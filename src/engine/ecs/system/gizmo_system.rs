@@ -292,35 +292,32 @@ impl TransformGizmoSystem {
         [v[0], v[1], v[2]]
     }
 
-    fn target_local_point_to_world(
+    fn target_translation_local_to_world(
         world: &World,
         target_transform: ComponentId,
         point_local: [f32; 3],
     ) -> [f32; 3] {
-        use crate::engine::ecs::system::transform_system::TransformSystem;
-
-        let target_world = TransformSystem::world_model(world, target_transform)
+        let parent_world = Self::parent_transform_world_matrix(world, target_transform)
             .unwrap_or_else(Self::mat4_identity);
         let v = Self::mat4_mul_vec4(
-            target_world,
+            parent_world,
             [point_local[0], point_local[1], point_local[2], 1.0],
         );
         [v[0], v[1], v[2]]
     }
 
-    fn world_point_to_target_local(
+    fn world_point_to_target_translation_local(
         world: &World,
         target_transform: ComponentId,
         point_world: [f32; 3],
     ) -> [f32; 3] {
-        use crate::engine::ecs::system::transform_system::TransformSystem;
         use crate::utils::math;
 
-        let target_world = TransformSystem::world_model(world, target_transform)
+        let parent_world = Self::parent_transform_world_matrix(world, target_transform)
             .unwrap_or_else(Self::mat4_identity);
-        let inv_target_world = math::mat4_inverse(target_world).unwrap_or_else(Self::mat4_identity);
+        let inv_parent_world = math::mat4_inverse(parent_world).unwrap_or_else(Self::mat4_identity);
         let v = Self::mat4_mul_vec4(
-            inv_target_world,
+            inv_parent_world,
             [point_world[0], point_world[1], point_world[2], 1.0],
         );
         [v[0], v[1], v[2]]
@@ -347,6 +344,38 @@ impl TransformGizmoSystem {
 
         let d = Self::world_delta_to_target_local(world, target_transform, dir_world);
         math::vec3_normalize(d)
+    }
+
+    fn translation_drag_next_local(
+        world: &World,
+        target_transform: ComponentId,
+        axis_world: [f32; 3],
+        drag_start_hit_point_world: [f32; 3],
+        drag_start_target_translation: [f32; 3],
+        current_hit_point_world: [f32; 3],
+    ) -> [f32; 3] {
+        fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+            a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+        }
+
+        fn add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+            [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+        }
+
+        fn mul(v: [f32; 3], s: f32) -> [f32; 3] {
+            [v[0] * s, v[1] * s, v[2] * s]
+        }
+
+        fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+            [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+        }
+
+        let drag_world = sub(current_hit_point_world, drag_start_hit_point_world);
+        let axis_distance_world = dot(drag_world, axis_world);
+        let delta_world_axis = mul(axis_world, axis_distance_world);
+        let delta_local =
+            Self::world_delta_to_target_local(world, target_transform, delta_world_axis);
+        add(drag_start_target_translation, delta_local)
     }
 
     fn resolve_translation_space(
@@ -598,10 +627,18 @@ impl TransformGizmoSystem {
             return;
         };
 
+        let drag_start_target_translation = world
+            .get_component_by_id_as::<TransformGizmoComponent>(gizmo_cid)
+            .and_then(|g| g.target_transform)
+            .and_then(|target| world.get_component_by_id_as::<TransformComponent>(target))
+            .map(|t| t.transform.translation);
+
         let mut old_debug_root: Option<ComponentId> = None;
         if let Some(g) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(gizmo_cid) {
             g.active_raycaster = Some(*raycaster);
             g.active_drag_slider_last_angle = 0.0;
+            g.active_drag_start_hit_point_world = Some(*hit_point);
+            g.active_drag_start_target_translation = drag_start_target_translation;
             if Self::debug_drag_plane_enabled() {
                 old_debug_root = g.debug_drag_plane_root.take();
             }
@@ -642,10 +679,6 @@ impl TransformGizmoSystem {
             [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
         }
 
-        fn add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-            [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
-        }
-
         fn mul(v: [f32; 3], s: f32) -> [f32; 3] {
             [v[0] * s, v[1] * s, v[2] * s]
         }
@@ -677,13 +710,21 @@ impl TransformGizmoSystem {
         };
 
         // Copy out what we need without holding a mutable borrow.
-        let Some((target_transform, active, slider_last_angle)) = world
+        let Some((
+            target_transform,
+            active,
+            slider_last_angle,
+            drag_start_hit_point_world,
+            drag_start_target_translation,
+        )) = world
             .get_component_by_id_as::<TransformGizmoComponent>(gizmo_cid)
             .map(|g| {
                 (
                     g.target_transform,
                     g.active_raycaster,
                     g.active_drag_slider_last_angle,
+                    g.active_drag_start_hit_point_world,
+                    g.active_drag_start_target_translation,
                 )
             })
         else {
@@ -703,25 +744,36 @@ impl TransformGizmoSystem {
                 let translation_space = Self::resolve_translation_space(world, gizmo_cid);
                 let axis_v =
                     Self::translation_axis_world(world, target_transform, translation_space, axis);
-                let d = dot(*delta_world, axis_v);
-                let delta_world_axis = mul(axis_v, d);
-                let delta =
-                    Self::world_delta_to_target_local(world, target_transform, delta_world_axis);
-
-                let Some(t_ro) =
-                    world.get_component_by_id_as::<TransformComponent>(target_transform)
-                else {
+                let Some(drag_start_hit_point_world) = drag_start_hit_point_world else {
                     return;
                 };
-                let cur = t_ro.transform.translation;
-                let unsnapped_next = add(cur, delta);
+                let Some(drag_start_target_translation) = drag_start_target_translation else {
+                    return;
+                };
+                let unsnapped_next = Self::translation_drag_next_local(
+                    world,
+                    target_transform,
+                    axis_v,
+                    drag_start_hit_point_world,
+                    drag_start_target_translation,
+                    *hit_point,
+                );
                 let next = if let Some(active_grid) =
                     Self::active_snap_grid_for_translate(world, editor_context_state.clone())
                 {
-                    let candidate_world =
-                        Self::target_local_point_to_world(world, target_transform, unsnapped_next);
-                    let snapped_world = GridSystem::snap_hit(&active_grid, candidate_world).point_world;
-                    Self::world_point_to_target_local(world, target_transform, snapped_world)
+                    let candidate_world = Self::target_translation_local_to_world(
+                        world,
+                        target_transform,
+                        unsnapped_next,
+                    );
+                    let snapped_world =
+                        GridSystem::snap_point_preserving_plane_offset(&active_grid, candidate_world)
+                            .point_world;
+                    Self::world_point_to_target_translation_local(
+                        world,
+                        target_transform,
+                        snapped_world,
+                    )
                 } else {
                     unsnapped_next
                 };
@@ -732,19 +784,22 @@ impl TransformGizmoSystem {
                         "translate",
                         target_transform,
                         &format!(
-                            "translation_space={:?} delta_world={:?} axis_world={:?} d={:.6} delta_world_axis={:?} delta_applied={:?} cur_t={:?} next_t={:?}",
+                            "translation_space={:?} hit_point={:?} drag_start_hit_point={:?} axis_world={:?} drag_start_t={:?} next_t={:?}",
                             translation_space,
-                            *delta_world,
+                            *hit_point,
+                            drag_start_hit_point_world,
                             axis_v,
-                            d,
-                            delta_world_axis,
-                            delta,
-                            cur,
+                            drag_start_target_translation,
                             next,
                         ),
                     );
                 }
 
+                let Some(t_ro) =
+                    world.get_component_by_id_as::<TransformComponent>(target_transform)
+                else {
+                    return;
+                };
                 if Self::debug_sanity_enabled() {
                     Self::sanity_check_transform_values(
                         world,
@@ -982,6 +1037,8 @@ impl TransformGizmoSystem {
                 g.active_raycaster = None;
             }
             g.active_drag_slider_last_angle = 0.0;
+            g.active_drag_start_hit_point_world = None;
+            g.active_drag_start_target_translation = None;
 
             if Self::debug_drag_plane_enabled() {
                 if let Some(root) = g.debug_drag_plane_root.take() {
@@ -1777,5 +1834,79 @@ mod tests {
             TransformGizmoAxis::X,
         );
         approx3(axis, [0.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn translation_drag_uses_drag_start_anchor_instead_of_frame_delta() {
+        let mut world = World::default();
+        let target = world.add_component(TransformComponent::new().with_position(10.0, 0.0, 0.0));
+
+        let next = TransformGizmoSystem::translation_drag_next_local(
+            &world,
+            target,
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [10.0, 0.0, 0.0],
+            [0.25, 0.5, 0.0],
+        );
+
+        approx3(next, [10.25, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn translation_drag_respects_rotated_parent_space_from_drag_start() {
+        let mut world = World::default();
+        let parent = world.add_component(TransformComponent::new().with_rotation_euler(
+            0.0,
+            0.0,
+            std::f32::consts::FRAC_PI_2,
+        ));
+        let target = world.add_component(TransformComponent::new().with_position(0.0, 2.0, 0.0));
+        world.add_child(parent, target).expect("attach target");
+
+        let parent_world = world
+            .get_component_by_id_as::<TransformComponent>(parent)
+            .expect("parent transform")
+            .transform
+            .model;
+        world
+            .get_component_by_id_as_mut::<TransformComponent>(parent)
+            .expect("parent transform")
+            .transform
+            .matrix_world = parent_world;
+
+        let next = TransformGizmoSystem::translation_drag_next_local(
+            &world,
+            target,
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0],
+            [1.0, 0.25, 0.0],
+        );
+
+        approx3(next, [0.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn translation_local_world_conversion_uses_parent_space_not_target_rotation() {
+        let mut world = World::default();
+        let parent = world.add_component(TransformComponent::new());
+        let target = world.add_component(
+            TransformComponent::new()
+                .with_position(1.0, 2.0, 3.0)
+                .with_rotation_euler(std::f32::consts::FRAC_PI_2, 0.0, 0.0),
+        );
+        world.add_child(parent, target).expect("attach target");
+
+        let world_point =
+            TransformGizmoSystem::target_translation_local_to_world(&world, target, [4.0, 5.0, 6.0]);
+        approx3(world_point, [4.0, 5.0, 6.0]);
+
+        let local_point = TransformGizmoSystem::world_point_to_target_translation_local(
+            &world,
+            target,
+            [7.0, 8.0, 9.0],
+        );
+        approx3(local_point, [7.0, 8.0, 9.0]);
     }
 }

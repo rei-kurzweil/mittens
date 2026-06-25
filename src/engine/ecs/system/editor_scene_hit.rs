@@ -48,7 +48,8 @@ pub fn resolve_editor_scene_hit(world: &World, renderable: ComponentId) -> Optio
         }
         return None;
     }
-    let target_transform = nearest_transform_ancestor(world, renderable)?;
+    let target_transform = preferred_scene_selection_transform(world, renderable)
+        .or_else(|| nearest_transform_ancestor(world, renderable))?;
     if debug_editor_scene_hit_enabled() {
         println!(
             "[EditorSceneHit] accept renderable={renderable:?} '{}' -> target_transform={target_transform:?} '{}' editor_root={editor_root:?} '{}'",
@@ -62,6 +63,17 @@ pub fn resolve_editor_scene_hit(world: &World, renderable: ComponentId) -> Optio
         target_renderable: renderable,
         target_transform,
     })
+}
+
+fn preferred_scene_selection_transform(world: &World, start: ComponentId) -> Option<ComponentId> {
+    let mut cur = Some(start);
+    while let Some(node) = cur {
+        if world.component_label(node) == Some("painted_asset_root") {
+            return Some(node);
+        }
+        cur = world.parent_of(node);
+    }
+    None
 }
 
 pub fn nearest_editor_ancestor(world: &World, start: ComponentId) -> Option<ComponentId> {
@@ -119,4 +131,32 @@ pub fn has_selectable_off_ancestor(world: &World, start: ComponentId) -> bool {
         cur = world.parent_of(node);
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_editor_scene_hit;
+    use crate::engine::ecs::World;
+    use crate::engine::ecs::component::{EditorComponent, RenderableComponent, TransformComponent};
+
+    #[test]
+    fn painted_asset_hits_resolve_to_wrapper_root() {
+        let mut world = World::default();
+        let editor = world.add_component(EditorComponent::new());
+        let raycastable_root =
+            world.add_component_boxed_named("painted_asset_raycastable", Box::new(TransformComponent::new()));
+        let painted_root =
+            world.add_component_boxed_named("painted_asset_root", Box::new(TransformComponent::new()));
+        let internal =
+            world.add_component_boxed_named("internal_mesh_root", Box::new(TransformComponent::new()));
+        let renderable = world.add_component(RenderableComponent::cube());
+
+        world.add_child(editor, raycastable_root).expect("attach raycastable");
+        world.add_child(raycastable_root, painted_root).expect("attach painted root");
+        world.add_child(painted_root, internal).expect("attach internal");
+        world.add_child(internal, renderable).expect("attach renderable");
+
+        let hit = resolve_editor_scene_hit(&world, renderable).expect("scene hit");
+        assert_eq!(hit.target_transform, painted_root);
+    }
 }

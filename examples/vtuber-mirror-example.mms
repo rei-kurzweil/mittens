@@ -56,14 +56,14 @@ T.position(0.75, 0.35, -0.75) {
 
 // --- Temple shell and floor collision ---
 ED {
-    T.position(0.0, -1.75, 0.0).scale(120.0, 0.12, 120.0) {
+    T.position(0.0, -0.75, 0.0).scale(120.0, 0.12, 120.0) {
         Collision.static() {
             CollisionShape.cube([60.0, 0.06, 60.0])
         }
         R.cube() { C.rgba(0.75, 0.75, 0.75, 1.0) }
     }
 
-    T.position(0.0, -1.55, -0.2).scale(8.0, 0.18, 10.5) {
+    T.position(0.0, -0.55, -0.2).scale(8.0, 0.18, 10.5) {
         R.cube() { C.rgba(0.86, 0.84, 0.82, 1.0) }
     }
 
@@ -133,22 +133,9 @@ ED {
     
     T.position(0.0, 0.55, -4.5).scale(3.0, 3.0, 0.08) {
         R.cube() {
-            Mirror.quality(1024) {}
+            Mirror.quality(2048) {}
         }
     }
-
-    // T.position(-1.5, 0.55, -3).rotation(0.0, 3.14159 / 2.0, 0.0).scale(3, 3, 1.0) {
-    //     R.plane() { C.rgba(0.10, 0.30, 1.0, 1.0) }
-    // }
-
-    // T.position(1.5, 0.55, -3).rotation(0.0, 3.14159 / 2.0, 0.0).scale(3, 3, 1.0) {
-    //     R.plane() { C.rgba(0.12, 0.86, 0.22, 1.0) }
-    // }
-
-
-    // T.position(0.0, 0.55, -4.08).scale(2.45, 2.75, 0.10) {
-    //     R.cube() { C.rgba(0.66, 0.56, 0.34, 1.0) }
-    // }
 
     T.position(-1.1, -0.95, -1.7).scale(0.45, 0.9, 0.45) {
         R.cube() { C.rgba(0.75, 0.28, 0.26, 1.0) EM.on() Raycastable.enabled() }
@@ -183,7 +170,7 @@ InputXR.on() {
             hand_grip_rotation_right([-0.6408564, -0.29883623, -0.29883623, 0.6408564])
 
             T {
-                GLTF.new("assets/models/bisket.8.0.glb") {
+                GLTF.new("assets/models/bisket.11.0.glb") {
                     EM.on()
                     PoseCapture { label("Bisket") }
                 }
@@ -214,46 +201,25 @@ InputXR.on() {
 }
 
 // Aim/controller reference cubes kept so mirror hand motion is easy to judge.
-InputXR.on() {
-    T {
-        CTLXR.new(true, Left, Grip) {
-            T.scale(0.05, 0.05, 0.10) {
-                T {
-                    R.cube() { C.rgba(1.0, 1.0, 0.0, 1.0) EM.on() }
-                }
-            }
-        }
-        CTLXR.new(true, Right, Grip) {
-            T.scale(0.05, 0.05, 0.10) {
-                T {
-                    R.cube() { C.rgba(0.2, 1.0, 0.2, 1.0) EM.on() }
-                }
-            }
-        }
-    }
-}
+// InputXR.on() {
+//     T {
+//         CTLXR.new(true, Left, Grip) {
+//             T.scale(0.05, 0.05, 0.10) {
+//                 T {
+//                     R.cube() { C.rgba(1.0, 1.0, 0.0, 1.0) EM.on() }
+//                 }
+//             }
+//         }
+//         CTLXR.new(true, Right, Grip) {
+//             T.scale(0.05, 0.05, 0.10) {
+//                 T {
+//                     R.cube() { C.rgba(0.2, 1.0, 0.2, 1.0) EM.on() }
+//                 }
+//             }
+//         }
+//     }
+// }
 
-// // --- Desktop overview camera (Window target) ---
-// //
-// // Companion camera for desktop validation when XR is also active.
-// // This keeps the example usable without a headset and avoids the white-screen
-// // case where only the clear color is visible in the window.
-// I.speed(1.0) {
-//     InputTransformMode.forward_z() {
-//         roll_axis_y()
-//         fps_rotation()
-//     }
-//     T.position(3.1, 1.45, 3.9).rotation(0.0, 0.58, 0.0) {
-//         name = "desktop_camera_rig"
-//         Collision.kinematic() {
-//             CollisionShape.sphere(0.22)
-//             KineticResponse.slide() {}
-//         }
-//         C3D {
-//             Pointer {}
-//         }
-//     }
-//}
 
 ED { 
 I.speed(1.5) {
@@ -268,7 +234,7 @@ I.speed(1.5) {
                 initial_yaw(0.0)
 
                 T.position(0.0, -1.6, 0.0) {
-                    GLTF.new("assets/models/bisket.8.0.glb") { EM.on() }
+                    GLTF.new("assets/models/bisket.11.0.glb") { EM.on() }
                 }
 
                 // Camera wrapped in T(eye_offset).

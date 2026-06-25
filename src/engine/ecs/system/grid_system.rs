@@ -267,6 +267,29 @@ impl GridSystem {
         }
     }
 
+    pub fn snap_point_preserving_plane_offset(
+        active: &ActiveGrid,
+        point_world: [f32; 3],
+    ) -> GridSnapResult {
+        let local = transform_point(active.inverse_world, point_world);
+        let cell_x = round_to_i32(local[0] / active.spacing);
+        let cell_y = round_to_i32(local[2] / active.spacing);
+        let snapped_local = [
+            cell_x as f32 * active.spacing,
+            local[1],
+            cell_y as f32 * active.spacing,
+        ];
+        let snapped_world = transform_point(active.matrix_world, snapped_local);
+
+        GridSnapResult {
+            point_world: snapped_world,
+            normal_world: active.normal_world,
+            step: GridStep {
+                cell: [cell_x, cell_y],
+            },
+        }
+    }
+
     pub fn same_step(a: Option<GridStep>, b: GridStep) -> bool {
         a == Some(b)
     }
@@ -562,19 +585,11 @@ impl GridSystem {
             .add_component_boxed_named(GRID_LIVE_ROOT_NAME, Box::new(TransformComponent::new()));
         let live_selectable = world.add_component_boxed_named(
             GRID_LIVE_SELECTABLE_NAME,
-            Box::new(if preview_mode || grid.hidden {
-                SelectableComponent::off()
-            } else {
-                SelectableComponent::on()
-            }),
+            Box::new(SelectableComponent::off()),
         );
         let live_raycastable = world.add_component_boxed_named(
             GRID_LIVE_RAYCASTABLE_NAME,
-            Box::new(if preview_mode || grid.hidden {
-                RaycastableComponent::disabled()
-            } else {
-                RaycastableComponent::enabled()
-            }),
+            Box::new(RaycastableComponent::disabled()),
         );
         let live_serialize = world.add_component_boxed_named(
             GRID_LIVE_SERIALIZE_NAME,
@@ -658,14 +673,14 @@ impl GridSystem {
             && let Some(selectable) =
                 world.get_component_by_id_as_mut::<SelectableComponent>(selectable_id)
         {
-            selectable.enabled = !preview_mode && !grid.hidden;
+            selectable.enabled = false;
         }
         if let Some(raycastable_id) =
             world.find_component(owner_transform, "#grid_live_raycastable")
             && let Some(raycastable) =
                 world.get_component_by_id_as_mut::<RaycastableComponent>(raycastable_id)
         {
-            raycastable.enable = !preview_mode && !grid.hidden;
+            raycastable.enable = false;
         }
     }
 
@@ -838,6 +853,25 @@ mod tests {
         assert_eq!(snapped.step.cell, [0, 0]);
         assert!((snapped.point_world[0] - 0.0).abs() < 1e-5);
         assert!((snapped.point_world[1] - 0.0).abs() < 1e-5);
+        assert!((snapped.point_world[2] - 0.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn snap_point_preserving_plane_offset_keeps_local_height() {
+        let mut world = World::default();
+        let active = ActiveGrid {
+            component: world.add_component(TransformComponent::new()),
+            spacing: 0.5,
+            origin_world: [0.0, 0.0, 0.0],
+            normal_world: [0.0, 1.0, 0.0],
+            matrix_world: TransformComponent::new().transform.matrix_world,
+            inverse_world: TransformComponent::new().transform.matrix_world,
+        };
+
+        let snapped = GridSystem::snap_point_preserving_plane_offset(&active, [0.24, 0.76, 0.18]);
+        assert_eq!(snapped.step.cell, [0, 0]);
+        assert!((snapped.point_world[0] - 0.0).abs() < 1e-5);
+        assert!((snapped.point_world[1] - 0.76).abs() < 1e-5);
         assert!((snapped.point_world[2] - 0.0).abs() < 1e-5);
     }
 

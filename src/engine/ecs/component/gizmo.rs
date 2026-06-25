@@ -159,6 +159,12 @@ pub struct TransformGizmoComponent {
     /// Runtime: accumulated slider angle (radians) since drag start.
     pub active_drag_slider_last_angle: f32,
 
+    /// Runtime: drag-start hit point in world space for translation drags.
+    pub active_drag_start_hit_point_world: Option<[f32; 3]>,
+
+    /// Runtime: target local translation captured at drag start.
+    pub active_drag_start_target_translation: Option<[f32; 3]>,
+
     /// Root TransformComponent id of the gizmo visual subtree (spawned on init).
     pub visual_root: Option<ComponentId>,
 
@@ -181,6 +187,8 @@ impl TransformGizmoComponent {
             target_transform: None,
             active_raycaster: None,
             active_drag_slider_last_angle: 0.0,
+            active_drag_start_hit_point_world: None,
+            active_drag_start_target_translation: None,
             visual_root: None,
             debug_drag_plane_root: None,
             component: None,
