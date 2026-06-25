@@ -79,6 +79,25 @@ But the current OpenXR action/path debug output shows:
 
 That means the action-based controller input path is not currently alive for this session, even when the scene is focused.
 
+Additional hand-tracking runtime evidence gathered during this task:
+
+- hand-root fallback can drive `CTLXR` even while controller actions remain dead
+- the reduced hand-root source currently resolves to `WRIST` when available
+- once both hands are visible, hand tracking can remain continuously present rather than dropping out every frame
+- thumb-tip/index-tip pinch distance is valid enough to derive a simple engine-side pinch state
+- pinch transitions appear believable from runtime data alone
+- the main remaining hand-tracking problem is now subjective pose quality, not hand-data absence
+
+Most importantly:
+
+- the left/right hands can both stay `root=Some(WRIST)` for extended periods
+- but the user still observes wrist orientation pitching/yawing back and forth while rotating a hand slowly
+
+So the next debugging target is not "is hand tracking alive?" but:
+
+- whether `WRIST` orientation itself is unstable on this runtime, or
+- whether `WRIST` is simply the wrong semantic pose to drive authored hand transforms
+
 ---
 
 ## 4. Important architecture finding
@@ -217,6 +236,17 @@ Before renaming, finish proving which runtime path is alive on the Focus 3 sessi
    - controller activation/profile issue
    - incorrect action/profile setup
    - or a bug in our pose-vs-action branching
+
+Updated follow-up after the above was verified:
+
+5. Compare `WRIST` orientation against `PALM` orientation for each tracked hand.
+
+6. Log large per-frame wrist rotation spikes rather than every small pinch-distance change.
+
+7. Use those traces to decide whether the current jitter is:
+   - raw runtime `WRIST` orientation noise
+   - a bad choice of hand-root joint for authored pose driving
+   - or an engine-side transform/application issue after sampling
 
 ---
 

@@ -52,7 +52,7 @@ impl InputXRGamepadComponent {
         Self {
             enabled: true,
             hand: XrHandPreference::Default,
-            locomotion: false,
+            locomotion: true,
             speed: 1.5,
             deadzone: 0.2,
             component_id: None,
@@ -71,6 +71,11 @@ impl InputXRGamepadComponent {
 
     pub fn locomotion(mut self) -> Self {
         self.locomotion = true;
+        self
+    }
+
+    pub fn locomotion_enabled(mut self, enabled: bool) -> Self {
+        self.locomotion = enabled;
         self
     }
 
@@ -147,8 +152,8 @@ impl Component for InputXRGamepadComponent {
         let mut ce = ce_call("InputXRGamepad", "new", vec![])
             .with_call("enabled", vec![b(self.enabled)])
             .with_call("hand", vec![s(hand)]);
-        if self.locomotion {
-            ce = ce.with_call("locomotion", vec![]);
+        if !self.locomotion {
+            ce = ce.with_call("locomotion", vec![b(false)]);
         }
         if (self.speed - 1.5).abs() > f32::EPSILON {
             ce = ce.with_call("speed", vec![num(self.speed as f64)]);

@@ -2461,7 +2461,13 @@ fn apply_call(
                     s => return Err(format!("unknown XrHandPreference: {s}")),
                 }
             }
-            "locomotion" => inp.locomotion = true,
+            "locomotion" => {
+                inp.locomotion = if args.is_empty() {
+                    true
+                } else {
+                    arg_bool(args, 0)?
+                };
+            }
             "speed" => inp.speed = arg_f32(args, 0)?,
             "deadzone" => inp.deadzone = arg_f32(args, 0)?,
             _ => {}
