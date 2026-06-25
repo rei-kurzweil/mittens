@@ -902,6 +902,70 @@ fn mms_click_handler_can_emit_data_event() {
 }
 
 #[test]
+fn mms_xr_axis_handler_receives_array_payload() {
+    let src = r##"
+        let root = T { name = "root" }
+        let target = Text { "(idle)" name = "target" }
+
+        on(root, "XrAxisChanged", fn(event) {
+            target.set_text("" + event[0] + ":" + event[1] + ":" + event[2][0])
+        })
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+
+    let root_id = world
+        .all_components()
+        .filter(|&id| world.parent_of(id).is_none())
+        .find_map(|root| world.find_component(root, "#root"))
+        .expect("expected #root");
+
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            root_id,
+            EventSignal::XrAxisChanged {
+                source_component: root_id,
+                hand: crate::engine::ecs::component::ControllerHand::Left,
+                control: crate::engine::ecs::component::XrAxisControl::LeftStick,
+                value: [0.25, -0.5],
+            },
+        ),
+    );
+
+    let intents = rx.drain_ready_intents();
+    assert!(
+        intents.iter().any(|signal| matches!(
+            signal.intent.as_ref().map(|intent| &intent.value),
+            Some(crate::engine::ecs::IntentValue::SetText { text, .. }) if text == "Left:LeftStick:0.25"
+        )),
+        "expected XR axis handler payload to reach MMS"
+    );
+}
+
+#[test]
+fn xr_input_gamepad_example_parses() {
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+    let source = std::fs::read_to_string("examples/xr-input-gamepad.mms").unwrap();
+
+    let out = MeowMeowRunner::eval_with_world_at_path(
+        &source,
+        Some("examples/xr-input-gamepad.mms"),
+        &mut world,
+        &mut rx,
+        &mut emit,
+    );
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+}
+
+#[test]
 fn eval_for_in_array_emits_correct_count() {
     // 3 elements → 3 SpawnComponentTree intents
     let out = eval("for x in [1, 2, 3] { T {} }");
@@ -1792,6 +1856,25 @@ fn roundtrip_input_xr_off() {
 }
 
 #[test]
+fn roundtrip_input_xr_gamepad() {
+    use crate::engine::ecs::component::{InputXRGamepadComponent, XrHandPreference};
+    let original = InputXRGamepadComponent::new()
+        .hand(XrHandPreference::Either)
+        .locomotion()
+        .speed(2.25)
+        .deadzone(0.15);
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<InputXRGamepadComponent>(id)
+        .unwrap();
+    assert!(got.enabled);
+    assert_eq!(got.hand, XrHandPreference::Either);
+    assert!(got.locomotion);
+    assert!((got.speed - 2.25).abs() < 1e-6);
+    assert!((got.deadzone - 0.15).abs() < 1e-6);
+}
+
+#[test]
 fn roundtrip_animation_paused() {
     use crate::engine::ecs::component::{AnimationComponent, AnimationState};
     let (world, id) =
@@ -2164,7 +2247,9 @@ fn roundtrip_input_speed() {
 
 #[test]
 fn roundtrip_input_transform_mode() {
-    use crate::engine::ecs::component::{ComponentRef, ForwardAxis, InputTransformModeComponent, RollAxis};
+    use crate::engine::ecs::component::{
+        ComponentRef, ForwardAxis, InputTransformModeComponent, RollAxis,
+    };
     let original = InputTransformModeComponent::forward_y()
         .with_roll_axis_y()
         .with_rotation_disabled()

@@ -148,17 +148,16 @@ ED {
     }
 }
 
-// --- bisket avatar — XR pose stays owned by OpenXR; desktop input moves an outer locomotion rig ---
-I.speed(1.5) {
-    InputTransformMode.forward_z() {
-        rotation_disabled()
-        translation_basis("../#xr_pose")
-    }
-    T {
-        InputXR.on() {
-            T {
-                name = "xr_pose"
-                AVC {
+// --- bisket avatar — XR pose stays owned by OpenXR; thumbstick locomotion moves an outer rig ---
+T {
+    InputXR.on() {
+        InputXRGamepad {
+            locomotion()
+            speed(1.5)
+        }
+        T {
+            name = "xr_pose"
+            AVC {
                     head_bone("J_Bip_C_Head")
                     camera_bone("J_Bip_C_Head")
                     left_hand_bone("J_Bip_L_Hand")
@@ -194,14 +193,13 @@ I.speed(1.5) {
 
                     CTLXR.new(true, Left,  Grip) { T { Pointer {} } }
                     CTLXR.new(true, Right, Grip) { T { Pointer {} } }
-                }
+            }
 
-                OV {
-                    T.scale(0.06, 0.06, 0.12) {
-                        R.cube() {
-                            C.rgba(0.00, 1.0, 1.0, 0.5)
-                            EM.on()
-                        }
+            OV {
+                T.scale(0.06, 0.06, 0.12) {
+                    R.cube() {
+                        C.rgba(0.00, 1.0, 1.0, 0.5)
+                        EM.on()
                     }
                 }
             }

@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, LazyLock};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use crate::engine::ecs::component::{
     DataComponent, EditorComponent, SelectionComponent, SelectionEntry, TransformGizmoComponent,
@@ -8,14 +8,14 @@ use crate::engine::ecs::system::data_renderer_system::{
     DataRendererSystem, ItemRendererSpec, RendererSpec, UiItem, UiItemKind,
 };
 use crate::engine::ecs::system::editor::context::{
-    apply_semantic_target_selection, EditorContextState,
+    EditorContextState, apply_semantic_target_selection,
 };
 use crate::engine::ecs::system::editor::panel_ui::{
-    spawn_block_container, spawn_panel_ui_row_tree, PanelUiRowSpec,
+    PanelUiRowSpec, spawn_block_container, spawn_panel_ui_row_tree,
 };
 use crate::engine::ecs::system::panel_system::{
-    decode_panel_action_payload, find_named_root, is_descendant_or_self, PanelActionKind, PanelKind,
-    EDITOR_RUNTIME_UI_ROOT_NAME,
+    EDITOR_RUNTIME_UI_ROOT_NAME, PanelActionKind, PanelKind, decode_panel_action_payload,
+    find_named_root, is_descendant_or_self,
 };
 use crate::engine::ecs::system::selection_system::{
     apply_selection_set, resolve_semantic_target_from_payload,
@@ -764,7 +764,8 @@ pub fn handle_world_panel_item_click(
         }],
         Some(row_root),
     );
-    let Some(status_wrap) = world.find_component(world_panel_root, PANEL_STATUS_WRAP_SELECTOR) else {
+    let Some(status_wrap) = world.find_component(world_panel_root, PANEL_STATUS_WRAP_SELECTOR)
+    else {
         return false;
     };
     apply_world_panel_semantic_selection(

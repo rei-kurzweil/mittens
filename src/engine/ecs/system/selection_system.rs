@@ -521,7 +521,9 @@ fn direct_option_payload(
     let mut matches = Vec::new();
     for root in [row_root, option_root] {
         for &child in world.children_of(root) {
-            if world.get_component_by_id_as::<DataComponent>(child).is_some()
+            if world
+                .get_component_by_id_as::<DataComponent>(child)
+                .is_some()
                 && !matches.contains(&child)
             {
                 matches.push(child);

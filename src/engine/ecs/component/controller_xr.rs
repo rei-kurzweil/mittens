@@ -1,7 +1,7 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ControllerHand {
     Left,
     Right,

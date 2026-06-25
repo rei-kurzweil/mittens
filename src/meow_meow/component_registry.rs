@@ -21,26 +21,26 @@ use crate::engine::ecs::component::{
     EmissivePassComponent, FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection,
     FlexWrap, GLTFComponent, GestureCoordTypeComponent, GravityComponent, GridComponent,
     HtmlElementComponent, IKChainComponent, IKSolver, InputComponent, InputTransformModeComponent,
-    InputXRComponent, InspectLayoutComponent, JustifyContent, KeyframeComponent,
-    KineticResponseComponent, LayoutBoundsComponent, LayoutComponent, LightQuantizationComponent,
-    MeshComponent, MirrorComponent, MusicContextComponent, MusicNote, MusicNoteComponent,
-    NormalVisualisationComponent, OpacityComponent, OpenXRComponent, OptionComponent,
-    OscillatorType, Overflow, OverlayComponent, PointLightComponent, PointerComponent,
-    PointerEvents, PoseCaptureComponent, PoseCaptureLibraryComponent, PoseCapturePoseComponent,
-    Position, QuatTemporalFilterComponent, QuatYawFollowComponent, RayCastComponent,
-    RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType, RenderGraphComponent,
-    RenderableComponent, RendererSettingsComponent, RendererStatsComponent, RouterComponent,
-    ScrollingComponent, SelectableComponent, SelectionComponent, SerializeComponent,
-    SignalObserverRouterComponent, SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent,
-    StencilClipComponent, StyleComponent, TextAlign, TextComponent, TextInputComponent,
-    TextShadowComponent, TextureComponent, TextureFilteringComponent, TransformComponent,
-    TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
-    TransformGizmoCoordSpace, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
-    TransformGizmoTranslateComponent, TransformMapRotationComponent, TransformMapScaleComponent,
-    TransformMapTranslationComponent, TransformMergeTRSComponent, TransformParentComponent,
-    TransformSampleAncestorComponent, TransitionComponent, TransitionEasing,
-    TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
-    Vector3TemporalFilterComponent, WordWrapMode,
+    InputXRComponent, InputXRGamepadComponent, InspectLayoutComponent, JustifyContent,
+    KeyframeComponent, KineticResponseComponent, LayoutBoundsComponent, LayoutComponent,
+    LightQuantizationComponent, MeshComponent, MirrorComponent, MusicContextComponent, MusicNote,
+    MusicNoteComponent, NormalVisualisationComponent, OpacityComponent, OpenXRComponent,
+    OptionComponent, OscillatorType, Overflow, OverlayComponent, PointLightComponent,
+    PointerComponent, PointerEvents, PoseCaptureComponent, PoseCaptureLibraryComponent,
+    PoseCapturePoseComponent, Position, QuatTemporalFilterComponent, QuatYawFollowComponent,
+    RayCastComponent, RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType,
+    RenderGraphComponent, RenderableComponent, RendererSettingsComponent, RendererStatsComponent,
+    RouterComponent, ScrollingComponent, SelectableComponent, SelectionComponent,
+    SerializeComponent, SignalObserverRouterComponent, SignalRouteUpwardComponent, SizeDimension,
+    SkinnedMeshComponent, StencilClipComponent, StyleComponent, TextAlign, TextComponent,
+    TextInputComponent, TextShadowComponent, TextureComponent, TextureFilteringComponent,
+    TransformComponent, TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis,
+    TransformGizmoComponent, TransformGizmoCoordSpace, TransformGizmoRotateComponent,
+    TransformGizmoScaleComponent, TransformGizmoTranslateComponent, TransformMapRotationComponent,
+    TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
+    TransformParentComponent, TransformSampleAncestorComponent, TransitionComponent,
+    TransitionEasing, TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
+    Vector3TemporalFilterComponent, WordWrapMode, XrHandPreference,
 };
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::CameraTarget;
@@ -1142,6 +1142,15 @@ fn create_component(
             Some("off") => add!(InputXRComponent::off()),
             _ => add!(InputXRComponent::on()),
         },
+        "InputXRGamepad" => {
+            let id = world.add_component(InputXRGamepadComponent::new());
+            if let Some(method) = ctor {
+                if method != "new" {
+                    apply_call(world, id, method, args)?;
+                }
+            }
+            Ok(id)
+        }
         "InputTransformMode" => {
             let c = match ctor {
                 Some("forward_y") => InputTransformModeComponent::forward_y(),
@@ -2440,6 +2449,25 @@ fn apply_call(
         }
         return Ok(());
     }
+    if let Some(inp) = world.get_component_by_id_as_mut::<InputXRGamepadComponent>(id) {
+        match method {
+            "enabled" => inp.enabled = arg_bool(args, 0)?,
+            "hand" => {
+                inp.hand = match arg_str(args, 0)?.to_ascii_lowercase().as_str() {
+                    "default" => XrHandPreference::Default,
+                    "left" => XrHandPreference::Left,
+                    "right" => XrHandPreference::Right,
+                    "either" => XrHandPreference::Either,
+                    s => return Err(format!("unknown XrHandPreference: {s}")),
+                }
+            }
+            "locomotion" => inp.locomotion = true,
+            "speed" => inp.speed = arg_f32(args, 0)?,
+            "deadzone" => inp.deadzone = arg_f32(args, 0)?,
+            _ => {}
+        }
+        return Ok(());
+    }
     if world
         .get_component_by_id_as::<InputTransformModeComponent>(id)
         .is_some()
@@ -2458,9 +2486,8 @@ fn apply_call(
                 "fps_rotation" => itm.with_fps_rotation(),
                 "roll_axis_y" => itm.with_roll_axis_y(),
                 "rotation_disabled" => itm.with_rotation_disabled(),
-                "translation_basis" => itm.with_translation_basis_source(
-                    translation_basis_src.expect("computed above"),
-                ),
+                "translation_basis" => itm
+                    .with_translation_basis_source(translation_basis_src.expect("computed above")),
                 _ => itm,
             }
         };
@@ -2685,7 +2712,9 @@ fn apply_call(
                 *anim = anim.clone().with_length_beats(n);
             }
             "scope" => {
-                *anim = anim.clone().with_scope_source(scope_src.expect("scope arg pre-parsed"));
+                *anim = anim
+                    .clone()
+                    .with_scope_source(scope_src.expect("scope arg pre-parsed"));
             }
             "resolve_targets" => {
                 let mode = match arg_str(args, 0)? {

@@ -1,7 +1,8 @@
 use crate::engine::ecs::component::ik_chain::TwoBoneIkDebugVisuals;
 use crate::engine::ecs::component::{
     AvatarControlComponent, ColorComponent, EmissiveComponent, IKChainComponent, IKSolver,
-    OverlayComponent, QueryRootMode, RenderableComponent, TransformComponent, resolve_component_ref,
+    OverlayComponent, QueryRootMode, RenderableComponent, TransformComponent,
+    resolve_component_ref,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::utils::math::{
@@ -1099,7 +1100,8 @@ mod tests {
         let mut w = World::default();
 
         let unrelated_root = w.add_component(TransformComponent::new());
-        let unrelated_hand = w.add_component_boxed_named("hand", Box::new(TransformComponent::new()));
+        let unrelated_hand =
+            w.add_component_boxed_named("hand", Box::new(TransformComponent::new()));
         w.add_child(unrelated_root, unrelated_hand).unwrap();
 
         let root = w.add_component(TransformComponent::new());

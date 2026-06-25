@@ -10,6 +10,7 @@ use crate::engine::ecs::system::ClockSystem;
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::system::InputSystem;
+use crate::engine::ecs::system::InputXRGamepadSystem;
 use crate::engine::ecs::system::KineticResponseSystem;
 use crate::engine::ecs::system::LightSystem;
 use crate::engine::ecs::system::MirrorSystem;
@@ -97,6 +98,7 @@ pub struct SystemWorld {
     pub armature_visualization: ArmatureVisualizationSystem,
 
     pub openxr: OpenXRSystem,
+    pub input_xr_gamepad: InputXRGamepadSystem,
 
     pub pose_capture: PoseCaptureSystem,
 
@@ -616,7 +618,9 @@ mod tests {
         let mirror = visuals.mirrors().first().expect("mirror registration");
         for capture in &mirror.captures {
             assert!(
-                visuals.runtime_texture_handle(&capture.target_key).is_some(),
+                visuals
+                    .runtime_texture_handle(&capture.target_key)
+                    .is_some(),
                 "expected runtime texture handle for {}",
                 capture.target_key
             );
@@ -1655,6 +1659,15 @@ impl SystemWorld {
             .register_controller_xr(world, visuals, component);
     }
 
+    pub fn register_input_xr_gamepad(
+        &mut self,
+        _world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.input_xr_gamepad.register_input_xr_gamepad(component);
+    }
+
     /// Remove a ControllerXRComponent from OpenXRSystem tracking.
     pub fn remove_controller_xr(
         &mut self,
@@ -1673,6 +1686,15 @@ impl SystemWorld {
         component: ComponentId,
     ) {
         self.openxr.remove_input_xr(world, visuals, component);
+    }
+
+    pub fn remove_input_xr_gamepad(
+        &mut self,
+        _world: &mut World,
+        _visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.input_xr_gamepad.remove_input_xr_gamepad(component);
     }
 
     /// Register a PointLightComponent instance with the LightSystem.
@@ -2146,6 +2168,10 @@ impl SystemWorld {
         self.openxr
             .tick_with_queue(world, visuals, input, queue, dt_sec);
         // Controller pose updates should be visible to raycasting/gestures this frame.
+        queue.flush(world, self, visuals, render_assets);
+        self.tick_transition_runtime(world, visuals);
+        self.input_xr_gamepad
+            .tick_with_queue(world, visuals, &self.openxr, queue, dt_sec);
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
 

@@ -13,11 +13,11 @@ use crate::engine::ecs::system::editor::context::{
     EditorContextState, apply_editor_root_selection,
 };
 use crate::engine::ecs::system::editor::world_panel::{
-    world_panel_item_label, PANEL_CONTENT_SLOT_SELECTOR,
+    PANEL_CONTENT_SLOT_SELECTOR, world_panel_item_label,
 };
 use crate::engine::ecs::system::grid_system::GridSpawnSpec;
 use crate::engine::ecs::system::panel_system::{
-    decode_panel_action_payload, is_descendant_or_self, PanelActionKind, PanelKind,
+    PanelActionKind, PanelKind, decode_panel_action_payload, is_descendant_or_self,
 };
 use crate::engine::ecs::system::selection_system::apply_selection_set;
 use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter, World};
@@ -386,7 +386,8 @@ fn clear_active_grid_selection_if_matches(
         return;
     }
 
-    if let Some(selection_root) = world.find_component(panel_query_root, GRID_PANEL_SELECTION_SELECTOR)
+    if let Some(selection_root) =
+        world.find_component(panel_query_root, GRID_PANEL_SELECTION_SELECTOR)
     {
         crate::engine::ecs::system::selection_system::apply_selection_set(
             world,
@@ -462,13 +463,14 @@ pub(crate) fn rerender_grid_panel_from_context(
         editor_context.active_grid_owner_transform,
     );
     let items = grid_panel_items(&model);
-    let container = match data_renderer.render_list(world, emit, content_slot, &GRID_PANEL_ROW_SPEC, &items) {
-        Ok(container) => container,
-        Err(error) => {
-        eprintln!("[InspectorSystem] grid panel content render error: {error}");
-            return;
-        }
-    };
+    let container =
+        match data_renderer.render_list(world, emit, content_slot, &GRID_PANEL_ROW_SPEC, &items) {
+            Ok(container) => container,
+            Err(error) => {
+                eprintln!("[InspectorSystem] grid panel content render error: {error}");
+                return;
+            }
+        };
 
     let Some(selection_root) = world.find_component(grid_panel_root, GRID_PANEL_SELECTION_SELECTOR)
     else {

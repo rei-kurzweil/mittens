@@ -2,8 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::engine::ecs::component::{
     ActionComponent, AnimationComponent, AnimationState, KeyframeComponent, MusicNoteComponent,
-    QueryRootMode, ResolveTargetsMode, resolve_component_ref,
+    QueryRootMode, ResolveTargetsMode,
     action::{apply_resolved_targets, signal_target_slot_count},
+    resolve_component_ref,
 };
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::animation_system_evaluator::AnimationEvaluator;
@@ -97,8 +98,7 @@ fn owning_animation_of(world: &World, id: ComponentId) -> Option<ComponentId> {
 
 fn resolve_animation_scope(world: &mut World, animation_id: ComponentId) -> Option<ComponentId> {
     let (resolved_scope, scope_source) = {
-        let animation = world
-            .get_component_by_id_as::<AnimationComponent>(animation_id)?;
+        let animation = world.get_component_by_id_as::<AnimationComponent>(animation_id)?;
         (animation.resolved_scope, animation.scope_source.clone())
     };
 
@@ -152,7 +152,7 @@ fn resolve_action_targets(world: &mut World, action_id: ComponentId) -> Result<(
             Some(resolution_root),
             QueryRootMode::SelfSubtree,
         )
-            .ok_or_else(|| format!("resolve: source {source:?} matched nothing"))?;
+        .ok_or_else(|| format!("resolve: source {source:?} matched nothing"))?;
         resolved.push(id);
     }
 

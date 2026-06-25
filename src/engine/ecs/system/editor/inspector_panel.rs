@@ -10,18 +10,18 @@ use crate::engine::ecs::system::data_renderer_system::{
     UiItemKind,
 };
 use crate::engine::ecs::system::editor::context::EditorContextState;
-use crate::engine::ecs::system::editor::panel_ui::{PanelUiRowSpec, spawn_panel_ui_row_tree};
 use crate::engine::ecs::system::editor::grid_panel::GRID_PANEL_ROOT_SELECTOR;
+use crate::engine::ecs::system::editor::panel_ui::{PanelUiRowSpec, spawn_panel_ui_row_tree};
 use crate::engine::ecs::system::editor::workspace::PAINT_PANEL_ROOT_SELECTOR;
 use crate::engine::ecs::system::editor::world_panel::{
-    AuthoredSceneNodePolicy, AuthoredWorldPanelSceneModel, authored_scene_node_policy,
-    component_id_short, editor_chunk_label, mark_nearest_layout_dirty, rerender_world_panel_status,
-    world_panel_item_label, PANEL_STATUS_WRAP_SELECTOR, WORLD_PANEL_ROOT_SELECTOR,
+    AuthoredSceneNodePolicy, AuthoredWorldPanelSceneModel, PANEL_STATUS_WRAP_SELECTOR,
+    WORLD_PANEL_ROOT_SELECTOR, authored_scene_node_policy, component_id_short, editor_chunk_label,
+    mark_nearest_layout_dirty, rerender_world_panel_status, world_panel_item_label,
 };
 use crate::engine::ecs::system::panel_system::{
-    decode_panel_action_payload, is_descendant_or_self, panel_layout_root_id, PanelActionKind,
-    PanelControlKind, PanelKind, PanelShellSpec, PanelSlotKind, spawn_panel_instance,
-    PANEL_LAYOUT_ROOT_NAME, PANEL_LAYOUT_SELECTION_NAME,
+    PANEL_LAYOUT_ROOT_NAME, PANEL_LAYOUT_SELECTION_NAME, PanelActionKind, PanelControlKind,
+    PanelKind, PanelShellSpec, PanelSlotKind, decode_panel_action_payload, is_descendant_or_self,
+    panel_layout_root_id, spawn_panel_instance,
 };
 use crate::engine::ecs::system::selection_system::{
     apply_selection_set, resolve_semantic_target_from_payload,
@@ -811,7 +811,11 @@ pub(crate) fn update_inspector_panel_instance_tree(
     }
 }
 
-pub(crate) fn clicked_named_ancestor(world: &World, node: ComponentId, prefix: &str) -> Option<String> {
+pub(crate) fn clicked_named_ancestor(
+    world: &World,
+    node: ComponentId,
+    prefix: &str,
+) -> Option<String> {
     let mut current = Some(node);
     while let Some(component_id) = current {
         if let Some(label) = world.component_label(component_id) {
@@ -1180,7 +1184,8 @@ pub(crate) fn spawn_inspector_panel_instance_tree(
 
     let shell_spec = PanelShellSpec {
         panel_kind: PanelKind::Inspector,
-        asset_path: concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms").to_string(),
+        asset_path: concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panels.mms")
+            .to_string(),
         export_name: "inspector_panel".to_string(),
         args: vec![
             Value::String(model.title.clone()),

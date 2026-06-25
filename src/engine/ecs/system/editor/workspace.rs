@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use crate::engine::ecs::system::editor::grid_panel::GRID_PANEL_ROOT_SELECTOR;
+use crate::engine::ecs::system::editor::pose_panel::POSE_PANEL_ROOT_SELECTOR;
 use crate::engine::ecs::system::panel_system::{
     PanelControlKind, PanelInstance, PanelKind, PanelShellSpec, PanelSlotKind,
     get_or_create_runtime_ui_root, resolve_panel_instance,
 };
-use crate::engine::ecs::system::editor::grid_panel::GRID_PANEL_ROOT_SELECTOR;
-use crate::engine::ecs::system::editor::pose_panel::POSE_PANEL_ROOT_SELECTOR;
 use crate::engine::ecs::{ComponentId, World};
 
 pub(crate) const PANEL_LAYOUT_MOUNT_NAME: &str = "editor_panel_layout_mount";
@@ -84,10 +84,7 @@ impl EditorWorkspaceRuntime {
         self.focused_panel = Some(kind);
     }
 
-    pub(crate) fn find_panel_mount_root(
-        &self,
-        world: &World,
-    ) -> Option<ComponentId> {
+    pub(crate) fn find_panel_mount_root(&self, world: &World) -> Option<ComponentId> {
         world.all_components().find(|&id| {
             world
                 .component_label(id)

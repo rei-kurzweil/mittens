@@ -34,6 +34,138 @@ pub struct XrInputState {
     pub trigger_released: [bool; 2],
 }
 
+#[derive(Default, Debug, Clone, Copy)]
+pub struct XrHandGamepadState {
+    pub thumbstick: Option<[f32; 2]>,
+    pub trigger_value: Option<f32>,
+    pub trigger_pressed: Option<(bool, f32)>,
+    pub grip_value: Option<f32>,
+    pub grip_pressed: Option<(bool, f32)>,
+    pub button_a: Option<(bool, f32)>,
+    pub button_b: Option<(bool, f32)>,
+    pub button_x: Option<(bool, f32)>,
+    pub button_y: Option<(bool, f32)>,
+}
+
+#[derive(Default, Debug, Clone, Copy)]
+pub struct XrGamepadState {
+    pub active: bool,
+    pub hands: [XrHandGamepadState; 2],
+    pub head_pose_rotation: Option<[f32; 4]>,
+}
+
+fn log_xr_gamepad_changes(prev: XrGamepadState, next: XrGamepadState) {
+    if prev.active != next.active {
+        eprintln!(
+            "[OpenXR][gamepad] active -> {}",
+            if next.active { "true" } else { "false" }
+        );
+    }
+    for (index, hand_name) in ["left", "right"].into_iter().enumerate() {
+        let before = prev.hands[index];
+        let after = next.hands[index];
+        if before.thumbstick != after.thumbstick {
+            eprintln!(
+                "[OpenXR][gamepad] {hand_name} thumbstick -> {:?}",
+                after.thumbstick
+            );
+        }
+        if before.trigger_value != after.trigger_value {
+            eprintln!(
+                "[OpenXR][gamepad] {hand_name} trigger_value -> {:?}",
+                after.trigger_value
+            );
+        }
+        if before.trigger_pressed != after.trigger_pressed {
+            eprintln!(
+                "[OpenXR][gamepad] {hand_name} trigger_pressed -> {:?}",
+                after.trigger_pressed
+            );
+        }
+        if before.grip_value != after.grip_value {
+            eprintln!(
+                "[OpenXR][gamepad] {hand_name} grip_value -> {:?}",
+                after.grip_value
+            );
+        }
+        if before.grip_pressed != after.grip_pressed {
+            eprintln!(
+                "[OpenXR][gamepad] {hand_name} grip_pressed -> {:?}",
+                after.grip_pressed
+            );
+        }
+        if before.button_x != after.button_x {
+            eprintln!(
+                "[OpenXR][gamepad] {hand_name} button_x -> {:?}",
+                after.button_x
+            );
+        }
+        if before.button_y != after.button_y {
+            eprintln!(
+                "[OpenXR][gamepad] {hand_name} button_y -> {:?}",
+                after.button_y
+            );
+        }
+        if before.button_a != after.button_a {
+            eprintln!(
+                "[OpenXR][gamepad] {hand_name} button_a -> {:?}",
+                after.button_a
+            );
+        }
+        if before.button_b != after.button_b {
+            eprintln!(
+                "[OpenXR][gamepad] {hand_name} button_b -> {:?}",
+                after.button_b
+            );
+        }
+    }
+}
+
+fn log_active_interaction_profile(
+    instance: &openxr::Instance,
+    session: &openxr::Session<openxr::Vulkan>,
+    user_path: openxr::Path,
+    user_path_str: &str,
+    last_logged: &mut Option<openxr::Path>,
+) {
+    let Ok(profile) = session.current_interaction_profile(user_path) else {
+        return;
+    };
+    if *last_logged == Some(profile) {
+        return;
+    }
+    *last_logged = Some(profile);
+    if profile == openxr::Path::NULL {
+        eprintln!("[OpenXR][profile] {user_path_str}: no active interaction profile");
+        return;
+    }
+    match instance.path_to_string(profile) {
+        Ok(profile_str) => {
+            eprintln!("[OpenXR][profile] {user_path_str}: active profile = {profile_str}");
+        }
+        Err(err) => {
+            eprintln!(
+                "[OpenXR][profile] {user_path_str}: active profile path {:?} (path_to_string failed: {:?})",
+                profile, err
+            );
+        }
+    }
+}
+
+fn profile_string_or_none(
+    instance: &openxr::Instance,
+    session: &openxr::Session<openxr::Vulkan>,
+    user_path: openxr::Path,
+) -> String {
+    match session.current_interaction_profile(user_path) {
+        Ok(profile) if profile == openxr::Path::NULL => "none".to_string(),
+        Ok(profile) => instance
+            .path_to_string(profile)
+            .unwrap_or_else(|_| format!("{profile:?}")),
+        Err(err) => format!("error:{err:?}"),
+    }
+}
+
 pub struct OpenXRSystem {
     state: Option<OpenXRState>,
     last_init_error: Option<String>,
@@ -48,6 +180,8 @@ pub struct OpenXRSystem {
     controller_components: HashSet<ComponentId>,
 
     xr_input_state: XrInputState,
+    xr_gamepad_state: XrGamepadState,
+    xr_gamepad_state_last_logged: XrGamepadState,
 }
 
 struct OpenXRState {
@@ -133,6 +267,15 @@ struct ControllerInput {
     aim_pose: openxr::Action<openxr::Posef>,
     grip_pose: openxr::Action<openxr::Posef>,
     select: openxr::Action<bool>,
+    thumbstick: openxr::Action<openxr::Vector2f>,
+    trigger_value: openxr::Action<f32>,
+    trigger_click: openxr::Action<bool>,
+    grip_value: openxr::Action<f32>,
+    grip_click: openxr::Action<bool>,
+    button_a: openxr::Action<bool>,
+    button_b: openxr::Action<bool>,
+    button_x: openxr::Action<bool>,
+    button_y: openxr::Action<bool>,
 
     left: openxr::Path,
     right: openxr::Path,
@@ -141,6 +284,10 @@ struct ControllerInput {
     right_aim_space: openxr::Space,
     left_grip_space: openxr::Space,
     right_grip_space: openxr::Space,
+
+    last_logged_left_profile: Option<openxr::Path>,
+    last_logged_right_profile: Option<openxr::Path>,
+    debug_frame_counter: u64,
 }
 
 impl Default for OpenXRSystem {
@@ -158,6 +305,8 @@ impl Default for OpenXRSystem {
             controller_components: HashSet::new(),
 
             xr_input_state: XrInputState::default(),
+            xr_gamepad_state: XrGamepadState::default(),
+            xr_gamepad_state_last_logged: XrGamepadState::default(),
         }
     }
 }
@@ -175,6 +324,10 @@ impl std::fmt::Debug for OpenXRSystem {
 impl OpenXRSystem {
     pub fn xr_input_state(&self) -> &XrInputState {
         &self.xr_input_state
+    }
+
+    pub fn xr_gamepad_state(&self) -> &XrGamepadState {
+        &self.xr_gamepad_state
     }
 
     fn debug_hand_rotation_enabled() -> bool {
@@ -1213,6 +1366,33 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
         let select = action_set
             .create_action::<bool>("select", "Select", &subaction_paths)
             .map_err(|e| format!("create_action(select): {e:?}"))?;
+        let thumbstick = action_set
+            .create_action::<openxr::Vector2f>("thumbstick", "Thumbstick", &subaction_paths)
+            .map_err(|e| format!("create_action(thumbstick): {e:?}"))?;
+        let trigger_value = action_set
+            .create_action::<f32>("trigger_value", "Trigger Value", &subaction_paths)
+            .map_err(|e| format!("create_action(trigger_value): {e:?}"))?;
+        let trigger_click = action_set
+            .create_action::<bool>("trigger_click", "Trigger Click", &subaction_paths)
+            .map_err(|e| format!("create_action(trigger_click): {e:?}"))?;
+        let grip_value = action_set
+            .create_action::<f32>("grip_value", "Grip Value", &subaction_paths)
+            .map_err(|e| format!("create_action(grip_value): {e:?}"))?;
+        let grip_click = action_set
+            .create_action::<bool>("grip_click", "Grip Click", &subaction_paths)
+            .map_err(|e| format!("create_action(grip_click): {e:?}"))?;
+        let button_a = action_set
+            .create_action::<bool>("button_a", "Button A", &subaction_paths)
+            .map_err(|e| format!("create_action(button_a): {e:?}"))?;
+        let button_b = action_set
+            .create_action::<bool>("button_b", "Button B", &subaction_paths)
+            .map_err(|e| format!("create_action(button_b): {e:?}"))?;
+        let button_x = action_set
+            .create_action::<bool>("button_x", "Button X", &subaction_paths)
+            .map_err(|e| format!("create_action(button_x): {e:?}"))?;
+        let button_y = action_set
+            .create_action::<bool>("button_y", "Button Y", &subaction_paths)
+            .map_err(|e| format!("create_action(button_y): {e:?}"))?;
 
         // Create spaces for each subaction path.
         let left_aim_space = aim_pose
@@ -1304,6 +1484,123 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
                 "/user/hand/right/input/pinch_ext/value",
             ),
         ];
+        let profile_bindings: &[(&str, &[(&str, &str, &str)])] = &[
+            (
+                "/interaction_profiles/oculus/touch_controller",
+                &[
+                    (
+                        "thumbstick",
+                        "/user/hand/left/input/thumbstick",
+                        "/user/hand/right/input/thumbstick",
+                    ),
+                    (
+                        "trigger_value",
+                        "/user/hand/left/input/trigger/value",
+                        "/user/hand/right/input/trigger/value",
+                    ),
+                    (
+                        "grip_value",
+                        "/user/hand/left/input/squeeze/value",
+                        "/user/hand/right/input/squeeze/value",
+                    ),
+                    ("x", "/user/hand/left/input/x/click", ""),
+                    ("y", "/user/hand/left/input/y/click", ""),
+                    ("a", "", "/user/hand/right/input/a/click"),
+                    ("b", "", "/user/hand/right/input/b/click"),
+                ],
+            ),
+            (
+                "/interaction_profiles/valve/index_controller",
+                &[
+                    (
+                        "thumbstick",
+                        "/user/hand/left/input/thumbstick",
+                        "/user/hand/right/input/thumbstick",
+                    ),
+                    (
+                        "trigger_value",
+                        "/user/hand/left/input/trigger/value",
+                        "/user/hand/right/input/trigger/value",
+                    ),
+                    (
+                        "grip_value",
+                        "/user/hand/left/input/squeeze/value",
+                        "/user/hand/right/input/squeeze/value",
+                    ),
+                    ("a", "", "/user/hand/right/input/a/click"),
+                    ("b", "", "/user/hand/right/input/b/click"),
+                ],
+            ),
+            (
+                "/interaction_profiles/microsoft/motion_controller",
+                &[
+                    (
+                        "thumbstick",
+                        "/user/hand/left/input/thumbstick",
+                        "/user/hand/right/input/thumbstick",
+                    ),
+                    (
+                        "trigger_value",
+                        "/user/hand/left/input/trigger/value",
+                        "/user/hand/right/input/trigger/value",
+                    ),
+                    (
+                        "grip_click",
+                        "/user/hand/left/input/squeeze/click",
+                        "/user/hand/right/input/squeeze/click",
+                    ),
+                ],
+            ),
+            (
+                "/interaction_profiles/htc/vive_controller",
+                &[
+                    (
+                        "trigger_click",
+                        "/user/hand/left/input/trigger/click",
+                        "/user/hand/right/input/trigger/click",
+                    ),
+                    (
+                        "grip_click",
+                        "/user/hand/left/input/squeeze/click",
+                        "/user/hand/right/input/squeeze/click",
+                    ),
+                ],
+            ),
+            (
+                "/interaction_profiles/htc/vive_focus3_controller",
+                &[
+                    (
+                        "thumbstick",
+                        "/user/hand/left/input/thumbstick",
+                        "/user/hand/right/input/thumbstick",
+                    ),
+                    (
+                        "trigger_value",
+                        "/user/hand/left/input/trigger/value",
+                        "/user/hand/right/input/trigger/value",
+                    ),
+                    (
+                        "trigger_click",
+                        "/user/hand/left/input/trigger/click",
+                        "/user/hand/right/input/trigger/click",
+                    ),
+                    (
+                        "grip_value",
+                        "/user/hand/left/input/squeeze/value",
+                        "/user/hand/right/input/squeeze/value",
+                    ),
+                    (
+                        "grip_click",
+                        "/user/hand/left/input/squeeze/click",
+                        "/user/hand/right/input/squeeze/click",
+                    ),
+                    ("x", "/user/hand/left/input/x/click", ""),
+                    ("y", "/user/hand/left/input/y/click", ""),
+                    ("a", "", "/user/hand/right/input/a/click"),
+                    ("b", "", "/user/hand/right/input/b/click"),
+                ],
+            ),
+        ];
 
         for profile_str in profiles {
             let Ok(profile) = instance.string_to_path(profile_str) else {
@@ -1323,6 +1620,83 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
                         instance.suggest_interaction_profile_bindings(profile, &select_bindings);
                 }
             }
+            if let Some((_, bindings)) = profile_bindings.iter().find(|(p, _)| *p == profile_str) {
+                let mut suggested = Vec::new();
+                for (kind, left_path, right_path) in bindings.iter().copied() {
+                    match kind {
+                        "thumbstick" => {
+                            if let Ok(lp) = instance.string_to_path(left_path) {
+                                suggested.push(openxr::Binding::new(&thumbstick, lp));
+                            }
+                            if let Ok(rp) = instance.string_to_path(right_path) {
+                                suggested.push(openxr::Binding::new(&thumbstick, rp));
+                            }
+                        }
+                        "trigger_value" => {
+                            if let Ok(lp) = instance.string_to_path(left_path) {
+                                suggested.push(openxr::Binding::new(&trigger_value, lp));
+                            }
+                            if let Ok(rp) = instance.string_to_path(right_path) {
+                                suggested.push(openxr::Binding::new(&trigger_value, rp));
+                            }
+                        }
+                        "trigger_click" => {
+                            if let Ok(lp) = instance.string_to_path(left_path) {
+                                suggested.push(openxr::Binding::new(&trigger_click, lp));
+                            }
+                            if let Ok(rp) = instance.string_to_path(right_path) {
+                                suggested.push(openxr::Binding::new(&trigger_click, rp));
+                            }
+                        }
+                        "grip_value" => {
+                            if let Ok(lp) = instance.string_to_path(left_path) {
+                                suggested.push(openxr::Binding::new(&grip_value, lp));
+                            }
+                            if let Ok(rp) = instance.string_to_path(right_path) {
+                                suggested.push(openxr::Binding::new(&grip_value, rp));
+                            }
+                        }
+                        "grip_click" => {
+                            if let Ok(lp) = instance.string_to_path(left_path) {
+                                suggested.push(openxr::Binding::new(&grip_click, lp));
+                            }
+                            if let Ok(rp) = instance.string_to_path(right_path) {
+                                suggested.push(openxr::Binding::new(&grip_click, rp));
+                            }
+                        }
+                        "a" => {
+                            if !right_path.is_empty() {
+                                if let Ok(rp) = instance.string_to_path(right_path) {
+                                    suggested.push(openxr::Binding::new(&button_a, rp));
+                                }
+                            }
+                        }
+                        "b" => {
+                            if !right_path.is_empty() {
+                                if let Ok(rp) = instance.string_to_path(right_path) {
+                                    suggested.push(openxr::Binding::new(&button_b, rp));
+                                }
+                            }
+                        }
+                        "x" => {
+                            if !left_path.is_empty() {
+                                if let Ok(lp) = instance.string_to_path(left_path) {
+                                    suggested.push(openxr::Binding::new(&button_x, lp));
+                                }
+                            }
+                        }
+                        "y" => {
+                            if !left_path.is_empty() {
+                                if let Ok(lp) = instance.string_to_path(left_path) {
+                                    suggested.push(openxr::Binding::new(&button_y, lp));
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                let _ = instance.suggest_interaction_profile_bindings(profile, &suggested);
+            }
         }
 
         Ok(ControllerInput {
@@ -1330,12 +1704,24 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
             aim_pose,
             grip_pose,
             select,
+            thumbstick,
+            trigger_value,
+            trigger_click,
+            grip_value,
+            grip_click,
+            button_a,
+            button_b,
+            button_x,
+            button_y,
             left,
             right,
             left_aim_space,
             right_aim_space,
             left_grip_space,
             right_grip_space,
+            last_logged_left_profile: None,
+            last_logged_right_profile: None,
+            debug_frame_counter: 0,
         })
     }
 
@@ -1498,17 +1884,20 @@ impl OpenXRSystem {
     ) {
         let Some(state) = self.state.as_mut() else {
             self.xr_input_state = XrInputState::default();
+            self.xr_gamepad_state = XrGamepadState::default();
             visuals.set_xr_frame_dt_sec(None);
             return;
         };
 
         let Some(sess) = state.session.as_mut() else {
             self.xr_input_state = XrInputState::default();
+            self.xr_gamepad_state = XrGamepadState::default();
             visuals.set_xr_frame_dt_sec(None);
             return;
         };
         if !sess.running {
             self.xr_input_state = XrInputState::default();
+            self.xr_gamepad_state = XrGamepadState::default();
             visuals.set_xr_frame_dt_sec(None);
             return;
         }
@@ -1532,6 +1921,7 @@ impl OpenXRSystem {
             .is_none()
         {
             self.xr_input_state = XrInputState::default();
+            self.xr_gamepad_state = XrGamepadState::default();
             sess.head_pose_cache = None;
             sess.hand_root_pose_cache = HandRootPoseCache::default();
             sess.controller_pose_cache = ControllerPoseCache::default();
@@ -1577,6 +1967,7 @@ impl OpenXRSystem {
         };
 
         sess.head_pose_cache = Self::derive_head_pose(&views);
+        self.xr_gamepad_state.head_pose_rotation = sess.head_pose_cache.map(Self::quat_from_posef);
 
         let mut left_root_for_debug: Option<(openxr::Posef, openxr::HandJointEXT)> = None;
         let mut right_root_for_debug: Option<(openxr::Posef, openxr::HandJointEXT)> = None;
@@ -1646,7 +2037,7 @@ impl OpenXRSystem {
         }
 
         // Update controller pose cache at the same predicted time as views.
-        if let Some(ci) = sess.controller_input.as_ref() {
+        if let Some(ci) = sess.controller_input.as_mut() {
             // Sync actions (best-effort).
             let active = openxr::ActiveActionSet::new(&ci.action_set);
             match sess.session.sync_actions(&[active]) {
@@ -1655,6 +2046,21 @@ impl OpenXRSystem {
                     eprintln!("[OpenXR] sync_actions failed: {e:?}");
                 }
             }
+            log_active_interaction_profile(
+                &state.instance,
+                &sess.session,
+                ci.left,
+                "/user/hand/left",
+                &mut ci.last_logged_left_profile,
+            );
+            log_active_interaction_profile(
+                &state.instance,
+                &sess.session,
+                ci.right,
+                "/user/hand/right",
+                &mut ci.last_logged_right_profile,
+            );
+            ci.debug_frame_counter = ci.debug_frame_counter.wrapping_add(1);
 
             let update_pose = |space: &openxr::Space, base: &openxr::Space, t: openxr::Time| {
                 space.locate(base, t).ok()
@@ -1737,8 +2143,72 @@ impl OpenXRSystem {
                 sess.controller_pose_cache.right_grip = None;
             }
 
+            if ci.debug_frame_counter % 120 == 0 {
+                let left_select = ci.select.state(&sess.session, ci.left).ok();
+                let right_select = ci.select.state(&sess.session, ci.right).ok();
+                let left_thumbstick = ci.thumbstick.state(&sess.session, ci.left).ok();
+                let right_thumbstick = ci.thumbstick.state(&sess.session, ci.right).ok();
+                let left_trigger_value = ci.trigger_value.state(&sess.session, ci.left).ok();
+                let right_trigger_value = ci.trigger_value.state(&sess.session, ci.right).ok();
+                let left_trigger_click = ci.trigger_click.state(&sess.session, ci.left).ok();
+                let right_trigger_click = ci.trigger_click.state(&sess.session, ci.right).ok();
+                let left_grip_value = ci.grip_value.state(&sess.session, ci.left).ok();
+                let right_grip_value = ci.grip_value.state(&sess.session, ci.right).ok();
+                let left_grip_click = ci.grip_click.state(&sess.session, ci.left).ok();
+                let right_grip_click = ci.grip_click.state(&sess.session, ci.right).ok();
+                let left_x = ci.button_x.state(&sess.session, ci.left).ok();
+                let left_y = ci.button_y.state(&sess.session, ci.left).ok();
+                let right_a = ci.button_a.state(&sess.session, ci.right).ok();
+                let right_b = ci.button_b.state(&sess.session, ci.right).ok();
+                eprintln!(
+                    "[OpenXR][debug] profiles left={} right={}",
+                    profile_string_or_none(&state.instance, &sess.session, ci.left),
+                    profile_string_or_none(&state.instance, &sess.session, ci.right),
+                );
+                eprintln!(
+                    "[OpenXR][debug] pose_valid left_aim={} right_aim={} left_grip={} right_grip={}",
+                    sess.controller_pose_cache.left_aim.is_some(),
+                    sess.controller_pose_cache.right_aim.is_some(),
+                    sess.controller_pose_cache.left_grip.is_some(),
+                    sess.controller_pose_cache.right_grip.is_some(),
+                );
+                eprintln!(
+                    "[OpenXR][debug] select L={:?} R={:?} thumbstick L={:?} R={:?}",
+                    left_select.map(|s| (s.is_active, s.current_state)),
+                    right_select.map(|s| (s.is_active, s.current_state)),
+                    left_thumbstick.map(|s| (s.is_active, [s.current_state.x, s.current_state.y])),
+                    right_thumbstick.map(|s| (s.is_active, [s.current_state.x, s.current_state.y])),
+                );
+                eprintln!(
+                    "[OpenXR][debug] trigger_value L={:?} R={:?} trigger_click L={:?} R={:?}",
+                    left_trigger_value.map(|s| (s.is_active, s.current_state)),
+                    right_trigger_value.map(|s| (s.is_active, s.current_state)),
+                    left_trigger_click.map(|s| (s.is_active, s.current_state)),
+                    right_trigger_click.map(|s| (s.is_active, s.current_state)),
+                );
+                eprintln!(
+                    "[OpenXR][debug] grip_value L={:?} R={:?} grip_click L={:?} R={:?}",
+                    left_grip_value.map(|s| (s.is_active, s.current_state)),
+                    right_grip_value.map(|s| (s.is_active, s.current_state)),
+                    left_grip_click.map(|s| (s.is_active, s.current_state)),
+                    right_grip_click.map(|s| (s.is_active, s.current_state)),
+                );
+                eprintln!(
+                    "[OpenXR][debug] face_buttons X={:?} Y={:?} A={:?} B={:?}",
+                    left_x.map(|s| (s.is_active, s.current_state)),
+                    left_y.map(|s| (s.is_active, s.current_state)),
+                    right_a.map(|s| (s.is_active, s.current_state)),
+                    right_b.map(|s| (s.is_active, s.current_state)),
+                );
+            }
+
             // Poll select action for each hand and derive pressed/down/released edges.
             let prev = self.xr_input_state.trigger_down;
+            self.xr_gamepad_state = XrGamepadState {
+                active: true,
+                hands: [XrHandGamepadState::default(), XrHandGamepadState::default()],
+                head_pose_rotation: self.xr_gamepad_state.head_pose_rotation,
+            };
             for (i, subaction) in [ci.left, ci.right].into_iter().enumerate() {
                 let cur_down = ci
                     .select
@@ -1749,9 +2219,79 @@ impl OpenXRSystem {
                 self.xr_input_state.trigger_down[i] = cur_down;
                 self.xr_input_state.trigger_pressed[i] = cur_down && !prev[i];
                 self.xr_input_state.trigger_released[i] = !cur_down && prev[i];
+
+                if let Ok(state) = ci.thumbstick.state(&sess.session, subaction) {
+                    if state.is_active {
+                        self.xr_gamepad_state.hands[i].thumbstick =
+                            Some([state.current_state.x, state.current_state.y]);
+                    }
+                }
+
+                let trigger_value = ci
+                    .trigger_value
+                    .state(&sess.session, subaction)
+                    .ok()
+                    .filter(|s| s.is_active)
+                    .map(|s| s.current_state);
+                let trigger_click = ci
+                    .trigger_click
+                    .state(&sess.session, subaction)
+                    .ok()
+                    .filter(|s| s.is_active)
+                    .map(|s| s.current_state);
+                self.xr_gamepad_state.hands[i].trigger_value = trigger_value;
+                self.xr_gamepad_state.hands[i].trigger_pressed = trigger_click
+                    .map(|down| (down, if down { 1.0 } else { 0.0 }))
+                    .or_else(|| trigger_value.map(|value| (value >= 0.7, value)));
+
+                let grip_value = ci
+                    .grip_value
+                    .state(&sess.session, subaction)
+                    .ok()
+                    .filter(|s| s.is_active)
+                    .map(|s| s.current_state);
+                let grip_click = ci
+                    .grip_click
+                    .state(&sess.session, subaction)
+                    .ok()
+                    .filter(|s| s.is_active)
+                    .map(|s| s.current_state);
+                self.xr_gamepad_state.hands[i].grip_value = grip_value;
+                self.xr_gamepad_state.hands[i].grip_pressed = grip_click
+                    .map(|down| (down, if down { 1.0 } else { 0.0 }))
+                    .or_else(|| grip_value.map(|value| (value >= 0.7, value)));
             }
+            self.xr_gamepad_state.hands[0].button_x = ci
+                .button_x
+                .state(&sess.session, ci.left)
+                .ok()
+                .filter(|s| s.is_active)
+                .map(|s| (s.current_state, if s.current_state { 1.0 } else { 0.0 }));
+            self.xr_gamepad_state.hands[0].button_y = ci
+                .button_y
+                .state(&sess.session, ci.left)
+                .ok()
+                .filter(|s| s.is_active)
+                .map(|s| (s.current_state, if s.current_state { 1.0 } else { 0.0 }));
+            self.xr_gamepad_state.hands[1].button_a = ci
+                .button_a
+                .state(&sess.session, ci.right)
+                .ok()
+                .filter(|s| s.is_active)
+                .map(|s| (s.current_state, if s.current_state { 1.0 } else { 0.0 }));
+            self.xr_gamepad_state.hands[1].button_b = ci
+                .button_b
+                .state(&sess.session, ci.right)
+                .ok()
+                .filter(|s| s.is_active)
+                .map(|s| (s.current_state, if s.current_state { 1.0 } else { 0.0 }));
+            log_xr_gamepad_changes(self.xr_gamepad_state_last_logged, self.xr_gamepad_state);
+            self.xr_gamepad_state_last_logged = self.xr_gamepad_state;
         } else {
             self.xr_input_state = XrInputState::default();
+            self.xr_gamepad_state = XrGamepadState::default();
+            log_xr_gamepad_changes(self.xr_gamepad_state_last_logged, self.xr_gamepad_state);
+            self.xr_gamepad_state_last_logged = self.xr_gamepad_state;
         }
 
         // Publish XR per-eye camera matrices into VisualWorld (CameraTarget::Xr).

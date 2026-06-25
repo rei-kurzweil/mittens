@@ -1,7 +1,6 @@
 use crate::engine::ecs::component::{
     GestureCoordType, GestureCoordTypeComponent, SignalRouteUpwardComponent, TransformComponent,
-    TransformDropComponent,
-    TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
+    TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
     TransformGizmoRotateComponent, TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
     TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
 };
@@ -11,9 +10,9 @@ use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
 };
 use crate::engine::user_input::InputState;
-use std::sync::{Arc, Mutex};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Copy)]
 enum TransformGizmoOp {
@@ -766,9 +765,11 @@ impl TransformGizmoSystem {
                         target_transform,
                         unsnapped_next,
                     );
-                    let snapped_world =
-                        GridSystem::snap_point_preserving_plane_offset(&active_grid, candidate_world)
-                            .point_world;
+                    let snapped_world = GridSystem::snap_point_preserving_plane_offset(
+                        &active_grid,
+                        candidate_world,
+                    )
+                    .point_world;
                     Self::world_point_to_target_translation_local(
                         world,
                         target_transform,
@@ -1697,8 +1698,7 @@ impl TransformGizmoSystem {
                 .unwrap_or_else(|| "<none>".to_string());
             println!(
                 "[TransformGizmoSystem] resolve_gizmo_op renderable={renderable:?} '{}' gizmo={gizmo_cid:?} '{}' op={op:?} target={target_name}",
-                renderable_name,
-                gizmo_name,
+                renderable_name, gizmo_name,
             );
             return Some((gizmo_cid, op));
         }
@@ -1898,8 +1898,11 @@ mod tests {
         );
         world.add_child(parent, target).expect("attach target");
 
-        let world_point =
-            TransformGizmoSystem::target_translation_local_to_world(&world, target, [4.0, 5.0, 6.0]);
+        let world_point = TransformGizmoSystem::target_translation_local_to_world(
+            &world,
+            target,
+            [4.0, 5.0, 6.0],
+        );
         approx3(world_point, [4.0, 5.0, 6.0]);
 
         let local_point = TransformGizmoSystem::world_point_to_target_translation_local(

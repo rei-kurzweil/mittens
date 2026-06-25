@@ -1,5 +1,7 @@
 use crate::engine::ecs::component::style::SizeDimension;
-use crate::engine::ecs::component::{AnimationState, SelectionEntry, SelectionMode};
+use crate::engine::ecs::component::{
+    AnimationState, ControllerHand, SelectionEntry, SelectionMode, XrAxisControl, XrButtonControl,
+};
 use crate::engine::ecs::{ComponentId, World};
 use std::sync::mpsc::Sender;
 
@@ -205,6 +207,31 @@ pub enum EventSignal {
         name: String,
         payload: Option<ComponentId>,
     },
+
+    XrButtonDown {
+        source_component: ComponentId,
+        hand: ControllerHand,
+        control: XrButtonControl,
+        value: f32,
+    },
+    XrButtonUp {
+        source_component: ComponentId,
+        hand: ControllerHand,
+        control: XrButtonControl,
+        value: f32,
+    },
+    XrButtonChanged {
+        source_component: ComponentId,
+        hand: ControllerHand,
+        control: XrButtonControl,
+        value: f32,
+    },
+    XrAxisChanged {
+        source_component: ComponentId,
+        hand: ControllerHand,
+        control: XrAxisControl,
+        value: [f32; 2],
+    },
 }
 
 impl EventSignal {
@@ -227,6 +254,10 @@ impl EventSignal {
             EventSignal::TextInputChanged { .. } => SignalKind::TextInputChanged,
             EventSignal::LayoutRootSizeAvailable { .. } => SignalKind::LayoutRootSizeAvailable,
             EventSignal::DataEvent { .. } => SignalKind::DataEvent,
+            EventSignal::XrButtonDown { .. } => SignalKind::XrButtonDown,
+            EventSignal::XrButtonUp { .. } => SignalKind::XrButtonUp,
+            EventSignal::XrButtonChanged { .. } => SignalKind::XrButtonChanged,
+            EventSignal::XrAxisChanged { .. } => SignalKind::XrAxisChanged,
         }
     }
 }
@@ -546,10 +577,16 @@ pub enum IntentValue {
     RegisterControllerXr {
         component_ids: Vec<ComponentId>,
     },
+    RegisterInputXrGamepad {
+        component_ids: Vec<ComponentId>,
+    },
     RemoveInputXr {
         component_ids: Vec<ComponentId>,
     },
     RemoveControllerXr {
+        component_ids: Vec<ComponentId>,
+    },
+    RemoveInputXrGamepad {
         component_ids: Vec<ComponentId>,
     },
 
@@ -733,8 +770,10 @@ impl IntentValue {
             IntentValue::RegisterOpenxr { .. } => "register_openxr",
             IntentValue::RegisterInputXr { .. } => "register_input_xr",
             IntentValue::RegisterControllerXr { .. } => "register_controller_xr",
+            IntentValue::RegisterInputXrGamepad { .. } => "register_input_xr_gamepad",
             IntentValue::RemoveInputXr { .. } => "remove_input_xr",
             IntentValue::RemoveControllerXr { .. } => "remove_controller_xr",
+            IntentValue::RemoveInputXrGamepad { .. } => "remove_input_xr_gamepad",
 
             IntentValue::RegisterRaycast { .. } => "register_raycast",
             IntentValue::RegisterPointer { .. } => "register_pointer",
@@ -800,6 +839,10 @@ pub enum SignalKind {
     /// Handlers must filter by name inside the closure body since the kind is
     /// a unit variant (no payload).
     DataEvent,
+    XrButtonDown,
+    XrButtonUp,
+    XrButtonChanged,
+    XrAxisChanged,
 }
 
 /// Optional timing metadata on the signal envelope.

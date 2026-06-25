@@ -119,7 +119,9 @@ impl Component for InputTransformModeComponent {
         }
         if let Some(source) = &self.translation_basis_source {
             let expr = match source {
-                ComponentRef::Guid(u) => crate::meow_meow::ast::Expression::String(format!("@uuid:{u}")),
+                ComponentRef::Guid(u) => {
+                    crate::meow_meow::ast::Expression::String(format!("@uuid:{u}"))
+                }
                 ComponentRef::Query(s) => crate::meow_meow::ast::Expression::String(s.clone()),
             };
             ce = ce.with_call("translation_basis", vec![expr]);

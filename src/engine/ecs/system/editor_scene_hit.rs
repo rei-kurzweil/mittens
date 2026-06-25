@@ -21,7 +21,8 @@ fn debug_editor_scene_hit_enabled() -> bool {
 }
 
 fn debug_component_label(world: &World, component: ComponentId) -> String {
-    world.get_component_record(component)
+    world
+        .get_component_record(component)
         .map(|n| {
             if n.name.is_empty() {
                 n.component_type.clone()
@@ -143,18 +144,28 @@ mod tests {
     fn painted_asset_hits_resolve_to_wrapper_root() {
         let mut world = World::default();
         let editor = world.add_component(EditorComponent::new());
-        let raycastable_root =
-            world.add_component_boxed_named("painted_asset_raycastable", Box::new(TransformComponent::new()));
-        let painted_root =
-            world.add_component_boxed_named("painted_asset_root", Box::new(TransformComponent::new()));
-        let internal =
-            world.add_component_boxed_named("internal_mesh_root", Box::new(TransformComponent::new()));
+        let raycastable_root = world.add_component_boxed_named(
+            "painted_asset_raycastable",
+            Box::new(TransformComponent::new()),
+        );
+        let painted_root = world
+            .add_component_boxed_named("painted_asset_root", Box::new(TransformComponent::new()));
+        let internal = world
+            .add_component_boxed_named("internal_mesh_root", Box::new(TransformComponent::new()));
         let renderable = world.add_component(RenderableComponent::cube());
 
-        world.add_child(editor, raycastable_root).expect("attach raycastable");
-        world.add_child(raycastable_root, painted_root).expect("attach painted root");
-        world.add_child(painted_root, internal).expect("attach internal");
-        world.add_child(internal, renderable).expect("attach renderable");
+        world
+            .add_child(editor, raycastable_root)
+            .expect("attach raycastable");
+        world
+            .add_child(raycastable_root, painted_root)
+            .expect("attach painted root");
+        world
+            .add_child(painted_root, internal)
+            .expect("attach internal");
+        world
+            .add_child(internal, renderable)
+            .expect("attach renderable");
 
         let hit = resolve_editor_scene_hit(&world, renderable).expect("scene hit");
         assert_eq!(hit.target_transform, painted_root);

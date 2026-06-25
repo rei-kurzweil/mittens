@@ -45,6 +45,7 @@ pub mod ik_chain;
 pub mod input;
 pub mod input_transform_mode;
 pub mod input_xr;
+pub mod input_xr_gamepad;
 pub mod inspect_layout;
 pub mod keyframe;
 pub mod kinetic_response;
@@ -153,6 +154,9 @@ pub use ik_chain::{IKChainComponent, IKSolver};
 pub use input::InputComponent;
 pub use input_transform_mode::{ForwardAxis, InputTransformModeComponent, RollAxis};
 pub use input_xr::InputXRComponent;
+pub use input_xr_gamepad::{
+    InputXRGamepadComponent, XrAxisControl, XrButtonControl, XrHandPreference,
+};
 pub use inspect_layout::InspectLayoutComponent;
 pub use keyframe::KeyframeComponent;
 pub use kinetic_response::{KineticResponseComponent, KineticResponseMode};

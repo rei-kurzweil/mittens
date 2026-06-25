@@ -117,8 +117,10 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterOpenxr { component_ids }
             | IntentValue::RegisterInputXr { component_ids }
             | IntentValue::RegisterControllerXr { component_ids }
+            | IntentValue::RegisterInputXrGamepad { component_ids }
             | IntentValue::RemoveInputXr { component_ids }
             | IntentValue::RemoveControllerXr { component_ids }
+            | IntentValue::RemoveInputXrGamepad { component_ids }
             | IntentValue::RegisterRaycast { component_ids }
             | IntentValue::RegisterPointer { component_ids }
             | IntentValue::RemoveRaycast { component_ids }
@@ -222,8 +224,10 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterOpenxr { component_ids }
             | IntentValue::RegisterInputXr { component_ids }
             | IntentValue::RegisterControllerXr { component_ids }
+            | IntentValue::RegisterInputXrGamepad { component_ids }
             | IntentValue::RemoveInputXr { component_ids }
             | IntentValue::RemoveControllerXr { component_ids }
+            | IntentValue::RemoveInputXrGamepad { component_ids }
             | IntentValue::RegisterRaycast { component_ids }
             | IntentValue::RegisterPointer { component_ids }
             | IntentValue::RemoveRaycast { component_ids }

@@ -9,46 +9,47 @@ use crate::engine::ecs::system::GridSystem;
 use crate::engine::ecs::system::data_renderer_system::DataRendererSystem;
 use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor::grid_panel::{
-    GridPanelClickOutcome, handle_grid_panel_click, rerender_grid_panel_from_context,
     EDITOR_WORKSPACE_GRIDS_CHANGED, GRID_PANEL_ROOT_SELECTOR, GRID_PANEL_SELECTION_SELECTOR,
+    GridPanelClickOutcome, handle_grid_panel_click, rerender_grid_panel_from_context,
 };
 use crate::engine::ecs::system::editor::inspector_panel::{
     INSPECTOR_DETAIL_SPEC, INSPECTOR_ITEM_PREFIX, INSPECTOR_PANEL_INSTANCE_ID_KEY,
     INSPECTOR_PANEL_PAYLOAD_NAME, INSPECTOR_ROW_SPEC, InspectorPanelDetailModel, InspectorPanelId,
     InspectorPanelModel, InspectorPanelRow, InspectorPanelRowKind, InspectorWorkspaceEvent,
     InspectorWorkspaceState, build_inspector_panel_models, clear_missing_inspector_targets,
-    focus_panel_from_descendant_click,
-    handle_inspector_panel_workspace_click, inspector_panel_instance_id_on_root,
-    reduce_inspector_workspace_state, rerender_inspector_panels,
-    sync_and_refresh_inspector_panels, world_panel_selection_matches_editor_context,
+    focus_panel_from_descendant_click, handle_inspector_panel_workspace_click,
+    inspector_panel_instance_id_on_root, reduce_inspector_workspace_state,
+    rerender_inspector_panels, sync_and_refresh_inspector_panels,
+    world_panel_selection_matches_editor_context,
 };
 use crate::engine::ecs::system::editor::panel_ui::{
-    spawn_panel_ui_row_tree, spawn_panel_ui_section_header_tree, PanelUiRowSpec,
+    PanelUiRowSpec, spawn_panel_ui_row_tree, spawn_panel_ui_section_header_tree,
 };
-use crate::engine::ecs::system::editor::pose_panel::{handle_pose_panel_click, rerender_pose_panel};
+use crate::engine::ecs::system::editor::pose_panel::{
+    handle_pose_panel_click, rerender_pose_panel,
+};
 use crate::engine::ecs::system::editor::settings_panel::{
     EDITOR_SETTINGS_ARMATURE_CHECKMARK_SLOT_NAME, EDITOR_SETTINGS_ARMATURE_ROW_NAME,
     EDITOR_SETTINGS_PANEL_ROOT_SELECTOR, EDITOR_SETTINGS_PAYLOAD_NAME,
-    EDITOR_SETTINGS_SELECTION_SELECTOR, EditorSettingsOption,
-    handle_editor_settings_panel_click, sync_editor_settings_panel_selection,
-    sync_editor_settings_armature_checkmark,
+    EDITOR_SETTINGS_SELECTION_SELECTOR, EditorSettingsOption, handle_editor_settings_panel_click,
+    sync_editor_settings_armature_checkmark, sync_editor_settings_panel_selection,
 };
 use crate::engine::ecs::system::editor::workspace::EditorWorkspaceRuntime;
 use crate::engine::ecs::system::editor::world_panel::{
-    apply_world_panel_semantic_selection, handle_panel_button_click, handle_world_panel_item_click,
-    panel_status_text, world_panel_scene_path, AuthoredWorldPanelSceneModel, ITEM_PREFIX,
-    PANEL_CONTENT_SLOT_SELECTOR, WORLD_PANEL_CONTENT_ROOT_SELECTOR, WORLD_PANEL_PAYLOAD_NAME,
-    WORLD_PANEL_ROOT_SELECTOR, WORLD_PANEL_SELECTION_NAME, WORLD_PANEL_SELECTION_SELECTOR,
-    WorldPanelModel, WorldPanelRow, WorldPanelRowKind, build_world_panel_model,
-    effective_editor_roots, mark_nearest_layout_dirty, rebuild_world_panel_scene_model,
+    AuthoredWorldPanelSceneModel, ITEM_PREFIX, PANEL_CONTENT_SLOT_SELECTOR,
+    WORLD_PANEL_CONTENT_ROOT_SELECTOR, WORLD_PANEL_PAYLOAD_NAME, WORLD_PANEL_ROOT_SELECTOR,
+    WORLD_PANEL_SELECTION_NAME, WORLD_PANEL_SELECTION_SELECTOR, WorldPanelModel, WorldPanelRow,
+    WorldPanelRowKind, apply_world_panel_semantic_selection, build_world_panel_model,
+    effective_editor_roots, handle_panel_button_click, handle_world_panel_item_click,
+    mark_nearest_layout_dirty, panel_status_text, rebuild_world_panel_scene_model,
     register_editor_root, rerender_world_panel_content, rerender_world_panel_status,
     spawn_world_panel_content_tree, spawn_world_panel_row_tree, sync_world_panel_selection,
+    world_panel_scene_path,
 };
 use crate::engine::ecs::system::panel_system::{
-    PANEL_LAYOUT_MOUNT_NAME, PANEL_LAYOUT_ROOT_NAME, PANEL_LAYOUT_SELECTION_NAME,
-    PanelControlKind, PanelKind, PanelSlotKind, ensure_panel_layout_selection,
-    is_descendant_or_self, panel_layout_root_id, panel_layout_selection_id,
-    spawn_editor_panel_layout_tree,
+    PANEL_LAYOUT_MOUNT_NAME, PANEL_LAYOUT_ROOT_NAME, PANEL_LAYOUT_SELECTION_NAME, PanelControlKind,
+    PanelKind, PanelSlotKind, ensure_panel_layout_selection, is_descendant_or_self,
+    panel_layout_root_id, panel_layout_selection_id, spawn_editor_panel_layout_tree,
 };
 use crate::engine::ecs::system::selection_system::{
     apply_selection_set, resolve_semantic_target_from_payload,
@@ -556,8 +557,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     selected_component,
                     selected_payload,
                     ..
-                }) =
-                    signal.event.as_ref()
+                }) = signal.event.as_ref()
                 else {
                     return;
                 };
@@ -992,7 +992,10 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         let Some(content_slot) = world_panel.slots.get(&PanelSlotKind::List).copied() else {
             return;
         };
-        let Some(selection_root) = world_panel.controls.get(&PanelControlKind::Selection).copied()
+        let Some(selection_root) = world_panel
+            .controls
+            .get(&PanelControlKind::Selection)
+            .copied()
         else {
             return;
         };
@@ -1212,11 +1215,16 @@ impl EditorInspectorSystemStopgapMmsReconciler {
 
         *panel_layout_spawned = true;
 
-        let (panel_mount_root, layout_root_id) =
-            match spawn_editor_panel_layout_tree(world, emit, model, working_file_path, world_panel_pos) {
-                Some(ids) => ids,
-                None => return,
-            };
+        let (panel_mount_root, layout_root_id) = match spawn_editor_panel_layout_tree(
+            world,
+            emit,
+            model,
+            working_file_path,
+            world_panel_pos,
+        ) {
+            Some(ids) => ids,
+            None => return,
+        };
 
         // Post-spawn work
         let selection = ensure_panel_layout_selection(world, layout_root_id);
@@ -1392,13 +1400,6 @@ impl EditorInspectorSystemStopgapMmsReconciler {
     }
 }
 
-
-
-
-
-
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1444,12 +1445,10 @@ mod tests {
 
         let editor_context_state = Arc::new(Mutex::new(EditorContextState::default()));
 
-        let world_panel_root =
-            world.add_component_boxed_named("world_panel_root", Box::new(TransformComponent::new()));
-        let status_wrap = world.add_component_boxed_named(
-            "save_status_wrap",
-            Box::new(TransformComponent::new()),
-        );
+        let world_panel_root = world
+            .add_component_boxed_named("world_panel_root", Box::new(TransformComponent::new()));
+        let status_wrap = world
+            .add_component_boxed_named("save_status_wrap", Box::new(TransformComponent::new()));
         let _ = world.add_child(world_panel_root, status_wrap);
 
         apply_world_panel_semantic_selection(

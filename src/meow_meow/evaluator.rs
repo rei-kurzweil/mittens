@@ -1548,6 +1548,42 @@ fn eval_method_call(
 
             if matches!(
                 component_type.as_str(),
+                "T" | "Transform" | "TransformComponent" | "transform"
+            ) && method == "set_position"
+            {
+                let [x, y, z] = match args.as_slice() {
+                    [Value::Number(x), Value::Number(y), Value::Number(z)] => {
+                        [*x as f32, *y as f32, *z as f32]
+                    }
+                    other => {
+                        return Err(format!(
+                            "set_position: expected three numeric arguments, got {:?}",
+                            other
+                        ));
+                    }
+                };
+                let Some(world) = ctx.host_world else {
+                    return Err("set_position(): no host world".into());
+                };
+                let world = unsafe { &mut *world };
+                let t = world
+                    .get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(
+                        id,
+                    )
+                    .ok_or_else(|| "set_position(): not a TransformComponent".to_string())?;
+                t.transform.translation = [x, y, z];
+                t.transform.recompute_model();
+                ctx.emits.push(IntentValue::UpdateTransform {
+                    component_ids: vec![id],
+                    translation: t.transform.translation,
+                    rotation_quat_xyzw: t.transform.rotation,
+                    scale: t.transform.scale,
+                });
+                return Ok(Value::Null);
+            }
+
+            if matches!(
+                component_type.as_str(),
                 "Camera3D" | "Camera3DComponent" | "camera3d" | "C3D"
             ) && matches!(method, "enabled" | "make_active_camera")
             {
@@ -2096,6 +2132,10 @@ fn parse_signal_kind(s: &str) -> Result<SignalKind, String> {
         "SelectionCleared" => Ok(SignalKind::SelectionCleared),
         "Scrolling" => Ok(SignalKind::Scrolling),
         "DataEvent" => Ok(SignalKind::DataEvent),
+        "XrButtonDown" => Ok(SignalKind::XrButtonDown),
+        "XrButtonUp" => Ok(SignalKind::XrButtonUp),
+        "XrButtonChanged" => Ok(SignalKind::XrButtonChanged),
+        "XrAxisChanged" => Ok(SignalKind::XrAxisChanged),
         other => Err(format!("unknown signal kind: '{}'", other)),
     }
 }

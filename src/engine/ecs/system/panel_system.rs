@@ -469,10 +469,7 @@ pub fn build_editor_panel_component_expr(
     result.ok()
 }
 
-pub fn build_placeholder_panel_component_expr(
-    title_name: &str,
-    title: &str,
-) -> MaterializedCE {
+pub fn build_placeholder_panel_component_expr(title_name: &str, title: &str) -> MaterializedCE {
     MaterializedCE {
         component_type: "T".to_string(),
         component_property_assignment_only: false,
@@ -518,7 +515,10 @@ pub fn icons_asset_path() -> &'static str {
 }
 
 pub fn world_panel_status_asset_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/panel_items.mms")
+    concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/components/panel_items.mms"
+    )
 }
 
 pub fn inspector_panel_asset_path() -> &'static str {
@@ -526,7 +526,10 @@ pub fn inspector_panel_asset_path() -> &'static str {
 }
 
 pub fn inspector_details_asset_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/inspector_details.mms")
+    concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/components/inspector_details.mms"
+    )
 }
 
 pub fn asset_panel_asset_path() -> &'static str {
@@ -746,9 +749,7 @@ pub fn spawn_editor_panel_layout_tree(
     ) {
         Ok(ids) => ids,
         Err(error) => {
-            eprintln!(
-                "[InspectorSystemStopgapMmsAdapter] panel layout spawn error: {error}"
-            );
+            eprintln!("[InspectorSystemStopgapMmsAdapter] panel layout spawn error: {error}");
             return None;
         }
     };

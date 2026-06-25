@@ -4,7 +4,7 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::system::data_renderer_system::DataRendererSystem;
 use crate::engine::ecs::system::editor::panel_ui::{
-    spawn_panel_ui_row_tree, spawn_panel_ui_section_header_tree, PanelUiRowSpec,
+    PanelUiRowSpec, spawn_panel_ui_row_tree, spawn_panel_ui_section_header_tree,
 };
 use crate::engine::ecs::system::panel_system::{data_text, is_descendant_or_self};
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};

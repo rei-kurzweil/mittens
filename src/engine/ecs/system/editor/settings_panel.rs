@@ -1,14 +1,12 @@
 use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::EditorInteractionMode;
-use crate::engine::ecs::component::{
-    DataComponent, GLTFComponent, SelectionEntry,
-};
+use crate::engine::ecs::component::{DataComponent, GLTFComponent, SelectionEntry};
 use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor::world_panel::effective_editor_roots;
 use crate::engine::ecs::system::panel_system::{
-    build_editor_panel_component_expr, data_text, icons_asset_path, is_descendant_or_self,
-    PanelKind,
+    PanelKind, build_editor_panel_component_expr, data_text, icons_asset_path,
+    is_descendant_or_self,
 };
 use crate::engine::ecs::system::selection_system::apply_selection_set;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
@@ -323,8 +321,10 @@ mod tests {
         let render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
 
-        let panel_query_root =
-            world.add_component_boxed_named("panel_root", Box::new(crate::engine::ecs::component::TransformComponent::new()));
+        let panel_query_root = world.add_component_boxed_named(
+            "panel_root",
+            Box::new(crate::engine::ecs::component::TransformComponent::new()),
+        );
         let settings_panel_root = world.add_component_boxed_named(
             "editor_settings_panel_root",
             Box::new(crate::engine::ecs::component::TransformComponent::new()),

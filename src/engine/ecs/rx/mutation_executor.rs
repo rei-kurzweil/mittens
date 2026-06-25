@@ -395,6 +395,11 @@ impl RxMutationExecutor {
                     systems.register_controller_xr(world, visuals, component);
                 }
             }
+            IntentValue::RegisterInputXrGamepad { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_input_xr_gamepad(world, visuals, component);
+                }
+            }
             IntentValue::RemoveInputXr { component_ids } => {
                 for &component in component_ids.iter() {
                     systems.remove_input_xr(world, visuals, component);
@@ -403,6 +408,11 @@ impl RxMutationExecutor {
             IntentValue::RemoveControllerXr { component_ids } => {
                 for &component in component_ids.iter() {
                     systems.remove_controller_xr(world, visuals, component);
+                }
+            }
+            IntentValue::RemoveInputXrGamepad { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.remove_input_xr_gamepad(world, visuals, component);
                 }
             }
 

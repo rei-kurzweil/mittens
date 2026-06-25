@@ -310,13 +310,22 @@ impl System for MirrorSystem {
 
             // Mirror surface world-space dimensions (used for mirror-sized frustum).
             let (mirror_world_w, mirror_world_h) = if let Some(b) = bounds {
-                let sx = math::vec3_len([world_matrix[0][0], world_matrix[0][1], world_matrix[0][2]]);
-                let sy = math::vec3_len([world_matrix[1][0], world_matrix[1][1], world_matrix[1][2]]);
-                ((b.max[0] - b.min[0]).abs() * sx, (b.max[1] - b.min[1]).abs() * sy)
+                let sx =
+                    math::vec3_len([world_matrix[0][0], world_matrix[0][1], world_matrix[0][2]]);
+                let sy =
+                    math::vec3_len([world_matrix[1][0], world_matrix[1][1], world_matrix[1][2]]);
+                (
+                    (b.max[0] - b.min[0]).abs() * sx,
+                    (b.max[1] - b.min[1]).abs() * sy,
+                )
             } else {
                 (1.0, 1.0)
             };
-            let mirror_aspect = if mirror_world_h > 1e-6 { mirror_world_w / mirror_world_h } else { 1.0 };
+            let mirror_aspect = if mirror_world_h > 1e-6 {
+                mirror_world_w / mirror_world_h
+            } else {
+                1.0
+            };
 
             // Mirror plane in world space.
             // Start from the transform origin, then move the plane onto the renderable's
@@ -387,11 +396,9 @@ impl System for MirrorSystem {
                     // frustum window. Coupling the capture basis to viewer yaw/pitch causes
                     // edge-touching reflected geometry to shrink away from the side/corner the
                     // viewer turns toward.
-                    let Some(ref_world) = Self::build_camera_world_from_forward_up(
-                        ref_pos,
-                        plane_normal,
-                        mirror_y,
-                    ) else {
+                    let Some(ref_world) =
+                        Self::build_camera_world_from_forward_up(ref_pos, plane_normal, mirror_y)
+                    else {
                         continue;
                     };
                     let ref_forward = plane_normal;

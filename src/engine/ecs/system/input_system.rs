@@ -358,7 +358,14 @@ impl InputSystem {
             });
 
             // Optional mode child.
-            let (mode_component, forward_axis, roll_axis, rotation_enabled, fps_rotation, translation_basis_source) = world
+            let (
+                mode_component,
+                forward_axis,
+                roll_axis,
+                rotation_enabled,
+                fps_rotation,
+                translation_basis_source,
+            ) = world
                 .children_of(input_cid)
                 .iter()
                 .copied()

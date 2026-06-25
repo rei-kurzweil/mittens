@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod tests {
+    use crate::engine::ecs::World;
     use crate::engine::ecs::component::{
         ComponentRef, QueryRootMode, parse_scoped_query, resolve_component_ref,
     };
-    use crate::engine::ecs::World;
 
     #[test]
     fn add_child_sets_parent_and_child_list() {
@@ -162,7 +162,10 @@ mod tests {
     #[test]
     fn parse_scoped_query_recognizes_relative_prefixes() {
         let scoped = parse_scoped_query("../../ #target");
-        assert_eq!(scoped.root_mode, QueryRootMode::ParentScope { levels_up: 2 });
+        assert_eq!(
+            scoped.root_mode,
+            QueryRootMode::ParentScope { levels_up: 2 }
+        );
         assert_eq!(scoped.selector, "#target");
 
         let scoped = parse_scoped_query("/ > #scene");

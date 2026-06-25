@@ -2,8 +2,7 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     RayCastComponent, RayCastMode, RaycastableComponent, RaycastableShapeComponent,
-    RaycastableShapeType,
-    RenderableComponent,
+    RaycastableShapeType, RenderableComponent,
 };
 use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::System;
