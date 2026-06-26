@@ -22,6 +22,7 @@ Related context:
 - [docs/task/openxr-wayvr-style-controller-action-experiment.md](./openxr-wayvr-style-controller-action-experiment.md)
 - [docs/task/openxr-controller-actions-and-default-stick-locomotion.md](./openxr-controller-actions-and-default-stick-locomotion.md)
 - [docs/draft/openxr-vulkan-enable2-ownership-and-bootstrap.md](../draft/openxr-vulkan-enable2-ownership-and-bootstrap.md)
+- [docs/draft/shared-xr-backend-abstraction-openxr-openvr.md](../draft/shared-xr-backend-abstraction-openxr-openvr.md)
 - [/home/rei/_/hotham/hotham/src/contexts/xr_context/mod.rs](/home/rei/_/hotham/hotham/src/contexts/xr_context/mod.rs)
 - [/home/rei/_/hotham/hotham/src/contexts/xr_context/input.rs](/home/rei/_/hotham/hotham/src/contexts/xr_context/input.rs)
 - [src/engine/ecs/system/openxr_system.rs](../../src/engine/ecs/system/openxr_system.rs)
@@ -397,3 +398,8 @@ The next investigation should therefore focus on:
 - Vulkan enable path
 - reference-space policy
 - whether the runtime exposes controller actions differently for different app classes
+
+If that investigation strengthens the case for multi-backend XR support, the broader architecture
+direction is captured in:
+
+- [docs/draft/shared-xr-backend-abstraction-openxr-openvr.md](../draft/shared-xr-backend-abstraction-openxr-openvr.md)

@@ -16,6 +16,7 @@ Related context:
 
 - [docs/task/xr-gamepad-and-hand-input-refactor.md](./xr-gamepad-and-hand-input-refactor.md)
 - [docs/task/openxr-per-hand-input-state.md](./openxr-per-hand-input-state.md)
+- [docs/draft/shared-xr-backend-abstraction-openxr-openvr.md](../draft/shared-xr-backend-abstraction-openxr-openvr.md)
 - [src/engine/ecs/system/openxr_system.rs](../../src/engine/ecs/system/openxr_system.rs)
 - [src/engine/ecs/system/input_xr_gamepad_system.rs](../../src/engine/ecs/system/input_xr_gamepad_system.rs)
 - [src/engine/ecs/component/input_xr_gamepad.rs](../../src/engine/ecs/component/input_xr_gamepad.rs)
@@ -237,3 +238,8 @@ This task is complete when all of the following are true:
 - AVC has a clear default path for XR stick locomotion, or there is a tightly scoped follow-up task to add it immediately next
 
 This task is **not** complete merely because hand tracking works or because `CTLXR` moves.
+
+If the current OpenXR controller-action bring-up remains blocked, the broader backend direction is
+captured in:
+
+- [docs/draft/shared-xr-backend-abstraction-openxr-openvr.md](../draft/shared-xr-backend-abstraction-openxr-openvr.md)
