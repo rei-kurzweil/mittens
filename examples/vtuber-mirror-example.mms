@@ -149,6 +149,42 @@ ED {
 }
 
 // --- bisket avatar — VR pose stays owned by the runtime; thumbstick locomotion moves an outer rig ---
+ED {
+    I.speed(1.0) {
+        InputTransformMode.forward_z() {
+            roll_axis_y()
+            fps_rotation()
+        }
+        T.position(3.0, 1.2, 3.5).rotation(0.0, 0.5, 0.0) {
+            name = "desktop_camera_rig"
+            Collision.kinematic() {
+                CollisionShape.sphere(0.22)
+                KineticResponse.slide() {}
+            }
+            T {
+                AVC {
+                    head_bone("J_Bip_C_Head")
+                    camera_bone("J_Bip_C_Head")
+                    forward_plus_z()
+                    initial_yaw(0.0)
+
+                    T {
+                        GLTF.new("assets/models/bisket.11.0.glb") {
+                            EM.on()
+                            PoseCapture { label("BisketDesktop") }
+                        }
+                    }
+
+                    T.position(0.0, 0.08, -0.12) {
+                        name = "desktop_camera_wrapper"
+                        C3D { Pointer {} }
+                    }
+                }
+            }
+        }
+    }
+}
+
 T {
     InputVR.on() {
         InputVRGamepad {
