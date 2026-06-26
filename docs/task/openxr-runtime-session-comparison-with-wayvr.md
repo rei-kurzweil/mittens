@@ -4,6 +4,13 @@ Date: 2026-06-25
 
 Status: follow-up investigation after the WayVR-style controller action experiment failed to activate controller actions.
 
+Important update:
+
+- WayVR was later tested directly on this same machine and was confirmed to receive live
+  controller input, including sticks and triggers
+- but forcing `wayvr --openxr` on 2026-06-25 failed immediately with `Missing EXTX_overlay extension`
+- so the confirmed working WayVR path here is OpenVR fallback, not OpenXR
+
 This task captures the next comparison step:
 
 - compare Cat Engine's OpenXR app/session setup against the local WayVR checkout
@@ -15,10 +22,12 @@ Related context:
 - [docs/task/openxr-wayvr-style-controller-action-experiment.md](./openxr-wayvr-style-controller-action-experiment.md)
 - [docs/task/openxr-controller-actions-and-default-stick-locomotion.md](./openxr-controller-actions-and-default-stick-locomotion.md)
 - [docs/draft/openxr-vulkan-enable2-ownership-and-bootstrap.md](../draft/openxr-vulkan-enable2-ownership-and-bootstrap.md)
+- [/home/rei/_/hotham/hotham/src/contexts/xr_context/mod.rs](/home/rei/_/hotham/hotham/src/contexts/xr_context/mod.rs)
+- [/home/rei/_/hotham/hotham/src/contexts/xr_context/input.rs](/home/rei/_/hotham/hotham/src/contexts/xr_context/input.rs)
 - [src/engine/ecs/system/openxr_system.rs](../../src/engine/ecs/system/openxr_system.rs)
-- [/tmp/wayvr/wayvr/src/backend/openxr/mod.rs](/tmp/wayvr/wayvr/src/backend/openxr/mod.rs)
-- [/tmp/wayvr/wayvr/src/backend/openxr/helpers.rs](/tmp/wayvr/wayvr/src/backend/openxr/helpers.rs)
-- [/tmp/wayvr/wayvr/src/backend/openxr/input.rs](/tmp/wayvr/wayvr/src/backend/openxr/input.rs)
+- [/home/rei/_/wayvr/wayvr/src/backend/openxr/mod.rs](/home/rei/_/wayvr/wayvr/src/backend/openxr/mod.rs)
+- [/home/rei/_/wayvr/wayvr/src/backend/openxr/helpers.rs](/home/rei/_/wayvr/wayvr/src/backend/openxr/helpers.rs)
+- [/home/rei/_/wayvr/wayvr/src/backend/openxr/input.rs](/home/rei/_/wayvr/wayvr/src/backend/openxr/input.rs)
 
 ---
 
@@ -43,6 +52,45 @@ So the remaining investigation should move outward from action shape and toward:
 - session creation differences
 - reference-space differences
 - any runtime-policy difference between Cat Engine and a known-working app
+
+The "known-working app" part is now concrete, but narrower than it first appeared:
+
+- on this machine, WayVR itself is a working controller-input reference
+- on this machine, WayVR is not yet a confirmed working OpenXR reference
+
+---
+
+## 1A. Current backend/runtime matrix
+
+The current known matrix is:
+
+### Cat Engine via OpenXR
+
+- OpenXR instance creation: works
+- OpenXR Vulkan session creation: works
+- session transitions (`READY` / `VISIBLE` / `FOCUSED`): work
+- headset pose: works
+- hand tracking / hand-root fallback: works
+- controller interaction profile activation: fails (`none`)
+- controller action activation: fails
+- stick/trigger/button-driven authored UI behavior: fails because controller actions stay inactive
+
+### WayVR via OpenXR
+
+- forced `wayvr --openxr`: fails immediately on this machine
+- observed failure on 2026-06-25: `Missing EXTX_overlay extension`
+- therefore no useful controller-action comparison was obtained from WayVR's OpenXR path yet
+
+### WayVR via OpenVR fallback
+
+- local build confirmed running
+- controller input works
+- sticks work
+- triggers work
+- this is a confirmed working controller path on this machine
+- but it is not proof about the OpenXR path Cat Engine is using
+
+This matrix is the current reality anchor for the rest of the investigation.
 
 ---
 
@@ -157,6 +205,17 @@ It only proves that:
 
 - WayVR is a useful reference for a simpler action architecture
 
+But later direct testing adds a stronger practical fact:
+
+- WayVR on this same machine/runtime does receive live controller actions, including stick and trigger behavior
+
+At the same time, the forced OpenXR run failed with missing `EXTX_overlay`, so the current
+successful WayVR path here appears to be OpenVR rather than OpenXR.
+
+So even if its high-level input model is pointer-oriented, it is still a confirmed working
+controller-input reference for this environment, but not a confirmed working OpenXR overlay
+reference yet.
+
 ### E. Session state behavior still differs in practical effect
 
 Cat Engine logs show:
@@ -222,13 +281,45 @@ So "WayVR works" may not translate to:
 
 ### Hypothesis 4: The runtime simply is not exposing controller actions to this app/session
 
-The current evidence still fits:
+This hypothesis is weaker, but not gone.
 
-- hand tracking is available
-- controller actions are not
-- focused session alone is not enough
+Current evidence now says:
 
-If so, the remaining work is not about API shape. It is about discovering the runtime policy boundary.
+- hand tracking is available in Cat Engine
+- controller actions are not available in Cat Engine
+- controller actions are available in WayVR on the same machine
+- but the observed successful WayVR path is OpenVR, not OpenXR
+
+So the more likely conclusion is:
+
+- the machine and controllers are generally capable of working
+- Cat Engine is still differing from a known-working path in some meaningful setup dimension
+- but that known-working path may currently be API/backend-specific rather than proving the OpenXR path
+
+### Hypothesis 5: A non-overlay OpenXR app may be a better comparison target than WayVR
+
+`WayVR` remains useful, but its OpenXR path is gated by `EXTX_overlay`, which Cat Engine does not use.
+
+The local `hotham` checkout may provide a cleaner comparison because it appears to be:
+
+- an OpenXR engine/runtime path
+- not obviously centered on the same overlay-only requirement as WayVR
+- using more conventional controller actions for grip, trigger, and thumbstick
+
+Early inspection suggests `hotham` does:
+
+- per-hand grip pose bindings
+- per-hand trigger bindings
+- per-hand thumbstick bindings
+- per-hand grip spaces
+- `STAGE` reference-space usage
+
+So `hotham` is a strong follow-up comparison target for:
+
+- action creation shape
+- binding paths
+- reference-space policy
+- session/bootstrap assumptions in a non-WayVR OpenXR codebase
 
 ---
 
@@ -273,6 +364,17 @@ The recent evidence is strong enough that:
 - more small polling-shape changes
 
 should no longer be the default next step.
+
+### Step 5: Compare against `hotham`
+
+Do a targeted comparison against:
+
+- [/home/rei/_/hotham/hotham/src/contexts/xr_context/mod.rs](/home/rei/_/hotham/hotham/src/contexts/xr_context/mod.rs)
+- [/home/rei/_/hotham/hotham/src/contexts/xr_context/input.rs](/home/rei/_/hotham/hotham/src/contexts/xr_context/input.rs)
+
+This is likely a cleaner OpenXR reference than WayVR for the specific question:
+
+- what does a non-overlay OpenXR app do differently when setting up controller actions, spaces, and session state?
 
 ---
 

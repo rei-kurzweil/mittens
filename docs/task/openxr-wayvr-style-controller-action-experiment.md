@@ -10,13 +10,20 @@ This task captures the next narrow OpenXR debugging step for XR controller input
 
 Status: implemented and tested on 2026-06-25. Result: negative.
 
+Important later update:
+
+- on the same machine, a local WayVR run was confirmed to receive live controller input,
+  including sticks and triggers
+- but forcing `wayvr --openxr` failed on 2026-06-25 because `EXTX_overlay` was missing
+- so the confirmed working WayVR path in this environment is OpenVR fallback, not OpenXR
+
 Related context:
 
 - [docs/task/openxr-controller-actions-and-default-stick-locomotion.md](./openxr-controller-actions-and-default-stick-locomotion.md)
 - [docs/task/xr-gamepad-and-hand-input-refactor.md](./xr-gamepad-and-hand-input-refactor.md)
 - [src/engine/ecs/system/openxr_system.rs](../../src/engine/ecs/system/openxr_system.rs)
-- [/tmp/wayvr/wayvr/src/backend/openxr/input.rs](/tmp/wayvr/wayvr/src/backend/openxr/input.rs)
-- [/tmp/wayvr/wayvr/src/backend/openxr/openxr_actions.json5](/tmp/wayvr/wayvr/src/backend/openxr/openxr_actions.json5)
+- [/home/rei/_/wayvr/wayvr/src/backend/openxr/input.rs](/home/rei/_/wayvr/wayvr/src/backend/openxr/input.rs)
+- [/home/rei/_/wayvr/wayvr/src/backend/openxr/openxr_actions.json5](/home/rei/_/wayvr/wayvr/src/backend/openxr/openxr_actions.json5)
 
 ---
 
@@ -128,6 +135,12 @@ So this task is not based on:
 It is based on:
 
 - "WayVR uses a simpler OpenXR action model, and that model is worth testing directly on this runtime"
+
+Later evidence refined WayVR's value as a reference:
+
+- WayVR is not just a structural hint
+- it is a confirmed working controller-input app on the same machine where Cat Engine fails
+- but it is not yet a confirmed working OpenXR app in this environment
 
 ---
 
