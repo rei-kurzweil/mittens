@@ -1086,7 +1086,7 @@ impl OpenXRSystem {
                 world_from_head[3][1],
                 world_from_head[3][2],
             ];
-            let desired_world_rot = Self::quat_from_mat4(&world_from_head);
+            let desired_world_rot = math::mat_to_quat(world_from_head);
 
             let local_translation =
                 Self::world_to_local_translation(world, tcid, desired_world_pos);
@@ -1161,7 +1161,7 @@ impl OpenXRSystem {
                 world_from_controller[3][1],
                 world_from_controller[3][2],
             ];
-            let desired_world_rot = Self::quat_from_mat4(&world_from_controller);
+            let desired_world_rot = math::mat_to_quat(world_from_controller);
 
             let local_translation =
                 Self::world_to_local_translation(world, tcid, desired_world_pos);
@@ -1208,7 +1208,7 @@ impl OpenXRSystem {
                 .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(parent)
             {
                 if let Some(inv) = math::mat4_inverse(t.transform.matrix_world) {
-                    let p_local = Self::mat4_mul_vec4(
+                    let p_local = math::mat4_mul_vec4(
                         inv,
                         [desired_world[0], desired_world[1], desired_world[2], 1.0],
                     );
@@ -1228,81 +1228,11 @@ impl OpenXRSystem {
             if let Some(t) = world
                 .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(parent)
             {
-                return Some(Self::quat_from_mat4(&t.transform.matrix_world));
+                return Some(math::mat_to_quat(t.transform.matrix_world));
             }
             cur = parent;
         }
         None
-    }
-
-    fn mat4_mul_vec4(m: [[f32; 4]; 4], v: [f32; 4]) -> [f32; 4] {
-        [
-            m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2] + m[3][0] * v[3],
-            m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2] + m[3][1] * v[3],
-            m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2] + m[3][2] * v[3],
-            m[0][3] * v[0] + m[1][3] * v[1] + m[2][3] * v[2] + m[3][3] * v[3],
-        ]
-    }
-
-    /// Extract a unit quaternion from the rotation part of a column-major 4x4 matrix.
-    ///
-    /// Best-effort: normalizes basis vectors to remove uniform/non-uniform scale.
-    fn quat_from_mat4(m: &[[f32; 4]; 4]) -> [f32; 4] {
-        let mut x = [m[0][0], m[0][1], m[0][2]];
-        let mut y = [m[1][0], m[1][1], m[1][2]];
-        let mut z = [m[2][0], m[2][1], m[2][2]];
-
-        let nx = (x[0] * x[0] + x[1] * x[1] + x[2] * x[2]).sqrt();
-        let ny = (y[0] * y[0] + y[1] * y[1] + y[2] * y[2]).sqrt();
-        let nz = (z[0] * z[0] + z[1] * z[1] + z[2] * z[2]).sqrt();
-        if nx > 0.0 {
-            x[0] /= nx;
-            x[1] /= nx;
-            x[2] /= nx;
-        }
-        if ny > 0.0 {
-            y[0] /= ny;
-            y[1] /= ny;
-            y[2] /= ny;
-        }
-        if nz > 0.0 {
-            z[0] /= nz;
-            z[1] /= nz;
-            z[2] /= nz;
-        }
-
-        // Convert column-major basis into row-major rotation entries.
-        let r00 = x[0];
-        let r01 = y[0];
-        let r02 = z[0];
-        let r10 = x[1];
-        let r11 = y[1];
-        let r12 = z[1];
-        let r20 = x[2];
-        let r21 = y[2];
-        let r22 = z[2];
-
-        let trace = r00 + r11 + r22;
-        let (qx, qy, qz, qw) = if trace > 0.0 {
-            let s = (trace + 1.0).sqrt() * 2.0;
-            ((r21 - r12) / s, (r02 - r20) / s, (r10 - r01) / s, 0.25 * s)
-        } else if r00 > r11 && r00 > r22 {
-            let s = (1.0 + r00 - r11 - r22).sqrt() * 2.0;
-            (0.25 * s, (r01 + r10) / s, (r02 + r20) / s, (r21 - r12) / s)
-        } else if r11 > r22 {
-            let s = (1.0 + r11 - r00 - r22).sqrt() * 2.0;
-            ((r01 + r10) / s, 0.25 * s, (r12 + r21) / s, (r02 - r20) / s)
-        } else {
-            let s = (1.0 + r22 - r00 - r11).sqrt() * 2.0;
-            ((r02 + r20) / s, (r12 + r21) / s, 0.25 * s, (r10 - r01) / s)
-        };
-
-        let len = (qx * qx + qy * qy + qz * qz + qw * qw).sqrt();
-        if len > 0.0 {
-            [qx / len, qy / len, qz / len, qw / len]
-        } else {
-            [0.0, 0.0, 0.0, 1.0]
-        }
     }
 
     fn try_init_hand_tracking(
