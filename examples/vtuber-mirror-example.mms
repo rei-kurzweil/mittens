@@ -148,10 +148,10 @@ ED {
     }
 }
 
-// --- bisket avatar — XR pose stays owned by OpenXR; thumbstick locomotion moves an outer rig ---
+// --- bisket avatar — VR pose stays owned by the runtime; thumbstick locomotion moves an outer rig ---
 T {
-    InputXR.on() {
-        InputXRGamepad {
+    InputVR.on() {
+        InputVrGamepad {
             locomotion()
             speed(1.5)
         }
@@ -191,8 +191,8 @@ T {
                         CXR { Pointer {} }
                     }
 
-                    CTLXR.new(true, Left,  Grip) { T { Pointer {} } }
-                    CTLXR.new(true, Right, Grip) { T { Pointer {} } }
+                    VrHand.new(true, Left,  Grip) { T { Pointer {} } }
+                    VrHand.new(true, Right, Grip) { T { Pointer {} } }
             }
 
             OV {
@@ -207,23 +207,4 @@ T {
     }
 }
 
-// Aim/controller reference cubes kept so mirror hand motion is easy to judge.
-// InputXR.on() {
-//     T {
-//         CTLXR.new(true, Left, Grip) {
-//             T.scale(0.05, 0.05, 0.10) {
-//                 T {
-//                     R.cube() { C.rgba(1.0, 1.0, 0.0, 1.0) EM.on() }
-//                 }
-//             }
-//         }
-//         CTLXR.new(true, Right, Grip) {
-//             T.scale(0.05, 0.05, 0.10) {
-//                 T {
-//                     R.cube() { C.rgba(0.2, 1.0, 0.2, 1.0) EM.on() }
-//                 }
-//             }
-//         }
-//     }
-// }
-XR.on()
+VR.on()

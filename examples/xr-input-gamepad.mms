@@ -1,6 +1,6 @@
-// xr-input-gamepad scene
+// vr-input-gamepad scene
 //
-// XR-only input dashboard for InputXRGamepad.
+// VR-only input dashboard for InputVrGamepad.
 // Shows A/B, X/Y, left/right sticks, and trigger/grip readouts.
 //
 // To run:
@@ -139,13 +139,13 @@ let right_stick_dot = T.position(0.0, 0.0, 0.03) {
     }
 }
 
-let xr_gamepad = InputXRGamepad {
+let xr_gamepad = InputVrGamepad {
     locomotion()
     speed(1.5)
 }
 
 T {
-    InputXR.on() {
+    InputVR.on() {
         xr_gamepad
         T {
             name = "xr_pose"
@@ -181,8 +181,8 @@ T {
                     CXR { Pointer {} }
                 }
 
-                CTLXR.new(true, Left,  Grip) { T { Pointer {} } }
-                CTLXR.new(true, Right, Grip) { T { Pointer {} } }
+                VrHand.new(true, Left,  Grip) { T { Pointer {} } }
+                VrHand.new(true, Right, Grip) { T { Pointer {} } }
             }
 
             T.position(0.0, 0.2, -2.0) {
@@ -356,4 +356,4 @@ on(xr_gamepad, "XrAxisChanged", fn(event) {
     }
 })
 
-XR.on()
+VR.on()

@@ -82,15 +82,15 @@ BG {
 
 // --- VTuber avatar — single-input topology ---
 //
-// InputXR drives body translation and head rotation via AvatarControlSystem.
-// ControllerXR and CameraXR children are discovered by topology.
+// InputVR drives body translation and head rotation via AvatarControlSystem.
+// VrHand and CameraXR children are discovered by topology.
 // camera_bone triggers two things at AVC init:
 //   1. model_root.y is auto-calibrated to -J_Bip_C_Head_local_y (no hardcoded constant).
 //   2. CXR is re-parented under J_Bip_C_Head for first-person XR alignment.
 //
 // Topology (after AvatarControlSystem init):
 //   ED
-//     └── InputXR
+//     └── InputVR
 //           └── T (driven_t)
 //                 └── AVC
 //                       ├── TransformForkTRS (body pipeline root)
@@ -102,12 +102,12 @@ BG {
 //                       │             └── GLTF { EM }
 //                       │                   └── ... → J_Bip_C_Head
 //                       │                                 └── CXR  ← re-parented here
-//                       ├── CTLXR(Left, Grip)   ← discovered; re-parented to lower_arm
+//                       ├── VrHand(Left, Grip)  ← discovered; re-parented to lower_arm
 //                       │     └── T
-//                       └── CTLXR(Right, Grip)
+//                       └── VrHand(Right, Grip)
 //                             └── T
 ED {
-    InputXR.on() {
+    InputVR.on() {
         T {
             AVC {
                 head_bone("J_Bip_C_Head")
@@ -123,15 +123,15 @@ ED {
                 }
 
                 CXR { Pointer {} }
-                CTLXR.new(true, Left, Grip) { T { Pointer {} } }
-                CTLXR.new(true, Right, Grip) { T { Pointer {} } }
+                VrHand.new(true, Left, Grip) { T { Pointer {} } }
+                VrHand.new(true, Right, Grip) { T { Pointer {} } }
             }
         }
     }
 }
 
 // --- XR rig (Aim controller debug cubes; camera has moved to AVC above) ---
-InputXR.on() {
+InputVR.on() {
     T {
         T.position(0.0, 1.85, 0.6) {
             RendererStats {
@@ -140,7 +140,7 @@ InputXR.on() {
         }
 
         // Controller debug cubes (Aim pose, rotation-smoothed)
-        CTLXR.new(true, Left, Aim) {
+        VrHand.new(true, Left, Aim) {
             T.scale(0.06, 0.06, 0.12) {
                 TransformForkTRS {
                     TransformMapTranslation {}
@@ -157,7 +157,7 @@ InputXR.on() {
             }
         }
 
-        CTLXR.new(true, Right, Aim) {
+        VrHand.new(true, Right, Aim) {
             T.scale(0.06, 0.06, 0.12) {
                 TransformForkTRS {
                     TransformMapTranslation {}
@@ -176,5 +176,5 @@ InputXR.on() {
     }
 }
 
-// --- OpenXR runtime ---
-XR.on()
+// --- VR runtime ---
+VR.on()

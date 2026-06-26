@@ -154,7 +154,7 @@ ED {
 
 // --- bisket avatar — preserve the useful XR topology from bisket-vr-demo ---
 ED {
-    InputXR.on() {
+    InputVR.on() {
         T {
             AVC {
                 head_bone("J_Bip_C_Head")
@@ -190,8 +190,8 @@ ED {
                     CXR { Pointer {} }
                 }
 
-                CTLXR.new(true, Left,  Grip) { T { Pointer {} } }
-                CTLXR.new(true, Right, Grip) { T { Pointer {} } }
+                VrHand.new(true, Left,  Grip) { T { Pointer {} } }
+                VrHand.new(true, Right, Grip) { T { Pointer {} } }
             }
 
             OV {
@@ -207,7 +207,7 @@ ED {
 }
 
 // Aim/controller reference cubes kept so mirror hand motion is easy to judge.
-InputXR.on() {
+InputVR.on() {
     T {
         T.position(0.0, 1.95, 0.8) {
             RendererStats {
@@ -215,7 +215,7 @@ InputXR.on() {
             }
         }
 
-        // CTLXR.new(true, Left, Aim) {
+        // VrHand.new(true, Left, Aim) {
         //     T.scale(0.06, 0.06, 0.12) {
         //         TransformForkTRS {
         //             TransformMapTranslation {}
@@ -230,7 +230,7 @@ InputXR.on() {
         //     }
         // }
 
-        // CTLXR.new(true, Right, Aim) {
+        // VrHand.new(true, Right, Aim) {
         //     T.scale(0.06, 0.06, 0.12) {
         //         TransformForkTRS {
         //             TransformMapTranslation {}
@@ -245,14 +245,14 @@ InputXR.on() {
         //     }
         // }
 
-        CTLXR.new(true, Left, Grip) {
+        VrHand.new(true, Left, Grip) {
             T.scale(0.05, 0.05, 0.10) {
                 T {
                     R.cube() { C.rgba(1.0, 1.0, 0.0, 1.0) EM.on() }
                 }
             }
         }
-        CTLXR.new(true, Right, Grip) {
+        VrHand.new(true, Right, Grip) {
             T.scale(0.05, 0.05, 0.10) {
                 T {
                     R.cube() { C.rgba(0.2, 1.0, 0.2, 1.0) EM.on() }
@@ -284,4 +284,4 @@ I.speed(1.0) {
     }
 }
 
-XR.on()
+VR.on()

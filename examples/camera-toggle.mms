@@ -5,7 +5,7 @@
 // Notes:
 // - Turning Camera3D off blanks the desktop scene view by design when there is
 //   no other active Camera3D/Camera2D.
-// - CameraXR toggling updates the XR rig selection path while OpenXR stays live.
+// - CameraXR toggling updates the XR rig selection path while VR stays live.
 
 RendererSettings {
     window_size(1280, 960)
@@ -48,7 +48,7 @@ I.speed(2.5) {
 // XR rig selection target.
 let xr_cam = CXR.on()
 
-InputXR.on() {
+InputVR.on() {
     T.position(0.0, 1.55, 0.0) {
         xr_cam {
             Pointer {}
@@ -56,7 +56,7 @@ InputXR.on() {
     }
 }
 
-XR.on()
+VR.on()
 
 // Simple scene reference so toggling the desktop camera has an obvious effect.
 T.position(0.0, -0.15, 0.0).scale(12.0, 0.2, 12.0) {

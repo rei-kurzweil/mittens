@@ -2,7 +2,7 @@
 
 Date: 2026-06-25
 
-Status: planned implementation task.
+Status: active staged implementation task.
 
 Implementation checklist:
 
@@ -10,12 +10,19 @@ Implementation checklist:
 - [x] Switch engine/runtime wiring to depend on `VrSystem` instead of directly on `OpenXRSystem`
 - [x] Add an `OpenVRSystem` backend slot/placeholder under the shared VR coordinator
 - [x] Change the authoring/component API surface to `VR`, `VrHand`, `InputVR`, and `InputVrGamepad`
-- [ ] Finish packaging current OpenXR behavior as one backend implementation under the shared VR boundary
-- [ ] Define which shared XR state types should live above backend-specific code versus remain backend-local
+- [x] Add a real `VrBackend` interface so `VrSystem` dispatches through one backend contract
+- [x] Finish packaging current OpenXR behavior as one backend implementation under the shared VR boundary
+- [ ] Define which additional shared XR state types should live above backend-specific code versus remain backend-local
 - [ ] Decide and implement backend health/fallback policy beyond hard init/session failure
 - [ ] Implement actual OpenVR runtime/session/input/render bring-up behind the same abstraction
 - [ ] Verify OpenXR behavior still works at least as well as before the abstraction refactor
 - [ ] Update and verify example scenes against the new VR authoring surface
+
+Current note:
+
+- shared XR input/gamepad state already lives above `OpenXRSystem`
+- backend dispatch now goes through a real trait boundary
+- the most obvious remaining user-facing gap is that many MMS/examples still use older XR names
 
 This task captures the likely staged XR-engine direction:
 
@@ -66,6 +73,18 @@ The current `OpenXRSystem` already contains several layers mixed together:
 
 So before adding OpenVR, the engine should first create a cleaner backend boundary.
 
+Update as of 2026-06-26:
+
+- `VrSystem` exists as the engine-owned coordinator
+- `OpenXRSystem` and `OpenVRSystem` now both sit behind a shared `VrBackend` trait
+- shared XR input/gamepad state has been extracted above `OpenXRSystem`
+
+So the backend abstraction is now structurally real, but still incomplete:
+
+- more frame/view/head/hand state may still need a shared backend-neutral shape
+- OpenXR-specific render/session internals are still largely embedded in `OpenXRSystem`
+- the authored MMS/example layer still needs migration and verification
+
 ---
 
 ## 2. Main goal
@@ -96,6 +115,7 @@ This task should cover:
 - deciding which parts of `OpenXRSystem` stay shared versus move behind the backend
 - reorganizing current OpenXR code to fit the new boundary
 - preparing a clean place for an OpenVR backend module
+- updating authored examples to the renamed VR authoring surface once the backend boundary is stable
 - documenting the staged implementation order
 
 It should not cover:
@@ -124,9 +144,9 @@ This layer should own the runtime-independent state the engine actually consumes
 
 This is the layer used by:
 
-- `InputXR`
-- `ControllerXRComponent` / future `InputXrHand`
-- `InputXRGamepad`
+- `InputVR`
+- `VrHand`
+- `InputVrGamepad`
 - AVC
 - MMS event/input systems
 
@@ -181,6 +201,11 @@ That likely means introducing some combination of:
 The exact Rust shape does not need to be finalized in this task note, but the boundary must be
 clear enough that backend-specific runtime structs stop leaking upward.
 
+Current state:
+
+- done for backend dispatch and shared XR input/gamepad state
+- still open for broader shared frame/view/head/hand state
+
 ### Phase 2: Package current OpenXR under the abstraction
 
 Once the boundary exists:
@@ -194,6 +219,11 @@ Once the boundary exists:
   - current `InputXRGamepad` publication shape
 
 The point of this phase is not feature expansion. It is isolation and packaging.
+
+Current state:
+
+- largely done for backend dispatch and ownership boundaries
+- still open where OpenXR-specific render/session internals remain inside `OpenXRSystem`
 
 ### Phase 3: Add OpenVR backend
 
@@ -237,6 +267,24 @@ The renderer split should be:
 
 - shared scene rendering above
 - backend-specific swapchain/compositor submission below
+
+### C. Keep the authored surface honest
+
+The engine-side rename to:
+
+- `VR`
+- `InputVR`
+- `VrHand`
+- `InputVrGamepad`
+
+is already in place, but many MMS/example files still use older XR authoring names such as:
+
+- `OpenXR.on()`
+- `InputXR.on()`
+- `ControllerXR.new(...)`
+- `InputXRGamepad`
+
+That means example migration is now a primary follow-up task, not later cleanup.
 
 ### C. Avoid deepening `OpenXRSystem` as the permanent center
 
