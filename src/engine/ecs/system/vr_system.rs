@@ -14,6 +14,7 @@ pub struct VrSystem {
     backend: Box<dyn VrBackend>,
     preferred_backend: VrBackendKind,
     last_backend_error: Option<String>,
+    announced_backend: Option<VrBackendKind>,
 }
 
 impl Default for VrSystem {
@@ -22,6 +23,7 @@ impl Default for VrSystem {
             backend: Box::new(OpenXRSystem::default()),
             preferred_backend: Self::preferred_backend_from_env(),
             last_backend_error: None,
+            announced_backend: None,
         }
     }
 }
@@ -172,6 +174,19 @@ impl VrSystem {
         }
     }
 
+    fn announce_backend(&mut self, context: &str) {
+        let active_backend = self.backend.kind();
+        if self.announced_backend == Some(active_backend) {
+            return;
+        }
+
+        println!(
+            "[VR] Using {active_backend} backend ({context}; requested: {})",
+            self.preferred_backend
+        );
+        self.announced_backend = Some(active_backend);
+    }
+
     fn ensure_preferred_backend_initialized(&mut self) {
         match self.preferred_backend {
             VrBackendKind::OpenXR => {
@@ -179,6 +194,7 @@ impl VrSystem {
                 match self.backend.initialize_runtime() {
                     Ok(()) => {
                         self.last_backend_error = None;
+                        self.announce_backend("initialized successfully");
                     }
                     Err(openxr_err) => {
                         eprintln!(
@@ -190,6 +206,9 @@ impl VrSystem {
                         if let Some(openvr_err) = openvr_err {
                             self.last_backend_error =
                                 Some(format!("OpenXR failed, then OpenVR failed: {}", openvr_err));
+                        } else {
+                            self.last_backend_error = None;
+                            self.announce_backend("fallback after OpenXR initialization failure");
                         }
                     }
                 }
@@ -200,6 +219,7 @@ impl VrSystem {
                     self.last_backend_error = Some(err);
                 } else {
                     self.last_backend_error = None;
+                    self.announce_backend("initialized successfully");
                 }
             }
         }

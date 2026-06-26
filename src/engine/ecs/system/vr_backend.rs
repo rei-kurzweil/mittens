@@ -10,6 +10,15 @@ pub enum VrBackendKind {
     OpenVR,
 }
 
+impl std::fmt::Display for VrBackendKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OpenXR => write!(f, "OpenXR"),
+            Self::OpenVR => write!(f, "OpenVR"),
+        }
+    }
+}
+
 pub trait VrBackend: std::fmt::Debug {
     fn kind(&self) -> VrBackendKind;
     fn initialize_runtime(&mut self) -> Result<(), String>;
