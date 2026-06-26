@@ -149,7 +149,7 @@ fn main() {
     // Add an OpenXR component so OpenXRSystem initializes and starts polling events.
     let xr_root = universe
         .world
-        .add_component(engine::ecs::component::OpenXRComponent::on());
+        .add_component(engine::ecs::component::VrComponent::openxr());
     universe.add(xr_root);
     universe.systems.process_commands(
         &mut universe.world,

@@ -1952,10 +1952,11 @@ mod vulkano_backend {
             // MVP: assume PRIMARY_STEREO (2 eyes).
             let view_count = 2;
             self.ensure_xr_offscreen_targets(view_count, extent)?;
-
-            let Some(targets) = self.xr_offscreen.as_ref() else {
-                return Err("XR offscreen targets missing".into());
-            };
+            let color_format = self
+                .xr_offscreen
+                .as_ref()
+                .ok_or("XR offscreen targets missing")?
+                .color_format;
 
             let post_process_config = visual_world.post_processing().clone();
             let post_process_active = post_process_config.is_active();
@@ -1963,11 +1964,17 @@ mod vulkano_backend {
                 self.post_processing_renderer.ensure_xr_targets(
                     view_count,
                     extent,
-                    targets.color_format,
+                    color_format,
                     self.msaa_samples,
                     &post_process_config,
                 )?;
             }
+
+            self.render_mirror_captures(visual_world, color_format)?;
+
+            let Some(targets) = self.xr_offscreen.as_ref() else {
+                return Err("XR offscreen targets missing".into());
+            };
 
             let resolve_view = targets
                 .color_views
@@ -2064,6 +2071,118 @@ mod vulkano_backend {
                 .then_execute(queue, cb)?
                 .then_signal_fence_and_flush()?
                 .wait(None)?;
+
+            Ok(())
+        }
+
+        fn render_mirror_captures(
+            &mut self,
+            visual_world: &mut VisualWorld,
+            color_format: Format,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let device = self.context.device().clone();
+            let queue = self.context.graphics_queue().clone();
+            let mirrors = visual_world.mirrors().to_vec();
+            let msaa_samples = self.msaa_samples;
+
+            for mirror in mirrors {
+                if mirror.captures.is_empty() {
+                    continue;
+                }
+                let capture_count = mirror.captures.len();
+
+                let aspect = mirror.aspect_ratio.max(1e-6);
+                let base_extent = (1024.0 * mirror.resolution_scale).max(1.0).floor() as u32;
+                let mirror_extent = if aspect >= 1.0 {
+                    [
+                        ((base_extent as f32) * aspect).max(1.0).floor() as u32,
+                        base_extent.max(1),
+                    ]
+                } else {
+                    [
+                        base_extent.max(1),
+                        ((base_extent as f32) / aspect).max(1.0).floor() as u32,
+                    ]
+                };
+                if mirror_extent[0] == 0 || mirror_extent[1] == 0 {
+                    continue;
+                }
+
+                let (color_views, msaa_color_views, depth_views) = {
+                    let mirror_offscreen_key = mirror
+                        .captures
+                        .first()
+                        .map(|capture| capture.target_key.as_str())
+                        .ok_or("mirror capture key missing")?;
+                    let targets = self.ensure_mirror_offscreen_targets(
+                        mirror_offscreen_key,
+                        capture_count,
+                        mirror_extent,
+                        color_format,
+                    )?;
+                    (
+                        targets.color_views.clone(),
+                        targets.msaa_color_views.clone(),
+                        targets.depth_views.clone(),
+                    )
+                };
+
+                for (capture_slot, capture) in mirror.captures.iter().enumerate() {
+                    let eye_data = &capture.camera;
+
+                    let render_view = RenderView {
+                        view: eye_data.view,
+                        proj: eye_data.proj,
+                        viewport: [mirror_extent[0] as f32, mirror_extent[1] as f32],
+                        kind: RenderViewKind::Mirror {
+                            mirror_component: mirror.mirror_component,
+                            family: capture.family,
+                            view_index: capture.view_index,
+                            plane_origin: mirror.plane_origin,
+                            plane_normal: mirror.plane_normal,
+                            excluded_instance: Some(mirror.source_instance),
+                        },
+                    };
+
+                    let (color_attachment_view, color_resolve_view) =
+                        if msaa_samples != SampleCount::Sample1 {
+                            (
+                                msaa_color_views[capture_slot].clone(),
+                                Some(color_views[capture_slot].clone()),
+                            )
+                        } else {
+                            (color_views[capture_slot].clone(), None)
+                        };
+                    let depth_view = depth_views[capture_slot].clone();
+
+                    let runtime_texture_publication = visual_world
+                        .runtime_texture_handle(&capture.target_key)
+                        .map(|handle| {
+                            let src_view = color_resolve_view
+                                .clone()
+                                .unwrap_or_else(|| color_attachment_view.clone());
+                            (handle, src_view)
+                        });
+
+                    let cb = self.build_draw_batches_command_buffer(
+                        visual_world,
+                        &render_view,
+                        0,
+                        1,
+                        color_attachment_view,
+                        color_resolve_view,
+                        depth_view,
+                        mirror_extent,
+                        None,
+                        runtime_texture_publication,
+                    )?;
+
+                    sync::now(device.clone())
+                        .then_execute(queue.clone(), cb)?
+                        .then_signal_fence_and_flush()?
+                        .wait(None)?;
+                }
+            }
 
             Ok(())
         }
@@ -3779,107 +3898,11 @@ mod vulkano_backend {
 
             let device = self.context.device().clone();
             let queue = self.context.graphics_queue().clone();
-            let mirrors = visual_world.mirrors().to_vec();
-            let msaa_samples = self.msaa_samples;
 
-            for mirror in mirrors {
-                if mirror.captures.is_empty() {
-                    continue;
-                }
-                let capture_count = mirror.captures.len();
-
-                let aspect = mirror.aspect_ratio.max(1e-6);
-                let base_extent = (1024.0 * mirror.resolution_scale).max(1.0).floor() as u32;
-                let mirror_extent = if aspect >= 1.0 {
-                    [
-                        ((base_extent as f32) * aspect).max(1.0).floor() as u32,
-                        base_extent.max(1),
-                    ]
-                } else {
-                    [
-                        base_extent.max(1),
-                        ((base_extent as f32) / aspect).max(1.0).floor() as u32,
-                    ]
-                };
-                if mirror_extent[0] == 0 || mirror_extent[1] == 0 {
-                    continue;
-                }
-
-                let (color_views, msaa_color_views, depth_views) = {
-                    let mirror_offscreen_key = mirror
-                        .captures
-                        .first()
-                        .map(|capture| capture.target_key.as_str())
-                        .ok_or("mirror capture key missing")?;
-                    let targets = self.ensure_mirror_offscreen_targets(
-                        mirror_offscreen_key,
-                        capture_count,
-                        mirror_extent,
-                        self.swapchain_state.swapchain.image_format(),
-                    )?;
-                    (
-                        targets.color_views.clone(),
-                        targets.msaa_color_views.clone(),
-                        targets.depth_views.clone(),
-                    )
-                };
-
-                for (capture_slot, capture) in mirror.captures.iter().enumerate() {
-                    let eye_data = &capture.camera;
-
-                    let render_view = RenderView {
-                        view: eye_data.view,
-                        proj: eye_data.proj,
-                        viewport: [mirror_extent[0] as f32, mirror_extent[1] as f32],
-                        kind: RenderViewKind::Mirror {
-                            mirror_component: mirror.mirror_component,
-                            family: capture.family,
-                            view_index: capture.view_index,
-                            plane_origin: mirror.plane_origin,
-                            plane_normal: mirror.plane_normal,
-                            excluded_instance: Some(mirror.source_instance),
-                        },
-                    };
-
-                    let (color_attachment_view, color_resolve_view) =
-                        if msaa_samples != SampleCount::Sample1 {
-                            (
-                                msaa_color_views[capture_slot].clone(),
-                                Some(color_views[capture_slot].clone()),
-                            )
-                        } else {
-                            (color_views[capture_slot].clone(), None)
-                        };
-                    let depth_view = depth_views[capture_slot].clone();
-
-                    let runtime_texture_publication = visual_world
-                        .runtime_texture_handle(&capture.target_key)
-                        .map(|handle| {
-                            let src_view = color_resolve_view
-                                .clone()
-                                .unwrap_or_else(|| color_attachment_view.clone());
-                            (handle, src_view)
-                        });
-
-                    let cb = self.build_draw_batches_command_buffer(
-                        visual_world,
-                        &render_view,
-                        0,
-                        1,
-                        color_attachment_view,
-                        color_resolve_view,
-                        depth_view,
-                        mirror_extent,
-                        None,
-                        runtime_texture_publication,
-                    )?;
-
-                    sync::now(device.clone())
-                        .then_execute(queue.clone(), cb)?
-                        .then_signal_fence_and_flush()?
-                        .wait(None)?;
-                }
-            }
+            self.render_mirror_captures(
+                visual_world,
+                self.swapchain_state.swapchain.image_format(),
+            )?;
 
             let (color_attachment_view, color_resolve_view, depth_view) =
                 if let Some(post) = post_process.as_ref() {

@@ -3,7 +3,7 @@
 
 // --- Renderer settings ---
 let renderer = RendererSettings.msaa_off() {
-    window_size(320, 240)
+    window_size(640, 480)
 }
 
 // --- Sky color and ambient light ---
@@ -115,62 +115,30 @@ ED {
                 camera_bone("J_Bip_C_Head")
                 left_hand_bone("J_Bip_L_Hand")
                 right_hand_bone("J_Bip_R_Hand")
+                
                 initial_yaw(3.14159)
+                
+                left_arm_pole_direction([  1, -0.35, -1])
+                right_arm_pole_direction([-1, -0.35, -1])
+
                 hand_rotation_smoothing(220.0)
+                hand_grip_rotation_left([-0.6408564, 0.29883623, 0.29883623, 0.6408564])
+                hand_grip_rotation_right([-0.6408564, -0.29883623, -0.29883623, 0.6408564])
 
                 T {
                     GLTF.new("assets/models/pc-rei.hoodie.glb") { EM.on() }
                 }
 
-                CXR { Pointer {} }
+                T.position(0.0, 0.18, 0.12) {
+                        name = "xr_camera_wrapper"
+                        Collision.kinematic() {
+                            CollisionShape.sphere(0.18)
+                            KineticResponse.slide() {}
+                        }
+                        CXR { Pointer {} }
+                }
                 VRHand.new(true, Left, Grip) { T { Pointer {} } }
                 VRHand.new(true, Right, Grip) { T { Pointer {} } }
-            }
-        }
-    }
-}
-
-// --- XR rig (Aim controller debug cubes; camera has moved to AVC above) ---
-InputVR.on() {
-    T {
-        T.position(0.0, 1.85, 0.6) {
-            RendererStats {
-                camera_target(Xr)
-            }
-        }
-
-        // Controller debug cubes (Aim pose, rotation-smoothed)
-        VRHand.new(true, Left, Aim) {
-            T.scale(0.06, 0.06, 0.12) {
-                TransformForkTRS {
-                    TransformMapTranslation {}
-                    TransformMapRotation {
-                        QuatTemporalFilter.smoothing_factor(220.0)
-                    }
-                    TransformMapScale {}
-                    T {
-                        R.cube() {
-                            C.rgba(0.10, 0.90, 1.00, 1.0)
-                        }
-                    }
-                }
-            }
-        }
-
-        VRHand.new(true, Right, Aim) {
-            T.scale(0.06, 0.06, 0.12) {
-                TransformForkTRS {
-                    TransformMapTranslation {}
-                    TransformMapRotation {
-                        QuatTemporalFilter.smoothing_factor(220.0)
-                    }
-                    TransformMapScale {}
-                    T {
-                        R.cube() {
-                            C.rgba(1.00, 0.35, 0.35, 1.0)
-                        }
-                    }
-                }
             }
         }
     }

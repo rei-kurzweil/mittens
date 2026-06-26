@@ -3,9 +3,9 @@ use cat_engine::engine::ecs::component::{
     BlurPassComponent, Camera3DComponent, CameraXRComponent, ColorComponent, ControllerHand,
     ControllerPoseKind, ControllerXRComponent, DirectionalLightComponent, EditorComponent,
     EmissiveComponent, EmissivePassComponent, GLTFComponent, InputComponent,
-    InputTransformModeComponent, InputXRComponent, OpenXRComponent, PointerComponent,
+    InputTransformModeComponent, InputXRComponent, PointerComponent,
     QuatTemporalFilterComponent, RaycastableComponent, RenderGraphComponent, RenderableComponent,
-    RendererSettingsComponent, RendererStatsComponent, TransformComponent,
+    RendererSettingsComponent, RendererStatsComponent, TransformComponent, VrComponent,
     TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
     TransformMapTranslationComponent,
 };
@@ -409,7 +409,7 @@ fn main() {
     );
 
     // Enable OpenXR runtime.
-    let xr_root = universe.world.add_component(OpenXRComponent::on());
+    let xr_root = universe.world.add_component(VrComponent::openxr());
     universe.add(xr_root);
 
     universe.systems.process_commands(
