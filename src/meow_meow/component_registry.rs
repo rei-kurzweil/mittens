@@ -16,15 +16,15 @@ use crate::engine::ecs::component::{
     BackgroundComponent, BloomComponent, BlurPassComponent, BoundsComponent, BoxSizing,
     Camera2DComponent, Camera3DComponent, CameraXRComponent, ClockComponent, CollisionComponent,
     CollisionShape, CollisionShapeComponent, ColorComponent, ControllerHand, ControllerPoseKind,
-    ControllerXRComponent, DataComponent, DataValue, DirectionalLightComponent, Display,
+    DataComponent, DataValue, DirectionalLightComponent, Display,
     EdgeInsets, EditorComponent, EditorInteractionMode, ElementType, EmissiveComponent,
     EmissivePassComponent, FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection,
     FlexWrap, GLTFComponent, GestureCoordTypeComponent, GravityComponent, GridComponent,
     HtmlElementComponent, IKChainComponent, IKSolver, InputComponent, InputTransformModeComponent,
-    InputXRComponent, InputXRGamepadComponent, InspectLayoutComponent, JustifyContent,
+    InputVRComponent, InputVrGamepadComponent, InspectLayoutComponent, JustifyContent,
     KeyframeComponent, KineticResponseComponent, LayoutBoundsComponent, LayoutComponent,
     LightQuantizationComponent, MeshComponent, MirrorComponent, MusicContextComponent, MusicNote,
-    MusicNoteComponent, NormalVisualisationComponent, OpacityComponent, OpenXRComponent,
+    MusicNoteComponent, NormalVisualisationComponent, OpacityComponent,
     OptionComponent, OscillatorType, Overflow, OverlayComponent, PointLightComponent,
     PointerComponent, PointerEvents, PoseCaptureComponent, PoseCaptureLibraryComponent,
     PoseCapturePoseComponent, Position, QuatTemporalFilterComponent, QuatYawFollowComponent,
@@ -40,7 +40,7 @@ use crate::engine::ecs::component::{
     TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
     TransformParentComponent, TransformSampleAncestorComponent, TransitionComponent,
     TransitionEasing, TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
-    Vector3TemporalFilterComponent, VrComponent, WordWrapMode, XrHandPreference,
+    Vector3TemporalFilterComponent, VrComponent, VrHandComponent, WordWrapMode, XrHandPreference,
 };
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::CameraTarget;
@@ -1137,13 +1137,13 @@ fn create_component(
             }
             add!(c)
         }
-        "InputXR" => match ctor {
-            Some("on") => add!(InputXRComponent::on()),
-            Some("off") => add!(InputXRComponent::off()),
-            _ => add!(InputXRComponent::on()),
+        "InputVR" => match ctor {
+            Some("on") => add!(InputVRComponent::on()),
+            Some("off") => add!(InputVRComponent::off()),
+            _ => add!(InputVRComponent::on()),
         },
-        "InputXRGamepad" => {
-            let id = world.add_component(InputXRGamepadComponent::new());
+        "InputVrGamepad" => {
+            let id = world.add_component(InputVrGamepadComponent::new());
             if let Some(method) = ctor {
                 if method != "new" {
                     apply_call(world, id, method, args)?;
@@ -1192,14 +1192,7 @@ fn create_component(
             Some("openvr") => add!(VrComponent::openvr()),
             _ => add!(VrComponent::on()),
         },
-        "OpenXR" => match ctor {
-            Some("off") => add!(OpenXRComponent::off()),
-            Some("on") | Some("auto") => add!(OpenXRComponent::on()),
-            Some("openxr") => add!(OpenXRComponent::openxr()),
-            Some("openvr") => add!(OpenXRComponent::openvr()),
-            _ => add!(OpenXRComponent::on()),
-        },
-        "ControllerXR" => match ctor {
+        "VrHand" => match ctor {
             Some("new") => {
                 let _enabled = arg_bool(args, 0)?;
                 let hand = match arg_str(args, 1)? {
@@ -1212,9 +1205,9 @@ fn create_component(
                     "Grip" => ControllerPoseKind::Grip,
                     s => return Err(format!("unknown ControllerPoseKind: {s}")),
                 };
-                add!(ControllerXRComponent::new(true, hand, pose))
+                add!(VrHandComponent::new(true, hand, pose))
             }
-            _ => Err("ControllerXR requires .new(enabled, hand, pose)".into()),
+            _ => Err("VrHand requires .new(enabled, hand, pose)".into()),
         },
         "TransformParent" => match ctor {
             Some("target") => add!(
@@ -2458,7 +2451,7 @@ fn apply_call(
         }
         return Ok(());
     }
-    if let Some(inp) = world.get_component_by_id_as_mut::<InputXRGamepadComponent>(id) {
+    if let Some(inp) = world.get_component_by_id_as_mut::<InputVrGamepadComponent>(id) {
         match method {
             "enabled" => inp.enabled = arg_bool(args, 0)?,
             "hand" => {

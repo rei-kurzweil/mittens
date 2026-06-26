@@ -75,7 +75,6 @@ pub mod style;
 pub mod transparent_cutout;
 pub mod vr;
 
-pub mod openxr;
 pub mod point_light;
 pub mod pointer;
 pub mod raycast;
@@ -171,7 +170,6 @@ pub(crate) use music_note::NotePitch;
 pub use music_note::{MusicNote, MusicNoteComponent};
 pub use normal_visualisation::NormalVisualisationComponent;
 pub use opacity::OpacityComponent;
-pub use openxr::OpenXRComponent;
 pub use option::OptionComponent;
 pub use overlay::OverlayComponent;
 pub use point_light::PointLightComponent;
@@ -219,6 +217,9 @@ pub use transition::{TransitionComponent, TransitionEasing, TransitionReplacePol
 pub use transparent_cutout::TransparentCutoutComponent;
 pub use uv::UVComponent;
 pub use vr::{VrBackendPreference, VrComponent};
+pub type VrHandComponent = ControllerXRComponent;
+pub type InputVRComponent = InputXRComponent;
+pub type InputVrGamepadComponent = InputXRGamepadComponent;
 
 /// For now, our "LightComponent" is a point light.
 pub type LightComponent = point_light::PointLightComponent;

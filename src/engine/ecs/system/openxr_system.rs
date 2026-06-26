@@ -1,7 +1,6 @@
 use crate::engine::ecs::component::CameraXRComponent;
-use crate::engine::ecs::component::OpenXRComponent;
 use crate::engine::ecs::component::{
-    ControllerHand, ControllerPoseKind, ControllerXRComponent, InputXRComponent,
+    ControllerHand, ControllerPoseKind, InputVRComponent, VrComponent, VrHandComponent,
 };
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
@@ -819,7 +818,7 @@ impl OpenXRSystem {
         let mut cur = cid;
         loop {
             if world
-                .get_component_by_id_as::<InputXRComponent>(cur)
+                .get_component_by_id_as::<InputVRComponent>(cur)
                 .is_some()
             {
                 return Some(cur);
@@ -948,7 +947,7 @@ impl OpenXRSystem {
         _visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        let Some(cfg) = world.get_component_by_id_as::<OpenXRComponent>(component) else {
+        let Some(cfg) = world.get_component_by_id_as::<VrComponent>(component) else {
             return;
         };
 
@@ -1092,7 +1091,7 @@ impl OpenXRSystem {
 
         let input_xr_ids: Vec<ComponentId> = self.input_xr_components.iter().copied().collect();
         for input_xr_cid in input_xr_ids {
-            let Some(cfg) = world.get_component_by_id_as::<InputXRComponent>(input_xr_cid) else {
+            let Some(cfg) = world.get_component_by_id_as::<InputVRComponent>(input_xr_cid) else {
                 self.input_xr_components.remove(&input_xr_cid);
                 continue;
             };
@@ -1153,7 +1152,7 @@ impl OpenXRSystem {
 
         let controller_ids: Vec<ComponentId> = self.controller_components.iter().copied().collect();
         for controller_cid in controller_ids {
-            let Some(cfg) = world.get_component_by_id_as::<ControllerXRComponent>(controller_cid)
+            let Some(cfg) = world.get_component_by_id_as::<VrHandComponent>(controller_cid)
             else {
                 self.controller_components.remove(&controller_cid);
                 continue;

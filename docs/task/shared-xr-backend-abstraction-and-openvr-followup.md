@@ -4,6 +4,19 @@ Date: 2026-06-25
 
 Status: planned implementation task.
 
+Implementation checklist:
+
+- [x] Introduce an engine-facing `VrSystem` coordinator above backend-specific XR runtime code
+- [x] Switch engine/runtime wiring to depend on `VrSystem` instead of directly on `OpenXRSystem`
+- [x] Add an `OpenVRSystem` backend slot/placeholder under the shared VR coordinator
+- [x] Change the authoring/component API surface to `VR`, `VrHand`, `InputVR`, and `InputVrGamepad`
+- [ ] Finish packaging current OpenXR behavior as one backend implementation under the shared VR boundary
+- [ ] Define which shared XR state types should live above backend-specific code versus remain backend-local
+- [ ] Decide and implement backend health/fallback policy beyond hard init/session failure
+- [ ] Implement actual OpenVR runtime/session/input/render bring-up behind the same abstraction
+- [ ] Verify OpenXR behavior still works at least as well as before the abstraction refactor
+- [ ] Update and verify example scenes against the new VR authoring surface
+
 This task captures the likely staged XR-engine direction:
 
 - introduce a shared engine-owned XR backend abstraction

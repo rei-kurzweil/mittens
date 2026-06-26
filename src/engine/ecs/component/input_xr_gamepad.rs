@@ -98,7 +98,7 @@ impl Default for InputXRGamepadComponent {
 
 impl Component for InputXRGamepadComponent {
     fn name(&self) -> &'static str {
-        "input_xr_gamepad"
+        "input_vr_gamepad"
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -149,7 +149,7 @@ impl Component for InputXRGamepadComponent {
             XrHandPreference::Either => "either",
         };
 
-        let mut ce = ce_call("InputXRGamepad", "new", vec![])
+        let mut ce = ce_call("InputVrGamepad", "new", vec![])
             .with_call("enabled", vec![b(self.enabled)])
             .with_call("hand", vec![s(hand)]);
         if !self.locomotion {

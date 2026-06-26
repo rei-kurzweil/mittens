@@ -31,7 +31,7 @@ impl Default for ControllerPoseKind {
 ///
 /// Semantics:
 /// - Attach a `TransformComponent` as a child of this component.
-/// - `OpenXRSystem` will drive that transform child from OpenXR pose tracking.
+    /// - the active VR backend will drive that transform child from controller pose tracking.
 #[derive(Debug, Clone, Default)]
 pub struct ControllerXRComponent {
     pub enabled: bool,
@@ -71,7 +71,7 @@ impl Component for ControllerXRComponent {
     }
 
     fn name(&self) -> &'static str {
-        "controller_xr"
+        "vr_hand"
     }
 
     fn set_id(&mut self, component: ComponentId) {
@@ -115,7 +115,7 @@ impl Component for ControllerXRComponent {
             ControllerPoseKind::Grip => "Grip",
         };
         ce_call(
-            "ControllerXR",
+            "VrHand",
             "new",
             vec![b(self.enabled), s(hand), s(pose)],
         )
