@@ -190,8 +190,8 @@ ED {
                     CXR { Pointer {} }
                 }
 
-                VrHand.new(true, Left,  Grip) { T { Pointer {} } }
-                VrHand.new(true, Right, Grip) { T { Pointer {} } }
+                VRHand.new(true, Left,  Grip) { T { Pointer {} } }
+                VRHand.new(true, Right, Grip) { T { Pointer {} } }
             }
 
             OV {
@@ -215,7 +215,7 @@ InputVR.on() {
             }
         }
 
-        // VrHand.new(true, Left, Aim) {
+        // VRHand.new(true, Left, Aim) {
         //     T.scale(0.06, 0.06, 0.12) {
         //         TransformForkTRS {
         //             TransformMapTranslation {}
@@ -230,7 +230,7 @@ InputVR.on() {
         //     }
         // }
 
-        // VrHand.new(true, Right, Aim) {
+        // VRHand.new(true, Right, Aim) {
         //     T.scale(0.06, 0.06, 0.12) {
         //         TransformForkTRS {
         //             TransformMapTranslation {}
@@ -245,14 +245,14 @@ InputVR.on() {
         //     }
         // }
 
-        VrHand.new(true, Left, Grip) {
+        VRHand.new(true, Left, Grip) {
             T.scale(0.05, 0.05, 0.10) {
                 T {
                     R.cube() { C.rgba(1.0, 1.0, 0.0, 1.0) EM.on() }
                 }
             }
         }
-        VrHand.new(true, Right, Grip) {
+        VRHand.new(true, Right, Grip) {
             T.scale(0.05, 0.05, 0.10) {
                 T {
                     R.cube() { C.rgba(0.2, 1.0, 0.2, 1.0) EM.on() }

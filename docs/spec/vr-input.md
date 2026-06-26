@@ -46,7 +46,7 @@ This separation ensures:
 
 ## Components and registration
 
-### `ControllerXRComponent`
+### `VRHandComponent`
 
 A lightweight marker component that declares:
 - `hand`: `Left` or `Right`
@@ -55,9 +55,9 @@ A lightweight marker component that declares:
 
 It does **not** store poses; it only identifies what pose stream the node wants.
 
-Typical authoring shape:
+Typical authored shape:
 ```
-ControllerXRComponent
+VRHand
   ↓
   TransformComponent (driven by OpenXR)
     ↓
@@ -66,7 +66,7 @@ ControllerXRComponent
 
 ### Registration and tracking
 
-When a `ControllerXRComponent` is initialized, it queues a registration command that routes to `OpenXRSystem`, which maintains a set of active controller component IDs.
+When a `VRHand` node is initialized, it queues a registration command that routes to `OpenXRSystem`, which maintains a set of active controller component IDs.
 
 This gives a clean data ownership boundary:
 - **ECS** owns components and topology
@@ -121,11 +121,11 @@ Notes:
 
 ### `OpenXRSystem::tick_with_queue`
 
-For each registered `ControllerXRComponent`:
+For each registered `VRHandComponent`:
 
 1. Lookup the component in the world; drop stale IDs
 2. **Resolve the preferred pose source** (see precedence below)
-3. Find a `TransformComponent` child of the `ControllerXRComponent`
+3. Find a `TransformComponent` child of the `VRHandComponent`
    - If no transform child exists, nothing is updated
 4. Convert the OpenXR pose into the correct transform space (see below)
 5. Queue `UpdateTransform` so downstream systems see the updated transforms
@@ -163,7 +163,7 @@ OpenXR poses from `Space::locate(reference_space, ...)` are expressed in the Ope
 
 4. **Write to TransformComponent** and queue `queue_update_transform(...)`
 
-This means the `ControllerXRComponent` acts like a pose source/driver node, and the child transform is the attachment point for visible geometry or interaction helpers.
+This means the `VRHandComponent` acts like a pose source/driver node, and the child transform is the attachment point for visible geometry or interaction helpers.
 
 ### Tick ordering
 
@@ -218,7 +218,7 @@ For per-finger/per-joint hand tracking, see `docs/spec/hand-tracking-armature.md
 **OpenXR system:**
 - `src/engine/ecs/system/openxr_system.rs` — controller/hand init, pose caching, transform application
 
-**Controller component:**
+**Hand pose component:**
 - `src/engine/ecs/component/controller_xr.rs`
 
 **Orchestration:**

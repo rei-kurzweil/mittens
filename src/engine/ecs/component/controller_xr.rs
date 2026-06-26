@@ -115,7 +115,7 @@ impl Component for ControllerXRComponent {
             ControllerPoseKind::Grip => "Grip",
         };
         ce_call(
-            "VrHand",
+            "VRHand",
             "new",
             vec![b(self.enabled), s(hand), s(pose)],
         )

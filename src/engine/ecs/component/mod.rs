@@ -217,9 +217,9 @@ pub use transition::{TransitionComponent, TransitionEasing, TransitionReplacePol
 pub use transparent_cutout::TransparentCutoutComponent;
 pub use uv::UVComponent;
 pub use vr::{VrBackendPreference, VrComponent};
-pub type VrHandComponent = ControllerXRComponent;
+pub type VRHandComponent = ControllerXRComponent;
 pub type InputVRComponent = InputXRComponent;
-pub type InputVrGamepadComponent = InputXRGamepadComponent;
+pub type InputVRGamepadComponent = InputXRGamepadComponent;
 
 /// For now, our "LightComponent" is a point light.
 pub type LightComponent = point_light::PointLightComponent;

@@ -9,7 +9,7 @@ Implementation checklist:
 - [x] Introduce an engine-facing `VrSystem` coordinator above backend-specific XR runtime code
 - [x] Switch engine/runtime wiring to depend on `VrSystem` instead of directly on `OpenXRSystem`
 - [x] Add an `OpenVRSystem` backend slot/placeholder under the shared VR coordinator
-- [x] Change the authoring/component API surface to `VR`, `VrHand`, `InputVR`, and `InputVrGamepad`
+- [x] Change the authoring/component API surface to `VR`, `VRHand`, `InputVR`, and `InputVRGamepad`
 - [x] Add a real `VrBackend` interface so `VrSystem` dispatches through one backend contract
 - [x] Finish packaging current OpenXR behavior as one backend implementation under the shared VR boundary
 - [ ] Define which additional shared XR state types should live above backend-specific code versus remain backend-local
@@ -37,6 +37,7 @@ Related context:
 
 - [docs/draft/shared-xr-backend-abstraction-openxr-openvr.md](../draft/shared-xr-backend-abstraction-openxr-openvr.md)
 - [docs/task/openxr-controller-actions-and-default-stick-locomotion.md](./openxr-controller-actions-and-default-stick-locomotion.md)
+- [docs/task/openxr-parity-gate-before-openvr.md](./openxr-parity-gate-before-openvr.md)
 - [docs/task/openxr-runtime-session-comparison-with-wayvr.md](./openxr-runtime-session-comparison-with-wayvr.md)
 - [docs/task/xr-gamepad-and-hand-input-refactor.md](./xr-gamepad-and-hand-input-refactor.md)
 - [src/engine/ecs/system/openxr_system.rs](../../src/engine/ecs/system/openxr_system.rs)
@@ -145,8 +146,8 @@ This layer should own the runtime-independent state the engine actually consumes
 This is the layer used by:
 
 - `InputVR`
-- `VrHand`
-- `InputVrGamepad`
+- `VRHand`
+- `InputVRGamepad`
 - AVC
 - MMS event/input systems
 
@@ -274,8 +275,8 @@ The engine-side rename to:
 
 - `VR`
 - `InputVR`
-- `VrHand`
-- `InputVrGamepad`
+- `VRHand`
+- `InputVRGamepad`
 
 is already in place, but many MMS/example files still use older XR authoring names such as:
 

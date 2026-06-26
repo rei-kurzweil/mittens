@@ -151,7 +151,7 @@ ED {
 // --- bisket avatar — VR pose stays owned by the runtime; thumbstick locomotion moves an outer rig ---
 T {
     InputVR.on() {
-        InputVrGamepad {
+        InputVRGamepad {
             locomotion()
             speed(1.5)
         }
@@ -191,8 +191,8 @@ T {
                         CXR { Pointer {} }
                     }
 
-                    VrHand.new(true, Left,  Grip) { T { Pointer {} } }
-                    VrHand.new(true, Right, Grip) { T { Pointer {} } }
+                    VRHand.new(true, Left,  Grip) { T { Pointer {} } }
+                    VRHand.new(true, Right, Grip) { T { Pointer {} } }
             }
 
             OV {

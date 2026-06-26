@@ -6,7 +6,7 @@
 //
 // Drivers:
 //   - InputVR.on(): HMD pose → driven_t (translation + rotation)
-//   - VrHand(Left/Right, Grip): hand pose → splices into J_Bip_{L,R}_Hand
+//   - VRHand(Left/Right, Grip): hand pose → splices into J_Bip_{L,R}_Hand
 //                              (TwoBoneIK on upper/lower arm when chain resolves)
 //   - CXR (CameraXR): direct child of AVC, re-parented under J_Bip_C_Head.
 //     XR runtime overrides pose; no manual flip needed.
@@ -22,8 +22,8 @@
 //                       │             └── GLTF { EM } → ... → J_Bip_C_Head
 //                       │                                          └── CXR  ← re-parented here
 //                       ├── splice_head → J_Bip_C_Head (AimConstraint, offset π)
-//                       ├── VrHand(Left,  Grip) ─→ TwoBoneIK on left arm chain
-//                       └── VrHand(Right, Grip) ─→ TwoBoneIK on right arm chain
+//                       ├── VRHand(Left,  Grip) ─→ TwoBoneIK on left arm chain
+//                       └── VRHand(Right, Grip) ─→ TwoBoneIK on right arm chain
 //
 // To run:
 //   cargo run --release --example bisket-vr-demo
@@ -240,8 +240,8 @@ ED {
                 
                 // Tracked Grip controllers — re-parented to lower-arm bones
                 // by AVC, drive J_Bip_{L,R}_Hand via TwoBoneIK.
-                VrHand.new(true, Left,  Grip) { T { Pointer {} } }
-                VrHand.new(true, Right, Grip) { T { Pointer {} } }
+                VRHand.new(true, Left,  Grip) { T { Pointer {} } }
+                VRHand.new(true, Right, Grip) { T { Pointer {} } }
             }
             
             // debug camera marker
@@ -269,7 +269,7 @@ InputVR.on() {
         //     }
         // }
 
-        VrHand.new(true, Left, Aim) {
+        VRHand.new(true, Left, Aim) {
             T.scale(0.06, 0.06, 0.12) {
                 TransformForkTRS {
                     TransformMapTranslation {}
@@ -284,7 +284,7 @@ InputVR.on() {
             }
         }
 
-        VrHand.new(true, Right, Aim) {
+        VRHand.new(true, Right, Aim) {
             T.scale(0.06, 0.06, 0.12) {
                 TransformForkTRS {
                     TransformMapTranslation {}
@@ -300,14 +300,14 @@ InputVR.on() {
         }
 
         // Grip pose markers (yellow = left, green = right) — compare with Aim above.
-        VrHand.new(true, Left, Grip) {
+        VRHand.new(true, Left, Grip) {
             T.scale(0.05, 0.05, 0.10) {
                 T {
                     R.cube() { C.rgba(1.0, 1.0, 0.0, 1.0) EM.on() }
                 }
             }
         }
-        VrHand.new(true, Right, Grip) {
+        VRHand.new(true, Right, Grip) {
             T.scale(0.05, 0.05, 0.10) {
                 T {
                     R.cube() { C.rgba(0.2, 1.0, 0.2, 1.0) EM.on() }

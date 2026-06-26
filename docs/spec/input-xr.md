@@ -1,7 +1,7 @@
-# InputXR
+# InputVR
 
-This document proposes an `InputXRComponent` that acts as the **headset pose driver** for an XR
-rig subtree.
+This document describes the public `InputVR` authored surface, backed internally by
+`InputXRComponent`, which acts as the **headset pose driver** for a VR rig subtree.
 
 The goal is to make headset motion available in the ECS the same way desktop camera motion is
 available through:
@@ -14,12 +14,12 @@ Input {
 }
 ```
 
-For XR, we want the analogous authoring shape:
+For VR, we want the analogous authoring shape:
 
 ```text
-OpenXR {}
+VR {}
 
-InputXR {
+InputVR {
     Transform {
         CameraXR {}
         GLTF { "vtuber-model.gltf" }
@@ -27,7 +27,8 @@ InputXR {
 }
 ```
 
-This is a **docs-only** proposal. No runtime changes are made here.
+Authored MMS should use `InputVR`, even though the internal implementation type is still
+`InputXRComponent`.
 
 ## Problem
 
@@ -69,19 +70,19 @@ It should **not** be thought of as:
 This distinction matters because it explains why a subtree attached “to the XR rig” may still fail
 to move the way an author expects.
 
-### ControllerXR vs headset tracking
+### VRHand vs headset tracking
 
 We already have a useful precedent for controllers:
 
 ```text
-ControllerXR {
+VRHand {
     Transform {
         ... children to be driven by controller pose ...
     }
 }
 ```
 
-`ControllerXRComponent` works because `OpenXRSystem` explicitly finds a **direct
+`VRHandComponent` works because `OpenXRSystem` explicitly finds a **direct
 `TransformComponent` child** and writes the resolved controller pose into it.
 
 There is no equivalent headset-driven component yet.
@@ -90,22 +91,23 @@ There is no equivalent headset-driven component yet.
 
 Introduce:
 
-- `InputXRComponent`
+- public authored surface: `InputVR`
+- internal engine component: `InputXRComponent`
 
 Semantics:
 
-- `InputXRComponent` registers with `OpenXRSystem`
+- `InputVR` registers with `OpenXRSystem`
 - each tick/frame, `OpenXRSystem` resolves the current headset/root XR rig pose
-- it finds a direct `TransformComponent` child of `InputXRComponent`
+- it finds a direct `TransformComponent` child of `InputVR`
 - it writes the headset/root pose into that transform
 - everything under that transform inherits the motion through normal transform propagation
 
 Authoring pattern:
 
 ```text
-OpenXR {}
+VR {}
 
-InputXR {
+InputVR {
     Transform {
         CameraXR {}
         AvatarRoot {
@@ -118,7 +120,7 @@ InputXR {
 Or more compactly:
 
 ```text
-InputXR {
+InputVR {
     Transform {
         CameraXR {}
         GLTF { "vtuber-model.gltf" }
@@ -128,7 +130,7 @@ InputXR {
 
 This makes the headset-driven XR rig explicit and inspectable in ECS.
 
-## Why `InputXR` instead of overloading `CameraXR`
+## Why `InputVR` instead of overloading `CameraXR`
 
 `CameraXRComponent` already has a clear job:
 
@@ -146,7 +148,7 @@ for other patterns.
 `InputXRComponent` keeps the responsibilities parallel with desktop input:
 
 - `InputComponent` = source/driver of movement intent for desktop
-- `InputXRComponent` = source/driver of headset pose for XR
+- `InputVR` / `InputXRComponent` = source/driver of headset pose for VR
 - `Camera3DComponent` / `CameraXRComponent` = camera/render selection components that live under
   the driven transform
 
@@ -154,7 +156,7 @@ for other patterns.
 
 ### Minimal shape
 
-`InputXRComponent` should follow the same pattern as `ControllerXRComponent`:
+`InputVR` should follow the same pattern as `VRHand`:
 
 - marker/config component
 - owns no transform directly
@@ -163,7 +165,7 @@ for other patterns.
 Expected shape:
 
 ```text
-InputXR
+InputVR
   Transform
     CameraXR
     ... anything that should follow the headset rig ...
@@ -176,14 +178,14 @@ The pose source should be the XR headset/root rig transform, not per-eye transfo
 That means:
 
 - `CameraXR` still renders stereo left/right views
-- `InputXR` drives the shared parent rig transform that both eyes conceptually move with
+- `InputVR` drives the shared parent rig transform that both eyes conceptually move with
 
 This avoids exposing “two cameras” as two independent ECS transforms for authoring. The authoring
 model should remain one headset rig transform.
 
 ### Space
 
-`InputXR` should drive its child transform in the same reference space used for XR camera rig
+`InputVR` should drive its child transform in the same reference space used for XR camera rig
 composition today.
 
 That keeps headset motion and controller motion in the same rig space and avoids a mismatch where:
@@ -195,7 +197,7 @@ That keeps headset motion and controller motion in the same rig space and avoids
 
 On init:
 
-- `InputXRComponent` should register with the XR system
+- `InputVR` should register with the XR system
 
 On cleanup:
 
@@ -214,14 +216,14 @@ controller-driven wrists/hands to be inserted into the armature.
 That looks like:
 
 ```text
-OpenXR {}
+VR {}
 
-InputXR {
+InputVR {
     Transform {
         CameraXR {}
         AvatarRoot {
             GLTF { "vtuber-model.gltf" }
-            ... later splice ControllerXR-driven wrist branches into the spawned armature ...
+            ... later splice VRHand-driven wrist branches into the spawned armature ...
         }
     }
 }
@@ -240,23 +242,23 @@ This proposal does **not** mean:
 
 - `CameraXR` should disappear
 - per-eye views should become ECS child cameras with separate transform drivers
-- `InputXR` should replace `ControllerXR`
-- headset motion filtering must be built into `InputXR`
+- `InputVR` should replace `VRHand`
+- headset motion filtering must be built into `InputVR`
 
 Instead:
 
-- `InputXR` is for headset/root pose driving
-- `ControllerXR` is for controller/hand-root pose driving
+- `InputVR` is for headset/root pose driving
+- `VRHand` is for controller/hand-root pose driving
 - transform pipelines stay a separate concern that can be inserted below either one
 
 ## Interaction with transform pipelines
 
-`InputXR` should be pipeline-friendly in the same way `ControllerXR` is intended to be.
+`InputVR` should be pipeline-friendly in the same way `VRHand` is intended to be.
 
 That means the useful authored topology is:
 
 ```text
-InputXR {
+InputVR {
     Transform {
         TransformForkTRS {
             ... optional smoothing / remapping / offsets ...
@@ -269,7 +271,7 @@ InputXR {
 
 or a simpler direct form with no pipeline.
 
-The key point is that `InputXR` should drive a real transform node, not bypass the ECS transform
+The key point is that `InputVR` should drive a real transform node, not bypass the ECS transform
 graph with camera-only special handling.
 
 ## Suggested API/component sketch
@@ -294,9 +296,9 @@ But the first version should stay minimal.
 
 When we implement this, likely changes would include:
 
-1. Add `InputXRComponent`
-2. Add register/remove intent types similar to `ControllerXR`
-3. Track registered `InputXRComponent` IDs in `OpenXRSystem`
+1. Keep `InputXRComponent` as the engine-facing implementation type
+2. Add register/remove intent types similar to `VRHand`
+3. Track registered `InputVR` IDs in `OpenXRSystem`
 4. Resolve headset/root pose each frame/tick
 5. Drive the direct `TransformComponent` child
 6. Keep `CameraXRComponent` focused on active XR rig/camera selection
@@ -306,7 +308,7 @@ When we implement this, likely changes would include:
 One subtle design question is whether the active XR rig should be:
 
 - the `CameraXRComponent` node itself, or
-- the driven `TransformComponent` child under `InputXR`
+- the driven `TransformComponent` child under `InputVR`
 
 Recommendation:
 
@@ -320,10 +322,10 @@ That matches the desktop pattern more closely and keeps authored topology intuit
 
 `CameraXRComponent` is currently doing camera-selection work, not general headset transform driving.
 
-We should add `InputXRComponent` so authors can write:
+We should keep `InputXRComponent` internally so authors can write:
 
 ```text
-InputXR {
+InputVR {
     Transform {
         CameraXR {}
         GLTF { "vtuber-model.gltf" }

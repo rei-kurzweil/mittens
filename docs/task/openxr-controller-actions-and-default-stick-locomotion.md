@@ -5,9 +5,9 @@ Date: 2026-06-25
 This task narrows the current XR input work to the main blocked goal:
 
 - make OpenXR controller actions actually become active on Vive Focus 3 controllers
-- get thumbsticks/buttons/triggers flowing through `InputXRGamepad`
+- get thumbsticks/buttons/triggers flowing through `InputVRGamepad`
 - expose that state reliably to MMS events
-- make AVC + `InputXR` + `CTLXR` use one or both sticks for locomotion by default unless authored otherwise
+- make AVC + `InputVR` + `VRHand` use one or both sticks for locomotion by default unless authored otherwise
 
 This task is intentionally about the **controller action path**, not the hand-tracking pose-quality
 problem.
@@ -49,7 +49,7 @@ So before changing authored defaults, the controller action/profile path itself 
 
 The current debugging work has already established:
 
-- hand-root fallback can drive `CTLXR` independently of controller actions
+- hand-root fallback can drive `VRHand` independently of controller actions
 - hand tracking and pinch inference can be debugged separately
 - those hand-tracking results do **not** explain the dead thumbsticks/buttons
 
@@ -81,7 +81,7 @@ It should not cover:
 - full hand-finger/avatar retargeting
 - wrist-vs-palm hand-root quality investigation
 - general hand-tracking smoothing
-- replacing `CTLXR` naming in this task
+- replacing internal engine type names in this task
 
 ---
 
@@ -102,20 +102,20 @@ When Focus 3 controllers are active in a focused XR session:
 For the common authored XR rig shape:
 
 ```text
-InputXR
+InputVR
   Transform
     AVC
       ...
-    CTLXR(left)
-    CTLXR(right)
-    InputXRGamepad
+    VRHand(left)
+    VRHand(right)
+    InputVRGamepad
 ```
 
 desired default behavior is:
 
-- HMD continues to provide head pose / root pose information through `InputXR`
-- `CTLXR` continues to provide left/right pose drivers for authored XR hand/controller transforms
-- `InputXRGamepad` provides button/stick/controller state
+- HMD continues to provide head pose / root pose information through `InputVR`
+- `VRHand` continues to provide left/right pose drivers for authored XR hand/controller transforms
+- `InputVRGamepad` provides button/stick/controller state
 - AVC uses one or both controller sticks for locomotion by default unless explicitly configured not to
 
 This should be treated as a higher-level follow-up after controller actions are proven alive.
@@ -135,8 +135,8 @@ This should be treated as a higher-level follow-up after controller actions are 
 ### Event / engine questions
 
 6. Once actions are alive, do thumbstick changes reach MMS handlers correctly?
-7. Is the current `InputXRGamepad` state shape enough for default locomotion, or does AVC need a cleaner consumption path?
-8. Should AVC read stick locomotion directly from `OpenXRSystem`, from `InputXRGamepad`, or from a more generic engine-level input abstraction?
+7. Is the current `InputVRGamepad` state shape enough for default locomotion, or does AVC need a cleaner consumption path?
+8. Should AVC read stick locomotion directly from `OpenXRSystem`, from `InputVRGamepad`, or from a more generic engine-level input abstraction?
 
 ---
 
@@ -205,8 +205,8 @@ If controller actions start working, the likely short-term engine direction is:
 
 ### A. Keep authored split
 
-- `CTLXR`: pose
-- `InputXRGamepad`: sticks/buttons/triggers
+- `VRHand`: pose
+- `InputVRGamepad`: sticks/buttons/triggers
 
 ### B. Add default XR locomotion policy
 
@@ -233,11 +233,11 @@ This task is complete when all of the following are true:
 
 - on Focus 3, an active controller interaction profile is observed when controllers are in use
 - thumbstick actions become live and non-zero in engine logs
-- `InputXRGamepad` emits usable thumbstick/button events into MMS
+- `InputVRGamepad` emits usable thumbstick/button events into MMS
 - a minimal MMS example can react to Focus 3 thumbstick input
 - AVC has a clear default path for XR stick locomotion, or there is a tightly scoped follow-up task to add it immediately next
 
-This task is **not** complete merely because hand tracking works or because `CTLXR` moves.
+This task is **not** complete merely because hand tracking works or because `VRHand` moves.
 
 If the current OpenXR controller-action bring-up remains blocked, the broader backend direction is
 captured in:

@@ -21,7 +21,7 @@ use crate::engine::ecs::component::{
     EmissivePassComponent, FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection,
     FlexWrap, GLTFComponent, GestureCoordTypeComponent, GravityComponent, GridComponent,
     HtmlElementComponent, IKChainComponent, IKSolver, InputComponent, InputTransformModeComponent,
-    InputVRComponent, InputVrGamepadComponent, InspectLayoutComponent, JustifyContent,
+    InputVRComponent, InputVRGamepadComponent, InspectLayoutComponent, JustifyContent,
     KeyframeComponent, KineticResponseComponent, LayoutBoundsComponent, LayoutComponent,
     LightQuantizationComponent, MeshComponent, MirrorComponent, MusicContextComponent, MusicNote,
     MusicNoteComponent, NormalVisualisationComponent, OpacityComponent,
@@ -40,7 +40,7 @@ use crate::engine::ecs::component::{
     TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
     TransformParentComponent, TransformSampleAncestorComponent, TransitionComponent,
     TransitionEasing, TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
-    Vector3TemporalFilterComponent, VrComponent, VrHandComponent, WordWrapMode, XrHandPreference,
+    Vector3TemporalFilterComponent, VRHandComponent, VrComponent, WordWrapMode, XrHandPreference,
 };
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::CameraTarget;
@@ -1142,8 +1142,8 @@ fn create_component(
             Some("off") => add!(InputVRComponent::off()),
             _ => add!(InputVRComponent::on()),
         },
-        "InputVrGamepad" => {
-            let id = world.add_component(InputVrGamepadComponent::new());
+        "InputVRGamepad" | "InputVrGamepad" => {
+            let id = world.add_component(InputVRGamepadComponent::new());
             if let Some(method) = ctor {
                 if method != "new" {
                     apply_call(world, id, method, args)?;
@@ -1192,7 +1192,7 @@ fn create_component(
             Some("openvr") => add!(VrComponent::openvr()),
             _ => add!(VrComponent::on()),
         },
-        "VrHand" => match ctor {
+        "VRHand" | "VrHand" => match ctor {
             Some("new") => {
                 let _enabled = arg_bool(args, 0)?;
                 let hand = match arg_str(args, 1)? {
@@ -1205,9 +1205,9 @@ fn create_component(
                     "Grip" => ControllerPoseKind::Grip,
                     s => return Err(format!("unknown ControllerPoseKind: {s}")),
                 };
-                add!(VrHandComponent::new(true, hand, pose))
+                add!(VRHandComponent::new(true, hand, pose))
             }
-            _ => Err("VrHand requires .new(enabled, hand, pose)".into()),
+            _ => Err("VRHand requires .new(enabled, hand, pose)".into()),
         },
         "TransformParent" => match ctor {
             Some("target") => add!(
@@ -2451,7 +2451,7 @@ fn apply_call(
         }
         return Ok(());
     }
-    if let Some(inp) = world.get_component_by_id_as_mut::<InputVrGamepadComponent>(id) {
+    if let Some(inp) = world.get_component_by_id_as_mut::<InputVRGamepadComponent>(id) {
         match method {
             "enabled" => inp.enabled = arg_bool(args, 0)?,
             "hand" => {

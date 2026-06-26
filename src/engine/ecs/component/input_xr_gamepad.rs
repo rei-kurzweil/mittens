@@ -149,7 +149,7 @@ impl Component for InputXRGamepadComponent {
             XrHandPreference::Either => "either",
         };
 
-        let mut ce = ce_call("InputVrGamepad", "new", vec![])
+        let mut ce = ce_call("InputVRGamepad", "new", vec![])
             .with_call("enabled", vec![b(self.enabled)])
             .with_call("hand", vec![s(hand)]);
         if !self.locomotion {

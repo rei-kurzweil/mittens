@@ -1,6 +1,6 @@
 use crate::engine::ecs::component::CameraXRComponent;
 use crate::engine::ecs::component::{
-    ControllerHand, ControllerPoseKind, InputVRComponent, VrComponent, VrHandComponent,
+    ControllerHand, ControllerPoseKind, InputVRComponent, VRHandComponent, VrComponent,
 };
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
@@ -1121,7 +1121,7 @@ impl OpenXRSystem {
 
         let controller_ids: Vec<ComponentId> = self.controller_components.iter().copied().collect();
         for controller_cid in controller_ids {
-            let Some(cfg) = world.get_component_by_id_as::<VrHandComponent>(controller_cid)
+            let Some(cfg) = world.get_component_by_id_as::<VRHandComponent>(controller_cid)
             else {
                 self.controller_components.remove(&controller_cid);
                 continue;

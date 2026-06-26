@@ -56,9 +56,9 @@ Priority is roughly "what's likely to be live-edited and need round-trip":
 - [x] `Camera3DComponent` — `Camera3D.target(...).fov(...).near(...).far(...)`
 - [x] `Camera2DComponent` — `Camera2D.target(...)` (registry entry added)
 - [x] `CameraXRComponent` — `CameraXR.on/off()` + optional `.target("window")`
-- [x] `OpenXRComponent` — `OpenXR.on/off()`
-- [x] `ControllerXRComponent` — `ControllerXR.new(enabled, hand, pose)`
-- [x] `InputXRComponent` — `InputXR.on/off()`
+- [x] `VrComponent` — `VR.on/off()/openxr()/openvr()`
+- [x] `VRHandComponent` — `VRHand.new(enabled, hand, pose)`
+- [x] `InputVRComponent` — `InputVR.on/off()`
 - [x] `AnimationComponent` — `Animation.playing/looping/paused()`
 - [x] `KeyframeComponent` — `Keyframe.at(beat)`
 - [x] `InputComponent` — `Input.speed(x)`

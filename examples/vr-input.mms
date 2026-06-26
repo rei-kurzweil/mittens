@@ -83,7 +83,7 @@ BG {
 // --- VTuber avatar — single-input topology ---
 //
 // InputVR drives body translation and head rotation via AvatarControlSystem.
-// VrHand and CameraXR children are discovered by topology.
+// VRHand and CameraXR children are discovered by topology.
 // camera_bone triggers two things at AVC init:
 //   1. model_root.y is auto-calibrated to -J_Bip_C_Head_local_y (no hardcoded constant).
 //   2. CXR is re-parented under J_Bip_C_Head for first-person XR alignment.
@@ -102,9 +102,9 @@ BG {
 //                       │             └── GLTF { EM }
 //                       │                   └── ... → J_Bip_C_Head
 //                       │                                 └── CXR  ← re-parented here
-//                       ├── VrHand(Left, Grip)  ← discovered; re-parented to lower_arm
+//                       ├── VRHand(Left, Grip)  ← discovered; re-parented to lower_arm
 //                       │     └── T
-//                       └── VrHand(Right, Grip)
+//                       └── VRHand(Right, Grip)
 //                             └── T
 ED {
     InputVR.on() {
@@ -123,8 +123,8 @@ ED {
                 }
 
                 CXR { Pointer {} }
-                VrHand.new(true, Left, Grip) { T { Pointer {} } }
-                VrHand.new(true, Right, Grip) { T { Pointer {} } }
+                VRHand.new(true, Left, Grip) { T { Pointer {} } }
+                VRHand.new(true, Right, Grip) { T { Pointer {} } }
             }
         }
     }
@@ -140,7 +140,7 @@ InputVR.on() {
         }
 
         // Controller debug cubes (Aim pose, rotation-smoothed)
-        VrHand.new(true, Left, Aim) {
+        VRHand.new(true, Left, Aim) {
             T.scale(0.06, 0.06, 0.12) {
                 TransformForkTRS {
                     TransformMapTranslation {}
@@ -157,7 +157,7 @@ InputVR.on() {
             }
         }
 
-        VrHand.new(true, Right, Aim) {
+        VRHand.new(true, Right, Aim) {
             T.scale(0.06, 0.06, 0.12) {
                 TransformForkTRS {
                     TransformMapTranslation {}
