@@ -66,6 +66,8 @@ pub mod transform_stream_system;
 pub mod transform_system;
 pub mod transition_system;
 pub mod vr_system;
+pub mod vr_backend;
+pub mod vr_types;
 
 pub use animation_system::AnimationSystem;
 pub use armature_visualization_system::ArmatureVisualizationSystem;
@@ -119,7 +121,9 @@ pub use texture_system::TextureSystem;
 pub use transform_stream_system::TransformStreamSystem;
 pub use transform_system::TransformSystem;
 pub use transition_system::TransitionSystem;
-pub use vr_system::{VrBackendKind, VrSystem, XrGamepadState, XrHandGamepadState, XrInputState};
+pub use vr_backend::VrBackendKind;
+pub use vr_system::VrSystem;
+pub use vr_types::{XrGamepadState, XrHandGamepadState, XrInputState};
 
 use super::World;
 use crate::engine::graphics::VisualWorld;

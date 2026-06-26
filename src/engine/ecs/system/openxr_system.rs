@@ -4,6 +4,8 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
+use crate::engine::ecs::system::vr_backend::{VrBackend, VrBackendKind};
+use crate::engine::ecs::system::vr_types::{XrGamepadState, XrHandGamepadState, XrInputState};
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::engine::graphics::CameraData;
 use crate::engine::graphics::VisualWorld;
@@ -19,39 +21,6 @@ use ash::vk::Handle as _;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::OnceLock;
 use std::time::Instant;
-
-/// Per-frame trigger activation state for XR controllers.
-///
-/// Mirrors the edge-triggered / level-triggered structure of `InputState` for mouse buttons,
-/// but for the XR select action. Index 0 = left hand, 1 = right hand.
-///
-/// Reset to default each frame when XR is not running.
-#[derive(Default, Debug, Clone, Copy)]
-pub struct XrInputState {
-    pub trigger_pressed: [bool; 2],
-    pub trigger_down: [bool; 2],
-    pub trigger_released: [bool; 2],
-}
-
-#[derive(Default, Debug, Clone, Copy)]
-pub struct XrHandGamepadState {
-    pub thumbstick: Option<[f32; 2]>,
-    pub trigger_value: Option<f32>,
-    pub trigger_pressed: Option<(bool, f32)>,
-    pub grip_value: Option<f32>,
-    pub grip_pressed: Option<(bool, f32)>,
-    pub button_a: Option<(bool, f32)>,
-    pub button_b: Option<(bool, f32)>,
-    pub button_x: Option<(bool, f32)>,
-    pub button_y: Option<(bool, f32)>,
-}
-
-#[derive(Default, Debug, Clone, Copy)]
-pub struct XrGamepadState {
-    pub active: bool,
-    pub hands: [XrHandGamepadState; 2],
-    pub head_pose_rotation: Option<[f32; 4]>,
-}
 
 fn log_xr_gamepad_changes(prev: XrGamepadState, next: XrGamepadState) {
     if prev.active != next.active {
@@ -941,7 +910,7 @@ impl OpenXRSystem {
         }
     }
 
-    pub fn register_openxr(
+    pub fn register_vr(
         &mut self,
         world: &mut World,
         _visuals: &mut VisualWorld,
@@ -2063,6 +2032,119 @@ impl System for OpenXRSystem {
         _dt_sec: f32,
     ) {
         self.pump_events();
+    }
+}
+
+impl VrBackend for OpenXRSystem {
+    fn kind(&self) -> VrBackendKind {
+        VrBackendKind::OpenXR
+    }
+
+    fn initialize_runtime(&mut self) -> Result<(), String> {
+        OpenXRSystem::initialize_runtime(self)
+    }
+
+    fn last_init_error(&self) -> Option<&str> {
+        OpenXRSystem::last_init_error(self)
+    }
+
+    fn xr_input_state(&self) -> &XrInputState {
+        OpenXRSystem::xr_input_state(self)
+    }
+
+    fn xr_gamepad_state(&self) -> &XrGamepadState {
+        OpenXRSystem::xr_gamepad_state(self)
+    }
+
+    fn set_preferred_swapchain_format(&mut self, format: u32) {
+        OpenXRSystem::set_preferred_swapchain_format(self, format)
+    }
+
+    fn required_vulkan_extensions(&self) -> Option<(Vec<String>, Vec<String>)> {
+        OpenXRSystem::required_vulkan_extensions(self)
+    }
+
+    fn set_vulkan_graphics(&mut self, gfx: XrVulkanGraphics) {
+        OpenXRSystem::set_vulkan_graphics(self, gfx)
+    }
+
+    fn register_vr(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        OpenXRSystem::register_vr(self, world, visuals, component)
+    }
+
+    fn register_controller_xr(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        OpenXRSystem::register_controller_xr(self, world, visuals, component)
+    }
+
+    fn register_input_xr(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        OpenXRSystem::register_input_xr(self, world, visuals, component)
+    }
+
+    fn remove_controller_xr(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        OpenXRSystem::remove_controller_xr(self, world, visuals, component)
+    }
+
+    fn remove_input_xr(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        OpenXRSystem::remove_input_xr(self, world, visuals, component)
+    }
+
+    fn tick_with_queue(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        input: &InputState,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        dt_sec: f32,
+    ) {
+        OpenXRSystem::tick_with_queue(self, world, visuals, input, emit, dt_sec)
+    }
+
+    fn last_render_dt_sec(&self) -> Option<f32> {
+        OpenXRSystem::last_render_dt_sec(self)
+    }
+
+    fn render_xr(
+        &mut self,
+        world: &World,
+        visuals: &mut VisualWorld,
+        renderer: &mut VulkanoRenderer,
+    ) {
+        OpenXRSystem::render_xr(self, world, visuals, renderer)
+    }
+
+    fn tick(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        input: &InputState,
+        dt_sec: f32,
+    ) {
+        System::tick(self, world, visuals, input, dt_sec)
     }
 }
 

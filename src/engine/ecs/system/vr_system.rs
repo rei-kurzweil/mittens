@@ -1,31 +1,17 @@
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::World;
 use crate::engine::ecs::component::{VrBackendPreference, VrComponent};
+use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::openvr_system::OpenVRSystem;
 use crate::engine::ecs::system::openxr_system::OpenXRSystem;
-use crate::engine::ecs::system::System;
-use crate::engine::ecs::World;
+use crate::engine::ecs::system::vr_backend::{VrBackend, VrBackendKind};
+use crate::engine::ecs::system::vr_types::{XrGamepadState, XrInputState};
 use crate::engine::graphics::{VisualWorld, VulkanoRenderer, XrVulkanGraphics};
 use crate::engine::user_input::InputState;
 
-pub use crate::engine::ecs::system::openxr_system::{
-    XrGamepadState, XrHandGamepadState, XrInputState,
-};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VrBackendKind {
-    OpenXR,
-    OpenVR,
-}
-
-#[derive(Debug)]
-enum VrBackend {
-    OpenXR(OpenXRSystem),
-    OpenVR(OpenVRSystem),
-}
-
 #[derive(Debug)]
 pub struct VrSystem {
-    backend: VrBackend,
+    backend: Box<dyn VrBackend>,
     preferred_backend: VrBackendKind,
     last_backend_error: Option<String>,
 }
@@ -33,7 +19,7 @@ pub struct VrSystem {
 impl Default for VrSystem {
     fn default() -> Self {
         Self {
-            backend: VrBackend::OpenXR(OpenXRSystem::default()),
+            backend: Box::new(OpenXRSystem::default()),
             preferred_backend: Self::preferred_backend_from_env(),
             last_backend_error: None,
         }
@@ -54,11 +40,15 @@ impl VrSystem {
         }
     }
 
-    pub fn active_backend_kind(&self) -> VrBackendKind {
-        match self.backend {
-            VrBackend::OpenXR(_) => VrBackendKind::OpenXR,
-            VrBackend::OpenVR(_) => VrBackendKind::OpenVR,
+    fn make_backend(kind: VrBackendKind) -> Box<dyn VrBackend> {
+        match kind {
+            VrBackendKind::OpenXR => Box::new(OpenXRSystem::default()),
+            VrBackendKind::OpenVR => Box::new(OpenVRSystem::default()),
         }
+    }
+
+    pub fn active_backend_kind(&self) -> VrBackendKind {
+        self.backend.kind()
     }
 
     pub fn preferred_backend_kind(&self) -> VrBackendKind {
@@ -70,38 +60,23 @@ impl VrSystem {
     }
 
     pub fn xr_input_state(&self) -> &XrInputState {
-        match &self.backend {
-            VrBackend::OpenXR(system) => system.xr_input_state(),
-            VrBackend::OpenVR(system) => system.xr_input_state(),
-        }
+        self.backend.xr_input_state()
     }
 
     pub fn xr_gamepad_state(&self) -> &XrGamepadState {
-        match &self.backend {
-            VrBackend::OpenXR(system) => system.xr_gamepad_state(),
-            VrBackend::OpenVR(system) => system.xr_gamepad_state(),
-        }
+        self.backend.xr_gamepad_state()
     }
 
     pub fn set_preferred_swapchain_format(&mut self, format: u32) {
-        match &mut self.backend {
-            VrBackend::OpenXR(system) => system.set_preferred_swapchain_format(format),
-            VrBackend::OpenVR(system) => system.set_preferred_swapchain_format(format),
-        }
+        self.backend.set_preferred_swapchain_format(format);
     }
 
     pub fn required_vulkan_extensions(&self) -> Option<(Vec<String>, Vec<String>)> {
-        match &self.backend {
-            VrBackend::OpenXR(system) => system.required_vulkan_extensions(),
-            VrBackend::OpenVR(system) => system.required_vulkan_extensions(),
-        }
+        self.backend.required_vulkan_extensions()
     }
 
     pub fn set_vulkan_graphics(&mut self, gfx: XrVulkanGraphics) {
-        match &mut self.backend {
-            VrBackend::OpenXR(system) => system.set_vulkan_graphics(gfx),
-            VrBackend::OpenVR(system) => system.set_vulkan_graphics(gfx),
-        }
+        self.backend.set_vulkan_graphics(gfx);
     }
 
     pub fn register_vr(
@@ -127,10 +102,7 @@ impl VrSystem {
             self.ensure_preferred_backend_initialized();
         }
 
-        match &mut self.backend {
-            VrBackend::OpenXR(system) => system.register_openxr(world, visuals, component),
-            VrBackend::OpenVR(system) => system.register_openxr(world, visuals, component),
-        }
+        self.backend.register_vr(world, visuals, component);
     }
 
     pub fn register_controller_xr(
@@ -139,10 +111,7 @@ impl VrSystem {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        match &mut self.backend {
-            VrBackend::OpenXR(system) => system.register_controller_xr(world, visuals, component),
-            VrBackend::OpenVR(system) => system.register_controller_xr(world, visuals, component),
-        }
+        self.backend.register_controller_xr(world, visuals, component);
     }
 
     pub fn register_input_xr(
@@ -151,10 +120,7 @@ impl VrSystem {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        match &mut self.backend {
-            VrBackend::OpenXR(system) => system.register_input_xr(world, visuals, component),
-            VrBackend::OpenVR(system) => system.register_input_xr(world, visuals, component),
-        }
+        self.backend.register_input_xr(world, visuals, component);
     }
 
     pub fn remove_controller_xr(
@@ -163,10 +129,7 @@ impl VrSystem {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        match &mut self.backend {
-            VrBackend::OpenXR(system) => system.remove_controller_xr(world, visuals, component),
-            VrBackend::OpenVR(system) => system.remove_controller_xr(world, visuals, component),
-        }
+        self.backend.remove_controller_xr(world, visuals, component);
     }
 
     pub fn remove_input_xr(
@@ -175,10 +138,7 @@ impl VrSystem {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        match &mut self.backend {
-            VrBackend::OpenXR(system) => system.remove_input_xr(world, visuals, component),
-            VrBackend::OpenVR(system) => system.remove_input_xr(world, visuals, component),
-        }
+        self.backend.remove_input_xr(world, visuals, component);
     }
 
     pub fn tick_with_queue(
@@ -189,19 +149,12 @@ impl VrSystem {
         emit: &mut dyn crate::engine::ecs::SignalEmitter,
         dt_sec: f32,
     ) {
-        match &mut self.backend {
-            VrBackend::OpenXR(system) => {
-                system.tick_with_queue(world, visuals, input, emit, dt_sec)
-            }
-            VrBackend::OpenVR(system) => system.tick_with_queue(world, visuals, input, emit, dt_sec),
-        }
+        self.backend
+            .tick_with_queue(world, visuals, input, emit, dt_sec);
     }
 
     pub fn last_render_dt_sec(&self) -> Option<f32> {
-        match &self.backend {
-            VrBackend::OpenXR(system) => system.last_render_dt_sec(),
-            VrBackend::OpenVR(system) => system.last_render_dt_sec(),
-        }
+        self.backend.last_render_dt_sec()
     }
 
     pub fn render_xr(
@@ -210,21 +163,20 @@ impl VrSystem {
         visuals: &mut VisualWorld,
         renderer: &mut VulkanoRenderer,
     ) {
-        match &mut self.backend {
-            VrBackend::OpenXR(system) => system.render_xr(world, visuals, renderer),
-            VrBackend::OpenVR(system) => system.render_xr(world, visuals, renderer),
+        self.backend.render_xr(world, visuals, renderer);
+    }
+
+    fn switch_backend(&mut self, kind: VrBackendKind) {
+        if self.backend.kind() != kind {
+            self.backend = Self::make_backend(kind);
         }
     }
 
     fn ensure_preferred_backend_initialized(&mut self) {
         match self.preferred_backend {
             VrBackendKind::OpenXR => {
-                self.ensure_openxr_backend();
-                let init = match &mut self.backend {
-                    VrBackend::OpenXR(system) => system.initialize_runtime(),
-                    VrBackend::OpenVR(_) => unreachable!(),
-                };
-                match init {
+                self.switch_backend(VrBackendKind::OpenXR);
+                match self.backend.initialize_runtime() {
                     Ok(()) => {
                         self.last_backend_error = None;
                     }
@@ -233,43 +185,23 @@ impl VrSystem {
                             "[VR] OpenXR initialization failed; falling back to OpenVR placeholder: {openxr_err}"
                         );
                         self.last_backend_error = Some(openxr_err);
-                        self.ensure_openvr_backend();
-                        let openvr_err = match &mut self.backend {
-                            VrBackend::OpenVR(system) => system.initialize_runtime(),
-                            VrBackend::OpenXR(_) => unreachable!(),
-                        }
-                        .err();
+                        self.switch_backend(VrBackendKind::OpenVR);
+                        let openvr_err = self.backend.initialize_runtime().err();
                         if let Some(openvr_err) = openvr_err {
-                            self.last_backend_error = Some(format!(
-                                "OpenXR failed, then OpenVR failed: {}",
-                                openvr_err
-                            ));
+                            self.last_backend_error =
+                                Some(format!("OpenXR failed, then OpenVR failed: {}", openvr_err));
                         }
                     }
                 }
             }
             VrBackendKind::OpenVR => {
-                self.ensure_openvr_backend();
-                if let VrBackend::OpenVR(system) = &mut self.backend {
-                    if let Err(err) = system.initialize_runtime() {
-                        self.last_backend_error = Some(err);
-                    } else {
-                        self.last_backend_error = None;
-                    }
+                self.switch_backend(VrBackendKind::OpenVR);
+                if let Err(err) = self.backend.initialize_runtime() {
+                    self.last_backend_error = Some(err);
+                } else {
+                    self.last_backend_error = None;
                 }
             }
-        }
-    }
-
-    fn ensure_openxr_backend(&mut self) {
-        if !matches!(self.backend, VrBackend::OpenXR(_)) {
-            self.backend = VrBackend::OpenXR(OpenXRSystem::default());
-        }
-    }
-
-    fn ensure_openvr_backend(&mut self) {
-        if !matches!(self.backend, VrBackend::OpenVR(_)) {
-            self.backend = VrBackend::OpenVR(OpenVRSystem::default());
         }
     }
 }
@@ -282,9 +214,6 @@ impl System for VrSystem {
         input: &InputState,
         dt_sec: f32,
     ) {
-        match &mut self.backend {
-            VrBackend::OpenXR(system) => system.tick(world, visuals, input, dt_sec),
-            VrBackend::OpenVR(system) => system.tick(world, visuals, input, dt_sec),
-        }
+        self.backend.tick(world, visuals, input, dt_sec);
     }
 }

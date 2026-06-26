@@ -1,7 +1,8 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::system::System;
-use crate::engine::ecs::system::openxr_system::{XrGamepadState, XrInputState};
+use crate::engine::ecs::system::vr_backend::{VrBackend, VrBackendKind};
+use crate::engine::ecs::system::vr_types::{XrGamepadState, XrInputState};
 use crate::engine::graphics::{VisualWorld, VulkanoRenderer, XrVulkanGraphics};
 use crate::engine::user_input::InputState;
 
@@ -44,7 +45,7 @@ impl OpenVRSystem {
 
     pub fn set_vulkan_graphics(&mut self, _gfx: XrVulkanGraphics) {}
 
-    pub fn register_openxr(
+    pub fn register_vr(
         &mut self,
         _world: &mut World,
         _visuals: &mut VisualWorld,
@@ -108,6 +109,119 @@ impl OpenVRSystem {
         _renderer: &mut VulkanoRenderer,
     ) {
         visuals.set_xr_frame_dt_sec(None);
+    }
+}
+
+impl VrBackend for OpenVRSystem {
+    fn kind(&self) -> VrBackendKind {
+        VrBackendKind::OpenVR
+    }
+
+    fn initialize_runtime(&mut self) -> Result<(), String> {
+        OpenVRSystem::initialize_runtime(self)
+    }
+
+    fn last_init_error(&self) -> Option<&str> {
+        OpenVRSystem::last_init_error(self)
+    }
+
+    fn xr_input_state(&self) -> &XrInputState {
+        OpenVRSystem::xr_input_state(self)
+    }
+
+    fn xr_gamepad_state(&self) -> &XrGamepadState {
+        OpenVRSystem::xr_gamepad_state(self)
+    }
+
+    fn set_preferred_swapchain_format(&mut self, format: u32) {
+        OpenVRSystem::set_preferred_swapchain_format(self, format)
+    }
+
+    fn required_vulkan_extensions(&self) -> Option<(Vec<String>, Vec<String>)> {
+        OpenVRSystem::required_vulkan_extensions(self)
+    }
+
+    fn set_vulkan_graphics(&mut self, gfx: XrVulkanGraphics) {
+        OpenVRSystem::set_vulkan_graphics(self, gfx)
+    }
+
+    fn register_vr(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        OpenVRSystem::register_vr(self, world, visuals, component)
+    }
+
+    fn register_controller_xr(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        OpenVRSystem::register_controller_xr(self, world, visuals, component)
+    }
+
+    fn register_input_xr(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        OpenVRSystem::register_input_xr(self, world, visuals, component)
+    }
+
+    fn remove_controller_xr(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        OpenVRSystem::remove_controller_xr(self, world, visuals, component)
+    }
+
+    fn remove_input_xr(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        OpenVRSystem::remove_input_xr(self, world, visuals, component)
+    }
+
+    fn tick_with_queue(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        input: &InputState,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        dt_sec: f32,
+    ) {
+        OpenVRSystem::tick_with_queue(self, world, visuals, input, emit, dt_sec)
+    }
+
+    fn last_render_dt_sec(&self) -> Option<f32> {
+        OpenVRSystem::last_render_dt_sec(self)
+    }
+
+    fn render_xr(
+        &mut self,
+        world: &World,
+        visuals: &mut VisualWorld,
+        renderer: &mut VulkanoRenderer,
+    ) {
+        OpenVRSystem::render_xr(self, world, visuals, renderer)
+    }
+
+    fn tick(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        input: &InputState,
+        dt_sec: f32,
+    ) {
+        System::tick(self, world, visuals, input, dt_sec)
     }
 }
 
