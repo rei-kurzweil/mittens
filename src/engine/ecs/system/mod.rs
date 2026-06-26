@@ -64,6 +64,7 @@ pub mod texture_system;
 pub mod transform_stream_system;
 pub mod transform_system;
 pub mod transition_system;
+pub mod vr_system;
 
 pub use animation_system::AnimationSystem;
 pub use armature_visualization_system::ArmatureVisualizationSystem;
@@ -99,7 +100,6 @@ pub use layout::LayoutSystem;
 pub use light_system::LightSystem;
 pub use mirror_system::MirrorSystem;
 pub use music_system::MusicSystem;
-pub use openxr_system::{OpenXRSystem, XrInputState};
 pub use pipeline_system::PipelineSystem;
 pub use pointer_system::{PointerActivations, PointerSystem, PointerTopologyContext};
 pub use pose_capture_system::PoseCaptureSystem;
@@ -118,6 +118,7 @@ pub use texture_system::TextureSystem;
 pub use transform_stream_system::TransformStreamSystem;
 pub use transform_system::TransformSystem;
 pub use transition_system::TransitionSystem;
+pub use vr_system::{VrBackendKind, VrSystem, XrGamepadState, XrHandGamepadState, XrInputState};
 
 use super::World;
 use crate::engine::graphics::VisualWorld;

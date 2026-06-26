@@ -2,7 +2,7 @@ use crate::engine::ecs::component::{
     ControllerHand, InputXRComponent, InputXRGamepadComponent, TransformComponent, XrAxisControl,
     XrButtonControl, XrHandPreference,
 };
-use crate::engine::ecs::system::{OpenXRSystem, System};
+use crate::engine::ecs::system::{System, VrSystem, XrGamepadState};
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
@@ -40,11 +40,11 @@ impl InputXRGamepadSystem {
         &mut self,
         world: &mut World,
         _visuals: &mut VisualWorld,
-        openxr: &OpenXRSystem,
+        vr: &VrSystem,
         emit: &mut dyn SignalEmitter,
         dt_sec: f32,
     ) {
-        let xr = *openxr.xr_gamepad_state();
+        let xr = *vr.xr_gamepad_state();
         if !xr.active {
             if self.xr_active_last_frame {
                 eprintln!("[input_xr_gamepad_system] XR gamepad input inactive");
@@ -119,7 +119,7 @@ impl System for InputXRGamepadSystem {
 fn emit_axis_events(
     cid: ComponentId,
     hand_pref: XrHandPreference,
-    xr: &crate::engine::ecs::system::openxr_system::XrGamepadState,
+    xr: &XrGamepadState,
     prev: &ComponentEventState,
     next: &mut ComponentEventState,
     emit: &mut dyn SignalEmitter,
@@ -184,7 +184,7 @@ fn emit_axis_events(
 fn emit_button_events(
     cid: ComponentId,
     hand_pref: XrHandPreference,
-    xr: &crate::engine::ecs::system::openxr_system::XrGamepadState,
+    xr: &XrGamepadState,
     prev: &ComponentEventState,
     next: &mut ComponentEventState,
     emit: &mut dyn SignalEmitter,
@@ -285,7 +285,7 @@ fn apply_locomotion(
     world: &mut World,
     input_xr_owner: ComponentId,
     cfg: &InputXRGamepadComponent,
-    xr: &crate::engine::ecs::system::openxr_system::XrGamepadState,
+    xr: &XrGamepadState,
     emit: &mut dyn SignalEmitter,
     dt_sec: f32,
 ) -> bool {
@@ -367,7 +367,7 @@ fn locomotion_target_transform(world: &World, input_xr_owner: ComponentId) -> Op
 
 fn resolve_locomotion_stick(
     pref: XrHandPreference,
-    xr: &crate::engine::ecs::system::openxr_system::XrGamepadState,
+    xr: &XrGamepadState,
 ) -> Option<(ControllerHand, [f32; 2])> {
     match pref {
         XrHandPreference::Left => xr.hands[0].thumbstick.map(|v| (ControllerHand::Left, v)),

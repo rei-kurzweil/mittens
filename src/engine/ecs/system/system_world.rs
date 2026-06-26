@@ -15,7 +15,6 @@ use crate::engine::ecs::system::KineticResponseSystem;
 use crate::engine::ecs::system::LightSystem;
 use crate::engine::ecs::system::MirrorSystem;
 use crate::engine::ecs::system::MusicSystem;
-use crate::engine::ecs::system::OpenXRSystem;
 use crate::engine::ecs::system::PipelineSystem;
 use crate::engine::ecs::system::PointerSystem;
 use crate::engine::ecs::system::PoseCaptureSystem;
@@ -33,6 +32,7 @@ use crate::engine::ecs::system::TextureSystem;
 use crate::engine::ecs::system::TransformStreamSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::TransitionSystem;
+use crate::engine::ecs::system::VrSystem;
 use crate::engine::ecs::system::bounds_system::BoundsSystem;
 use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
 use crate::engine::ecs::system::{
@@ -97,7 +97,7 @@ pub struct SystemWorld {
     pub gltf: GLTFSystem,
     pub armature_visualization: ArmatureVisualizationSystem,
 
-    pub openxr: OpenXRSystem,
+    pub vr: VrSystem,
     pub input_xr_gamepad: InputXRGamepadSystem,
 
     pub pose_capture: PoseCaptureSystem,
@@ -1635,7 +1635,7 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.openxr.register_openxr(world, visuals, component);
+        self.vr.register_openxr(world, visuals, component);
     }
 
     /// Register an InputXRComponent (tracks the headset/root XR pose and drives a transform).
@@ -1645,7 +1645,7 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.openxr.register_input_xr(world, visuals, component);
+        self.vr.register_input_xr(world, visuals, component);
     }
 
     /// Register a ControllerXRComponent (tracks an XR controller pose and drives a transform).
@@ -1655,7 +1655,7 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.openxr
+        self.vr
             .register_controller_xr(world, visuals, component);
     }
 
@@ -1668,24 +1668,24 @@ impl SystemWorld {
         self.input_xr_gamepad.register_input_xr_gamepad(component);
     }
 
-    /// Remove a ControllerXRComponent from OpenXRSystem tracking.
+    /// Remove a ControllerXRComponent from VR backend tracking.
     pub fn remove_controller_xr(
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.openxr.remove_controller_xr(world, visuals, component);
+        self.vr.remove_controller_xr(world, visuals, component);
     }
 
-    /// Remove an InputXRComponent from OpenXRSystem tracking.
+    /// Remove an InputXRComponent from VR backend tracking.
     pub fn remove_input_xr(
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.openxr.remove_input_xr(world, visuals, component);
+        self.vr.remove_input_xr(world, visuals, component);
     }
 
     pub fn remove_input_xr_gamepad(
@@ -2165,19 +2165,19 @@ impl SystemWorld {
         // Update window camera + select active XR camera rig before OpenXR consumes it.
         self.camera.tick(world, visuals, input, dt_sec);
         // OpenXR consumes the latest rig transform + publishes per-eye cameras.
-        self.openxr
+        self.vr
             .tick_with_queue(world, visuals, input, queue, dt_sec);
         // Controller pose updates should be visible to raycasting/gestures this frame.
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
         self.input_xr_gamepad
-            .tick_with_queue(world, visuals, &self.openxr, queue, dt_sec);
+            .tick_with_queue(world, visuals, &self.vr, queue, dt_sec);
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
 
         let activations =
             self.pointer
-                .build_activations(world, input, self.openxr.xr_input_state());
+                .build_activations(world, input, self.vr.xr_input_state());
 
         self.raycast.tick_with_queue(
             world,

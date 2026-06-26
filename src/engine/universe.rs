@@ -328,7 +328,7 @@ impl Universe {
             }
         }
 
-        let xr_required = self.systems.openxr.required_vulkan_extensions();
+        let xr_required = self.systems.vr.required_vulkan_extensions();
         if let Some((ref instance_exts, ref device_exts)) = xr_required {
             println!(
                 "[OpenXR] Required Vulkan extensions: instance={} device={}",
@@ -353,11 +353,11 @@ impl Universe {
         )?;
 
         if let Some(fmt) = self.renderer.window_vk_format_raw() {
-            self.systems.openxr.set_preferred_swapchain_format(fmt);
+            self.systems.vr.set_preferred_swapchain_format(fmt);
         }
 
         if let Some(gfx) = self.renderer.xr_vulkan_graphics() {
-            self.systems.openxr.set_vulkan_graphics(gfx);
+            self.systems.vr.set_vulkan_graphics(gfx);
         }
 
         Ok(())
@@ -413,7 +413,7 @@ impl Universe {
 
         // Render XR (if enabled) before the window present.
         self.systems
-            .openxr
+            .vr
             .render_xr(&self.world, &mut self.visuals, &mut self.renderer);
         log_startup_progress(StartupCheckpoint::XrRenderCompleted);
 
