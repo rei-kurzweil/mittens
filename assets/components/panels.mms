@@ -15,7 +15,7 @@ import { fill_icon } from "./icons.mms"
 import { erase_icon } from "./icons.mms"
 import { grid_tool_icon } from "./icons.mms"
 import { grid_visibility_icon } from "./icons.mms"
-import { checkmark_icon } from "./icons.mms"
+
 
 // ── Shared constants ──────────────────────────────────────────────────────────
 
@@ -89,7 +89,7 @@ fn editor_settings_armature_row() {
                 Text { "show armature" }
             }
             T {
-                name = "checkmark_slot"
+                name = "armature_toggle_slot"
                 Style {
                     display("inline-block")
                     margin_left(0.65)

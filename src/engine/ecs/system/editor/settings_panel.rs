@@ -5,12 +5,10 @@ use crate::engine::ecs::component::{DataComponent, GLTFComponent, SelectionEntry
 use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor::world_panel::effective_editor_roots;
 use crate::engine::ecs::system::panel_system::{
-    PanelKind, build_editor_panel_component_expr, data_text, icons_asset_path,
-    is_descendant_or_self,
+    data_text, is_descendant_or_self,
 };
 use crate::engine::ecs::system::selection_system::apply_selection_set;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
-use crate::meow_meow::component_registry::spawn_tree;
 
 pub(crate) const EDITOR_SETTINGS_PANEL_ROOT_SELECTOR: &str = "#editor_settings_panel_root";
 pub(crate) const EDITOR_SETTINGS_SELECTION_NAME: &str = "editor_settings_selection";
@@ -21,7 +19,7 @@ pub(crate) const EDITOR_SETTINGS_CURSOR_ROW_NAME: &str = "editor_settings_mode_c
 pub(crate) const EDITOR_SETTINGS_SELECT_CURSOR_ROW_NAME: &str =
     "editor_settings_mode_select_cursor";
 pub(crate) const EDITOR_SETTINGS_ARMATURE_ROW_NAME: &str = "editor_settings_armature_visibility";
-pub(crate) const EDITOR_SETTINGS_ARMATURE_CHECKMARK_SLOT_NAME: &str = "checkmark_slot";
+pub(crate) const EDITOR_SETTINGS_ARMATURE_TOGGLE_SLOT_NAME: &str = "armature_toggle_slot";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EditorSettingsOption {
@@ -130,12 +128,16 @@ fn find_gltf_components_under(world: &World, root: ComponentId) -> Vec<Component
     out
 }
 
-pub(crate) fn sync_editor_settings_armature_checkmark(
+pub(crate) fn sync_editor_settings_armature_toggle(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     panel_query_root: ComponentId,
     editor_context: &EditorContextState,
 ) {
+    use crate::engine::ecs::component::{
+        Display, SizeDimension, StyleComponent, TextComponent,
+    };
+
     let Some(settings_panel_root) =
         world.find_component(panel_query_root, EDITOR_SETTINGS_PANEL_ROOT_SELECTOR)
     else {
@@ -147,14 +149,14 @@ pub(crate) fn sync_editor_settings_armature_checkmark(
     ) else {
         return;
     };
-    let Some(checkmark_slot) = world.find_component(
+    let Some(toggle_slot) = world.find_component(
         armature_row_root,
-        &format!("#{EDITOR_SETTINGS_ARMATURE_CHECKMARK_SLOT_NAME}"),
+        &format!("#{EDITOR_SETTINGS_ARMATURE_TOGGLE_SLOT_NAME}"),
     ) else {
         return;
     };
 
-    let existing_children = world.children_of(checkmark_slot).to_vec();
+    let existing_children = world.children_of(toggle_slot).to_vec();
     for child in existing_children {
         if world.get_component_record(child).is_some() {
             emit.push_intent_now(
@@ -166,24 +168,45 @@ pub(crate) fn sync_editor_settings_armature_checkmark(
         }
     }
 
-    if !editor_context.armature_visible {
-        return;
-    }
+    let on = editor_context.armature_visible;
+    let label = if on { "On" } else { "Off" };
+    let bg = if on {
+        [0.95, 0.73, 0.16, 1.0]
+    } else {
+        [0.12, 0.36, 0.72, 1.0]
+    };
 
-    let Some(checkmark) = build_editor_panel_component_expr(
-        world,
-        emit,
-        icons_asset_path(),
-        "checkmark_icon",
-        vec![],
-        PanelKind::Inspector,
-        "editor settings checkmark",
-    ) else {
-        return;
-    };
-    let Ok(_root) = spawn_tree(&checkmark, Some(checkmark_slot), world, emit) else {
-        return;
-    };
+    let root = world.add_component_boxed_named(
+        "armature_toggle",
+        Box::new(crate::engine::ecs::component::TransformComponent::new()),
+    );
+    let style = world.add_component_boxed_named(
+        "armature_toggle_style",
+        Box::new({
+            let mut style = StyleComponent::new();
+            style.display = Some(Display::InlineBlock);
+            style.width = SizeDimension::GlyphUnits(3.5);
+            style.height = SizeDimension::GlyphUnits(2.0);
+            style.text_align = crate::engine::ecs::component::TextAlign::Center;
+            style.vertical_align = crate::engine::ecs::component::style::VerticalAlign::Middle;
+            style.background_color = Some(bg);
+            style.color = Some([0.96, 0.98, 0.96, 1.0]);
+            style
+        }),
+    );
+    let text_root = world.add_component_boxed_named(
+        "armature_toggle_text_root",
+        Box::new(crate::engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.005)),
+    );
+    let text_component = world.add_component_boxed_named(
+        "armature_toggle_text",
+        Box::new(TextComponent::new(label.to_string()).with_font_size(0.08)),
+    );
+
+    let _ = world.add_child(root, style);
+    let _ = world.add_child(root, text_root);
+    let _ = world.add_child(text_root, text_component);
+    let _ = world.add_child(toggle_slot, root);
 }
 
 pub(crate) fn sync_editor_settings_panel_selection(
@@ -228,7 +251,7 @@ pub(crate) fn sync_editor_settings_panel_selection(
         Some(row_root),
     );
 
-    sync_editor_settings_armature_checkmark(world, emit, panel_query_root, editor_context);
+    sync_editor_settings_armature_toggle(world, emit, panel_query_root, editor_context);
 }
 
 pub(crate) fn handle_editor_settings_panel_click(
@@ -314,7 +337,7 @@ mod tests {
     use crate::engine::graphics::{RenderAssets, VisualWorld};
 
     #[test]
-    fn armature_settings_click_toggles_state_renders_checkmark_and_fans_out_to_all_editors() {
+    fn armature_settings_click_toggles_state_renders_toggle_and_fans_out_to_all_editors() {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
@@ -333,8 +356,8 @@ mod tests {
             EDITOR_SETTINGS_ARMATURE_ROW_NAME,
             Box::new(crate::engine::ecs::component::TransformComponent::new()),
         );
-        let checkmark_slot = world.add_component_boxed_named(
-            EDITOR_SETTINGS_ARMATURE_CHECKMARK_SLOT_NAME,
+        let toggle_slot = world.add_component_boxed_named(
+            EDITOR_SETTINGS_ARMATURE_TOGGLE_SLOT_NAME,
             Box::new(crate::engine::ecs::component::TransformComponent::new()),
         );
         let payload = world.add_component_boxed_named(
@@ -347,7 +370,7 @@ mod tests {
         );
         let _ = world.add_child(panel_query_root, settings_panel_root);
         let _ = world.add_child(settings_panel_root, armature_row);
-        let _ = world.add_child(armature_row, checkmark_slot);
+        let _ = world.add_child(armature_row, toggle_slot);
         let _ = world.add_child(armature_row, payload);
 
         let editor_a =
@@ -390,15 +413,16 @@ mod tests {
                 .armature_visible
         );
 
-        sync_editor_settings_armature_checkmark(
+        sync_editor_settings_armature_toggle(
             &mut world,
             &mut emit,
             panel_query_root,
             &editor_context,
         );
+        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
         assert!(
-            !world.children_of(checkmark_slot).is_empty(),
-            "expected checkmark subtree to be rendered into slot"
+            !world.children_of(toggle_slot).is_empty(),
+            "expected toggle button to be rendered when armature is visible"
         );
 
         assert!(handle_editor_settings_panel_click(
@@ -415,7 +439,7 @@ mod tests {
             .expect("editor context state mutex poisoned")
             .clone();
         assert!(!editor_context.armature_visible);
-        sync_editor_settings_armature_checkmark(
+        sync_editor_settings_armature_toggle(
             &mut world,
             &mut emit,
             panel_query_root,
@@ -423,8 +447,8 @@ mod tests {
         );
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
         assert!(
-            world.children_of(checkmark_slot).is_empty(),
-            "expected checkmark subtree to be removed when armature visibility is toggled off"
+            !world.children_of(toggle_slot).is_empty(),
+            "expected toggle button to still be rendered when armature is hidden (shows Off)"
         );
     }
 }

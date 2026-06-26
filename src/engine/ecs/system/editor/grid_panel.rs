@@ -17,10 +17,12 @@ use crate::engine::ecs::system::editor::world_panel::{
 };
 use crate::engine::ecs::system::grid_system::GridSpawnSpec;
 use crate::engine::ecs::system::panel_system::{
-    PanelActionKind, PanelKind, decode_panel_action_payload, is_descendant_or_self,
+    PanelActionKind, PanelKind, build_editor_panel_component_expr, decode_panel_action_payload,
+    icons_asset_path, is_descendant_or_self,
 };
 use crate::engine::ecs::system::selection_system::apply_selection_set;
 use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter, World};
+use crate::meow_meow::component_registry::spawn_tree;
 
 pub(crate) const GRID_PANEL_ROOT_SELECTOR: &str = "#grid_panel_root";
 pub(crate) const GRID_PANEL_SELECTION_SELECTOR: &str = "#grid_panel_selection";
@@ -130,7 +132,7 @@ pub(crate) fn grid_panel_items(model: &GridPanelModel) -> Vec<UiItem> {
 
 fn grid_panel_row_render_fn(
     world: &mut World,
-    _emit: &mut dyn SignalEmitter,
+    emit: &mut dyn SignalEmitter,
     item: &UiItem,
 ) -> Result<ComponentId, String> {
     let owner_transform = item
@@ -143,6 +145,7 @@ fn grid_panel_row_render_fn(
     let (shown, enabled) = (!entry.hidden, entry.enabled);
     Ok(spawn_grid_panel_row_tree(
         world,
+        emit,
         &item.key,
         entry.grid_component,
         owner_transform,
@@ -160,6 +163,7 @@ pub(crate) static GRID_PANEL_ROW_SPEC: LazyLock<ItemRendererSpec> =
 
 fn spawn_grid_panel_row_tree(
     world: &mut World,
+    emit: &mut dyn SignalEmitter,
     row_name: &str,
     grid_component: ComponentId,
     owner_transform: ComponentId,
@@ -221,7 +225,7 @@ fn spawn_grid_panel_row_tree(
         Box::new({
             let mut style = StyleComponent::new();
             style.display = Some(Display::InlineBlock);
-            style.width = SizeDimension::GlyphUnits(20.5);
+            style.width = SizeDimension::GlyphUnits(13.0);
             style.height = SizeDimension::GlyphUnits(2.3);
             style.padding = EdgeInsets::axes(0.15, 0.10);
             style.vertical_align = VerticalAlign::Middle;
@@ -258,41 +262,50 @@ fn spawn_grid_panel_row_tree(
 
     let visibility = spawn_grid_icon_button(
         world,
+        emit,
         row_name,
         "visibility",
         GRID_PANEL_VISIBILITY_PAYLOAD_NAME,
         owner_transform,
         row_name,
-        if shown { "Hide" } else { "Show" },
+        if shown { "Visible" } else { "Hidden" },
         if shown {
             [0.10, 0.55, 0.18, 1.0]
         } else {
             [0.42, 0.42, 0.42, 1.0]
         },
+        None,
+        None,
     );
     let enabled_toggle = spawn_grid_icon_button(
         world,
+        emit,
         row_name,
         "enabled",
         GRID_PANEL_ENABLED_PAYLOAD_NAME,
         owner_transform,
         row_name,
-        if enabled { "Off" } else { "On" },
+        if enabled { "On" } else { "Off" },
         if enabled {
             [0.12, 0.36, 0.72, 1.0]
         } else {
             [0.45, 0.30, 0.08, 1.0]
         },
+        None,
+        Some(3.5),
     );
     let delete = spawn_grid_icon_button(
         world,
+        emit,
         row_name,
         "delete",
         GRID_PANEL_DELETE_PAYLOAD_NAME,
         owner_transform,
         row_name,
-        "Delete",
+        "",
         [0.72, 0.15, 0.15, 1.0],
+        Some("delete_x_icon"),
+        Some(3.5),
     );
     let _ = world.add_child(row_root, visibility);
     let _ = world.add_child(row_root, enabled_toggle);
@@ -303,6 +316,7 @@ fn spawn_grid_panel_row_tree(
 
 fn spawn_grid_icon_button(
     world: &mut World,
+    emit: &mut dyn SignalEmitter,
     row_name: &str,
     suffix: &str,
     payload_name: &str,
@@ -310,6 +324,8 @@ fn spawn_grid_icon_button(
     item_key: &str,
     text: &str,
     background_color: [f32; 4],
+    icon_name: Option<&str>,
+    width_glyph_units: Option<f32>,
 ) -> ComponentId {
     let root = world.add_component_boxed_named(
         format!("{row_name}_{suffix}_button"),
@@ -337,7 +353,9 @@ fn spawn_grid_icon_button(
         Box::new({
             let mut style = StyleComponent::new();
             style.display = Some(Display::InlineBlock);
-            style.width = SizeDimension::GlyphUnits(3.3);
+            if let Some(w) = width_glyph_units {
+                style.width = SizeDimension::GlyphUnits(w);
+            }
             style.height = SizeDimension::GlyphUnits(2.3);
             style.margin = EdgeInsets {
                 left: SizeDimension::GlyphUnits(0.20),
@@ -352,21 +370,41 @@ fn spawn_grid_icon_button(
             style
         }),
     );
-    let text_root = world.add_component_boxed_named(
-        format!("{row_name}_{suffix}_text_root"),
-        Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.005)),
-    );
-    let text_component = world.add_component_boxed_named(
-        format!("{row_name}_{suffix}_text"),
-        Box::new(TextComponent::new(text.to_string()).with_font_size(0.08)),
-    );
-
     let _ = world.add_child(root, option);
     let _ = world.add_child(root, raycastable);
     let _ = world.add_child(root, payload);
     let _ = world.add_child(root, style);
-    let _ = world.add_child(root, text_root);
-    let _ = world.add_child(text_root, text_component);
+
+    if let Some(icon) = icon_name {
+        if let Some(expr) = build_editor_panel_component_expr(
+            world,
+            emit,
+            icons_asset_path(),
+            icon,
+            vec![],
+            PanelKind::Inspector,
+            &format!("grid_{}_{}_icon", row_name, suffix),
+        ) {
+            let icon_wrapper = world.add_component_boxed_named(
+                format!("{row_name}_{suffix}_icon_wrapper"),
+                Box::new(TransformComponent::new().with_scale(0.25, 0.25, 0.333)),
+            );
+            let _ = world.add_child(root, icon_wrapper);
+            let _ = spawn_tree(&expr, Some(icon_wrapper), world, emit);
+        }
+    } else {
+        let text_root = world.add_component_boxed_named(
+            format!("{row_name}_{suffix}_text_root"),
+            Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.005)),
+        );
+        let text_component = world.add_component_boxed_named(
+            format!("{row_name}_{suffix}_text"),
+            Box::new(TextComponent::new(text.to_string()).with_font_size(0.08)),
+        );
+        let _ = world.add_child(root, text_root);
+        let _ = world.add_child(text_root, text_component);
+    }
+
     root
 }
 
