@@ -611,6 +611,10 @@ impl OpenXRSystem {
         &self.xr_gamepad_state
     }
 
+    pub fn last_init_error(&self) -> Option<&str> {
+        self.last_init_error.as_deref()
+    }
+
     fn debug_hand_rotation_enabled() -> bool {
         static ENABLED: OnceLock<bool> = OnceLock::new();
         *ENABLED.get_or_init(|| {
@@ -905,6 +909,39 @@ impl OpenXRSystem {
         }
     }
 
+    pub fn initialize_runtime(&mut self) -> Result<(), String> {
+        if self.state.is_some() {
+            return Ok(());
+        }
+
+        match Self::try_init_openxr() {
+            Ok(state) => {
+                println!("[OpenXR] Initialized.");
+                self.state = Some(state);
+                self.last_init_error = None;
+
+                if let (Some(state), Some(gfx)) = (self.state.as_mut(), self.vulkan_graphics) {
+                    if state.session.is_none() {
+                        if let Err(err) =
+                            Self::try_init_session(state, gfx, self.preferred_swapchain_format)
+                        {
+                            eprintln!("[OpenXR] Session init failed: {err}");
+                            self.last_init_error = Some(err.clone());
+                            return Err(err);
+                        }
+                    }
+                }
+
+                Ok(())
+            }
+            Err(err) => {
+                eprintln!("[OpenXR] Init failed: {err}");
+                self.last_init_error = Some(err.clone());
+                Err(err)
+            }
+        }
+    }
+
     pub fn register_openxr(
         &mut self,
         world: &mut World,
@@ -923,29 +960,7 @@ impl OpenXRSystem {
             return;
         }
 
-        match Self::try_init_openxr() {
-            Ok(state) => {
-                println!("[OpenXR] Initialized.");
-                self.state = Some(state);
-                self.last_init_error = None;
-
-                // If we already have Vulkan handles from the renderer, try to create a session.
-                if let (Some(state), Some(gfx)) = (self.state.as_mut(), self.vulkan_graphics) {
-                    if state.session.is_none() {
-                        if let Err(err) =
-                            Self::try_init_session(state, gfx, self.preferred_swapchain_format)
-                        {
-                            eprintln!("[OpenXR] Session init failed: {err}");
-                            self.last_init_error = Some(err);
-                        }
-                    }
-                }
-            }
-            Err(err) => {
-                eprintln!("[OpenXR] Init failed: {err}");
-                self.last_init_error = Some(err);
-            }
-        }
+        let _ = self.initialize_runtime();
     }
 
     pub fn register_controller_xr(

@@ -1822,11 +1822,20 @@ fn roundtrip_camera_xr_off() {
 }
 
 #[test]
-fn roundtrip_openxr_off() {
-    use crate::engine::ecs::component::OpenXRComponent;
-    let (world, id) = roundtrip_component(OpenXRComponent::off());
-    let got = world.get_component_by_id_as::<OpenXRComponent>(id).unwrap();
+fn roundtrip_vr_off() {
+    use crate::engine::ecs::component::VrComponent;
+    let (world, id) = roundtrip_component(VrComponent::off());
+    let got = world.get_component_by_id_as::<VrComponent>(id).unwrap();
     assert!(!got.enabled);
+}
+
+#[test]
+fn roundtrip_vr_openvr() {
+    use crate::engine::ecs::component::{VrBackendPreference, VrComponent};
+    let (world, id) = roundtrip_component(VrComponent::openvr());
+    let got = world.get_component_by_id_as::<VrComponent>(id).unwrap();
+    assert!(got.enabled);
+    assert_eq!(got.backend, VrBackendPreference::OpenVR);
 }
 
 #[test]

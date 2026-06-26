@@ -1061,8 +1061,8 @@ impl SystemWorld {
                 }
             }
 
-            IntentValue::RegisterOpenxr { component } => {
-                self.register_openxr(world, visuals, *component);
+            IntentValue::RegisterVr { component } => {
+                self.register_vr(world, visuals, *component);
             }
             IntentValue::RegisterControllerXr { component } => {
                 self.register_controller_xr(world, visuals, *component);
@@ -1628,14 +1628,14 @@ impl SystemWorld {
         self.collision.remove_collision(world, visuals, component);
     }
 
-    /// Register an OpenXRComponent (initializes OpenXR runtime if enabled).
-    pub fn register_openxr(
+    /// Register a VrComponent (initializes the selected VR backend if enabled).
+    pub fn register_vr(
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.vr.register_openxr(world, visuals, component);
+        self.vr.register_vr(world, visuals, component);
     }
 
     /// Register an InputXRComponent (tracks the headset/root XR pose and drives a transform).

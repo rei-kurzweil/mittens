@@ -380,9 +380,9 @@ impl RxMutationExecutor {
                 }
             }
 
-            IntentValue::RegisterOpenxr { component_ids } => {
+            IntentValue::RegisterVr { component_ids } => {
                 for &component in component_ids.iter() {
-                    systems.register_openxr(world, visuals, component);
+                    systems.register_vr(world, visuals, component);
                 }
             }
             IntentValue::RegisterInputXr { component_ids } => {

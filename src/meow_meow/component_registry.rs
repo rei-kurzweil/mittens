@@ -40,7 +40,7 @@ use crate::engine::ecs::component::{
     TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
     TransformParentComponent, TransformSampleAncestorComponent, TransitionComponent,
     TransitionEasing, TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
-    Vector3TemporalFilterComponent, WordWrapMode, XrHandPreference,
+    Vector3TemporalFilterComponent, VrComponent, WordWrapMode, XrHandPreference,
 };
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::CameraTarget;
@@ -1185,9 +1185,18 @@ fn create_component(
             Some("disabled") => add!(PointerComponent::disabled()),
             _ => add!(PointerComponent::new()),
         },
+        "VR" => match ctor {
+            Some("off") => add!(VrComponent::off()),
+            Some("on") | Some("auto") => add!(VrComponent::on()),
+            Some("openxr") => add!(VrComponent::openxr()),
+            Some("openvr") => add!(VrComponent::openvr()),
+            _ => add!(VrComponent::on()),
+        },
         "OpenXR" => match ctor {
             Some("off") => add!(OpenXRComponent::off()),
-            Some("on") => add!(OpenXRComponent::on()),
+            Some("on") | Some("auto") => add!(OpenXRComponent::on()),
+            Some("openxr") => add!(OpenXRComponent::openxr()),
+            Some("openvr") => add!(OpenXRComponent::openvr()),
             _ => add!(OpenXRComponent::on()),
         },
         "ControllerXR" => match ctor {

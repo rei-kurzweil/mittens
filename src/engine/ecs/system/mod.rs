@@ -44,6 +44,7 @@ pub mod model;
 pub mod music_system;
 pub mod object_placement_preview;
 pub mod openxr_system;
+pub mod openvr_system;
 pub mod paint_placement;
 pub mod panel_system;
 pub mod pipeline_system;

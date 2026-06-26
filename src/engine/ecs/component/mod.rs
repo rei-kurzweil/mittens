@@ -73,6 +73,7 @@ pub mod skinned_mesh;
 pub mod stencil_clip;
 pub mod style;
 pub mod transparent_cutout;
+pub mod vr;
 
 pub mod openxr;
 pub mod point_light;
@@ -217,6 +218,7 @@ pub use transform_temporal_filter::{
 pub use transition::{TransitionComponent, TransitionEasing, TransitionReplacePolicy};
 pub use transparent_cutout::TransparentCutoutComponent;
 pub use uv::UVComponent;
+pub use vr::{VrBackendPreference, VrComponent};
 
 /// For now, our "LightComponent" is a point light.
 pub type LightComponent = point_light::PointLightComponent;
