@@ -165,8 +165,6 @@ ED {
                 AVC {
                     head_bone("J_Bip_C_Head")
                     camera_bone("J_Bip_C_Head")
-                    forward_plus_z()
-                    initial_yaw(0.0)
 
                     T {
                         GLTF.new("assets/models/bisket.11.0.glb") {
@@ -198,8 +196,6 @@ T {
                     camera_bone("J_Bip_C_Head")
                     left_hand_bone("J_Bip_L_Hand")
                     right_hand_bone("J_Bip_R_Hand")
-
-                    initial_yaw(3.14159)
                     ik_debug()
 
                     // Match bisket-vr-demo: body-local elbow hints that bias the

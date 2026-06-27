@@ -1,9 +1,11 @@
 use crate::engine::ecs::component::{
     AvatarControlComponent, BoneRestPoseComponent, Camera3DComponent, CameraXRComponent,
-    ControllerHand, ControllerXRComponent, IKChainComponent, IKSolver, QuatYawFollowComponent,
-    SerializeComponent, TransformComponent, TransformForkTRSComponent,
+    ControllerHand, ControllerXRComponent, IKChainComponent, IKSolver, InputComponent,
+    InputXRComponent, QuatYawFollowComponent, SerializeComponent, TransformComponent,
+    TransformForkTRSComponent,
     TransformMapRotationComponent,
 };
+use crate::engine::ecs::component::avatar_control::AvatarDriverKind;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::utils::math::{quat_rotate_vec3, quat_rotation_y};
 
@@ -89,8 +91,10 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         right_arm_pole_direction,
         body_yaw_threshold,
         body_yaw_rate,
-        forward_plus_z,
-        initial_body_yaw,
+        authored_forward_plus_z,
+        forward_plus_z_overridden,
+        authored_initial_body_yaw,
+        initial_body_yaw_overridden,
         skip_body_pipeline,
         camera_bone_name,
         avatar_height_override,
@@ -116,7 +120,9 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             c.body_yaw_threshold,
             c.body_yaw_rate,
             c.forward_plus_z,
+            c.forward_plus_z_overridden,
             c.initial_body_yaw,
+            c.initial_body_yaw_overridden,
             c.skip_body_pipeline,
             c.camera_bone.clone(),
             c.avatar_height,
@@ -154,6 +160,20 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     // driven_t is the parent of AVC — needed as IK target for the head AimConstraint.
     let Some(driven_t_id) = world.parent_of(id) else {
         return;
+    };
+    let driver_kind = infer_avatar_driver_kind(world, driven_t_id);
+    let resolved_forward_plus_z = if forward_plus_z_overridden {
+        authored_forward_plus_z
+    } else {
+        matches!(driver_kind, AvatarDriverKind::Desktop)
+    };
+    let resolved_initial_body_yaw = if initial_body_yaw_overridden {
+        authored_initial_body_yaw
+    } else {
+        match driver_kind {
+            AvatarDriverKind::Desktop => 0.0,
+            AvatarDriverKind::Xr => std::f32::consts::PI,
+        }
     };
 
     // Head bone is required — retry next tick if GLTF hasn't spawned yet.
@@ -277,7 +297,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     // This remains the source for the head target offset. It no longer owns
     // body/root XZ placement; steady-state body XZ is handled by
     // HeadPoseBodyXzFollowSystem.
-    let head_ik_offset_yaw = if forward_plus_z {
+    let head_ik_offset_yaw = if resolved_forward_plus_z {
         0.0
     } else {
         std::f32::consts::PI
@@ -370,6 +390,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         c.model_root_local_y = model_root_local_y;
         c.neck_bone_id = neck_bone_id;
         c.neck_rest_translation = neck_rest_t;
+        c.driver_kind = Some(driver_kind);
         if let Some((_, _, _, bone)) = left {
             c.left_hand_bone_id = Some(bone);
         }
@@ -394,8 +415,8 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         let map_rot_id = world.add_component(TransformMapRotationComponent::new());
         let yaw_follow_id = world.add_component(
             QuatYawFollowComponent::new(body_yaw_threshold, body_yaw_rate)
-                .with_initial_yaw(initial_body_yaw)
-                .with_forward_plus_z_if(forward_plus_z),
+                .with_initial_yaw(resolved_initial_body_yaw)
+                .with_forward_plus_z_if(resolved_forward_plus_z),
         );
 
         let _ = world.set_parent(body_pipeline_serialize_id, Some(body_pipeline_id));
@@ -655,6 +676,21 @@ fn emit_attach(emit: &mut dyn SignalEmitter, parent: ComponentId, child: Compone
             child,
         },
     );
+}
+
+fn infer_avatar_driver_kind(world: &World, mut node: ComponentId) -> AvatarDriverKind {
+    loop {
+        if world.get_component_by_id_as::<InputXRComponent>(node).is_some() {
+            return AvatarDriverKind::Xr;
+        }
+        if world.get_component_by_id_as::<InputComponent>(node).is_some() {
+            return AvatarDriverKind::Desktop;
+        }
+        let Some(parent) = world.parent_of(node) else {
+            return AvatarDriverKind::Desktop;
+        };
+        node = parent;
+    }
 }
 
 /// Read a bone's authored bind-pose local TRS via the `BoneRestPoseComponent`
