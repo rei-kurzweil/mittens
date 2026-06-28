@@ -6,25 +6,34 @@
 //!   1. Loads the scene (two bisket avatars: one bare-FK reference, one
 //!      AVC-driven).
 //!   2. Ticks the engine enough to spawn armatures and let AVC wire its
-//!      splices + spine FABRIK chain.
-//!   3. Scripts the AVC avatar's `driven_t` through a sequence of poses
-//!      that simulate HMD movement (pitch, yaw, lean, walk).
-//!   4. For each pose, samples world Y/Z of the spine bones on both
-//!      avatars and prints a diff table to the console.
-//!   5. Also checks a handful of invariants (bone-length preservation,
-//!      monotonic Y from hips → head, splice_head landing near the
-//!      offset-compensated target).
+//!      splices + IK chains.
+//!   3. Runs the original spine probes against scripted head poses.
+//!   4. Resolves the live arm IK chain(s), then scripts wrist/pronation
+//!      probes by mutating the actual runtime hand targets directly.
+//!   5. Optionally compares authored hand target offsets and
+//!      `copy_end_rotation` modes without changing engine behavior outside
+//!      this harness process.
 //!
-//! Run with `cargo run --release --example bisket-vr-debug`.  No
-//! windowing loop — exits after printing the report.
+//! Run with `cargo run --release --example bisket-vr-debug`.
+//! Useful flags:
+//!   --compare-copy-end-rotation
+//!   --neutralize-hand-offsets
+//!   --compare-hand-offsets
 
-use cat_engine::engine::ecs::component::{AvatarControlComponent, TransformComponent};
+use std::env;
+
+use cat_engine::engine::ecs::component::{
+    AvatarControlComponent, IKChainComponent, IKSolver, TransformComponent,
+};
 use cat_engine::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use cat_engine::engine::user_input::InputState;
-use cat_engine::utils::math::{quat_from_axis_angle, quat_rotate_vec3};
+use cat_engine::utils::math::{
+    mat4_identity, mat4_inverse, mat4_mul_vec4, mat_to_quat, quat_conjugate, quat_from_axis_angle,
+    quat_mul, quat_rotate_vec3, quat_rotation_y, quat_to_axis_angle, vec3_len, vec3_normalize,
+    vec3_sub,
+};
 use cat_engine::{engine, meow_meow, utils};
 
-// Spine bones sampled at each pose, ordered root → end.
 const SPINE_BONES: &[&str] = &[
     "J_Bip_C_Hips",
     "J_Bip_C_Spine",
@@ -34,14 +43,13 @@ const SPINE_BONES: &[&str] = &[
     "J_Bip_C_Head",
 ];
 
-// Tolerances (metres) for invariant checks.
-const BONE_LENGTH_TOL: f32 = 0.005; // 5 mm
-const SPLICE_TARGET_TOL: f32 = 0.010; // 1 cm
-const MONOTONIC_Y_TOL: f32 = 0.005; // 5 mm
-
-// Frames ticked per pose to let IK + transform propagation settle.
+const BONE_LENGTH_TOL: f32 = 0.005;
+const SPLICE_TARGET_TOL: f32 = 0.010;
+const MONOTONIC_Y_TOL: f32 = 0.005;
 const SETTLE_TICKS_PER_POSE: usize = 8;
+const WRIST_TWIST_RAD: f32 = 1.35;
 
+#[derive(Clone, Copy)]
 struct Pose {
     name: &'static str,
     description: &'static str,
@@ -49,13 +57,117 @@ struct Pose {
     rot: [f32; 4],
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ArmSide {
+    Left,
+    Right,
+}
+
+impl ArmSide {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Left => "left",
+            Self::Right => "right",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum HandOffsetMode {
+    Authored,
+    Neutralized,
+}
+
+impl HandOffsetMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Authored => "authored_offsets",
+            Self::Neutralized => "neutralized_offsets",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum CopyEndRotationMode {
+    SolverDefault,
+    ForcedOff,
+}
+
+impl CopyEndRotationMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::SolverDefault => "copy_end_rotation=solver_default",
+            Self::ForcedOff => "copy_end_rotation=forced_off",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ArmProbePose {
+    name: &'static str,
+    description: &'static str,
+    left_twist_rad: f32,
+    right_twist_rad: f32,
+}
+
+#[derive(Clone, Copy)]
+struct HarnessOptions {
+    compare_copy_end_rotation: bool,
+    compare_hand_offsets: bool,
+    neutralize_hand_offsets: bool,
+}
+
+#[derive(Clone, Copy)]
+struct ArmChainRuntime {
+    side: ArmSide,
+    ik_chain_id: ComponentId,
+    upper_arm: ComponentId,
+    lower_arm: ComponentId,
+    hand: ComponentId,
+    target: ComponentId,
+    authored_target_local_rotation: [f32; 4],
+    rest_hand_world_pos: [f32; 3],
+    original_copy_end_rotation: bool,
+}
+
+#[derive(Clone, Copy)]
+struct ArmPassBaseline {
+    hand_world_pos: [f32; 3],
+    target_world_rot: [f32; 4],
+    forearm_axis_world: [f32; 3],
+}
+
+#[derive(Clone, Copy)]
+struct NodeRotationSample {
+    world: [f32; 4],
+    local: [f32; 4],
+}
+
+#[derive(Clone, Copy)]
+struct ArmPoseSample {
+    upper_arm: NodeRotationSample,
+    lower_arm: NodeRotationSample,
+    hand: NodeRotationSample,
+    target: NodeRotationSample,
+    lower_to_hand_deg: f32,
+    lower_to_target_deg: f32,
+    hand_to_target_deg: f32,
+}
+
+#[derive(Clone, Copy)]
+struct MirrorSignature {
+    lower_to_hand_deg: f32,
+    lower_to_target_deg: f32,
+    hand_to_target_deg: f32,
+}
+
 fn main() {
     utils::logger::init();
+    let opts = parse_args();
 
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
 
-    // --- Load scene ---
     let source = include_str!("bisket-vr-debug.mms");
     let output = meow_meow::MeowMeowRunner::eval_with_world_at_path(
         source,
@@ -74,12 +186,9 @@ fn main() {
             .push_intent_now(ComponentId::default(), intent);
     }
     drain(&mut universe);
-
-    // --- Tick GLTF so armatures spawn before we go looking for bones ---
     tick_gltf(&mut universe);
     drain(&mut universe);
 
-    // --- Find AVC + the two avatars' subtrees ---
     let avc_id = universe
         .world
         .all_components()
@@ -96,56 +205,27 @@ fn main() {
         .expect("AVC has no parent (driven_t)");
 
     println!("[debug] avc_id={:?} driven_t={:?}", avc_id, driven_t);
+    println!(
+        "[debug] options: compare_copy_end_rotation={} compare_hand_offsets={} neutralize_hand_offsets={}",
+        opts.compare_copy_end_rotation,
+        opts.compare_hand_offsets,
+        opts.neutralize_hand_offsets
+    );
 
-    // Capture eye_offset BEFORE AVC init runs — once init fires, AVC reparents
-    // the T-wrapped camera out from under itself (over to the head bone), so
-    // querying `children_of(avc)` post-init returns no camera wrapper.
     let head_target_offset_world = head_target_offset_in_target_local(&universe.world, avc_id);
     println!(
         "[debug] head_target_offset (target-local) = {:?}",
         head_target_offset_world
     );
 
-    // Settle a few frames so AVC init splices fire and FABRIK chain wires up.
-    let input = InputState::default();
-    for _ in 0..10 {
-        universe.systems.tick(
-            &mut universe.world,
-            &mut universe.visuals,
-            &universe.render_assets,
-            &input,
-            &mut universe.command_queue,
-            1.0 / 60.0,
-        );
-        drain(&mut universe);
-    }
+    settle_world(&mut universe, 10);
 
-    // --- Resolve bones on both avatars ---
-    let mut ref_bones: Vec<ComponentId> = Vec::with_capacity(SPINE_BONES.len());
-    let mut avc_bones: Vec<ComponentId> = Vec::with_capacity(SPINE_BONES.len());
-    for name in SPINE_BONES {
-        let all = find_components_by_name(&universe.world, name);
-        let (under_avc, not_under_avc): (Vec<_>, Vec<_>) = all
-            .into_iter()
-            .partition(|&id| is_descendant_of(&universe.world, id, avc_id));
-        let avc = under_avc
-            .first()
-            .copied()
-            .unwrap_or_else(|| panic!("bone {} not found under AVC subtree", name));
-        let r = not_under_avc
-            .first()
-            .copied()
-            .unwrap_or_else(|| panic!("bone {} not found outside AVC subtree", name));
-        ref_bones.push(r);
-        avc_bones.push(avc);
-    }
+    let (ref_bones, avc_bones) = resolve_spine_bones(&universe.world, avc_id);
     println!(
         "[debug] resolved {} spine bones in both subtrees",
         SPINE_BONES.len()
     );
 
-    // splice_head: the runtime-created TC injected between neck and head_bone.
-    // It's the parent of head_bone in the AVC subtree.
     let avc_head_bone = avc_bones[SPINE_BONES
         .iter()
         .position(|n| *n == "J_Bip_C_Head")
@@ -155,7 +235,49 @@ fn main() {
         .parent_of(avc_head_bone)
         .expect("head_bone has no parent — splice didn't run?");
 
-    // --- Define poses to scrub through ---
+    run_spine_probes(
+        &mut universe,
+        driven_t,
+        splice_head,
+        &ref_bones,
+        &avc_bones,
+        head_target_offset_world,
+    );
+
+    let arms = resolve_arm_chains(&universe.world, avc_id);
+    print_arm_startup_report(&universe.world, &arms);
+    run_arm_probes(&mut universe, driven_t, &arms, opts);
+
+    println!("\n[debug] done. Exiting (no window loop).");
+}
+
+fn parse_args() -> HarnessOptions {
+    let mut opts = HarnessOptions {
+        compare_copy_end_rotation: false,
+        compare_hand_offsets: false,
+        neutralize_hand_offsets: false,
+    };
+    for arg in env::args().skip(1) {
+        match arg.as_str() {
+            "--compare-copy-end-rotation" => opts.compare_copy_end_rotation = true,
+            "--compare-hand-offsets" => opts.compare_hand_offsets = true,
+            "--neutralize-hand-offsets" => opts.neutralize_hand_offsets = true,
+            other => {
+                eprintln!("[debug] ignoring unknown arg: {other}");
+            }
+        }
+    }
+    opts
+}
+
+fn run_spine_probes(
+    universe: &mut engine::Universe,
+    driven_t: ComponentId,
+    splice_head: ComponentId,
+    ref_bones: &[ComponentId],
+    avc_bones: &[ComponentId],
+    head_target_offset_world: [f32; 3],
+) {
     let poses = [
         Pose {
             name: "rest",
@@ -207,38 +329,21 @@ fn main() {
         },
     ];
 
-    // --- Sample baseline (ref) bone positions once at rest.  They never change. ---
     let ref_y_z: Vec<[f32; 2]> = ref_bones
         .iter()
         .map(|&id| world_yz(&universe.world, id))
         .collect();
 
-    // --- Run each pose ---
     for pose in &poses {
-        // Drive driven_t.
-        universe.command_queue.push_intent_now(
+        set_local_transform(
+            &mut universe.command_queue,
             driven_t,
-            IntentValue::UpdateTransform {
-                component_ids: vec![driven_t],
-                translation: pose.t,
-                rotation_quat_xyzw: pose.rot,
-                scale: [1.0, 1.0, 1.0],
-            },
+            pose.t,
+            pose.rot,
+            [1.0, 1.0, 1.0],
         );
-        // Settle.
-        for _ in 0..SETTLE_TICKS_PER_POSE {
-            universe.systems.tick(
-                &mut universe.world,
-                &mut universe.visuals,
-                &universe.render_assets,
-                &input,
-                &mut universe.command_queue,
-                1.0 / 60.0,
-            );
-            drain(&mut universe);
-        }
+        settle_world(universe, SETTLE_TICKS_PER_POSE);
 
-        // Sample AVC bones + splice_head + driven_t world pose.
         let avc_y_z: Vec<[f32; 2]> = avc_bones
             .iter()
             .map(|&id| world_yz(&universe.world, id))
@@ -251,18 +356,14 @@ fn main() {
         let driven_pos = world_pos(&universe.world, driven_t);
         let driven_rot = world_rot(&universe.world, driven_t);
 
-        // --- Header ---
         println!("\n================================================================");
-        println!("pose: {}", pose.name);
+        println!("spine pose: {}", pose.name);
         println!("  {}", pose.description);
         println!(
             "  driven_t world pos: [{:+.3}, {:+.3}, {:+.3}] (model offset +1.2 on X)",
             driven_pos[0], driven_pos[1], driven_pos[2]
         );
 
-        // --- Diff table (Y/Z; X is symmetric and not informative for spine work) ---
-        // Reference avatar sits at x=-1.2; AVC at x=+1.2.  Subtract the
-        // model-root X offsets so we compare local-space Y/Z.
         println!("\nspine bones — model-local Y/Z (REF vs AVC)");
         println!(
             "  {:<22}  {:>7}  {:>7}    {:>7}  {:>7}     {:>+7}  {:>+7}",
@@ -271,20 +372,22 @@ fn main() {
         for (i, name) in SPINE_BONES.iter().enumerate() {
             let r = ref_y_z[i];
             let a = avc_y_z[i];
-            let dy = a[0] - r[0];
-            let dz = a[1] - r[1];
             println!(
                 "  {:<22}  {:>+7.3}  {:>+7.3}    {:>+7.3}  {:>+7.3}     {:>+7.3}  {:>+7.3}",
-                name, r[0], r[1], a[0], a[1], dy, dz,
+                name,
+                r[0],
+                r[1],
+                a[0],
+                a[1],
+                a[0] - r[0],
+                a[1] - r[1],
             );
         }
 
-        // --- Invariants ---
         println!("\ninvariants");
 
-        // (1) Bone-segment lengths along chain should be preserved (FABRIK keeps them).
-        let ref_seg_lens = segment_lengths(&ref_bones, &universe.world);
-        let avc_seg_lens = segment_lengths(&avc_bones, &universe.world);
+        let ref_seg_lens = segment_lengths(ref_bones, &universe.world);
+        let avc_seg_lens = segment_lengths(avc_bones, &universe.world);
         let mut bone_length_ok = true;
         for i in 0..ref_seg_lens.len() {
             let drift = (avc_seg_lens[i] - ref_seg_lens[i]).abs();
@@ -313,10 +416,6 @@ fn main() {
             );
         }
 
-        // (2) Monotonic Y hips → neck (no kinks/folding in spine).  Head is
-        // intentionally below neck on Y by `eye_offset.y` — the head bone
-        // pivot sits at skull base, while the HMD is at eye height — so we
-        // stop the check at neck.
         let mut mono_ok = true;
         let mut prev_y = f32::NEG_INFINITY;
         for (i, name) in SPINE_BONES.iter().enumerate() {
@@ -340,14 +439,6 @@ fn main() {
             );
         }
 
-        // (3) Body sits directly UNDER head: hips world XZ ≈ splice_head XZ.
-        //
-        // This is the key fix for the "body 4-7 cm forward of head" symptom.
-        // Hips translate-follows driven_t.xz instantly (Pass on T channel),
-        // and AVC adds an xz compensation to model_root.local so the body
-        // shifts back by R(driven_rot) * head_target_offset.xz — matching
-        // where the head pivot lands.  If these diverge, the avatar will
-        // visibly lean forward/back at the hips.
         let hips_idx = SPINE_BONES
             .iter()
             .position(|n| *n == "J_Bip_C_Hips")
@@ -356,22 +447,21 @@ fn main() {
         let dx = hips_xz[0] - splice_pos[0];
         let dz = hips_xz[1] - splice_pos[2];
         let xz_drift = (dx * dx + dz * dz).sqrt();
-        // 5 cm — passes at rest + pure translation; rotation poses can drift
-        // up to ~`eye_offset.xz` because the body is statically compensated
-        // for the rest HMD orientation, while head moves around its pivot as
-        // the HMD rotates.  That drift is anatomical, not a bug.
         const HIPS_UNDER_HEAD_TOL: f32 = 0.050;
-        let xz_tag = if xz_drift <= HIPS_UNDER_HEAD_TOL {
-            "ok"
-        } else {
-            "FAIL"
-        };
         println!(
             "  hips_under_head  splice_xz=[{:+.3},{:+.3}]  hips_xz=[{:+.3},{:+.3}]  drift={:.4}m  {}",
-            splice_pos[0], splice_pos[2], hips_xz[0], hips_xz[1], xz_drift, xz_tag,
+            splice_pos[0],
+            splice_pos[2],
+            hips_xz[0],
+            hips_xz[1],
+            xz_drift,
+            if xz_drift <= HIPS_UNDER_HEAD_TOL {
+                "ok"
+            } else {
+                "FAIL"
+            },
         );
 
-        // (4) splice_head world pos ≈ driven_t world pos + R(driven_rot) * offset.
         let predicted_splice_world = {
             let off_world = quat_rotate_vec3(driven_rot, head_target_offset_world);
             [
@@ -381,11 +471,6 @@ fn main() {
             ]
         };
         let splice_drift = vec3_dist(splice_pos, predicted_splice_world);
-        let splice_tag = if splice_drift <= SPLICE_TARGET_TOL {
-            "ok"
-        } else {
-            "FAIL"
-        };
         println!(
             "  splice_head  expected=[{:+.3},{:+.3},{:+.3}]  actual=[{:+.3},{:+.3},{:+.3}]  drift={:.4}m  {}",
             predicted_splice_world[0],
@@ -395,16 +480,621 @@ fn main() {
             splice_pos[1],
             splice_pos[2],
             splice_drift,
-            splice_tag,
+            if splice_drift <= SPLICE_TARGET_TOL {
+                "ok"
+            } else {
+                "FAIL"
+            },
         );
     }
-
-    println!("\n[debug] done. Exiting (no window loop).");
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+fn resolve_spine_bones(
+    world: &World,
+    _avc_id: ComponentId,
+) -> (Vec<ComponentId>, Vec<ComponentId>) {
+    let mut ref_bones = Vec::with_capacity(SPINE_BONES.len());
+    let mut avc_bones = Vec::with_capacity(SPINE_BONES.len());
+    for name in SPINE_BONES {
+        let all = find_components_by_name(world, name);
+        let (avc_side, ref_side): (Vec<_>, Vec<_>) = all
+            .into_iter()
+            .partition(|&id| world_pos(world, id)[0] > 0.0);
+        let avc = avc_side
+            .first()
+            .copied()
+            .unwrap_or_else(|| panic!("bone {} not found on +X AVC side", name));
+        let reference = ref_side
+            .first()
+            .copied()
+            .unwrap_or_else(|| panic!("bone {} not found on -X reference side", name));
+        ref_bones.push(reference);
+        avc_bones.push(avc);
+    }
+    (ref_bones, avc_bones)
+}
+
+fn resolve_arm_chains(world: &World, avc_id: ComponentId) -> Vec<ArmChainRuntime> {
+    let avc = world
+        .get_component_by_id_as::<AvatarControlComponent>(avc_id)
+        .expect("avc missing");
+    let hand_map = [
+        (
+            ArmSide::Left,
+            avc.left_hand_bone
+                .as_deref()
+                .expect("left_hand_bone config missing"),
+        ),
+        (
+            ArmSide::Right,
+            avc.right_hand_bone
+                .as_deref()
+                .expect("right_hand_bone config missing"),
+        ),
+    ];
+
+    hand_map
+        .into_iter()
+        .map(|(side, hand_name)| {
+            let hand_id = find_components_by_name(world, hand_name)
+                .into_iter()
+                .find(|&id| is_descendant_of(world, id, avc_id))
+                .unwrap_or_else(|| panic!("{} bone not found under AVC subtree", hand_name));
+            let (ik_chain_id, solver, target_id) = world
+                .all_components()
+                .find_map(|id| {
+                    let ik = world.get_component_by_id_as::<IKChainComponent>(id)?;
+                    if !is_descendant_of(world, id, avc_id) {
+                        return None;
+                    }
+                    if ik.end_effector_id != hand_id {
+                        return None;
+                    }
+                    Some((id, ik.solver, ik.target_id))
+                })
+                .unwrap_or_else(|| panic!("{} arm IK chain not found", side.as_str()));
+            let (upper_arm, lower_arm, copy_end_rotation) = match solver {
+                IKSolver::TwoBoneIK {
+                    root_joint_id,
+                    mid_joint_id,
+                    copy_end_rotation,
+                    ..
+                } => (root_joint_id, mid_joint_id, copy_end_rotation),
+                _ => panic!("{} arm chain resolved to non-TwoBoneIK", side.as_str()),
+            };
+            let authored_target_local_rotation = local_rot(world, target_id);
+            let rest_hand_world_pos = world_pos(world, hand_id);
+
+            ArmChainRuntime {
+                side,
+                ik_chain_id,
+                upper_arm,
+                lower_arm,
+                hand: hand_id,
+                target: target_id,
+                authored_target_local_rotation,
+                rest_hand_world_pos,
+                original_copy_end_rotation: copy_end_rotation,
+            }
+        })
+        .collect()
+}
+
+fn print_arm_startup_report(world: &World, arms: &[ArmChainRuntime]) {
+    println!("\n================================================================");
+    println!("arm chain startup");
+    for arm in arms {
+        let upward = upward_chain_labels(world, arm.hand, Some(arm.upper_arm), 8);
+        let skipped = skipped_chain_labels(world, arm.hand, arm.lower_arm, arm.upper_arm);
+        println!(
+            "  [{}] ik_chain={} target={} upper={} lower={} hand={}",
+            arm.side.as_str(),
+            describe_component(world, arm.ik_chain_id),
+            describe_component(world, arm.target),
+            describe_component(world, arm.upper_arm),
+            describe_component(world, arm.lower_arm),
+            describe_component(world, arm.hand),
+        );
+        println!("    hand→upper chain: {}", upward.join(" <- "));
+        if skipped.is_empty() {
+            println!("    skipped between hand and upper: none (direct upper->lower->hand)");
+        } else {
+            println!(
+                "    skipped between hand and upper: {}",
+                skipped.join(" <- ")
+            );
+        }
+        println!(
+            "    target parent chain: {}",
+            upward_chain_labels(world, arm.target, None, 4).join(" <- ")
+        );
+    }
+}
+
+fn run_arm_probes(
+    universe: &mut engine::Universe,
+    driven_t: ComponentId,
+    arms: &[ArmChainRuntime],
+    opts: HarnessOptions,
+) {
+    let hand_offset_modes: Vec<HandOffsetMode> = if opts.compare_hand_offsets {
+        vec![HandOffsetMode::Authored, HandOffsetMode::Neutralized]
+    } else if opts.neutralize_hand_offsets {
+        vec![HandOffsetMode::Neutralized]
+    } else {
+        vec![HandOffsetMode::Authored]
+    };
+    let copy_modes: Vec<CopyEndRotationMode> = if opts.compare_copy_end_rotation {
+        vec![
+            CopyEndRotationMode::SolverDefault,
+            CopyEndRotationMode::ForcedOff,
+        ]
+    } else {
+        vec![CopyEndRotationMode::SolverDefault]
+    };
+
+    let poses = [
+        ArmProbePose {
+            name: "neutral_rest",
+            description: "both hand targets at rest hand position and pass baseline rotation",
+            left_twist_rad: 0.0,
+            right_twist_rad: 0.0,
+        },
+        ArmProbePose {
+            name: "left_palm_down",
+            description: "left hand target pronated around the current forearm axis",
+            left_twist_rad: -WRIST_TWIST_RAD,
+            right_twist_rad: 0.0,
+        },
+        ArmProbePose {
+            name: "left_palm_up",
+            description: "left hand target supinated around the current forearm axis",
+            left_twist_rad: WRIST_TWIST_RAD,
+            right_twist_rad: 0.0,
+        },
+        ArmProbePose {
+            name: "right_palm_down",
+            description: "right hand target pronated around the current forearm axis",
+            left_twist_rad: 0.0,
+            right_twist_rad: WRIST_TWIST_RAD,
+        },
+        ArmProbePose {
+            name: "right_palm_up",
+            description: "right hand target supinated around the current forearm axis",
+            left_twist_rad: 0.0,
+            right_twist_rad: -WRIST_TWIST_RAD,
+        },
+    ];
+
+    set_local_transform(
+        &mut universe.command_queue,
+        driven_t,
+        [0.0, 1.55, 0.0],
+        ident_quat(),
+        [1.0, 1.0, 1.0],
+    );
+    settle_world(universe, SETTLE_TICKS_PER_POSE);
+
+    for hand_mode in hand_offset_modes {
+        for copy_mode in &copy_modes {
+            println!("\n================================================================");
+            println!("arm pass: {} | {}", hand_mode.as_str(), copy_mode.as_str());
+
+            apply_pass_settings(&mut universe.world, arms, hand_mode, *copy_mode);
+            for arm in arms {
+                reset_arm_target_to_pass_baseline(universe, *arm, hand_mode);
+            }
+            settle_world(universe, SETTLE_TICKS_PER_POSE);
+
+            let baselines: Vec<(ArmSide, ArmPassBaseline)> = arms
+                .iter()
+                .map(|arm| {
+                    (
+                        arm.side,
+                        ArmPassBaseline {
+                            hand_world_pos: arm.rest_hand_world_pos,
+                            target_world_rot: world_rot(&universe.world, arm.target),
+                            forearm_axis_world: forearm_axis_world(
+                                &universe.world,
+                                arm.lower_arm,
+                                arm.hand,
+                            ),
+                        },
+                    )
+                })
+                .collect();
+
+            for pose in &poses {
+                for arm in arms {
+                    let baseline = baselines
+                        .iter()
+                        .find(|(side, _)| *side == arm.side)
+                        .map(|(_, b)| *b)
+                        .unwrap();
+                    let twist_rad = match arm.side {
+                        ArmSide::Left => pose.left_twist_rad,
+                        ArmSide::Right => pose.right_twist_rad,
+                    };
+                    set_arm_target_world_pose(
+                        universe,
+                        *arm,
+                        baseline.hand_world_pos,
+                        quat_mul(
+                            quat_from_axis_angle(baseline.forearm_axis_world, twist_rad),
+                            baseline.target_world_rot,
+                        ),
+                    );
+                }
+                settle_world(universe, SETTLE_TICKS_PER_POSE);
+
+                let left = arms
+                    .iter()
+                    .find(|arm| matches!(arm.side, ArmSide::Left))
+                    .copied()
+                    .map(|arm| sample_arm_pose(&universe.world, arm))
+                    .expect("left arm sample missing");
+                let right = arms
+                    .iter()
+                    .find(|arm| matches!(arm.side, ArmSide::Right))
+                    .copied()
+                    .map(|arm| sample_arm_pose(&universe.world, arm))
+                    .expect("right arm sample missing");
+
+                println!("\npose: {}", pose.name);
+                println!("  {}", pose.description);
+                print_arm_pose_sample(&universe.world, ArmSide::Left, &left);
+                print_arm_pose_sample(&universe.world, ArmSide::Right, &right);
+
+                if pose.name == "left_palm_down" || pose.name == "right_palm_down" {
+                    continue;
+                }
+            }
+
+            let left_down = sample_signature_for_pose(
+                universe,
+                arms,
+                &baselines,
+                "left_palm_down",
+                -WRIST_TWIST_RAD,
+                0.0,
+            );
+            let right_down = sample_signature_for_pose(
+                universe,
+                arms,
+                &baselines,
+                "right_palm_down",
+                0.0,
+                WRIST_TWIST_RAD,
+            );
+            let left_up = sample_signature_for_pose(
+                universe,
+                arms,
+                &baselines,
+                "left_palm_up",
+                WRIST_TWIST_RAD,
+                0.0,
+            );
+            let right_up = sample_signature_for_pose(
+                universe,
+                arms,
+                &baselines,
+                "right_palm_up",
+                0.0,
+                -WRIST_TWIST_RAD,
+            );
+
+            println!("\nmirror summary");
+            print_mirror_compare("palm_down", left_down, right_down);
+            print_mirror_compare("palm_up", left_up, right_up);
+        }
+    }
+}
+
+fn sample_signature_for_pose(
+    universe: &mut engine::Universe,
+    arms: &[ArmChainRuntime],
+    baselines: &[(ArmSide, ArmPassBaseline)],
+    _pose_name: &str,
+    left_twist_rad: f32,
+    right_twist_rad: f32,
+) -> MirrorSignature {
+    for arm in arms {
+        let baseline = baselines
+            .iter()
+            .find(|(side, _)| *side == arm.side)
+            .map(|(_, b)| *b)
+            .unwrap();
+        let twist = match arm.side {
+            ArmSide::Left => left_twist_rad,
+            ArmSide::Right => right_twist_rad,
+        };
+        set_arm_target_world_pose(
+            universe,
+            *arm,
+            baseline.hand_world_pos,
+            quat_mul(
+                quat_from_axis_angle(baseline.forearm_axis_world, twist),
+                baseline.target_world_rot,
+            ),
+        );
+    }
+    settle_world(universe, SETTLE_TICKS_PER_POSE);
+
+    let active_arm = if left_twist_rad.abs() > right_twist_rad.abs() {
+        arms.iter()
+            .find(|arm| matches!(arm.side, ArmSide::Left))
+            .copied()
+            .unwrap()
+    } else {
+        arms.iter()
+            .find(|arm| matches!(arm.side, ArmSide::Right))
+            .copied()
+            .unwrap()
+    };
+    let sample = sample_arm_pose(&universe.world, active_arm);
+    MirrorSignature {
+        lower_to_hand_deg: sample.lower_to_hand_deg,
+        lower_to_target_deg: sample.lower_to_target_deg,
+        hand_to_target_deg: sample.hand_to_target_deg,
+    }
+}
+
+fn apply_pass_settings(
+    world: &mut World,
+    arms: &[ArmChainRuntime],
+    hand_mode: HandOffsetMode,
+    copy_mode: CopyEndRotationMode,
+) {
+    for arm in arms {
+        if let Some(tc) = world.get_component_by_id_as_mut::<TransformComponent>(arm.target) {
+            tc.transform.rotation = match hand_mode {
+                HandOffsetMode::Authored => arm.authored_target_local_rotation,
+                HandOffsetMode::Neutralized => ident_quat(),
+            };
+            tc.transform.recompute_model();
+        }
+        if let Some(ik) = world.get_component_by_id_as_mut::<IKChainComponent>(arm.ik_chain_id) {
+            if let IKSolver::TwoBoneIK {
+                root_joint_id,
+                mid_joint_id,
+                pole_direction,
+                copy_end_rotation: enabled,
+            } = &mut ik.solver
+            {
+                let _ = (root_joint_id, mid_joint_id, pole_direction);
+                *enabled = match copy_mode {
+                    CopyEndRotationMode::SolverDefault => arm.original_copy_end_rotation,
+                    CopyEndRotationMode::ForcedOff => false,
+                };
+            }
+        }
+    }
+}
+
+fn reset_arm_target_to_pass_baseline(
+    universe: &mut engine::Universe,
+    arm: ArmChainRuntime,
+    hand_mode: HandOffsetMode,
+) {
+    let world_rot = match hand_mode {
+        HandOffsetMode::Authored => world_rot(&universe.world, arm.target),
+        HandOffsetMode::Neutralized => world_rot(&universe.world, arm.target),
+    };
+    set_arm_target_world_pose(universe, arm, arm.rest_hand_world_pos, world_rot);
+}
+
+fn set_arm_target_world_pose(
+    universe: &mut engine::Universe,
+    arm: ArmChainRuntime,
+    desired_world_pos: [f32; 3],
+    desired_world_rot: [f32; 4],
+) {
+    let (local_translation, local_rotation, local_scale) = world_pose_to_local(
+        &universe.world,
+        arm.target,
+        desired_world_pos,
+        desired_world_rot,
+    );
+    set_local_transform(
+        &mut universe.command_queue,
+        arm.target,
+        local_translation,
+        local_rotation,
+        local_scale,
+    );
+}
+
+fn sample_arm_pose(world: &World, arm: ArmChainRuntime) -> ArmPoseSample {
+    let upper_arm = sample_node_rotation(world, arm.upper_arm);
+    let lower_arm = sample_node_rotation(world, arm.lower_arm);
+    let hand = sample_node_rotation(world, arm.hand);
+    let target = sample_node_rotation(world, arm.target);
+    ArmPoseSample {
+        upper_arm,
+        lower_arm,
+        hand,
+        target,
+        lower_to_hand_deg: quat_delta_deg(lower_arm.world, hand.world),
+        lower_to_target_deg: quat_delta_deg(lower_arm.world, target.world),
+        hand_to_target_deg: quat_delta_deg(hand.world, target.world),
+    }
+}
+
+fn sample_node_rotation(world: &World, id: ComponentId) -> NodeRotationSample {
+    NodeRotationSample {
+        world: world_rot(world, id),
+        local: local_rot(world, id),
+    }
+}
+
+fn print_arm_pose_sample(world: &World, side: ArmSide, sample: &ArmPoseSample) {
+    println!("  [{}]", side.as_str());
+    print_node_rot("upper_arm", sample.upper_arm);
+    print_node_rot("lower_arm", sample.lower_arm);
+    print_node_rot("hand", sample.hand);
+    print_node_rot("target", sample.target);
+    println!(
+        "    deltas: lower→hand={:>6.2}°  lower→target={:>6.2}°  hand→target={:>6.2}°",
+        sample.lower_to_hand_deg, sample.lower_to_target_deg, sample.hand_to_target_deg
+    );
+    let _ = world;
+}
+
+fn print_node_rot(label: &str, sample: NodeRotationSample) {
+    println!(
+        "    {:<9} world={}  local={}",
+        label,
+        fmt_quat(sample.world),
+        fmt_quat(sample.local)
+    );
+}
+
+fn print_mirror_compare(name: &str, left: MirrorSignature, right: MirrorSignature) {
+    println!(
+        "  {:<10} lower→hand L/R={:>6.2}°/{:>6.2}°  lower→target L/R={:>6.2}°/{:>6.2}°  hand→target L/R={:>6.2}°/{:>6.2}°",
+        name,
+        left.lower_to_hand_deg,
+        right.lower_to_hand_deg,
+        left.lower_to_target_deg,
+        right.lower_to_target_deg,
+        left.hand_to_target_deg,
+        right.hand_to_target_deg,
+    );
+}
+
+fn upward_chain_labels(
+    world: &World,
+    start: ComponentId,
+    stop_at: Option<ComponentId>,
+    max_hops: usize,
+) -> Vec<String> {
+    let mut out = vec![describe_component(world, start)];
+    let mut cur = start;
+    for _ in 0..max_hops {
+        let Some(parent) = world.parent_of(cur) else {
+            break;
+        };
+        out.push(describe_component(world, parent));
+        if Some(parent) == stop_at {
+            break;
+        }
+        cur = parent;
+    }
+    out
+}
+
+fn skipped_chain_labels(
+    world: &World,
+    hand: ComponentId,
+    lower: ComponentId,
+    upper: ComponentId,
+) -> Vec<String> {
+    let mut skipped = Vec::new();
+    let mut cur = hand;
+    let mut seen_lower = false;
+    for _ in 0..8 {
+        let Some(parent) = world.parent_of(cur) else {
+            break;
+        };
+        if parent == lower {
+            seen_lower = true;
+        } else if parent == upper {
+            break;
+        } else if seen_lower {
+            skipped.push(describe_component(world, parent));
+        }
+        cur = parent;
+    }
+    skipped
+}
+
+fn describe_component(world: &World, id: ComponentId) -> String {
+    let label = world
+        .component_label(id)
+        .or_else(|| world.component_name(id));
+    format!("{}({id:?})", label.unwrap_or("?"))
+}
+
+fn set_local_transform(
+    emit: &mut dyn SignalEmitter,
+    id: ComponentId,
+    translation: [f32; 3],
+    rotation_quat_xyzw: [f32; 4],
+    scale: [f32; 3],
+) {
+    emit.push_intent_now(
+        id,
+        IntentValue::UpdateTransform {
+            component_ids: vec![id],
+            translation,
+            rotation_quat_xyzw,
+            scale,
+        },
+    );
+}
+
+fn world_pose_to_local(
+    world: &World,
+    id: ComponentId,
+    desired_world_pos: [f32; 3],
+    desired_world_rot: [f32; 4],
+) -> ([f32; 3], [f32; 4], [f32; 3]) {
+    let scale = world
+        .get_component_by_id_as::<TransformComponent>(id)
+        .map(|t| t.transform.scale)
+        .unwrap_or([1.0, 1.0, 1.0]);
+
+    let parent_world_mat = parent_world_matrix(world, id).unwrap_or(mat4_identity());
+    let parent_world_rot = parent_world_rotation(world, id).unwrap_or(ident_quat());
+    let inv_parent = mat4_inverse(parent_world_mat).unwrap_or(mat4_identity());
+    let local_pos4 = mat4_mul_vec4(
+        inv_parent,
+        [
+            desired_world_pos[0],
+            desired_world_pos[1],
+            desired_world_pos[2],
+            1.0,
+        ],
+    );
+    let local_rot = quat_mul(quat_conjugate(parent_world_rot), desired_world_rot);
+    (
+        [local_pos4[0], local_pos4[1], local_pos4[2]],
+        local_rot,
+        scale,
+    )
+}
+
+fn parent_world_matrix(world: &World, id: ComponentId) -> Option<[[f32; 4]; 4]> {
+    let parent = world.parent_of(id)?;
+    world
+        .get_component_by_id_as::<TransformComponent>(parent)
+        .map(|t| t.transform.matrix_world)
+}
+
+fn parent_world_rotation(world: &World, id: ComponentId) -> Option<[f32; 4]> {
+    let parent = world.parent_of(id)?;
+    world
+        .get_component_by_id_as::<TransformComponent>(parent)
+        .map(|t| mat_to_quat(t.transform.matrix_world))
+}
+
+fn forearm_axis_world(world: &World, lower_arm: ComponentId, hand: ComponentId) -> [f32; 3] {
+    let axis = vec3_sub(world_pos(world, hand), world_pos(world, lower_arm));
+    if vec3_len(axis) > 1e-6 {
+        vec3_normalize(axis)
+    } else {
+        [0.0, 0.0, 1.0]
+    }
+}
+
+fn quat_delta_deg(from: [f32; 4], to: [f32; 4]) -> f32 {
+    let (_, angle) = quat_to_axis_angle(quat_mul(quat_conjugate(from), to));
+    angle.abs().to_degrees()
+}
+
+fn fmt_quat(q: [f32; 4]) -> String {
+    format!("[{:+.3},{:+.3},{:+.3},{:+.3}]", q[0], q[1], q[2], q[3])
+}
 
 fn ident_quat() -> [f32; 4] {
     [0.0, 0.0, 0.0, 1.0]
@@ -430,9 +1120,22 @@ fn tick_gltf(universe: &mut engine::Universe) {
     );
 }
 
+fn settle_world(universe: &mut engine::Universe, ticks: usize) {
+    let input = InputState::default();
+    for _ in 0..ticks {
+        universe.systems.tick(
+            &mut universe.world,
+            &mut universe.visuals,
+            &universe.render_assets,
+            &input,
+            &mut universe.command_queue,
+            1.0 / 60.0,
+        );
+        drain(universe);
+    }
+}
+
 fn find_components_by_name(world: &World, name: &str) -> Vec<ComponentId> {
-    // `component_name` returns the engine type (e.g. "transform"); user-facing
-    // labels (which is how GLTF stores bone names) come from `component_label`.
     world
         .all_components()
         .filter(|&id| world.component_label(id).map_or(false, |n| n == name))
@@ -442,13 +1145,13 @@ fn find_components_by_name(world: &World, name: &str) -> Vec<ComponentId> {
 fn is_descendant_of(world: &World, child: ComponentId, ancestor: ComponentId) -> bool {
     let mut cur = child;
     for _ in 0..64 {
-        let Some(p) = world.parent_of(cur) else {
+        let Some(parent) = world.parent_of(cur) else {
             return false;
         };
-        if p == ancestor {
+        if parent == ancestor {
             return true;
         }
-        cur = p;
+        cur = parent;
     }
     false
 }
@@ -466,8 +1169,15 @@ fn world_pos(world: &World, id: ComponentId) -> [f32; 3] {
 fn world_rot(world: &World, id: ComponentId) -> [f32; 4] {
     world
         .get_component_by_id_as::<TransformComponent>(id)
-        .map(|t| cat_engine::utils::math::mat_to_quat(t.transform.matrix_world))
-        .unwrap_or([0.0, 0.0, 0.0, 1.0])
+        .map(|t| mat_to_quat(t.transform.matrix_world))
+        .unwrap_or(ident_quat())
+}
+
+fn local_rot(world: &World, id: ComponentId) -> [f32; 4] {
+    world
+        .get_component_by_id_as::<TransformComponent>(id)
+        .map(|t| t.transform.rotation)
+        .unwrap_or(ident_quat())
 }
 
 fn world_yz(world: &World, id: ComponentId) -> [f32; 2] {
@@ -476,10 +1186,8 @@ fn world_yz(world: &World, id: ComponentId) -> [f32; 2] {
 }
 
 fn vec3_dist(a: [f32; 3], b: [f32; 3]) -> f32 {
-    let dx = a[0] - b[0];
-    let dy = a[1] - b[1];
-    let dz = a[2] - b[2];
-    (dx * dx + dy * dy + dz * dz).sqrt()
+    let d = vec3_sub(a, b);
+    vec3_len(d)
 }
 
 fn segment_lengths(chain: &[ComponentId], world: &World) -> Vec<f32> {
@@ -489,17 +1197,10 @@ fn segment_lengths(chain: &[ComponentId], world: &World) -> Vec<f32> {
         .collect()
 }
 
-/// Reconstruct the head IK `target_position_offset` from the AVC subtree.
-///
-/// AVC computes it as `R(rot_y(offset_yaw)) * -eye_offset_head_local`, where
-/// `eye_offset_head_local` is the camera-wrapper T's translation, and
-/// `offset_yaw = 0` when `forward_plus_z`, else `π`.  We don't have direct
-/// access here, so we replicate the math from the AVC component.
 fn head_target_offset_in_target_local(world: &World, avc_id: ComponentId) -> [f32; 3] {
     let avc = world
         .get_component_by_id_as::<AvatarControlComponent>(avc_id)
         .expect("avc missing");
-    // Find first T-wrapped camera child (matches the AVC discovery logic).
     let mut eye_offset = [0.0, 0.0, 0.0];
     for &ch in world.children_of(avc_id) {
         let is_t = world
@@ -531,8 +1232,5 @@ fn head_target_offset_in_target_local(world: &World, avc_id: ComponentId) -> [f3
         std::f32::consts::PI
     };
     let neg_eye = [-eye_offset[0], -eye_offset[1], -eye_offset[2]];
-    quat_rotate_vec3(
-        cat_engine::utils::math::quat_rotation_y(offset_yaw),
-        neg_eye,
-    )
+    quat_rotate_vec3(quat_rotation_y(offset_yaw), neg_eye)
 }

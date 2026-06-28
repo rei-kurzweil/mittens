@@ -50,7 +50,15 @@ ED {
                 head_bone("J_Bip_C_Head")
                 camera_bone("J_Bip_C_Head")
                 hips_bone("J_Bip_C_Hips")
+                left_hand_bone("J_Bip_L_Hand")
+                right_hand_bone("J_Bip_R_Hand")
+                left_upper_arm_bone("J_Bip_L_UpperArm")
+                left_lower_arm_bone("J_Bip_L_LowerArm")
+                right_upper_arm_bone("J_Bip_R_UpperArm")
+                right_lower_arm_bone("J_Bip_R_LowerArm")
                 initial_yaw(3.14159)
+                hand_grip_rotation_left([-0.6408564, 0.29883623, 0.29883623, 0.6408564])
+                hand_grip_rotation_right([-0.6408564, -0.29883623, -0.29883623, 0.6408564])
 
                 T {
                     GLTF.new("assets/models/bisket.8.0.glb")
@@ -63,6 +71,9 @@ ED {
                 T.position(0.0, 0.08, 0.04) {
                     C3D {}
                 }
+
+                VRHand.new(true, Left, Grip) { T {} }
+                VRHand.new(true, Right, Grip) { T {} }
             }
         }
     }
