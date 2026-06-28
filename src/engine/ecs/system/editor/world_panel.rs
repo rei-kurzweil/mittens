@@ -507,10 +507,7 @@ fn rerender_panel_status(
         },
     );
     mark_nearest_layout_dirty(world, status_wrap);
-    println!(
-        "[WorldPanel] rerender_panel_status took {:?}",
-        start.elapsed()
-    );
+    let _ = start;
 }
 
 pub fn rerender_world_panel_status(
@@ -594,10 +591,7 @@ pub fn rerender_world_panel_content(
     } else {
         apply_selection_set(world, emit, selection_root, Vec::new(), None);
     }
-    println!(
-        "[WorldPanel] rerender_world_panel_content took {:?}",
-        start.elapsed()
-    );
+    let _ = start;
 }
 
 pub fn parse_item_index(row_name: &str) -> Option<usize> {

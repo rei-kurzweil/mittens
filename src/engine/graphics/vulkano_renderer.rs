@@ -1732,7 +1732,10 @@ mod vulkano_backend {
                         format: color_format,
                         extent: [extent[0], extent[1], 1],
                         samples: SampleCount::Sample1,
+                        // OpenXR copies from these images; OpenVR submits them directly to the
+                        // compositor, so keep them usable for both transfer and sampling.
                         usage: vulkano::image::ImageUsage::COLOR_ATTACHMENT
+                            | vulkano::image::ImageUsage::SAMPLED
                             | vulkano::image::ImageUsage::TRANSFER_SRC,
                         ..Default::default()
                     },
@@ -4400,11 +4403,13 @@ impl VulkanoRenderer {
         let vk_instance = instance.handle().as_raw() as usize as *const c_void;
         let vk_physical_device = physical_device.handle().as_raw() as usize as *const c_void;
         let vk_device = device.handle().as_raw() as usize as *const c_void;
+        let vk_queue = queue.handle().as_raw() as usize as *const c_void;
 
         Some(crate::engine::graphics::XrVulkanGraphics {
             vk_instance,
             vk_physical_device,
             vk_device,
+            vk_queue,
             queue_family_index: queue.queue_family_index(),
             // Vulkano doesn't currently expose a stable “queue index within family” API here.
             // Using 0 is correct for the common single-queue case.

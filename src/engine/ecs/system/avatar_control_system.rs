@@ -254,12 +254,6 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     let camera_bone_id: Option<ComponentId> = actual_camera_bone_name.and_then(|name| {
         let sel = format!("#{}", name);
         let found = world.find_component(model_root_id, &sel);
-        if found.is_none() && camera_bone_name.is_some() {
-            println!(
-                "[AVC] camera_bone '{}' not found under model_root {:?}",
-                name, model_root_id
-            );
-        }
         found
     });
 
@@ -278,10 +272,6 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
                 .get_component_by_id_as::<CameraXRComponent>(ch)
                 .is_some();
             if is_c3d || is_cxr {
-                println!(
-                    "[AVC] found bare camera child {:?} — re-parent to camera_bone (no eye offset)",
-                    ch
-                );
                 return Some((ch, [0.0, 0.0, 0.0], is_c3d));
             }
             if let Some(tc) = world.get_component_by_id_as::<TransformComponent>(ch) {
@@ -294,21 +284,12 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
                 let wraps_cam = wraps_c3d || wraps_cxr;
                 if wraps_cam {
                     let eye_offset = tc.transform.translation;
-                    println!(
-                        "[AVC] found T-wrapped camera child {:?} — eye_offset = {:?}",
-                        ch, eye_offset
-                    );
                     return Some((ch, eye_offset, wraps_c3d));
                 }
             }
             None
         })
         .collect();
-    if camera_children.is_empty() && camera_bone_id.is_some() {
-        println!(
-            "[AVC] WARNING: camera_bone set but no Camera3D/CameraXR direct children of AVC found"
-        );
-    }
     let eye_offset_head_local: [f32; 3] = camera_children
         .iter()
         .map(|&(_, off, _)| off)
@@ -331,7 +312,6 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     // eye-offset term — that would subtract it twice and stretch the
     // rest-pose neck by `eye_offset.y`.
     let model_root_translation: Option<[f32; 3]> = if let Some(h) = avatar_height_override {
-        println!("[AVC] using avatar_height_override = {}", h);
         Some([0.0, -h, 0.0])
     } else if let Some(cam_bone_id) = camera_bone_id {
         let cam_bone_world_y = world
@@ -343,17 +323,8 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             .map(|t| t.transform.matrix_world[3][1])
             .unwrap_or(0.0);
         let bone_local_y = cam_bone_world_y - model_root_world_y;
-        println!(
-            "[AVC] camera_bone found: cam_bone_world_y={:.4} model_root_world_y={:.4} bone_local_y={:.4} → model_root.y={:.4}",
-            cam_bone_world_y, model_root_world_y, bone_local_y, -bone_local_y
-        );
         Some([0.0, -bone_local_y, 0.0])
     } else {
-        if camera_bone_name.is_some() || actual_camera_bone_name.is_some() {
-            println!(
-                "[AVC] camera_bone (or fallback) not found and no avatar_height_override — model_root.y unchanged"
-            );
-        }
         None
     };
 

@@ -7,9 +7,18 @@ Status: active staged implementation task.
 Update: 2026-06-28
 
 - OpenXR parity is now considered restored after the backend-abstraction refactor.
-- The next primary XR milestone is a minimal real OpenVR backend for controller input testing.
-- The immediate OpenVR goal is not full runtime parity with OpenXR; it is enough runtime/session/input
-  bring-up to exercise controller buttons, triggers, and analog sticks on real VR controllers.
+- The attempted OpenVR bring-up did not become the path that restored controller input.
+- The actual controller-input breakthrough came from fixing Cat Engine's OpenXR action usage and
+  binding suggestion flow.
+- The runtime on this machine reported the active interaction profile as
+  `/interaction_profiles/oculus/touch_controller`, even though the physical device under test was
+  a Vive Focus 3.
+- That means the runtime is currently presenting a Touch-style OpenXR interaction profile to the
+  app, so Cat Engine must follow the runtime-reported profile rather than infer one from hardware
+  branding.
+- OpenVR remains present in code but is no longer the primary path forward for restoring XR input.
+- The next priority should be cleanup and consolidation around OpenXR-first behavior, not further
+  OpenVR expansion.
 
 Implementation checklist:
 
@@ -22,17 +31,152 @@ Implementation checklist:
 - [x] Verify OpenXR behavior still works at least as well as before the abstraction refactor
 - [ ] Define which additional shared XR state types should live above backend-specific code versus remain backend-local
 - [ ] Decide and implement backend health/fallback policy beyond hard init/session failure
-- [ ] Implement minimal actual OpenVR runtime/session/input bring-up behind the same abstraction
-- [ ] Publish real controller button / trigger / analog-stick state through the shared XR input/gamepad surface
-- [ ] Decide whether the first OpenVR milestone includes full stereo render submission or input-only bring-up
-- [ ] Update and verify example scenes against the new VR authoring surface
+- [ ] Decide whether `OpenVRSystem` should be removed entirely now that OpenXR input bring-up is unblocked
+- [ ] Remove OpenVR runtime/session/input bring-up code if the project remains OpenXR-only
+- [x] Publish real controller button / trigger / analog-stick state through the shared XR input/gamepad surface
+- [x] Decide whether the first OpenVR milestone includes full stereo render submission or input-only bring-up
+- [ ] Make all XR examples default explicitly to `VR.openxr()`
+- [ ] Decide whether engine/authored names should revert from `VR`/`VRHand`/`InputVR`/`InputVRGamepad` back to `XR`/`XRHand`/`InputXR`/`InputXRGamepad`
+- [ ] If the naming reversion is accepted, update engine/component names, MMS surface names, and examples consistently
 
 Current note:
 
 - shared XR input/gamepad state already lives above `OpenXRSystem`
 - backend dispatch now goes through a real trait boundary
-- `OpenVRSystem` is still only a placeholder
-- the most obvious remaining user-facing gap is real OpenVR controller input for testing authored VR flows
+- `OpenVRSystem` exists, but OpenXR is the path that actually resumed real controller input
+- the most obvious remaining user-facing gaps are:
+  - finish OpenXR binding coverage for the runtime-reported profile
+  - clean up temporary debug/investigation scaffolding
+  - decide whether the OpenVR code should be deleted rather than expanded
+
+---
+
+## 0. 2026-06-28 investigation result
+
+This section records what actually happened during the latest XR input debugging pass.
+
+### What was observed
+
+- OpenVR did not become usable on this machine.
+- `openvr::init` repeatedly failed with `VRInitError_Init_InterfaceNotFound`.
+- SteamVR-side helper processes also emitted `STEAMVR_VRENV: unbound variable`, which made the
+  OpenVR logs noisy and did not produce a reliable runtime path for Cat Engine.
+- Meanwhile, OpenXR continued to provide head/hand tracking and a valid session.
+- After instrumenting the vendored `openxr` crate, Cat Engine could see the runtime's current
+  interaction profile for both hands.
+- The runtime reported:
+  - `/interaction_profiles/oculus/touch_controller`
+- That was true even though the physical headset/controller setup being discussed was Vive Focus 3.
+
+### What this means
+
+- Cat Engine was not "mistakenly hardcoded to Oculus Touch" at the runtime-detection layer.
+- The OpenXR runtime itself exposed a Touch-style interaction profile.
+- Therefore Cat Engine must trust the runtime-reported interaction profile and bind actions against
+  what the runtime says is active.
+- Hardware identity and interaction-profile identity are not guaranteed to match in a human-obvious
+  way.
+
+### What traces were added to the vendored `openxr` crate
+
+Temporary tracing was added in the vendored `openxr` crate to expose:
+
+- `string_to_path(...)`
+- `suggest_interaction_profile_bindings(...)`
+- `attach_action_sets(...)`
+- `current_interaction_profile(...)`
+
+That instrumentation made three important facts visible:
+
+1. Cat Engine was successfully creating the expected OpenXR paths and actions.
+2. The runtime was returning an active interaction profile instead of `NULL`.
+3. Some batched binding suggestions failed with `ERROR_PATH_UNSUPPORTED`, which meant one bad
+   alias path could poison an entire profile-suggestion batch.
+
+### What actually fixed controller input
+
+The important fixes were in Cat Engine's OpenXR action plumbing, not in OpenVR:
+
+1. `suggest_interaction_profile_bindings(...)` was moved before `attach_action_sets(...)`.
+   Action sets become immutable after attach, so suggestion ordering mattered.
+2. Binding suggestion errors stopped being silently swallowed.
+3. Binding suggestions were changed from "batch all aliases together" to best-effort per-binding
+   suggestion, so one unsupported path no longer kills all other bindings for that profile.
+4. Controller actions were changed to use explicit left/right subaction paths.
+5. Action state polling was changed from `Path::NULL` to the correct per-hand subaction paths.
+6. Aim/grip spaces were changed from one shared `Path::NULL` space to separate left/right spaces.
+
+This was the key bug:
+
+- Cat Engine had working action definitions and some working bindings, but it still queried button
+  and axis state as if there were no per-hand subaction paths.
+- That let the runtime/session exist while leaving most input effectively inert.
+
+### What worked afterward
+
+- Right `ButtonB` started producing real events.
+- That was the first proof that the OpenXR action pipeline was now live end-to-end:
+  - bindings suggested
+  - action set attached
+  - actions synced
+  - per-hand action state queried correctly
+  - engine gamepad events emitted
+
+### What still appears incomplete
+
+- Binding coverage is still incomplete or partially mismatched for the runtime-reported profile.
+- At the time of writing:
+  - `ButtonB` was confirmed working
+  - `A`, `X`, `Y`, triggers, grips, and sticks were not yet all confirmed working
+  - aim/grip pose actions still showed invalid in the debug output during the same session
+
+So the current state is:
+
+- OpenXR action plumbing bug: substantially fixed
+- OpenXR profile/binding coverage: still incomplete
+- OpenVR fallback path: not justified as the primary next step
+
+### Logging cleanup done during the investigation
+
+The debugging pass also removed or gated large amounts of log noise:
+
+- repeated editor/inspector/scroll/layout diagnostics
+- repeated OpenXR frame snapshots
+- repeated XR input event spam
+- repeated vendored-crate profile polling spam
+
+Current env knobs:
+
+- `CAT_OPENXR_TRACE=1`
+  - enables vendored `openxr` trace points other than profile-poll spam
+- `CAT_OPENXR_TRACE_PROFILE=1`
+  - additionally enables vendored `current_interaction_profile(...)` polling logs
+- `CAT_OPENXR_DEBUG=1`
+  - enables Cat Engine OpenXR debug snapshots / hand / controller-source logs
+- `CAT_XR_INPUT_LOG=1`
+  - enables `[input_xr_gamepad_system]` axis/button event logs
+
+---
+
+## 0.1 Revised direction after the investigation
+
+The previous assumption behind this task was:
+
+- OpenXR parity is done
+- OpenVR is the next practical milestone
+
+The latest investigation changes that assessment.
+
+The revised priority order should be:
+
+1. keep OpenXR as the default and primary runtime path
+2. finish OpenXR profile/binding coverage for real hardware/runtime combinations
+3. clean up temporary compatibility/debug code
+4. decide whether to delete OpenVR code instead of developing it further
+5. decide whether the authoring/component API should revert from `VR*` names back to `XR*` names
+
+That means this task is now less about "OpenVR follow-up implementation" and more about
+"what to do after learning that OpenXR was the real fix."
 
 This task captures the likely staged XR-engine direction:
 

@@ -1,5 +1,6 @@
 /target
 .vscode
+vendor-openxr/
 
 # Profiling artifacts
 docs/analysis/perf.data*

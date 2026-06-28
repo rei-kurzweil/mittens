@@ -136,11 +136,6 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         let runtime_ui_root = self.workspace_runtime.get_or_create_runtime_ui_root(world);
         editor_memory_marker("editor setup_panels_for_editor:after runtime ui root");
 
-        println!(
-            "[InspectorSystem][debug] setup_panels_for_editor editor_root={editor_root:?} runtime_ui_root={runtime_ui_root:?} world_panel_pos={:?} inspector_panel_pos={:?}",
-            world_panel_pos, inspector_panel_pos,
-        );
-
         register_editor_root(self.workspace_runtime.installed_editor_roots(), editor_root);
         editor_memory_marker("editor setup_panels_for_editor:after register_editor_root");
         GridSystem::new().ensure_default_grid(world, emit, editor_root);
@@ -832,11 +827,6 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 }
                 let base_y = base.unwrap();
 
-                println!(
-                    "[LayoutRootSizeAvailable] layout_id={layout_id:?} width_wu={width_wu:.4} height_wu={height_wu:.4} mount_root={mount_root:?} base_y={base_y:.4} new_y={:.4}",
-                    base_y + height_wu,
-                );
-
                 emit.push_intent_now(
                     mount_root,
                     IntentValue::UpdateTransform {
@@ -1179,36 +1169,20 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 .is_some_and(|label| label == PANEL_LAYOUT_MOUNT_NAME)
         });
 
-        println!(
-            "[InspectorSystem][debug] reconcile_panel_layout panel_query_root={panel_query_root:?} existing_world_panel={existing_world_panel:?} existing_panel_mount={existing_panel_mount:?}"
-        );
-
         if *panel_layout_spawned {
             if existing_world_panel.is_none() && existing_panel_mount.is_none() {
-                println!(
-                    "[InspectorSystem][debug] panel layout flag was stale for panel_query_root={panel_query_root:?}; respawning missing panel layout"
-                );
                 *panel_layout_spawned = false;
             } else {
-                println!(
-                    "[InspectorSystem][debug] panel layout already spawned for panel_query_root={panel_query_root:?}; skipping duplicate spawn"
-                );
                 return;
             }
         }
 
         if existing_world_panel.is_some() {
-            println!(
-                "[InspectorSystem][debug] panel layout already present for panel_query_root={panel_query_root:?}; skipping spawn"
-            );
             *panel_layout_spawned = true;
             return;
         }
 
         if existing_panel_mount.is_some() {
-            println!(
-                "[InspectorSystem][debug] pending panel layout mount already exists for panel_query_root={panel_query_root:?}; skipping duplicate spawn"
-            );
             *panel_layout_spawned = true;
             return;
         }
@@ -1249,12 +1223,6 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 {
                     let items_already_there = world.children_of(selection_root).len();
                     if items_already_there <= 2 {
-                        println!(
-                            "[InspectorSystem][debug] populating asset panel with {} items into selection_root={:?}",
-                            asset_system.items.len(),
-                            selection_root
-                        );
-
                         let mut last_module_id = None;
                         for (index, item) in asset_system.items.iter().enumerate() {
                             if last_module_id != Some(item.module_id) {
@@ -1295,10 +1263,6 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                                 index,
                             ) {
                                 Ok(item_root) => {
-                                    println!(
-                                        "[InspectorSystem][debug] attaching asset item title={:?} export={:?} root={:?} to selection_root={:?}",
-                                        item.title, item.export_name, item_root, selection_root
-                                    );
                                     world.init_component_tree(item_root, emit);
                                     emit.push_intent_now(
                                         item_root,
@@ -1338,11 +1302,6 @@ impl EditorInspectorSystemStopgapMmsReconciler {
                 );
             }
         }
-
-        println!(
-            "[InspectorSystem][debug] spawned panel mount root={panel_mount_root:?} name={} anchor_pos={:?}",
-            PANEL_LAYOUT_MOUNT_NAME, world_panel_pos,
-        );
 
         emit.push_intent_now(
             panel_mount_root,
@@ -1387,9 +1346,6 @@ impl EditorInspectorSystemStopgapMmsReconciler {
         );
         sync_editor_settings_panel_selection(world, emit, panel_mount_root, &grid_context);
 
-        println!(
-            "[InspectorSystem][debug] queued attach panel_mount_root={panel_mount_root:?} -> panel_query_root={panel_query_root:?}"
-        );
         emit.push_intent_now(
             panel_mount_root,
             IntentValue::Attach {

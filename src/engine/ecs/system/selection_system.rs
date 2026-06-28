@@ -530,9 +530,6 @@ fn direct_option_payload(
             }
         }
     }
-    println!(
-        "[selection] direct_option_payload selection_root={selection_root:?} row_root={row_root:?} option_root={option_root:?} matches={matches:?}"
-    );
     match matches.len() {
         0 => None,
         1 => matches.into_iter().next(),
@@ -555,19 +552,10 @@ pub fn resolve_semantic_target_from_payload(
         if let Some(data) = world.get_component_by_id_as::<DataComponent>(payload)
             && let Some(target_component) = data.get_component("target_component")
         {
-            println!(
-                "[selection] resolve_semantic_target_from_payload payload={payload:?} target_component={target_component:?} selected_component={selected_component:?}"
-            );
             return Some(target_component);
         }
-        println!(
-            "[selection] resolve_semantic_target_from_payload payload={payload:?} missing target_component selected_component={selected_component:?}"
-        );
         return Some(payload);
     }
-    println!(
-        "[selection] resolve_semantic_target_from_payload no payload, falling back to selected_component={selected_component:?}"
-    );
     selected_component
 }
 
@@ -687,14 +675,7 @@ fn handle_selection_click(
     selection_root: ComponentId,
     item_id: ComponentId,
 ) {
-    if let Some(rec) = world.get_component_record(item_id) {
-        println!(
-            "[selection] selected item name={:?} type={} id={:?}",
-            rec.name, rec.component_type, item_id
-        );
-    }
     let selected_index = find_selected_item_index(world, selection_root, item_id);
-    println!("[selection] index={:?}", selected_index);
 
     let entry = SelectionEntry {
         index: selected_index,

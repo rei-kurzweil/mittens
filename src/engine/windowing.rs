@@ -130,20 +130,10 @@ impl ApplicationHandler for App {
             } => event_loop.exit(),
 
             WindowEvent::Resized(size) => {
-                println!("[Windowing] Resized event received: {:?}", size);
-                if let Some(w) = &self.window {
-                    let actual_size = w.inner_size();
-                    println!("[Windowing] Window's actual inner_size: {:?}", actual_size);
-                    // Ensure window is still resizable (in case something changed it)
-                    if !w.is_resizable() {
-                        println!("[Windowing] WARNING: Window is not resizable!");
-                    }
-                }
                 if let Some(universe) = self.universe.as_mut() {
                     universe.resize_renderer(size);
                 }
                 if let Some(w) = &self.window {
-                    println!("[Windowing] resized; requesting redraw");
                     // w.pre_present_notify();
                     w.request_redraw();
                 }

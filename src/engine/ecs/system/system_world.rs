@@ -1191,10 +1191,6 @@ impl SystemWorld {
             return;
         };
 
-        println!(
-            "[InspectorSystem][debug] register_editor editor_root={component:?} spawn_panels={} world_panel_pos={:?} inspector_panel_pos={:?}",
-            spawn_panels, world_panel_pos, inspector_panel_pos,
-        );
         let editor_context_state = self.editor_context.shared_state();
         self.transform_gizmo
             .set_editor_context_state(editor_context_state.clone());
@@ -1203,7 +1199,6 @@ impl SystemWorld {
             .materialize_editor_raycastables(world, emit, component);
 
         if spawn_panels {
-            println!("[InspectorSystem][debug] setup_panels_for_editor editor_root={component:?}");
             self.editor_inspector.setup_panels_for_editor(
                 &mut self.rx,
                 world,

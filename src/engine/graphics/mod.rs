@@ -52,6 +52,7 @@ pub struct XrVulkanGraphics {
     pub vk_instance: openxr::sys::platform::VkInstance,
     pub vk_physical_device: openxr::sys::platform::VkPhysicalDevice,
     pub vk_device: openxr::sys::platform::VkDevice,
+    pub vk_queue: *const std::ffi::c_void,
     pub queue_family_index: u32,
     pub queue_index: u32,
 }

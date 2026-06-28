@@ -356,4 +356,4 @@ on(xr_gamepad, "XrAxisChanged", fn(event) {
     }
 })
 
-VR.on()
+VR.openxr()

@@ -528,15 +528,7 @@ fn editor_context_event_from_shared_signal(
 
 fn apply_editor_context_event(state: &Arc<Mutex<EditorContextState>>, event: &EditorContextEvent) {
     let mut state = state.lock().expect("editor context state poisoned");
-    eprintln!(
-        "🧠🔁📣 apply_editor_context_event before state.active_editor={:?} state.mode={:?} event={event:?}",
-        state.active_editor, state.interaction_mode
-    );
     *state = reduce_editor_context_state(&state, event);
-    eprintln!(
-        "🧠✅📣 apply_editor_context_event after state.active_editor={:?} state.mode={:?}",
-        state.active_editor, state.interaction_mode
-    );
 }
 
 fn emit_editor_workspace_data_event(

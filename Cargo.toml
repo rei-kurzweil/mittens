@@ -12,7 +12,9 @@ vulkano-util = "0.35"
 ash = "0.38"
 
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
-openxr = "0.19"
+openxr = { path = "vendor-openxr" }
+openvr = "0.9"
+openvr_sys = "2.1.4"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "json"] }
 winit = "0.30"
 slotmap = "1.0.7"
@@ -49,4 +51,3 @@ gltf = { version = "1", features = ["import"] }
 [[example]]
 name = "panel-pierce"
 path = "examples/triage/panel-pierce.rs"
-

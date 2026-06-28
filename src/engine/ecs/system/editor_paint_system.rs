@@ -198,9 +198,13 @@ fn install_shared_panel_handlers(
                         let dc = world.get_component_by_id_as::<DataComponent>(id);
                         let has_dc = dc.is_some();
                         let entries_str = dc.map(|d| format!("{:?}", d.entries())).unwrap_or_default();
-                        eprintln!("🎨🖌️ paint_debug bridge: label missing for component={id:?} type={} name={:?} has_DataComponent={} entries={}", rec.component_type, rec.name, has_dc, entries_str);
+                        if PAINT_DEBUG_LOGS {
+                            eprintln!("paint_debug bridge: label missing for component={id:?} type={} name={:?} has_DataComponent={} entries={}", rec.component_type, rec.name, has_dc, entries_str);
+                        }
                     } else {
-                        eprintln!("🎨🖌️ paint_debug bridge: component={id:?} has no record");
+                        if PAINT_DEBUG_LOGS {
+                            eprintln!("paint_debug bridge: component={id:?} has no record");
+                        }
                     }
                 }
             }
@@ -209,9 +213,11 @@ fn install_shared_panel_handlers(
                 .find_component(panel_query_root, PAINT_TOOL_SELECTION_SELECTOR)
                 .is_some_and(|root| root == *selection_root);
 
-            println!(
-                "🎨🖌️ paint_debug bridge SelectionChanged is_tool={is_tool} selection_root={selection_root:?} component={component:?} label={label:?}",
-            );
+            if PAINT_DEBUG_LOGS {
+                println!(
+                    "paint_debug bridge SelectionChanged is_tool={is_tool} selection_root={selection_root:?} component={component:?} label={label:?}",
+                );
+            }
             if is_tool {
                 let event = PaintEvent::ToolSelectionChanged {
                     tool: paint_tool_from_item(label.clone()),
@@ -295,14 +301,18 @@ fn handle_paint_event(
     event: &PaintEvent,
 ) {
     let total_start = Instant::now();
-    eprintln!("🎨🖌️ paint_debug handle_paint_event event={event:?}");
+    if PAINT_DEBUG_LOGS {
+        eprintln!("paint_debug handle_paint_event event={event:?}");
+    }
     let reduce_start = Instant::now();
     let (old_state, new_state) = {
         let mut state = paint_state.lock().expect("paint state mutex poisoned");
         let old_state = state.clone();
         let new_state = reduce_paint_state(&old_state, event);
         *state = new_state.clone();
-        eprintln!("🎨🖌️ paint_debug   old={old_state:?} new={new_state:?}");
+        if PAINT_DEBUG_LOGS {
+            eprintln!("paint_debug   old={old_state:?} new={new_state:?}");
+        }
         (old_state, new_state)
     };
     paint_perf(
@@ -380,10 +390,9 @@ fn bootstrap_paint_state(
         }
         state_str = format!("{state:?}");
     }
-    eprintln!(
-        "🎨🖌️ paint_debug bootstrap_paint_state done → {}",
-        state_str
-    );
+    if PAINT_DEBUG_LOGS {
+        eprintln!("paint_debug bootstrap_paint_state done -> {}", state_str);
+    }
 }
 
 fn label_from_component_id(world: &World, id: ComponentId) -> Option<String> {
@@ -2488,3 +2497,4 @@ mod tests {
         );
     }
 }
+const PAINT_DEBUG_LOGS: bool = false;

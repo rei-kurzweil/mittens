@@ -315,6 +315,8 @@ impl Universe {
         self.visuals
             .set_viewport([size.width as f32, size.height as f32]);
 
+        self.systems.vr.prepare_for_renderer_init(&self.world);
+
         // Apply renderer settings from the component graph if the caller didn't explicitly
         // override them (e.g. via CLI).
         if self.renderer.msaa_mode_override().is_none() {

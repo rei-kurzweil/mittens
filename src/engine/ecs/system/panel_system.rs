@@ -561,11 +561,6 @@ pub fn spawn_editor_panel_layout_tree(
     working_file_path: &Path,
     world_panel_pos: (f32, f32, f32),
 ) -> Option<(ComponentId, ComponentId)> {
-    println!(
-        "[InspectorSystem][debug] spawn_editor_panel_layout_tree world_panel_pos={:?}",
-        world_panel_pos,
-    );
-
     let world_panel_title_color = Value::Array(vec![
         Value::Number(0.90),
         Value::Number(1.00),

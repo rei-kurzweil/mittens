@@ -15,6 +15,8 @@ pub struct VrSystem {
     preferred_backend: VrBackendKind,
     last_backend_error: Option<String>,
     announced_backend: Option<VrBackendKind>,
+    preferred_swapchain_format: Option<u32>,
+    vulkan_graphics: Option<XrVulkanGraphics>,
 }
 
 impl Default for VrSystem {
@@ -24,6 +26,8 @@ impl Default for VrSystem {
             preferred_backend: Self::preferred_backend_from_env(),
             last_backend_error: None,
             announced_backend: None,
+            preferred_swapchain_format: None,
+            vulkan_graphics: None,
         }
     }
 }
@@ -70,6 +74,7 @@ impl VrSystem {
     }
 
     pub fn set_preferred_swapchain_format(&mut self, format: u32) {
+        self.preferred_swapchain_format = Some(format);
         self.backend.set_preferred_swapchain_format(format);
     }
 
@@ -78,7 +83,27 @@ impl VrSystem {
     }
 
     pub fn set_vulkan_graphics(&mut self, gfx: XrVulkanGraphics) {
+        self.vulkan_graphics = Some(gfx);
         self.backend.set_vulkan_graphics(gfx);
+    }
+
+    pub fn prepare_for_renderer_init(&mut self, world: &World) {
+        let preferred_from_world = world.all_components().find_map(|cid| {
+            let component = world.get_component_by_id_as::<VrComponent>(cid)?;
+            if !component.enabled {
+                return None;
+            }
+            Some(match component.backend {
+                VrBackendPreference::Auto => Self::preferred_backend_from_env(),
+                VrBackendPreference::OpenXR => VrBackendKind::OpenXR,
+                VrBackendPreference::OpenVR => VrBackendKind::OpenVR,
+            })
+        });
+
+        if let Some(kind) = preferred_from_world {
+            self.preferred_backend = kind;
+            self.ensure_preferred_backend_initialized();
+        }
     }
 
     pub fn register_vr(
@@ -171,6 +196,12 @@ impl VrSystem {
     fn switch_backend(&mut self, kind: VrBackendKind) {
         if self.backend.kind() != kind {
             self.backend = Self::make_backend(kind);
+            if let Some(format) = self.preferred_swapchain_format {
+                self.backend.set_preferred_swapchain_format(format);
+            }
+            if let Some(gfx) = self.vulkan_graphics {
+                self.backend.set_vulkan_graphics(gfx);
+            }
         }
     }
 

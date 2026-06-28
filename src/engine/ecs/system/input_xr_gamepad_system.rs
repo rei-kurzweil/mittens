@@ -8,6 +8,20 @@ use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 use crate::utils::math;
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
+
+fn xr_input_event_log_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("CAT_XR_INPUT_LOG")
+            .ok()
+            .map(|s| {
+                let s = s.trim().to_ascii_lowercase();
+                s == "1" || s == "true" || s == "on" || s == "yes"
+            })
+            .unwrap_or(false)
+    })
+}
 
 #[derive(Debug, Clone, Default)]
 struct ComponentEventState {
@@ -164,10 +178,12 @@ fn emit_axis_events(
         };
         next.axes.insert((hand, control), value);
         if prev.axes.get(&(hand, control)).copied() != Some(value) {
-            eprintln!(
-                "[input_xr_gamepad_system] axis {:?} {:?} -> [{:.3}, {:.3}] on {:?}",
-                hand, control, value[0], value[1], cid
-            );
+            if xr_input_event_log_enabled() {
+                eprintln!(
+                    "[input_xr_gamepad_system] axis {:?} {:?} -> [{:.3}, {:.3}] on {:?}",
+                    hand, control, value[0], value[1], cid
+                );
+            }
             emit.push_event(
                 cid,
                 EventSignal::XrAxisChanged {
@@ -240,14 +256,16 @@ fn emit_button_events(
         next.buttons.insert((hand, control), down);
         let was_down = prev.buttons.get(&(hand, control)).copied().unwrap_or(false);
         if was_down != down {
-            eprintln!(
-                "[input_xr_gamepad_system] button {:?} {:?} -> {} ({:.3}) on {:?}",
-                hand,
-                control,
-                if down { "down" } else { "up" },
-                value,
-                cid
-            );
+            if xr_input_event_log_enabled() {
+                eprintln!(
+                    "[input_xr_gamepad_system] button {:?} {:?} -> {} ({:.3}) on {:?}",
+                    hand,
+                    control,
+                    if down { "down" } else { "up" },
+                    value,
+                    cid
+                );
+            }
             emit.push_event(
                 cid,
                 if down {

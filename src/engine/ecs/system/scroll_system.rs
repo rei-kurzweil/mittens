@@ -208,14 +208,6 @@ impl ScrollingSystem {
             .or_else(|| Self::nearest_ancestor_transform(world, scroll_component));
         let drag_scope = Self::nearest_drag_scope(world, scroll_component);
 
-        println!(
-            "[Scrolling] register scroll={:?} label={:?} track={:?} drag_scope={:?}",
-            scroll_component,
-            world.component_label(scroll_component),
-            track,
-            drag_scope,
-        );
-
         if let Some(track_id) = track {
             let base_pos = world
                 .get_component_by_id_as::<TransformComponent>(track_id)
