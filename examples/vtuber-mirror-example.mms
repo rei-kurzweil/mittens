@@ -155,7 +155,7 @@ ED {
             roll_axis_y()
             fps_rotation()
         }
-        T.position(3.0, 1.2, 3.5).rotation(0.0, 0.5, 0.0) {
+        T.position(3.0, 1.2, 3.5) {
             name = "desktop_camera_rig"
             Collision.kinematic() {
                 CollisionShape.sphere(0.22)
@@ -173,7 +173,7 @@ ED {
                         }
                     }
 
-                    T.position(0.0, 0.08, -0.12) {
+                    T.position(0.0, 0.08, 0.12) {
                         name = "desktop_camera_wrapper"
                         C3D { Pointer {} }
                     }

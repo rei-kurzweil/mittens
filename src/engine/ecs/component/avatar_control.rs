@@ -1,12 +1,6 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AvatarDriverKind {
-    Desktop,
-    Xr,
-}
-
 /// Coordinates all pose drivers for a humanoid avatar.
 ///
 /// **Design rule**: every transform driver that moves this avatar's bones must be a
@@ -103,11 +97,11 @@ pub struct AvatarControlComponent {
     /// Body rotation rate (radians/sec). Default: 3.0.
     pub body_yaw_rate: f32,
 
-    /// Use +Z as the forward axis (desktop).
+    /// Use +Z as the authored forward axis override.
     ///
-    /// When not explicitly overridden, AVC now resolves this from the pose
-    /// driver: desktop `Input` defaults to `true`, XR `InputXR` defaults to
-    /// `false`.
+    /// When not explicitly overridden, AVC keeps the shared XR-style default
+    /// (`false`) for both desktop and XR. This override remains available for
+    /// assets that were authored with a different convention.
     pub forward_plus_z: bool,
 
     /// Whether `forward_plus_z` was explicitly authored as an override.
@@ -115,8 +109,7 @@ pub struct AvatarControlComponent {
 
     /// Initial body yaw (radians) seeded into the `YawFollow` pipeline op.
     ///
-    /// When not explicitly overridden, AVC now resolves this from the pose
-    /// driver: desktop defaults to `0`, XR defaults to `π`.
+    /// When not explicitly overridden, AVC uses the shared default `π`.
     pub initial_body_yaw: f32,
 
     /// Whether `initial_body_yaw` was explicitly authored as an override.
@@ -247,9 +240,6 @@ pub struct AvatarControlComponent {
     /// Neck rest local translation cached at init for the rest-pin.
     pub(crate) neck_rest_translation: Option<[f32; 3]>,
 
-    /// Driver kind inferred from AVC ancestry at init.
-    pub(crate) driver_kind: Option<AvatarDriverKind>,
-
     component: Option<ComponentId>,
 }
 
@@ -316,16 +306,14 @@ impl AvatarControlComponent {
     }
 
     /// Override the initial body yaw (radians) seeded into the `YawFollow` pipeline op.
-    /// Use `std::f32::consts::PI` for VR setups where the model faces -Z at rest.
-    /// If unset, AVC resolves a driver-specific default automatically.
+    /// Use `std::f32::consts::PI` for rigs that face -Z at rest.
     pub fn with_initial_yaw(mut self, yaw: f32) -> Self {
         self.initial_body_yaw = yaw;
         self.initial_body_yaw_overridden = true;
         self
     }
 
-    /// Use +Z as the forward axis.
-    /// If unset, AVC resolves a driver-specific default automatically.
+    /// Use +Z as the authored forward axis override.
     pub fn with_forward_plus_z(mut self) -> Self {
         self.forward_plus_z = true;
         self.forward_plus_z_overridden = true;
@@ -457,7 +445,6 @@ impl Default for AvatarControlComponent {
             model_root_local_y: 0.0,
             neck_bone_id: None,
             neck_rest_translation: None,
-            driver_kind: None,
             hand_grip_rotation_left: None,
             hand_grip_rotation_right: None,
             component: None,

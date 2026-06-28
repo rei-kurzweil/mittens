@@ -1,11 +1,9 @@
 use crate::engine::ecs::component::{
     AvatarControlComponent, BoneRestPoseComponent, Camera3DComponent, CameraXRComponent,
-    ControllerHand, ControllerXRComponent, IKChainComponent, IKSolver, InputComponent,
-    InputXRComponent, QuatYawFollowComponent, SerializeComponent, TransformComponent,
-    TransformForkTRSComponent,
+    ControllerHand, ControllerXRComponent, IKChainComponent, IKSolver, QuatYawFollowComponent,
+    SerializeComponent, TransformComponent, TransformForkTRSComponent,
     TransformMapRotationComponent,
 };
-use crate::engine::ecs::component::avatar_control::AvatarDriverKind;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::utils::math::{quat_rotate_vec3, quat_rotation_y};
 
@@ -161,19 +159,20 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     let Some(driven_t_id) = world.parent_of(id) else {
         return;
     };
-    let driver_kind = infer_avatar_driver_kind(world, driven_t_id);
-    let resolved_forward_plus_z = if forward_plus_z_overridden {
+    let resolved_body_forward_plus_z = if forward_plus_z_overridden {
         authored_forward_plus_z
     } else {
-        matches!(driver_kind, AvatarDriverKind::Desktop)
+        false
+    };
+    let resolved_head_target_forward_plus_z = if forward_plus_z_overridden {
+        authored_forward_plus_z
+    } else {
+        false
     };
     let resolved_initial_body_yaw = if initial_body_yaw_overridden {
         authored_initial_body_yaw
     } else {
-        match driver_kind {
-            AvatarDriverKind::Desktop => 0.0,
-            AvatarDriverKind::Xr => std::f32::consts::PI,
-        }
+        std::f32::consts::PI
     };
 
     // Head bone is required — retry next tick if GLTF hasn't spawned yet.
@@ -243,7 +242,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     // Discover camera children + derive eye_offset_head_local FIRST — the
     // model_root xz compensation below needs the offset, and the eye_offset
     // also feeds the head IK target_position_offset (used much later).
-    let camera_children: Vec<(ComponentId, [f32; 3])> = world
+    let camera_children: Vec<(ComponentId, [f32; 3], bool)> = world
         .children_of(id)
         .iter()
         .copied()
@@ -259,24 +258,23 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
                     "[AVC] found bare camera child {:?} — re-parent to camera_bone (no eye offset)",
                     ch
                 );
-                return Some((ch, [0.0, 0.0, 0.0]));
+                return Some((ch, [0.0, 0.0, 0.0], is_c3d));
             }
             if let Some(tc) = world.get_component_by_id_as::<TransformComponent>(ch) {
-                let wraps_cam = world.children_of(ch).iter().any(|&gc| {
-                    world
-                        .get_component_by_id_as::<Camera3DComponent>(gc)
-                        .is_some()
-                        || world
-                            .get_component_by_id_as::<CameraXRComponent>(gc)
-                            .is_some()
+                let wraps_c3d = world.children_of(ch).iter().any(|&gc| {
+                    world.get_component_by_id_as::<Camera3DComponent>(gc).is_some()
                 });
+                let wraps_cxr = world.children_of(ch).iter().any(|&gc| {
+                    world.get_component_by_id_as::<CameraXRComponent>(gc).is_some()
+                });
+                let wraps_cam = wraps_c3d || wraps_cxr;
                 if wraps_cam {
                     let eye_offset = tc.transform.translation;
                     println!(
                         "[AVC] found T-wrapped camera child {:?} — eye_offset = {:?}",
                         ch, eye_offset
                     );
-                    return Some((ch, eye_offset));
+                    return Some((ch, eye_offset, wraps_c3d));
                 }
             }
             None
@@ -289,7 +287,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     }
     let eye_offset_head_local: [f32; 3] = camera_children
         .iter()
-        .map(|&(_, off)| off)
+        .map(|&(_, off, _)| off)
         .find(|off| off != &[0.0, 0.0, 0.0])
         .unwrap_or([0.0, eye_height_from_head_bone.unwrap_or(0.0), 0.0]);
 
@@ -297,7 +295,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     // This remains the source for the head target offset. It no longer owns
     // body/root XZ placement; steady-state body XZ is handled by
     // HeadPoseBodyXzFollowSystem.
-    let head_ik_offset_yaw = if resolved_forward_plus_z {
+    let head_ik_offset_yaw = if resolved_head_target_forward_plus_z {
         0.0
     } else {
         std::f32::consts::PI
@@ -390,7 +388,6 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         c.model_root_local_y = model_root_local_y;
         c.neck_bone_id = neck_bone_id;
         c.neck_rest_translation = neck_rest_t;
-        c.driver_kind = Some(driver_kind);
         if let Some((_, _, _, bone)) = left {
             c.left_hand_bone_id = Some(bone);
         }
@@ -416,7 +413,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         let yaw_follow_id = world.add_component(
             QuatYawFollowComponent::new(body_yaw_threshold, body_yaw_rate)
                 .with_initial_yaw(resolved_initial_body_yaw)
-                .with_forward_plus_z_if(resolved_forward_plus_z),
+                .with_forward_plus_z_if(resolved_body_forward_plus_z),
         );
 
         let _ = world.set_parent(body_pipeline_serialize_id, Some(body_pipeline_id));
@@ -462,10 +459,10 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     emit_attach(emit, head_target_id, head_bone_id);
 
     // Zero head_bone's local translation — splice_head now carries the rest offset
-    // from neck.  Preserve head_bone's rest rotation/scale so face mesh orientation
-    // stays correct.  Emitted *after* the reparent attach so the UpdateTransform
-    // lands on head_bone in its new parent (splice_head) without fighting the
-    // attach intent's matrix recompute.
+    // from neck. Preserve the authored head rest rotation/scale so the visible
+    // head mesh and camera anchor share the same convention across desktop and XR.
+    // Emitted *after* the reparent attach so the UpdateTransform lands on
+    // head_bone in its new parent without fighting the attach intent's matrix recompute.
     emit.push_intent_now(
         head_bone_id,
         IntentValue::UpdateTransform {
@@ -610,9 +607,32 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     // under the camera bone so they inherit its world transform each tick.
     // -----------------------------------------------------------------------
     if let Some(cam_bone_id) = camera_bone_id {
-        for &(cam, _eye_offset) in &camera_children {
+        for &(cam, _eye_offset, is_desktop_camera_path) in &camera_children {
+            if is_desktop_camera_path {
+                if let Some(tc) = world.get_component_by_id_as_mut::<TransformComponent>(cam) {
+                    if tc.transform.rotation != quat_rotation_y(std::f32::consts::PI) {
+                        tc.transform.rotation = quat_rotation_y(std::f32::consts::PI);
+                        tc.transform.recompute_model();
+                    }
+                } else {
+                    let desktop_camera_mount = world.add_component(
+                        TransformComponent::new()
+                            .with_rotation_quat(quat_rotation_y(std::f32::consts::PI)),
+                    );
+                    let desktop_camera_mount_serialize_id =
+                        world.add_component(SerializeComponent::off());
+                    let _ = world.set_parent(desktop_camera_mount_serialize_id, Some(desktop_camera_mount));
+                    emit_attach(emit, desktop_camera_mount, cam);
+                    println!(
+                        "[AVC] inserted desktop camera yaw-correction mount {:?} for camera {:?}",
+                        desktop_camera_mount, cam
+                    );
+                    emit_attach(emit, cam_bone_id, desktop_camera_mount);
+                    continue;
+                }
+            }
             println!(
-                "[AVC] re-parenting camera {:?} under camera_bone {:?}",
+                "[AVC] re-parenting camera {:?} under camera anchor {:?}",
                 cam, cam_bone_id
             );
             emit_attach(emit, cam_bone_id, cam);
@@ -676,21 +696,6 @@ fn emit_attach(emit: &mut dyn SignalEmitter, parent: ComponentId, child: Compone
             child,
         },
     );
-}
-
-fn infer_avatar_driver_kind(world: &World, mut node: ComponentId) -> AvatarDriverKind {
-    loop {
-        if world.get_component_by_id_as::<InputXRComponent>(node).is_some() {
-            return AvatarDriverKind::Xr;
-        }
-        if world.get_component_by_id_as::<InputComponent>(node).is_some() {
-            return AvatarDriverKind::Desktop;
-        }
-        let Some(parent) = world.parent_of(node) else {
-            return AvatarDriverKind::Desktop;
-        };
-        node = parent;
-    }
 }
 
 /// Read a bone's authored bind-pose local TRS via the `BoneRestPoseComponent`
