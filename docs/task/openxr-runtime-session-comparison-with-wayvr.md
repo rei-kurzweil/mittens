@@ -2,7 +2,14 @@
 
 Date: 2026-06-25
 
-Status: follow-up investigation after the WayVR-style controller action experiment failed to activate controller actions.
+Status: historical investigation context.
+
+Update: 2026-06-28
+
+- This note remains useful for explaining why OpenVR became a practical fallback target.
+- It should no longer be read as the current top-level blocker for XR backend work.
+- OpenXR parity is now considered restored for the backend-abstraction refactor.
+- The current milestone is implementing a minimal real OpenVR backend for controller input testing.
 
 Important update:
 
@@ -11,7 +18,7 @@ Important update:
 - but forcing `wayvr --openxr` on 2026-06-25 failed immediately with `Missing EXTX_overlay extension`
 - so the confirmed working WayVR path here is OpenVR fallback, not OpenXR
 
-This task captures the next comparison step:
+This note captured the next comparison step at the time:
 
 - compare Cat Engine's OpenXR app/session setup against the local WayVR checkout
 - identify differences that could explain why controller actions never become active

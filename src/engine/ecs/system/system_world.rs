@@ -2218,7 +2218,7 @@ impl SystemWorld {
         // Avatar body yaw: smoothly rotate body to follow head when yaw diverges.
         // Runs after OpenXR + raycasts + gestures so avatar_driven_t.matrix_world is current.
         self.avatar_body_yaw.tick(world, queue, dt_sec);
-        self.avatar_control.tick(world, queue, dt_sec);
+        self.avatar_control.tick(world, input, queue, dt_sec);
         // head_pose_body_xz_follow owns model_root XZ translation + neck
         // rest-pin. Runs after AVC init so model_root_id / body_pipeline_id
         // are populated. Currently Step 0 pass-through (see

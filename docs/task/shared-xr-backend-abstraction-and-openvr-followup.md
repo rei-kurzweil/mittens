@@ -4,6 +4,13 @@ Date: 2026-06-25
 
 Status: active staged implementation task.
 
+Update: 2026-06-28
+
+- OpenXR parity is now considered restored after the backend-abstraction refactor.
+- The next primary XR milestone is a minimal real OpenVR backend for controller input testing.
+- The immediate OpenVR goal is not full runtime parity with OpenXR; it is enough runtime/session/input
+  bring-up to exercise controller buttons, triggers, and analog sticks on real VR controllers.
+
 Implementation checklist:
 
 - [x] Introduce an engine-facing `VrSystem` coordinator above backend-specific XR runtime code
@@ -12,17 +19,20 @@ Implementation checklist:
 - [x] Change the authoring/component API surface to `VR`, `VRHand`, `InputVR`, and `InputVRGamepad`
 - [x] Add a real `VrBackend` interface so `VrSystem` dispatches through one backend contract
 - [x] Finish packaging current OpenXR behavior as one backend implementation under the shared VR boundary
+- [x] Verify OpenXR behavior still works at least as well as before the abstraction refactor
 - [ ] Define which additional shared XR state types should live above backend-specific code versus remain backend-local
 - [ ] Decide and implement backend health/fallback policy beyond hard init/session failure
-- [ ] Implement actual OpenVR runtime/session/input/render bring-up behind the same abstraction
-- [ ] Verify OpenXR behavior still works at least as well as before the abstraction refactor
+- [ ] Implement minimal actual OpenVR runtime/session/input bring-up behind the same abstraction
+- [ ] Publish real controller button / trigger / analog-stick state through the shared XR input/gamepad surface
+- [ ] Decide whether the first OpenVR milestone includes full stereo render submission or input-only bring-up
 - [ ] Update and verify example scenes against the new VR authoring surface
 
 Current note:
 
 - shared XR input/gamepad state already lives above `OpenXRSystem`
 - backend dispatch now goes through a real trait boundary
-- the most obvious remaining user-facing gap is that many MMS/examples still use older XR names
+- `OpenVRSystem` is still only a placeholder
+- the most obvious remaining user-facing gap is real OpenVR controller input for testing authored VR flows
 
 This task captures the likely staged XR-engine direction:
 
@@ -72,7 +82,8 @@ The current `OpenXRSystem` already contains several layers mixed together:
 - pose publication
 - XR render integration
 
-So before adding OpenVR, the engine should first create a cleaner backend boundary.
+That backend boundary work is now done at the structural level, and OpenXR parity is considered
+good enough to move forward.
 
 Update as of 2026-06-26:
 
@@ -85,6 +96,7 @@ So the backend abstraction is now structurally real, but still incomplete:
 - more frame/view/head/hand state may still need a shared backend-neutral shape
 - OpenXR-specific render/session internals are still largely embedded in `OpenXRSystem`
 - the authored MMS/example layer still needs migration and verification
+- `OpenVRSystem` still needs a real runtime/session/input implementation
 
 ---
 
@@ -96,14 +108,14 @@ The implementation goal is:
 - keep one shared render path above the runtime boundary
 - treat OpenXR and OpenVR as backend adapters rather than separate XR subsystems
 
-The staged order should be:
+The staged order was:
 
 1. define the abstraction
 2. package current OpenXR behavior under it
 3. add OpenVR under the same abstraction
 
-That order matters because adding OpenVR first would strongly encourage copying the current
-`OpenXRSystem` shape rather than decomposing it.
+That order mattered because adding OpenVR first would have strongly encouraged copying the current
+`OpenXRSystem` shape rather than decomposing it. The project is now at step 3.
 
 ---
 
@@ -117,14 +129,17 @@ This task should cover:
 - reorganizing current OpenXR code to fit the new boundary
 - preparing a clean place for an OpenVR backend module
 - updating authored examples to the renamed VR authoring surface once the backend boundary is stable
+- defining the minimum viable OpenVR milestone for controller-input testing
 - documenting the staged implementation order
 
 It should not cover:
 
-- fully solving the current Focus 3 OpenXR controller-action bug first
 - finishing a complete OpenVR implementation in the same step as the abstraction refactor
 - broad renderer redesign unrelated to XR backend separation
 - renaming every XR-facing engine concept in the same patch unless needed for the abstraction
+
+The earlier OpenXR controller-action investigation remains useful historical context, but it is
+no longer the primary gate on starting OpenVR work.
 
 ---
 
@@ -228,7 +243,7 @@ Current state:
 
 ### Phase 3: Add OpenVR backend
 
-Only after OpenXR is successfully sitting behind the shared boundary should the engine add:
+Now that OpenXR is successfully sitting behind the shared boundary, the engine should add:
 
 - an OpenVR runtime adapter
 
@@ -241,6 +256,13 @@ That backend should aim to publish the same engine-facing XR state model as Open
 - haptics
 
 This phase should deliberately reuse as much shared XR render/input code as possible.
+
+Immediate sub-phases:
+
+1. minimal runtime/session bring-up
+2. controller pose + button/trigger/stick publication
+3. authored `InputVRGamepad` verification against real controllers
+4. only then decide how much additional OpenVR render/compositor work is required
 
 ---
 

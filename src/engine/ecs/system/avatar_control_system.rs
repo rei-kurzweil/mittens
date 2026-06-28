@@ -5,7 +5,9 @@ use crate::engine::ecs::component::{
     TransformMapRotationComponent,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
-use crate::utils::math::{quat_rotate_vec3, quat_rotation_y};
+use crate::engine::user_input::InputState;
+use crate::utils::math::{mat_to_quat, quat_conjugate, quat_mul, quat_rotate_vec3, quat_rotation_y};
+use winit::keyboard::{Key, NamedKey};
 
 #[derive(Debug, Default)]
 pub struct AvatarControlSystem;
@@ -15,7 +17,13 @@ impl AvatarControlSystem {
         Self
     }
 
-    pub fn tick(&mut self, world: &mut World, emit: &mut dyn SignalEmitter, dt_sec: f32) {
+    pub fn tick(
+        &mut self,
+        world: &mut World,
+        input: &InputState,
+        emit: &mut dyn SignalEmitter,
+        dt_sec: f32,
+    ) {
         let ids: Vec<ComponentId> = world
             .all_components()
             .filter(|&id| {
@@ -25,17 +33,28 @@ impl AvatarControlSystem {
             })
             .collect();
 
+        let mut calibration_consumed = false;
+        let calibrate_pressed = input.key_pressed(&Key::Named(NamedKey::Enter));
         for id in ids {
-            tick_one(id, world, emit, dt_sec);
+            let allow_calibration = calibrate_pressed && !calibration_consumed;
+            if tick_one(id, world, emit, dt_sec, allow_calibration) {
+                calibration_consumed = true;
+            }
         }
     }
 }
 
-fn tick_one(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter, _dt_sec: f32) {
+fn tick_one(
+    id: ComponentId,
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    _dt_sec: f32,
+    allow_calibration: bool,
+) -> bool {
     // --- Init phase ---
     let needs_init = {
         let Some(c) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
-            return;
+            return false;
         };
         c.splice_head.is_none()
     };
@@ -66,6 +85,11 @@ fn tick_one(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter, _d
             }
         }
     }
+
+    if allow_calibration && capture_hand_grip_calibration(id, world, emit) {
+        return true;
+    }
+    false
 }
 
 /// First-time setup: splice bones, create body pipeline, and (optionally) hand smoothing pipelines.
@@ -394,6 +418,14 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
         if let Some((_, _, _, bone)) = right {
             c.right_hand_bone_id = Some(bone);
         }
+        if let Some((_, raw_driver, hand_driver, _)) = left {
+            c.left_hand_raw_target_id = Some(raw_driver);
+            c.left_hand_visual_target_id = Some(hand_driver);
+        }
+        if let Some((_, raw_driver, hand_driver, _)) = right {
+            c.right_hand_raw_target_id = Some(raw_driver);
+            c.right_hand_visual_target_id = Some(hand_driver);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -698,6 +730,116 @@ fn emit_attach(emit: &mut dyn SignalEmitter, parent: ComponentId, child: Compone
     );
 }
 
+fn capture_hand_grip_calibration(
+    avc_id: ComponentId,
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+) -> bool {
+    let (
+        enabled,
+        left_raw,
+        right_raw,
+        left_visual,
+        right_visual,
+        left_hand,
+        right_hand,
+    ) = {
+        let Some(c) = world.get_component_by_id_as::<AvatarControlComponent>(avc_id) else {
+            return false;
+        };
+        (
+            c.calibrate_hand_transforms,
+            c.left_hand_raw_target_id,
+            c.right_hand_raw_target_id,
+            c.left_hand_visual_target_id,
+            c.right_hand_visual_target_id,
+            c.left_hand_bone_id,
+            c.right_hand_bone_id,
+        )
+    };
+
+    if !enabled {
+        return false;
+    }
+
+    let (
+        Some(left_raw),
+        Some(right_raw),
+        Some(left_visual),
+        Some(right_visual),
+        Some(left_hand),
+        Some(right_hand),
+    ) = (
+        left_raw,
+        right_raw,
+        left_visual,
+        right_visual,
+        left_hand,
+        right_hand,
+    )
+    else {
+        println!(
+            "[AVC][calibrate] AVC {:?} is enabled for hand calibration but arm targets are not initialized yet.",
+            avc_id
+        );
+        return true;
+    };
+
+    let left_offset = quat_mul(
+        quat_conjugate(tc_world_rot(world, left_raw)),
+        tc_world_rot(world, left_hand),
+    );
+    let right_offset = quat_mul(
+        quat_conjugate(tc_world_rot(world, right_raw)),
+        tc_world_rot(world, right_hand),
+    );
+
+    if let Some(c) = world.get_component_by_id_as_mut::<AvatarControlComponent>(avc_id) {
+        c.hand_grip_rotation_left = Some(left_offset);
+        c.hand_grip_rotation_right = Some(right_offset);
+    }
+
+    if left_visual != left_raw {
+        update_local_rotation(world, emit, left_visual, left_offset);
+    }
+    if right_visual != right_raw {
+        update_local_rotation(world, emit, right_visual, right_offset);
+    }
+
+    println!("[AVC][calibrate] captured hand grip offsets for AVC {:?}:", avc_id);
+    println!(
+        "  hand_grip_rotation_left([{:.7}, {:.7}, {:.7}, {:.7}])",
+        left_offset[0], left_offset[1], left_offset[2], left_offset[3]
+    );
+    println!(
+        "  hand_grip_rotation_right([{:.7}, {:.7}, {:.7}, {:.7}])",
+        right_offset[0], right_offset[1], right_offset[2], right_offset[3]
+    );
+
+    true
+}
+
+fn update_local_rotation(
+    world: &World,
+    emit: &mut dyn SignalEmitter,
+    component_id: ComponentId,
+    rotation: [f32; 4],
+) {
+    let (translation, scale) = world
+        .get_component_by_id_as::<TransformComponent>(component_id)
+        .map(|t| (t.transform.translation, t.transform.scale))
+        .unwrap_or(([0.0; 3], [1.0, 1.0, 1.0]));
+    emit.push_intent_now(
+        component_id,
+        IntentValue::UpdateTransform {
+            component_ids: vec![component_id],
+            translation,
+            rotation_quat_xyzw: rotation,
+            scale,
+        },
+    );
+}
+
 /// Read a bone's authored bind-pose local TRS via the `BoneRestPoseComponent`
 /// sidecar that `GLTFSystem` stamps at node-spawn time.  Falls back to the
 /// live `TransformComponent` (then to identity) for non-GLTF skeletons that
@@ -720,4 +862,11 @@ fn read_bone_rest_pose(world: &World, bone_id: ComponentId) -> ([f32; 3], [f32; 
             )
         })
         .unwrap_or(([0.0; 3], [0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0]))
+}
+
+fn tc_world_rot(world: &World, id: ComponentId) -> [f32; 4] {
+    world
+        .get_component_by_id_as::<TransformComponent>(id)
+        .map(|t| mat_to_quat(t.transform.matrix_world))
+        .unwrap_or([0.0, 0.0, 0.0, 1.0])
 }

@@ -2,17 +2,23 @@
 
 Date: 2026-06-26
 
-Status: active verification gate.
+Status: completed on 2026-06-28.
+
+Outcome:
+
+- the refactored OpenXR path is now considered back at parity for the backend-abstraction work
+- OpenVR runtime bring-up is no longer blocked on this gate
+- this note remains as a historical checklist and completion record
 
 This task exists to prevent the backend-abstraction refactor from drifting straight into
 OpenVR implementation before the existing OpenXR path is re-verified.
 
-The rule should be:
+The rule was:
 
 - do not treat OpenVR runtime bring-up as the next primary milestone
 - first verify that the refactored OpenXR path still works at least as well as it did before
 
-This is a gate task, not a separate XR direction.
+This was a gate task, not a separate XR direction.
 
 Related context:
 
@@ -131,7 +137,7 @@ OpenXR is considered "back at parity for the abstraction refactor" when:
 - the coordinator/backend split is verified not to have broken the working OpenXR paths
 - the remaining known OpenXR issues are the same old runtime/input issues, not new regressions introduced by the backend packaging
 
-Only after that should the engine treat:
+This gate is now considered satisfied. After that, the engine can treat:
 
 - real OpenVR runtime/session/input/render implementation
 
@@ -139,11 +145,11 @@ as the next primary milestone.
 
 ---
 
-## 5. Immediate next steps
+## 5. Next steps after completion
 
 The next useful steps are:
 
-1. finish migrating the remaining authored `.mms` files under `assets/data/`
-2. update docs that still describe the public authored surface using obsolete XR names
-3. run explicit OpenXR smoke checks against the migrated example scenes
-4. only then start filling in real OpenVR runtime bring-up work
+1. implement minimal real OpenVR runtime/session bring-up
+2. publish OpenVR controller buttons, triggers, and analog sticks through the shared XR input/gamepad state
+3. verify authored `InputVRGamepad` flows against real OpenVR controller input
+4. decide whether the first OpenVR milestone also includes full stereo render submission

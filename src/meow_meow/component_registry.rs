@@ -2597,6 +2597,7 @@ fn apply_call(
             "initial_yaw" => *avc = avc.clone().with_initial_yaw(arg_f32(args, 0)?),
             "forward_plus_z" => *avc = avc.clone().with_forward_plus_z(),
             "ik_debug" => *avc = avc.clone().with_ik_debug(),
+            "calibrate_hand_transforms" => *avc = avc.clone().with_calibrate_hand_transforms(),
             "body_yaw_threshold" => *avc = avc.clone().with_body_yaw_threshold(arg_f32(args, 0)?),
             "body_yaw_rate" => *avc = avc.clone().with_body_yaw_rate(arg_f32(args, 0)?),
             "hand_rotation_smoothing" => {

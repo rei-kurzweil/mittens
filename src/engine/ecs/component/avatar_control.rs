@@ -189,6 +189,13 @@ pub struct AvatarControlComponent {
     /// `None` = no offset.
     pub hand_grip_rotation_right: Option<[f32; 4]>,
 
+    /// Enable interactive capture of live hand grip offsets.
+    ///
+    /// When enabled, pressing `Enter` captures the current controller-to-hand
+    /// rotation offset for the first initialized AVC in the world and prints
+    /// MMS-ready `hand_grip_rotation_left/right([...])` lines to the console.
+    pub calibrate_hand_transforms: bool,
+
     // Runtime IDs set by AvatarControlSystem on first tick:
     pub(crate) splice_head: Option<ComponentId>,
     pub(crate) displaced_head: Option<ComponentId>,
@@ -196,6 +203,14 @@ pub struct AvatarControlComponent {
     pub(crate) left_hand_bone_id: Option<ComponentId>,
     /// Cached right hand bone id (end effector of right-arm TwoBoneIK).
     pub(crate) right_hand_bone_id: Option<ComponentId>,
+    /// Raw left controller/grip transform that feeds the optional hand offset node.
+    pub(crate) left_hand_raw_target_id: Option<ComponentId>,
+    /// Raw right controller/grip transform that feeds the optional hand offset node.
+    pub(crate) right_hand_raw_target_id: Option<ComponentId>,
+    /// Final left visual hand target transform used by IK.
+    pub(crate) left_hand_visual_target_id: Option<ComponentId>,
+    /// Final right visual hand target transform used by IK.
+    pub(crate) right_hand_visual_target_id: Option<ComponentId>,
 
     /// ComponentId of the body pipeline root (`TransformForkTRSComponent`).
     /// Set by `try_init_splices`.
@@ -406,6 +421,11 @@ impl AvatarControlComponent {
         self.hand_grip_rotation_right = Some(q);
         self
     }
+
+    pub fn with_calibrate_hand_transforms(mut self) -> Self {
+        self.calibrate_hand_transforms = true;
+        self
+    }
 }
 
 impl Default for AvatarControlComponent {
@@ -435,6 +455,10 @@ impl Default for AvatarControlComponent {
             displaced_head: None,
             left_hand_bone_id: None,
             right_hand_bone_id: None,
+            left_hand_raw_target_id: None,
+            right_hand_raw_target_id: None,
+            left_hand_visual_target_id: None,
+            right_hand_visual_target_id: None,
             body_pipeline_id: None,
             splice_camera_bone: None,
             skip_body_pipeline: false,
@@ -447,6 +471,7 @@ impl Default for AvatarControlComponent {
             neck_rest_translation: None,
             hand_grip_rotation_left: None,
             hand_grip_rotation_right: None,
+            calibrate_hand_transforms: false,
             component: None,
         }
     }
@@ -528,6 +553,9 @@ impl Component for AvatarControlComponent {
         }
         if self.ik_debug {
             c = c.with_call("ik_debug", vec![]);
+        }
+        if self.calibrate_hand_transforms {
+            c = c.with_call("calibrate_hand_transforms", vec![]);
         }
         if let Some(factor) = self.hand_rotation_smoothing {
             c = c.with_call("hand_rotation_smoothing", vec![num(factor as f64)]);
