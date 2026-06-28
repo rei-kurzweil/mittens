@@ -2,7 +2,7 @@
 
 ## Status
 
-Open bug / investigation.
+Inconclusive investigation.
 
 ## Symptom
 
@@ -17,29 +17,40 @@ can appear to do nothing until the editor settings panel title bar is clicked fi
 The user-visible effect is that the mode rows do not seem to take effect until the panel is
 "focused", after which the same controls begin behaving normally.
 
-## Repro
+This is currently only reported in `vtuber-desktop`. The same behavior has not been confirmed in
+`vtuber-mirror-example`, which raises the possibility that the apparent no-op is scene-specific or
+even perceptual:
 
-1. Run `vtuber-desktop`.
-2. Open the shared editor UI.
-3. Without first clicking the editor settings panel title bar, click one of:
-   - `Select`
-   - `3D Cursor`
-   - `Select + Cursor`
-4. Try the corresponding scene interaction.
-5. Observe that the mode change appears not to take effect.
-6. Click the editor settings title bar to focus the panel.
-7. Click the same mode row again.
-8. Observe that the mode now behaves as expected.
+- overlay / hit-surface behavior may differ between the examples
+- fixed-camera framing and view angle may make the mode change harder to observe in
+  `vtuber-desktop`
+- the first click may be working, while the follow-up scene interaction is what looks wrong
+
+## Repro Status
+
+The original repro was written against `vtuber-desktop`, but it should now be treated as
+example-specific and not yet generalized:
+
+1. In `vtuber-desktop`, the mode change can look like a no-op until a title-bar click.
+2. In `vtuber-mirror-example`, the same interaction is not currently known to fail.
+
+So this is not yet strong evidence of a generic editor-settings focus bug.
 
 ## Expected behavior
 
 Clicking a mode row inside the editor settings panel should immediately change the active editor
 interaction mode, regardless of whether that panel was already focused.
 
-## Actual behavior
+## Observed behavior
 
-The mode rows can behave like a no-op until the settings panel is focused through a title-bar
-click or equivalent panel-shell interaction.
+In `vtuber-desktop`, the mode rows can appear to behave like a no-op until the settings panel is
+focused through a title-bar click or equivalent panel-shell interaction.
+
+That appearance may be misleading. It is still possible that:
+
+- the row selection and interaction-mode change are already happening
+- the scene used to verify the mode change is what differs
+- overlay / camera presentation in `vtuber-desktop` is masking the effect
 
 ## Investigation notes
 
@@ -55,7 +66,7 @@ The mode-change reducer path itself does not appear to require panel focus:
 - there are already tests covering settings-selection to interaction-mode mapping in
   [src/engine/ecs/system/editor/context.rs](/home/rei/_/cat-engine/src/engine/ecs/system/editor/context.rs:1474)
 
-The stronger current suspicion is a panel-focus routing mismatch around settings-panel clicks:
+One earlier suspicion was a panel-focus routing mismatch around settings-panel clicks:
 
 - panel click handling calls `focus_panel_from_descendant_click(...)` before
   `handle_editor_settings_panel_click(...)` in
@@ -81,29 +92,38 @@ But if the first click is being interpreted primarily as an outer shell/focus ge
 inner settings selection is not winning on that first interaction, then the user would see exactly
 this "first click focuses, second click works" behavior.
 
-## Likely root cause
+## Current interpretation
 
-The editor settings panel is missing from the common descendant-click panel-focus path.
+The old "missing settings panel in descendant-click focus path" theory is no longer sufficient by
+itself:
 
-That leaves settings behavior split across two mechanisms:
+- that path has since been updated
+- focused tests cover direct settings-row selection and panel-layout focus handoff
+- the reported symptom still appears scene-dependent
 
-- shell/title-bar focus through panel-layout selection
-- row selection through `#editor_settings_selection`
+So the remaining issue may be outside generic settings-panel selection/focus handling.
 
-Other panels get a shared focus handoff on any descendant click; settings currently appears to rely
-on narrower follow-up paths.
+More plausible current buckets are:
+
+- `vtuber-desktop`-specific overlay or hit-surface interference
+- camera/framing making mode changes hard to perceive
+- a downstream scene-interaction difference after mode selection, rather than a failed row click
 
 ## Recommended next checks
 
 1. Add a focused regression test for "first click on an unfocused settings mode row changes
    `EditorComponent.interaction_mode` immediately".
-2. Instrument whether the first row click produces:
+2. Compare `vtuber-desktop` and `vtuber-mirror-example` directly for:
+   - row-selection events
+   - panel-layout focus events
+   - resulting `EditorContextState.interaction_mode`
+3. Instrument whether the first row click produces:
    - panel-layout `SelectionChanged`
    - settings `SelectionChanged`
    - both, and in what order
-3. Extend `focus_panel_from_descendant_click(...)` to include
-   `#editor_settings_panel_root`, then verify whether that alone fixes the repro.
-4. If not, inspect whether the first click is hitting panel-shell renderables instead of the row
+4. Verify whether the apparent failure is actually in the follow-up scene interaction, not in the
+   settings row click itself.
+5. Inspect whether the first click is hitting panel-shell renderables instead of the row
    option/raycastable subtree.
 
 ## Notes
