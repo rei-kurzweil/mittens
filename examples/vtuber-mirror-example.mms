@@ -204,8 +204,9 @@ T {
                     right_arm_pole_direction([-1, -0.35, -1])
 
                     hand_rotation_smoothing(220.0)
-                    hand_grip_rotation_left([-0.6408564, 0.29883623, 0.29883623, 0.6408564])
-                    hand_grip_rotation_right([-0.6408564, -0.29883623, -0.29883623, 0.6408564])
+                    //hand_grip_rotation_left([-0.6408564, 0.29883623, 0.29883623, 0.6408564])
+                    //hand_grip_rotation_right([-0.6408564, -0.29883623, -0.29883623, 0.6408564])
+
 
                     T {
                         GLTF.new("assets/models/bisket.11.0.glb") {

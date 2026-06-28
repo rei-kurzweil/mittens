@@ -4,6 +4,10 @@
 
 Open bug / investigation note.
 
+Focused follow-up task:
+
+- [docs/task/avc-forearm-roll-visual-hand-offset-alignment.md](../task/avc-forearm-roll-visual-hand-offset-alignment.md)
+
 ## Symptom
 
 When XR hand tracking is active and takes over `CTLXR` pose driving, the resulting hand orientation

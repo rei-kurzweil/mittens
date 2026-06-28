@@ -1,14 +1,14 @@
 use crate::engine::ecs::component::ik_chain::TwoBoneIkDebugVisuals;
 use crate::engine::ecs::component::{
-    AvatarControlComponent, ColorComponent, EmissiveComponent, IKChainComponent, IKSolver,
-    OverlayComponent, QueryRootMode, RenderableComponent, TransformComponent,
-    resolve_component_ref,
+    resolve_component_ref, AvatarControlComponent, BoneRestPoseComponent, ColorComponent,
+    EmissiveComponent, IKChainComponent, IKSolver, OverlayComponent, QueryRootMode,
+    RenderableComponent, TransformComponent,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::utils::math::{
-    mat_to_quat, mat4_inverse, quat_conjugate, quat_from_axis_angle, quat_mul, quat_nlerp,
+    mat4_inverse, mat_to_quat, quat_conjugate, quat_from_axis_angle, quat_mul, quat_nlerp,
     quat_rotate_vec3, quat_rotation_y, quat_to_axis_angle, shortest_arc_quat, vec3_add, vec3_cross,
-    vec3_len, vec3_lerp, vec3_normalize, vec3_scale, vec3_sub,
+    vec3_dot, vec3_len, vec3_lerp, vec3_normalize, vec3_scale, vec3_sub,
 };
 
 #[derive(Debug, Default)]
@@ -499,7 +499,22 @@ fn solve_two_bone(
         lower_fwd_after_upper
     };
     let delta_lower = shortest_arc_quat(lower_fwd_after_upper, new_lower_fwd);
-    let new_lower_world_rot = quat_mul(delta_lower, quat_mul(delta_upper, mid_world_rot));
+    let mut new_lower_world_rot = quat_mul(delta_lower, quat_mul(delta_upper, mid_world_rot));
+    let end_local_rest = read_bone_rest_rot(world, end_tc);
+    let solved_forearm_axis = if vec3_len(vec3_sub(target_pos, elbow_pos)) > 1e-6 {
+        vec3_normalize(vec3_sub(target_pos, elbow_pos))
+    } else {
+        new_lower_fwd
+    };
+    let solved_hand_world_rot = quat_mul(new_lower_world_rot, end_local_rest);
+    let target_world_rot = tc_world_rot(world, target_id);
+    let target_from_solved_hand = quat_mul(target_world_rot, quat_conjugate(solved_hand_world_rot));
+    let forearm_twist_world =
+        extract_twist_about_axis(target_from_solved_hand, solved_forearm_axis);
+    let (_, forearm_twist_angle) = quat_to_axis_angle(forearm_twist_world);
+    if forearm_twist_angle.abs() > 1e-4 {
+        new_lower_world_rot = quat_mul(forearm_twist_world, new_lower_world_rot);
+    }
 
     // Parent of lower arm is now upper arm with new_upper_world_rot.
     let full_lower_local = quat_mul(quat_conjugate(new_upper_world_rot), new_lower_world_rot);
@@ -545,7 +560,6 @@ fn solve_two_bone(
 
     // Optionally copy target rotation to end-effector bone.
     if copy_end_rotation {
-        let target_world_rot = tc_world_rot(world, target_id);
         let full_end_local = quat_mul(quat_conjugate(new_lower_world_rot), target_world_rot);
         let end_local = if weight < 1.0 {
             let cur = world
@@ -569,6 +583,31 @@ fn solve_two_bone(
                 scale: es,
             },
         );
+    }
+}
+
+fn extract_twist_about_axis(delta_rot: [f32; 4], axis_world: [f32; 3]) -> [f32; 4] {
+    let axis = vec3_normalize(axis_world);
+    if vec3_len(axis) <= 1e-6 {
+        return [0.0, 0.0, 0.0, 1.0];
+    }
+    let projected = vec3_scale(
+        axis,
+        vec3_dot([delta_rot[0], delta_rot[1], delta_rot[2]], axis),
+    );
+    let twist = [projected[0], projected[1], projected[2], delta_rot[3]];
+    let len_sq =
+        twist[0] * twist[0] + twist[1] * twist[1] + twist[2] * twist[2] + twist[3] * twist[3];
+    if len_sq <= 1e-12 {
+        [0.0, 0.0, 0.0, 1.0]
+    } else {
+        let inv_len = len_sq.sqrt().recip();
+        [
+            twist[0] * inv_len,
+            twist[1] * inv_len,
+            twist[2] * inv_len,
+            twist[3] * inv_len,
+        ]
     }
 }
 
@@ -976,12 +1015,46 @@ fn tc_world_rot(world: &World, id: ComponentId) -> [f32; 4] {
         .unwrap_or([0.0, 0.0, 0.0, 1.0])
 }
 
+fn read_bone_rest_rot(world: &World, bone_id: ComponentId) -> [f32; 4] {
+    world
+        .children_of(bone_id)
+        .iter()
+        .find_map(|&c| world.get_component_by_id_as::<BoneRestPoseComponent>(c))
+        .map(|rest| rest.rotation)
+        .or_else(|| {
+            world
+                .get_component_by_id_as::<TransformComponent>(bone_id)
+                .map(|t| t.transform.rotation)
+        })
+        .unwrap_or([0.0, 0.0, 0.0, 1.0])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::ecs::component::{
+        BoneRestPoseComponent, ComponentRef, IKChainComponent, IKSolver, TransformComponent,
+    };
     use crate::engine::ecs::CommandQueue;
-    use crate::engine::ecs::component::{ComponentRef, IKChainComponent, IKSolver};
+    use crate::engine::ecs::IntentValue;
     use slotmap::Key;
+
+    #[derive(Default)]
+    struct TestEmitter {
+        intents: Vec<(ComponentId, IntentValue)>,
+    }
+
+    impl SignalEmitter for TestEmitter {
+        fn push_event(&mut self, _scope: ComponentId, _event: crate::engine::ecs::EventSignal) {}
+
+        fn push_intent(
+            &mut self,
+            scope: ComponentId,
+            intent: crate::engine::ecs::IntentSignal,
+        ) {
+            self.intents.push((scope, intent.value));
+        }
+    }
 
     // Temporarily gated: see docs/bugs/ik-solver-api-drift-breaks-tests.md.
     #[cfg(any())]
@@ -1134,5 +1207,54 @@ mod tests {
         assert_eq!(ik.target_id, hand);
         assert_ne!(ik.target_id, unrelated_hand);
         assert_eq!(ik.end_effector_id, elbow);
+    }
+
+    #[test]
+    fn two_bone_forearm_twist_uses_hand_rest_rotation_not_live_hand_local_rotation() {
+        let mut w = World::default();
+        let root = w.add_component(TransformComponent::new().with_position(0.0, 0.0, 0.0));
+        let mid = w.add_component(TransformComponent::new().with_position(1.0, 0.0, 0.0));
+        let hand = w.add_component(
+            TransformComponent::new()
+                .with_position(2.0, 0.0, 0.0)
+                .with_rotation_quat(quat_from_axis_angle([1.0, 0.0, 0.0], std::f32::consts::FRAC_PI_2)),
+        );
+        let target = w.add_component(TransformComponent::new().with_position(2.0, 0.0, 0.0));
+        let hand_rest =
+            w.add_component(BoneRestPoseComponent::new([0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0]));
+        w.add_child(hand, hand_rest).unwrap();
+
+        let mut emit = TestEmitter::default();
+        solve_two_bone(
+            &mut w,
+            &mut emit,
+            ComponentId::null(),
+            &[root, mid, hand],
+            target,
+            [0.0, 1.0, 0.0],
+            true,
+            1.0,
+            None,
+        );
+
+        let lower_update = emit
+            .intents
+            .iter()
+            .find_map(|(scope, value)| match (scope, value) {
+                (
+                    scope_id,
+                    IntentValue::UpdateTransform {
+                        rotation_quat_xyzw, ..
+                    },
+                ) if *scope_id == mid => Some(*rotation_quat_xyzw),
+                _ => None,
+            })
+            .expect("lower arm update intent");
+
+        let (_, lower_angle) = quat_to_axis_angle(lower_update);
+        assert!(
+            lower_angle.abs() < 1e-4,
+            "expected no forearm twist from live hand local rotation, got {lower_angle}"
+        );
     }
 }
