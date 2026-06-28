@@ -1189,7 +1189,6 @@ fn create_component(
             Some("off") => add!(VrComponent::off()),
             Some("on") | Some("auto") => add!(VrComponent::on()),
             Some("openxr") => add!(VrComponent::openxr()),
-            Some("openvr") => add!(VrComponent::openvr()),
             _ => add!(VrComponent::on()),
         },
         "VRHand" | "VrHand" => match ctor {

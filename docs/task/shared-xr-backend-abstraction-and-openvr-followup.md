@@ -1,8 +1,8 @@
-# Task: Shared XR backend abstraction and OpenVR follow-up
+# Task: Shared XR backend abstraction follow-up
 
 Date: 2026-06-25
 
-Status: active staged implementation task.
+Status: active OpenXR-first cleanup task.
 
 Update: 2026-06-28
 
@@ -16,9 +16,8 @@ Update: 2026-06-28
 - That means the runtime is currently presenting a Touch-style OpenXR interaction profile to the
   app, so Cat Engine must follow the runtime-reported profile rather than infer one from hardware
   branding.
-- OpenVR remains present in code but is no longer the primary path forward for restoring XR input.
-- The next priority should be cleanup and consolidation around OpenXR-first behavior, not further
-  OpenVR expansion.
+- OpenVR has now been removed from the live engine/runtime path.
+- The next priority is cleanup and consolidation around OpenXR-first behavior.
 
 Implementation checklist:
 
@@ -31,11 +30,13 @@ Implementation checklist:
 - [x] Verify OpenXR behavior still works at least as well as before the abstraction refactor
 - [ ] Define which additional shared XR state types should live above backend-specific code versus remain backend-local
 - [ ] Decide and implement backend health/fallback policy beyond hard init/session failure
-- [ ] Decide whether `OpenVRSystem` should be removed entirely now that OpenXR input bring-up is unblocked
-- [ ] Remove OpenVR runtime/session/input bring-up code if the project remains OpenXR-only
+- [ ] Add a one-shot init-time report for the runtime-reported active OpenXR interaction profile showing which suggested bindings were accepted vs unsupported
+- [x] Switch back off the vendored `openxr` crate
+- [x] Decide whether `OpenVRSystem` should be removed entirely now that OpenXR input bring-up is unblocked
+- [x] Remove OpenVR runtime/session/input bring-up code now that the project is OpenXR-only again
 - [x] Publish real controller button / trigger / analog-stick state through the shared XR input/gamepad surface
 - [x] Decide whether the first OpenVR milestone includes full stereo render submission or input-only bring-up
-- [ ] Make all XR examples default explicitly to `VR.openxr()`
+- [x] Make all XR examples default explicitly to `VR.openxr()`
 - [ ] Decide whether engine/authored names should revert from `VR`/`VRHand`/`InputVR`/`InputVRGamepad` back to `XR`/`XRHand`/`InputXR`/`InputXRGamepad`
 - [ ] If the naming reversion is accepted, update engine/component names, MMS surface names, and examples consistently
 
@@ -43,11 +44,18 @@ Current note:
 
 - shared XR input/gamepad state already lives above `OpenXRSystem`
 - backend dispatch now goes through a real trait boundary
-- `OpenVRSystem` exists, but OpenXR is the path that actually resumed real controller input
+- `VrSystem` now resolves to the OpenXR backend only
 - the most obvious remaining user-facing gaps are:
   - finish OpenXR binding coverage for the runtime-reported profile
   - clean up temporary debug/investigation scaffolding
-  - decide whether the OpenVR code should be deleted rather than expanded
+  - decide whether the `VR*` authoring names should stay or revert to `XR*`
+
+Cleanup done in this pass:
+
+- removed the `openvr` / `openvr_sys` dependencies
+- removed `OpenVRSystem` and its fallback wiring from `VrSystem`
+- switched `openxr` back from the vendored crate to the registry crate
+- verified the current XR examples already opt into `VR.openxr()` / `VrComponent::openxr()`
 
 ---
 

@@ -1830,15 +1830,6 @@ fn roundtrip_vr_off() {
 }
 
 #[test]
-fn roundtrip_vr_openvr() {
-    use crate::engine::ecs::component::{VrBackendPreference, VrComponent};
-    let (world, id) = roundtrip_component(VrComponent::openvr());
-    let got = world.get_component_by_id_as::<VrComponent>(id).unwrap();
-    assert!(got.enabled);
-    assert_eq!(got.backend, VrBackendPreference::OpenVR);
-}
-
-#[test]
 fn roundtrip_vr_hand() {
     use crate::engine::ecs::component::{ControllerHand, ControllerPoseKind, VRHandComponent};
     let original = VRHandComponent::new(true, ControllerHand::Right, ControllerPoseKind::Grip);

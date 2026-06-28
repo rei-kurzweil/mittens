@@ -1732,8 +1732,8 @@ mod vulkano_backend {
                         format: color_format,
                         extent: [extent[0], extent[1], 1],
                         samples: SampleCount::Sample1,
-                        // OpenXR copies from these images; OpenVR submits them directly to the
-                        // compositor, so keep them usable for both transfer and sampling.
+                        // OpenXR copies from these images into the XR swapchain target, so keep
+                        // them usable for both transfer and sampling.
                         usage: vulkano::image::ImageUsage::COLOR_ATTACHMENT
                             | vulkano::image::ImageUsage::SAMPLED
                             | vulkano::image::ImageUsage::TRANSFER_SRC,

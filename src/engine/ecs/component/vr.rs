@@ -6,7 +6,6 @@ pub enum VrBackendPreference {
     #[default]
     Auto,
     OpenXR,
-    OpenVR,
 }
 
 #[derive(Debug, Clone)]
@@ -50,13 +49,6 @@ impl VrComponent {
             backend: VrBackendPreference::OpenXR,
         }
     }
-
-    pub fn openvr() -> Self {
-        Self {
-            enabled: true,
-            backend: VrBackendPreference::OpenVR,
-        }
-    }
 }
 
 impl Component for VrComponent {
@@ -92,7 +84,6 @@ impl Component for VrComponent {
             match self.backend {
                 VrBackendPreference::Auto => "on",
                 VrBackendPreference::OpenXR => "openxr",
-                VrBackendPreference::OpenVR => "openvr",
             }
         };
         ce_call("VR", ctor, vec![])

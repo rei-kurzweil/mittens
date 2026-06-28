@@ -7,14 +7,12 @@ use crate::engine::user_input::InputState;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VrBackendKind {
     OpenXR,
-    OpenVR,
 }
 
 impl std::fmt::Display for VrBackendKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::OpenXR => write!(f, "OpenXR"),
-            Self::OpenVR => write!(f, "OpenVR"),
         }
     }
 }

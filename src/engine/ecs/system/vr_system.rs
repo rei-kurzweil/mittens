@@ -2,7 +2,6 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{VrBackendPreference, VrComponent};
 use crate::engine::ecs::system::System;
-use crate::engine::ecs::system::openvr_system::OpenVRSystem;
 use crate::engine::ecs::system::openxr_system::OpenXRSystem;
 use crate::engine::ecs::system::vr_backend::{VrBackend, VrBackendKind};
 use crate::engine::ecs::system::vr_types::{XrGamepadState, XrInputState};
@@ -12,7 +11,6 @@ use crate::engine::user_input::InputState;
 #[derive(Debug)]
 pub struct VrSystem {
     backend: Box<dyn VrBackend>,
-    preferred_backend: VrBackendKind,
     last_backend_error: Option<String>,
     announced_backend: Option<VrBackendKind>,
     preferred_swapchain_format: Option<u32>,
@@ -23,7 +21,6 @@ impl Default for VrSystem {
     fn default() -> Self {
         Self {
             backend: Box::new(OpenXRSystem::default()),
-            preferred_backend: Self::preferred_backend_from_env(),
             last_backend_error: None,
             announced_backend: None,
             preferred_swapchain_format: None,
@@ -33,32 +30,12 @@ impl Default for VrSystem {
 }
 
 impl VrSystem {
-    fn preferred_backend_from_env() -> VrBackendKind {
-        match std::env::var("CAT_VR_BACKEND")
-            .ok()
-            .as_deref()
-            .map(str::trim)
-            .map(str::to_ascii_lowercase)
-            .as_deref()
-        {
-            Some("openvr") => VrBackendKind::OpenVR,
-            _ => VrBackendKind::OpenXR,
-        }
-    }
-
-    fn make_backend(kind: VrBackendKind) -> Box<dyn VrBackend> {
-        match kind {
-            VrBackendKind::OpenXR => Box::new(OpenXRSystem::default()),
-            VrBackendKind::OpenVR => Box::new(OpenVRSystem::default()),
-        }
-    }
-
     pub fn active_backend_kind(&self) -> VrBackendKind {
         self.backend.kind()
     }
 
     pub fn preferred_backend_kind(&self) -> VrBackendKind {
-        self.preferred_backend
+        VrBackendKind::OpenXR
     }
 
     pub fn last_backend_error(&self) -> Option<&str> {
@@ -88,21 +65,21 @@ impl VrSystem {
     }
 
     pub fn prepare_for_renderer_init(&mut self, world: &World) {
-        let preferred_from_world = world.all_components().find_map(|cid| {
-            let component = world.get_component_by_id_as::<VrComponent>(cid)?;
-            if !component.enabled {
-                return None;
-            }
-            Some(match component.backend {
-                VrBackendPreference::Auto => Self::preferred_backend_from_env(),
-                VrBackendPreference::OpenXR => VrBackendKind::OpenXR,
-                VrBackendPreference::OpenVR => VrBackendKind::OpenVR,
-            })
+        let should_enable = world.all_components().any(|cid| {
+            world
+                .get_component_by_id_as::<VrComponent>(cid)
+                .map(|component| {
+                    component.enabled
+                        && matches!(
+                            component.backend,
+                            VrBackendPreference::Auto | VrBackendPreference::OpenXR
+                        )
+                })
+                .unwrap_or(false)
         });
 
-        if let Some(kind) = preferred_from_world {
-            self.preferred_backend = kind;
-            self.ensure_preferred_backend_initialized();
+        if should_enable {
+            self.ensure_openxr_initialized();
         }
     }
 
@@ -117,16 +94,8 @@ impl VrSystem {
             .map(|component| component.enabled)
             .unwrap_or(false);
 
-        if let Some(component) = world.get_component_by_id_as::<VrComponent>(component) {
-            self.preferred_backend = match component.backend {
-                VrBackendPreference::Auto => Self::preferred_backend_from_env(),
-                VrBackendPreference::OpenXR => VrBackendKind::OpenXR,
-                VrBackendPreference::OpenVR => VrBackendKind::OpenVR,
-            };
-        }
-
         if enabled {
-            self.ensure_preferred_backend_initialized();
+            self.ensure_openxr_initialized();
         }
 
         self.backend.register_vr(world, visuals, component);
@@ -193,65 +162,24 @@ impl VrSystem {
         self.backend.render_xr(world, visuals, renderer);
     }
 
-    fn switch_backend(&mut self, kind: VrBackendKind) {
-        if self.backend.kind() != kind {
-            self.backend = Self::make_backend(kind);
-            if let Some(format) = self.preferred_swapchain_format {
-                self.backend.set_preferred_swapchain_format(format);
-            }
-            if let Some(gfx) = self.vulkan_graphics {
-                self.backend.set_vulkan_graphics(gfx);
-            }
-        }
-    }
-
     fn announce_backend(&mut self, context: &str) {
         let active_backend = self.backend.kind();
         if self.announced_backend == Some(active_backend) {
             return;
         }
 
-        println!(
-            "[VR] Using {active_backend} backend ({context}; requested: {})",
-            self.preferred_backend
-        );
+        println!("[VR] Using {active_backend} backend ({context})");
         self.announced_backend = Some(active_backend);
     }
 
-    fn ensure_preferred_backend_initialized(&mut self) {
-        match self.preferred_backend {
-            VrBackendKind::OpenXR => {
-                self.switch_backend(VrBackendKind::OpenXR);
-                match self.backend.initialize_runtime() {
-                    Ok(()) => {
-                        self.last_backend_error = None;
-                        self.announce_backend("initialized successfully");
-                    }
-                    Err(openxr_err) => {
-                        eprintln!(
-                            "[VR] OpenXR initialization failed; falling back to OpenVR placeholder: {openxr_err}"
-                        );
-                        self.last_backend_error = Some(openxr_err);
-                        self.switch_backend(VrBackendKind::OpenVR);
-                        let openvr_err = self.backend.initialize_runtime().err();
-                        if let Some(openvr_err) = openvr_err {
-                            self.last_backend_error =
-                                Some(format!("OpenXR failed, then OpenVR failed: {}", openvr_err));
-                        } else {
-                            self.last_backend_error = None;
-                            self.announce_backend("fallback after OpenXR initialization failure");
-                        }
-                    }
-                }
+    fn ensure_openxr_initialized(&mut self) {
+        match self.backend.initialize_runtime() {
+            Ok(()) => {
+                self.last_backend_error = None;
+                self.announce_backend("initialized successfully");
             }
-            VrBackendKind::OpenVR => {
-                self.switch_backend(VrBackendKind::OpenVR);
-                if let Err(err) = self.backend.initialize_runtime() {
-                    self.last_backend_error = Some(err);
-                } else {
-                    self.last_backend_error = None;
-                    self.announce_backend("initialized successfully");
-                }
+            Err(err) => {
+                self.last_backend_error = Some(err);
             }
         }
     }
