@@ -127,9 +127,9 @@ for it.
 ```
 splice_head  (TC, placed under neck_parent by try_init_splices)
   IKChain { AimConstraint }
-    target_id:    driven_t          // InputXR-driven TC (HMD world rotation)
+    target_id:    driven_t          // Input/InputXR-driven TC
     end_effector: splice_head       // root joint = end joint for AimConstraint
-    offset_yaw:   π (VR) / 0.0 (desktop)
+    offset_yaw:   π by default for both desktop and XR
     weight:       1.0
 ```
 
@@ -190,26 +190,55 @@ bone_original_parent  (e.g. J_Bip_L_LowerArm)
 
 When `camera_bone` is set:
 1. On init, `model_root.y` is set to `-(camera_bone_world_y - model_root_world_y)` so the
-   camera bone sits exactly at `driven_t`'s world Y (= HMD eye height in XR).
+   camera bone sits exactly at `driven_t`'s world Y.
 2. Any `Camera3DComponent` or `CameraXRComponent` direct children of AVC are re-parented
    under the camera bone so they inherit its world transform each tick.
+3. `Camera3D` paths receive an extra local `Y = π` correction so the desktop render camera
+   keeps the engine's `-Z` camera-forward convention while the visible head path preserves the
+   authored avatar-facing basis. `CameraXR` does not receive this correction.
 
 `avatar_height` overrides step 1 if set; step 2 still uses `camera_bone`.
 
 ---
 
-## Desktop vs VR
+## Shared vs Different
 
-The only authoring differences:
+The runtime is now mostly shared across desktop and XR. The key distinction is:
+the avatar/head topology and head-target convention are shared, while the primary pose
+driver and final camera consumer are still different.
 
-| Field | Desktop | VR |
-|---|---|---|
-| Primary driver | `InputComponent` | `InputXRComponent` |
-| `forward_plus_z` | `true` | `false` (default) |
-| `initial_body_yaw` | `0.0` (default) | `π` |
-| `head IK offset_yaw` | `0.0` (derived) | `π` (derived) |
-| `ControllerXR` children | none | Left + Right Grip |
-| `hand_rotation_smoothing` | — | `Some(220.0)` typical |
+| Aspect | Shared between desktop and XR? | Desktop | XR |
+|---|---|---|---|
+| AVC init flow | Yes | Same `try_init_splices` path | Same `try_init_splices` path |
+| Body pipeline topology | Yes | `body_pipeline -> model_root` | `body_pipeline -> model_root` |
+| Visible head topology | Yes | `driven_t -> head_target -> head_bone` | `driven_t -> head_target -> head_bone` |
+| Head-target convention | Yes | Shared XR-style default | Shared XR-style default |
+| Default `head_target` yaw / head IK offset yaw | Yes | `π` | `π` |
+| Head bone restore after reparent | Yes | restore authored `head_rest_rot`, zero translation, preserve scale | same |
+| Camera-bone auto-calibration | Yes | same `model_root.y` calibration from `camera_bone` | same |
+| Camera discovery by topology | Yes | direct AVC camera child discovered and re-parented | same |
+| Camera anchor parent | Yes | same `camera_bone` anchor | same `camera_bone` anchor |
+| Primary pose driver | No | `InputComponent` | `InputXRComponent` |
+| Hand/controller drivers | No | usually none | optional `ControllerXRComponent` children |
+| Body-yaw authored override support | Yes | supported | supported |
+| Default body-yaw convention | Yes | `forward_plus_z = false`, `initial_body_yaw = π` | `forward_plus_z = false`, `initial_body_yaw = π` |
+| Final render camera component | No | `Camera3DComponent` | `CameraXRComponent` |
+| Extra camera local yaw correction | No | local `Y = π` applied to `Camera3D` path | none |
+
+### Practical reading of the table
+
+What is the same:
+- The avatar rigging topology created by AVC.
+- The head-target math and authored eye-offset sign convention.
+- The way the visible head bone is restored and mounted.
+- The camera-bone calibration and camera discovery/reparent flow.
+
+What is not the same:
+- Desktop is driven by `InputComponent`; XR is driven by `InputXRComponent`.
+- XR may also include controller/hand drivers.
+- Desktop `Camera3D` gets a final local yaw correction because it consumes the parent
+  transform directly as a mono render camera, while XR view matrices come from OpenXR's
+  eye poses rather than from the `CameraXR` parent transform alone.
 
 ---
 

@@ -47,7 +47,7 @@ mod tests {
     use crate::engine::ecs::command_queue::CommandQueue;
     use crate::engine::ecs::component::{
         BoundsComponent, EditorComponent, GLTFComponent, OverlayComponent, RenderableComponent,
-        SerializeComponent, TransformComponent,
+        SelectionComponent, SerializeComponent, TransformComponent,
     };
     use crate::engine::ecs::system::TransformSystem;
     use crate::engine::ecs::system::editor::inspector_panel::{
@@ -522,6 +522,207 @@ mod tests {
         assert_eq!(
             row_text(&world, runtime_ui_root, "#item_2"),
             "  child_transform"
+        );
+    }
+
+    #[test]
+    fn setup_panels_for_editor_clicking_settings_mode_row_selects_row_and_focuses_settings_panel() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::new();
+        let mut inspector = EditorInspectorSystem::new();
+        systems.selection.install_handlers(&mut systems.rx);
+
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &render_assets,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
+            &systems.asset_system,
+        );
+
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
+        let settings_row = world
+            .find_component(runtime_ui_root, "#editor_settings_mode_cursor_3d")
+            .expect("expected settings mode row");
+        let settings_selection = world
+            .find_component(runtime_ui_root, "#editor_settings_selection")
+            .expect("expected settings selection");
+        let settings_panel_root = world
+            .find_component(runtime_ui_root, "#editor_settings_panel_root")
+            .expect("expected settings panel root");
+        let panel_layout_selection = world
+            .find_component(runtime_ui_root, "#editor_panel_layout_selection")
+            .expect("expected panel layout selection");
+
+        let descendant_renderables = world
+            .find_all_components(settings_row, "Renderable")
+            .into_iter()
+            .filter(|&id| id != settings_row)
+            .collect::<Vec<_>>();
+        let clicked_renderable = world
+            .find_component(settings_row, "#__bg")
+            .and_then(|bg| world.find_component(bg, "Renderable"))
+            .or_else(|| descendant_renderables.first().copied())
+            .expect("expected clickable renderable under settings row");
+
+        systems.rx.push_event(
+            clicked_renderable,
+            EventSignal::Click {
+                raycaster: clicked_renderable,
+                renderable: clicked_renderable,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        let settings_selection = world
+            .get_component_by_id_as::<SelectionComponent>(settings_selection)
+            .expect("expected settings selection component");
+        assert_eq!(settings_selection.selected_component, Some(settings_row));
+
+        let panel_layout_selection = world
+            .get_component_by_id_as::<SelectionComponent>(panel_layout_selection)
+            .expect("expected panel layout selection component");
+        assert_eq!(
+            panel_layout_selection.selected_component,
+            Some(settings_panel_root)
+        );
+    }
+
+    #[test]
+    fn setup_panels_for_editor_settings_mode_click_steals_focus_from_world_panel() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::new();
+        let mut inspector = EditorInspectorSystem::new();
+        systems.selection.install_handlers(&mut systems.rx);
+
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        let scene_root =
+            world.add_component_boxed_named("scene_root", Box::new(TransformComponent::new()));
+        let _ = world.add_child(editor_root, scene_root);
+
+        inspector.setup_panels_for_editor(
+            &mut systems.rx,
+            &mut world,
+            &render_assets,
+            &mut emit,
+            editor_root,
+            (-0.7, 1.6, -1.2),
+            (-0.7, 1.6, -1.2),
+            systems.editor_context.shared_state(),
+            &systems.asset_system,
+        );
+
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
+        let world_row = world
+            .find_component(runtime_ui_root, "#item_1")
+            .expect("expected world panel row");
+        let settings_row = world
+            .find_component(runtime_ui_root, "#editor_settings_mode_cursor_3d")
+            .expect("expected settings mode row");
+        let settings_renderable = world
+            .find_component(settings_row, "#__bg")
+            .and_then(|bg| world.find_component(bg, "Renderable"))
+            .or_else(|| {
+                world
+                    .find_all_components(settings_row, "Renderable")
+                    .into_iter()
+                    .find(|&id| id != settings_row)
+            })
+            .expect("expected clickable renderable under settings row");
+        let settings_selection = world
+            .find_component(runtime_ui_root, "#editor_settings_selection")
+            .expect("expected settings selection");
+        let settings_panel_root = world
+            .find_component(runtime_ui_root, "#editor_settings_panel_root")
+            .expect("expected settings panel root");
+        let panel_layout_selection = world
+            .find_component(runtime_ui_root, "#editor_panel_layout_selection")
+            .expect("expected panel layout selection");
+
+        systems.rx.push_event(
+            world_row,
+            EventSignal::Click {
+                raycaster: world_row,
+                renderable: world_row,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        systems.rx.push_event(
+            settings_renderable,
+            EventSignal::Click {
+                raycaster: settings_renderable,
+                renderable: settings_renderable,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+        flush_runtime_updates(
+            &mut systems,
+            &mut world,
+            &mut visuals,
+            &render_assets,
+            &mut emit,
+        );
+
+        let settings_selection = world
+            .get_component_by_id_as::<SelectionComponent>(settings_selection)
+            .expect("expected settings selection component");
+        assert_eq!(settings_selection.selected_component, Some(settings_row));
+
+        let panel_layout_selection = world
+            .get_component_by_id_as::<SelectionComponent>(panel_layout_selection)
+            .expect("expected panel layout selection component");
+        assert_eq!(
+            panel_layout_selection.selected_component,
+            Some(settings_panel_root)
         );
     }
 

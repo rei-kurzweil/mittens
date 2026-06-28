@@ -12,6 +12,7 @@ use crate::engine::ecs::system::data_renderer_system::{
 use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor::grid_panel::GRID_PANEL_ROOT_SELECTOR;
 use crate::engine::ecs::system::editor::panel_ui::{PanelUiRowSpec, spawn_panel_ui_row_tree};
+use crate::engine::ecs::system::editor::settings_panel::EDITOR_SETTINGS_PANEL_ROOT_SELECTOR;
 use crate::engine::ecs::system::editor::workspace::PAINT_PANEL_ROOT_SELECTOR;
 use crate::engine::ecs::system::editor::world_panel::{
     AuthoredSceneNodePolicy, AuthoredWorldPanelSceneModel, PANEL_STATUS_WRAP_SELECTOR,
@@ -1512,6 +1513,7 @@ pub(crate) fn focus_panel_from_descendant_click(
         "#assets_root",
         PAINT_PANEL_ROOT_SELECTOR,
         GRID_PANEL_ROOT_SELECTOR,
+        EDITOR_SETTINGS_PANEL_ROOT_SELECTOR,
     ] {
         let Some(panel_root) = world.find_component(panel_query_root, selector) else {
             continue;
@@ -1531,5 +1533,68 @@ pub(crate) fn focus_panel_from_descendant_click(
             },
         );
         return;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::ecs::component::{SelectionComponent, TransformComponent};
+    use crate::engine::ecs::rx::IntentSignal;
+
+    #[derive(Default)]
+    struct TestEmitter {
+        intents: Vec<(ComponentId, IntentSignal)>,
+    }
+
+    impl SignalEmitter for TestEmitter {
+        fn push_event(&mut self, _scope: ComponentId, _event: EventSignal) {}
+
+        fn push_intent(&mut self, scope: ComponentId, intent: IntentSignal) {
+            self.intents.push((scope, intent));
+        }
+    }
+
+    #[test]
+    fn focus_panel_from_settings_descendant_click_targets_settings_panel() {
+        let mut world = World::default();
+        let mut emit = TestEmitter::default();
+
+        let panel_query_root = world
+            .add_component_boxed_named("panel_query_root", Box::new(TransformComponent::new()));
+        let panel_layout_selection = world.add_component_boxed_named(
+            PANEL_LAYOUT_SELECTION_NAME,
+            Box::new(SelectionComponent::new()),
+        );
+        let _ = world.add_child(panel_query_root, panel_layout_selection);
+
+        let settings_panel_root = world.add_component_boxed_named(
+            "editor_settings_panel_root",
+            Box::new(TransformComponent::new()),
+        );
+        let _ = world.add_child(panel_query_root, settings_panel_root);
+
+        let settings_row = world
+            .add_component_boxed_named("settings_row", Box::new(TransformComponent::new()));
+        let _ = world.add_child(settings_panel_root, settings_row);
+
+        focus_panel_from_descendant_click(&mut world, &mut emit, panel_query_root, settings_row);
+
+        assert_eq!(emit.intents.len(), 1);
+        let (scope, intent) = &emit.intents[0];
+        assert_eq!(*scope, panel_layout_selection);
+        match &intent.value {
+            IntentValue::SelectionSet {
+                component_ids,
+                entries,
+                primary,
+            } => {
+                assert_eq!(component_ids, &vec![panel_layout_selection]);
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0].component, settings_panel_root);
+                assert_eq!(*primary, Some(settings_panel_root));
+            }
+            other => panic!("expected SelectionSet intent, got {other:?}"),
+        }
     }
 }
