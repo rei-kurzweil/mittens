@@ -1989,6 +1989,7 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
                 profile_path: spec.profile.to_string(),
                 suggestions: Vec::new(),
             };
+            let mut accepted_bindings = Vec::new();
             for (binding_label, binding_path, binding) in [
                 ("aim_pose_left", "/user/hand/left/input/aim/pose", pose_bindings[0]),
                 ("aim_pose_right", "/user/hand/right/input/aim/pose", pose_bindings[1]),
@@ -2003,6 +2004,9 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
                     binding_path,
                     binding,
                 )?;
+                if outcome == BindingSuggestionOutcome::Accepted {
+                    accepted_bindings.push(binding);
+                }
                 report.suggestions.push(BindingSuggestionRecord {
                     label: binding_label,
                     path: binding_path.to_string(),
@@ -2020,6 +2024,9 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
                         l,
                         openxr::Binding::new(&select, lp),
                     )?;
+                    if outcome == BindingSuggestionOutcome::Accepted {
+                        accepted_bindings.push(openxr::Binding::new(&select, lp));
+                    }
                     report.suggestions.push(BindingSuggestionRecord {
                         label: "select_left",
                         path: l.to_string(),
@@ -2033,6 +2040,9 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
                         r,
                         openxr::Binding::new(&select, rp),
                     )?;
+                    if outcome == BindingSuggestionOutcome::Accepted {
+                        accepted_bindings.push(openxr::Binding::new(&select, rp));
+                    }
                     report.suggestions.push(BindingSuggestionRecord {
                         label: "select_right",
                         path: r.to_string(),
@@ -2089,12 +2099,26 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
                         binding_path,
                         binding,
                     )?;
+                    if outcome == BindingSuggestionOutcome::Accepted {
+                        accepted_bindings.push(binding);
+                    }
                     report.suggestions.push(BindingSuggestionRecord {
                         label: binding_label,
                         path: binding_path.to_string(),
                         outcome,
                     });
                 }
+            }
+            if !accepted_bindings.is_empty() {
+                instance
+                    .suggest_interaction_profile_bindings(profile, &accepted_bindings)
+                    .map_err(|err| {
+                        format!(
+                            "suggest_interaction_profile_bindings(final batch {}, count={}): {err:?}",
+                            spec.profile,
+                            accepted_bindings.len()
+                        )
+                    })?;
             }
             binding_reports.push(report);
         }
