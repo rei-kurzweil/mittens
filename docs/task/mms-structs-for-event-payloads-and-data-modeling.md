@@ -189,10 +189,11 @@ Possible layers:
 - named `struct` declarations
 - named struct allocation
 
-We may want:
+We want:
 
-- records first as runtime values
-- named structs second as type-level sugar / declarations
+- both anonymous records and named structs
+- records first as the runtime value model
+- named structs second as declaration/type sugar over that same model
 
 ### 2. What is the exact field access surface?
 
@@ -234,16 +235,25 @@ let item = {
 }
 ```
 
-But if MMS wants explicit declarations, transpilation, and better type docs,
-named `struct` declarations are still useful.
+Anonymous records should exist even if named structs also exist. They are the
+right starting point for generic event payloads and small ad hoc data models.
+
+Named `struct` declarations are still useful for:
+
+- reusable model shapes
+- clearer docs
+- eventual transpilation / static analysis
 
 ### 5. Should events become records first, before full user-authored structs?
+
+Yes. The right first move is a generic record model for events.
 
 One staged approach:
 
 1. add runtime record/object field access
-2. convert host event payloads from arrays to records
-3. later add authored `struct` declarations + allocations
+2. convert host event payloads from arrays to generic records
+3. add authored anonymous record literals
+4. later add named `struct` declarations + allocations
 
 That may be lower-risk than implementing the full language feature in one pass.
 
@@ -252,17 +262,21 @@ That may be lower-risk than implementing the full language feature in one pass.
 This task should investigate and clarify:
 
 1. the desired MMS plain-data value model
-2. whether named structs, anonymous records, or both should exist
+2. how anonymous records and named structs fit together
 3. whether lowercase/snake_case data constructors are the right answer to the
    component-vs-data ambiguity
 4. how event payload APIs should be re-expressed once structured data exists
+5. when optional type annotations on functions should enter the plan
 
 The recommendation to test against is:
 
 - component expressions stay as-is
-- records/structs become the general MMS data surface
-- event payloads move to structured values
+- generic records become the initial MMS plain-data runtime surface
+- anonymous records and named structs both exist in the final design
+- event payloads move to generic structured values first
 - handler code stops using positional array indexing for named payloads
+- optional function typing is deferred until after the core record/event model
+  is working, likely as a later phase rather than phase 1
 
 ## Concrete target examples
 
@@ -315,11 +329,10 @@ let item = world_panel_item {
 
 ### Step 2. Decide the plain-data surface
 
-Choose among:
+Lock in:
 
-- anonymous records only
-- named structs only
-- anonymous records + named structs
+- anonymous records as the base runtime model
+- named structs as an additional authored surface
 
 Also decide:
 
@@ -332,9 +345,10 @@ Also decide:
 Likely best order:
 
 1. runtime record/object field access
-2. host event payload conversion to records
-3. authored record literals and/or named struct allocation
-4. optional type-checker integration
+2. host event payload conversion to generic records
+3. authored anonymous record literals
+4. named struct declarations / allocation
+5. optional function typing and wider type-checker integration
 
 ### Step 4. Update event API plans
 
