@@ -7,8 +7,8 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     let output = meow_meow::MeowMeowRunner::eval_with_world_at_path(
-        include_str!("xr-input-gamepad.mms"),
-        Some("examples/xr-input-gamepad.mms"),
+        include_str!("input-xr-gamepad.mms"),
+        Some("examples/input-xr-gamepad.mms"),
         &mut universe.world,
         &mut universe.systems.rx,
         &mut universe.command_queue,
@@ -18,7 +18,7 @@ fn main() {
         eprintln!("[mms] {error}");
     }
     println!(
-        "[mms] {} intent(s) from xr-input-gamepad.mms",
+        "[mms] {} intent(s) from input-xr-gamepad.mms",
         output.intents.len()
     );
 

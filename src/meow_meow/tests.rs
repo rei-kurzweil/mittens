@@ -953,11 +953,11 @@ fn xr_input_gamepad_example_parses() {
     let mut world = World::default();
     let mut rx = RxWorld::default();
     let mut emit = CommandQueue::new();
-    let source = std::fs::read_to_string("examples/xr-input-gamepad.mms").unwrap();
+    let source = std::fs::read_to_string("examples/input-xr-gamepad.mms").unwrap();
 
     let out = MeowMeowRunner::eval_with_world_at_path(
         &source,
-        Some("examples/xr-input-gamepad.mms"),
+        Some("examples/input-xr-gamepad.mms"),
         &mut world,
         &mut rx,
         &mut emit,

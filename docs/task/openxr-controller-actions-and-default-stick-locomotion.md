@@ -21,7 +21,7 @@ Related context:
 - [src/engine/ecs/system/input_xr_gamepad_system.rs](../../src/engine/ecs/system/input_xr_gamepad_system.rs)
 - [src/engine/ecs/component/input_xr_gamepad.rs](../../src/engine/ecs/component/input_xr_gamepad.rs)
 - [src/engine/ecs/component/avatar_control.rs](../../src/engine/ecs/component/avatar_control.rs)
-- [examples/xr-input-gamepad.mms](../../examples/xr-input-gamepad.mms)
+- [examples/input-xr-gamepad.mms](../../examples/input-xr-gamepad.mms)
 
 ---
 

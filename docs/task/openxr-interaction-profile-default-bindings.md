@@ -4,6 +4,15 @@ Date: 2026-06-28
 
 Status: active
 
+Progress update:
+
+- implemented conservative Touch-like default binding suggestions in `OpenXRSystem`
+- removed currently known-dead Touch / Focus 3 alias paths from ordinary defaults
+- stopped binding Touch / Focus 3 `select` to `trigger/click`
+- derived trigger/grip/select pressed semantics from active click-or-analog sources with an
+  explicit threshold fallback
+- remaining work is runtime validation plus tracing the `X/Y` debug-UI inconsistency
+
 This task narrows the remaining XR controller-input problem to the current OpenXR reality:
 
 - Cat Engine is OpenXR-only again
@@ -37,7 +46,7 @@ Related context:
 - [docs/task/shared-xr-backend-abstraction-and-openvr-followup.md](./shared-xr-backend-abstraction-and-openvr-followup.md)
 - [src/engine/ecs/system/openxr_system.rs](../../src/engine/ecs/system/openxr_system.rs)
 - [src/engine/ecs/system/input_xr_gamepad_system.rs](../../src/engine/ecs/system/input_xr_gamepad_system.rs)
-- [examples/xr-input-gamepad.mms](../../examples/xr-input-gamepad.mms)
+- [examples/input-xr-gamepad.mms](../../examples/input-xr-gamepad.mms)
 
 ---
 
@@ -376,14 +385,18 @@ In the current `OpenXRSystem` tables, this likely means:
    - `trigger/click`
    - `grip/value`
    - `squeeze/grip click` variants
+   - status: implemented for Touch-like defaults in `OpenXRSystem`
 
 3. Remap Touch `select_left` / `select_right` away from `trigger/click`:
    - first candidate: `trigger/value`-driven threshold semantics
+   - status: implemented as runtime-derived select semantics rather than a Touch-specific raw
+     `select` binding path
 
 4. Add explicit threshold policy for value-driven controls:
    - trigger pressed threshold
    - grip pressed threshold
    - optional select threshold if `select` remains a logical action rather than a direct path
+   - status: implemented with explicit trigger/grip threshold fallback in `OpenXRSystem`
 
 5. Make the modern generic-controller target explicit in code comments / tables:
    - dual sticks when present

@@ -17,8 +17,8 @@ Related code:
 - `src/engine/ecs/system/input_xr_gamepad_system.rs`
 - `src/engine/ecs/component/controller_xr.rs`
 - `src/engine/ecs/component/input_xr_gamepad.rs`
-- `examples/xr-input-gamepad.mms`
-- `examples/xr-input-gamepad.rs`
+- `examples/input-xr-gamepad.mms`
+- `examples/input-xr-gamepad.rs`
 
 ---
 
@@ -35,7 +35,7 @@ The engine now has two authored XR input surfaces with different responsibilitie
 
 The current bug investigation started because:
 
-- `examples/xr-input-gamepad.mms` renders correctly
+- `examples/input-xr-gamepad.mms` renders correctly
 - but button/stick UI was not responding
 
 The example itself was not the root problem.
@@ -256,8 +256,8 @@ The debugging work so far has already added:
 
 - XR MMS event payload bridging
 - `Transform.set_position(...)` for stick-dot UI movement
-- `examples/xr-input-gamepad.mms`
-- `examples/xr-input-gamepad.rs`
+- `examples/input-xr-gamepad.mms`
+- `examples/input-xr-gamepad.rs`
 - Focus 3 profile binding suggestions in `OpenXRSystem`
 - runtime debug logging for:
   - interaction profiles

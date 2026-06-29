@@ -125,7 +125,7 @@ At minimum that means preserving:
 - [ ] `examples/bisket-vr-demo.mms` still expresses the intended XR topology after migration
 - [ ] `examples/vtuber-mirror-example.mms` still expresses the intended XR topology after migration
 - [ ] `examples/vtuber-editor-example.mms` still expresses the intended XR topology after migration
-- [ ] `examples/xr-input-gamepad.mms` still expresses the intended XR topology after migration
+- [ ] `examples/input-xr-gamepad.mms` still expresses the intended XR topology after migration
 
 ---
 

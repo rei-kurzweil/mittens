@@ -4,7 +4,7 @@
 // Shows A/B, X/Y, left/right sticks, and trigger/grip readouts.
 //
 // To run:
-//   cargo run --release --example xr-input-gamepad
+//   cargo run --release --example input-xr-gamepad
 
 RendererSettings {
     window_size(640, 480)
@@ -67,25 +67,25 @@ let x_glow = Emissive.off()
 let y_glow = Emissive.off()
 
 let left_stick_text = Text {
-    "Left Stick: (0.00, 0.00)"
+    "LS (0.00, 0.00)"
     C.rgba(0.07, 0.08, 0.11, 1.0)
     TextureFiltering.linear()
 }
 
 let right_stick_text = Text {
-    "Right Stick: (0.00, 0.00)"
+    "RS (0.00, 0.00)"
     C.rgba(0.07, 0.08, 0.11, 1.0)
     TextureFiltering.linear()
 }
 
 let trigger_text = Text {
-    "Triggers L/R: 0.00 / 0.00"
+    "Trig L/R 0.00 / 0.00"
     C.rgba(0.07, 0.08, 0.11, 1.0)
     TextureFiltering.linear()
 }
 
 let grip_text = Text {
-    "Grips L/R: 0.00 / 0.00"
+    "Grip L/R 0.00 / 0.00"
     C.rgba(0.07, 0.08, 0.11, 1.0)
     TextureFiltering.linear()
 }
@@ -256,7 +256,7 @@ T {
                         }
                     }
                     left_stick_dot
-                    T.position(0.0, -0.26, 0.05).scale(0.05, 0.05, 1.0) {
+                    T.position(0.0, -0.29, 0.05).scale(0.043, 0.043, 1.0) {
                         left_stick_text
                     }
                 }
@@ -273,18 +273,18 @@ T {
                         }
                     }
                     right_stick_dot
-                    T.position(0.0, -0.26, 0.05).scale(0.05, 0.05, 1.0) {
+                    T.position(0.0, -0.29, 0.05).scale(0.043, 0.043, 1.0) {
                         right_stick_text
                     }
                 }
 
-                T.position(-0.52, -0.71, 0.05).scale(0.045, 0.045, 1.0) { left_trigger_value }
-                T.position(-0.16, -0.71, 0.05).scale(0.045, 0.045, 1.0) { right_trigger_value }
-                T.position( 0.16, -0.71, 0.05).scale(0.045, 0.045, 1.0) { left_grip_value }
-                T.position( 0.52, -0.71, 0.05).scale(0.045, 0.045, 1.0) { right_grip_value }
+                T.position(-0.58, -0.71, 0.05).scale(0.042, 0.042, 1.0) { left_trigger_value }
+                T.position(-0.20, -0.71, 0.05).scale(0.042, 0.042, 1.0) { right_trigger_value }
+                T.position( 0.20, -0.71, 0.05).scale(0.042, 0.042, 1.0) { left_grip_value }
+                T.position( 0.58, -0.71, 0.05).scale(0.042, 0.042, 1.0) { right_grip_value }
 
-                T.position(-0.34, -0.88, 0.05).scale(0.045, 0.045, 1.0) { trigger_text }
-                T.position( 0.34, -0.88, 0.05).scale(0.045, 0.045, 1.0) { grip_text }
+                T.position(-0.43, -0.88, 0.05).scale(0.038, 0.038, 1.0) { trigger_text }
+                T.position( 0.43, -0.88, 0.05).scale(0.038, 0.038, 1.0) { grip_text }
             }
         }
     }
@@ -337,22 +337,22 @@ on(xr_gamepad, "XrAxisChanged", fn(event) {
     let value = event[2]
     if control == "LeftStick" {
         left_stick_dot.set_position(value[0] * 0.14, value[1] * 0.14, 0.03)
-        left_stick_text.set_text("Left Stick: (" + value[0] + ", " + value[1] + ")")
+        left_stick_text.set_text("LS (" + value[0] + ", " + value[1] + ")")
     } else if control == "RightStick" {
         right_stick_dot.set_position(value[0] * 0.14, value[1] * 0.14, 0.03)
-        right_stick_text.set_text("Right Stick: (" + value[0] + ", " + value[1] + ")")
+        right_stick_text.set_text("RS (" + value[0] + ", " + value[1] + ")")
     } else if control == "LeftTrigger" {
         left_trigger_value.set_text("LT: " + value[0])
-        trigger_text.set_text("Left trigger moved: " + value[0])
+        trigger_text.set_text("Trig L " + value[0])
     } else if control == "RightTrigger" {
         right_trigger_value.set_text("RT: " + value[0])
-        trigger_text.set_text("Right trigger moved: " + value[0])
+        trigger_text.set_text("Trig R " + value[0])
     } else if control == "LeftGrip" {
         left_grip_value.set_text("LG: " + value[0])
-        grip_text.set_text("Left grip moved: " + value[0])
+        grip_text.set_text("Grip L " + value[0])
     } else if control == "RightGrip" {
         right_grip_value.set_text("RG: " + value[0])
-        grip_text.set_text("Right grip moved: " + value[0])
+        grip_text.set_text("Grip R " + value[0])
     }
 })
 
