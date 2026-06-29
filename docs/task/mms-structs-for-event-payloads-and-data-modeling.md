@@ -249,6 +249,18 @@ let item = {
 An anonymous table is effectively a generic key/value table. Structs can later
 be treated as typed tables.
 
+Nested tables should also be supported from the start:
+
+```mms
+let item = {
+    label = "Head"
+    metadata = {
+        selected = true
+        target_ref = "@uuid:..."
+    }
+}
+```
+
 Named `struct` declarations are still useful for:
 
 - reusable model shapes
@@ -369,6 +381,9 @@ Likely best order:
 3. host event payload conversion to generic tables
 4. named struct declarations / allocation
 5. optional function typing and wider type-checker integration
+
+Nested anonymous tables should be covered by step 1 and step 2 rather than
+treated as a separate feature, since field values are ordinary expressions.
 
 ### Step 4. Update event API plans
 

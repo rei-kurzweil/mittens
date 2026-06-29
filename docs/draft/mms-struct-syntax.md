@@ -55,6 +55,17 @@ let event = {
 This should be the first syntax implemented in tokenizer/parser/AST so the core
 table model can be tested directly.
 
+Nested tables should work out of the box because table field values are just
+expressions:
+
+```mms
+let foo = {
+    bar = {
+        baz = "qux"
+    }
+}
+```
+
 ### Phase 2: named structs
 
 ```mms
@@ -144,6 +155,9 @@ Where:
 - `TableFieldValue { name: Ident, value: Expression }`
 - `StructFieldValue { name: Ident, value: Expression }`
 
+Because field values are full expressions, nested anonymous tables should not
+need any special AST case beyond recursive `Expression` parsing.
+
 ### `ast::Statement`
 
 Add:
@@ -196,6 +210,16 @@ The target form is:
 let foo = { bar = "baz" }
 ```
 
+Nested forms should parse the same way:
+
+```mms
+let foo = {
+    bar = {
+        baz = "qux"
+    }
+}
+```
+
 That gives a direct parser/AST/evaluator path for validating the runtime table
 model.
 
@@ -226,6 +250,7 @@ That means:
 - struct allocations also allocate a generic table/object
 - a struct name may be stored as optional metadata for introspection or
   transpilation, but it should not require a separate runtime value category
+- nested anonymous tables are just recursively allocated table values
 
 ### Field access
 
@@ -276,6 +301,8 @@ Function parameter/return annotations are a later phase.
 
 - `src/meow_meow/tests.rs`
   - add parser tests for `let foo = { bar = "baz" }`
+  - add parser/evaluator tests for nested tables such as
+    `let foo = { bar = { baz = "qux" } }`
   - add evaluator tests proving anonymous tables allocate correctly
   - later add struct declaration/allocation tests
 
