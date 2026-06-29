@@ -14,6 +14,14 @@ This task narrows the remaining XR controller-input problem to the current OpenX
 - several other accepted bindings still report inactive state
 - several alias / click-style paths are outright unsupported
 
+The practical target is not "every OpenXR control layout at once". The near-term target is the
+common motion-controller shape used by modern HMDs:
+
+- dual sticks where available
+- dual trigger analog values
+- dual grip / squeeze values or clicks
+- common face buttons (`A/B/X/Y`) where present
+
 This note exists to make the next pass concrete:
 
 - interaction profiles should be manageable
@@ -84,6 +92,17 @@ The immediate goal is:
 
 This task is about the OpenXR profile/binding layer, not backend selection and not locomotion
 policy by itself.
+
+More concretely, the generic engine-facing controller shape we want to support first is:
+
+- left stick
+- right stick
+- left trigger value + pressed state
+- right trigger value + pressed state
+- left grip value/click + pressed state
+- right grip value/click + pressed state
+- left face buttons (`X`, `Y`) when present
+- right face buttons (`A`, `B`) when present
 
 ---
 
@@ -175,6 +194,25 @@ Possible buckets:
 
 This should be treated as a separate symptom to trace, not as proof that the binding itself failed.
 
+### E. Binding policy is still too alias-oriented
+
+The current implementation in `OpenXRSystem` is still mostly:
+
+- profile path
+- a list of suggested raw paths
+- a direct raw-path choice for `select`
+
+That was good enough for bring-up, but it is not the cleanest way to express the real goal:
+
+- "thumbstick if this profile has one"
+- "trigger analog if exposed"
+- "grip analog if exposed, otherwise click fallback"
+- "face buttons when exposed"
+- "select as a logical semantic, not necessarily a literal hardware click path"
+
+The next pass should think in terms of semantic capability first, then choose the best raw path
+for that profile.
+
 ---
 
 ## 5. Desired profile-management direction
@@ -223,41 +261,159 @@ Even if profile logic changes underneath, higher layers should still consume the
 
 ---
 
-## 6. Concrete next implementation steps
+## 6. Generic controller target
 
-1. Remove known-dead Touch aliases from the default suggestion set:
+For common HMD motion controllers, the default engine-facing capabilities should be:
+
+- locomotion stick left: 2D analog when present
+- locomotion stick right: 2D analog when present
+- trigger left/right: analog value plus derived pressed state
+- grip left/right: analog value if available, otherwise click-backed pressed state
+- face buttons left/right: `X/Y` and `A/B` when present
+- aim and grip pose
+
+This does **not** mean every profile must provide every capability.
+
+The rule should be:
+
+- missing capabilities stay `None`
+- present capabilities map into one stable engine slot
+- higher layers do not care whether the low-level source was `squeeze/value`, `grip/click`, or
+  a threshold derived from analog input
+
+### A. Main profile families
+
+For the practical near-term target, the important families are:
+
+1. Touch-like:
+   - Oculus / Meta Touch
+   - HTC Vive Focus 3
+
+2. Valve Index
+
+3. Microsoft motion controller
+
+4. Legacy Vive wand
+
+The first three are the real "generic modern HMD controller" baseline.
+Legacy Vive still matters, but it should be treated as a click-first fallback profile rather than
+the shape that drives default policy for everyone else.
+
+### B. Minimal default policy for modern dual-stick controllers
+
+For modern motion-controller profiles, the default policy should be:
+
+- prefer `thumbstick/x` + `thumbstick/y`
+- prefer `trigger/value`
+- prefer `squeeze/value` for grip when supported
+- use face-button click paths where the profile exposes them
+- derive pressed semantics from analog values when click actions are absent or known-dead
+
+### C. Select policy
+
+`select` is an engine semantic, not necessarily a dedicated hardware button.
+
+For modern motion controllers:
+
+- trigger should remain the default select source
+- use a real trigger click path only when it is actually reliable on that profile/runtime
+- otherwise derive select from trigger value threshold
+
+That keeps pointer activation stable even across runtimes that disagree on whether trigger is
+primarily a click action or a float action.
+
+### D. Profile-specific expectations
+
+Touch-like profiles:
+
+- dual thumbsticks
+- trigger analog
+- squeeze analog
+- `X/Y` on left
+- `A/B` on right
+
+Index:
+
+- dual thumbsticks
+- trigger analog
+- squeeze analog
+- face buttons only where actually exposed/verified
+
+Microsoft motion:
+
+- dual thumbsticks
+- trigger analog
+- grip may be click-first
+
+Legacy Vive:
+
+- click-first trigger/grip semantics
+- no modern dual-stick assumption
+
+### E. Implication for current code
+
+In the current `OpenXRSystem` tables, this likely means:
+
+- Touch-like profiles should stop carrying the known-dead `joystick/*`, `trigger/click`,
+  `grip/value`, and click-style squeeze/grip aliases once verified dead
+- Index should remain analog-first
+- Microsoft motion should remain mixed analog/click
+- Vive wand should remain click-first
+- `select_left` / `select_right` should be treated as a semantic default source, not a permanent
+  insistence on one raw OpenXR path
+
+---
+
+## 7. Concrete next implementation steps
+
+1. Split the profile policy mentally into:
+   - modern dual-stick controllers
+   - legacy click-first controllers
+
+2. Remove known-dead Touch aliases from the default suggestion set:
    - `joystick/x`
    - `joystick/y`
    - `trigger/click`
    - `grip/value`
    - `squeeze/grip click` variants
 
-2. Remap Touch `select_left` / `select_right` away from `trigger/click`:
+3. Remap Touch `select_left` / `select_right` away from `trigger/click`:
    - first candidate: `trigger/value`-driven threshold semantics
 
-3. Add explicit threshold policy for value-driven controls:
+4. Add explicit threshold policy for value-driven controls:
    - trigger pressed threshold
    - grip pressed threshold
    - optional select threshold if `select` remains a logical action rather than a direct path
 
-4. Improve validation after session focus:
+5. Make the modern generic-controller target explicit in code comments / tables:
+   - dual sticks when present
+   - trigger analog
+   - grip analog-or-click
+   - `A/B/X/Y` when present
+
+6. Improve validation after session focus:
    - log whether accepted controls ever become active after a short focused-session window
    - distinguish "accepted but not yet touched" from "accepted but never active"
 
-5. Trace the `X` / `Y` debug-UI inconsistency:
+7. Trace the `X` / `Y` debug-UI inconsistency:
    - verify low-level snapshot
    - verify `XrGamepadState` publication
-   - verify `InputVRGamepadSystem` propagation
+   - verify `InputXRGamepadSystem` propagation
    - verify debug UI rendering conditions
 
 ---
 
-## 7. Exit criteria
+## 8. Exit criteria
 
 This task is complete when:
 
 - the default Touch-profile binding map no longer contains the currently known-dead aliases
 - trigger/grip/select semantics are sensible on the tested runtime even without click paths
+- the engine has a clear "generic modern HMD controller" policy covering:
+  - dual sticks
+  - dual trigger values
+  - grip / squeeze
+  - common face buttons
 - `A/B/X/Y` visibility is consistent between low-level debug snapshots and the debug UI
 - thumbstick/trigger/grip defaults are understandable enough to serve as the engine's practical
   OpenXR baseline for common controller runtimes
@@ -267,3 +423,4 @@ It is acceptable if additional profiles still need later tuning, as long as:
 - the runtime-reported profile path is handled intentionally
 - defaults are conservative rather than noisy
 - the tested runtime no longer depends on lucky partial behavior like "only `B` works"
+- legacy click-first controllers are still supported without distorting the modern default policy
