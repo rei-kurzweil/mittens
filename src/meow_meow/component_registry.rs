@@ -21,7 +21,7 @@ use crate::engine::ecs::component::{
     EmissivePassComponent, FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection,
     FlexWrap, GLTFComponent, GestureCoordTypeComponent, GravityComponent, GridComponent,
     HtmlElementComponent, IKChainComponent, IKSolver, InputComponent, InputTransformModeComponent,
-    InputVRComponent, InputVRGamepadComponent, InspectLayoutComponent, JustifyContent,
+    InputXRComponent, InputXRGamepadComponent, InspectLayoutComponent, JustifyContent,
     KeyframeComponent, KineticResponseComponent, LayoutBoundsComponent, LayoutComponent,
     LightQuantizationComponent, MeshComponent, MirrorComponent, MusicContextComponent, MusicNote,
     MusicNoteComponent, NormalVisualisationComponent, OpacityComponent,
@@ -40,7 +40,8 @@ use crate::engine::ecs::component::{
     TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
     TransformParentComponent, TransformSampleAncestorComponent, TransitionComponent,
     TransitionEasing, TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
-    Vector3TemporalFilterComponent, VRHandComponent, VrComponent, WordWrapMode, XrHandPreference,
+    Vector3TemporalFilterComponent, XRHandComponent, WordWrapMode, XrComponent,
+    XrHandPreference,
 };
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::CameraTarget;
@@ -1137,13 +1138,13 @@ fn create_component(
             }
             add!(c)
         }
-        "InputVR" => match ctor {
-            Some("on") => add!(InputVRComponent::on()),
-            Some("off") => add!(InputVRComponent::off()),
-            _ => add!(InputVRComponent::on()),
+        "InputXR" | "InputVR" => match ctor {
+            Some("on") => add!(InputXRComponent::on()),
+            Some("off") => add!(InputXRComponent::off()),
+            _ => add!(InputXRComponent::on()),
         },
-        "InputVRGamepad" | "InputVrGamepad" => {
-            let id = world.add_component(InputVRGamepadComponent::new());
+        "InputXRGamepad" | "InputXrGamepad" | "InputVRGamepad" | "InputVrGamepad" => {
+            let id = world.add_component(InputXRGamepadComponent::new());
             if let Some(method) = ctor {
                 if method != "new" {
                     apply_call(world, id, method, args)?;
@@ -1185,13 +1186,12 @@ fn create_component(
             Some("disabled") => add!(PointerComponent::disabled()),
             _ => add!(PointerComponent::new()),
         },
-        "VR" => match ctor {
-            Some("off") => add!(VrComponent::off()),
-            Some("on") | Some("auto") => add!(VrComponent::on()),
-            Some("openxr") => add!(VrComponent::openxr()),
-            _ => add!(VrComponent::on()),
+        "XR" | "VR" | "OpenXR" => match ctor {
+            Some("off") => add!(XrComponent::off()),
+            Some("on") | Some("auto") | Some("openxr") => add!(XrComponent::on()),
+            _ => add!(XrComponent::on()),
         },
-        "VRHand" | "VrHand" => match ctor {
+        "XRHand" | "XrHand" | "VRHand" | "VrHand" => match ctor {
             Some("new") => {
                 let _enabled = arg_bool(args, 0)?;
                 let hand = match arg_str(args, 1)? {
@@ -1204,9 +1204,9 @@ fn create_component(
                     "Grip" => ControllerPoseKind::Grip,
                     s => return Err(format!("unknown ControllerPoseKind: {s}")),
                 };
-                add!(VRHandComponent::new(true, hand, pose))
+                add!(XRHandComponent::new(true, hand, pose))
             }
-            _ => Err("VRHand requires .new(enabled, hand, pose)".into()),
+            _ => Err("XRHand requires .new(enabled, hand, pose)".into()),
         },
         "TransformParent" => match ctor {
             Some("target") => add!(
@@ -2450,7 +2450,7 @@ fn apply_call(
         }
         return Ok(());
     }
-    if let Some(inp) = world.get_component_by_id_as_mut::<InputVRGamepadComponent>(id) {
+    if let Some(inp) = world.get_component_by_id_as_mut::<InputXRGamepadComponent>(id) {
         match method {
             "enabled" => inp.enabled = arg_bool(args, 0)?,
             "hand" => {

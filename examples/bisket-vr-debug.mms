@@ -72,8 +72,8 @@ ED {
                     C3D {}
                 }
 
-                VRHand.new(true, Left, Grip) { T {} }
-                VRHand.new(true, Right, Grip) { T {} }
+                XRHand.new(true, Left, Grip) { T {} }
+                XRHand.new(true, Right, Grip) { T {} }
             }
         }
     }

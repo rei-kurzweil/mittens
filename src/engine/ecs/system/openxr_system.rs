@@ -1,10 +1,9 @@
 use crate::engine::ecs::component::CameraXRComponent;
 use crate::engine::ecs::component::{
-    ControllerHand, ControllerPoseKind, InputVRComponent, VRHandComponent, VrComponent,
+    ControllerHand, ControllerPoseKind, InputXRComponent, XRHandComponent, XrComponent,
 };
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
-use crate::engine::ecs::system::vr_backend::{VrBackend, VrBackendKind};
 use crate::engine::ecs::system::vr_types::{XrGamepadState, XrHandGamepadState, XrInputState};
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::engine::graphics::CameraData;
@@ -215,15 +214,15 @@ fn suggest_binding_best_effort(
     binding_label: &str,
     binding_path: &str,
     binding: openxr::Binding<'_>,
-) -> Result<(), String> {
+) -> Result<BindingSuggestionOutcome, String> {
     match instance.suggest_interaction_profile_bindings(profile, &[binding]) {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok(BindingSuggestionOutcome::Accepted),
         Err(openxr::sys::Result::ERROR_PATH_UNSUPPORTED) => {
             eprintln!(
                 "[OpenXR] ignoring unsupported binding profile={} label={} path={}",
                 profile_name, binding_label, binding_path
             );
-            Ok(())
+            Ok(BindingSuggestionOutcome::Unsupported)
         }
         Err(err) => Err(format!(
             "suggest_interaction_profile_bindings({}, {} -> {}): {err:?}",
@@ -255,6 +254,96 @@ fn log_profile_binding_dump(spec: &ProfileBindingSpec) {
             spec.paths.join(", ")
         );
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BindingSuggestionOutcome {
+    Accepted,
+    Unsupported,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BindingSuggestionRecord {
+    label: &'static str,
+    path: String,
+    outcome: BindingSuggestionOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProfileBindingReport {
+    profile_path: String,
+    suggestions: Vec<BindingSuggestionRecord>,
+}
+
+impl ProfileBindingReport {
+    fn accepted_count(&self) -> usize {
+        self.suggestions
+            .iter()
+            .filter(|record| record.outcome == BindingSuggestionOutcome::Accepted)
+            .count()
+    }
+
+    fn unsupported_count(&self) -> usize {
+        self.suggestions
+            .iter()
+            .filter(|record| record.outcome == BindingSuggestionOutcome::Unsupported)
+            .count()
+    }
+}
+
+fn log_runtime_profile_binding_report(
+    active_profile_label: &str,
+    report: &ProfileBindingReport,
+    snapshot: &ControllerDebugSnapshot,
+) {
+    eprintln!(
+        "[OpenXR][binding_report] hand={} profile={} accepted={} unsupported={}",
+        active_profile_label,
+        report.profile_path,
+        report.accepted_count(),
+        report.unsupported_count(),
+    );
+    for record in &report.suggestions {
+        let outcome = match record.outcome {
+            BindingSuggestionOutcome::Accepted => "accepted",
+            BindingSuggestionOutcome::Unsupported => "unsupported",
+        };
+        eprintln!(
+            "[OpenXR][binding_report]   {:<12} {:<11} {}",
+            record.label, outcome, record.path
+        );
+    }
+    eprintln!(
+        "[OpenXR][binding_report]   runtime_state profileL={} profileR={} poseL(aim={},grip={}) poseR(aim={},grip={})",
+        snapshot.left_profile,
+        snapshot.right_profile,
+        snapshot.left_aim_valid,
+        snapshot.left_grip_valid,
+        snapshot.right_aim_valid,
+        snapshot.right_grip_valid,
+    );
+    eprintln!(
+        "[OpenXR][binding_report]   buttons/select left(select={:?},x={:?},y={:?}) right(select={:?},a={:?},b={:?})",
+        snapshot.left_select,
+        snapshot.left_x,
+        snapshot.left_y,
+        snapshot.right_select,
+        snapshot.right_a,
+        snapshot.right_b,
+    );
+    eprintln!(
+        "[OpenXR][binding_report]   analog left(stick={:?},trigger={:?}/{:?},grip={:?}/{:?}) right(stick={:?},trigger={:?}/{:?},grip={:?}/{:?})",
+        snapshot.left_thumbstick,
+        snapshot.left_trigger_value,
+        snapshot.left_trigger_click,
+        snapshot.left_grip_value,
+        snapshot.left_grip_click,
+        snapshot.right_thumbstick,
+        snapshot.right_trigger_value,
+        snapshot.right_trigger_click,
+        snapshot.right_grip_value,
+        snapshot.right_grip_click,
+    );
 }
 
 pub struct OpenXRSystem {
@@ -439,7 +528,10 @@ struct ControllerInput {
     profile_poll_counter: u32,
     last_logged_left_profile: Option<openxr::Path>,
     last_logged_right_profile: Option<openxr::Path>,
+    last_reported_left_profile: Option<openxr::Path>,
+    last_reported_right_profile: Option<openxr::Path>,
     last_debug_snapshot: Option<ControllerDebugSnapshot>,
+    binding_reports: Vec<ProfileBindingReport>,
 }
 
 const PROFILE_SIMPLE_CONTROLLER: &str = "/interaction_profiles/khr/simple_controller";
@@ -630,6 +722,19 @@ impl OpenXRSystem {
 
     pub fn last_init_error(&self) -> Option<&str> {
         self.last_init_error.as_deref()
+    }
+
+    pub fn prepare_for_renderer_init(&mut self, world: &World) {
+        let should_enable = world.all_components().any(|cid| {
+            world
+                .get_component_by_id_as::<XrComponent>(cid)
+                .map(|component| component.enabled)
+                .unwrap_or(false)
+        });
+
+        if should_enable {
+            let _ = self.initialize_runtime();
+        }
     }
 
     fn debug_hand_rotation_enabled() -> bool {
@@ -836,7 +941,7 @@ impl OpenXRSystem {
         let mut cur = cid;
         loop {
             if world
-                .get_component_by_id_as::<InputVRComponent>(cur)
+                .get_component_by_id_as::<InputXRComponent>(cur)
                 .is_some()
             {
                 return Some(cur);
@@ -959,13 +1064,13 @@ impl OpenXRSystem {
         }
     }
 
-    pub fn register_vr(
+    pub fn register_xr(
         &mut self,
         world: &mut World,
         _visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        let Some(cfg) = world.get_component_by_id_as::<VrComponent>(component) else {
+        let Some(cfg) = world.get_component_by_id_as::<XrComponent>(component) else {
             return;
         };
 
@@ -1109,7 +1214,7 @@ impl OpenXRSystem {
 
         let input_xr_ids: Vec<ComponentId> = self.input_xr_components.iter().copied().collect();
         for input_xr_cid in input_xr_ids {
-            let Some(cfg) = world.get_component_by_id_as::<InputVRComponent>(input_xr_cid) else {
+            let Some(cfg) = world.get_component_by_id_as::<InputXRComponent>(input_xr_cid) else {
                 self.input_xr_components.remove(&input_xr_cid);
                 continue;
             };
@@ -1170,7 +1275,7 @@ impl OpenXRSystem {
 
         let controller_ids: Vec<ComponentId> = self.controller_components.iter().copied().collect();
         for controller_cid in controller_ids {
-            let Some(cfg) = world.get_component_by_id_as::<VRHandComponent>(controller_cid)
+            let Some(cfg) = world.get_component_by_id_as::<XRHandComponent>(controller_cid)
             else {
                 self.controller_components.remove(&controller_cid);
                 continue;
@@ -1785,10 +1890,16 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
             openxr::Binding::new(&grip_pose, right_grip_path),
         ];
 
+        let mut binding_reports = Vec::new();
+
         for spec in PROFILE_BINDING_SPECS {
             log_profile_binding_dump(spec);
             let Ok(profile) = instance.string_to_path(spec.profile) else {
                 continue;
+            };
+            let mut report = ProfileBindingReport {
+                profile_path: spec.profile.to_string(),
+                suggestions: Vec::new(),
             };
             for (binding_label, binding_path, binding) in [
                 ("aim_pose_left", "/user/hand/left/input/aim/pose", pose_bindings[0]),
@@ -1796,7 +1907,7 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
                 ("grip_pose_left", "/user/hand/left/input/grip/pose", pose_bindings[2]),
                 ("grip_pose_right", "/user/hand/right/input/grip/pose", pose_bindings[3]),
             ] {
-                suggest_binding_best_effort(
+                let outcome = suggest_binding_best_effort(
                     instance,
                     profile,
                     spec.profile,
@@ -1804,11 +1915,16 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
                     binding_path,
                     binding,
                 )?;
+                report.suggestions.push(BindingSuggestionRecord {
+                    label: binding_label,
+                    path: binding_path.to_string(),
+                    outcome,
+                });
             }
             if let (Some(l), Some(r)) = (spec.select_left, spec.select_right) {
                 if let (Ok(lp), Ok(rp)) = (instance.string_to_path(l), instance.string_to_path(r))
                 {
-                    suggest_binding_best_effort(
+                    let outcome = suggest_binding_best_effort(
                         instance,
                         profile,
                         spec.profile,
@@ -1816,7 +1932,12 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
                         l,
                         openxr::Binding::new(&select, lp),
                     )?;
-                    suggest_binding_best_effort(
+                    report.suggestions.push(BindingSuggestionRecord {
+                        label: "select_left",
+                        path: l.to_string(),
+                        outcome,
+                    });
+                    let outcome = suggest_binding_best_effort(
                         instance,
                         profile,
                         spec.profile,
@@ -1824,6 +1945,11 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
                         r,
                         openxr::Binding::new(&select, rp),
                     )?;
+                    report.suggestions.push(BindingSuggestionRecord {
+                        label: "select_right",
+                        path: r.to_string(),
+                        outcome,
+                    });
                 }
             }
             let mut suggested = Vec::new();
@@ -1867,7 +1993,7 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
             }
             if !suggested.is_empty() {
                 for (binding_label, binding_path, binding) in suggested {
-                    suggest_binding_best_effort(
+                    let outcome = suggest_binding_best_effort(
                         instance,
                         profile,
                         spec.profile,
@@ -1875,8 +2001,14 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
                         binding_path,
                         binding,
                     )?;
+                    report.suggestions.push(BindingSuggestionRecord {
+                        label: binding_label,
+                        path: binding_path.to_string(),
+                        outcome,
+                    });
                 }
             }
+            binding_reports.push(report);
         }
 
         session
@@ -1909,7 +2041,10 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
             profile_poll_counter: 0,
             last_logged_left_profile: None,
             last_logged_right_profile: None,
+            last_reported_left_profile: None,
+            last_reported_right_profile: None,
             last_debug_snapshot: None,
+            binding_reports,
         })
     }
 
@@ -2056,119 +2191,6 @@ impl System for OpenXRSystem {
         _dt_sec: f32,
     ) {
         self.pump_events();
-    }
-}
-
-impl VrBackend for OpenXRSystem {
-    fn kind(&self) -> VrBackendKind {
-        VrBackendKind::OpenXR
-    }
-
-    fn initialize_runtime(&mut self) -> Result<(), String> {
-        OpenXRSystem::initialize_runtime(self)
-    }
-
-    fn last_init_error(&self) -> Option<&str> {
-        OpenXRSystem::last_init_error(self)
-    }
-
-    fn xr_input_state(&self) -> &XrInputState {
-        OpenXRSystem::xr_input_state(self)
-    }
-
-    fn xr_gamepad_state(&self) -> &XrGamepadState {
-        OpenXRSystem::xr_gamepad_state(self)
-    }
-
-    fn set_preferred_swapchain_format(&mut self, format: u32) {
-        OpenXRSystem::set_preferred_swapchain_format(self, format)
-    }
-
-    fn required_vulkan_extensions(&self) -> Option<(Vec<String>, Vec<String>)> {
-        OpenXRSystem::required_vulkan_extensions(self)
-    }
-
-    fn set_vulkan_graphics(&mut self, gfx: XrVulkanGraphics) {
-        OpenXRSystem::set_vulkan_graphics(self, gfx)
-    }
-
-    fn register_vr(
-        &mut self,
-        world: &mut World,
-        visuals: &mut VisualWorld,
-        component: ComponentId,
-    ) {
-        OpenXRSystem::register_vr(self, world, visuals, component)
-    }
-
-    fn register_controller_xr(
-        &mut self,
-        world: &mut World,
-        visuals: &mut VisualWorld,
-        component: ComponentId,
-    ) {
-        OpenXRSystem::register_controller_xr(self, world, visuals, component)
-    }
-
-    fn register_input_xr(
-        &mut self,
-        world: &mut World,
-        visuals: &mut VisualWorld,
-        component: ComponentId,
-    ) {
-        OpenXRSystem::register_input_xr(self, world, visuals, component)
-    }
-
-    fn remove_controller_xr(
-        &mut self,
-        world: &mut World,
-        visuals: &mut VisualWorld,
-        component: ComponentId,
-    ) {
-        OpenXRSystem::remove_controller_xr(self, world, visuals, component)
-    }
-
-    fn remove_input_xr(
-        &mut self,
-        world: &mut World,
-        visuals: &mut VisualWorld,
-        component: ComponentId,
-    ) {
-        OpenXRSystem::remove_input_xr(self, world, visuals, component)
-    }
-
-    fn tick_with_queue(
-        &mut self,
-        world: &mut World,
-        visuals: &mut VisualWorld,
-        input: &InputState,
-        emit: &mut dyn crate::engine::ecs::SignalEmitter,
-        dt_sec: f32,
-    ) {
-        OpenXRSystem::tick_with_queue(self, world, visuals, input, emit, dt_sec)
-    }
-
-    fn last_render_dt_sec(&self) -> Option<f32> {
-        OpenXRSystem::last_render_dt_sec(self)
-    }
-
-    fn render_xr(
-        &mut self,
-        world: &World,
-        visuals: &mut VisualWorld,
-        renderer: &mut VulkanoRenderer,
-    ) {
-        OpenXRSystem::render_xr(self, world, visuals, renderer)
-    }
-
-    fn tick(
-        &mut self,
-        world: &mut World,
-        visuals: &mut VisualWorld,
-        input: &InputState,
-        dt_sec: f32,
-    ) {
-        System::tick(self, world, visuals, input, dt_sec)
     }
 }
 
@@ -2485,6 +2507,44 @@ impl OpenXRSystem {
                 right_a: right_a.map(|s| (s.is_active, s.current_state)),
                 right_b: right_b.map(|s| (s.is_active, s.current_state)),
             };
+            if let Some(left_profile) = left_profile {
+                if left_profile != openxr::Path::NULL
+                    && ci.last_reported_left_profile != Some(left_profile)
+                {
+                    if let Some(report) = ci
+                        .binding_reports
+                        .iter()
+                        .find(|report| report.profile_path == snapshot.left_profile)
+                    {
+                        log_runtime_profile_binding_report("left", report, &snapshot);
+                    } else {
+                        eprintln!(
+                            "[OpenXR][binding_report] left active profile has no stored binding report: {}",
+                            snapshot.left_profile
+                        );
+                    }
+                    ci.last_reported_left_profile = Some(left_profile);
+                }
+            }
+            if let Some(right_profile) = right_profile {
+                if right_profile != openxr::Path::NULL
+                    && ci.last_reported_right_profile != Some(right_profile)
+                {
+                    if let Some(report) = ci
+                        .binding_reports
+                        .iter()
+                        .find(|report| report.profile_path == snapshot.right_profile)
+                    {
+                        log_runtime_profile_binding_report("right", report, &snapshot);
+                    } else {
+                        eprintln!(
+                            "[OpenXR][binding_report] right active profile has no stored binding report: {}",
+                            snapshot.right_profile
+                        );
+                    }
+                    ci.last_reported_right_profile = Some(right_profile);
+                }
+            }
             if openxr_debug_enabled() && ci.last_debug_snapshot.as_ref() != Some(&snapshot) {
                 eprintln!(
                     "[OpenXR][debug] profiles left={} right={}",

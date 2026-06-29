@@ -2,7 +2,7 @@ use crate::engine::ecs::component::{
     ControllerHand, InputXRComponent, InputXRGamepadComponent, TransformComponent, XrAxisControl,
     XrButtonControl, XrHandPreference,
 };
-use crate::engine::ecs::system::{System, VrSystem, XrGamepadState};
+use crate::engine::ecs::system::{System, XrGamepadState, XrSystem};
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
@@ -54,12 +54,12 @@ impl InputXRGamepadSystem {
         &mut self,
         world: &mut World,
         _visuals: &mut VisualWorld,
-        vr: &VrSystem,
+        xr: &XrSystem,
         emit: &mut dyn SignalEmitter,
         dt_sec: f32,
     ) {
-        let xr = *vr.xr_gamepad_state();
-        if !xr.active {
+        let xr_state = *xr.xr_gamepad_state();
+        if !xr_state.active {
             if self.xr_active_last_frame {
                 eprintln!("[input_xr_gamepad_system] XR gamepad input inactive");
             }
@@ -98,12 +98,12 @@ impl InputXRGamepadSystem {
 
             let prev = self.previous.get(&cid).cloned().unwrap_or_default();
             let mut next = ComponentEventState::default();
-            emit_axis_events(cid, cfg.hand, &xr, &prev, &mut next, emit);
-            emit_button_events(cid, cfg.hand, &xr, &prev, &mut next, emit);
+            emit_axis_events(cid, cfg.hand, &xr_state, &prev, &mut next, emit);
+            emit_button_events(cid, cfg.hand, &xr_state, &prev, &mut next, emit);
             self.previous.insert(cid, next);
 
             if cfg.locomotion {
-                let moved = apply_locomotion(world, input_xr_owner, &cfg, &xr, emit, dt_sec);
+                let moved = apply_locomotion(world, input_xr_owner, &cfg, &xr_state, emit, dt_sec);
                 if moved {
                     self.logged_missing_locomotion_target.remove(&cid);
                 } else if locomotion_target_transform(world, input_xr_owner).is_none()

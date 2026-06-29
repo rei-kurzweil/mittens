@@ -32,7 +32,7 @@ use crate::engine::ecs::system::TextureSystem;
 use crate::engine::ecs::system::TransformStreamSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::TransitionSystem;
-use crate::engine::ecs::system::VrSystem;
+use crate::engine::ecs::system::XrSystem;
 use crate::engine::ecs::system::bounds_system::BoundsSystem;
 use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
 use crate::engine::ecs::system::{
@@ -97,7 +97,7 @@ pub struct SystemWorld {
     pub gltf: GLTFSystem,
     pub armature_visualization: ArmatureVisualizationSystem,
 
-    pub vr: VrSystem,
+    pub xr: XrSystem,
     pub input_xr_gamepad: InputXRGamepadSystem,
 
     pub pose_capture: PoseCaptureSystem,
@@ -1061,14 +1061,26 @@ impl SystemWorld {
                 }
             }
 
-            IntentValue::RegisterVr { component } => {
-                self.register_vr(world, visuals, *component);
+            IntentValue::RegisterXr { component } => {
+                self.register_xr(world, visuals, *component);
+            }
+            IntentValue::RegisterInputXr { component } => {
+                self.register_input_xr(world, visuals, *component);
             }
             IntentValue::RegisterControllerXr { component } => {
                 self.register_controller_xr(world, visuals, *component);
             }
+            IntentValue::RegisterInputXrGamepad { component } => {
+                self.register_input_xr_gamepad(world, visuals, *component);
+            }
+            IntentValue::RemoveInputXr { component } => {
+                self.remove_input_xr(world, visuals, *component);
+            }
             IntentValue::RemoveControllerXr { component } => {
                 self.remove_controller_xr(world, visuals, *component);
+            }
+            IntentValue::RemoveInputXrGamepad { component } => {
+                self.remove_input_xr_gamepad(world, visuals, *component);
             }
 
             IntentValue::RegisterRaycast { component } => {
@@ -1623,14 +1635,14 @@ impl SystemWorld {
         self.collision.remove_collision(world, visuals, component);
     }
 
-    /// Register a VrComponent (initializes the selected VR backend if enabled).
-    pub fn register_vr(
+    /// Register an XrComponent (initializes the XR runtime if enabled).
+    pub fn register_xr(
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.vr.register_vr(world, visuals, component);
+        self.xr.register_xr(world, visuals, component);
     }
 
     /// Register an InputXRComponent (tracks the headset/root XR pose and drives a transform).
@@ -1640,7 +1652,7 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.vr.register_input_xr(world, visuals, component);
+        self.xr.register_input_xr(world, visuals, component);
     }
 
     /// Register a ControllerXRComponent (tracks an XR controller pose and drives a transform).
@@ -1650,7 +1662,7 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.vr
+        self.xr
             .register_controller_xr(world, visuals, component);
     }
 
@@ -1663,24 +1675,24 @@ impl SystemWorld {
         self.input_xr_gamepad.register_input_xr_gamepad(component);
     }
 
-    /// Remove a ControllerXRComponent from VR backend tracking.
+    /// Remove a ControllerXRComponent from XR runtime tracking.
     pub fn remove_controller_xr(
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.vr.remove_controller_xr(world, visuals, component);
+        self.xr.remove_controller_xr(world, visuals, component);
     }
 
-    /// Remove an InputXRComponent from VR backend tracking.
+    /// Remove an InputXRComponent from XR runtime tracking.
     pub fn remove_input_xr(
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.vr.remove_input_xr(world, visuals, component);
+        self.xr.remove_input_xr(world, visuals, component);
     }
 
     pub fn remove_input_xr_gamepad(
@@ -2160,19 +2172,19 @@ impl SystemWorld {
         // Update window camera + select active XR camera rig before OpenXR consumes it.
         self.camera.tick(world, visuals, input, dt_sec);
         // OpenXR consumes the latest rig transform + publishes per-eye cameras.
-        self.vr
+        self.xr
             .tick_with_queue(world, visuals, input, queue, dt_sec);
         // Controller pose updates should be visible to raycasting/gestures this frame.
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
         self.input_xr_gamepad
-            .tick_with_queue(world, visuals, &self.vr, queue, dt_sec);
+            .tick_with_queue(world, visuals, &self.xr, queue, dt_sec);
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
 
         let activations =
             self.pointer
-                .build_activations(world, input, self.vr.xr_input_state());
+                .build_activations(world, input, self.xr.xr_input_state());
 
         self.raycast.tick_with_queue(
             world,

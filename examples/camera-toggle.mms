@@ -48,7 +48,7 @@ I.speed(2.5) {
 // XR rig selection target.
 let xr_cam = CXR.on()
 
-InputVR.on() {
+InputXR.on() {
     T.position(0.0, 1.55, 0.0) {
         xr_cam {
             Pointer {}
@@ -56,7 +56,7 @@ InputVR.on() {
     }
 }
 
-VR.on()
+XR.on()
 
 // Simple scene reference so toggling the desktop camera has an obvious effect.
 T.position(0.0, -0.15, 0.0).scale(12.0, 0.2, 12.0) {

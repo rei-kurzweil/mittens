@@ -568,7 +568,7 @@ pub enum IntentValue {
         component_ids: Vec<ComponentId>,
     },
 
-    RegisterVr {
+    RegisterXr {
         component_ids: Vec<ComponentId>,
     },
     RegisterInputXr {
@@ -767,7 +767,7 @@ impl IntentValue {
             IntentValue::RegisterKineticResponse { .. } => "register_kinetic_response",
             IntentValue::RemoveKineticResponse { .. } => "remove_kinetic_response",
 
-            IntentValue::RegisterVr { .. } => "register_vr",
+            IntentValue::RegisterXr { .. } => "register_xr",
             IntentValue::RegisterInputXr { .. } => "register_input_xr",
             IntentValue::RegisterControllerXr { .. } => "register_controller_xr",
             IntentValue::RegisterInputXrGamepad { .. } => "register_input_xr_gamepad",

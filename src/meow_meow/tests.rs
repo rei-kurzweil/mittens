@@ -1822,43 +1822,43 @@ fn roundtrip_camera_xr_off() {
 }
 
 #[test]
-fn roundtrip_vr_off() {
-    use crate::engine::ecs::component::VrComponent;
-    let (world, id) = roundtrip_component(VrComponent::off());
-    let got = world.get_component_by_id_as::<VrComponent>(id).unwrap();
+fn roundtrip_xr_off() {
+    use crate::engine::ecs::component::XrComponent;
+    let (world, id) = roundtrip_component(XrComponent::off());
+    let got = world.get_component_by_id_as::<XrComponent>(id).unwrap();
     assert!(!got.enabled);
 }
 
 #[test]
-fn roundtrip_vr_hand() {
-    use crate::engine::ecs::component::{ControllerHand, ControllerPoseKind, VRHandComponent};
-    let original = VRHandComponent::new(true, ControllerHand::Right, ControllerPoseKind::Grip);
+fn roundtrip_xr_hand() {
+    use crate::engine::ecs::component::{ControllerHand, ControllerPoseKind, XRHandComponent};
+    let original = XRHandComponent::new(true, ControllerHand::Right, ControllerPoseKind::Grip);
     let (world, id) = roundtrip_component(original);
-    let got = world.get_component_by_id_as::<VRHandComponent>(id).unwrap();
+    let got = world.get_component_by_id_as::<XRHandComponent>(id).unwrap();
     assert!(got.enabled);
     assert_eq!(got.hand, ControllerHand::Right);
     assert_eq!(got.pose, ControllerPoseKind::Grip);
 }
 
 #[test]
-fn roundtrip_input_vr_off() {
-    use crate::engine::ecs::component::InputVRComponent;
-    let (world, id) = roundtrip_component(InputVRComponent::off());
-    let got = world.get_component_by_id_as::<InputVRComponent>(id).unwrap();
+fn roundtrip_input_xr_off() {
+    use crate::engine::ecs::component::InputXRComponent;
+    let (world, id) = roundtrip_component(InputXRComponent::off());
+    let got = world.get_component_by_id_as::<InputXRComponent>(id).unwrap();
     assert!(!got.enabled);
 }
 
 #[test]
-fn roundtrip_input_vr_gamepad() {
-    use crate::engine::ecs::component::{InputVRGamepadComponent, XrHandPreference};
-    let original = InputVRGamepadComponent::new()
+fn roundtrip_input_xr_gamepad() {
+    use crate::engine::ecs::component::{InputXRGamepadComponent, XrHandPreference};
+    let original = InputXRGamepadComponent::new()
         .hand(XrHandPreference::Either)
         .locomotion()
         .speed(2.25)
         .deadzone(0.15);
     let (world, id) = roundtrip_component(original);
     let got = world
-        .get_component_by_id_as::<InputVRGamepadComponent>(id)
+        .get_component_by_id_as::<InputXRGamepadComponent>(id)
         .unwrap();
     assert!(got.enabled);
     assert_eq!(got.hand, XrHandPreference::Either);

@@ -184,8 +184,8 @@ ED {
 }
 
 T {
-    InputVR.on() {
-        InputVRGamepad {
+    InputXR.on() {
+        InputXRGamepad {
             locomotion()
             speed(1.5)
         }
@@ -224,8 +224,8 @@ T {
                         CXR { Pointer {} }
                     }
 
-                    VRHand.new(true, Left,  Grip) { T { Pointer {} } }
-                    VRHand.new(true, Right, Grip) { T { Pointer {} } }
+                    XRHand.new(true, Left,  Grip) { T { Pointer {} } }
+                    XRHand.new(true, Right, Grip) { T { Pointer {} } }
             }
 
             OV {
@@ -240,4 +240,4 @@ T {
     }
 }
 
-VR.on()
+XR.on()

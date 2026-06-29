@@ -114,7 +114,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RemoveCollision { component_ids }
             | IntentValue::RegisterKineticResponse { component_ids }
             | IntentValue::RemoveKineticResponse { component_ids }
-            | IntentValue::RegisterVr { component_ids }
+            | IntentValue::RegisterXr { component_ids }
             | IntentValue::RegisterInputXr { component_ids }
             | IntentValue::RegisterControllerXr { component_ids }
             | IntentValue::RegisterInputXrGamepad { component_ids }
@@ -221,7 +221,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RemoveCollision { component_ids }
             | IntentValue::RegisterKineticResponse { component_ids }
             | IntentValue::RemoveKineticResponse { component_ids }
-            | IntentValue::RegisterVr { component_ids }
+            | IntentValue::RegisterXr { component_ids }
             | IntentValue::RegisterInputXr { component_ids }
             | IntentValue::RegisterControllerXr { component_ids }
             | IntentValue::RegisterInputXrGamepad { component_ids }

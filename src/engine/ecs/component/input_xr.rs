@@ -1,11 +1,11 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
 
-/// Marker/config for a VR headset pose driver.
+/// Marker/config for an XR headset pose driver.
 ///
 /// Semantics:
 /// - Attach a `TransformComponent` as a child of this component.
-/// - the active VR backend will drive that transform child from the headset/root pose.
+/// - the active XR runtime will drive that transform child from the headset/root pose.
 #[derive(Debug, Clone)]
 pub struct InputXRComponent {
     pub enabled: bool,
@@ -37,7 +37,7 @@ impl Default for InputXRComponent {
 
 impl Component for InputXRComponent {
     fn name(&self) -> &'static str {
-        "input_vr"
+        "input_xr"
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -81,6 +81,6 @@ impl Component for InputXRComponent {
     ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let ctor = if self.enabled { "on" } else { "off" };
-        ce_call("InputVR", ctor, vec![])
+        ce_call("InputXR", ctor, vec![])
     }
 }

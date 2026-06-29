@@ -82,15 +82,15 @@ BG {
 
 // --- VTuber avatar — single-input topology ---
 //
-// InputVR drives body translation and head rotation via AvatarControlSystem.
-// VRHand and CameraXR children are discovered by topology.
+// InputXR drives body translation and head rotation via AvatarControlSystem.
+// XRHand and CameraXR children are discovered by topology.
 // camera_bone triggers two things at AVC init:
 //   1. model_root.y is auto-calibrated to -J_Bip_C_Head_local_y (no hardcoded constant).
 //   2. CXR is re-parented under J_Bip_C_Head for first-person XR alignment.
 //
 // Topology (after AvatarControlSystem init):
 //   ED
-//     └── InputVR
+//     └── InputXR
 //           └── T (driven_t)
 //                 └── AVC
 //                       ├── TransformForkTRS (body pipeline root)
@@ -102,12 +102,12 @@ BG {
 //                       │             └── GLTF { EM }
 //                       │                   └── ... → J_Bip_C_Head
 //                       │                                 └── CXR  ← re-parented here
-//                       ├── VRHand(Left, Grip)  ← discovered; re-parented to lower_arm
+//                       ├── XRHand(Left, Grip)  ← discovered; re-parented to lower_arm
 //                       │     └── T
-//                       └── VRHand(Right, Grip)
+//                       └── XRHand(Right, Grip)
 //                             └── T
 ED {
-    InputVR.on() {
+    InputXR.on() {
         T {
             AVC {
                 head_bone("J_Bip_C_Head")
@@ -137,12 +137,12 @@ ED {
                         }
                         CXR { Pointer {} }
                 }
-                VRHand.new(true, Left, Grip) { T { Pointer {} } }
-                VRHand.new(true, Right, Grip) { T { Pointer {} } }
+                XRHand.new(true, Left, Grip) { T { Pointer {} } }
+                XRHand.new(true, Right, Grip) { T { Pointer {} } }
             }
         }
     }
 }
 
 // --- VR runtime ---
-VR.on()
+XR.on()

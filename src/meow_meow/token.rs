@@ -245,7 +245,7 @@ pub const COMPONENT_SHORTFORMS: &[ComponentShortformEntry] = &[
     },
     ComponentShortformEntry {
         short: "XR",
-        full: "OpenXR",
+        full: "XR",
     },
     ComponentShortformEntry {
         short: "CXR",

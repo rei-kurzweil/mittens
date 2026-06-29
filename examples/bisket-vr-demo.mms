@@ -5,15 +5,15 @@
 // AVC convention (head_bone="J_Bip_C_Head") and the bisket model.
 //
 // Drivers:
-//   - InputVR.on(): HMD pose → driven_t (translation + rotation)
-//   - VRHand(Left/Right, Grip): hand pose → splices into J_Bip_{L,R}_Hand
+//   - InputXR.on(): HMD pose → driven_t (translation + rotation)
+//   - XRHand(Left/Right, Grip): hand pose → splices into J_Bip_{L,R}_Hand
 //                              (TwoBoneIK on upper/lower arm when chain resolves)
 //   - CXR (CameraXR): direct child of AVC, re-parented under J_Bip_C_Head.
 //     XR runtime overrides pose; no manual flip needed.
 //
 // Topology (after AvatarControlSystem init):
 //   ED
-//     └── InputVR
+//     └── InputXR
 //           └── T (driven_t)
 //                 └── AVC
 //                       ├── TransformForkTRS (body pipeline root)
@@ -22,8 +22,8 @@
 //                       │             └── GLTF { EM } → ... → J_Bip_C_Head
 //                       │                                          └── CXR  ← re-parented here
 //                       ├── splice_head → J_Bip_C_Head (AimConstraint, offset π)
-//                       ├── VRHand(Left,  Grip) ─→ TwoBoneIK on left arm chain
-//                       └── VRHand(Right, Grip) ─→ TwoBoneIK on right arm chain
+//                       ├── XRHand(Left,  Grip) ─→ TwoBoneIK on left arm chain
+//                       └── XRHand(Right, Grip) ─→ TwoBoneIK on right arm chain
 //
 // To run:
 //   cargo run --release --example bisket-vr-demo
@@ -187,7 +187,7 @@ BG {
 // camera_bone == head_bone: head bone is the eye anchor (CXR re-parented here;
 //   model_root.y auto-calibrated so head bone sits at HMD height).
 ED {
-    InputVR.on() {
+    InputXR.on() {
         T {
             AVC {
                 head_bone("J_Bip_C_Head")
@@ -240,8 +240,8 @@ ED {
                 
                 // Tracked Grip controllers — re-parented to lower-arm bones
                 // by AVC, drive J_Bip_{L,R}_Hand via TwoBoneIK.
-                VRHand.new(true, Left,  Grip) { T { Pointer {} } }
-                VRHand.new(true, Right, Grip) { T { Pointer {} } }
+                XRHand.new(true, Left,  Grip) { T { Pointer {} } }
+                XRHand.new(true, Right, Grip) { T { Pointer {} } }
             }
             
             // debug camera marker
@@ -261,7 +261,7 @@ ED {
 //
 // Sit alongside the avatar — useful to see raw controller tracking before
 // any IK/splice transforms touch them.
-InputVR.on() {
+InputXR.on() {
     T {
         // T.position(0.0, 1.85, 0.6) {
         //     RendererStats {
@@ -269,7 +269,7 @@ InputVR.on() {
         //     }
         // }
 
-        VRHand.new(true, Left, Aim) {
+        XRHand.new(true, Left, Aim) {
             T.scale(0.06, 0.06, 0.12) {
                 TransformForkTRS {
                     TransformMapTranslation {}
@@ -284,7 +284,7 @@ InputVR.on() {
             }
         }
 
-        VRHand.new(true, Right, Aim) {
+        XRHand.new(true, Right, Aim) {
             T.scale(0.06, 0.06, 0.12) {
                 TransformForkTRS {
                     TransformMapTranslation {}
@@ -300,14 +300,14 @@ InputVR.on() {
         }
 
         // Grip pose markers (yellow = left, green = right) — compare with Aim above.
-        VRHand.new(true, Left, Grip) {
+        XRHand.new(true, Left, Grip) {
             T.scale(0.05, 0.05, 0.10) {
                 T {
                     R.cube() { C.rgba(1.0, 1.0, 0.0, 1.0) EM.on() }
                 }
             }
         }
-        VRHand.new(true, Right, Grip) {
+        XRHand.new(true, Right, Grip) {
             T.scale(0.05, 0.05, 0.10) {
                 T {
                     R.cube() { C.rgba(0.2, 1.0, 0.2, 1.0) EM.on() }
@@ -350,7 +350,7 @@ I.speed(1.0) {
 }
 
 // --- OpenXR runtime ---
-VR.on()
+XR.on()
 
 
 // pink yellow and orange lighting

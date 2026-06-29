@@ -5,7 +5,7 @@ use cat_engine::engine::ecs::component::{
     EmissiveComponent, EmissivePassComponent, GLTFComponent, InputComponent,
     InputTransformModeComponent, InputXRComponent, PointerComponent,
     QuatTemporalFilterComponent, RaycastableComponent, RenderGraphComponent, RenderableComponent,
-    RendererSettingsComponent, RendererStatsComponent, TransformComponent, VrComponent,
+    RendererSettingsComponent, RendererStatsComponent, TransformComponent, XrComponent,
     TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
     TransformMapTranslationComponent,
 };
@@ -409,7 +409,7 @@ fn main() {
     );
 
     // Enable OpenXR runtime.
-    let xr_root = universe.world.add_component(VrComponent::openxr());
+    let xr_root = universe.world.add_component(XrComponent::on());
     universe.add(xr_root);
 
     universe.systems.process_commands(
