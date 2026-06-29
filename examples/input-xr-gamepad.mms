@@ -199,6 +199,30 @@ T {
                 T.position(-0.58, 0.05, 0.05) {
                     T.scale(0.18, 0.18, 0.08) {
                         R.cube() {
+                            C.rgba(0.88, 0.28, 0.82, 1.0)
+                            x_glow
+                        }
+                    }
+                    T.position(0.0, -0.20, 0.05).scale(0.05, 0.05, 1.0) {
+                        Text { "X" C.rgba(0.07, 0.08, 0.11, 1.0) TextureFiltering.linear() }
+                    }
+                }
+
+                T.position(-0.28, 0.05, 0.05) {
+                    T.scale(0.18, 0.18, 0.08) {
+                        R.cube() {
+                            C.rgba(0.95, 0.73, 0.16, 1.0)
+                            y_glow
+                        }
+                    }
+                    T.position(0.0, -0.20, 0.05).scale(0.05, 0.05, 1.0) {
+                        Text { "Y" C.rgba(0.07, 0.08, 0.11, 1.0) TextureFiltering.linear() }
+                    }
+                }
+
+                T.position(0.28, 0.05, 0.05) {
+                    T.scale(0.18, 0.18, 0.08) {
+                        R.cube() {
                             C.rgba(0.22, 0.52, 0.92, 1.0)
                             a_glow
                         }
@@ -208,7 +232,7 @@ T {
                     }
                 }
 
-                T.position(-0.28, 0.05, 0.05) {
+                T.position(0.58, 0.05, 0.05) {
                     T.scale(0.18, 0.18, 0.08) {
                         R.cube() {
                             C.rgba(0.22, 0.76, 0.46, 1.0)
@@ -217,30 +241,6 @@ T {
                     }
                     T.position(0.0, -0.20, 0.05).scale(0.05, 0.05, 1.0) {
                         Text { "B" C.rgba(0.07, 0.08, 0.11, 1.0) TextureFiltering.linear() }
-                    }
-                }
-
-                T.position(0.28, 0.05, 0.05) {
-                    T.scale(0.18, 0.18, 0.08) {
-                        R.cube() {
-                            C.rgba(0.95, 0.73, 0.16, 0.38)
-                            y_glow
-                        }
-                    }
-                    T.position(0.0, -0.20, 0.05).scale(0.05, 0.05, 1.0) {
-                        Text { "Y" C.rgba(0.07, 0.08, 0.11, 1.0) TextureFiltering.linear() }
-                    }
-                }
-
-                T.position(0.58, 0.05, 0.05) {
-                    T.scale(0.18, 0.18, 0.08) {
-                        R.cube() {
-                            C.rgba(0.88, 0.28, 0.82, 0.38)
-                            x_glow
-                        }
-                    }
-                    T.position(0.0, -0.20, 0.05).scale(0.05, 0.05, 1.0) {
-                        Text { "X" C.rgba(0.07, 0.08, 0.11, 1.0) TextureFiltering.linear() }
                     }
                 }
 
