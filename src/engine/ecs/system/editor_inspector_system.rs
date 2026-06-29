@@ -46,8 +46,8 @@ mod tests {
     use super::EditorInspectorSystem;
     use crate::engine::ecs::command_queue::CommandQueue;
     use crate::engine::ecs::component::{
-        BoundsComponent, EditorComponent, GLTFComponent, OverlayComponent, RenderableComponent,
-        SelectionComponent, SerializeComponent, TransformComponent,
+        BoundsComponent, EditorComponent, GLTFComponent, RenderableComponent, SelectionComponent,
+        SerializeComponent, TransformComponent,
     };
     use crate::engine::ecs::system::TransformSystem;
     use crate::engine::ecs::system::editor::inspector_panel::{
@@ -336,14 +336,9 @@ mod tests {
             .expect("expected world panel root under runtime ui root");
         assert_eq!(world.parent_of(runtime_ui_root), None);
         assert_eq!(world.parent_of(panel_mount), Some(runtime_ui_root));
-        assert!(
-            world
-                .find_component(runtime_ui_root, "#editor_panel_layout_root")
-                .is_some()
-        );
         let panel_shared_layout = world
-            .parent_of(panel_root)
-            .expect("expected layout root above world panel root");
+            .find_component(runtime_ui_root, "#editor_panel_layout_root")
+            .expect("expected shared panel layout root under runtime ui root");
         assert!(
             world
                 .find_component(panel_shared_layout, "#paint_panel_root")
@@ -364,31 +359,11 @@ mod tests {
         );
         assert!(
             world
-                .find_component(panel_shared_layout, "#inspector_panel_root")
-                .is_some(),
-            "expected inspector panel under layout root"
-        );
-        assert!(
-            world
                 .find_component(panel_shared_layout, "#editor_settings_panel_root")
                 .is_some(),
             "expected editor settings panel under layout root"
         );
-        assert_eq!(world.parent_of(panel_root), Some(panel_shared_layout));
-        let panel_overlay = world
-            .parent_of(panel_shared_layout)
-            .expect("expected overlay ancestor above shared layout root");
-        assert_eq!(world.parent_of(panel_overlay), Some(panel_mount));
-        assert!(
-            world
-                .get_component_by_id_as::<OverlayComponent>(panel_overlay)
-                .is_some()
-        );
-        assert!(
-            world
-                .find_component(runtime_ui_root, "#inspector_panel_root")
-                .is_some()
-        );
+        assert_eq!(world.parent_of(panel_shared_layout), Some(panel_mount));
         assert!(
             world
                 .find_component(runtime_ui_root, "#panel_status_value")

@@ -267,17 +267,6 @@ pub fn build_panel_layout_mount_ce(spec: PanelLayoutMountSpec) -> MaterializedCE
         children: spec.children.into_iter().map(CeChild::Spawn).collect(),
     };
 
-    let overlay_ce = MaterializedCE {
-        component_type: "Overlay".to_string(),
-        component_property_assignment_only: false,
-        ctor_method: None,
-        ctor_args: Vec::new(),
-        calls: Vec::new(),
-        named: Vec::new(),
-        positionals: Vec::new(),
-        children: vec![CeChild::Spawn(shared_layout_root)],
-    };
-
     MaterializedCE {
         component_type: "T".to_string(),
         component_property_assignment_only: false,
@@ -290,7 +279,7 @@ pub fn build_panel_layout_mount_ce(spec: PanelLayoutMountSpec) -> MaterializedCE
         calls: Vec::new(),
         named: vec![("name".to_string(), Value::String(spec.mount_name))],
         positionals: Vec::new(),
-        children: vec![CeChild::Spawn(overlay_ce)],
+        children: vec![CeChild::Spawn(shared_layout_root)],
     }
 }
 
@@ -750,4 +739,34 @@ pub fn spawn_editor_panel_layout_tree(
     };
 
     Some((panel_mount_root, layout_root_id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PanelLayoutMountSpec, build_panel_layout_mount_ce};
+    use crate::meow_meow::object::{CeChild, Value};
+
+    #[test]
+    fn build_panel_layout_mount_ce_places_layout_root_directly_under_mount() {
+        let mount = build_panel_layout_mount_ce(PanelLayoutMountSpec {
+            anchor_pos: (1.0, 2.0, 3.0),
+            total_height_gu: 10.0,
+            available_width_gu: 20.0,
+            text_scale: 0.08,
+            mount_name: "panel_mount".to_string(),
+            layout_name: "panel_layout".to_string(),
+            children: Vec::new(),
+        });
+
+        assert_eq!(mount.component_type, "T");
+        assert_eq!(mount.children.len(), 1);
+        let CeChild::Spawn(layout_root) = &mount.children[0] else {
+            panic!("expected spawned layout root");
+        };
+        assert_eq!(layout_root.component_type, "LayoutRoot");
+        assert_eq!(
+            layout_root.named,
+            vec![("name".to_string(), Value::String("panel_layout".to_string()))]
+        );
+    }
 }
