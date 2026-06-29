@@ -828,7 +828,13 @@ fn eval_expr(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<Value, Stri
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Value::Array(vals))
         }
-        Expression::Table(_) => Err("table literals are not evaluatable yet".into()),
+        Expression::Table(fields) => {
+            let mut map = HashMap::with_capacity(fields.len());
+            for field in fields {
+                map.insert(field.name.0.clone(), eval_expr(&field.value, ctx)?);
+            }
+            Ok(Value::Map(map))
+        }
         Expression::Index { base, index } => {
             let base = eval_expr(base, ctx)?;
             let index = eval_expr(index, ctx)?;
@@ -1984,7 +1990,30 @@ fn eval_binop(
         BinOpKind::And | BinOpKind::Or | BinOpKind::Pipe | BinOpKind::Query => {
             unreachable!("handled above")
         }
-        BinOpKind::Dot => Err("'.' must be used as part of a method call: obj.method(args)".into()),
+        BinOpKind::Dot => match (l, r) {
+            (Value::Map(fields), Value::Identifier(field)) => fields
+                .get(&field)
+                .cloned()
+                .ok_or_else(|| format!("field access: '{}' not found", field)),
+            (Value::Object(id), Value::Identifier(field)) => {
+                let Some(crate::meow_meow::object::Object::Map(fields)) =
+                    ctx.object_world.heap().get(id)
+                else {
+                    return Err("field access: invalid object".into());
+                };
+                fields
+                    .get(&field)
+                    .cloned()
+                    .ok_or_else(|| format!("field access: '{}' not found", field))
+            }
+            (lhs, Value::Identifier(field)) => {
+                Err(format!("field access: cannot read '{field}' from {:?}", lhs))
+            }
+            (_, rhs) => Err(format!(
+                "field access: RHS of '.' must be an identifier, got {:?}",
+                rhs
+            )),
+        },
     }
 }
 
@@ -2072,6 +2101,13 @@ fn value_display(val: &Value) -> String {
         Value::Array(arr) => format!(
             "[{}]",
             arr.iter().map(value_display).collect::<Vec<_>>().join(", ")
+        ),
+        Value::Map(map) => format!(
+            "{{{}}}",
+            map.iter()
+                .map(|(key, value)| format!("{key}: {}", value_display(value)))
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
         Value::Function { .. } => "<fn>".into(),
         Value::ComponentObject { id, component_type } => format!("<{}:{:?}>", component_type, id),
@@ -2401,5 +2437,25 @@ export let payload = T {
         assert!(component.named.iter().any(|(key, value)| {
             key == "id" && matches!(value, Value::String(value) if value == "paint_panel_root")
         }));
+    }
+
+    #[test]
+    fn module_eval_supports_table_literals_and_field_access() {
+        let source = r#"
+export let label = {
+    theme = {
+        label = "aurora"
+    }
+}.theme.label
+"#;
+
+        let module = eval_module_source(source, None).expect("module eval");
+        let Value::Module { named, .. } = module else {
+            panic!("expected module value");
+        };
+        assert!(matches!(
+            named.get("label"),
+            Some(Value::String(label)) if label == "aurora"
+        ));
     }
 }

@@ -265,6 +265,24 @@ impl MeowMeowParser {
                 continue;
             }
 
+            if self.try_consume(&TokenKind::Dot) {
+                let member = self.expect_ident()?;
+                let dot_expr = Expression::BinaryOp {
+                    op: BinOpKind::Dot,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(Expression::Identifier(member)),
+                };
+                lhs = if self.try_consume(&TokenKind::LParen) {
+                    Expression::Call(CallExpression {
+                        callee: Box::new(dot_expr),
+                        args: self.parse_call_args()?,
+                    })
+                } else {
+                    dot_expr
+                };
+                continue;
+            }
+
             let Some((l_bp, r_bp, op)) = self.peek_infix_op() else {
                 break;
             };
@@ -449,7 +467,6 @@ impl MeowMeowParser {
     ///
     /// Disambiguates:
     /// - Uppercase `Type.method(args)[.method2(args2)...] [{body}]` → ComponentExpression
-    /// - Lowercase `obj.method(args)`                               → Call with Dot callee
     /// - `ident(args)`                                              → free CallExpression
     /// - `UpperType { body }`                                       → ComponentExpression, no ctor
     /// - `ident`                                                    → bare Identifier
@@ -462,42 +479,32 @@ impl MeowMeowParser {
             .map(|c| c.is_uppercase())
             .unwrap_or(false);
 
-        if self.try_consume(&TokenKind::Dot) {
+        if is_component_type && self.try_consume(&TokenKind::Dot) {
             let method = self.expect_ident()?;
             self.consume(&TokenKind::LParen)?;
             let args = self.parse_call_args()?;
 
-            if is_component_type {
-                // `Type.method(args)[.chain(args)...] [{body}]` → ComponentExpression
-                let mut constructors = vec![ConstructorCall { method, args }];
-                while self.try_consume(&TokenKind::Dot) {
-                    let chained = self.expect_ident()?;
-                    self.consume(&TokenKind::LParen)?;
-                    let chained_args = self.parse_call_args()?;
-                    constructors.push(ConstructorCall {
-                        method: chained,
-                        args: chained_args,
-                    });
-                }
-                let body = if matches!(self.peek_kind(), TokenKind::LBrace) {
-                    self.parse_block_statement()?
-                } else {
-                    BlockStatement { statements: vec![] }
-                };
-                return Ok(Expression::Component(ComponentExpression {
-                    component_type: ident,
-                    constructors,
-                    body,
-                }));
-            } else {
-                // `obj.method(args)` → Call { callee: BinaryOp(Dot, obj, method) }
-                let callee = Box::new(Expression::BinaryOp {
-                    op: BinOpKind::Dot,
-                    lhs: Box::new(Expression::Identifier(ident)),
-                    rhs: Box::new(Expression::Identifier(method)),
+            // `Type.method(args)[.chain(args)...] [{body}]` → ComponentExpression
+            let mut constructors = vec![ConstructorCall { method, args }];
+            while self.try_consume(&TokenKind::Dot) {
+                let chained = self.expect_ident()?;
+                self.consume(&TokenKind::LParen)?;
+                let chained_args = self.parse_call_args()?;
+                constructors.push(ConstructorCall {
+                    method: chained,
+                    args: chained_args,
                 });
-                return Ok(Expression::Call(CallExpression { callee, args }));
             }
+            let body = if matches!(self.peek_kind(), TokenKind::LBrace) {
+                self.parse_block_statement()?
+            } else {
+                BlockStatement { statements: vec![] }
+            };
+            return Ok(Expression::Component(ComponentExpression {
+                component_type: ident,
+                constructors,
+                body,
+            }));
         }
 
         // `ident(args)` → free call expression

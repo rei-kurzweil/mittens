@@ -68,6 +68,7 @@ pub enum Value {
     },
     String(String),
     Array(Vec<Value>),
+    Map(HashMap<String, Value>),
 
     /// A live engine component (already spawned). Holds the engine-side
     /// `ComponentId` and the MMS component type name (e.g. `"Anim"`, `"T"`).

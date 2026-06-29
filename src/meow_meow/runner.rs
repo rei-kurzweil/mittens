@@ -348,24 +348,33 @@ impl MeowMeowRunner {
                                                 value,
                                                 ..
                                             },
-                                        ) => Value::Array(vec![
-                                            Value::String(format!("{hand:?}")),
-                                            Value::String(format!("{control:?}")),
-                                            Value::Number(*value as f64),
-                                        ]),
+                                        ) => Value::Map(HashMap::from([
+                                            ("hand".to_string(), Value::String(format!("{hand:?}"))),
+                                            (
+                                                "control".to_string(),
+                                                Value::String(format!("{control:?}")),
+                                            ),
+                                            ("value".to_string(), Value::Number(*value as f64)),
+                                        ])),
                                         Some(crate::engine::ecs::EventSignal::XrAxisChanged {
                                             hand,
                                             control,
                                             value,
                                             ..
-                                        }) => Value::Array(vec![
-                                            Value::String(format!("{hand:?}")),
-                                            Value::String(format!("{control:?}")),
-                                            Value::Array(vec![
-                                                Value::Number(value[0] as f64),
-                                                Value::Number(value[1] as f64),
-                                            ]),
-                                        ]),
+                                        }) => Value::Map(HashMap::from([
+                                            ("hand".to_string(), Value::String(format!("{hand:?}"))),
+                                            (
+                                                "control".to_string(),
+                                                Value::String(format!("{control:?}")),
+                                            ),
+                                            (
+                                                "value".to_string(),
+                                                Value::Array(vec![
+                                                    Value::Number(value[0] as f64),
+                                                    Value::Number(value[1] as f64),
+                                                ]),
+                                            ),
+                                        ])),
                                         _ => Value::Null,
                                     };
                                     if let Err(e) = eval_mms_fn(

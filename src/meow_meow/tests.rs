@@ -355,6 +355,30 @@ fn parse_array_index_expression() {
     assert!(matches!(a.value, Expression::Index { .. }));
 }
 
+#[test]
+fn parse_table_field_access_expression() {
+    let prog = parse("let x = settings.theme.label");
+    let Statement::Assignment(a) = &prog[0] else {
+        panic!()
+    };
+    let Expression::BinaryOp {
+        op: crate::meow_meow::ast::BinOpKind::Dot,
+        lhs,
+        rhs,
+    } = &a.value
+    else {
+        panic!("expected dot field access")
+    };
+    assert!(matches!(rhs.as_ref(), Expression::Identifier(id) if id.0 == "label"));
+    assert!(matches!(
+        lhs.as_ref(),
+        Expression::BinaryOp {
+            op: crate::meow_meow::ast::BinOpKind::Dot,
+            ..
+        }
+    ));
+}
+
 // ---------------------------------------------------------------------------
 // Error cases
 // ---------------------------------------------------------------------------
@@ -968,13 +992,13 @@ fn mms_click_handler_can_emit_data_event() {
 }
 
 #[test]
-fn mms_xr_axis_handler_receives_array_payload() {
+fn mms_xr_axis_handler_receives_table_payload() {
     let src = r##"
         let root = T { name = "root" }
         let target = Text { "(idle)" name = "target" }
 
         on(root, "XrAxisChanged", fn(event) {
-            target.set_text("" + event[0] + ":" + event[1] + ":" + event[2][0])
+            target.set_text("" + event.hand + ":" + event.control + ":" + event.value[0])
         })
     "##;
 

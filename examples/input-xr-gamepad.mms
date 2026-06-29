@@ -291,7 +291,7 @@ T {
 }
 
 on(xr_gamepad, "XrButtonDown", fn(event) {
-    let control = event[1]
+    let control = event.control
     if control == "ButtonA" {
         a_glow.set_intensity(2.8)
         event_text.set_text("A down")
@@ -316,7 +316,7 @@ on(xr_gamepad, "XrButtonDown", fn(event) {
 })
 
 on(xr_gamepad, "XrButtonUp", fn(event) {
-    let control = event[1]
+    let control = event.control
     if control == "ButtonA" {
         a_glow.off()
         event_text.set_text("A up")
@@ -333,23 +333,29 @@ on(xr_gamepad, "XrButtonUp", fn(event) {
 })
 
 on(xr_gamepad, "XrAxisChanged", fn(event) {
-    let control = event[1]
-    let value = event[2]
+    let control = event.control
+    let value = event.value
+
     if control == "LeftStick" {
         left_stick_dot.set_position(value[0] * 0.14, value[1] * 0.14, 0.03)
         left_stick_text.set_text("LS (" + value[0] + ", " + value[1] + ")")
+
     } else if control == "RightStick" {
         right_stick_dot.set_position(value[0] * 0.14, value[1] * 0.14, 0.03)
         right_stick_text.set_text("RS (" + value[0] + ", " + value[1] + ")")
+
     } else if control == "LeftTrigger" {
         left_trigger_value.set_text("LT: " + value[0])
         trigger_text.set_text("Trig L " + value[0])
+
     } else if control == "RightTrigger" {
         right_trigger_value.set_text("RT: " + value[0])
         trigger_text.set_text("Trig R " + value[0])
+
     } else if control == "LeftGrip" {
         left_grip_value.set_text("LG: " + value[0])
         grip_text.set_text("Grip L " + value[0])
+        
     } else if control == "RightGrip" {
         right_grip_value.set_text("RG: " + value[0])
         grip_text.set_text("Grip R " + value[0])
