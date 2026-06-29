@@ -1,8 +1,10 @@
 # ᓚᘏᗢ MMS Type System — Design Draft
 
 > **Status: draft.** No type-checking is implemented yet.
-> The evaluator is fully dynamic today. This doc designs the static layer that will sit
-> above it — gradual, optional annotations now; mandatory checking later.
+> The evaluator is fully dynamic today. This doc designs the static layer that
+> may sit above the runtime later. Tables/structs should land before optional
+> function typing; this doc therefore describes a later layer, not the first
+> implementation milestone.
 
 ---
 
@@ -18,12 +20,25 @@
 4. **Stay lightweight** — MMS is a scene-authoring language, not a systems language.
    The type system should get out of the way for simple scripts and add value for complex ones.
 
+## Scope ordering
+
+Before this type system work, MMS should first gain a plain-data runtime surface:
+
+1. anonymous tables
+2. field access on tables
+3. host event payload conversion from arrays to tables
+4. named structs as typed/authored tables
+
+Optional function annotations are useful, but they should be treated as a later
+phase after the table model is proven in parser/AST/evaluator tests.
+
 ---
 
 ## Strategy: gradual typing
 
-Type annotations are **optional on bindings and parameters**. Where an annotation is
-absent the type is inferred where possible, and falls back to `Any` where not.
+Type annotations are **optional on bindings and parameters**. Where an
+annotation is absent the type is inferred where possible, and falls back to
+`Any` where not.
 
 ```mms
 let x = 1.0                     // inferred: Double
@@ -96,32 +111,52 @@ anywhere. The annotation is a hint, not a guarantee.
 at runtime (any element can be any `Value`). The type checker enforces homogeneity at
 annotated sites; unannotated arrays are `[Any]`.
 
-### Structs
+### Tables and structs
 
-User-defined named record types. See [structs.md](structs.md) for full syntax design.
+The runtime data model should be table-based.
+
+Anonymous tables are plain key/value values:
 
 ```mms
-struct Vec3 { x: Double, y: Double, z: Double }
+let event = {
+    hand = "Right"
+    control = "ButtonB"
+    value = 1.0
+}
 ```
 
-In the type system, `Vec3` is a nominal type — two structs with the same fields but
-different names are distinct types. This differs from structural typing (duck typing)
-where only field shape matters.
+Named structs are typed/authored tables layered on top of that runtime model.
+See [mms-struct-syntax.md](../../draft/mms-struct-syntax.md) for the syntax
+design.
+
+```mms
+struct vec3 {
+    x: Double
+    y: Double
+    z: Double
+}
+```
+
+In the type system, a named struct such as `vec3` is a nominal type layered over
+the table runtime. Two structs with the same fields but different names are
+distinct types. This differs from structural typing (duck typing) where only
+field shape matters.
 
 **Nominal vs structural:**
 ```mms
-struct Vec3  { x: Double, y: Double, z: Double }
-struct Point { x: Double, y: Double, z: Double }  // same fields, different name
+struct vec3  { x: Double, y: Double, z: Double }
+struct point { x: Double, y: Double, z: Double }  // same fields, different name
 
-fn translate(pos: Vec3, delta: Vec3): Vec3 { ... }
-let p = Point { x: 1, y: 2, z: 3 }
+fn translate(pos: vec3, delta: vec3): vec3 { ... }
+let p = point { x: 1, y: 2, z: 3 }
 translate(p, ...)   // type error (structural) OR ok (nominal)?
 ```
 
-**Recommendation: nominal typing.** Errors on the above. Rationale: `Vec3` and `Point`
-may be semantically different (position vs displacement) and the programmer chose different
-names for a reason. Structural typing silently accepts wrong arguments — this is the bug
-the type system is meant to catch.
+**Recommendation: nominal typing.** Errors on the above. Rationale: `vec3` and
+`point` may be semantically different (position vs displacement) and the
+programmer chose different names for a reason. Structural typing silently
+accepts wrong arguments; that is exactly the class of bug the type system is
+meant to catch.
 
 ---
 
@@ -129,7 +164,7 @@ the type system is meant to catch.
 
 ```mms
 Fn(Double, Double): Double           // takes two Doubles, returns Double
-Fn(Vec3, Vec3): Vec3        // takes two Vec3, returns Vec3
+Fn(vec3, vec3): vec3        // takes two vec3, returns vec3
 Fn(): Null                  // no args, no return value
 Fn(Double): Fn(Double): Double     // curried: takes Double, returns a function
 ```
@@ -203,7 +238,7 @@ Probably not — gradual typing with `Any` covers the use cases that unions woul
 let x: Double = 1.0
 let name: Str = "hello"
 let nums: [Double] = [1, 2, 3]
-let pos: Vec3 = Vec3 { x: 0, y: 1, z: 0 }
+let pos: vec3 = vec3 { x: 0, y: 1, z: 0 }
 ```
 
 Annotations are placed after `:` following the binding name — same as Rust and TypeScript.

@@ -1,86 +1,162 @@
-# MMS Struct Syntax / AST Extension
+# MMS Tables And Struct Syntax
 
 ## Goal
 
-Enable Rust-style struct declarations and instantiations in MMS like:
+Give MMS a first-class plain-data surface that starts with anonymous tables and
+later supports named structs as typed/authored tables.
 
-```mms
-struct AppState {
-    blinking_light_blocked: bool
-}
+This is primarily a language/AST feature request, not an engine component
+feature. It should make MMS more ergonomic for event payloads, panel models,
+and future MMS-to-Rust transpilation.
 
-let app_state = AppState {
-    blinking_light_blocked: false
-}
-```
+## Terminology
 
-This is primarily a language/AST feature request, not an engine component feature.
-It should make MMS more ergonomic for plain data modeling and support future
-MMS-to-Rust transpilation.
+- `table`
+  - the base runtime plain-data shape: string-keyed fields holding values
+- `anonymous table`
+  - a table literal such as `{ foo = 1 }`
+- `struct`
+  - a named typed table declaration
+- `struct allocation`
+  - a named table construction such as `special_table { id: 0, specialness: 1.0 }`
+
+The important constraint is that structs are not a separate runtime universe.
+They are tables with additional declaration/type information.
 
 ## Current state
 
-- MMS already has an internal object/map runtime representation in `src/meow_meow/object.rs`.
-- The language currently supports assignment syntax `name = expr` and component syntax `Type { ... }`.
-- There is no parser token for `:` and no `struct` keyword or struct allocation AST node.
-- `AppState { ... }` currently would be parsed as a component expression when `AppState` is uppercase.
+- MMS already has an internal object/map runtime representation in
+  `src/meow_meow/object.rs`.
+- The language currently supports assignment syntax `name = expr` and component
+  syntax `Type { ... }`.
+- There is no parser support for anonymous table literals.
+- There is no `struct` keyword or struct-allocation AST node.
+- `UpperCamel { ... }` is already used for component expressions and should stay
+  reserved for that purpose.
 
 ## Proposed source model
 
-### Struct declaration
+### Phase 1: anonymous tables
 
 ```mms
-struct AppState {
-    blinking_light_blocked: bool
+let foo = { bar = "baz" }
+```
+
+Expanded example:
+
+```mms
+let event = {
+    hand = "Right"
+    control = "ButtonB"
+    value = 1.0
 }
 ```
 
-### Struct allocation
+This should be the first syntax implemented in tokenizer/parser/AST so the core
+table model can be tested directly.
+
+### Phase 2: named structs
 
 ```mms
-let app_state = AppState {
-    blinking_light_blocked: false
+struct special_table {
+    id: Int
+    specialness: Float
 }
 ```
 
-### Field syntax
+### Phase 3: struct allocation
 
-Use colon-based fields inside both declarations and allocations.
-This is the Rust-like syntax the user requested.
+```mms
+let special = special_table {
+    id: 0
+    specialness: 1.0
+}
+```
+
+Named struct allocation intentionally remains distinct from component
+construction:
+
+- `T { ... }` => component expression
+- `{ ... }` => anonymous table literal
+- `special_table { ... }` => struct allocation
+
+## Syntax choices
+
+### Anonymous tables use `=`
+
+Anonymous tables should use assignment-style fields:
+
+```mms
+let foo = {
+    bar = "baz"
+    count = 3
+}
+```
+
+Reasons:
+
+- it aligns with existing MMS assignment syntax
+- it avoids pretending anonymous tables are declarations
+- it makes table literals easier to parse as a new expression form
+
+### Struct declarations use `:`
+
+Struct declarations should use type-annotation syntax:
+
+```mms
+struct special_table {
+    id: Int
+    specialness: Float
+}
+```
+
+This keeps declaration syntax consistent with typed fields.
+
+### Struct allocations use value fields
+
+The current leading candidate is colon-style field assignment:
+
+```mms
+let special = special_table {
+    id: 0
+    specialness: 1.0
+}
+```
+
+That keeps typed construction visually distinct from anonymous table literals.
+If implementation experience shows `=` is materially cleaner, this can be
+revisited, but the main requirement is to keep anonymous tables and component
+construction unambiguous.
 
 ## AST additions
 
-The AST should gain new nodes for struct declarations and allocations.
-
-### `ast::Statement`
-
-Add a new variant:
-
-- `StructDefinition(StructDefinition)`
-
-And a new struct type:
-
-- `StructDefinition { name: Ident, fields: Vec<StructField> }`
-
-`StructField` should include:
-
-- `name: Ident`
-- `field_type: TypeExpression` or `String`
-
-This keeps declaration syntax explicit and separate from ordinary assignments.
+The AST should gain table-first nodes.
 
 ### `ast::Expression`
 
-Add a new variant:
+Add:
 
+- `AnonymousTable(Vec<TableFieldValue>)`
 - `StructAllocation { struct_name: Ident, fields: Vec<StructFieldValue> }`
 
-Where `StructFieldValue` contains:
+Where:
 
-- `name: Ident`
-- `value: Expression`
+- `TableFieldValue { name: Ident, value: Expression }`
+- `StructFieldValue { name: Ident, value: Expression }`
 
-This makes `AppState { ... }` an expression form that is distinct from component expressions.
+### `ast::Statement`
+
+Add:
+
+- `StructDefinition(StructDefinition)`
+
+Where:
+
+- `StructDefinition { name: Ident, fields: Vec<StructField> }`
+- `StructField { name: Ident, field_type: TypeExpression }`
+
+The parser/evaluator can treat `StructAllocation` as "allocate a table, with an
+optional attached struct name".
 
 ## Parser changes
 
@@ -92,26 +168,46 @@ Files:
 
 ### Tokenizer
 
-- Add `TokenKind::Colon`.
-- Lex the `:` character into `Colon`.
+Add:
 
-### Parser
+- `TokenKind::Struct`
+- `TokenKind::Colon` if not already present for typed declarations
 
-- Add a `TokenKind::Struct` reserved keyword in the tokenizer and parser.
-- In `parse_statement()`, add a new branch for `struct` declarations.
-- In `parse_ident_leading_expression()`, disambiguate `UpperType { ... }` between:
-  - component expressions (`Type { body }`)
-  - struct allocations (`Type { field: expr, ... }`)
+Anonymous table literals do not need a new punctuation token beyond existing
+braces and `=`.
 
-Because `AppState {}` is ambiguous with component syntax, the parser should look inside the brace body:
+### Parser priorities
 
-- If the body begins with colon-style field entries, parse it as `StructAllocation`.
-- Otherwise, preserve existing component parsing.
+Implementation should start here:
 
-### Helper parsing methods
+1. parse anonymous table literals as expressions
+2. add tests that tables evaluate into the existing object/map runtime
+3. add field access on those values
+4. only then add `struct` declarations and `struct` allocations
 
-- Add `parse_struct_fields()` or `parse_field_list()` to parse `ident: expr` entries.
-- Add a `parse_struct_declaration_fields()` helper for type annotations inside `struct` bodies.
+### Anonymous table parsing
+
+`{ ... }` should parse as an anonymous table literal when it appears in an
+expression position where a component expression is not expected.
+
+The target form is:
+
+```mms
+let foo = { bar = "baz" }
+```
+
+That gives a direct parser/AST/evaluator path for validating the runtime table
+model.
+
+### Struct parsing
+
+Once anonymous tables are working:
+
+- add `struct` declarations in statement position
+- add `snake_case_name { ... }` as struct allocation
+
+The lowercase/snake_case rule is useful because it avoids colliding with the
+existing uppercase component surface.
 
 ## Runtime / evaluator changes
 
@@ -122,86 +218,66 @@ Files:
 
 ### Evaluation model
 
-Two principal choices:
+Use the existing generic object/map runtime as the underlying representation.
 
-1. Keep a generic `Value::Object(ObjectId)` and use the existing `Object::Map(HashMap<String, Value>)`.
-   - `StructAllocation` becomes an object/map allocation.
-   - Optionally tag the object with a struct name for better introspection.
+That means:
 
-2. Add a typed map variant:
-   - `Object::Struct { type_name: String, fields: HashMap<String, Value> }`
-   - This preserves the struct identity in the runtime.
+- anonymous table literals allocate a generic table/object
+- struct allocations also allocate a generic table/object
+- a struct name may be stored as optional metadata for introspection or
+  transpilation, but it should not require a separate runtime value category
 
-At minimum, allocator support should exist for field maps.
+### Field access
 
-### Struct definitions in runtime
+Desired later surface:
 
-A `struct` declaration is a compile-time/type-level binding, not a runtime value by itself.
-Possible runtime representations:
+```mms
+event.control
+special.specialness
+```
 
-- Bind `AppState` in the MMS environment as a constructor-like value.
-- Or reserve it as a syntax-only type name for parser validation and transpilation.
+Field access should work on table-backed values regardless of whether they came
+from an anonymous table literal or a named struct allocation.
 
-If the interpreter wants to support typed construction, the binding should probably be stored as metadata in the evaluator environment.
+## Type system relationship
 
-### Evaluator changes
+Tables come first. Structs matter later for:
 
-- Extend statement evaluation to handle `Statement::StructDefinition`.
-- Extend expression evaluation to handle `Expression::StructAllocation`.
-- Field evaluation should allocate a map object and bind each field.
-- Support record field access if desired later (`app_state.blinking_light_blocked`).
+- optional type checking
+- clearer user-authored declarations
+- transpilation
 
-## Transpiler / Rust output
-
-Once the AST supports `StructDefinition` and `StructAllocation`, a transpiler can directly map them to Rust:
-
-- `StructDefinition` → Rust `struct` definition
-- `StructAllocation` → Rust struct literal or `HashMap` literal
-
-If a future MMS-to-Rust transpiler is a goal, the AST should preserve:
-
-- struct name
-- field names
-- field types in declarations
-- field expression values in allocations
+That means optional typing on functions should not block the first table work.
+Function parameter/return annotations are a later phase.
 
 ## Files to change/add
 
 ### Core MMS parser / AST
 
 - `src/meow_meow/ast.rs`
-  - Add `StructDefinition`, `StructAllocation`, `StructField`, and related AST types.
+  - add anonymous table and struct-related AST nodes
 - `src/meow_meow/token.rs`
-  - Add `TokenKind::Colon` and a `Struct` keyword token.
+  - add `Struct` and `Colon` as needed
 - `src/meow_meow/tokenizer.rs`
-  - Lex `:` and `struct`.
+  - lex `struct` and `:`
 - `src/meow_meow/parser.rs`
-  - Parse `struct` declarations and struct allocations.
-  - Add helpers for field lists.
+  - parse anonymous tables first
+  - later parse struct declarations and allocations
 
 ### Evaluator / runtime
 
 - `src/meow_meow/evaluator.rs`
-  - Evaluate struct definitions and allocations.
+  - evaluate anonymous tables first
+  - later evaluate struct definitions and allocations
 - `src/meow_meow/object.rs`
-  - Optionally add typed object/struct storage or use `Object::Map`.
+  - reuse generic map/table storage
 
 ### Tests
 
 - `src/meow_meow/tests.rs`
-  - Add parser tests for `struct` declarations and allocations.
-  - Add evaluator tests for `let x = AppState { foo: 1 }`.
-
-### Docs / design
-
-- `docs/draft/mms-struct-syntax.md` (this file)
-- Optionally update `docs/draft/mms-records-and-rust-interop.md` with the new struct plan.
-
-## Notes
-
-- This design is intentionally narrowly scoped to the language feature.
-- The existing runtime object/map support means we do not need a large new value system just to implement struct allocation.
-- If full Rust-style record field access is desired, that can be added later once struct allocation is live.
+  - add parser tests for `let foo = { bar = "baz" }`
+  - add evaluator tests proving anonymous tables allocate correctly
+  - later add struct declaration/allocation tests
 
 ## Example AST shapes
 
@@ -210,7 +286,6 @@ pub enum Statement {
     Assignment(AssignmentStatement),
     Reassign { name: Ident, value: Expression },
     StructDefinition(StructDefinition),
-    // ...
 }
 
 pub struct StructDefinition {
@@ -220,15 +295,20 @@ pub struct StructDefinition {
 
 pub struct StructField {
     pub name: Ident,
-    pub field_type: Box<Expression>, // or a dedicated type AST
+    pub field_type: Box<Expression>,
 }
 
 pub enum Expression {
     Identifier(Ident),
     Call(CallExpression),
     Component(ComponentExpression),
+    AnonymousTable(Vec<TableFieldValue>),
     StructAllocation(StructAllocation),
-    // ...
+}
+
+pub struct TableFieldValue {
+    pub name: Ident,
+    pub value: Expression,
 }
 
 pub struct StructAllocation {
@@ -244,4 +324,8 @@ pub struct StructFieldValue {
 
 ## Next step
 
-If we agree on this roadmap, the next concrete work is to wire parser support for `:` and `struct` plus add a minimal evaluator path for plain allocation to `Value::Object`.
+If this direction stands, the first implementation work should be:
+
+1. anonymous table literals in tokenizer/parser/AST
+2. evaluator/runtime support using the existing table/object store
+3. parser and evaluator tests proving tables work before layering structs on top

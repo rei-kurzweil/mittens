@@ -24,7 +24,7 @@ That is functional, but it is the wrong long-term surface.
 
 The real problem is broader than XR:
 
-- MMS lacks a first-class plain-data struct / record surface
+- MMS lacks a first-class plain-data table / struct surface
 - event payload APIs therefore fall back to arrays
 - editor/panel model data also falls back to arrays, strings, or ad-hoc host
   encodings
@@ -33,7 +33,7 @@ The real problem is broader than XR:
 
 This task reframes the issue as:
 
-- MMS needs general plain-data structs/records
+- MMS needs general plain-data tables, with named structs layered on top
 - event payloads should become one consumer of that feature, not a bespoke
   exception
 
@@ -55,9 +55,9 @@ That means authored MMS has to know index positions instead of field names.
 Relevant existing docs:
 
 - `docs/task/mms-event-payloads-and-runtime-attach.md`
-  - already argues that event payloads should become MMS objects/records
+  - already argues that event payloads should become MMS objects/tables
 - `docs/draft/panel-model-view-contract.md`
-  - explicitly says MMS lacks an authored record/struct/dict literal surface
+  - explicitly says MMS lacks an authored table/struct/dict literal surface
 - `docs/meow_meow/draft/type-system.md`
   - already reserves a "Structs" concept in the type system draft
 - `docs/draft/mms-struct-syntax.md`
@@ -93,19 +93,26 @@ That is possible, but it may not be the cleanest language direction.
 
 ## Main question
 
-Should MMS plain-data structs use a source form that is intentionally distinct
-from component constructors, instead of trying to parse two unrelated concepts
-from the same `Type { ... }` surface?
+Should MMS plain-data values be framed as generic tables first, with named
+structs as an additional typed/authored layer, instead of treating event
+payloads as a bespoke special-case data system?
 
 The motivating idea from recent discussion is:
 
+- anonymous table literals should be the first parser/AST/runtime target
 - component constructors remain the current uppercase / engine-facing form
-- plain-data structs use `struct` plus lowercase snake_case names
-- struct allocation uses the same lowercase snake_case constructor name
+- named structs use `struct` plus lowercase snake_case names
+- named struct allocation uses the same lowercase snake_case constructor name
 
 Example:
 
 ```mms
+let event = {
+    hand = "Right"
+    control = "ButtonB"
+    value = 1.0
+}
+
 struct xr_button_event {
     hand: Str
     control: Str
@@ -119,11 +126,12 @@ let event = xr_button_event {
 }
 ```
 
-That would make this unambiguous in theory:
+That would make the language split clearer:
 
 - `T { ... }` => component expression
 - `Data { ... }` => component expression
-- `xr_button_event { ... }` => plain-data struct allocation
+- `{ ... }` => anonymous table literal
+- `xr_button_event { ... }` => named struct allocation
 
 ## Why this direction is attractive
 
@@ -153,7 +161,7 @@ let control = event.control
 let value = event.value
 ```
 
-or equivalent field access syntax once plain-data objects are live.
+or equivalent field access syntax once plain-data tables are live.
 
 ### C. It avoids parser cleverness where possible
 
@@ -181,19 +189,19 @@ level.
 
 ## Open design questions
 
-### 1. Are structs nominal types, records, or both?
+### 1. Are structs nominal types, tables, or both?
 
 Possible layers:
 
-- plain anonymous record/map literals
+- plain anonymous table literals
 - named `struct` declarations
 - named struct allocation
 
 We want:
 
-- both anonymous records and named structs
-- records first as the runtime value model
-- named structs second as declaration/type sugar over that same model
+- tables as the runtime value model
+- anonymous tables first
+- named structs on top of tables as declaration/type sugar
 
 ### 2. What is the exact field access surface?
 
@@ -207,7 +215,7 @@ item.target_ref
 
 This implies:
 
-- runtime object/record allocation
+- runtime table allocation
 - dot-field read support on plain data values
 
 ### 3. Do we want lowercase struct names as a rule?
@@ -223,20 +231,23 @@ Questions:
 - should component constructors remain `UpperCamel` / symbolic component names?
 - should the parser enforce the distinction or merely allow it?
 
-### 4. Do we need anonymous record literals too?
+### 4. Do we need anonymous table literals too?
 
-For event conversion and panel models, anonymous record literals may be enough:
+Yes. They should be the first thing implemented in tokenizer/parser/AST so the
+table model is testable before named structs or optional typing land.
+
+For event conversion and panel models, anonymous table literals may be enough:
 
 ```mms
 let item = {
-    label: "Head",
-    selected: true,
-    target_ref: "@uuid:..."
+    label = "Head"
+    selected = true
+    target_ref = "@uuid:..."
 }
 ```
 
-Anonymous records should exist even if named structs also exist. They are the
-right starting point for generic event payloads and small ad hoc data models.
+An anonymous table is effectively a generic key/value table. Structs can later
+be treated as typed tables.
 
 Named `struct` declarations are still useful for:
 
@@ -244,16 +255,17 @@ Named `struct` declarations are still useful for:
 - clearer docs
 - eventual transpilation / static analysis
 
-### 5. Should events become records first, before full user-authored structs?
+### 5. Should events become tables first, before full user-authored structs?
 
-Yes. The right first move is a generic record model for events.
+Yes. The right first move is a generic table model for events.
 
 One staged approach:
 
-1. add runtime record/object field access
-2. convert host event payloads from arrays to generic records
-3. add authored anonymous record literals
-4. later add named `struct` declarations + allocations
+1. add anonymous table literals to tokenizer / parser / AST
+2. add runtime table allocation and field access
+3. convert host event payloads from arrays to generic tables
+4. add named `struct` declarations + allocations
+5. later add optional typing to functions and wider type-checker integration
 
 That may be lower-risk than implementing the full language feature in one pass.
 
@@ -262,7 +274,7 @@ That may be lower-risk than implementing the full language feature in one pass.
 This task should investigate and clarify:
 
 1. the desired MMS plain-data value model
-2. how anonymous records and named structs fit together
+2. how anonymous tables and named structs fit together
 3. whether lowercase/snake_case data constructors are the right answer to the
    component-vs-data ambiguity
 4. how event payload APIs should be re-expressed once structured data exists
@@ -271,11 +283,12 @@ This task should investigate and clarify:
 The recommendation to test against is:
 
 - component expressions stay as-is
-- generic records become the initial MMS plain-data runtime surface
-- anonymous records and named structs both exist in the final design
-- event payloads move to generic structured values first
+- generic tables become the initial MMS plain-data runtime surface
+- anonymous tables and named structs both exist in the final design
+- structs are typed/authored tables, not a separate runtime universe
+- event payloads move to generic structured table values first
 - handler code stops using positional array indexing for named payloads
-- optional function typing is deferred until after the core record/event model
+- optional function typing is deferred until after the core table/event model
   is working, likely as a later phase rather than phase 1
 
 ## Concrete target examples
@@ -309,7 +322,14 @@ on(xr_gamepad, "XrAxisChanged", fn(event) {
 Desired authored shape:
 
 ```mms
-let item = world_panel_item {
+let item = {
+    key = "head"
+    label = "Head"
+    selected = true
+    target_ref = "@uuid:..."
+}
+
+let typed_item = world_panel_item {
     key: "head"
     label: "Head"
     selected: true
@@ -331,8 +351,8 @@ let item = world_panel_item {
 
 Lock in:
 
-- anonymous records as the base runtime model
-- named structs as an additional authored surface
+- anonymous tables as the base runtime model
+- named structs as an additional authored/type surface
 
 Also decide:
 
@@ -344,9 +364,9 @@ Also decide:
 
 Likely best order:
 
-1. runtime record/object field access
-2. host event payload conversion to generic records
-3. authored anonymous record literals
+1. tokenizer/parser/AST support for anonymous table literals
+2. runtime table allocation + field access
+3. host event payload conversion to generic tables
 4. named struct declarations / allocation
 5. optional function typing and wider type-checker integration
 
@@ -354,7 +374,7 @@ Likely best order:
 
 Revise event-payload tasks so they target:
 
-- named record payloads
+- named table payloads
 - not positional arrays
 
 XR should be treated as the first concrete migration target, not the only one.
@@ -363,7 +383,7 @@ XR should be treated as the first concrete migration target, not the only one.
 
 This task is complete when:
 
-- the repo has a clear decision on MMS plain-data structs/records
+- the repo has a clear decision on MMS plain-data tables/structs
 - the component-vs-data construction ambiguity is resolved at the design level
 - the event payload API direction is rewritten around structured values
 - existing struct/event drafts are either aligned with that decision or clearly

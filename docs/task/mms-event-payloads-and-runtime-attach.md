@@ -58,7 +58,7 @@ already receives.
 
 ### Event → MMS Value conversion
 
-Define a conversion `EventSignal → Value` that returns an MMS object (record)
+Define a conversion `EventSignal → Value` that returns an MMS table/object
 exposing the event's fields. Component ids surface as MMS
 `ComponentObject { id, component_type }` so the handler can immediately call
 methods on them or pass them to other MMS functions.
