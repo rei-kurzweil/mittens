@@ -217,6 +217,8 @@ This implies:
 
 - runtime table allocation
 - dot-field read support on plain data values
+- `foo.bar` should mean table field access when not followed by `(`
+- `foo.bar(...)` should remain method-call syntax
 
 ### 3. Do we want lowercase struct names as a rule?
 
@@ -280,6 +282,26 @@ One staged approach:
 5. later add optional typing to functions and wider type-checker integration
 
 That may be lower-risk than implementing the full language feature in one pass.
+
+## Current conclusions
+
+The current implementation-direction conclusions are:
+
+- anonymous tables are phase 1
+- nested anonymous tables should work from the start
+- table values should be heap-backed runtime values
+- whole-table reassignment is enough for the first pass
+- dot access should split as:
+  - `foo.bar` => table field read
+  - `foo.bar(...)` => method call
+- named structs are later and should not block anonymous tables
+- optional function typing is later and should not block anonymous tables
+- runtime naming should align toward tables:
+  - `Value::Object(ObjectId)` may stay as the low-level heap reference for now
+  - `Object::Map(...)` should be renamed to `Object::Table(...)`
+- event payload migration should target tables, not arrays
+- table-driven examples will also need a concrete color mutation API such as
+  `set_rgba(...)`
 
 ## Proposed direction for this task
 

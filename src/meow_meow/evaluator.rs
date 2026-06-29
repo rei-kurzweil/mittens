@@ -828,6 +828,7 @@ fn eval_expr(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<Value, Stri
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Value::Array(vals))
         }
+        Expression::Table(_) => Err("table literals are not evaluatable yet".into()),
         Expression::Index { base, index } => {
             let base = eval_expr(base, ctx)?;
             let index = eval_expr(index, ctx)?;

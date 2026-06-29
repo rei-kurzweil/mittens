@@ -1,7 +1,7 @@
 use crate::meow_meow::ast::{
     AssignmentStatement, BinOpKind, BlockStatement, CallExpression, ComponentExpression,
-    ConstructorCall, ElseBranch, Expression, Ident, IfStatement, ImportItem, ReturnStatement, Span,
-    Statement, UnaryOpKind,
+    ConstructorCall, ElseBranch, Expression, Ident, IfStatement, ImportItem, ReturnStatement,
+    Span, Statement, TableFieldValue, UnaryOpKind,
 };
 use crate::meow_meow::token::{Token, TokenKind};
 
@@ -373,6 +373,7 @@ impl MeowMeowParser {
                 self.bump();
                 Ok(Expression::Null)
             }
+            TokenKind::LBrace => self.parse_table(),
             TokenKind::LBracket => self.parse_array(),
             TokenKind::Ident(_) => self.parse_ident_leading_expression(),
             _ => Err(self.err("Unexpected token in expression")),
@@ -417,6 +418,31 @@ impl MeowMeowParser {
             break;
         }
         Ok(Expression::Array(items))
+    }
+
+    fn parse_table(&mut self) -> Result<Expression, ParseError> {
+        self.consume(&TokenKind::LBrace)?;
+        let mut fields = Vec::new();
+        if self.try_consume(&TokenKind::RBrace) {
+            return Ok(Expression::Table(fields));
+        }
+        loop {
+            let name = self.expect_ident()?;
+            self.consume(&TokenKind::Eq)?;
+            let value = self.parse_expression()?;
+            fields.push(TableFieldValue { name, value });
+
+            if self.try_consume(&TokenKind::Comma) {
+                if self.try_consume(&TokenKind::RBrace) {
+                    break;
+                }
+                continue;
+            }
+            if self.try_consume(&TokenKind::RBrace) {
+                break;
+            }
+        }
+        Ok(Expression::Table(fields))
     }
 
     /// Parse an expression that starts with an identifier.

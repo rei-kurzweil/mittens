@@ -681,6 +681,7 @@ fn expression_to_value(e: &Expression) -> Result<Value, String> {
                 .collect::<Result<_, _>>()?;
             Ok(Value::Array(vals))
         }
+        Expression::Table(_) => Err("expression_to_value: table literals are not supported yet".into()),
         Expression::Index { base, index } => {
             let base = expression_to_value(base)?;
             let index = expression_to_value(index)?;

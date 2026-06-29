@@ -25,7 +25,7 @@ They are tables with additional declaration/type information.
 
 ## Current state
 
-- MMS already has an internal object/map runtime representation in
+- MMS already has an internal heap-object runtime representation in
   `src/meow_meow/object.rs`.
 - The language currently supports assignment syntax `name = expr` and component
   syntax `Type { ... }`.
@@ -242,7 +242,16 @@ Files:
 
 ### Evaluation model
 
-Use the existing generic object/map runtime as the underlying representation.
+Use the existing heap-object runtime as the underlying representation.
+
+Current implementation-direction conclusion:
+
+- language/runtime docs should talk about `tables`
+- `Value::Object(ObjectId)` can remain the low-level heap reference for now
+- `Object::Map(...)` should become `Object::Table(...)` so the stored heap
+  variant matches the language concept
+- table field access should use `foo.bar` when not followed by `(`
+- method calls should remain `foo.bar(...)`
 
 That means:
 

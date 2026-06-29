@@ -13,7 +13,7 @@
 use crate::meow_meow::ast::{
     AssignmentStatement, BinOpKind, BlockStatement, CallExpression, ComponentExpression,
     ConstructorCall, ElseBranch, Expression, Ident, IfStatement, ImportItem, ReturnStatement,
-    Statement, UnaryOpKind,
+    Statement, TableFieldValue, UnaryOpKind,
 };
 use crate::meow_meow::token::Unit;
 
@@ -226,6 +226,7 @@ impl<'a> Printer<'a> {
                 }
                 self.out.push(']');
             }
+            Expression::Table(fields) => self.table(fields),
             Expression::Index { base, index } => {
                 self.atom(base);
                 self.out.push('[');
@@ -264,6 +265,26 @@ impl<'a> Printer<'a> {
             }
             _ => self.expression(e),
         }
+    }
+
+    fn table(&mut self, fields: &[TableFieldValue]) {
+        if fields.is_empty() {
+            self.out.push_str("{}");
+            return;
+        }
+        self.out.push('{');
+        self.out.push('\n');
+        self.indent += INDENT_STEP;
+        for field in fields {
+            self.write_indent();
+            self.out.push_str(&field.name.0);
+            self.out.push_str(" = ");
+            self.expression(&field.value);
+            self.out.push('\n');
+        }
+        self.indent -= INDENT_STEP;
+        self.write_indent();
+        self.out.push('}');
     }
 
     fn call(&mut self, c: &CallExpression) {

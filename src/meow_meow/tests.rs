@@ -1,4 +1,5 @@
 use std::time::{Duration, Instant};
+use std::{fs, path::PathBuf};
 
 use crate::engine;
 use crate::engine::ecs::component::style::SizeDimension;
@@ -17,6 +18,10 @@ fn parse(src: &str) -> Vec<Statement> {
     MeowMeowParser::new(tokens)
         .parse_program()
         .expect("parse ok")
+}
+
+fn repo_path(rel: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel)
 }
 
 /// Helper: extract a `ComponentExpression` from a `Statement::Expression(Expression::Component(_))`.
@@ -278,6 +283,67 @@ fn parse_let_binding() {
     };
     assert_eq!(a.name.0, "x");
     assert!(matches!(a.value, Expression::Number(n) if n == 42.0));
+}
+
+#[test]
+fn parse_table_literal_binding() {
+    let prog = parse(r#"let foo = { bar = "baz" count = 3 }"#);
+    let Statement::Assignment(a) = &prog[0] else {
+        panic!()
+    };
+    let Expression::Table(fields) = &a.value else {
+        panic!("expected table literal")
+    };
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].name.0, "bar");
+    assert!(matches!(fields[0].value, Expression::String(ref s) if s == "baz"));
+    assert_eq!(fields[1].name.0, "count");
+    assert!(matches!(fields[1].value, Expression::Number(n) if n == 3.0));
+}
+
+#[test]
+fn parse_nested_table_literal_binding() {
+    let prog = parse(
+        r#"let foo = {
+    bar = {
+        baz = "qux"
+    }
+}"#,
+    );
+    let Statement::Assignment(a) = &prog[0] else {
+        panic!()
+    };
+    let Expression::Table(fields) = &a.value else {
+        panic!("expected outer table")
+    };
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].name.0, "bar");
+    let Expression::Table(inner_fields) = &fields[0].value else {
+        panic!("expected nested table")
+    };
+    assert_eq!(inner_fields.len(), 1);
+    assert_eq!(inner_fields[0].name.0, "baz");
+    assert!(matches!(inner_fields[0].value, Expression::String(ref s) if s == "qux"));
+}
+
+#[test]
+fn unparse_roundtrip_table_literal() {
+    let src = r#"let foo = {
+    bar = {
+        baz = "qux"
+    }
+    count = 3
+}"#;
+    let prog = parse(src);
+    let reparsed = parse(&unparse_program(&prog));
+    assert_eq!(reparsed, prog);
+}
+
+#[test]
+fn parse_mms_tables_example() {
+    let src = fs::read_to_string(repo_path("examples/mms-tables.mms")).expect("read example");
+    let prog = parse(&src);
+    assert!(!prog.is_empty());
 }
 
 #[test]

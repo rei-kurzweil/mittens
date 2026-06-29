@@ -33,6 +33,7 @@ pub enum Expression {
     Null,
     Identifier(Ident),
     Array(Vec<Expression>),
+    Table(Vec<TableFieldValue>),
     Index {
         base: Box<Expression>,
         index: Box<Expression>,
@@ -52,6 +53,12 @@ pub enum Expression {
         params: Vec<Ident>,
         body: BlockStatement,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TableFieldValue {
+    pub name: Ident,
+    pub value: Expression,
 }
 
 #[derive(Debug, Clone, PartialEq)]

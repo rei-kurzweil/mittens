@@ -195,6 +195,11 @@ fn qd_expr(expr: &mut Expression) {
                 qd_expr(item);
             }
         }
+        Expression::Table(fields) => {
+            for field in fields.iter_mut() {
+                qd_expr(&mut field.value);
+            }
+        }
         Expression::Function { body, .. } => qd_block(body),
         _ => {}
     }
