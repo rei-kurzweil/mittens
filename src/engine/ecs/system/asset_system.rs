@@ -720,7 +720,7 @@ mod tests {
         let render_assets = RenderAssets::new();
         let mut emit = CommandQueue::new();
         let item_root = system
-            .build_asset_item_shell(&mut world, &render_assets, &mut emit, item, 0)
+            .build_asset_item_shell(&mut world, &mut render_assets, &mut emit, item, 0)
             .expect("build asset item");
 
         assert_eq!(
@@ -751,7 +751,7 @@ mod tests {
         let render_assets = RenderAssets::new();
         let mut emit = CommandQueue::new();
         let item_root = system
-            .build_asset_item_shell(&mut world, &render_assets, &mut emit, item, 0)
+            .build_asset_item_shell(&mut world, &mut render_assets, &mut emit, item, 0)
             .expect("build asset item despite preview failure");
 
         assert_eq!(world.component_label(item_root), Some("asset_item"));
@@ -787,7 +787,7 @@ mod tests {
         let wrapper = system
             .spawn_assets_panel(
                 &mut world,
-                &render_assets,
+                &mut render_assets,
                 &mut emit,
                 parent,
                 (0.0, 0.0, 0.0),

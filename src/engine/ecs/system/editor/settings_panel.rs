@@ -394,7 +394,7 @@ mod tests {
             &installed_editor_roots,
         ));
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
         let editor_context = editor_context_state
             .lock()
             .expect("editor context state mutex poisoned")
@@ -419,7 +419,7 @@ mod tests {
             panel_query_root,
             &editor_context,
         );
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
         assert!(
             !world.children_of(toggle_slot).is_empty(),
             "expected toggle button to be rendered when armature is visible"
@@ -433,7 +433,7 @@ mod tests {
             &editor_context_state,
             &installed_editor_roots,
         ));
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
         let editor_context = editor_context_state
             .lock()
             .expect("editor context state mutex poisoned")
@@ -445,7 +445,7 @@ mod tests {
             panel_query_root,
             &editor_context,
         );
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
         assert!(
             !world.children_of(toggle_slot).is_empty(),
             "expected toggle button to still be rendered when armature is hidden (shows Off)"

@@ -278,7 +278,7 @@ mod tests {
             .expect("attach icon renderable");
 
         world.init_component_tree(fit_root, &mut queue);
-        fit_system.tick(&mut world, &render_assets, &mut queue);
+        fit_system.tick(&mut world, &mut render_assets, &mut queue);
 
         let fit_root = world
             .get_component_by_id_as::<TransformComponent>(fit_root)
@@ -338,7 +338,7 @@ mod tests {
 
         world.init_component_tree(root, &mut queue);
         layout_system.tick(&mut world, &mut queue);
-        fit_system.tick(&mut world, &render_assets, &mut queue);
+        fit_system.tick(&mut world, &mut render_assets, &mut queue);
 
         let owned_fit = world
             .children_of(fit)

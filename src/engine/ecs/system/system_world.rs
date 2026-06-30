@@ -255,7 +255,7 @@ mod tests {
         let _ = world.add_child(content_color, content_renderable);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         assert!(
             world
@@ -757,7 +757,7 @@ impl SystemWorld {
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
-        render_assets: &crate::engine::graphics::RenderAssets,
+        render_assets: &mut crate::engine::graphics::RenderAssets,
         queue: &mut crate::engine::ecs::CommandQueue,
         max_signals: usize,
     ) -> usize {
@@ -820,7 +820,7 @@ impl SystemWorld {
                     if crate::engine::ecs::rx::RxIntentExecutor::handles_value(&intent.value) {
                         // Emit follow-up intent work directly into the per-frame queue to avoid
                         // borrowing `self.rx` while also mutably borrowing `self`.
-                        intent_executor.execute(world, queue, &env);
+                        intent_executor.execute(world, render_assets, queue, &env);
                     } else {
                         mutation_executor.execute(self, world, visuals, render_assets, queue, &env);
                     }
@@ -1191,7 +1191,7 @@ impl SystemWorld {
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
-        render_assets: &crate::engine::graphics::RenderAssets,
+        render_assets: &mut crate::engine::graphics::RenderAssets,
         component: ComponentId,
         emit: &mut dyn crate::engine::ecs::SignalEmitter,
     ) {
@@ -2084,7 +2084,7 @@ impl SystemWorld {
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
-        render_assets: &crate::engine::graphics::RenderAssets,
+        render_assets: &mut crate::engine::graphics::RenderAssets,
         input: &InputState,
         queue: &mut crate::engine::ecs::CommandQueue,
         dt_sec: f32,
@@ -2269,7 +2269,7 @@ impl SystemWorld {
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
-        render_assets: &crate::engine::graphics::RenderAssets,
+        render_assets: &mut crate::engine::graphics::RenderAssets,
         commands: &mut crate::engine::ecs::CommandQueue,
     ) {
         commands.flush(world, self, visuals, render_assets);

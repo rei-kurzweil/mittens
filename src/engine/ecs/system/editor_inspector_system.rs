@@ -310,7 +310,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -323,7 +323,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 
@@ -417,7 +417,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -426,7 +426,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let item_0 = world
@@ -444,7 +444,7 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         let panel_status_value = world
             .find_component(runtime_ui_root, "#panel_status_value")
@@ -481,7 +481,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -490,7 +490,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
 
@@ -516,7 +516,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -529,7 +529,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 
@@ -572,7 +572,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 
@@ -609,7 +609,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -622,7 +622,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 
@@ -666,7 +666,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 
@@ -683,7 +683,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 
@@ -724,7 +724,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -733,7 +733,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let item_0 = world
@@ -751,7 +751,7 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         let panel_status_value = world
             .find_component(runtime_ui_root, "#panel_status_value")
@@ -822,7 +822,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -831,7 +831,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let world_panel_root = world
@@ -857,7 +857,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 
@@ -906,7 +906,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -915,7 +915,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let scene_a_row = world
@@ -934,7 +934,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 
@@ -954,7 +954,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 
@@ -974,7 +974,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 
@@ -1038,7 +1038,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -1047,7 +1047,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let scene_row = world
@@ -1066,7 +1066,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 
@@ -1103,7 +1103,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 
@@ -1145,7 +1145,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -1153,12 +1153,12 @@ mod tests {
             systems.editor_context.shared_state(),
             &systems.asset_system,
         );
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             other_editor_root,
             (-0.7, 1.6, -1.2),
@@ -1167,7 +1167,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         assert_eq!(row_text(&world, runtime_ui_root, "#item_0"), "Editor#alpha");
@@ -1205,7 +1205,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -1214,7 +1214,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         assert_eq!(
@@ -1245,7 +1245,7 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         assert_eq!(
             row_text(&world, runtime_ui_root, "#inspector_item_0"),
@@ -1286,7 +1286,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -1295,7 +1295,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         assert_eq!(row_text(&world, runtime_ui_root, "#item_1"), "scene_root");
@@ -1312,7 +1312,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 
@@ -1333,7 +1333,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
         assert_eq!(row_text(&world, runtime_ui_root, "#item_2"), "sibling_root");
@@ -1375,7 +1375,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -1384,7 +1384,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let scene_row = world
@@ -1401,7 +1401,7 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         assert_eq!(
             row_text(&world, runtime_ui_root, "#inspector_item_0"),
@@ -1443,7 +1443,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -1452,7 +1452,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let bounds = world.add_component_boxed(Box::new(BoundsComponent::new(Aabb {
             min: [-0.5, -0.5, -0.5],
@@ -1477,7 +1477,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 
@@ -1520,7 +1520,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -1529,7 +1529,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let add_button = world
@@ -1549,7 +1549,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 
@@ -1571,7 +1571,7 @@ mod tests {
         );
 
         let processed =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 10_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 10_000);
         assert!(
             processed < 10_000,
             "expected add-grid path to quiesce before signal budget exhaustion"
@@ -1607,7 +1607,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -1620,7 +1620,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 
@@ -1629,7 +1629,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
         {
@@ -1660,7 +1660,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 
@@ -1703,7 +1703,7 @@ mod tests {
         inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -1716,7 +1716,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 
@@ -1737,7 +1737,7 @@ mod tests {
             &mut systems,
             &mut world,
             &mut visuals,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
         );
 

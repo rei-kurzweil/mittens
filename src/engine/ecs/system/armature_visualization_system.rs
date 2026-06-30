@@ -244,7 +244,7 @@ mod tests {
             &mut queue,
             0.016,
         );
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
         assert_eq!(
             systems
                 .armature_visualization
@@ -262,7 +262,7 @@ mod tests {
             &mut queue,
             0.016,
         );
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
         assert_eq!(
             systems
                 .armature_visualization

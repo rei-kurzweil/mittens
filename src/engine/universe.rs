@@ -77,7 +77,7 @@ impl Universe {
         self.systems.process_commands(
             &mut self.world,
             &mut self.visuals,
-            &self.render_assets,
+            &mut self.render_assets,
             &mut self.command_queue,
         );
     }
@@ -382,7 +382,7 @@ impl Universe {
         self.systems.tick(
             &mut self.world,
             &mut self.visuals,
-            &self.render_assets,
+            &mut self.render_assets,
             input,
             &mut self.command_queue,
             dt_sec,
@@ -392,7 +392,7 @@ impl Universe {
         self.systems.process_commands(
             &mut self.world,
             &mut self.visuals,
-            &self.render_assets,
+            &mut self.render_assets,
             &mut self.command_queue,
         );
         log_startup_progress(StartupCheckpoint::FirstUpdateCompleted);

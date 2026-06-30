@@ -1169,10 +1169,10 @@ mod tests {
         let _ = world.add_child(text, color);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let item_tc = world
             .get_component_by_id_as::<TransformComponent>(item)
@@ -1210,10 +1210,10 @@ mod tests {
         let _ = world.add_child(item, item_style);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let bg = world
             .children_of(item)
@@ -1261,10 +1261,10 @@ mod tests {
         let _ = world.add_child(item, item_style);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let bg = world
             .children_of(item)
@@ -1292,7 +1292,7 @@ mod tests {
             .dirty = true;
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         assert_eq!(
             world
@@ -1349,10 +1349,10 @@ mod tests {
         let _ = world.add_child(title_color, title_text);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let title_bar_tc = world
             .get_component_by_id_as::<TransformComponent>(title_bar)
@@ -1399,10 +1399,10 @@ mod tests {
         let _ = world.add_child(text_wrap, text);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let text_wrap_tc = world
             .get_component_by_id_as::<TransformComponent>(text_wrap)
@@ -1446,10 +1446,10 @@ mod tests {
         let _ = world.add_child(text_wrap, text);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let text_wrap_tc = world
             .get_component_by_id_as::<TransformComponent>(text_wrap)
@@ -1493,10 +1493,10 @@ mod tests {
         let _ = world.add_child(text_wrap, text);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let text_wrap_tc = world
             .get_component_by_id_as::<TransformComponent>(text_wrap)
@@ -1542,10 +1542,10 @@ mod tests {
         let _ = world.add_child(text_wrap, text);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let text_wrap_tc = world
             .get_component_by_id_as::<TransformComponent>(text_wrap)
@@ -1582,10 +1582,10 @@ mod tests {
         let _ = world.add_child(item, style);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let bg = world
             .children_of(item)
@@ -1651,10 +1651,10 @@ mod tests {
         let _ = world.add_child(title_bar, load);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let child_bg = |world: &World, owner| {
             world
@@ -1738,10 +1738,10 @@ mod tests {
         let _ = world.add_child(text_wrapper, text);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let clipped = world.children_of(chip).iter().copied().find(|&child| {
             world.component_label(child) == Some(super::OWNED_CLIPPED_CONTENT_LABEL)
@@ -1811,9 +1811,9 @@ mod tests {
         let _ = world.add_child(text_wrap, text);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let text_wrap_tc = world
             .get_component_by_id_as::<TransformComponent>(text_wrap)
@@ -1855,9 +1855,9 @@ mod tests {
         let _ = world.add_child(row, text);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let stamped = world
             .get_component_by_id_as::<TextComponent>(text)
@@ -1895,9 +1895,9 @@ mod tests {
         let _ = world.add_child(row, text);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
         layout_system.tick(&mut world, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let stamped = world
             .get_component_by_id_as::<TextComponent>(text)

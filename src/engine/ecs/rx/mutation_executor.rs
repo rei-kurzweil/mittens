@@ -22,7 +22,7 @@ impl RxMutationExecutor {
         systems: &mut SystemWorld,
         world: &mut World,
         visuals: &mut VisualWorld,
-        render_assets: &crate::engine::graphics::RenderAssets,
+        render_assets: &mut crate::engine::graphics::RenderAssets,
         emit: &mut dyn SignalEmitter,
         env: &Signal,
     ) {

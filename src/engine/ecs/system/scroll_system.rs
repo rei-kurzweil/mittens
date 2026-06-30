@@ -407,7 +407,7 @@ mod tests {
         let _ = world.add_child(scrolling, item);
 
         world.init_component_tree(scrolling, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let track = world
             .get_component_by_id_as::<ScrollingComponent>(scrolling)
@@ -439,7 +439,7 @@ mod tests {
         }
 
         world.init_component_tree(scrolling, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let sc = world
             .get_component_by_id_as::<ScrollingComponent>(scrolling)
@@ -459,7 +459,7 @@ mod tests {
 
         let scrolling = world.add_component(ScrollingComponent::new(1.0, 10.0));
         world.init_component_tree(scrolling, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let track = world
             .get_component_by_id_as::<ScrollingComponent>(scrolling)
@@ -474,7 +474,7 @@ mod tests {
                 child: late,
             },
         );
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         assert_eq!(world.parent_of(late), Some(track));
     }
@@ -500,7 +500,7 @@ mod tests {
         let _ = world.add_child(root, scrolling);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let sc = world
             .get_component_by_id_as::<ScrollingComponent>(scrolling)
@@ -526,7 +526,7 @@ mod tests {
         let _ = world.add_child(parent, scrolling);
 
         world.init_component_tree(parent, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let delta_local_y =
             ScrollingSystem::scroll_local_drag_delta_y(&world, scrolling, [0.0, 2.0, 0.0]);
@@ -538,7 +538,7 @@ mod tests {
         let scroll_state =
             ScrollingSystem::apply_world_drag(&mut world, &mut queue, scrolling, [0.0, 2.0, 0.0])
                 .expect("scroll should move");
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let sc = world
             .get_component_by_id_as::<ScrollingComponent>(scrolling)

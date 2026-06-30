@@ -856,7 +856,7 @@ mod tests {
             .asset_system
             .spawn_assets_panel(
                 &mut world,
-                &render_assets,
+                &mut render_assets,
                 &mut emit,
                 parent,
                 (0.0, 0.0, 0.0),
@@ -904,7 +904,7 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -967,7 +967,7 @@ mod tests {
             .asset_system
             .spawn_assets_panel(
                 &mut world,
-                &render_assets,
+                &mut render_assets,
                 &mut emit,
                 parent,
                 (0.0, 0.0, 0.0),
@@ -1012,7 +1012,7 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -1034,7 +1034,7 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -1090,7 +1090,7 @@ mod tests {
         systems.editor_inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -1099,7 +1099,7 @@ mod tests {
             &asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let selection_root = world
@@ -1123,7 +1123,7 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -1142,7 +1142,7 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -1171,7 +1171,7 @@ mod tests {
         systems.editor_inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -1180,7 +1180,7 @@ mod tests {
             &asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let paint_panel_root = world
@@ -1204,10 +1204,10 @@ mod tests {
         let second = items[1];
 
         systems.layout.tick(&mut world, &mut emit);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
         systems
             .fit_bounds
-            .tick(&mut world, &render_assets, &mut emit);
+            .tick(&mut world, &mut render_assets, &mut emit);
 
         let first_scale_before = fit_bounds_content_scale(&world, first);
         assert!(
@@ -1226,13 +1226,13 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         systems.layout.tick(&mut world, &mut emit);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
         systems
             .fit_bounds
-            .tick(&mut world, &render_assets, &mut emit);
+            .tick(&mut world, &mut render_assets, &mut emit);
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -1252,13 +1252,13 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         systems.layout.tick(&mut world, &mut emit);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
         systems
             .fit_bounds
-            .tick(&mut world, &render_assets, &mut emit);
+            .tick(&mut world, &mut render_assets, &mut emit);
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -1312,7 +1312,7 @@ mod tests {
         systems.editor_inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -1321,7 +1321,7 @@ mod tests {
             &systems.asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let assets_panel_root = world
@@ -1345,7 +1345,7 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(panel_layout_selection)
@@ -1376,7 +1376,7 @@ mod tests {
         systems.editor_inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -1385,7 +1385,7 @@ mod tests {
             &asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let world_panel_root = world
@@ -1430,7 +1430,7 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         let selection_root = world
             .find_component(world_panel_root, "#world_panel_selection")
@@ -1474,7 +1474,7 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         let selection_root = world
             .find_component(world_panel_root, "#world_panel_selection")
@@ -1528,7 +1528,7 @@ mod tests {
         systems.editor_inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -1536,7 +1536,7 @@ mod tests {
             systems.editor_context.shared_state(),
             &asset_system,
         );
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let world_panel_root = world
@@ -1562,7 +1562,7 @@ mod tests {
             },
         );
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -1601,7 +1601,7 @@ mod tests {
         systems.editor_inspector.setup_panels_for_editor(
             &mut systems.rx,
             &mut world,
-            &render_assets,
+            &mut render_assets,
             &mut emit,
             editor_root,
             (-0.7, 1.6, -1.2),
@@ -1610,7 +1610,7 @@ mod tests {
             &asset_system,
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, "editor_runtime_ui_root");
         let world_panel_root = world
@@ -1631,8 +1631,8 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let inspector_panel_root = world
             .find_component(runtime_ui_root, "#inspector_panel_root")
@@ -1677,8 +1677,8 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(inspector_selection)
@@ -1734,7 +1734,7 @@ mod tests {
             },
         );
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         assert_eq!(
             world
@@ -1772,7 +1772,7 @@ mod tests {
             },
         );
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         assert_eq!(
             world
@@ -1822,7 +1822,7 @@ mod tests {
             },
         );
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         let highlight = world
             .find_component(item, "[name='selection_highlight']")
@@ -1876,7 +1876,7 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -1925,7 +1925,7 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -2065,7 +2065,7 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -2137,7 +2137,7 @@ mod tests {
         );
 
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         let seen = seen.lock().expect("selection events mutex poisoned");
         assert!(

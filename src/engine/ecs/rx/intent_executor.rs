@@ -1,4 +1,5 @@
 use crate::engine::ecs::{ComponentId, IntentValue, Signal, SignalEmitter, World};
+use crate::engine::graphics::RenderAssets;
 
 /// Built-in executor for **intent** signals.
 ///
@@ -51,12 +52,23 @@ impl RxIntentExecutor {
 
     /// Execute an intent signal, emitting follow-up mutation signals via `emit`.
     ///
-    pub fn execute(&mut self, world: &mut World, emit: &mut dyn SignalEmitter, env: &Signal) {
-        handle_intent_signal(world, emit, env);
+    pub fn execute(
+        &mut self,
+        world: &mut World,
+        render_assets: &mut RenderAssets,
+        emit: &mut dyn SignalEmitter,
+        env: &Signal,
+    ) {
+        handle_intent_signal(world, render_assets, emit, env);
     }
 }
 
-fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &Signal) {
+fn handle_intent_signal(
+    world: &mut World,
+    render_assets: &mut RenderAssets,
+    emit: &mut dyn SignalEmitter,
+    env: &Signal,
+) {
     use crate::engine::ecs::component::{
         AudioBandPassFilterComponent, AudioClipComponent, AudioClipLoadState,
         AudioLowPassFilterComponent, AudioOscillatorComponent, ColorComponent, MusicNoteComponent,
@@ -76,7 +88,9 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
         IntentValue::Noop => {}
 
         IntentValue::SpawnComponentTree { root, parent } => {
-            match crate::meow_meow::component_registry::spawn_tree(root, *parent, world, emit) {
+            match crate::meow_meow::component_registry::with_live_render_assets(render_assets, || {
+                crate::meow_meow::component_registry::spawn_tree(root, *parent, world, emit)
+            }) {
                 Ok(id) => println!("[SpawnComponentTree] spawned root {id:?}"),
                 Err(e) => println!("[SpawnComponentTree] error: {e}"),
             }
@@ -241,11 +255,16 @@ fn handle_intent_signal(world: &mut World, emit: &mut dyn SignalEmitter, env: &S
                 };
 
             for &parent in parents.iter() {
-                let new_root = match crate::meow_meow::component_registry::spawn_tree(
-                    &materialized,
-                    Some(parent),
-                    world,
-                    emit,
+                let new_root = match crate::meow_meow::component_registry::with_live_render_assets(
+                    render_assets,
+                    || {
+                        crate::meow_meow::component_registry::spawn_tree(
+                            &materialized,
+                            Some(parent),
+                            world,
+                            emit,
+                        )
+                    },
                 ) {
                     Ok(id) => id,
                     Err(e) => {

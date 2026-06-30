@@ -5,7 +5,9 @@ RendererSettings {
     window_size(1280, 960)
 }
 
-BGC.rgba(0.95, 0.96, 0.99, 1.0)
+BGC {
+    C.rgba(0.05, 0.15, 0.8, 1.0)
+}
 AL.rgb(0.55, 0.55, 0.60)
 
 T.position(0.0, 3.5, 3.5) {
@@ -30,7 +32,7 @@ I.speed(1.5) {
 
 T.position(-0.15, 2.35, 0.2).scale(0.075, 0.075, 1.0) {
     TXT {
-        "partial_annulus_2d()\n5 concentric quarter-rings"
+        "partial_annulus_2d()\nstar()\nheart()"
         C.rgba(0.08, 0.08, 0.10, 1.0)
         EM.on()
         TextureFiltering.linear()
@@ -39,9 +41,41 @@ T.position(-0.15, 2.35, 0.2).scale(0.075, 0.075, 1.0) {
 
 T.position(2.55, -2.1, -4.1).scale(0.05, 0.05, 1.0) {
     TXT {
-        "mesh geometry from Rust\nscene shell from MMS"
+        "all geometry authored\nin this MMS file"
         C.rgba(0.12, 0.12, 0.15, 1.0)
         EM.on()
         TextureFiltering.linear()
+    }
+}
+
+T.position(-2.1, -2.1, -4.0) {
+    T.scale(1.0, 1.0, 1.0) {
+        R.partial_annulus_2d(0.55, 0.89, 0.0, 1.5707963, 48) { C.rgba(0.89, 0.16, 0.11, 1.0) EM.on() }
+    }
+    T.scale(1.0, 1.0, 1.0) {
+        R.partial_annulus_2d(0.92, 1.26, 0.0, 1.5707963, 48) { C.rgba(0.98, 0.49, 0.10, 1.0) EM.on() }
+    }
+    T.scale(1.0, 1.0, 1.0) {
+        R.partial_annulus_2d(1.29, 1.63, 0.0, 1.5707963, 48) { C.rgba(0.99, 0.84, 0.13, 1.0) EM.on() }
+    }
+    T.scale(1.0, 1.0, 1.0) {
+        R.partial_annulus_2d(1.66, 2.00, 0.0, 1.5707963, 48) { C.rgba(0.16, 0.68, 0.27, 1.0) EM.on() }
+    }
+    T.scale(1.0, 1.0, 1.0) {
+        R.partial_annulus_2d(2.03, 2.37, 0.0, 1.5707963, 48) { C.rgba(0.10, 0.42, 0.91, 1.0) EM.on() }
+    }
+}
+
+T.position(2.45, 0.55, -4.0).scale(1.6, 1.6, 1.0) {
+    R.star(5, 0.48, 10, 10) {
+        C.rgba(0.98, 0.91, 0.16, 1.0)
+        EM.on()
+    }
+}
+
+T.position(2.55, -1.85, -4.0).scale(1.7, 1.7, 1.0) {
+    R.heart(96) {
+        C.rgba(0.94, 0.12, 0.22, 1.0)
+        EM.on()
     }
 }

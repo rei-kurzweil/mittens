@@ -1942,7 +1942,7 @@ mod tests {
         let _ = world.add_child(color, renderable);
 
         world.init_component_tree(editor_root, &mut emit);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, RUNTIME_UI_ROOT_NAME);
         let paint_panel_root = world
@@ -1951,13 +1951,13 @@ mod tests {
 
         push_asset_and_panel_focus(&world, &mut systems, paint_panel_root);
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
         systems.rx.begin_frame();
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
         systems.rx.begin_frame();
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
         systems.rx.push_event(
             paint_panel_root,
             EventSignal::Click {
@@ -1968,10 +1968,10 @@ mod tests {
             },
         );
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
         systems.rx.begin_frame();
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         (
             world,
@@ -2007,12 +2007,12 @@ mod tests {
         let _ = world.add_child(color, renderable);
 
         world.init_component_tree(editor_root, &mut emit);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         push_drag_place(&mut systems, renderable);
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
             count_named_descendants(&world, editor_root, "painted_asset_root"),
@@ -2067,8 +2067,8 @@ mod tests {
 
         push_drag_place(&mut systems, renderable);
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
             count_named_descendants(&world, editor_root, "painted_asset_root"),
@@ -2092,8 +2092,8 @@ mod tests {
 
         push_drag_place(&mut systems, renderable);
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let painted_root = world
             .find_component(editor_root, "[name='painted_asset_root']")
@@ -2166,8 +2166,8 @@ mod tests {
             },
         );
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
             count_named_descendants(&world, editor_root, "painted_asset_root"),
@@ -2249,8 +2249,8 @@ mod tests {
             },
         );
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
             count_named_descendants(&world, editor_root, "painted_asset_root"),
@@ -2303,7 +2303,7 @@ mod tests {
 
         world.init_component_tree(editor_a, &mut emit);
         world.init_component_tree(editor_b, &mut emit);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let runtime_ui_root = find_named_root(&world, RUNTIME_UI_ROOT_NAME);
         let paint_panel_root = world
@@ -2312,24 +2312,24 @@ mod tests {
 
         push_asset_and_panel_focus(&world, &mut systems, paint_panel_root);
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
         systems.rx.begin_frame();
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
         systems.rx.begin_frame();
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
         push_click(&mut systems, paint_panel_root);
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
         systems.rx.begin_frame();
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
 
         push_drag_place(&mut systems, renderable_b);
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
             count_named_descendants(&world, editor_a, "painted_asset_root"),
@@ -2363,8 +2363,8 @@ mod tests {
 
         push_drag_place(&mut systems, renderable);
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
             count_named_descendants(&world, editor_root, "painted_asset_root"),
@@ -2380,8 +2380,8 @@ mod tests {
 
         push_drag_place(&mut systems, renderable);
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
             count_named_descendants(&world, editor_root, "painted_asset_root"),
@@ -2412,8 +2412,8 @@ mod tests {
         // Click hit point is [0.0, 0.0, 0.5] in push_click
         push_drag_place(&mut systems, renderable);
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
             count_named_descendants(&world, editor_root, "painted_asset_root"),
@@ -2462,8 +2462,8 @@ mod tests {
         // 1. First, place an asset using Free Draw
         push_drag_place(&mut systems, renderable);
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
             count_named_descendants(&world, editor_root, "painted_asset_root"),
@@ -2487,8 +2487,8 @@ mod tests {
         // 3. Click directly on the painted renderable to erase it
         push_click(&mut systems, painted_renderable);
         let _ =
-            systems.process_signals(&mut world, &mut visuals, &render_assets, &mut emit, 100_000);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut emit);
+            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
             count_named_descendants(&world, editor_root, "painted_asset_root"),

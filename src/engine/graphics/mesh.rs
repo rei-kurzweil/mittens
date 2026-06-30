@@ -7,6 +7,77 @@
 use vulkano::buffer::BufferContents;
 use vulkano::pipeline::graphics::vertex_input::Vertex;
 
+fn filled_polygon_2d(boundary: &[[f32; 2]]) -> CpuMesh {
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    for [x, y] in boundary {
+        min_x = min_x.min(*x);
+        max_x = max_x.max(*x);
+        min_y = min_y.min(*y);
+        max_y = max_y.max(*y);
+    }
+    let width = (max_x - min_x).max(1.0e-6);
+    let height = (max_y - min_y).max(1.0e-6);
+
+    let mut vertices = Vec::with_capacity(boundary.len() + 1);
+    vertices.push(CpuVertex {
+        pos: [0.0, 0.0, 0.0],
+        uv: [
+            ((0.0 - min_x) / width).clamp(0.0, 1.0),
+            (1.0 - (0.0 - min_y) / height).clamp(0.0, 1.0),
+        ],
+        normal: [0.0, 0.0, 1.0],
+    });
+    for [x, y] in boundary {
+        vertices.push(CpuVertex {
+            pos: [*x, *y, 0.0],
+            uv: [(*x - min_x) / width, 1.0 - (*y - min_y) / height],
+            normal: [0.0, 0.0, 1.0],
+        });
+    }
+
+    let mut indices = Vec::with_capacity(boundary.len() * 3);
+    for i in 0..boundary.len() {
+        let next = (i + 1) % boundary.len();
+        indices.extend_from_slice(&[0, (i + 1) as u32, (next + 1) as u32]);
+    }
+    CpuMesh::new(vertices, indices)
+}
+
+fn signed_area_2d(points: &[[f32; 2]]) -> f32 {
+    let mut area = 0.0;
+    for i in 0..points.len() {
+        let [x0, y0] = points[i];
+        let [x1, y1] = points[(i + 1) % points.len()];
+        area += x0 * y1 - x1 * y0;
+    }
+    area * 0.5
+}
+
+fn append_arc_points(
+    points: &mut Vec<[f32; 2]>,
+    radius: f32,
+    start_angle: f32,
+    end_angle: f32,
+    bevel_segments: u32,
+    sharp_angle: f32,
+) {
+    if bevel_segments == 0 {
+        let (s, c) = sharp_angle.sin_cos();
+        points.push([c * radius, s * radius]);
+        return;
+    }
+
+    for i in 0..=bevel_segments {
+        let t = i as f32 / bevel_segments as f32;
+        let a = start_angle + (end_angle - start_angle) * t;
+        let (s, c) = a.sin_cos();
+        points.push([c * radius, s * radius]);
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimitiveTopology {
     TriangleList,
@@ -590,5 +661,82 @@ impl MeshFactory {
         }
 
         CpuMesh::new(vertices, indices)
+    }
+
+    /// 2D filled star centered at the origin in the XY plane (normal +Z).
+    pub fn star(
+        points: u32,
+        inner_radius_fraction: f32,
+        outer_bevel_segments: u32,
+        inner_bevel_segments: u32,
+    ) -> CpuMesh {
+        let point_count = points.max(3);
+        let outer = 0.5_f32;
+        let inner = outer * inner_radius_fraction.clamp(0.01, 1.0);
+        let step = std::f32::consts::PI / point_count as f32;
+
+        let mut boundary: Vec<[f32; 2]> = Vec::new();
+        for i in 0..point_count {
+            let outer_angle = i as f32 * 2.0 * step - std::f32::consts::FRAC_PI_2;
+            let inner_angle = outer_angle + step;
+
+            append_arc_points(
+                &mut boundary,
+                outer,
+                outer_angle - step * 0.5,
+                outer_angle + step * 0.5,
+                outer_bevel_segments,
+                outer_angle,
+            );
+            append_arc_points(
+                &mut boundary,
+                inner,
+                inner_angle - step * 0.5,
+                inner_angle + step * 0.5,
+                inner_bevel_segments,
+                inner_angle,
+            );
+        }
+
+        if signed_area_2d(&boundary) < 0.0 {
+            boundary.reverse();
+        }
+        filled_polygon_2d(&boundary)
+    }
+
+    /// 2D filled heart centered near the origin in the XY plane (normal +Z).
+    pub fn heart(number_of_segments: u32) -> CpuMesh {
+        let segs = number_of_segments.max(12);
+        let mut boundary: Vec<[f32; 2]> = Vec::with_capacity(segs as usize);
+        for i in 0..segs {
+            let t = i as f32 / segs as f32 * std::f32::consts::TAU;
+            let x = 16.0 * t.sin().powi(3);
+            let y =
+                13.0 * t.cos() - 5.0 * (2.0 * t).cos() - 2.0 * (3.0 * t).cos() - (4.0 * t).cos();
+            boundary.push([x, y]);
+        }
+
+        let mut min_x = f32::INFINITY;
+        let mut max_x = f32::NEG_INFINITY;
+        let mut min_y = f32::INFINITY;
+        let mut max_y = f32::NEG_INFINITY;
+        for [x, y] in &boundary {
+            min_x = min_x.min(*x);
+            max_x = max_x.max(*x);
+            min_y = min_y.min(*y);
+            max_y = max_y.max(*y);
+        }
+        let center_x = (min_x + max_x) * 0.5;
+        let center_y = (min_y + max_y) * 0.5;
+        let scale = 1.0 / (max_x - min_x).max(max_y - min_y).max(1.0e-6);
+        for point in &mut boundary {
+            point[0] = (point[0] - center_x) * scale;
+            point[1] = (point[1] - center_y) * scale;
+        }
+
+        if signed_area_2d(&boundary) < 0.0 {
+            boundary.reverse();
+        }
+        filled_polygon_2d(&boundary)
     }
 }

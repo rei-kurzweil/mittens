@@ -46,11 +46,39 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::CameraTarget;
 use crate::engine::graphics::bounds::Aabb;
+use crate::engine::graphics::render_assets::RenderAssets;
 use crate::meow_meow::ast::{
     BlockStatement, ComponentExpression, Expression, Ident, Statement, UnaryOpKind,
 };
 use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
 use crate::meow_meow::token::expand_component_shortform;
+use std::cell::RefCell;
+
+thread_local! {
+    static LIVE_RENDER_ASSETS: RefCell<Option<*mut RenderAssets>> = const { RefCell::new(None) };
+}
+
+pub fn with_live_render_assets<R>(
+    render_assets: &mut RenderAssets,
+    f: impl FnOnce() -> R,
+) -> R {
+    LIVE_RENDER_ASSETS.with(|slot| {
+        let prev = slot.replace(Some(render_assets as *mut RenderAssets));
+        let result = f();
+        let _ = slot.replace(prev);
+        result
+    })
+}
+
+fn with_render_assets_mut<R>(f: impl FnOnce(&mut RenderAssets) -> Result<R, String>) -> Result<R, String> {
+    LIVE_RENDER_ASSETS.with(|slot| {
+        let ptr = (*slot.borrow())
+            .ok_or_else(|| "procedural Renderable constructors require live RenderAssets".to_string())?;
+        // SAFETY: callers install the pointer for the duration of spawn/materialization on the
+        // main thread, and no nested aliasing mutable access to the same RenderAssets occurs.
+        unsafe { f(&mut *ptr) }
+    })
+}
 
 // ---------------------------------------------------------------------------
 // Public entry point
@@ -825,6 +853,12 @@ fn arg(args: &[Value], i: usize) -> Result<&Value, String> {
 fn arg_f32(args: &[Value], i: usize) -> Result<f32, String> {
     val_as_f32(arg(args, i)?)
 }
+fn arg_u32(args: &[Value], i: usize) -> Result<u32, String> {
+    match arg(args, i)? {
+        Value::Number(n) if *n >= 0.0 && *n <= u32::MAX as f64 && n.fract() == 0.0 => Ok(*n as u32),
+        other => Err(format!("arg {i}: expected non-negative integer, got {other:?}")),
+    }
+}
 fn arg_world_f32(args: &[Value], i: usize) -> Result<f32, String> {
     val_as_world_f32(arg(args, i)?)
 }
@@ -1043,6 +1077,31 @@ fn create_component(
             Some("square") => add!(RenderableComponent::square()),
             Some("plane") => add!(RenderableComponent::plane()),
             Some("tetrahedron") => add!(RenderableComponent::tetrahedron()),
+            Some("partial_annulus_2d") => with_render_assets_mut(|render_assets| {
+                Ok(world.add_component(RenderableComponent::partial_annulus_2d(
+                    render_assets,
+                    arg_f32(args, 0)?,
+                    arg_f32(args, 1)?,
+                    arg_f32(args, 2)?,
+                    arg_f32(args, 3)?,
+                    arg_u32(args, 4)?,
+                )))
+            }),
+            Some("star") => with_render_assets_mut(|render_assets| {
+                Ok(world.add_component(RenderableComponent::star(
+                    render_assets,
+                    arg_u32(args, 0)?,
+                    arg_f32(args, 1)?,
+                    arg_u32(args, 2)?,
+                    arg_u32(args, 3)?,
+                )))
+            }),
+            Some("heart") => with_render_assets_mut(|render_assets| {
+                Ok(world.add_component(RenderableComponent::heart(
+                    render_assets,
+                    arg_u32(args, 0)?,
+                )))
+            }),
             _ => Err(format!(
                 "Renderable: unknown constructor '{}'",
                 ctor.unwrap_or("")

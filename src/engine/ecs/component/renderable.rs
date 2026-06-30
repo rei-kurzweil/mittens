@@ -1,15 +1,38 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use crate::engine::ecs::component::ce_helpers::{ce, ce_call, num};
 use crate::engine::graphics::mesh::MeshFactory;
 use crate::engine::graphics::primitives::{
     CpuMeshHandle, InstanceHandle, MaterialHandle, Renderable,
 };
 use crate::engine::graphics::render_assets::RenderAssets;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum AuthoredRenderableShape {
+    Builtin(&'static str),
+    PartialAnnulus2d {
+        inner_radius: f32,
+        outer_radius: f32,
+        start_angle_radians: f32,
+        sweep_angle_radians: f32,
+        segments: u32,
+    },
+    Star {
+        points: u32,
+        inner_radius_fraction: f32,
+        outer_bevel_segments: u32,
+        inner_bevel_segments: u32,
+    },
+    Heart {
+        segments: u32,
+    },
+}
+
 /// Renderable component.
 #[derive(Debug, Clone)]
 pub struct RenderableComponent {
     pub renderable: Renderable,
+    pub authored_shape: Option<AuthoredRenderableShape>,
 
     /// VisualWorld instance handle created for this renderable.
     pub handle: Option<InstanceHandle>,
@@ -21,6 +44,7 @@ impl RenderableComponent {
     pub fn new(renderable: Renderable) -> Self {
         Self {
             renderable,
+            authored_shape: None,
             handle: None,
             component: None,
         }
@@ -36,7 +60,9 @@ impl RenderableComponent {
 
     /// Predefined renderable: 2D triangle (shared built-in mesh handle).
     pub fn triangle() -> Self {
-        Self::from_cpu_mesh_handle(CpuMeshHandle::TRIANGLE_2D, MaterialHandle::TOON_MESH)
+        let mut s = Self::from_cpu_mesh_handle(CpuMeshHandle::TRIANGLE_2D, MaterialHandle::TOON_MESH);
+        s.authored_shape = Some(AuthoredRenderableShape::Builtin("triangle"));
+        s
     }
 
     /// Predefined renderable: 2D triangle (unique CPU mesh registered into `render_assets`).
@@ -50,7 +76,9 @@ impl RenderableComponent {
 
     /// Predefined renderable: 2D square/quad (shared built-in mesh handle).
     pub fn square() -> Self {
-        Self::from_cpu_mesh_handle(CpuMeshHandle::QUAD_2D, MaterialHandle::TOON_MESH)
+        let mut s = Self::from_cpu_mesh_handle(CpuMeshHandle::QUAD_2D, MaterialHandle::TOON_MESH);
+        s.authored_shape = Some(AuthoredRenderableShape::Builtin("square"));
+        s
     }
 
     /// Predefined renderable: 2D plane/quad (alias of `square`).
@@ -68,7 +96,9 @@ impl RenderableComponent {
 
     /// Predefined renderable: cube primitive (shared built-in mesh handle).
     pub fn cube() -> Self {
-        Self::from_cpu_mesh_handle(CpuMeshHandle::CUBE, MaterialHandle::TOON_MESH)
+        let mut s = Self::from_cpu_mesh_handle(CpuMeshHandle::CUBE, MaterialHandle::TOON_MESH);
+        s.authored_shape = Some(AuthoredRenderableShape::Builtin("cube"));
+        s
     }
 
     /// Predefined renderable: cube primitive (unique CPU mesh registered into `render_assets`).
@@ -79,7 +109,9 @@ impl RenderableComponent {
 
     /// Predefined renderable: sphere primitive (shared built-in mesh handle).
     pub fn sphere() -> Self {
-        Self::from_cpu_mesh_handle(CpuMeshHandle::SPHERE, MaterialHandle::TOON_MESH)
+        let mut s = Self::from_cpu_mesh_handle(CpuMeshHandle::SPHERE, MaterialHandle::TOON_MESH);
+        s.authored_shape = Some(AuthoredRenderableShape::Builtin("sphere"));
+        s
     }
 
     /// Predefined renderable: sphere primitive (unique CPU mesh registered into `render_assets`).
@@ -92,7 +124,10 @@ impl RenderableComponent {
 
     /// Predefined renderable: tetrahedron primitive (shared built-in mesh handle).
     pub fn tetrahedron() -> Self {
-        Self::from_cpu_mesh_handle(CpuMeshHandle::TETRAHEDRON, MaterialHandle::TOON_MESH)
+        let mut s =
+            Self::from_cpu_mesh_handle(CpuMeshHandle::TETRAHEDRON, MaterialHandle::TOON_MESH);
+        s.authored_shape = Some(AuthoredRenderableShape::Builtin("tetrahedron"));
+        s
     }
 
     /// Predefined renderable: tetrahedron primitive (unique CPU mesh registered into `render_assets`).
@@ -111,7 +146,66 @@ impl RenderableComponent {
 
     /// Predefined renderable: 2D circle (shared built-in mesh handle).
     pub fn circle2d() -> Self {
-        Self::from_cpu_mesh_handle(CpuMeshHandle::CIRCLE_2D, MaterialHandle::TOON_MESH)
+        let mut s = Self::from_cpu_mesh_handle(CpuMeshHandle::CIRCLE_2D, MaterialHandle::TOON_MESH);
+        s.authored_shape = Some(AuthoredRenderableShape::Builtin("circle2d"));
+        s
+    }
+
+    pub fn partial_annulus_2d(
+        render_assets: &mut RenderAssets,
+        inner_radius: f32,
+        outer_radius: f32,
+        start_angle_radians: f32,
+        sweep_angle_radians: f32,
+        segments: u32,
+    ) -> Self {
+        let mesh = MeshFactory::partial_annulus_2d(
+            inner_radius,
+            outer_radius,
+            start_angle_radians,
+            sweep_angle_radians,
+            segments,
+        );
+        let h = render_assets.register_mesh(mesh);
+        let mut s = Self::new(Renderable::new(h, MaterialHandle::TOON_MESH));
+        s.authored_shape = Some(AuthoredRenderableShape::PartialAnnulus2d {
+            inner_radius,
+            outer_radius,
+            start_angle_radians,
+            sweep_angle_radians,
+            segments,
+        });
+        s
+    }
+
+    pub fn star(
+        render_assets: &mut RenderAssets,
+        points: u32,
+        inner_radius_fraction: f32,
+        outer_bevel_segments: u32,
+        inner_bevel_segments: u32,
+    ) -> Self {
+        let h = render_assets.register_mesh(MeshFactory::star(
+            points,
+            inner_radius_fraction,
+            outer_bevel_segments,
+            inner_bevel_segments,
+        ));
+        let mut s = Self::new(Renderable::new(h, MaterialHandle::TOON_MESH));
+        s.authored_shape = Some(AuthoredRenderableShape::Star {
+            points,
+            inner_radius_fraction,
+            outer_bevel_segments,
+            inner_bevel_segments,
+        });
+        s
+    }
+
+    pub fn heart(render_assets: &mut RenderAssets, segments: u32) -> Self {
+        let h = render_assets.register_mesh(MeshFactory::heart(segments));
+        let mut s = Self::new(Renderable::new(h, MaterialHandle::TOON_MESH));
+        s.authored_shape = Some(AuthoredRenderableShape::Heart { segments });
+        s
     }
 }
 
@@ -158,22 +252,45 @@ impl Component for RenderableComponent {
         &self,
         _world: &crate::engine::ecs::World,
     ) -> crate::meow_meow::ast::ComponentExpression {
-        use crate::engine::ecs::component::ce_helpers::*;
-        // Map known shared primitive handles back to the constructor that
-        // produces them. Custom dynamic meshes (registered with
-        // `RenderAssets`) don't have a round-tripable identifier and are
-        // emitted as bare `Renderable` — clones will get the default mesh.
-        let ctor = match self.renderable.base_mesh {
-            CpuMeshHandle::CUBE => Some("cube"),
-            CpuMeshHandle::SPHERE => Some("sphere"),
-            CpuMeshHandle::TRIANGLE_2D => Some("triangle"),
-            CpuMeshHandle::QUAD_2D => Some("square"),
-            CpuMeshHandle::TETRAHEDRON => Some("tetrahedron"),
-            CpuMeshHandle::CIRCLE_2D => Some("circle2d"),
-            _ => None,
-        };
-        match ctor {
-            Some(name) => ce_call("Renderable", name, vec![]),
+        match &self.authored_shape {
+            Some(AuthoredRenderableShape::Builtin(name)) => ce_call("Renderable", name, vec![]),
+            Some(AuthoredRenderableShape::PartialAnnulus2d {
+                inner_radius,
+                outer_radius,
+                start_angle_radians,
+                sweep_angle_radians,
+                segments,
+            }) => ce_call(
+                "Renderable",
+                "partial_annulus_2d",
+                vec![
+                    num(*inner_radius as f64),
+                    num(*outer_radius as f64),
+                    num(*start_angle_radians as f64),
+                    num(*sweep_angle_radians as f64),
+                    num(*segments as f64),
+                ],
+            ),
+            Some(AuthoredRenderableShape::Star {
+                points,
+                inner_radius_fraction,
+                outer_bevel_segments,
+                inner_bevel_segments,
+            }) => ce_call(
+                "Renderable",
+                "star",
+                vec![
+                    num(*points as f64),
+                    num(*inner_radius_fraction as f64),
+                    num(*outer_bevel_segments as f64),
+                    num(*inner_bevel_segments as f64),
+                ],
+            ),
+            Some(AuthoredRenderableShape::Heart { segments }) => ce_call(
+                "Renderable",
+                "heart",
+                vec![num(*segments as f64)],
+            ),
             None => ce("Renderable"),
         }
     }

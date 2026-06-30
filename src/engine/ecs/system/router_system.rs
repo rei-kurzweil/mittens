@@ -234,7 +234,7 @@ mod tests {
         let _ = world.add_child(owner, authored);
 
         world.init_component_tree(owner, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         assert_eq!(world.parent_of(authored), Some(container));
         assert_eq!(world.parent_of(toolbar), Some(owner));
@@ -260,7 +260,7 @@ mod tests {
         let _ = world.add_child(owner, container);
 
         world.init_component_tree(owner, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let late = world.add_component_boxed_named("late", Box::new(TransformComponent::new()));
         queue.push_intent_now(
@@ -271,7 +271,7 @@ mod tests {
             },
         );
 
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         assert_eq!(world.parent_of(late), Some(container));
     }
@@ -301,7 +301,7 @@ mod tests {
         let _ = world.add_child(owner, authored);
 
         world.init_component_tree(owner, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         assert_eq!(world.parent_of(authored), Some(container));
         assert_eq!(world.parent_of(style), Some(owner));

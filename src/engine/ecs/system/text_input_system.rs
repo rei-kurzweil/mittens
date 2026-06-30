@@ -607,7 +607,7 @@ mod tests {
         let _ = world.add_child(root, input);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         queue.push_intent_now(
             input,
@@ -621,7 +621,7 @@ mod tests {
                 text: "!".to_string(),
             },
         );
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let input_state = world
             .get_component_by_id_as::<TextInputComponent>(input)
@@ -666,7 +666,7 @@ mod tests {
         assert!((caret_bg_opacity.opacity - CARET_BG_OPACITY_FOCUSED).abs() < 1e-6);
 
         queue.push_intent_now(input, IntentValue::TextInputClearFocus);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         let caret_bg_opacity =
             resolve_named_descendant(&world, caret_bg, OWNED_TEXT_INPUT_CARET_BG_OPACITY_LABEL)
@@ -691,7 +691,7 @@ mod tests {
         let _ = world.add_child(root, input);
 
         world.init_component_tree(root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         // 2. Identify the 'e' glyph (index 1)
         let text_target = resolve_text_target(&world, input).expect("backing text");
@@ -736,7 +736,7 @@ mod tests {
 
         // process_commands will run the global click handler, which pushes intents,
         // then it will execute those intents.
-        systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         // 4. Verify caret moved to 1
         let input_state = world

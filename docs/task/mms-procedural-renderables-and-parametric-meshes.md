@@ -546,9 +546,9 @@ Notes:
 
 ### MMS authoring
 
-- [ ] `R.partial_annulus_2d(...)` can be authored directly in `.mms`
-- [ ] `R.star(...)` can be authored directly in `.mms`
-- [ ] `R.heart(...)` can be authored directly in `.mms`
+- [x] `R.partial_annulus_2d(...)` can be authored directly in `.mms`
+- [x] `R.star(...)` can be authored directly in `.mms`
+- [x] `R.heart(...)` can be authored directly in `.mms`
 - [ ] `R.cylinder(...)` can be authored directly in `.mms`
 - [ ] `R.partial_cylinder(...)` can be authored directly in `.mms`
 - [ ] `R.torus(...)` can be authored directly in `.mms`
@@ -560,11 +560,11 @@ Notes:
 
 ### Mesh generation
 
-- [ ] partial annulus generates correct open-arc annulus geometry
-- [ ] star generates stable filled topology for sharp corners
-- [ ] star generates stable filled topology for beveled outer points
-- [ ] star generates stable filled topology for beveled inner valleys
-- [ ] heart generates a stable filled silhouette across practical segment counts
+- [x] partial annulus generates correct open-arc annulus geometry
+- [x] star generates stable filled topology for sharp corners
+- [x] star generates stable filled topology for beveled outer points
+- [x] star generates stable filled topology for beveled inner valleys
+- [x] heart generates a stable filled silhouette across practical segment counts
 - [ ] cylinder generates stable side topology across practical radial and height segment counts
 - [ ] partial cylinder honors exact terminal angle while preserving sensible segment density
 - [ ] torus generates stable closed topology
