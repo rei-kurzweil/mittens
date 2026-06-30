@@ -1334,6 +1334,44 @@ fn call_mms_module_fn_invokes_exported_factory_function() {
 }
 
 #[test]
+fn omitted_function_args_bind_to_null() {
+    let tmp = std::env::temp_dir();
+    let lib_path = tmp.join("_mms_test_optional_args_lib.mms");
+    let user_path = tmp.join("_mms_test_optional_args_user.mms");
+
+    std::fs::write(
+        &lib_path,
+        r#"
+export fn maybe_label(label, options) {
+    if options == null {
+        return label + ":none"
+    }
+    return label + ":some"
+}
+"#,
+    )
+    .unwrap();
+
+    std::fs::write(
+        &user_path,
+        r#"
+import { maybe_label } from "_mms_test_optional_args_lib.mms"
+let result = maybe_label("ok")
+if result != "ok:none" {
+    print("unexpected: " + result)
+}
+"#,
+    )
+    .unwrap();
+
+    let out = MeowMeowRunner::eval_file(user_path.to_str().unwrap());
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+
+    let _ = std::fs::remove_file(&lib_path);
+    let _ = std::fs::remove_file(&user_path);
+}
+
+#[test]
 fn spawn_mms_module_component_initialises_live_root() {
     let tmp_dir = std::env::temp_dir().join(format!(
         "mms_spawn_test_{}",

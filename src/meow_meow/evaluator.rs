@@ -1138,7 +1138,8 @@ fn eval_call(call: &CallExpression, ctx: &mut EvalContext<'_>) -> Result<Value, 
             // Push a Function frame seeded with the closure's captured env;
             // bind arg values into the same frame so they shadow captured names.
             ctx.object_world.push_function_frame(captured_env);
-            for (param, arg) in params.iter().zip(args.into_iter()) {
+            for (index, param) in params.iter().enumerate() {
+                let arg = args.get(index).cloned().unwrap_or(Value::Null);
                 ctx.object_world.bind(param.clone(), arg);
             }
             let result = {
@@ -1295,7 +1296,8 @@ fn eval_user_fn(
         return Err(format!("expected function, got {:?}", handler));
     };
     ctx.object_world.push_function_frame(captured_env.clone());
-    for (param, arg) in params.iter().zip(args.into_iter()) {
+    for (index, param) in params.iter().enumerate() {
+        let arg = args.get(index).cloned().unwrap_or(Value::Null);
         ctx.object_world.bind(param.clone(), arg);
     }
     let result = {
@@ -2226,7 +2228,8 @@ pub(crate) fn eval_mms_fn(
     let mut emits: Vec<IntentValue> = Vec::new();
     let mut world = ObjectWorld::new();
     world.push_function_frame(captured_env.clone());
-    for (param, arg) in params.iter().zip(args) {
+    for (index, param) in params.iter().enumerate() {
+        let arg = args.get(index).cloned().unwrap_or(Value::Null);
         world.bind(param.clone(), arg);
     }
     let mut ctx = EvalContext {

@@ -21,15 +21,15 @@
 // docs/task/action-target-scoping-and-factory-handlers.md).
 
 export fn button(label, options) {
-    let background_color = [0.88, 0.18, 0.18, 1.0]
-    let color = [0.98, 0.98, 0.98, 1.0]
+    let bg_rgba = [0.88, 0.18, 0.18, 1.0]
+    let text_rgba = [0.98, 0.98, 0.98, 1.0]
 
     if options {
         if options.background_color {
-            background_color = options.background_color
+            bg_rgba = options.background_color
         }
         if options.color {
-            color = options.color
+            text_rgba = options.color
         }
     }
 
@@ -41,8 +41,8 @@ export fn button(label, options) {
             padding_xy(0.6, 0.6)
             text_align("center")
             vertical_align("middle")
-            background_color = background_color
-            color = color
+            background_color(bg_rgba)
+            color(text_rgba)
         }
         T.position(0.0, 0.0, 0.0) {
             Text { label }
