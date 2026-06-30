@@ -18,8 +18,6 @@ use super::measure::{
     MeasuredItem, apply_text_color_for_item, apply_text_font_size_for_item,
     apply_text_wrap_for_item, measure_container_items, measure_items,
 };
-use crate::engine::ecs::component::style::Display;
-
 /// Run an inline formatting context layout pass for `layout_id`.
 ///
 /// Each TC child is treated as an atomic inline-block: its measured
@@ -161,37 +159,24 @@ pub(crate) fn layout_items(
         let nested_items =
             measure_container_items(world, content_root, item.content_width_gu, None, unit_scale);
         if !nested_items.is_empty() {
-            let all_inline_block = nested_items
-                .iter()
-                .all(|it| matches!(it.display, Some(Display::InlineBlock | Display::Inline)));
             let child_depth = if super::block::item_owns_layer(world, item.tc_id) {
                 depth + 1
             } else {
                 depth
             };
-            if all_inline_block {
-                layout_items(
-                    world,
-                    emit,
-                    &nested_items,
-                    item.content_width_gu,
-                    unit_scale,
-                    axis_scales,
-                    child_depth,
-                    depth,
-                    viz,
-                );
-            } else {
-                super::block::layout_items_for(
-                    world,
-                    emit,
-                    &nested_items,
-                    unit_scale,
-                    child_depth,
-                    depth,
-                    viz,
-                );
-            }
+            super::layout_container_items(
+                world,
+                emit,
+                item.tc_id,
+                &nested_items,
+                item.content_width_gu,
+                Some(item.content_height_gu),
+                unit_scale,
+                axis_scales,
+                child_depth,
+                depth,
+                viz,
+            );
         }
 
         cursor_x_gu += item.margin_box_width_gu;

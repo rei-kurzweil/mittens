@@ -23,7 +23,7 @@ use crate::engine::ecs::ComponentId;
 /// by `unit_scale` itself (e.g. inspector panels with `unit_scale = TEXT_SCALE`).
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::style::VerticalAlign;
-use crate::engine::ecs::component::style::{Display, SizeDimension, TextAlign};
+use crate::engine::ecs::component::style::{SizeDimension, TextAlign};
 use crate::engine::ecs::component::{
     ColorComponent, InspectLayoutComponent, LayoutBoundsComponent, OpacityComponent, Overflow,
     RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType, RenderableComponent,
@@ -76,6 +76,7 @@ pub(crate) fn layout_items_for(
     emit: &mut dyn SignalEmitter,
     items: &[MeasuredItem],
     unit_scale: f32,
+    axis_scales: (f32, f32),
     depth: i32,
     parent_depth: i32,
     viz: bool,
@@ -85,7 +86,7 @@ pub(crate) fn layout_items_for(
         emit,
         items,
         unit_scale,
-        (1.0, 1.0),
+        axis_scales,
         depth,
         parent_depth,
         viz,
@@ -104,7 +105,7 @@ fn layout_items(
     emit: &mut dyn SignalEmitter,
     items: &[MeasuredItem],
     unit_scale: f32,
-    axis_scales: (f32, f32),
+    _axis_scales: (f32, f32),
     depth: i32,
     parent_depth: i32,
     viz: bool,
@@ -193,14 +194,6 @@ fn layout_items(
             );
         }
         if !nested_items.is_empty() {
-            // Switch formatting context per subtree: when every nested item
-            // is inline-block, run them through the inline cursor + wrap
-            // path; otherwise stay in block flow. Mirrors the dispatch in
-            // `LayoutSystem::run_layout` but applied at every level so
-            // mixed trees under a single LayoutRoot work.
-            let all_inline_block = nested_items
-                .iter()
-                .all(|it| matches!(it.display, Some(Display::InlineBlock | Display::Inline)));
             // Children only sit on a new Z layer when *this* item owns one
             // (has a bg or an overflow clip). Structural wrappers without
             // their own bg keep their children on the parent's layer, so
@@ -210,30 +203,19 @@ fn layout_items(
             } else {
                 depth
             };
-            if all_inline_block {
-                super::inline::layout_items(
-                    world,
-                    emit,
-                    &nested_items,
-                    item.content_width_gu,
-                    unit_scale,
-                    axis_scales,
-                    child_depth,
-                    depth,
-                    viz,
-                );
-            } else {
-                layout_items(
-                    world,
-                    emit,
-                    &nested_items,
-                    unit_scale,
-                    axis_scales,
-                    child_depth,
-                    depth,
-                    viz,
-                );
-            }
+            super::layout_container_items(
+                world,
+                emit,
+                item.tc_id,
+                &nested_items,
+                item.content_width_gu,
+                Some(item.content_height_gu),
+                unit_scale,
+                (1.0, 1.0),
+                child_depth,
+                depth,
+                viz,
+            );
         }
 
         cursor_gu += item.box_height_gu + item.margin_bottom_gu;
@@ -518,7 +500,7 @@ fn scroll_content_root(world: &World, scroll_id: ComponentId) -> ComponentId {
         .unwrap_or(scroll_id)
 }
 
-fn sync_scrolling_metrics(
+pub(crate) fn sync_scrolling_metrics(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     scroll_id: ComponentId,
@@ -811,10 +793,12 @@ pub(crate) fn apply_text_align(
     // it half-a-glyph from the content-box origin. A styled item with an
     // explicit `font_size` opts into the inset (signals "this box hosts text
     // and wants it sized to its content area").
-    if align == TextAlign::Auto
-        && vertical_align == VerticalAlign::Auto
-        && matches!(style_font_size, SizeDimension::Auto)
-    {
+    let font_size_is_default = match style_font_size {
+        SizeDimension::Auto => true,
+        SizeDimension::GlyphUnits(v) => (v - 1.0).abs() < f32::EPSILON,
+        _ => false,
+    };
+    if align == TextAlign::Auto && vertical_align == VerticalAlign::Auto && font_size_is_default {
         return;
     }
 
@@ -869,6 +853,7 @@ pub(crate) fn apply_text_align(
 }
 
 fn find_alignable_direct_child(world: &World, tc_id: ComponentId) -> Option<ComponentId> {
+    let mut fallback = None;
     for &child in world.children_of(tc_id) {
         if world
             .component_label(child)
@@ -881,10 +866,15 @@ fn find_alignable_direct_child(world: &World, tc_id: ComponentId) -> Option<Comp
             .get_component_by_id_as::<TransformComponent>(child)
             .is_some()
         {
-            return Some(child);
+            if subtree_has_text(world, child) {
+                return Some(child);
+            }
+            if fallback.is_none() {
+                fallback = Some(child);
+            }
         }
     }
-    None
+    fallback
 }
 
 fn subtree_has_text(world: &World, root: ComponentId) -> bool {

@@ -525,6 +525,30 @@ fn eval_stmt(stmt: &Statement, ctx: &mut EvalContext<'_>) -> Result<StmtEffect, 
         } => {
             let items = match eval_expr(iterable, ctx)? {
                 Value::Array(a) => a,
+                Value::Map(map) => map
+                    .into_iter()
+                    .map(|(key, value)| {
+                        Value::Map(HashMap::from([
+                            ("key".to_string(), Value::String(key)),
+                            ("value".to_string(), value),
+                        ]))
+                    })
+                    .collect(),
+                Value::Object(id) => {
+                    let Some(crate::meow_meow::object::Object::Map(map)) =
+                        ctx.object_world.heap().get(id)
+                    else {
+                        return Err("for/in: invalid object".into());
+                    };
+                    map.iter()
+                        .map(|(key, value)| {
+                            Value::Map(HashMap::from([
+                                ("key".to_string(), Value::String(key.clone())),
+                                ("value".to_string(), value.clone()),
+                            ]))
+                        })
+                        .collect()
+                }
                 other => return Err(format!("for/in: expected array, got {:?}", other)),
             };
             ctx.object_world.push_frame(FrameKind::Block);
@@ -2457,5 +2481,25 @@ export let label = {
             named.get("label"),
             Some(Value::String(label)) if label == "aurora"
         ));
+    }
+
+    #[test]
+    fn module_eval_supports_for_in_over_tables() {
+        let source = r#"
+let total = 0
+for entry in {
+    apples = 2
+    pears = 5
+} {
+    total = total + entry.value
+}
+export let total = total
+"#;
+
+        let module = eval_module_source(source, None).expect("module eval");
+        let Value::Module { named, .. } = module else {
+            panic!("expected module value");
+        };
+        assert!(matches!(named.get("total"), Some(Value::Number(total)) if (*total - 7.0).abs() < 1e-6));
     }
 }

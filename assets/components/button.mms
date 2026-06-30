@@ -3,6 +3,10 @@
 // Usage:
 //   import { button } from "../assets/components/button.mms"
 //   let btn = button("Click me")
+//   let accent_btn = button("Accent", {
+//       background_color = [0.18, 0.48, 0.88, 1.0]
+//       color = [0.98, 0.98, 0.98, 1.0]
+//   })
 //   T.position(x, y, z) { btn }
 //   on(btn, "Click", fn(e) { ... })
 //
@@ -16,7 +20,19 @@
 // action-target subtree scoping (see
 // docs/task/action-target-scoping-and-factory-handlers.md).
 
-export fn button(label) {
+export fn button(label, options) {
+    let background_color = [0.88, 0.18, 0.18, 1.0]
+    let color = [0.98, 0.98, 0.98, 1.0]
+
+    if options {
+        if options.background_color {
+            background_color = options.background_color
+        }
+        if options.color {
+            color = options.color
+        }
+    }
+
     let root = T {
         name = "button_root"
         Raycastable.enabled()
@@ -25,10 +41,10 @@ export fn button(label) {
             padding_xy(0.6, 0.6)
             text_align("center")
             vertical_align("middle")
-            font_size(0.08wu)
-            background_color = [0.88, 0.18, 0.18, 1.0]
+            background_color = background_color
+            color = color
         }
-        T.position(0.0, 0.0, 0.05) {
+        T.position(0.0, 0.0, 0.0) {
             Text { label }
         }
     }
