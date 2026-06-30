@@ -19,6 +19,15 @@ This task also adds two new procedural mesh families:
 - `R.star(points, inner_radius_fraction, outer_bevel_segments, inner_bevel_segments)`
 - `R.heart(segments)`
 
+And it should establish the pattern for additional rotational procedural
+families:
+
+- `R.cylinder(circle_segments, height_segments)`
+- `R.partial_cylinder(max_circle_segments, height_segments, angular_distance_radians)`
+- `R.torus(major_segments, minor_segments)`
+- `R.partial_torus(max_major_segments, minor_segments, angular_distance_radians)`
+- `R.spring(max_major_segments, minor_segments, angular_distance_radians, radians_per_unit_height)`
+
 The intended end state is that these shapes are authored directly in `.mms`
 files and instantiated by the normal MMS component materialization path.
 
@@ -66,6 +75,9 @@ This task covers:
    - partial annulus
    - star
    - heart
+   - cylinder / partial cylinder
+   - torus / partial torus
+   - spring
 4. Round-trip / serialization behavior for those renderables.
 
 ## Non-goals
@@ -96,6 +108,18 @@ T.position(0.0, 0.0, -4.0) {
 T.position(0.0, 0.0, -4.0) {
     R.heart(64) {
         C.rgba(1.0, 0.2, 0.45, 1.0)
+    }
+}
+
+T.position(0.0, 0.0, -4.0) {
+    R.cylinder(48, 8) {
+        C.rgba(0.8, 0.85, 0.95, 1.0)
+    }
+}
+
+T.position(0.0, 0.0, -4.0) {
+    R.partial_cylinder(48, 8, 1.5707963) {
+        C.rgba(0.95, 0.55, 0.25, 1.0)
     }
 }
 ```
@@ -130,6 +154,11 @@ At minimum:
 - `partial_annulus_2d(render_assets, inner, outer, start, sweep, segments)`
 - `star(render_assets, points, inner_radius_fraction, outer_bevel_segments, inner_bevel_segments)`
 - `heart(render_assets, segments)`
+- `cylinder(render_assets, circle_segments, height_segments)`
+- `partial_cylinder(render_assets, max_circle_segments, height_segments, angular_distance_radians)`
+- `torus(render_assets, major_segments, minor_segments)`
+- `partial_torus(render_assets, max_major_segments, minor_segments, angular_distance_radians)`
+- `spring(render_assets, max_major_segments, minor_segments, angular_distance_radians, radians_per_unit_height)`
 
 These constructors should:
 
@@ -148,6 +177,11 @@ At minimum:
 - `partial_annulus_2d`
 - `star`
 - `heart`
+- `cylinder`
+- `partial_cylinder`
+- `torus`
+- `partial_torus`
+- `spring`
 
 These constructors should validate arguments and return good authoring errors.
 
@@ -194,6 +228,10 @@ enum AuthoredRenderableShape {
 
 The exact type shape can change, but the engine needs this kind of authored
 descriptor somewhere.
+
+It likely also wants a reusable shape-family enum rather than one ad hoc field
+per constructor, because the rotational families below share a lot of topology
+rules and save/load semantics.
 
 ## Mesh requirements
 
@@ -282,6 +320,137 @@ Recommended implementation shape:
 - sample it by `segments`
 - triangulate into a filled polygon mesh
 
+## Cylinder / partial cylinder
+
+Add a 3D cylinder family in `MeshFactory`.
+
+Target authored APIs:
+
+- `R.cylinder(circle_segments, height_segments)`
+- `R.partial_cylinder(max_circle_segments, height_segments, angular_distance_radians)`
+
+Requirements:
+
+- axis-aligned default orientation should be specified and kept consistent with
+  the rest of `MeshFactory`
+- support configurable radial tessellation and vertical tessellation
+- include side surface topology
+- decide explicitly whether v1 includes end caps; if omitted, document that
+  clearly rather than leaving it ambiguous
+
+### Partial-cylinder angular sampling rule
+
+The partial-cylinder constructor needs a precise sampling rule:
+
+- `max_circle_segments` means the segment density the full cylinder would have
+  around `2π`
+- `angular_distance_radians` is the exact angular extent to realize
+- the generated arc may use up to roughly
+  `full_circle_segment_count * (angular_distance / 2π)`, rounded up
+- this can produce a final radial boundary that is not exactly located at the
+  next evenly spaced full-circle segment position
+- that is acceptable and intentional if it is needed to hit the exact requested
+  angular distance
+
+In other words:
+
+- density should be inherited from the full-circle tessellation budget
+- extent should still land exactly on the requested terminal angle
+- the last segment may be narrower than the earlier ones
+
+This same question likely applies to `partial_annulus_2d(...)` and is worth
+auditing there rather than treating cylinder as a special case by accident.
+
+## Torus / partial torus
+
+Add a torus family in `MeshFactory`.
+
+Target authored APIs:
+
+- `R.torus(major_segments, minor_segments)`
+- `R.partial_torus(max_major_segments, minor_segments, angular_distance_radians)`
+
+Requirements:
+
+- full torus should represent a closed major loop with a circular minor cross
+  section
+- partial torus should reuse the same major-loop density logic as
+  `partial_cylinder`
+- the exact requested angular extent should be honored even if the final major
+  segment is shorter than the regular full-torus spacing
+- decide explicitly whether the ends of a partial torus are open or capped in v1
+
+## Spring
+
+Add a spring / helix-tube family in `MeshFactory`.
+
+Target authored API:
+
+- `R.spring(max_major_segments, minor_segments, angular_distance_radians, radians_per_unit_height)`
+
+Intended behavior:
+
+- topologically similar to a `partial_torus`
+- unlike a torus, total angular distance may exceed `2π`
+- as the shape winds, `y` increases according to a pitch control
+
+Parameter meaning:
+
+1. `max_major_segments`
+   - segment-density budget per `2π` of winding
+
+2. `minor_segments`
+   - cross-section segmentation around the tube
+
+3. `angular_distance_radians`
+   - total wound angle
+   - may be larger than `2π`
+
+4. `radians_per_unit_height`
+   - pitch control
+   - how many radians of winding correspond to `+1.0` unit of `y`
+
+This should likely be interpreted so that:
+
+- `delta_y = angular_distance_radians / radians_per_unit_height`
+
+unless implementation experience shows that the inverse convention reads more
+naturally in code or authoring. The important part is to document one convention
+clearly and keep it consistent.
+
+## Shared geometry seam across full and partial rotational shapes
+
+We should avoid implementing:
+
+- annulus
+- partial annulus
+- cylinder
+- partial cylinder
+- torus
+- partial torus
+- spring
+
+as unrelated one-off mesh generators.
+
+There is likely a reusable internal seam for:
+
+- angular sampling over a requested extent
+- density budget derived from the "full" shape segment count
+- exact terminal-angle placement for partial variants
+- optional seam closure for full variants
+- optional cap generation for open-ended variants
+- cross-section sweep along a path
+
+This task should explicitly look for shared helpers rather than copying the same
+arc-sampling logic into every shape family.
+
+At minimum, the code should try to centralize:
+
+- angular sampling for full vs partial sweeps
+- terminal-angle handling when exact extent does not land on an evenly spaced
+  nominal segment boundary
+- sweep-path tessellation utilities
+
 ## RenderAssets / built-in policy
 
 We need to be precise about terminology here.
@@ -290,7 +459,8 @@ These shapes are "built in" in the sense that the engine knows how to generate
 them, but they are not all fixed singleton mesh handles like `Cube` or
 `Circle2D`.
 
-The star and heart are parameterized families, so they should be treated as:
+The star, heart, cylinder, torus, spring, and partial variants are parameterized
+families, so they should be treated as:
 
 - engine-supported procedural mesh constructors
 - dynamically registered CPU meshes at spawn time
@@ -325,6 +495,30 @@ enum ProceduralMeshKey {
     Heart {
         segments: u32,
     },
+    Cylinder {
+        circle_segments: u32,
+        height_segments: u32,
+    },
+    PartialCylinder {
+        max_circle_segments: u32,
+        height_segments: u32,
+        angular_distance_bits: u32,
+    },
+    Torus {
+        major_segments: u32,
+        minor_segments: u32,
+    },
+    PartialTorus {
+        max_major_segments: u32,
+        minor_segments: u32,
+        angular_distance_bits: u32,
+    },
+    Spring {
+        max_major_segments: u32,
+        minor_segments: u32,
+        angular_distance_bits: u32,
+        radians_per_unit_height_bits: u32,
+    },
 }
 ```
 
@@ -355,6 +549,11 @@ Notes:
 - [ ] `R.partial_annulus_2d(...)` can be authored directly in `.mms`
 - [ ] `R.star(...)` can be authored directly in `.mms`
 - [ ] `R.heart(...)` can be authored directly in `.mms`
+- [ ] `R.cylinder(...)` can be authored directly in `.mms`
+- [ ] `R.partial_cylinder(...)` can be authored directly in `.mms`
+- [ ] `R.torus(...)` can be authored directly in `.mms`
+- [ ] `R.partial_torus(...)` can be authored directly in `.mms`
+- [ ] `R.spring(...)` can be authored directly in `.mms`
 - [ ] invalid constructor names fail clearly
 - [ ] invalid argument counts fail clearly
 - [ ] invalid argument ranges fail clearly
@@ -366,6 +565,11 @@ Notes:
 - [ ] star generates stable filled topology for beveled outer points
 - [ ] star generates stable filled topology for beveled inner valleys
 - [ ] heart generates a stable filled silhouette across practical segment counts
+- [ ] cylinder generates stable side topology across practical radial and height segment counts
+- [ ] partial cylinder honors exact terminal angle while preserving sensible segment density
+- [ ] torus generates stable closed topology
+- [ ] partial torus honors exact terminal angle while preserving sensible segment density
+- [ ] spring generates stable helical topology for angles above and below `2π`
 
 ### Round-trip / serialization
 
@@ -386,15 +590,19 @@ Notes:
 3. Expose `partial_annulus_2d` from MMS using the existing mesh factory support.
 4. Add `MeshFactory::star(...)`.
 5. Add `MeshFactory::heart(...)`.
-6. Add MMS constructors for `star` and `heart`.
-7. Add save / round-trip coverage.
-8. Add example scenes authored fully in MMS.
+6. Add `MeshFactory::cylinder(...)` and `MeshFactory::partial_cylinder(...)`.
+7. Add `MeshFactory::torus(...)`, `MeshFactory::partial_torus(...)`, and `MeshFactory::spring(...)`.
+8. Add MMS constructors for all new procedural renderables.
+9. Add save / round-trip coverage.
+10. Add example scenes authored fully in MMS.
 
 ## Completion criteria
 
 This task is complete when:
 
-- MMS can author `R.partial_annulus_2d(...)`, `R.star(...)`, and `R.heart(...)`
+- MMS can author `R.partial_annulus_2d(...)`, `R.star(...)`, `R.heart(...)`,
+  `R.cylinder(...)`, `R.partial_cylinder(...)`, `R.torus(...)`,
+  `R.partial_torus(...)`, and `R.spring(...)`
 - the procedural meshes are registered during normal MMS spawning without Rust
   hand-wiring per instance
 - authored procedural renderables save and reload correctly
