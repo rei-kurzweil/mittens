@@ -153,7 +153,7 @@ impl LayoutSystem {
 
     /// Process all dirty [`LayoutComponent`] roots.
     pub fn tick(&mut self, world: &mut World, emit: &mut dyn SignalEmitter) {
-        let mut dirty: Vec<ComponentId> = world
+        let dirty: Vec<ComponentId> = world
             .all_components()
             .filter(|&id| {
                 world
@@ -162,17 +162,6 @@ impl LayoutSystem {
                     .unwrap_or(false)
             })
             .collect();
-
-        // Style mutations are not yet uniformly routed through an intent path
-        // that marks the nearest LayoutRoot dirty. When nothing is flagged,
-        // fall back to recomputing all layout roots so authored style changes
-        // still refresh layout-owned helpers such as `__bg`.
-        if dirty.is_empty() {
-            dirty = world
-                .all_components()
-                .filter(|&id| world.get_component_by_id_as::<LayoutComponent>(id).is_some())
-                .collect();
-        }
 
         for &layout_id in &dirty {
             let (width_gu, height_gu) = Self::run_layout(world, emit, layout_id);

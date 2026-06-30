@@ -1286,6 +1286,10 @@ mod tests {
         if let Some(style) = world.get_component_by_id_as_mut::<StyleComponent>(item_style) {
             style.background_color = Some([0.9, 0.8, 0.2, 1.0]);
         }
+        world
+            .get_component_by_id_as_mut::<LayoutComponent>(root)
+            .expect("layout root")
+            .dirty = true;
 
         layout_system.tick(&mut world, &mut queue);
         systems.process_commands(&mut world, &mut visuals, &render_assets, &mut queue);
