@@ -518,4 +518,77 @@ impl MeshFactory {
 
         CpuMesh::new(vertices, indices)
     }
+
+    /// 2D partial ring/annulus in the XY plane (normal +Z).
+    ///
+    /// `start_angle_radians` is the arc start angle in standard polar coordinates.
+    /// `sweep_angle_radians` is the angular span; negative values are accepted and
+    /// are normalized to the equivalent positive arc.
+    pub fn partial_annulus_2d(
+        inner_radius: f32,
+        outer_radius: f32,
+        start_angle_radians: f32,
+        sweep_angle_radians: f32,
+        number_of_segments: u32,
+    ) -> CpuMesh {
+        let mut start = start_angle_radians;
+        let mut sweep = sweep_angle_radians;
+        if sweep < 0.0 {
+            start += sweep;
+            sweep = -sweep;
+        }
+
+        if sweep >= std::f32::consts::TAU - 1.0e-6 {
+            return Self::circle_2d(inner_radius, outer_radius, number_of_segments);
+        }
+
+        let segs = number_of_segments.max(1);
+        let inner = inner_radius.max(0.0);
+        let outer = outer_radius.max(inner + 1.0e-6);
+        let n = [0.0_f32, 0.0_f32, 1.0_f32];
+
+        let ring_vertex_count = (segs as usize) + 1;
+        let mut vertices: Vec<CpuVertex> = Vec::with_capacity(ring_vertex_count * 2);
+        let mut indices: Vec<u32> = Vec::with_capacity((segs as usize) * 6);
+
+        for i in 0..=segs {
+            let t = i as f32 / segs as f32;
+            let a = start + sweep * t;
+            let (s, c) = a.sin_cos();
+            let x = c * outer;
+            let y = s * outer;
+            let uv = [0.5 + x / (2.0 * outer), 0.5 - y / (2.0 * outer)];
+            vertices.push(CpuVertex {
+                pos: [x, y, 0.0],
+                uv,
+                normal: n,
+            });
+        }
+
+        for i in 0..=segs {
+            let t = i as f32 / segs as f32;
+            let a = start + sweep * t;
+            let (s, c) = a.sin_cos();
+            let x = c * inner;
+            let y = s * inner;
+            let uv = [0.5 + x / (2.0 * outer), 0.5 - y / (2.0 * outer)];
+            vertices.push(CpuVertex {
+                pos: [x, y, 0.0],
+                uv,
+                normal: n,
+            });
+        }
+
+        for i in 0..segs {
+            let outer_i = i;
+            let outer_n = i + 1;
+            let inner_i = segs + 1 + i;
+            let inner_n = inner_i + 1;
+
+            indices.extend_from_slice(&[outer_i, outer_n, inner_n]);
+            indices.extend_from_slice(&[outer_i, inner_n, inner_i]);
+        }
+
+        CpuMesh::new(vertices, indices)
+    }
 }
