@@ -10,6 +10,24 @@ BGC {
 }
 AL.rgb(0.55, 0.55, 0.55)
 
+RenderGraph {
+    EmissivePass {
+        BlurPass {
+            radius_ndc(0.06)
+            half_res(true)
+        }
+    }
+    Bloom {
+        intensity(0.90)
+        radius_ndc(0.06)
+        emissive_scale(1.2)
+        half_res(true)
+    }
+}
+
+
+Clock.bpm(240) {}
+
 T.position(0.0, 3.5, 3.5) {
     PL {
         intensity(5.0)
@@ -48,21 +66,65 @@ T.position(2.55, -2.1, -4.1).scale(0.05, 0.05, 1.0) {
     }
 }
 
+let annulus_0_glow = Emissive.on() { intensity(0.2) }
+let annulus_1_glow = Emissive.on() { intensity(0.2) }
+let annulus_2_glow = Emissive.on() { intensity(0.2) }
+let annulus_3_glow = Emissive.on() { intensity(0.2) }
+let annulus_4_glow = Emissive.on() { intensity(0.2) }
+
 T.position(-2.1, -2.1, -4.0) {
     T.scale(1.0, 1.0, 1.0) {
-        R.partial_annulus_2d(0.55, 0.89, 0.0, 1.5707963, 48) { C.rgba(0.89, 0.16, 0.11, 1.0) EM.on() }
+        R.partial_annulus_2d(0.55, 0.89, 0.0, 1.5707963, 48) { C.rgba(0.89, 0.16, 0.11, 1.0) annulus_0_glow }
     }
     T.scale(1.0, 1.0, 1.0) {
-        R.partial_annulus_2d(0.92, 1.26, 0.0, 1.5707963, 48) { C.rgba(0.98, 0.49, 0.10, 1.0) EM.on() }
+        R.partial_annulus_2d(0.92, 1.26, 0.0, 1.5707963, 48) { C.rgba(0.98, 0.49, 0.10, 1.0) annulus_1_glow }
     }
     T.scale(1.0, 1.0, 1.0) {
-        R.partial_annulus_2d(1.29, 1.63, 0.0, 1.5707963, 48) { C.rgba(0.99, 0.84, 0.13, 1.0) EM.on() }
+        R.partial_annulus_2d(1.29, 1.63, 0.0, 1.5707963, 48) { C.rgba(0.99, 0.84, 0.13, 1.0) annulus_2_glow }
     }
     T.scale(1.0, 1.0, 1.0) {
-        R.partial_annulus_2d(1.66, 2.00, 0.0, 1.5707963, 48) { C.rgba(0.16, 0.68, 0.27, 1.0) EM.on() }
+        R.partial_annulus_2d(1.66, 2.00, 0.0, 1.5707963, 48) { C.rgba(0.16, 0.68, 0.27, 1.0) annulus_3_glow }
     }
     T.scale(1.0, 1.0, 1.0) {
-        R.partial_annulus_2d(2.03, 2.37, 0.0, 1.5707963, 48) { C.rgba(0.10, 0.42, 0.91, 1.0) EM.on() }
+        R.partial_annulus_2d(2.03, 2.37, 0.0, 1.5707963, 48) { C.rgba(0.10, 0.42, 0.91, 1.0) annulus_4_glow }
+    }
+}
+
+Animation.looping().length(5.0) {
+    Keyframe.at(0.0) {
+        Action.set_emissive_intensity(annulus_0_glow, 2.5)
+        Action.set_emissive_intensity(annulus_4_glow, 1.0)
+        Action.set_emissive_intensity(annulus_1_glow, 0.0)
+        Action.set_emissive_intensity(annulus_2_glow, 0.0)
+        Action.set_emissive_intensity(annulus_3_glow, 0.0)
+    }
+    Keyframe.at(1.0) {
+        Action.set_emissive_intensity(annulus_1_glow, 2.5)
+        Action.set_emissive_intensity(annulus_0_glow, 1.0)
+        Action.set_emissive_intensity(annulus_2_glow, 0.0)
+        Action.set_emissive_intensity(annulus_3_glow, 0.0)
+        Action.set_emissive_intensity(annulus_4_glow, 0.0)
+    }
+    Keyframe.at(2.0) {
+        Action.set_emissive_intensity(annulus_2_glow, 2.5)
+        Action.set_emissive_intensity(annulus_1_glow, 1.0)
+        Action.set_emissive_intensity(annulus_0_glow, 0.0)
+        Action.set_emissive_intensity(annulus_3_glow, 0.0)
+        Action.set_emissive_intensity(annulus_4_glow, 0.0)
+    }
+    Keyframe.at(3.0) {
+        Action.set_emissive_intensity(annulus_3_glow, 2.5)
+        Action.set_emissive_intensity(annulus_2_glow, 1.0)
+        Action.set_emissive_intensity(annulus_0_glow, 0.0)
+        Action.set_emissive_intensity(annulus_1_glow, 0.0)
+        Action.set_emissive_intensity(annulus_4_glow, 0.0)
+    }
+    Keyframe.at(4.0) {
+        Action.set_emissive_intensity(annulus_4_glow, 2.5)
+        Action.set_emissive_intensity(annulus_3_glow, 1.0)
+        Action.set_emissive_intensity(annulus_0_glow, 0.0)
+        Action.set_emissive_intensity(annulus_1_glow, 0.0)
+        Action.set_emissive_intensity(annulus_2_glow, 0.0)
     }
 }
 

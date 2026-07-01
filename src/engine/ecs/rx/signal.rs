@@ -318,6 +318,10 @@ pub enum IntentValue {
         component_ids: Vec<ComponentId>,
         text: String,
     },
+    SetEmissiveIntensity {
+        component_ids: Vec<ComponentId>,
+        intensity: f32,
+    },
     SetPosition {
         component_ids: Vec<ComponentId>,
         position: [f32; 3],
@@ -693,6 +697,7 @@ impl IntentValue {
 
             IntentValue::SetColor { .. } => "set_color",
             IntentValue::SetText { .. } => "set_text",
+            IntentValue::SetEmissiveIntensity { .. } => "set_emissive_intensity",
             IntentValue::SetPosition { .. } => "set_position",
             IntentValue::SetLayoutAvailableWidth { .. } => "set_layout_available_width",
             IntentValue::SetLayoutAvailableHeight { .. } => "set_layout_available_height",

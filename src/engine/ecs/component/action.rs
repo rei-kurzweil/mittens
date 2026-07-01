@@ -81,6 +81,7 @@ pub fn signal_target_slot_count(signal: &IntentValue) -> usize {
 
         SetColor { component_ids, .. }
         | SetText { component_ids, .. }
+        | SetEmissiveIntensity { component_ids, .. }
         | SetPosition { component_ids, .. }
         | GLTFArmatureVisible { component_ids, .. }
         | Detach { component_ids }
@@ -118,6 +119,7 @@ pub fn apply_resolved_targets(signal: &mut IntentValue, ids: &[ComponentId]) {
 
         SetColor { component_ids, .. }
         | SetText { component_ids, .. }
+        | SetEmissiveIntensity { component_ids, .. }
         | SetPosition { component_ids, .. }
         | GLTFArmatureVisible { component_ids, .. }
         | Detach { component_ids }
@@ -220,6 +222,11 @@ impl Component for ActionComponent {
                 "Action",
                 "set_text",
                 vec![targets_expr(&self.target_sources), s(text)],
+            ),
+            IntentValue::SetEmissiveIntensity { intensity, .. } => ce_call(
+                "Action",
+                "set_emissive_intensity",
+                vec![targets_expr(&self.target_sources), num(*intensity as f64)],
             ),
             IntentValue::SetPosition { position, .. } => ce_call(
                 "Action",

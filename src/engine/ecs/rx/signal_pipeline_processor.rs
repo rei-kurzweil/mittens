@@ -65,6 +65,7 @@ impl SignalPipelineProcessor {
         match value {
             IntentValue::SetColor { component_ids, .. }
             | IntentValue::SetText { component_ids, .. }
+            | IntentValue::SetEmissiveIntensity { component_ids, .. }
             | IntentValue::SetPosition { component_ids, .. }
             | IntentValue::GLTFArmatureVisible { component_ids, .. }
             | IntentValue::SetLayoutAvailableWidth { component_ids, .. }
@@ -172,6 +173,7 @@ impl SignalPipelineProcessor {
         match value {
             IntentValue::SetColor { component_ids, .. }
             | IntentValue::SetText { component_ids, .. }
+            | IntentValue::SetEmissiveIntensity { component_ids, .. }
             | IntentValue::SetPosition { component_ids, .. }
             | IntentValue::GLTFArmatureVisible { component_ids, .. }
             | IntentValue::SetLayoutAvailableWidth { component_ids, .. }

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use crate::engine::ecs::{ComponentId, IntentValue, RxWorld, SignalEmitter, World};
+use crate::engine::graphics::render_assets::RenderAssets;
 use crate::meow_meow::evaluator::{
     EvalRequest, EvalResponse, HostCallKind, HostValue, MeowMeowEvaluator, eval_mms_fn,
     eval_module_source,
@@ -36,7 +37,13 @@ impl LoadedMmsModule {
 pub struct MeowMeowRunner;
 
 impl MeowMeowRunner {
-    /// Evaluate `source`, collecting all emitted intents and errors.
+    /// Evaluate `source` without a live ECS world, collecting emitted intents
+    /// and errors.
+    ///
+    /// This mode cannot allocate live `ComponentId`s during evaluation, so
+    /// let-bound component expressions stay as `ComponentExpr` values rather
+    /// than becoming live `ComponentObject` handles.
+    ///
     /// Times out after 2 seconds if the evaluator stalls.
     pub fn eval(source: &str) -> EvalOutput {
         Self::eval_impl(source, None, Duration::from_secs(2))
@@ -216,6 +223,37 @@ impl MeowMeowRunner {
         rx: &mut RxWorld,
         emit: &mut dyn SignalEmitter,
     ) -> EvalOutput {
+        Self::eval_with_world_and_assets_at_path(source, source_path, world, rx, None, emit)
+    }
+
+    /// Evaluate `source` with live world + render-asset access.
+    pub fn eval_with_world_and_assets(
+        source: &str,
+        world: &mut World,
+        rx: &mut RxWorld,
+        render_assets: &mut RenderAssets,
+        emit: &mut dyn SignalEmitter,
+    ) -> EvalOutput {
+        Self::eval_with_world_and_assets_at_path(
+            source,
+            None,
+            world,
+            rx,
+            Some(render_assets),
+            emit,
+        )
+    }
+
+    /// Like `eval_with_world_and_assets`, but also records the source file path so
+    /// `import` statements resolve relative to it.
+    pub fn eval_with_world_and_assets_at_path(
+        source: &str,
+        source_path: Option<&str>,
+        world: &mut World,
+        rx: &mut RxWorld,
+        mut render_assets: Option<&mut RenderAssets>,
+        emit: &mut dyn SignalEmitter,
+    ) -> EvalOutput {
         let mut handle = MeowMeowEvaluator::spawn(64);
         handle
             .requests
@@ -241,9 +279,21 @@ impl MeowMeowRunner {
                 Ok(EvalResponse::HostCall { id, kind }) => {
                     let reply = match kind {
                         HostCallKind::Spawn(ce) => {
-                            match crate::meow_meow::component_registry::spawn_tree(
-                                &ce, None, world, emit,
-                            ) {
+                            let result = if let Some(render_assets) = render_assets.as_deref_mut() {
+                                crate::meow_meow::component_registry::with_live_render_assets(
+                                    render_assets,
+                                    || {
+                                        crate::meow_meow::component_registry::spawn_tree(
+                                            &ce, None, world, emit,
+                                        )
+                                    },
+                                )
+                            } else {
+                                crate::meow_meow::component_registry::spawn_tree(
+                                    &ce, None, world, emit,
+                                )
+                            };
+                            match result {
                                 Ok(component_id) => HostValue::ComponentId(component_id),
                                 Err(e) => {
                                     output.errors.push(format!("HostCall::Spawn error: {e}"));
@@ -252,9 +302,21 @@ impl MeowMeowRunner {
                             }
                         }
                         HostCallKind::Register(ce) => {
-                            match crate::meow_meow::component_registry::spawn_tree_uninitialized(
-                                &ce, world, emit,
-                            ) {
+                            let result = if let Some(render_assets) = render_assets.as_deref_mut() {
+                                crate::meow_meow::component_registry::with_live_render_assets(
+                                    render_assets,
+                                    || {
+                                        crate::meow_meow::component_registry::spawn_tree_uninitialized(
+                                            &ce, world, emit,
+                                        )
+                                    },
+                                )
+                            } else {
+                                crate::meow_meow::component_registry::spawn_tree_uninitialized(
+                                    &ce, world, emit,
+                                )
+                            };
+                            match result {
                                 Ok(component_id) => HostValue::ComponentId(component_id),
                                 Err(e) => {
                                     output.errors.push(format!("HostCall::Register error: {e}"));

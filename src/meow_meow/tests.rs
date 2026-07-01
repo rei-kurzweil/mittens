@@ -568,6 +568,44 @@ fn live_eval_reassigned_component_expr_supports_query_method_after_emit() {
 }
 
 #[test]
+fn live_eval_let_bound_component_expr_can_mutate_before_and_after_attach() {
+    let src = r##"
+        let glow = Emissive.off()
+        glow.set_intensity(0.2)
+
+        T {
+            R.cube() {
+                glow
+            }
+        }
+
+        glow.set_intensity(2.5)
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+
+    let glow = world
+        .all_components()
+        .find_map(|id| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::EmissiveComponent>(id)
+                .map(|glow| (id, glow.intensity))
+        })
+        .expect("expected EmissiveComponent");
+    assert!(
+        (glow.1 - 2.5).abs() < 1.0e-6,
+        "expected final emissive intensity 2.5, got {} on {:?}",
+        glow.1,
+        glow.0
+    );
+}
+
+#[test]
 fn live_handler_query_can_see_world() {
     let src = r##"
         T { name = "btn" }

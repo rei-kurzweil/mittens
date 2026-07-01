@@ -1528,6 +1528,15 @@ fn create_component(
                     };
                     add!(ActionComponent::new_authored(signal, targets))
                 }
+                Some("set_emissive_intensity") => {
+                    let targets = arg_component_ref_vec(world, args, 0)?;
+                    let intensity = arg_f32(args, 1)?.max(0.0);
+                    let signal = IV::SetEmissiveIntensity {
+                        component_ids: null_ids(targets.len()),
+                        intensity,
+                    };
+                    add!(ActionComponent::new_authored(signal, targets))
+                }
                 Some("set_position") => {
                     let targets = arg_component_ref_vec(world, args, 0)?;
                     let position = arg_f32_arr::<3>(args, 1)?;

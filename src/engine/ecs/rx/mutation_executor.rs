@@ -279,6 +279,23 @@ impl RxMutationExecutor {
                 }
             }
 
+            IntentValue::SetEmissiveIntensity {
+                component_ids,
+                intensity,
+            } => {
+                let intensity = (*intensity).max(0.0);
+                for &cid in component_ids.iter() {
+                    if let Some(emissive) = world
+                        .get_component_by_id_as_mut::<crate::engine::ecs::component::EmissiveComponent>(
+                            cid,
+                        )
+                    {
+                        emissive.intensity = intensity;
+                        systems.register_emissive(world, visuals, cid);
+                    }
+                }
+            }
+
             IntentValue::SetLayoutAvailableWidth {
                 component_ids,
                 width,

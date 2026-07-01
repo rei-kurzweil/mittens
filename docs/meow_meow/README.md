@@ -36,6 +36,56 @@ let panel = T.position(0, 0, -2) {
 panel    // bare reference in statement position → emits
 ```
 
+### Component Lifecycle
+
+There are two distinct runtime modes for component expressions:
+
+- `ComponentExpr`: a declarative component tree value that has not been given a
+  live ECS id yet.
+- `ComponentObject`: a live ECS component handle with a real `ComponentId`.
+
+In live-world evaluation (`MeowMeowRunner::eval_with_world...`), `let x = SomeComponent...`
+eagerly registers the component subtree immediately. That means `x` becomes a
+`ComponentObject` right away, even before it is attached or initialized. MMS can
+then safely do runtime receiver calls like:
+
+```mms
+let glow = Emissive.off()
+glow.set_intensity(0.2)   // valid: live detached component
+
+T {
+    R.cube() { glow }     // attach later
+}
+
+glow.set_intensity(2.5)   // still valid after attach
+```
+
+The lifecycle in that mode is:
+
+1. author CE syntax
+2. eager `Register` on `let` / reassignment
+3. get a live detached `ComponentObject`
+4. attach it into another CE or as a root later
+5. initialization runs on attach/root-emit
+
+If the script also needs procedural `Renderable` constructors during live-world
+evaluation, use the runner entry points that also provide `RenderAssets`
+(`eval_with_world_and_assets...`), otherwise procedural `R.partial_annulus_2d(...)`,
+`R.star(...)`, etc. cannot materialize during host `Register` / `Spawn`.
+
+In fire-and-forget evaluation (`MeowMeowRunner::eval`, `eval_file`, etc.), there
+is no live world during evaluation, so MMS cannot allocate real `ComponentId`s.
+In that mode `let x = SomeComponent...` remains a `ComponentExpr`, and runtime
+receiver calls like `x.set_intensity(...)` are not valid. Only CE builder syntax
+such as `Emissive.on()`, `Renderable.star(...)`, or body calls like
+`Emissive.on() { intensity(0.2) }` are valid there.
+
+One more distinction: `Keyframe { ... }` bodies are declarative animation
+content, not an imperative runtime block. Deferred mutations inside keyframes
+should be authored as `Action.*(...)` children, for example
+`Action.set_emissive_intensity(glow, 2.5)`, rather than direct runtime receiver
+calls like `glow.set_intensity(2.5)`.
+
 See [`spec/component-expression-format.md`](spec/component-expression-format.md)
 and [`assets/components/`](../../assets/components) for component definitions.
 
