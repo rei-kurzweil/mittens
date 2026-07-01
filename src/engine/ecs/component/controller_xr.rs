@@ -114,10 +114,6 @@ impl Component for ControllerXRComponent {
             ControllerPoseKind::Aim => "Aim",
             ControllerPoseKind::Grip => "Grip",
         };
-        ce_call(
-            "XRHand",
-            "new",
-            vec![b(self.enabled), s(hand), s(pose)],
-        )
+        ce_call("XRHand", "new", vec![b(self.enabled), s(hand), s(pose)])
     }
 }

@@ -102,39 +102,39 @@ T.position(-2.1, -2.1, -4.0) {
 
 Animation.looping().length(5.0) {
     Keyframe.at(0.0) {
-        Action.set_emissive_intensity(annulus_0_glow, 2.5)
-        Action.set_emissive_intensity(annulus_4_glow, 1.0)
-        Action.set_emissive_intensity(annulus_1_glow, 0.0)
-        Action.set_emissive_intensity(annulus_2_glow, 0.0)
-        Action.set_emissive_intensity(annulus_3_glow, 0.0)
+        annulus_0_glow.set_intensity(2.5)
+        annulus_4_glow.set_intensity(1.0)
+        annulus_1_glow.set_intensity(0.0)
+        annulus_2_glow.set_intensity(0.0)
+        annulus_3_glow.set_intensity(0.0)
     }
     Keyframe.at(1.0) {
-        Action.set_emissive_intensity(annulus_1_glow, 2.5)
-        Action.set_emissive_intensity(annulus_0_glow, 1.0)
-        Action.set_emissive_intensity(annulus_2_glow, 0.0)
-        Action.set_emissive_intensity(annulus_3_glow, 0.0)
-        Action.set_emissive_intensity(annulus_4_glow, 0.0)
+        annulus_1_glow.set_intensity(2.5)
+        annulus_0_glow.set_intensity(1.0)
+        annulus_2_glow.set_intensity(0.0)
+        annulus_3_glow.set_intensity(0.0)
+        annulus_4_glow.set_intensity(0.0)
     }
     Keyframe.at(2.0) {
-        Action.set_emissive_intensity(annulus_2_glow, 2.5)
-        Action.set_emissive_intensity(annulus_1_glow, 1.0)
-        Action.set_emissive_intensity(annulus_0_glow, 0.0)
-        Action.set_emissive_intensity(annulus_3_glow, 0.0)
-        Action.set_emissive_intensity(annulus_4_glow, 0.0)
+        annulus_2_glow.set_intensity(2.5)
+        annulus_1_glow.set_intensity(1.0)
+        annulus_0_glow.set_intensity(0.0)
+        annulus_3_glow.set_intensity(0.0)
+        annulus_4_glow.set_intensity(0.0)
     }
     Keyframe.at(3.0) {
-        Action.set_emissive_intensity(annulus_3_glow, 2.5)
-        Action.set_emissive_intensity(annulus_2_glow, 1.0)
-        Action.set_emissive_intensity(annulus_0_glow, 0.0)
-        Action.set_emissive_intensity(annulus_1_glow, 0.0)
-        Action.set_emissive_intensity(annulus_4_glow, 0.0)
+        annulus_3_glow.set_intensity(2.5)
+        annulus_2_glow.set_intensity(1.0)
+        annulus_0_glow.set_intensity(0.0)
+        annulus_1_glow.set_intensity(0.0)
+        annulus_4_glow.set_intensity(0.0)
     }
     Keyframe.at(4.0) {
-        Action.set_emissive_intensity(annulus_4_glow, 2.5)
-        Action.set_emissive_intensity(annulus_3_glow, 1.0)
-        Action.set_emissive_intensity(annulus_0_glow, 0.0)
-        Action.set_emissive_intensity(annulus_1_glow, 0.0)
-        Action.set_emissive_intensity(annulus_2_glow, 0.0)
+        annulus_4_glow.set_intensity(2.5)
+        annulus_3_glow.set_intensity(1.0)
+        annulus_0_glow.set_intensity(0.0)
+        annulus_1_glow.set_intensity(0.0)
+        annulus_2_glow.set_intensity(0.0)
     }
 }
 

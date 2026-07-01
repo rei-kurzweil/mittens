@@ -1,14 +1,16 @@
 use crate::engine::ecs::ComponentId;
+use crate::engine::ecs::IntentValue;
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::TransformComponent;
-use crate::engine::ecs::component::style::{AlignItems, FlexDirection, JustifyContent, SizeDimension};
+use crate::engine::ecs::component::style::{
+    AlignItems, FlexDirection, JustifyContent, SizeDimension,
+};
 use crate::engine::ecs::component::{HtmlElementComponent, StyleComponent};
-use crate::engine::ecs::IntentValue;
 
 use super::block::{
-    apply_text_align, item_owns_layer, layout_root_has_inspect, sync_auto_text_lift,
-    sync_bg_quad, sync_layout_bounds, sync_overflow_topology, sync_scrolling_metrics,
+    apply_text_align, item_owns_layer, layout_root_has_inspect, sync_auto_text_lift, sync_bg_quad,
+    sync_layout_bounds, sync_overflow_topology, sync_scrolling_metrics,
 };
 use super::box_model_viz::sync_box_model_viz;
 use super::measure::{
@@ -115,7 +117,10 @@ pub(crate) fn layout_items(
         .iter()
         .map(|item| main_margin_box_size(&item.measured, main_axis))
         .sum::<f32>();
-    let total_grow = flex_items.iter().map(|item| item.style.flex_grow.max(0.0)).sum::<f32>();
+    let total_grow = flex_items
+        .iter()
+        .map(|item| item.style.flex_grow.max(0.0))
+        .sum::<f32>();
 
     if let Some(main_size) = container_main_gu {
         let free_space = (main_size - base_main_total - gap_total).max(0.0);
@@ -124,8 +129,8 @@ pub(crate) fn layout_items(
                 if item.style.flex_grow <= 0.0 {
                     continue;
                 }
-                let grown_margin_box =
-                    main_margin_box_size(&item.measured, main_axis) + free_space * item.style.flex_grow / total_grow;
+                let grown_margin_box = main_margin_box_size(&item.measured, main_axis)
+                    + free_space * item.style.flex_grow / total_grow;
                 item.measured = remeasure_main_axis(
                     world,
                     item.measured.clone(),
@@ -255,8 +260,12 @@ pub(crate) fn layout_items(
             item.measured.content_height_gu,
             unit_scale,
         );
-        let content_root =
-            sync_overflow_topology(world, emit, item.measured.tc_id, item.measured.content_height_gu);
+        let content_root = sync_overflow_topology(
+            world,
+            emit,
+            item.measured.tc_id,
+            item.measured.content_height_gu,
+        );
         let nested_items = measure_container_items(
             world,
             content_root,
@@ -403,7 +412,11 @@ fn remeasure_main_axis(
     };
     let current_main = main_margin_box_size(&measured, main_axis);
     if target_margin_box_gu > current_main {
-        grow_main_axis(&mut measured, main_axis, target_margin_box_gu - current_main);
+        grow_main_axis(
+            &mut measured,
+            main_axis,
+            target_margin_box_gu - current_main,
+        );
     }
     let _ = (style, avail_w_gu);
     measured
@@ -431,7 +444,11 @@ fn remeasure_cross_axis(
     };
     let current_cross = cross_margin_box_size(&measured, main_axis);
     if target_margin_box_gu > current_cross {
-        grow_cross_axis(&mut measured, main_axis, target_margin_box_gu - current_cross);
+        grow_cross_axis(
+            &mut measured,
+            main_axis,
+            target_margin_box_gu - current_cross,
+        );
     }
     if matches!(main_axis, MainAxis::Horizontal) {
         let _ = avail_w_gu;
@@ -527,8 +544,8 @@ mod tests {
     use super::*;
     use crate::engine::ecs::component::LayoutComponent;
     use crate::engine::ecs::rx::{EventSignal, IntentValue};
-    use crate::engine::ecs::{IntentSignal, SignalEmitter};
     use crate::engine::ecs::system::layout::LayoutSystem;
+    use crate::engine::ecs::{IntentSignal, SignalEmitter};
 
     #[derive(Default)]
     struct TestEmitter {
@@ -715,7 +732,8 @@ mod tests {
         );
         let left = item_tc(&mut world, "left", 4.0, 2.0);
         let right = item_tc(&mut world, "right", 4.0, 2.0);
-        let nested_block = world.add_component_boxed_named("nested_block", Box::new(TransformComponent::new()));
+        let nested_block =
+            world.add_component_boxed_named("nested_block", Box::new(TransformComponent::new()));
         let nested_block_style = world.add_component_boxed_named(
             "nested_block_style",
             Box::new({

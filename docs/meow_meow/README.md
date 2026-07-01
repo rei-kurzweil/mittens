@@ -80,11 +80,11 @@ receiver calls like `x.set_intensity(...)` are not valid. Only CE builder syntax
 such as `Emissive.on()`, `Renderable.star(...)`, or body calls like
 `Emissive.on() { intensity(0.2) }` are valid there.
 
-One more distinction: `Keyframe { ... }` bodies are declarative animation
-content, not an imperative runtime block. Deferred mutations inside keyframes
-should be authored as `Action.*(...)` children, for example
-`Action.set_emissive_intensity(glow, 2.5)`, rather than direct runtime receiver
-calls like `glow.set_intensity(2.5)`.
+One more distinction: `Keyframe.at(...) { ... }` bodies are timed imperative
+blocks. In live-world evaluation, they capture the surrounding lexical env and
+run when the keyframe becomes due, so direct receiver calls like
+`glow.set_intensity(2.5)` or `cube_t.update_transform([...], [...], [...])`
+dispatch intents at that due frame.
 
 See [`spec/component-expression-format.md`](spec/component-expression-format.md)
 and [`assets/components/`](../../assets/components) for component definitions.

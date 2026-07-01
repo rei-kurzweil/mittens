@@ -358,8 +358,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 10_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            10_000,
+        );
 
         let state = context
             .lock()

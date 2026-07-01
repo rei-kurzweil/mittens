@@ -16,32 +16,31 @@ use crate::engine::ecs::component::{
     BackgroundComponent, BloomComponent, BlurPassComponent, BoundsComponent, BoxSizing,
     Camera2DComponent, Camera3DComponent, CameraXRComponent, ClockComponent, CollisionComponent,
     CollisionShape, CollisionShapeComponent, ColorComponent, ControllerHand, ControllerPoseKind,
-    DataComponent, DataValue, DirectionalLightComponent, Display,
-    EdgeInsets, EditorComponent, EditorInteractionMode, ElementType, EmissiveComponent,
-    EmissivePassComponent, FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection,
-    FlexWrap, GLTFComponent, GestureCoordTypeComponent, GravityComponent, GridComponent,
-    HtmlElementComponent, IKChainComponent, IKSolver, InputComponent, InputTransformModeComponent,
-    InputXRComponent, InputXRGamepadComponent, InspectLayoutComponent, JustifyContent,
-    KeyframeComponent, KineticResponseComponent, LayoutBoundsComponent, LayoutComponent,
-    LightQuantizationComponent, MeshComponent, MirrorComponent, MusicContextComponent, MusicNote,
-    MusicNoteComponent, NormalVisualisationComponent, OpacityComponent,
-    OptionComponent, OscillatorType, Overflow, OverlayComponent, PointLightComponent,
-    PointerComponent, PointerEvents, PoseCaptureComponent, PoseCaptureLibraryComponent,
-    PoseCapturePoseComponent, Position, QuatTemporalFilterComponent, QuatYawFollowComponent,
-    RayCastComponent, RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType,
-    RenderGraphComponent, RenderableComponent, RendererSettingsComponent, RendererStatsComponent,
-    RouterComponent, ScrollingComponent, SelectableComponent, SelectionComponent,
-    SerializeComponent, SignalObserverRouterComponent, SignalRouteUpwardComponent, SizeDimension,
-    SkinnedMeshComponent, StencilClipComponent, StyleComponent, TextAlign, TextComponent,
-    TextInputComponent, TextShadowComponent, TextureComponent, TextureFilteringComponent,
-    TransformComponent, TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis,
-    TransformGizmoComponent, TransformGizmoCoordSpace, TransformGizmoRotateComponent,
-    TransformGizmoScaleComponent, TransformGizmoTranslateComponent, TransformMapRotationComponent,
-    TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
-    TransformParentComponent, TransformSampleAncestorComponent, TransitionComponent,
-    TransitionEasing, TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
-    Vector3TemporalFilterComponent, XRHandComponent, WordWrapMode, XrComponent,
-    XrHandPreference,
+    DataComponent, DataValue, DirectionalLightComponent, Display, EdgeInsets, EditorComponent,
+    EditorInteractionMode, ElementType, EmissiveComponent, EmissivePassComponent,
+    FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent,
+    GestureCoordTypeComponent, GravityComponent, GridComponent, HtmlElementComponent,
+    IKChainComponent, IKSolver, InputComponent, InputTransformModeComponent, InputXRComponent,
+    InputXRGamepadComponent, InspectLayoutComponent, JustifyContent, KeyframeComponent,
+    KineticResponseComponent, LayoutBoundsComponent, LayoutComponent, LightQuantizationComponent,
+    MeshComponent, MirrorComponent, MusicContextComponent, MusicNote, MusicNoteComponent,
+    NormalVisualisationComponent, OpacityComponent, OptionComponent, OscillatorType, Overflow,
+    OverlayComponent, PointLightComponent, PointerComponent, PointerEvents, PoseCaptureComponent,
+    PoseCaptureLibraryComponent, PoseCapturePoseComponent, Position, QuatTemporalFilterComponent,
+    QuatYawFollowComponent, RayCastComponent, RaycastableComponent, RaycastableShapeComponent,
+    RaycastableShapeType, RenderGraphComponent, RenderableComponent, RendererSettingsComponent,
+    RendererStatsComponent, RouterComponent, ScrollingComponent, SelectableComponent,
+    SelectionComponent, SerializeComponent, SignalObserverRouterComponent,
+    SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent, StencilClipComponent,
+    StyleComponent, TextAlign, TextComponent, TextInputComponent, TextShadowComponent,
+    TextureComponent, TextureFilteringComponent, TransformComponent, TransformDropComponent,
+    TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
+    TransformGizmoCoordSpace, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
+    TransformGizmoTranslateComponent, TransformMapRotationComponent, TransformMapScaleComponent,
+    TransformMapTranslationComponent, TransformMergeTRSComponent, TransformParentComponent,
+    TransformSampleAncestorComponent, TransitionComponent, TransitionEasing,
+    TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
+    Vector3TemporalFilterComponent, WordWrapMode, XRHandComponent, XrComponent, XrHandPreference,
 };
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::CameraTarget;
@@ -58,10 +57,7 @@ thread_local! {
     static LIVE_RENDER_ASSETS: RefCell<Option<*mut RenderAssets>> = const { RefCell::new(None) };
 }
 
-pub fn with_live_render_assets<R>(
-    render_assets: &mut RenderAssets,
-    f: impl FnOnce() -> R,
-) -> R {
+pub fn with_live_render_assets<R>(render_assets: &mut RenderAssets, f: impl FnOnce() -> R) -> R {
     LIVE_RENDER_ASSETS.with(|slot| {
         let prev = slot.replace(Some(render_assets as *mut RenderAssets));
         let result = f();
@@ -70,10 +66,13 @@ pub fn with_live_render_assets<R>(
     })
 }
 
-fn with_render_assets_mut<R>(f: impl FnOnce(&mut RenderAssets) -> Result<R, String>) -> Result<R, String> {
+fn with_render_assets_mut<R>(
+    f: impl FnOnce(&mut RenderAssets) -> Result<R, String>,
+) -> Result<R, String> {
     LIVE_RENDER_ASSETS.with(|slot| {
-        let ptr = (*slot.borrow())
-            .ok_or_else(|| "procedural Renderable constructors require live RenderAssets".to_string())?;
+        let ptr = (*slot.borrow()).ok_or_else(|| {
+            "procedural Renderable constructors require live RenderAssets".to_string()
+        })?;
         // SAFETY: callers install the pointer for the duration of spawn/materialization on the
         // main thread, and no nested aliasing mutable access to the same RenderAssets occurs.
         unsafe { f(&mut *ptr) }
@@ -191,6 +190,12 @@ pub fn spawn_tree_uninitialized(
 ) -> Result<ComponentId, String> {
     let type_name = resolve_type_name(&ce.component_type);
     let id = create_component(world, &type_name, ce.ctor_method.as_deref(), &ce.ctor_args)?;
+
+    if let Some(block) = &ce.deferred_block {
+        if let Some(keyframe) = world.get_component_by_id_as_mut::<KeyframeComponent>(id) {
+            keyframe.callback = Some(block.clone());
+        }
+    }
 
     for (method, args) in &ce.calls {
         apply_call(world, id, method, args)?;
@@ -609,6 +614,7 @@ fn subtree_to_ce_ast_inner_limited(
 pub fn ce_ast_to_materialized(ce: &ComponentExpression) -> Result<MaterializedCE, String> {
     let component_property_assignment_only =
         component_expr_uses_property_assignment_only(&ce.component_type.0);
+    let is_keyframe = matches!(ce.component_type.0.as_str(), "KF" | "Keyframe");
     let mut ctor_method: Option<String> = None;
     let mut ctor_args: Vec<Value> = Vec::new();
     let mut calls: Vec<(String, Vec<Value>)> = Vec::new();
@@ -629,6 +635,23 @@ pub fn ce_ast_to_materialized(ce: &ComponentExpression) -> Result<MaterializedCE
             .map(expression_to_value)
             .collect::<Result<_, _>>()?;
         calls.push((ctor.method.0.clone(), args));
+    }
+
+    if is_keyframe {
+        return Ok(MaterializedCE {
+            component_type: ce.component_type.0.clone(),
+            component_property_assignment_only,
+            ctor_method,
+            ctor_args,
+            calls,
+            named: Vec::new(),
+            positionals: Vec::new(),
+            deferred_block: Some(crate::meow_meow::object::CapturedBlock {
+                body: ce.body.clone(),
+                captured_env: std::sync::Arc::new(std::collections::HashMap::new()),
+            }),
+            children: Vec::new(),
+        });
     }
 
     let mut children: Vec<CeChild> = Vec::new();
@@ -676,6 +699,7 @@ pub fn ce_ast_to_materialized(ce: &ComponentExpression) -> Result<MaterializedCE
         calls,
         named,
         positionals: Vec::new(),
+        deferred_block: None,
         children,
     })
 }
@@ -709,7 +733,9 @@ fn expression_to_value(e: &Expression) -> Result<Value, String> {
                 .collect::<Result<_, _>>()?;
             Ok(Value::Array(vals))
         }
-        Expression::Table(_) => Err("expression_to_value: table literals are not supported yet".into()),
+        Expression::Table(_) => {
+            Err("expression_to_value: table literals are not supported yet".into())
+        }
         Expression::Index { base, index } => {
             let base = expression_to_value(base)?;
             let index = expression_to_value(index)?;
@@ -856,7 +882,9 @@ fn arg_f32(args: &[Value], i: usize) -> Result<f32, String> {
 fn arg_u32(args: &[Value], i: usize) -> Result<u32, String> {
     match arg(args, i)? {
         Value::Number(n) if *n >= 0.0 && *n <= u32::MAX as f64 && n.fract() == 0.0 => Ok(*n as u32),
-        other => Err(format!("arg {i}: expected non-negative integer, got {other:?}")),
+        other => Err(format!(
+            "arg {i}: expected non-negative integer, got {other:?}"
+        )),
     }
 }
 fn arg_world_f32(args: &[Value], i: usize) -> Result<f32, String> {
@@ -1097,10 +1125,8 @@ fn create_component(
                 )))
             }),
             Some("heart") => with_render_assets_mut(|render_assets| {
-                Ok(world.add_component(RenderableComponent::heart(
-                    render_assets,
-                    arg_u32(args, 0)?,
-                )))
+                Ok(world
+                    .add_component(RenderableComponent::heart(render_assets, arg_u32(args, 0)?)))
             }),
             _ => Err(format!(
                 "Renderable: unknown constructor '{}'",

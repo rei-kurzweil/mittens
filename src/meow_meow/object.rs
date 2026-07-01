@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::engine::ecs::ComponentId;
+use crate::meow_meow::ast::BlockStatement;
 
 // ---------------------------------------------------------------------------
 // Materialized component expression
@@ -13,6 +14,12 @@ use crate::engine::ecs::ComponentId;
 /// Produced by the evaluator when a `ComponentExpression` AST node is
 /// evaluated. Passed to `spawn_tree` in the registry — no MMS expression
 /// evaluation needed on the main thread.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CapturedBlock {
+    pub body: BlockStatement,
+    pub captured_env: Arc<HashMap<String, Value>>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct MaterializedCE {
     /// Component type name (short or full, e.g. `"T"` / `"Transform"`).
@@ -31,6 +38,9 @@ pub struct MaterializedCE {
     pub named: Vec<(String, Value)>,
     /// String-type positional content (e.g. `Text { "hello " + name }`).
     pub positionals: Vec<Value>,
+    /// Deferred executable block payload for components that own imperative
+    /// runtime bodies, such as `Keyframe.at(...) { ... }`.
+    pub deferred_block: Option<CapturedBlock>,
     /// Child component trees, in source order. Each entry is either a CE to
     /// spawn fresh, or a pre-Registered `ComponentId` to splice in.
     pub children: Vec<CeChild>,

@@ -162,7 +162,8 @@ mod tests {
             .add_child(color, renderable)
             .expect("attach renderable");
 
-        let measure = BoundsSystem::measure_renderable_subtree_bounds(&world, &mut render_assets, root);
+        let measure =
+            BoundsSystem::measure_renderable_subtree_bounds(&world, &mut render_assets, root);
         let RenderableBoundsMeasure::Measured(bounds) = measure else {
             panic!("expected measured bounds");
         };

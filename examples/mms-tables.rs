@@ -17,7 +17,10 @@ fn main() {
     for error in &output.errors {
         eprintln!("[mms] {error}");
     }
-    println!("[mms] {} intent(s) from mms-tables.mms", output.intents.len());
+    println!(
+        "[mms] {} intent(s) from mms-tables.mms",
+        output.intents.len()
+    );
 
     let scope = engine::ecs::ComponentId::default();
     for intent in output.intents {

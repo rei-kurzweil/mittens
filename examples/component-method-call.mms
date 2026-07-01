@@ -44,8 +44,8 @@ I.speed(3.0) {
     }
 }
 
-// The spinning cube — must be defined before the Animation so that
-// Action.update_transform("cube") can resolve the name at spawn time.
+// The spinning cube handle is captured by the keyframe blocks and mutated live
+// when each keyframe becomes due.
 let cube_t = T.position(0.0, 0.0, 0.0).scale(0.5, 0.5, 0.5) {
     name = "cube"
     Transition {
@@ -68,16 +68,16 @@ Clock.bpm(60) {}
 // One full rotation every 4 beats = 4 seconds at 60 BPM.
 let anim = A {
     Keyframe.at(0) {
-        Action.update_transform("cube", [0.0, 0.0, 0.0], [0.0,   0.0, 0.0], [0.5, 0.5, 0.5])
+        cube_t.update_transform([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.5, 0.5, 0.5])
     }
     Keyframe.at(1) {
-        Action.update_transform("cube", [0.0, 0.0, 0.0], [0.0,  3.14159 / 2, 0.0], [0.5, 0.5, 0.5])
+        cube_t.update_transform([0.0, 0.0, 0.0], [0.0, 3.14159 / 2, 0.0], [0.5, 0.5, 0.5])
     }
     Keyframe.at(2) {
-        Action.update_transform("cube", [0.0, 0.0, 0.0], [0.0, 3.14159 , 0.0], [0.5, 0.5, 0.5])
+        cube_t.update_transform([0.0, 0.0, 0.0], [0.0, 3.14159, 0.0], [0.5, 0.5, 0.5])
     }
     Keyframe.at(3) {
-        Action.update_transform("cube", [0.0, 0.0, 0.0], [0.0, 3.14159 * 1.5, 0.0], [0.5, 0.5, 0.5])
+        cube_t.update_transform([0.0, 0.0, 0.0], [0.0, 3.14159 * 1.5, 0.0], [0.5, 0.5, 0.5])
     }
 }
 
@@ -140,5 +140,4 @@ on(play_btn, "Click", fn(event) {
     playback_status.set_text("Playing")
     print("anim.play()")
 })
-
 

@@ -2010,7 +2010,9 @@ fn roundtrip_xr_hand() {
 fn roundtrip_input_xr_off() {
     use crate::engine::ecs::component::InputXRComponent;
     let (world, id) = roundtrip_component(InputXRComponent::off());
-    let got = world.get_component_by_id_as::<InputXRComponent>(id).unwrap();
+    let got = world
+        .get_component_by_id_as::<InputXRComponent>(id)
+        .unwrap();
     assert!(!got.enabled);
 }
 

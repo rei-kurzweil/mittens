@@ -234,14 +234,7 @@ impl MeowMeowRunner {
         render_assets: &mut RenderAssets,
         emit: &mut dyn SignalEmitter,
     ) -> EvalOutput {
-        Self::eval_with_world_and_assets_at_path(
-            source,
-            None,
-            world,
-            rx,
-            Some(render_assets),
-            emit,
-        )
+        Self::eval_with_world_and_assets_at_path(source, None, world, rx, Some(render_assets), emit)
     }
 
     /// Like `eval_with_world_and_assets`, but also records the source file path so

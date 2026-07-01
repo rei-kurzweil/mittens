@@ -17,7 +17,30 @@ I {
 }
 
 // button
-T.position(0, -0.2, 1.5) {
+let button_surface = T.position(0,0,0) {
+    name="button_surface"
+    Transition {
+        duration_beats(0.25)
+        ease_in_out_sine()
+    }
+    T.position(0, 0.1, 0).scale(0.9, 0.1, 0.9) {
+        R.cube() {
+            C.rgba(1.0, 0.1, 0.1, 1.0)
+            Emissive.on()
+        }
+    }
+    T.position(-0.2, 0.2, 0)
+        .rotation(-3.141/2.0, 0, 0).scale(0.2, 0.2, 0.2) {
+        TXT {
+            "add"
+            C.rgba(1.0, 1.0, 1.0, 1.0)
+            TextureFiltering.linear()
+            Emissive.on()
+        }   
+    }
+}
+
+let button_root = T.position(0, -0.2, 1.5) {
     name="button"
     Raycastable.enabled()
 
@@ -26,40 +49,20 @@ T.position(0, -0.2, 1.5) {
             C.rgba(0.9, 0.9, 0.9, 1.0)
         }
     }
-    T.position(0,0,0) {
-        name="button_surface"
-        Transition {
-            duration_beats(0.25)
-            ease_in_out_sine()
-        }
-        T.position(0, 0.1, 0).scale(0.9, 0.1, 0.9) {
-            R.cube() {
-                C.rgba(1.0, 0.1, 0.1, 1.0)
-                Emissive.on()
-            }
-        }
-        T.position(-0.2, 0.2, 0)
-            .rotation(-3.141/2.0, 0, 0).scale(0.2, 0.2, 0.2) {
-            TXT {
-                "add"
-                C.rgba(1.0, 1.0, 1.0, 1.0)
-                TextureFiltering.linear()
-                Emissive.on()
-            }   
-        }
-    }
+    button_surface
 }
+button_root
 
 // button animation
 Animation.looping() {
     name="button_animation"
     
     Keyframe.at(0) {
-        Action.update_transform("#button_surface", 
+        button_surface.update_transform(
             [0,0,0], [0,0,0], [1,1,1]) 
     }
     Keyframe.at(0.25) {
-        Action.update_transform("#button_surface", 
+        button_surface.update_transform(
             [0, -0.04,0], [0,0,0], [1,1,1])   
     }
 }

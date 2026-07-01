@@ -1574,8 +1574,8 @@ mod tests {
         );
         let _ = world.add_child(panel_query_root, settings_panel_root);
 
-        let settings_row = world
-            .add_component_boxed_named("settings_row", Box::new(TransformComponent::new()));
+        let settings_row =
+            world.add_component_boxed_named("settings_row", Box::new(TransformComponent::new()));
         let _ = world.add_child(settings_panel_root, settings_row);
 
         focus_panel_from_descendant_click(&mut world, &mut emit, panel_query_root, settings_row);

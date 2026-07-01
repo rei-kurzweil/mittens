@@ -29,7 +29,7 @@ use crate::engine::ecs::system::editor::pose_panel::{
     handle_pose_panel_click, rerender_pose_panel,
 };
 use crate::engine::ecs::system::editor::settings_panel::{
-    EDITOR_SETTINGS_ARMATURE_TOGGLE_SLOT_NAME, EDITOR_SETTINGS_ARMATURE_ROW_NAME,
+    EDITOR_SETTINGS_ARMATURE_ROW_NAME, EDITOR_SETTINGS_ARMATURE_TOGGLE_SLOT_NAME,
     EDITOR_SETTINGS_PANEL_ROOT_SELECTOR, EDITOR_SETTINGS_PAYLOAD_NAME,
     EDITOR_SETTINGS_SELECTION_SELECTOR, EditorSettingsOption, handle_editor_settings_panel_click,
     sync_editor_settings_armature_toggle, sync_editor_settings_panel_selection,
@@ -815,8 +815,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     return;
                 };
 
-                let Some(tc) =
-                    world.get_component_by_id_as::<TransformComponent>(mount_root)
+                let Some(tc) = world.get_component_by_id_as::<TransformComponent>(mount_root)
                 else {
                     return;
                 };

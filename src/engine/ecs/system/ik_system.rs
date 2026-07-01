@@ -1,12 +1,12 @@
 use crate::engine::ecs::component::ik_chain::TwoBoneIkDebugVisuals;
 use crate::engine::ecs::component::{
-    resolve_component_ref, AvatarControlComponent, BoneRestPoseComponent, ColorComponent,
-    EmissiveComponent, IKChainComponent, IKSolver, OverlayComponent, QueryRootMode,
-    RenderableComponent, TransformComponent,
+    AvatarControlComponent, BoneRestPoseComponent, ColorComponent, EmissiveComponent,
+    IKChainComponent, IKSolver, OverlayComponent, QueryRootMode, RenderableComponent,
+    TransformComponent, resolve_component_ref,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::utils::math::{
-    mat4_inverse, mat_to_quat, quat_conjugate, quat_from_axis_angle, quat_mul, quat_nlerp,
+    mat_to_quat, mat4_inverse, quat_conjugate, quat_from_axis_angle, quat_mul, quat_nlerp,
     quat_rotate_vec3, quat_rotation_y, quat_to_axis_angle, shortest_arc_quat, vec3_add, vec3_cross,
     vec3_dot, vec3_len, vec3_lerp, vec3_normalize, vec3_scale, vec3_sub,
 };
@@ -1032,11 +1032,11 @@ fn read_bone_rest_rot(world: &World, bone_id: ComponentId) -> [f32; 4] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::ecs::CommandQueue;
+    use crate::engine::ecs::IntentValue;
     use crate::engine::ecs::component::{
         BoneRestPoseComponent, ComponentRef, IKChainComponent, IKSolver, TransformComponent,
     };
-    use crate::engine::ecs::CommandQueue;
-    use crate::engine::ecs::IntentValue;
     use slotmap::Key;
 
     #[derive(Default)]
@@ -1047,11 +1047,7 @@ mod tests {
     impl SignalEmitter for TestEmitter {
         fn push_event(&mut self, _scope: ComponentId, _event: crate::engine::ecs::EventSignal) {}
 
-        fn push_intent(
-            &mut self,
-            scope: ComponentId,
-            intent: crate::engine::ecs::IntentSignal,
-        ) {
+        fn push_intent(&mut self, scope: ComponentId, intent: crate::engine::ecs::IntentSignal) {
             self.intents.push((scope, intent.value));
         }
     }
@@ -1217,11 +1213,17 @@ mod tests {
         let hand = w.add_component(
             TransformComponent::new()
                 .with_position(2.0, 0.0, 0.0)
-                .with_rotation_quat(quat_from_axis_angle([1.0, 0.0, 0.0], std::f32::consts::FRAC_PI_2)),
+                .with_rotation_quat(quat_from_axis_angle(
+                    [1.0, 0.0, 0.0],
+                    std::f32::consts::FRAC_PI_2,
+                )),
         );
         let target = w.add_component(TransformComponent::new().with_position(2.0, 0.0, 0.0));
-        let hand_rest =
-            w.add_component(BoneRestPoseComponent::new([0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0]));
+        let hand_rest = w.add_component(BoneRestPoseComponent::new(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0],
+        ));
         w.add_child(hand, hand_rest).unwrap();
 
         let mut emit = TestEmitter::default();

@@ -46,10 +46,7 @@ pub(crate) fn formatting_context_for_container(
     container_id: ComponentId,
     items: &[MeasuredItem],
 ) -> FormattingContext {
-    if matches!(
-        container_display(world, container_id),
-        Some(Display::Flex)
-    ) {
+    if matches!(container_display(world, container_id), Some(Display::Flex)) {
         return FormattingContext::Flex;
     }
 

@@ -60,7 +60,7 @@ ED {
         R.cube() { C.rgba(0.10, 0.10, 0.14, 1.0) }
     }
 
-    T.position(-2.8, 0.0, -5.2).scale(0.75, 0.75, 0.75) {
+    let transition_cube_a = T.position(-2.8, 0.0, -5.2).scale(0.75, 0.75, 0.75) {
         name = "transition_cube_a"
         Transition {
             duration_beats(0.85)
@@ -72,8 +72,9 @@ ED {
             Emissive.on()
         }
     }
+    transition_cube_a
 
-    T.position(0.0, 0.0, -5.2).scale(0.75, 0.75, 0.75) {
+    let transition_cube_b = T.position(0.0, 0.0, -5.2).scale(0.75, 0.75, 0.75) {
         name = "transition_cube_b"
         Transition {
             duration_beats(0.85)
@@ -85,8 +86,9 @@ ED {
             Emissive.on()
         }
     }
+    transition_cube_b
 
-    T.position(2.8, 0.0, -5.2).scale(0.75, 0.75, 0.75) {
+    let transition_cube_c = T.position(2.8, 0.0, -5.2).scale(0.75, 0.75, 0.75) {
         name = "transition_cube_c"
         Transition {
             duration_beats(0.85)
@@ -98,54 +100,55 @@ ED {
             Emissive.on()
         }
     }
+    transition_cube_c
 
     Animation.looping() {
         Keyframe.at(0) {
-            Action.update_transform("#transition_cube_a", [-2.8, 0.0, -5.2], [0.0, 0.0, 0.0], [0.75, 0.75, 0.75])
-            Action.update_transform("#transition_cube_b", [0.0, 0.0, -5.2], [0.0, 0.0, 0.0], [0.75, 0.75, 0.75])
-            Action.update_transform("#transition_cube_c", [2.8, 0.0, -5.2], [0.0, 0.0, 0.0], [0.75, 0.75, 0.75])
+            transition_cube_a.update_transform([-2.8, 0.0, -5.2], [0.0, 0.0, 0.0], [0.75, 0.75, 0.75])
+            transition_cube_b.update_transform([0.0, 0.0, -5.2], [0.0, 0.0, 0.0], [0.75, 0.75, 0.75])
+            transition_cube_c.update_transform([2.8, 0.0, -5.2], [0.0, 0.0, 0.0], [0.75, 0.75, 0.75])
         }
 
         Keyframe.at(1) {
-            Action.update_transform("#transition_cube_a", [-2.8, 0.0, -5.2], [0.0, 0.6, 0.0], [0.75, 0.75, 0.75])
-            Action.update_transform("#transition_cube_b", [0.0, 0.0, -5.2], [0.45, 0.0, 0.35], [0.75, 0.75, 0.75])
-            Action.update_transform("#transition_cube_c", [2.8, 0.0, -5.2], [0.0, -0.6, 0.0], [0.75, 0.75, 0.75])
+            transition_cube_a.update_transform([-2.8, 0.0, -5.2], [0.0, 0.6, 0.0], [0.75, 0.75, 0.75])
+            transition_cube_b.update_transform([0.0, 0.0, -5.2], [0.45, 0.0, 0.35], [0.75, 0.75, 0.75])
+            transition_cube_c.update_transform([2.8, 0.0, -5.2], [0.0, -0.6, 0.0], [0.75, 0.75, 0.75])
         }
 
         Keyframe.at(2) {
-            Action.update_transform("#transition_cube_a", [-1.6, 1.1, -5.2], [0.0, 0.6, 0.0], [0.75, 0.75, 0.75])
-            Action.update_transform("#transition_cube_b", [0.0, -0.4, -4.2], [0.45, 0.0, 0.35], [0.75, 0.75, 0.75])
-            Action.update_transform("#transition_cube_c", [1.6, 1.1, -5.2], [0.0, -0.6, 0.0], [0.75, 0.75, 0.75])
+            transition_cube_a.update_transform([-1.6, 1.1, -5.2], [0.0, 0.6, 0.0], [0.75, 0.75, 0.75])
+            transition_cube_b.update_transform([0.0, -0.4, -4.2], [0.45, 0.0, 0.35], [0.75, 0.75, 0.75])
+            transition_cube_c.update_transform([1.6, 1.1, -5.2], [0.0, -0.6, 0.0], [0.75, 0.75, 0.75])
         }
 
         Keyframe.at(3) {
-            Action.update_transform("#transition_cube_a", [-1.6, 1.1, -5.2], [0.35, 1.4, 0.25], [0.75, 0.75, 0.75])
-            Action.update_transform("#transition_cube_b", [0.0, -0.4, -4.2], [-0.4, 0.6, -0.5], [0.75, 0.75, 0.75])
-            Action.update_transform("#transition_cube_c", [1.6, 1.1, -5.2], [0.25, -1.4, 0.4], [0.75, 0.75, 0.75])
+            transition_cube_a.update_transform([-1.6, 1.1, -5.2], [0.35, 1.4, 0.25], [0.75, 0.75, 0.75])
+            transition_cube_b.update_transform([0.0, -0.4, -4.2], [-0.4, 0.6, -0.5], [0.75, 0.75, 0.75])
+            transition_cube_c.update_transform([1.6, 1.1, -5.2], [0.25, -1.4, 0.4], [0.75, 0.75, 0.75])
         }
 
         Keyframe.at(4) {
-            Action.update_transform("#transition_cube_a", [-3.5, -0.2, -4.5], [0.35, 1.4, 0.25], [0.75, 0.75, 0.75])
-            Action.update_transform("#transition_cube_b", [0.0, 1.25, -5.9], [-0.4, 0.6, -0.5], [0.75, 0.75, 0.75])
-            Action.update_transform("#transition_cube_c", [3.5, -0.2, -4.5], [0.25, -1.4, 0.4], [0.75, 0.75, 0.75])
+            transition_cube_a.update_transform([-3.5, -0.2, -4.5], [0.35, 1.4, 0.25], [0.75, 0.75, 0.75])
+            transition_cube_b.update_transform([0.0, 1.25, -5.9], [-0.4, 0.6, -0.5], [0.75, 0.75, 0.75])
+            transition_cube_c.update_transform([3.5, -0.2, -4.5], [0.25, -1.4, 0.4], [0.75, 0.75, 0.75])
         }
 
         Keyframe.at(5) {
-            Action.update_transform("#transition_cube_a", [-3.5, -0.2, -4.5], [-0.2, 2.2, 0.0], [0.75, 0.75, 0.75])
-            Action.update_transform("#transition_cube_b", [0.0, 1.25, -5.9], [0.8, 1.3, 0.2], [0.75, 0.75, 0.75])
-            Action.update_transform("#transition_cube_c", [3.5, -0.2, -4.5], [0.2, -2.2, -0.2], [0.75, 0.75, 0.75])
+            transition_cube_a.update_transform([-3.5, -0.2, -4.5], [-0.2, 2.2, 0.0], [0.75, 0.75, 0.75])
+            transition_cube_b.update_transform([0.0, 1.25, -5.9], [0.8, 1.3, 0.2], [0.75, 0.75, 0.75])
+            transition_cube_c.update_transform([3.5, -0.2, -4.5], [0.2, -2.2, -0.2], [0.75, 0.75, 0.75])
         }
 
         Keyframe.at(6) {
-            Action.update_transform("#transition_cube_a", [-2.2, 0.9, -6.1], [-0.2, 2.2, 0.0], [0.75, 0.75, 0.75])
-            Action.update_transform("#transition_cube_b", [0.0, 0.2, -5.0], [0.8, 1.3, 0.2], [0.75, 0.75, 0.75])
-            Action.update_transform("#transition_cube_c", [2.2, 0.9, -6.1], [0.2, -2.2, -0.2], [0.75, 0.75, 0.75])
+            transition_cube_a.update_transform([-2.2, 0.9, -6.1], [-0.2, 2.2, 0.0], [0.75, 0.75, 0.75])
+            transition_cube_b.update_transform([0.0, 0.2, -5.0], [0.8, 1.3, 0.2], [0.75, 0.75, 0.75])
+            transition_cube_c.update_transform([2.2, 0.9, -6.1], [0.2, -2.2, -0.2], [0.75, 0.75, 0.75])
         }
 
         Keyframe.at(7) {
-            Action.update_transform("#transition_cube_a", [-2.2, 0.9, -6.1], [0.0, 6.2831855, 0.0], [0.75, 0.75, 0.75])
-            Action.update_transform("#transition_cube_b", [0.0, 0.2, -5.0], [0.0, 3.1415927, 3.1415927], [0.75, 0.75, 0.75])
-            Action.update_transform("#transition_cube_c", [2.2, 0.9, -6.1], [0.0, -6.2831855, 0.0], [0.75, 0.75, 0.75])
+            transition_cube_a.update_transform([-2.2, 0.9, -6.1], [0.0, 6.2831855, 0.0], [0.75, 0.75, 0.75])
+            transition_cube_b.update_transform([0.0, 0.2, -5.0], [0.0, 3.1415927, 3.1415927], [0.75, 0.75, 0.75])
+            transition_cube_c.update_transform([2.2, 0.9, -6.1], [0.0, -6.2831855, 0.0], [0.75, 0.75, 0.75])
         }
     }
 }

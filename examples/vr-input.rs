@@ -3,11 +3,11 @@ use cat_engine::engine::ecs::component::{
     BlurPassComponent, Camera3DComponent, CameraXRComponent, ColorComponent, ControllerHand,
     ControllerPoseKind, ControllerXRComponent, DirectionalLightComponent, EditorComponent,
     EmissiveComponent, EmissivePassComponent, GLTFComponent, InputComponent,
-    InputTransformModeComponent, InputXRComponent, PointerComponent,
-    QuatTemporalFilterComponent, RaycastableComponent, RenderGraphComponent, RenderableComponent,
-    RendererSettingsComponent, RendererStatsComponent, TransformComponent, XrComponent,
-    TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
-    TransformMapTranslationComponent,
+    InputTransformModeComponent, InputXRComponent, PointerComponent, QuatTemporalFilterComponent,
+    RaycastableComponent, RenderGraphComponent, RenderableComponent, RendererSettingsComponent,
+    RendererStatsComponent, TransformComponent, TransformForkTRSComponent,
+    TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
+    XrComponent,
 };
 use cat_engine::engine::graphics::BuiltinMeshType;
 use cat_engine::engine::graphics::CameraTarget;

@@ -18,7 +18,9 @@ use crate::meow_meow::ast::{
 use crate::meow_meow::component_registry::{
     component_expr_uses_property_assignment_only, is_universal_component_named_prop,
 };
-use crate::meow_meow::object::{CeChild, FrameKind, MaterializedCE, ObjectWorld, Value};
+use crate::meow_meow::object::{
+    CapturedBlock, CeChild, FrameKind, MaterializedCE, ObjectWorld, Value,
+};
 use crate::meow_meow::parser::{MeowMeowParser, ParseError};
 use crate::meow_meow::token::TokenizeError;
 use crate::meow_meow::tokenizer::MeowMeowTokenizer;
@@ -778,6 +780,7 @@ fn eval_if(if_stmt: &IfStatement, ctx: &mut EvalContext<'_>) -> Result<StmtEffec
 fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value, String> {
     let component_property_assignment_only =
         component_expr_uses_property_assignment_only(&ce.component_type.0);
+    let is_keyframe = matches!(ce.component_type.0.as_str(), "KF" | "Keyframe");
     // Evaluate all constructor calls.
     let mut ctor_method: Option<String> = None;
     let mut ctor_args: Vec<Value> = vec![];
@@ -794,6 +797,24 @@ fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value,
         } else {
             extra_ctor_calls.push((ctor.method.0.clone(), args));
         }
+    }
+
+    if is_keyframe {
+        let mce = MaterializedCE {
+            component_type: ce.component_type.0.clone(),
+            component_property_assignment_only,
+            ctor_method,
+            ctor_args,
+            calls: extra_ctor_calls,
+            named: vec![],
+            positionals: vec![],
+            deferred_block: Some(CapturedBlock {
+                body: ce.body.clone(),
+                captured_env: Arc::new(ctx.object_world.snapshot_visible()),
+            }),
+            children: vec![],
+        };
+        return Ok(Value::ComponentExpr(Box::new(mce)));
     }
 
     // Evaluate the body block with a CE builder context.
@@ -830,6 +851,7 @@ fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value,
         calls: builder.calls,
         named: builder.named,
         positionals: builder.positionals,
+        deferred_block: None,
         children: builder.children,
     };
     Ok(Value::ComponentExpr(Box::new(mce)))
@@ -1617,6 +1639,48 @@ fn eval_method_call(
 
             if matches!(
                 component_type.as_str(),
+                "T" | "Transform" | "TransformComponent" | "transform"
+            ) && method == "update_transform"
+            {
+                let [translation, rotation_euler, scale] = match args.as_slice() {
+                    [translation, rotation, scale] => [
+                        value_as_f32_array::<3>(translation)?,
+                        value_as_f32_array::<3>(rotation)?,
+                        value_as_f32_array::<3>(scale)?,
+                    ],
+                    other => {
+                        return Err(format!(
+                            "update_transform: expected three vec3 array arguments, got {:?}",
+                            other
+                        ));
+                    }
+                };
+                let Some(world) = ctx.host_world else {
+                    return Err("update_transform(): no host world".into());
+                };
+                let world = unsafe { &mut *world };
+                let t = world
+                    .get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(
+                        id,
+                    )
+                    .ok_or_else(|| "update_transform(): not a TransformComponent".to_string())?;
+                t.transform.translation = translation;
+                t.transform.scale = scale;
+                *t = t
+                    .with_position(translation[0], translation[1], translation[2])
+                    .with_rotation_euler(rotation_euler[0], rotation_euler[1], rotation_euler[2])
+                    .with_scale(scale[0], scale[1], scale[2]);
+                ctx.emits.push(IntentValue::UpdateTransform {
+                    component_ids: vec![id],
+                    translation: t.transform.translation,
+                    rotation_quat_xyzw: t.transform.rotation,
+                    scale: t.transform.scale,
+                });
+                return Ok(Value::Null);
+            }
+
+            if matches!(
+                component_type.as_str(),
                 "Camera3D" | "Camera3DComponent" | "camera3d" | "C3D"
             ) && matches!(method, "enabled" | "make_active_camera")
             {
@@ -2032,9 +2096,10 @@ fn eval_binop(
                     .cloned()
                     .ok_or_else(|| format!("field access: '{}' not found", field))
             }
-            (lhs, Value::Identifier(field)) => {
-                Err(format!("field access: cannot read '{field}' from {:?}", lhs))
-            }
+            (lhs, Value::Identifier(field)) => Err(format!(
+                "field access: cannot read '{field}' from {:?}",
+                lhs
+            )),
             (_, rhs) => Err(format!(
                 "field access: RHS of '.' must be an identifier, got {:?}",
                 rhs
@@ -2154,6 +2219,30 @@ fn value_display(val: &Value) -> String {
     }
 }
 
+fn value_as_f32_array<const N: usize>(value: &Value) -> Result<[f32; N], String> {
+    match value {
+        Value::Array(items) => {
+            if items.len() != N {
+                return Err(format!("expected array of {N}, got {}", items.len()));
+            }
+            let mut out = [0.0_f32; N];
+            for (index, item) in items.iter().enumerate() {
+                match item {
+                    Value::Number(n) => out[index] = *n as f32,
+                    other => {
+                        return Err(format!(
+                            "expected numeric array element at {index}, got {:?}",
+                            other
+                        ));
+                    }
+                }
+            }
+            Ok(out)
+        }
+        other => Err(format!("expected array, got {:?}", other)),
+    }
+}
+
 fn is_truthy(val: &Value) -> bool {
     match val {
         Value::Bool(b) => *b,
@@ -2255,6 +2344,38 @@ pub(crate) fn eval_mms_fn(
         }
     }
     Ok(result)
+}
+
+pub(crate) fn eval_mms_captured_block(
+    block: &CapturedBlock,
+    channels: Option<&mut EvalChannels>,
+    world_host: Option<&mut World>,
+    mut emit: Option<&mut dyn SignalEmitter>,
+) -> Result<(), String> {
+    let mut emits: Vec<IntentValue> = Vec::new();
+    let mut world = ObjectWorld::new();
+    world.push_function_frame(block.captured_env.clone());
+    let mut ctx = EvalContext {
+        emits: &mut emits,
+        source_path: None,
+        channels,
+        ce_builder: None,
+        object_world: &mut world,
+        host_world: world_host.map(|world| world as *mut World),
+    };
+    let live_emit = emit.as_mut().map(|em| unsafe {
+        std::mem::transmute::<&mut dyn SignalEmitter, *mut dyn SignalEmitter>(&mut **em)
+    });
+    with_live_signal_emitter(live_emit, || {
+        let _ = eval_block_stmts(&block.body.statements, &mut ctx)?;
+        Ok::<(), String>(())
+    })?;
+    if let Some(em) = emit {
+        for iv in emits {
+            em.push_intent_now(ComponentId::default(), iv);
+        }
+    }
+    Ok(())
 }
 
 /// Evaluate a source file as a module (sandboxed — emits go to `sequence`, not the engine).
@@ -2503,6 +2624,8 @@ export let total = total
         let Value::Module { named, .. } = module else {
             panic!("expected module value");
         };
-        assert!(matches!(named.get("total"), Some(Value::Number(total)) if (*total - 7.0).abs() < 1e-6));
+        assert!(
+            matches!(named.get("total"), Some(Value::Number(total)) if (*total - 7.0).abs() < 1e-6)
+        );
     }
 }

@@ -28,7 +28,7 @@ use cat_engine::engine::ecs::component::{
 use cat_engine::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use cat_engine::engine::user_input::InputState;
 use cat_engine::utils::math::{
-    mat4_identity, mat4_inverse, mat4_mul_vec4, mat_to_quat, quat_conjugate, quat_from_axis_angle,
+    mat_to_quat, mat4_identity, mat4_inverse, mat4_mul_vec4, quat_conjugate, quat_from_axis_angle,
     quat_mul, quat_rotate_vec3, quat_rotation_y, quat_to_axis_angle, vec3_len, vec3_normalize,
     vec3_sub,
 };
@@ -207,9 +207,7 @@ fn main() {
     println!("[debug] avc_id={:?} driven_t={:?}", avc_id, driven_t);
     println!(
         "[debug] options: compare_copy_end_rotation={} compare_hand_offsets={} neutralize_hand_offsets={}",
-        opts.compare_copy_end_rotation,
-        opts.compare_hand_offsets,
-        opts.neutralize_hand_offsets
+        opts.compare_copy_end_rotation, opts.compare_hand_offsets, opts.neutralize_hand_offsets
     );
 
     let head_target_offset_world = head_target_offset_in_target_local(&universe.world, avc_id);

@@ -1,10 +1,12 @@
 use super::Component;
 use crate::engine::ecs::ComponentId;
+use crate::meow_meow::object::CapturedBlock;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct KeyframeComponent {
     /// When this keyframe should fire, in beats.
     pub beat: f64,
+    pub callback: Option<CapturedBlock>,
 
     component: Option<ComponentId>,
 }
@@ -13,6 +15,15 @@ impl KeyframeComponent {
     pub fn new(beat: f64) -> Self {
         Self {
             beat,
+            callback: None,
+            component: None,
+        }
+    }
+
+    pub fn new_with_callback(beat: f64, callback: CapturedBlock) -> Self {
+        Self {
+            beat,
+            callback: Some(callback),
             component: None,
         }
     }
@@ -53,6 +64,10 @@ impl Component for KeyframeComponent {
         _world: &crate::engine::ecs::World,
     ) -> crate::meow_meow::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
-        ce_call("Keyframe", "at", vec![num(self.beat)])
+        let mut ce = ce_call("Keyframe", "at", vec![num(self.beat)]);
+        if let Some(callback) = &self.callback {
+            ce.body = callback.body.clone();
+        }
+        ce
     }
 }

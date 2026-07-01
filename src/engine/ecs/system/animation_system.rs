@@ -11,6 +11,7 @@ use crate::engine::ecs::system::animation_system_evaluator::AnimationEvaluator;
 use crate::engine::ecs::{ComponentId, IntentValue, RxWorld, SignalEmitter, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
+use crate::meow_meow::evaluator::eval_mms_captured_block;
 
 #[derive(Debug, Default)]
 struct AnimationRuntime {
@@ -454,11 +455,22 @@ impl AnimationSystem {
                 let Some(kf) = world.get_component_by_id_as::<KeyframeComponent>(kf_id) else {
                     continue;
                 };
+                let callback = kf.callback.clone();
 
                 let kf_beat = kf.beat;
                 let kf_local_beat = kf_beat - min_beat;
 
                 if kf_local_beat <= local_beat + 1e-9 {
+                    if let Some(callback) = callback {
+                        if let Err(error) =
+                            eval_mms_captured_block(&callback, None, Some(world), Some(rx))
+                        {
+                            eprintln!(
+                                "[AnimationSystem] keyframe callback failed for {kf_id:?}: {error}"
+                            );
+                        }
+                    }
+
                     // println!(
                     //     "[AnimationSystem] beat {:.3}: keyframe active (kf={:?})",
                     //     kf_beat, kf_id
@@ -571,7 +583,13 @@ impl System for AnimationSystem {
 mod tests {
     use super::*;
     use crate::engine::ecs::component::{ComponentRef, TransformComponent};
+    use crate::meow_meow::ast::{
+        BinOpKind, BlockStatement, CallExpression, Expression, Ident, Statement,
+    };
+    use crate::meow_meow::object::{CapturedBlock, Value};
     use slotmap::Key;
+    use std::collections::HashMap;
+    use std::sync::Arc;
 
     #[test]
     fn resolve_action_targets_supports_relative_parent_prefixes() {
@@ -692,5 +710,80 @@ mod tests {
             }
             other => panic!("unexpected signal: {other:?}"),
         }
+    }
+
+    #[test]
+    fn keyframe_callback_dispatches_live_component_intent_when_due() {
+        let mut world = World::default();
+        let animation =
+            world.add_component(AnimationComponent::new().with_state(AnimationState::Playing));
+        let target = world.add_component(TransformComponent::new());
+        let callback = CapturedBlock {
+            body: BlockStatement {
+                statements: vec![Statement::Expression(Expression::Call(CallExpression {
+                    callee: Box::new(Expression::BinaryOp {
+                        op: BinOpKind::Dot,
+                        lhs: Box::new(Expression::Identifier(Ident("cube_t".to_string()))),
+                        rhs: Box::new(Expression::Identifier(Ident(
+                            "update_transform".to_string(),
+                        ))),
+                    }),
+                    args: vec![
+                        Expression::Array(vec![
+                            Expression::Number(1.0),
+                            Expression::Number(2.0),
+                            Expression::Number(3.0),
+                        ]),
+                        Expression::Array(vec![
+                            Expression::Number(0.0),
+                            Expression::Number(0.5),
+                            Expression::Number(0.0),
+                        ]),
+                        Expression::Array(vec![
+                            Expression::Number(2.0),
+                            Expression::Number(2.0),
+                            Expression::Number(2.0),
+                        ]),
+                    ],
+                }))],
+            },
+            captured_env: Arc::new(HashMap::from([(
+                "cube_t".to_string(),
+                Value::ComponentObject {
+                    id: target,
+                    component_type: "Transform".to_string(),
+                },
+            )])),
+        };
+        let keyframe = world.add_component(KeyframeComponent::new_with_callback(0.0, callback));
+        world.add_child(animation, keyframe).unwrap();
+
+        let mut system = AnimationSystem::new();
+        system.register_animation(&mut world, animation);
+        system.register_keyframe(&mut world, keyframe);
+
+        let mut rx = RxWorld::default();
+        system.tick_with_beat(&mut world, 0.0, 60.0, &mut rx);
+
+        let intents = rx.drain_ready_intents();
+        assert!(intents.iter().any(|signal| {
+            matches!(
+                signal.intent.as_ref().map(|intent| &intent.value),
+                Some(IntentValue::UpdateTransform {
+                    component_ids,
+                    translation,
+                    scale,
+                    ..
+                }) if component_ids == &vec![target]
+                    && *translation == [1.0, 2.0, 3.0]
+                    && *scale == [2.0, 2.0, 2.0]
+            )
+        }));
+
+        let transform = world
+            .get_component_by_id_as::<TransformComponent>(target)
+            .expect("target transform exists");
+        assert_eq!(transform.transform.translation, [1.0, 2.0, 3.0]);
+        assert_eq!(transform.transform.scale, [2.0, 2.0, 2.0]);
     }
 }

@@ -203,6 +203,7 @@ pub fn decorate_panel_root_ce(
             calls: Vec::new(),
             named: Vec::new(),
             positionals: Vec::new(),
+            deferred_block: None,
             children: Vec::new(),
         }),
     );
@@ -216,6 +217,7 @@ pub fn decorate_panel_root_ce(
             calls: Vec::new(),
             named: Vec::new(),
             positionals: Vec::new(),
+            deferred_block: None,
             children: Vec::new(),
         }),
     );
@@ -264,6 +266,7 @@ pub fn build_panel_layout_mount_ce(spec: PanelLayoutMountSpec) -> MaterializedCE
         ],
         named: vec![("name".to_string(), Value::String(spec.layout_name))],
         positionals: Vec::new(),
+        deferred_block: None,
         children: spec.children.into_iter().map(CeChild::Spawn).collect(),
     };
 
@@ -279,6 +282,7 @@ pub fn build_panel_layout_mount_ce(spec: PanelLayoutMountSpec) -> MaterializedCE
         calls: Vec::new(),
         named: vec![("name".to_string(), Value::String(spec.mount_name))],
         positionals: Vec::new(),
+        deferred_block: None,
         children: vec![CeChild::Spawn(shared_layout_root)],
     }
 }
@@ -467,6 +471,7 @@ pub fn build_placeholder_panel_component_expr(title_name: &str, title: &str) -> 
         calls: Vec::new(),
         named: vec![("name".to_string(), Value::String(title_name.to_string()))],
         positionals: Vec::new(),
+        deferred_block: None,
         children: vec![CeChild::Spawn(MaterializedCE {
             component_type: "T".to_string(),
             component_property_assignment_only: false,
@@ -478,6 +483,7 @@ pub fn build_placeholder_panel_component_expr(title_name: &str, title: &str) -> 
                 Value::String(format!("{title_name}_title")),
             )],
             positionals: Vec::new(),
+            deferred_block: None,
             children: vec![CeChild::Spawn(MaterializedCE {
                 component_type: "Text".to_string(),
                 component_property_assignment_only: false,
@@ -489,6 +495,7 @@ pub fn build_placeholder_panel_component_expr(title_name: &str, title: &str) -> 
                     Value::String(format!("{title_name}_label")),
                 )],
                 positionals: vec![Value::String(title.to_string())],
+                deferred_block: None,
                 children: Vec::new(),
             })],
         })],
@@ -766,7 +773,10 @@ mod tests {
         assert_eq!(layout_root.component_type, "LayoutRoot");
         assert_eq!(
             layout_root.named,
-            vec![("name".to_string(), Value::String("panel_layout".to_string()))]
+            vec![(
+                "name".to_string(),
+                Value::String("panel_layout".to_string())
+            )]
         );
     }
 }

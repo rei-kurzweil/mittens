@@ -135,10 +135,7 @@ fn log_active_interaction_profile(
     }
 }
 
-fn profile_string_or_none(
-    instance: &openxr::Instance,
-    profile: Option<openxr::Path>,
-) -> String {
+fn profile_string_or_none(instance: &openxr::Instance, profile: Option<openxr::Path>) -> String {
     match profile {
         Some(profile) if profile == openxr::Path::NULL => "none".to_string(),
         Some(profile) => instance
@@ -153,7 +150,9 @@ fn scalar_stick_value(
     y: Option<openxr::ActionState<f32>>,
 ) -> Option<[f32; 2]> {
     match (x, y) {
-        (Some(x), Some(y)) if x.is_active || y.is_active => Some([x.current_state, y.current_state]),
+        (Some(x), Some(y)) if x.is_active || y.is_active => {
+            Some([x.current_state, y.current_state])
+        }
         _ => None,
     }
 }
@@ -163,7 +162,10 @@ fn scalar_stick_state(
     y: Option<openxr::ActionState<f32>>,
 ) -> Option<(bool, [f32; 2])> {
     match (x, y) {
-        (Some(x), Some(y)) => Some((x.is_active || y.is_active, [x.current_state, y.current_state])),
+        (Some(x), Some(y)) => Some((
+            x.is_active || y.is_active,
+            [x.current_state, y.current_state],
+        )),
         _ => None,
     }
 }
@@ -193,8 +195,15 @@ fn derive_trigger_like_pressed(
     threshold: f32,
 ) -> Option<(bool, f32)> {
     primary_click
-        .map(|state| (state.current_state, if state.current_state { 1.0 } else { 0.0 }))
-        .or_else(|| analog_value.map(|state| (state.current_state >= threshold, state.current_state)))
+        .map(|state| {
+            (
+                state.current_state,
+                if state.current_state { 1.0 } else { 0.0 },
+            )
+        })
+        .or_else(|| {
+            analog_value.map(|state| (state.current_state >= threshold, state.current_state))
+        })
 }
 
 fn derive_select_down(
@@ -205,9 +214,7 @@ fn derive_select_down(
     select
         .map(|state| state.current_state)
         .or_else(|| trigger_click.map(|state| state.current_state))
-        .or_else(|| {
-            trigger_value.map(|state| state.current_state >= XR_TRIGGER_PRESS_THRESHOLD)
-        })
+        .or_else(|| trigger_value.map(|state| state.current_state >= XR_TRIGGER_PRESS_THRESHOLD))
         .unwrap_or(false)
 }
 
@@ -285,14 +292,42 @@ fn append_action_bindings<'a>(
             continue;
         };
         match spec.label {
-            "left_stick_x" => suggested.push((spec.label, path_str, openxr::Binding::new(left_stick_x, path))),
-            "left_stick_y" => suggested.push((spec.label, path_str, openxr::Binding::new(left_stick_y, path))),
-            "right_stick_x" => suggested.push((spec.label, path_str, openxr::Binding::new(right_stick_x, path))),
-            "right_stick_y" => suggested.push((spec.label, path_str, openxr::Binding::new(right_stick_y, path))),
-            "trigger_value" => suggested.push((spec.label, path_str, openxr::Binding::new(trigger_value, path))),
-            "trigger_click" => suggested.push((spec.label, path_str, openxr::Binding::new(trigger_click, path))),
-            "grip_value" => suggested.push((spec.label, path_str, openxr::Binding::new(grip_value, path))),
-            "grip_click" => suggested.push((spec.label, path_str, openxr::Binding::new(grip_click, path))),
+            "left_stick_x" => suggested.push((
+                spec.label,
+                path_str,
+                openxr::Binding::new(left_stick_x, path),
+            )),
+            "left_stick_y" => suggested.push((
+                spec.label,
+                path_str,
+                openxr::Binding::new(left_stick_y, path),
+            )),
+            "right_stick_x" => suggested.push((
+                spec.label,
+                path_str,
+                openxr::Binding::new(right_stick_x, path),
+            )),
+            "right_stick_y" => suggested.push((
+                spec.label,
+                path_str,
+                openxr::Binding::new(right_stick_y, path),
+            )),
+            "trigger_value" => suggested.push((
+                spec.label,
+                path_str,
+                openxr::Binding::new(trigger_value, path),
+            )),
+            "trigger_click" => suggested.push((
+                spec.label,
+                path_str,
+                openxr::Binding::new(trigger_click, path),
+            )),
+            "grip_value" => {
+                suggested.push((spec.label, path_str, openxr::Binding::new(grip_value, path)))
+            }
+            "grip_click" => {
+                suggested.push((spec.label, path_str, openxr::Binding::new(grip_click, path)))
+            }
             "a" => suggested.push((spec.label, path_str, openxr::Binding::new(button_a, path))),
             "b" => suggested.push((spec.label, path_str, openxr::Binding::new(button_b, path))),
             "x" => suggested.push((spec.label, path_str, openxr::Binding::new(button_x, path))),
@@ -642,74 +677,254 @@ const SIMPLE_CONTROLLER_LEFT_SPECS: &[BindingSpec] = &[];
 const SIMPLE_CONTROLLER_RIGHT_SPECS: &[BindingSpec] = &[];
 
 const OCULUS_TOUCH_LEFT_SPECS: &[BindingSpec] = &[
-    BindingSpec { label: "left_stick_x", paths: &["/user/hand/left/input/thumbstick/x"] },
-    BindingSpec { label: "left_stick_y", paths: &["/user/hand/left/input/thumbstick/y"] },
-    BindingSpec { label: "trigger_value", paths: &["/user/hand/left/input/trigger/value"] },
-    BindingSpec { label: "grip_value", paths: &["/user/hand/left/input/squeeze/value"] },
-    BindingSpec { label: "x", paths: &["/user/hand/left/input/x/click"] },
-    BindingSpec { label: "y", paths: &["/user/hand/left/input/y/click"] },
+    BindingSpec {
+        label: "left_stick_x",
+        paths: &["/user/hand/left/input/thumbstick/x"],
+    },
+    BindingSpec {
+        label: "left_stick_y",
+        paths: &["/user/hand/left/input/thumbstick/y"],
+    },
+    BindingSpec {
+        label: "trigger_value",
+        paths: &["/user/hand/left/input/trigger/value"],
+    },
+    BindingSpec {
+        label: "grip_value",
+        paths: &["/user/hand/left/input/squeeze/value"],
+    },
+    BindingSpec {
+        label: "x",
+        paths: &["/user/hand/left/input/x/click"],
+    },
+    BindingSpec {
+        label: "y",
+        paths: &["/user/hand/left/input/y/click"],
+    },
 ];
 const OCULUS_TOUCH_RIGHT_SPECS: &[BindingSpec] = &[
-    BindingSpec { label: "right_stick_x", paths: &["/user/hand/right/input/thumbstick/x"] },
-    BindingSpec { label: "right_stick_y", paths: &["/user/hand/right/input/thumbstick/y"] },
-    BindingSpec { label: "trigger_value", paths: &["/user/hand/right/input/trigger/value"] },
-    BindingSpec { label: "grip_value", paths: &["/user/hand/right/input/squeeze/value"] },
-    BindingSpec { label: "a", paths: &["/user/hand/right/input/a/click"] },
-    BindingSpec { label: "b", paths: &["/user/hand/right/input/b/click"] },
+    BindingSpec {
+        label: "right_stick_x",
+        paths: &["/user/hand/right/input/thumbstick/x"],
+    },
+    BindingSpec {
+        label: "right_stick_y",
+        paths: &["/user/hand/right/input/thumbstick/y"],
+    },
+    BindingSpec {
+        label: "trigger_value",
+        paths: &["/user/hand/right/input/trigger/value"],
+    },
+    BindingSpec {
+        label: "grip_value",
+        paths: &["/user/hand/right/input/squeeze/value"],
+    },
+    BindingSpec {
+        label: "a",
+        paths: &["/user/hand/right/input/a/click"],
+    },
+    BindingSpec {
+        label: "b",
+        paths: &["/user/hand/right/input/b/click"],
+    },
 ];
 
 const VALVE_INDEX_LEFT_SPECS: &[BindingSpec] = &[
-    BindingSpec { label: "left_stick_x", paths: &["/user/hand/left/input/thumbstick/x", "/user/hand/left/input/joystick/x"] },
-    BindingSpec { label: "left_stick_y", paths: &["/user/hand/left/input/thumbstick/y", "/user/hand/left/input/joystick/y"] },
-    BindingSpec { label: "trigger_value", paths: &["/user/hand/left/input/trigger/value"] },
-    BindingSpec { label: "grip_value", paths: &["/user/hand/left/input/squeeze/value", "/user/hand/left/input/grip/value"] },
+    BindingSpec {
+        label: "left_stick_x",
+        paths: &[
+            "/user/hand/left/input/thumbstick/x",
+            "/user/hand/left/input/joystick/x",
+        ],
+    },
+    BindingSpec {
+        label: "left_stick_y",
+        paths: &[
+            "/user/hand/left/input/thumbstick/y",
+            "/user/hand/left/input/joystick/y",
+        ],
+    },
+    BindingSpec {
+        label: "trigger_value",
+        paths: &["/user/hand/left/input/trigger/value"],
+    },
+    BindingSpec {
+        label: "grip_value",
+        paths: &[
+            "/user/hand/left/input/squeeze/value",
+            "/user/hand/left/input/grip/value",
+        ],
+    },
 ];
 const VALVE_INDEX_RIGHT_SPECS: &[BindingSpec] = &[
-    BindingSpec { label: "right_stick_x", paths: &["/user/hand/right/input/thumbstick/x", "/user/hand/right/input/joystick/x"] },
-    BindingSpec { label: "right_stick_y", paths: &["/user/hand/right/input/thumbstick/y", "/user/hand/right/input/joystick/y"] },
-    BindingSpec { label: "trigger_value", paths: &["/user/hand/right/input/trigger/value"] },
-    BindingSpec { label: "grip_value", paths: &["/user/hand/right/input/squeeze/value", "/user/hand/right/input/grip/value"] },
-    BindingSpec { label: "a", paths: &["/user/hand/right/input/a/click"] },
-    BindingSpec { label: "b", paths: &["/user/hand/right/input/b/click"] },
+    BindingSpec {
+        label: "right_stick_x",
+        paths: &[
+            "/user/hand/right/input/thumbstick/x",
+            "/user/hand/right/input/joystick/x",
+        ],
+    },
+    BindingSpec {
+        label: "right_stick_y",
+        paths: &[
+            "/user/hand/right/input/thumbstick/y",
+            "/user/hand/right/input/joystick/y",
+        ],
+    },
+    BindingSpec {
+        label: "trigger_value",
+        paths: &["/user/hand/right/input/trigger/value"],
+    },
+    BindingSpec {
+        label: "grip_value",
+        paths: &[
+            "/user/hand/right/input/squeeze/value",
+            "/user/hand/right/input/grip/value",
+        ],
+    },
+    BindingSpec {
+        label: "a",
+        paths: &["/user/hand/right/input/a/click"],
+    },
+    BindingSpec {
+        label: "b",
+        paths: &["/user/hand/right/input/b/click"],
+    },
 ];
 
 const MICROSOFT_MOTION_LEFT_SPECS: &[BindingSpec] = &[
-    BindingSpec { label: "left_stick_x", paths: &["/user/hand/left/input/thumbstick/x", "/user/hand/left/input/joystick/x"] },
-    BindingSpec { label: "left_stick_y", paths: &["/user/hand/left/input/thumbstick/y", "/user/hand/left/input/joystick/y"] },
-    BindingSpec { label: "trigger_value", paths: &["/user/hand/left/input/trigger/value"] },
-    BindingSpec { label: "grip_click", paths: &["/user/hand/left/input/squeeze/click", "/user/hand/left/input/grip/click"] },
+    BindingSpec {
+        label: "left_stick_x",
+        paths: &[
+            "/user/hand/left/input/thumbstick/x",
+            "/user/hand/left/input/joystick/x",
+        ],
+    },
+    BindingSpec {
+        label: "left_stick_y",
+        paths: &[
+            "/user/hand/left/input/thumbstick/y",
+            "/user/hand/left/input/joystick/y",
+        ],
+    },
+    BindingSpec {
+        label: "trigger_value",
+        paths: &["/user/hand/left/input/trigger/value"],
+    },
+    BindingSpec {
+        label: "grip_click",
+        paths: &[
+            "/user/hand/left/input/squeeze/click",
+            "/user/hand/left/input/grip/click",
+        ],
+    },
 ];
 const MICROSOFT_MOTION_RIGHT_SPECS: &[BindingSpec] = &[
-    BindingSpec { label: "right_stick_x", paths: &["/user/hand/right/input/thumbstick/x", "/user/hand/right/input/joystick/x"] },
-    BindingSpec { label: "right_stick_y", paths: &["/user/hand/right/input/thumbstick/y", "/user/hand/right/input/joystick/y"] },
-    BindingSpec { label: "trigger_value", paths: &["/user/hand/right/input/trigger/value"] },
-    BindingSpec { label: "grip_click", paths: &["/user/hand/right/input/squeeze/click", "/user/hand/right/input/grip/click"] },
+    BindingSpec {
+        label: "right_stick_x",
+        paths: &[
+            "/user/hand/right/input/thumbstick/x",
+            "/user/hand/right/input/joystick/x",
+        ],
+    },
+    BindingSpec {
+        label: "right_stick_y",
+        paths: &[
+            "/user/hand/right/input/thumbstick/y",
+            "/user/hand/right/input/joystick/y",
+        ],
+    },
+    BindingSpec {
+        label: "trigger_value",
+        paths: &["/user/hand/right/input/trigger/value"],
+    },
+    BindingSpec {
+        label: "grip_click",
+        paths: &[
+            "/user/hand/right/input/squeeze/click",
+            "/user/hand/right/input/grip/click",
+        ],
+    },
 ];
 
 const HTC_VIVE_LEFT_SPECS: &[BindingSpec] = &[
-    BindingSpec { label: "trigger_click", paths: &["/user/hand/left/input/trigger/click"] },
-    BindingSpec { label: "grip_click", paths: &["/user/hand/left/input/squeeze/click", "/user/hand/left/input/grip/click"] },
+    BindingSpec {
+        label: "trigger_click",
+        paths: &["/user/hand/left/input/trigger/click"],
+    },
+    BindingSpec {
+        label: "grip_click",
+        paths: &[
+            "/user/hand/left/input/squeeze/click",
+            "/user/hand/left/input/grip/click",
+        ],
+    },
 ];
 const HTC_VIVE_RIGHT_SPECS: &[BindingSpec] = &[
-    BindingSpec { label: "trigger_click", paths: &["/user/hand/right/input/trigger/click"] },
-    BindingSpec { label: "grip_click", paths: &["/user/hand/right/input/squeeze/click", "/user/hand/right/input/grip/click"] },
+    BindingSpec {
+        label: "trigger_click",
+        paths: &["/user/hand/right/input/trigger/click"],
+    },
+    BindingSpec {
+        label: "grip_click",
+        paths: &[
+            "/user/hand/right/input/squeeze/click",
+            "/user/hand/right/input/grip/click",
+        ],
+    },
 ];
 
 const HTC_VIVE_FOCUS3_LEFT_SPECS: &[BindingSpec] = &[
-    BindingSpec { label: "left_stick_x", paths: &["/user/hand/left/input/thumbstick/x"] },
-    BindingSpec { label: "left_stick_y", paths: &["/user/hand/left/input/thumbstick/y"] },
-    BindingSpec { label: "trigger_value", paths: &["/user/hand/left/input/trigger/value"] },
-    BindingSpec { label: "grip_value", paths: &["/user/hand/left/input/squeeze/value"] },
-    BindingSpec { label: "x", paths: &["/user/hand/left/input/x/click"] },
-    BindingSpec { label: "y", paths: &["/user/hand/left/input/y/click"] },
+    BindingSpec {
+        label: "left_stick_x",
+        paths: &["/user/hand/left/input/thumbstick/x"],
+    },
+    BindingSpec {
+        label: "left_stick_y",
+        paths: &["/user/hand/left/input/thumbstick/y"],
+    },
+    BindingSpec {
+        label: "trigger_value",
+        paths: &["/user/hand/left/input/trigger/value"],
+    },
+    BindingSpec {
+        label: "grip_value",
+        paths: &["/user/hand/left/input/squeeze/value"],
+    },
+    BindingSpec {
+        label: "x",
+        paths: &["/user/hand/left/input/x/click"],
+    },
+    BindingSpec {
+        label: "y",
+        paths: &["/user/hand/left/input/y/click"],
+    },
 ];
 const HTC_VIVE_FOCUS3_RIGHT_SPECS: &[BindingSpec] = &[
-    BindingSpec { label: "right_stick_x", paths: &["/user/hand/right/input/thumbstick/x"] },
-    BindingSpec { label: "right_stick_y", paths: &["/user/hand/right/input/thumbstick/y"] },
-    BindingSpec { label: "trigger_value", paths: &["/user/hand/right/input/trigger/value"] },
-    BindingSpec { label: "grip_value", paths: &["/user/hand/right/input/squeeze/value"] },
-    BindingSpec { label: "a", paths: &["/user/hand/right/input/a/click"] },
-    BindingSpec { label: "b", paths: &["/user/hand/right/input/b/click"] },
+    BindingSpec {
+        label: "right_stick_x",
+        paths: &["/user/hand/right/input/thumbstick/x"],
+    },
+    BindingSpec {
+        label: "right_stick_y",
+        paths: &["/user/hand/right/input/thumbstick/y"],
+    },
+    BindingSpec {
+        label: "trigger_value",
+        paths: &["/user/hand/right/input/trigger/value"],
+    },
+    BindingSpec {
+        label: "grip_value",
+        paths: &["/user/hand/right/input/squeeze/value"],
+    },
+    BindingSpec {
+        label: "a",
+        paths: &["/user/hand/right/input/a/click"],
+    },
+    BindingSpec {
+        label: "b",
+        paths: &["/user/hand/right/input/b/click"],
+    },
 ];
 
 const EXT_HAND_INTERACTION_LEFT_SPECS: &[BindingSpec] = &[];
@@ -1363,8 +1578,7 @@ impl OpenXRSystem {
 
         let controller_ids: Vec<ComponentId> = self.controller_components.iter().copied().collect();
         for controller_cid in controller_ids {
-            let Some(cfg) = world.get_component_by_id_as::<XRHandComponent>(controller_cid)
-            else {
+            let Some(cfg) = world.get_component_by_id_as::<XRHandComponent>(controller_cid) else {
                 self.controller_components.remove(&controller_cid);
                 continue;
             };
@@ -1516,7 +1730,8 @@ impl OpenXRSystem {
     fn wrist_palm_delta_deg(joints: &openxr::HandJointLocations) -> Option<u16> {
         let wrist = Self::valid_pose_from_hand_joint(&joints[openxr::HandJointEXT::WRIST])?;
         let palm = Self::valid_pose_from_hand_joint(&joints[openxr::HandJointEXT::PALM])?;
-        let deg = Self::quat_angle_degrees(Self::quat_from_posef(wrist), Self::quat_from_posef(palm));
+        let deg =
+            Self::quat_angle_degrees(Self::quat_from_posef(wrist), Self::quat_from_posef(palm));
         Some(deg.round().clamp(0.0, u16::MAX as f32) as u16)
     }
 
@@ -1991,10 +2206,26 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
             };
             let mut accepted_bindings = Vec::new();
             for (binding_label, binding_path, binding) in [
-                ("aim_pose_left", "/user/hand/left/input/aim/pose", pose_bindings[0]),
-                ("aim_pose_right", "/user/hand/right/input/aim/pose", pose_bindings[1]),
-                ("grip_pose_left", "/user/hand/left/input/grip/pose", pose_bindings[2]),
-                ("grip_pose_right", "/user/hand/right/input/grip/pose", pose_bindings[3]),
+                (
+                    "aim_pose_left",
+                    "/user/hand/left/input/aim/pose",
+                    pose_bindings[0],
+                ),
+                (
+                    "aim_pose_right",
+                    "/user/hand/right/input/aim/pose",
+                    pose_bindings[1],
+                ),
+                (
+                    "grip_pose_left",
+                    "/user/hand/left/input/grip/pose",
+                    pose_bindings[2],
+                ),
+                (
+                    "grip_pose_right",
+                    "/user/hand/right/input/grip/pose",
+                    pose_bindings[3],
+                ),
             ] {
                 let outcome = suggest_binding_best_effort(
                     instance,
@@ -2014,8 +2245,7 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
                 });
             }
             if let (Some(l), Some(r)) = (spec.select_left, spec.select_right) {
-                if let (Ok(lp), Ok(rp)) = (instance.string_to_path(l), instance.string_to_path(r))
-                {
+                if let (Ok(lp), Ok(rp)) = (instance.string_to_path(l), instance.string_to_path(r)) {
                     let outcome = suggest_binding_best_effort(
                         instance,
                         profile,
@@ -2585,11 +2815,9 @@ impl OpenXRSystem {
             let right_stick_x = ci.right_stick_x.state(&sess.session, ci.right).ok();
             let right_stick_y = ci.right_stick_y.state(&sess.session, ci.right).ok();
             let left_trigger_value = action_state_f32(&ci.trigger_value, &sess.session, ci.left);
-            let right_trigger_value =
-                action_state_f32(&ci.trigger_value, &sess.session, ci.right);
+            let right_trigger_value = action_state_f32(&ci.trigger_value, &sess.session, ci.right);
             let left_trigger_click = action_state_bool(&ci.trigger_click, &sess.session, ci.left);
-            let right_trigger_click =
-                action_state_bool(&ci.trigger_click, &sess.session, ci.right);
+            let right_trigger_click = action_state_bool(&ci.trigger_click, &sess.session, ci.right);
             let left_grip_value = action_state_f32(&ci.grip_value, &sess.session, ci.left);
             let right_grip_value = action_state_f32(&ci.grip_value, &sess.session, ci.right);
             let left_grip_click = action_state_bool(&ci.grip_click, &sess.session, ci.left);
@@ -2661,10 +2889,8 @@ impl OpenXRSystem {
                 }
             }
             if !ci.did_log_bound_sources
-                && (
-                    matches!(left_profile, Some(profile) if profile != openxr::Path::NULL)
-                        || matches!(right_profile, Some(profile) if profile != openxr::Path::NULL)
-                )
+                && (matches!(left_profile, Some(profile) if profile != openxr::Path::NULL)
+                    || matches!(right_profile, Some(profile) if profile != openxr::Path::NULL))
             {
                 log_controller_input_bound_sources(&sess.session, ci);
                 ci.did_log_bound_sources = true;
@@ -2704,10 +2930,7 @@ impl OpenXRSystem {
                 );
                 eprintln!(
                     "[OpenXR][debug] face_buttons X={:?} Y={:?} A={:?} B={:?}",
-                    snapshot.left_x,
-                    snapshot.left_y,
-                    snapshot.right_a,
-                    snapshot.right_b,
+                    snapshot.left_x, snapshot.left_y, snapshot.right_a, snapshot.right_b,
                 );
             }
             ci.last_debug_snapshot = Some(snapshot);

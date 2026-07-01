@@ -903,8 +903,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -1011,8 +1016,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -1033,8 +1043,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -1122,8 +1137,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -1141,8 +1161,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -1225,8 +1250,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         systems.layout.tick(&mut world, &mut emit);
         systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
@@ -1251,8 +1281,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         systems.layout.tick(&mut world, &mut emit);
         systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
@@ -1344,8 +1379,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(panel_layout_selection)
@@ -1429,8 +1469,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         let selection_root = world
             .find_component(world_panel_root, "#world_panel_selection")
@@ -1473,8 +1518,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         let selection_root = world
             .find_component(world_panel_root, "#world_panel_selection")
@@ -1561,8 +1611,13 @@ mod tests {
                 screen_pos_px: None,
             },
         );
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -1630,8 +1685,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let inspector_panel_root = world
@@ -1676,8 +1736,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let selection = world
@@ -1733,8 +1798,13 @@ mod tests {
                 screen_pos_px: None,
             },
         );
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         assert_eq!(
             world
@@ -1771,8 +1841,13 @@ mod tests {
                 screen_pos_px: None,
             },
         );
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         assert_eq!(
             world
@@ -1821,8 +1896,13 @@ mod tests {
                 screen_pos_px: None,
             },
         );
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         let highlight = world
             .find_component(item, "[name='selection_highlight']")
@@ -1875,8 +1955,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -1924,8 +2009,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -2064,8 +2154,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         let selection = world
             .get_component_by_id_as::<SelectionComponent>(selection_root)
@@ -2136,8 +2231,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         let seen = seen.lock().expect("selection events mutex poisoned");
         assert!(

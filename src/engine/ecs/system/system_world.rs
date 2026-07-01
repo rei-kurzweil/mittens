@@ -1662,8 +1662,7 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.xr
-            .register_controller_xr(world, visuals, component);
+        self.xr.register_controller_xr(world, visuals, component);
     }
 
     pub fn register_input_xr_gamepad(
@@ -2182,9 +2181,9 @@ impl SystemWorld {
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
 
-        let activations =
-            self.pointer
-                .build_activations(world, input, self.xr.xr_input_state());
+        let activations = self
+            .pointer
+            .build_activations(world, input, self.xr.xr_input_state());
 
         self.raycast.tick_with_queue(
             world,

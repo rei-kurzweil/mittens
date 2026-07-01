@@ -4,9 +4,7 @@ use crate::engine::ecs::component::EditorInteractionMode;
 use crate::engine::ecs::component::{DataComponent, GLTFComponent, SelectionEntry};
 use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor::world_panel::effective_editor_roots;
-use crate::engine::ecs::system::panel_system::{
-    data_text, is_descendant_or_self,
-};
+use crate::engine::ecs::system::panel_system::{data_text, is_descendant_or_self};
 use crate::engine::ecs::system::selection_system::apply_selection_set;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 
@@ -134,9 +132,7 @@ pub(crate) fn sync_editor_settings_armature_toggle(
     panel_query_root: ComponentId,
     editor_context: &EditorContextState,
 ) {
-    use crate::engine::ecs::component::{
-        Display, SizeDimension, StyleComponent, TextComponent,
-    };
+    use crate::engine::ecs::component::{Display, SizeDimension, StyleComponent, TextComponent};
 
     let Some(settings_panel_root) =
         world.find_component(panel_query_root, EDITOR_SETTINGS_PANEL_ROOT_SELECTOR)
@@ -196,7 +192,9 @@ pub(crate) fn sync_editor_settings_armature_toggle(
     );
     let text_root = world.add_component_boxed_named(
         "armature_toggle_text_root",
-        Box::new(crate::engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.005)),
+        Box::new(
+            crate::engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.005),
+        ),
     );
     let text_component = world.add_component_boxed_named(
         "armature_toggle_text",

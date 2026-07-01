@@ -60,7 +60,8 @@ impl RenderableComponent {
 
     /// Predefined renderable: 2D triangle (shared built-in mesh handle).
     pub fn triangle() -> Self {
-        let mut s = Self::from_cpu_mesh_handle(CpuMeshHandle::TRIANGLE_2D, MaterialHandle::TOON_MESH);
+        let mut s =
+            Self::from_cpu_mesh_handle(CpuMeshHandle::TRIANGLE_2D, MaterialHandle::TOON_MESH);
         s.authored_shape = Some(AuthoredRenderableShape::Builtin("triangle"));
         s
     }
@@ -286,11 +287,9 @@ impl Component for RenderableComponent {
                     num(*inner_bevel_segments as f64),
                 ],
             ),
-            Some(AuthoredRenderableShape::Heart { segments }) => ce_call(
-                "Renderable",
-                "heart",
-                vec![num(*segments as f64)],
-            ),
+            Some(AuthoredRenderableShape::Heart { segments }) => {
+                ce_call("Renderable", "heart", vec![num(*segments as f64)])
+            }
             None => ce("Renderable"),
         }
     }

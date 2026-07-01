@@ -1950,14 +1950,29 @@ mod tests {
             .expect("paint panel");
 
         push_asset_and_panel_focus(&world, &mut systems, paint_panel_root);
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.rx.begin_frame();
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.rx.begin_frame();
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.rx.push_event(
             paint_panel_root,
             EventSignal::Click {
@@ -1967,11 +1982,21 @@ mod tests {
                 screen_pos_px: None,
             },
         );
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.rx.begin_frame();
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         (
             world,
@@ -2010,8 +2035,13 @@ mod tests {
         systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         push_drag_place(&mut systems, renderable);
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
@@ -2066,8 +2096,13 @@ mod tests {
         ) = init_editor_fixture();
 
         push_drag_place(&mut systems, renderable);
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
@@ -2091,8 +2126,13 @@ mod tests {
         ) = init_editor_fixture();
 
         push_drag_place(&mut systems, renderable);
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         let painted_root = world
@@ -2165,8 +2205,13 @@ mod tests {
                 hit_point: Some([0.2, 0.0, 0.5]),
             },
         );
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
@@ -2248,8 +2293,13 @@ mod tests {
                 hit_point: Some([0.6, 0.1, 0.5]),
             },
         );
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
@@ -2311,24 +2361,54 @@ mod tests {
             .expect("paint panel");
 
         push_asset_and_panel_focus(&world, &mut systems, paint_panel_root);
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.rx.begin_frame();
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.rx.begin_frame();
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         push_click(&mut systems, paint_panel_root);
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.rx.begin_frame();
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         push_drag_place(&mut systems, renderable_b);
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
@@ -2362,8 +2442,13 @@ mod tests {
         }
 
         push_drag_place(&mut systems, renderable);
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
@@ -2379,8 +2464,13 @@ mod tests {
         }
 
         push_drag_place(&mut systems, renderable);
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
@@ -2411,8 +2501,13 @@ mod tests {
 
         // Click hit point is [0.0, 0.0, 0.5] in push_click
         push_drag_place(&mut systems, renderable);
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
@@ -2461,8 +2556,13 @@ mod tests {
 
         // 1. First, place an asset using Free Draw
         push_drag_place(&mut systems, renderable);
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(
@@ -2486,8 +2586,13 @@ mod tests {
 
         // 3. Click directly on the painted renderable to erase it
         push_click(&mut systems, painted_renderable);
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
         systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
 
         assert_eq!(

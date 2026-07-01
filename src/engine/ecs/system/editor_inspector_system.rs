@@ -443,8 +443,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         let panel_status_value = world
             .find_component(runtime_ui_root, "#panel_status_value")
@@ -750,8 +755,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         let panel_status_value = world
             .find_component(runtime_ui_root, "#panel_status_value")
@@ -1244,8 +1254,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         assert_eq!(
             row_text(&world, runtime_ui_root, "#inspector_item_0"),
@@ -1400,8 +1415,13 @@ mod tests {
             },
         );
 
-        let _ =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 100_000);
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            100_000,
+        );
 
         assert_eq!(
             row_text(&world, runtime_ui_root, "#inspector_item_0"),
@@ -1570,8 +1590,13 @@ mod tests {
             "expected a helper visual subtree under the spawned grid"
         );
 
-        let processed =
-            systems.process_signals(&mut world, &mut visuals, &mut render_assets, &mut emit, 10_000);
+        let processed = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            10_000,
+        );
         assert!(
             processed < 10_000,
             "expected add-grid path to quiesce before signal budget exhaustion"

@@ -72,43 +72,47 @@ T.position(0.0, -0.55, -2.4).scale(5.5, 0.12, 2.4) {
     }
 }
 
-T.position(-1.6, 1.2, -2.3).rotation(0.0, 0.0, 0.7) {
+let light_a_arm = T.position(-1.6, 1.2, -2.3).rotation(0.0, 0.0, 0.7) {
     name = "light_a_arm"
-    Animation.looping().length(2.0) {
-        Keyframe.at(0.0) {
-            Action.update_transform("#light_a_arm", [-1.6, 1.2, -2.3], [0.0, 0.0, 0.7], [1.0, 1.0, 1.0])
-        }
-        Keyframe.at(1.0) {
-            Action.update_transform("#light_a_arm", [-1.6, 1.2, -2.3], [0.0, 0.0, -0.7], [1.0, 1.0, 1.0])
-        }
-        Keyframe.at(2.0) {
-            Action.update_transform("#light_a_arm", [-1.6, 1.2, -2.3], [0.0, 0.0, 0.7], [1.0, 1.0, 1.0])
-        }
-    }
     T.position(0.0, -0.32, 0.0).scale(0.06, 0.6, 0.06) {
         R.cube() {
             C.rgba(0.35, 0.30, 0.30, 1.0)
         }
     }
 }
+light_a_arm
 
-T.position(1.6, 1.2, -2.3).rotation(0.0, 0.0, -0.7) {
-    name = "light_b_arm"
-    Animation.looping().length(2.0) {
-        Keyframe.at(0.0) {
-            Action.update_transform("#light_b_arm", [1.6, 1.2, -2.3], [0.0, 0.0, -0.7], [1.0, 1.0, 1.0])
-        }
-        Keyframe.at(1.0) {
-            Action.update_transform("#light_b_arm", [1.6, 1.2, -2.3], [0.0, 0.0, 0.7], [1.0, 1.0, 1.0])
-        }
-        Keyframe.at(2.0) {
-            Action.update_transform("#light_b_arm", [1.6, 1.2, -2.3], [0.0, 0.0, -0.7], [1.0, 1.0, 1.0])
-        }
+Animation.looping().length(2.0) {
+    Keyframe.at(0.0) {
+        light_a_arm.update_transform([-1.6, 1.2, -2.3], [0.0, 0.0, 0.7], [1.0, 1.0, 1.0])
     }
+    Keyframe.at(1.0) {
+        light_a_arm.update_transform([-1.6, 1.2, -2.3], [0.0, 0.0, -0.7], [1.0, 1.0, 1.0])
+    }
+    Keyframe.at(2.0) {
+        light_a_arm.update_transform([-1.6, 1.2, -2.3], [0.0, 0.0, 0.7], [1.0, 1.0, 1.0])
+    }
+}
+
+let light_b_arm = T.position(1.6, 1.2, -2.3).rotation(0.0, 0.0, -0.7) {
+    name = "light_b_arm"
     T.position(0.0, -0.32, 0.0).scale(0.06, 0.6, 0.06) {
         R.cube() {
             C.rgba(0.28, 0.34, 0.38, 1.0)
         }
+    }
+}
+light_b_arm
+
+Animation.looping().length(2.0) {
+    Keyframe.at(0.0) {
+        light_b_arm.update_transform([1.6, 1.2, -2.3], [0.0, 0.0, -0.7], [1.0, 1.0, 1.0])
+    }
+    Keyframe.at(1.0) {
+        light_b_arm.update_transform([1.6, 1.2, -2.3], [0.0, 0.0, 0.7], [1.0, 1.0, 1.0])
+    }
+    Keyframe.at(2.0) {
+        light_b_arm.update_transform([1.6, 1.2, -2.3], [0.0, 0.0, -0.7], [1.0, 1.0, 1.0])
     }
 }
 

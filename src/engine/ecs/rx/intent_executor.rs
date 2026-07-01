@@ -88,9 +88,10 @@ fn handle_intent_signal(
         IntentValue::Noop => {}
 
         IntentValue::SpawnComponentTree { root, parent } => {
-            match crate::meow_meow::component_registry::with_live_render_assets(render_assets, || {
-                crate::meow_meow::component_registry::spawn_tree(root, *parent, world, emit)
-            }) {
+            match crate::meow_meow::component_registry::with_live_render_assets(
+                render_assets,
+                || crate::meow_meow::component_registry::spawn_tree(root, *parent, world, emit),
+            ) {
                 Ok(id) => println!("[SpawnComponentTree] spawned root {id:?}"),
                 Err(e) => println!("[SpawnComponentTree] error: {e}"),
             }

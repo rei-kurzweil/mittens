@@ -100,6 +100,7 @@ pub use layout::LayoutSystem;
 pub use light_system::LightSystem;
 pub use mirror_system::MirrorSystem;
 pub use music_system::MusicSystem;
+pub use openxr_system::OpenXRSystem as XrSystem;
 pub use pipeline_system::PipelineSystem;
 pub use pointer_system::{PointerActivations, PointerSystem, PointerTopologyContext};
 pub use pose_capture_system::PoseCaptureSystem;
@@ -118,7 +119,6 @@ pub use texture_system::TextureSystem;
 pub use transform_stream_system::TransformStreamSystem;
 pub use transform_system::TransformSystem;
 pub use transition_system::TransitionSystem;
-pub use openxr_system::OpenXRSystem as XrSystem;
 pub use vr_types::{XrGamepadState, XrHandGamepadState, XrInputState};
 
 use super::World;

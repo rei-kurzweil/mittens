@@ -6,7 +6,9 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::engine::user_input::InputState;
-use crate::utils::math::{mat_to_quat, quat_conjugate, quat_mul, quat_rotate_vec3, quat_rotation_y};
+use crate::utils::math::{
+    mat_to_quat, quat_conjugate, quat_mul, quat_rotate_vec3, quat_rotation_y,
+};
 use winit::keyboard::{Key, NamedKey};
 
 #[derive(Debug, Default)]
@@ -276,10 +278,14 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             }
             if let Some(tc) = world.get_component_by_id_as::<TransformComponent>(ch) {
                 let wraps_c3d = world.children_of(ch).iter().any(|&gc| {
-                    world.get_component_by_id_as::<Camera3DComponent>(gc).is_some()
+                    world
+                        .get_component_by_id_as::<Camera3DComponent>(gc)
+                        .is_some()
                 });
                 let wraps_cxr = world.children_of(ch).iter().any(|&gc| {
-                    world.get_component_by_id_as::<CameraXRComponent>(gc).is_some()
+                    world
+                        .get_component_by_id_as::<CameraXRComponent>(gc)
+                        .is_some()
                 });
                 let wraps_cam = wraps_c3d || wraps_cxr;
                 if wraps_cam {
@@ -624,7 +630,10 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
                     );
                     let desktop_camera_mount_serialize_id =
                         world.add_component(SerializeComponent::off());
-                    let _ = world.set_parent(desktop_camera_mount_serialize_id, Some(desktop_camera_mount));
+                    let _ = world.set_parent(
+                        desktop_camera_mount_serialize_id,
+                        Some(desktop_camera_mount),
+                    );
                     emit_attach(emit, desktop_camera_mount, cam);
                     println!(
                         "[AVC] inserted desktop camera yaw-correction mount {:?} for camera {:?}",
@@ -706,15 +715,7 @@ fn capture_hand_grip_calibration(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
 ) -> bool {
-    let (
-        enabled,
-        left_raw,
-        right_raw,
-        left_visual,
-        right_visual,
-        left_hand,
-        right_hand,
-    ) = {
+    let (enabled, left_raw, right_raw, left_visual, right_visual, left_hand, right_hand) = {
         let Some(c) = world.get_component_by_id_as::<AvatarControlComponent>(avc_id) else {
             return false;
         };
@@ -777,7 +778,10 @@ fn capture_hand_grip_calibration(
         update_local_rotation(world, emit, right_visual, right_offset);
     }
 
-    println!("[AVC][calibrate] captured hand grip offsets for AVC {:?}:", avc_id);
+    println!(
+        "[AVC][calibrate] captured hand grip offsets for AVC {:?}:",
+        avc_id
+    );
     println!(
         "  hand_grip_rotation_left([{:.7}, {:.7}, {:.7}, {:.7}])",
         left_offset[0], left_offset[1], left_offset[2], left_offset[3]

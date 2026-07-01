@@ -77,91 +77,95 @@ ED {
         R.cube() { C.rgba(1.0, 0.8, 0.4, 1.0) }
     }
 
-    T.position(2.0, 0.15, 1.0) {
+    let repro_cube_a_transform = T.position(-0.9, -0.44, -1.0) {
+        name = "repro_cube_a_transform"
+        Transition {
+            duration_beats(1.0)
+            ease_in_out_sine()
+            replace_same_target()
+        }
+        T.scale(0.50, 0.50, 0.50) {
+            name = "repro_cube_a"
+            R.cube() {
+                C.rgba(1.0, 0.88, 0.15, 1.0)
+                EM.on()
+                Raycastable.enabled()
+            }
+        }
+    }
+
+    let repro_cube_b_transform = T.position(0.0, -0.44, -0.7) {
+        name = "repro_cube_b_transform"
+        Transition {
+            duration_beats(1.0)
+            ease_in_out_sine()
+            replace_same_target()
+        }
+        T.scale(0.50, 0.50, 0.50) {
+            name = "repro_cube_b"
+            R.cube() {
+                C.rgba(1.0, 0.35, 0.78, 1.0)
+                EM.on()
+                Raycastable.enabled()
+            }
+        }
+    }
+
+    let repro_cube_c_transform = T.position(0.9, -0.44, -1.1) {
+        name = "repro_cube_c_transform"
+        Transition {
+            duration_beats(1.0)
+            ease_in_out_sine()
+            replace_same_target()
+        }
+        T.scale(0.50, 0.50, 0.50) {
+            name = "repro_cube_c"
+            R.cube() {
+                C.rgba(0.10, 0.95, 1.0, 1.0)
+                EM.on()
+                Raycastable.enabled()
+            }
+        }
+    }
+
+    let repro_rotating_parent = T.position(2.0, 0.15, 1.0) {
         name = "repro_rotating_parent"
         Transition {
             duration_beats(1.0)
             ease_in_out_sine()
             replace_same_target()
         }
-
-        T.position(-0.9, -0.44, -1.0) {
-            name = "repro_cube_a_transform"
-            Transition {
-                duration_beats(1.0)
-                ease_in_out_sine()
-                replace_same_target()
-            }
-            T.scale(0.50, 0.50, 0.50) {
-                name = "repro_cube_a"
-                R.cube() {
-                    C.rgba(1.0, 0.88, 0.15, 1.0)
-                    EM.on()
-                    Raycastable.enabled()
-                }
-            }
-        }
-
-        T.position(0.0, -0.44, -0.7) {
-            name = "repro_cube_b_transform"
-            Transition {
-                duration_beats(1.0)
-                ease_in_out_sine()
-                replace_same_target()
-            }
-            T.scale(0.50, 0.50, 0.50) {
-                name = "repro_cube_b"
-                R.cube() {
-                    C.rgba(1.0, 0.35, 0.78, 1.0)
-                    EM.on()
-                    Raycastable.enabled()
-                }
-            }
-        }
-
-        T.position(0.9, -0.44, -1.1) {
-            name = "repro_cube_c_transform"
-            Transition {
-                duration_beats(1.0)
-                ease_in_out_sine()
-                replace_same_target()
-            }
-            T.scale(0.50, 0.50, 0.50) {
-                name = "repro_cube_c"
-                R.cube() {
-                    C.rgba(0.10, 0.95, 1.0, 1.0)
-                    EM.on()
-                    Raycastable.enabled()
-                }
-            }
-        }
+        repro_cube_a_transform
+        repro_cube_b_transform
+        repro_cube_c_transform
     }
+    repro_rotating_parent
 }
 
 Animation.looping().length(4.0) {
     Keyframe.at(0.0) {
-        Action.update_transform("#repro_rotating_parent", [2.0, 0.15, 1.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
-        Action.update_transform("#repro_cube_a_transform", [-0.9, -0.44, -1.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
-        Action.update_transform("#repro_cube_b_transform", [0.0, -0.44, -0.7], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
-        Action.update_transform("#repro_cube_c_transform", [0.9, -0.44, -1.1], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        repro_rotating_parent.update_transform([2.0, 0.15, 1.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        repro_cube_a_transform.update_transform([-0.9, -0.44, -1.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        repro_cube_b_transform.update_transform([0.0, -0.44, -0.7], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        repro_cube_c_transform.update_transform([0.9, -0.44, -1.1], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
     }
     Keyframe.at(1.0) {
-        Action.update_transform("#repro_rotating_parent", [2.0, 0.15, 1.0], [0.55, 0.0, 0.0], [1.0, 1.0, 1.0])
-        Action.update_transform("#repro_cube_a_transform", [-0.9, -0.44, -1.0], [0.0, 1.570795, 0.0], [1.0, 1.0, 1.0])
-        Action.update_transform("#repro_cube_b_transform", [0.0, -0.44, -0.7], [1.570795, 0.0, 0.0], [1.0, 1.0, 1.0])
-        Action.update_transform("#repro_cube_c_transform", [0.9, -0.44, -1.1], [0.0, 0.0, 1.570795], [1.0, 1.0, 1.0])
+        repro_rotating_parent.update_transform([2.0, 0.15, 1.0], [0.55, 0.0, 0.0], [1.0, 1.0, 1.0])
+        repro_cube_a_transform.update_transform([-0.9, -0.44, -1.0], [0.0, 1.570795, 0.0], [1.0, 1.0, 1.0])
+        repro_cube_b_transform.update_transform([0.0, -0.44, -0.7], [1.570795, 0.0, 0.0], [1.0, 1.0, 1.0])
+        repro_cube_c_transform.update_transform([0.9, -0.44, -1.1], [0.0, 0.0, 1.570795], [1.0, 1.0, 1.0])
     }
     Keyframe.at(2.0) {
-        Action.update_transform("#repro_rotating_parent", [2.0, 0.15, 1.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
-        Action.update_transform("#repro_cube_a_transform", [-0.9, -0.44, -1.0], [0.0, 3.14159, 0.0], [1.0, 1.0, 1.0])
-        Action.update_transform("#repro_cube_b_transform", [0.0, -0.44, -0.7], [3.14159, 0.0, 0.0], [1.0, 1.0, 1.0])
-        Action.update_transform("#repro_cube_c_transform", [0.9, -0.44, -1.1], [0.0, 0.0, 3.14159], [1.0, 1.0, 1.0])
+        repro_rotating_parent.update_transform([2.0, 0.15, 1.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        repro_cube_a_transform.update_transform([-0.9, -0.44, -1.0], [0.0, 3.14159, 0.0], [1.0, 1.0, 1.0])
+        repro_cube_b_transform.update_transform([0.0, -0.44, -0.7], [3.14159, 0.0, 0.0], [1.0, 1.0, 1.0])
+        repro_cube_c_transform.update_transform([0.9, -0.44, -1.1], [0.0, 0.0, 3.14159], [1.0, 1.0, 1.0])
     }
     Keyframe.at(3.0) {
-        Action.update_transform("#repro_rotating_parent", [2.0, 0.15, 1.0], [-0.55, 0.0, 0.0], [1.0, 1.0, 1.0])
-        Action.update_transform("#repro_cube_a_transform", [-0.9, -0.44, -1.0], [0.0, 4.712385, 0.0], [1.0, 1.0, 1.0])
-        Action.update_transform("#repro_cube_b_transform", [0.0, -0.44, -0.7], [4.712385, 0.0, 0.0], [1.0, 1.0, 1.0])
-        Action.update_transform("#repro_cube_c_transform", [0.9, -0.44, -1.1], [0.0, 0.0, 4.712385], [1.0, 1.0, 1.0])
+        repro_rotating_parent.update_transform([2.0, 0.15, 1.0], [-0.55, 0.0, 0.0], [1.0, 1.0, 1.0])
+        repro_cube_a_transform.update_transform([-0.9, -0.44, -1.0], [0.0, 4.712385, 0.0], [1.0, 1.0, 1.0])
+        repro_cube_b_transform.update_transform([0.0, -0.44, -0.7], [4.712385, 0.0, 0.0], [1.0, 1.0, 1.0])
+        repro_cube_c_transform.update_transform([0.9, -0.44, -1.1], [0.0, 0.0, 4.712385], [1.0, 1.0, 1.0])
     }
 }
 
