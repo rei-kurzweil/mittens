@@ -56,25 +56,54 @@ fn signed_area_2d(points: &[[f32; 2]]) -> f32 {
     area * 0.5
 }
 
-fn append_arc_points(
-    points: &mut Vec<[f32; 2]>,
-    radius: f32,
-    start_angle: f32,
-    end_angle: f32,
+fn add2(a: [f32; 2], b: [f32; 2]) -> [f32; 2] {
+    [a[0] + b[0], a[1] + b[1]]
+}
+
+fn sub2(a: [f32; 2], b: [f32; 2]) -> [f32; 2] {
+    [a[0] - b[0], a[1] - b[1]]
+}
+
+fn mul2(v: [f32; 2], s: f32) -> [f32; 2] {
+    [v[0] * s, v[1] * s]
+}
+
+fn len2(v: [f32; 2]) -> f32 {
+    (v[0] * v[0] + v[1] * v[1]).sqrt()
+}
+
+fn normalize2(v: [f32; 2]) -> [f32; 2] {
+    let len = len2(v).max(1.0e-6);
+    [v[0] / len, v[1] / len]
+}
+
+fn quadratic_bezier2(a: [f32; 2], b: [f32; 2], c: [f32; 2], t: f32) -> [f32; 2] {
+    let u = 1.0 - t;
+    add2(add2(mul2(a, u * u), mul2(b, 2.0 * u * t)), mul2(c, t * t))
+}
+
+fn append_rounded_corner_points(
+    boundary: &mut Vec<[f32; 2]>,
+    prev: [f32; 2],
+    curr: [f32; 2],
+    next: [f32; 2],
     bevel_segments: u32,
-    sharp_angle: f32,
+    trim_fraction: f32,
 ) {
     if bevel_segments == 0 {
-        let (s, c) = sharp_angle.sin_cos();
-        points.push([c * radius, s * radius]);
+        boundary.push(curr);
         return;
     }
 
+    let to_prev = sub2(prev, curr);
+    let to_next = sub2(next, curr);
+    let trim = len2(to_prev).min(len2(to_next)) * trim_fraction.clamp(0.0, 0.49);
+    let start = add2(curr, mul2(normalize2(to_prev), trim));
+    let end = add2(curr, mul2(normalize2(to_next), trim));
+
     for i in 0..=bevel_segments {
         let t = i as f32 / bevel_segments as f32;
-        let a = start_angle + (end_angle - start_angle) * t;
-        let (s, c) = a.sin_cos();
-        points.push([c * radius, s * radius]);
+        boundary.push(quadratic_bezier2(start, curr, end, t));
     }
 }
 
@@ -675,27 +704,27 @@ impl MeshFactory {
         let inner = outer * inner_radius_fraction.clamp(0.01, 1.0);
         let step = std::f32::consts::PI / point_count as f32;
 
-        let mut boundary: Vec<[f32; 2]> = Vec::new();
+        let mut star_vertices: Vec<[f32; 2]> = Vec::with_capacity((point_count as usize) * 2);
         for i in 0..point_count {
             let outer_angle = i as f32 * 2.0 * step - std::f32::consts::FRAC_PI_2;
             let inner_angle = outer_angle + step;
+            let (outer_s, outer_c) = outer_angle.sin_cos();
+            let (inner_s, inner_c) = inner_angle.sin_cos();
+            star_vertices.push([outer_c * outer, outer_s * outer]);
+            star_vertices.push([inner_c * inner, inner_s * inner]);
+        }
 
-            append_arc_points(
-                &mut boundary,
-                outer,
-                outer_angle - step * 0.5,
-                outer_angle + step * 0.5,
-                outer_bevel_segments,
-                outer_angle,
-            );
-            append_arc_points(
-                &mut boundary,
-                inner,
-                inner_angle - step * 0.5,
-                inner_angle + step * 0.5,
-                inner_bevel_segments,
-                inner_angle,
-            );
+        let mut boundary: Vec<[f32; 2]> = Vec::new();
+        for i in 0..star_vertices.len() {
+            let prev = star_vertices[(i + star_vertices.len() - 1) % star_vertices.len()];
+            let curr = star_vertices[i];
+            let next = star_vertices[(i + 1) % star_vertices.len()];
+            let bevel_segments = if i % 2 == 0 {
+                outer_bevel_segments
+            } else {
+                inner_bevel_segments
+            };
+            append_rounded_corner_points(&mut boundary, prev, curr, next, bevel_segments, 0.35);
         }
 
         if signed_area_2d(&boundary) < 0.0 {
@@ -738,5 +767,37 @@ impl MeshFactory {
             boundary.reverse();
         }
         filled_polygon_2d(&boundary)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MeshFactory;
+
+    fn radius(point: [f32; 3]) -> f32 {
+        (point[0] * point[0] + point[1] * point[1]).sqrt()
+    }
+
+    #[test]
+    fn sharp_star_alternates_outer_and_inner_radii() {
+        let mesh = MeshFactory::star(5, 0.4, 0, 0);
+        let boundary = &mesh.vertices[1..];
+
+        assert_eq!(boundary.len(), 10);
+        for (index, vertex) in boundary.iter().enumerate() {
+            let expected = if index % 2 == 0 { 0.5 } else { 0.2 };
+            assert!((radius(vertex.pos) - expected).abs() < 1.0e-4);
+        }
+    }
+
+    #[test]
+    fn beveled_star_generates_intermediate_radii_near_tips() {
+        let mesh = MeshFactory::star(5, 0.4, 3, 0);
+        let boundary = &mesh.vertices[1..];
+
+        assert!(boundary.iter().any(|vertex| {
+            let r = radius(vertex.pos);
+            r > 0.2 + 1.0e-4 && r < 0.5 - 1.0e-4
+        }));
     }
 }

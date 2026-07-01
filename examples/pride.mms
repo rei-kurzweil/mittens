@@ -6,15 +6,15 @@ RendererSettings {
 }
 
 BGC {
-    C.rgba(0.05, 0.15, 0.8, 1.0)
+    C.rgba(0.05, 0.05, 0.6, 1.0)
 }
-AL.rgb(0.55, 0.55, 0.60)
+AL.rgb(0.55, 0.55, 0.55)
 
 T.position(0.0, 3.5, 3.5) {
     PL {
         intensity(5.0)
         distance(20.0)
-        color(1.0, 0.98, 0.95)
+        color(1.0, 1.0, 1.0)
     }
 }
 
@@ -75,7 +75,7 @@ T.position(2.45, 0.55, -4.0).scale(1.6, 1.6, 1.0) {
 
 T.position(2.55, -1.85, -4.0).scale(1.7, 1.7, 1.0) {
     R.heart(96) {
-        C.rgba(0.94, 0.12, 0.22, 1.0)
+        C.rgba(0.94, 0.12, 0.12, 1.0)
         EM.on()
     }
 }
