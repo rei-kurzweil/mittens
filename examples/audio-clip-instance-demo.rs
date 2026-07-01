@@ -1,11 +1,10 @@
 // audio-clip-instance-demo
 //
-// Cloned from `audio-music-context-demo`. Same scene, but demonstrates
+// Cloned from `audio-music-demo`. Same scene, but demonstrates
 // `.instance()` on a live AudioClip handle: two extra voices share the
 // AmenBreak decoded buffer, each starting at a different point in the
-// sample (0.25 / 0.5 beats in). The MusicContext addresses them by
-// live handle (`voice("amen_quarter", amen_q)`) instead of by name
-// selector.
+// sample (0.25 / 0.5 beats in). The keyframes target those clone
+// handles directly instead of routing through MusicContext voice names.
 //
 // See docs/draft/audio-clip-instance-cloning.md.
 

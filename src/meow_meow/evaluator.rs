@@ -10,7 +10,7 @@ use crate::engine::ecs::IntentValue;
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::SignalKind;
 use crate::engine::ecs::World;
-use crate::engine::ecs::component::{AnimationState, ComponentRef, MusicContextComponent, MusicNote};
+use crate::engine::ecs::component::{AnimationState, ComponentRef, MusicNote};
 use crate::meow_meow::ast::{
     BinOpKind, CallExpression, ComponentExpression, ElseBranch, Expression, IfStatement,
     ImportItem, Statement, UnaryOpKind,
@@ -746,7 +746,6 @@ fn try_build_live_music_note_intent(
     if ce.component_type != "MusicNote" {
         return None;
     }
-    let exec_scope = ctx.exec_scope?;
     let world = unsafe { &mut *ctx.host_world? };
 
     let pitch_ctor = match ce.ctor_method.as_deref() {
@@ -765,17 +764,11 @@ fn try_build_live_music_note_intent(
     let mut note = pitch_ctor(octave, duration_beats);
 
     let mut target_source: Option<ComponentRef> = None;
-    let mut voice_name: Option<String> = None;
     let mut beat_offset = 0.0_f64;
 
     if let Some(arg) = ce.ctor_args.get(2) {
-        match arg {
-            Value::String(name) => voice_name = Some(name.clone()),
-            _ => {
-                if let Ok(src) = value_to_component_ref_live(world, arg) {
-                    target_source = Some(src);
-                }
-            }
+        if let Ok(src) = value_to_component_ref_live(world, arg) {
+            target_source = Some(src);
         }
     }
 
@@ -783,7 +776,6 @@ fn try_build_live_music_note_intent(
         match method.as_str() {
             "velocity" => note = note.with_velocity(value_as_f32(args.first()?).ok()?),
             "at_beat" => beat_offset = value_as_f64(args.first()?).ok()?,
-            "voice" => voice_name = Some(value_as_string(args.first()?).ok()?.to_string()),
             "target" => {
                 target_source = Some(value_to_component_ref_live(world, args.first()?).ok()?)
             }
@@ -795,8 +787,7 @@ fn try_build_live_music_note_intent(
     let target = if let Some(src) = target_source.as_ref() {
         resolve_live_component_ref_global(world, src)?
     } else {
-        let ctx_id = find_music_context_scope(world, exec_scope)?;
-        lookup_music_context_voice(world, ctx_id, voice_name.as_deref())?
+        return None;
     };
 
     Some(IntentValue::AudioSchedulePlay {
@@ -842,60 +833,6 @@ fn resolve_live_component_ref_global(world: &World, src: &ComponentRef) -> Optio
             .into_iter()
             .find_map(|root| world.find_component(root, selector)),
     }
-}
-
-fn find_music_context_scope(world: &World, mut current: ComponentId) -> Option<ComponentId> {
-    loop {
-        if world
-            .get_component_by_id_as::<MusicContextComponent>(current)
-            .is_some()
-        {
-            return Some(current);
-        }
-        current = world.parent_of(current)?;
-    }
-}
-
-fn lookup_music_context_voice(
-    world: &mut World,
-    ctx_id: ComponentId,
-    name: Option<&str>,
-) -> Option<ComponentId> {
-    let index = {
-        let ctx = world.get_component_by_id_as::<MusicContextComponent>(ctx_id)?;
-        match name {
-            None => 0,
-            Some(voice_name) => ctx.voices.iter().position(|(entry, _)| entry == voice_name)?,
-        }
-    };
-
-    if let Some(cached) = world
-        .get_component_by_id_as::<MusicContextComponent>(ctx_id)?
-        .voices_resolved
-        .get(index)
-        .copied()
-        .flatten()
-    {
-        return Some(cached);
-    }
-
-    let source = world
-        .get_component_by_id_as::<MusicContextComponent>(ctx_id)?
-        .voices
-        .get(index)?
-        .1
-        .clone();
-    let resolved = resolve_live_component_ref_global(world, &source)?;
-
-    if let Some(slot) = world
-        .get_component_by_id_as_mut::<MusicContextComponent>(ctx_id)?
-        .voices_resolved
-        .get_mut(index)
-    {
-        *slot = Some(resolved);
-    }
-
-    Some(resolved)
 }
 
 fn is_builtin_fn(name: &str) -> bool {
@@ -2369,13 +2306,6 @@ fn value_as_u16(value: &Value) -> Result<u16, String> {
     match value {
         Value::Number(n) if n.is_finite() && *n >= 0.0 && n.fract() == 0.0 => Ok(*n as u16),
         other => Err(format!("expected non-negative integer, got {other:?}")),
-    }
-}
-
-fn value_as_string(value: &Value) -> Result<&str, String> {
-    match value {
-        Value::String(s) | Value::Identifier(s) => Ok(s),
-        other => Err(format!("expected string, got {other:?}")),
     }
 }
 

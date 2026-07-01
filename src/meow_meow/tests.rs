@@ -707,19 +707,17 @@ fn live_keyframe_block_music_note_emits_audio_schedule_play() {
     let src = r##"
         Clock.bpm(60) {}
 
+        let lead = AudioOscillator.square() {
+            name = "lead"
+        };
+
         AudioOutput {
-            AudioOscillator.square() {
-                name = "lead"
-            }
+            lead;
         }
 
-        MusicContext {
-            voice("lead", "[name='lead']")
-
-            Animation.looping() {
-                Keyframe.at(0.0) {
-                    MusicNote.e(4, 0.25, "lead")
-                }
+        Animation.looping() {
+            Keyframe.at(0.0) {
+                MusicNote.e(4, 0.25, lead)
             }
         }
     "##;

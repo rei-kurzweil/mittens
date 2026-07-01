@@ -23,7 +23,7 @@ use crate::engine::ecs::component::{
     IKChainComponent, IKSolver, InputComponent, InputTransformModeComponent, InputXRComponent,
     InputXRGamepadComponent, InspectLayoutComponent, JustifyContent, KeyframeComponent,
     KineticResponseComponent, LayoutBoundsComponent, LayoutComponent, LightQuantizationComponent,
-    MeshComponent, MirrorComponent, MusicContextComponent, MusicNote, MusicNoteComponent,
+    MeshComponent, MirrorComponent, MusicNote, MusicNoteComponent,
     NormalVisualisationComponent, OpacityComponent, OptionComponent, OscillatorType, Overflow,
     OverlayComponent, PointLightComponent, PointerComponent, PointerEvents, PoseCaptureComponent,
     PoseCaptureLibraryComponent, PoseCapturePoseComponent, Position, QuatTemporalFilterComponent,
@@ -1792,22 +1792,13 @@ fn create_component(
                 _ => MusicNote::default(),
             };
             let mut mn = MusicNoteComponent::new(note);
-            // Optional 3rd positional arg: either a voice name ("bass") or
-            // a component ref. Per docs/spec/audio-sources.md §6.6 rank 3.
+            // Optional 3rd positional arg: target audio source ref/query.
             if let Ok(v) = arg(args, 2) {
-                match v {
-                    Value::String(s) => mn.voice_name = Some(s.clone()),
-                    _ => {
-                        if let Ok(src) = value_to_component_ref(world, v) {
-                            mn.target_source = Some(src);
-                        }
-                    }
+                if let Ok(src) = value_to_component_ref(world, v) {
+                    mn.target_source = Some(src);
                 }
             }
             add!(mn)
-        }
-        "MusicContext" => {
-            add!(MusicContextComponent::new())
         }
         "AudioOutput" => {
             add!(AudioOutputComponent::new())
@@ -2275,13 +2266,6 @@ fn apply_call(
                     mn.scheduled_beat = Some(b);
                 }
             }
-            "voice" => {
-                // voice("bass") — name lookup against MusicContext ancestor.
-                let name = val_as_str(arg(args, 0)?)?.to_string();
-                if let Some(mn) = world.get_component_by_id_as_mut::<MusicNoteComponent>(id) {
-                    mn.voice_name = Some(name);
-                }
-            }
             "target" => {
                 // target(ref) — explicit ComponentRef override.
                 let src = arg_component_ref(world, args, 0)?;
@@ -2290,19 +2274,6 @@ fn apply_call(
                 }
             }
             _ => {}
-        }
-        return Ok(());
-    }
-    if world
-        .get_component_by_id_as::<MusicContextComponent>(id)
-        .is_some()
-    {
-        if method == "voice" {
-            let name = val_as_str(arg(args, 0)?)?.to_string();
-            let src = arg_component_ref(world, args, 1)?;
-            if let Some(mc) = world.get_component_by_id_as_mut::<MusicContextComponent>(id) {
-                mc.add_voice(name, src);
-            }
         }
         return Ok(());
     }

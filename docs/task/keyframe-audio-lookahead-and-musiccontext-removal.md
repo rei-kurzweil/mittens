@@ -2,7 +2,7 @@
 
 ## Problem
 
-`audio-music-context-demo` plays again after the `Keyframe { ... }` refactor,
+`audio-music-demo` plays again after the `Keyframe { ... }` refactor,
 but the current imperative `MusicNote...` path appears to have reintroduced
 timing jitter / latency.
 
@@ -19,7 +19,7 @@ The strongest current hypothesis is:
 Observed symptom:
 
 - loop restarts can sound slightly late or inconsistent
-- the regression is most noticeable in `examples/audio-music-context-demo.mms`
+- the regression is most noticeable in `examples/audio-music-demo.mms`
 
 ## Goal
 
@@ -189,7 +189,7 @@ One plausible shape:
 
 ## Acceptance Criteria
 
-- `examples/audio-music-context-demo.mms` plays with stable timing across loop
+- `examples/audio-music-demo.mms` plays with stable timing across loop
   boundaries
 - imperative keyframe-authored audio is scheduled ahead of time, not only at
   visual due execution

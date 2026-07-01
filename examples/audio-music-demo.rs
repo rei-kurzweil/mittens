@@ -1,17 +1,17 @@
-// audio-music-context-demo
+// audio-music-demo
 //
-// Loads `audio-music-context-demo.mms`, which declares a MusicContext-driven
-// scene that plays an A-minor scale on a square wave and a C2 bass clip at
-// 140 BPM. The bass `assets/audio/bass-c2.wav` URI may not exist on disk —
-// the AudioClip load path is expected to report missing assets without
-// crashing the scene.
+// Loads `audio-music-demo.mms`, which targets the audio sources directly
+// from keyframe blocks. It keeps the old demo's 174 BPM arrangement so the
+// Amen break stays in time. The bass `assets/audio/bass-c2.wav` URI may not
+// exist on disk — the AudioClip load path is expected to report missing
+// assets without crashing the scene.
 
 use cat_engine::{engine, engine::ecs::SignalEmitter, meow_meow, utils};
 
 fn main() {
     utils::logger::init();
 
-    println!("[audio-music-context-demo] start");
+    println!("[audio-music-demo] start");
 
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
@@ -46,10 +46,10 @@ fn main() {
     let _ = universe.world.add_child(clear, clear_c);
     universe.add(clear);
 
-    let source = include_str!("audio-music-context-demo.mms");
+    let source = include_str!("audio-music-demo.mms");
     let output = meow_meow::MeowMeowRunner::eval_with_world_at_path(
         source,
-        Some("examples/audio-music-context-demo.mms"),
+        Some("examples/audio-music-demo.mms"),
         &mut universe.world,
         &mut universe.systems.rx,
         &mut universe.command_queue,
@@ -59,7 +59,7 @@ fn main() {
         eprintln!("[mms] {error}");
     }
     println!(
-        "[audio-music-context-demo] mms ok: {} intent(s)",
+        "[audio-music-demo] mms ok: {} intent(s)",
         output.intents.len()
     );
 

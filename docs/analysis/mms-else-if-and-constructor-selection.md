@@ -2,7 +2,7 @@
 
 ## Context
 
-While looking at `examples/audio-music-context-demo.mms`, two separate issues showed up:
+While looking at `examples/audio-music-demo.mms`, two separate issues showed up:
 
 1. The language currently supports `if { ... } else { ... }`, but not `else if` as a direct syntactic form.
 2. `MusicNote` exposes a deeper component-construction problem: the note letter is currently encoded as the primary constructor method name (`MusicNote.a(...)`, `MusicNote.b(...)`, etc.), which makes data-driven selection awkward.
