@@ -147,9 +147,34 @@ is that `MusicNote` is a built-in host namespace, not a component.
 
 ## Implementation Direction
 
-### Phase 1: Fix timing without changing the public API yet
+### Phase 1: Add Cached Block Effect Analysis
 
-- Make imperative keyframe audio participate in the same lookahead scheduling
+- rename `CapturedBlock` to `RuntimeClosure`
+- add `analysis: Option<BlockEffectAnalysis>` to `RuntimeClosure`
+- keep `BlockStatement` as pure parser AST; do not attach effect metadata there
+- introduce an opt-in `BlockEffectAnalyzer` semantic pass for
+  `Keyframe.at(...) { ... }` runtime closures
+- cache the analysis result when constructing the keyframe-owned runtime
+  closure
+- the runtime evaluator should consume cached analysis, not recompute it during
+  playback
+
+Initial narrow target:
+
+- classify direct `MusicNote.a/b/c/d/e/f/g(...)` calls as audio
+- leave nontrivial or unknown calls conservative (`Unknown`)
+
+Ownership boundary:
+
+- parser: syntax only
+- runtime-closure construction: run `BlockEffectAnalyzer` when the closure
+  owner explicitly opts in, such as `Keyframe`
+- runtime evaluator: read `RuntimeClosure.analysis`; do not own effect
+  classification policy
+
+### Phase 2: Fix Timing With Audio-Only / Visual-Only Keyframe Eval
+
+- make imperative keyframe audio participate in the same lookahead scheduling
   pass as legacy keyframe audio
 - avoid emitting callback-authored audio directly at visual due time when the
   lookahead pass could have scheduled it earlier
@@ -157,14 +182,24 @@ is that `MusicNote` is a built-in host namespace, not a component.
 
 One plausible shape:
 
-- evaluate the callback in a "collect audio intents only" mode during the
-  lookahead pass
+- evaluate the keyframe runtime closure in a keyframe-specific `audio_only`
+  mode during the lookahead pass
 - rewrite collected audio intents with `beat_context = keyframe_global_beat`
 - enqueue them through the existing pending-intent path
-- continue executing the full callback normally on the visual-due pass, but
-  suppress duplicate audio re-emission for the same keyframe cycle
+- continue executing the same runtime closure in keyframe-specific
+  `visual_only` mode on the visual-due pass, while suppressing duplicate audio
+  re-emission for the same keyframe cycle
+- keep the intent / signal dispatch filter scoped to keyframe runtime-closure
+  evaluation only; ordinary MMS evaluation must stay unfiltered
 
-### Phase 2: Replace `MusicContext`
+Important design point:
+
+- control-flow still evaluates at runtime
+- `BlockEffectAnalyzer` does not replace the interpreter
+- it only preclassifies which statements/calls are potentially audio,
+  visual, mixed, or unknown so runtime modes do less rediscovery work
+
+### Phase 3: Replace `MusicContext`
 
 - deprecate string-key voice lookup in authored MMS
 - introduce direct audio-source methods on live handles, for example:
@@ -178,7 +213,7 @@ One plausible shape:
 - preserve direct component-handle targeting instead of forcing name-based
   lookup through a separate context object
 
-### Phase 3: Clean Up MMS Runtime Semantics
+### Phase 4: Clean Up MMS Runtime Semantics
 
 - remove the evaluator hack that treats `MusicNote` component expressions as a
   special method-call-like path
@@ -194,6 +229,13 @@ One plausible shape:
 - imperative keyframe-authored audio is scheduled ahead of time, not only at
   visual due execution
 - instrumentation can prove when and where an audio intent was queued
+- `RuntimeClosure` stores cached effect analysis for keyframe-owned deferred
+  closures
+- the runtime evaluator uses cached block-effect analysis instead of
+  reclassifying keyframe block effects on every evaluation
+- keyframe-specific audio / visual dispatch filtering is isolated to
+  `RuntimeClosure` execution modes used by `Keyframe.at(...)` and does not
+  affect ordinary MMS statement evaluation
 - authored MMS no longer requires `MusicContext` voice names for the common
   direct-handle case
 - `MusicNote` is no longer authored or implemented as a component expression;

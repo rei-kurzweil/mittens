@@ -15,6 +15,7 @@ use crate::meow_meow::ast::{
     BinOpKind, CallExpression, ComponentExpression, ElseBranch, Expression, IfStatement,
     ImportItem, Statement, UnaryOpKind,
 };
+use crate::meow_meow::block_effect_analyzer::BlockEffectAnalyzer;
 use crate::meow_meow::component_registry::{
     component_expr_uses_property_assignment_only, is_universal_component_named_prop,
 };
@@ -848,6 +849,7 @@ fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value,
             deferred_block: Some(CapturedBlock {
                 body: ce.body.clone(),
                 captured_env: Arc::new(ctx.object_world.snapshot_visible()),
+                analysis: Some(BlockEffectAnalyzer::analyze_keyframe_block(&ce.body)),
             }),
             children: vec![],
         };

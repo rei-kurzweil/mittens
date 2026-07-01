@@ -759,6 +759,7 @@ mod tests {
                     component_type: "Transform".to_string(),
                 },
             )])),
+            analysis: None,
         };
         let keyframe = world.add_component(KeyframeComponent::new_with_callback(0.0, callback));
         world.add_child(animation, keyframe).unwrap();
@@ -816,6 +817,7 @@ mod tests {
                     component_type: "EM".to_string(),
                 },
             )])),
+            analysis: None,
         };
         let keyframe = world.add_component(KeyframeComponent::new_with_callback(0.0, callback));
         world.add_child(animation, keyframe).unwrap();

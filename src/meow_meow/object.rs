@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::engine::ecs::ComponentId;
 use crate::meow_meow::ast::BlockStatement;
+use crate::meow_meow::block_effect_analyzer::BlockEffectAnalysis;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BuiltinTableKind {
@@ -23,6 +24,7 @@ pub enum BuiltinTableKind {
 pub struct CapturedBlock {
     pub body: BlockStatement,
     pub captured_env: Arc<HashMap<String, Value>>,
+    pub analysis: Option<BlockEffectAnalysis>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

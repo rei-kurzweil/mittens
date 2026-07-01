@@ -655,6 +655,9 @@ pub fn ce_ast_to_materialized(ce: &ComponentExpression) -> Result<MaterializedCE
             deferred_block: Some(crate::meow_meow::object::CapturedBlock {
                 body: ce.body.clone(),
                 captured_env: std::sync::Arc::new(std::collections::HashMap::new()),
+                analysis: Some(
+                    crate::meow_meow::block_effect_analyzer::BlockEffectAnalyzer::analyze_keyframe_block(&ce.body),
+                ),
             }),
             children: Vec::new(),
         });
@@ -3072,6 +3075,7 @@ mod tests {
             deferred_block: Some(CapturedBlock {
                 body: BlockStatement { statements: vec![] },
                 captured_env: Arc::new(HashMap::new()),
+                analysis: None,
             }),
             children: vec![],
         };
