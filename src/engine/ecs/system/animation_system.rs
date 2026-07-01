@@ -11,7 +11,7 @@ use crate::engine::ecs::system::animation_system_evaluator::AnimationEvaluator;
 use crate::engine::ecs::{ComponentId, IntentValue, RxWorld, SignalEmitter, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
-use crate::meow_meow::evaluator::eval_mms_captured_block;
+use crate::meow_meow::evaluator::{RuntimeClosureExecMode, eval_runtime_closure};
 
 #[derive(Debug, Default)]
 struct AnimationRuntime {
@@ -462,12 +462,13 @@ impl AnimationSystem {
 
                 if kf_local_beat <= local_beat + 1e-9 {
                     if let Some(callback) = callback {
-                        if let Err(error) = eval_mms_captured_block(
+                        if let Err(error) = eval_runtime_closure(
                             &callback,
                             None,
                             Some(world),
                             Some(rx),
                             Some(kf_id),
+                            RuntimeClosureExecMode::Full,
                         )
                         {
                             eprintln!(
@@ -587,11 +588,13 @@ impl System for AnimationSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::ecs::component::{ComponentRef, TransformComponent};
+    use crate::engine::ecs::component::{
+        AudioOscillatorComponent, ComponentRef, TransformComponent,
+    };
     use crate::meow_meow::ast::{
         BinOpKind, BlockStatement, CallExpression, Expression, Ident, Statement,
     };
-    use crate::meow_meow::object::{CapturedBlock, Value};
+    use crate::meow_meow::object::{RuntimeClosure, Value};
     use slotmap::Key;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -723,7 +726,7 @@ mod tests {
         let animation =
             world.add_component(AnimationComponent::new().with_state(AnimationState::Playing));
         let target = world.add_component(TransformComponent::new());
-        let callback = CapturedBlock {
+        let callback = RuntimeClosure {
             body: BlockStatement {
                 statements: vec![Statement::Expression(Expression::Call(CallExpression {
                     callee: Box::new(Expression::BinaryOp {
@@ -799,7 +802,7 @@ mod tests {
         let animation =
             world.add_component(AnimationComponent::new().with_state(AnimationState::Playing));
         let target = world.add_component(crate::engine::ecs::component::EmissiveComponent::off());
-        let callback = CapturedBlock {
+        let callback = RuntimeClosure {
             body: BlockStatement {
                 statements: vec![Statement::Expression(Expression::Call(CallExpression {
                     callee: Box::new(Expression::BinaryOp {
@@ -844,5 +847,158 @@ mod tests {
             .get_component_by_id_as::<crate::engine::ecs::component::EmissiveComponent>(target)
             .expect("target emissive exists");
         assert!((emissive.intensity - 2.5).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn runtime_closure_audio_only_filters_visual_and_rewrites_beat_context() {
+        let mut world = World::default();
+        let glow = world.add_component(crate::engine::ecs::component::EmissiveComponent::off());
+        let lead = world.add_component(AudioOscillatorComponent::default());
+
+        let callback = RuntimeClosure {
+            body: BlockStatement {
+                statements: vec![
+                    Statement::Expression(Expression::Call(CallExpression {
+                        callee: Box::new(Expression::BinaryOp {
+                            op: BinOpKind::Dot,
+                            lhs: Box::new(Expression::Identifier(Ident("glow".to_string()))),
+                            rhs: Box::new(Expression::Identifier(Ident(
+                                "set_intensity".to_string(),
+                            ))),
+                        }),
+                        args: vec![Expression::Number(2.5)],
+                    })),
+                    Statement::Expression(Expression::Call(CallExpression {
+                        callee: Box::new(Expression::BinaryOp {
+                            op: BinOpKind::Dot,
+                            lhs: Box::new(Expression::Identifier(Ident("MusicNote".to_string()))),
+                            rhs: Box::new(Expression::Identifier(Ident("e".to_string()))),
+                        }),
+                        args: vec![
+                            Expression::Number(4.0),
+                            Expression::Number(0.25),
+                            Expression::Identifier(Ident("lead".to_string())),
+                        ],
+                    })),
+                ],
+            },
+            captured_env: Arc::new(HashMap::from([
+                (
+                    "glow".to_string(),
+                    Value::ComponentObject {
+                        id: glow,
+                        component_type: "EM".to_string(),
+                    },
+                ),
+                (
+                    "lead".to_string(),
+                    Value::ComponentObject {
+                        id: lead,
+                        component_type: "AudioOscillator".to_string(),
+                    },
+                ),
+            ])),
+            analysis: None,
+        };
+
+        let mut rx = RxWorld::default();
+        eval_runtime_closure(
+            &callback,
+            None,
+            Some(&mut world),
+            Some(&mut rx),
+            None,
+            RuntimeClosureExecMode::KeyframeAudioOnly { beat_context: 12.5 },
+        )
+        .expect("audio-only runtime closure eval succeeds");
+
+        let intents = rx.drain_ready_intents();
+        assert_eq!(intents.len(), 1);
+        assert!(intents.iter().any(|signal| {
+            matches!(
+                signal.intent.as_ref().map(|intent| &intent.value),
+                Some(IntentValue::AudioSchedulePlay {
+                    component_ids,
+                    beat_context,
+                    ..
+                }) if component_ids == &vec![lead] && *beat_context == Some(12.5)
+            )
+        }));
+    }
+
+    #[test]
+    fn runtime_closure_visual_only_filters_audio() {
+        let mut world = World::default();
+        let glow = world.add_component(crate::engine::ecs::component::EmissiveComponent::off());
+        let lead = world.add_component(AudioOscillatorComponent::default());
+
+        let callback = RuntimeClosure {
+            body: BlockStatement {
+                statements: vec![
+                    Statement::Expression(Expression::Call(CallExpression {
+                        callee: Box::new(Expression::BinaryOp {
+                            op: BinOpKind::Dot,
+                            lhs: Box::new(Expression::Identifier(Ident("MusicNote".to_string()))),
+                            rhs: Box::new(Expression::Identifier(Ident("e".to_string()))),
+                        }),
+                        args: vec![
+                            Expression::Number(4.0),
+                            Expression::Number(0.25),
+                            Expression::Identifier(Ident("lead".to_string())),
+                        ],
+                    })),
+                    Statement::Expression(Expression::Call(CallExpression {
+                        callee: Box::new(Expression::BinaryOp {
+                            op: BinOpKind::Dot,
+                            lhs: Box::new(Expression::Identifier(Ident("glow".to_string()))),
+                            rhs: Box::new(Expression::Identifier(Ident(
+                                "set_intensity".to_string(),
+                            ))),
+                        }),
+                        args: vec![Expression::Number(2.5)],
+                    })),
+                ],
+            },
+            captured_env: Arc::new(HashMap::from([
+                (
+                    "glow".to_string(),
+                    Value::ComponentObject {
+                        id: glow,
+                        component_type: "EM".to_string(),
+                    },
+                ),
+                (
+                    "lead".to_string(),
+                    Value::ComponentObject {
+                        id: lead,
+                        component_type: "AudioOscillator".to_string(),
+                    },
+                ),
+            ])),
+            analysis: None,
+        };
+
+        let mut rx = RxWorld::default();
+        eval_runtime_closure(
+            &callback,
+            None,
+            Some(&mut world),
+            Some(&mut rx),
+            None,
+            RuntimeClosureExecMode::KeyframeVisualOnly,
+        )
+        .expect("visual-only runtime closure eval succeeds");
+
+        let intents = rx.drain_ready_intents();
+        assert_eq!(intents.len(), 1);
+        assert!(intents.iter().any(|signal| {
+            matches!(
+                signal.intent.as_ref().map(|intent| &intent.value),
+                Some(IntentValue::SetEmissiveIntensity {
+                    component_ids,
+                    intensity,
+                }) if component_ids == &vec![glow] && (*intensity - 2.5).abs() < 1.0e-6
+            )
+        }));
     }
 }

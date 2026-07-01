@@ -1,12 +1,12 @@
 use super::Component;
 use crate::engine::ecs::ComponentId;
-use crate::meow_meow::object::CapturedBlock;
+use crate::meow_meow::object::RuntimeClosure;
 
 #[derive(Debug, Clone)]
 pub struct KeyframeComponent {
     /// When this keyframe should fire, in beats.
     pub beat: f64,
-    pub callback: Option<CapturedBlock>,
+    pub callback: Option<RuntimeClosure>,
 
     component: Option<ComponentId>,
 }
@@ -20,7 +20,7 @@ impl KeyframeComponent {
         }
     }
 
-    pub fn new_with_callback(beat: f64, callback: CapturedBlock) -> Self {
+    pub fn new_with_callback(beat: f64, callback: RuntimeClosure) -> Self {
         Self {
             beat,
             callback: Some(callback),

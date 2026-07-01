@@ -20,7 +20,7 @@ use crate::meow_meow::component_registry::{
     component_expr_uses_property_assignment_only, is_universal_component_named_prop,
 };
 use crate::meow_meow::object::{
-    BuiltinTableKind, CapturedBlock, CeChild, FrameKind, MaterializedCE, ObjectWorld, Value,
+    BuiltinTableKind, CeChild, FrameKind, MaterializedCE, ObjectWorld, RuntimeClosure, Value,
 };
 use crate::meow_meow::parser::{MeowMeowParser, ParseError};
 use crate::meow_meow::token::TokenizeError;
@@ -156,6 +156,13 @@ impl MeowMeowEvaluatorHandle {
 }
 
 pub struct MeowMeowEvaluator;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RuntimeClosureExecMode {
+    Full,
+    KeyframeAudioOnly { beat_context: f64 },
+    KeyframeVisualOnly,
+}
 
 impl MeowMeowEvaluator {
     pub fn spawn(queue_capacity: usize) -> MeowMeowEvaluatorHandle {
@@ -295,6 +302,8 @@ struct EvalContext<'a> {
     host_world: Option<*mut World>,
     /// Live component subtree that owns the currently executing imperative block.
     exec_scope: Option<ComponentId>,
+    /// Execution policy for deferred runtime closures such as `Keyframe` callbacks.
+    runtime_closure_mode: RuntimeClosureExecMode,
 }
 
 thread_local! {
@@ -308,6 +317,33 @@ fn with_live_signal_emitter<R>(emit: Option<*mut dyn SignalEmitter>, f: impl FnO
         let _ = slot.replace(prev);
         result
     })
+}
+
+fn push_eval_intent(ctx: &mut EvalContext<'_>, mut intent: IntentValue) {
+    match ctx.runtime_closure_mode {
+        RuntimeClosureExecMode::Full => {}
+        RuntimeClosureExecMode::KeyframeAudioOnly { beat_context } => match &mut intent {
+            IntentValue::AudioSchedulePlay {
+                beat_context: signal_beat_context,
+                ..
+            }
+            | IntentValue::OscillatorScheduleSetPitch {
+                beat_context: signal_beat_context,
+                ..
+            } => {
+                *signal_beat_context = Some(beat_context);
+            }
+            _ => return,
+        },
+        RuntimeClosureExecMode::KeyframeVisualOnly => match intent {
+            IntentValue::AudioSchedulePlay { .. } | IntentValue::OscillatorScheduleSetPitch { .. } => {
+                return;
+            }
+            _ => {}
+        },
+    }
+
+    ctx.emits.push(intent);
 }
 
 /// Accumulator used while evaluating a component expression body block.
@@ -387,6 +423,7 @@ fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
             object_world: &mut world,
             host_world: None,
             exec_scope: None,
+            runtime_closure_mode: RuntimeClosureExecMode::Full,
         };
         eval_block_stmts(&stmts, &mut ctx)
     }; // ctx (and its borrow of ch) dropped here
@@ -717,7 +754,7 @@ fn eval_expr_stmt(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<(), St
 fn push_component_emit(val: Value, ctx: &mut EvalContext<'_>) {
     match val {
         Value::ComponentExpr(ce) => {
-            ctx.emits.push(IntentValue::SpawnComponentTree {
+            push_eval_intent(ctx, IntentValue::SpawnComponentTree {
                 root: ce,
                 parent: None,
             });
@@ -846,7 +883,7 @@ fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value,
             calls: extra_ctor_calls,
             named: vec![],
             positionals: vec![],
-            deferred_block: Some(CapturedBlock {
+            deferred_block: Some(RuntimeClosure {
                 body: ce.body.clone(),
                 captured_env: Arc::new(ctx.object_world.snapshot_visible()),
                 analysis: Some(BlockEffectAnalyzer::analyze_keyframe_block(&ce.body)),
@@ -877,6 +914,7 @@ fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value,
             object_world: ctx.object_world,
             host_world: ctx.host_world,
             exec_scope: ctx.exec_scope,
+            runtime_closure_mode: ctx.runtime_closure_mode,
         };
         eval_block_stmts(&ce.body.statements, &mut body_ctx)
     };
@@ -1216,6 +1254,7 @@ fn eval_call(call: &CallExpression, ctx: &mut EvalContext<'_>) -> Result<Value, 
                     object_world: ctx.object_world,
                     host_world: ctx.host_world,
                     exec_scope: ctx.exec_scope,
+                    runtime_closure_mode: ctx.runtime_closure_mode,
                 };
                 eval_block_stmts(&body.statements, &mut func_ctx)
             };
@@ -1375,6 +1414,7 @@ fn eval_user_fn(
             object_world: ctx.object_world,
             host_world: ctx.host_world,
             exec_scope: ctx.exec_scope,
+            runtime_closure_mode: ctx.runtime_closure_mode,
         };
         eval_block_stmts(&body.statements, &mut func_ctx)
     };
@@ -1448,7 +1488,7 @@ fn eval_method_call(
                     format!("MusicNote.{}(): arg 2 must resolve to an audio target", method)
                 })?;
 
-            ctx.emits.push(IntentValue::AudioSchedulePlay {
+            push_eval_intent(ctx, IntentValue::AudioSchedulePlay {
                 component_ids: vec![target],
                 beat_offset: 0.0,
                 beat_context: None,
@@ -1519,7 +1559,7 @@ fn eval_method_call(
                 _ => None,
             };
             if let Some(state) = anim_state {
-                ctx.emits.push(IntentValue::SetAnimationState {
+                push_eval_intent(ctx, IntentValue::SetAnimationState {
                     component_ids: vec![id],
                     state,
                 });
@@ -1608,7 +1648,7 @@ fn eval_method_call(
                         );
                     }
                 };
-                ctx.emits.push(IntentValue::SetLayoutAvailableWidth {
+                push_eval_intent(ctx, IntentValue::SetLayoutAvailableWidth {
                     component_ids: vec![id],
                     width,
                 });
@@ -1651,7 +1691,7 @@ fn eval_method_call(
                         );
                     }
                 };
-                ctx.emits.push(IntentValue::SetLayoutAvailableHeight {
+                push_eval_intent(ctx, IntentValue::SetLayoutAvailableHeight {
                     component_ids: vec![id],
                     height,
                 });
@@ -1679,7 +1719,7 @@ fn eval_method_call(
                     }
                     _ => unreachable!(),
                 };
-                ctx.emits.push(IntentValue::SetLayoutInspect {
+                push_eval_intent(ctx, IntentValue::SetLayoutInspect {
                     component_ids: vec![id],
                     enabled,
                 });
@@ -1702,7 +1742,7 @@ fn eval_method_call(
                     }
                     None => return Err("set_text: missing string argument".into()),
                 };
-                ctx.emits.push(IntentValue::SetText {
+                push_eval_intent(ctx, IntentValue::SetText {
                     component_ids: vec![id],
                     text,
                 });
@@ -1737,7 +1777,7 @@ fn eval_method_call(
                 let mut next = t.transform;
                 next.translation = [x, y, z];
                 next.recompute_model();
-                ctx.emits.push(IntentValue::UpdateTransform {
+                push_eval_intent(ctx, IntentValue::UpdateTransform {
                     component_ids: vec![id],
                     translation: next.translation,
                     rotation_quat_xyzw: next.rotation,
@@ -1778,7 +1818,7 @@ fn eval_method_call(
                     .with_position(translation[0], translation[1], translation[2])
                     .with_rotation_euler(rotation_euler[0], rotation_euler[1], rotation_euler[2])
                     .with_scale(scale[0], scale[1], scale[2]);
-                ctx.emits.push(IntentValue::UpdateTransform {
+                push_eval_intent(ctx, IntentValue::UpdateTransform {
                     component_ids: vec![id],
                     translation: next.transform.translation,
                     rotation_quat_xyzw: next.transform.rotation,
@@ -1820,7 +1860,7 @@ fn eval_method_call(
                     camera.enabled = enabled;
                     return Ok(Value::Null);
                 }
-                ctx.emits.push(IntentValue::MakeActiveCamera {
+                push_eval_intent(ctx, IntentValue::MakeActiveCamera {
                     component_ids: vec![id],
                 });
                 return Ok(Value::Null);
@@ -1859,7 +1899,7 @@ fn eval_method_call(
                     camera.enabled = enabled;
                     return Ok(Value::Null);
                 }
-                ctx.emits.push(IntentValue::MakeActiveCamera {
+                push_eval_intent(ctx, IntentValue::MakeActiveCamera {
                     component_ids: vec![id],
                 });
                 return Ok(Value::Null);
@@ -1893,7 +1933,7 @@ fn eval_method_call(
                 {
                     t.set_font_size(font_size);
                 }
-                ctx.emits.push(IntentValue::SetText {
+                push_eval_intent(ctx, IntentValue::SetText {
                     component_ids: vec![id],
                     text: cur_text,
                 });
@@ -1932,7 +1972,7 @@ fn eval_method_call(
                     .ok_or_else(|| format!("{method}(): not an EmissiveComponent"))?;
                 emissive.intensity = intensity;
 
-                ctx.emits.push(IntentValue::SetEmissiveIntensity {
+                push_eval_intent(ctx, IntentValue::SetEmissiveIntensity {
                     component_ids: vec![id],
                     intensity,
                 });
@@ -2121,6 +2161,7 @@ fn eval_binop(
                             object_world: ctx.object_world,
                             host_world: None,
                             exec_scope: None,
+                            runtime_closure_mode: RuntimeClosureExecMode::Full,
                         };
                         eval_block_stmts(&body.statements, &mut func_ctx)
                     };
@@ -2472,6 +2513,7 @@ pub(crate) fn eval_mms_fn(
         object_world: &mut world,
         host_world: world_host.map(|world| world as *mut World),
         exec_scope: None,
+        runtime_closure_mode: RuntimeClosureExecMode::Full,
     };
     let live_emit = emit.as_mut().map(|em| unsafe {
         std::mem::transmute::<&mut dyn SignalEmitter, *mut dyn SignalEmitter>(&mut **em)
@@ -2490,30 +2532,32 @@ pub(crate) fn eval_mms_fn(
     Ok(result)
 }
 
-pub(crate) fn eval_mms_captured_block(
-    block: &CapturedBlock,
+pub(crate) fn eval_runtime_closure(
+    closure: &RuntimeClosure,
     channels: Option<&mut EvalChannels>,
     world_host: Option<&mut World>,
     mut emit: Option<&mut dyn SignalEmitter>,
     exec_scope: Option<ComponentId>,
+    mode: RuntimeClosureExecMode,
 ) -> Result<(), String> {
     let mut emits: Vec<IntentValue> = Vec::new();
     let mut world = ObjectWorld::new();
-    world.push_function_frame(block.captured_env.clone());
-    let mut ctx = EvalContext {
-        emits: &mut emits,
-        source_path: None,
-        channels,
-        ce_builder: None,
-        object_world: &mut world,
-        host_world: world_host.map(|world| world as *mut World),
-        exec_scope,
-    };
+    world.push_function_frame(closure.captured_env.clone());
+        let mut ctx = EvalContext {
+            emits: &mut emits,
+            source_path: None,
+            channels,
+            ce_builder: None,
+            object_world: &mut world,
+            host_world: world_host.map(|world| world as *mut World),
+            exec_scope,
+            runtime_closure_mode: mode,
+        };
     let live_emit = emit.as_mut().map(|em| unsafe {
         std::mem::transmute::<&mut dyn SignalEmitter, *mut dyn SignalEmitter>(&mut **em)
     });
     with_live_signal_emitter(live_emit, || {
-        let _ = eval_block_stmts(&block.body.statements, &mut ctx)?;
+        let _ = eval_block_stmts(&closure.body.statements, &mut ctx)?;
         Ok::<(), String>(())
     })?;
     if let Some(em) = emit {
@@ -2534,15 +2578,16 @@ pub(crate) fn eval_module_source(source: &str, source_path: Option<&str>) -> Res
     let mut emits: Vec<IntentValue> = Vec::new();
     let mut named: HashMap<String, Value> = HashMap::new();
     let mut world = ObjectWorld::new();
-    let mut ctx = EvalContext {
-        emits: &mut emits,
-        source_path,
-        channels: None,
-        ce_builder: None,
-        object_world: &mut world,
-        host_world: None,
-        exec_scope: None,
-    };
+        let mut ctx = EvalContext {
+            emits: &mut emits,
+            source_path,
+            channels: None,
+            ce_builder: None,
+            object_world: &mut world,
+            host_world: None,
+            exec_scope: None,
+            runtime_closure_mode: RuntimeClosureExecMode::Full,
+        };
 
     for stmt in &stmts {
         match eval_stmt(stmt, &mut ctx)? {

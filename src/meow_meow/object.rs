@@ -21,7 +21,7 @@ pub enum BuiltinTableKind {
 /// evaluated. Passed to `spawn_tree` in the registry — no MMS expression
 /// evaluation needed on the main thread.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CapturedBlock {
+pub struct RuntimeClosure {
     pub body: BlockStatement,
     pub captured_env: Arc<HashMap<String, Value>>,
     pub analysis: Option<BlockEffectAnalysis>,
@@ -47,7 +47,7 @@ pub struct MaterializedCE {
     pub positionals: Vec<Value>,
     /// Deferred executable block payload for components that own imperative
     /// runtime bodies, such as `Keyframe.at(...) { ... }`.
-    pub deferred_block: Option<CapturedBlock>,
+    pub deferred_block: Option<RuntimeClosure>,
     /// Child component trees, in source order. Each entry is either a CE to
     /// spawn fresh, or a pre-Registered `ComponentId` to splice in.
     pub children: Vec<CeChild>,

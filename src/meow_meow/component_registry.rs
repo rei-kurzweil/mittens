@@ -652,7 +652,7 @@ pub fn ce_ast_to_materialized(ce: &ComponentExpression) -> Result<MaterializedCE
             calls,
             named: Vec::new(),
             positionals: Vec::new(),
-            deferred_block: Some(crate::meow_meow::object::CapturedBlock {
+            deferred_block: Some(crate::meow_meow::object::RuntimeClosure {
                 body: ce.body.clone(),
                 captured_env: std::sync::Arc::new(std::collections::HashMap::new()),
                 analysis: Some(
@@ -3058,7 +3058,7 @@ fn apply_layout_bounds_ctor(
 mod tests {
     use super::*;
     use crate::meow_meow::ast::BlockStatement;
-    use crate::meow_meow::object::CapturedBlock;
+    use crate::meow_meow::object::RuntimeClosure;
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -3072,7 +3072,7 @@ mod tests {
             calls: vec![],
             named: vec![],
             positionals: vec![],
-            deferred_block: Some(CapturedBlock {
+            deferred_block: Some(RuntimeClosure {
                 body: BlockStatement { statements: vec![] },
                 captured_env: Arc::new(HashMap::new()),
                 analysis: None,
