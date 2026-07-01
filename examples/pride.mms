@@ -74,19 +74,29 @@ let annulus_4_glow = Emissive.on() { intensity(0.2) }
 
 T.position(-2.1, -2.1, -4.0) {
     T.scale(1.0, 1.0, 1.0) {
-        R.partial_annulus_2d(0.55, 0.89, 0.0, 1.5707963, 48) { C.rgba(0.89, 0.16, 0.11, 1.0) annulus_0_glow }
+        R.partial_annulus_2d(0.55, 0.89, 0.0, 1.5707963, 48) { 
+            C.rgba(0.89, 0.16, 0.11, 1.0) annulus_0_glow 
+        }
     }
     T.scale(1.0, 1.0, 1.0) {
-        R.partial_annulus_2d(0.92, 1.26, 0.0, 1.5707963, 48) { C.rgba(0.98, 0.49, 0.10, 1.0) annulus_1_glow }
+        R.partial_annulus_2d(0.92, 1.26, 0.0, 1.5707963, 48) { 
+            C.rgba(0.98, 0.49, 0.10, 1.0) annulus_1_glow 
+        }
     }
     T.scale(1.0, 1.0, 1.0) {
-        R.partial_annulus_2d(1.29, 1.63, 0.0, 1.5707963, 48) { C.rgba(0.99, 0.84, 0.13, 1.0) annulus_2_glow }
+        R.partial_annulus_2d(1.29, 1.63, 0.0, 1.5707963, 48) { 
+            C.rgba(0.99, 0.84, 0.13, 1.0) annulus_2_glow 
+        }
     }
     T.scale(1.0, 1.0, 1.0) {
-        R.partial_annulus_2d(1.66, 2.00, 0.0, 1.5707963, 48) { C.rgba(0.16, 0.68, 0.27, 1.0) annulus_3_glow }
+        R.partial_annulus_2d(1.66, 2.00, 0.0, 1.5707963, 48) { 
+            C.rgba(0.16, 0.68, 0.27, 1.0) annulus_3_glow 
+        }
     }
     T.scale(1.0, 1.0, 1.0) {
-        R.partial_annulus_2d(2.03, 2.37, 0.0, 1.5707963, 48) { C.rgba(0.10, 0.42, 0.91, 1.0) annulus_4_glow }
+        R.partial_annulus_2d(2.03, 2.37, 0.0, 1.5707963, 48) { 
+            C.rgba(0.10, 0.42, 0.91, 1.0) annulus_4_glow 
+        }
     }
 }
 
