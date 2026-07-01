@@ -94,6 +94,12 @@ pub fn spawn_tree(
     let type_name = resolve_type_name(&ce.component_type);
     let id = create_component(world, &type_name, ce.ctor_method.as_deref(), &ce.ctor_args)?;
 
+    if let Some(block) = &ce.deferred_block {
+        if let Some(keyframe) = world.get_component_by_id_as_mut::<KeyframeComponent>(id) {
+            keyframe.callback = Some(block.clone());
+        }
+    }
+
     // Extra ctor calls + body builder calls (already evaluated).
     for (method, args) in &ce.calls {
         apply_call(world, id, method, args)?;
@@ -3072,4 +3078,40 @@ fn apply_layout_bounds_ctor(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::meow_meow::ast::BlockStatement;
+    use crate::meow_meow::object::CapturedBlock;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    #[test]
+    fn spawn_tree_installs_keyframe_callback() {
+        let ce = MaterializedCE {
+            component_type: "Keyframe".to_string(),
+            component_property_assignment_only: false,
+            ctor_method: Some("at".to_string()),
+            ctor_args: vec![Value::Number(1.0)],
+            calls: vec![],
+            named: vec![],
+            positionals: vec![],
+            deferred_block: Some(CapturedBlock {
+                body: BlockStatement { statements: vec![] },
+                captured_env: Arc::new(HashMap::new()),
+            }),
+            children: vec![],
+        };
+
+        let mut world = World::default();
+        let mut emit = crate::engine::ecs::RxWorld::default();
+        let id = spawn_tree(&ce, None, &mut world, &mut emit).expect("spawn keyframe");
+
+        let keyframe = world
+            .get_component_by_id_as::<KeyframeComponent>(id)
+            .expect("spawned keyframe exists");
+        assert!(keyframe.callback.is_some());
+    }
 }

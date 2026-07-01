@@ -20,12 +20,26 @@ Migrate authored MMS examples from legacy `Action.*` children under
 - [x] `examples/bisket-vr-demo.mms`
 - [x] `examples/router.mms`
 
+### Migrated Rust example launchers
+
+The `.mms` files alone were not enough. Any launcher that still used
+`MeowMeowRunner::eval(...)` stayed in the old offline mode, which cannot
+materialize live `let`-bound component handles for keyframe blocks.
+
+- [x] `examples/component-method-call.rs`
+- [x] `examples/pride.rs`
+- [x] `examples/observer-router.rs`
+- [x] `examples/bisket-vr-demo.rs`
+- [x] `examples/router.rs`
+- [x] `examples/transition.rs`
+
 ### What this migration needed
 
 - [x] `KeyframeComponent` stores an executable captured MMS block
 - [x] `AnimationSystem` invokes the block when the keyframe becomes due
 - [x] live method calls from keyframe blocks push intents through the normal signal path
 - [x] `Transform.update_transform(translation, rotation_euler, scale)` method for MMS
+- [x] example launchers use live runner paths (`eval_with_world...`) when authored MMS depends on captured live handles
 
 ### What did not require new support
 

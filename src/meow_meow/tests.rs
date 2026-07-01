@@ -4,7 +4,9 @@ use std::{fs, path::PathBuf};
 use crate::engine;
 use crate::engine::ecs::component::style::SizeDimension;
 use crate::engine::ecs::component::{LayoutComponent, StyleComponent, TransformComponent};
-use crate::engine::ecs::{CommandQueue, ComponentId, EventSignal, RxWorld, Signal, World};
+use crate::engine::ecs::{CommandQueue, ComponentId, EventSignal, RxWorld, Signal, SignalEmitter, World};
+use crate::engine::graphics::{RenderAssets, VisualWorld};
+use crate::engine::user_input::InputState;
 use crate::meow_meow::ast::{AssignmentStatement, Expression, ImportItem, Statement};
 use crate::meow_meow::evaluator::{EvalRequest, EvalResponse, MeowMeowEvaluator};
 use crate::meow_meow::object::Value;
@@ -602,6 +604,98 @@ fn live_eval_let_bound_component_expr_can_mutate_before_and_after_attach() {
         "expected final emissive intensity 2.5, got {} on {:?}",
         glow.1,
         glow.0
+    );
+}
+
+#[test]
+fn live_eval_nested_let_attached_transform_animates_via_keyframe_block() {
+    let src = r##"
+        Clock.bpm(60) {}
+
+        let cube_t = T.position(0.0, 0.0, 0.0) {
+            name = "cube_t"
+            Transition {
+                duration_beats(1.0)
+                linear()
+                replace_same_target()
+            }
+        }
+
+        let parent_t = T.position(0.0, 0.0, 0.0) {
+            name = "parent_t"
+            cube_t
+        }
+
+        parent_t
+
+        Animation.looping().length(2.0) {
+            Keyframe.at(0.0) {
+                cube_t.update_transform([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+            }
+            Keyframe.at(1.0) {
+                cube_t.update_transform([1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+            }
+        }
+    "##;
+
+    let mut world = World::default();
+    let mut systems = crate::engine::ecs::system::SystemWorld::default();
+    let mut visuals = VisualWorld::default();
+    let mut render_assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+    let input = InputState::default();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut systems.rx, &mut queue);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+
+    for intent in out.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
+
+    systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
+
+    let parent_t = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("parent_t"))
+        .expect("parent_t exists");
+    let cube_t = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("cube_t"))
+        .expect("cube_t exists");
+    assert_eq!(world.parent_of(cube_t), Some(parent_t));
+
+    systems.tick(
+        &mut world,
+        &mut visuals,
+        &mut render_assets,
+        &input,
+        &mut queue,
+        0.1,
+    );
+    systems.tick(
+        &mut world,
+        &mut visuals,
+        &mut render_assets,
+        &input,
+        &mut queue,
+        1.0,
+    );
+    systems.tick(
+        &mut world,
+        &mut visuals,
+        &mut render_assets,
+        &input,
+        &mut queue,
+        0.5,
+    );
+
+    let transform = world
+        .get_component_by_id_as::<TransformComponent>(cube_t)
+        .expect("cube_t transform exists");
+    assert!(
+        transform.transform.translation[0] > 0.0,
+        "expected transition to begin moving cube_t, got {:?}",
+        transform.transform.translation
     );
 }
 

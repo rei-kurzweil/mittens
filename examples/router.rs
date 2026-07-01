@@ -41,7 +41,16 @@ fn spawn_runtime_text(
 fn main() {
     utils::logger::init();
 
-    let output = meow_meow::MeowMeowRunner::eval(include_str!("router.mms"));
+    let world = engine::ecs::World::default();
+    let mut universe = engine::Universe::new(world);
+
+    let output = meow_meow::MeowMeowRunner::eval_with_world_at_path(
+        include_str!("router.mms"),
+        Some("examples/router.mms"),
+        &mut universe.world,
+        &mut universe.systems.rx,
+        &mut universe.command_queue,
+    );
 
     for error in &output.errors {
         eprintln!("[mms] {error}");
@@ -51,9 +60,6 @@ fn main() {
     if !output.errors.is_empty() {
         std::process::exit(1);
     }
-
-    let world = engine::ecs::World::default();
-    let mut universe = engine::Universe::new(world);
 
     let scope = engine::ecs::ComponentId::default();
     for intent in output.intents {

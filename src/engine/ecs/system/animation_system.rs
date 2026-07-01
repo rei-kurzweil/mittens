@@ -786,4 +786,56 @@ mod tests {
         assert_eq!(transform.transform.translation, [1.0, 2.0, 3.0]);
         assert_eq!(transform.transform.scale, [2.0, 2.0, 2.0]);
     }
+
+    #[test]
+    fn keyframe_callback_emissive_set_intensity_emits_intensity_intent() {
+        let mut world = World::default();
+        let animation =
+            world.add_component(AnimationComponent::new().with_state(AnimationState::Playing));
+        let target = world.add_component(crate::engine::ecs::component::EmissiveComponent::off());
+        let callback = CapturedBlock {
+            body: BlockStatement {
+                statements: vec![Statement::Expression(Expression::Call(CallExpression {
+                    callee: Box::new(Expression::BinaryOp {
+                        op: BinOpKind::Dot,
+                        lhs: Box::new(Expression::Identifier(Ident("glow".to_string()))),
+                        rhs: Box::new(Expression::Identifier(Ident("set_intensity".to_string()))),
+                    }),
+                    args: vec![Expression::Number(2.5)],
+                }))],
+            },
+            captured_env: Arc::new(HashMap::from([(
+                "glow".to_string(),
+                Value::ComponentObject {
+                    id: target,
+                    component_type: "EM".to_string(),
+                },
+            )])),
+        };
+        let keyframe = world.add_component(KeyframeComponent::new_with_callback(0.0, callback));
+        world.add_child(animation, keyframe).unwrap();
+
+        let mut system = AnimationSystem::new();
+        system.register_animation(&mut world, animation);
+        system.register_keyframe(&mut world, keyframe);
+
+        let mut rx = RxWorld::default();
+        system.tick_with_beat(&mut world, 0.0, 60.0, &mut rx);
+
+        let intents = rx.drain_ready_intents();
+        assert!(intents.iter().any(|signal| {
+            matches!(
+                signal.intent.as_ref().map(|intent| &intent.value),
+                Some(IntentValue::SetEmissiveIntensity {
+                    component_ids,
+                    intensity,
+                }) if component_ids == &vec![target] && (*intensity - 2.5).abs() < 1.0e-6
+            )
+        }));
+
+        let emissive = world
+            .get_component_by_id_as::<crate::engine::ecs::component::EmissiveComponent>(target)
+            .expect("target emissive exists");
+        assert!((emissive.intensity - 2.5).abs() < 1.0e-6);
+    }
 }

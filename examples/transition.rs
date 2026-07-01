@@ -3,7 +3,17 @@ use cat_engine::{engine, engine::ecs::SignalEmitter, meow_meow, utils};
 fn main() {
     utils::logger::init();
 
-    let output = meow_meow::MeowMeowRunner::eval(include_str!("transition.mms"));
+    let world = engine::ecs::World::default();
+    let mut universe = engine::Universe::new(world);
+
+    let output = meow_meow::MeowMeowRunner::eval_with_world_and_assets_at_path(
+        include_str!("transition.mms"),
+        Some("examples/transition.mms"),
+        &mut universe.world,
+        &mut universe.systems.rx,
+        Some(&mut universe.render_assets),
+        &mut universe.command_queue,
+    );
 
     for error in &output.errors {
         eprintln!("[mms error] {error}");
@@ -14,9 +24,6 @@ fn main() {
         eprintln!("[transition] FAIL — {} error(s)", output.errors.len());
         std::process::exit(1);
     }
-
-    let world = engine::ecs::World::default();
-    let mut universe = engine::Universe::new(world);
 
     let scope = engine::ecs::ComponentId::default();
     for intent in output.intents {

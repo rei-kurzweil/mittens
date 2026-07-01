@@ -1622,17 +1622,18 @@ fn eval_method_call(
                 };
                 let world = unsafe { &mut *world };
                 let t = world
-                    .get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(
+                    .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(
                         id,
                     )
                     .ok_or_else(|| "set_position(): not a TransformComponent".to_string())?;
-                t.transform.translation = [x, y, z];
-                t.transform.recompute_model();
+                let mut next = t.transform;
+                next.translation = [x, y, z];
+                next.recompute_model();
                 ctx.emits.push(IntentValue::UpdateTransform {
                     component_ids: vec![id],
-                    translation: t.transform.translation,
-                    rotation_quat_xyzw: t.transform.rotation,
-                    scale: t.transform.scale,
+                    translation: next.translation,
+                    rotation_quat_xyzw: next.rotation,
+                    scale: next.scale,
                 });
                 return Ok(Value::Null);
             }
@@ -1660,21 +1661,20 @@ fn eval_method_call(
                 };
                 let world = unsafe { &mut *world };
                 let t = world
-                    .get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(
+                    .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(
                         id,
                     )
                     .ok_or_else(|| "update_transform(): not a TransformComponent".to_string())?;
-                t.transform.translation = translation;
-                t.transform.scale = scale;
-                *t = t
+                let next = t
+                    .clone()
                     .with_position(translation[0], translation[1], translation[2])
                     .with_rotation_euler(rotation_euler[0], rotation_euler[1], rotation_euler[2])
                     .with_scale(scale[0], scale[1], scale[2]);
                 ctx.emits.push(IntentValue::UpdateTransform {
                     component_ids: vec![id],
-                    translation: t.transform.translation,
-                    rotation_quat_xyzw: t.transform.rotation,
-                    scale: t.transform.scale,
+                    translation: next.transform.translation,
+                    rotation_quat_xyzw: next.transform.rotation,
+                    scale: next.transform.scale,
                 });
                 return Ok(Value::Null);
             }
@@ -1794,19 +1794,10 @@ fn eval_method_call(
 
             if matches!(
                 component_type.as_str(),
-                "Emissive" | "EmissiveComponent" | "emissive"
+                "EM" | "Emissive" | "EmissiveComponent" | "emissive"
             ) && matches!(method, "set_intensity" | "on" | "off")
             {
-                let Some(world) = ctx.host_world else {
-                    return Err(format!("{method}(): no host world"));
-                };
-                let world = unsafe { &mut *world };
-                let emissive = world
-                    .get_component_by_id_as_mut::<crate::engine::ecs::component::EmissiveComponent>(
-                        id,
-                    )
-                    .ok_or_else(|| format!("{method}(): not an EmissiveComponent"))?;
-                emissive.intensity = match method {
+                let intensity = match method {
                     "on" => 1.0,
                     "off" => 0.0,
                     "set_intensity" => match args.first() {
@@ -1821,8 +1812,21 @@ fn eval_method_call(
                     },
                     _ => unreachable!(),
                 };
-                ctx.emits.push(IntentValue::RegisterEmissive {
+
+                let Some(world) = ctx.host_world else {
+                    return Err(format!("{method}(): no host world"));
+                };
+                let world = unsafe { &mut *world };
+                let emissive = world
+                    .get_component_by_id_as_mut::<crate::engine::ecs::component::EmissiveComponent>(
+                        id,
+                    )
+                    .ok_or_else(|| format!("{method}(): not an EmissiveComponent"))?;
+                emissive.intensity = intensity;
+
+                ctx.emits.push(IntentValue::SetEmissiveIntensity {
                     component_ids: vec![id],
+                    intensity,
                 });
                 return Ok(Value::Null);
             }

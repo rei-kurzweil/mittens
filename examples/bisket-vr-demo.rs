@@ -276,7 +276,17 @@ fn on_dump_click(world: &mut World, _emit: &mut dyn SignalEmitter, env: &Signal)
 fn main() {
     utils::logger::init();
 
-    let output = meow_meow::MeowMeowRunner::eval(include_str!("bisket-vr-demo.mms"));
+    let world = engine::ecs::World::default();
+    let mut universe = engine::Universe::new(world);
+
+    let output = meow_meow::MeowMeowRunner::eval_with_world_and_assets_at_path(
+        include_str!("bisket-vr-demo.mms"),
+        Some("examples/bisket-vr-demo.mms"),
+        &mut universe.world,
+        &mut universe.systems.rx,
+        Some(&mut universe.render_assets),
+        &mut universe.command_queue,
+    );
 
     for error in &output.errors {
         eprintln!("[mms] {error}");
@@ -285,9 +295,6 @@ fn main() {
         "[mms] {} intent(s) from bisket-vr-demo.mms",
         output.intents.len()
     );
-
-    let world = engine::ecs::World::default();
-    let mut universe = engine::Universe::new(world);
 
     let scope = engine::ecs::ComponentId::default();
     for intent in output.intents {
