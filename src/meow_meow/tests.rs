@@ -700,6 +700,80 @@ fn live_eval_nested_let_attached_transform_animates_via_keyframe_block() {
 }
 
 #[test]
+fn live_keyframe_block_music_note_emits_audio_schedule_play() {
+    use crate::engine::ecs::IntentValue;
+    use crate::engine::ecs::component::MusicNote;
+
+    let src = r##"
+        Clock.bpm(60) {}
+
+        AudioOutput {
+            AudioOscillator.square() {
+                name = "lead"
+            }
+        }
+
+        MusicContext {
+            voice("lead", "[name='lead']")
+
+            Animation.looping() {
+                Keyframe.at(0.0) {
+                    MusicNote.e(4, 0.25, "lead")
+                }
+            }
+        }
+    "##;
+
+    let mut world = World::default();
+    let mut systems = crate::engine::ecs::system::SystemWorld::default();
+    let mut visuals = VisualWorld::default();
+    let mut render_assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut systems.rx, &mut queue);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+
+    for intent in out.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
+
+    systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
+    systems.animation.tick_with_beat(&mut world, 0.0, 60.0, &mut systems.rx);
+
+    let intents = systems.rx.drain_ready_intents();
+    assert!(
+        intents.iter().all(|signal| {
+            !matches!(
+                signal.intent.as_ref().map(|intent| &intent.value),
+                Some(IntentValue::SpawnComponentTree { .. })
+            )
+        }),
+        "keyframe callback should not spawn detached MusicNote trees: {:?}",
+        intents
+    );
+
+    let audio = intents
+        .iter()
+        .find_map(|signal| match signal.intent.as_ref().map(|intent| &intent.value) {
+            Some(IntentValue::AudioSchedulePlay {
+                component_ids,
+                note,
+                beat_offset,
+                ..
+            }) => Some((component_ids.clone(), note.clone(), *beat_offset)),
+            _ => None,
+        })
+        .expect("expected AudioSchedulePlay from keyframe MusicNote");
+
+    assert_eq!(audio.2, 0.0);
+    let note = audio.1.expect("expected note payload");
+    assert_eq!(note.pitch_name(), MusicNote::e(4, 0.25).pitch_name());
+    assert_eq!(note.octave(), 4);
+    assert!((note.duration_beats() - 0.25).abs() < 1.0e-6);
+    assert_eq!(audio.0.len(), 1);
+}
+
+#[test]
 fn live_handler_query_can_see_world() {
     let src = r##"
         T { name = "btn" }

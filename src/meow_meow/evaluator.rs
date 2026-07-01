@@ -10,7 +10,7 @@ use crate::engine::ecs::IntentValue;
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::SignalKind;
 use crate::engine::ecs::World;
-use crate::engine::ecs::component::AnimationState;
+use crate::engine::ecs::component::{AnimationState, ComponentRef, MusicContextComponent, MusicNote};
 use crate::meow_meow::ast::{
     BinOpKind, CallExpression, ComponentExpression, ElseBranch, Expression, IfStatement,
     ImportItem, Statement, UnaryOpKind,
@@ -292,6 +292,8 @@ struct EvalContext<'a> {
     /// Inline live-world host access used when MMS runs directly inside a
     /// registered engine handler rather than through evaluator channels.
     host_world: Option<*mut World>,
+    /// Live component subtree that owns the currently executing imperative block.
+    exec_scope: Option<ComponentId>,
 }
 
 thread_local! {
@@ -383,6 +385,7 @@ fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
             ce_builder: None,
             object_world: &mut world,
             host_world: None,
+            exec_scope: None,
         };
         eval_block_stmts(&stmts, &mut ctx)
     }; // ctx (and its borrow of ch) dropped here
@@ -713,6 +716,10 @@ fn eval_expr_stmt(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<(), St
 fn push_component_emit(val: Value, ctx: &mut EvalContext<'_>) {
     match val {
         Value::ComponentExpr(ce) => {
+            if let Some(intent) = try_build_live_music_note_intent(&ce, ctx) {
+                ctx.emits.push(intent);
+                return;
+            }
             ctx.emits.push(IntentValue::SpawnComponentTree {
                 root: ce,
                 parent: None,
@@ -730,6 +737,165 @@ fn push_component_emit(val: Value, ctx: &mut EvalContext<'_>) {
         }
         _ => {}
     }
+}
+
+fn try_build_live_music_note_intent(
+    ce: &crate::meow_meow::object::MaterializedCE,
+    ctx: &mut EvalContext<'_>,
+) -> Option<IntentValue> {
+    if ce.component_type != "MusicNote" {
+        return None;
+    }
+    let exec_scope = ctx.exec_scope?;
+    let world = unsafe { &mut *ctx.host_world? };
+
+    let pitch_ctor = match ce.ctor_method.as_deref() {
+        Some("a") => MusicNote::a,
+        Some("b") => MusicNote::b,
+        Some("c") => MusicNote::c,
+        Some("d") => MusicNote::d,
+        Some("e") => MusicNote::e,
+        Some("f") => MusicNote::f,
+        Some("g") => MusicNote::g,
+        _ => return None,
+    };
+
+    let octave = value_as_u16(ce.ctor_args.first()?).ok()?;
+    let duration_beats = value_as_f32(ce.ctor_args.get(1)?).ok()?;
+    let mut note = pitch_ctor(octave, duration_beats);
+
+    let mut target_source: Option<ComponentRef> = None;
+    let mut voice_name: Option<String> = None;
+    let mut beat_offset = 0.0_f64;
+
+    if let Some(arg) = ce.ctor_args.get(2) {
+        match arg {
+            Value::String(name) => voice_name = Some(name.clone()),
+            _ => {
+                if let Ok(src) = value_to_component_ref_live(world, arg) {
+                    target_source = Some(src);
+                }
+            }
+        }
+    }
+
+    for (method, args) in &ce.calls {
+        match method.as_str() {
+            "velocity" => note = note.with_velocity(value_as_f32(args.first()?).ok()?),
+            "at_beat" => beat_offset = value_as_f64(args.first()?).ok()?,
+            "voice" => voice_name = Some(value_as_string(args.first()?).ok()?.to_string()),
+            "target" => {
+                target_source = Some(value_to_component_ref_live(world, args.first()?).ok()?)
+            }
+            "play_on_attach" => {}
+            _ => {}
+        }
+    }
+
+    let target = if let Some(src) = target_source.as_ref() {
+        resolve_live_component_ref_global(world, src)?
+    } else {
+        let ctx_id = find_music_context_scope(world, exec_scope)?;
+        lookup_music_context_voice(world, ctx_id, voice_name.as_deref())?
+    };
+
+    Some(IntentValue::AudioSchedulePlay {
+        component_ids: vec![target],
+        beat_offset,
+        beat_context: None,
+        note: Some(note),
+        gain: None,
+        rate: None,
+        duration: None,
+    })
+}
+
+fn value_to_component_ref_live(world: &World, value: &Value) -> Result<ComponentRef, String> {
+    match value {
+        Value::ComponentObject { id, .. } => {
+            let guid = world
+                .get_component_record(*id)
+                .map(|record| record.guid)
+                .ok_or_else(|| format!("component handle {id:?} not found in world"))?;
+            Ok(ComponentRef::Guid(guid))
+        }
+        Value::String(s) | Value::Identifier(s) => {
+            if let Some(hex) = s.strip_prefix("@uuid:") {
+                let uuid = uuid::Uuid::parse_str(hex)
+                    .map_err(|e| format!("invalid uuid in '@uuid:{hex}': {e}"))?;
+                Ok(ComponentRef::Guid(uuid))
+            } else {
+                Ok(ComponentRef::Query(s.clone()))
+            }
+        }
+        other => Err(format!(
+            "expected component handle or selector string, got {other:?}"
+        )),
+    }
+}
+
+fn resolve_live_component_ref_global(world: &World, src: &ComponentRef) -> Option<ComponentId> {
+    match src {
+        ComponentRef::Guid(uuid) => world.component_id_by_guid(*uuid),
+        ComponentRef::Query(selector) => world
+            .world_roots()
+            .into_iter()
+            .find_map(|root| world.find_component(root, selector)),
+    }
+}
+
+fn find_music_context_scope(world: &World, mut current: ComponentId) -> Option<ComponentId> {
+    loop {
+        if world
+            .get_component_by_id_as::<MusicContextComponent>(current)
+            .is_some()
+        {
+            return Some(current);
+        }
+        current = world.parent_of(current)?;
+    }
+}
+
+fn lookup_music_context_voice(
+    world: &mut World,
+    ctx_id: ComponentId,
+    name: Option<&str>,
+) -> Option<ComponentId> {
+    let index = {
+        let ctx = world.get_component_by_id_as::<MusicContextComponent>(ctx_id)?;
+        match name {
+            None => 0,
+            Some(voice_name) => ctx.voices.iter().position(|(entry, _)| entry == voice_name)?,
+        }
+    };
+
+    if let Some(cached) = world
+        .get_component_by_id_as::<MusicContextComponent>(ctx_id)?
+        .voices_resolved
+        .get(index)
+        .copied()
+        .flatten()
+    {
+        return Some(cached);
+    }
+
+    let source = world
+        .get_component_by_id_as::<MusicContextComponent>(ctx_id)?
+        .voices
+        .get(index)?
+        .1
+        .clone();
+    let resolved = resolve_live_component_ref_global(world, &source)?;
+
+    if let Some(slot) = world
+        .get_component_by_id_as_mut::<MusicContextComponent>(ctx_id)?
+        .voices_resolved
+        .get_mut(index)
+    {
+        *slot = Some(resolved);
+    }
+
+    Some(resolved)
 }
 
 fn is_builtin_fn(name: &str) -> bool {
@@ -837,6 +1003,7 @@ fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value,
             ce_builder: Some(&mut builder),
             object_world: ctx.object_world,
             host_world: ctx.host_world,
+            exec_scope: ctx.exec_scope,
         };
         eval_block_stmts(&ce.body.statements, &mut body_ctx)
     };
@@ -1172,6 +1339,7 @@ fn eval_call(call: &CallExpression, ctx: &mut EvalContext<'_>) -> Result<Value, 
                     ce_builder: None,
                     object_world: ctx.object_world,
                     host_world: ctx.host_world,
+                    exec_scope: ctx.exec_scope,
                 };
                 eval_block_stmts(&body.statements, &mut func_ctx)
             };
@@ -1330,6 +1498,7 @@ fn eval_user_fn(
             ce_builder: None,
             object_world: ctx.object_world,
             host_world: ctx.host_world,
+            exec_scope: ctx.exec_scope,
         };
         eval_block_stmts(&body.statements, &mut func_ctx)
     };
@@ -2012,6 +2181,7 @@ fn eval_binop(
                             ce_builder: None,
                             object_world: ctx.object_world,
                             host_world: None,
+                            exec_scope: None,
                         };
                         eval_block_stmts(&body.statements, &mut func_ctx)
                     };
@@ -2181,6 +2351,34 @@ fn dimension_scale(
 // Helpers
 // ---------------------------------------------------------------------------
 
+fn value_as_f32(value: &Value) -> Result<f32, String> {
+    match value {
+        Value::Number(n) => Ok(*n as f32),
+        other => Err(format!("expected number, got {other:?}")),
+    }
+}
+
+fn value_as_f64(value: &Value) -> Result<f64, String> {
+    match value {
+        Value::Number(n) => Ok(*n),
+        other => Err(format!("expected number, got {other:?}")),
+    }
+}
+
+fn value_as_u16(value: &Value) -> Result<u16, String> {
+    match value {
+        Value::Number(n) if n.is_finite() && *n >= 0.0 && n.fract() == 0.0 => Ok(*n as u16),
+        other => Err(format!("expected non-negative integer, got {other:?}")),
+    }
+}
+
+fn value_as_string(value: &Value) -> Result<&str, String> {
+    match value {
+        Value::String(s) | Value::Identifier(s) => Ok(s),
+        other => Err(format!("expected string, got {other:?}")),
+    }
+}
+
 fn value_display(val: &Value) -> String {
     match val {
         Value::Null => "null".into(),
@@ -2332,6 +2530,7 @@ pub(crate) fn eval_mms_fn(
         ce_builder: None,
         object_world: &mut world,
         host_world: world_host.map(|world| world as *mut World),
+        exec_scope: None,
     };
     let live_emit = emit.as_mut().map(|em| unsafe {
         std::mem::transmute::<&mut dyn SignalEmitter, *mut dyn SignalEmitter>(&mut **em)
@@ -2355,6 +2554,7 @@ pub(crate) fn eval_mms_captured_block(
     channels: Option<&mut EvalChannels>,
     world_host: Option<&mut World>,
     mut emit: Option<&mut dyn SignalEmitter>,
+    exec_scope: Option<ComponentId>,
 ) -> Result<(), String> {
     let mut emits: Vec<IntentValue> = Vec::new();
     let mut world = ObjectWorld::new();
@@ -2366,6 +2566,7 @@ pub(crate) fn eval_mms_captured_block(
         ce_builder: None,
         object_world: &mut world,
         host_world: world_host.map(|world| world as *mut World),
+        exec_scope,
     };
     let live_emit = emit.as_mut().map(|em| unsafe {
         std::mem::transmute::<&mut dyn SignalEmitter, *mut dyn SignalEmitter>(&mut **em)
@@ -2399,6 +2600,7 @@ pub(crate) fn eval_module_source(source: &str, source_path: Option<&str>) -> Res
         ce_builder: None,
         object_world: &mut world,
         host_world: None,
+        exec_scope: None,
     };
 
     for stmt in &stmts {

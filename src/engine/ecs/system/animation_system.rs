@@ -462,8 +462,13 @@ impl AnimationSystem {
 
                 if kf_local_beat <= local_beat + 1e-9 {
                     if let Some(callback) = callback {
-                        if let Err(error) =
-                            eval_mms_captured_block(&callback, None, Some(world), Some(rx))
+                        if let Err(error) = eval_mms_captured_block(
+                            &callback,
+                            None,
+                            Some(world),
+                            Some(rx),
+                            Some(kf_id),
+                        )
                         {
                             eprintln!(
                                 "[AnimationSystem] keyframe callback failed for {kf_id:?}: {error}"
