@@ -19,7 +19,7 @@ use crate::meow_meow::component_registry::{
     component_expr_uses_property_assignment_only, is_universal_component_named_prop,
 };
 use crate::meow_meow::object::{
-    CapturedBlock, CeChild, FrameKind, MaterializedCE, ObjectWorld, Value,
+    BuiltinTableKind, CapturedBlock, CeChild, FrameKind, MaterializedCE, ObjectWorld, Value,
 };
 use crate::meow_meow::parser::{MeowMeowParser, ParseError};
 use crate::meow_meow::token::TokenizeError;
@@ -716,10 +716,6 @@ fn eval_expr_stmt(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<(), St
 fn push_component_emit(val: Value, ctx: &mut EvalContext<'_>) {
     match val {
         Value::ComponentExpr(ce) => {
-            if let Some(intent) = try_build_live_music_note_intent(&ce, ctx) {
-                ctx.emits.push(intent);
-                return;
-            }
             ctx.emits.push(IntentValue::SpawnComponentTree {
                 root: ce,
                 parent: None,
@@ -737,68 +733,6 @@ fn push_component_emit(val: Value, ctx: &mut EvalContext<'_>) {
         }
         _ => {}
     }
-}
-
-fn try_build_live_music_note_intent(
-    ce: &crate::meow_meow::object::MaterializedCE,
-    ctx: &mut EvalContext<'_>,
-) -> Option<IntentValue> {
-    if ce.component_type != "MusicNote" {
-        return None;
-    }
-    let world = unsafe { &mut *ctx.host_world? };
-
-    let pitch_ctor = match ce.ctor_method.as_deref() {
-        Some("a") => MusicNote::a,
-        Some("b") => MusicNote::b,
-        Some("c") => MusicNote::c,
-        Some("d") => MusicNote::d,
-        Some("e") => MusicNote::e,
-        Some("f") => MusicNote::f,
-        Some("g") => MusicNote::g,
-        _ => return None,
-    };
-
-    let octave = value_as_u16(ce.ctor_args.first()?).ok()?;
-    let duration_beats = value_as_f32(ce.ctor_args.get(1)?).ok()?;
-    let mut note = pitch_ctor(octave, duration_beats);
-
-    let mut target_source: Option<ComponentRef> = None;
-    let mut beat_offset = 0.0_f64;
-
-    if let Some(arg) = ce.ctor_args.get(2) {
-        if let Ok(src) = value_to_component_ref_live(world, arg) {
-            target_source = Some(src);
-        }
-    }
-
-    for (method, args) in &ce.calls {
-        match method.as_str() {
-            "velocity" => note = note.with_velocity(value_as_f32(args.first()?).ok()?),
-            "at_beat" => beat_offset = value_as_f64(args.first()?).ok()?,
-            "target" => {
-                target_source = Some(value_to_component_ref_live(world, args.first()?).ok()?)
-            }
-            "play_on_attach" => {}
-            _ => {}
-        }
-    }
-
-    let target = if let Some(src) = target_source.as_ref() {
-        resolve_live_component_ref_global(world, src)?
-    } else {
-        return None;
-    };
-
-    Some(IntentValue::AudioSchedulePlay {
-        component_ids: vec![target],
-        beat_offset,
-        beat_context: None,
-        note: Some(note),
-        gain: None,
-        rate: None,
-        duration: None,
-    })
 }
 
 fn value_to_component_ref_live(world: &World, value: &Value) -> Result<ComponentRef, String> {
@@ -1006,7 +940,10 @@ fn eval_expr(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<Value, Stri
             // Look up in scope chain; fall back to bare identifier value (for enum-like flags).
             match ctx.object_world.lookup(&id.0) {
                 Some(val) => Ok(val.clone()),
-                None => Ok(Value::Identifier(id.0.clone())),
+                None => match id.0.as_str() {
+                    "MusicNote" => Ok(Value::BuiltinTable(BuiltinTableKind::MusicNote)),
+                    _ => Ok(Value::Identifier(id.0.clone())),
+                },
             }
         }
         Expression::Component(ce) => eval_ce(ce, ctx),
@@ -1457,6 +1394,69 @@ fn eval_method_call(
     ctx: &mut EvalContext<'_>,
 ) -> Result<Value, String> {
     match receiver {
+        Value::BuiltinTable(BuiltinTableKind::MusicNote) => {
+            let pitch_ctor = match method {
+                "a" => MusicNote::a,
+                "b" => MusicNote::b,
+                "c" => MusicNote::c,
+                "d" => MusicNote::d,
+                "e" => MusicNote::e,
+                "f" => MusicNote::f,
+                "g" => MusicNote::g,
+                _ => return Err(format!("MusicNote: unknown note '{}'", method)),
+            };
+
+            let octave = match args.first() {
+                Some(Value::Number(n)) if n.is_finite() && *n >= 0.0 && n.fract() == 0.0 => {
+                    *n as u16
+                }
+                other => {
+                    return Err(format!(
+                        "MusicNote.{}(): arg 0 must be a non-negative integer octave, got {:?}",
+                        method, other
+                    ));
+                }
+            };
+            let duration_beats = match args.get(1) {
+                Some(Value::Number(n)) => *n as f32,
+                other => {
+                    return Err(format!(
+                        "MusicNote.{}(): arg 1 must be a numeric duration, got {:?}",
+                        method, other
+                    ));
+                }
+            };
+            let mut note = pitch_ctor(octave, duration_beats);
+            if let Some(Value::Number(velocity)) = args.get(3) {
+                note = note.with_velocity(*velocity as f32);
+            }
+
+            let Some(world) = ctx.host_world else {
+                return Err(format!("MusicNote.{}(): no host world", method));
+            };
+            let world = unsafe { &mut *world };
+            let target_source = match args.get(2) {
+                Some(value) => Some(value_to_component_ref_live(world, value)?),
+                None => None,
+            };
+            let target = target_source
+                .as_ref()
+                .and_then(|src| resolve_live_component_ref_global(world, src))
+                .ok_or_else(|| {
+                    format!("MusicNote.{}(): arg 2 must resolve to an audio target", method)
+                })?;
+
+            ctx.emits.push(IntentValue::AudioSchedulePlay {
+                component_ids: vec![target],
+                beat_offset: 0.0,
+                beat_context: None,
+                note: Some(note),
+                gain: None,
+                rate: None,
+                duration: None,
+            });
+            Ok(Value::Null)
+        }
         Value::ComponentObject {
             id,
             ref component_type,
@@ -2192,6 +2192,14 @@ fn eval_binop(
             unreachable!("handled above")
         }
         BinOpKind::Dot => match (l, r) {
+            (Value::BuiltinTable(BuiltinTableKind::MusicNote), Value::Identifier(field)) => {
+                match field.as_str() {
+                    "a" | "b" | "c" | "d" | "e" | "f" | "g" => {
+                        Ok(Value::Identifier(format!("MusicNote.{field}")))
+                    }
+                    _ => Err(format!("field access: '{}' not found", field)),
+                }
+            }
             (Value::Map(fields), Value::Identifier(field)) => fields
                 .get(&field)
                 .cloned()
@@ -2337,6 +2345,7 @@ fn value_display(val: &Value) -> String {
         Value::ComponentExpr(_) => "<ce>".into(),
         Value::Object(_) => "<object>".into(),
         Value::Identifier(s) => s.clone(),
+        Value::BuiltinTable(BuiltinTableKind::MusicNote) => "<builtin MusicNote>".into(),
         Value::Module { .. } => "<module>".into(),
         Value::Dimension { value, unit } => {
             let suffix = match unit {

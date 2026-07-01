@@ -4,6 +4,11 @@ use std::sync::Arc;
 use crate::engine::ecs::ComponentId;
 use crate::meow_meow::ast::BlockStatement;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BuiltinTableKind {
+    MusicNote,
+}
+
 // ---------------------------------------------------------------------------
 // Materialized component expression
 // ---------------------------------------------------------------------------
@@ -94,6 +99,9 @@ pub enum Value {
 
     /// Symbolic identifier value (e.g. enum-like flags passed to constructors).
     Identifier(String),
+
+    /// Host-provided built-in namespace/table.
+    BuiltinTable(BuiltinTableKind),
 
     /// A fully-evaluated component expression ready to spawn.
     /// Produced whenever a `ComponentExpression` AST node is evaluated.

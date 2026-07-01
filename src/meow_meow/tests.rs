@@ -63,6 +63,22 @@ fn parse_constructor_no_body() {
 }
 
 #[test]
+fn parse_music_note_as_builtin_call_not_component() {
+    let prog = parse("MusicNote.e(4, 0.25, lead)");
+    assert_eq!(prog.len(), 1);
+    let Statement::Expression(Expression::Call(call)) = &prog[0] else {
+        panic!("expected call expression statement");
+    };
+    let Expression::BinaryOp { op, lhs, rhs } = call.callee.as_ref() else {
+        panic!("expected dot-call callee");
+    };
+    assert!(matches!(op, crate::meow_meow::ast::BinOpKind::Dot));
+    assert!(matches!(lhs.as_ref(), Expression::Identifier(id) if id.0 == "MusicNote"));
+    assert!(matches!(rhs.as_ref(), Expression::Identifier(id) if id.0 == "e"));
+    assert_eq!(call.args.len(), 3);
+}
+
+#[test]
 fn parse_constructor_with_body() {
     let prog = parse("T.with_scale(0.06, 0.06, 0.12) { C {} }");
     let c = as_component!(&prog[0]);

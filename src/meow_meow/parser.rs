@@ -472,6 +472,7 @@ impl MeowMeowParser {
     /// - `ident`                                                    → bare Identifier
     fn parse_ident_leading_expression(&mut self) -> Result<Expression, ParseError> {
         let ident = self.expect_ident()?;
+        let is_builtin_table = matches!(ident.0.as_str(), "MusicNote");
         let is_component_type = ident
             .0
             .chars()
@@ -479,7 +480,7 @@ impl MeowMeowParser {
             .map(|c| c.is_uppercase())
             .unwrap_or(false);
 
-        if is_component_type && self.try_consume(&TokenKind::Dot) {
+        if !is_builtin_table && is_component_type && self.try_consume(&TokenKind::Dot) {
             let method = self.expect_ident()?;
             self.consume(&TokenKind::LParen)?;
             let args = self.parse_call_args()?;
@@ -525,7 +526,8 @@ impl MeowMeowParser {
             .next()
             .map(|c| c.is_uppercase())
             .unwrap_or(false);
-        if is_component_type && matches!(self.peek_kind(), TokenKind::LBrace) {
+        if !is_builtin_table && is_component_type && matches!(self.peek_kind(), TokenKind::LBrace)
+        {
             let body = self.parse_block_statement()?;
             return Ok(Expression::Component(ComponentExpression {
                 component_type: ident,
