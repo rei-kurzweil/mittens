@@ -18,11 +18,11 @@ impl Default for AnimationEvalConfig {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct AnimationEvaluator {
+pub(crate) struct AnimationScheduler {
     pub(crate) config: AnimationEvalConfig,
 }
 
-impl AnimationEvaluator {
+impl AnimationScheduler {
     pub(crate) fn new() -> Self {
         Self::default()
     }
@@ -42,10 +42,6 @@ impl AnimationEvaluator {
         (self.config.audio_lookahead_sec.max(0.0)) * beats_per_sec
     }
 
-    /// Returns keyframes that should fire for the visual evaluation phase.
-    ///
-    /// Current semantics: returns all keyframes with `kf_local_beat <= local_beat` that have
-    /// not been fired yet.
     pub(crate) fn visual_due_keyframes(
         &self,
         world: &World,
@@ -70,10 +66,6 @@ impl AnimationEvaluator {
         out
     }
 
-    /// Returns keyframes that should be evaluated for the audio lookahead phase.
-    ///
-    /// NOTE: we intentionally do not use this yet; it is scaffolding for upcoming
-    /// sample-precise audio scheduling.
     pub(crate) fn audio_due_keyframes(
         &self,
         world: &World,
@@ -115,7 +107,6 @@ impl AnimationEvaluator {
             };
             let kf_local_beat = kf.beat - min_beat;
 
-            // Segment A: remaining part of current cycle.
             if kf_local_beat > local_beat + 1e-9 && kf_local_beat <= local_end + 1e-9 {
                 if scheduled_cycle != Some(current_cycle) {
                     out.push((kf_id, kf_local_beat, current_cycle));
@@ -123,8 +114,6 @@ impl AnimationEvaluator {
                 continue;
             }
 
-            // Segment B: if lookahead crosses the loop boundary, also schedule early keyframes
-            // in the *next* cycle.
             if is_looping && loop_len > 1e-9 && local_end > loop_len + 1e-9 {
                 let next_end = local_end - loop_len;
                 if kf_local_beat >= 0.0 - 1e-9 && kf_local_beat <= next_end + 1e-9 {
