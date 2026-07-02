@@ -27,6 +27,26 @@ Restore deterministic audio scheduling for imperative keyframe blocks, remove
 the redundant `MusicContext` string-lookup layer from authored MMS, and stop
 treating `MusicNote` as a component-shaped MMS expression.
 
+## Progress Checklist
+
+- [x] rename `CapturedBlock` to `RuntimeClosure`
+- [x] cache `BlockEffectAnalysis` on `RuntimeClosure`
+- [x] add `RuntimeClosureExecMode` and evaluator-side intent filtering /
+  `beat_context` rewrite support
+- [ ] evaluate keyframe-owned `RuntimeClosure` in `KeyframeAudioOnly` during
+  animation lookahead
+- [ ] evaluate keyframe-owned `RuntimeClosure` in `KeyframeVisualOnly` during
+  visual-due execution
+- [ ] confirm imperative keyframe-authored audio enters the pending queue early
+  instead of only firing at visual due time
+- [ ] remove legacy keyframe child scheduling paths
+  - `ActionComponent` children under keyframes
+  - `MusicNoteComponent` children under keyframes
+- [ ] replace authored `MusicContext` direct-voice lookup with direct live
+  audio-source handle methods
+- [ ] remove `MusicNote` component-expression special casing in favor of a
+  host-owned built-in table
+
 ## Why `MusicContext` Should Go
 
 The current authoring shape:

@@ -393,6 +393,27 @@ impl AnimationSystem {
                     let kf_global_beat =
                         runtime.start_beat + cycle_offset * loop_len + kf_local_beat;
 
+                    let runtime_closure = world
+                        .get_component_by_id_as::<KeyframeComponent>(kf_id)
+                        .and_then(|kf| kf.callback.clone());
+
+                    if let Some(runtime_closure) = runtime_closure {
+                        if let Err(error) = eval_runtime_closure(
+                            &runtime_closure,
+                            None,
+                            Some(world),
+                            Some(rx),
+                            Some(kf_id),
+                            RuntimeClosureExecMode::KeyframeAudioOnly {
+                                beat_context: kf_global_beat,
+                            },
+                        ) {
+                            eprintln!(
+                                "[AnimationSystem] keyframe runtime closure audio lookahead failed for {kf_id:?}: {error}"
+                            );
+                        }
+                    }
+
                     let action_ids: Vec<ComponentId> = world
                         .children_of(kf_id)
                         .iter()
@@ -455,24 +476,24 @@ impl AnimationSystem {
                 let Some(kf) = world.get_component_by_id_as::<KeyframeComponent>(kf_id) else {
                     continue;
                 };
-                let callback = kf.callback.clone();
+                let runtime_closure = kf.callback.clone();
 
                 let kf_beat = kf.beat;
                 let kf_local_beat = kf_beat - min_beat;
 
                 if kf_local_beat <= local_beat + 1e-9 {
-                    if let Some(callback) = callback {
+                    if let Some(runtime_closure) = runtime_closure {
                         if let Err(error) = eval_runtime_closure(
-                            &callback,
+                            &runtime_closure,
                             None,
                             Some(world),
                             Some(rx),
                             Some(kf_id),
-                            RuntimeClosureExecMode::Full,
+                            RuntimeClosureExecMode::KeyframeVisualOnly,
                         )
                         {
                             eprintln!(
-                                "[AnimationSystem] keyframe callback failed for {kf_id:?}: {error}"
+                                "[AnimationSystem] keyframe runtime closure failed for {kf_id:?}: {error}"
                             );
                         }
                     }
