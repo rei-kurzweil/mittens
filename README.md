@@ -229,6 +229,86 @@ You define how each item in your data list should be rendered using a `RendererS
 
 For simpler widgets or reusable UI elements, you can define factory functions in `.mms` scripts.
 
+### Calling component methods from animation keyframes
+
+Keyframe blocks run in the live world when the keyframe becomes due, so they can call methods on captured component handles directly.
+
+```javascript
+Clock.bpm(60) {}
+
+let cube_t = T.position(0.0, 0.0, 0.0).scale(0.5, 0.5, 0.5) {
+    Transition {
+        duration_beats(0.85)
+        ease_in_out_sine()
+        replace_same_target()
+    }
+    R.cube() {
+        C.rgba(0.90, 0.75, 0.30, 1.0)
+    }
+}
+
+cube_t
+
+Animation.looping() {
+    Keyframe.at(0) {
+        cube_t.update_transform([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.5, 0.5, 0.5])
+    }
+    Keyframe.at(1) {
+        cube_t.update_transform([0.0, 0.0, 0.0], [0.0, 3.14159 / 2, 0.0], [0.5, 0.5, 0.5])
+    }
+    Keyframe.at(2) {
+        cube_t.update_transform([0.0, 0.0, 0.0], [0.0, 3.14159, 0.0], [0.5, 0.5, 0.5])
+    }
+    Keyframe.at(3) {
+        cube_t.update_transform([0.0, 0.0, 0.0], [0.0, 3.14159 * 1.5, 0.0], [0.5, 0.5, 0.5])
+    }
+}
+```
+
+This is the simplest pattern for authoring animation-driven behavior in MMS: capture a live component handle with `let`, then mutate it from `Keyframe.at(...)` blocks.
+
+### Playing and pausing an animation from MMS
+
+Animation components are also live handles, so you can store them in a variable and call playback methods from signal handlers or other script logic.
+
+```javascript
+let anim = Animation.looping() {
+    Keyframe.at(0) { cube_t.update_transform([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.5, 0.5, 0.5]) }
+    Keyframe.at(1) { cube_t.update_transform([0.0, 0.0, 0.0], [0.0, 3.14159 / 2, 0.0], [0.5, 0.5, 0.5]) }
+    Keyframe.at(2) { cube_t.update_transform([0.0, 0.0, 0.0], [0.0, 3.14159, 0.0], [0.5, 0.5, 0.5]) }
+    Keyframe.at(3) { cube_t.update_transform([0.0, 0.0, 0.0], [0.0, 3.14159 * 1.5, 0.0], [0.5, 0.5, 0.5]) }
+}
+
+anim
+
+let pause_btn = T.position(-1.2, -1.2, 0.0).scale(0.35, 0.35, 0.35) {
+    R.cube() {
+        C.rgba(0.25, 0.55, 1.0, 1.0)
+        Raycastable.enabled()
+    }
+}
+
+let play_btn = T.position(1.2, -1.2, 0.0).scale(0.35, 0.35, 0.35) {
+    R.cube() {
+        C.rgba(0.30, 0.85, 0.45, 1.0)
+        Raycastable.enabled()
+    }
+}
+
+pause_btn
+play_btn
+
+on(pause_btn, "Click", fn(event) {
+    anim.pause()
+})
+
+on(play_btn, "Click", fn(event) {
+    anim.play()
+})
+```
+
+See `examples/component-method-call.mms` for a complete runnable example.
+
 ### Reusable Buttons (`button.mms`)
 The `assets/components/button.mms` file provides a standard button:
 
