@@ -123,7 +123,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         &mut self,
         rx: &mut RxWorld,
         world: &mut World,
-        render_assets: &crate::engine::graphics::RenderAssets,
+        render_assets: &mut crate::engine::graphics::RenderAssets,
         emit: &mut dyn SignalEmitter,
         editor_root: ComponentId,
         world_panel_pos: (f32, f32, f32),
@@ -1146,7 +1146,7 @@ impl EditorInspectorSystemStopgapMmsReconciler {
     fn reconcile_panel_layout(
         &self,
         world: &mut World,
-        render_assets: &crate::engine::graphics::RenderAssets,
+        render_assets: &mut crate::engine::graphics::RenderAssets,
         emit: &mut dyn SignalEmitter,
         panel_layout_spawned: &mut bool,
         panel_query_root: ComponentId,

@@ -96,10 +96,10 @@ fn parse_named_assignment_in_body() {
     let prog = parse(r#"T { name = "root" }"#);
     let c = as_component!(&prog[0]);
     assert_eq!(c.body.statements.len(), 1);
-    let Statement::Reassign { name, value } = &c.body.statements[0] else {
+    let Statement::Reassign { target, value } = &c.body.statements[0] else {
         panic!("expected Reassign")
     };
-    assert_eq!(name.0, "name");
+    assert!(matches!(target, Expression::Identifier(name) if name.0 == "name"));
     assert!(matches!(value, Expression::String(s) if s == "root"));
 }
 
@@ -144,10 +144,10 @@ fn parse_positional_ident_flag() {
 fn parse_named_assignment_array() {
     let prog = parse("T { rotation = [0.0, 0.0, 3.14] }");
     let c = as_component!(&prog[0]);
-    let Statement::Reassign { name, value } = &c.body.statements[0] else {
+    let Statement::Reassign { target, value } = &c.body.statements[0] else {
         panic!("expected Reassign")
     };
-    assert_eq!(name.0, "rotation");
+    assert!(matches!(target, Expression::Identifier(name) if name.0 == "rotation"));
     let Expression::Array(items) = value else {
         panic!()
     };
@@ -1592,6 +1592,39 @@ if result != "ok:none" {
 }
 
 #[test]
+fn renderable_constructors_accept_omitted_default_args() {
+    let module = MeowMeowRunner::load_module_source(
+        r#"
+export fn procedural_defaults() {
+    return T {
+        R.heart() {}
+        R.star() {}
+        R.partial_annulus_2d() {}
+    }
+}
+"#,
+        None,
+    )
+    .expect("load inline module");
+
+    let mut world = World::default();
+    let mut render_assets = RenderAssets::new();
+    let mut emit = CommandQueue::new();
+    let root = MeowMeowRunner::spawn_mms_module_component_uninitialized_with_assets(
+        &module,
+        "procedural_defaults",
+        vec![],
+        &mut world,
+        Some(&mut render_assets),
+        &mut emit,
+    )
+    .expect("spawn procedural defaults");
+
+    assert!(world.get_component_record(root).is_some());
+    assert_eq!(world.children_of(root).len(), 3);
+}
+
+#[test]
 fn spawn_mms_module_component_initialises_live_root() {
     let tmp_dir = std::env::temp_dir().join(format!(
         "mms_spawn_test_{}",
@@ -1674,10 +1707,25 @@ fn parse_reassign() {
     let prog = parse("let x = 1\nx = 2");
     assert_eq!(prog.len(), 2);
     assert!(matches!(&prog[0], Statement::Assignment(_)));
-    let Statement::Reassign { name, .. } = &prog[1] else {
+    let Statement::Reassign { target, .. } = &prog[1] else {
         panic!("expected Reassign")
     };
-    assert_eq!(name.0, "x");
+    assert!(matches!(target, Expression::Identifier(name) if name.0 == "x"));
+}
+
+#[test]
+fn parse_table_field_reassign() {
+    let prog = parse("app_state.text = \"sent\"");
+    let Statement::Reassign { target, value } = &prog[0] else {
+        panic!("expected Reassign");
+    };
+    assert!(matches!(value, Expression::String(s) if s == "sent"));
+    let Expression::BinaryOp { op, lhs, rhs } = target else {
+        panic!("expected dot target");
+    };
+    assert!(matches!(op, crate::meow_meow::ast::BinOpKind::Dot));
+    assert!(matches!(lhs.as_ref(), Expression::Identifier(name) if name.0 == "app_state"));
+    assert!(matches!(rhs.as_ref(), Expression::Identifier(name) if name.0 == "text"));
 }
 
 #[test]
@@ -1690,6 +1738,51 @@ fn eval_reassign_basic() {
     "#;
     let out = MeowMeowRunner::eval(src);
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+}
+
+#[test]
+fn eval_table_field_reassign_basic() {
+    let module = MeowMeowRunner::load_module_source(
+        r#"
+export let result = {
+    text = "before"
+    count = 0
+}
+result.text = "after"
+result.count = result.count + 1
+"#,
+        None,
+    )
+    .expect("module eval");
+    let Value::Map(result) = module.named_exports.get("result").cloned().expect("result export") else {
+        panic!("expected table");
+    };
+    assert!(matches!(result.get("text"), Some(Value::String(text)) if text == "after"));
+    assert!(matches!(result.get("count"), Some(Value::Number(count)) if (*count - 1.0).abs() < 1e-6));
+}
+
+#[test]
+fn eval_table_field_read_inside_function() {
+    let module = MeowMeowRunner::load_module_source(
+        r#"
+fn pick_text(state) {
+    return state.text
+}
+
+export let app_state = {
+    text = "hello table fields"
+    count = 1
+}
+
+export let result = pick_text(app_state)
+"#,
+        None,
+    )
+    .expect("module eval");
+    assert!(matches!(
+        module.named_exports.get("result"),
+        Some(Value::String(text)) if text == "hello table fields"
+    ));
 }
 
 #[test]

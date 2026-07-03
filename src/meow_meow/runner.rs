@@ -157,9 +157,36 @@ impl MeowMeowRunner {
         world: &mut World,
         emit: &mut dyn SignalEmitter,
     ) -> Result<ComponentId, String> {
+        Self::spawn_mms_module_component_uninitialized_with_assets(
+            module, name, args, world, None, emit,
+        )
+    }
+
+    pub fn spawn_mms_module_component_uninitialized_with_assets(
+        module: &LoadedMmsModule,
+        name: &str,
+        args: Vec<Value>,
+        world: &mut World,
+        render_assets: Option<&mut RenderAssets>,
+        emit: &mut dyn SignalEmitter,
+    ) -> Result<ComponentId, String> {
         let component_expr =
             Self::materialize_mms_module_component(module, name, args, Some(world), Some(emit))?;
-        crate::meow_meow::component_registry::spawn_tree_uninitialized(&component_expr, world, emit)
+        if let Some(render_assets) = render_assets {
+            crate::meow_meow::component_registry::with_live_render_assets(render_assets, || {
+                crate::meow_meow::component_registry::spawn_tree_uninitialized(
+                    &component_expr,
+                    world,
+                    emit,
+                )
+            })
+        } else {
+            crate::meow_meow::component_registry::spawn_tree_uninitialized(
+                &component_expr,
+                world,
+                emit,
+            )
+        }
     }
 
     pub fn spawn_mms_module_component_uninitialized_from_file(
@@ -429,6 +456,14 @@ impl MeowMeowRunner {
                                                     Value::Number(value[1] as f64),
                                                 ]),
                                             ),
+                                        ])),
+                                        Some(crate::engine::ecs::EventSignal::TextInputChanged {
+                                            component_id: _,
+                                            text,
+                                            caret,
+                                        }) => Value::Map(HashMap::from([
+                                            ("text".to_string(), Value::String(text.clone())),
+                                            ("caret".to_string(), Value::Number(*caret as f64)),
                                         ])),
                                         _ => Value::Null,
                                     };

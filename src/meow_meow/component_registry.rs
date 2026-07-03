@@ -470,14 +470,14 @@ fn filtered_ce_ast_inner(
 
     if !node.name.is_empty() {
         ce.body.statements.push(Statement::Reassign {
-            name: crate::meow_meow::ast::Ident("name".to_string()),
+            target: Expression::Identifier(crate::meow_meow::ast::Ident("name".to_string())),
             value: Expression::String(node.name.clone()),
         });
     }
 
     if referenced_guids.contains(&node.guid) {
         ce.body.statements.push(Statement::Reassign {
-            name: crate::meow_meow::ast::Ident("guid".to_string()),
+            target: Expression::Identifier(crate::meow_meow::ast::Ident("guid".to_string())),
             value: Expression::String(node.guid.to_string()),
         });
     }
@@ -576,7 +576,7 @@ fn subtree_to_ce_ast_inner_limited(
     // both apply.
     if !node.name.is_empty() {
         ce.body.statements.push(Statement::Reassign {
-            name: crate::meow_meow::ast::Ident("name".to_string()),
+            target: Expression::Identifier(crate::meow_meow::ast::Ident("name".to_string())),
             value: Expression::String(node.name.clone()),
         });
     }
@@ -588,7 +588,7 @@ fn subtree_to_ce_ast_inner_limited(
     // `@uuid:` lookups.
     if referenced_guids.contains(&node.guid) {
         ce.body.statements.push(Statement::Reassign {
-            name: crate::meow_meow::ast::Ident("guid".to_string()),
+            target: Expression::Identifier(crate::meow_meow::ast::Ident("guid".to_string())),
             value: Expression::String(node.guid.to_string()),
         });
     }
@@ -681,7 +681,10 @@ pub fn ce_ast_to_materialized(ce: &ComponentExpression) -> Result<MaterializedCE
                     calls.push((name.clone(), args));
                 }
             }
-            Statement::Reassign { name, value } => {
+            Statement::Reassign { target, value } => {
+                let Expression::Identifier(name) = target else {
+                    continue;
+                };
                 if component_property_assignment_only || is_universal_component_named_prop(&name.0)
                 {
                     // Named-prop in a property-bag CE body, e.g. `row_name = "hero"`.
@@ -1115,27 +1118,36 @@ fn create_component(
             Some("plane") => add!(RenderableComponent::plane()),
             Some("tetrahedron") => add!(RenderableComponent::tetrahedron()),
             Some("partial_annulus_2d") => with_render_assets_mut(|render_assets| {
+                let inner_radius = arg_f32(args, 0).unwrap_or(0.28);
+                let outer_radius = arg_f32(args, 1).unwrap_or(0.52);
+                let start_angle = arg_f32(args, 2).unwrap_or(0.0);
+                let end_angle = arg_f32(args, 3).unwrap_or(4.71239);
+                let segments = arg_u32(args, 4).unwrap_or(64);
                 Ok(world.add_component(RenderableComponent::partial_annulus_2d(
                     render_assets,
-                    arg_f32(args, 0)?,
-                    arg_f32(args, 1)?,
-                    arg_f32(args, 2)?,
-                    arg_f32(args, 3)?,
-                    arg_u32(args, 4)?,
+                    inner_radius,
+                    outer_radius,
+                    start_angle,
+                    end_angle,
+                    segments,
                 )))
             }),
             Some("star") => with_render_assets_mut(|render_assets| {
+                let points = arg_u32(args, 0).unwrap_or(5);
+                let inner_radius = arg_f32(args, 1).unwrap_or(0.45);
+                let skip = arg_u32(args, 2).unwrap_or(2);
+                let phase = arg_u32(args, 3).unwrap_or(1);
                 Ok(world.add_component(RenderableComponent::star(
                     render_assets,
-                    arg_u32(args, 0)?,
-                    arg_f32(args, 1)?,
-                    arg_u32(args, 2)?,
-                    arg_u32(args, 3)?,
+                    points,
+                    inner_radius,
+                    skip,
+                    phase,
                 )))
             }),
             Some("heart") => with_render_assets_mut(|render_assets| {
-                Ok(world
-                    .add_component(RenderableComponent::heart(render_assets, arg_u32(args, 0)?)))
+                let segments = arg_u32(args, 0).unwrap_or(64);
+                Ok(world.add_component(RenderableComponent::heart(render_assets, segments)))
             }),
             _ => Err(format!(
                 "Renderable: unknown constructor '{}'",

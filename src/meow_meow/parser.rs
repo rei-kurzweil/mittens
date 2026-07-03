@@ -186,22 +186,18 @@ impl MeowMeowParser {
             }
             TokenKind::LBrace => Ok(Statement::Block(self.parse_block_statement()?)),
             _ => {
-                // `ident = expr` reassignment — two-token lookahead to avoid
-                // consuming the start of a comparison expression like `x == y`.
-                if matches!(self.peek_kind(), TokenKind::Ident(_))
-                    && self
-                        .tokens
-                        .get(self.pos + 1)
-                        .map(|t| matches!(t.kind, TokenKind::Eq))
-                        .unwrap_or(false)
-                {
-                    let name = self.expect_ident()?;
-                    self.consume(&TokenKind::Eq)?;
+                let expr = self.parse_expression()?;
+                if self.try_consume(&TokenKind::Eq) {
+                    if !is_assignable_target(&expr) {
+                        return Err(self.err("invalid reassignment target"));
+                    }
                     let value = self.parse_expression()?;
                     self.try_consume(&TokenKind::Semicolon);
-                    return Ok(Statement::Reassign { name, value });
+                    return Ok(Statement::Reassign {
+                        target: expr,
+                        value,
+                    });
                 }
-                let expr = self.parse_expression()?;
                 self.try_consume(&TokenKind::Semicolon);
                 Ok(Statement::Expression(expr))
             }
@@ -614,5 +610,17 @@ impl MeowMeowParser {
             token_index: self.pos,
             span,
         }
+    }
+}
+
+fn is_assignable_target(expr: &Expression) -> bool {
+    match expr {
+        Expression::Identifier(_) => true,
+        Expression::BinaryOp {
+            op: crate::meow_meow::ast::BinOpKind::Dot,
+            lhs,
+            rhs,
+        } => is_assignable_target(lhs) && matches!(rhs.as_ref(), Expression::Identifier(_)),
+        _ => false,
     }
 }

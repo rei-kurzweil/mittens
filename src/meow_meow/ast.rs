@@ -142,14 +142,14 @@ pub struct BlockStatement {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     Assignment(AssignmentStatement),
-    /// `x = expr` — mutate an existing binding. Distinct from `Assignment` (`let x = expr`).
+    /// `x = expr` or `obj.field = expr` — mutate an existing binding or table field.
     ///
     /// Scope note (v1): reassignment updates the binding in the current block's local env.
     /// It does NOT propagate outward to enclosing scopes — that requires a scope chain
     /// (deferred). Inside a `for` loop body the loop's accumulated env is used, so
     /// accumulator patterns (`sum = sum + i`) work correctly within the loop.
     Reassign {
-        name: Ident,
+        target: Expression,
         value: Expression,
     },
     Return(ReturnStatement),

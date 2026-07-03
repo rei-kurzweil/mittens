@@ -839,7 +839,7 @@ mod tests {
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
-        let render_assets = crate::engine::graphics::RenderAssets::new();
+        let mut render_assets = crate::engine::graphics::RenderAssets::new();
 
         systems
             .asset_system
@@ -956,7 +956,7 @@ mod tests {
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
 
         systems
             .asset_system

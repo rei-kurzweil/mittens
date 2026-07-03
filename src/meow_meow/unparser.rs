@@ -73,8 +73,8 @@ impl<'a> Printer<'a> {
     fn statement(&mut self, s: &Statement) {
         match s {
             Statement::Assignment(a) => self.assignment(a),
-            Statement::Reassign { name, value } => {
-                self.out.push_str(&name.0);
+            Statement::Reassign { target, value } => {
+                self.expression(target);
                 self.out.push_str(" = ");
                 self.expression(value);
             }

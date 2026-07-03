@@ -524,21 +524,23 @@ fn eval_stmt(stmt: &Statement, ctx: &mut EvalContext<'_>) -> Result<StmtEffect, 
                 Ok(StmtEffect::None)
             }
         }
-        Statement::Reassign { name, value } => {
+        Statement::Reassign { target, value } => {
             let val = eval_expr(value, ctx)?;
             if let Some(builder) = ctx.ce_builder.as_mut() {
-                if builder.component_property_assignment_only
-                    || is_universal_component_named_prop(&name.0)
-                {
-                    // Property-bag CE bodies capture assignments as named props.
-                    // This must win even when `foo` also exists as a lexical binding,
-                    // so authored payloads like `row_name = row_name` survive.
-                    builder.named.push((name.0.clone(), val));
-                    return Ok(StmtEffect::None);
+                if let Expression::Identifier(name) = target {
+                    if builder.component_property_assignment_only
+                        || is_universal_component_named_prop(&name.0)
+                    {
+                        // Property-bag CE bodies capture assignments as named props.
+                        // This must win even when `foo` also exists as a lexical binding,
+                        // so authored payloads like `row_name = row_name` survive.
+                        builder.named.push((name.0.clone(), val));
+                        return Ok(StmtEffect::None);
+                    }
                 }
             }
             let val = maybe_register_live_component_value(val, ctx);
-            ctx.object_world.reassign(&name.0, val)?;
+            assign_retarget(target, val, ctx)?;
             Ok(StmtEffect::None)
         }
         Statement::Expression(expr) => {
@@ -804,6 +806,106 @@ fn resolve_live_component_ref_global(world: &World, src: &ComponentRef) -> Optio
             .world_roots()
             .into_iter()
             .find_map(|root| world.find_component(root, selector)),
+    }
+}
+
+fn assign_retarget(
+    target: &Expression,
+    value: Value,
+    ctx: &mut EvalContext<'_>,
+) -> Result<(), String> {
+    match target {
+        Expression::Identifier(name) => ctx.object_world.reassign(&name.0, value),
+        Expression::BinaryOp {
+            op: BinOpKind::Dot, ..
+        } => {
+            let mut path = Vec::new();
+            let root_name = flatten_assign_path(target, &mut path)?;
+            let mut root_value = ctx
+                .object_world
+                .lookup(&root_name)
+                .cloned()
+                .ok_or_else(|| format!("reassignment: '{}' is not defined", root_name))?;
+            assign_into_value(&mut root_value, &path, value, ctx)?;
+            ctx.object_world.reassign(&root_name, root_value)
+        }
+        _ => Err("invalid reassignment target".into()),
+    }
+}
+
+fn flatten_assign_path(target: &Expression, out: &mut Vec<String>) -> Result<String, String> {
+    match target {
+        Expression::Identifier(name) => Ok(name.0.clone()),
+        Expression::BinaryOp {
+            op: BinOpKind::Dot,
+            lhs,
+            rhs,
+        } => {
+            let root = flatten_assign_path(lhs, out)?;
+            let Expression::Identifier(field) = rhs.as_ref() else {
+                return Err("invalid reassignment target".into());
+            };
+            out.push(field.0.clone());
+            Ok(root)
+        }
+        _ => Err("invalid reassignment target".into()),
+    }
+}
+
+fn assign_into_value(
+    current: &mut Value,
+    path: &[String],
+    value: Value,
+    ctx: &mut EvalContext<'_>,
+) -> Result<(), String> {
+    let Some((field, rest)) = path.split_first() else {
+        *current = value;
+        return Ok(());
+    };
+
+    match current {
+        Value::Map(map) => {
+            if rest.is_empty() {
+                map.insert(field.clone(), value);
+                return Ok(());
+            }
+            let next = map
+                .get_mut(field)
+                .ok_or_else(|| format!("field assignment: '{}' not found", field))?;
+            assign_into_value(next, rest, value, ctx)
+        }
+        Value::Object(id) => {
+            if rest.is_empty() {
+                let Some(crate::meow_meow::object::Object::Map(map)) =
+                    ctx.object_world.heap_mut().get_mut(*id)
+                else {
+                    return Err("field assignment: invalid object".into());
+                };
+                map.insert(field.clone(), value);
+                return Ok(());
+            }
+
+            let Some(crate::meow_meow::object::Object::Map(map)) = ctx.object_world.heap().get(*id)
+            else {
+                return Err("field assignment: invalid object".into());
+            };
+            let mut next = map
+                .get(field)
+                .cloned()
+                .ok_or_else(|| format!("field assignment: '{}' not found", field))?;
+            assign_into_value(&mut next, rest, value, ctx)?;
+            let Some(crate::meow_meow::object::Object::Map(map)) =
+                ctx.object_world.heap_mut().get_mut(*id)
+            else {
+                return Err("field assignment: invalid object".into());
+            };
+            map.insert(field.clone(), next);
+            Ok(())
+        }
+        other => Err(format!(
+            "field assignment: cannot assign through '{}': {:?}",
+            field, other
+        )),
     }
 }
 
@@ -2174,6 +2276,42 @@ fn eval_binop(
                 other => return Err(format!("pipe: RHS must be a function, got {:?}", other)),
             }
         }
+        BinOpKind::Dot => {
+            let lhs_val = eval_expr(lhs, ctx)?;
+            let Expression::Identifier(field) = rhs else {
+                return Err(format!(
+                    "field access: RHS of '.' must be an identifier, got {:?}",
+                    rhs
+                ));
+            };
+            return match lhs_val {
+                Value::BuiltinTable(BuiltinTableKind::MusicNote) => match field.0.as_str() {
+                    "a" | "b" | "c" | "d" | "e" | "f" | "g" => {
+                        Ok(Value::Identifier(format!("MusicNote.{}", field.0)))
+                    }
+                    _ => Err(format!("field access: '{}' not found", field.0)),
+                },
+                Value::Map(fields) => fields
+                    .get(&field.0)
+                    .cloned()
+                    .ok_or_else(|| format!("field access: '{}' not found", field.0)),
+                Value::Object(id) => {
+                    let Some(crate::meow_meow::object::Object::Map(fields)) =
+                        ctx.object_world.heap().get(id)
+                    else {
+                        return Err("field access: invalid object".into());
+                    };
+                    fields
+                        .get(&field.0)
+                        .cloned()
+                        .ok_or_else(|| format!("field access: '{}' not found", field.0))
+                }
+                other => Err(format!(
+                    "field access: cannot read '{}' from {:?}",
+                    field.0, other
+                )),
+            };
+        }
         _ => {}
     }
 
@@ -2234,39 +2372,7 @@ fn eval_binop(
         BinOpKind::And | BinOpKind::Or | BinOpKind::Pipe | BinOpKind::Query => {
             unreachable!("handled above")
         }
-        BinOpKind::Dot => match (l, r) {
-            (Value::BuiltinTable(BuiltinTableKind::MusicNote), Value::Identifier(field)) => {
-                match field.as_str() {
-                    "a" | "b" | "c" | "d" | "e" | "f" | "g" => {
-                        Ok(Value::Identifier(format!("MusicNote.{field}")))
-                    }
-                    _ => Err(format!("field access: '{}' not found", field)),
-                }
-            }
-            (Value::Map(fields), Value::Identifier(field)) => fields
-                .get(&field)
-                .cloned()
-                .ok_or_else(|| format!("field access: '{}' not found", field)),
-            (Value::Object(id), Value::Identifier(field)) => {
-                let Some(crate::meow_meow::object::Object::Map(fields)) =
-                    ctx.object_world.heap().get(id)
-                else {
-                    return Err("field access: invalid object".into());
-                };
-                fields
-                    .get(&field)
-                    .cloned()
-                    .ok_or_else(|| format!("field access: '{}' not found", field))
-            }
-            (lhs, Value::Identifier(field)) => Err(format!(
-                "field access: cannot read '{field}' from {:?}",
-                lhs
-            )),
-            (_, rhs) => Err(format!(
-                "field access: RHS of '.' must be an identifier, got {:?}",
-                rhs
-            )),
-        },
+        BinOpKind::Dot => unreachable!("handled above"),
     }
 }
 
@@ -2472,6 +2578,8 @@ fn parse_signal_kind(s: &str) -> Result<SignalKind, String> {
         "XrButtonUp" => Ok(SignalKind::XrButtonUp),
         "XrButtonChanged" => Ok(SignalKind::XrButtonChanged),
         "XrAxisChanged" => Ok(SignalKind::XrAxisChanged),
+        "TextInputFocusChanged" => Ok(SignalKind::TextInputFocusChanged),
+        "TextInputChanged" => Ok(SignalKind::TextInputChanged),
         other => Err(format!("unknown signal kind: '{}'", other)),
     }
 }

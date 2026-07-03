@@ -226,7 +226,7 @@ impl AssetSystem {
         item: &AssetItem,
         args: Vec<Value>,
         world: &mut World,
-        render_assets: &crate::engine::graphics::RenderAssets,
+        render_assets: &mut crate::engine::graphics::RenderAssets,
         emit: &mut dyn SignalEmitter,
     ) -> Result<ComponentId, String> {
         let module = self.modules.get(&item.module_id).ok_or_else(|| {
@@ -236,11 +236,12 @@ impl AssetSystem {
             )
         })?;
 
-        MeowMeowRunner::spawn_mms_module_component_uninitialized(
+        MeowMeowRunner::spawn_mms_module_component_uninitialized_with_assets(
             &module.module,
             &item.export_name,
             args,
             world,
+            Some(render_assets),
             emit,
         )
     }
@@ -252,7 +253,7 @@ impl AssetSystem {
     pub fn spawn_assets_panel(
         &self,
         world: &mut World,
-        render_assets: &crate::engine::graphics::RenderAssets,
+        render_assets: &mut crate::engine::graphics::RenderAssets,
         emit: &mut dyn SignalEmitter,
         parent: ComponentId,
         position: (f32, f32, f32),
@@ -430,7 +431,7 @@ impl AssetSystem {
     pub fn build_asset_item_shell(
         &self,
         world: &mut World,
-        render_assets: &crate::engine::graphics::RenderAssets,
+        render_assets: &mut crate::engine::graphics::RenderAssets,
         emit: &mut dyn SignalEmitter,
         item: &AssetItem,
         _index: usize,
@@ -762,6 +763,42 @@ mod tests {
     }
 
     #[test]
+    fn spawn_asset_component_uninitialized_supports_procedural_renderables() {
+        let tmp_dir = temp_asset_directory();
+        let asset_path = tmp_dir.join("primitives_preview.mms");
+        std::fs::write(
+            &asset_path,
+            r#"
+                export fn heart_preview() {
+                    return T {
+                        R.heart() {}
+                    }
+                }
+            "#,
+        )
+        .expect("write asset file");
+
+        let mut system = AssetSystem::new();
+        system.load_module(asset_path).expect("load module");
+
+        let item = &system.items[0];
+        let mut world = World::default();
+        let mut render_assets = RenderAssets::new();
+        let mut emit = CommandQueue::new();
+        let root = system
+            .spawn_asset_component_uninitialized(
+                item,
+                vec![],
+                &mut world,
+                &mut render_assets,
+                &mut emit,
+            )
+            .expect("spawn procedural preview");
+
+        assert!(world.get_component_record(root).is_some());
+    }
+
+    #[test]
     fn spawn_assets_panel_shows_assets_dir_in_title() {
         let tmp_dir = temp_asset_directory();
         let asset_path = tmp_dir.join("test_asset.mms");
@@ -780,7 +817,7 @@ mod tests {
         system.scan_assets_dir(&tmp_dir).expect("scan assets dir");
 
         let mut world = World::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut emit = CommandQueue::new();
         let parent = world.add_component_boxed_named("parent", Box::new(TransformComponent::new()));
 
