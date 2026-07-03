@@ -2,23 +2,23 @@
 
 Date: 2026-07-03
 
-Status: observed / needs reduction
+Status: root cause identified / engine fix in progress
 
 ## Summary
 
-On flex items, adding padding can improve the apparent text position, but the background quad does
-not expand to match the padded content box.
+The original visual read was slightly wrong. The background quad math itself is already driven from
+the measured padding box, but flex items with `height: auto` were being measured as if their
+content height were `0`.
 
-The visible result is:
+That means the visible result can look like "padding moved the text but did not expand the
+background", when the actual failure is:
 
-- text appears better aligned once padding is added
-- but the background fill remains too small or sized to the unpadded bounds
-- so the text looks visually offset relative to the colored row background
+- the flex item background quad uses `box_height = padding_top + padding_bottom`
+- nested text still renders below that because the item's real intrinsic content height was never
+  included in measurement
+- so the background appears too short even though the quad is honoring the measured box
 
-This appears to be specific to the flex layout path, or at least much easier to trigger there than
-with non-flex layout.
-
-This does **not** currently appear to be a broad regression across the existing editor panels.
+This is specific to the flex auto-height measurement path, not the background quad placement code.
 
 ## Observed in
 
@@ -38,50 +38,53 @@ In particular, the `table field reassignment` text near the top of the demo is a
 That makes the padding effect easy to see: the text position changes, but the visible background
 box does not fully track the padded bounds.
 
-## Scope notes
+## Confirmed cause
 
-Most existing editor panels do not visibly exhibit this exact behavior.
+Current code path:
 
-Current observations:
+- `sync_bg_quad(...)` in [src/engine/ecs/system/layout/block.rs](../../src/engine/ecs/system/layout/block.rs)
+  sizes the quad from `box_width_gu` / `box_height_gu`
+- `sync_layout_bounds(...)` in the same file stores a matching `padding_local` AABB
+- the actual bad value comes earlier in
+  [src/engine/ecs/system/layout/measure.rs](../../src/engine/ecs/system/layout/measure.rs)
 
-- world/inspector/assets/paint panels do not appear to show the same obvious padded-flex-item
-  background mismatch
-- the editor settings panel may have a related but narrower issue
-- in editor settings, the `Select + Cursor` label, which wraps to two lines, looks a bit off in
-  terms of visual centering within its background quad
-- the editor settings panel also appears slightly too short to comfortably fit all of its items
+Before the fix, the vertical auto-size branch was:
 
-So this should be treated as a somewhat isolated flex/layout/background interaction rather than a
-repo-wide panel rendering failure.
+- `display: block` or `inline-block` -> use `intrinsic_block_height(...)`
+- any other `display` with `height: auto` -> use `(0.0, padding_v)`
+
+So `display:flex` items with nested text were taking the fallback branch and collapsing their
+content height to zero.
 
 ## Symptoms
 
-- row text sits a bit low without extra padding
-- adding padding on flex rows/cells improves text placement
-- the row/cell background quad does not grow to the padded size
-- this makes the padded text look like it is escaping or hanging below the intended colored block
+- row text appears to sit low or escape the colored row
+- adding padding makes the mismatch easier to see
+- the background quad height matches only the padding band
+- glyphs render below the visible background because the flex row's intrinsic text height was
+  dropped during measurement
 
 ## Expected
 
 For a flex item with background color and padding:
 
-- layout size should include the padding
-- the generated background quad should match the padded box
-- text should render inside that padded box
+- auto height should include intrinsic child content height
+- the generated background quad should match that measured padding box
+- text should render inside the same measured box
 
 ## Actual
 
-The layout/text relationship and the background-quad sizing appear to disagree for padded flex
-items.
+Flex auto-height measurement omitted intrinsic content height for `display:flex` items, so layout
+handed background generation an undersized box.
 
-## Initial suspicion
+## Fix direction
 
-Likely one of:
+Treat `display:flex` items with `height: auto` the same way block items are treated:
 
-- flex measurement is computing padded size differently from background quad generation
-- background quad generation is using content bounds instead of padded layout bounds
-- text baseline/offset and background box sizing are being derived from different box models on the
-  flex path
+- measure intrinsic content height from descendant text/renderable/nested layout content
+- then add vertical padding on top of that content height
+
+That keeps background sizing code unchanged and fixes the bad measurement upstream.
 
 ## Why this matters
 
@@ -94,21 +97,15 @@ current editor panels are mostly okay:
 
 It makes it harder to visually center text in rows without breaking the visible block sizing.
 
-## Suggested next step
+## Validation
 
-Make a smaller dedicated repro with:
+A targeted regression test was added in
+[src/engine/ecs/system/layout/measure.rs](../../src/engine/ecs/system/layout/measure.rs) to cover
+an auto-height flex row with nested text and padding.
 
-1. one `LayoutRoot`
-2. one flex column
-3. two flex rows with background colors
-4. text children
-5. toggle padding on the row and/or cell wrappers
-
-Then compare:
-
-- computed layout bounds
-- background quad bounds
-- text transform / baseline placement
+Focused `cargo test flex_auto_height_includes_nested_text_height --lib` validation is currently
+blocked by unrelated repo-wide test compile failures in other modules, primarily `RenderAssets`
+mutability fixes already pending elsewhere.
 
 ## Related
 

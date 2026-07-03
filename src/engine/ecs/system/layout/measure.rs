@@ -191,6 +191,7 @@ pub(crate) fn measure_item(
     let display = style_display.or(ua_display);
 
     let is_block = matches!(display, None | Some(Display::Block));
+    let is_flex = matches!(display, Some(Display::Flex));
 
     // Resolve padding/margin against the inline-axis container width (CSS semantic).
     let margin = margin.resolve(avail_w_gu, unit_scale);
@@ -295,7 +296,10 @@ pub(crate) fn measure_item(
             let content_h = avail_h_gu.map(|h| h * p / 100.0).unwrap_or(0.0);
             (content_h, content_h + padding_v)
         }
-        (SizeDimension::Auto, _) if is_block || is_inline_block => {
+        // Flex items still need intrinsic content height when auto-sized; if
+        // we fall through to `padding_v` only, their background quads collapse
+        // to the padding band even though the nested text renders below it.
+        (SizeDimension::Auto, _) if is_block || is_inline_block || is_flex => {
             let c = intrinsic_block_height(world, tc_id, content_width_gu, unit_scale);
             (c, padding_v + c)
         }
@@ -1748,6 +1752,55 @@ mod tests {
             measure_container_items(&world, panel, narrow_items[0].content_width_gu, None, 1.0);
         assert_eq!(narrow_nested.len(), 1);
         assert!((narrow_nested[0].box_width_gu - 4.4).abs() < 1e-4);
+    }
+
+    #[test]
+    fn flex_auto_height_includes_nested_text_height() {
+        use crate::engine::ecs::component::style::EdgeInsets;
+
+        let mut world = World::default();
+        let row = world.add_component_boxed_named("row", Box::new(TransformComponent::new()));
+        let style = world.add_component_boxed_named(
+            "style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.display = Some(Display::Flex);
+                s.padding = EdgeInsets::axes(0.9, 0.7);
+                s
+            }),
+        );
+        let _ = world.add_child(row, style);
+
+        let label = world.add_component_boxed_named("label", Box::new(TransformComponent::new()));
+        let label_style = world.add_component_boxed_named(
+            "label_style",
+            Box::new({
+                let mut s = StyleComponent::new();
+                s.display = Some(Display::Flex);
+                s.width = SizeDimension::GlyphUnits(14.0);
+                s
+            }),
+        );
+        let _ = world.add_child(label, label_style);
+        let _ = world.add_child(row, label);
+
+        let inner = world.add_component_boxed_named("inner", Box::new(TransformComponent::new()));
+        let text = world.add_component_boxed_named(
+            "text",
+            Box::new(TextComponent::new("Key".to_string())),
+        );
+        let _ = world.add_child(label, inner);
+        let _ = world.add_child(inner, text);
+
+        let measured = measure_item(&world, row, 52.0, None, 1.0);
+        assert_eq!(
+            measured.content_height_gu, 1.0,
+            "auto-height flex row should include its nested text height"
+        );
+        assert_eq!(
+            measured.box_height_gu, 2.4,
+            "box height should be content height plus vertical padding"
+        );
     }
 
     #[test]

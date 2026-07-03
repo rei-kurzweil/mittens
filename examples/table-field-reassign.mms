@@ -50,15 +50,22 @@ let send_btn = button("send", {
 let panel = T.position(0.0, 1.45, -1.45).scale(0.08, 0.08, 0.08) {
     name = "table_field_reassign_panel"
 
-    T.position(0.0, 6.6, 0.0) {
-        name = "table_header_island"
+    LayoutRoot {
+        name = "table_field_reassign_panel_layout"
+        available_width(52.0)
+        available_height(42.0)
 
-        LayoutRoot {
-            name = "table_field_reassign_header_layout"
-            available_width(52.0)
-            available_height(8.0)
+        T {
+            name = "panel_shell"
+            Style {
+                display("flex")
+                flex_direction("column")
+                row_gap(1.1)
+                width(100%)
+            }
 
             T {
+                name = "table_header_island"
                 Style {
                     display("flex")
                     flex_direction("column")
@@ -88,19 +95,9 @@ let panel = T.position(0.0, 1.45, -1.45).scale(0.08, 0.08, 0.08) {
                     }
                 }
             }
-        }
-    }
-
-    T.position(0.0, 0.0, 0.0) {
-        name = "table_island"
-
-        LayoutRoot {
-            name = "table_field_reassign_layout"
-            available_width(52.0)
-            available_height(22.0)
 
             T {
-                name = "table_shell"
+                name = "table_island"
                 Style {
                     display("flex")
                     flex_direction("column")
@@ -216,19 +213,9 @@ let panel = T.position(0.0, 1.45, -1.45).scale(0.08, 0.08, 0.08) {
                     }
                 }
             }
-        }
-    }
-
-    T.position(0.0, -9.4, 0.0) {
-        name = "controls_island"
-
-        LayoutRoot {
-            name = "table_field_reassign_controls_layout"
-            available_width(52.0)
-            available_height(8.0)
 
             T {
-                name = "controls_shell"
+                name = "controls_island"
                 Style {
                     display("flex")
                     flex_direction("column")
