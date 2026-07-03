@@ -133,4 +133,4 @@ This is workable, but it is more complex than matching the tree ownership direct
 - [docs/bugs/paint-panel-shell-does-not-take-focus.md](./paint-panel-shell-does-not-take-focus.md)
 - [docs/bugs/panel-layout-selection-interaction.md](./panel-layout-selection-interaction.md)
 - [docs/task/paint-panel-selection-and-panel-focus.md](../task/paint-panel-selection-and-panel-focus.md)
-- [docs/refactor/selection-option-topology.md](../refactor/selection-option-topology.md)
+- [docs/task/refactor/selection-option-topology.md](../task/refactor/selection-option-topology.md)

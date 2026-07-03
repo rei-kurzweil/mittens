@@ -42,11 +42,11 @@ Today the selection system is not topology-neutral. It is built around a specifi
 
 Relevant code:
 
-- [src/engine/ecs/system/selection_system.rs](../../src/engine/ecs/system/selection_system.rs)
-- [assets/components/panels.mms](../../assets/components/panels.mms)
-- [assets/components/assets_content.mms](../../assets/components/assets_content.mms)
-- [assets/components/asset_item.mms](../../assets/components/asset_item.mms)
-- [assets/components/panel_items.mms](../../assets/components/panel_items.mms)
+- [src/engine/ecs/system/selection_system.rs](../../../src/engine/ecs/system/selection_system.rs)
+- [assets/components/panels.mms](../../../assets/components/panels.mms)
+- [assets/components/assets_content.mms](../../../assets/components/assets_content.mms)
+- [assets/components/asset_item.mms](../../../assets/components/asset_item.mms)
+- [assets/components/panel_items.mms](../../../assets/components/panel_items.mms)
 
 The current behavior is roughly:
 
@@ -137,7 +137,7 @@ This differs from the current `paint_panel` shape, where `Selection {}` sits dir
 
 The paint panel needs a small authored-topology change so the selection model stays clean as the panel grows.
 
-Current shape in [assets/components/panels.mms](../../assets/components/panels.mms):
+Current shape in [assets/components/panels.mms](../../../assets/components/panels.mms):
 
 - the outer paint panel root is a styled panel shell
 - `content_slot` currently carries `Selection {}`

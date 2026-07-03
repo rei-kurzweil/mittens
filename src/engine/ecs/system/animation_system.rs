@@ -511,6 +511,7 @@ mod tests {
                     component_type: "Transform".to_string(),
                 },
             )])),
+            heap: crate::meow_meow::object::HeapHandle::new(),
             analysis: None,
         };
         let keyframe = world.add_component(KeyframeComponent::new_with_callback(0.0, callback));
@@ -569,6 +570,7 @@ mod tests {
                     component_type: "EM".to_string(),
                 },
             )])),
+            heap: crate::meow_meow::object::HeapHandle::new(),
             analysis: None,
         };
         let keyframe = world.add_component(KeyframeComponent::new_with_callback(0.0, callback));
@@ -647,6 +649,7 @@ mod tests {
                     },
                 ),
             ])),
+            heap: crate::meow_meow::object::HeapHandle::new(),
             analysis: None,
         };
 
@@ -724,6 +727,7 @@ mod tests {
                     },
                 ),
             ])),
+            heap: crate::meow_meow::object::HeapHandle::new(),
             analysis: None,
         };
 

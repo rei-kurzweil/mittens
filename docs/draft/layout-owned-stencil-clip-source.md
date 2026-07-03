@@ -6,7 +6,7 @@ Historical note: examples below that mention `TransformPipeline` / `TransformPip
 
 Companion to:
 - `docs/draft/stencil-clip-algorithm.md`
-- `docs/refactor/scrolling-component-layout-system.md`
+- `docs/task/refactor/scrolling-component-layout-system.md`
 
 ## Goal
 

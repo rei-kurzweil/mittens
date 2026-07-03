@@ -20,7 +20,8 @@ use crate::meow_meow::component_registry::{
     component_expr_uses_property_assignment_only, is_universal_component_named_prop,
 };
 use crate::meow_meow::object::{
-    BuiltinTableKind, CeChild, FrameKind, MaterializedCE, ObjectWorld, RuntimeClosure, Value,
+    BuiltinTableKind, CeChild, FrameKind, MaterializedCE, Object, ObjectWorld, RuntimeClosure,
+    Value,
 };
 use crate::meow_meow::parser::{MeowMeowParser, ParseError};
 use crate::meow_meow::token::TokenizeError;
@@ -580,19 +581,19 @@ fn eval_stmt(stmt: &Statement, ctx: &mut EvalContext<'_>) -> Result<StmtEffect, 
                     })
                     .collect(),
                 Value::Object(id) => {
-                    let Some(crate::meow_meow::object::Object::Map(map)) =
-                        ctx.object_world.heap().get(id)
-                    else {
+                    let Some(items) = id.with_map(|map| {
+                        map.iter()
+                            .map(|(key, value)| {
+                                Value::Map(HashMap::from([
+                                    ("key".to_string(), Value::String(key.clone())),
+                                    ("value".to_string(), value.clone()),
+                                ]))
+                            })
+                            .collect::<Vec<_>>()
+                    }) else {
                         return Err("for/in: invalid object".into());
                     };
-                    map.iter()
-                        .map(|(key, value)| {
-                            Value::Map(HashMap::from([
-                                ("key".to_string(), Value::String(key.clone())),
-                                ("value".to_string(), value.clone()),
-                            ]))
-                        })
-                        .collect()
+                    items
                 }
                 other => return Err(format!("for/in: expected array, got {:?}", other)),
             };
@@ -642,7 +643,9 @@ fn eval_stmt(stmt: &Statement, ctx: &mut EvalContext<'_>) -> Result<StmtEffect, 
                 .map_err(|e| format!("import error: cannot read '{}': {}", path, e))?;
             let module_val = eval_module_source(&content, Some(&resolved))?;
             let (named, sequence) = match module_val {
-                Value::Module { named, sequence } => (named, sequence),
+                Value::Module {
+                    named, sequence, ..
+                } => (named, sequence),
                 _ => return Err("import: internal error".to_string()),
             };
             for item in items {
@@ -876,30 +879,23 @@ fn assign_into_value(
         }
         Value::Object(id) => {
             if rest.is_empty() {
-                let Some(crate::meow_meow::object::Object::Map(map)) =
-                    ctx.object_world.heap_mut().get_mut(*id)
-                else {
+                let Some(()) = id.with_map_mut(|map| {
+                    map.insert(field.clone(), value);
+                }) else {
                     return Err("field assignment: invalid object".into());
                 };
-                map.insert(field.clone(), value);
                 return Ok(());
             }
 
-            let Some(crate::meow_meow::object::Object::Map(map)) = ctx.object_world.heap().get(*id)
-            else {
-                return Err("field assignment: invalid object".into());
+            let Some(mut next) = id.with_map(|map| map.get(field).cloned()).flatten() else {
+                return Err(format!("field assignment: '{}' not found", field));
             };
-            let mut next = map
-                .get(field)
-                .cloned()
-                .ok_or_else(|| format!("field assignment: '{}' not found", field))?;
             assign_into_value(&mut next, rest, value, ctx)?;
-            let Some(crate::meow_meow::object::Object::Map(map)) =
-                ctx.object_world.heap_mut().get_mut(*id)
-            else {
+            let Some(()) = id.with_map_mut(|map| {
+                map.insert(field.clone(), next);
+            }) else {
                 return Err("field assignment: invalid object".into());
             };
-            map.insert(field.clone(), next);
             Ok(())
         }
         other => Err(format!(
@@ -988,6 +984,7 @@ fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value,
             deferred_block: Some(RuntimeClosure {
                 body: ce.body.clone(),
                 captured_env: Arc::new(ctx.object_world.snapshot_visible()),
+                heap: ctx.object_world.heap().clone(),
                 analysis: Some(BlockEffectAnalyzer::analyze_keyframe_block(&ce.body)),
             }),
             children: vec![],
@@ -1059,7 +1056,7 @@ fn eval_expr(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<Value, Stri
             for field in fields {
                 map.insert(field.name.0.clone(), eval_expr(&field.value, ctx)?);
             }
-            Ok(Value::Map(map))
+            Ok(Value::Object(ctx.object_world.alloc_object(Object::Map(map))))
         }
         Expression::Index { base, index } => {
             let base = eval_expr(base, ctx)?;
@@ -1095,6 +1092,7 @@ fn eval_expr(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<Value, Stri
                 params: params.iter().map(|p| p.0.clone()).collect(),
                 body: body.clone(),
                 captured_env: Arc::new(captured_env),
+                heap: ctx.object_world.heap().clone(),
             })
         }
         Expression::Call(call) => eval_call(call, ctx),
@@ -1333,6 +1331,7 @@ fn eval_call(call: &CallExpression, ctx: &mut EvalContext<'_>) -> Result<Value, 
             params,
             body,
             captured_env,
+            ..
         } => {
             let args: Vec<Value> = call
                 .args
@@ -1498,6 +1497,7 @@ fn eval_user_fn(
         params,
         body,
         captured_env,
+        ..
     } = handler
     else {
         return Err(format!("expected function, got {:?}", handler));
@@ -2249,6 +2249,7 @@ fn eval_binop(
                     params,
                     body,
                     captured_env,
+                    ..
                 } => {
                     ctx.object_world.push_function_frame(captured_env);
                     if let Some(param) = params.first() {
@@ -2295,17 +2296,11 @@ fn eval_binop(
                     .get(&field.0)
                     .cloned()
                     .ok_or_else(|| format!("field access: '{}' not found", field.0)),
-                Value::Object(id) => {
-                    let Some(crate::meow_meow::object::Object::Map(fields)) =
-                        ctx.object_world.heap().get(id)
-                    else {
-                        return Err("field access: invalid object".into());
-                    };
-                    fields
-                        .get(&field.0)
-                        .cloned()
-                        .ok_or_else(|| format!("field access: '{}' not found", field.0))
-                }
+                Value::Object(id) => match id.with_map(|fields| fields.get(&field.0).cloned()) {
+                    Some(Some(value)) => Ok(value),
+                    Some(None) => Err(format!("field access: '{}' not found", field.0)),
+                    None => Err("field access: invalid object".into()),
+                },
                 other => Err(format!(
                     "field access: cannot read '{}' from {:?}",
                     field.0, other
@@ -2492,7 +2487,17 @@ fn value_display(val: &Value) -> String {
         Value::Function { .. } => "<fn>".into(),
         Value::ComponentObject { id, component_type } => format!("<{}:{:?}>", component_type, id),
         Value::ComponentExpr(_) => "<ce>".into(),
-        Value::Object(_) => "<object>".into(),
+        Value::Object(id) => id
+            .with_map(|map| {
+                format!(
+                    "{{{}}}",
+                    map.iter()
+                        .map(|(key, value)| format!("{key}: {}", value_display(value)))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })
+            .unwrap_or_else(|| "<object>".into()),
         Value::Identifier(s) => s.clone(),
         Value::BuiltinTable(BuiltinTableKind::MusicNote) => "<builtin MusicNote>".into(),
         Value::Module { .. } => "<module>".into(),
@@ -2602,12 +2607,13 @@ pub(crate) fn eval_mms_fn(
         params,
         body,
         captured_env,
+        heap,
     } = fn_val
     else {
         return Err(format!("eval_mms_fn: expected Function, got {:?}", fn_val));
     };
     let mut emits: Vec<IntentValue> = Vec::new();
-    let mut world = ObjectWorld::new();
+    let mut world = ObjectWorld::with_heap(heap.clone());
     world.push_function_frame(captured_env.clone());
     for (index, param) in params.iter().enumerate() {
         let arg = args.get(index).cloned().unwrap_or(Value::Null);
@@ -2649,7 +2655,7 @@ pub(crate) fn eval_runtime_closure(
     mode: RuntimeClosureExecMode,
 ) -> Result<(), String> {
     let mut emits: Vec<IntentValue> = Vec::new();
-    let mut world = ObjectWorld::new();
+    let mut world = ObjectWorld::with_heap(closure.heap.clone());
     world.push_function_frame(closure.captured_env.clone());
         let mut ctx = EvalContext {
             emits: &mut emits,
@@ -2719,7 +2725,11 @@ pub(crate) fn eval_module_source(source: &str, source_path: Option<&str>) -> Res
         })
         .collect();
 
-    Ok(Value::Module { named, sequence })
+    Ok(Value::Module {
+        named,
+        sequence,
+        heap: world.heap().clone(),
+    })
 }
 
 fn resolve_import_path(path: &str, source_path: Option<&str>) -> String {

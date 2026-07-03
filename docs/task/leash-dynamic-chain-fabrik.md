@@ -75,7 +75,7 @@ authoring path is the source of truth.
 - No cross-tick state — IK re-solves from current world matrices each tick. Combined
   with the lack of gravity bias, slack chains can look "frozen" between movements.
   This intersects with the temporal IK state idea in
-  `docs/wip/avatar-control.md` §4.
+  `docs/task/wip/avatar-control.md` §4.
 
 These are deliberately out of scope. The point of this task is to land the basic
 two-end-pinned authoring pattern.

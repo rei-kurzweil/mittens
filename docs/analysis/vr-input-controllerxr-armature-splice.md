@@ -25,8 +25,8 @@ specific shape that matters for filtering and for future MMS authoring.
 
 Related docs already exist:
 
-- [docs/refactor/splice-component-into-topology.md](docs/refactor/splice-component-into-topology.md)
-- [docs/refactor/controller-xr-armature-targeting.md](docs/refactor/controller-xr-armature-targeting.md)
+- [docs/task/refactor/splice-component-into-topology.md](../task/refactor/splice-component-into-topology.md)
+- [docs/task/refactor/controller-xr-armature-targeting.md](../task/refactor/controller-xr-armature-targeting.md)
 - [docs/analysis/vr-controller-rotation-filter-ab.md](docs/analysis/vr-controller-rotation-filter-ab.md)
 
 Those docs cover:
@@ -191,7 +191,7 @@ real experiment.
 ## 6. What this means for a future splice API
 
 The existing splice concept in
-[docs/refactor/splice-component-into-topology.md](docs/refactor/splice-component-into-topology.md)
+[docs/task/refactor/splice-component-into-topology.md](../task/refactor/splice-component-into-topology.md)
 is still useful, but `vr-input.rs` suggests we likely need a richer variant.
 
 Instead of only:

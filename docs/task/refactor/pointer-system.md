@@ -173,8 +173,8 @@ That puts pointer interpretation in one place instead of splitting it across ray
 This refactor note is intended to line up with:
 
 - `docs/draft/pointer.md`
-- `docs/refactor/gesture-refactor.md`
-- `docs/refactor/raycast-driven-by-actions.md`
+- `docs/task/refactor/gesture-refactor.md`
+- `docs/task/refactor/raycast-driven-by-actions.md`
 
 Roughly:
 

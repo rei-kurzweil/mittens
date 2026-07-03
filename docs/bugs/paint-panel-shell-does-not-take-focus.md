@@ -46,7 +46,7 @@ The Paint panel does not become the selected/focused panel when clicked.
 - `assets/components/panels.mms`
   Confirm the Paint panel subtree shape still matches the intended nested
   `panel shell Option -> content -> inner Selection` structure.
-- `docs/refactor/selection-option-topology.md`
+- `docs/task/refactor/selection-option-topology.md`
   Compare the runtime behavior against the intended outer-panel / inner-tool-scope contract.
 
 ## Questions to answer
@@ -64,5 +64,5 @@ The Paint panel does not become the selected/focused panel when clicked.
 
 - `docs/bugs/panel-layout-selection-interaction.md`
 - `docs/task/paint-panel-selection-and-panel-focus.md`
-- `docs/refactor/selection-option-topology.md`
+- `docs/task/refactor/selection-option-topology.md`
 

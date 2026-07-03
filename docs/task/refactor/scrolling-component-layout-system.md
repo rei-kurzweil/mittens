@@ -7,7 +7,7 @@
 
 Scrolling and clipping are related but **not the same concern**.
 
-See also [docs/analysis/splicing-for-layout-owned-scrolling.md](../analysis/splicing-for-layout-owned-scrolling.md) for the newer framing of layout-owned scrolling as a general splice/output-target problem.
+See also [docs/analysis/splicing-for-layout-owned-scrolling.md](../../analysis/splicing-for-layout-owned-scrolling.md) for the newer framing of layout-owned scrolling as a general splice/output-target problem.
 
 - `StyleComponent::overflow = Hidden | Scroll` expresses **viewport clipping**.
 - Scrolling expresses **motion of content inside that clipped viewport**.

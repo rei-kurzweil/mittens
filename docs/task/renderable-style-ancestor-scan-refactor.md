@@ -7,7 +7,7 @@ Status: open
 Related:
 
 - `docs/spec/visibility-component.md`
-- `docs/refactor/topology-queries-and-style-inheritance.md`
+- `docs/task/refactor/topology-queries-and-style-inheritance.md`
 - `docs/task/grid-panel-select-delete-hide-and-gizmo.md`
 
 ## Goal

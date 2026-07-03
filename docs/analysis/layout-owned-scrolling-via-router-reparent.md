@@ -19,7 +19,7 @@ desired ownership split:
 
 Related docs:
 
-- [docs/refactor/scrolling-component-layout-system.md](../refactor/scrolling-component-layout-system.md)
+- [docs/task/refactor/scrolling-component-layout-system.md](../task/refactor/scrolling-component-layout-system.md)
 - [docs/analysis/splicing-for-layout-owned-scrolling.md](splicing-for-layout-owned-scrolling.md)
 - [docs/analysis/query-usage.md](query-usage.md)
 

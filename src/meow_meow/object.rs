@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, Mutex, Weak};
 
 use crate::engine::ecs::ComponentId;
 use crate::meow_meow::ast::BlockStatement;
@@ -24,6 +25,7 @@ pub enum BuiltinTableKind {
 pub struct RuntimeClosure {
     pub body: BlockStatement,
     pub captured_env: Arc<HashMap<String, Value>>,
+    pub heap: HeapHandle,
     pub analysis: Option<BlockEffectAnalysis>,
 }
 
@@ -114,12 +116,14 @@ pub enum Value {
         params: Vec<String>,
         body: crate::meow_meow::ast::BlockStatement,
         captured_env: Arc<HashMap<String, Value>>,
+        heap: HeapHandle,
     },
 
     /// A loaded module: named exports + ordered sequence of root CE emits.
     Module {
         named: HashMap<String, Value>,
         sequence: Vec<MaterializedCE>,
+        heap: HeapHandle,
     },
 }
 
@@ -127,12 +131,49 @@ pub enum Value {
 // MMS heap objects
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct ObjectId(u32);
+#[derive(Debug, Clone)]
+pub struct ObjectId {
+    slot: u32,
+    heap: Weak<Mutex<Heap>>,
+}
 
 impl ObjectId {
-    pub fn as_u32(self) -> u32 {
-        self.0
+    pub fn as_u32(&self) -> u32 {
+        self.slot
+    }
+
+    pub fn get(&self) -> Option<Object> {
+        let heap = self.heap.upgrade()?;
+        heap.lock().ok()?.get(self.clone()).cloned()
+    }
+
+    pub fn with_map<R>(&self, f: impl FnOnce(&HashMap<String, Value>) -> R) -> Option<R> {
+        let heap = self.heap.upgrade()?;
+        let heap = heap.lock().ok()?;
+        let Object::Map(map) = heap.get(self.clone())?;
+        Some(f(map))
+    }
+
+    pub fn with_map_mut<R>(&self, f: impl FnOnce(&mut HashMap<String, Value>) -> R) -> Option<R> {
+        let heap = self.heap.upgrade()?;
+        let mut heap = heap.lock().ok()?;
+        let Object::Map(map) = heap.get_mut(self.clone())?;
+        Some(f(map))
+    }
+}
+
+impl PartialEq for ObjectId {
+    fn eq(&self, other: &Self) -> bool {
+        self.slot == other.slot && Weak::as_ptr(&self.heap) == Weak::as_ptr(&other.heap)
+    }
+}
+
+impl Eq for ObjectId {}
+
+impl Hash for ObjectId {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.slot.hash(state);
+        Weak::as_ptr(&self.heap).hash(state);
     }
 }
 
@@ -152,23 +193,29 @@ impl Heap {
         Self::default()
     }
 
-    pub fn alloc(&mut self, object: Object) -> ObjectId {
-        let id = ObjectId(
-            self.objects
+    fn alloc_in(handle: &HeapHandle, object: Object) -> ObjectId {
+        let slot = {
+            let mut heap = handle.0.lock().expect("heap lock poisoned");
+            let slot = heap
+                .objects
                 .len()
                 .try_into()
-                .expect("too many heap objects"),
-        );
-        self.objects.push(object);
-        id
+                .expect("too many heap objects");
+            heap.objects.push(object);
+            slot
+        };
+        ObjectId {
+            slot,
+            heap: Arc::downgrade(&handle.0),
+        }
     }
 
     pub fn get(&self, id: ObjectId) -> Option<&Object> {
-        self.objects.get(id.0 as usize)
+        self.objects.get(id.slot as usize)
     }
 
     pub fn get_mut(&mut self, id: ObjectId) -> Option<&mut Object> {
-        self.objects.get_mut(id.0 as usize)
+        self.objects.get_mut(id.slot as usize)
     }
 
     pub fn len(&self) -> usize {
@@ -177,6 +224,31 @@ impl Heap {
 
     pub fn is_empty(&self) -> bool {
         self.objects.is_empty()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct HeapHandle(Arc<Mutex<Heap>>);
+
+impl HeapHandle {
+    pub fn new() -> Self {
+        Self(Arc::new(Mutex::new(Heap::new())))
+    }
+
+    pub fn alloc(&self, object: Object) -> ObjectId {
+        Heap::alloc_in(self, object)
+    }
+}
+
+impl Default for HeapHandle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PartialEq for HeapHandle {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
     }
 }
 
@@ -235,14 +307,14 @@ impl Frame {
 #[derive(Debug)]
 pub struct ObjectWorld {
     frames: Vec<Frame>,
-    heap: Heap,
+    heap: HeapHandle,
 }
 
 impl Default for ObjectWorld {
     fn default() -> Self {
         Self {
             frames: vec![Frame::root()],
-            heap: Heap::new(),
+            heap: HeapHandle::new(),
         }
     }
 }
@@ -251,6 +323,13 @@ impl ObjectWorld {
     /// New `ObjectWorld` with one root frame already pushed.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_heap(heap: HeapHandle) -> Self {
+        Self {
+            frames: vec![Frame::root()],
+            heap,
+        }
     }
 
     // --- Frame management ---
@@ -368,12 +447,12 @@ impl ObjectWorld {
 
     // --- Heap access ---
 
-    pub fn heap(&self) -> &Heap {
+    pub fn heap(&self) -> &HeapHandle {
         &self.heap
     }
 
-    pub fn heap_mut(&mut self) -> &mut Heap {
-        &mut self.heap
+    pub fn alloc_object(&self, object: Object) -> ObjectId {
+        self.heap.alloc(object)
     }
 }
 

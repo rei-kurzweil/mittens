@@ -536,7 +536,7 @@ But v1 does not need pre-optimization.
 
 ## 12. Relationship to existing topology-query docs
 
-This proposal is complementary to [docs/refactor/topology-queries-and-style-inheritance.md](docs/refactor/topology-queries-and-style-inheritance.md).
+This proposal is complementary to [docs/task/refactor/topology-queries-and-style-inheritance.md](../task/refactor/topology-queries-and-style-inheritance.md).
 
 That refactor note is about:
 - internal helper traversal APIs,

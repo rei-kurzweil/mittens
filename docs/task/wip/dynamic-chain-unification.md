@@ -108,7 +108,7 @@ natural home is `IKSystem` (or a renamed `DynamicChainSystem`) because the
 solver writes multi-joint output anyway.
 
 There's also a hook here for the upcoming `VelocityComponent` /
-`AngularVelocityComponent` story (see `docs/wip/velocity-components.md`) — if
+`AngularVelocityComponent` story (see `docs/task/wip/velocity-components.md`) — if
 those become a first-class component on TCs, the dynamic-chain solver should
 read/write them directly instead of keeping a private state map.
 

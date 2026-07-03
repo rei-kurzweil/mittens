@@ -124,7 +124,7 @@ That exactly explains:
 The background-color refactor note says the background quad should be scaled by
 `unit_scale`:
 
-- `docs/refactor/style-background-color.md:77`
+- `docs/task/refactor/style-background-color.md:77`
 
 But the current implementation in `block.rs` does not multiply the background quad
 transform by `unit_scale`; it writes raw glyph-unit scale into `__bg`.

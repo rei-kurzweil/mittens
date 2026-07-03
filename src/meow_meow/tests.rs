@@ -1754,11 +1754,15 @@ result.count = result.count + 1
         None,
     )
     .expect("module eval");
-    let Value::Map(result) = module.named_exports.get("result").cloned().expect("result export") else {
-        panic!("expected table");
+    let Value::Object(result) = module.named_exports.get("result").cloned().expect("result export") else {
+        panic!("expected object-backed table");
     };
-    assert!(matches!(result.get("text"), Some(Value::String(text)) if text == "after"));
-    assert!(matches!(result.get("count"), Some(Value::Number(count)) if (*count - 1.0).abs() < 1e-6));
+    let Some(()) = result.with_map(|result| {
+        assert!(matches!(result.get("text"), Some(Value::String(text)) if text == "after"));
+        assert!(matches!(result.get("count"), Some(Value::Number(count)) if (*count - 1.0).abs() < 1e-6));
+    }) else {
+        panic!("expected live table object");
+    };
 }
 
 #[test]
@@ -1783,6 +1787,44 @@ export let result = pick_text(app_state)
         module.named_exports.get("result"),
         Some(Value::String(text)) if text == "hello table fields"
     ));
+}
+
+#[test]
+fn exported_functions_share_object_backed_table_state() {
+    let module = MeowMeowRunner::load_module_source(
+        r#"
+export let app_state = {
+    text = "before"
+    count = 0
+}
+
+export fn write_state() {
+    app_state.text = "after"
+    app_state.count = app_state.count + 1
+}
+
+export fn read_state() {
+    return app_state.text
+}
+
+export fn read_count() {
+    return app_state.count
+}
+"#,
+        None,
+    )
+    .expect("module eval");
+
+    MeowMeowRunner::call_mms_module_fn(&module, "write_state", vec![], None, None, None)
+        .expect("write_state");
+
+    let text = MeowMeowRunner::call_mms_module_fn(&module, "read_state", vec![], None, None, None)
+        .expect("read_state");
+    assert!(matches!(text, Value::String(text) if text == "after"));
+
+    let count = MeowMeowRunner::call_mms_module_fn(&module, "read_count", vec![], None, None, None)
+        .expect("read_count");
+    assert!(matches!(count, Value::Number(count) if (count - 1.0).abs() < 1e-6));
 }
 
 #[test]

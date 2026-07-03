@@ -128,7 +128,7 @@ These are query-like, but currently hardcoded to simple name lookup rather than 
 
 ### Tree splice docs
 
-- [docs/refactor/splice-component-into-topology.md](../refactor/splice-component-into-topology.md)
+- [docs/task/refactor/splice-component-into-topology.md](../task/refactor/splice-component-into-topology.md)
 - [docs/analysis/vr-input-controllerxr-armature-splice.md](vr-input-controllerxr-armature-splice.md)
 - [docs/meow_meow/analysis/tree-splicing.md](../meow_meow/analysis/tree-splicing.md)
 

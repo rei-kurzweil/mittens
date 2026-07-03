@@ -1,6 +1,6 @@
 # MMS tables as heap objects only
 
-Status: task / design decision
+Status: in progress
 
 ## Goal
 
@@ -80,6 +80,17 @@ Heap-object tables make the model clearer:
 - mutating a field changes the shared object behind that binding
 - closures can capture object references naturally
 
+This is not just theoretical. The original
+[`examples/table-field-reassign.mms`](/home/rei/_/cat-engine/examples/table-field-reassign.mms:1)
+demonstrated the failure mode:
+
+- the `TextInputChanged` handler updates `app_state.draft_text`
+- the `Click` handler on the send button still sees the older captured value
+- so `status` and `send_count` can update while `text` / `draft_text` do not reflect what was
+  typed
+
+That is the exact kind of cross-handler mutable state sharing this task is meant to fix.
+
 ### 4. It aligns with future structs
 
 We already want:
@@ -96,27 +107,7 @@ The cleanest route is:
 That is much cleaner than keeping authored tables as ad hoc inline maps and later introducing a
 different object representation for structs.
 
-## Current inconsistency
-
-Today MMS effectively has two table-like runtime shapes:
-
-- `Value::Map`
-- `Value::Object(id)` where the heap object is a map
-
-This shows up in several places:
-
-- evaluator table iteration and field access
-- reassignment logic
-- host/event payload shaping
-- Rust/MMS structured data interop planning
-
-The result is that “tables exist” is true, but “tables have one stable runtime representation” is
-false.
-
-That inconsistency is the main thing to remove.
-
-## Recommended runtime rule
-
+## Runtime rule
 For authored MMS evaluation:
 
 1. evaluating a table literal allocates a heap map object
@@ -125,8 +116,24 @@ For authored MMS evaluation:
 4. field reassignment mutates that object
 5. passing a table to functions passes the object reference
 6. returning a table returns the object reference
+7. closures and runtime blocks must keep the referenced heap alive
 
-This should be the normal rule for user-authored code.
+This is now the normal rule for user-authored code.
+
+## Current state
+
+Implemented:
+
+- authored table literals lower to `Value::Object(id)`
+- dotted field reads/writes operate on object-backed tables
+- exported/runtime closures keep a shared heap handle alive
+- separately invoked closures can observe the same table mutation history
+
+Still mixed / follow-up:
+
+- some internal Rust helper paths still construct `Value::Map`
+- host event payload shaping should be normalized onto the same object model
+- reassignment code still has transitional `Value::Map` support for non-authored inputs
 
 ## What can still stay non-object
 
@@ -157,6 +164,10 @@ Exit criteria:
 
 - authored table literals no longer surface as inline `Value::Map`
 
+Status:
+
+- done
+
 ### Phase 2: simplify reassignment around object-backed tables
 
 Work:
@@ -168,6 +179,27 @@ Work:
 Exit criteria:
 
 - dotted field assignment works without dual-representation branching for authored tables
+
+Status:
+
+- mostly done for authored tables
+- transitional `Value::Map` support remains for non-authored/internal paths
+
+### Verification after heap-object migration
+
+Retest:
+
+- [`examples/table-field-reassign.mms`](/home/rei/_/cat-engine/examples/table-field-reassign.mms:1)
+
+Expected behavior after the migration:
+
+- typing into the `TextInput` updates `app_state.draft_text`
+- rerender shows the updated `draft_text` immediately
+- clicking `send` copies `app_state.draft_text` into `app_state.text`
+- the click handler sees the same shared table object state that the text-input handler mutated
+
+If that example still shows stale handler-local table state after the migration, the heap-object
+change is incomplete.
 
 ### Phase 3: normalize structured host payloads
 

@@ -276,5 +276,5 @@ These are independent concerns.
 - `docs/spec/bvh-and-raycast.md`
 - `docs/spec/gestures-and-gizmos.md`
 - `docs/spec/system/editor.md`
-- `docs/refactor/pointer-trigger-policy-and-auto-casting.md`
-- `docs/refactor/raycast-driven-by-actions.md`
+- `docs/task/refactor/pointer-trigger-policy-and-auto-casting.md`
+- `docs/task/refactor/raycast-driven-by-actions.md`

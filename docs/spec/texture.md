@@ -256,7 +256,7 @@ Current limitations:
 Future design work is tracked in:
 
 - [docs/draft/render-image.md](docs/draft/render-image.md)
-- [docs/refactor/render-image-contextual-binding.md](docs/refactor/render-image-contextual-binding.md)
+- [docs/task/refactor/render-image-contextual-binding.md](../task/refactor/render-image-contextual-binding.md)
 
 ## 9. Practical guidance
 

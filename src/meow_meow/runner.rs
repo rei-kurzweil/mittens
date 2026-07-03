@@ -7,7 +7,7 @@ use crate::meow_meow::evaluator::{
     EvalRequest, EvalResponse, HostCallKind, HostValue, MeowMeowEvaluator, eval_mms_fn,
     eval_module_source,
 };
-use crate::meow_meow::object::{MaterializedCE, Value};
+use crate::meow_meow::object::{HeapHandle, MaterializedCE, Value};
 
 /// The result of evaluating an MMS script: collected intents and any errors.
 #[derive(Debug, Default)]
@@ -20,6 +20,7 @@ pub struct EvalOutput {
 pub struct LoadedMmsModule {
     pub named_exports: HashMap<String, Value>,
     pub sequence: Vec<MaterializedCE>,
+    pub heap: HeapHandle,
     pub source_path: Option<String>,
 }
 
@@ -83,9 +84,14 @@ impl MeowMeowRunner {
         source_path: Option<&str>,
     ) -> Result<LoadedMmsModule, String> {
         let module = match eval_module_source(source, source_path)? {
-            Value::Module { named, sequence } => Ok(LoadedMmsModule {
+            Value::Module {
+                named,
+                sequence,
+                heap,
+            } => Ok(LoadedMmsModule {
                 named_exports: named,
                 sequence,
+                heap,
                 source_path: source_path.map(|s| s.to_string()),
             }),
             other => Err(format!(

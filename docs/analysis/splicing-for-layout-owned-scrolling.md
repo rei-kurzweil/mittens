@@ -16,10 +16,10 @@ itself still routes its incoming content to a **specific internal node** (`__scr
 
 Relevant existing docs:
 
-- [docs/refactor/splice-component-into-topology.md](../refactor/splice-component-into-topology.md)
+- [docs/task/refactor/splice-component-into-topology.md](../task/refactor/splice-component-into-topology.md)
 - [docs/analysis/vr-input-controllerxr-armature-splice.md](vr-input-controllerxr-armature-splice.md)
 - [docs/meow_meow/analysis/tree-splicing.md](../meow_meow/analysis/tree-splicing.md)
-- [docs/refactor/scrolling-component-layout-system.md](../refactor/scrolling-component-layout-system.md)
+- [docs/task/refactor/scrolling-component-layout-system.md](../task/refactor/scrolling-component-layout-system.md)
 - [docs/analysis/layout-owned-scrolling-via-router-reparent.md](layout-owned-scrolling-via-router-reparent.md)
 
 The new router-reparent note captures a simpler near-term path for scrolling specifically. This

@@ -247,9 +247,9 @@ The higher-value ordering is:
 
 ## Relation to existing docs
 
-- Current implemented bridge: [docs/spec/render-to-texture.md](docs/spec/render-to-texture.md)
-- Future runtime abstraction draft: [docs/draft/render-image.md](docs/draft/render-image.md)
-- Older pass-owned texture reference direction: [docs/draft/render-to-texture.md](docs/draft/render-to-texture.md)
+- Current implemented bridge: [docs/spec/render-to-texture.md](../../spec/render-to-texture.md)
+- Future runtime abstraction draft: [docs/draft/render-image.md](../../draft/render-image.md)
+- Older pass-owned texture reference direction: [docs/draft/render-to-texture.md](../../draft/render-to-texture.md)
 
 This refactor note is specifically about the **migration path** from the implemented selector-string
 bridge toward contextual/pass-owned texture binding.

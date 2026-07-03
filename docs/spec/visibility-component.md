@@ -176,7 +176,7 @@ instances.
 
 This spec is compatible with the proposal in:
 
-- `docs/refactor/topology-queries-and-style-inheritance.md`
+- `docs/task/refactor/topology-queries-and-style-inheritance.md`
 
 Visibility should use the same family of helper queries as other inheritable render
 properties.

@@ -151,7 +151,7 @@ World::splice_between(parent, child, inserted)
 But the important point is:
 - the **publicly encouraged** API should probably be on `Universe`.
 
-That matches the direction in `docs/refactor/private-world-api.md`.
+That matches the direction in `docs/task/refactor/private-world-api.md`.
 
 ---
 

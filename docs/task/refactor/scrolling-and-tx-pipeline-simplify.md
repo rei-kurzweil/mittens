@@ -4,9 +4,9 @@ Date: 2026-04-17
 
 Historical note: references below to `TransformPipelineOutput` describe the removed authored output marker. Current authored scrolling/topology experiments should read those shapes as `TransformForkTRS` roots with the driven `T` attached directly under the fork.
 
-This note captures a refactor direction that became clearer while debugging the authored scrolling list in [examples/ui-layout.mms](../../examples/ui-layout.mms).
+This note captures a refactor direction that became clearer while debugging the authored scrolling list in [examples/ui-layout.mms](../../../examples/ui-layout.mms).
 
-It is adjacent to, but not the same as, the older scrolling/layout ownership note in [docs/refactor/scrolling-component-layout-system.md](scrolling-component-layout-system.md).
+It is adjacent to, but not the same as, the older scrolling/layout ownership note in [docs/task/refactor/scrolling-component-layout-system.md](scrolling-component-layout-system.md).
 
 That document is about who should own scrolling and clipping at the system/topology level.
 This document is about making the authored topology and transform-pipeline semantics simpler, less error-prone, and easier to read in both MMS and hand-rolled runtime trees.
@@ -411,7 +411,7 @@ Without this phase, the feature will work on initial trees but drift out of shap
 
 After helper ownership works, convert the known call sites to the simpler model:
 
-1. [examples/ui-layout.mms](../../examples/ui-layout.mms)
+1. [examples/ui-layout.mms](../../../examples/ui-layout.mms)
 2. editor panels / inspector-owned scrolling subtrees
 3. any hand-built ECS trees that still create a manual scroll track transform
 

@@ -205,7 +205,7 @@ What stays:
 ## Use by dynamic chains
 
 When the unified `DynamicChain` solver lands (see
-`docs/wip/dynamic-chain-unification.md`), each driven joint TC carries an
+`docs/task/wip/dynamic-chain-unification.md`), each driven joint TC carries an
 `AngularVelocityComponent` with `source = OwnedBy(DynamicChain)`. The solver
 reads it for momentum/damping each tick and writes back the post-solve value.
 

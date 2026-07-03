@@ -132,7 +132,7 @@ Stopping unintended auto-casts first gives the editor a stable selection input a
 
 ## Related docs
 
-- `docs/refactor/pointer-system.md`
-- `docs/refactor/raycast-driven-by-actions.md`
+- `docs/task/refactor/pointer-system.md`
+- `docs/task/refactor/raycast-driven-by-actions.md`
 
 This note is intentionally a refactor doc because it describes the runtime migration step that should happen before the final trigger semantics move into `docs/spec`.
