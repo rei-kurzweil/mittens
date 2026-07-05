@@ -78,9 +78,6 @@ let guid = universe.world.get_component_record(instance_root).unwrap().guid;
 #### RenderAssets
 + converts `CPUMesh` into `GPUMesh`
 
-#### TextureSystem
-#### LightSystem
-
 ## VulkanoRenderer 
 + displays data from VisualWorld through vulkan
 + TODO: make WgpuRenderer for web / webasm
@@ -271,7 +268,7 @@ This is the simplest pattern for authoring animation-driven behavior in MMS: cap
 
 Animation components are also live handles, so you can store them in a variable and call playback methods from signal handlers or other script logic.
 
-```javascript
+```c
 let anim = Animation.looping() {
     Keyframe.at(0) { cube_t.update_transform([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.5, 0.5, 0.5]) }
     Keyframe.at(1) { cube_t.update_transform([0.0, 0.0, 0.0], [0.0, 3.14159 / 2, 0.0], [0.5, 0.5, 0.5]) }
