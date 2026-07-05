@@ -265,7 +265,7 @@ settled, `neck_parent_world_rot` will be stale and the local rotation will be wr
 
 ### A. Verify neck_parent_world_rot is current at tick time
 
-The body pipeline runs in `TransformPipelineSystem` before `AvatarControlSystem` runs.
+The body pipeline runs in `TransformStreamSystem` before `AvatarControlSystem` runs.
 Confirm the tick order guarantees neck_parent's world matrix is fresh when `tick_one` reads it.
 
 ### B. Verify the 180° Y correction doesn't double-apply
@@ -329,7 +329,7 @@ rotation, regardless of what the body pipeline does to the parent chain.
 So the question is not "can we ignore parent propagation" (we already do) — it is **"is
 `neck_parent_world_rot` always current when we read it?"**
 
-`TransformPipelineSystem` runs before `AvatarControlSystem` in the tick order. The body
+`TransformStreamSystem` runs before `AvatarControlSystem` in the tick order. The body
 pipeline therefore updates `model_root` and propagates down the skeleton before `tick_one`
 reads `neck_parent_world_rot`. So by the time we read it, it should be the result of this
 tick's body pipeline run — not last tick's. This means the cancellation should be exact,

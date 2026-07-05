@@ -20,7 +20,7 @@ Not yet a task. This is the design surface to settle before refactoring `src/`.
 - That velocity is integrated, damped, and consumed in
   `KineticResponseSystem::tick_with_queue` and never exposed outside that system.
 - Spring bones own their own per-stage angular-velocity state inside
-  `TransformPipelineSystem` (keyed by stage path).
+  `TransformStreamSystem` (keyed by stage path).
 - IK is fully stateless — no velocity anywhere.
 - Nothing has access to a TC's velocity except the system that authored it.
 

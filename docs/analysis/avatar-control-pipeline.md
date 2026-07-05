@@ -37,7 +37,7 @@ This means:
   `model_root`'s local `(0, -1.6, 0)` offset is then only ever rotated by a pure-Y body_yaw
   rotation, which leaves the Y component unchanged. **The circle bug cannot occur.**
 - The head branch can keep full rotation and route it to `splice_head` independently.
-- Temporal state (body yaw follow) lives in `TransformPipelineSystem` keyed by stage path,
+- Temporal state (body yaw follow) lives in `TransformStreamSystem` keyed by stage path,
   consistent with how `QuatTemporalFilter` already works.
 - `AvatarControlSystem` is reduced to topology init only: find bones, create splices,
   displace bones. No per-tick math.
@@ -99,7 +99,7 @@ Used in the body branch to ensure `model_root` never inherits pitch.
 A stateful temporal quat op that implements body-yaw-follow logic:
 
 - Input: current head yaw (from `ExtractYaw` on `driven_t`'s rotation).
-- State: `body_yaw` (f32), maintained across ticks inside `TransformPipelineSystem`.
+- State: `body_yaw` (f32), maintained across ticks inside `TransformStreamSystem`.
 - Output: a pure-Y quaternion for `body_yaw`.
 - Logic: if `|head_yaw − body_yaw| > threshold`, advance `body_yaw` toward
   `head_yaw ± threshold` at `rate` rad/s.

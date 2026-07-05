@@ -148,7 +148,7 @@ Phase selection is driven by `OpacityComponent`, `ColorComponent`, and material 
 Architecture decisions with significant non-obvious reasoning are documented in `docs/`:
 
 - `docs/spec/signals.md` — canonical signal design rationale
-- `docs/spec/transform-pipeline.md` — `TransformPipelineSystem` operators (fork/map/filter/merge)
+- `docs/spec/transform-pipeline.md` — `TransformStreamSystem` operators (fork/map/filter/merge)
 - `docs/spec/skinned-mesh-system.md` — glTF armature → ECS, skin matrix math, routing hazards
 - `docs/spec/gestures-and-gizmos.md` — interaction pipeline (drag, raycast, gizmo coord types)
 - `docs/spec/vr-input.md` — OpenXR controller/hand-root pose flow

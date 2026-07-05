@@ -13,7 +13,7 @@ while the leash + Y-leash tasks land.
 | Concern | Spring (`QuatSpringComponent`) | IK (`IKChainComponent`) |
 |---|---|---|
 | Granularity | 1 component per affected TC | 1 component per chain (N TCs) |
-| Lives in | `TransformPipelineSystem` | `IKSystem` |
+| Lives in | `TransformStreamSystem` | `IKSystem` |
 | Output | Inline rotation override during world-matrix propagation | N `UpdateTransform` intents |
 | State | Per-stage angular velocity (kept in pipeline system) | Stateless — re-solves from current world matrices each tick |
 | Algorithm shape | Local recurrence — each bone reads parent, integrates, hands to child | Global iteration — fwd+bwd passes touch every joint |
@@ -103,7 +103,7 @@ Whichever solver wins, this needs **per-joint state across ticks**:
   directly)
 
 Spring already has this pattern — keyed by stage path in
-`TransformPipelineSystem`. IK doesn't. The unified solver picks one home; the
+`TransformStreamSystem`. IK doesn't. The unified solver picks one home; the
 natural home is `IKSystem` (or a renamed `DynamicChainSystem`) because the
 solver writes multi-joint output anyway.
 

@@ -6,7 +6,7 @@ Historical note: topology references below to `TransformPipelineComponent` or `T
 
 Scratch space for thinking through AVC evolution: current system inventory,
 spine IK implications, the head-drift problem, and how IKSystem and
-TransformPipelineSystem do or don't share structure.
+TransformStreamSystem do or don't share structure.
 
 ---
 
@@ -36,12 +36,12 @@ In **simple splice mode** (no arm IK resolved), also creates:
 | System | What it does for AVC |
 |---|---|
 | `OpenXRSystem` | Writes `driven_t` world pose (HMD) and controller `driven_t` world poses |
-| `TransformSystem` | Propagates world matrices; calls into `TransformPipelineSystem` for pipeline nodes |
-| `TransformPipelineSystem` | Evaluates body pipeline: `driven_t` → `QuatYawFollow` → `model_root.world` |
+| `TransformSystem` | Propagates world matrices; calls into `TransformStreamSystem` for pipeline nodes |
+| `TransformStreamSystem` | Evaluates body pipeline: `driven_t` → `QuatYawFollow` → `model_root.world` |
 | `AvatarControlSystem` | No-op after init (`splice_head.is_some()` short-circuits) |
 | `IKSystem` | AimConstraint: head world rot; TwoBoneIK: arm rotations |
 
-`TransformPipelineSystem` does not write directly — `TransformSystem` calls
+`TransformStreamSystem` does not write directly — `TransformSystem` calls
 `evaluate_pipeline_node` during world-matrix propagation and applies the result to
 `model_root`'s world matrix inline. No `UpdateTransform` intent is emitted.
 
@@ -206,11 +206,11 @@ it. No change needed to that division.
 
 ---
 
-## 4. IKSystem vs TransformPipelineSystem — shared structure?
+## 4. IKSystem vs TransformStreamSystem — shared structure?
 
 ### How each system works
 
-**TransformPipelineSystem:**
+**TransformStreamSystem:**
 - Called by `TransformSystem` during world-matrix propagation
 - Input: world matrix of nearest TC ancestor of the pipeline node
 - Evaluates a linear chain of operators (ForkTRS → ops → MergeTRS) producing an
@@ -227,7 +227,7 @@ it. No change needed to that division.
 ### Math helpers are now consolidated
 
 Earlier drafts of this doc flagged duplicated quat / vec helpers between
-`TransformPipelineSystem` and `IKSystem`. That has since been resolved:
+`TransformStreamSystem` and `IKSystem`. That has since been resolved:
 `quat_mul`, `quat_conjugate`, `quat_normalize`, `quat_rotation_y`,
 `quat_from_basis_columns`, `mat_to_quat`, `quat_rotate_vec3`, `quat_nlerp`, and
 `vec3_lerp` / `vec3_sub` all live in `src/utils/math.rs`, and `IKSystem` imports
@@ -261,7 +261,7 @@ IK features will need per-joint state:
 - Jiggle / spring on end effectors (needs velocity)
 
 When that happens, `IKSystem` will need a state store similar to
-`TransformPipelineSystem`'s `stage_states: HashMap<ComponentId, StageState>`. Same
+`TransformStreamSystem`'s `stage_states: HashMap<ComponentId, StageState>`. Same
 pattern, different data. Still not shared code, but same design.
 
 ### Could AimConstraint become a pipeline op?
