@@ -1902,12 +1902,33 @@ impl SystemWorld {
         self.transform_changed(world, visuals, component);
     }
 
-    fn tick_transition_runtime(&mut self, world: &mut World, visuals: &mut VisualWorld) {
-        let updates = self
-            .transition
-            .sample_transform_updates(self.clock.beat_now());
-        for update in updates {
+    fn apply_emissive_immediate(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+        intensity: f32,
+    ) {
+        if let Some(emissive_comp) = world
+            .get_component_by_id_as_mut::<crate::engine::ecs::component::EmissiveComponent>(
+                component,
+            )
+        {
+            emissive_comp.intensity = intensity.max(0.0);
+        }
+        self.register_emissive(world, visuals, component);
+    }
+
+    pub(crate) fn tick_transition_runtime(&mut self, world: &mut World, visuals: &mut VisualWorld) {
+        let beat_now = self.clock.beat_now();
+        let transform_updates = self.transition.sample_transform_updates(beat_now);
+        for update in transform_updates {
             self.apply_transform_immediate(world, visuals, update.component, update.transform);
+        }
+
+        let emissive_updates = self.transition.sample_emissive_updates(beat_now);
+        for update in emissive_updates {
+            self.apply_emissive_immediate(world, visuals, update.component, update.intensity);
         }
     }
 
@@ -1945,6 +1966,44 @@ impl SystemWorld {
         }
 
         self.apply_transform_immediate(world, visuals, component, transform);
+    }
+
+    /// Update an emissive component's intensity value and notify systems.
+    pub fn update_emissive_intensity(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+        intensity: f32,
+    ) {
+        let target_intensity = intensity.max(0.0);
+        let transition = world.children_of(component).iter().find_map(|&child| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::TransitionComponent>(child)
+                .copied()
+        });
+
+        if let (Some(policy), Some(current)) = (
+            transition,
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::EmissiveComponent>(
+                    component,
+                )
+                .map(|emissive_comp| emissive_comp.intensity),
+        ) {
+            if self.transition.start_emissive_transition(
+                component,
+                current,
+                target_intensity,
+                policy,
+                self.clock.beat_now(),
+            ) {
+                return;
+            }
+        }
+
+        self.transition.cancel_emissive_transitions(component);
+        self.apply_emissive_immediate(world, visuals, component, target_intensity);
     }
 
     /// Remove/reset a transform component's transform value and notify systems.

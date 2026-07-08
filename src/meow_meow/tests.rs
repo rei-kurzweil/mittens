@@ -1,3 +1,4 @@
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::{fs, path::PathBuf};
 
@@ -14,6 +15,27 @@ use crate::meow_meow::parser::MeowMeowParser;
 use crate::meow_meow::runner::MeowMeowRunner;
 use crate::meow_meow::tokenizer::MeowMeowTokenizer;
 use crate::meow_meow::unparser::unparse_program;
+
+#[derive(Clone, Default)]
+struct TestClockDriver {
+    now_sec: Arc<Mutex<f64>>,
+}
+
+impl TestClockDriver {
+    fn set_time_sec(&self, time_sec: f64) {
+        *self.now_sec.lock().expect("clock mutex poisoned") = time_sec;
+    }
+}
+
+impl crate::engine::ecs::system::ClockDriver for TestClockDriver {
+    fn name(&self) -> &'static str {
+        "test"
+    }
+
+    fn time_now_sec(&self) -> f64 {
+        *self.now_sec.lock().expect("clock mutex poisoned")
+    }
+}
 
 fn parse(src: &str) -> Vec<Statement> {
     let tokens = MeowMeowTokenizer::new(src).tokenize().expect("tokenize ok");
@@ -712,6 +734,100 @@ fn live_eval_nested_let_attached_transform_animates_via_keyframe_block() {
         transform.transform.translation[0] > 0.0,
         "expected transition to begin moving cube_t, got {:?}",
         transform.transform.translation
+    );
+}
+
+#[test]
+fn live_eval_attached_emissive_transition_interpolates_set_intensity() {
+    let src = r##"
+        Clock.bpm(60) {}
+
+        let glow = Emissive.off() {
+            name = "glow"
+            Transition {
+                duration_beats(1.0)
+                linear()
+                replace_same_target()
+            }
+        }
+
+        T {
+            R.cube() {
+                glow
+            }
+        }
+
+        glow.set_intensity(2.0)
+    "##;
+
+    let mut world = World::default();
+    let mut systems = crate::engine::ecs::system::SystemWorld::default();
+    let mut visuals = VisualWorld::default();
+    let mut render_assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+    let input = InputState::default();
+
+    let driver = TestClockDriver::default();
+    systems.clock.set_driver(Arc::new(driver.clone()));
+    systems.clock.set_bpm(60.0);
+    driver.set_time_sec(0.0);
+    systems.clock.sample();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut systems.rx, &mut queue);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+
+    for intent in out.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
+
+    systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
+
+    let glow = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("glow"))
+        .expect("glow exists");
+
+    let initial = world
+        .get_component_by_id_as::<crate::engine::ecs::component::EmissiveComponent>(glow)
+        .expect("glow emissive exists");
+    assert_eq!(initial.intensity, 0.0);
+
+    driver.set_time_sec(0.5);
+    systems.tick(
+        &mut world,
+        &mut visuals,
+        &mut render_assets,
+        &input,
+        &mut queue,
+        0.0,
+    );
+
+    let halfway = world
+        .get_component_by_id_as::<crate::engine::ecs::component::EmissiveComponent>(glow)
+        .expect("glow emissive exists");
+    assert!(
+        halfway.intensity > 0.0 && halfway.intensity < 2.0,
+        "expected interpolated emissive intensity, got {}",
+        halfway.intensity
+    );
+
+    driver.set_time_sec(1.0);
+    systems.tick(
+        &mut world,
+        &mut visuals,
+        &mut render_assets,
+        &input,
+        &mut queue,
+        0.0,
+    );
+
+    let finished = world
+        .get_component_by_id_as::<crate::engine::ecs::component::EmissiveComponent>(glow)
+        .expect("glow emissive exists");
+    assert!(
+        (finished.intensity - 2.0).abs() < 1.0e-6,
+        "expected final emissive intensity 2.0, got {}",
+        finished.intensity
     );
 }
 

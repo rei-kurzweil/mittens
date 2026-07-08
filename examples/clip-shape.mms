@@ -6,6 +6,22 @@ AL {
     C.rgba(0.35, 0.35, 0.35, 1.0)
 }
 
+RenderGraph {
+    EmissivePass {
+        BlurPass {
+            radius_ndc(0.06)
+            half_res(true)
+        }
+    }
+    Bloom {
+        intensity(0.95)
+        radius_ndc(0.06)
+        emissive_scale(1.2)
+        half_res(true)
+    }
+}
+
+
 T.position(-1.3, 1.5, 1.3) {
     PL {
         intensity(7.5)
@@ -34,12 +50,10 @@ T.position(0.0, 0.0, -4.8).scale(2.55, 2.55, 1.0).rotation(0.0, 0.0, 3.14159) {
         }    
     }
     R.star(5, 0.48, 10, 10) {
-        // Match the clear color so the stencil source disappears into the bg.
         C.rgba(1.0, 1.0, 1.0, 1.0)
 
         StencilClip {
             
-
             T.position(0.0, 0, -1.25).scale(0.4, 0.4, 0.4).rotation(-0.5, -0.7, 0.0) {
                 Overlay {
                     R.cube() {
@@ -47,6 +61,7 @@ T.position(0.0, 0.0, -4.8).scale(2.55, 2.55, 1.0).rotation(0.0, 0.0, 3.14159) {
                     }
                 }
             }
+            
         }
     }
 }

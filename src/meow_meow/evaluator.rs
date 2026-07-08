@@ -2067,12 +2067,26 @@ fn eval_method_call(
                     return Err(format!("{method}(): no host world"));
                 };
                 let world = unsafe { &mut *world };
-                let emissive = world
-                    .get_component_by_id_as_mut::<crate::engine::ecs::component::EmissiveComponent>(
-                        id,
-                    )
+                world
+                    .get_component_by_id_as::<crate::engine::ecs::component::EmissiveComponent>(id)
                     .ok_or_else(|| format!("{method}(): not an EmissiveComponent"))?;
-                emissive.intensity = intensity;
+
+                let has_transition_child = world.children_of(id).iter().any(|&child| {
+                    world
+                        .get_component_by_id_as::<crate::engine::ecs::component::TransitionComponent>(
+                            child,
+                        )
+                        .is_some()
+                });
+                let is_attached = world.parent_of(id).is_some();
+                if !(is_attached && has_transition_child) {
+                    let emissive = world
+                        .get_component_by_id_as_mut::<crate::engine::ecs::component::EmissiveComponent>(
+                            id,
+                        )
+                        .ok_or_else(|| format!("{method}(): not an EmissiveComponent"))?;
+                    emissive.intensity = intensity;
+                }
 
                 push_eval_intent(ctx, IntentValue::SetEmissiveIntensity {
                     component_ids: vec![id],
