@@ -1,5 +1,6 @@
 pub mod ast;
 pub mod block_effect_analyzer;
+pub mod component_method_registry;
 pub mod component_registry;
 pub mod evaluator;
 pub mod lowering;

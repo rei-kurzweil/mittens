@@ -832,6 +832,42 @@ fn live_eval_attached_emissive_transition_interpolates_set_intensity() {
 }
 
 #[test]
+fn live_eval_imported_factory_component_supports_top_level_update_transform() {
+    let src = r##"
+        import { rainbow_animated } from "../assets/components/animated.mms"
+
+        let rainbow = rainbow_animated()
+        rainbow
+        rainbow.update_transform([0.0, 4.0, -4.0], [0.0, 0.0, 0.0], [1.6, 1.6, 1.6])
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world_at_path(
+        src,
+        Some("examples/_mms_test_top_level_component_method_dispatch.mms"),
+        &mut world,
+        &mut rx,
+        &mut emit,
+    );
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert!(
+        out.intents.iter().any(|intent| matches!(
+            intent,
+            crate::engine::ecs::IntentValue::UpdateTransform {
+                translation,
+                scale,
+                ..
+            } if *translation == [0.0, 4.0, -4.0] && *scale == [1.6, 1.6, 1.6]
+        )),
+        "expected top-level imported factory method call to emit UpdateTransform, got {:?}",
+        out.intents
+    );
+}
+
+#[test]
 fn live_keyframe_block_music_note_emits_audio_schedule_play() {
     use crate::engine::ecs::IntentValue;
     use crate::engine::ecs::component::MusicNote;

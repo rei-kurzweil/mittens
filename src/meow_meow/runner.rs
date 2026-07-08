@@ -522,6 +522,39 @@ impl MeowMeowRunner {
                                 }
                             }
                         }
+                        HostCallKind::InvokeComponentMethod {
+                            id,
+                            component_type,
+                            method,
+                            args,
+                        } => match crate::meow_meow::component_method_registry::invoke_component_method(
+                            world,
+                            id,
+                            &component_type,
+                            &method,
+                            &args,
+                            |intent| output.intents.push(intent),
+                        ) {
+                            Ok(value) => match value {
+                                Value::Null => HostValue::Null,
+                                Value::ComponentObject { id, component_type } => {
+                                    HostValue::Component { id, component_type }
+                                }
+                                other => {
+                                    output.errors.push(format!(
+                                        "HostCall::InvokeComponentMethod returned unsupported value: {:?}",
+                                        other
+                                    ));
+                                    HostValue::Null
+                                }
+                            },
+                            Err(e) => {
+                                output
+                                    .errors
+                                    .push(format!("HostCall::InvokeComponentMethod error: {e}"));
+                                HostValue::Null
+                            }
+                        },
                     };
                     let _ = handle
                         .requests

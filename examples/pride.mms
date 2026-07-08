@@ -1,6 +1,8 @@
 // pride scene
 // Corresponds to examples/pride.rs
 
+import { rainbow_animated } from "../assets/components/animated.mms"
+
 RendererSettings {
     window_size(1280, 960)
 }
@@ -153,6 +155,14 @@ Animation.looping().length(2.5) {
         annulus_2_glow.set_intensity(0.0)
     }
 }
+
+
+let rainbow_2 = rainbow_animated()
+
+rainbow_2
+
+rainbow_2.update_transform([0, 4.0, -4.0], [0, 0, 0], [1.6, 1.6, 1.6])
+
 
 
 let star = T.position(2.45, 0.55, -4.0).scale(1.6, 1.6, 1.0).rotation(0, 3.14159 / 4, 0) {

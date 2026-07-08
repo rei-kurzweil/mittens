@@ -16,6 +16,9 @@ use crate::meow_meow::ast::{
     ImportItem, Statement, UnaryOpKind,
 };
 use crate::meow_meow::block_effect_analyzer::BlockEffectAnalyzer;
+use crate::meow_meow::component_method_registry::{
+    invoke_component_method, supports_component_method,
+};
 use crate::meow_meow::component_registry::{
     component_expr_uses_property_assignment_only, is_universal_component_named_prop,
 };
@@ -121,6 +124,12 @@ pub enum HostCallKind {
         source: ComponentId,
         start_beat: Option<f64>,
         stop_beat: Option<f64>,
+    },
+    InvokeComponentMethod {
+        id: ComponentId,
+        component_type: String,
+        method: String,
+        args: Vec<Value>,
     },
 }
 
@@ -1632,6 +1641,40 @@ fn eval_method_call(
                 return dispatch_query_result(result, handler, multiple, ctx);
             }
 
+            if supports_component_method(component_type, method) {
+                if let Some(world) = ctx.host_world {
+                    let world = unsafe { &mut *world };
+                    return invoke_component_method(world, id, component_type, method, &args, |intent| {
+                        push_eval_intent(ctx, intent)
+                    });
+                }
+                if let Some(ch) = ctx.channels.as_mut() {
+                    match ch.call(HostCallKind::InvokeComponentMethod {
+                        id,
+                        component_type: component_type.clone(),
+                        method: method.to_string(),
+                        args: args.clone(),
+                    }) {
+                        Some(HostValue::Null) | None => return Ok(Value::Null),
+                        Some(HostValue::Component { id, component_type }) => {
+                            return Ok(Value::ComponentObject { id, component_type });
+                        }
+                        Some(HostValue::ComponentId(component_id)) => {
+                            return Ok(Value::ComponentObject {
+                                id: component_id,
+                                component_type: component_type.clone(),
+                            });
+                        }
+                        Some(other) => {
+                            return Err(format!(
+                                "InvokeComponentMethod returned unexpected value {:?}",
+                                other
+                            ));
+                        }
+                    }
+                }
+            }
+
             // Animation playback.
             let anim_state = match method {
                 "play"
@@ -1890,47 +1933,6 @@ fn eval_method_call(
 
             if matches!(
                 component_type.as_str(),
-                "T" | "Transform" | "TransformComponent" | "transform"
-            ) && method == "update_transform"
-            {
-                let [translation, rotation_euler, scale] = match args.as_slice() {
-                    [translation, rotation, scale] => [
-                        value_as_f32_array::<3>(translation)?,
-                        value_as_f32_array::<3>(rotation)?,
-                        value_as_f32_array::<3>(scale)?,
-                    ],
-                    other => {
-                        return Err(format!(
-                            "update_transform: expected three vec3 array arguments, got {:?}",
-                            other
-                        ));
-                    }
-                };
-                let Some(world) = ctx.host_world else {
-                    return Err("update_transform(): no host world".into());
-                };
-                let world = unsafe { &mut *world };
-                let t = world
-                    .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(
-                        id,
-                    )
-                    .ok_or_else(|| "update_transform(): not a TransformComponent".to_string())?;
-                let next = t
-                    .clone()
-                    .with_position(translation[0], translation[1], translation[2])
-                    .with_rotation_euler(rotation_euler[0], rotation_euler[1], rotation_euler[2])
-                    .with_scale(scale[0], scale[1], scale[2]);
-                push_eval_intent(ctx, IntentValue::UpdateTransform {
-                    component_ids: vec![id],
-                    translation: next.transform.translation,
-                    rotation_quat_xyzw: next.transform.rotation,
-                    scale: next.transform.scale,
-                });
-                return Ok(Value::Null);
-            }
-
-            if matches!(
-                component_type.as_str(),
                 "Camera3D" | "Camera3DComponent" | "camera3d" | "C3D"
             ) && matches!(method, "enabled" | "make_active_camera")
             {
@@ -2038,59 +2040,6 @@ fn eval_method_call(
                 push_eval_intent(ctx, IntentValue::SetText {
                     component_ids: vec![id],
                     text: cur_text,
-                });
-                return Ok(Value::Null);
-            }
-
-            if matches!(
-                component_type.as_str(),
-                "EM" | "Emissive" | "EmissiveComponent" | "emissive"
-            ) && matches!(method, "set_intensity" | "on" | "off")
-            {
-                let intensity = match method {
-                    "on" => 1.0,
-                    "off" => 0.0,
-                    "set_intensity" => match args.first() {
-                        Some(Value::Number(n)) => (*n as f32).max(0.0),
-                        Some(other) => {
-                            return Err(format!(
-                                "set_intensity: expected number argument, got {:?}",
-                                other
-                            ));
-                        }
-                        None => return Err("set_intensity: missing number argument".into()),
-                    },
-                    _ => unreachable!(),
-                };
-
-                let Some(world) = ctx.host_world else {
-                    return Err(format!("{method}(): no host world"));
-                };
-                let world = unsafe { &mut *world };
-                world
-                    .get_component_by_id_as::<crate::engine::ecs::component::EmissiveComponent>(id)
-                    .ok_or_else(|| format!("{method}(): not an EmissiveComponent"))?;
-
-                let has_transition_child = world.children_of(id).iter().any(|&child| {
-                    world
-                        .get_component_by_id_as::<crate::engine::ecs::component::TransitionComponent>(
-                            child,
-                        )
-                        .is_some()
-                });
-                let is_attached = world.parent_of(id).is_some();
-                if !(is_attached && has_transition_child) {
-                    let emissive = world
-                        .get_component_by_id_as_mut::<crate::engine::ecs::component::EmissiveComponent>(
-                            id,
-                        )
-                        .ok_or_else(|| format!("{method}(): not an EmissiveComponent"))?;
-                    emissive.intensity = intensity;
-                }
-
-                push_eval_intent(ctx, IntentValue::SetEmissiveIntensity {
-                    component_ids: vec![id],
-                    intensity,
                 });
                 return Ok(Value::Null);
             }
