@@ -39,7 +39,7 @@ let moon = T.position(4.2, 10.9, -8.8).scale(1.8, 1.8, 1.0).rotation(0.0, 0.0, 0
     }
 }
 
-BG {
+BG.occlusion_and_lighting() {
     ED {
         moon
     }

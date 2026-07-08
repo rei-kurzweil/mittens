@@ -44,7 +44,7 @@ fn star_instance(index, radius, color) {
         R.star(5, 0.48, 10, 10) {
             C.rgba(color[0], color[1], color[2], color[3])
             EM.on() {
-                intensity(1.35 + hash01(seed + 91.0) * 0.8)
+                intensity(1.9)
             }
         }
     }

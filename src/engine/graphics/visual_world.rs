@@ -176,6 +176,8 @@ pub struct VisualWorld {
     background_batches: Vec<DrawBatch>,
     background_occluded_lit_order: Vec<u32>,
     background_occluded_lit_batches: Vec<DrawBatch>,
+    background_occluded_lit_emissive_order: Vec<u32>,
+    background_occluded_lit_emissive_batches: Vec<DrawBatch>,
     draw_order: Vec<u32>, // indices into `instances`
     draw_batches: Vec<DrawBatch>,
 
@@ -326,6 +328,8 @@ impl Default for VisualWorld {
             background_batches: Vec::new(),
             background_occluded_lit_order: Vec::new(),
             background_occluded_lit_batches: Vec::new(),
+            background_occluded_lit_emissive_order: Vec::new(),
+            background_occluded_lit_emissive_batches: Vec::new(),
             draw_order: Vec::new(),
             draw_batches: Vec::new(),
             emissive_draw_order: Vec::new(),
@@ -634,6 +638,100 @@ mod tests {
 
     fn dummy_renderable() -> GpuRenderable {
         GpuRenderable::new(MeshHandle::SQUARE, MaterialHandle::TOON_MESH)
+    }
+
+    fn dummy_emissive_renderable() -> GpuRenderable {
+        GpuRenderable::new(MeshHandle::SQUARE, MaterialHandle::EMISSIVE_TOON_MESH)
+    }
+
+    #[test]
+    fn background_occluded_lit_emissive_subset_includes_only_eligible_instances() {
+        let mut visuals = VisualWorld::default();
+
+        let _ = visuals.register(
+            cid(100),
+            dummy_emissive_renderable(),
+            Transform::default(),
+            [1.0, 0.8, 0.4, 1.0],
+            1.0,
+            false,
+            false,
+            true,
+            true,
+            false,
+            1.0,
+            None,
+            3.0,
+        );
+        let _ = visuals.register(
+            cid(101),
+            dummy_emissive_renderable(),
+            Transform::default(),
+            [1.0, 0.8, 0.4, 1.0],
+            1.0,
+            false,
+            false,
+            true,
+            false,
+            false,
+            1.0,
+            None,
+            3.0,
+        );
+        let _ = visuals.register(
+            cid(102),
+            dummy_renderable(),
+            Transform::default(),
+            [0.6, 0.6, 0.6, 1.0],
+            1.0,
+            false,
+            false,
+            true,
+            true,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+
+        visuals.prepare_draw_cache();
+
+        assert!(visuals.has_background_occluded_lit_emissive());
+        assert_eq!(visuals.background_occluded_lit_order().len(), 2);
+        assert_eq!(visuals.background_occluded_lit_emissive_order().len(), 1);
+        assert_eq!(visuals.background_occluded_lit_emissive_batches().len(), 1);
+    }
+
+    #[test]
+    fn background_occluded_lit_non_emissive_keeps_subset_empty() {
+        let mut visuals = VisualWorld::default();
+
+        let _ = visuals.register(
+            cid(110),
+            dummy_renderable(),
+            Transform::default(),
+            [0.6, 0.6, 0.6, 1.0],
+            1.0,
+            false,
+            false,
+            true,
+            true,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+
+        visuals.prepare_draw_cache();
+
+        assert_eq!(visuals.background_occluded_lit_order().len(), 1);
+        assert!(!visuals.has_background_occluded_lit_emissive());
+        assert!(visuals.background_occluded_lit_emissive_order().is_empty());
+        assert!(
+            visuals
+                .background_occluded_lit_emissive_batches()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1768,10 +1866,16 @@ impl VisualWorld {
         self.background_batches.clear();
         self.background_occluded_lit_order.clear();
         self.background_occluded_lit_batches.clear();
+        self.background_occluded_lit_emissive_order.clear();
+        self.background_occluded_lit_emissive_batches.clear();
         self.draw_order.clear();
         self.draw_batches.clear();
+        self.emissive_draw_order.clear();
+        self.emissive_draw_batches.clear();
         self.cutout_order.clear();
         self.cutout_batches.clear();
+        self.emissive_cutout_order.clear();
+        self.emissive_cutout_batches.clear();
         self.cutout_stream.clear();
         self.cutout_stream_instances.clear();
 
@@ -2034,6 +2138,18 @@ impl VisualWorld {
         &self.background_occluded_lit_batches
     }
 
+    pub fn background_occluded_lit_emissive_order(&self) -> &[u32] {
+        &self.background_occluded_lit_emissive_order
+    }
+
+    pub fn background_occluded_lit_emissive_batches(&self) -> &[DrawBatch] {
+        &self.background_occluded_lit_emissive_batches
+    }
+
+    pub fn has_background_occluded_lit_emissive(&self) -> bool {
+        !self.background_occluded_lit_emissive_order.is_empty()
+    }
+
     /// Indices into `instances()` in the order they should be drawn (opaque batching).
     pub fn draw_order(&self) -> &[u32] {
         &self.draw_order
@@ -2252,6 +2368,8 @@ impl VisualWorld {
 
         self.background_order.clear();
         self.background_occluded_lit_order.clear();
+        self.background_occluded_lit_emissive_order.clear();
+        self.background_occluded_lit_emissive_batches.clear();
         self.draw_order.clear();
         self.emissive_draw_order.clear();
         self.cutout_order.clear();
@@ -2325,6 +2443,26 @@ impl VisualWorld {
             background_occluded_lit_draw_order,
             &mut self.background_occluded_lit_batches,
         );
+
+        if self
+            .background_occluded_lit_order
+            .iter()
+            .any(|&i| Self::is_emissive_material(self.instances[i as usize].renderable.material))
+        {
+            self.background_occluded_lit_emissive_order.extend(
+                self.background_occluded_lit_order
+                    .iter()
+                    .copied()
+                    .filter(|&i| {
+                        Self::is_emissive_material(self.instances[i as usize].renderable.material)
+                    }),
+            );
+            Self::build_draw_batches_for_order(
+                instances,
+                &self.background_occluded_lit_emissive_order,
+                &mut self.background_occluded_lit_emissive_batches,
+            );
+        }
 
         // Sort by (stencil_ref, material, tex, mesh, filtering) so stencil-clipped
         // instances group with their clip region. tex before mesh matches overlay convention
