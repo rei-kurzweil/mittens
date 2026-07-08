@@ -33,7 +33,7 @@ T.position(0, -3, 0).scale(10000, 0.1, 10000) {
     }
 }
 
-Clock.bpm(240) {}
+Clock.bpm(140) {}
 
 T.position(0.0, 3.5, 3.5) {
     PL {
@@ -87,7 +87,7 @@ let annulus_4_glow = Emissive.on() {
 
 T.position(-4.1, -2.1, -4.0).scale(2,2,2) {
 
-    let start_angle = 3.14159 / 5;
+    let start_angle = 0;
 
     T.scale(1.0, 1.0, 1.0) {
         R.partial_annulus_2d(0.55, 0.89, start_angle, 1.5707963, 48) { 
@@ -116,7 +116,7 @@ T.position(-4.1, -2.1, -4.0).scale(2,2,2) {
     }
 }
 
-Animation.looping().length(5.0) {
+Animation.looping().length(2.5) {
     Keyframe.at(0.0) {
         annulus_0_glow.set_intensity(2.5)
         annulus_4_glow.set_intensity(1.0)
@@ -124,28 +124,28 @@ Animation.looping().length(5.0) {
         annulus_2_glow.set_intensity(0.0)
         annulus_3_glow.set_intensity(0.0)
     }
-    Keyframe.at(1.0) {
+    Keyframe.at(0.5) {
         annulus_1_glow.set_intensity(2.5)
         annulus_0_glow.set_intensity(1.0)
         annulus_2_glow.set_intensity(0.0)
         annulus_3_glow.set_intensity(0.0)
         annulus_4_glow.set_intensity(0.0)
     }
-    Keyframe.at(2.0) {
+    Keyframe.at(1.0) {
         annulus_2_glow.set_intensity(2.5)
         annulus_1_glow.set_intensity(1.0)
         annulus_0_glow.set_intensity(0.0)
         annulus_3_glow.set_intensity(0.0)
         annulus_4_glow.set_intensity(0.0)
     }
-    Keyframe.at(3.0) {
+    Keyframe.at(1.5) {
         annulus_3_glow.set_intensity(2.5)
         annulus_2_glow.set_intensity(1.0)
         annulus_0_glow.set_intensity(0.0)
         annulus_1_glow.set_intensity(0.0)
         annulus_4_glow.set_intensity(0.0)
     }
-    Keyframe.at(4.0) {
+    Keyframe.at(2.0) {
         annulus_4_glow.set_intensity(2.5)
         annulus_3_glow.set_intensity(1.0)
         annulus_0_glow.set_intensity(0.0)
@@ -154,16 +154,31 @@ Animation.looping().length(5.0) {
     }
 }
 
-T.position(2.45, 0.55, -4.0).scale(1.6, 1.6, 1.0).rotation(0, 3.14159 / 4, 0) {
+
+let star = T.position(2.45, 0.55, -4.0).scale(1.6, 1.6, 1.0).rotation(0, 3.14159 / 4, 0) {
+    trans();
     R.star(5, 0.48, 10, 10) {
         C.rgba(0.98, 0.91, 0.16, 1.0)
         EM.on()
     }
 }
 
-T.position(2.55, -1.85, -4.0).scale(1.7, 1.7, 1.0).rotation(-3.14159 / 8, 0, 3.14159 / 5) {
+let heart = T.position(2.55, -1.85, -4.0).scale(1.7, 1.7, 1.0).rotation(-3.14159 / 8, 0, 3.14159 / 5) {
+    trans();
     R.heart(64) {
         C.rgba(1.0, 0.52, 0.52, 1.0)
         EM.on()
+    }
+}
+
+star
+heart
+
+Animation.looping().length(4) {
+    Keyframe.at(0) {
+        star.update_transform([2.45, 0.0, -4.0], [0, 3.14159 / 4, 0], [1.6, 1.6, 1.6])
+    }
+    Keyframe.at(1) {
+        star.update_transform([2.45, -0.1, -4.0], [0, 3.14159 / 4, 0], [1.6, 1.6, 1.6])
     }
 }
