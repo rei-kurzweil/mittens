@@ -522,8 +522,7 @@ impl MeowMeowParser {
             .next()
             .map(|c| c.is_uppercase())
             .unwrap_or(false);
-        if !is_builtin_table && is_component_type && matches!(self.peek_kind(), TokenKind::LBrace)
-        {
+        if !is_builtin_table && is_component_type && matches!(self.peek_kind(), TokenKind::LBrace) {
             let body = self.parse_block_statement()?;
             return Ok(Expression::Component(ComponentExpression {
                 component_type: ident,

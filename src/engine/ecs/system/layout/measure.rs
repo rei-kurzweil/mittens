@@ -1785,10 +1785,8 @@ mod tests {
         let _ = world.add_child(row, label);
 
         let inner = world.add_component_boxed_named("inner", Box::new(TransformComponent::new()));
-        let text = world.add_component_boxed_named(
-            "text",
-            Box::new(TextComponent::new("Key".to_string())),
-        );
+        let text = world
+            .add_component_boxed_named("text", Box::new(TextComponent::new("Key".to_string())));
         let _ = world.add_child(label, inner);
         let _ = world.add_child(inner, text);
 

@@ -45,11 +45,7 @@ pub(crate) fn invoke_component_method(
                 component_ids: vec![id],
                 translation,
                 rotation_quat_xyzw: TransformComponent::new()
-                    .with_rotation_euler(
-                        rotation_euler[0],
-                        rotation_euler[1],
-                        rotation_euler[2],
-                    )
+                    .with_rotation_euler(rotation_euler[0], rotation_euler[1], rotation_euler[2])
                     .transform
                     .rotation,
                 scale,

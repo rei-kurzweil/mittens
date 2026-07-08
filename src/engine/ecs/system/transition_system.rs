@@ -315,16 +315,16 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::TransitionSystem;
-    use crate::engine::ecs::World;
     use crate::engine::ecs::CommandQueue;
+    use crate::engine::ecs::World;
     use crate::engine::ecs::component::{
-        EmissiveComponent, RenderableComponent, TransitionComponent, TransitionEasing,
-        TransformComponent,
+        EmissiveComponent, RenderableComponent, TransformComponent, TransitionComponent,
+        TransitionEasing,
     };
     use crate::engine::ecs::system::{ClockDriver, SystemWorld};
+    use crate::engine::graphics::primitives::Transform;
     use crate::engine::graphics::primitives::{MaterialHandle, Renderable};
     use crate::engine::graphics::{CpuMesh, MeshUploader, RenderAssets, VisualWorld};
-    use crate::engine::graphics::primitives::Transform;
 
     #[derive(Clone, Default)]
     struct TestClockDriver {

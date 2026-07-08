@@ -175,7 +175,10 @@ impl AnimationSystem {
                     })
                     .collect();
                 for action_cid in action_ids {
-                    if let Err(e) = self.keyframe_evaluator.resolve_action_targets(world, action_cid) {
+                    if let Err(e) = self
+                        .keyframe_evaluator
+                        .resolve_action_targets(world, action_cid)
+                    {
                         eprintln!(
                             "[AnimationSystem] OnAttach resolve failed for {action_cid:?}: {e}"
                         );
@@ -255,8 +258,12 @@ impl AnimationSystem {
                     let kf_global_beat =
                         runtime.start_beat + cycle_offset * loop_len + kf_local_beat;
 
-                    self.keyframe_evaluator
-                        .evaluate_audio_due_keyframe(world, rx, kf_id, kf_global_beat);
+                    self.keyframe_evaluator.evaluate_audio_due_keyframe(
+                        world,
+                        rx,
+                        kf_id,
+                        kf_global_beat,
+                    );
 
                     runtime
                         .audio_scheduled_cycle_by_keyframe
@@ -328,11 +335,11 @@ impl System for AnimationSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::ecs::IntentValue;
     use crate::engine::ecs::component::{
         AudioOscillatorComponent, ComponentRef, TransformComponent,
     };
     use crate::engine::ecs::system::animation_keyframe_evaluator::AnimationKeyframeEvaluator;
-    use crate::engine::ecs::IntentValue;
     use crate::meow_meow::ast::{
         BinOpKind, BlockStatement, CallExpression, Expression, Ident, Statement,
     };

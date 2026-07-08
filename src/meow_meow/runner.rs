@@ -37,6 +37,12 @@ impl LoadedMmsModule {
 /// down and joined before returning.
 pub struct MeowMeowRunner;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleFactoryEvalMode {
+    Template,
+    Live,
+}
+
 impl MeowMeowRunner {
     /// Evaluate `source` without a live ECS world, collecting emitted intents
     /// and errors.
@@ -135,6 +141,32 @@ impl MeowMeowRunner {
         world_host: Option<&mut World>,
         emit: Option<&mut dyn SignalEmitter>,
     ) -> Result<MaterializedCE, String> {
+        Self::materialize_mms_module_component_in_mode(
+            module,
+            name,
+            args,
+            world_host,
+            emit,
+            ModuleFactoryEvalMode::Template,
+        )
+    }
+
+    pub fn materialize_mms_module_component_in_mode(
+        module: &LoadedMmsModule,
+        name: &str,
+        args: Vec<Value>,
+        world_host: Option<&mut World>,
+        emit: Option<&mut dyn SignalEmitter>,
+        mode: ModuleFactoryEvalMode,
+    ) -> Result<MaterializedCE, String> {
+        match mode {
+            ModuleFactoryEvalMode::Template => {}
+            ModuleFactoryEvalMode::Live => {
+                return Err(
+                    "materialize_mms_module_component_in_mode: live mode does not return a stable MaterializedCE; use a spawn/instantiate helper instead".to_string()
+                )
+            }
+        }
         let _ = world_host;
         let _ = emit;
         let value = Self::call_mms_module_fn(module, name, args, None, None, None)?;
@@ -178,23 +210,16 @@ impl MeowMeowRunner {
         render_assets: Option<&mut RenderAssets>,
         emit: &mut dyn SignalEmitter,
     ) -> Result<ComponentId, String> {
-        let component_expr =
-            Self::materialize_mms_module_component(module, name, args, Some(world), Some(emit))?;
-        if let Some(render_assets) = render_assets {
-            crate::meow_meow::component_registry::with_live_render_assets(render_assets, || {
-                crate::meow_meow::component_registry::spawn_tree_uninitialized(
-                    &component_expr,
-                    world,
-                    emit,
-                )
-            })
-        } else {
-            crate::meow_meow::component_registry::spawn_tree_uninitialized(
-                &component_expr,
-                world,
-                emit,
-            )
-        }
+        Self::spawn_mms_module_component_value(
+            module,
+            name,
+            args,
+            None,
+            world,
+            render_assets,
+            emit,
+            false,
+        )
     }
 
     pub fn spawn_mms_module_component_uninitialized_from_file(
@@ -216,9 +241,7 @@ impl MeowMeowRunner {
         world: &mut World,
         emit: &mut dyn SignalEmitter,
     ) -> Result<ComponentId, String> {
-        let component_expr =
-            Self::materialize_mms_module_component(module, name, args, Some(world), Some(emit))?;
-        crate::meow_meow::component_registry::spawn_tree(&component_expr, parent, world, emit)
+        Self::spawn_mms_module_component_value(module, name, args, parent, world, None, emit, true)
     }
 
     pub fn spawn_mms_module_component_from_file(
@@ -231,6 +254,99 @@ impl MeowMeowRunner {
     ) -> Result<ComponentId, String> {
         let module = Self::load_module_file(path)?;
         Self::spawn_mms_module_component(&module, name, args, parent, world, emit)
+    }
+
+    fn spawn_mms_module_component_value(
+        module: &LoadedMmsModule,
+        name: &str,
+        args: Vec<Value>,
+        parent: Option<ComponentId>,
+        world: &mut World,
+        mut render_assets: Option<&mut RenderAssets>,
+        emit: &mut dyn SignalEmitter,
+        initialize: bool,
+    ) -> Result<ComponentId, String> {
+        let value = Self::eval_mms_module_component_live(
+            module,
+            name,
+            args,
+            world,
+            render_assets.as_deref_mut(),
+            emit,
+        )?;
+        match value {
+            Value::ComponentObject { id, .. } => {
+                if let Some(p) = parent {
+                    world
+                        .add_child(p, id)
+                        .map_err(|e| format!("attach live module component failed: {e}"))?;
+                }
+                if initialize {
+                    let should_init = parent.map(|p| world.is_initialized(p)).unwrap_or(true);
+                    if should_init {
+                        world.init_component_tree(id, emit);
+                    }
+                }
+                Ok(id)
+            }
+            Value::ComponentExpr(component_expr) => {
+                if let Some(render_assets) = render_assets.as_deref_mut() {
+                    crate::meow_meow::component_registry::with_live_render_assets(
+                        render_assets,
+                        || {
+                            if initialize {
+                                crate::meow_meow::component_registry::spawn_tree(
+                                    &component_expr,
+                                    parent,
+                                    world,
+                                    emit,
+                                )
+                            } else {
+                                crate::meow_meow::component_registry::spawn_tree_uninitialized(
+                                    &component_expr,
+                                    world,
+                                    emit,
+                                )
+                            }
+                        },
+                    )
+                } else if initialize {
+                    crate::meow_meow::component_registry::spawn_tree(
+                        &component_expr,
+                        parent,
+                        world,
+                        emit,
+                    )
+                } else {
+                    crate::meow_meow::component_registry::spawn_tree_uninitialized(
+                        &component_expr,
+                        world,
+                        emit,
+                    )
+                }
+            }
+            other => Err(format!(
+                "spawn_mms_module_component: export '{}' did not return a component tree, got {:?}",
+                name, other
+            )),
+        }
+    }
+
+    fn eval_mms_module_component_live(
+        module: &LoadedMmsModule,
+        name: &str,
+        args: Vec<Value>,
+        world: &mut World,
+        render_assets: Option<&mut RenderAssets>,
+        emit: &mut dyn SignalEmitter,
+    ) -> Result<Value, String> {
+        if let Some(render_assets) = render_assets {
+            crate::meow_meow::component_registry::with_live_render_assets(render_assets, || {
+                Self::call_mms_module_fn(module, name, args, None, Some(world), Some(emit))
+            })
+        } else {
+            Self::call_mms_module_fn(module, name, args, None, Some(world), Some(emit))
+        }
     }
 
     /// Evaluate `source` with live world access.

@@ -94,7 +94,11 @@ impl AnimationKeyframeEvaluator {
             .children_of(kf_id)
             .iter()
             .copied()
-            .filter(|&cid| world.get_component_by_id_as::<ActionComponent>(cid).is_some())
+            .filter(|&cid| {
+                world
+                    .get_component_by_id_as::<ActionComponent>(cid)
+                    .is_some()
+            })
             .collect();
 
         for action_cid in action_ids {
@@ -152,7 +156,11 @@ impl AnimationKeyframeEvaluator {
             .children_of(kf_id)
             .iter()
             .copied()
-            .filter(|&cid| world.get_component_by_id_as::<ActionComponent>(cid).is_some())
+            .filter(|&cid| {
+                world
+                    .get_component_by_id_as::<ActionComponent>(cid)
+                    .is_some()
+            })
             .collect();
 
         let mut saw_any_action = false;
@@ -210,7 +218,11 @@ fn fire_music_note_children(
         .children_of(kf_id)
         .iter()
         .copied()
-        .filter(|&cid| world.get_component_by_id_as::<MusicNoteComponent>(cid).is_some())
+        .filter(|&cid| {
+            world
+                .get_component_by_id_as::<MusicNoteComponent>(cid)
+                .is_some()
+        })
         .collect();
 
     for note_cid in note_ids {

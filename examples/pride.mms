@@ -167,31 +167,31 @@ rainbow_2
 rainbow_2.update_transform([-8, -2, -4.0], [0, 0, 3.14159 / 2], [2.0, 2.0, 2.0])
 
 
-T.position(-6, 0.92, -4).scale(2,1.83,2) {
+T.position(-6, 0.919, -4).scale(2,1.845,2) {
 
     let start_angle = 0;
 
-    T.scale(2.0, 0.37, 0.1).position(0, -0.8, 0) {
+    T.scale(2.0, 0.37, 0.001).position(0, -0.8, 0) {
         R.cube() { 
             C.rgba(0.89, 0.16, 0.11, 1.0) annulus_0_glow 
         }
     }
-    T.scale(2.0, 0.37, 0.1).position(0, -0.4, 0) {
+    T.scale(2.0, 0.37, 0.001).position(0, -0.4, 0) {
         R.cube() { 
             C.rgba(0.98, 0.49, 0.10, 1.0) annulus_1_glow 
         }
     }
-    T.scale(2.0, 0.37, 0.1).position(0, 0, 0) {
+    T.scale(2.0, 0.37, 0.001).position(0, 0, 0) {
         R.cube() { 
             C.rgba(0.99, 0.84, 0.13, 1.0) annulus_2_glow 
         }
     }
-    T.scale(2.0, 0.37, 0.1).position(0, 0.4, 0) {
+    T.scale(2.0, 0.37, 0.001).position(0, 0.4, 0) {
         R.cube() { 
             C.rgba(0.16, 0.68, 0.27, 1.0) annulus_3_glow 
         }
     }
-    T.scale(2.0, 0.37, 0.1).position(0, 0.8, 0) {
+    T.scale(2.0, 0.37, 0.001).position(0, 0.8, 0) {
         R.cube() { 
             C.rgba(0.10, 0.42, 0.91, 1.0) annulus_4_glow 
         }

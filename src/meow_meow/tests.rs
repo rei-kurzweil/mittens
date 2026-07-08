@@ -5,7 +5,9 @@ use std::{fs, path::PathBuf};
 use crate::engine;
 use crate::engine::ecs::component::style::SizeDimension;
 use crate::engine::ecs::component::{LayoutComponent, StyleComponent, TransformComponent};
-use crate::engine::ecs::{CommandQueue, ComponentId, EventSignal, RxWorld, Signal, SignalEmitter, World};
+use crate::engine::ecs::{
+    CommandQueue, ComponentId, EventSignal, RxWorld, Signal, SignalEmitter, World,
+};
 use crate::engine::graphics::{RenderAssets, VisualWorld};
 use crate::engine::user_input::InputState;
 use crate::meow_meow::ast::{AssignmentStatement, Expression, ImportItem, Statement};
@@ -561,7 +563,6 @@ fn live_eval_emitted_tree_is_queryable_by_next_statement() {
     "##;
 
     let mut world = World::default();
-    let mut rx = RxWorld::default();
     let mut emit = CommandQueue::new();
 
     let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
@@ -964,7 +965,9 @@ fn live_keyframe_block_music_note_emits_audio_schedule_play() {
     }
 
     systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
-    systems.animation.tick_with_beat(&mut world, 0.0, 60.0, &mut systems.rx);
+    systems
+        .animation
+        .tick_with_beat(&mut world, 0.0, 60.0, &mut systems.rx);
 
     let intents = systems.rx.drain_ready_intents();
     assert!(
@@ -980,15 +983,17 @@ fn live_keyframe_block_music_note_emits_audio_schedule_play() {
 
     let audio = intents
         .iter()
-        .find_map(|signal| match signal.intent.as_ref().map(|intent| &intent.value) {
-            Some(IntentValue::AudioSchedulePlay {
-                component_ids,
-                note,
-                beat_offset,
-                ..
-            }) => Some((component_ids.clone(), note.clone(), *beat_offset)),
-            _ => None,
-        })
+        .find_map(
+            |signal| match signal.intent.as_ref().map(|intent| &intent.value) {
+                Some(IntentValue::AudioSchedulePlay {
+                    component_ids,
+                    note,
+                    beat_offset,
+                    ..
+                }) => Some((component_ids.clone(), note.clone(), *beat_offset)),
+                _ => None,
+            },
+        )
         .expect("expected AudioSchedulePlay from keyframe MusicNote");
 
     assert_eq!(audio.2, 0.0);
@@ -1906,6 +1911,72 @@ fn spawn_mms_module_component_initialises_live_root() {
 }
 
 #[test]
+fn spawn_mms_module_component_uninitialized_captures_live_component_objects_in_keyframes() {
+    let module = MeowMeowRunner::load_module_source(
+        r#"
+export fn animated_preview() {
+    let glow = Emissive.off() {
+        name = "glow"
+    }
+
+    return T {
+        glow
+        Animation.looping().length(2.0) {
+            Keyframe.at(0.0) {
+                glow.set_intensity(2.5)
+            }
+        }
+    }
+}
+"#,
+        None,
+    )
+    .expect("load inline module");
+
+    let mut world = World::default();
+    let mut emit = CommandQueue::new();
+    let root_id = MeowMeowRunner::spawn_mms_module_component_uninitialized(
+        &module,
+        "animated_preview",
+        vec![],
+        &mut world,
+        &mut emit,
+    )
+    .expect("spawn live preview root");
+
+    assert!(world.get_component_record(root_id).is_some());
+    assert!(!world.is_initialized(root_id));
+
+    let keyframe_id = world
+        .all_components()
+        .find(|&id| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::KeyframeComponent>(id)
+                .is_some()
+        })
+        .expect("keyframe exists");
+    let keyframe = world
+        .get_component_by_id_as::<crate::engine::ecs::component::KeyframeComponent>(keyframe_id)
+        .expect("keyframe component exists");
+    let callback = keyframe
+        .callback
+        .as_ref()
+        .expect("keyframe callback exists");
+    let captured = callback
+        .captured_env
+        .get("glow")
+        .expect("captured glow binding exists");
+
+    match captured {
+        Value::ComponentObject { id, component_type } => {
+            assert_eq!(component_type, "Emissive");
+            assert!(world.get_component_record(*id).is_some());
+        }
+        other => panic!("expected live ComponentObject capture, got {other:?}"),
+    }
+}
+
+#[test]
 fn eval_world_panel_content_rows_are_queryable_by_index_name() {
     let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let source_path = workspace_root.join("target/_mms_test_world_panel_content_names.mms");
@@ -1994,12 +2065,19 @@ result.count = result.count + 1
         None,
     )
     .expect("module eval");
-    let Value::Object(result) = module.named_exports.get("result").cloned().expect("result export") else {
+    let Value::Object(result) = module
+        .named_exports
+        .get("result")
+        .cloned()
+        .expect("result export")
+    else {
         panic!("expected object-backed table");
     };
     let Some(()) = result.with_map(|result| {
         assert!(matches!(result.get("text"), Some(Value::String(text)) if text == "after"));
-        assert!(matches!(result.get("count"), Some(Value::Number(count)) if (*count - 1.0).abs() < 1e-6));
+        assert!(
+            matches!(result.get("count"), Some(Value::Number(count)) if (*count - 1.0).abs() < 1e-6)
+        );
     }) else {
         panic!("expected live table object");
     };

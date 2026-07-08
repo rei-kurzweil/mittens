@@ -346,7 +346,8 @@ fn push_eval_intent(ctx: &mut EvalContext<'_>, mut intent: IntentValue) {
             _ => return,
         },
         RuntimeClosureExecMode::KeyframeVisualOnly => match intent {
-            IntentValue::AudioSchedulePlay { .. } | IntentValue::OscillatorScheduleSetPitch { .. } => {
+            IntentValue::AudioSchedulePlay { .. }
+            | IntentValue::OscillatorScheduleSetPitch { .. } => {
                 return;
             }
             _ => {}
@@ -693,7 +694,9 @@ fn maybe_register_live_component_value(val: Value, ctx: &mut EvalContext<'_>) ->
             let component_type = ce.component_type.clone();
             if let Some(ch) = ctx.channels.as_mut() {
                 return match ch.call(HostCallKind::Register(*ce.clone())) {
-                    Some(HostValue::ComponentId(id)) => Value::ComponentObject { id, component_type },
+                    Some(HostValue::ComponentId(id)) => {
+                        Value::ComponentObject { id, component_type }
+                    }
                     _ => Value::ComponentExpr(ce),
                 };
             }
@@ -789,10 +792,13 @@ fn eval_expr_stmt(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<(), St
 fn push_component_emit(val: Value, ctx: &mut EvalContext<'_>) {
     match val {
         Value::ComponentExpr(ce) => {
-            push_eval_intent(ctx, IntentValue::SpawnComponentTree {
-                root: ce,
-                parent: None,
-            });
+            push_eval_intent(
+                ctx,
+                IntentValue::SpawnComponentTree {
+                    root: ce,
+                    parent: None,
+                },
+            );
         }
         // Bare top-level reference to a previously Registered ComponentObject —
         // attach as a world root and run the deferred init walk.
@@ -1086,7 +1092,9 @@ fn eval_expr(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<Value, Stri
             for field in fields {
                 map.insert(field.name.0.clone(), eval_expr(&field.value, ctx)?);
             }
-            Ok(Value::Object(ctx.object_world.alloc_object(Object::Map(map))))
+            Ok(Value::Object(
+                ctx.object_world.alloc_object(Object::Map(map)),
+            ))
         }
         Expression::Index { base, index } => {
             let base = eval_expr(base, ctx)?;
@@ -1617,18 +1625,24 @@ fn eval_method_call(
                 .as_ref()
                 .and_then(|src| resolve_live_component_ref_global(world, src))
                 .ok_or_else(|| {
-                    format!("MusicNote.{}(): arg 2 must resolve to an audio target", method)
+                    format!(
+                        "MusicNote.{}(): arg 2 must resolve to an audio target",
+                        method
+                    )
                 })?;
 
-            push_eval_intent(ctx, IntentValue::AudioSchedulePlay {
-                component_ids: vec![target],
-                beat_offset: 0.0,
-                beat_context: None,
-                note: Some(note),
-                gain: None,
-                rate: None,
-                duration: None,
-            });
+            push_eval_intent(
+                ctx,
+                IntentValue::AudioSchedulePlay {
+                    component_ids: vec![target],
+                    beat_offset: 0.0,
+                    beat_context: None,
+                    note: Some(note),
+                    gain: None,
+                    rate: None,
+                    duration: None,
+                },
+            );
             Ok(Value::Null)
         }
         Value::ComponentObject {
@@ -1665,9 +1679,14 @@ fn eval_method_call(
             if supports_component_method(component_type, method) {
                 if let Some(world) = ctx.host_world {
                     let world = unsafe { &mut *world };
-                    return invoke_component_method(world, id, component_type, method, &args, |intent| {
-                        push_eval_intent(ctx, intent)
-                    });
+                    return invoke_component_method(
+                        world,
+                        id,
+                        component_type,
+                        method,
+                        &args,
+                        |intent| push_eval_intent(ctx, intent),
+                    );
                 }
                 if let Some(ch) = ctx.channels.as_mut() {
                     match ch.call(HostCallKind::InvokeComponentMethod {
@@ -1725,10 +1744,13 @@ fn eval_method_call(
                 _ => None,
             };
             if let Some(state) = anim_state {
-                push_eval_intent(ctx, IntentValue::SetAnimationState {
-                    component_ids: vec![id],
-                    state,
-                });
+                push_eval_intent(
+                    ctx,
+                    IntentValue::SetAnimationState {
+                        component_ids: vec![id],
+                        state,
+                    },
+                );
                 return Ok(Value::Null);
             }
 
@@ -1814,10 +1836,13 @@ fn eval_method_call(
                         );
                     }
                 };
-                push_eval_intent(ctx, IntentValue::SetLayoutAvailableWidth {
-                    component_ids: vec![id],
-                    width,
-                });
+                push_eval_intent(
+                    ctx,
+                    IntentValue::SetLayoutAvailableWidth {
+                        component_ids: vec![id],
+                        width,
+                    },
+                );
                 return Ok(Value::Null);
             }
 
@@ -1857,10 +1882,13 @@ fn eval_method_call(
                         );
                     }
                 };
-                push_eval_intent(ctx, IntentValue::SetLayoutAvailableHeight {
-                    component_ids: vec![id],
-                    height,
-                });
+                push_eval_intent(
+                    ctx,
+                    IntentValue::SetLayoutAvailableHeight {
+                        component_ids: vec![id],
+                        height,
+                    },
+                );
                 return Ok(Value::Null);
             }
 
@@ -1885,10 +1913,13 @@ fn eval_method_call(
                     }
                     _ => unreachable!(),
                 };
-                push_eval_intent(ctx, IntentValue::SetLayoutInspect {
-                    component_ids: vec![id],
-                    enabled,
-                });
+                push_eval_intent(
+                    ctx,
+                    IntentValue::SetLayoutInspect {
+                        component_ids: vec![id],
+                        enabled,
+                    },
+                );
                 return Ok(Value::Null);
             }
 
@@ -1908,10 +1939,13 @@ fn eval_method_call(
                     }
                     None => return Err("set_text: missing string argument".into()),
                 };
-                push_eval_intent(ctx, IntentValue::SetText {
-                    component_ids: vec![id],
-                    text,
-                });
+                push_eval_intent(
+                    ctx,
+                    IntentValue::SetText {
+                        component_ids: vec![id],
+                        text,
+                    },
+                );
                 return Ok(Value::Null);
             }
 
@@ -1936,19 +1970,20 @@ fn eval_method_call(
                 };
                 let world = unsafe { &mut *world };
                 let t = world
-                    .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(
-                        id,
-                    )
+                    .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(id)
                     .ok_or_else(|| "set_position(): not a TransformComponent".to_string())?;
                 let mut next = t.transform;
                 next.translation = [x, y, z];
                 next.recompute_model();
-                push_eval_intent(ctx, IntentValue::UpdateTransform {
-                    component_ids: vec![id],
-                    translation: next.translation,
-                    rotation_quat_xyzw: next.rotation,
-                    scale: next.scale,
-                });
+                push_eval_intent(
+                    ctx,
+                    IntentValue::UpdateTransform {
+                        component_ids: vec![id],
+                        translation: next.translation,
+                        rotation_quat_xyzw: next.rotation,
+                        scale: next.scale,
+                    },
+                );
                 return Ok(Value::Null);
             }
 
@@ -1985,9 +2020,12 @@ fn eval_method_call(
                     camera.enabled = enabled;
                     return Ok(Value::Null);
                 }
-                push_eval_intent(ctx, IntentValue::MakeActiveCamera {
-                    component_ids: vec![id],
-                });
+                push_eval_intent(
+                    ctx,
+                    IntentValue::MakeActiveCamera {
+                        component_ids: vec![id],
+                    },
+                );
                 return Ok(Value::Null);
             }
 
@@ -2024,9 +2062,12 @@ fn eval_method_call(
                     camera.enabled = enabled;
                     return Ok(Value::Null);
                 }
-                push_eval_intent(ctx, IntentValue::MakeActiveCamera {
-                    component_ids: vec![id],
-                });
+                push_eval_intent(
+                    ctx,
+                    IntentValue::MakeActiveCamera {
+                        component_ids: vec![id],
+                    },
+                );
                 return Ok(Value::Null);
             }
 
@@ -2058,10 +2099,13 @@ fn eval_method_call(
                 {
                     t.set_font_size(font_size);
                 }
-                push_eval_intent(ctx, IntentValue::SetText {
-                    component_ids: vec![id],
-                    text: cur_text,
-                });
+                push_eval_intent(
+                    ctx,
+                    IntentValue::SetText {
+                        component_ids: vec![id],
+                        text: cur_text,
+                    },
+                );
                 return Ok(Value::Null);
             }
 
@@ -2641,16 +2685,16 @@ pub(crate) fn eval_runtime_closure(
     let mut emits: Vec<IntentValue> = Vec::new();
     let mut world = ObjectWorld::with_heap(closure.heap.clone());
     world.push_function_frame(closure.captured_env.clone());
-        let mut ctx = EvalContext {
-            emits: &mut emits,
-            source_path: None,
-            channels,
-            ce_builder: None,
-            object_world: &mut world,
-            host_world: world_host.map(|world| world as *mut World),
-            exec_scope,
-            runtime_closure_mode: mode,
-        };
+    let mut ctx = EvalContext {
+        emits: &mut emits,
+        source_path: None,
+        channels,
+        ce_builder: None,
+        object_world: &mut world,
+        host_world: world_host.map(|world| world as *mut World),
+        exec_scope,
+        runtime_closure_mode: mode,
+    };
     let live_emit = emit.as_mut().map(|em| unsafe {
         std::mem::transmute::<&mut dyn SignalEmitter, *mut dyn SignalEmitter>(&mut **em)
     });
@@ -2676,16 +2720,16 @@ pub(crate) fn eval_module_source(source: &str, source_path: Option<&str>) -> Res
     let mut emits: Vec<IntentValue> = Vec::new();
     let mut named: HashMap<String, Value> = HashMap::new();
     let mut world = ObjectWorld::new();
-        let mut ctx = EvalContext {
-            emits: &mut emits,
-            source_path,
-            channels: None,
-            ce_builder: None,
-            object_world: &mut world,
-            host_world: None,
-            exec_scope: None,
-            runtime_closure_mode: RuntimeClosureExecMode::Full,
-        };
+    let mut ctx = EvalContext {
+        emits: &mut emits,
+        source_path,
+        channels: None,
+        ce_builder: None,
+        object_world: &mut world,
+        host_world: None,
+        exec_scope: None,
+        runtime_closure_mode: RuntimeClosureExecMode::Full,
+    };
 
     for stmt in &stmts {
         match eval_stmt(stmt, &mut ctx)? {

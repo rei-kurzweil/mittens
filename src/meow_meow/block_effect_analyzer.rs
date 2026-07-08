@@ -55,7 +55,11 @@ fn classify_statement(stmt: &Statement) -> EffectKind {
         Statement::Block(block) => summarize(block.statements.iter().map(classify_statement)),
         Statement::If(if_stmt) => {
             let mut effects = vec![summarize(
-                if_stmt.then_branch.statements.iter().map(classify_statement),
+                if_stmt
+                    .then_branch
+                    .statements
+                    .iter()
+                    .map(classify_statement),
             )];
             if let Some(else_branch) = &if_stmt.else_branch {
                 let effect = match else_branch {
