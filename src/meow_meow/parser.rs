@@ -468,7 +468,7 @@ impl MeowMeowParser {
     /// - `ident`                                                    → bare Identifier
     fn parse_ident_leading_expression(&mut self) -> Result<Expression, ParseError> {
         let ident = self.expect_ident()?;
-        let is_builtin_table = matches!(ident.0.as_str(), "MusicNote");
+        let is_builtin_table = matches!(ident.0.as_str(), "Math" | "MusicNote");
         let is_component_type = ident
             .0
             .chars()

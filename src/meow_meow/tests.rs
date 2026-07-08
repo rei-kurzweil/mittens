@@ -103,6 +103,22 @@ fn parse_music_note_as_builtin_call_not_component() {
 }
 
 #[test]
+fn parse_math_builtin_call_not_component() {
+    let prog = parse("Math.sin(1.0)");
+    assert_eq!(prog.len(), 1);
+    let Statement::Expression(Expression::Call(call)) = &prog[0] else {
+        panic!("expected call expression statement");
+    };
+    let Expression::BinaryOp { op, lhs, rhs } = call.callee.as_ref() else {
+        panic!("expected dot-call callee");
+    };
+    assert!(matches!(op, crate::meow_meow::ast::BinOpKind::Dot));
+    assert!(matches!(lhs.as_ref(), Expression::Identifier(id) if id.0 == "Math"));
+    assert!(matches!(rhs.as_ref(), Expression::Identifier(id) if id.0 == "sin"));
+    assert_eq!(call.args.len(), 1);
+}
+
+#[test]
 fn parse_constructor_with_body() {
     let prog = parse("T.with_scale(0.06, 0.06, 0.12) { C {} }");
     let c = as_component!(&prog[0]);
@@ -563,6 +579,7 @@ fn live_eval_emitted_tree_is_queryable_by_next_statement() {
     "##;
 
     let mut world = World::default();
+    let mut rx = RxWorld::default();
     let mut emit = CommandQueue::new();
 
     let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
@@ -865,6 +882,53 @@ fn live_eval_imported_factory_component_supports_top_level_update_transform() {
         )),
         "expected top-level imported factory method call to emit UpdateTransform, got {:?}",
         out.intents
+    );
+}
+
+#[test]
+fn live_eval_math_builtin_table_supports_trig_and_rounding() {
+    let src = r##"
+        assert(Math.abs(Math.sin(Math.pi / 2.0) - 1.0) < 0.0001, "expected sin(pi/2) ~= 1")
+        assert(Math.abs(Math.cos(Math.pi) + 1.0) < 0.0001, "expected cos(pi) ~= -1")
+        assert(Math.floor(3.8) == 3.0, "expected floor")
+        assert(Math.ceil(3.2) == 4.0, "expected ceil")
+        assert(Math.round(3.6) == 4.0, "expected round")
+        assert(Math.atan2(1.0, 0.0) > 1.5, "expected atan2")
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+}
+
+#[test]
+fn live_eval_imported_kawaii_background_module_emits_without_errors() {
+    let src = r##"
+        import { star_kawaii_background } from "../assets/components/backgrounds/star_kawaii_background.mms"
+
+        BG {
+            star_kawaii_background()
+        }
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world_at_path(
+        src,
+        Some("examples/_mms_test_star_kawaii_background_import.mms"),
+        &mut world,
+        &mut rx,
+        &mut emit,
+    );
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert!(
+        !out.intents.is_empty(),
+        "expected imported background to emit content"
     );
 }
 

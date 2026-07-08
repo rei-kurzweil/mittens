@@ -8,6 +8,7 @@ use crate::meow_meow::block_effect_analyzer::BlockEffectAnalysis;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BuiltinTableKind {
+    Math,
     MusicNote,
 }
 

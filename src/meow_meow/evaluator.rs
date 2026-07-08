@@ -1118,6 +1118,7 @@ fn eval_expr(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<Value, Stri
             match ctx.object_world.lookup(&id.0) {
                 Some(val) => Ok(val.clone()),
                 None => match id.0.as_str() {
+                    "Math" => Ok(Value::BuiltinTable(BuiltinTableKind::Math)),
                     "MusicNote" => Ok(Value::BuiltinTable(BuiltinTableKind::MusicNote)),
                     _ => Ok(Value::Identifier(id.0.clone())),
                 },
@@ -1576,6 +1577,38 @@ fn eval_method_call(
     ctx: &mut EvalContext<'_>,
 ) -> Result<Value, String> {
     match receiver {
+        Value::BuiltinTable(BuiltinTableKind::Math) => {
+            let arg1 = || match args.first() {
+                Some(Value::Number(n)) => Ok(*n),
+                other => Err(format!(
+                    "Math.{method}(): arg 0 must be a number, got {:?}",
+                    other
+                )),
+            };
+            let arg2 = || match args.as_slice() {
+                [Value::Number(a), Value::Number(b)] => Ok((*a, *b)),
+                other => Err(format!(
+                    "Math.{method}(): expected two numeric arguments, got {:?}",
+                    other
+                )),
+            };
+
+            match method {
+                "sin" => Ok(Value::Number(arg1()?.sin())),
+                "cos" => Ok(Value::Number(arg1()?.cos())),
+                "tan" => Ok(Value::Number(arg1()?.tan())),
+                "atan" => Ok(Value::Number(arg1()?.atan())),
+                "atan2" => {
+                    let (y, x) = arg2()?;
+                    Ok(Value::Number(y.atan2(x)))
+                }
+                "floor" => Ok(Value::Number(arg1()?.floor())),
+                "ceil" => Ok(Value::Number(arg1()?.ceil())),
+                "round" => Ok(Value::Number(arg1()?.round())),
+                "abs" => Ok(Value::Number(arg1()?.abs())),
+                _ => Err(format!("Math: unknown method '{}'", method)),
+            }
+        }
         Value::BuiltinTable(BuiltinTableKind::MusicNote) => {
             let pitch_ctor = match method {
                 "a" => MusicNote::a,
@@ -2314,6 +2347,14 @@ fn eval_binop(
                 ));
             };
             return match lhs_val {
+                Value::BuiltinTable(BuiltinTableKind::Math) => match field.0.as_str() {
+                    "pi" => Ok(Value::Number(std::f64::consts::PI)),
+                    "tau" => Ok(Value::Number(std::f64::consts::TAU)),
+                    "e" => Ok(Value::Number(std::f64::consts::E)),
+                    "sin" | "cos" | "tan" | "atan" | "atan2" | "floor" | "ceil" | "round"
+                    | "abs" => Ok(Value::Identifier(format!("Math.{}", field.0))),
+                    _ => Err(format!("field access: '{}' not found", field.0)),
+                },
                 Value::BuiltinTable(BuiltinTableKind::MusicNote) => match field.0.as_str() {
                     "a" | "b" | "c" | "d" | "e" | "f" | "g" => {
                         Ok(Value::Identifier(format!("MusicNote.{}", field.0)))
@@ -2527,6 +2568,7 @@ fn value_display(val: &Value) -> String {
             })
             .unwrap_or_else(|| "<object>".into()),
         Value::Identifier(s) => s.clone(),
+        Value::BuiltinTable(BuiltinTableKind::Math) => "<builtin Math>".into(),
         Value::BuiltinTable(BuiltinTableKind::MusicNote) => "<builtin MusicNote>".into(),
         Value::Module { .. } => "<module>".into(),
         Value::Dimension { value, unit } => {
