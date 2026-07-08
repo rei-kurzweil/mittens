@@ -868,6 +868,66 @@ fn live_eval_imported_factory_component_supports_top_level_update_transform() {
 }
 
 #[test]
+fn live_eval_imported_factory_keyframe_closure_captures_live_component_objects() {
+    let src = r##"
+        import { rainbow_animated } from "../assets/components/animated.mms"
+        rainbow_animated()
+    "##;
+
+    let mut world = World::default();
+    let mut systems = crate::engine::ecs::system::SystemWorld::default();
+    let mut visuals = VisualWorld::default();
+    let mut render_assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+    let input = InputState::default();
+
+    let driver = TestClockDriver::default();
+    systems.clock.set_driver(Arc::new(driver.clone()));
+    systems.clock.set_bpm(60.0);
+    driver.set_time_sec(0.0);
+    systems.clock.sample();
+
+    let out = MeowMeowRunner::eval_with_world_at_path(
+        src,
+        Some("examples/_mms_test_imported_factory_keyframe_live_handles.mms"),
+        &mut world,
+        &mut systems.rx,
+        &mut queue,
+    );
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+
+    for intent in out.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
+
+    systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
+
+    driver.set_time_sec(0.5);
+    systems.tick(
+        &mut world,
+        &mut visuals,
+        &mut render_assets,
+        &input,
+        &mut queue,
+        0.0,
+    );
+
+    let intensities: Vec<f32> = world
+        .all_components()
+        .filter_map(|id| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::EmissiveComponent>(id)
+                .map(|emissive| emissive.intensity)
+        })
+        .collect();
+    assert!(
+        intensities.iter().any(|intensity| *intensity > 0.2),
+        "expected imported factory keyframe callback to drive emissive intensity, got {:?}",
+        intensities
+    );
+}
+
+#[test]
 fn live_keyframe_block_music_note_emits_audio_schedule_play() {
     use crate::engine::ecs::IntentValue;
     use crate::engine::ecs::component::MusicNote;
@@ -1703,6 +1763,34 @@ fn call_mms_module_fn_invokes_exported_factory_function() {
     .expect("expected exported factory call to succeed");
 
     assert!(matches!(value, Value::ComponentExpr(_)));
+}
+
+#[test]
+fn materialize_mms_module_component_keeps_factory_return_as_component_expr_in_live_mode() {
+    let module = MeowMeowRunner::load_module_source(
+        r#"
+export fn example() {
+    let root = T {}
+    return root
+}
+"#,
+        None,
+    )
+    .expect("load inline module");
+
+    let mut world = World::default();
+    let mut emit = CommandQueue::new();
+    let value = MeowMeowRunner::materialize_mms_module_component(
+        &module,
+        "example",
+        vec![],
+        Some(&mut world),
+        Some(&mut emit),
+    )
+    .expect("materialize live module component");
+
+    assert_eq!(value.component_type, "T");
+    assert!(world.all_components().next().is_none());
 }
 
 #[test]

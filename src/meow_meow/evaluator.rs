@@ -688,15 +688,36 @@ fn eval_stmt(stmt: &Statement, ctx: &mut EvalContext<'_>) -> Result<StmtEffect, 
 fn maybe_register_live_component_value(val: Value, ctx: &mut EvalContext<'_>) -> Value {
     // In live mode, binding or reassigning a CE should produce a live handle
     // rather than leave a dead ComponentExpr in scope.
-    match (val, ctx.channels.as_mut()) {
-        (Value::ComponentExpr(ce), Some(ch)) => {
+    match val {
+        Value::ComponentExpr(ce) => {
             let component_type = ce.component_type.clone();
-            match ch.call(HostCallKind::Register(*ce.clone())) {
-                Some(HostValue::ComponentId(id)) => Value::ComponentObject { id, component_type },
-                _ => Value::ComponentExpr(ce),
+            if let Some(ch) = ctx.channels.as_mut() {
+                return match ch.call(HostCallKind::Register(*ce.clone())) {
+                    Some(HostValue::ComponentId(id)) => Value::ComponentObject { id, component_type },
+                    _ => Value::ComponentExpr(ce),
+                };
             }
+            if let Some(world) = ctx.host_world {
+                let registered = LIVE_SIGNAL_EMITTER.with(|slot| {
+                    let Some(host_emit) = *slot.borrow() else {
+                        return None;
+                    };
+                    unsafe {
+                        crate::meow_meow::component_registry::spawn_tree_uninitialized(
+                            &ce,
+                            &mut *world,
+                            &mut *host_emit,
+                        )
+                        .ok()
+                    }
+                });
+                if let Some(id) = registered {
+                    return Value::ComponentObject { id, component_type };
+                }
+            }
+            Value::ComponentExpr(ce)
         }
-        (val, _) => val,
+        val => val,
     }
 }
 

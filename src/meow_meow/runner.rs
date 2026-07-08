@@ -135,7 +135,9 @@ impl MeowMeowRunner {
         world_host: Option<&mut World>,
         emit: Option<&mut dyn SignalEmitter>,
     ) -> Result<MaterializedCE, String> {
-        let value = Self::call_mms_module_fn(module, name, args, None, world_host, emit)?;
+        let _ = world_host;
+        let _ = emit;
+        let value = Self::call_mms_module_fn(module, name, args, None, None, None)?;
         let Value::ComponentExpr(component_expr) = value else {
             return Err(format!(
                 "materialize_mms_module_component: export '{}' did not return a component tree",
