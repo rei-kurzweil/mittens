@@ -6,7 +6,7 @@ RendererSettings {
 }
 
 BGC {
-    C.rgba(0.1, 0.2, 0.9, 1.0)
+    C.rgba(0.07, 0.07, 0.4, 1.0)
 }
 AL.rgb(0.55, 0.55, 0.55)
 
@@ -26,12 +26,19 @@ RenderGraph {
 }
 
 
+// ground box
+T.position(0, -3, 0).scale(10000, 0.1, 10000) {
+    R.cube() {
+        C.rgba(0.2, 0.2, 1.0, 1.0)
+    }
+}
+
 Clock.bpm(240) {}
 
 T.position(0.0, 3.5, 3.5) {
     PL {
         intensity(5.0)
-        distance(20.0)
+        distance(200.0)
         color(1.0, 1.0, 1.0)
     }
 }
@@ -49,50 +56,38 @@ I.speed(1.5) {
 }
 
 
-let annulus_0_glow = Emissive.on() { 
-    intensity(0.2) 
-    Transition {
+let trans = fn () {
+    return Transition {
         duration_beats(1.0)
         ease_in_out_sine()
         replace_same_target()
     } 
+}
+
+let annulus_0_glow = Emissive.on() { 
+    intensity(0.2) 
+    trans();
 }
 let annulus_1_glow = Emissive.on() { 
     intensity(0.2) 
-    Transition {
-        duration_beats(1.0)
-        ease_in_out_sine()
-        replace_same_target()
-    } 
+    trans();
 }
 let annulus_2_glow = Emissive.on() { 
     intensity(0.2) 
-    Transition {
-        duration_beats(1.0)
-        ease_in_out_sine()
-        replace_same_target()
-    } 
+    trans();
 }
 let annulus_3_glow = Emissive.on() { 
     intensity(0.2) 
-    Transition {
-        duration_beats(1.0)
-        ease_in_out_sine()
-        replace_same_target()
-    } 
+    trans();
 }
 let annulus_4_glow = Emissive.on() { 
     intensity(0.2) 
-    Transition {
-            duration_beats(1.0)
-            ease_in_out_sine()
-            replace_same_target()
-    } 
+    trans();
 }
 
 T.position(-4.1, -2.1, -4.0).scale(2,2,2) {
 
-    let start_angle = 3.14159;
+    let start_angle = 3.14159 / 5;
 
     T.scale(1.0, 1.0, 1.0) {
         R.partial_annulus_2d(0.55, 0.89, start_angle, 1.5707963, 48) { 
