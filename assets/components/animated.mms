@@ -29,7 +29,7 @@ export fn rainbow_animated() {
         trans();
     }
 
-    return T.position(-4.1, -2.1, -4.0).scale(2,2,2) {
+    return T.scale(2,2,2) {
 
         let start_angle = 0;
 

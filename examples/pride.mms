@@ -87,7 +87,10 @@ let annulus_4_glow = Emissive.on() {
     trans();
 }
 
-T.position(-4.1, -2.1, -4.0).scale(2,2,2) {
+T.position(0, -1, 0) {
+    name="rainbow_t"
+
+T.position(-4, -2, -4).scale(2,2,2) {
 
     let start_angle = 0;
 
@@ -161,8 +164,41 @@ let rainbow_2 = rainbow_animated()
 
 rainbow_2
 
-rainbow_2.update_transform([0, 4.0, -4.0], [0, 0, 0], [1.6, 1.6, 1.6])
+rainbow_2.update_transform([-8, -2, -4.0], [0, 0, 3.14159 / 2], [2.0, 2.0, 2.0])
 
+
+T.position(-6, 0.92, -4).scale(2,1.83,2) {
+
+    let start_angle = 0;
+
+    T.scale(2.0, 0.37, 0.1).position(0, -0.8, 0) {
+        R.cube() { 
+            C.rgba(0.89, 0.16, 0.11, 1.0) annulus_0_glow 
+        }
+    }
+    T.scale(2.0, 0.37, 0.1).position(0, -0.4, 0) {
+        R.cube() { 
+            C.rgba(0.98, 0.49, 0.10, 1.0) annulus_1_glow 
+        }
+    }
+    T.scale(2.0, 0.37, 0.1).position(0, 0, 0) {
+        R.cube() { 
+            C.rgba(0.99, 0.84, 0.13, 1.0) annulus_2_glow 
+        }
+    }
+    T.scale(2.0, 0.37, 0.1).position(0, 0.4, 0) {
+        R.cube() { 
+            C.rgba(0.16, 0.68, 0.27, 1.0) annulus_3_glow 
+        }
+    }
+    T.scale(2.0, 0.37, 0.1).position(0, 0.8, 0) {
+        R.cube() { 
+            C.rgba(0.10, 0.42, 0.91, 1.0) annulus_4_glow 
+        }
+    }
+}
+
+} // rainbow_t 
 
 
 let star = T.position(2.45, 0.55, -4.0).scale(1.6, 1.6, 1.0).rotation(0, 3.14159 / 4, 0) {
