@@ -102,7 +102,3 @@ Animation.looping().length(8.0) {
         moon.update_transform([4.0, 2.9, -8.8], [0.0, 0.0, 0.0], [1.8, 1.8, 1.0])
     }
 }
-
-
-
- // }ED

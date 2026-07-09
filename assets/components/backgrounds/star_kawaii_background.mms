@@ -25,13 +25,13 @@ fn star_color(seed) {
 fn star_instance(index, radius, color) {
     let seed = index + 1.0
 
-    let yaw = hash01(seed + 3.0) * 6.28318530717959
-    let pitch = (hash01(seed + 5.0) - 0.5) * 1.25
+    let orbit_yaw = hash01(seed + 3.0) * 6.28318530717959
+    let orbit_pitch = (hash01(seed + 5.0) - 0.5) * 1.25
 
-    let cos_pitch = Math.cos(pitch)
-    let sin_pitch = Math.sin(pitch)
-    let cos_yaw = Math.cos(yaw)
-    let sin_yaw = Math.sin(yaw)
+    let cos_pitch = Math.cos(orbit_pitch)
+    let sin_pitch = Math.sin(orbit_pitch)
+    let cos_yaw = Math.cos(orbit_yaw)
+    let sin_yaw = Math.sin(orbit_yaw)
 
     let x = radius * cos_pitch * cos_yaw
     let y = radius * sin_pitch
@@ -39,8 +39,14 @@ fn star_instance(index, radius, color) {
 
     let scale = star_scale(seed) * 8.0
     let twist = star_twist(seed) / 2.0
+    let facing_yaw = Math.atan2(-z, -x)
+    let horizontal = Math.abs(radius * cos_pitch)
+    let facing_pitch = Math.atan2(y, horizontal) - 3.14159 / 2.0
 
-    return T.position(x, y, z).rotation(-3.14159 / 2, 0, 0).scale(scale, scale, scale) {
+    return T
+        .position(x, y, z)
+        .rotation(facing_pitch, facing_yaw, twist)
+        .scale(scale, scale, scale) {
         R.star(5, 0.48, 10, 10) {
             C.rgba(color[0], color[1], color[2], color[3])
             EM.on() {

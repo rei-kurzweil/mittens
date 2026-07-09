@@ -894,6 +894,16 @@ fn live_eval_math_builtin_table_supports_trig_and_rounding() {
         assert(Math.ceil(3.2) == 4.0, "expected ceil")
         assert(Math.round(3.6) == 4.0, "expected round")
         assert(Math.atan2(1.0, 0.0) > 1.5, "expected atan2")
+        assert(Math.dot([1.0, 2.0, 3.0], [4.0, 5.0, 6.0]) == 32.0, "expected dot")
+        let cross = Math.cross([1.0, 0.0, 0.0], [0.0, 1.0, 0.0])
+        assert(cross[0] == 0.0, "expected cross.x")
+        assert(cross[1] == 0.0, "expected cross.y")
+        assert(cross[2] == 1.0, "expected cross.z")
+        assert(Math.clamp(-1.0, 0.0, 1.0) == 0.0, "expected lower clamp")
+        assert(Math.clamp(2.0, 0.0, 1.0) == 1.0, "expected upper clamp")
+        assert(Math.smoothstep(-1.0, 0.0, 1.0) == 0.0, "expected smoothstep lower clamp")
+        assert(Math.smoothstep(2.0, 0.0, 1.0) == 1.0, "expected smoothstep upper clamp")
+        assert(Math.abs(Math.smoothstep(0.5, 0.0, 1.0) - 0.5) < 0.0001, "expected smoothstep midpoint")
     "##;
 
     let mut world = World::default();
@@ -902,6 +912,57 @@ fn live_eval_math_builtin_table_supports_trig_and_rounding() {
 
     let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+}
+
+#[test]
+fn live_eval_math_builtin_table_reports_invalid_usage() {
+    let cases = [
+        (
+            "Math.dot([1.0, 2.0, 3.0])",
+            "Math.dot(): expected 2 array arguments",
+        ),
+        (
+            "Math.dot([1.0, 2.0], [3.0, 4.0, 5.0])",
+            "Math.dot(): expected arrays of equal length",
+        ),
+        (
+            "Math.dot([1.0, test], [3.0, 4.0])",
+            "Math.dot(): arg 0 expected numeric array element",
+        ),
+        (
+            "Math.cross([1.0, 0.0], [0.0, 1.0])",
+            "Math.cross(): arg 0 expected array of 3, got 2",
+        ),
+        (
+            "Math.cross([1.0, 0.0, 0.0], [0.0, nope, 0.0])",
+            "Math.cross(): arg 1 expected numeric array element",
+        ),
+        (
+            "Math.clamp(0.5, 0.0)",
+            "Math.clamp(): expected 3 numeric arguments",
+        ),
+        (
+            "Math.smoothstep(0.5, 0.0)",
+            "Math.smoothstep(): expected 3 numeric arguments",
+        ),
+        (
+            "Math.smoothstep(0.5, 1.0, 1.0)",
+            "Math.smoothstep(): edge0 and edge1 must be distinct",
+        ),
+    ];
+
+    for (src, expected) in cases {
+        let mut world = World::default();
+        let mut rx = RxWorld::default();
+        let mut emit = CommandQueue::new();
+        let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+        assert!(!out.errors.is_empty(), "expected error for {src}");
+        assert!(
+            out.errors[0].contains(expected),
+            "expected error containing {expected:?}, got {:?}",
+            out.errors
+        );
+    }
 }
 
 #[test]
@@ -929,6 +990,31 @@ fn live_eval_imported_kawaii_background_module_emits_without_errors() {
     assert!(
         !out.intents.is_empty(),
         "expected imported background to emit content"
+    );
+}
+
+#[test]
+fn star_kawaii_background_derives_rotation_from_position() {
+    let src = fs::read_to_string(repo_path(
+        "assets/components/backgrounds/star_kawaii_background.mms",
+    ))
+    .expect("read star background");
+    assert!(
+        src.contains("let facing_yaw = Math.atan2(-z, -x)"),
+        "expected star background to derive yaw from position"
+    );
+    assert!(
+        src.contains("let horizontal = Math.abs(radius * cos_pitch)")
+            && src.contains("let facing_pitch = Math.atan2(y, horizontal) - 3.14159 / 2.0"),
+        "expected star background to derive pitch from position"
+    );
+    assert!(
+        src.contains(".rotation(facing_pitch, facing_yaw, twist)"),
+        "expected star background to use derived rotation with twist roll"
+    );
+    assert!(
+        !src.contains(".rotation(-3.14159 / 2, 0, 0)"),
+        "expected fixed rotation to be removed"
     );
 }
 

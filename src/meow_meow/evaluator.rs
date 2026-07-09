@@ -1577,38 +1577,11 @@ fn eval_method_call(
     ctx: &mut EvalContext<'_>,
 ) -> Result<Value, String> {
     match receiver {
-        Value::BuiltinTable(BuiltinTableKind::Math) => {
-            let arg1 = || match args.first() {
-                Some(Value::Number(n)) => Ok(*n),
-                other => Err(format!(
-                    "Math.{method}(): arg 0 must be a number, got {:?}",
-                    other
-                )),
-            };
-            let arg2 = || match args.as_slice() {
-                [Value::Number(a), Value::Number(b)] => Ok((*a, *b)),
-                other => Err(format!(
-                    "Math.{method}(): expected two numeric arguments, got {:?}",
-                    other
-                )),
-            };
-
-            match method {
-                "sin" => Ok(Value::Number(arg1()?.sin())),
-                "cos" => Ok(Value::Number(arg1()?.cos())),
-                "tan" => Ok(Value::Number(arg1()?.tan())),
-                "atan" => Ok(Value::Number(arg1()?.atan())),
-                "atan2" => {
-                    let (y, x) = arg2()?;
-                    Ok(Value::Number(y.atan2(x)))
-                }
-                "floor" => Ok(Value::Number(arg1()?.floor())),
-                "ceil" => Ok(Value::Number(arg1()?.ceil())),
-                "round" => Ok(Value::Number(arg1()?.round())),
-                "abs" => Ok(Value::Number(arg1()?.abs())),
-                _ => Err(format!("Math: unknown method '{}'", method)),
-            }
-        }
+        Value::BuiltinTable(BuiltinTableKind::Math) => eval_math_method(
+            MathReceiverKind::BuiltinTable(BuiltinTableKind::Math),
+            method,
+            &args,
+        ),
         Value::BuiltinTable(BuiltinTableKind::MusicNote) => {
             let pitch_ctor = match method {
                 "a" => MusicNote::a,
@@ -2347,14 +2320,8 @@ fn eval_binop(
                 ));
             };
             return match lhs_val {
-                Value::BuiltinTable(BuiltinTableKind::Math) => match field.0.as_str() {
-                    "pi" => Ok(Value::Number(std::f64::consts::PI)),
-                    "tau" => Ok(Value::Number(std::f64::consts::TAU)),
-                    "e" => Ok(Value::Number(std::f64::consts::E)),
-                    "sin" | "cos" | "tan" | "atan" | "atan2" | "floor" | "ceil" | "round"
-                    | "abs" => Ok(Value::Identifier(format!("Math.{}", field.0))),
-                    _ => Err(format!("field access: '{}' not found", field.0)),
-                },
+                Value::BuiltinTable(BuiltinTableKind::Math) => builtin_math_field(&field.0)
+                    .ok_or_else(|| format!("field access: '{}' not found", field.0)),
                 Value::BuiltinTable(BuiltinTableKind::MusicNote) => match field.0.as_str() {
                     "a" | "b" | "c" | "d" | "e" | "f" | "g" => {
                         Ok(Value::Identifier(format!("MusicNote.{}", field.0)))
@@ -2584,6 +2551,151 @@ fn value_display(val: &Value) -> String {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MathReceiverKind {
+    BuiltinTable(BuiltinTableKind),
+}
+
+fn eval_math_method(
+    receiver: MathReceiverKind,
+    method: &str,
+    args: &[Value],
+) -> Result<Value, String> {
+    let prefix = match receiver {
+        MathReceiverKind::BuiltinTable(BuiltinTableKind::Math) => "Math",
+        MathReceiverKind::BuiltinTable(other) => {
+            return Err(format!("unsupported math receiver: {:?}", other));
+        }
+    };
+
+    match method {
+        "sin" => Ok(Value::Number(math_arg1(prefix, method, args)?.sin())),
+        "cos" => Ok(Value::Number(math_arg1(prefix, method, args)?.cos())),
+        "tan" => Ok(Value::Number(math_arg1(prefix, method, args)?.tan())),
+        "atan" => Ok(Value::Number(math_arg1(prefix, method, args)?.atan())),
+        "atan2" => {
+            let (y, x) = math_arg2(prefix, method, args)?;
+            Ok(Value::Number(y.atan2(x)))
+        }
+        "floor" => Ok(Value::Number(math_arg1(prefix, method, args)?.floor())),
+        "ceil" => Ok(Value::Number(math_arg1(prefix, method, args)?.ceil())),
+        "round" => Ok(Value::Number(math_arg1(prefix, method, args)?.round())),
+        "abs" => Ok(Value::Number(math_arg1(prefix, method, args)?.abs())),
+        "clamp" => {
+            let (x, min, max) = math_arg3(prefix, method, args)?;
+            Ok(Value::Number(x.max(min).min(max)))
+        }
+        "smoothstep" => {
+            let (x, edge0, edge1) = math_arg3(prefix, method, args)?;
+            if (edge1 - edge0).abs() <= f64::EPSILON {
+                return Err(format!(
+                    "{prefix}.{method}(): edge0 and edge1 must be distinct"
+                ));
+            }
+            let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+            Ok(Value::Number(t * t * (3.0 - 2.0 * t)))
+        }
+        "dot" => {
+            let (a, b) = math_array_arg2(prefix, method, args)?;
+            if a.len() != b.len() {
+                return Err(format!(
+                    "{prefix}.{method}(): expected arrays of equal length, got {} and {}",
+                    a.len(),
+                    b.len()
+                ));
+            }
+            Ok(Value::Number(
+                a.iter().zip(b.iter()).map(|(lhs, rhs)| lhs * rhs).sum(),
+            ))
+        }
+        "cross" => {
+            let (a, b) = math_vec3_arg2(prefix, method, args)?;
+            let cross = crate::utils::math::vec3_cross(a, b);
+            Ok(Value::Array(
+                cross.into_iter().map(|n| Value::Number(n as f64)).collect(),
+            ))
+        }
+        _ => Err(format!("{prefix}: unknown method '{method}'")),
+    }
+}
+
+fn math_arg1(prefix: &str, method: &str, args: &[Value]) -> Result<f64, String> {
+    match args {
+        [Value::Number(n)] => Ok(*n),
+        _ => Err(format!(
+            "{prefix}.{method}(): expected 1 numeric argument, got {:?}",
+            args
+        )),
+    }
+}
+
+fn math_arg2(prefix: &str, method: &str, args: &[Value]) -> Result<(f64, f64), String> {
+    match args {
+        [Value::Number(a), Value::Number(b)] => Ok((*a, *b)),
+        _ => Err(format!(
+            "{prefix}.{method}(): expected 2 numeric arguments, got {:?}",
+            args
+        )),
+    }
+}
+
+fn math_arg3(prefix: &str, method: &str, args: &[Value]) -> Result<(f64, f64, f64), String> {
+    match args {
+        [Value::Number(a), Value::Number(b), Value::Number(c)] => Ok((*a, *b, *c)),
+        _ => Err(format!(
+            "{prefix}.{method}(): expected 3 numeric arguments, got {:?}",
+            args
+        )),
+    }
+}
+
+fn math_array_arg2(
+    prefix: &str,
+    method: &str,
+    args: &[Value],
+) -> Result<(Vec<f64>, Vec<f64>), String> {
+    match args {
+        [lhs, rhs] => Ok((
+            value_as_number_array(lhs)
+                .map_err(|err| format!("{prefix}.{method}(): arg 0 {err}"))?,
+            value_as_number_array(rhs)
+                .map_err(|err| format!("{prefix}.{method}(): arg 1 {err}"))?,
+        )),
+        _ => Err(format!(
+            "{prefix}.{method}(): expected 2 array arguments, got {:?}",
+            args
+        )),
+    }
+}
+
+fn math_vec3_arg2(
+    prefix: &str,
+    method: &str,
+    args: &[Value],
+) -> Result<([f32; 3], [f32; 3]), String> {
+    match args {
+        [lhs, rhs] => Ok((
+            value_as_f32_array(lhs).map_err(|err| format!("{prefix}.{method}(): arg 0 {err}"))?,
+            value_as_f32_array(rhs).map_err(|err| format!("{prefix}.{method}(): arg 1 {err}"))?,
+        )),
+        _ => Err(format!(
+            "{prefix}.{method}(): expected 2 array arguments, got {:?}",
+            args
+        )),
+    }
+}
+
+fn builtin_math_field(field: &str) -> Option<Value> {
+    match field {
+        "pi" => Some(Value::Number(std::f64::consts::PI)),
+        "tau" => Some(Value::Number(std::f64::consts::TAU)),
+        "e" => Some(Value::Number(std::f64::consts::E)),
+        "sin" | "cos" | "tan" | "atan" | "atan2" | "floor" | "ceil" | "round" | "abs" | "dot"
+        | "cross" | "clamp" | "smoothstep" => Some(Value::Identifier(format!("Math.{field}"))),
+        _ => None,
+    }
+}
+
 fn value_as_f32_array<const N: usize>(value: &Value) -> Result<[f32; N], String> {
     match value {
         Value::Array(items) => {
@@ -2594,6 +2706,27 @@ fn value_as_f32_array<const N: usize>(value: &Value) -> Result<[f32; N], String>
             for (index, item) in items.iter().enumerate() {
                 match item {
                     Value::Number(n) => out[index] = *n as f32,
+                    other => {
+                        return Err(format!(
+                            "expected numeric array element at {index}, got {:?}",
+                            other
+                        ));
+                    }
+                }
+            }
+            Ok(out)
+        }
+        other => Err(format!("expected array, got {:?}", other)),
+    }
+}
+
+fn value_as_number_array(value: &Value) -> Result<Vec<f64>, String> {
+    match value {
+        Value::Array(items) => {
+            let mut out = Vec::with_capacity(items.len());
+            for (index, item) in items.iter().enumerate() {
+                match item {
+                    Value::Number(n) => out.push(*n),
                     other => {
                         return Err(format!(
                             "expected numeric array element at {index}, got {:?}",
