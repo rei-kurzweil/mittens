@@ -119,6 +119,21 @@ fn parse_math_builtin_call_not_component() {
 }
 
 #[test]
+fn parse_transform_quat_constructor() {
+    let prog = parse("T.quat([0.0, 0.0, 0.0, 1.0]) {}");
+    assert_eq!(prog.len(), 1);
+    let c = as_component!(&prog[0]);
+    assert_eq!(c.component_type.0, "T");
+    let hc = c.constructors.first().expect("constructor");
+    assert_eq!(hc.method.0, "quat");
+    assert_eq!(hc.args.len(), 1);
+    let Expression::Array(items) = &hc.args[0] else {
+        panic!("expected quaternion array arg");
+    };
+    assert_eq!(items.len(), 4);
+}
+
+#[test]
 fn parse_constructor_with_body() {
     let prog = parse("T.with_scale(0.06, 0.06, 0.12) { C {} }");
     let c = as_component!(&prog[0]);
@@ -890,6 +905,7 @@ fn live_eval_math_builtin_table_supports_trig_and_rounding() {
     let src = r##"
         assert(Math.abs(Math.sin(Math.pi / 2.0) - 1.0) < 0.0001, "expected sin(pi/2) ~= 1")
         assert(Math.abs(Math.cos(Math.pi) + 1.0) < 0.0001, "expected cos(pi) ~= -1")
+        assert(Math.sqrt(9.0) == 3.0, "expected sqrt")
         assert(Math.floor(3.8) == 3.0, "expected floor")
         assert(Math.ceil(3.2) == 4.0, "expected ceil")
         assert(Math.round(3.6) == 4.0, "expected round")
@@ -1000,21 +1016,45 @@ fn star_kawaii_background_derives_rotation_from_position() {
     ))
     .expect("read star background");
     assert!(
-        src.contains("let facing_yaw = Math.atan2(-z, -x)"),
-        "expected star background to derive yaw from position"
+        src.contains("let dir_x = -x / radius")
+            && src.contains("let dir_y = -y / radius")
+            && src.contains("let dir_z = -z / radius"),
+        "expected star background to derive inward direction from position"
     );
     assert!(
-        src.contains("let horizontal = Math.abs(radius * cos_pitch)")
-            && src.contains("let facing_pitch = Math.atan2(y, horizontal) - 3.14159 / 2.0"),
-        "expected star background to derive pitch from position"
+        src.contains("let look_raw = [-dir_y, dir_x, 0.0, 1.0 + dir_z]")
+            && src.contains("let look_inv_len = 1.0 / Math.sqrt("),
+        "expected star background to build a shortest-arc look quaternion"
     );
     assert!(
-        src.contains(".rotation(facing_pitch, facing_yaw, twist)"),
-        "expected star background to use derived rotation with twist roll"
+        src.contains("let twist_quat = [0.0, 0.0, Math.sin(half_twist), Math.cos(half_twist)]")
+            && src.contains("let rotation = quat_mul(look, twist_quat)")
+            && src.contains(".quat(rotation)"),
+        "expected star background to use quaternion look-at plus local twist"
     );
     assert!(
-        !src.contains(".rotation(-3.14159 / 2, 0, 0)"),
-        "expected fixed rotation to be removed"
+        !src.contains(".rotation("),
+        "expected Euler rotation authoring to be removed from the star background"
+    );
+}
+
+#[test]
+fn live_eval_transform_quaternion_builder_supports_array_aliases() {
+    let src = r##"
+        T.quat([0.0, 0.0, 0.0, 1.0]) {
+            T.quaternion([0.0, 0.0, 0.0, 1.0]) {}
+        }
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert!(
+        !out.intents.is_empty(),
+        "expected quaternion-authored transforms to emit content"
     );
 }
 

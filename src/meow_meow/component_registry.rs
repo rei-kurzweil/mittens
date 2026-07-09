@@ -2066,13 +2066,8 @@ fn apply_call(
                     arg_f32(args, 2)?,
                 )
             }
-            "rotation_quat" => {
-                *t = t.clone().with_rotation_quat([
-                    arg_f32(args, 0)?,
-                    arg_f32(args, 1)?,
-                    arg_f32(args, 2)?,
-                    arg_f32(args, 3)?,
-                ])
+            "rotation_quat" | "quaternion" | "quat" => {
+                *t = t.clone().with_rotation_quat(arg_f32_quat(args)?)
             }
             _ => {}
         }
@@ -3009,16 +3004,27 @@ fn apply_transform_builder(
         }
         // Lossless quaternion form — used by `to_mms_ast` so saved/cloned
         // transforms reproduce exactly, including arbitrary axis rotations.
-        "rotation_quat" => Ok(c.with_rotation_quat([
-            arg_f32(args, 0)?,
-            arg_f32(args, 1)?,
-            arg_f32(args, 2)?,
-            arg_f32(args, 3)?,
-        ])),
+        "rotation_quat" | "quaternion" | "quat" => Ok(c.with_rotation_quat(arg_f32_quat(args)?)),
         other => {
             println!("[registry] unknown Transform builder: '{other}'");
             Ok(c)
         }
+    }
+}
+
+fn arg_f32_quat(args: &[Value]) -> Result<[f32; 4], String> {
+    match args {
+        [Value::Array(_)] => val_as_f32_array::<4>(&args[0]),
+        [_, _, _, _] => Ok([
+            arg_f32(args, 0)?,
+            arg_f32(args, 1)?,
+            arg_f32(args, 2)?,
+            arg_f32(args, 3)?,
+        ]),
+        other => Err(format!(
+            "expected quaternion as four numeric args or one vec4 array, got {:?}",
+            other
+        )),
     }
 }
 

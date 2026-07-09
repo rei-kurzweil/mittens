@@ -2571,6 +2571,7 @@ fn eval_math_method(
     match method {
         "sin" => Ok(Value::Number(math_arg1(prefix, method, args)?.sin())),
         "cos" => Ok(Value::Number(math_arg1(prefix, method, args)?.cos())),
+        "sqrt" => Ok(Value::Number(math_arg1(prefix, method, args)?.sqrt())),
         "tan" => Ok(Value::Number(math_arg1(prefix, method, args)?.tan())),
         "atan" => Ok(Value::Number(math_arg1(prefix, method, args)?.atan())),
         "atan2" => {
@@ -2690,8 +2691,10 @@ fn builtin_math_field(field: &str) -> Option<Value> {
         "pi" => Some(Value::Number(std::f64::consts::PI)),
         "tau" => Some(Value::Number(std::f64::consts::TAU)),
         "e" => Some(Value::Number(std::f64::consts::E)),
-        "sin" | "cos" | "tan" | "atan" | "atan2" | "floor" | "ceil" | "round" | "abs" | "dot"
-        | "cross" | "clamp" | "smoothstep" => Some(Value::Identifier(format!("Math.{field}"))),
+        "sin" | "cos" | "sqrt" | "tan" | "atan" | "atan2" | "floor" | "ceil" | "round" | "abs"
+        | "dot" | "cross" | "clamp" | "smoothstep" => {
+            Some(Value::Identifier(format!("Math.{field}")))
+        }
         _ => None,
     }
 }
