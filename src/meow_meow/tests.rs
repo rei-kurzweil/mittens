@@ -2083,6 +2083,7 @@ fn renderable_constructors_accept_omitted_default_args() {
         r#"
 export fn procedural_defaults() {
     return T {
+        R.cone() {}
         R.heart() {}
         R.star() {}
         R.partial_annulus_2d() {}
@@ -2107,7 +2108,14 @@ export fn procedural_defaults() {
     .expect("spawn procedural defaults");
 
     assert!(world.get_component_record(root).is_some());
-    assert_eq!(world.children_of(root).len(), 3);
+    assert_eq!(world.children_of(root).len(), 4);
+}
+
+#[test]
+fn renderable_cone_accepts_explicit_detail_arg() {
+    let out = eval("T { R.cone(12) {} }");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 1);
 }
 
 #[test]

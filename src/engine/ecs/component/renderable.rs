@@ -10,6 +10,9 @@ use crate::engine::graphics::render_assets::RenderAssets;
 #[derive(Debug, Clone, PartialEq)]
 pub enum AuthoredRenderableShape {
     Builtin(&'static str),
+    Cone {
+        segments: u32,
+    },
     PartialAnnulus2d {
         inner_radius: f32,
         outer_radius: f32,
@@ -121,6 +124,22 @@ impl RenderableComponent {
         Self::new(
             Renderable::new(h, MaterialHandle::TOON_MESH).with_base_mesh(CpuMeshHandle::SPHERE),
         )
+    }
+
+    /// Predefined renderable: cone primitive (shared built-in mesh handle).
+    pub fn cone() -> Self {
+        let mut s = Self::from_cpu_mesh_handle(CpuMeshHandle::CONE, MaterialHandle::TOON_MESH);
+        s.authored_shape = Some(AuthoredRenderableShape::Builtin("cone"));
+        s
+    }
+
+    /// Predefined renderable: cone primitive (unique CPU mesh registered into `render_assets`).
+    pub fn cone_dynamic(render_assets: &mut RenderAssets, segments: u32) -> Self {
+        let h = render_assets.register_mesh(MeshFactory::cone(segments));
+        let mut s =
+            Self::new(Renderable::new(h, MaterialHandle::TOON_MESH).with_base_mesh(CpuMeshHandle::CONE));
+        s.authored_shape = Some(AuthoredRenderableShape::Cone { segments });
+        s
     }
 
     /// Predefined renderable: tetrahedron primitive (shared built-in mesh handle).
@@ -255,6 +274,9 @@ impl Component for RenderableComponent {
     ) -> crate::meow_meow::ast::ComponentExpression {
         match &self.authored_shape {
             Some(AuthoredRenderableShape::Builtin(name)) => ce_call("Renderable", name, vec![]),
+            Some(AuthoredRenderableShape::Cone { segments }) => {
+                ce_call("Renderable", "cone", vec![num(*segments as f64)])
+            }
             Some(AuthoredRenderableShape::PartialAnnulus2d {
                 inner_radius,
                 outer_radius,

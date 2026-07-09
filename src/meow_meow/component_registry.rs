@@ -1113,6 +1113,19 @@ fn create_component(
         "Renderable" => match ctor {
             Some("cube") => add!(RenderableComponent::cube()),
             Some("circle2d") => add!(RenderableComponent::circle2d()),
+            Some("cone") => {
+                if args.is_empty() {
+                    add!(RenderableComponent::cone())
+                } else {
+                    with_render_assets_mut(|render_assets| {
+                        let segments = arg_u32(args, 0).unwrap_or(32);
+                        Ok(world.add_component(RenderableComponent::cone_dynamic(
+                            render_assets,
+                            segments,
+                        )))
+                    })
+                }
+            }
             Some("sphere") => add!(RenderableComponent::sphere()),
             Some("triangle") => add!(RenderableComponent::triangle()),
             Some("square") => add!(RenderableComponent::square()),
