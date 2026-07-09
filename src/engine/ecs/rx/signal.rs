@@ -326,6 +326,10 @@ pub enum IntentValue {
         component_ids: Vec<ComponentId>,
         position: [f32; 3],
     },
+    LookAt {
+        component_ids: Vec<ComponentId>,
+        target_world: [f32; 3],
+    },
     GLTFArmatureVisible {
         component_ids: Vec<ComponentId>,
         visible: bool,
@@ -699,6 +703,7 @@ impl IntentValue {
             IntentValue::SetText { .. } => "set_text",
             IntentValue::SetEmissiveIntensity { .. } => "set_emissive_intensity",
             IntentValue::SetPosition { .. } => "set_position",
+            IntentValue::LookAt { .. } => "look_at",
             IntentValue::SetLayoutAvailableWidth { .. } => "set_layout_available_width",
             IntentValue::SetLayoutAvailableHeight { .. } => "set_layout_available_height",
             IntentValue::SetLayoutInspect { .. } => "set_layout_inspect",

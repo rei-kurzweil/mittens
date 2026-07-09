@@ -6,7 +6,7 @@ use crate::engine;
 use crate::engine::ecs::component::style::SizeDimension;
 use crate::engine::ecs::component::{LayoutComponent, StyleComponent, TransformComponent};
 use crate::engine::ecs::{
-    CommandQueue, ComponentId, EventSignal, RxWorld, Signal, SignalEmitter, World,
+    CommandQueue, ComponentId, EventSignal, IntentValue, RxWorld, Signal, SignalEmitter, World,
 };
 use crate::engine::graphics::{RenderAssets, VisualWorld};
 use crate::engine::user_input::InputState;
@@ -1055,6 +1055,57 @@ fn live_eval_transform_quaternion_builder_supports_array_aliases() {
     assert!(
         !out.intents.is_empty(),
         "expected quaternion-authored transforms to emit content"
+    );
+}
+
+#[test]
+fn live_eval_transform_looking_at_builder_queues_look_at_intent() {
+    let src = r##"
+        T.position(1.0, 2.0, 3.0).looking_at([4.0, 5.0, 6.0]) {}
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+
+    emit.drain_into_rx(&mut rx);
+    let intents = rx.drain_ready_intents();
+    assert!(
+        intents.iter().any(|env| matches!(
+            env.intent.as_ref().map(|i| &i.value),
+            Some(IntentValue::LookAt { target_world, .. }) if *target_world == [4.0, 5.0, 6.0]
+        )),
+        "expected builder-authored transform init to queue LookAt, got {:?}",
+        intents
+            .iter()
+            .map(|env| env.intent.as_ref().map(|i| i.value.kind_name()))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn live_eval_component_object_transform_look_at_emits_look_at_intent() {
+    let src = r##"
+        let t = T {}
+        t.look_at([0.0, 1.0, 0.0])
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert!(
+        out.intents.iter().any(|intent| matches!(
+            intent,
+            IntentValue::LookAt { target_world, .. } if *target_world == [0.0, 1.0, 0.0]
+        )),
+        "expected live component method to emit LookAt, got {:?}",
+        out.intents
     );
 }
 

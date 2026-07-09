@@ -30,6 +30,7 @@ impl RxIntentExecutor {
                 | IntentValue::Print { .. }
                 | IntentValue::SetColor { .. }
                 | IntentValue::SetPosition { .. }
+                | IntentValue::LookAt { .. }
                 | IntentValue::GLTFArmatureVisible { .. }
                 | IntentValue::SelectionSet { .. }
                 | IntentValue::Attach { .. }
@@ -141,6 +142,60 @@ fn handle_intent_signal(
                 {
                     t.set_position(emit, position[0], position[1], position[2]);
                 }
+            }
+        }
+
+        IntentValue::LookAt {
+            component_ids,
+            target_world,
+        } => {
+            let mut transform_cids = Vec::new();
+            for &t in component_ids.iter() {
+                collect_transform_targets(world, t, &mut transform_cids);
+            }
+            transform_cids.sort();
+            transform_cids.dedup();
+            for transform_cid in transform_cids {
+                let Some(world_position) =
+                    crate::engine::ecs::system::TransformSystem::world_position(world, transform_cid)
+                else {
+                    continue;
+                };
+
+                let Some(desired_world_rotation) =
+                    TransformComponent::look_at_world_rotation(world_position, *target_world)
+                else {
+                    continue;
+                };
+
+                let parent_world_rotation = world
+                    .parent_of(transform_cid)
+                    .and_then(|parent| {
+                        crate::engine::ecs::system::TransformSystem::world_model(world, parent)
+                    })
+                    .map(crate::utils::math::mat_to_quat)
+                    .unwrap_or([0.0, 0.0, 0.0, 1.0]);
+                let local_rotation = crate::utils::math::quat_normalize(crate::utils::math::quat_mul(
+                    crate::utils::math::quat_conjugate(parent_world_rotation),
+                    desired_world_rotation,
+                ));
+
+                let Some(transform) = world
+                    .get_component_by_id_as::<TransformComponent>(transform_cid)
+                    .map(|t| t.transform)
+                else {
+                    continue;
+                };
+
+                emit.push_intent_now(
+                    transform_cid,
+                    IntentValue::UpdateTransform {
+                        component_ids: vec![transform_cid],
+                        translation: transform.translation,
+                        rotation_quat_xyzw: local_rotation,
+                        scale: transform.scale,
+                    },
+                );
             }
         }
 

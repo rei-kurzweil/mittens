@@ -6,7 +6,7 @@ pub(crate) fn supports_component_method(component_type: &str, method: &str) -> b
     (matches!(
         component_type,
         "T" | "Transform" | "TransformComponent" | "transform"
-    ) && method == "update_transform")
+    ) && matches!(method, "update_transform" | "look_at"))
         || (matches!(
             component_type,
             "EM" | "Emissive" | "EmissiveComponent" | "emissive"
@@ -49,6 +49,27 @@ pub(crate) fn invoke_component_method(
                     .transform
                     .rotation,
                 scale,
+            });
+            Ok(Value::Null)
+        }
+        ("T" | "Transform" | "TransformComponent" | "transform", "look_at") => {
+            let [target_world] = match args {
+                [target_world] => [value_as_f32_array::<3>(target_world)?],
+                other => {
+                    return Err(format!(
+                        "look_at: expected one vec3 array argument, got {:?}",
+                        other
+                    ));
+                }
+            };
+
+            world
+                .get_component_by_id_as::<TransformComponent>(id)
+                .ok_or_else(|| "look_at(): not a TransformComponent".to_string())?;
+
+            emit_intent(IntentValue::LookAt {
+                component_ids: vec![id],
+                target_world,
             });
             Ok(Value::Null)
         }

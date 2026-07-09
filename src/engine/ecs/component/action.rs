@@ -83,6 +83,7 @@ pub fn signal_target_slot_count(signal: &IntentValue) -> usize {
         | SetText { component_ids, .. }
         | SetEmissiveIntensity { component_ids, .. }
         | SetPosition { component_ids, .. }
+        | LookAt { component_ids, .. }
         | GLTFArmatureVisible { component_ids, .. }
         | Detach { component_ids }
         | RemoveSubtree { component_ids }
@@ -121,6 +122,7 @@ pub fn apply_resolved_targets(signal: &mut IntentValue, ids: &[ComponentId]) {
         | SetText { component_ids, .. }
         | SetEmissiveIntensity { component_ids, .. }
         | SetPosition { component_ids, .. }
+        | LookAt { component_ids, .. }
         | GLTFArmatureVisible { component_ids, .. }
         | Detach { component_ids }
         | RemoveSubtree { component_ids }

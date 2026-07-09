@@ -2069,6 +2069,7 @@ fn apply_call(
             "rotation_quat" | "quaternion" | "quat" => {
                 *t = t.clone().with_rotation_quat(arg_f32_quat(args)?)
             }
+            "looking_at" => *t = t.clone().with_looking_at(arg_f32_arr::<3>(args, 0)?),
             _ => {}
         }
         return Ok(());
@@ -3002,6 +3003,7 @@ fn apply_transform_builder(
         "rotation" | "rotation_euler" => {
             Ok(c.with_rotation_euler(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?))
         }
+        "looking_at" => Ok(c.with_looking_at(arg_f32_arr::<3>(args, 0)?)),
         // Lossless quaternion form — used by `to_mms_ast` so saved/cloned
         // transforms reproduce exactly, including arbitrary axis rotations.
         "rotation_quat" | "quaternion" | "quat" => Ok(c.with_rotation_quat(arg_f32_quat(args)?)),
