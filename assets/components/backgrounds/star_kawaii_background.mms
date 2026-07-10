@@ -3,27 +3,33 @@ fn hash01(seed) {
     return x - Math.floor(x)
 }
 
-fn star_scale(seed) {
-    return 0.22 + hash01(seed + 8.0) * 0.55
-}
+// fn star_scale(seed) {
+//     return 0.22 + hash01(seed + 8.0) * 0.55
+// }
 
+fn sphere_direction(index, count) {
+    let i = index + 0.5
+    let y = 1.0 - (2.0 * i / count)
+    let ring_radius = Math.sqrt(1.0 - y * y)
+    let theta = i * 2.399963229728653
+
+    return [
+        Math.cos(theta) * ring_radius,
+        y,
+        Math.sin(theta) * ring_radius,
+    ]
+}
 
 fn star_instance(index, radius, color) {
     let seed = index + 1.0
+    let dir = sphere_direction(index, 320.0)
+    let radial_noise = Math.perlin(dir[0] * 2.4, dir[1] * 2.4, dir[2] * 2.4)
+    let r = radius + radial_noise * 6.0
+    let x = dir[0] * r
+    let y = dir[1] * r
+    let z = dir[2] * r
 
-    let orbit_yaw = hash01(seed + 3.0) * 6.28318530717959
-    let orbit_pitch = (hash01(seed + 5.0) - 0.5) * 1.25
-
-    let cos_pitch = Math.cos(orbit_pitch)
-    let sin_pitch = Math.sin(orbit_pitch)
-    let cos_yaw = Math.cos(orbit_yaw)
-    let sin_yaw = Math.sin(orbit_yaw)
-
-    let x = radius * cos_pitch * cos_yaw
-    let y = radius * sin_pitch
-    let z = radius * cos_pitch * sin_yaw
-
-    let scale = star_scale(seed) * 8.0
+    let scale = 0.2 + radial_noise * 4.0
 
     return T
         .position(x, y, z)
@@ -42,8 +48,16 @@ export fn star_kawaii_background(color) {
     let radius = 48.0
 
     return T {
-        for i in range(300) {
-            star_instance(i, radius, color)
+        for i in range(320) {
+            let dir = sphere_direction(i, 320.0)
+            let density = Math.perlin(
+                dir[0] * 4.2 + 13.7,
+                dir[1] * 4.2 - 2.1,
+                dir[2] * 4.2 + 7.9,
+            )
+            if density > -0.08 {
+                star_instance(i, radius, color)
+            }
         }
     }
 }

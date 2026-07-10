@@ -920,6 +920,13 @@ fn live_eval_math_builtin_table_supports_trig_and_rounding() {
         assert(Math.smoothstep(-1.0, 0.0, 1.0) == 0.0, "expected smoothstep lower clamp")
         assert(Math.smoothstep(2.0, 0.0, 1.0) == 1.0, "expected smoothstep upper clamp")
         assert(Math.abs(Math.smoothstep(0.5, 0.0, 1.0) - 0.5) < 0.0001, "expected smoothstep midpoint")
+        let p2 = Math.perlin(1.25, 2.5)
+        let p2_again = Math.perlin(1.25, 2.5)
+        let p3 = Math.perlin(1.25, 2.5, 7.0)
+        assert(p2 >= -1.0, "expected perlin lower bound")
+        assert(p2 <= 1.0, "expected perlin upper bound")
+        assert(p2 == p2_again, "expected perlin deterministic")
+        assert(Math.abs(p2 - p3) > 0.0001, "expected z slice variation")
     "##;
 
     let mut world = World::default();
@@ -933,6 +940,14 @@ fn live_eval_math_builtin_table_supports_trig_and_rounding() {
 #[test]
 fn live_eval_math_builtin_table_reports_invalid_usage() {
     let cases = [
+        (
+            "Math.perlin(0.5)",
+            "Math.perlin(): expected 2 or 3 numeric arguments",
+        ),
+        (
+            "Math.perlin(0.5, 1.0, nope)",
+            "Math.perlin(): expected 2 or 3 numeric arguments",
+        ),
         (
             "Math.dot([1.0, 2.0, 3.0])",
             "Math.dot(): expected 2 array arguments",

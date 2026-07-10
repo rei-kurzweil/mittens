@@ -2582,6 +2582,18 @@ fn eval_math_method(
         "ceil" => Ok(Value::Number(math_arg1(prefix, method, args)?.ceil())),
         "round" => Ok(Value::Number(math_arg1(prefix, method, args)?.round())),
         "abs" => Ok(Value::Number(math_arg1(prefix, method, args)?.abs())),
+        "perlin" => match args {
+            [Value::Number(x), Value::Number(y)] => {
+                Ok(Value::Number(crate::utils::math::perlin(*x, *y, None)))
+            }
+            [Value::Number(x), Value::Number(y), Value::Number(z)] => {
+                Ok(Value::Number(crate::utils::math::perlin(*x, *y, Some(*z))))
+            }
+            _ => Err(format!(
+                "{prefix}.{method}(): expected 2 or 3 numeric arguments, got {:?}",
+                args
+            )),
+        },
         "clamp" => {
             let (x, min, max) = math_arg3(prefix, method, args)?;
             Ok(Value::Number(x.max(min).min(max)))
@@ -2692,7 +2704,7 @@ fn builtin_math_field(field: &str) -> Option<Value> {
         "tau" => Some(Value::Number(std::f64::consts::TAU)),
         "e" => Some(Value::Number(std::f64::consts::E)),
         "sin" | "cos" | "sqrt" | "tan" | "atan" | "atan2" | "floor" | "ceil" | "round" | "abs"
-        | "dot" | "cross" | "clamp" | "smoothstep" => {
+        | "perlin" | "dot" | "cross" | "clamp" | "smoothstep" => {
             Some(Value::Identifier(format!("Math.{field}")))
         }
         _ => None,
