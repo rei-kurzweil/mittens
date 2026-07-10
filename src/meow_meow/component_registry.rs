@@ -24,8 +24,8 @@ use crate::engine::ecs::component::{
     InputXRGamepadComponent, InspectLayoutComponent, JustifyContent, KeyframeComponent,
     KineticResponseComponent, LayoutBoundsComponent, LayoutComponent, LightQuantizationComponent,
     MeshComponent, MirrorComponent, MusicNote, MusicNoteComponent, NormalVisualisationComponent,
-    OpacityComponent, OptionComponent, OscillatorType, Overflow, OverlayComponent,
-    PointLightComponent, PointerComponent, PointerEvents, PoseCaptureComponent,
+    HttpClientComponent, HttpServerComponent, OpacityComponent, OptionComponent, OscillatorType,
+    Overflow, OverlayComponent, PointLightComponent, PointerComponent, PointerEvents, PoseCaptureComponent,
     PoseCaptureLibraryComponent, PoseCapturePoseComponent, Position, QuatTemporalFilterComponent,
     QuatYawFollowComponent, RayCastComponent, RaycastableComponent, RaycastableShapeComponent,
     RaycastableShapeType, RenderGraphComponent, RenderableComponent, RendererSettingsComponent,
@@ -1181,6 +1181,28 @@ fn create_component(
             }
             add!(c)
         }
+        "HttpClient" => {
+            let mut c = HttpClientComponent::new();
+            if let Some(method) = ctor {
+                match method {
+                    "enabled" => c = c.with_enabled(arg_bool(args, 0)?),
+                    "timeout_ms" => c = c.with_timeout_ms(arg_f32(args, 0)? as u64),
+                    _ => return Err(format!("HttpClient: unknown constructor '{method}'")),
+                }
+            }
+            add!(c)
+        }
+        "HttpServer" => {
+            let mut c = HttpServerComponent::new();
+            if let Some(method) = ctor {
+                match method {
+                    "bind" => c = c.with_bind_addr(arg_str(args, 0)?),
+                    "enabled" => c = c.with_enabled(arg_bool(args, 0)?),
+                    _ => return Err(format!("HttpServer: unknown constructor '{method}'")),
+                }
+            }
+            add!(c)
+        }
         "StencilClip" => {
             let id = world.add_component(StencilClipComponent::new());
             if let Some(method) = ctor {
@@ -2103,6 +2125,22 @@ fn apply_call(
     if let Some(text_input) = world.get_component_by_id_as_mut::<TextInputComponent>(id) {
         match method {
             "read_only" => text_input.read_only = arg_bool(args, 0)?,
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(http_client) = world.get_component_by_id_as_mut::<HttpClientComponent>(id) {
+        match method {
+            "enabled" => http_client.enabled = arg_bool(args, 0)?,
+            "timeout_ms" => http_client.timeout_ms = Some(arg_f32(args, 0)? as u64),
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(http_server) = world.get_component_by_id_as_mut::<HttpServerComponent>(id) {
+        match method {
+            "bind" => http_server.bind_addr = arg_str(args, 0)?.to_string(),
+            "enabled" => http_server.enabled = arg_bool(args, 0)?,
             _ => {}
         }
         return Ok(());

@@ -11,6 +11,8 @@ pub enum TextInputCaretDirection {
     Right,
 }
 
+pub type HttpHeaders = Vec<(String, String)>;
+
 /// Signal envelope.
 ///
 /// Exactly one of `event` or `intent` should be `Some`.
@@ -232,6 +234,32 @@ pub enum EventSignal {
         control: XrAxisControl,
         value: [f32; 2],
     },
+
+    HttpRequest {
+        request_id: u64,
+        method: String,
+        path: String,
+        query: Option<String>,
+        url: String,
+        headers: HttpHeaders,
+        body_text: String,
+        remote_addr: Option<String>,
+    },
+    HttpResponse {
+        request_id: u64,
+        status: u16,
+        ok: bool,
+        headers: HttpHeaders,
+        body_text: String,
+        url: String,
+    },
+    HttpError {
+        request_id: Option<u64>,
+        phase: String,
+        message: String,
+        url: Option<String>,
+        bind_addr: Option<String>,
+    },
 }
 
 impl EventSignal {
@@ -258,6 +286,9 @@ impl EventSignal {
             EventSignal::XrButtonUp { .. } => SignalKind::XrButtonUp,
             EventSignal::XrButtonChanged { .. } => SignalKind::XrButtonChanged,
             EventSignal::XrAxisChanged { .. } => SignalKind::XrAxisChanged,
+            EventSignal::HttpRequest { .. } => SignalKind::HttpRequest,
+            EventSignal::HttpResponse { .. } => SignalKind::HttpResponse,
+            EventSignal::HttpError { .. } => SignalKind::HttpError,
         }
     }
 }
@@ -458,6 +489,26 @@ pub enum IntentValue {
 
     RegisterRouter {
         component_ids: Vec<ComponentId>,
+    },
+    RegisterHttpServer {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterHttpClient {
+        component_ids: Vec<ComponentId>,
+    },
+    HttpClientRequest {
+        component_id: ComponentId,
+        method: String,
+        url: String,
+        headers: HttpHeaders,
+        body_text: Option<String>,
+    },
+    HttpServerReply {
+        component_id: ComponentId,
+        request_id: u64,
+        status: u16,
+        headers: HttpHeaders,
+        body_text: String,
     },
     RegisterScrolling {
         component_ids: Vec<ComponentId>,
@@ -734,6 +785,10 @@ impl IntentValue {
             IntentValue::RegisterStencilClip { .. } => "register_stencil_clip",
             IntentValue::UnregisterStencilClip { .. } => "unregister_stencil_clip",
             IntentValue::RegisterRouter { .. } => "register_router",
+            IntentValue::RegisterHttpServer { .. } => "register_http_server",
+            IntentValue::RegisterHttpClient { .. } => "register_http_client",
+            IntentValue::HttpClientRequest { .. } => "http_client_request",
+            IntentValue::HttpServerReply { .. } => "http_server_reply",
             IntentValue::RegisterScrolling { .. } => "register_scrolling",
             IntentValue::RegisterTransform { .. } => "register_transform",
             IntentValue::UpdateTransformWorld { .. } => "update_transform_world",
@@ -853,6 +908,9 @@ pub enum SignalKind {
     XrButtonUp,
     XrButtonChanged,
     XrAxisChanged,
+    HttpRequest,
+    HttpResponse,
+    HttpError,
 }
 
 /// Optional timing metadata on the signal envelope.

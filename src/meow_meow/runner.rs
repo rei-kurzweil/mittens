@@ -43,6 +43,142 @@ pub enum ModuleFactoryEvalMode {
     Live,
 }
 
+fn headers_to_value(headers: &[(String, String)]) -> Value {
+    Value::Map(
+        headers
+            .iter()
+            .map(|(name, value)| (name.clone(), Value::String(value.clone())))
+            .collect(),
+    )
+}
+
+fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
+    match signal.event.as_ref() {
+        Some(crate::engine::ecs::EventSignal::DataEvent { name, .. }) => Value::String(name.clone()),
+        Some(crate::engine::ecs::EventSignal::XrButtonDown {
+            hand,
+            control,
+            value,
+            ..
+        })
+        | Some(crate::engine::ecs::EventSignal::XrButtonUp {
+            hand,
+            control,
+            value,
+            ..
+        })
+        | Some(crate::engine::ecs::EventSignal::XrButtonChanged {
+            hand,
+            control,
+            value,
+            ..
+        }) => Value::Map(HashMap::from([
+            ("hand".to_string(), Value::String(format!("{hand:?}"))),
+            ("control".to_string(), Value::String(format!("{control:?}"))),
+            ("value".to_string(), Value::Number(*value as f64)),
+        ])),
+        Some(crate::engine::ecs::EventSignal::XrAxisChanged {
+            hand,
+            control,
+            value,
+            ..
+        }) => Value::Map(HashMap::from([
+            ("hand".to_string(), Value::String(format!("{hand:?}"))),
+            ("control".to_string(), Value::String(format!("{control:?}"))),
+            (
+                "value".to_string(),
+                Value::Array(vec![
+                    Value::Number(value[0] as f64),
+                    Value::Number(value[1] as f64),
+                ]),
+            ),
+        ])),
+        Some(crate::engine::ecs::EventSignal::TextInputChanged { text, caret, .. }) => {
+            Value::Map(HashMap::from([
+                ("text".to_string(), Value::String(text.clone())),
+                ("caret".to_string(), Value::Number(*caret as f64)),
+            ]))
+        }
+        Some(crate::engine::ecs::EventSignal::HttpRequest {
+            request_id,
+            method,
+            path,
+            query,
+            url,
+            headers,
+            body_text,
+            remote_addr,
+        }) => Value::Map(HashMap::from([
+            ("request_id".to_string(), Value::Number(*request_id as f64)),
+            ("method".to_string(), Value::String(method.clone())),
+            ("path".to_string(), Value::String(path.clone())),
+            (
+                "query".to_string(),
+                query
+                    .as_ref()
+                    .map(|query| Value::String(query.clone()))
+                    .unwrap_or(Value::Null),
+            ),
+            ("url".to_string(), Value::String(url.clone())),
+            ("target".to_string(), Value::String(url.clone())),
+            ("headers".to_string(), headers_to_value(headers)),
+            ("body_text".to_string(), Value::String(body_text.clone())),
+            (
+                "remote_addr".to_string(),
+                remote_addr
+                    .as_ref()
+                    .map(|addr| Value::String(addr.clone()))
+                    .unwrap_or(Value::Null),
+            ),
+        ])),
+        Some(crate::engine::ecs::EventSignal::HttpResponse {
+            request_id,
+            status,
+            ok,
+            headers,
+            body_text,
+            url,
+        }) => Value::Map(HashMap::from([
+            ("request_id".to_string(), Value::Number(*request_id as f64)),
+            ("status".to_string(), Value::Number(*status as f64)),
+            ("ok".to_string(), Value::Bool(*ok)),
+            ("headers".to_string(), headers_to_value(headers)),
+            ("body_text".to_string(), Value::String(body_text.clone())),
+            ("url".to_string(), Value::String(url.clone())),
+        ])),
+        Some(crate::engine::ecs::EventSignal::HttpError {
+            request_id,
+            phase,
+            message,
+            url,
+            bind_addr,
+        }) => Value::Map(HashMap::from([
+            (
+                "request_id".to_string(),
+                request_id
+                    .map(|request_id| Value::Number(request_id as f64))
+                    .unwrap_or(Value::Null),
+            ),
+            ("phase".to_string(), Value::String(phase.clone())),
+            ("message".to_string(), Value::String(message.clone())),
+            (
+                "url".to_string(),
+                url.as_ref()
+                    .map(|url| Value::String(url.clone()))
+                    .unwrap_or(Value::Null),
+            ),
+            (
+                "bind_addr".to_string(),
+                bind_addr
+                    .as_ref()
+                    .map(|bind_addr| Value::String(bind_addr.clone()))
+                    .unwrap_or(Value::Null),
+            ),
+        ])),
+        _ => Value::Null,
+    }
+}
+
 impl MeowMeowRunner {
     /// Evaluate `source` without a live ECS world, collecting emitted intents
     /// and errors.
@@ -530,67 +666,7 @@ impl MeowMeowRunner {
                                 move |world: &mut World,
                                       emit: &mut dyn SignalEmitter,
                                       signal: &crate::engine::ecs::Signal| {
-                                    let arg = match signal.event.as_ref() {
-                                        Some(crate::engine::ecs::EventSignal::DataEvent {
-                                            name,
-                                            ..
-                                        }) => Value::String(name.clone()),
-                                        Some(crate::engine::ecs::EventSignal::XrButtonDown {
-                                            hand,
-                                            control,
-                                            value,
-                                            ..
-                                        })
-                                        | Some(crate::engine::ecs::EventSignal::XrButtonUp {
-                                            hand,
-                                            control,
-                                            value,
-                                            ..
-                                        })
-                                        | Some(
-                                            crate::engine::ecs::EventSignal::XrButtonChanged {
-                                                hand,
-                                                control,
-                                                value,
-                                                ..
-                                            },
-                                        ) => Value::Map(HashMap::from([
-                                            ("hand".to_string(), Value::String(format!("{hand:?}"))),
-                                            (
-                                                "control".to_string(),
-                                                Value::String(format!("{control:?}")),
-                                            ),
-                                            ("value".to_string(), Value::Number(*value as f64)),
-                                        ])),
-                                        Some(crate::engine::ecs::EventSignal::XrAxisChanged {
-                                            hand,
-                                            control,
-                                            value,
-                                            ..
-                                        }) => Value::Map(HashMap::from([
-                                            ("hand".to_string(), Value::String(format!("{hand:?}"))),
-                                            (
-                                                "control".to_string(),
-                                                Value::String(format!("{control:?}")),
-                                            ),
-                                            (
-                                                "value".to_string(),
-                                                Value::Array(vec![
-                                                    Value::Number(value[0] as f64),
-                                                    Value::Number(value[1] as f64),
-                                                ]),
-                                            ),
-                                        ])),
-                                        Some(crate::engine::ecs::EventSignal::TextInputChanged {
-                                            component_id: _,
-                                            text,
-                                            caret,
-                                        }) => Value::Map(HashMap::from([
-                                            ("text".to_string(), Value::String(text.clone())),
-                                            ("caret".to_string(), Value::Number(*caret as f64)),
-                                        ])),
-                                        _ => Value::Null,
-                                    };
+                                    let arg = event_arg_value(signal);
                                     if let Err(e) = eval_mms_fn(
                                         &handler,
                                         vec![arg],

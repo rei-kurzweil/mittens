@@ -88,6 +88,8 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterStencilClip { component_ids }
             | IntentValue::UnregisterStencilClip { component_ids }
             | IntentValue::RegisterRouter { component_ids }
+            | IntentValue::RegisterHttpServer { component_ids }
+            | IntentValue::RegisterHttpClient { component_ids }
             | IntentValue::RegisterScrolling { component_ids }
             | IntentValue::RegisterTransform { component_ids }
             | IntentValue::UpdateTransform { component_ids, .. }
@@ -166,7 +168,9 @@ impl SignalPipelineProcessor {
             | IntentValue::RemoveSignalRouteUpward { .. }
             | IntentValue::SpawnComponentTree { .. }
             | IntentValue::PoseCapture { .. }
-            | IntentValue::PoseApply { .. } => None,
+            | IntentValue::PoseApply { .. }
+            | IntentValue::HttpClientRequest { .. }
+            | IntentValue::HttpServerReply { .. } => None,
         }
     }
 
@@ -197,6 +201,8 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterStencilClip { component_ids }
             | IntentValue::UnregisterStencilClip { component_ids }
             | IntentValue::RegisterRouter { component_ids }
+            | IntentValue::RegisterHttpServer { component_ids }
+            | IntentValue::RegisterHttpClient { component_ids }
             | IntentValue::RegisterScrolling { component_ids }
             | IntentValue::RegisterTransform { component_ids }
             | IntentValue::UpdateTransform { component_ids, .. }
@@ -276,7 +282,9 @@ impl SignalPipelineProcessor {
             IntentValue::TextInputMoveCaretTo { .. } => None,
             IntentValue::SpawnComponentTree { .. }
             | IntentValue::PoseCapture { .. }
-            | IntentValue::PoseApply { .. } => None,
+            | IntentValue::PoseApply { .. }
+            | IntentValue::HttpClientRequest { .. }
+            | IntentValue::HttpServerReply { .. } => None,
         }
     }
 }

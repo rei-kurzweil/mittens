@@ -158,7 +158,7 @@ mod tests {
         systems: &mut SystemWorld,
         world: &mut World,
         visuals: &mut VisualWorld,
-        render_assets: &RenderAssets,
+        render_assets: &mut RenderAssets,
         emit: &mut CommandQueue,
     ) {
         systems.process_commands(world, visuals, render_assets, emit);

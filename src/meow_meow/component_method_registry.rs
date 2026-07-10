@@ -11,6 +11,14 @@ pub(crate) fn supports_component_method(component_type: &str, method: &str) -> b
             component_type,
             "EM" | "Emissive" | "EmissiveComponent" | "emissive"
         ) && matches!(method, "set_intensity" | "on" | "off"))
+        || (matches!(
+            component_type,
+            "HttpClient" | "HttpClientComponent" | "http_client"
+        ) && matches!(method, "get" | "post" | "put" | "delete"))
+        || (matches!(
+            component_type,
+            "HttpServer" | "HttpServerComponent" | "http_server"
+        ) && matches!(method, "reply_text"))
 }
 
 pub(crate) fn invoke_component_method(
@@ -113,6 +121,67 @@ pub(crate) fn invoke_component_method(
             });
             Ok(Value::Null)
         }
+        ("HttpClient" | "HttpClientComponent" | "http_client", "get" | "delete") => {
+            let [url] = match args {
+                [url] => [value_as_string(url, method)?],
+                other => {
+                    return Err(format!(
+                        "{method}: expected one string url argument, got {:?}",
+                        other
+                    ));
+                }
+            };
+            emit_intent(IntentValue::HttpClientRequest {
+                component_id: id,
+                method: method.to_ascii_uppercase(),
+                url,
+                headers: vec![],
+                body_text: None,
+            });
+            Ok(Value::Null)
+        }
+        ("HttpClient" | "HttpClientComponent" | "http_client", "post" | "put") => {
+            let (url, body_text) = match args {
+                [url, body_text] => (value_as_string(url, method)?, value_as_string(body_text, method)?),
+                other => {
+                    return Err(format!(
+                        "{method}: expected url and body_text string arguments, got {:?}",
+                        other
+                    ));
+                }
+            };
+            emit_intent(IntentValue::HttpClientRequest {
+                component_id: id,
+                method: method.to_ascii_uppercase(),
+                url,
+                headers: vec![],
+                body_text: Some(body_text),
+            });
+            Ok(Value::Null)
+        }
+        ("HttpServer" | "HttpServerComponent" | "http_server", "reply_text") => {
+            let (request_id, status, body_text) = match args {
+                [request, status, body_text] => (
+                    request_id_from_value(request)?,
+                    value_as_u16(status, method)?,
+                    value_as_string(body_text, method)?,
+                ),
+                other => {
+                    return Err(format!(
+                        "reply_text: expected request, status, body_text arguments, got {:?}",
+                        other
+                    ));
+                }
+            };
+            emit_intent(IntentValue::HttpServerReply {
+                component_id: id,
+                request_id,
+                status,
+                headers: vec![],
+                body_text,
+            });
+            Ok(Value::Null)
+        }
         _ => Err(format!(
             "unsupported live component method '{}.{}'",
             component_type, method
@@ -135,4 +204,31 @@ fn value_as_f32_array<const N: usize>(value: &Value) -> Result<[f32; N], String>
         }
     }
     Ok(out)
+}
+
+fn value_as_string(value: &Value, method: &str) -> Result<String, String> {
+    match value {
+        Value::String(s) => Ok(s.clone()),
+        other => Err(format!("{method}: expected string, got {:?}", other)),
+    }
+}
+
+fn value_as_u16(value: &Value, method: &str) -> Result<u16, String> {
+    match value {
+        Value::Number(n) if *n >= 0.0 && *n <= u16::MAX as f64 => Ok(*n as u16),
+        other => Err(format!("{method}: expected status number, got {:?}", other)),
+    }
+}
+
+fn request_id_from_value(value: &Value) -> Result<u64, String> {
+    let Value::Map(map) = value else {
+        return Err(format!("reply_text: expected request object, got {:?}", value));
+    };
+    let Some(Value::Number(request_id)) = map.get("request_id") else {
+        return Err("reply_text: request missing numeric request_id".to_string());
+    };
+    if *request_id < 0.0 {
+        return Err("reply_text: request_id must be non-negative".to_string());
+    }
+    Ok(*request_id as u64)
 }

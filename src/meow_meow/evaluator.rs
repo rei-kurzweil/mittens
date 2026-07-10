@@ -2791,6 +2791,9 @@ fn parse_signal_kind(s: &str) -> Result<SignalKind, String> {
         "XrAxisChanged" => Ok(SignalKind::XrAxisChanged),
         "TextInputFocusChanged" => Ok(SignalKind::TextInputFocusChanged),
         "TextInputChanged" => Ok(SignalKind::TextInputChanged),
+        "HttpRequest" => Ok(SignalKind::HttpRequest),
+        "HttpResponse" => Ok(SignalKind::HttpResponse),
+        "HttpError" => Ok(SignalKind::HttpError),
         other => Err(format!("unknown signal kind: '{}'", other)),
     }
 }

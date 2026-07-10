@@ -40,6 +40,8 @@ pub mod gizmo;
 pub mod gltf;
 pub mod gravity;
 pub mod grid;
+pub mod http_client;
+pub mod http_server;
 pub mod html_element;
 pub mod ik_chain;
 pub mod input;
@@ -148,6 +150,8 @@ pub use gizmo::{
 };
 pub use gravity::GravityComponent;
 pub use grid::GridComponent;
+pub use http_client::HttpClientComponent;
+pub use http_server::HttpServerComponent;
 pub use html_element::{ElementType, HtmlElementComponent};
 pub use ik_chain::{IKChainComponent, IKSolver};
 pub use input::InputComponent;

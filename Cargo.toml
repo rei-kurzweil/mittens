@@ -13,7 +13,8 @@ ash = "0.38"
 
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 openxr = "0.19"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "json", "blocking"] }
+tiny_http = "0.12"
 winit = "0.30"
 slotmap = "1.0.7"
 serde = { version = "1.0", features = ["derive"] }

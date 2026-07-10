@@ -121,6 +121,46 @@ impl RxMutationExecutor {
                     systems.register_router(world, emit, component);
                 }
             }
+            IntentValue::RegisterHttpServer { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_http_server(world, emit, component);
+                }
+            }
+            IntentValue::RegisterHttpClient { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_http_client(world, emit, component);
+                }
+            }
+            IntentValue::HttpClientRequest {
+                component_id,
+                method,
+                url,
+                headers,
+                body_text,
+            } => {
+                systems.http_client.issue_request(
+                    *component_id,
+                    method.clone(),
+                    url.clone(),
+                    headers.clone(),
+                    body_text.clone(),
+                );
+            }
+            IntentValue::HttpServerReply {
+                component_id,
+                request_id,
+                status,
+                headers,
+                body_text,
+            } => {
+                systems.http_server.deliver_reply(
+                    *component_id,
+                    *request_id,
+                    *status,
+                    headers.clone(),
+                    body_text.clone(),
+                );
+            }
             IntentValue::RegisterScrolling { component_ids } => {
                 for &component in component_ids.iter() {
                     systems.register_scrolling(world, emit, component);

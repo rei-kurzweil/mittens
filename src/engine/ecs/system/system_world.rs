@@ -9,6 +9,8 @@ use crate::engine::ecs::system::ClippingSystem;
 use crate::engine::ecs::system::ClockSystem;
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::GLTFSystem;
+use crate::engine::ecs::system::HttpClientSystem;
+use crate::engine::ecs::system::HttpServerSystem;
 use crate::engine::ecs::system::InputSystem;
 use crate::engine::ecs::system::InputXRGamepadSystem;
 use crate::engine::ecs::system::KineticResponseSystem;
@@ -69,6 +71,8 @@ pub struct SystemWorld {
     pub clipping: ClippingSystem,
     pub renderer_stats: RendererStatsSystem,
     pub router: RouterSystem,
+    pub http_server: HttpServerSystem,
+    pub http_client: HttpClientSystem,
     pub scrolling: ScrollingSystem,
 
     pub pointer: PointerSystem,
@@ -637,8 +641,9 @@ impl SystemWorld {
     ) {
         use crate::engine::ecs::component::{
             CollisionComponent, ControllerXRComponent, InputXRComponent, KineticResponseComponent,
-            PointerComponent, RayCastComponent, RenderableComponent, SignalRouteUpwardComponent,
-            StencilClipComponent, TransformComponent,
+            HttpClientComponent, HttpServerComponent, PointerComponent, RayCastComponent,
+            RenderableComponent, SignalRouteUpwardComponent, StencilClipComponent,
+            TransformComponent,
         };
 
         // Best-effort: remove system state for known component types before deleting.
@@ -708,6 +713,18 @@ impl SystemWorld {
                 self.remove_controller_xr(world, visuals, n);
             }
             if world
+                .get_component_by_id_as::<HttpServerComponent>(n)
+                .is_some()
+            {
+                self.http_server.remove_component(n);
+            }
+            if world
+                .get_component_by_id_as::<HttpClientComponent>(n)
+                .is_some()
+            {
+                self.http_client.remove_component(n);
+            }
+            if world
                 .get_component_by_id_as::<TransformComponent>(n)
                 .is_some()
             {
@@ -746,6 +763,24 @@ impl SystemWorld {
         std::mem::take(&mut self.repl_command_queue)
     }
 
+    pub fn register_http_server(
+        &mut self,
+        world: &World,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        component: ComponentId,
+    ) {
+        self.http_server.register_component(world, emit, component);
+    }
+
+    pub fn register_http_client(
+        &mut self,
+        world: &World,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        component: ComponentId,
+    ) {
+        self.http_client.register_component(world, emit, component);
+    }
+
     /// Execute pending signals up to `max_signals`.
     ///
     /// Semantics:
@@ -761,6 +796,9 @@ impl SystemWorld {
         queue: &mut crate::engine::ecs::CommandQueue,
         max_signals: usize,
     ) -> usize {
+        self.http_server.drain_messages(&mut self.rx);
+        self.http_client.drain_completions(&mut self.rx);
+
         let mut processed = 0usize;
 
         let mut intent_executor = crate::engine::ecs::rx::RxIntentExecutor::default();
