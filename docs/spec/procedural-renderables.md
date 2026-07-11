@@ -26,6 +26,7 @@ These renderables are generated procedurally by engine code and registered into
 
 Currently implemented:
 
+- `icosahedron`
 - `partial_annulus_2d`
 - `star`
 - `heart`
@@ -35,6 +36,29 @@ Currently implemented:
 The current Rust-facing constructors live on:
 
 - [src/engine/ecs/component/renderable.rs](../../src/engine/ecs/component/renderable.rs)
+
+### `RenderableComponent::icosahedron(...)`
+
+```rust
+RenderableComponent::icosahedron(render_assets, tessellations, sphericalness)
+```
+
+Parameter meanings:
+
+- `tessellations: u32`
+- `sphericalness: f32`
+
+Geometry contract:
+
+- starts from an icosahedron centered at the origin
+- recursive face tessellation subdivides each triangle into 4
+- `sphericalness=0.0` keeps subdivided vertices on the original face planes
+- `sphericalness=1.0` projects them onto the circumscribed sphere
+- intermediate values blend linearly between those two positions
+
+Implementation:
+
+- [MeshFactory::icosahedron](../../src/engine/graphics/mesh.rs)
 
 ### `RenderableComponent::partial_annulus_2d(...)`
 
@@ -124,6 +148,7 @@ Implementation:
 
 These Rust constructors are exposed to MMS as:
 
+- `R.icosahedron(...)`
 - `R.partial_annulus_2d(...)`
 - `R.star(...)`
 - `R.heart(...)`
@@ -149,6 +174,7 @@ That metadata is used so saving / re-emitting MMS can preserve:
 
 Current emitted MMS forms:
 
+- `Renderable.icosahedron(...)`
 - `Renderable.partial_annulus_2d(...)`
 - `Renderable.star(...)`
 - `Renderable.heart(...)`

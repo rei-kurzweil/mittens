@@ -13,6 +13,10 @@ pub enum AuthoredRenderableShape {
     Cone {
         segments: u32,
     },
+    Icosahedron {
+        tessellations: u32,
+        sphericalness: f32,
+    },
     PartialAnnulus2d {
         inner_radius: f32,
         outer_radius: f32,
@@ -136,9 +140,24 @@ impl RenderableComponent {
     /// Predefined renderable: cone primitive (unique CPU mesh registered into `render_assets`).
     pub fn cone_dynamic(render_assets: &mut RenderAssets, segments: u32) -> Self {
         let h = render_assets.register_mesh(MeshFactory::cone(segments));
-        let mut s =
-            Self::new(Renderable::new(h, MaterialHandle::TOON_MESH).with_base_mesh(CpuMeshHandle::CONE));
+        let mut s = Self::new(
+            Renderable::new(h, MaterialHandle::TOON_MESH).with_base_mesh(CpuMeshHandle::CONE),
+        );
         s.authored_shape = Some(AuthoredRenderableShape::Cone { segments });
+        s
+    }
+
+    pub fn icosahedron(
+        render_assets: &mut RenderAssets,
+        tessellations: u32,
+        sphericalness: f32,
+    ) -> Self {
+        let h = render_assets.register_mesh(MeshFactory::icosahedron(tessellations, sphericalness));
+        let mut s = Self::new(Renderable::new(h, MaterialHandle::TOON_MESH));
+        s.authored_shape = Some(AuthoredRenderableShape::Icosahedron {
+            tessellations,
+            sphericalness,
+        });
         s
     }
 
@@ -277,6 +296,14 @@ impl Component for RenderableComponent {
             Some(AuthoredRenderableShape::Cone { segments }) => {
                 ce_call("Renderable", "cone", vec![num(*segments as f64)])
             }
+            Some(AuthoredRenderableShape::Icosahedron {
+                tessellations,
+                sphericalness,
+            }) => ce_call(
+                "Renderable",
+                "icosahedron",
+                vec![num(*tessellations as f64), num(*sphericalness as f64)],
+            ),
             Some(AuthoredRenderableShape::PartialAnnulus2d {
                 inner_radius,
                 outer_radius,

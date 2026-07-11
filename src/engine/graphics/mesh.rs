@@ -82,6 +82,43 @@ fn quadratic_bezier2(a: [f32; 2], b: [f32; 2], c: [f32; 2], t: f32) -> [f32; 2] 
     add2(add2(mul2(a, u * u), mul2(b, 2.0 * u * t)), mul2(c, t * t))
 }
 
+fn add3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
+fn sub3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn mul3(v: [f32; 3], s: f32) -> [f32; 3] {
+    [v[0] * s, v[1] * s, v[2] * s]
+}
+
+fn len3(v: [f32; 3]) -> f32 {
+    (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
+}
+
+fn normalize3(v: [f32; 3]) -> [f32; 3] {
+    let len = len3(v).max(1.0e-6);
+    [v[0] / len, v[1] / len, v[2] / len]
+}
+
+fn cross3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn lerp3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
+    [
+        a[0] + (b[0] - a[0]) * t,
+        a[1] + (b[1] - a[1]) * t,
+        a[2] + (b[2] - a[2]) * t,
+    ]
+}
+
 fn append_rounded_corner_points(
     boundary: &mut Vec<[f32; 2]>,
     prev: [f32; 2],
@@ -395,6 +432,111 @@ impl MeshFactory {
             0, 2, 3, // side
             1, 3, 2, // bottom
         ];
+
+        CpuMesh::new(vertices, indices)
+    }
+
+    /// Icosahedron with optional recursive tessellation and spherical blending.
+    ///
+    /// `tessellations` is the number of recursive 4-way triangle splits.
+    /// `sphericalness` blends from planar face subdivision (`0.0`) to an icosphere (`1.0`).
+    pub fn icosahedron(tessellations: u32, sphericalness: f32) -> CpuMesh {
+        let radius = 0.5_f32;
+        let sphericalness = sphericalness.clamp(0.0, 1.0);
+        let phi = (1.0 + 5.0_f32.sqrt()) * 0.5;
+
+        let base_positions = [
+            normalize3([-1.0, phi, 0.0]),
+            normalize3([1.0, phi, 0.0]),
+            normalize3([-1.0, -phi, 0.0]),
+            normalize3([1.0, -phi, 0.0]),
+            normalize3([0.0, -1.0, phi]),
+            normalize3([0.0, 1.0, phi]),
+            normalize3([0.0, -1.0, -phi]),
+            normalize3([0.0, 1.0, -phi]),
+            normalize3([phi, 0.0, -1.0]),
+            normalize3([phi, 0.0, 1.0]),
+            normalize3([-phi, 0.0, -1.0]),
+            normalize3([-phi, 0.0, 1.0]),
+        ]
+        .map(|p| mul3(p, radius));
+
+        let base_faces = [
+            [0, 11, 5],
+            [0, 5, 1],
+            [0, 1, 7],
+            [0, 7, 10],
+            [0, 10, 11],
+            [1, 5, 9],
+            [5, 11, 4],
+            [11, 10, 2],
+            [10, 7, 6],
+            [7, 1, 8],
+            [3, 9, 4],
+            [3, 4, 2],
+            [3, 2, 6],
+            [3, 6, 8],
+            [3, 8, 9],
+            [4, 9, 5],
+            [2, 4, 11],
+            [6, 2, 10],
+            [8, 6, 7],
+            [9, 8, 1],
+        ];
+
+        let mut triangles: Vec<[[f32; 3]; 3]> = base_faces
+            .iter()
+            .map(|face| {
+                [
+                    base_positions[face[0]],
+                    base_positions[face[1]],
+                    base_positions[face[2]],
+                ]
+            })
+            .collect();
+
+        for _ in 0..tessellations {
+            let mut next = Vec::with_capacity(triangles.len() * 4);
+            for [a, b, c] in triangles {
+                let ab = mul3(add3(a, b), 0.5);
+                let bc = mul3(add3(b, c), 0.5);
+                let ca = mul3(add3(c, a), 0.5);
+                next.push([a, ab, ca]);
+                next.push([ab, b, bc]);
+                next.push([ca, bc, c]);
+                next.push([ab, bc, ca]);
+            }
+            triangles = next;
+        }
+
+        let mut vertices = Vec::with_capacity(triangles.len() * 3);
+        let mut indices = Vec::with_capacity(triangles.len() * 3);
+
+        for triangle in triangles {
+            let [planar_a, planar_b, planar_c] = triangle;
+            let final_positions = [planar_a, planar_b, planar_c].map(|planar| {
+                let spherical = mul3(normalize3(planar), radius);
+                lerp3(planar, spherical, sphericalness)
+            });
+
+            let face_normal = normalize3(cross3(
+                sub3(final_positions[1], final_positions[0]),
+                sub3(final_positions[2], final_positions[0]),
+            ));
+
+            for pos in final_positions {
+                let spherical_normal = normalize3(pos);
+                let normal = normalize3(lerp3(face_normal, spherical_normal, sphericalness));
+                let u = 0.5 + normal[2].atan2(normal[0]) / std::f32::consts::TAU;
+                let v = 0.5 - normal[1].asin() / std::f32::consts::PI;
+                vertices.push(CpuVertex {
+                    pos,
+                    uv: [u, v],
+                    normal,
+                });
+                indices.push((vertices.len() - 1) as u32);
+            }
+        }
 
         CpuMesh::new(vertices, indices)
     }
@@ -774,8 +916,12 @@ impl MeshFactory {
 mod tests {
     use super::MeshFactory;
 
-    fn radius(point: [f32; 3]) -> f32 {
+    fn radius2(point: [f32; 3]) -> f32 {
         (point[0] * point[0] + point[1] * point[1]).sqrt()
+    }
+
+    fn radius3(point: [f32; 3]) -> f32 {
+        (point[0] * point[0] + point[1] * point[1] + point[2] * point[2]).sqrt()
     }
 
     #[test]
@@ -786,7 +932,7 @@ mod tests {
         assert_eq!(boundary.len(), 10);
         for (index, vertex) in boundary.iter().enumerate() {
             let expected = if index % 2 == 0 { 0.5 } else { 0.2 };
-            assert!((radius(vertex.pos) - expected).abs() < 1.0e-4);
+            assert!((radius2(vertex.pos) - expected).abs() < 1.0e-4);
         }
     }
 
@@ -796,8 +942,26 @@ mod tests {
         let boundary = &mesh.vertices[1..];
 
         assert!(boundary.iter().any(|vertex| {
-            let r = radius(vertex.pos);
+            let r = radius2(vertex.pos);
             r > 0.2 + 1.0e-4 && r < 0.5 - 1.0e-4
         }));
+    }
+
+    #[test]
+    fn icosahedron_tessellation_increases_triangle_count_by_four_per_level() {
+        let base = MeshFactory::icosahedron(0, 0.0);
+        let subdivided = MeshFactory::icosahedron(2, 0.0);
+
+        assert_eq!(base.indices_u32.len() / 3, 20);
+        assert_eq!(subdivided.indices_u32.len() / 3, 20 * 4 * 4);
+    }
+
+    #[test]
+    fn icosahedron_sphericalness_one_projects_vertices_to_radius() {
+        let mesh = MeshFactory::icosahedron(1, 1.0);
+
+        for vertex in &mesh.vertices {
+            assert!((radius3(vertex.pos) - 0.5).abs() < 1.0e-4);
+        }
     }
 }

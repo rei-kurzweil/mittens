@@ -20,21 +20,21 @@ use crate::engine::ecs::component::{
     EditorInteractionMode, ElementType, EmissiveComponent, EmissivePassComponent,
     FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent,
     GestureCoordTypeComponent, GravityComponent, GridComponent, HtmlElementComponent,
-    IKChainComponent, IKSolver, InputComponent, InputTransformModeComponent, InputXRComponent,
-    InputXRGamepadComponent, InspectLayoutComponent, JustifyContent, KeyframeComponent,
-    KineticResponseComponent, LayoutBoundsComponent, LayoutComponent, LightQuantizationComponent,
-    MeshComponent, MirrorComponent, MusicNote, MusicNoteComponent, NormalVisualisationComponent,
-    HttpClientComponent, HttpServerComponent, OpacityComponent, OptionComponent, OscillatorType,
-    Overflow, OverlayComponent, PointLightComponent, PointerComponent, PointerEvents, PoseCaptureComponent,
-    PoseCaptureLibraryComponent, PoseCapturePoseComponent, Position, QuatTemporalFilterComponent,
-    QuatYawFollowComponent, RayCastComponent, RaycastableComponent, RaycastableShapeComponent,
-    RaycastableShapeType, RenderGraphComponent, RenderableComponent, RendererSettingsComponent,
-    RendererStatsComponent, RouterComponent, ScrollingComponent, SelectableComponent,
-    SelectionComponent, SerializeComponent, SignalObserverRouterComponent,
-    SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent, StencilClipComponent,
-    StyleComponent, TextAlign, TextComponent, TextInputComponent, TextShadowComponent,
-    TextureComponent, TextureFilteringComponent, TransformComponent, TransformDropComponent,
-    TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
+    HttpClientComponent, HttpServerComponent, IKChainComponent, IKSolver, InputComponent,
+    InputTransformModeComponent, InputXRComponent, InputXRGamepadComponent, InspectLayoutComponent,
+    JustifyContent, KeyframeComponent, KineticResponseComponent, LayoutBoundsComponent,
+    LayoutComponent, LightQuantizationComponent, MeshComponent, MirrorComponent, MusicNote,
+    MusicNoteComponent, NormalVisualisationComponent, OpacityComponent, OptionComponent,
+    OscillatorType, Overflow, OverlayComponent, PointLightComponent, PointerComponent,
+    PointerEvents, PoseCaptureComponent, PoseCaptureLibraryComponent, PoseCapturePoseComponent,
+    Position, QuatTemporalFilterComponent, QuatYawFollowComponent, RayCastComponent,
+    RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType, RenderGraphComponent,
+    RenderableComponent, RendererSettingsComponent, RendererStatsComponent, RouterComponent,
+    ScrollingComponent, SelectableComponent, SelectionComponent, SerializeComponent,
+    SignalObserverRouterComponent, SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent,
+    StencilClipComponent, StyleComponent, TextAlign, TextComponent, TextInputComponent,
+    TextShadowComponent, TextureComponent, TextureFilteringComponent, TransformComponent,
+    TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
     TransformGizmoCoordSpace, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
     TransformGizmoTranslateComponent, TransformMapRotationComponent, TransformMapScaleComponent,
     TransformMapTranslationComponent, TransformMergeTRSComponent, TransformParentComponent,
@@ -1126,6 +1126,15 @@ fn create_component(
                     })
                 }
             }
+            Some("icosahedron") => with_render_assets_mut(|render_assets| {
+                let tessellations = arg_u32(args, 0).unwrap_or(0);
+                let sphericalness = arg_f32(args, 1).unwrap_or(0.0);
+                Ok(world.add_component(RenderableComponent::icosahedron(
+                    render_assets,
+                    tessellations,
+                    sphericalness,
+                )))
+            }),
             Some("sphere") => add!(RenderableComponent::sphere()),
             Some("triangle") => add!(RenderableComponent::triangle()),
             Some("square") => add!(RenderableComponent::square()),

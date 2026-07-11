@@ -19,6 +19,7 @@ For the Rust/API surface and implementation-facing contracts, see:
 
 You can currently author these procedural renderables in MMS:
 
+- `R.icosahedron(...)`
 - `R.partial_annulus_2d(...)`
 - `R.star(...)`
 - `R.heart(...)`
@@ -29,7 +30,39 @@ All of them can be styled the same way as other renderables, for example with:
 - `EM.on()`
 - `TextureFiltering.linear()`
 
-## 1. Partial annulus
+## 1. Icosahedron
+
+Authoring form:
+
+```mms
+R.icosahedron(tessellations, sphericalness)
+```
+
+Parameter meanings:
+
+- `tessellations`: recursive subdivision depth
+- `sphericalness`: `0.0` keeps subdivision on the original face planes, `1.0` makes an icosphere
+
+Example:
+
+```mms
+T.position(0.0, 0.0, -4.0) {
+    R.icosahedron(2, 0.85) {
+        C.rgba(0.25, 0.8, 1.0, 1.0)
+        EM.on()
+    }
+}
+```
+
+Base low-poly form:
+
+```mms
+R.icosahedron(0, 0.0) {
+    C.rgba(1.0, 0.75, 0.25, 1.0)
+}
+```
+
+## 2. Partial annulus
 
 Authoring form:
 
@@ -66,7 +99,7 @@ Quarter-circle reminder:
 
 - `1.5707963` is approximately `π / 2`
 
-## 2. Star
+## 3. Star
 
 Authoring form:
 
@@ -105,7 +138,7 @@ R.star(5, 0.45, 0, 0) {
 }
 ```
 
-## 3. Heart
+## 4. Heart
 
 Authoring form:
 
@@ -128,7 +161,7 @@ T.position(2.55, -1.85, -4.0).scale(1.7, 1.7, 1.0) {
 }
 ```
 
-## 4. Building the rainbow example in MMS
+## 5. Building the rainbow example in MMS
 
 A concentric quarter-rainbow is just multiple `R.partial_annulus_2d(...)`
 renderables with different radii:
@@ -146,7 +179,7 @@ T.position(-2.1, -2.1, -4.0) {
 If you want small gaps between bands, increase the distance between one band’s
 `outer_radius` and the next band’s `inner_radius`.
 
-## 5. Full example
+## 6. Full example
 
 See:
 
@@ -159,6 +192,8 @@ That file includes:
 - one heart
 
 all authored directly in MMS.
+
+The same runtime path also supports `R.icosahedron(...)`.
 
 ## Notes
 
