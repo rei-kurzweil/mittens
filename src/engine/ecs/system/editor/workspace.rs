@@ -14,6 +14,7 @@ pub(crate) const WORLD_PANEL_ROOT_SELECTOR: &str = "#world_panel_root";
 pub(crate) const PANEL_CONTENT_SLOT_SELECTOR: &str = "#content_slot";
 pub(crate) const WORLD_PANEL_SELECTION_SELECTOR: &str = "#world_panel_selection";
 pub(crate) const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
+pub(crate) const COLOR_PANEL_ROOT_SELECTOR: &str = "#color_panel_root";
 
 #[derive(Debug, Default)]
 pub(crate) struct EditorWorkspaceRuntime {
@@ -100,10 +101,11 @@ impl EditorWorkspaceRuntime {
     ) {
         let mut mounted = HashMap::new();
 
-        let panel_roots: [(PanelKind, &str); 5] = [
+        let panel_roots: [(PanelKind, &str); 6] = [
             (PanelKind::World, WORLD_PANEL_ROOT_SELECTOR),
             (PanelKind::Grid, GRID_PANEL_ROOT_SELECTOR),
             (PanelKind::Paint, PAINT_PANEL_ROOT_SELECTOR),
+            (PanelKind::Color, COLOR_PANEL_ROOT_SELECTOR),
             (PanelKind::Assets, "#assets_root"),
             (PanelKind::Pose, POSE_PANEL_ROOT_SELECTOR),
         ];

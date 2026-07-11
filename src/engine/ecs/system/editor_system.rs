@@ -1,9 +1,11 @@
 use crate::engine::ecs::component::{
     EditorComponent, EditorInteractionMode, RaycastableComponent, SelectableComponent,
-    SerializeComponent, TransformComponent, TransformGizmoComponent,
+    SerializeComponent, TransformComponent,
 };
-use crate::engine::ecs::system::editor::context::EditorContextState;
-use crate::engine::ecs::system::editor_scene_hit::resolve_editor_scene_hit;
+use crate::engine::ecs::system::editor::context::{
+    EditorContextState, ensure_shared_workspace_transform_gizmo_global,
+};
+use crate::engine::ecs::system::editor_scene_hit::resolve_world_scene_hit;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, RxWorld, SignalKind, World};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -53,10 +55,12 @@ impl EditorSystem {
                     return;
                 }
 
-                let Some(scene_hit) = resolve_editor_scene_hit(world, *renderable) else {
+                let Some(scene_hit) = resolve_world_scene_hit(world, *renderable) else {
                     return;
                 };
-                if scene_hit.editor_root != editor_root {
+                let handles_non_editor_hit = scene_hit.editor_root.is_none()
+                    && editor_context.active_editor == Some(editor_root);
+                if scene_hit.editor_root != Some(editor_root) && !handles_non_editor_hit {
                     return;
                 }
 
@@ -174,8 +178,7 @@ pub(crate) fn select_editor_target(
         "🧲🛠️🐛 select_editor_target called editor_root={editor_root:?} target_transform={target_transform:?} mode={interaction_mode:?} update_repl_cwd={update_repl_cwd}"
     );
 
-    let gizmo = resolve_editor_transform_gizmo(world, editor_root)
-        .or_else(|| spawn_editor_transform_gizmo(world, emit, editor_root));
+    let gizmo = ensure_shared_workspace_transform_gizmo_global(world, emit);
 
     if let Some(gizmo) = gizmo {
         emit.push_intent_now(
@@ -190,20 +193,16 @@ pub(crate) fn select_editor_target(
     if let Some(ed) = world.get_component_by_id_as_mut::<EditorComponent>(editor_root) {
         ed.selected = Some(target_transform);
     }
-
-    emit.push_event(
-        editor_root,
-        EventSignal::SelectionChanged {
-            selection_root: editor_root,
-            mode: crate::engine::ecs::component::SelectionMode::Single,
-            selected_entries: vec![crate::engine::ecs::component::SelectionEntry {
-                index: None,
-                component: target_transform,
-            }],
-            selected_component: Some(target_transform),
-            selected_payload: Some(target_transform),
-        },
-    );
+    emit.push_event(editor_root, EventSignal::SelectionChanged {
+        selection_root: editor_root,
+        mode: crate::engine::ecs::component::SelectionMode::Single,
+        selected_entries: vec![crate::engine::ecs::component::SelectionEntry {
+            index: None,
+            component: target_transform,
+        }],
+        selected_component: Some(target_transform),
+        selected_payload: Some(target_transform),
+    });
 
     if update_repl_cwd {
         if let Some(node) = world.get_component_node(target_transform) {
@@ -221,87 +220,6 @@ pub(crate) fn select_editor_target(
             );
         }
     }
-}
-
-fn spawn_editor_transform_gizmo(
-    world: &mut World,
-    emit: &mut dyn crate::engine::ecs::SignalEmitter,
-    editor_root: ComponentId,
-) -> Option<ComponentId> {
-    // --- Transform gizmo ---
-    // Create a tiny anchor transform under the editor root so the gizmo has a Transform
-    // ancestor before it is first moved onto a clicked target.
-    let anchor =
-        world.add_component_boxed_named("editor_gizmo_anchor", Box::new(TransformComponent::new()));
-    let _ = world.add_child(editor_root, anchor);
-    let anchor_selectable = world.add_component_boxed_named(
-        "editor_gizmo_anchor_selectable",
-        Box::new(SelectableComponent::off()),
-    );
-    let _ = world.add_child(anchor, anchor_selectable);
-    let anchor_serialize = world.add_component_boxed_named(
-        "editor_gizmo_anchor_serialize",
-        Box::new(SerializeComponent::off()),
-    );
-    let _ = world.add_child(anchor, anchor_serialize);
-
-    // Interpret `scale` as world-space size (GizmoSystem compensates for inherited scales).
-    let gizmo = world.add_component_boxed_named(
-        "editor_transform_gizmo",
-        Box::new(TransformGizmoComponent::new().with_scale(0.5)),
-    );
-    let _ = world.add_child(anchor, gizmo);
-
-    // Initialize to trigger RegisterTransformGizmo and spawn visuals.
-    world.init_component_tree(anchor, emit);
-
-    if let Some(ed) = world.get_component_by_id_as_mut::<EditorComponent>(editor_root) {
-        ed.transform_gizmo = Some(gizmo);
-    }
-
-    Some(gizmo)
-}
-
-fn resolve_editor_transform_gizmo(
-    world: &mut World,
-    editor_root: ComponentId,
-) -> Option<ComponentId> {
-    // Fast path: cached id.
-    if let Some(ed) = world.get_component_by_id_as::<EditorComponent>(editor_root) {
-        if let Some(g) = ed.transform_gizmo {
-            if world
-                .get_component_by_id_as::<TransformGizmoComponent>(g)
-                .is_some()
-            {
-                return Some(g);
-            }
-        }
-    }
-
-    let found = find_transform_gizmo_in_subtree(world, editor_root);
-
-    if let Some(ed) = world.get_component_by_id_as_mut::<EditorComponent>(editor_root) {
-        ed.transform_gizmo = found;
-    }
-
-    found
-}
-
-fn find_transform_gizmo_in_subtree(world: &World, root: ComponentId) -> Option<ComponentId> {
-    let mut stack: Vec<ComponentId> = vec![root];
-    while let Some(node) = stack.pop() {
-        if world
-            .get_component_by_id_as::<TransformGizmoComponent>(node)
-            .is_some()
-        {
-            return Some(node);
-        }
-
-        for &ch in world.children_of(node).iter() {
-            stack.push(ch);
-        }
-    }
-    None
 }
 
 #[cfg(test)]

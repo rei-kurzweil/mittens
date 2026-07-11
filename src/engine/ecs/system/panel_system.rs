@@ -24,6 +24,7 @@ pub enum PanelKind {
     World,
     Inspector,
     Paint,
+    Color,
     Assets,
     Grid,
     Pose,
@@ -645,6 +646,23 @@ pub fn spawn_editor_panel_layout_tree(
         None => return None,
     };
 
+    let color_panel = match build_editor_panel_component_expr(
+        world,
+        emit,
+        paint_panel_asset_path(),
+        "color_panel",
+        vec![
+            Value::String("Color".to_string()),
+            paint_panel_title_color.clone(),
+            paint_panel_bg.clone(),
+        ],
+        PanelKind::Color,
+        "color panel",
+    ) {
+        Some(panel) => panel,
+        None => return None,
+    };
+
     let grid_panel = match build_editor_panel_component_expr(
         world,
         emit,
@@ -713,6 +731,7 @@ pub fn spawn_editor_panel_layout_tree(
 
     let world_panel = decorate_panel_root_ce(world_panel, 2.0);
     let paint_panel = decorate_panel_root_ce(paint_panel, 2.0);
+    let color_panel = decorate_panel_root_ce(color_panel, 2.0);
     let asset_panel = decorate_panel_root_ce(asset_panel, 2.0);
     let grid_panel = decorate_panel_root_ce(grid_panel, 2.0);
     let pose_panel = decorate_panel_root_ce(pose_panel, 2.0);
@@ -731,6 +750,7 @@ pub fn spawn_editor_panel_layout_tree(
             children: vec![
                 editor_settings_panel,
                 paint_panel,
+                color_panel,
                 grid_panel,
                 pose_panel,
                 asset_panel,

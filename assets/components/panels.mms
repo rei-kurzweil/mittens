@@ -161,6 +161,8 @@ let PAINT_PANEL_STATUS_BAR_HEIGHT_GU = 4.0
 let PAINT_PANEL_CONTENT_STATUS_GAP_GU = 0.5
 let PAINT_PANEL_CONTENT_HEIGHT_GU = 8.5
 let PAINT_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + PAINT_PANEL_CONTENT_HEIGHT_GU + PAINT_PANEL_CONTENT_STATUS_GAP_GU + PAINT_PANEL_STATUS_BAR_HEIGHT_GU
+let COLOR_PANEL_WIDTH_GU = 16.0
+let COLOR_PANEL_HEIGHT_GU = 18.5
 
 let tool_names = ["Free Draw", "Grid Tool", "Line", "Spray Can", "Fill", "Erase"]
 
@@ -244,6 +246,85 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
                     }
                 }
             }
+        }
+    }
+}
+
+fn color_swatch(name, label, idx, rgba, rgba_text) {
+    return T {
+        name = name
+        Option {
+            Data {
+                name = "color_swatch_payload"
+                row_kind = "ColorSwatch"
+                label = label
+                index = idx
+                rgba = rgba_text
+                interactive = true
+            }
+        }
+        Raycastable.click_only()
+        Style {
+            display("inline-block")
+            width(2.5)
+            height(2.5)
+            margin_xy(0.2, 0.2)
+            background_color(rgba)
+            background_z(-0.01)
+        }
+    }
+}
+
+export fn color_panel(title, title_color, panel_background_color) {
+    return T {
+        name = "color_panel_root"
+        Style {
+            display("block")
+            width(COLOR_PANEL_WIDTH_GU)
+            height(COLOR_PANEL_HEIGHT_GU)
+            margin_xy(0.5, 0.5)
+        }
+        T {
+            name = "title_bar"
+            Raycastable.enabled()
+            Style {
+                display("block")
+                height(TITLE_BAR_HEIGHT_GU)
+                margin_bottom(TITLE_CONTENT_GAP_GU)
+                padding_xy(0.5, 0.5)
+                color = title_color
+                background_color(panel_background_color)
+                text_align("left")
+                vertical_align("middle")
+                background_z(-0.01)
+            }
+            T.position(0.0, 0.0, 0.0) { Text { title } }
+        }
+        T {
+            name = "content_slot"
+            Style {
+                display("block")
+                background_color([0.96, 0.92, 0.18, 0.80])
+                background_z(-0.001)
+                padding(0.4)
+            }
+            color_swatch("swatch_0", "Snow", 0, [0.96, 0.95, 0.90, 1.0], "0.96,0.95,0.90,1.0")
+            color_swatch("swatch_1", "Apricot", 1, [0.96, 0.75, 0.46, 1.0], "0.96,0.75,0.46,1.0")
+            color_swatch("swatch_2", "Tomato", 2, [0.91, 0.34, 0.25, 1.0], "0.91,0.34,0.25,1.0")
+            color_swatch("swatch_3", "Berry", 3, [0.66, 0.17, 0.24, 1.0], "0.66,0.17,0.24,1.0")
+            color_swatch("swatch_4", "Sun", 4, [0.95, 0.84, 0.22, 1.0], "0.95,0.84,0.22,1.0")
+            color_swatch("swatch_5", "Moss", 5, [0.63, 0.74, 0.24, 1.0], "0.63,0.74,0.24,1.0")
+            color_swatch("swatch_6", "Leaf", 6, [0.24, 0.58, 0.27, 1.0], "0.24,0.58,0.27,1.0")
+            color_swatch("swatch_7", "Pine", 7, [0.12, 0.31, 0.19, 1.0], "0.12,0.31,0.19,1.0")
+            color_swatch("swatch_8", "Sky", 8, [0.46, 0.78, 0.94, 1.0], "0.46,0.78,0.94,1.0")
+            color_swatch("swatch_9", "Ocean", 9, [0.19, 0.52, 0.80, 1.0], "0.19,0.52,0.80,1.0")
+            color_swatch("swatch_10", "Ink", 10, [0.14, 0.25, 0.50, 1.0], "0.14,0.25,0.50,1.0")
+            color_swatch("swatch_11", "Night", 11, [0.10, 0.12, 0.24, 1.0], "0.10,0.12,0.24,1.0")
+            color_swatch("swatch_12", "Lilac", 12, [0.78, 0.60, 0.87, 1.0], "0.78,0.60,0.87,1.0")
+            color_swatch("swatch_13", "Rose", 13, [0.90, 0.45, 0.66, 1.0], "0.90,0.45,0.66,1.0")
+            color_swatch("swatch_14", "Clay", 14, [0.61, 0.44, 0.31, 1.0], "0.61,0.44,0.31,1.0")
+            color_swatch("swatch_15", "Char", 15, [0.16, 0.16, 0.16, 1.0], "0.16,0.16,0.16,1.0")
+            Selection.root("#content_slot") { name = "color_panel_selection" }
         }
     }
 }

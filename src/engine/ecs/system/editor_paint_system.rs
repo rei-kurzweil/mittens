@@ -7,11 +7,13 @@ use crate::engine::ecs::component::{
     SelectableComponent, SelectionComponent, TransformComponent, TransformGizmoComponent,
 };
 use crate::engine::ecs::system::editor::context::{
-    EDITOR_WORKSPACE_ASSET_SELECTION_CHANGED, EditorContextState,
+    EDITOR_WORKSPACE_ASSET_SELECTION_CHANGED, EDITOR_WORKSPACE_COLOR_SELECTION_CHANGED,
+    EditorContextState,
 };
 use crate::engine::ecs::system::editor_paint_system_state_manager::{
+    COLOR_PANEL_ROOT_SELECTOR, COLOR_PANEL_SELECTION_SELECTOR, COLOR_SWATCH_PAYLOAD_NAME,
     PaintEvent, PaintState, PaintTool, is_paint_active, is_paint_panel_focused,
-    paint_tool_from_item, reduce_paint_state,
+    is_paint_workspace_focused, paint_tool_from_item, reduce_paint_state,
 };
 use crate::engine::ecs::system::editor_system::select_editor_target;
 use crate::engine::ecs::system::grid_system::{
@@ -235,6 +237,42 @@ fn install_shared_panel_handlers(
                     None,
                     &event,
                 );
+                return;
+            }
+
+            let is_color = world
+                .find_component(panel_query_root, COLOR_PANEL_SELECTION_SELECTOR)
+                .is_some_and(|root| root == *selection_root);
+            if is_color {
+                let rgba = component.and_then(|id| rgba_from_payload(world, id));
+                if let Some(runtime_ui_root) = world.all_components().find(|&component_id| {
+                    world.parent_of(component_id).is_none()
+                        && world.component_label(component_id) == Some(RUNTIME_UI_ROOT_NAME)
+                }) {
+                    emit.push_event(
+                        runtime_ui_root,
+                        EventSignal::DataEvent {
+                            name: EDITOR_WORKSPACE_COLOR_SELECTION_CHANGED.to_string(),
+                            payload: component,
+                        },
+                    );
+                }
+                let event = PaintEvent::ColorSelectionChanged {
+                    item: label,
+                    component,
+                    rgba,
+                };
+                handle_paint_event(
+                    world,
+                    emit,
+                    panel_query_root,
+                    &grid_system,
+                    &tpl,
+                    &state,
+                    &ctx,
+                    None,
+                    &event,
+                );
             }
         },
     );
@@ -369,6 +407,22 @@ fn bootstrap_paint_state(
         events.push(tool_event);
     }
 
+    if let Some(color_event) = bootstrap_selection_event(
+        world,
+        panel_query_root,
+        COLOR_PANEL_SELECTION_SELECTOR,
+        |selection, w| {
+            let component = selection.selected_payload.or(selection.selected_component);
+            PaintEvent::ColorSelectionChanged {
+                item: component.and_then(|id| label_from_component_id(w, id)),
+                component,
+                rgba: component.and_then(|id| rgba_from_payload(w, id)),
+            }
+        },
+    ) {
+        events.push(color_event);
+    }
+
     let state_str;
     {
         let mut state = paint_state.lock().expect("paint state mutex poisoned");
@@ -387,6 +441,9 @@ fn bootstrap_paint_state(
                     component: None,
                 },
             );
+        }
+        if state.selected_color.is_none() {
+            state.selected_color = Some([1.0, 1.0, 1.0, 1.0]);
         }
         state_str = format!("{state:?}");
     }
@@ -407,6 +464,22 @@ fn label_from_component_id(world: &World, id: ComponentId) -> Option<String> {
 fn label_from_selected_payload(world: &World, selection: &SelectionComponent) -> Option<String> {
     let payload_id = selection.selected_payload?;
     label_from_component_id(world, payload_id)
+}
+
+fn rgba_from_payload(world: &World, id: ComponentId) -> Option<[f32; 4]> {
+    let data = world.get_component_by_id_as::<DataComponent>(id)?;
+    let DataValue::Text(text) = data.get("rgba")? else {
+        return None;
+    };
+    let parts: Vec<&str> = text.split(',').collect();
+    if parts.len() != 4 {
+        return None;
+    }
+    let mut rgba = [0.0; 4];
+    for (idx, value) in parts.iter().enumerate() {
+        rgba[idx] = value.parse::<f32>().ok()?;
+    }
+    Some(rgba)
 }
 
 fn bootstrap_selection_event<F>(
@@ -494,6 +567,7 @@ fn apply_paint_side_effects(
 ) {
     let total_start = Instant::now();
     let editor_context = current_editor_context(editor_context_state);
+    update_last_scene_interacted_editor(world, editor_context_state, event);
     let active_editor = event_active_editor(event).or(editor_context.active_editor);
     paint_perf(
         "apply_paint_side_effects.context",
@@ -671,6 +745,7 @@ fn event_active_editor(event: &PaintEvent) -> Option<ComponentId> {
         | PaintEvent::StrokeStarted { editor, .. }
         | PaintEvent::StrokeMoved { editor, .. }
         | PaintEvent::StrokeEnded { editor } => Some(*editor),
+        PaintEvent::ColorSelectionChanged { .. } => None,
         PaintEvent::AssetSelectionChanged { .. }
         | PaintEvent::ToolSelectionChanged { .. }
         | PaintEvent::PanelFocusChanged { .. } => None,
@@ -804,10 +879,11 @@ fn handle_spray_can_click(
     Some(place_asset(
         world,
         emit,
-        editor_root,
+        context.destination_editor,
         renderable,
         offset_hit_point,
         &context.asset,
+        context.selected_color,
         None,
     ))
 }
@@ -855,10 +931,11 @@ fn handle_spray_can_stroke_move(
         Some(place_asset(
             world,
             emit,
-            editor_root,
+            context.destination_editor,
             renderable,
             offset_hit_point,
             &context.asset,
+            context.selected_color,
             None,
         ))
     } else {
@@ -941,15 +1018,20 @@ fn handle_line_stroke_move(
 }
 
 fn handle_fill_click(
-    _world: &mut World,
+    world: &mut World,
     _emit: &mut dyn SignalEmitter,
     _editor_root: ComponentId,
-    _context: &PaintContext<'_>,
+    context: &PaintContext<'_>,
     _stroke_runtime: Option<&Arc<Mutex<PaintStrokeRuntime>>>,
-    _renderable: ComponentId,
+    renderable: ComponentId,
     _hit_point: [f32; 3],
 ) -> Option<String> {
-    None
+    let hit = crate::engine::ecs::system::editor_scene_hit::resolve_world_scene_hit(world, renderable)?;
+    if apply_color_to_subtree(world, hit.target_transform, context.selected_color, false) {
+        Some("fill applied".to_string())
+    } else {
+        Some("fill inactive: target has no color channel".to_string())
+    }
 }
 
 fn handle_fill_stroke_move(
@@ -1159,6 +1241,8 @@ fn handle_stroke_move(
 #[derive(Debug, Clone)]
 struct PaintContext<'a> {
     asset: &'a PaintAssetTemplate,
+    destination_editor: ComponentId,
+    selected_color: [f32; 4],
     grid_system: GridSystem,
 }
 
@@ -1187,7 +1271,13 @@ fn resolve_paint_context<'a>(
 ) -> Option<PaintContext<'a>> {
     let start = Instant::now();
     let paint_panel_root = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR);
-    if !is_paint_active(paint_panel_root, paint_state, editor_context) {
+    let color_panel_root = world.find_component(panel_query_root, COLOR_PANEL_ROOT_SELECTOR);
+    if !is_paint_active(
+        paint_panel_root,
+        color_panel_root,
+        paint_state,
+        editor_context,
+    ) {
         paint_perf(
             "resolve_paint_context.inactive",
             start,
@@ -1198,6 +1288,10 @@ fn resolve_paint_context<'a>(
         );
         return None;
     }
+    let destination_editor = match editor_context.last_scene_interacted_editor.or(Some(editor_root)) {
+        Some(editor) => editor,
+        None => return None,
+    };
     let asset = match paint_state.selected_tool {
         PaintTool::GridTool | PaintTool::Erase => templates.first(),
         _ => {
@@ -1219,6 +1313,8 @@ fn resolve_paint_context<'a>(
     }?;
     let context = PaintContext {
         asset,
+        destination_editor,
+        selected_color: paint_state.selected_color.unwrap_or([1.0, 1.0, 1.0, 1.0]),
         grid_system: grid_system.clone(),
     };
     paint_perf(
@@ -1277,8 +1373,8 @@ fn start_paint_preview_session(
     hit_point: [f32; 3],
     context: &PaintContext<'_>,
 ) -> Option<PlacementPreviewSession> {
-    let scene_parent = resolve_scene_parent(world, editor_root);
-    let asset_root = spawn_asset_subtree(world, emit, &context.asset).ok()?;
+    let scene_parent = resolve_scene_parent(world, context.destination_editor);
+    let asset_root = spawn_asset_subtree(world, emit, &context.asset, context.selected_color).ok()?;
     let preview_root =
         world.add_component_boxed_named("painted_asset_root", Box::new(TransformComponent::new()));
     let raycastable_root = world.add_component_boxed_named(
@@ -1388,7 +1484,7 @@ fn paint_activity_status(
         }
     }
 
-    let Some(_editor_root) = active_editor else {
+   let Some(_editor_root) = active_editor else {
         return PaintActivityStatus {
             active: false,
             reason: "no active editor".to_string(),
@@ -1408,11 +1504,12 @@ fn place_asset(
     target_renderable: ComponentId,
     hit_point: [f32; 3],
     asset: &PaintAssetTemplate,
+    selected_color: [f32; 4],
     grid_snap: Option<GridSnapResult>,
 ) -> String {
     let scene_parent = resolve_scene_parent(world, editor_root);
 
-    let asset_root = match spawn_asset_subtree(world, emit, asset) {
+    let asset_root = match spawn_asset_subtree(world, emit, asset, selected_color) {
         Ok(asset_root) => asset_root,
         Err(error) => return error,
     };
@@ -1473,16 +1570,18 @@ fn spawn_asset_subtree(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     asset: &PaintAssetTemplate,
+    selected_color: [f32; 4],
 ) -> Result<ComponentId, String> {
     let asset_root = MeowMeowRunner::spawn_mms_module_component_uninitialized(
         &asset.module,
         &asset.export_name,
-        default_asset_args(asset),
+        default_asset_args(asset, selected_color),
         world,
         emit,
     )
     .map_err(|error| format!("paint failed: asset spawn error: {error}"))?;
     sanitize_painted_asset_subtree(world, asset_root);
+    apply_color_to_subtree(world, asset_root, selected_color, true);
     Ok(asset_root)
 }
 
@@ -1522,7 +1621,7 @@ fn sanitize_painted_asset_subtree(world: &mut World, root: ComponentId) {
     }
 }
 
-fn default_asset_args(asset: &PaintAssetTemplate) -> Vec<Value> {
+fn default_asset_args(asset: &PaintAssetTemplate, selected_color: [f32; 4]) -> Vec<Value> {
     asset
         .param_names
         .iter()
@@ -1530,10 +1629,10 @@ fn default_asset_args(asset: &PaintAssetTemplate) -> Vec<Value> {
             let lower_name = name.to_lowercase();
             if lower_name.contains("color") {
                 Value::Array(vec![
-                    Value::Number(0.5),
-                    Value::Number(0.5),
-                    Value::Number(0.5),
-                    Value::Number(1.0),
+                    Value::Number(selected_color[0] as f64),
+                    Value::Number(selected_color[1] as f64),
+                    Value::Number(selected_color[2] as f64),
+                    Value::Number(selected_color[3] as f64),
                 ])
             } else if lower_name.contains("items") || lower_name.contains("sequence") {
                 Value::Array(Vec::new())
@@ -1608,7 +1707,8 @@ fn base_status_text(
     editor_context: &EditorContextState,
 ) -> String {
     let paint_panel_root = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR);
-    if !is_paint_panel_focused(paint_panel_root, editor_context) {
+    let color_panel_root = world.find_component(panel_query_root, COLOR_PANEL_ROOT_SELECTOR);
+    if !is_paint_workspace_focused(paint_panel_root, color_panel_root, editor_context) {
         return "paint inactive: focus Paint panel".to_string();
     }
 
@@ -1764,6 +1864,65 @@ fn is_descendant_or_self(world: &World, ancestor: ComponentId, node: ComponentId
         current = world.parent_of(component);
     }
     false
+}
+
+fn update_last_scene_interacted_editor(
+    world: &World,
+    editor_context_state: &Arc<Mutex<EditorContextState>>,
+    event: &PaintEvent,
+) {
+    let renderable = match event {
+        PaintEvent::SceneClick { renderable, .. }
+        | PaintEvent::StrokeStarted { renderable, .. }
+        | PaintEvent::StrokeMoved { renderable, .. } => *renderable,
+        _ => return,
+    };
+    let Some(hit) = crate::engine::ecs::system::editor_scene_hit::resolve_world_scene_hit(world, renderable) else {
+        return;
+    };
+    let Some(editor_root) = hit.editor_root else {
+        return;
+    };
+    if let Ok(mut guard) = editor_context_state.lock() {
+        guard.last_scene_interacted_editor = Some(editor_root);
+    }
+}
+
+fn apply_color_to_subtree(
+    world: &mut World,
+    root: ComponentId,
+    rgba: [f32; 4],
+    attach_if_missing: bool,
+) -> bool {
+    let mut stack = vec![root];
+    let mut found_color = false;
+    let mut first_renderable = None;
+    while let Some(node) = stack.pop() {
+        if world
+            .get_component_by_id_as::<crate::engine::ecs::component::RenderableComponent>(node)
+            .is_some()
+            && first_renderable.is_none()
+        {
+            first_renderable = Some(node);
+        }
+        if let Some(color) = world.get_component_by_id_as_mut::<crate::engine::ecs::component::ColorComponent>(node) {
+            color.rgba = rgba;
+            found_color = true;
+        }
+        for &child in world.children_of(node) {
+            stack.push(child);
+        }
+    }
+    if !found_color && attach_if_missing {
+        if let Some(parent) = first_renderable.or(Some(root)) {
+            let color = world.add_component(crate::engine::ecs::component::ColorComponent::rgba(
+                rgba[0], rgba[1], rgba[2], rgba[3],
+            ));
+            let _ = world.add_child(parent, color);
+            return true;
+        }
+    }
+    found_color
 }
 
 #[cfg(test)]

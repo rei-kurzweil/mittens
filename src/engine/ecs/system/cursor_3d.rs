@@ -1,6 +1,6 @@
 use crate::engine::ecs::component::EditorInteractionMode;
 use crate::engine::ecs::system::editor::context::{EditorContextState, sync_editor_cursor_visual};
-use crate::engine::ecs::system::editor_scene_hit::resolve_editor_scene_hit;
+use crate::engine::ecs::system::editor_scene_hit::resolve_world_scene_hit;
 use crate::engine::ecs::system::paint_placement::{
     resolve_surface_aligned_pose_from_frame, resolve_surface_placement_frame,
 };
@@ -78,10 +78,12 @@ fn handle_cursor_signal(
             hit_point,
             ..
         }) => {
-            let Some(scene_hit) = resolve_editor_scene_hit(world, *renderable) else {
+            let Some(scene_hit) = resolve_world_scene_hit(world, *renderable) else {
                 return;
             };
-            if scene_hit.editor_root != editor_root {
+            let handles_non_editor_hit = scene_hit.editor_root.is_none()
+                && editor_context.active_editor == Some(editor_root);
+            if scene_hit.editor_root != Some(editor_root) && !handles_non_editor_hit {
                 return;
             }
             update_editor_cursor(

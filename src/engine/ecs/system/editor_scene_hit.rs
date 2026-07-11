@@ -5,8 +5,8 @@ use crate::engine::ecs::{ComponentId, World};
 use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EditorSceneHit {
-    pub editor_root: ComponentId,
+pub struct WorldSceneHit {
+    pub editor_root: Option<ComponentId>,
     pub target_renderable: ComponentId,
     pub target_transform: ComponentId,
 }
@@ -33,16 +33,15 @@ fn debug_component_label(world: &World, component: ComponentId) -> String {
         .unwrap_or_else(|| "<missing>".to_string())
 }
 
-pub fn resolve_editor_scene_hit(world: &World, renderable: ComponentId) -> Option<EditorSceneHit> {
-    let editor_root = nearest_editor_ancestor(world, renderable)?;
+pub fn resolve_world_scene_hit(world: &World, renderable: ComponentId) -> Option<WorldSceneHit> {
+    let editor_root = nearest_editor_ancestor(world, renderable);
     let blocked_by_selectable = has_selectable_off_ancestor(world, renderable);
     let blocked_by_gizmo = has_transform_gizmo_ancestor(world, renderable);
     if blocked_by_selectable || blocked_by_gizmo {
         if debug_editor_scene_hit_enabled() {
             println!(
-                "[EditorSceneHit] reject renderable={renderable:?} '{}' editor_root={editor_root:?} '{}' selectable_off={} gizmo_ancestor={}",
+                "[WorldSceneHit] reject renderable={renderable:?} '{}' editor_root={editor_root:?} selectable_off={} gizmo_ancestor={}",
                 debug_component_label(world, renderable),
-                debug_component_label(world, editor_root),
                 blocked_by_selectable,
                 blocked_by_gizmo,
             );
@@ -53,13 +52,12 @@ pub fn resolve_editor_scene_hit(world: &World, renderable: ComponentId) -> Optio
         .or_else(|| nearest_transform_ancestor(world, renderable))?;
     if debug_editor_scene_hit_enabled() {
         println!(
-            "[EditorSceneHit] accept renderable={renderable:?} '{}' -> target_transform={target_transform:?} '{}' editor_root={editor_root:?} '{}'",
+            "[WorldSceneHit] accept renderable={renderable:?} '{}' -> target_transform={target_transform:?} '{}' editor_root={editor_root:?}",
             debug_component_label(world, renderable),
             debug_component_label(world, target_transform),
-            debug_component_label(world, editor_root),
         );
     }
-    Some(EditorSceneHit {
+    Some(WorldSceneHit {
         editor_root,
         target_renderable: renderable,
         target_transform,
@@ -136,7 +134,7 @@ pub fn has_selectable_off_ancestor(world: &World, start: ComponentId) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_editor_scene_hit;
+    use super::resolve_world_scene_hit;
     use crate::engine::ecs::World;
     use crate::engine::ecs::component::{EditorComponent, RenderableComponent, TransformComponent};
 
@@ -167,7 +165,8 @@ mod tests {
             .add_child(internal, renderable)
             .expect("attach renderable");
 
-        let hit = resolve_editor_scene_hit(&world, renderable).expect("scene hit");
+        let hit = resolve_world_scene_hit(&world, renderable).expect("scene hit");
         assert_eq!(hit.target_transform, painted_root);
+        assert_eq!(hit.editor_root, Some(editor));
     }
 }

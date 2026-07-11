@@ -6,6 +6,7 @@ use crate::engine::ecs::component::{
     RaycastableComponent, RenderableComponent, SelectableComponent, SelectionComponent,
     SerializeComponent, SignalObserverRouterComponent, TransformComponent,
 };
+use crate::engine::ecs::system::editor::paint_panel::COLOR_PANEL_ROOT_SELECTOR;
 use crate::engine::ecs::system::editor::settings_panel::{
     EDITOR_SETTINGS_PAYLOAD_NAME, EDITOR_SETTINGS_SELECTION_SELECTOR, EditorSettingsOption,
 };
@@ -25,6 +26,7 @@ const ASSETS_SELECTION_SELECTOR: &str = "#assets_selection";
 const GRID_PANEL_SELECTION_SELECTOR: &str = "#grid_panel_selection";
 const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
 pub const EDITOR_WORKSPACE_ASSET_SELECTION_CHANGED: &str = "EditorWorkspaceAssetSelectionChanged";
+pub const EDITOR_WORKSPACE_COLOR_SELECTION_CHANGED: &str = "EditorWorkspaceColorSelectionChanged";
 const PAINT_SYSTEM_HANDLER_NAME: &str = "paint_system";
 const EDITOR_PANEL_REFRESH_HANDLER_NAME: &str = "editor_panel_refresh";
 const EDITOR_SELECT_HANDLER_NAME: &str = "editor_select";
@@ -43,6 +45,7 @@ pub struct EditorContextState {
     pub focused_panel: Option<ComponentId>,
     pub interaction_mode: EditorInteractionMode,
     pub armature_visible: bool,
+    pub last_scene_interacted_editor: Option<ComponentId>,
     pub cursor_translation: Option<[f32; 3]>,
     pub cursor_rotation: Option<[f32; 4]>,
     pub cursor_frame: Option<SurfacePlacementFrame>,
@@ -62,6 +65,8 @@ pub(crate) struct SemanticEditorSelectionResult {
 struct EditorContextWorkspaceState {
     panel_query_root: Option<ComponentId>,
     cursor_host_root: Option<ComponentId>,
+    gizmo_host_root: Option<ComponentId>,
+    shared_transform_gizmo: Option<ComponentId>,
     registered_editors: Vec<ComponentId>,
 }
 
@@ -354,6 +359,147 @@ fn ensure_workspace_cursor_host(
     let cursor_host_root = ensure_shared_workspace_cursor_host(world, workspace.panel_query_root)?;
     workspace.cursor_host_root = Some(cursor_host_root);
     Some(cursor_host_root)
+}
+
+pub(crate) fn ensure_workspace_gizmo_host(
+    world: &mut World,
+    workspace: &Arc<Mutex<EditorContextWorkspaceState>>,
+) -> Option<ComponentId> {
+    let mut workspace = workspace.lock().expect("editor context workspace poisoned");
+    if workspace.panel_query_root.is_none() {
+        return None;
+    }
+    if let Some(existing) = workspace.gizmo_host_root
+        && world
+            .get_component_by_id_as::<TransformComponent>(existing)
+            .is_some()
+    {
+        return Some(existing);
+    }
+    let gizmo_host_root = world.add_component_boxed_named(
+        "editor_workspace_gizmo_root",
+        Box::new(TransformComponent::new()),
+    );
+    let selectable = world.add_component_boxed_named(
+        "editor_workspace_gizmo_root_selectable",
+        Box::new(SelectableComponent::off()),
+    );
+    let serialize = world.add_component_boxed_named(
+        "editor_workspace_gizmo_root_serialize",
+        Box::new(SerializeComponent::off()),
+    );
+    let _ = world.add_child(gizmo_host_root, selectable);
+    let _ = world.add_child(gizmo_host_root, serialize);
+    workspace.gizmo_host_root = Some(gizmo_host_root);
+    Some(gizmo_host_root)
+}
+
+pub(crate) fn ensure_shared_workspace_transform_gizmo(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    workspace: &Arc<Mutex<EditorContextWorkspaceState>>,
+) -> Option<ComponentId> {
+    {
+        let workspace = workspace.lock().expect("editor context workspace poisoned");
+        if let Some(gizmo) = workspace.shared_transform_gizmo
+            && world
+                .get_component_by_id_as::<crate::engine::ecs::component::TransformGizmoComponent>(
+                    gizmo,
+                )
+                .is_some()
+        {
+            return Some(gizmo);
+        }
+    }
+
+    let host = ensure_workspace_gizmo_host(world, workspace)?;
+    let anchor = world.add_component_boxed_named(
+        "editor_workspace_gizmo_anchor",
+        Box::new(TransformComponent::new()),
+    );
+    let selectable = world.add_component_boxed_named(
+        "editor_workspace_gizmo_anchor_selectable",
+        Box::new(SelectableComponent::off()),
+    );
+    let serialize = world.add_component_boxed_named(
+        "editor_workspace_gizmo_anchor_serialize",
+        Box::new(SerializeComponent::off()),
+    );
+    let gizmo = world.add_component_boxed_named(
+        "editor_transform_gizmo",
+        Box::new(crate::engine::ecs::component::TransformGizmoComponent::new().with_scale(0.5)),
+    );
+    let _ = world.add_child(host, anchor);
+    let _ = world.add_child(anchor, selectable);
+    let _ = world.add_child(anchor, serialize);
+    let _ = world.add_child(anchor, gizmo);
+    world.init_component_tree(anchor, emit);
+    if let Ok(mut guard) = workspace.lock() {
+        guard.shared_transform_gizmo = Some(gizmo);
+    }
+    Some(gizmo)
+}
+
+pub(crate) fn ensure_shared_workspace_transform_gizmo_global(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+) -> Option<ComponentId> {
+    if let Some(existing) = world.all_components().find(|&component_id| {
+        world
+            .get_component_by_id_as::<crate::engine::ecs::component::TransformGizmoComponent>(
+                component_id,
+            )
+            .is_some()
+            && world.component_label(component_id) == Some("editor_transform_gizmo")
+    }) {
+        return Some(existing);
+    }
+
+    let host = if let Some(existing) = world.all_components().find(|&component_id| {
+        world.parent_of(component_id).is_none()
+            && world.component_label(component_id) == Some("editor_workspace_gizmo_root")
+    }) {
+        existing
+    } else {
+        let host = world.add_component_boxed_named(
+            "editor_workspace_gizmo_root",
+            Box::new(TransformComponent::new()),
+        );
+        let selectable = world.add_component_boxed_named(
+            "editor_workspace_gizmo_root_selectable",
+            Box::new(SelectableComponent::off()),
+        );
+        let serialize = world.add_component_boxed_named(
+            "editor_workspace_gizmo_root_serialize",
+            Box::new(SerializeComponent::off()),
+        );
+        let _ = world.add_child(host, selectable);
+        let _ = world.add_child(host, serialize);
+        host
+    };
+
+    let anchor = world.add_component_boxed_named(
+        "editor_workspace_gizmo_anchor",
+        Box::new(TransformComponent::new()),
+    );
+    let selectable = world.add_component_boxed_named(
+        "editor_workspace_gizmo_anchor_selectable",
+        Box::new(SelectableComponent::off()),
+    );
+    let serialize = world.add_component_boxed_named(
+        "editor_workspace_gizmo_anchor_serialize",
+        Box::new(SerializeComponent::off()),
+    );
+    let gizmo = world.add_component_boxed_named(
+        "editor_transform_gizmo",
+        Box::new(crate::engine::ecs::component::TransformGizmoComponent::new().with_scale(0.5)),
+    );
+    let _ = world.add_child(host, anchor);
+    let _ = world.add_child(anchor, selectable);
+    let _ = world.add_child(anchor, serialize);
+    let _ = world.add_child(anchor, gizmo);
+    world.init_component_tree(anchor, emit);
+    Some(gizmo)
 }
 
 fn ensure_editor_observer_router(world: &mut World, editor_root: ComponentId) -> ComponentId {
@@ -863,8 +1009,12 @@ fn sync_editor_observer_routes(
     let paint_panel_root = workspace.panel_query_root.and_then(|panel_query_root| {
         world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
     });
-    let paint_focused =
-        paint_panel_root.is_some_and(|panel| editor_context.focused_panel == Some(panel));
+    let color_panel_root = workspace.panel_query_root.and_then(|panel_query_root| {
+        world.find_component(panel_query_root, COLOR_PANEL_ROOT_SELECTOR)
+    });
+    let paint_focused = paint_panel_root
+        .is_some_and(|panel| editor_context.focused_panel == Some(panel))
+        || color_panel_root.is_some_and(|panel| editor_context.focused_panel == Some(panel));
 
     for editor_root in workspace.registered_editors {
         let router_id = ensure_editor_observer_router(world, editor_root);
@@ -1317,16 +1467,8 @@ mod tests {
             &EditorContextState {
                 active_editor: Some(editor),
                 selected_component: Some(selected),
-                active_grid_owner_transform: None,
-                selected_asset_payload: None,
-                focused_panel: None,
                 interaction_mode: EditorInteractionMode::Select,
-                armature_visible: false,
-                cursor_translation: None,
-                cursor_rotation: None,
-                cursor_frame: None,
-                pending_grid_placement_editor: None,
-                grid_preview_session: None,
+                ..EditorContextState::default()
             },
             &EditorContextEvent::InteractionModeChanged {
                 editor: Some(editor),
@@ -1348,16 +1490,8 @@ mod tests {
             &EditorContextState {
                 active_editor: Some(editor),
                 selected_component: Some(selected),
-                active_grid_owner_transform: None,
-                selected_asset_payload: None,
-                focused_panel: None,
                 interaction_mode: EditorInteractionMode::Select,
-                armature_visible: false,
-                cursor_translation: None,
-                cursor_rotation: None,
-                cursor_frame: None,
-                pending_grid_placement_editor: None,
-                grid_preview_session: None,
+                ..EditorContextState::default()
             },
             &EditorContextEvent::InteractionModeChanged {
                 editor: Some(editor),
@@ -1381,20 +1515,14 @@ mod tests {
         let state = Arc::new(Mutex::new(EditorContextState {
             active_editor: Some(editor_root),
             selected_component: Some(editor_root),
-            active_grid_owner_transform: None,
-            selected_asset_payload: None,
-            focused_panel: None,
             interaction_mode: EditorInteractionMode::Select,
-            armature_visible: false,
-            cursor_translation: None,
-            cursor_rotation: None,
-            cursor_frame: None,
-            pending_grid_placement_editor: None,
-            grid_preview_session: None,
+            ..EditorContextState::default()
         }));
         let workspace = Arc::new(Mutex::new(EditorContextWorkspaceState {
             panel_query_root: None,
             cursor_host_root: None,
+            gizmo_host_root: None,
+            shared_transform_gizmo: None,
             registered_editors: vec![editor_root],
         }));
 
@@ -1646,21 +1774,17 @@ mod tests {
         let workspace = Arc::new(Mutex::new(EditorContextWorkspaceState {
             panel_query_root: Some(panel_query_root),
             cursor_host_root: None,
+            gizmo_host_root: None,
+            shared_transform_gizmo: None,
             registered_editors: vec![editor_root],
         }));
         let state = Arc::new(Mutex::new(EditorContextState {
             active_editor: Some(editor_root),
             selected_component: Some(editor_root),
-            active_grid_owner_transform: None,
-            selected_asset_payload: None,
-            focused_panel: None,
             interaction_mode: EditorInteractionMode::Cursor3d,
-            armature_visible: false,
             cursor_translation: Some([1.0, 2.0, 3.0]),
             cursor_rotation: Some([0.0, 0.0, 0.0, 1.0]),
-            cursor_frame: None,
-            pending_grid_placement_editor: None,
-            grid_preview_session: None,
+            ..EditorContextState::default()
         }));
         let mut emit = super::NullEmit;
         let cursor_host =
@@ -1699,6 +1823,8 @@ mod tests {
         let workspace = Arc::new(Mutex::new(EditorContextWorkspaceState {
             panel_query_root: Some(panel_query_root),
             cursor_host_root: None,
+            gizmo_host_root: None,
+            shared_transform_gizmo: None,
             registered_editors: vec![],
         }));
 
@@ -1718,6 +1844,8 @@ mod tests {
         let workspace = Arc::new(Mutex::new(EditorContextWorkspaceState {
             panel_query_root: Some(panel_query_root),
             cursor_host_root: None,
+            gizmo_host_root: None,
+            shared_transform_gizmo: None,
             registered_editors: vec![],
         }));
 
