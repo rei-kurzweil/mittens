@@ -53,6 +53,12 @@ export fn tetrahedron() {
     })
 }
 
+export fn icosahedron() {
+    return primitive_shell("primitive_icosahedron", R.icosahedron() {
+        C.rgba(0.42, 0.64, 0.96, 1.0)
+    })
+}
+
 export fn star() {
     return primitive_shell("primitive_star", R.star() {
         C.rgba(1.0, 0.90, 0.30, 1.0)
