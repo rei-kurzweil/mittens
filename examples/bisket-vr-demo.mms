@@ -1,3 +1,6 @@
+import { star_kawaii_background } from "../assets/components/backgrounds/star_kawaii_background.mms"
+import { voxel_terrain } from "../assets/components/floors/voxel_terrain.mms"
+
 // bisket-vr-demo scene
 //
 // Shared VR room-scale demo using the bisket avatar (bisket.8.0.glb).
@@ -34,10 +37,10 @@ RendererSettings {
 }
 
 BGC {
-    C.rgba(1.0, 0.65, 0.75, 1.0)
+    C.rgba(0.9, 0.5, 0.3, 1.0)
 }
 
-AL.rgb(0.18, 0.18, 0.22)
+AL.rgb(0.10, 0.11, 0.16)
 
 Clock.bpm(60) {}
 
@@ -49,7 +52,7 @@ RenderGraph {
         }
     }
     Bloom {
-        intensity(0.95)
+        intensity(0.90)
         radius_ndc(0.06)
         emissive_scale(1.2)
         half_res(true)
@@ -64,17 +67,15 @@ T.position(0.15, -0.45, 1.0) {
     }
 }
 
-// --- Floor + back wall so the room has visual reference ---
-ED {
-    T.position(0.0, -1.65, -0.4).scale(120.0, 0.1, 95) {
-        Collision.static() {
-            CollisionShape.cube([60.0, 0.05, 47.5])
-        }
-        R.cube() { C.rgba(0.68, 0.48, 0.60, 1.0) }
+// --- Terrain + back wall so the room has visual reference ---
+// ED {
+    T.position(0.0, -6.0, 0.0) {
+        voxel_terrain()
     }
+
     // back wall
     T.position(0.0, 2.15, -7.2).scale(8.8, 3.6, 0.24) {
-        R.cube() { C.rgba(1.0, 0.8, 0.4, 1.0) }
+        R.cube() { C.rgba(0.95, 0.55, 0.22, 1.0) }
     }
 
     let repro_cube_a_transform = T.position(-0.9, -0.44, -1.0) {
@@ -167,10 +168,12 @@ ED {
             repro_cube_c_transform.update_transform([1.35, -0.25, -1.35], [0.0, 0.0, 4.712385], [1.0, 1.0, 1.0])
         }
     }
-}
+// }
 
-// --- Background sun ---
-BG {
+// --- Background sun + stars ---
+BG.occlusion_and_lighting() {
+    star_kawaii_background([1.0, 0.88, 0.42, 1.0])
+
     T.position(2.0, 1.5, -8.0).scale(3.5, 3.5, 3.5) {
         R.circle2d() {
             C.rgba(1.0, 0.85, 0.15, 1.0)
@@ -192,6 +195,10 @@ BG {
 //   model_root.y auto-calibrated so head bone sits at HMD height).
 ED {
     InputXR.on() {
+        InputXRGamepad {
+            locomotion()
+            speed(1.5)
+        }
         T {
             AVC {
                 head_bone("J_Bip_C_Head")
@@ -219,7 +226,7 @@ ED {
                 hand_grip_rotation_right([-0.6408564, -0.29883623, -0.29883623, 0.6408564])
 
                 T {
-                    GLTF.new("assets/models/bisket.8.0.glb") { 
+                    GLTF.new("assets/models/bisket.11.0.glb") { 
                         EM.on() 
                         PoseCapture { label("Bisket") }
                     }
@@ -235,10 +242,10 @@ ED {
                 // upper torso with a head-only correction.
                 T.position(0.0, 0.08, 0.12) {
                     name = "xr_camera_wrapper"
-                    Collision.kinematic() {
-                        CollisionShape.sphere(0.18)
-                        KineticResponse.slide() {}
-                    }
+                    // Collision.kinematic() {
+                    //     CollisionShape.sphere(0.18)
+                    //     KineticResponse.slide() {}
+                    // }
                     CXR { Pointer {} }
                 }
                 
@@ -259,67 +266,67 @@ ED {
             }
         }
     }
-}
+} 
 
-// --- Controller debug cubes (Aim pose, rotation-smoothed) ---
-//
-// Sit alongside the avatar — useful to see raw controller tracking before
-// any IK/splice transforms touch them.
-InputXR.on() {
-    T {
-        // T.position(0.0, 1.85, 0.6) {
-        //     RendererStats {
-        //         camera_target(Xr)
-        //     }
-        // }
+// // --- Controller debug cubes (Aim pose, rotation-smoothed) ---
+// //
+// // Sit alongside the avatar — useful to see raw controller tracking before
+// // any IK/splice transforms touch them.
+// InputXR.on() {
+//     T {
+//         // T.position(0.0, 1.85, 0.6) {
+//         //     RendererStats {
+//         //         camera_target(Xr)
+//         //     }
+//         // }
 
-        XRHand.new(true, Left, Aim) {
-            T.scale(0.06, 0.06, 0.12) {
-                TransformForkTRS {
-                    TransformMapTranslation {}
-                    TransformMapRotation {
-                        QuatTemporalFilter.smoothing_factor(220.0)
-                    }
-                    TransformMapScale {}
-                    T {
-                        R.cube() { C.rgba(0.10, 0.90, 1.00, 1.0) }
-                    }
-                }
-            }
-        }
+//         XRHand.new(true, Left, Aim) {
+//             T.scale(0.06, 0.06, 0.12) {
+//                 TransformForkTRS {
+//                     TransformMapTranslation {}
+//                     TransformMapRotation {
+//                         QuatTemporalFilter.smoothing_factor(220.0)
+//                     }
+//                     TransformMapScale {}
+//                     T {
+//                         R.cube() { C.rgba(0.10, 0.90, 1.00, 1.0) }
+//                     }
+//                 }
+//             }
+//         }
 
-        XRHand.new(true, Right, Aim) {
-            T.scale(0.06, 0.06, 0.12) {
-                TransformForkTRS {
-                    TransformMapTranslation {}
-                    TransformMapRotation {
-                        QuatTemporalFilter.smoothing_factor(220.0)
-                    }
-                    TransformMapScale {}
-                    T {
-                        R.cube() { C.rgba(1.00, 0.35, 0.35, 1.0) }
-                    }
-                }
-            }
-        }
+//         XRHand.new(true, Right, Aim) {
+//             T.scale(0.06, 0.06, 0.12) {
+//                 TransformForkTRS {
+//                     TransformMapTranslation {}
+//                     TransformMapRotation {
+//                         QuatTemporalFilter.smoothing_factor(220.0)
+//                     }
+//                     TransformMapScale {}
+//                     T {
+//                         R.cube() { C.rgba(1.00, 0.35, 0.35, 1.0) }
+//                     }
+//                 }
+//             }
+//         }
 
-        // Grip pose markers (yellow = left, green = right) — compare with Aim above.
-        XRHand.new(true, Left, Grip) {
-            T.scale(0.05, 0.05, 0.10) {
-                T {
-                    R.cube() { C.rgba(1.0, 1.0, 0.0, 1.0) EM.on() }
-                }
-            }
-        }
-        XRHand.new(true, Right, Grip) {
-            T.scale(0.05, 0.05, 0.10) {
-                T {
-                    R.cube() { C.rgba(0.2, 1.0, 0.2, 1.0) EM.on() }
-                }
-            }
-        }
-    }
-}
+//         // Grip pose markers (yellow = left, green = right) — compare with Aim above.
+//         XRHand.new(true, Left, Grip) {
+//             T.scale(0.05, 0.05, 0.10) {
+//                 T {
+//                     R.cube() { C.rgba(1.0, 1.0, 0.0, 1.0) EM.on() }
+//                 }
+//             }
+//         }
+//         XRHand.new(true, Right, Grip) {
+//             T.scale(0.05, 0.05, 0.10) {
+//                 T {
+//                     R.cube() { C.rgba(0.2, 1.0, 0.2, 1.0) EM.on() }
+//                 }
+//             }
+//         }
+//     }
+// }
 
 // --- Desktop overview camera (Window target) ---
 //
@@ -334,7 +341,7 @@ InputXR.on() {
 // the user pitches because the head bone pivot is at skull-base height while
 // the HMD pose is at eye height. Hide the head mesh from the XR camera once
 // render-layer / visibility-mask support lands.
-I.speed(1.0) {
+I.speed(2.0) {
     InputTransformMode.forward_z() {
         roll_axis_y()
         fps_rotation()
@@ -369,7 +376,7 @@ T.position(0, 2, 0) {
 T.position(-1, -1, 0) {
     DL {
         intensity(0.8)
-        color(1.0, 0.9, 0.15)
+        color(1.0, 0.9, 1.0)
     }
 }
 

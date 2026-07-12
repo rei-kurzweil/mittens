@@ -1,7 +1,8 @@
 use crate::engine::ecs::component::{
-    BoundsComponent, ColorComponent, Component, ComponentRef, DataComponent, EmissiveComponent,
-    LayoutComponent, OptionComponent, QueryRootMode, RenderableComponent, SelectionComponent,
-    SelectionEntry, SelectionMode, StyleComponent, TransformComponent, resolve_component_ref,
+    BoundsComponent, ColorComponent, Component, ComponentRef, DataComponent,
+    EmissiveComponent, LayoutComponent, OptionComponent,
+    QueryRootMode, RenderableComponent, SelectionComponent, SelectionEntry, SelectionMode,
+    StyleComponent, TransformComponent, resolve_component_ref,
 };
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
@@ -382,7 +383,6 @@ fn ensure_selection_overlay(world: &mut World, emit: &mut dyn SignalEmitter, ite
             let emissive = world.add_component_boxed(Box::new(EmissiveComponent::new(
                 SELECTED_HIGHLIGHT_EMISSIVE,
             )));
-
             let _ = world.add_child(highlight, color);
             let _ = world.add_child(highlight, renderable);
             let _ = world.add_child(highlight, emissive);

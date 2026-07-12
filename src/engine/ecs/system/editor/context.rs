@@ -2,9 +2,10 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::{
-    ColorComponent, EditorComponent, EditorInteractionMode, EmissiveComponent, OpacityComponent,
-    RaycastableComponent, RenderableComponent, SelectableComponent, SelectionComponent,
-    SerializeComponent, SignalObserverRouterComponent, TransformComponent,
+    ColorComponent, EditorComponent, EditorInteractionMode,
+    EmissiveComponent, OpacityComponent, RaycastableComponent, RenderableComponent,
+    SelectableComponent, SelectionComponent, SerializeComponent, SignalObserverRouterComponent,
+    TransformComponent,
 };
 use crate::engine::ecs::system::editor::paint_panel::COLOR_PANEL_ROOT_SELECTOR;
 use crate::engine::ecs::system::editor::settings_panel::{
@@ -195,6 +196,35 @@ impl EditorContextSystem {
 
     pub fn shared_state(&self) -> Arc<Mutex<EditorContextState>> {
         Arc::clone(&self.state)
+    }
+
+    pub fn register_editor_identity(&mut self, world: &World, editor_root: ComponentId) {
+        let requested_active = world
+            .get_component_by_id_as::<EditorComponent>(editor_root)
+            .is_some_and(|editor| editor.active);
+        let registered = self
+            .workspace
+            .lock()
+            .expect("editor context workspace poisoned")
+            .register_editor(editor_root);
+
+        if requested_active {
+            let interaction_mode = world
+                .get_component_by_id_as::<EditorComponent>(editor_root)
+                .map(|editor| editor.interaction_mode)
+                .unwrap_or_default();
+            let mut state = self.state.lock().expect("editor context state poisoned");
+            *state = reduce_editor_context_state(
+                &state,
+                &EditorContextEvent::ActiveEditorChanged {
+                    editor: Some(editor_root),
+                    selected_component: Some(editor_root),
+                    interaction_mode,
+                },
+            );
+        } else if registered {
+            ensure_default_active_editor(&self.state, &self.workspace);
+        }
     }
 
     pub fn install_scoped_handlers_for_editor(

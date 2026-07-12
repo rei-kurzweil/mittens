@@ -6,6 +6,7 @@ use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 use crate::utils::math;
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -70,6 +71,17 @@ pub struct GestureSystem {
 }
 
 impl GestureSystem {
+    fn debug_gesture_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            let v = std::env::var("CAT_DEBUG_GESTURE").unwrap_or_default();
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+    }
+
     pub fn begin_frame(&mut self) {
         if let Ok(mut hits) = self.ray_hits_sorted.lock() {
             hits.clear();
@@ -272,6 +284,33 @@ impl GestureSystem {
 
             let drag_hit = pointer_hits.iter().find(|h| h.6.captures_drag());
             let click_hit = pointer_hits.iter().find(|h| h.6.captures_click());
+            if Self::debug_gesture_enabled() {
+                let summary: Vec<String> = pointer_hits
+                    .iter()
+                    .take(8)
+                    .map(|h| {
+                        format!(
+                            "{:?} t={:.3} pri={} pe={:?}",
+                            h.3,
+                            h.1,
+                            h.0,
+                            h.6
+                        )
+                    })
+                    .collect();
+                eprintln!(
+                    "[gesture] press pointer={:?} raycaster={:?} drag_hit={:?} click_hit={:?} hits={}",
+                    pointer_cid,
+                    raycaster_cid,
+                    drag_hit.map(|h| h.3),
+                    click_hit.map(|h| h.3),
+                    if summary.is_empty() {
+                        "<none>".to_string()
+                    } else {
+                        summary.join(" | ")
+                    }
+                );
+            }
 
             let Some(&&(_priority, t, raycaster, renderable, origin, dir, _pe)) = drag_hit else {
                 continue;
@@ -501,6 +540,15 @@ impl GestureSystem {
                             if is_click {
                                 let click_target =
                                     state.click_renderable.unwrap_or(active_renderable);
+                                if Self::debug_gesture_enabled() {
+                                    eprintln!(
+                                        "[gesture] click pointer={:?} raycaster={:?} drag_renderable={:?} click_target={:?}",
+                                        pointer_cid,
+                                        active_rc,
+                                        active_renderable,
+                                        click_target,
+                                    );
+                                }
                                 if let Some(start_hit) = state.drag_start_hit_point {
                                     rx.push_event(
                                         click_target,

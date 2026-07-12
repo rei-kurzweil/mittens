@@ -120,11 +120,7 @@ pub fn has_transform_gizmo_ancestor(world: &World, start: ComponentId) -> bool {
 pub fn has_selectable_off_ancestor(world: &World, start: ComponentId) -> bool {
     let mut cur = Some(start);
     while let Some(node) = cur {
-        if world
-            .get_component_by_id_as::<SelectableComponent>(node)
-            .map(|s| !s.enabled)
-            .unwrap_or(false)
-        {
+        if has_selectable_off_marker(world, node) {
             return true;
         }
         cur = world.parent_of(node);
@@ -132,11 +128,26 @@ pub fn has_selectable_off_ancestor(world: &World, start: ComponentId) -> bool {
     false
 }
 
+fn has_selectable_off_marker(world: &World, component_id: ComponentId) -> bool {
+    world
+        .get_component_by_id_as::<SelectableComponent>(component_id)
+        .map(|s| !s.enabled)
+        .unwrap_or(false)
+        || world.children_of(component_id).iter().copied().any(|child| {
+            world
+                .get_component_by_id_as::<SelectableComponent>(child)
+                .map(|s| !s.enabled)
+                .unwrap_or(false)
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::resolve_world_scene_hit;
     use crate::engine::ecs::World;
-    use crate::engine::ecs::component::{EditorComponent, RenderableComponent, TransformComponent};
+    use crate::engine::ecs::component::{
+        EditorComponent, RenderableComponent, SelectableComponent, TransformComponent,
+    };
 
     #[test]
     fn painted_asset_hits_resolve_to_wrapper_root() {
@@ -168,5 +179,26 @@ mod tests {
         let hit = resolve_world_scene_hit(&world, renderable).expect("scene hit");
         assert_eq!(hit.target_transform, painted_root);
         assert_eq!(hit.editor_root, Some(editor));
+    }
+
+    #[test]
+    fn selectable_off_child_on_ancestor_blocks_scene_hit() {
+        let mut world = World::default();
+        let editor = world.add_component(EditorComponent::new());
+        let scene_root = world.add_component(TransformComponent::new());
+        let selectable = world.add_component(SelectableComponent::off());
+        let child = world.add_component(TransformComponent::new());
+        let renderable = world.add_component(RenderableComponent::cube());
+
+        world.add_child(editor, scene_root).expect("attach scene root");
+        world
+            .add_child(scene_root, selectable)
+            .expect("attach selectable marker");
+        world.add_child(scene_root, child).expect("attach child");
+        world
+            .add_child(child, renderable)
+            .expect("attach renderable");
+
+        assert!(resolve_world_scene_hit(&world, renderable).is_none());
     }
 }

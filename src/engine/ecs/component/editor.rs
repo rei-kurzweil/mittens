@@ -34,6 +34,9 @@ impl Default for EditorInteractionMode {
 /// the editor's gizmos (e.g. TransformGizmo) to the clicked target.
 #[derive(Debug, Clone, Copy)]
 pub struct EditorComponent {
+    /// Declaratively prefer this editor as the active workspace editor.
+    pub active: bool,
+
     /// Runtime cache: resolved TransformGizmoComponent id within this editor subtree.
     ///
     /// Not serialized.
@@ -75,6 +78,7 @@ pub struct EditorComponent {
 impl Default for EditorComponent {
     fn default() -> Self {
         Self {
+            active: false,
             transform_gizmo: None,
             selected: None,
             interaction_mode: EditorInteractionMode::Select,
@@ -96,6 +100,11 @@ impl Default for EditorComponent {
 impl EditorComponent {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_active(mut self, active: bool) -> Self {
+        self.active = active;
+        self
     }
 
     pub fn with_transform_gizmo_translation_space(
@@ -187,9 +196,13 @@ impl Component for EditorComponent {
             EditorInteractionMode::Cursor3d => "cursor_3d",
             EditorInteractionMode::SelectAndCursor => "select_cursor",
         };
-        ce("Editor")
+        let mut expr = ce("Editor")
             .with_call("interaction_mode", vec![s(interaction_mode)])
             .with_call("translation_space", vec![s(translation)])
-            .with_call("rotation_space", vec![s(rotation)])
+            .with_call("rotation_space", vec![s(rotation)]);
+        if self.active {
+            expr = expr.with_call("active", vec![]);
+        }
+        expr
     }
 }

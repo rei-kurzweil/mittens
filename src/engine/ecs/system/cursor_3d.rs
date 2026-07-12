@@ -1,5 +1,7 @@
 use crate::engine::ecs::component::EditorInteractionMode;
-use crate::engine::ecs::system::editor::context::{EditorContextState, sync_editor_cursor_visual};
+use crate::engine::ecs::system::editor::context::{
+    EditorContextState, ensure_shared_workspace_cursor_host, sync_editor_cursor_visual,
+};
 use crate::engine::ecs::system::editor_scene_hit::resolve_world_scene_hit;
 use crate::engine::ecs::system::paint_placement::{
     resolve_surface_aligned_pose_from_frame, resolve_surface_placement_frame,
@@ -8,11 +10,10 @@ use crate::engine::ecs::{ComponentId, EventSignal, RxWorld, SignalKind, World};
 use crate::utils::math;
 use std::collections::HashSet;
 use std::f32::consts::FRAC_PI_2;
+use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
 
 const EDITOR_CURSOR_HANDLER_NAME: &str = "editor_cursor_3d";
-const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
-
 #[derive(Debug, Default)]
 pub struct Cursor3dSystem {
     installed_editor_roots: HashSet<ComponentId>,
@@ -36,7 +37,7 @@ impl Cursor3dSystem {
         self.installed_editor_roots.insert(editor_root);
 
         for signal_kind in [SignalKind::Click] {
-            let editor_context_state = editor_context_state.clone();
+            let scoped_editor_context_state = editor_context_state.clone();
             rx.add_handler_closure_named(
                 signal_kind,
                 editor_root,
@@ -48,7 +49,70 @@ impl Cursor3dSystem {
                         env.event.as_ref(),
                         editor_root,
                         panel_query_root,
-                        editor_context_state.clone(),
+                        scoped_editor_context_state.clone(),
+                    );
+                },
+            );
+
+            let global_editor_context_state = editor_context_state.clone();
+            rx.add_global_handler_closure_named(
+                signal_kind,
+                Some(format!("{EDITOR_CURSOR_HANDLER_NAME}_global_{editor_root:?}")),
+                move |world, emit, env| {
+                    let Some(EventSignal::Click {
+                        renderable,
+                        hit_point,
+                        ..
+                    }) = env.event.as_ref()
+                    else {
+                        return;
+                    };
+                    let Some(scene_hit) = resolve_world_scene_hit(world, *renderable) else {
+                        if debug_cursor_3d_enabled() {
+                            eprintln!(
+                                "[cursor_3d] no scene hit renderable={:?} '{}'",
+                                renderable,
+                                debug_component_label(world, *renderable)
+                            );
+                        }
+                        return;
+                    };
+                    // Scoped handlers already cover hits within the editor subtree.
+                    // The global bridge is only for world objects outside any editor root.
+                    if scene_hit.editor_root.is_some() {
+                        return;
+                    }
+
+                    let editor_context = global_editor_context_state
+                        .lock()
+                        .expect("editor context state mutex poisoned")
+                        .clone();
+                    if editor_context
+                        .active_editor
+                        .is_some_and(|active_editor| active_editor != editor_root)
+                    {
+                        if debug_cursor_3d_enabled() {
+                            eprintln!(
+                                "[cursor_3d] reject global hit renderable={:?} '{}' scene_editor={:?} active_editor={:?} editor_root={:?}",
+                                renderable,
+                                debug_component_label(world, *renderable),
+                                scene_hit.editor_root,
+                                editor_context.active_editor,
+                                editor_root
+                            );
+                        }
+                        return;
+                    }
+
+                    update_editor_cursor(
+                        world,
+                        emit,
+                        global_editor_context_state.clone(),
+                        editor_root,
+                        panel_query_root,
+                        scene_hit.target_transform,
+                        scene_hit.target_renderable,
+                        *hit_point,
                     );
                 },
             );
@@ -68,9 +132,6 @@ fn handle_cursor_signal(
         .lock()
         .expect("editor context state mutex poisoned")
         .clone();
-    if paint_panel_is_focused(world, panel_query_root, &editor_context) {
-        return;
-    }
 
     match event {
         Some(EventSignal::Click {
@@ -79,11 +140,28 @@ fn handle_cursor_signal(
             ..
         }) => {
             let Some(scene_hit) = resolve_world_scene_hit(world, *renderable) else {
+                if debug_cursor_3d_enabled() {
+                    eprintln!(
+                        "[cursor_3d] scoped no scene hit renderable={:?} '{}'",
+                        renderable,
+                        debug_component_label(world, *renderable)
+                    );
+                }
                 return;
             };
             let handles_non_editor_hit = scene_hit.editor_root.is_none()
                 && editor_context.active_editor == Some(editor_root);
             if scene_hit.editor_root != Some(editor_root) && !handles_non_editor_hit {
+                if debug_cursor_3d_enabled() {
+                    eprintln!(
+                        "[cursor_3d] scoped reject renderable={:?} '{}' scene_editor={:?} active_editor={:?} editor_root={:?}",
+                        renderable,
+                        debug_component_label(world, *renderable),
+                        scene_hit.editor_root,
+                        editor_context.active_editor,
+                        editor_root
+                    );
+                }
                 return;
             }
             update_editor_cursor(
@@ -99,18 +177,6 @@ fn handle_cursor_signal(
         }
         _ => {}
     }
-}
-
-fn paint_panel_is_focused(
-    world: &World,
-    panel_query_root: ComponentId,
-    editor_context: &EditorContextState,
-) -> bool {
-    let Some(paint_panel_root) = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
-    else {
-        return false;
-    };
-    editor_context.focused_panel == Some(paint_panel_root)
 }
 
 fn update_editor_cursor(
@@ -167,8 +233,46 @@ fn update_editor_cursor(
         editor_context.cursor_rotation = Some(rotation);
         editor_context.cursor_frame = frame;
     }
+    if debug_cursor_3d_enabled() {
+        eprintln!(
+            "[cursor_3d] update editor={:?} target_transform={:?} '{}' target_renderable={:?} '{}' translation=[{:+.3},{:+.3},{:+.3}]",
+            editor_root,
+            target_transform,
+            debug_component_label(world, target_transform),
+            target_renderable,
+            debug_component_label(world, target_renderable),
+            translation[0],
+            translation[1],
+            translation[2]
+        );
+    }
 
-    sync_editor_cursor_visual(world, emit, &editor_context_state, Some(panel_query_root));
+    let cursor_host = ensure_shared_workspace_cursor_host(world, Some(panel_query_root));
+    sync_editor_cursor_visual(world, emit, &editor_context_state, cursor_host);
+}
+
+fn debug_cursor_3d_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        let v = std::env::var("CAT_DEBUG_CURSOR_3D").unwrap_or_default();
+        matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
+}
+
+fn debug_component_label(world: &World, component: ComponentId) -> String {
+    world
+        .get_component_record(component)
+        .map(|n| {
+            if n.name.is_empty() {
+                n.component_type.clone()
+            } else {
+                format!("{}: {}", n.component_type, n.name)
+            }
+        })
+        .unwrap_or_else(|| "<missing>".to_string())
 }
 
 fn remap_cursor_rotation_to_surface_up(surface_aligned_rotation: [f32; 4]) -> [f32; 4] {

@@ -652,10 +652,16 @@ pub enum IntentValue {
     RegisterRaycast {
         component_ids: Vec<ComponentId>,
     },
+    RegisterRaycastable {
+        component_ids: Vec<ComponentId>,
+    },
     RegisterPointer {
         component_ids: Vec<ComponentId>,
     },
     RemoveRaycast {
+        component_ids: Vec<ComponentId>,
+    },
+    RemoveRaycastable {
         component_ids: Vec<ComponentId>,
     },
 
@@ -841,8 +847,10 @@ impl IntentValue {
             IntentValue::RemoveInputXrGamepad { .. } => "remove_input_xr_gamepad",
 
             IntentValue::RegisterRaycast { .. } => "register_raycast",
+            IntentValue::RegisterRaycastable { .. } => "register_raycastable",
             IntentValue::RegisterPointer { .. } => "register_pointer",
             IntentValue::RemoveRaycast { .. } => "remove_raycast",
+            IntentValue::RemoveRaycastable { .. } => "remove_raycastable",
 
             IntentValue::RegisterAnimation { .. } => "register_animation",
             IntentValue::SetAnimationState { .. } => "set_animation_state",

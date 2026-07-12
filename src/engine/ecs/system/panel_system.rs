@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::engine::ecs::component::{
-    DataComponent, DataValue, SelectableComponent, SelectionComponent, SerializeComponent,
-    TransformComponent,
+    DataComponent, DataValue, SelectableComponent,
+    SelectionComponent, SerializeComponent, TransformComponent,
 };
 use crate::engine::ecs::system::data_renderer_system::{
     DataRendererSystem, DetailRendererSpec, ItemRendererSpec, UiDetailItem, UiItem,

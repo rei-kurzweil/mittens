@@ -4,7 +4,7 @@ RendererSettings {
     window_size(1280, 960)
 }
 
-BGC.with_occlusion_and_lighting() {
+BGC {
     C.rgba(0.17, 0.12, 0.09, 1.0)
 }
 AL.rgb(0.28, 0.22, 0.20)

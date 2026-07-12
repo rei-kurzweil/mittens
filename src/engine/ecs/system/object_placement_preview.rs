@@ -1,5 +1,6 @@
 use crate::engine::ecs::component::{
-    OpacityComponent, SelectableComponent, SerializeComponent, TransformComponent,
+    OpacityComponent, SelectableComponent,
+    SerializeComponent, TransformComponent,
 };
 use crate::engine::ecs::system::paint_placement::{PlacementPose, SurfacePlacementFrame};
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
@@ -99,6 +100,7 @@ fn remove_preview_markers(world: &mut World, preview_root: ComponentId) {
             world.component_label(node),
             Some("placement_preview_selectable")
                 | Some("placement_preview_serialize")
+                | Some("placement_preview_world_panel")
                 | Some("placement_preview_opacity")
         ) {
             preview_nodes.push(node);

@@ -125,7 +125,7 @@ mod tests {
     use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::World;
     use crate::engine::ecs::component::{
-        BoundsComponent, ColorComponent, MirrorComponent, RenderableComponent,
+        BoundsComponent, ColorComponent, MirrorComponent, RaycastableComponent, RenderableComponent,
         StencilClipComponent, TextureComponent, TransformComponent,
     };
     use crate::engine::ecs::system::System;
@@ -630,6 +630,45 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn late_raycastable_init_refreshes_descendant_renderables() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut render_assets = RenderAssets::new();
+
+        let raycastable_root = world.add_component(RaycastableComponent::enabled());
+        let terrain_root =
+            world.add_component_boxed_named("terrain_root", Box::new(TransformComponent::new()));
+        let terrain_renderable = world.add_component(RenderableComponent::cube());
+
+        let _ = world.add_child(raycastable_root, terrain_root);
+        let _ = world.add_child(terrain_root, terrain_renderable);
+
+        world.init_component_tree(terrain_root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
+
+        assert!(
+            !crate::engine::ecs::system::BvhSystem::renderable_is_raycastable(
+                &world,
+                terrain_renderable
+            ),
+            "renderable should not become raycastable before the ancestor Raycastable is initialized"
+        );
+
+        world.init_component_tree(raycastable_root, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
+
+        assert!(
+            crate::engine::ecs::system::BvhSystem::renderable_is_raycastable(
+                &world,
+                terrain_renderable
+            ),
+            "initializing an ancestor Raycastable should refresh descendant renderable bindings"
+        );
+    }
 }
 
 impl SystemWorld {
@@ -1124,8 +1163,14 @@ impl SystemWorld {
             IntentValue::RegisterRaycast { component } => {
                 self.register_raycast(world, visuals, *component);
             }
+            IntentValue::RegisterRaycastable { component } => {
+                self.register_raycastable(world, visuals, *component);
+            }
             IntentValue::RemoveRaycast { component } => {
                 self.remove_raycast(world, visuals, *component);
+            }
+            IntentValue::RemoveRaycastable { component } => {
+                self.remove_raycastable(world, visuals, *component);
             }
 
             IntentValue::RegisterAnimation { component } => {
@@ -1241,6 +1286,8 @@ impl SystemWorld {
             return;
         };
 
+        self.editor_context.register_editor_identity(world, component);
+
         let editor_context_state = self.editor_context.shared_state();
         self.transform_gizmo
             .set_editor_context_state(editor_context_state.clone());
@@ -1353,6 +1400,48 @@ impl SystemWorld {
         self.raycast.notify_renderable_added(&*world, component);
 
         self.clipping.register_renderable(world, visuals, component);
+    }
+
+    fn refresh_raycastable_bindings(&mut self, world: &World, component: ComponentId) {
+        use crate::engine::ecs::component::RenderableComponent;
+        use std::collections::HashSet;
+
+        let mut renderables = HashSet::new();
+
+        let mut current = world.parent_of(component);
+        while let Some(node) = current {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(node)
+                .is_some()
+            {
+                renderables.insert(node);
+                break;
+            }
+            current = world.parent_of(node);
+        }
+
+        let mut stack = vec![component];
+        while let Some(node) = stack.pop() {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(node)
+                .is_some()
+            {
+                renderables.insert(node);
+            }
+            for &child in world.children_of(node) {
+                stack.push(child);
+            }
+        }
+
+        for renderable in renderables {
+            if BvhSystem::renderable_is_raycastable(world, renderable) {
+                self.bvh.queue_renderable_added(renderable);
+                self.raycast.notify_renderable_added(world, renderable);
+            } else {
+                self.bvh.queue_renderable_removed(renderable);
+                self.raycast.notify_renderable_removed(renderable);
+            }
+        }
     }
 
     /// Register a StencilClipComponent: find the sibling RenderableComponent in the same
@@ -1761,6 +1850,16 @@ impl SystemWorld {
         self.raycast.register_raycast(world, visuals, component);
     }
 
+    pub fn register_raycastable(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        let _ = visuals;
+        self.refresh_raycastable_bindings(world, component);
+    }
+
     /// Register a PointerComponent by ensuring it owns a child RayCastComponent.
     pub fn register_pointer(
         &mut self,
@@ -1780,6 +1879,16 @@ impl SystemWorld {
         component: ComponentId,
     ) {
         self.raycast.remove_raycast(world, visuals, component);
+    }
+
+    pub fn remove_raycastable(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        let _ = visuals;
+        self.refresh_raycastable_bindings(world, component);
     }
 
     pub fn register_animation(

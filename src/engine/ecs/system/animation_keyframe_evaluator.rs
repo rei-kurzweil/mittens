@@ -163,7 +163,6 @@ impl AnimationKeyframeEvaluator {
             })
             .collect();
 
-        let mut saw_any_action = false;
         for action_cid in action_ids {
             if let Err(e) = self.resolve_action_targets(world, action_cid) {
                 eprintln!("[AnimationSystem] lazy resolve failed for {action_cid:?}: {e}");
@@ -173,8 +172,6 @@ impl AnimationKeyframeEvaluator {
             else {
                 continue;
             };
-
-            saw_any_action = true;
 
             if audio_already_scheduled_this_cycle {
                 match action_comp.signal {
@@ -200,11 +197,6 @@ impl AnimationKeyframeEvaluator {
             fire_music_note_children(world, rx, kf_id, Some(beat_now));
         }
 
-        if !saw_any_action {
-            if let Some(kf) = world.get_component_by_id_as::<KeyframeComponent>(kf_id) {
-                println!("[AnimationSystem] beat {:.3}: (no actions)", kf.beat);
-            }
-        }
     }
 }
 

@@ -13,6 +13,8 @@ use crate::engine::graphics::primitives::{CpuMeshHandle, TransformMatrix};
 use crate::engine::user_input::InputState;
 use crate::utils::math;
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 use winit::event::MouseButton;
 
 #[derive(Debug, Default)]
@@ -24,6 +26,12 @@ pub struct RayCastSystem {
     ///
     /// This is used to avoid scanning `world.all_components()` for brute-force fallback tests.
     eligible_renderables: HashSet<ComponentId>,
+    profile_frames: u64,
+    profile_rays: u64,
+    profile_bvh_hits: u64,
+    profile_fallbacks: u64,
+    profile_fallback_candidates: u64,
+    profile_query_time: Duration,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -42,6 +50,44 @@ enum RaySourceKind {
 use crate::engine::ecs::system::pointer_system::pointer_topology_context;
 
 impl RayCastSystem {
+    fn debug_raycast_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            let v = std::env::var("CAT_DEBUG_RAYCAST").unwrap_or_default();
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+    }
+
+    fn profile_spatial_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            matches!(
+                std::env::var("CAT_PROFILE_SPATIAL")
+                    .unwrap_or_default()
+                    .trim()
+                    .to_ascii_lowercase()
+                    .as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+    }
+
+    fn debug_component_label(world: &World, component: ComponentId) -> String {
+        world
+            .get_component_record(component)
+            .map(|n| {
+                if n.name.is_empty() {
+                    n.component_type.clone()
+                } else {
+                    format!("{}: {}", n.component_type, n.name)
+                }
+            })
+            .unwrap_or_else(|| "<missing>".to_string())
+    }
+
     fn raycastable_for_renderable(
         world: &World,
         renderable: ComponentId,
@@ -852,6 +898,10 @@ impl RayCastSystem {
         pointer_system: &crate::engine::ecs::system::pointer_system::PointerSystem,
         _dt_sec: f32,
     ) {
+        let profile = Self::profile_spatial_enabled();
+        if profile {
+            self.profile_frames += 1;
+        }
         // Cursor ray (if needed by any raycaster this frame).
         let cursor_ray = Self::ray_from_cursor(visuals, input);
 
@@ -899,10 +949,55 @@ impl RayCastSystem {
                     continue;
                 }
 
-                let mut hits =
-                    self.cast_against_renderables_bvh(world, bvh, origin, dir, max_distance);
-                if hits.is_empty() {
+                let query_started = profile.then(Instant::now);
+                let mut hits = self.cast_against_renderables_bvh(world, bvh, origin, dir, max_distance);
+                if profile {
+                    self.profile_rays += 1;
+                    self.profile_bvh_hits += hits.len() as u64;
+                }
+                if hits.is_empty() && !bvh.has_index() {
                     hits = self.cast_against_renderables(world, origin, dir, max_distance);
+                    if profile {
+                        self.profile_fallbacks += 1;
+                        self.profile_fallback_candidates += self.eligible_renderables.len() as u64;
+                    }
+                }
+                if let Some(started) = query_started {
+                    self.profile_query_time += started.elapsed();
+                }
+                if Self::debug_raycast_enabled() {
+                    let summary: Vec<String> = hits
+                        .iter()
+                        .take(8)
+                        .map(|(cid, t)| {
+                            let rc = Self::raycastable_for_renderable(world, *cid);
+                            format!(
+                                "{:?} '{}' t={:.3} pri={} pe={:?}",
+                                cid,
+                                Self::debug_component_label(world, *cid),
+                                t,
+                                rc.map(|r| r.interaction_priority).unwrap_or(0),
+                                rc.map(|r| r.pointer_events)
+                                    .unwrap_or(crate::engine::ecs::component::PointerEvents::All)
+                            )
+                        })
+                        .collect();
+                    eprintln!(
+                        "[raycast] rc={:?} source={:?} origin=[{:+.3},{:+.3},{:+.3}] dir=[{:+.3},{:+.3},{:+.3}] hits={}",
+                        rcid,
+                        source,
+                        origin[0],
+                        origin[1],
+                        origin[2],
+                        dir[0],
+                        dir[1],
+                        dir[2],
+                        if summary.is_empty() {
+                            "<none>".to_string()
+                        } else {
+                            summary.join(" | ")
+                        }
+                    );
                 }
 
                 // Emit one RayIntersected per hit (front-to-back). GestureSystem accumulates
@@ -935,6 +1030,21 @@ impl RayCastSystem {
                     }
                 }
             }
+        }
+
+        if profile && self.profile_frames >= 120 {
+            eprintln!(
+                "[spatial-profile][raycast] frames={} rays={} bvh_hits={} fallbacks={} fallback_scan_candidates={} query_ms={:.3}",
+                self.profile_frames, self.profile_rays, self.profile_bvh_hits,
+                self.profile_fallbacks, self.profile_fallback_candidates,
+                self.profile_query_time.as_secs_f64() * 1000.0
+            );
+            self.profile_frames = 0;
+            self.profile_rays = 0;
+            self.profile_bvh_hits = 0;
+            self.profile_fallbacks = 0;
+            self.profile_fallback_candidates = 0;
+            self.profile_query_time = Duration::ZERO;
         }
     }
 }

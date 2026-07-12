@@ -155,6 +155,10 @@ ED {
 // --- bisket avatar — preserve the useful XR topology from bisket-vr-demo ---
 ED {
     InputXR.on() {
+        InputXRGamepad {
+            locomotion()
+            speed(1.5)
+        }
         T {
             AVC {
                 head_bone("J_Bip_C_Head")

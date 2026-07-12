@@ -161,9 +161,11 @@ pub fn authored_scene_node_policy(
         Some("editor_auto_raycastable") => return AuthoredSceneNodePolicy::Flatten,
         Some("selection_highlight")
         | Some("editor_runtime_ui_root")
+        | Some("editor_workspace_cursor_root")
+        | Some("editor_workspace_gizmo_root")
         | Some("editor_gizmo_anchor")
-        | Some("grid_visual")
-        | Some("editor_transform_gizmo") => return AuthoredSceneNodePolicy::Skip,
+        | Some("editor_transform_gizmo")
+        | Some("grid_live_root") => return AuthoredSceneNodePolicy::Skip,
         _ => {}
     }
 
@@ -520,6 +522,10 @@ pub fn rerender_world_panel_status(
     rerender_panel_status(world, emit, world_panel_root, status_wrap, label);
 }
 
+pub(crate) fn world_panel_status_label(rows_len: usize) -> String {
+    format!("rows: {rows_len}")
+}
+
 // ── Content rendering ───────────────────────────────────────────────
 
 pub fn rerender_world_panel_content(
@@ -697,10 +703,17 @@ pub fn apply_world_panel_semantic_selection(
     let _selection_result =
         apply_semantic_target_selection(world, emit, editor_context_state, target_component, true);
 
-    let status_text = format!(
-        "selected {}",
-        world_panel_item_label(world, target_component)
-    );
+    let status_text =
+        if let Some(rows_mount) = world.find_component(world_panel_root, "#rows_mount") {
+            let rows_len = world.children_of(rows_mount).len().saturating_sub(1);
+            format!(
+                "{} | selected {}",
+                world_panel_status_label(rows_len),
+                world_panel_item_label(world, target_component)
+            )
+        } else {
+            format!("selected {}", world_panel_item_label(world, target_component))
+        };
     rerender_world_panel_status(world, emit, world_panel_root, status_wrap, &status_text);
     true
 }
@@ -1126,6 +1139,10 @@ pub(crate) fn rerender_world_panel_for_context(
             .lock()
             .expect("world panel scene model mutex poisoned"),
     );
+    if let Some(status_wrap) = world.find_component(world_panel_root, PANEL_STATUS_WRAP_SELECTOR) {
+        let status_text = world_panel_status_label(world_model.rows.len());
+        rerender_world_panel_status(world, emit, world_panel_root, status_wrap, &status_text);
+    }
     rerender_world_panel_content(
         world,
         emit,

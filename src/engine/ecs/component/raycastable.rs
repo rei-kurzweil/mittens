@@ -90,6 +90,36 @@ impl RaycastableComponent {
 }
 
 impl Component for RaycastableComponent {
+    fn init(
+        &mut self,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        component: crate::engine::ecs::ComponentId,
+    ) {
+        emit.push_intent(
+            component,
+            crate::engine::ecs::IntentSignal::now(
+                crate::engine::ecs::IntentValue::RegisterRaycastable {
+                    component_ids: vec![component],
+                },
+            ),
+        );
+    }
+
+    fn cleanup(
+        &mut self,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+        component: crate::engine::ecs::ComponentId,
+    ) {
+        emit.push_intent(
+            component,
+            crate::engine::ecs::IntentSignal::now(
+                crate::engine::ecs::IntentValue::RemoveRaycastable {
+                    component_ids: vec![component],
+                },
+            ),
+        );
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

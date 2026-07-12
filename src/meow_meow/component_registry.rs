@@ -17,7 +17,8 @@ use crate::engine::ecs::component::{
     Camera2DComponent, Camera3DComponent, CameraXRComponent, ClockComponent, CollisionComponent,
     CollisionShape, CollisionShapeComponent, ColorComponent, ControllerHand, ControllerPoseKind,
     DataComponent, DataValue, DirectionalLightComponent, Display, EdgeInsets, EditorComponent,
-    EditorInteractionMode, ElementType, EmissiveComponent, EmissivePassComponent,
+    EditorInteractionMode, ElementType, EmissiveComponent,
+    EmissivePassComponent,
     FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent,
     GestureCoordTypeComponent, GravityComponent, GridComponent, HtmlElementComponent,
     HttpClientComponent, HttpServerComponent, IKChainComponent, IKSolver, InputComponent,
@@ -2530,6 +2531,7 @@ fn apply_call(
     }
     if let Some(ed) = world.get_component_by_id_as_mut::<EditorComponent>(id) {
         match method {
+            "active" => ed.active = true,
             "interaction_mode" => {
                 ed.interaction_mode = match arg_str(args, 0)? {
                     "cursor_3d" => EditorInteractionMode::Cursor3d,

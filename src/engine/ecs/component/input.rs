@@ -9,7 +9,7 @@ pub struct InputComponent {
 
 impl InputComponent {
     pub fn new() -> Self {
-        Self { speed: 0.01 }
+        Self { speed: 0.02 }
     }
 
     pub fn with_speed(mut self, speed: f32) -> Self {

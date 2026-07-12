@@ -49,6 +49,10 @@ I.speed(2.5) {
 let xr_cam = CXR.on()
 
 InputXR.on() {
+    InputXRGamepad {
+        locomotion()
+        speed(1.5)
+    }
     T.position(0.0, 1.55, 0.0) {
         xr_cam {
             Pointer {}

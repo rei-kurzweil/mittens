@@ -53,7 +53,7 @@ impl InputXRGamepadComponent {
             enabled: true,
             hand: XrHandPreference::Default,
             locomotion: true,
-            speed: 1.5,
+            speed: 3.0,
             deadzone: 0.2,
             component_id: None,
         }
@@ -155,7 +155,7 @@ impl Component for InputXRGamepadComponent {
         if !self.locomotion {
             ce = ce.with_call("locomotion", vec![b(false)]);
         }
-        if (self.speed - 1.5).abs() > f32::EPSILON {
+        if (self.speed - 3.0).abs() > f32::EPSILON {
             ce = ce.with_call("speed", vec![num(self.speed as f64)]);
         }
         if (self.deadzone - 0.2).abs() > f32::EPSILON {

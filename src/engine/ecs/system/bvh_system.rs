@@ -13,6 +13,8 @@ use bvh::bvh::BVHNode;
 use bvh::ray::Ray;
 use bvh::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
+use std::time::Instant;
 
 #[derive(Debug, Default)]
 pub struct BvhSystem {
@@ -71,6 +73,24 @@ impl BHShape for RenderableAabb {
 }
 
 impl BvhSystem {
+    pub fn has_index(&self) -> bool {
+        self.bvh.is_some()
+    }
+
+    fn profile_spatial_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            matches!(
+                std::env::var("CAT_PROFILE_SPATIAL")
+                    .unwrap_or_default()
+                    .trim()
+                    .to_ascii_lowercase()
+                    .as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+    }
+
     pub(crate) fn renderable_is_raycastable(world: &World, renderable_cid: ComponentId) -> bool {
         Self::find_raycastable_for_renderable(world, renderable_cid).is_some()
     }
@@ -192,6 +212,11 @@ impl BvhSystem {
     ///
     /// Intended to be called once after `CommandQueue::flush` completes.
     pub fn flush_pending(&mut self, world: &World) {
+        let profile = Self::profile_spatial_enabled();
+        let started = profile.then(Instant::now);
+        let queued_adds = self.pending_add.len();
+        let queued_refits = self.pending_refit.len();
+        let rebuilding = self.dirty_rebuild || queued_adds > 0;
         // Commit pending adds.
         if !self.pending_add.is_empty() {
             for cid in std::mem::take(&mut self.pending_add) {
@@ -256,6 +281,12 @@ impl BvhSystem {
             self.pending_refit_shape_indices.clear();
             self.rebuild_from_shapes();
             self.dirty_rebuild = false;
+            if let Some(started) = started {
+                eprintln!(
+                    "[spatial-profile][bvh] shapes={} add={} refit={} rebuild=true elapsed_ms={:.3}",
+                    self.shapes.len(), queued_adds, queued_refits, started.elapsed().as_secs_f64() * 1000.0
+                );
+            }
             return;
         }
 
@@ -270,6 +301,16 @@ impl BvhSystem {
                 }
             }
             self.pending_refit_shape_indices.clear();
+        }
+
+        if let Some(started) = started
+            && (queued_adds > 0 || queued_refits > 0 || rebuilding)
+        {
+            eprintln!(
+                "[spatial-profile][bvh] shapes={} add={} refit={} rebuild={} elapsed_ms={:.3}",
+                self.shapes.len(), queued_adds, queued_refits, rebuilding,
+                started.elapsed().as_secs_f64() * 1000.0
+            );
         }
     }
 
@@ -465,9 +506,7 @@ impl crate::engine::ecs::system::System for BvhSystem {
         _input: &InputState,
         _dt_sec: f32,
     ) {
-        // Event-driven via command queue flush.
-        // Keep this as a safety net in case someone mutates transforms/renderables directly.
-        let _ = world;
+        self.flush_pending(world);
     }
 }
 

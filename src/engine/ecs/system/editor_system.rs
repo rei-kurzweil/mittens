@@ -1,6 +1,6 @@
 use crate::engine::ecs::component::{
     EditorComponent, EditorInteractionMode, RaycastableComponent, SelectableComponent,
-    SerializeComponent, TransformComponent,
+    SerializeComponent,
 };
 use crate::engine::ecs::system::editor::context::{
     EditorContextState, ensure_shared_workspace_transform_gizmo_global,
@@ -8,9 +8,9 @@ use crate::engine::ecs::system::editor::context::{
 use crate::engine::ecs::system::editor_scene_hit::resolve_world_scene_hit;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, RxWorld, SignalKind, World};
 use std::collections::HashSet;
+use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
 
-const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
 const EDITOR_SELECT_HANDLER_NAME: &str = "editor_select";
 
 #[derive(Debug, Default)]
@@ -30,7 +30,7 @@ impl EditorSystem {
         &mut self,
         rx: &mut RxWorld,
         editor_root: ComponentId,
-        panel_query_root: ComponentId,
+        _panel_query_root: ComponentId,
         editor_context_state: Arc<Mutex<EditorContextState>>,
     ) {
         if self.installed_editor_roots.contains(&editor_root) {
@@ -38,6 +38,7 @@ impl EditorSystem {
         }
         self.installed_editor_roots.insert(editor_root);
 
+        let scoped_editor_context_state = editor_context_state.clone();
         rx.add_handler_closure_named(
             SignalKind::Click,
             editor_root,
@@ -47,21 +48,44 @@ impl EditorSystem {
                     return;
                 };
 
-                let editor_context = editor_context_state
+                let Some(scene_hit) = resolve_world_scene_hit(world, *renderable) else {
+                    if debug_editor_select_enabled() {
+                        eprintln!(
+                            "[editor_select] no scene hit renderable={:?} '{}'",
+                            renderable,
+                            debug_component_label(world, *renderable)
+                        );
+                    }
+                    return;
+                };
+                let editor_context = scoped_editor_context_state
                     .lock()
                     .expect("editor context state mutex poisoned")
                     .clone();
-                if paint_panel_is_focused(world, panel_query_root, &editor_context) {
-                    return;
-                }
-
-                let Some(scene_hit) = resolve_world_scene_hit(world, *renderable) else {
-                    return;
-                };
                 let handles_non_editor_hit = scene_hit.editor_root.is_none()
                     && editor_context.active_editor == Some(editor_root);
                 if scene_hit.editor_root != Some(editor_root) && !handles_non_editor_hit {
+                    if debug_editor_select_enabled() {
+                        eprintln!(
+                            "[editor_select] reject renderable={:?} '{}' scene_editor={:?} active_editor={:?} editor_root={:?}",
+                            renderable,
+                            debug_component_label(world, *renderable),
+                            scene_hit.editor_root,
+                            editor_context.active_editor,
+                            editor_root
+                        );
+                    }
                     return;
+                }
+                if debug_editor_select_enabled() {
+                    eprintln!(
+                        "[editor_select] select renderable={:?} '{}' target_transform={:?} '{}' mode={:?}",
+                        renderable,
+                        debug_component_label(world, *renderable),
+                        scene_hit.target_transform,
+                        debug_component_label(world, scene_hit.target_transform),
+                        editor_interaction_mode(world, editor_root)
+                    );
                 }
 
                 let interaction_mode = editor_interaction_mode(world, editor_root);
@@ -85,6 +109,58 @@ impl EditorSystem {
                             true,
                         );
                     }
+                }
+            },
+        );
+
+        let global_editor_context_state = editor_context_state.clone();
+        rx.add_global_handler_closure_named(
+            SignalKind::Click,
+            Some(format!("{EDITOR_SELECT_HANDLER_NAME}_global_{editor_root:?}")),
+            move |world, emit, env| {
+                let Some(EventSignal::Click { renderable, .. }) = env.event.as_ref() else {
+                    return;
+                };
+
+                let Some(scene_hit) = resolve_world_scene_hit(world, *renderable) else {
+                    return;
+                };
+                if scene_hit.editor_root.is_some() {
+                    return;
+                }
+
+                let editor_context = global_editor_context_state
+                    .lock()
+                    .expect("editor context state mutex poisoned")
+                    .clone();
+                if editor_context
+                    .active_editor
+                    .is_some_and(|active_editor| active_editor != editor_root)
+                {
+                    return;
+                }
+
+                if debug_editor_select_enabled() {
+                    eprintln!(
+                        "[editor_select] global select renderable={:?} '{}' target_transform={:?} '{}'",
+                        renderable,
+                        debug_component_label(world, *renderable),
+                        scene_hit.target_transform,
+                        debug_component_label(world, scene_hit.target_transform),
+                    );
+                }
+
+                match editor_interaction_mode(world, editor_root) {
+                    EditorInteractionMode::Select | EditorInteractionMode::SelectAndCursor => {
+                        select_editor_target(
+                            world,
+                            emit,
+                            editor_root,
+                            scene_hit.target_transform,
+                            true,
+                        );
+                    }
+                    EditorInteractionMode::Cursor3d => {}
                 }
             },
         );
@@ -131,6 +207,30 @@ impl EditorSystem {
     }
 }
 
+fn debug_editor_select_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        let v = std::env::var("CAT_DEBUG_EDITOR_SELECT").unwrap_or_default();
+        matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
+}
+
+fn debug_component_label(world: &World, component: ComponentId) -> String {
+    world
+        .get_component_record(component)
+        .map(|n| {
+            if n.name.is_empty() {
+                n.component_type.clone()
+            } else {
+                format!("{}: {}", n.component_type, n.name)
+            }
+        })
+        .unwrap_or_else(|| "<missing>".to_string())
+}
+
 fn subtree_root_has_explicit_raycastable(world: &World, node: ComponentId) -> bool {
     world
         .get_component_by_id_as::<RaycastableComponent>(node)
@@ -142,18 +242,6 @@ fn subtree_root_has_selectable_off(world: &World, node: ComponentId) -> bool {
         .get_component_by_id_as::<SelectableComponent>(node)
         .map(|s| !s.enabled)
         .unwrap_or(false)
-}
-
-fn paint_panel_is_focused(
-    world: &World,
-    panel_query_root: ComponentId,
-    editor_context: &EditorContextState,
-) -> bool {
-    let Some(paint_panel_root) = world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
-    else {
-        return false;
-    };
-    editor_context.focused_panel == Some(paint_panel_root)
 }
 
 fn editor_interaction_mode(world: &World, editor_root: ComponentId) -> EditorInteractionMode {
