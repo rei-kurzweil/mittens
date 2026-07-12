@@ -46,6 +46,18 @@ use crate::engine::ecs::system::{
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
 use std::path::Path;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
+
+#[derive(Debug, Default)]
+struct SystemPhaseProfile {
+    frames: u64,
+    animation: Duration,
+    transform: Duration,
+    skinning: Duration,
+    xr: Duration,
+    avatar_ik: Duration,
+}
 
 /// System world that holds and runs all registered systems.
 #[derive(Debug, Default)]
@@ -54,6 +66,7 @@ pub struct SystemWorld {
 
     /// REPL command queue (executed by Universe on the main thread).
     repl_command_queue: Vec<String>,
+    phase_profile: SystemPhaseProfile,
 
     pub clock: ClockSystem,
     pub audio: AudioSystem,
@@ -672,6 +685,41 @@ mod tests {
 }
 
 impl SystemWorld {
+    fn profile_systems_enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            matches!(
+                std::env::var("CAT_PROFILE_SYSTEMS")
+                    .unwrap_or_default()
+                    .trim()
+                    .to_ascii_lowercase()
+                    .as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+    }
+
+    fn finish_phase_profile_frame(&mut self) {
+        self.phase_profile.frames += 1;
+        if self.phase_profile.frames < 120 {
+            return;
+        }
+        let frames = self.phase_profile.frames as f64;
+        let avg_ms = |duration: Duration| duration.as_secs_f64() * 1000.0 / frames;
+        let line = format!(
+            "[system-profile] frames={} avg_ms animation={:.3} transform={:.3} skinning={:.3} xr={:.3} avatar_ik={:.3}",
+            self.phase_profile.frames,
+            avg_ms(self.phase_profile.animation),
+            avg_ms(self.phase_profile.transform),
+            avg_ms(self.phase_profile.skinning),
+            avg_ms(self.phase_profile.xr),
+            avg_ms(self.phase_profile.avatar_ik),
+        );
+        eprintln!("{line}");
+        crate::utils::profile_log::append("system-profile", &line);
+        self.phase_profile = SystemPhaseProfile::default();
+    }
+
     pub(crate) fn remove_subtree_immediate(
         &mut self,
         world: &mut World,
@@ -1140,6 +1188,11 @@ impl SystemWorld {
 
             IntentValue::RegisterXr { component } => {
                 self.register_xr(world, visuals, *component);
+            }
+            IntentValue::RetryXrRuntime => {
+                if let Err(error) = self.xr.retry_runtime() {
+                    eprintln!("[OpenXR] explicit retry failed: {error}");
+                }
             }
             IntentValue::RegisterInputXr { component } => {
                 self.register_input_xr(world, visuals, *component);
@@ -2334,8 +2387,13 @@ impl SystemWorld {
         self.audio
             .update_transport_from_clock(self.clock.beat_now(), self.clock.bpm());
 
+        let profile_systems = Self::profile_systems_enabled();
+        let phase_started = profile_systems.then(Instant::now);
         self.animation
             .tick_with_beat(world, self.clock.beat_now(), self.clock.bpm(), &mut self.rx);
+        if let Some(started) = phase_started {
+            self.phase_profile.animation += started.elapsed();
+        }
 
         // Execute/dispatch any signals emitted by AnimationSystem before downstream systems run.
         let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);
@@ -2345,10 +2403,18 @@ impl SystemWorld {
         self.transform_stream.tick(world, visuals, input, dt_sec);
 
         // Ensure transforms are propagated before any camera systems consume world matrices.
+        let phase_started = profile_systems.then(Instant::now);
         self.transform.tick(world, visuals, input, dt_sec);
+        if let Some(started) = phase_started {
+            self.phase_profile.transform += started.elapsed();
+        }
 
         // Compute joint palettes from cached world transforms.
+        let phase_started = profile_systems.then(Instant::now);
         self.skinned_mesh.tick(world, visuals, input, dt_sec);
+        if let Some(started) = phase_started {
+            self.phase_profile.skinning += started.elapsed();
+        }
 
         // Spatial acceleration structure built from latest world transforms.
         self.bvh.tick(world, visuals, input, dt_sec);
@@ -2377,8 +2443,12 @@ impl SystemWorld {
         // Update window camera + select active XR camera rig before OpenXR consumes it.
         self.camera.tick(world, visuals, input, dt_sec);
         // OpenXR consumes the latest rig transform + publishes per-eye cameras.
+        let phase_started = profile_systems.then(Instant::now);
         self.xr
             .tick_with_queue(world, visuals, input, queue, dt_sec);
+        if let Some(started) = phase_started {
+            self.phase_profile.xr += started.elapsed();
+        }
         // Controller pose updates should be visible to raycasting/gestures this frame.
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
@@ -2429,6 +2499,7 @@ impl SystemWorld {
 
         // Avatar body yaw: smoothly rotate body to follow head when yaw diverges.
         // Runs after OpenXR + raycasts + gestures so avatar_driven_t.matrix_world is current.
+        let phase_started = profile_systems.then(Instant::now);
         self.avatar_body_yaw.tick(world, queue, dt_sec);
         self.avatar_control.tick(world, input, queue, dt_sec);
         // head_pose_body_xz_follow owns model_root XZ translation + neck
@@ -2437,8 +2508,15 @@ impl SystemWorld {
         // docs/task/avatar-control-simple-humanoid-body-follow.md).
         self.head_pose_body_xz_follow.tick(world, queue, dt_sec);
         self.ik.tick(world, queue, dt_sec);
+        if let Some(started) = phase_started {
+            self.phase_profile.avatar_ik += started.elapsed();
+        }
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
+
+        if profile_systems {
+            self.finish_phase_profile_frame();
+        }
 
         // Flex-column position pass: emit UpdateTransform for dirty LayoutComponent subtrees.
         // Runs after transforms are propagated so initial world matrices are valid.

@@ -63,6 +63,11 @@ impl Universe {
         }
     }
 
+    /// Explicitly retry OpenXR initialization after launching without a runtime.
+    pub fn retry_xr_runtime(&mut self) -> Result<(), String> {
+        self.systems.xr.retry_runtime()
+    }
+
     /// Add a component subtree to the "live" universe by initializing it.
     ///
     /// This runs `Component::init` for `root` and any not-yet-initialized descendants.

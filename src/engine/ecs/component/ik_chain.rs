@@ -123,6 +123,9 @@ pub struct IKChainComponent {
     /// (current behavior for non-AVC chains).
     pub(crate) avc_id: Option<ComponentId>,
 
+    /// Cached InputXR/XRHand component governing this runtime AVC target.
+    pub(crate) xr_pose_driver: Option<ComponentId>,
+
     /// Lazily created runtime-only debug visual ids for TwoBoneIK inspection.
     pub(crate) two_bone_debug_visuals: Option<TwoBoneIkDebugVisuals>,
 
@@ -139,6 +142,7 @@ impl IKChainComponent {
             target_source: None,
             end_effector_source: None,
             avc_id: None,
+            xr_pose_driver: None,
             two_bone_debug_visuals: None,
             component: None,
         }

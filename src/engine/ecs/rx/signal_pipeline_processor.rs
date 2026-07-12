@@ -150,6 +150,7 @@ impl SignalPipelineProcessor {
             | IntentValue::ScheduleAudioGainSet { component_ids, .. } => Some(component_ids),
 
             IntentValue::Noop
+            | IntentValue::RetryXrRuntime
             | IntentValue::Print { .. }
             | IntentValue::ReplExec { .. }
             | IntentValue::Attach { .. }
@@ -267,6 +268,7 @@ impl SignalPipelineProcessor {
             IntentValue::RegisterSignalRouteUpward { .. }
             | IntentValue::RemoveSignalRouteUpward { .. }
             | IntentValue::Noop
+            | IntentValue::RetryXrRuntime
             | IntentValue::Print { .. }
             | IntentValue::ReplExec { .. }
             | IntentValue::Attach { .. }

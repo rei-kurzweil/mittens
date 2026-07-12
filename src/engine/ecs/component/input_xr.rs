@@ -9,6 +9,8 @@ use crate::engine::ecs::component::Component;
 #[derive(Debug, Clone)]
 pub struct InputXRComponent {
     pub enabled: bool,
+    /// Runtime-only: true after a valid headset pose was applied this frame.
+    pub pose_valid: bool,
     pub component_id: Option<ComponentId>,
 }
 
@@ -16,6 +18,7 @@ impl InputXRComponent {
     pub fn new(enabled: bool) -> Self {
         Self {
             enabled,
+            pose_valid: false,
             component_id: None,
         }
     }

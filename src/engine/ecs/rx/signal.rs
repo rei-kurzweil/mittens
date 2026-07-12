@@ -323,6 +323,7 @@ impl IntentSignal {
 #[derive(Debug, Clone)]
 pub enum IntentValue {
     Noop,
+    RetryXrRuntime,
 
     /// Spawn a component tree described by a fully-evaluated `MaterializedCE` and optionally
     /// attach it to a parent. If `parent` is `None` the root becomes a world root.
@@ -752,6 +753,7 @@ impl IntentValue {
     pub fn kind_name(&self) -> &'static str {
         match self {
             IntentValue::Noop => "noop",
+            IntentValue::RetryXrRuntime => "retry_xr_runtime",
             IntentValue::SpawnComponentTree { .. } => "spawn_component_tree",
             IntentValue::Print { .. } => "print",
             IntentValue::ReplExec { .. } => "repl_exec",

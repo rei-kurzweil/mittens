@@ -40,6 +40,9 @@ fn tick_one(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter, dt
     };
 
     let Some(hmd_id) = hmd_id else { return };
+    if !xr_source_is_valid(world, hmd_id) {
+        return;
+    }
 
     let hmd_yaw = {
         let Some(t) = world.get_component_by_id_as::<TransformComponent>(hmd_id) else {
@@ -93,6 +96,19 @@ fn tick_one(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter, dt
             scale,
         },
     );
+}
+
+fn xr_source_is_valid(world: &World, start: ComponentId) -> bool {
+    let mut current = Some(start);
+    while let Some(component) = current {
+        if let Some(input) = world
+            .get_component_by_id_as::<crate::engine::ecs::component::InputXRComponent>(component)
+        {
+            return input.pose_valid;
+        }
+        current = world.parent_of(component);
+    }
+    true
 }
 
 // ---------------------------------------------------------------------------

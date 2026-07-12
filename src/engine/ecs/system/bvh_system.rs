@@ -282,10 +282,12 @@ impl BvhSystem {
             self.rebuild_from_shapes();
             self.dirty_rebuild = false;
             if let Some(started) = started {
-                eprintln!(
+                let line = format!(
                     "[spatial-profile][bvh] shapes={} add={} refit={} rebuild=true elapsed_ms={:.3}",
                     self.shapes.len(), queued_adds, queued_refits, started.elapsed().as_secs_f64() * 1000.0
                 );
+                eprintln!("{line}");
+                crate::utils::profile_log::append("spatial-profile", &line);
             }
             return;
         }
@@ -306,11 +308,13 @@ impl BvhSystem {
         if let Some(started) = started
             && (queued_adds > 0 || queued_refits > 0 || rebuilding)
         {
-            eprintln!(
+            let line = format!(
                 "[spatial-profile][bvh] shapes={} add={} refit={} rebuild={} elapsed_ms={:.3}",
                 self.shapes.len(), queued_adds, queued_refits, rebuilding,
                 started.elapsed().as_secs_f64() * 1000.0
             );
+            eprintln!("{line}");
+            crate::utils::profile_log::append("spatial-profile", &line);
         }
     }
 

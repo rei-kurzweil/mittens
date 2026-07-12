@@ -125,14 +125,35 @@ fn find_avc_ancestor(world: &World, id: ComponentId) -> Option<ComponentId> {
 }
 
 fn tick_chain(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter) {
-    let (solver, target_id, end_effector_id, weight, avc_id) = {
+    let (solver, target_id, end_effector_id, weight, avc_id, xr_pose_driver) = {
         let Some(c) = world.get_component_by_id_as::<IKChainComponent>(id) else {
             return;
         };
-        (c.solver, c.target_id, c.end_effector_id, c.weight, c.avc_id)
+        (
+            c.solver,
+            c.target_id,
+            c.end_effector_id,
+            c.weight,
+            c.avc_id,
+            c.xr_pose_driver,
+        )
     };
     if weight <= 0.0 {
         return;
+    }
+    if let Some(driver) = xr_pose_driver {
+        let valid = world
+            .get_component_by_id_as::<crate::engine::ecs::component::InputXRComponent>(driver)
+            .map(|component| component.pose_valid)
+            .or_else(|| {
+                world
+                    .get_component_by_id_as::<crate::engine::ecs::component::ControllerXRComponent>(driver)
+                    .map(|component| component.pose_valid)
+            })
+            .unwrap_or(false);
+        if !valid {
+            return;
+        }
     }
 
     // For AimConstraint / Fabrik, root joint TC = parent of IKChainComponent.
@@ -1050,6 +1071,41 @@ mod tests {
         fn push_intent(&mut self, scope: ComponentId, intent: crate::engine::ecs::IntentSignal) {
             self.intents.push((scope, intent.value));
         }
+    }
+
+    #[test]
+    fn xr_driven_chain_skips_until_pose_is_valid() {
+        let mut world = World::default();
+        let driver = world.add_component(
+            crate::engine::ecs::component::InputXRComponent::on(),
+        );
+        let target = world.add_component(TransformComponent::new());
+        let root = world.add_component(TransformComponent::new());
+        world.add_child(driver, target).unwrap();
+
+        let mut chain = IKChainComponent::new(
+            IKSolver::AimConstraint {
+                offset_yaw: 0.0,
+                copy_position: false,
+                target_position_offset: [0.0; 3],
+            },
+            target,
+            root,
+        );
+        chain.xr_pose_driver = Some(driver);
+        let chain_id = world.add_component(chain);
+        world.add_child(root, chain_id).unwrap();
+
+        let mut emit = TestEmitter::default();
+        tick_chain(chain_id, &mut world, &mut emit);
+        assert!(emit.intents.is_empty());
+
+        world
+            .get_component_by_id_as_mut::<crate::engine::ecs::component::InputXRComponent>(driver)
+            .unwrap()
+            .pose_valid = true;
+        tick_chain(chain_id, &mut world, &mut emit);
+        assert!(!emit.intents.is_empty());
     }
 
     // Temporarily gated: see docs/bugs/ik-solver-api-drift-breaks-tests.md.

@@ -35,6 +35,8 @@ impl Default for ControllerPoseKind {
 #[derive(Debug, Clone, Default)]
 pub struct ControllerXRComponent {
     pub enabled: bool,
+    /// Runtime-only: true after a valid controller pose was applied this frame.
+    pub pose_valid: bool,
     pub hand: ControllerHand,
     pub pose: ControllerPoseKind,
 
@@ -46,6 +48,7 @@ impl ControllerXRComponent {
     pub fn new(enabled: bool, hand: ControllerHand, pose: ControllerPoseKind) -> Self {
         Self {
             enabled,
+            pose_valid: false,
             hand,
             pose,
             component_id: None,

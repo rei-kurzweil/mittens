@@ -586,7 +586,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             );
         }
 
-        let chain = IKChainComponent::new(
+        let mut chain = IKChainComponent::new(
             IKSolver::TwoBoneIK {
                 root_joint_id: upper_arm,
                 mid_joint_id: lower_arm,
@@ -596,6 +596,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             hand_driver,
             hand_bone,
         );
+        chain.xr_pose_driver = find_xr_pose_driver(world, hand_driver);
         let chain_id = world.add_component(chain);
         let chain_serialize_id = world.add_component(SerializeComponent::off());
         let _ = world.set_parent(chain_serialize_id, Some(chain_id));
@@ -654,6 +655,23 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             "[AVC] WARNING: camera children found but camera_bone not resolved — no re-parenting"
         );
     }
+}
+
+fn find_xr_pose_driver(world: &World, start: ComponentId) -> Option<ComponentId> {
+    let mut current = Some(start);
+    while let Some(component) = current {
+        if world
+            .get_component_by_id_as::<ControllerXRComponent>(component)
+            .is_some()
+            || world
+                .get_component_by_id_as::<crate::engine::ecs::component::InputXRComponent>(component)
+                .is_some()
+        {
+            return Some(component);
+        }
+        current = world.parent_of(component);
+    }
+    None
 }
 
 /// Find a hand bone by name and determine its raw driver node.

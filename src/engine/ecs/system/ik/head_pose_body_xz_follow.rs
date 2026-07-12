@@ -88,6 +88,9 @@ fn tick_one(avc_id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter
     let Some(head_bone_id) = head_bone_id_opt else {
         return;
     };
+    if !xr_source_is_valid(world, head_bone_id) {
+        return;
+    }
 
     // Target = displaced head bone world XZ (skull-base / head-pivot).
     // `displaced_head` lives under driven_t->head_target, so this is a
@@ -174,4 +177,17 @@ fn tick_one(avc_id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter
             }
         }
     }
+}
+
+fn xr_source_is_valid(world: &World, start: ComponentId) -> bool {
+    let mut current = Some(start);
+    while let Some(component) = current {
+        if let Some(input) = world
+            .get_component_by_id_as::<crate::engine::ecs::component::InputXRComponent>(component)
+        {
+            return input.pose_valid;
+        }
+        current = world.parent_of(component);
+    }
+    true
 }
