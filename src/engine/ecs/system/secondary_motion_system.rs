@@ -1,6 +1,6 @@
 use crate::engine::ecs::component::{
-    BoneRestPoseComponent, GLTFComponent, SecondaryMotionComponent, SpringBoneComponent,
-    SpringJointComponent, TransformComponent,
+    BoneRestPoseComponent, ComponentRef, GLTFComponent, QueryRootMode, SecondaryMotionComponent,
+    SpringBoneComponent, SpringJointComponent, TransformComponent, resolve_component_ref,
 };
 use crate::engine::ecs::{ComponentId, World};
 use crate::utils::math::{
@@ -156,6 +156,41 @@ fn rest(world: &World, id: ComponentId) -> Option<BoneRestPoseComponent> {
     })
 }
 
+fn ref_surface(reference: &ComponentRef) -> String {
+    match reference {
+        ComponentRef::Guid(guid) => format!("@uuid:{guid}"),
+        ComponentRef::Query(query) => query.clone(),
+    }
+}
+
+fn resolve_in_gltf(
+    world: &World,
+    gltf_id: ComponentId,
+    reference: &ComponentRef,
+) -> Result<ComponentId, String> {
+    if let ComponentRef::Query(query) = reference {
+        if !query.starts_with('/') && !query.starts_with("../") {
+            let matches = world.find_all_components(gltf_id, query);
+            if matches.len() != 1 {
+                return Err(format!(
+                    "query '{}' matched {} components in the owning GLTF instance (expected exactly one)",
+                    query,
+                    matches.len()
+                ));
+            }
+        }
+    }
+    let id = resolve_component_ref(world, reference, Some(gltf_id), QueryRootMode::SelfSubtree)
+        .ok_or_else(|| format!("reference '{}' did not resolve", ref_surface(reference)))?;
+    if !descendant(world, id, gltf_id) {
+        return Err(format!(
+            "reference '{}' resolved outside the owning GLTF instance",
+            ref_surface(reference)
+        ));
+    }
+    Ok(id)
+}
+
 fn bind_chain(
     world: &World,
     gltf_id: ComponentId,
@@ -180,10 +215,15 @@ fn bind_chain(
     let chain = world
         .get_component_by_id_as::<SpringBoneComponent>(chain_id)
         .ok_or("missing SpringBone")?;
-    let map = &world
+    if world
         .get_component_by_id_as::<GLTFComponent>(gltf_id)
-        .ok_or("owning GLTF disappeared")?
-        .node_path_to_transform;
+        .is_none()
+    {
+        return Err("owning GLTF disappeared".into());
+    }
+    if let Some(center) = &chain.center {
+        resolve_in_gltf(world, gltf_id, center).map_err(|error| format!("center {error}"))?;
+    }
     let joint_components: Vec<_> = world
         .children_of(chain_id)
         .iter()
@@ -198,16 +238,15 @@ fn bind_chain(
     }
     let mut joints = Vec::new();
     for (_, j) in joint_components {
-        let id = *map.get(&j.node.0).ok_or_else(|| {
-            format!(
-                "node path '{}' was not found in this GLTF instance",
-                j.node.0
-            )
-        })?;
+        let id = resolve_in_gltf(world, gltf_id, &j.node)?;
         if !owned.insert(id) {
-            return Err(format!("joint '{}' overlaps another chain", j.node.0));
+            return Err(format!(
+                "joint '{}' overlaps another chain",
+                ref_surface(&j.node)
+            ));
         }
-        let r = rest(world, id).ok_or_else(|| format!("joint '{}' has no rest pose", j.node.0))?;
+        let r = rest(world, id)
+            .ok_or_else(|| format!("joint '{}' has no rest pose", ref_surface(&j.node)))?;
         joints.push(JointConfig {
             id,
             rest_rotation: r.rotation,

@@ -188,7 +188,7 @@ pub use renderer_stats::RendererStatsComponent;
 pub use router::RouterComponent;
 pub use scrolling::ScrollingComponent;
 pub use secondary_motion::{
-    GltfNodePath, SecondaryMotionComponent, SpringBoneComponent, SpringJointComponent,
+    SecondaryMotionComponent, SpringBoneComponent, SpringJointComponent,
     export_secondary_motion_sidecar,
 };
 pub use selectable::SelectableComponent;

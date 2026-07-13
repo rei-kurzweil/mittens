@@ -13,6 +13,11 @@ fn main() {
     for error in &output.errors {
         eprintln!("[mms] {error}");
     }
+    assert!(
+        output.errors.is_empty(),
+        "MMS evaluation produced errors: {:?}",
+        output.errors
+    );
     let mut universe = engine::Universe::new(engine::ecs::World::default());
     let scope = engine::ecs::ComponentId::default();
     for intent in output.intents {
@@ -45,11 +50,9 @@ fn main() {
         );
         universe.world.add_child(metadata, chain).unwrap();
         for segment in 1..=3 {
-            let path = format!(
-                "Armature.003[0]/Root[0]/J_Bip_C_Hips[0]/J_Bip_C_Spine[0]/J_Bip_C_Chest[0]/J_Bip_C_UpperChest[0]/J_Bip_C_Neck[0]/J_Bip_C_Head[0]/J_Sec_Hair{segment}_{strand:02}[0]"
-            );
+            let selector = format!("[name='J_Sec_Hair{segment}_{strand:02}']");
             let joint = universe.world.add_component(
-                SpringJointComponent::new(path)
+                SpringJointComponent::query(selector)
                     .stiffness(1.0)
                     .drag_force(0.4)
                     .gravity(0.0, [0.0, -1.0, 0.0]),

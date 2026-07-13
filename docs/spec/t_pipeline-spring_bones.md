@@ -1,6 +1,6 @@
 # Secondary motion and transform springs
 
-Avatar hair, tails, ears, and cloth use the chain-level `SecondaryMotionSystem`, modeled on VRM 1.0 SpringBone. It binds explicit ordered `SpringJoint` paths within the nearest ancestor `GLTF`, integrates tail positions with fixed-length Verlet steps, and writes the final joint rotations after AvatarControl and IK. A virtual endpoint lets the last imported bone rotate without changing glTF topology.
+Avatar hair, tails, ears, and cloth use the chain-level `SecondaryMotionSystem`, modeled on VRM 1.0 SpringBone. It binds explicit ordered `SpringJoint` component references within the nearest ancestor `GLTF`, integrates tail positions with fixed-length Verlet steps, and writes the final joint rotations after AvatarControl and IK. A virtual endpoint lets the last imported bone rotate without changing glTF topology.
 
 Authored metadata has this shape:
 
@@ -8,14 +8,14 @@ Authored metadata has this shape:
 GLTF.new("assets/avatar.glb") {
     SecondaryMotion {
         SpringBone.new("hair").virtual_end_length_ratio(1.0) {
-            SpringJoint.new("Armature[0]/Hair1[0]").stiffness(1.0).drag_force(0.4)
-            SpringJoint.new("Armature[0]/Hair2[0]")
+            SpringJoint.new("#Hair1").stiffness(1.0).drag_force(0.4)
+            SpringJoint.new("#Hair2")
         }
     }
 }
 ```
 
-Paths contain escaped node-name segments and same-name sibling ordinals. They are resolved only through that GLTF instance's path map. Runtime IDs and imported nodes are not serialized. Generated `<asset>.glb.mms` sidecars export a generic `secondary_motion()` factory and refuse to replace files without the generated marker.
+Joint and center targets use the engine's ordinary serializable `ComponentRef` query strings (or GUID references). Queries are rooted at the nearest owning `GLTF`, must resolve uniquely, and are rejected if they resolve outside that instance. Runtime IDs and imported nodes are not serialized. Generated `<asset>.glb.mms` sidecars export a generic `secondary_motion()` factory and refuse to replace files without the generated marker.
 
 The initial implementation intentionally excludes VRM colliders, angular limits, stretch, grabbing, and parameter curves. Secondary motion and FABRIK/IK remain separate systems; see [dynamic-chain-unification.md](../task/wip/dynamic-chain-unification.md) for possible shared infrastructure.
 

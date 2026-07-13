@@ -1398,7 +1398,9 @@ fn create_component(
             _ => Err("SpringBone requires .new(\"stable_name\")".into()),
         },
         "SpringJoint" => match ctor {
-            Some("new") => add!(SpringJointComponent::new(arg_str(args, 0)?)),
+            Some("new") => add!(SpringJointComponent::new(arg_component_ref(
+                world, args, 0
+            )?)),
             _ => Err("SpringJoint requires .new(\"node/path[0]\")".into()),
         },
         "RendererSettings" => {
@@ -2599,9 +2601,14 @@ fn apply_call(
         }
         return Ok(());
     }
+    let spring_center = if method == "center" {
+        Some(arg_component_ref(world, args, 0)?)
+    } else {
+        None
+    };
     if let Some(chain) = world.get_component_by_id_as_mut::<SpringBoneComponent>(id) {
         match method {
-            "center" => chain.center = Some(arg_str(args, 0)?.into()),
+            "center" => chain.center = spring_center,
             "enabled" => chain.enabled = arg_bool(args, 0)?,
             "virtual_end_length_ratio" => {
                 chain.virtual_end_length_ratio = Some(arg_f32(args, 0)?.max(0.0))

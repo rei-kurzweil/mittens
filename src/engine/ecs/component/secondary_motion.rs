@@ -1,18 +1,18 @@
-use super::{Component, ce_helpers::*};
+use super::{Component, ComponentRef, ce_helpers::*};
 use crate::engine::ecs::ComponentId;
+use crate::meow_meow::ast::Expression;
 
-/// Asset-relative glTF node path. Segments are escaped and include a same-name sibling ordinal.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct GltfNodePath(pub String);
-
-impl From<&str> for GltfNodePath {
-    fn from(value: &str) -> Self {
-        Self(value.into())
+fn ref_expr(value: &ComponentRef) -> Expression {
+    match value {
+        ComponentRef::Guid(guid) => Expression::String(format!("@uuid:{guid}")),
+        ComponentRef::Query(query) => Expression::String(query.clone()),
     }
 }
-impl From<String> for GltfNodePath {
-    fn from(value: String) -> Self {
-        Self(value)
+
+fn ref_surface(value: &ComponentRef) -> String {
+    match value {
+        ComponentRef::Guid(guid) => format!("@uuid:{guid}"),
+        ComponentRef::Query(query) => query.clone(),
     }
 }
 
@@ -49,7 +49,7 @@ impl Component for SecondaryMotionComponent {
 #[derive(Debug, Clone)]
 pub struct SpringBoneComponent {
     pub stable_name: String,
-    pub center: Option<GltfNodePath>,
+    pub center: Option<ComponentRef>,
     pub enabled: bool,
     pub virtual_end_length_ratio: Option<f32>,
     component: Option<ComponentId>,
@@ -64,8 +64,8 @@ impl SpringBoneComponent {
             component: None,
         }
     }
-    pub fn center(mut self, path: impl Into<GltfNodePath>) -> Self {
-        self.center = Some(path.into());
+    pub fn center(mut self, target: ComponentRef) -> Self {
+        self.center = Some(target);
         self
     }
     pub fn enabled(mut self, enabled: bool) -> Self {
@@ -95,8 +95,8 @@ impl Component for SpringBoneComponent {
         _world: &crate::engine::ecs::World,
     ) -> crate::meow_meow::ast::ComponentExpression {
         let mut out = ce_call("SpringBone", "new", vec![s(&self.stable_name)]);
-        if let Some(path) = &self.center {
-            out = out.with_call("center", vec![s(&path.0)]);
+        if let Some(target) = &self.center {
+            out = out.with_call("center", vec![ref_expr(target)]);
         }
         if !self.enabled {
             out = out.with_call("enabled", vec![b(false)]);
@@ -110,7 +110,7 @@ impl Component for SpringBoneComponent {
 
 #[derive(Debug, Clone)]
 pub struct SpringJointComponent {
-    pub node: GltfNodePath,
+    pub node: ComponentRef,
     pub stiffness: f32,
     pub drag_force: f32,
     pub gravity_power: f32,
@@ -118,15 +118,18 @@ pub struct SpringJointComponent {
     component: Option<ComponentId>,
 }
 impl SpringJointComponent {
-    pub fn new(path: impl Into<GltfNodePath>) -> Self {
+    pub fn new(node: ComponentRef) -> Self {
         Self {
-            node: path.into(),
+            node,
             stiffness: 1.0,
             drag_force: 0.4,
             gravity_power: 0.0,
             gravity_dir: [0.0, -1.0, 0.0],
             component: None,
         }
+    }
+    pub fn query(selector: impl Into<String>) -> Self {
+        Self::new(ComponentRef::Query(selector.into()))
     }
     pub fn stiffness(mut self, value: f32) -> Self {
         self.stiffness = value.max(0.0);
@@ -159,7 +162,7 @@ impl Component for SpringJointComponent {
         &self,
         _world: &crate::engine::ecs::World,
     ) -> crate::meow_meow::ast::ComponentExpression {
-        ce_call("SpringJoint", "new", vec![s(&self.node.0)])
+        ce_call("SpringJoint", "new", vec![ref_expr(&self.node)])
             .with_call("stiffness", vec![num(self.stiffness as f64)])
             .with_call("drag_force", vec![num(self.drag_force as f64)])
             .with_call(
@@ -218,7 +221,7 @@ pub fn export_secondary_motion_sidecar(
             q(&chain.stable_name)
         ));
         if let Some(center) = &chain.center {
-            text.push_str(&format!(".center({})", q(&center.0)));
+            text.push_str(&format!(".center({})", q(&ref_surface(center))));
         }
         if !chain.enabled {
             text.push_str(".enabled(false)");
@@ -231,7 +234,7 @@ pub fn export_secondary_motion_sidecar(
             let Some(j) = world.get_component_by_id_as::<SpringJointComponent>(*joint_id) else {
                 continue;
             };
-            text.push_str(&format!("            SpringJoint.new({}).stiffness({}).drag_force({}).gravity({}, [{}, {}, {}])\n",q(&j.node.0),j.stiffness,j.drag_force,j.gravity_power,j.gravity_dir[0],j.gravity_dir[1],j.gravity_dir[2]));
+            text.push_str(&format!("            SpringJoint.new({}).stiffness({}).drag_force({}).gravity({}, [{}, {}, {}])\n",q(&ref_surface(&j.node)),j.stiffness,j.drag_force,j.gravity_power,j.gravity_dir[0],j.gravity_dir[1],j.gravity_dir[2]));
         }
         text.push_str("        }\n");
     }
