@@ -1,5 +1,6 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
+use std::collections::HashMap;
 
 /// Load and spawn content from a glTF asset.
 ///
@@ -27,6 +28,11 @@ pub struct GLTFComponent {
     /// Runtime-only: subset of `spawned_node_transforms` that correspond to skin joints.
     pub armature_joint_transforms: Vec<ComponentId>,
 
+    /// Runtime-only, instance-local stable paths for imported nodes.
+    pub node_path_to_transform: HashMap<String, ComponentId>,
+    /// Runtime-only reverse lookup used by editor actions and diagnostics.
+    pub transform_to_node_path: HashMap<ComponentId, String>,
+
     component: Option<ComponentId>,
 }
 
@@ -39,6 +45,8 @@ impl GLTFComponent {
             armature_visible: false,
             spawned_node_transforms: Vec::new(),
             armature_joint_transforms: Vec::new(),
+            node_path_to_transform: HashMap::new(),
+            transform_to_node_path: HashMap::new(),
             component: None,
         }
     }

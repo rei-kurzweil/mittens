@@ -17,8 +17,7 @@ use crate::engine::ecs::component::{
     Camera2DComponent, Camera3DComponent, CameraXRComponent, ClockComponent, CollisionComponent,
     CollisionShape, CollisionShapeComponent, ColorComponent, ControllerHand, ControllerPoseKind,
     DataComponent, DataValue, DirectionalLightComponent, Display, EdgeInsets, EditorComponent,
-    EditorInteractionMode, ElementType, EmissiveComponent,
-    EmissivePassComponent,
+    EditorInteractionMode, ElementType, EmissiveComponent, EmissivePassComponent,
     FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent,
     GestureCoordTypeComponent, GravityComponent, GridComponent, HtmlElementComponent,
     HttpClientComponent, HttpServerComponent, IKChainComponent, IKSolver, InputComponent,
@@ -31,11 +30,12 @@ use crate::engine::ecs::component::{
     Position, QuatTemporalFilterComponent, QuatYawFollowComponent, RayCastComponent,
     RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType, RenderGraphComponent,
     RenderableComponent, RendererSettingsComponent, RendererStatsComponent, RouterComponent,
-    ScrollingComponent, SelectableComponent, SelectionComponent, SerializeComponent,
-    SignalObserverRouterComponent, SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent,
-    StencilClipComponent, StyleComponent, TextAlign, TextComponent, TextInputComponent,
-    TextShadowComponent, TextureComponent, TextureFilteringComponent, TransformComponent,
-    TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
+    ScrollingComponent, SecondaryMotionComponent, SelectableComponent, SelectionComponent,
+    SerializeComponent, SignalObserverRouterComponent, SignalRouteUpwardComponent, SizeDimension,
+    SkinnedMeshComponent, SpringBoneComponent, SpringJointComponent, StencilClipComponent,
+    StyleComponent, TextAlign, TextComponent, TextInputComponent, TextShadowComponent,
+    TextureComponent, TextureFilteringComponent, TransformComponent, TransformDropComponent,
+    TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
     TransformGizmoCoordSpace, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
     TransformGizmoTranslateComponent, TransformMapRotationComponent, TransformMapScaleComponent,
     TransformMapTranslationComponent, TransformMergeTRSComponent, TransformParentComponent,
@@ -1392,6 +1392,15 @@ fn create_component(
             Some("new") => add!(GLTFComponent::new(arg_str(args, 0)?)),
             _ => Err("GLTF requires .new(\"uri\")".into()),
         },
+        "SecondaryMotion" => add!(SecondaryMotionComponent::new()),
+        "SpringBone" => match ctor {
+            Some("new") => add!(SpringBoneComponent::new(arg_str(args, 0)?)),
+            _ => Err("SpringBone requires .new(\"stable_name\")".into()),
+        },
+        "SpringJoint" => match ctor {
+            Some("new") => add!(SpringJointComponent::new(arg_str(args, 0)?)),
+            _ => Err("SpringJoint requires .new(\"node/path[0]\")".into()),
+        },
         "RendererSettings" => {
             let c = match ctor {
                 Some("msaa_off") => RendererSettingsComponent::msaa_off(),
@@ -2587,6 +2596,33 @@ fn apply_call(
     if let Some(gltf) = world.get_component_by_id_as_mut::<GLTFComponent>(id) {
         if method == "with_visualized_transforms" {
             *gltf = gltf.clone().with_visualized_transforms(arg_bool(args, 0)?);
+        }
+        return Ok(());
+    }
+    if let Some(chain) = world.get_component_by_id_as_mut::<SpringBoneComponent>(id) {
+        match method {
+            "center" => chain.center = Some(arg_str(args, 0)?.into()),
+            "enabled" => chain.enabled = arg_bool(args, 0)?,
+            "virtual_end_length_ratio" => {
+                chain.virtual_end_length_ratio = Some(arg_f32(args, 0)?.max(0.0))
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(joint) = world.get_component_by_id_as_mut::<SpringJointComponent>(id) {
+        match method {
+            "stiffness" => joint.stiffness = arg_f32(args, 0)?.max(0.0),
+            "drag_force" => joint.drag_force = arg_f32(args, 0)?.clamp(0.0, 1.0),
+            "gravity" => {
+                joint.gravity_power = arg_f32(args, 0)?;
+                joint.gravity_dir = if args.len() == 2 {
+                    val_as_f32_array::<3>(&args[1])?
+                } else {
+                    [arg_f32(args, 1)?, arg_f32(args, 2)?, arg_f32(args, 3)?]
+                };
+            }
+            _ => {}
         }
         return Ok(());
     }

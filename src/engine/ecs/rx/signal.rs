@@ -627,9 +627,15 @@ pub enum IntentValue {
     RemoveKineticResponse {
         component_ids: Vec<ComponentId>,
     },
-    RegisterAvatarControl { component_ids: Vec<ComponentId> },
-    RegisterAvatarBodyYaw { component_ids: Vec<ComponentId> },
-    RegisterIkChain { component_ids: Vec<ComponentId> },
+    RegisterAvatarControl {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterAvatarBodyYaw {
+        component_ids: Vec<ComponentId>,
+    },
+    RegisterIkChain {
+        component_ids: Vec<ComponentId>,
+    },
 
     RegisterXr {
         component_ids: Vec<ComponentId>,

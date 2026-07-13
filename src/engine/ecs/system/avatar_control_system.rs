@@ -9,8 +9,8 @@ use crate::engine::user_input::InputState;
 use crate::utils::math::{
     mat_to_quat, quat_conjugate, quat_mul, quat_rotate_vec3, quat_rotation_y,
 };
-use winit::keyboard::{Key, NamedKey};
 use std::collections::HashSet;
+use winit::keyboard::{Key, NamedKey};
 
 #[derive(Debug, Default)]
 pub struct AvatarControlSystem {

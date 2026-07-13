@@ -54,7 +54,9 @@ fn headers_to_value(headers: &[(String, String)]) -> Value {
 
 fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
     match signal.event.as_ref() {
-        Some(crate::engine::ecs::EventSignal::DataEvent { name, .. }) => Value::String(name.clone()),
+        Some(crate::engine::ecs::EventSignal::DataEvent { name, .. }) => {
+            Value::String(name.clone())
+        }
         Some(crate::engine::ecs::EventSignal::XrButtonDown {
             hand,
             control,

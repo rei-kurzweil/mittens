@@ -357,7 +357,10 @@ fn apply_locomotion(
         .parent_of(target_tcid)
         .and_then(|parent| TransformSystem::world_model(world, parent))
         .map(|parent_world| {
-            math::quat_rotate_vec3(math::quat_conjugate(math::mat_to_quat(parent_world)), move_world)
+            math::quat_rotate_vec3(
+                math::quat_conjugate(math::mat_to_quat(parent_world)),
+                move_world,
+            )
         })
         .unwrap_or(move_world);
     let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target_tcid) else {

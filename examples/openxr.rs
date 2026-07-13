@@ -136,9 +136,9 @@ fn main() {
     let xr_input = universe
         .world
         .add_component(engine::ecs::component::InputXRComponent::on());
-    let xr_gamepad = universe.world.add_component(
-        engine::ecs::component::InputXRGamepadComponent::new().speed(1.5),
-    );
+    let xr_gamepad = universe
+        .world
+        .add_component(engine::ecs::component::InputXRGamepadComponent::new().speed(1.5));
     let xr_head = universe
         .world
         .add_component(engine::ecs::component::TransformComponent::new());

@@ -142,7 +142,10 @@ pub(crate) fn invoke_component_method(
         }
         ("HttpClient" | "HttpClientComponent" | "http_client", "post" | "put") => {
             let (url, body_text) = match args {
-                [url, body_text] => (value_as_string(url, method)?, value_as_string(body_text, method)?),
+                [url, body_text] => (
+                    value_as_string(url, method)?,
+                    value_as_string(body_text, method)?,
+                ),
                 other => {
                     return Err(format!(
                         "{method}: expected url and body_text string arguments, got {:?}",
@@ -222,7 +225,10 @@ fn value_as_u16(value: &Value, method: &str) -> Result<u16, String> {
 
 fn request_id_from_value(value: &Value) -> Result<u64, String> {
     let Value::Map(map) = value else {
-        return Err(format!("reply_text: expected request object, got {:?}", value));
+        return Err(format!(
+            "reply_text: expected request object, got {:?}",
+            value
+        ));
     };
     let Some(Value::Number(request_id)) = map.get("request_id") else {
         return Err("reply_text: request missing numeric request_id".to_string());

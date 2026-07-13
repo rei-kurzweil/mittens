@@ -2,7 +2,9 @@ use super::World;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::RxWorld;
 use crate::engine::ecs::SignalKind;
-use crate::engine::ecs::component::{AvatarBodyYawComponent, AvatarControlComponent, IKChainComponent};
+use crate::engine::ecs::component::{
+    AvatarBodyYawComponent, AvatarControlComponent, IKChainComponent,
+};
 use crate::engine::ecs::system::ArmatureVisualizationSystem;
 use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::CameraSystem;
@@ -41,8 +43,8 @@ use crate::engine::ecs::system::{AnimationSystem, AudioSystem};
 use crate::engine::ecs::system::{
     AssetSystem, AvatarBodyYawSystem, AvatarControlSystem, Cursor3dSystem, EditorContextSystem,
     EditorInspectorSystem, EditorPaintSystem, EditorSystem, FitBoundsSystem, GestureSystem,
-    GridSystem, HeadPoseBodyXzFollowSystem, IKSystem, LayoutSystem, SelectionSystem,
-    TransformGizmoSystem,
+    GridSystem, HeadPoseBodyXzFollowSystem, IKSystem, LayoutSystem, SecondaryMotionSystem,
+    SelectionSystem, TransformGizmoSystem,
 };
 use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
 use crate::engine::user_input::InputState;
@@ -105,6 +107,7 @@ pub struct SystemWorld {
     pub avatar_control: AvatarControlSystem,
     pub head_pose_body_xz_follow: HeadPoseBodyXzFollowSystem,
     pub ik: IKSystem,
+    pub secondary_motion: SecondaryMotionSystem,
 
     pub gesture: GestureSystem,
     pub transform_gizmo: TransformGizmoSystem,
@@ -776,14 +779,23 @@ impl SystemWorld {
             {
                 self.remove_kinetic_response(world, visuals, n);
             }
-            if world.get_component_by_id_as::<AvatarControlComponent>(n).is_some() {
+            if world
+                .get_component_by_id_as::<AvatarControlComponent>(n)
+                .is_some()
+            {
                 self.avatar_control.remove(n);
                 self.head_pose_body_xz_follow.remove(n);
             }
-            if world.get_component_by_id_as::<AvatarBodyYawComponent>(n).is_some() {
+            if world
+                .get_component_by_id_as::<AvatarBodyYawComponent>(n)
+                .is_some()
+            {
                 self.avatar_body_yaw.remove(n);
             }
-            if world.get_component_by_id_as::<IKChainComponent>(n).is_some() {
+            if world
+                .get_component_by_id_as::<IKChainComponent>(n)
+                .is_some()
+            {
                 self.ik.remove(n);
             }
             if world
@@ -2530,6 +2542,13 @@ impl SystemWorld {
         }
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
+
+        // Post-pose stage: propagate primary pose, solve tails, propagate final pose,
+        // then refresh skin palettes for the frame that will actually be rendered.
+        self.transform.tick(world, visuals, input, dt_sec);
+        self.secondary_motion.tick(world, dt_sec);
+        self.transform.tick(world, visuals, input, dt_sec);
+        self.skinned_mesh.tick(world, visuals, input, dt_sec);
 
         if profile_systems {
             self.finish_phase_profile_frame();

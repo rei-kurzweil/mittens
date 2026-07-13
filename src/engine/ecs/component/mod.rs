@@ -65,6 +65,7 @@ pub mod pose_capture;
 pub mod render_graph;
 pub mod router;
 pub mod scrolling;
+pub mod secondary_motion;
 pub mod selectable;
 pub mod selection;
 pub mod serialize;
@@ -186,6 +187,10 @@ pub use renderer_settings::RendererSettingsComponent;
 pub use renderer_stats::RendererStatsComponent;
 pub use router::RouterComponent;
 pub use scrolling::ScrollingComponent;
+pub use secondary_motion::{
+    GltfNodePath, SecondaryMotionComponent, SpringBoneComponent, SpringJointComponent,
+    export_secondary_motion_sidecar,
+};
 pub use selectable::SelectableComponent;
 pub use selection::{SelectionComponent, SelectionEntry, SelectionMode};
 pub use serialize::SerializeComponent;

@@ -373,6 +373,7 @@ impl GLTFSystem {
             // Per-instance mapping from glTF node indices -> spawned TransformComponent ids.
             // Used to resolve skins (joint node indices -> ComponentId references).
             let mut node_index_to_component: HashMap<usize, ComponentId> = HashMap::new();
+            let mut node_paths: HashMap<String, ComponentId> = HashMap::new();
             let mut pending_skin_components: Vec<(ComponentId, usize)> = Vec::new();
             let joint_node_indices: HashSet<usize> = loaded
                 .skins
@@ -380,7 +381,14 @@ impl GLTFSystem {
                 .flat_map(|skin| skin.joints.iter().copied())
                 .collect();
 
-            for node in scene.nodes() {
+            let roots: Vec<_> = scene.nodes().collect();
+            for (root_i, node) in roots.iter().cloned().enumerate() {
+                let name = Self::node_path_name(&node);
+                let ordinal = roots[..root_i]
+                    .iter()
+                    .filter(|other| Self::node_path_name(other) == name)
+                    .count();
+                let path = format!("{}[{}]", Self::escape_node_path_segment(&name), ordinal);
                 let root = self.spawn_node_recursive(
                     world,
                     anchor_transform,
@@ -390,6 +398,8 @@ impl GLTFSystem {
                     &mut node_index_to_component,
                     &mut pending_skin_components,
                     serialize_spawned_nodes,
+                    &path,
+                    &mut node_paths,
                 );
                 if let Some(root) = root {
                     world.init_component_tree(root, emit);
@@ -479,6 +489,11 @@ impl GLTFSystem {
                 c.armature_joint_transforms = joint_node_indices
                     .iter()
                     .filter_map(|node_index| node_index_to_component.get(node_index).copied())
+                    .collect();
+                c.node_path_to_transform = node_paths.clone();
+                c.transform_to_node_path = node_paths
+                    .iter()
+                    .map(|(path, id)| (*id, path.clone()))
                     .collect();
             }
         }
@@ -899,6 +914,8 @@ impl GLTFSystem {
         node_index_to_component: &mut HashMap<usize, ComponentId>,
         pending_skin_components: &mut Vec<(ComponentId, usize)>,
         serialize_spawned_nodes: bool,
+        node_path: &str,
+        node_paths: &mut HashMap<String, ComponentId>,
     ) -> Option<ComponentId> {
         let node_display_name = node
             .name()
@@ -930,6 +947,7 @@ impl GLTFSystem {
         let _ = world.add_child(this_transform, rest_id);
 
         node_index_to_component.insert(node.index(), this_transform);
+        node_paths.insert(node_path.to_owned(), this_transform);
 
         // Note: we intentionally do not spawn per-joint marker components.
 
@@ -1056,7 +1074,19 @@ impl GLTFSystem {
         }
 
         // Recurse into children.
-        for ch in node.children() {
+        let children: Vec<_> = node.children().collect();
+        for (child_i, ch) in children.iter().cloned().enumerate() {
+            let name = Self::node_path_name(&ch);
+            let ordinal = children[..child_i]
+                .iter()
+                .filter(|other| Self::node_path_name(other) == name)
+                .count();
+            let child_path = format!(
+                "{}/{}[{}]",
+                node_path,
+                Self::escape_node_path_segment(&name),
+                ordinal
+            );
             let _ = self.spawn_node_recursive(
                 world,
                 this_transform,
@@ -1066,10 +1096,26 @@ impl GLTFSystem {
                 node_index_to_component,
                 pending_skin_components,
                 serialize_spawned_nodes,
+                &child_path,
+                node_paths,
             );
         }
 
         Some(this_transform)
+    }
+
+    fn node_path_name(node: &gltf::Node<'_>) -> String {
+        node.name()
+            .map(Self::sanitize_key_part)
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| format!("node{}", node.index()))
+    }
+
+    fn escape_node_path_segment(name: &str) -> String {
+        name.replace('\\', "\\\\")
+            .replace('/', "\\/")
+            .replace('[', "\\[")
+            .replace(']', "\\]")
     }
 }
 
