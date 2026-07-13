@@ -1,6 +1,7 @@
 // XR-only secondary-motion prototype. Spring metadata is attached by the Rust loader.
 // Move and turn your head/body in front of the mirror: the fourteen hair strands
-// should lag behind the primary avatar pose, keep their lengths, and settle at rest.
+// should sag visibly under gravity, lag behind the primary avatar pose, keep
+// their lengths, and oscillate briefly before settling.
 
 RendererSettings { window_size(640, 480) }
 BGC.rgba(0.12, 0.16, 0.24, 1.0)

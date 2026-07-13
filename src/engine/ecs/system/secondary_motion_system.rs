@@ -34,6 +34,8 @@ struct ChainState {
 pub struct SecondaryMotionSystem {
     states: HashMap<ComponentId, ChainState>,
     warned: HashSet<ComponentId>,
+    failures: HashMap<ComponentId, String>,
+    debug_frames: u64,
 }
 
 impl SecondaryMotionSystem {
@@ -43,6 +45,8 @@ impl SecondaryMotionSystem {
     }
 
     pub fn tick(&mut self, world: &mut World, dt: f32) {
+        self.debug_frames = self.debug_frames.wrapping_add(1);
+        let mut max_correction_radians = 0.0f32;
         let roots: Vec<_> = world
             .all_components()
             .filter(|id| {
@@ -74,8 +78,10 @@ impl SecondaryMotionSystem {
                         Ok(state) => {
                             self.states.insert(chain_id, state);
                             self.warned.remove(&chain_id);
+                            self.failures.remove(&chain_id);
                         }
                         Err(error) => {
+                            self.failures.insert(chain_id, error.clone());
                             if self.warned.insert(chain_id) {
                                 eprintln!(
                                     "[SecondaryMotion] chain {chain_id:?}: {error}; will retry after respawn"
@@ -113,10 +119,27 @@ impl SecondaryMotionSystem {
                     simulate_step(world, state);
                     state.accumulator -= STEP;
                 }
-                apply_rotations(world, state);
+                max_correction_radians = max_correction_radians.max(apply_rotations(world, state));
             }
         }
         self.states.retain(|id, _| live.contains(id));
+        self.failures.retain(|id, _| live.contains(id));
+        if self.debug_frames % 120 == 0 && std::env::var_os("CAT_DEBUG_SECONDARY_MOTION").is_some()
+        {
+            eprintln!(
+                "[SecondaryMotion][debug] bound_chains={} failed_chains={} max_rotation_correction_deg={:.2}",
+                self.states.len(),
+                self.failures.len(),
+                max_correction_radians.to_degrees()
+            );
+            for (chain_id, error) in self.failures.iter().take(3) {
+                let name = world
+                    .get_component_by_id_as::<SpringBoneComponent>(*chain_id)
+                    .map(|chain| chain.stable_name.as_str())
+                    .unwrap_or("<removed>");
+                eprintln!("[SecondaryMotion][debug] failed '{name}': {error}");
+            }
+        }
     }
 }
 
@@ -168,21 +191,48 @@ fn resolve_in_gltf(
     gltf_id: ComponentId,
     reference: &ComponentRef,
 ) -> Result<ComponentId, String> {
-    if let ComponentRef::Query(query) = reference {
-        if !query.starts_with('/') && !query.starts_with("../") {
-            let matches = world.find_all_components(gltf_id, query);
+    let gltf = world
+        .get_component_by_id_as::<GLTFComponent>(gltf_id)
+        .ok_or("owning GLTF disappeared")?;
+    let instance_nodes: HashSet<_> = gltf.spawned_node_transforms.iter().copied().collect();
+    if instance_nodes.is_empty() {
+        return Err("owning GLTF has not spawned its node transforms yet".into());
+    }
+    let anchor = world
+        .parent_of(gltf_id)
+        .ok_or("owning GLTF has no transform anchor")?;
+
+    let id = match reference {
+        ComponentRef::Guid(guid) => world.component_id_by_guid(*guid),
+        ComponentRef::Query(query) if !query.starts_with('/') && !query.starts_with("../") => {
+            // Imported nodes can be reparented after spawning (AvatarControl
+            // splices the head subtree, including hair). Match against the
+            // GLTF instance's recorded node set instead of assuming those
+            // nodes remain reachable below the original anchor.
+            let matches: Vec<_> = instance_nodes
+                .iter()
+                .copied()
+                .filter(|id| world.component_matches_selector(*id, query))
+                .collect();
             if matches.len() != 1 {
                 return Err(format!(
-                    "query '{}' matched {} components in the owning GLTF instance (expected exactly one)",
+                    "query '{}' matched {} nodes in the owning GLTF instance (expected exactly one)",
                     query,
                     matches.len()
                 ));
             }
+            matches.first().copied()
         }
+        ComponentRef::Query(_) => resolve_component_ref(
+            world,
+            reference,
+            Some(anchor),
+            QueryRootMode::SelfSubtree,
+        ),
     }
-    let id = resolve_component_ref(world, reference, Some(gltf_id), QueryRootMode::SelfSubtree)
-        .ok_or_else(|| format!("reference '{}' did not resolve", ref_surface(reference)))?;
-    if !descendant(world, id, gltf_id) {
+    .ok_or_else(|| format!("reference '{}' did not resolve", ref_surface(reference)))?;
+
+    if !instance_nodes.contains(&id) {
         return Err(format!(
             "reference '{}' resolved outside the owning GLTF instance",
             ref_surface(reference)
@@ -315,13 +365,28 @@ fn reset_state(world: &World, s: &mut ChainState) {
 }
 fn simulate_step(world: &World, s: &mut ChainState) {
     for i in 0..s.joints.len() {
-        let head = pos(world, s.joints[i].id).unwrap_or(s.current[i]);
+        // A joint's simulated tail is the next joint's simulated head. Using
+        // primary-pose heads for every segment breaks chain continuity and
+        // creates the characteristic curl/flicker feedback.
+        let primary_head = pos(world, s.joints[i].id).unwrap_or(s.current[i]);
+        let head = if i == 0 {
+            primary_head
+        } else {
+            s.current[i - 1]
+        };
         let inertia = vec3_scale(
             vec3_sub(s.current[i], s.previous[i]),
             1.0 - s.joints[i].drag,
         );
         let rest_tail = if i + 1 < s.joints.len() {
-            pos(world, s.joints[i + 1].id).unwrap_or(s.current[i])
+            let primary_tail = pos(world, s.joints[i + 1].id).unwrap_or(s.current[i]);
+            vec3_add(
+                head,
+                vec3_scale(
+                    vec3_normalize(vec3_sub(primary_tail, primary_head)),
+                    s.lengths[i],
+                ),
+            )
         } else if i > 0 {
             let prev = pos(world, s.joints[i - 1].id).unwrap_or(head);
             vec3_add(
@@ -344,24 +409,38 @@ fn simulate_step(world: &World, s: &mut ChainState) {
         s.current[i] = vec3_add(head, vec3_scale(direction, s.lengths[i]));
     }
 }
-fn apply_rotations(world: &mut World, s: &ChainState) {
+fn apply_rotations(world: &mut World, s: &ChainState) -> f32 {
+    let mut max_correction = 0.0f32;
+    let mut previous_joint_world_q = None;
     for i in 0..s.joints.len() {
         let id = s.joints[i].id;
         let Some(parent) = world.parent_of(id) else {
             continue;
         };
-        let parent_q = world
-            .get_component_by_id_as::<TransformComponent>(parent)
-            .map(|t| mat_to_quat(t.transform.matrix_world))
-            .unwrap_or([0.0, 0.0, 0.0, 1.0]);
-        let Some(head) = pos(world, id) else { continue };
+        let parent_q = if i > 0 && parent == s.joints[i - 1].id {
+            previous_joint_world_q.unwrap_or([0.0, 0.0, 0.0, 1.0])
+        } else {
+            world
+                .get_component_by_id_as::<TransformComponent>(parent)
+                .map(|t| mat_to_quat(t.transform.matrix_world))
+                .unwrap_or([0.0, 0.0, 0.0, 1.0])
+        };
+        let head = if i == 0 {
+            let Some(head) = pos(world, id) else { continue };
+            head
+        } else {
+            s.current[i - 1]
+        };
         let desired_local = quat_rotate_vec3(
             quat_conjugate(parent_q),
             vec3_normalize(vec3_sub(s.current[i], head)),
         );
         let rest_dir = if i + 1 < s.joints.len() {
             rest(world, s.joints[i + 1].id)
-                .map(|r| vec3_normalize(r.translation))
+                // Child translation is in the joint's local frame. Convert
+                // it through the immutable rest rotation before comparing it
+                // with a direction expressed in the parent frame.
+                .map(|r| quat_rotate_vec3(s.joints[i].rest_rotation, vec3_normalize(r.translation)))
                 .unwrap_or(desired_local)
         } else if i > 0 {
             rest(world, id)
@@ -370,13 +449,14 @@ fn apply_rotations(world: &mut World, s: &ChainState) {
         } else {
             desired_local
         };
-        let rotation = quat_mul(
-            shortest_arc_quat(rest_dir, desired_local),
-            s.joints[i].rest_rotation,
-        );
+        let correction = shortest_arc_quat(rest_dir, desired_local);
+        max_correction = max_correction.max(2.0 * correction[3].abs().clamp(0.0, 1.0).acos());
+        let rotation = quat_mul(correction, s.joints[i].rest_rotation);
+        previous_joint_world_q = Some(quat_mul(parent_q, rotation));
         if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(id) {
             t.transform.rotation = rotation;
             t.transform.recompute_model();
         }
     }
+    max_correction
 }
