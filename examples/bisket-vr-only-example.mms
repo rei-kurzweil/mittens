@@ -70,7 +70,7 @@ T.position(0.15, -0.45, 1.0) {
 // --- Terrain + back wall so the room has visual reference ---
 // ED {
     T.position(0.0, -6.0, 0.0) {
-        voxel_terrain({ length = 36 width = 36 })
+        voxel_terrain({ length = 48 width = 48 })
     }
 
     // back wall
@@ -194,7 +194,8 @@ BG.occlusion_and_lighting() {
 // camera_bone == head_bone: head bone is the eye anchor (CXR re-parented here;
 //   model_root.y auto-calibrated so head bone sits at HMD height).
 ED {
-    InputXR.on() {
+    T {
+      InputXR.on() {
         InputXRGamepad {
             locomotion()
             speed(1.5)
@@ -207,7 +208,6 @@ ED {
                 right_hand_bone("J_Bip_R_Hand")
 
                 initial_yaw(3.14159)
-                ik_debug()
 
                 // Body-local pole hints. The solver rotates them by the
                 // current model_root world rotation each tick, so author them
@@ -265,6 +265,7 @@ ED {
                 }
             }
         }
+      }
     }
 } 
 

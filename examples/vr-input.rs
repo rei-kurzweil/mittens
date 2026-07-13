@@ -282,8 +282,12 @@ fn main() {
 
     // --- XR rig (Aim controller debug cubes only; camera has moved to AVC) ---
     let xr_input = universe.world.add_component(InputXRComponent::on());
+    let xr_gamepad = universe.world.add_component(
+        cat_engine::engine::ecs::component::InputXRGamepadComponent::new().speed(1.5),
+    );
     let xr_rig = universe.world.add_component(TransformComponent::new());
     let _ = universe.attach(xr_input, xr_rig);
+    let _ = universe.attach(xr_input, xr_gamepad);
 
     // renderer stats
     let renderer_stats = universe
@@ -329,8 +333,12 @@ fn main() {
     let editor_root = universe.world.add_component(EditorComponent::new());
 
     let avatar_input_xr = universe.world.add_component(InputXRComponent::on());
+    let avatar_xr_gamepad = universe.world.add_component(
+        cat_engine::engine::ecs::component::InputXRGamepadComponent::new().speed(1.5),
+    );
     let avatar_driven_t = universe.world.add_component(TransformComponent::new());
     let _ = universe.attach(avatar_input_xr, avatar_driven_t);
+    let _ = universe.attach(avatar_input_xr, avatar_xr_gamepad);
 
     // AvatarControlComponent: -Z forward (OpenXR default), body starts facing -Z (π yaw).
     // camera_bone triggers auto-calibration of model_root.y from J_Bip_C_Head rest pose height,

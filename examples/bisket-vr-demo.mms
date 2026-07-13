@@ -194,7 +194,8 @@ BG.occlusion_and_lighting() {
 // camera_bone == head_bone: head bone is the eye anchor (CXR re-parented here;
 //   model_root.y auto-calibrated so head bone sits at HMD height).
 ED {
-    InputXR.on() {
+    T {
+      InputXR.on() {
         InputXRGamepad {
             locomotion()
             speed(1.5)
@@ -207,7 +208,6 @@ ED {
                 right_hand_bone("J_Bip_R_Hand")
 
                 initial_yaw(3.14159)
-                ik_debug()
 
                 // Body-local pole hints. The solver rotates them by the
                 // current model_root world rotation each tick, so author them
@@ -265,6 +265,7 @@ ED {
                 }
             }
         }
+      }
     }
 } 
 
