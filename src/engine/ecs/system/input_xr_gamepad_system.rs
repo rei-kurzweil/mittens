@@ -2,9 +2,9 @@ use crate::engine::ecs::component::{
     ControllerHand, InputXRComponent, InputXRGamepadComponent, TransformComponent, XrAxisControl,
     XrButtonControl, XrHandPreference,
 };
-use crate::engine::ecs::system::{System, XrGamepadState, XrSystem};
+use crate::engine::ecs::system::{System, TransformSystem, XrGamepadState, XrSystem};
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, World};
-use crate::engine::graphics::VisualWorld;
+use crate::engine::graphics::{CameraTarget, VisualWorld};
 use crate::engine::user_input::InputState;
 use crate::utils::math;
 use std::collections::{HashMap, HashSet};
@@ -53,7 +53,7 @@ impl InputXRGamepadSystem {
     pub fn tick_with_queue(
         &mut self,
         world: &mut World,
-        _visuals: &mut VisualWorld,
+        visuals: &mut VisualWorld,
         xr: &XrSystem,
         emit: &mut dyn SignalEmitter,
         dt_sec: f32,
@@ -103,7 +103,15 @@ impl InputXRGamepadSystem {
             self.previous.insert(cid, next);
 
             if cfg.locomotion {
-                let moved = apply_locomotion(world, input_xr_owner, &cfg, &xr_state, emit, dt_sec);
+                let moved = apply_locomotion(
+                    world,
+                    visuals,
+                    input_xr_owner,
+                    &cfg,
+                    &xr_state,
+                    emit,
+                    dt_sec,
+                );
                 if moved {
                     self.logged_missing_locomotion_target.remove(&cid);
                 } else if locomotion_target_transform(world, input_xr_owner).is_none()
@@ -301,6 +309,7 @@ fn emit_button_events(
 
 fn apply_locomotion(
     world: &mut World,
+    visuals: &VisualWorld,
     input_xr_owner: ComponentId,
     cfg: &InputXRGamepadComponent,
     xr: &XrGamepadState,
@@ -325,13 +334,37 @@ fn apply_locomotion(
         return false;
     };
 
-    let yaw_basis = xr.head_pose_rotation.unwrap_or([0.0, 0.0, 0.0, 1.0]);
-    let move_world = math::quat_rotate_vec3(yaw_only(yaw_basis), [dx, 0.0, dz]);
+    // OpenXR has already published the final world-space eye transforms for the
+    // active CameraXR this frame. Use that authoritative rendered orientation
+    // directly; reconstructing it from the ECS hierarchy can double AVC yaw.
+    let camera_world = visuals
+        .visual_camera(CameraTarget::Xr)
+        .and_then(|camera| camera.eyes.first())
+        .map(|eye| eye.transform.matrix_world)
+        .or_else(|| TransformSystem::world_model(world, target_tcid));
+    let (right, back) = camera_world
+        .and_then(horizontal_camera_basis)
+        .unwrap_or(([1.0, 0.0, 0.0], [0.0, 0.0, 1.0]));
+    let move_world = [
+        right[0] * dx + back[0] * dz,
+        0.0,
+        right[2] * dx + back[2] * dz,
+    ];
+
+    // The locomotion target stores a local translation. Convert the world-space
+    // direction back through its parent so rotated parent rigs don't skew it.
+    let move_local = world
+        .parent_of(target_tcid)
+        .and_then(|parent| TransformSystem::world_model(world, parent))
+        .map(|parent_world| {
+            math::quat_rotate_vec3(math::quat_conjugate(math::mat_to_quat(parent_world)), move_world)
+        })
+        .unwrap_or(move_world);
     let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target_tcid) else {
         return false;
     };
-    t.transform.translation[0] += move_world[0] * cfg.speed * dt_sec;
-    t.transform.translation[2] += move_world[2] * cfg.speed * dt_sec;
+    t.transform.translation[0] += move_local[0] * cfg.speed * dt_sec;
+    t.transform.translation[2] += move_local[2] * cfg.speed * dt_sec;
     t.transform.recompute_model();
 
     let transform = t.transform;
@@ -397,8 +430,14 @@ fn resolve_locomotion_stick(
     }
 }
 
-fn yaw_only(rotation: [f32; 4]) -> [f32; 4] {
-    let forward = math::quat_rotate_vec3(rotation, [0.0, 0.0, -1.0]);
-    let yaw = forward[0].atan2(-forward[2]);
-    math::quat_rotation_y(yaw)
+fn horizontal_camera_basis(matrix_world: [[f32; 4]; 4]) -> Option<([f32; 3], [f32; 3])> {
+    // Transform matrices are column-major: column 0 is camera-right and column
+    // 2 is camera-back. Project both onto the ground plane and normalize them.
+    let normalize_xz = |v: [f32; 3]| {
+        let len = (v[0] * v[0] + v[2] * v[2]).sqrt();
+        (len > 1e-6).then(|| [v[0] / len, 0.0, v[2] / len])
+    };
+    let right = normalize_xz([matrix_world[0][0], 0.0, matrix_world[0][2]])?;
+    let back = normalize_xz([matrix_world[2][0], 0.0, matrix_world[2][2]])?;
+    Some((right, back))
 }
