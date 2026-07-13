@@ -1026,7 +1026,8 @@ fn handle_fill_click(
     renderable: ComponentId,
     _hit_point: [f32; 3],
 ) -> Option<String> {
-    let hit = crate::engine::ecs::system::editor_scene_hit::resolve_world_scene_hit(world, renderable)?;
+    let hit =
+        crate::engine::ecs::system::editor_scene_hit::resolve_world_scene_hit(world, renderable)?;
     if apply_color_to_subtree(world, hit.target_transform, context.selected_color, false) {
         Some("fill applied".to_string())
     } else {
@@ -1288,7 +1289,10 @@ fn resolve_paint_context<'a>(
         );
         return None;
     }
-    let destination_editor = match editor_context.last_scene_interacted_editor.or(Some(editor_root)) {
+    let destination_editor = match editor_context
+        .last_scene_interacted_editor
+        .or(Some(editor_root))
+    {
         Some(editor) => editor,
         None => return None,
     };
@@ -1374,7 +1378,8 @@ fn start_paint_preview_session(
     context: &PaintContext<'_>,
 ) -> Option<PlacementPreviewSession> {
     let scene_parent = resolve_scene_parent(world, context.destination_editor);
-    let asset_root = spawn_asset_subtree(world, emit, &context.asset, context.selected_color).ok()?;
+    let asset_root =
+        spawn_asset_subtree(world, emit, &context.asset, context.selected_color).ok()?;
     let preview_root =
         world.add_component_boxed_named("painted_asset_root", Box::new(TransformComponent::new()));
     let raycastable_root = world.add_component_boxed_named(
@@ -1484,7 +1489,7 @@ fn paint_activity_status(
         }
     }
 
-   let Some(_editor_root) = active_editor else {
+    let Some(_editor_root) = active_editor else {
         return PaintActivityStatus {
             active: false,
             reason: "no active editor".to_string(),
@@ -1877,7 +1882,9 @@ fn update_last_scene_interacted_editor(
         | PaintEvent::StrokeMoved { renderable, .. } => *renderable,
         _ => return,
     };
-    let Some(hit) = crate::engine::ecs::system::editor_scene_hit::resolve_world_scene_hit(world, renderable) else {
+    let Some(hit) =
+        crate::engine::ecs::system::editor_scene_hit::resolve_world_scene_hit(world, renderable)
+    else {
         return;
     };
     let Some(editor_root) = hit.editor_root else {
@@ -1905,7 +1912,9 @@ fn apply_color_to_subtree(
         {
             first_renderable = Some(node);
         }
-        if let Some(color) = world.get_component_by_id_as_mut::<crate::engine::ecs::component::ColorComponent>(node) {
+        if let Some(color) =
+            world.get_component_by_id_as_mut::<crate::engine::ecs::component::ColorComponent>(node)
+        {
             color.rgba = rgba;
             found_color = true;
         }

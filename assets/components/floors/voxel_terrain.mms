@@ -19,21 +19,27 @@ fn terrain_cube(x, y, z, color) {
 }
 
 export fn voxel_terrain(config) {
-    let grid_size = 72.0
+    let grid_length = 72.0
+    let grid_width = 72.0
+    if config {
+        grid_length = config.length
+        grid_width = config.width
+    }
     let cube_size = 3.0
     let cube_half = cube_size * 0.5
-    let grid_half = grid_size * 0.5
+    let grid_half_x = grid_width * 0.5
+    let grid_half_z = grid_length * 0.5
     let base_y = -3.15
 
     
 
     return Raycastable.enabled() {
         T {
-            for z in range(grid_size) {
-                for x in range(grid_size) {
+            for z in range(grid_length) {
+                for x in range(grid_width) {
                     let height_steps = terrain_height(x, z)
-                    let snapped_x = (x - grid_half) * cube_size
-                    let snapped_z = (z - grid_half) * cube_size
+                    let snapped_x = (x - grid_half_x) * cube_size
+                    let snapped_z = (z - grid_half_z) * cube_size
                     let level = height_steps - 1.0
 
                     let color = [1,1,1,1]

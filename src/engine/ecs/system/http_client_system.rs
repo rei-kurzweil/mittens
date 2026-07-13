@@ -57,7 +57,8 @@ impl HttpClientSystem {
         emit: &mut dyn SignalEmitter,
         component_id: ComponentId,
     ) {
-        let Some(component) = world.get_component_by_id_as::<HttpClientComponent>(component_id) else {
+        let Some(component) = world.get_component_by_id_as::<HttpClientComponent>(component_id)
+        else {
             return;
         };
         if !component.enabled {
@@ -257,7 +258,9 @@ impl HttpClientSystem {
 
 #[cfg(test)]
 mod tests {
-    use crate::engine::ecs::component::{HttpClientComponent, HttpServerComponent, TransformComponent};
+    use crate::engine::ecs::component::{
+        HttpClientComponent, HttpServerComponent, TransformComponent,
+    };
     use crate::engine::ecs::{CommandQueue, EventSignal, SignalKind, SystemWorld, World};
     use crate::engine::graphics::{RenderAssets, VisualWorld};
     use std::sync::mpsc;
@@ -279,27 +282,37 @@ mod tests {
         let client = world.add_component(HttpClientComponent::new());
         let _ = world.add_child(client_root, client);
 
-        systems.rx.add_handler_closure(SignalKind::HttpRequest, server, move |_world, emit, signal| {
-            let Some(EventSignal::HttpRequest { request_id, .. }) = signal.event.as_ref() else {
-                return;
-            };
-            emit.push_intent_now(
-                signal.scope,
-                crate::engine::ecs::IntentValue::HttpServerReply {
-                    component_id: signal.scope,
-                    request_id: *request_id,
-                    status: 200,
-                    headers: vec![],
-                    body_text: "ok".to_string(),
-                },
-            );
-        });
-        systems.rx.add_handler_closure(SignalKind::HttpResponse, client, move |_world, _emit, signal| {
-            let Some(EventSignal::HttpResponse { body_text, .. }) = signal.event.as_ref() else {
-                return;
-            };
-            let _ = tx.send(body_text.clone());
-        });
+        systems.rx.add_handler_closure(
+            SignalKind::HttpRequest,
+            server,
+            move |_world, emit, signal| {
+                let Some(EventSignal::HttpRequest { request_id, .. }) = signal.event.as_ref()
+                else {
+                    return;
+                };
+                emit.push_intent_now(
+                    signal.scope,
+                    crate::engine::ecs::IntentValue::HttpServerReply {
+                        component_id: signal.scope,
+                        request_id: *request_id,
+                        status: 200,
+                        headers: vec![],
+                        body_text: "ok".to_string(),
+                    },
+                );
+            },
+        );
+        systems.rx.add_handler_closure(
+            SignalKind::HttpResponse,
+            client,
+            move |_world, _emit, signal| {
+                let Some(EventSignal::HttpResponse { body_text, .. }) = signal.event.as_ref()
+                else {
+                    return;
+                };
+                let _ = tx.send(body_text.clone());
+            },
+        );
 
         world.init_component_tree(server_root, &mut queue);
         world.init_component_tree(client_root, &mut queue);

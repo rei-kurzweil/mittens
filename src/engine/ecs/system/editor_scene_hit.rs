@@ -133,12 +133,16 @@ fn has_selectable_off_marker(world: &World, component_id: ComponentId) -> bool {
         .get_component_by_id_as::<SelectableComponent>(component_id)
         .map(|s| !s.enabled)
         .unwrap_or(false)
-        || world.children_of(component_id).iter().copied().any(|child| {
-            world
-                .get_component_by_id_as::<SelectableComponent>(child)
-                .map(|s| !s.enabled)
-                .unwrap_or(false)
-        })
+        || world
+            .children_of(component_id)
+            .iter()
+            .copied()
+            .any(|child| {
+                world
+                    .get_component_by_id_as::<SelectableComponent>(child)
+                    .map(|s| !s.enabled)
+                    .unwrap_or(false)
+            })
 }
 
 #[cfg(test)]
@@ -190,7 +194,9 @@ mod tests {
         let child = world.add_component(TransformComponent::new());
         let renderable = world.add_component(RenderableComponent::cube());
 
-        world.add_child(editor, scene_root).expect("attach scene root");
+        world
+            .add_child(editor, scene_root)
+            .expect("attach scene root");
         world
             .add_child(scene_root, selectable)
             .expect("attach selectable marker");

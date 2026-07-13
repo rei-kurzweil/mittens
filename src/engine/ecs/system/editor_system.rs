@@ -281,16 +281,19 @@ pub(crate) fn select_editor_target(
     if let Some(ed) = world.get_component_by_id_as_mut::<EditorComponent>(editor_root) {
         ed.selected = Some(target_transform);
     }
-    emit.push_event(editor_root, EventSignal::SelectionChanged {
-        selection_root: editor_root,
-        mode: crate::engine::ecs::component::SelectionMode::Single,
-        selected_entries: vec![crate::engine::ecs::component::SelectionEntry {
-            index: None,
-            component: target_transform,
-        }],
-        selected_component: Some(target_transform),
-        selected_payload: Some(target_transform),
-    });
+    emit.push_event(
+        editor_root,
+        EventSignal::SelectionChanged {
+            selection_root: editor_root,
+            mode: crate::engine::ecs::component::SelectionMode::Single,
+            selected_entries: vec![crate::engine::ecs::component::SelectionEntry {
+                index: None,
+                component: target_transform,
+            }],
+            selected_component: Some(target_transform),
+            selected_payload: Some(target_transform),
+        },
+    );
 
     if update_repl_cwd {
         if let Some(node) = world.get_component_node(target_transform) {

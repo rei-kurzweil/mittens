@@ -2,10 +2,9 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::{
-    ColorComponent, EditorComponent, EditorInteractionMode,
-    EmissiveComponent, OpacityComponent, RaycastableComponent, RenderableComponent,
-    SelectableComponent, SelectionComponent, SerializeComponent, SignalObserverRouterComponent,
-    TransformComponent,
+    ColorComponent, EditorComponent, EditorInteractionMode, EmissiveComponent, OpacityComponent,
+    RaycastableComponent, RenderableComponent, SelectableComponent, SelectionComponent,
+    SerializeComponent, SignalObserverRouterComponent, TransformComponent,
 };
 use crate::engine::ecs::system::editor::paint_panel::COLOR_PANEL_ROOT_SELECTOR;
 use crate::engine::ecs::system::editor::settings_panel::{

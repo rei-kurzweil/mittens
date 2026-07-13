@@ -5,6 +5,7 @@ use crate::engine::ecs::component::{
     TransformComponent, resolve_component_ref,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
+use std::collections::HashSet;
 use crate::utils::math::{
     mat_to_quat, mat4_inverse, quat_conjugate, quat_from_axis_angle, quat_mul, quat_nlerp,
     quat_rotate_vec3, quat_rotation_y, quat_to_axis_angle, shortest_arc_quat, vec3_add, vec3_cross,
@@ -12,22 +13,17 @@ use crate::utils::math::{
 };
 
 #[derive(Debug, Default)]
-pub struct IKSystem;
+pub struct IKSystem {
+    chains: HashSet<ComponentId>,
+}
 
 impl IKSystem {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 
     pub fn tick(&mut self, world: &mut World, emit: &mut dyn SignalEmitter, _dt_sec: f32) {
-        let ids: Vec<ComponentId> = world
-            .all_components()
-            .filter(|&id| {
-                world
-                    .get_component_by_id_as::<IKChainComponent>(id)
-                    .is_some()
-            })
-            .collect();
+        let ids: Vec<_> = self.chains.iter().copied().collect();
         for id in ids {
             // Lazy resolution of `target_source` / `end_effector_source` into
             // the actual ComponentId fields. Matches AnimationSystem's
@@ -39,6 +35,14 @@ impl IKSystem {
             resolve_avc_ancestor(world, id);
             tick_chain(id, world, emit);
         }
+    }
+
+    pub fn register(&mut self, component: ComponentId) {
+        self.chains.insert(component);
+    }
+
+    pub fn remove(&mut self, component: ComponentId) {
+        self.chains.remove(&component);
     }
 }
 
@@ -147,7 +151,9 @@ fn tick_chain(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter) 
             .map(|component| component.pose_valid)
             .or_else(|| {
                 world
-                    .get_component_by_id_as::<crate::engine::ecs::component::ControllerXRComponent>(driver)
+                    .get_component_by_id_as::<crate::engine::ecs::component::ControllerXRComponent>(
+                        driver,
+                    )
                     .map(|component| component.pose_valid)
             })
             .unwrap_or(false);
@@ -1076,9 +1082,7 @@ mod tests {
     #[test]
     fn xr_driven_chain_skips_until_pose_is_valid() {
         let mut world = World::default();
-        let driver = world.add_component(
-            crate::engine::ecs::component::InputXRComponent::on(),
-        );
+        let driver = world.add_component(crate::engine::ecs::component::InputXRComponent::on());
         let target = world.add_component(TransformComponent::new());
         let root = world.add_component(TransformComponent::new());
         world.add_child(driver, target).unwrap();

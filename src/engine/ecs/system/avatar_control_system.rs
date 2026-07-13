@@ -10,13 +10,16 @@ use crate::utils::math::{
     mat_to_quat, quat_conjugate, quat_mul, quat_rotate_vec3, quat_rotation_y,
 };
 use winit::keyboard::{Key, NamedKey};
+use std::collections::HashSet;
 
 #[derive(Debug, Default)]
-pub struct AvatarControlSystem;
+pub struct AvatarControlSystem {
+    avatars: HashSet<ComponentId>,
+}
 
 impl AvatarControlSystem {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 
     pub fn tick(
@@ -26,14 +29,7 @@ impl AvatarControlSystem {
         emit: &mut dyn SignalEmitter,
         dt_sec: f32,
     ) {
-        let ids: Vec<ComponentId> = world
-            .all_components()
-            .filter(|&id| {
-                world
-                    .get_component_by_id_as::<AvatarControlComponent>(id)
-                    .is_some()
-            })
-            .collect();
+        let ids: Vec<_> = self.avatars.iter().copied().collect();
 
         let mut calibration_consumed = false;
         let calibrate_pressed = input.key_pressed(&Key::Named(NamedKey::Enter));
@@ -43,6 +39,14 @@ impl AvatarControlSystem {
                 calibration_consumed = true;
             }
         }
+    }
+
+    pub fn register(&mut self, component: ComponentId) {
+        self.avatars.insert(component);
+    }
+
+    pub fn remove(&mut self, component: ComponentId) {
+        self.avatars.remove(&component);
     }
 }
 
@@ -664,7 +668,9 @@ fn find_xr_pose_driver(world: &World, start: ComponentId) -> Option<ComponentId>
             .get_component_by_id_as::<ControllerXRComponent>(component)
             .is_some()
             || world
-                .get_component_by_id_as::<crate::engine::ecs::component::InputXRComponent>(component)
+                .get_component_by_id_as::<crate::engine::ecs::component::InputXRComponent>(
+                    component,
+                )
                 .is_some()
         {
             return Some(component);

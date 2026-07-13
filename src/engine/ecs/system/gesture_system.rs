@@ -288,15 +288,7 @@ impl GestureSystem {
                 let summary: Vec<String> = pointer_hits
                     .iter()
                     .take(8)
-                    .map(|h| {
-                        format!(
-                            "{:?} t={:.3} pri={} pe={:?}",
-                            h.3,
-                            h.1,
-                            h.0,
-                            h.6
-                        )
-                    })
+                    .map(|h| format!("{:?} t={:.3} pri={} pe={:?}", h.3, h.1, h.0, h.6))
                     .collect();
                 eprintln!(
                     "[gesture] press pointer={:?} raycaster={:?} drag_hit={:?} click_hit={:?} hits={}",
@@ -543,10 +535,7 @@ impl GestureSystem {
                                 if Self::debug_gesture_enabled() {
                                     eprintln!(
                                         "[gesture] click pointer={:?} raycaster={:?} drag_renderable={:?} click_target={:?}",
-                                        pointer_cid,
-                                        active_rc,
-                                        active_renderable,
-                                        click_target,
+                                        pointer_cid, active_rc, active_renderable, click_target,
                                     );
                                 }
                                 if let Some(start_hit) = state.drag_start_hit_point {

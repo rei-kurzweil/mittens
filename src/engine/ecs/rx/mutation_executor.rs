@@ -401,6 +401,21 @@ impl RxMutationExecutor {
                     systems.remove_kinetic_response(world, visuals, component);
                 }
             }
+            IntentValue::RegisterAvatarControl { component_ids } => {
+                for &component in component_ids {
+                    systems.register_avatar_control(component);
+                }
+            }
+            IntentValue::RegisterAvatarBodyYaw { component_ids } => {
+                for &component in component_ids {
+                    systems.avatar_body_yaw.register(component);
+                }
+            }
+            IntentValue::RegisterIkChain { component_ids } => {
+                for &component in component_ids {
+                    systems.ik.register(component);
+                }
+            }
 
             IntentValue::RemoveSubtree { component_ids } => {
                 let mut roots: Vec<ComponentId> = component_ids.iter().copied().collect();

@@ -1,8 +1,7 @@
 use crate::engine::ecs::component::{
-    BoundsComponent, ColorComponent, Component, ComponentRef, DataComponent,
-    EmissiveComponent, LayoutComponent, OptionComponent,
-    QueryRootMode, RenderableComponent, SelectionComponent, SelectionEntry, SelectionMode,
-    StyleComponent, TransformComponent, resolve_component_ref,
+    BoundsComponent, ColorComponent, Component, ComponentRef, DataComponent, EmissiveComponent,
+    LayoutComponent, OptionComponent, QueryRootMode, RenderableComponent, SelectionComponent,
+    SelectionEntry, SelectionMode, StyleComponent, TransformComponent, resolve_component_ref,
 };
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,

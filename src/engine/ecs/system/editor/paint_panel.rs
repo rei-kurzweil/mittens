@@ -223,7 +223,10 @@ pub fn is_paint_active(
     let result = focused && tool_ok && asset_ok;
     eprintln!(
         "🎨🖌️ paint_debug is_paint_active result={result} focused={focused} tool_ok={tool_ok} asset_ok={asset_ok} tool={:?} asset={:?} color={:?} panel={paint_panel_root:?} focused_panel={:?}",
-        paint_state.selected_tool, paint_state.selected_asset, paint_state.selected_color, editor_context.focused_panel
+        paint_state.selected_tool,
+        paint_state.selected_asset,
+        paint_state.selected_color,
+        editor_context.focused_panel
     );
     result
 }

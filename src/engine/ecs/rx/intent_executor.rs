@@ -157,7 +157,10 @@ fn handle_intent_signal(
             transform_cids.dedup();
             for transform_cid in transform_cids {
                 let Some(world_position) =
-                    crate::engine::ecs::system::TransformSystem::world_position(world, transform_cid)
+                    crate::engine::ecs::system::TransformSystem::world_position(
+                        world,
+                        transform_cid,
+                    )
                 else {
                     continue;
                 };
@@ -175,10 +178,11 @@ fn handle_intent_signal(
                     })
                     .map(crate::utils::math::mat_to_quat)
                     .unwrap_or([0.0, 0.0, 0.0, 1.0]);
-                let local_rotation = crate::utils::math::quat_normalize(crate::utils::math::quat_mul(
-                    crate::utils::math::quat_conjugate(parent_world_rotation),
-                    desired_world_rotation,
-                ));
+                let local_rotation =
+                    crate::utils::math::quat_normalize(crate::utils::math::quat_mul(
+                        crate::utils::math::quat_conjugate(parent_world_rotation),
+                        desired_world_rotation,
+                    ));
 
                 let Some(transform) = world
                     .get_component_by_id_as::<TransformComponent>(transform_cid)

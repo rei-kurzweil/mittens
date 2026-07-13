@@ -2,6 +2,7 @@ use super::World;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::RxWorld;
 use crate::engine::ecs::SignalKind;
+use crate::engine::ecs::component::{AvatarBodyYawComponent, AvatarControlComponent, IKChainComponent};
 use crate::engine::ecs::system::ArmatureVisualizationSystem;
 use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::CameraSystem;
@@ -138,8 +139,8 @@ mod tests {
     use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::World;
     use crate::engine::ecs::component::{
-        BoundsComponent, ColorComponent, MirrorComponent, RaycastableComponent, RenderableComponent,
-        StencilClipComponent, TextureComponent, TransformComponent,
+        BoundsComponent, ColorComponent, MirrorComponent, RaycastableComponent,
+        RenderableComponent, StencilClipComponent, TextureComponent, TransformComponent,
     };
     use crate::engine::ecs::system::System;
     use crate::engine::graphics::primitives::{MaterialHandle, MeshHandle, TextureHandle};
@@ -727,8 +728,8 @@ impl SystemWorld {
         root: ComponentId,
     ) {
         use crate::engine::ecs::component::{
-            CollisionComponent, ControllerXRComponent, InputXRComponent, KineticResponseComponent,
-            HttpClientComponent, HttpServerComponent, PointerComponent, RayCastComponent,
+            CollisionComponent, ControllerXRComponent, HttpClientComponent, HttpServerComponent,
+            InputXRComponent, KineticResponseComponent, PointerComponent, RayCastComponent,
             RenderableComponent, SignalRouteUpwardComponent, StencilClipComponent,
             TransformComponent,
         };
@@ -774,6 +775,16 @@ impl SystemWorld {
                 .is_some()
             {
                 self.remove_kinetic_response(world, visuals, n);
+            }
+            if world.get_component_by_id_as::<AvatarControlComponent>(n).is_some() {
+                self.avatar_control.remove(n);
+                self.head_pose_body_xz_follow.remove(n);
+            }
+            if world.get_component_by_id_as::<AvatarBodyYawComponent>(n).is_some() {
+                self.avatar_body_yaw.remove(n);
+            }
+            if world.get_component_by_id_as::<IKChainComponent>(n).is_some() {
+                self.ik.remove(n);
             }
             if world
                 .get_component_by_id_as::<PointerComponent>(n)
@@ -836,6 +847,11 @@ impl SystemWorld {
             eprintln!("[SystemWorld] failed to scan assets dir: {error}");
         }
         systems
+    }
+
+    pub fn register_avatar_control(&mut self, component: ComponentId) {
+        self.avatar_control.register(component);
+        self.head_pose_body_xz_follow.register(component);
     }
 
     pub fn queue_repl_command(&mut self, command: String) {
@@ -1339,7 +1355,8 @@ impl SystemWorld {
             return;
         };
 
-        self.editor_context.register_editor_identity(world, component);
+        self.editor_context
+            .register_editor_identity(world, component);
 
         let editor_context_state = self.editor_context.shared_state();
         self.transform_gizmo

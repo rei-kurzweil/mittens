@@ -1,9 +1,9 @@
 use crate::engine::ecs::component::HttpServerComponent;
 use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter, World};
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Duration;
 use tiny_http::{Header, Response, Server, StatusCode};
@@ -77,7 +77,8 @@ impl HttpServerSystem {
     ) {
         self.remove_component(component_id);
 
-        let Some(component) = world.get_component_by_id_as::<HttpServerComponent>(component_id) else {
+        let Some(component) = world.get_component_by_id_as::<HttpServerComponent>(component_id)
+        else {
             return;
         };
         if !component.enabled || component.bind_addr.is_empty() {
@@ -162,7 +163,9 @@ impl HttpServerSystem {
                             let mut response = Response::from_string(reply.body_text)
                                 .with_status_code(StatusCode(reply.status));
                             for (name, value) in reply.headers {
-                                if let Ok(header) = Header::from_bytes(name.as_bytes(), value.as_bytes()) {
+                                if let Ok(header) =
+                                    Header::from_bytes(name.as_bytes(), value.as_bytes())
+                                {
                                     response.add_header(header);
                                 }
                             }

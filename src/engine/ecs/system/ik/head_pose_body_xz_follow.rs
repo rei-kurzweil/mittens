@@ -43,28 +43,32 @@
 use crate::engine::ecs::component::{AvatarControlComponent, TransformComponent};
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::utils::math::{mat_to_quat, quat_conjugate, quat_rotate_vec3};
+use std::collections::HashSet;
 
 #[derive(Debug, Default)]
-pub struct HeadPoseBodyXzFollowSystem;
+pub struct HeadPoseBodyXzFollowSystem {
+    avatars: HashSet<ComponentId>,
+}
 
 impl HeadPoseBodyXzFollowSystem {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 
     pub fn tick(&mut self, world: &mut World, emit: &mut dyn SignalEmitter, _dt_sec: f32) {
-        let ids: Vec<ComponentId> = world
-            .all_components()
-            .filter(|&id| {
-                world
-                    .get_component_by_id_as::<AvatarControlComponent>(id)
-                    .is_some()
-            })
-            .collect();
+        let ids: Vec<_> = self.avatars.iter().copied().collect();
 
         for id in ids {
             tick_one(id, world, emit);
         }
+    }
+
+    pub fn register(&mut self, component: ComponentId) {
+        self.avatars.insert(component);
+    }
+
+    pub fn remove(&mut self, component: ComponentId) {
+        self.avatars.remove(&component);
     }
 }
 

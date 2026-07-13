@@ -1,6 +1,5 @@
 use crate::engine::ecs::component::{
-    OpacityComponent, SelectableComponent,
-    SerializeComponent, TransformComponent,
+    OpacityComponent, SelectableComponent, SerializeComponent, TransformComponent,
 };
 use crate::engine::ecs::system::paint_placement::{PlacementPose, SurfacePlacementFrame};
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};

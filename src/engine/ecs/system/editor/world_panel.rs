@@ -712,7 +712,10 @@ pub fn apply_world_panel_semantic_selection(
                 world_panel_item_label(world, target_component)
             )
         } else {
-            format!("selected {}", world_panel_item_label(world, target_component))
+            format!(
+                "selected {}",
+                world_panel_item_label(world, target_component)
+            )
         };
     rerender_world_panel_status(world, emit, world_panel_root, status_wrap, &status_text);
     true

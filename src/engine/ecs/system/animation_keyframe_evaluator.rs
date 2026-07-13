@@ -196,7 +196,6 @@ impl AnimationKeyframeEvaluator {
         if !audio_already_scheduled_this_cycle {
             fire_music_note_children(world, rx, kf_id, Some(beat_now));
         }
-
     }
 }
 

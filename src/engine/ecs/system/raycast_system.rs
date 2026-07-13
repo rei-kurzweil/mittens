@@ -950,7 +950,8 @@ impl RayCastSystem {
                 }
 
                 let query_started = profile.then(Instant::now);
-                let mut hits = self.cast_against_renderables_bvh(world, bvh, origin, dir, max_distance);
+                let mut hits =
+                    self.cast_against_renderables_bvh(world, bvh, origin, dir, max_distance);
                 if profile {
                     self.profile_rays += 1;
                     self.profile_bvh_hits += hits.len() as u64;
@@ -1035,8 +1036,11 @@ impl RayCastSystem {
         if profile && self.profile_frames >= 120 {
             let line = format!(
                 "[spatial-profile][raycast] frames={} rays={} bvh_hits={} fallbacks={} fallback_scan_candidates={} query_ms={:.3}",
-                self.profile_frames, self.profile_rays, self.profile_bvh_hits,
-                self.profile_fallbacks, self.profile_fallback_candidates,
+                self.profile_frames,
+                self.profile_rays,
+                self.profile_bvh_hits,
+                self.profile_fallbacks,
+                self.profile_fallback_candidates,
                 self.profile_query_time.as_secs_f64() * 1000.0
             );
             eprintln!("{line}");

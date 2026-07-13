@@ -2,8 +2,8 @@ use super::Component;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter};
 use crate::engine::graphics::primitives::Transform;
 use crate::utils::math::{
-    mat_to_quat, quat_normalize, shortest_arc_quat, vec3_cross, vec3_dot, vec3_len,
-    vec3_normalize, vec3_scale, vec3_sub,
+    mat_to_quat, quat_normalize, shortest_arc_quat, vec3_cross, vec3_dot, vec3_len, vec3_normalize,
+    vec3_scale, vec3_sub,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -432,8 +432,14 @@ mod tests {
             .expect("b")
             .transform
             .rotation;
-        let dot = rot_a[0] * rot_b[0] + rot_a[1] * rot_b[1] + rot_a[2] * rot_b[2] + rot_a[3] * rot_b[3];
-        assert!(dot.abs() > 0.9999, "expected equivalent rotations, got {:?} vs {:?}", rot_a, rot_b);
+        let dot =
+            rot_a[0] * rot_b[0] + rot_a[1] * rot_b[1] + rot_a[2] * rot_b[2] + rot_a[3] * rot_b[3];
+        assert!(
+            dot.abs() > 0.9999,
+            "expected equivalent rotations, got {:?} vs {:?}",
+            rot_a,
+            rot_b
+        );
     }
 
     #[test]

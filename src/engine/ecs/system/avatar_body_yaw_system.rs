@@ -1,27 +1,31 @@
 use crate::engine::ecs::component::{AvatarBodyYawComponent, TransformComponent};
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
+use std::collections::HashSet;
 
 #[derive(Debug, Default)]
-pub struct AvatarBodyYawSystem;
+pub struct AvatarBodyYawSystem {
+    followers: HashSet<ComponentId>,
+}
 
 impl AvatarBodyYawSystem {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 
     pub fn tick(&mut self, world: &mut World, emit: &mut dyn SignalEmitter, dt_sec: f32) {
-        let ids: Vec<ComponentId> = world
-            .all_components()
-            .filter(|&id| {
-                world
-                    .get_component_by_id_as::<AvatarBodyYawComponent>(id)
-                    .is_some()
-            })
-            .collect();
+        let ids: Vec<_> = self.followers.iter().copied().collect();
 
         for id in ids {
             tick_one(id, world, emit, dt_sec);
         }
+    }
+
+    pub fn register(&mut self, component: ComponentId) {
+        self.followers.insert(component);
+    }
+
+    pub fn remove(&mut self, component: ComponentId) {
+        self.followers.remove(&component);
     }
 }
 

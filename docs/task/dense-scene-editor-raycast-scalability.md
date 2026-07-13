@@ -4,6 +4,78 @@ Date: 2026-07-12
 
 Status: open
 
+## Investigation status: 2026-07-12
+
+The initial assumption that 5,184 terrain raycast entries caused the steady-state slowdown was
+not supported by profiling.
+
+Confirmed fixes and measurements:
+
+- The BVH pending queue was not flushed at runtime, so raycasts could fall back to brute-force
+  scans. `BvhSystem::tick()` now flushes pending work.
+- A valid BVH miss incorrectly triggered a brute-force scan. Fallback now occurs only when no BVH
+  index exists.
+- The terrain produces about 5,370 total BVH shapes in `bisket-vr-demo`.
+- Initial BVH builds measured approximately 6-8 ms in the latest release run.
+- Steady state refits 35 moving renderables per frame at approximately 0.025 ms average and
+  0.094 ms maximum in the captured run.
+- The captured XR interval issued zero scene rays, so terrain ray queries contributed no time to
+  that run.
+- CPU simulation measurements remained small: animation approximately 0.006 ms, skinning
+  approximately 0.35 ms, and the combined AVC/body-follow/IK block approximately 1.1 ms per frame.
+
+The dominant measured XR costs were instead:
+
+- per-eye rendering: approximately 8.2-9.2 ms per frame
+- OpenXR frame submission: commonly 0.4-1.5 ms, with intervals around 2.4-2.9 ms
+- total `render_xr`: approximately 9.2-12.3 ms per frame
+
+Conclusion: the current terrain representation is not the observed steady-state bottleneck. Dense
+scene optimization remains useful future work, but it should not be used to explain or fix the
+current XR smoothness problem without new evidence.
+
+This clears terrain raycasting, not terrain rendering. The measured per-eye render stage includes
+drawing the 5,184 terrain cubes for each eye, and the window camera renders the scene again. The
+next controlled comparison should run the same VR scene with only `voxel_terrain()` disabled while
+keeping the avatar, XR session, cameras, and editor UI unchanged. Window rendering should also be
+timed separately so total frame cost can be divided among simulation, two XR eyes, and the desktop
+view.
+
+### 72 by 72 versus 36 by 36 VR-only comparison
+
+`voxel_terrain` now accepts `{ length, width }`; only `bisket-vr-only-example` was changed to
+`{ length = 36, width = 36 }`. The original VR and desktop demos retain the 72 by 72 default.
+
+The reduced run confirmed:
+
+- BVH shapes fell from approximately 5,379 to 1,476.
+- initial BVH build time fell from roughly 6-8 ms to roughly 2 ms.
+- eye rendering improved modestly from roughly 9.4-10.1 ms to 8.9-9.9 ms.
+- XR submission remained variable and commonly blocked for 7-12 ms.
+- total XR render commonly remained around 17-22 ms.
+
+The comparison also exposed unrelated global ECS scans:
+
+- skinning fell from approximately 0.51 ms to 0.26 ms
+- the combined AVC/body-follow/IK block fell from approximately 1.78 ms to 0.70 ms
+
+Terrain has no semantic relationship to skinning or IK. These reductions occur because those
+systems enumerate `world.all_components()` every frame and filter by component type. They should
+cache registered component IDs, consistent with the engine's caching philosophy. This is a
+separate CPU scalability issue from BVH maintenance and XR rendering.
+
+### Related XR correctness finding
+
+`InputXRGamepadSystem` locomotion is not connected for the topology authored by both
+`bisket-vr-demo.mms` and `vr-input.mms`:
+
+- authored topology: `Editor -> InputXR -> InputXRGamepad` and `InputXR -> driven Transform`
+- current resolver searches for a transform ancestor above `InputXR`
+- there is no such transform in either example, so locomotion has no target
+
+This should be tracked/fixed as an XR locomotion topology issue. It is separate from BVH and dense
+terrain performance.
+
 ## Problem
 
 Editor interaction now reaches raycastable objects outside `Editor {}` trees. This fixes the
@@ -144,6 +216,10 @@ Costs:
 - not every editable surface necessarily has collision enabled
 
 ## Recommended staged direction
+
+Do not begin terrain proxy/chunking work solely for the current performance report. Preserve the
+options below for future scale tests where ray count, BVH maintenance, or memory measurements show
+an actual bottleneck.
 
 ### Milestone 1: cursor-only dense surfaces
 
