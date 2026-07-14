@@ -2098,6 +2098,22 @@ fn apply_call(
         return Ok(());
     }
 
+    if let Some(pose) = world.get_component_by_id_as_mut::<PoseCapturePoseComponent>(id) {
+        match method {
+            "joint" => {
+                let entry = crate::engine::ecs::component::PoseBoneEntry {
+                    query: arg_str(args, 0)?.to_string(),
+                    translation: val_as_f32_array::<3>(arg(args, 1)?)?,
+                    rotation: val_as_f32_array::<4>(arg(args, 2)?)?,
+                    scale: val_as_f32_array::<3>(arg(args, 3)?)?,
+                };
+                pose.push_joint(entry)?;
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+
     // Transform builders
     if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(id) {
         match method {

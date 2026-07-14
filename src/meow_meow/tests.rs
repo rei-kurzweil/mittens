@@ -2671,6 +2671,61 @@ fn roundtrip_component<C: ComponentTrait + 'static>(original: C) -> (World, Comp
 }
 
 #[test]
+fn roundtrip_pose_capture_pose_preserves_all_ordered_joints() {
+    use crate::engine::ecs::component::{PoseBoneEntry, PoseCapturePoseComponent, PoseTargetRef};
+
+    let entries: Vec<_> = (0..12)
+        .map(|i| PoseBoneEntry {
+            query: format!("#joint_{i}"),
+            translation: [i as f32, i as f32 + 0.25, -(i as f32)],
+            rotation: [0.01 * i as f32, 0.02 * i as f32, 0.03 * i as f32, 1.0],
+            scale: [1.0, 1.0 + 0.01 * i as f32, 1.0],
+        })
+        .collect();
+    let original = PoseCapturePoseComponent::new(
+        "many joints",
+        PoseTargetRef::Query("#avatar".into()),
+        entries.clone(),
+    );
+
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<PoseCapturePoseComponent>(id)
+        .expect("PoseCapturePose downcast");
+    assert_eq!(got.name, "many joints");
+    assert_eq!(got.entries.len(), entries.len());
+    for (got, expected) in got.entries.iter().zip(&entries) {
+        assert_eq!(got.query, expected.query);
+        assert_eq!(got.translation, expected.translation);
+        assert_eq!(got.rotation, expected.rotation);
+        assert_eq!(got.scale, expected.scale);
+    }
+}
+
+#[test]
+fn pose_capture_pose_joint_appends_and_rejects_duplicates() {
+    use crate::engine::ecs::component::{PoseBoneEntry, PoseCapturePoseComponent, PoseTargetRef};
+    let entry = |query: &str| PoseBoneEntry {
+        query: query.into(),
+        translation: [0.0; 3],
+        rotation: [0.0, 0.0, 0.0, 1.0],
+        scale: [1.0; 3],
+    };
+    let mut pose = PoseCapturePoseComponent::new(
+        "partial",
+        PoseTargetRef::Query("#avatar".into()),
+        Vec::new(),
+    );
+    pose.push_joint(entry("#hips")).unwrap();
+    pose.push_joint(entry("#head")).unwrap();
+    assert_eq!(pose.entries.len(), 2);
+    assert_eq!(pose.entries[0].query, "#hips");
+    assert_eq!(pose.entries[1].query, "#head");
+    assert!(pose.push_joint(entry("#hips")).is_err());
+    assert_eq!(pose.entries.len(), 2);
+}
+
+#[test]
 fn roundtrip_opacity() {
     use crate::engine::ecs::component::OpacityComponent;
     let original = OpacityComponent::new()

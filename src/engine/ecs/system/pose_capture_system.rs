@@ -67,18 +67,35 @@ impl PoseCaptureSystem {
             pose.name, target
         );
 
+        // Resolution is a validation phase. Do not enqueue any mutations unless
+        // every query resolves uniquely inside this particular GLTF instance.
+        let Some(gltf_id) = self.owning_gltf(world, target) else {
+            println!("[PoseCaptureSystem] target {:?} has no owning GLTF", target);
+            return;
+        };
+        let mut resolved = Vec::with_capacity(pose.entries.len());
         for entry in &pose.entries {
-            if let Some(tc_id) = self.resolve_path(world, target, &entry.path) {
-                emit.push_intent_now(
-                    tc_id,
-                    IntentValue::UpdateTransform {
-                        component_ids: vec![tc_id],
-                        translation: entry.translation,
-                        rotation_quat_xyzw: entry.rotation,
-                        scale: entry.scale,
-                    },
+            let matches = self.resolve_joint_query(world, gltf_id, &entry.query);
+            if matches.len() != 1 {
+                println!(
+                    "[PoseCaptureSystem] joint query '{}' resolved {} times; pose not applied",
+                    entry.query,
+                    matches.len()
                 );
+                return;
             }
+            resolved.push((matches[0], entry));
+        }
+        for (tc_id, entry) in resolved {
+            emit.push_intent_now(
+                tc_id,
+                IntentValue::UpdateTransform {
+                    component_ids: vec![tc_id],
+                    translation: entry.translation,
+                    rotation_quat_xyzw: entry.rotation,
+                    scale: entry.scale,
+                },
+            );
         }
     }
 
@@ -121,13 +138,28 @@ impl PoseCaptureSystem {
         }
 
         let library_id = self.ensure_library(world, target, emit);
-        let transforms = world.find_all_components(target, "Transform");
+        let gltf_id = self.owning_gltf(world, target)?;
+        let transforms = world
+            .get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(gltf_id)?
+            .armature_joint_transforms
+            .clone();
         let mut entries = Vec::new();
+        let mut queries = HashSet::new();
         for tc_id in transforms {
             if let Some(tc) = world.get_component_by_id_as::<TransformComponent>(tc_id) {
-                if let Some(path) = self.get_subtree_path(world, target, tc_id) {
+                if let Some(label) = world
+                    .component_label(tc_id)
+                    .filter(|label| !label.is_empty())
+                {
+                    let query = format!("#{label}");
+                    if !queries.insert(query.clone()) {
+                        println!(
+                            "[PoseCaptureSystem] duplicate captured joint query '{query}'; pose not captured"
+                        );
+                        return None;
+                    }
                     entries.push(PoseBoneEntry {
-                        path,
+                        query,
                         translation: tc.transform.translation,
                         rotation: tc.transform.rotation,
                         scale: tc.transform.scale,
@@ -222,48 +254,37 @@ impl PoseCaptureSystem {
         None
     }
 
-    fn get_subtree_path(
-        &self,
-        world: &World,
-        root: ComponentId,
-        target: ComponentId,
-    ) -> Option<String> {
-        if target == root {
-            return Some("".to_string());
+    fn owning_gltf(&self, world: &World, start: ComponentId) -> Option<ComponentId> {
+        let mut current = Some(start);
+        while let Some(id) = current {
+            if world
+                .get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(id)
+                .is_some()
+            {
+                return Some(id);
+            }
+            current = world.parent_of(id);
         }
-        let mut path = Vec::new();
-        let mut curr = target;
-        while curr != root {
-            let name = world.component_label(curr).unwrap_or("node");
-            path.push(name.to_string());
-            let Some(parent) = world.parent_of(curr) else {
-                return None; // Not in subtree
-            };
-            curr = parent;
-        }
-        path.reverse();
-        Some(path.join("/"))
+        None
     }
 
-    fn resolve_path(&self, world: &World, root: ComponentId, path: &str) -> Option<ComponentId> {
-        if path.is_empty() {
-            return Some(root);
-        }
-        let parts: Vec<&str> = path.split('/').collect();
-        let mut curr = root;
-        for part in parts {
-            let mut found = false;
-            for &child in world.children_of(curr) {
-                if world.component_label(child) == Some(part) {
-                    curr = child;
-                    found = true;
-                    break;
-                }
-            }
-            if !found {
-                return None;
-            }
-        }
-        Some(curr)
+    fn resolve_joint_query(
+        &self,
+        world: &World,
+        gltf_id: ComponentId,
+        query: &str,
+    ) -> Vec<ComponentId> {
+        let Some(gltf) =
+            world.get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(gltf_id)
+        else {
+            return Vec::new();
+        };
+        let query_root = world.parent_of(gltf_id).unwrap_or(gltf_id);
+        let owned: HashSet<ComponentId> = gltf.armature_joint_transforms.iter().copied().collect();
+        world
+            .find_all_components(query_root, query)
+            .into_iter()
+            .filter(|id| owned.contains(id))
+            .collect()
     }
 }
