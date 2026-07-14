@@ -1,5 +1,6 @@
 use crate::engine::ecs::component::{
-    GestureCoordType, GestureCoordTypeComponent, SignalRouteUpwardComponent, TransformComponent,
+    GestureCoordType, GestureCoordTypeComponent, SignalRouteUpwardComponent,
+    TransformCameraSpecificComponent, TransformCameraSpecificMode, TransformComponent,
     TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
     TransformGizmoRotateComponent, TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
     TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
@@ -24,6 +25,7 @@ enum TransformGizmoOp {
 #[derive(Debug, Default)]
 pub struct TransformGizmoSystem {
     editor_context_state: Option<Arc<Mutex<EditorContextState>>>,
+    live_gizmos: std::collections::HashSet<ComponentId>,
 }
 
 impl TransformGizmoSystem {
@@ -36,6 +38,101 @@ impl TransformGizmoSystem {
         editor_context_state: Arc<Mutex<EditorContextState>>,
     ) {
         self.editor_context_state = Some(editor_context_state);
+    }
+
+    /// Update the ordinary settings transforms used by camera-specific gizmo anchors.
+    /// Returns anchors whose effective world matrices must be propagated immediately.
+    pub fn update_camera_scales(
+        &mut self,
+        world: &mut World,
+        visuals: &crate::engine::graphics::VisualWorld,
+        has_window_camera: bool,
+    ) -> Vec<ComponentId> {
+        use crate::engine::graphics::CameraTarget;
+        const REFERENCE_DISTANCE: f32 = 4.0;
+        const MIN_SCALE: f32 = 0.02;
+        const MAX_SCALE: f32 = 20.0;
+
+        self.live_gizmos.retain(|id| {
+            world
+                .get_component_by_id_as::<TransformGizmoComponent>(*id)
+                .is_some()
+        });
+        let stereo_eyes = visuals
+            .visual_camera(CameraTarget::Xr)
+            .filter(|c| visuals.active_xr_camera().is_some() && !c.eyes.is_empty());
+        let stereo_active = stereo_eyes.is_some();
+        let mut changed = Vec::new();
+
+        for gizmo in self.live_gizmos.iter().copied().collect::<Vec<_>>() {
+            let Some(g) = world
+                .get_component_by_id_as::<TransformGizmoComponent>(gizmo)
+                .copied()
+            else {
+                continue;
+            };
+            let Some(anchor) = g.visual_root else {
+                continue;
+            };
+            let p = world
+                .get_component_by_id_as::<TransformComponent>(anchor)
+                .map(|t| t.transform.matrix_world[3])
+                .unwrap_or([0.0, 0.0, 0.0, 1.0]);
+            let views: Vec<[[f32; 4]; 4]> = if let Some(c) = stereo_eyes {
+                c.eyes.iter().map(|e| e.view).collect()
+            } else if has_window_camera {
+                visuals
+                    .visual_camera(CameraTarget::Window)
+                    .and_then(|c| c.eyes.first())
+                    .map(|e| vec![e.view])
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            let depths: Vec<f32> = views
+                .iter()
+                .map(|v| {
+                    let z = v[0][2] * p[0] + v[1][2] * p[1] + v[2][2] * p[2] + v[3][2];
+                    -z
+                })
+                .collect();
+            if depths.is_empty() || depths.iter().any(|d| !d.is_finite() || *d <= 0.0) {
+                continue;
+            }
+            let depth = depths.iter().sum::<f32>() / depths.len() as f32;
+            let scale = (g.scale * depth / REFERENCE_DISTANCE).clamp(MIN_SCALE, MAX_SCALE);
+
+            let desired_mode = if stereo_active {
+                TransformCameraSpecificMode::Stereoscopic
+            } else {
+                TransformCameraSpecificMode::Monoscopic
+            };
+            let settings = world
+                .children_of(anchor)
+                .iter()
+                .copied()
+                .find_map(|marker| {
+                    let c =
+                        world.get_component_by_id_as::<TransformCameraSpecificComponent>(marker)?;
+                    (c.mode == desired_mode)
+                        .then(|| {
+                            world.children_of(marker).iter().copied().find(|id| {
+                                world
+                                    .get_component_by_id_as::<TransformComponent>(*id)
+                                    .is_some()
+                            })
+                        })
+                        .flatten()
+                });
+            if let Some(settings) = settings {
+                if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(settings) {
+                    t.transform.scale = [scale; 3];
+                    t.transform.recompute_model();
+                    changed.push(anchor);
+                }
+            }
+        }
+        changed
     }
 
     /// Install per-gizmo scoped handlers rooted at the `TransformGizmoComponent` node.
@@ -1263,15 +1360,34 @@ impl TransformGizmoSystem {
         );
 
         // Create a root transform for the gizmo visuals under the GizmoComponent node.
-        let gizmo_root = world.add_component_boxed_named(
-            "gizmo_root",
-            Box::new(TransformComponent::new().with_scale(
-                gizmo_local_scale,
-                gizmo_local_scale,
-                gizmo_local_scale,
-            )),
-        );
+        let gizmo_root =
+            world.add_component_boxed_named("gizmo_root", Box::new(TransformComponent::new()));
         let _ = world.add_child(gizmo_output, gizmo_root);
+
+        // Camera-specific configuration children are ordinary TRS values. The stream
+        // evaluates the anchor first and then composes exactly one settings transform.
+        for (name, marker) in [
+            (
+                "gizmo_camera_mono",
+                TransformCameraSpecificComponent::active_monoscopic(),
+            ),
+            (
+                "gizmo_camera_stereo",
+                TransformCameraSpecificComponent::active_stereoscopic(),
+            ),
+        ] {
+            let mode = world.add_component_boxed_named(name, Box::new(marker));
+            let settings = world.add_component_boxed_named(
+                format!("{name}_settings"),
+                Box::new(TransformComponent::new().with_scale(
+                    gizmo_local_scale,
+                    gizmo_local_scale,
+                    gizmo_local_scale,
+                )),
+            );
+            let _ = world.add_child(gizmo_root, mode);
+            let _ = world.add_child(mode, settings);
+        }
 
         // Wrap all gizmo visuals in an overlay marker so they render in the overlay pass.
         let gizmo_overlay =
@@ -1337,6 +1453,7 @@ impl TransformGizmoSystem {
         if let Some(g) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(component) {
             g.visual_root = Some(gizmo_root);
         }
+        self.live_gizmos.insert(component);
 
         // Helper: spawn a renderable under a transform with color+emissive.
         fn spawn_part(

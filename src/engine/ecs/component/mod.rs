@@ -91,6 +91,7 @@ pub mod text_shadow;
 pub mod texture;
 pub mod texture_filtering;
 pub mod transform;
+pub mod transform_camera_specific;
 pub mod transform_parent;
 pub mod transform_pipeline;
 pub mod transform_pipeline_map;
@@ -208,6 +209,9 @@ pub use text_shadow::TextShadowComponent;
 pub use texture::{CatEngineTextureFormat, TextureComponent};
 pub use texture_filtering::TextureFilteringComponent;
 pub use transform::TransformComponent;
+pub use transform_camera_specific::{
+    TransformCameraSpecificComponent, TransformCameraSpecificMode,
+};
 pub use transform_parent::TransformParentComponent;
 pub use transform_pipeline::{
     TransformDropComponent, TransformForkTRSComponent, TransformMergeTRSComponent,

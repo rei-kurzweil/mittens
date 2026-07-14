@@ -4033,6 +4033,32 @@ fn roundtrip_transform_gizmo() {
 }
 
 #[test]
+fn roundtrip_transform_camera_specific_modes() {
+    use crate::engine::ecs::component::{
+        TransformCameraSpecificComponent, TransformCameraSpecificMode,
+    };
+    for (component, expected) in [
+        (
+            TransformCameraSpecificComponent::active_monoscopic(),
+            TransformCameraSpecificMode::Monoscopic,
+        ),
+        (
+            TransformCameraSpecificComponent::active_stereoscopic(),
+            TransformCameraSpecificMode::Stereoscopic,
+        ),
+    ] {
+        let (world, id) = roundtrip_component(component);
+        assert_eq!(
+            world
+                .get_component_by_id_as::<TransformCameraSpecificComponent>(id)
+                .unwrap()
+                .mode,
+            expected
+        );
+    }
+}
+
+#[test]
 fn roundtrip_renderer_stats() {
     use crate::engine::ecs::component::RendererStatsComponent;
     use crate::engine::graphics::CameraTarget;

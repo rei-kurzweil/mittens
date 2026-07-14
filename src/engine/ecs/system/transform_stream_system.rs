@@ -1,9 +1,9 @@
 use crate::engine::ecs::component::{
     QuatExtractYawComponent, QuatTemporalFilterComponent, QuatYawFollowComponent,
-    TransformComponent, TransformDropComponent, TransformForkTRSComponent,
-    TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
-    TransformMergeTRSComponent, TransformParentComponent, TransformSampleAncestorComponent,
-    Vector3TemporalFilterComponent,
+    TransformCameraSpecificComponent, TransformCameraSpecificMode, TransformComponent,
+    TransformDropComponent, TransformForkTRSComponent, TransformMapRotationComponent,
+    TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
+    TransformParentComponent, TransformSampleAncestorComponent, Vector3TemporalFilterComponent,
 };
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::{ComponentId, World};
@@ -120,6 +120,11 @@ pub struct TransformStreamSystem {
     vec3_temporal_state: HashMap<TransformPipelineStageKey, Vec3TemporalState>,
     quat_temporal_state: HashMap<TransformPipelineStageKey, QuatTemporalState>,
     yaw_follow_state: HashMap<TransformPipelineStageKey, f32>,
+    stereoscopic_active: bool,
+    /// Pre-camera and effective matrices for camera-specific anchors. A direct refresh of an
+    /// anchor starts from its cached `matrix_world`, which is the previous effective matrix;
+    /// retaining the unmodified basis prevents the selected settings transform compounding.
+    camera_specific_basis: HashMap<ComponentId, (TransformMatrix, TransformMatrix)>,
 }
 
 impl TransformStreamSystem {
@@ -134,6 +139,35 @@ impl TransformStreamSystem {
             || world
                 .get_component_by_id_as::<TransformParentComponent>(cid)
                 .is_some()
+            || Self::camera_specific_settings(world, cid).is_some()
+    }
+
+    pub fn set_stereoscopic_active(&mut self, active: bool) {
+        self.stereoscopic_active = active;
+    }
+
+    fn camera_specific_settings(
+        world: &World,
+        anchor: ComponentId,
+    ) -> Option<(Option<ComponentId>, Option<ComponentId>)> {
+        let mut mono = None;
+        let mut stereo = None;
+        for &child in world.children_of(anchor) {
+            let Some(c) = world.get_component_by_id_as::<TransformCameraSpecificComponent>(child)
+            else {
+                continue;
+            };
+            let settings = world.children_of(child).iter().copied().find(|&id| {
+                world
+                    .get_component_by_id_as::<TransformComponent>(id)
+                    .is_some()
+            });
+            match c.mode {
+                TransformCameraSpecificMode::Monoscopic => mono = settings,
+                TransformCameraSpecificMode::Stereoscopic => stereo = settings,
+            }
+        }
+        (mono.is_some() || stereo.is_some()).then_some((mono, stereo))
     }
 
     pub fn parse_component_tree(
@@ -163,6 +197,34 @@ impl TransformStreamSystem {
         input_world: TransformMatrix,
     ) -> Option<(TransformMatrix, Vec<ComponentId>)> {
         let rebased_world = Self::apply_transform_parent_basis(world, root, input_world);
+
+        if let Some((mono, stereo)) = Self::camera_specific_settings(world, root) {
+            let basis = match self.camera_specific_basis.get(&root).copied() {
+                Some((basis, previous_effective)) if input_world == previous_effective => basis,
+                _ => rebased_world,
+            };
+            let selected = if self.stereoscopic_active {
+                stereo
+            } else {
+                mono
+            };
+            let effective = selected
+                .and_then(|id| world.get_component_by_id_as::<TransformComponent>(id))
+                .map(|t| math::mat4_mul(basis, t.transform.model))
+                .unwrap_or(basis);
+            self.camera_specific_basis.insert(root, (basis, effective));
+            let outputs = world
+                .children_of(root)
+                .iter()
+                .copied()
+                .filter(|&id| {
+                    world
+                        .get_component_by_id_as::<TransformCameraSpecificComponent>(id)
+                        .is_none()
+                })
+                .collect();
+            return Some((effective, outputs));
+        }
 
         if let Some(block) = self.parse_component_tree(world, root) {
             let outputs = self.downstream_children(world, root, &block);
@@ -891,10 +953,94 @@ mod tests {
     use super::*;
     use crate::engine::ecs::World;
     use crate::engine::ecs::component::{
-        QuatTemporalFilterComponent, TransformForkTRSComponent, TransformMapRotationComponent,
-        TransformMapScaleComponent, TransformMapTranslationComponent,
-        Vector3TemporalFilterComponent,
+        QuatTemporalFilterComponent, TransformCameraSpecificComponent, TransformComponent,
+        TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
+        TransformMapTranslationComponent, Vector3TemporalFilterComponent,
     };
+
+    #[test]
+    fn camera_specific_selects_modes_and_excludes_configuration_children() {
+        let mut world = World::default();
+        let anchor = world.add_component(TransformComponent::new());
+        let mono = world.add_component(TransformCameraSpecificComponent::active_monoscopic());
+        let mono_settings =
+            world.add_component(TransformComponent::new().with_position(0.0, 2.0, 0.0));
+        let stereo = world.add_component(TransformCameraSpecificComponent::active_stereoscopic());
+        let stereo_settings =
+            world.add_component(TransformComponent::new().with_position(0.0, 0.0, 3.0));
+        let output = world.add_component(TransformComponent::new());
+        world.add_child(anchor, mono).unwrap();
+        world.add_child(mono, mono_settings).unwrap();
+        world.add_child(anchor, stereo).unwrap();
+        world.add_child(stereo, stereo_settings).unwrap();
+        world.add_child(anchor, output).unwrap();
+        let input = TransformComponent::new()
+            .with_position(1.0, 0.0, 0.0)
+            .transform
+            .model;
+        let mut system = TransformStreamSystem::new();
+        let (m, outputs) = system.evaluate_stream_node(&world, anchor, input).unwrap();
+        assert_eq!([m[3][0], m[3][1], m[3][2]], [1.0, 2.0, 0.0]);
+        assert_eq!(outputs, vec![output]);
+        system.set_stereoscopic_active(true);
+        let (m, outputs) = system.evaluate_stream_node(&world, anchor, input).unwrap();
+        assert_eq!([m[3][0], m[3][1], m[3][2]], [1.0, 0.0, 3.0]);
+        assert_eq!(outputs, vec![output]);
+    }
+
+    #[test]
+    fn camera_specific_uses_generic_anchor_when_mode_has_no_settings() {
+        let mut world = World::default();
+        let anchor = world.add_component(TransformComponent::new());
+        let mono = world.add_component(TransformCameraSpecificComponent::active_monoscopic());
+        let settings = world.add_component(TransformComponent::new().with_scale(2.0, 2.0, 2.0));
+        world.add_child(anchor, mono).unwrap();
+        world.add_child(mono, settings).unwrap();
+        let input = TransformComponent::new()
+            .with_position(4.0, 5.0, 6.0)
+            .transform
+            .model;
+        let mut system = TransformStreamSystem::new();
+        system.set_stereoscopic_active(true);
+        assert_eq!(
+            system
+                .evaluate_stream_node(&world, anchor, input)
+                .unwrap()
+                .0,
+            input
+        );
+    }
+
+    #[test]
+    fn repeated_camera_specific_refresh_does_not_compound_scale() {
+        let mut world = World::default();
+        let anchor = world.add_component(TransformComponent::new());
+        let mono = world.add_component(TransformCameraSpecificComponent::active_monoscopic());
+        let settings = world.add_component(TransformComponent::new().with_scale(2.0, 2.0, 2.0));
+        world.add_child(anchor, mono).unwrap();
+        world.add_child(mono, settings).unwrap();
+
+        let mut system = TransformStreamSystem::new();
+        let identity = TransformComponent::new().transform.model;
+        let first = system
+            .evaluate_stream_node(&world, anchor, identity)
+            .unwrap()
+            .0;
+        let second = system
+            .evaluate_stream_node(&world, anchor, first)
+            .unwrap()
+            .0;
+        let third = system
+            .evaluate_stream_node(&world, anchor, second)
+            .unwrap()
+            .0;
+
+        assert_eq!(first, second);
+        assert_eq!(second, third);
+        assert_eq!(third[0][0], 2.0);
+        assert_eq!(third[1][1], 2.0);
+        assert_eq!(third[2][2], 2.0);
+    }
 
     #[test]
     fn controller_rotation_pipeline_contains_temporal_quat_op() {

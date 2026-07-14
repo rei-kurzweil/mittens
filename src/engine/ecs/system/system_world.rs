@@ -2486,6 +2486,23 @@ impl SystemWorld {
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
 
+        // Camera-dependent gizmo transforms must settle before pointer rays query the BVH.
+        // XR wins whenever an active rig has published at least one eye.
+        let stereo_active = visuals.active_xr_camera().is_some()
+            && visuals
+                .visual_camera(crate::engine::graphics::CameraTarget::Xr)
+                .is_some_and(|c| !c.eyes.is_empty());
+        self.transform_stream.set_stereoscopic_active(stereo_active);
+        let gizmo_anchors = self.transform_gizmo.update_camera_scales(
+            world,
+            visuals,
+            self.camera.has_active_window_camera(),
+        );
+        for anchor in gizmo_anchors {
+            self.transform_changed(world, visuals, anchor);
+        }
+        self.bvh.tick(world, visuals, input, dt_sec);
+
         let activations = self
             .pointer
             .build_activations(world, input, self.xr.xr_input_state());

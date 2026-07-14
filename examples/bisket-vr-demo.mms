@@ -144,25 +144,25 @@ T.position(0.15, -0.45, 1.0) {
     
     Animation.looping().length(4.0) {
         Keyframe.at(0.0) {
-            repro_rotating_parent.update_transform([2.0, 0.15, 1.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+            repro_rotating_parent.update_transform([1.0, 0.15, 1.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
             repro_cube_a_transform.update_transform([-0.9, -0.44, -1.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
             repro_cube_b_transform.update_transform([0.0, -0.44, -0.7], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
             repro_cube_c_transform.update_transform([0.9, -0.44, -1.1], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
         }
         Keyframe.at(1.0) {
-            repro_rotating_parent.update_transform([2.0, 0.15, 1.0], [0.0, 0.65, 0.0], [1.0, 1.0, 1.0])
+            repro_rotating_parent.update_transform([1.0, 0.15, 1.0], [0.0, 0.65, 0.0], [1.0, 1.0, 1.0])
             repro_cube_a_transform.update_transform([-1.25, -0.10, -0.55], [0.0, 1.570795, 0.0], [1.0, 1.0, 1.0])
             repro_cube_b_transform.update_transform([0.0, 0.45, -1.35], [1.570795, 0.0, 0.0], [1.0, 1.0, 1.0])
             repro_cube_c_transform.update_transform([1.25, -0.20, -0.55], [0.0, 0.0, 1.570795], [1.0, 1.0, 1.0])
         }
         Keyframe.at(2.0) {
-            repro_rotating_parent.update_transform([2.0, 0.15, 1.0], [0.0, 1.35, 0.0], [1.0, 1.0, 1.0])
+            repro_rotating_parent.update_transform([1.0, 0.15, 1.0], [0.0, 1.35, 0.0], [1.0, 1.0, 1.0])
             repro_cube_a_transform.update_transform([-0.35, 0.55, -1.45], [0.0, 3.14159, 0.0], [1.0, 1.0, 1.0])
             repro_cube_b_transform.update_transform([0.0, -0.55, -0.25], [3.14159, 0.0, 0.0], [1.0, 1.0, 1.0])
             repro_cube_c_transform.update_transform([0.35, 0.55, -1.45], [0.0, 0.0, 3.14159], [1.0, 1.0, 1.0])
         }
         Keyframe.at(3.0) {
-            repro_rotating_parent.update_transform([2.0, 0.15, 1.0], [0.0, 2.10, 0.0], [1.0, 1.0, 1.0])
+            repro_rotating_parent.update_transform([1.0, 0.15, 1.0], [0.0, 2.10, 0.0], [1.0, 1.0, 1.0])
             repro_cube_a_transform.update_transform([-1.35, -0.25, -1.35], [0.0, 4.712385, 0.0], [1.0, 1.0, 1.0])
             repro_cube_b_transform.update_transform([0.0, 0.30, 0.10], [4.712385, 0.0, 0.0], [1.0, 1.0, 1.0])
             repro_cube_c_transform.update_transform([1.35, -0.25, -1.35], [0.0, 0.0, 4.712385], [1.0, 1.0, 1.0])
@@ -270,64 +270,64 @@ ED {
 } 
 
 // // --- Controller debug cubes (Aim pose, rotation-smoothed) ---
-// //
-// // Sit alongside the avatar — useful to see raw controller tracking before
-// // any IK/splice transforms touch them.
-// InputXR.on() {
-//     T {
-//         // T.position(0.0, 1.85, 0.6) {
-//         //     RendererStats {
-//         //         camera_target(Xr)
-//         //     }
-//         // }
+    // //
+    // // Sit alongside the avatar — useful to see raw controller tracking before
+    // // any IK/splice transforms touch them.
+    // InputXR.on() {
+    //     T {
+    //         // T.position(0.0, 1.85, 0.6) {
+    //         //     RendererStats {
+    //         //         camera_target(Xr)
+    //         //     }
+    //         // }
 
-//         XRHand.new(true, Left, Aim) {
-//             T.scale(0.06, 0.06, 0.12) {
-//                 TransformForkTRS {
-//                     TransformMapTranslation {}
-//                     TransformMapRotation {
-//                         QuatTemporalFilter.smoothing_factor(220.0)
-//                     }
-//                     TransformMapScale {}
-//                     T {
-//                         R.cube() { C.rgba(0.10, 0.90, 1.00, 1.0) }
-//                     }
-//                 }
-//             }
-//         }
+    //         XRHand.new(true, Left, Aim) {
+    //             T.scale(0.06, 0.06, 0.12) {
+    //                 TransformForkTRS {
+    //                     TransformMapTranslation {}
+    //                     TransformMapRotation {
+    //                         QuatTemporalFilter.smoothing_factor(220.0)
+    //                     }
+    //                     TransformMapScale {}
+    //                     T {
+    //                         R.cube() { C.rgba(0.10, 0.90, 1.00, 1.0) }
+    //                     }
+    //                 }
+    //             }
+    //         }
 
-//         XRHand.new(true, Right, Aim) {
-//             T.scale(0.06, 0.06, 0.12) {
-//                 TransformForkTRS {
-//                     TransformMapTranslation {}
-//                     TransformMapRotation {
-//                         QuatTemporalFilter.smoothing_factor(220.0)
-//                     }
-//                     TransformMapScale {}
-//                     T {
-//                         R.cube() { C.rgba(1.00, 0.35, 0.35, 1.0) }
-//                     }
-//                 }
-//             }
-//         }
+    //         XRHand.new(true, Right, Aim) {
+    //             T.scale(0.06, 0.06, 0.12) {
+    //                 TransformForkTRS {
+    //                     TransformMapTranslation {}
+    //                     TransformMapRotation {
+    //                         QuatTemporalFilter.smoothing_factor(220.0)
+    //                     }
+    //                     TransformMapScale {}
+    //                     T {
+    //                         R.cube() { C.rgba(1.00, 0.35, 0.35, 1.0) }
+    //                     }
+    //                 }
+    //             }
+    //         }
 
-//         // Grip pose markers (yellow = left, green = right) — compare with Aim above.
-//         XRHand.new(true, Left, Grip) {
-//             T.scale(0.05, 0.05, 0.10) {
-//                 T {
-//                     R.cube() { C.rgba(1.0, 1.0, 0.0, 1.0) EM.on() }
-//                 }
-//             }
-//         }
-//         XRHand.new(true, Right, Grip) {
-//             T.scale(0.05, 0.05, 0.10) {
-//                 T {
-//                     R.cube() { C.rgba(0.2, 1.0, 0.2, 1.0) EM.on() }
-//                 }
-//             }
-//         }
-//     }
-// }
+    //         // Grip pose markers (yellow = left, green = right) — compare with Aim above.
+    //         XRHand.new(true, Left, Grip) {
+    //             T.scale(0.05, 0.05, 0.10) {
+    //                 T {
+    //                     R.cube() { C.rgba(1.0, 1.0, 0.0, 1.0) EM.on() }
+    //                 }
+    //             }
+    //         }
+    //         XRHand.new(true, Right, Grip) {
+    //             T.scale(0.05, 0.05, 0.10) {
+    //                 T {
+    //                     R.cube() { C.rgba(0.2, 1.0, 0.2, 1.0) EM.on() }
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 
 // --- Desktop overview camera (Window target) ---
 //

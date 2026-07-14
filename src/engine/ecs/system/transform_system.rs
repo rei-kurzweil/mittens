@@ -95,6 +95,13 @@ impl TransformSystem {
                 Some((processed_world, outputs)) => (processed_world, Some(outputs)),
                 None => (current_world, None),
             };
+            // Camera-specific anchors own the effective cached matrix as well as the
+            // inherited basis supplied to their direct children.
+            if stream_output_roots.is_some() {
+                if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(node) {
+                    t.transform.matrix_world = current_world;
+                }
+            }
 
             let children: Vec<ComponentId> = match stream_output_roots {
                 Some(outputs) if !outputs.is_empty() => outputs,
