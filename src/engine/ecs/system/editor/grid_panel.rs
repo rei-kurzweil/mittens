@@ -540,7 +540,6 @@ pub(crate) fn rerender_grid_panel_from_context(
 pub(crate) enum GridPanelClickOutcome {
     NotHandled,
     Handled,
-    HandledNeedsFullRefresh(bool),
 }
 
 pub(crate) fn handle_grid_panel_click(
@@ -706,7 +705,11 @@ pub(crate) fn handle_grid_panel_click(
                 payload: Some(editor_root),
             },
         );
-        return GridPanelClickOutcome::HandledNeedsFullRefresh(true);
+        // Let the queued workspace event refresh the grid projection after this
+        // click returns. A synchronous full-workspace refresh here used to rebuild
+        // every panel, and doing an immediate grid refresh as well would project it
+        // twice for the same deletion.
+        return GridPanelClickOutcome::Handled;
     }
 
     GridPanelClickOutcome::NotHandled

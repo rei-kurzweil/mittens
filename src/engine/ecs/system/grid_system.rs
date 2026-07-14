@@ -450,49 +450,18 @@ impl GridSystem {
             return false;
         }
 
-        let mut renderables = Vec::new();
-        let mut transforms = Vec::new();
-        let mut stack = vec![owner_transform];
-        while let Some(node) = stack.pop() {
-            if world
-                .get_component_by_id_as::<RenderableComponent>(node)
-                .is_some()
-            {
-                renderables.push(node);
-            }
-            if world
-                .get_component_by_id_as::<TransformComponent>(node)
-                .is_some()
-            {
-                transforms.push(node);
-            }
-            for &child in world.children_of(node) {
-                stack.push(child);
-            }
-        }
-
-        if !renderables.is_empty() {
-            emit.push_intent_now(
-                owner_transform,
-                IntentValue::RemoveRenderable {
-                    component_ids: renderables,
-                },
-            );
-        }
-        if !transforms.is_empty() {
-            emit.push_intent_now(
-                owner_transform,
-                IntentValue::RemoveTransform {
-                    component_ids: transforms,
-                },
-            );
-        }
-
-        let removed = world.remove_component_subtree(owner_transform).is_ok();
-        if removed {
-            self.mark_dirty();
-        }
-        removed
+        // The cleanup-aware subtree executor unregisters renderables, BVH/raycast
+        // entries, transforms, and other runtime state before removing ECS records.
+        // Removing the World subtree here first leaves those later cleanup intents
+        // without the component handles they need, producing orphaned visuals.
+        emit.push_intent_now(
+            owner_transform,
+            IntentValue::RemoveSubtree {
+                component_ids: vec![owner_transform],
+            },
+        );
+        self.mark_dirty();
+        true
     }
 
     fn ensure_registry_current(&self, world: &World) {

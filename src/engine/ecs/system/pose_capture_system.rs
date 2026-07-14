@@ -18,27 +18,31 @@ impl PoseCaptureSystem {
         &self,
         world: &mut World,
         emit: &mut dyn SignalEmitter,
-        target: ComponentId,
+        request_target: ComponentId,
         pose_name: Option<String>,
     ) {
-        let targets = self.resolve_capture_targets(world, target);
+        let targets = self.resolve_capture_targets(world, request_target);
         if targets.is_empty() {
             println!(
                 "[PoseCaptureSystem] no PoseCaptureComponent targets resolved from {:?}",
-                target
+                request_target
             );
             return;
         }
 
-        for target in targets {
-            let pose_id = match self.capture_target_pose(world, emit, target, pose_name.clone()) {
-                Some(pose_id) => pose_id,
-                None => continue,
-            };
+        for capture_target in targets {
+            let pose_id =
+                match self.capture_target_pose(world, emit, capture_target, pose_name.clone()) {
+                    Some(pose_id) => pose_id,
+                    None => continue,
+                };
 
             use crate::engine::ecs::EventSignal;
+            // Publish completion from the request origin. Editor panel handlers are
+            // scoped to their panel tree; publishing from the captured GLTF target
+            // leaves that tree and the new pose row never gets projected.
             emit.push_event(
-                target,
+                request_target,
                 EventSignal::DataEvent {
                     name: "pose_captured".to_string(),
                     payload: Some(pose_id),

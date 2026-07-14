@@ -66,6 +66,13 @@ fn tick_one(
     };
 
     if needs_init {
+        // Runtime splicing reparents and rewrites avatar bones, so it is itself a
+        // pose-changing operation. An XR-authored avatar must remain in its authored
+        // pose until the headset has supplied a valid pose. Non-XR AVC trees continue
+        // to initialize immediately.
+        if !ancestor_input_xr_is_ready(world, id) {
+            return false;
+        }
         try_init_splices(id, world, emit);
         // Head rotation is handled by IKSystem (AimConstraint on splice_head) after init.
     }
@@ -96,6 +103,19 @@ fn tick_one(
         return true;
     }
     false
+}
+
+fn ancestor_input_xr_is_ready(world: &World, start: ComponentId) -> bool {
+    let mut current = Some(start);
+    while let Some(component) = current {
+        if let Some(input) = world
+            .get_component_by_id_as::<crate::engine::ecs::component::InputXRComponent>(component)
+        {
+            return input.pose_valid;
+        }
+        current = world.parent_of(component);
+    }
+    true
 }
 
 /// First-time setup: splice bones, create body pipeline, and (optionally) hand smoothing pipelines.

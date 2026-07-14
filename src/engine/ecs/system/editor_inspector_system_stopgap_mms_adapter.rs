@@ -309,36 +309,23 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 ) {
                     return;
                 }
-                match handle_grid_panel_click(
-                    world,
-                    emit,
-                    panel_query_root,
-                    *renderable,
-                    &click_editor_context_state,
-                    &click_installed_editor_roots,
-                    &mut *click_data_renderer
+                let grid_click_outcome = {
+                    let mut data_renderer = click_data_renderer
                         .lock()
-                        .expect("data renderer mutex poisoned"),
-                ) {
+                        .expect("data renderer mutex poisoned");
+                    handle_grid_panel_click(
+                        world,
+                        emit,
+                        panel_query_root,
+                        *renderable,
+                        &click_editor_context_state,
+                        &click_installed_editor_roots,
+                        &mut data_renderer,
+                    )
+                };
+                match grid_click_outcome {
                     GridPanelClickOutcome::NotHandled => {}
                     GridPanelClickOutcome::Handled => return,
-                    GridPanelClickOutcome::HandledNeedsFullRefresh(rebuild_world_panel) => {
-                        refresh_all_panel_models(
-                            world,
-                            emit,
-                            panel_query_root,
-                            &click_editor_context_state,
-                            &click_world_panel_scene_model,
-                            &click_inspector_workspace_state,
-                            &click_installed_editor_roots,
-                            &click_rendered_inspector_models,
-                            rebuild_world_panel,
-                            &mut *click_data_renderer
-                                .lock()
-                                .expect("data renderer mutex poisoned"),
-                        );
-                        return;
-                    }
                 }
 
                 if handle_pose_panel_click(
@@ -1125,11 +1112,8 @@ fn refresh_all_panel_models(
         &editor_context,
         data_renderer,
     );
-
     rerender_pose_panel(world, emit, panel_query_root, data_renderer);
-
     sync_editor_settings_panel_selection(world, emit, panel_query_root, &editor_context);
-
     sync_and_refresh_inspector_panels(
         world,
         emit,
