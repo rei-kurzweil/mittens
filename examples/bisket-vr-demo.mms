@@ -369,21 +369,21 @@ XR.on()
 T.position(0, 2, 0) {
     DL {
         intensity(0.8)
-        color(1.0, 0.45, 0.85)
+        color(1.0, 0.9, 0.9)
     }
 }
 
 
-T.position(-1, -1, 0) {
+T.position(-0.5, 0.5, 0) {
     DL {
-        intensity(0.8)
-        color(1.0, 0.9, 1.0)
+        intensity(0.6)
+        color(1.0, 0.8, 0.9)
     }
 }
 
-T.position(1, -1, 0) {
+T.position(0.5, -0.5, 0) {
     DL {
-        intensity(0.8)
-        color(1.0, 0.6, 0.15)
+        intensity(0.6)
+        color(1.0, 0.8, 0.9)
     }
 }
