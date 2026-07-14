@@ -2,6 +2,7 @@
 // Move and turn your head/body in front of the mirror: the fourteen hair strands
 // should sag visibly under gravity, lag behind the primary avatar pose, keep
 // their lengths, and oscillate briefly before settling.
+import { bisket_secondary_motion } from "../assets/components/secondary_motion/bisket.mms"
 
 RendererSettings { window_size(640, 480) }
 BGC.rgba(0.12, 0.16, 0.24, 1.0)
@@ -49,7 +50,10 @@ ED {
                     hand_rotation_smoothing(220.0)
 
                     T {
-                        GLTF.new("assets/models/bisket.11.0.glb") { EM.on() }
+                        GLTF.new("assets/models/bisket.11.0.glb") {
+                            EM.on()
+                            bisket_secondary_motion(false)
+                        }
                     }
 
                     T.position(0.0, 0.08, 0.12) {
