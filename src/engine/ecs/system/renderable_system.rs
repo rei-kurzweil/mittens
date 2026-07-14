@@ -2,14 +2,15 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::BackgroundColorComponent;
 use crate::engine::ecs::component::OverlayComponent;
 use crate::engine::ecs::component::{
-    BackgroundComponent, ColorComponent, EmissiveComponent, LightQuantizationComponent,
-    MeshComponent, OpacityComponent, RenderableComponent, RendererSettingsComponent,
-    TransparentCutoutComponent, UVComponent,
+    BackgroundComponent, BoundsComponent, ColorComponent, EmissiveComponent,
+    LightQuantizationComponent, MeshComponent, OpacityComponent, RenderableComponent,
+    RendererSettingsComponent, TransparentCutoutComponent, UVComponent,
 };
 
 use crate::engine::ecs::World;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
+use crate::engine::graphics::bounds::Aabb;
 use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Transform};
 use crate::engine::graphics::{GpuRenderable, VisualWorld};
 use crate::engine::graphics::{MeshUploader, RenderAssets};
@@ -1089,6 +1090,8 @@ impl RenderableSystem {
                 }
             }
 
+            cache_resolved_mesh_bounds(world, render_assets, p.renderable_cid, cpu_mesh);
+
             // Upload/resolve GPU mesh.
             let mesh = match render_assets.gpu_mesh_handle(uploader, cpu_mesh) {
                 Ok(h) => h,
@@ -1333,6 +1336,39 @@ impl RenderableSystem {
             }
         }
     }
+}
+
+fn cache_resolved_mesh_bounds(
+    world: &mut World,
+    render_assets: &RenderAssets,
+    renderable: ComponentId,
+    mesh: CpuMeshHandle,
+) {
+    let Some(local) = render_assets.cpu_mesh(mesh).and_then(|cpu_mesh| {
+        let positions: Vec<[f32; 3]> = cpu_mesh.vertices.iter().map(|vertex| vertex.pos).collect();
+        Aabb::from_points(&positions)
+    }) else {
+        return;
+    };
+
+    let existing_bounds = world
+        .children_of(renderable)
+        .iter()
+        .copied()
+        .find(|&child| {
+            world
+                .get_component_by_id_as::<BoundsComponent>(child)
+                .is_some()
+        });
+    if let Some(bounds) =
+        existing_bounds.and_then(|child| world.get_component_by_id_as_mut::<BoundsComponent>(child))
+    {
+        bounds.local = local;
+        return;
+    }
+
+    let bounds = world.add_component(BoundsComponent::new(local));
+    let _ = world.add_child(renderable, bounds);
 }
 
 impl System for RenderableSystem {

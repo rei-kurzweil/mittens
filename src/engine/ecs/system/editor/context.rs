@@ -814,6 +814,14 @@ pub(crate) fn sync_editor_cursor_visual(
     cursor_root_host: Option<ComponentId>,
 ) {
     let state = state.lock().expect("editor context state poisoned").clone();
+    // Do not materialize the marker during editor bootstrap. Bootstrap currently
+    // uses a no-op emitter, so creating the component tree there would discard
+    // the registration intents emitted by `init_component_tree`. The first real
+    // cursor placement supplies both a pose and a live emitter.
+    let (Some(translation), Some(rotation)) = (state.cursor_translation, state.cursor_rotation)
+    else {
+        return;
+    };
     let Some(cursor_root_host) = cursor_root_host.or(state.active_editor) else {
         return;
     };
@@ -823,8 +831,6 @@ pub(crate) fn sync_editor_cursor_visual(
         return;
     };
 
-    let translation = state.cursor_translation.unwrap_or([0.0, 0.0, 0.0]);
-    let rotation = state.cursor_rotation.unwrap_or([0.0, 0.0, 0.0, 1.0]);
     marker_transform.transform.translation = translation;
     marker_transform.transform.rotation = rotation;
     marker_transform.transform.scale = [CURSOR_MARKER_SIZE, CURSOR_MARKER_SIZE, CURSOR_MARKER_SIZE];

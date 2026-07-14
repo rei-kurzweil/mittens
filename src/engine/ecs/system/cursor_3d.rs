@@ -197,13 +197,36 @@ fn update_editor_cursor(
     let (translation, rotation, frame) = match interaction_mode {
         EditorInteractionMode::Select => return,
         EditorInteractionMode::Cursor3d => {
-            let Ok(frame) =
-                resolve_surface_placement_frame(world, target_renderable, hit_point, None)
-            else {
-                return;
+            let frame = match resolve_surface_placement_frame(
+                world,
+                target_renderable,
+                hit_point,
+                None,
+            ) {
+                Ok(frame) => frame,
+                Err(err) => {
+                    if debug_cursor_3d_enabled() {
+                        eprintln!(
+                            "[cursor_3d] surface frame failed renderable={:?} '{}' error={err:?}",
+                            target_renderable,
+                            debug_component_label(world, target_renderable),
+                        );
+                    }
+                    return;
+                }
             };
-            let Ok(pose) = resolve_surface_aligned_pose_from_frame(&frame, -0.25) else {
-                return;
+            let pose = match resolve_surface_aligned_pose_from_frame(&frame, -0.25) {
+                Ok(pose) => pose,
+                Err(err) => {
+                    if debug_cursor_3d_enabled() {
+                        eprintln!(
+                            "[cursor_3d] surface pose failed renderable={:?} '{}' error={err:?}",
+                            target_renderable,
+                            debug_component_label(world, target_renderable),
+                        );
+                    }
+                    return;
+                }
             };
             (
                 pose.translation,
@@ -213,6 +236,13 @@ fn update_editor_cursor(
         }
         EditorInteractionMode::SelectAndCursor => {
             let Some(model) = authored_world_model(world, target_transform) else {
+                if debug_cursor_3d_enabled() {
+                    eprintln!(
+                        "[cursor_3d] authored world model missing transform={:?} '{}'",
+                        target_transform,
+                        debug_component_label(world, target_transform),
+                    );
+                }
                 return;
             };
             (
@@ -342,7 +372,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut context_system = EditorContextSystem::new();
         let mut cursor_system = Cursor3dSystem::new();
@@ -358,6 +388,12 @@ mod tests {
             &mut world,
             editor_root,
             panel_root,
+        );
+        assert!(
+            world
+                .all_components()
+                .all(|id| world.component_label(id) != Some("editor_cursor_marker")),
+            "bootstrap must not create a cursor marker with the no-op emitter"
         );
         let context = context_system.shared_state();
         let scene_root =
@@ -399,6 +435,12 @@ mod tests {
         assert_eq!(state.interaction_mode, EditorInteractionMode::Cursor3d);
         assert!(state.cursor_translation.is_some());
         assert!(state.cursor_rotation.is_some());
+        assert!(
+            world
+                .all_components()
+                .any(|id| world.component_label(id) == Some("editor_cursor_marker")),
+            "first live cursor placement should create the marker"
+        );
         assert_eq!(
             world
                 .get_component_by_id_as::<EditorComponent>(editor_root)
@@ -420,7 +462,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut context_system = EditorContextSystem::new();
         let mut cursor_system = Cursor3dSystem::new();
@@ -501,5 +543,68 @@ mod tests {
         assert!((rotation[2] - 0.0).abs() < 1e-6);
         assert!((rotation[3] - 0.9238795).abs() < 1e-6);
         assert_eq!(state.cursor_frame, None);
+    }
+
+    #[test]
+    fn cursor_mode_places_cursor_on_world_cube_outside_editor() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let mut render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::new();
+        let mut context_system = EditorContextSystem::new();
+        let mut cursor_system = Cursor3dSystem::new();
+
+        let panel_root =
+            world.add_component_boxed_named("panel_root", Box::new(TransformComponent::new()));
+        let editor_root = world.add_component_boxed_named(
+            "editor_root",
+            Box::new(EditorComponent::new().with_interaction_mode(EditorInteractionMode::Cursor3d)),
+        );
+        context_system.install_scoped_handlers_for_editor(
+            &mut systems.rx,
+            &mut world,
+            editor_root,
+            panel_root,
+        );
+        let context = context_system.shared_state();
+        let world_transform =
+            world.add_component_boxed_named("terrain_cube", Box::new(TransformComponent::new()));
+        let renderable = world
+            .add_component_boxed_named("terrain_cube_mesh", Box::new(RenderableComponent::cube()));
+        let _ = world.add_child(world_transform, renderable);
+        cursor_system.install_scoped_handlers_for_editor(
+            &mut systems.rx,
+            editor_root,
+            panel_root,
+            context.clone(),
+        );
+
+        systems.rx.push_event(
+            renderable,
+            EventSignal::Click {
+                raycaster: renderable,
+                renderable,
+                hit_point: [0.5, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        );
+        let _ = systems.process_signals(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &mut emit,
+            10_000,
+        );
+
+        let state = context.lock().expect("editor context mutex poisoned");
+        assert_eq!(state.active_editor, Some(editor_root));
+        assert!(state.cursor_translation.is_some());
+        assert!(state.cursor_rotation.is_some());
+        assert!(
+            world
+                .all_components()
+                .any(|id| world.component_label(id) == Some("editor_cursor_marker"))
+        );
     }
 }

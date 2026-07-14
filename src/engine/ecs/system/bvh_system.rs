@@ -1,7 +1,7 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
-use crate::engine::ecs::component::RaycastableComponent;
 use crate::engine::ecs::component::RenderableComponent;
+use crate::engine::ecs::component::{BoundsComponent, RaycastableComponent};
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::primitives::{CpuMeshHandle, TransformMatrix};
@@ -186,10 +186,30 @@ impl BvhSystem {
 
     fn compute_aabb_for_renderable(world: &World, cid: ComponentId) -> Option<AABB> {
         let r = world.get_component_by_id_as::<RenderableComponent>(cid)?;
+        let model = TransformSystem::world_model(world, cid)?;
+
+        if let Some(local) = world.children_of(cid).iter().find_map(|&child| {
+            world
+                .get_component_by_id_as::<BoundsComponent>(child)
+                .map(|bounds| bounds.local)
+        }) {
+            let world_bounds = local.transformed(model);
+            return Some(AABB::with_bounds(
+                Point3::new(
+                    world_bounds.min[0],
+                    world_bounds.min[1],
+                    world_bounds.min[2],
+                ),
+                Point3::new(
+                    world_bounds.max[0],
+                    world_bounds.max[1],
+                    world_bounds.max[2],
+                ),
+            ));
+        }
 
         // Use base mesh so UV-baked variants (text glyphs) still behave like their primitive.
         let mesh = r.renderable.base_mesh;
-        let model = TransformSystem::world_model(world, cid)?;
         let (min, max) = aabb_from_world_matrix_for_mesh(mesh, model)?;
 
         Some(AABB::with_bounds(
@@ -571,5 +591,35 @@ fn ray_aabb(
         Some(tmax)
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BvhSystem;
+    use crate::engine::ecs::World;
+    use crate::engine::ecs::component::{BoundsComponent, RenderableComponent, TransformComponent};
+    use crate::engine::graphics::bounds::Aabb;
+    use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Renderable};
+
+    #[test]
+    fn imported_renderable_uses_cached_local_bounds() {
+        let mut world = World::default();
+        let transform = world.add_component(TransformComponent::new().with_position(2.0, 3.0, 4.0));
+        let renderable = world.add_component(RenderableComponent::new(Renderable::new(
+            CpuMeshHandle(999),
+            MaterialHandle::TOON_MESH,
+        )));
+        let bounds = world.add_component(BoundsComponent::new(Aabb {
+            min: [-1.0, -2.0, -3.0],
+            max: [1.0, 2.0, 3.0],
+        }));
+        let _ = world.add_child(transform, renderable);
+        let _ = world.add_child(renderable, bounds);
+
+        let aabb = BvhSystem::compute_aabb_for_renderable(&world, renderable)
+            .expect("cached imported bounds should produce a BVH shape");
+        assert_eq!([aabb.min.x, aabb.min.y, aabb.min.z], [1.0, 1.0, 1.0]);
+        assert_eq!([aabb.max.x, aabb.max.y, aabb.max.z], [3.0, 5.0, 7.0]);
     }
 }
