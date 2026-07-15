@@ -348,7 +348,7 @@ I.speed(2.0) {
         fps_rotation()
         
     }
-    T.position(3.0, 1.2, 3.5).rotation(0.0, 0.5, 0.0) {
+    T.position(3.0, 1.2, 3.5) {
         name = "desktop_camera_rig"
         Collision.kinematic() {
             CollisionShape.sphere(0.22)

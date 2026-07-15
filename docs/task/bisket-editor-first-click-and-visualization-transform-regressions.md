@@ -41,7 +41,8 @@ Focused integration coverage verifies that:
 
 The existing bounds ownership changes remain intact: markers are separate non-selectable,
 non-raycastable followers and only materialize after imported renderables resolve. Visible bounds
-now use a solid-edge `Renderable.wireframe_box(thickness)` mesh instead of translucent cubes.
+now use a slightly translucent, emissive day-glow
+`Renderable.wireframe_box(thickness)` mesh instead of translucent cubes.
 
 ## Runtime Context
 

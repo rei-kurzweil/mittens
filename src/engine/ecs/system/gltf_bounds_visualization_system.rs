@@ -1,7 +1,7 @@
 use crate::engine::ecs::component::{
-    BoundsComponent, ColorComponent, ComponentRef, GLTFComponent, MeshComponent, OpacityComponent,
-    OverlayComponent, RaycastableComponent, RenderableComponent, SelectableComponent,
-    SerializeComponent, TransformComponent, TransformParentComponent,
+    BoundsComponent, ColorComponent, ComponentRef, EmissiveComponent, GLTFComponent, MeshComponent,
+    OpacityComponent, OverlayComponent, RaycastableComponent, RenderableComponent,
+    SelectableComponent, SerializeComponent, TransformComponent, TransformParentComponent,
 };
 use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
@@ -9,7 +9,9 @@ use crate::engine::graphics::RenderAssets;
 use crate::engine::graphics::VisualWorld;
 use std::collections::{HashMap, HashSet};
 
-const BOUNDS_EDGE_THICKNESS: f32 = 0.02;
+const BOUNDS_EDGE_THICKNESS: f32 = 0.01;
+const BOUNDS_EMISSIVE_INTENSITY: f32 = 2.0;
+const BOUNDS_OPACITY: f32 = 0.95;
 
 #[derive(Debug, Clone, Copy)]
 struct BoundsMarker {
@@ -163,8 +165,9 @@ fn spawn_marker(
         BOUNDS_EDGE_THICKNESS,
     ));
     let raycastable = world.add_component(RaycastableComponent::disabled());
-    let color = world.add_component(ColorComponent::rgba(1.0, 0.42, 0.05, 1.0));
-    let opacity = world.add_component(OpacityComponent::new().with_opacity(0.9));
+    let color = world.add_component(ColorComponent::rgba(1.0, 0.35, 0.015, 1.0));
+    let emissive = world.add_component(EmissiveComponent::new(BOUNDS_EMISSIVE_INTENSITY));
+    let opacity = world.add_component(OpacityComponent::new().with_opacity(BOUNDS_OPACITY));
     let _ = world.add_child(root, local);
     let _ = world.add_child(root, selectable);
     let _ = world.add_child(root, serialize);
@@ -172,6 +175,7 @@ fn spawn_marker(
     let _ = world.add_child(overlay, renderable);
     let _ = world.add_child(renderable, raycastable);
     let _ = world.add_child(renderable, color);
+    let _ = world.add_child(renderable, emissive);
     let _ = world.add_child(renderable, opacity);
     world.init_component_tree(root, emit);
 
