@@ -396,6 +396,43 @@ impl MeshFactory {
         CpuMesh::new(vertices, indices)
     }
 
+    /// Unit wireframe box centered at the origin, represented by twelve solid edge prisms.
+    ///
+    /// `thickness` is relative to the unit box dimensions and is clamped to `(0, 1]`. Using
+    /// triangles instead of line primitives keeps the geometry compatible with the normal mesh
+    /// rendering path and gives the edges visible thickness from every view direction.
+    pub fn wireframe_box(thickness: f32) -> CpuMesh {
+        let thickness = thickness.clamp(1.0e-4, 1.0);
+        let edge_center = 0.5 - thickness * 0.5;
+        let cube = Self::cube();
+        let mut vertices = Vec::with_capacity(cube.vertices.len() * 12);
+        let mut indices = Vec::with_capacity(cube.indices_u32.len() * 12);
+
+        let mut append_prism = |center: [f32; 3], size: [f32; 3]| {
+            let base = vertices.len() as u32;
+            vertices.extend(cube.vertices.iter().map(|vertex| CpuVertex {
+                pos: [
+                    center[0] + vertex.pos[0] * size[0],
+                    center[1] + vertex.pos[1] * size[1],
+                    center[2] + vertex.pos[2] * size[2],
+                ],
+                uv: vertex.uv,
+                normal: vertex.normal,
+            }));
+            indices.extend(cube.indices_u32.iter().map(|index| base + index));
+        };
+
+        for a in [-edge_center, edge_center] {
+            for b in [-edge_center, edge_center] {
+                append_prism([0.0, a, b], [1.0, thickness, thickness]);
+                append_prism([a, 0.0, b], [thickness, 1.0, thickness]);
+                append_prism([a, b, 0.0], [thickness, thickness, 1.0]);
+            }
+        }
+
+        CpuMesh::new(vertices, indices)
+    }
+
     /// Simple tetrahedron (4 vertices, 4 faces).
     pub fn tetrahedron() -> CpuMesh {
         // A regular tetrahedron-ish set of points.

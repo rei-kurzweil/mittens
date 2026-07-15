@@ -3,8 +3,8 @@ use cat_engine::engine::ecs::component::{
     PointerComponent, RenderableComponent, TransformComponent, TransformGizmoComponent,
     TransformParentComponent,
 };
-use cat_engine::engine::ecs::system::{EditorContextSystem, PointerSystem, XrInputState};
 use cat_engine::engine::ecs::system::editor_scene_hit::resolve_world_scene_hit;
+use cat_engine::engine::ecs::system::{EditorContextSystem, PointerSystem, XrInputState};
 use cat_engine::engine::ecs::{CommandQueue, IntentValue, SignalEmitter, SystemWorld, World};
 use cat_engine::engine::graphics::{RenderAssets, VisualWorld};
 use cat_engine::engine::user_input::InputState;
@@ -31,6 +31,45 @@ fn editor_startup_activates_identity_without_semantically_selecting_it() {
     let state = state.lock().unwrap();
     assert_eq!(state.active_editor, Some(editor));
     assert_eq!(state.selected_component, None);
+}
+
+#[test]
+fn gltf_bounds_are_invisible_by_default() {
+    assert!(!GLTFComponent::new("test.glb").bounds_visible);
+}
+
+#[test]
+fn wireframe_box_mesh_is_cached_by_thickness_and_retains_unit_extents() {
+    let mut assets = RenderAssets::new();
+    let thin =
+        cat_engine::engine::ecs::component::RenderableComponent::wireframe_box(&mut assets, 0.02);
+    let thin_again =
+        cat_engine::engine::ecs::component::RenderableComponent::wireframe_box(&mut assets, 0.02);
+    let thick =
+        cat_engine::engine::ecs::component::RenderableComponent::wireframe_box(&mut assets, 0.08);
+
+    assert_eq!(thin.renderable.mesh, thin_again.renderable.mesh);
+    assert_ne!(thin.renderable.mesh, thick.renderable.mesh);
+
+    let mesh = assets
+        .cpu_mesh(thin.renderable.mesh)
+        .expect("wireframe mesh");
+    assert_eq!(mesh.vertices.len(), 12 * 24);
+    assert_eq!(mesh.indices_u32.len(), 12 * 36);
+    for axis in 0..3 {
+        let min = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.pos[axis])
+            .fold(f32::INFINITY, f32::min);
+        let max = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.pos[axis])
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!((min + 0.5).abs() < 1.0e-6);
+        assert!((max - 0.5).abs() < 1.0e-6);
+    }
 }
 
 #[test]

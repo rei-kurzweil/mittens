@@ -35,6 +35,9 @@ pub struct RenderAssets {
     /// These are pre-registered in `RenderAssets::new()` so scenes that refer to built-in
     /// meshes by numeric id can load without any explicit setup.
     builtin_meshes: HashMap<BuiltinMeshType, CpuMeshHandle>,
+
+    /// Procedural unit wireframe boxes keyed by the exact authored thickness bits.
+    wireframe_box_meshes: HashMap<u32, CpuMeshHandle>,
 }
 
 impl RenderAssets {
@@ -92,6 +95,18 @@ impl RenderAssets {
         let h = CpuMeshHandle(self.cpu_meshes.len() as u32);
         self.cpu_meshes.push(mesh);
         h
+    }
+
+    /// Return a shared unit wireframe-box mesh for the requested relative edge thickness.
+    pub fn wireframe_box_mesh(&mut self, thickness: f32) -> CpuMeshHandle {
+        let thickness = thickness.clamp(1.0e-4, 1.0);
+        let key = thickness.to_bits();
+        if let Some(handle) = self.wireframe_box_meshes.get(&key).copied() {
+            return handle;
+        }
+        let handle = self.register_mesh(MeshFactory::wireframe_box(thickness));
+        self.wireframe_box_meshes.insert(key, handle);
+        handle
     }
 
     /// Register an imported mesh and index it by `key` for later lookup.

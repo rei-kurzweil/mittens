@@ -33,6 +33,9 @@ pub enum AuthoredRenderableShape {
     Heart {
         segments: u32,
     },
+    WireframeBox {
+        thickness: f32,
+    },
 }
 
 /// Renderable component.
@@ -113,6 +116,17 @@ impl RenderableComponent {
     pub fn cube_dynamic(render_assets: &mut RenderAssets) -> Self {
         let h = render_assets.register_mesh(MeshFactory::cube());
         Self::new(Renderable::new(h, MaterialHandle::TOON_MESH).with_base_mesh(CpuMeshHandle::CUBE))
+    }
+
+    /// Unit wireframe box with twelve solid edges of configurable relative thickness.
+    pub fn wireframe_box(render_assets: &mut RenderAssets, thickness: f32) -> Self {
+        let thickness = thickness.clamp(1.0e-4, 1.0);
+        let handle = render_assets.wireframe_box_mesh(thickness);
+        let mut component = Self::new(
+            Renderable::new(handle, MaterialHandle::TOON_MESH).with_base_mesh(CpuMeshHandle::CUBE),
+        );
+        component.authored_shape = Some(AuthoredRenderableShape::WireframeBox { thickness });
+        component
     }
 
     /// Predefined renderable: sphere primitive (shared built-in mesh handle).
@@ -338,6 +352,9 @@ impl Component for RenderableComponent {
             ),
             Some(AuthoredRenderableShape::Heart { segments }) => {
                 ce_call("Renderable", "heart", vec![num(*segments as f64)])
+            }
+            Some(AuthoredRenderableShape::WireframeBox { thickness }) => {
+                ce_call("Renderable", "wireframe_box", vec![num(*thickness as f64)])
             }
             None => ce("Renderable"),
         }

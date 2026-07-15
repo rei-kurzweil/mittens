@@ -5,8 +5,11 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
+use crate::engine::graphics::RenderAssets;
 use crate::engine::graphics::VisualWorld;
 use std::collections::{HashMap, HashSet};
+
+const BOUNDS_EDGE_THICKNESS: f32 = 0.02;
 
 #[derive(Debug, Clone, Copy)]
 struct BoundsMarker {
@@ -26,6 +29,7 @@ impl GltfBoundsVisualizationSystem {
         world: &mut World,
         gltf_system: &GLTFSystem,
         _visuals: &mut VisualWorld,
+        render_assets: &mut RenderAssets,
         emit: &mut dyn SignalEmitter,
     ) {
         self.cleanup(world);
@@ -38,7 +42,7 @@ impl GltfBoundsVisualizationSystem {
                 continue;
             }
             if gltf.bounds_visible {
-                self.ensure_markers(world, emit, gltf_id);
+                self.ensure_markers(world, render_assets, emit, gltf_id);
             } else {
                 self.remove_markers(emit, gltf_id);
             }
@@ -61,6 +65,7 @@ impl GltfBoundsVisualizationSystem {
     fn ensure_markers(
         &mut self,
         world: &mut World,
+        render_assets: &mut RenderAssets,
         emit: &mut dyn SignalEmitter,
         gltf_id: ComponentId,
     ) {
@@ -106,7 +111,7 @@ impl GltfBoundsVisualizationSystem {
                 }) else {
                     continue;
                 };
-                additions.push(spawn_marker(world, emit, child, bounds));
+                additions.push(spawn_marker(world, render_assets, emit, child, bounds));
             }
         }
 
@@ -130,6 +135,7 @@ impl GltfBoundsVisualizationSystem {
 
 fn spawn_marker(
     world: &mut World,
+    render_assets: &mut RenderAssets,
     emit: &mut dyn SignalEmitter,
     target: ComponentId,
     bounds: crate::engine::graphics::bounds::Aabb,
@@ -152,10 +158,13 @@ fn spawn_marker(
     let selectable = world.add_component(SelectableComponent::off());
     let serialize = world.add_component(SerializeComponent::off());
     let overlay = world.add_component(OverlayComponent::new());
-    let renderable = world.add_component(RenderableComponent::cube());
+    let renderable = world.add_component(RenderableComponent::wireframe_box(
+        render_assets,
+        BOUNDS_EDGE_THICKNESS,
+    ));
     let raycastable = world.add_component(RaycastableComponent::disabled());
     let color = world.add_component(ColorComponent::rgba(1.0, 0.42, 0.05, 1.0));
-    let opacity = world.add_component(OpacityComponent::new().with_opacity(0.18));
+    let opacity = world.add_component(OpacityComponent::new().with_opacity(0.9));
     let _ = world.add_child(root, local);
     let _ = world.add_child(root, selectable);
     let _ = world.add_child(root, serialize);

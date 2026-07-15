@@ -2,8 +2,8 @@
 
 ## Status
 
-Fix implemented with focused regression coverage. End-to-end Bisket runtime validation remains
-pending on a machine with a working compositor/OpenXR runtime.
+Fix implemented with focused regression coverage and desktop Bisket runtime validation. OpenXR
+runtime validation remains pending.
 
 ## Root Cause and Fix
 
@@ -35,17 +35,21 @@ Focused integration coverage verifies that:
 - runtime panel title geometry is rejected by world-scene hit resolution;
 - attaching a gizmo does not move its target or an unrelated transform follower;
 - a bounds follower updates when an ancestor of its target moves;
-- enabling armature visualization does not alter a joint's world transform.
+- enabling armature visualization does not alter a joint's world transform;
+- GLTF bounds are hidden by default;
+- procedural wireframe boxes retain unit-box extents and share cached geometry by thickness.
 
 The existing bounds ownership changes remain intact: markers are separate non-selectable,
-non-raycastable followers and only materialize after imported renderables resolve.
+non-raycastable followers and only materialize after imported renderables resolve. Visible bounds
+now use a solid-edge `Renderable.wireframe_box(thickness)` mesh instead of translucent cubes.
 
 ## Runtime Context
 
 - Example/world: Bisket avatar scene (`bisket-vr-demo`)
 - Armature visualization uses the previously working joint-child marker implementation.
-- Bounds visualization is enabled by default.
+- Bounds visualization is disabled by default and can be enabled from Editor Settings.
 - Bounds markers are independently owned, non-selectable `TransformParentComponent` followers.
+- Bounds markers use cached unit wireframe-box geometry with edge thickness set to `0.02`.
 - Imported mesh bounds are not materialized until the renderable has resolved, avoiding the old
   flat placeholder boxes at the avatar's feet.
 

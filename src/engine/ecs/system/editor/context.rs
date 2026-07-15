@@ -64,7 +64,7 @@ impl Default for EditorContextState {
             focused_panel: None,
             interaction_mode: EditorInteractionMode::default(),
             armature_visible: false,
-            bounds_visible: true,
+            bounds_visible: false,
             last_scene_interacted_editor: None,
             cursor_translation: None,
             cursor_rotation: None,

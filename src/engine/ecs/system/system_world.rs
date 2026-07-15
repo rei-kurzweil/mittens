@@ -2402,8 +2402,13 @@ impl SystemWorld {
 
         self.armature_visualization
             .tick_with_queue(world, &self.gltf, visuals, queue, dt_sec);
-        self.gltf_bounds_visualization
-            .tick_with_queue(world, &self.gltf, visuals, queue);
+        self.gltf_bounds_visualization.tick_with_queue(
+            world,
+            &self.gltf,
+            visuals,
+            render_assets,
+            queue,
+        );
         queue.flush(world, self, visuals, render_assets);
 
         // Audio clock takeover: once audio output is active, use it as the ClockDriver.
