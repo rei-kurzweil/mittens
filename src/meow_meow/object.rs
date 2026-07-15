@@ -309,6 +309,7 @@ impl Frame {
 pub struct ObjectWorld {
     frames: Vec<Frame>,
     heap: HeapHandle,
+    reset_requested: bool,
 }
 
 impl Default for ObjectWorld {
@@ -316,6 +317,7 @@ impl Default for ObjectWorld {
         Self {
             frames: vec![Frame::root()],
             heap: HeapHandle::new(),
+            reset_requested: false,
         }
     }
 }
@@ -330,6 +332,7 @@ impl ObjectWorld {
         Self {
             frames: vec![Frame::root()],
             heap,
+            reset_requested: false,
         }
     }
 
@@ -358,6 +361,14 @@ impl ObjectWorld {
 
     pub fn frame_depth(&self) -> usize {
         self.frames.len()
+    }
+
+    pub fn request_reset(&mut self) {
+        self.reset_requested = true;
+    }
+
+    pub fn take_reset_requested(&mut self) -> bool {
+        std::mem::take(&mut self.reset_requested)
     }
 
     // --- Variable environment ---

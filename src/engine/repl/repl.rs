@@ -12,6 +12,11 @@ pub struct Repl {
 
 impl Repl {
     pub fn new() -> Self {
+        Self::try_new().expect("an stdin REPL is already active")
+    }
+
+    pub(crate) fn try_new() -> Result<Self, &'static str> {
+        super::claim_stdin()?;
         let (tx, rx) = mpsc::channel::<String>();
 
         let handle = std::thread::spawn(move || {
@@ -26,12 +31,13 @@ impl Repl {
                     Err(_) => break,
                 }
             }
+            super::release_stdin();
         });
 
-        Self {
+        Ok(Self {
             rx,
             _thread: handle,
-        }
+        })
     }
 
     /// Drain all currently queued commands without blocking.

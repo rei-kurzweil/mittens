@@ -4,6 +4,8 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::{ComponentId, World};
 
+const PANEL_UI_TEXT_SIZE_GU: f32 = 1.0;
+
 pub struct PanelUiRowSpec<'a> {
     pub row_name: &'a str,
     pub payload_name: &'a str,
@@ -74,9 +76,8 @@ pub fn spawn_panel_ui_row_tree(world: &mut World, spec: PanelUiRowSpec<'_>) -> C
             style.width = SizeDimension::Percent(100.0);
             style.margin = EdgeInsets::axes(0.25, 0.20);
             style.padding = EdgeInsets::axes(0.55, 0.45);
-            if let Some(font_size_gu) = spec.font_size_gu {
-                style.font_size = SizeDimension::GlyphUnits(font_size_gu);
-            }
+            style.font_size =
+                SizeDimension::GlyphUnits(spec.font_size_gu.unwrap_or(PANEL_UI_TEXT_SIZE_GU));
             style.background_color = Some(spec.background_rgba);
             style.background_z = Some(0.001);
             style.color = Some(spec.text_rgba);
@@ -145,6 +146,7 @@ pub fn spawn_panel_ui_section_header_tree(
             style.background_color = Some([0.16, 0.20, 0.18, 1.0]);
             style.background_z = Some(0.001);
             style.color = Some([0.95, 0.98, 0.92, 1.0]);
+            style.font_size = SizeDimension::GlyphUnits(PANEL_UI_TEXT_SIZE_GU);
             style.overflow = Overflow::Visible;
             style
         }),

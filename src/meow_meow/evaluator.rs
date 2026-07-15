@@ -43,6 +43,10 @@ pub enum EvalRequest {
         source: String,
         source_path: Option<String>,
     },
+    /// Evaluate one interactive snippet while preserving the session's bindings and heap.
+    EvalSnippet {
+        source: String,
+    },
     /// Parse only — returns a debug AST string (used in tests / tooling).
     ParseScript {
         source: String,
@@ -66,6 +70,10 @@ pub enum EvalResponse {
     },
     Error {
         message: String,
+    },
+    /// Always emitted once for an `EvalSnippet`, including parse/evaluation failures.
+    SnippetComplete {
+        result: Result<Option<Value>, String>,
     },
     ShutdownAck,
     /// The evaluator needs the host to perform a side-effecting operation and
@@ -115,6 +123,15 @@ pub enum HostCallKind {
         scope: Option<ComponentId>,
         multiple: bool,
     },
+    ReplTree {
+        value: Value,
+        max_depth: Option<usize>,
+    },
+    ReplDump {
+        value: Value,
+    },
+    ReplHelp,
+    ReplClear,
     /// Create a new `AudioClipComponent` that shares `source`'s decoded
     /// asset but gets its own playhead (RT instance). Returns the new
     /// component's id, detached — mirrors `Register` semantics so the
@@ -193,6 +210,8 @@ impl MeowMeowEvaluator {
 
 fn evaluator_thread(requests: Consumer<EvalRequest>, responses: Producer<EvalResponse>) {
     let mut ch = EvalChannels::new(requests, responses);
+    let mut session_world = ObjectWorld::new();
+    session_world.bind("world", Value::Identifier("__mms_world__".into()));
     loop {
         if ch.shutdown_requested {
             while ch.responses.push(EvalResponse::ShutdownAck).is_err() {
@@ -207,6 +226,18 @@ fn evaluator_thread(requests: Consumer<EvalRequest>, responses: Producer<EvalRes
                 source_path,
             }) => {
                 eval_script(&source, source_path.as_deref(), &mut ch);
+            }
+            Ok(EvalRequest::EvalSnippet { source }) => {
+                let result = eval_snippet(&source, &mut session_world, &mut ch);
+                while ch
+                    .responses
+                    .push(EvalResponse::SnippetComplete {
+                        result: result.clone(),
+                    })
+                    .is_err()
+                {
+                    std::thread::yield_now();
+                }
             }
             Ok(EvalRequest::ParseScript { source }) => {
                 let resp = parse_only(&source)
@@ -456,6 +487,88 @@ fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
             std::thread::yield_now();
         }
     }
+}
+
+/// Interactive evaluation differs from file evaluation in two deliberate ways:
+/// its object world survives requests, and a top-level expression is a value to
+/// echo instead of an implicit component attachment.
+fn eval_snippet(
+    source: &str,
+    object_world: &mut ObjectWorld,
+    ch: &mut EvalChannels,
+) -> Result<Option<Value>, String> {
+    let result = eval_snippet_inner(source, object_world, ch);
+    if object_world.take_reset_requested() {
+        *object_world = ObjectWorld::new();
+        object_world.bind("world", Value::Identifier("__mms_world__".into()));
+    }
+    result
+}
+
+fn eval_snippet_inner(
+    source: &str,
+    object_world: &mut ObjectWorld,
+    ch: &mut EvalChannels,
+) -> Result<Option<Value>, String> {
+    let mut stmts = parse_source(source)?;
+    QueryDesugarTransform::apply(&mut stmts);
+    let mut emits = Vec::new();
+    let mut last = None;
+    let count = stmts.len();
+    for (index, stmt) in stmts.iter().enumerate() {
+        let mut ctx = EvalContext {
+            emits: &mut emits,
+            source_path: None,
+            channels: Some(ch),
+            ce_builder: None,
+            object_world,
+            host_world: None,
+            exec_scope: None,
+            runtime_closure_mode: RuntimeClosureExecMode::Full,
+        };
+        if let Statement::Expression(expr) = stmt {
+            let value = if let Expression::Call(call) = expr
+                && matches!(call.callee.as_ref(), Expression::Identifier(id) if id.0 == "emit")
+            {
+                if let Some(arg) = call.args.first() {
+                    let value = eval_expr(arg, &mut ctx)?;
+                    push_component_emit(value, &mut ctx);
+                }
+                Value::Null
+            } else {
+                eval_expr(expr, &mut ctx)?
+            };
+            let value = match value {
+                Value::ComponentExpr(ce) => {
+                    let component_type = ce.component_type.clone();
+                    match ctx
+                        .channels
+                        .as_mut()
+                        .and_then(|c| c.call(HostCallKind::Spawn(*ce)))
+                    {
+                        Some(HostValue::ComponentId(id)) => {
+                            Value::ComponentObject { id, component_type }
+                        }
+                        _ => return Err("unable to spawn component expression".into()),
+                    }
+                }
+                other => other,
+            };
+            if index + 1 == count {
+                last = Some(value);
+            }
+        } else {
+            match eval_stmt(stmt, &mut ctx)? {
+                StmtEffect::None | StmtEffect::Exported(_) => {}
+                StmtEffect::Return(_) => return Err("return cannot escape a REPL snippet".into()),
+                StmtEffect::Break | StmtEffect::Continue => {
+                    return Err("break/continue cannot escape a REPL snippet".into());
+                }
+            }
+        }
+        flush_live_statement_emits(&mut ctx);
+    }
+    Ok(last)
 }
 
 fn flush_live_statement_emits(ctx: &mut EvalContext<'_>) {
@@ -944,7 +1057,19 @@ fn assign_into_value(
 fn is_builtin_fn(name: &str) -> bool {
     matches!(
         name,
-        "print" | "assert" | "range" | "emit" | "on" | "query" | "query_all" | "emit_data"
+        "print"
+            | "assert"
+            | "range"
+            | "emit"
+            | "on"
+            | "query"
+            | "query_all"
+            | "emit_data"
+            | "tree"
+            | "dump"
+            | "help"
+            | "clear"
+            | "reset"
     )
 }
 
@@ -1222,6 +1347,59 @@ fn eval_call(call: &CallExpression, ctx: &mut EvalContext<'_>) -> Result<Value, 
         return Ok(Value::Array(arr));
     }
 
+    if matches!(
+        callee_name.as_str(),
+        "tree" | "dump" | "help" | "clear" | "reset"
+    ) {
+        let args: Vec<Value> = call
+            .args
+            .iter()
+            .map(|a| eval_expr(a, ctx))
+            .collect::<Result<_, _>>()?;
+        match callee_name.as_str() {
+            "tree" => {
+                let value = args
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| Value::Identifier("__mms_world__".into()));
+                let max_depth = match args.get(1) {
+                    Some(Value::Number(n)) if *n >= 0.0 => Some(*n as usize),
+                    Some(other) => {
+                        return Err(format!("tree(): max_depth must be a number, got {other:?}"));
+                    }
+                    None => None,
+                };
+                if let Some(ch) = ctx.channels.as_mut() {
+                    ch.call(HostCallKind::ReplTree { value, max_depth });
+                }
+            }
+            "dump" => {
+                let value = args
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| Value::Identifier("__mms_world__".into()));
+                if let Some(ch) = ctx.channels.as_mut() {
+                    ch.call(HostCallKind::ReplDump { value });
+                }
+            }
+            "help" => {
+                if let Some(ch) = ctx.channels.as_mut() {
+                    ch.call(HostCallKind::ReplHelp);
+                }
+            }
+            "clear" => {
+                if let Some(ch) = ctx.channels.as_mut() {
+                    ch.call(HostCallKind::ReplClear);
+                }
+            }
+            "reset" => {
+                ctx.object_world.request_reset();
+            }
+            _ => unreachable!(),
+        }
+        return Ok(Value::Null);
+    }
+
     // Built-in: query(selector) / query(selector, handler)
     //           query_all(selector) / query_all(selector, handler)
     if callee_name == "query" || callee_name == "query_all" {
@@ -1231,16 +1409,21 @@ fn eval_call(call: &CallExpression, ctx: &mut EvalContext<'_>) -> Result<Value, 
             .iter()
             .map(|a| eval_expr(a, ctx))
             .collect::<Result<_, _>>()?;
-        let selector = match args.first() {
+        let (scope, selector_index) = match args.first() {
+            Some(Value::ComponentObject { id, .. }) => (Some(*id), 1),
+            Some(Value::Identifier(s)) if s == "__mms_world__" => (None, 1),
+            _ => (None, 0),
+        };
+        let selector = match args.get(selector_index) {
             Some(Value::String(s)) => s.clone(),
             other => {
                 return Err(format!(
-                    "{}(): arg 0 must be a string selector, got {:?}",
+                    "{}(): selector must be a string, got {:?}",
                     callee_name, other
                 ));
             }
         };
-        let handler = match args.get(1) {
+        let handler = match args.get(selector_index + 1) {
             Some(f @ Value::Function { .. }) => Some(f.clone()),
             None => None,
             other => {
@@ -1250,7 +1433,7 @@ fn eval_call(call: &CallExpression, ctx: &mut EvalContext<'_>) -> Result<Value, 
                 ));
             }
         };
-        let result = run_world_query(selector, None, multiple, ctx)?;
+        let result = run_world_query(selector, scope, multiple, ctx)?;
         return dispatch_query_result(result, handler, multiple, ctx);
     }
 
@@ -3014,7 +3197,10 @@ fn parse_err_to_string(source: &str, e: ParseError) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::eval_module_source;
+    use super::{
+        EvalRequest, EvalResponse, HostValue, MeowMeowEvaluator, MeowMeowEvaluatorHandle,
+        eval_module_source,
+    };
     use crate::meow_meow::object::Value;
 
     #[test]
@@ -3158,5 +3344,60 @@ export let total = total
         assert!(
             matches!(named.get("total"), Some(Value::Number(total)) if (*total - 7.0).abs() < 1e-6)
         );
+    }
+
+    fn run_test_snippet(
+        handle: &mut MeowMeowEvaluatorHandle,
+        source: &str,
+    ) -> Result<Option<Value>, String> {
+        handle
+            .requests
+            .push(EvalRequest::EvalSnippet {
+                source: source.into(),
+            })
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        loop {
+            match handle.responses.pop() {
+                Ok(EvalResponse::SnippetComplete { result }) => return result,
+                Ok(EvalResponse::HostCall { id, .. }) => {
+                    handle
+                        .requests
+                        .push(EvalRequest::HostCallResult {
+                            id,
+                            value: HostValue::Null,
+                        })
+                        .unwrap();
+                }
+                Ok(_) | Err(rtrb::PopError::Empty) if std::time::Instant::now() < deadline => {
+                    std::thread::yield_now()
+                }
+                other => panic!("snippet timed out or returned unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn repl_snippets_persist_echo_reset_and_recover() {
+        let mut handle = MeowMeowEvaluator::spawn(32);
+        assert_eq!(
+            run_test_snippet(&mut handle, "let answer = 42").unwrap(),
+            None
+        );
+        assert_eq!(
+            run_test_snippet(&mut handle, "answer").unwrap(),
+            Some(Value::Number(42.0))
+        );
+        assert!(run_test_snippet(&mut handle, "1 + true").is_err());
+        assert_eq!(
+            run_test_snippet(&mut handle, "answer").unwrap(),
+            Some(Value::Number(42.0))
+        );
+        assert_eq!(
+            run_test_snippet(&mut handle, "reset()\nanswer").unwrap(),
+            Some(Value::Number(42.0))
+        );
+        assert!(run_test_snippet(&mut handle, "answer + 1").is_err());
+        handle.shutdown_and_join();
     }
 }

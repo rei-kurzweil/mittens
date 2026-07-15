@@ -6,6 +6,7 @@ pub mod evaluator;
 pub mod lowering;
 pub mod object;
 pub mod parser;
+pub mod repl;
 pub mod runner;
 pub mod token;
 pub mod tokenizer;

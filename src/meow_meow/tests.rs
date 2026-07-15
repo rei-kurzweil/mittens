@@ -506,6 +506,7 @@ fn evaluator_thread_parses_and_responds() {
             Ok(EvalResponse::Error { message }) => panic!("unexpected eval error: {message}"),
             Ok(EvalResponse::ShutdownAck) => panic!("unexpected shutdown ack"),
             Ok(EvalResponse::HostCall { .. }) => {} // ParseScript never triggers HostCalls
+            Ok(EvalResponse::SnippetComplete { .. }) => {}
             Err(rtrb::PopError::Empty) => std::thread::yield_now(),
         }
     }

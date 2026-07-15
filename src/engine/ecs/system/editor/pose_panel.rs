@@ -6,6 +6,7 @@ use crate::engine::ecs::system::data_renderer_system::DataRendererSystem;
 use crate::engine::ecs::system::editor::panel_ui::{
     PanelUiRowSpec, spawn_panel_ui_row_tree, spawn_panel_ui_section_header_tree,
 };
+use crate::engine::ecs::system::editor::world_panel::mark_nearest_layout_dirty;
 use crate::engine::ecs::system::panel_system::{data_text, is_descendant_or_self};
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 
@@ -136,6 +137,7 @@ pub fn rerender_pose_panel(
 
     let _ = data_renderer;
     world.init_component_tree(content_slot, emit);
+    mark_nearest_layout_dirty(world, content_slot);
 }
 
 pub fn handle_pose_panel_click(

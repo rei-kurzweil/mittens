@@ -17,6 +17,7 @@ pub struct Universe {
 
     repl: Option<crate::engine::repl::Repl>,
     repl_backend: Option<crate::engine::repl::ReplBackend>,
+    meow_meow_repl: Option<crate::meow_meow::repl::MeowMeowRepl>,
 
     renderer: graphics::VulkanoRenderer,
 }
@@ -34,6 +35,7 @@ impl Universe {
 
             repl: None,
             repl_backend: None,
+            meow_meow_repl: None,
         }
     }
 
@@ -56,10 +58,30 @@ impl Universe {
     }
 
     pub fn enable_repl(&mut self) {
-        if self.repl.is_none() {
-            self.repl = Some(crate::engine::repl::Repl::new());
-            self.repl_backend = Some(crate::engine::repl::ReplBackend::new());
-            println!("[REPL] Ready. Commands: ls, cd <name>, cd .., cd /, pwd, help");
+        if self.repl.is_none() && self.meow_meow_repl.is_none() {
+            match crate::engine::repl::Repl::try_new() {
+                Ok(repl) => {
+                    self.repl = Some(repl);
+                    self.repl_backend = Some(crate::engine::repl::ReplBackend::new());
+                    println!("[REPL] Ready. Commands: ls, cd <name>, cd .., cd /, pwd, help");
+                }
+                Err(error) => eprintln!("[REPL] {error}"),
+            }
+        }
+    }
+
+    /// Enable the persistent MMS-language stdin REPL.
+    pub fn enable_meow_meow_repl(&mut self) {
+        if self.repl.is_some() || self.meow_meow_repl.is_some() {
+            eprintln!("[mms] an stdin REPL is already active");
+            return;
+        }
+        match crate::meow_meow::repl::MeowMeowRepl::new() {
+            Ok(repl) => {
+                self.meow_meow_repl = Some(repl);
+                println!("[mms] Ready. Enter MMS expressions; help() lists capabilities.");
+            }
+            Err(error) => eprintln!("[mms] {error}"),
         }
     }
 
@@ -297,17 +319,23 @@ impl Universe {
         Ok(new_children[0])
     }
 
-    fn sync_repl(&mut self) {
+    fn sync_repl(&mut self, service_meow_meow: bool) {
         // Always drain queued system-driven REPL commands so they don't grow unbounded
         // when REPL is disabled.
         let scripted = self.systems.take_repl_commands();
 
-        let (Some(repl), Some(backend)) = (&self.repl, self.repl_backend.as_mut()) else {
-            return;
-        };
-
-        backend.exec_all(&self.world, repl.try_recv_all());
-        backend.exec_all(&self.world, scripted);
+        if let (Some(repl), Some(backend)) = (&self.repl, self.repl_backend.as_mut()) {
+            backend.exec_all(&self.world, repl.try_recv_all());
+            backend.exec_all(&self.world, scripted);
+        }
+        if service_meow_meow && let Some(repl) = self.meow_meow_repl.as_mut() {
+            repl.sync(
+                &mut self.world,
+                &mut self.systems.rx,
+                &mut self.render_assets,
+                &mut self.command_queue,
+            );
+        }
     }
 
     /// Initialize the renderer for a window.
@@ -379,7 +407,7 @@ impl Universe {
 
     /// Game/update step
     pub fn update(&mut self, dt_sec: f32, input: &InputState) {
-        self.sync_repl();
+        self.sync_repl(true);
         // 1. Process input events (handled inside systems for now).
         // 2. Let systems call methods on components,
         //      for example, to update transforms or renderables, which
@@ -404,7 +432,7 @@ impl Universe {
 
         // Editor systems may enqueue REPL navigation commands during this update.
         // Sync once more so the REPL reflects the just-applied world topology.
-        self.sync_repl();
+        self.sync_repl(false);
     }
 
     pub fn render(&mut self) {

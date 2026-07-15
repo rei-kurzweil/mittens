@@ -487,6 +487,6 @@ fn main() {
             .add_global_handler(kind, on_xr_pointer_event);
     }
 
-    universe.enable_repl();
+    universe.enable_meow_meow_repl();
     engine::Windowing::run_app(universe).expect("Windowing failed");
 }

@@ -52,7 +52,7 @@ fn headers_to_value(headers: &[(String, String)]) -> Value {
     )
 }
 
-fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
+pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
     match signal.event.as_ref() {
         Some(crate::engine::ecs::EventSignal::DataEvent { name, .. }) => {
             Value::String(name.clone())
@@ -557,6 +557,7 @@ impl MeowMeowRunner {
                 Ok(EvalResponse::Intent(iv)) => output.intents.push(iv),
                 Ok(EvalResponse::Error { message }) => output.errors.push(message),
                 Ok(EvalResponse::ParsedOk { .. }) => {}
+                Ok(EvalResponse::SnippetComplete { .. }) => {}
                 Ok(EvalResponse::ShutdownAck) => break,
                 Ok(EvalResponse::HostCall { id, kind }) => {
                     let reply = match kind {
@@ -751,6 +752,10 @@ impl MeowMeowRunner {
                                 HostValue::Null
                             }
                         },
+                        HostCallKind::ReplTree { .. }
+                        | HostCallKind::ReplDump { .. }
+                        | HostCallKind::ReplHelp
+                        | HostCallKind::ReplClear => HostValue::Null,
                     };
                     let _ = handle
                         .requests
@@ -795,6 +800,7 @@ impl MeowMeowRunner {
                 Ok(EvalResponse::Intent(iv)) => output.intents.push(iv),
                 Ok(EvalResponse::Error { message }) => output.errors.push(message),
                 Ok(EvalResponse::ParsedOk { .. }) => {}
+                Ok(EvalResponse::SnippetComplete { .. }) => {}
                 Ok(EvalResponse::ShutdownAck) => break,
                 // Fire-and-forget runner has no world — reply null so the evaluator
                 // falls back to ComponentExpr and continues without blocking.
