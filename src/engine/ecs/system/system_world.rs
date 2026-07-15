@@ -12,6 +12,7 @@ use crate::engine::ecs::system::ClippingSystem;
 use crate::engine::ecs::system::ClockSystem;
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::GLTFSystem;
+use crate::engine::ecs::system::GltfBoundsVisualizationSystem;
 use crate::engine::ecs::system::HttpClientSystem;
 use crate::engine::ecs::system::HttpServerSystem;
 use crate::engine::ecs::system::InputSystem;
@@ -117,6 +118,7 @@ pub struct SystemWorld {
 
     pub gltf: GLTFSystem,
     pub armature_visualization: ArmatureVisualizationSystem,
+    pub gltf_bounds_visualization: GltfBoundsVisualizationSystem,
 
     pub xr: XrSystem,
     pub input_xr_gamepad: InputXRGamepadSystem,
@@ -2400,6 +2402,8 @@ impl SystemWorld {
 
         self.armature_visualization
             .tick_with_queue(world, &self.gltf, visuals, queue, dt_sec);
+        self.gltf_bounds_visualization
+            .tick_with_queue(world, &self.gltf, visuals, queue);
         queue.flush(world, self, visuals, render_assets);
 
         // Audio clock takeover: once audio output is active, use it as the ClockDriver.

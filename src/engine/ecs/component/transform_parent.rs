@@ -76,6 +76,15 @@ impl Component for TransformParentComponent {
         self
     }
 
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::UpdateTransformWorld {
+                component_ids: vec![component],
+            },
+        );
+    }
+
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,

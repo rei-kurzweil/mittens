@@ -108,14 +108,27 @@ impl TransformSystem {
                 _ => world.children_of(node).to_vec(),
             };
             for child in children {
+                let inherited = if let Some(tp) =
+                    world.get_component_by_id_as::<TransformParentComponent>(child)
+                {
+                    let Some(target) = tp.resolve_target_component(world) else {
+                        continue;
+                    };
+                    let Some(target_world) = Self::world_model(world, target) else {
+                        continue;
+                    };
+                    target_world
+                } else {
+                    current_world
+                };
                 let next_world = if let Some(t) =
                     world.get_component_by_id_as_mut::<TransformComponent>(child)
                 {
-                    let w = Self::mat4_mul(current_world, t.transform.model);
+                    let w = Self::mat4_mul(inherited, t.transform.model);
                     t.transform.matrix_world = w;
                     w
                 } else {
-                    current_world
+                    inherited
                 };
 
                 if world
@@ -263,6 +276,28 @@ impl TransformSystem {
         light_system: &mut crate::engine::ecs::system::LightSystem,
         collision_system: &mut CollisionSystem,
     ) {
+        if let Some(inherited_world) = world
+            .get_component_by_id_as::<TransformParentComponent>(component)
+            .and_then(|tp| tp.resolve_target_component(world))
+            .and_then(|target| Self::world_model(world, target))
+        {
+            self.propagate_subtree(
+                world,
+                visuals,
+                component,
+                inherited_world,
+                transform_stream_system,
+                camera_system,
+                collision_system,
+            );
+            light_system.transform_changed(world, visuals, component);
+        }
+        if world
+            .get_component_by_id_as::<TransformParentComponent>(component)
+            .is_some()
+        {
+            return;
+        }
         // Recompute cached world matrices for this transform and all descendant transforms.
         // Then update any dependent renderables/cameras under the subtree.
 
@@ -274,6 +309,8 @@ impl TransformSystem {
         // as the chain root and start the chain-world from its cached `matrix_world`.
         let mut transform_chain: Vec<ComponentId> = Vec::new();
         let mut stream_boundary = false; // true → transform_chain[0] is stream-operator-managed
+        let mut transform_parent_basis = None;
+        let mut transform_parent_boundary = false;
         let mut cur = component;
         'chain: loop {
             if world
@@ -286,6 +323,13 @@ impl TransformSystem {
                 // inherited world basis). If so, its world is operator-managed — stop here.
                 let mut probe = cur;
                 while let Some(p) = world.parent_of(probe) {
+                    if let Some(tp) = world.get_component_by_id_as::<TransformParentComponent>(p) {
+                        transform_parent_boundary = true;
+                        transform_parent_basis = tp
+                            .resolve_target_component(world)
+                            .and_then(|target| Self::world_model(world, target));
+                        break 'chain;
+                    }
                     if transform_stream_system.is_transform_stream_boundary(world, p) {
                         stream_boundary = true;
                         break 'chain;
@@ -306,12 +350,20 @@ impl TransformSystem {
         }
         transform_chain.reverse();
 
+        // An unresolved follower boundary cannot safely fall back to structural ancestry:
+        // retain the follower's last effective world matrix until its target resolves.
+        if transform_parent_boundary && transform_parent_basis.is_none() {
+            return;
+        }
+
         // Compute world matrices down the chain and write them back.
         //
         // If `stream_boundary` is set, transform_chain[0] is under a stream operator.
         // Its cached `matrix_world` is stream-managed — use it as the starting world and
         // skip recomputing it from local matrices (which would bypass the operator).
-        let (start_idx, mut chain_world) = if stream_boundary && !transform_chain.is_empty() {
+        let (start_idx, mut chain_world) = if let Some(basis) = transform_parent_basis {
+            (0, basis)
+        } else if stream_boundary && !transform_chain.is_empty() {
             let cached = world
                 .get_component_by_id_as::<TransformComponent>(transform_chain[0])
                 .map(|t| t.transform.matrix_world)

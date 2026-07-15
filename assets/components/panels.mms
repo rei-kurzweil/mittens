@@ -23,7 +23,7 @@ let TITLE_BAR_HEIGHT_GU = 3.0
 let TITLE_CONTENT_GAP_GU = 0.5
 let TITLE_LABEL_PADDING_X_GU = 0.25
 let SETTINGS_PANEL_WIDTH_GU = 16.0
-let SETTINGS_PANEL_CONTENT_HEIGHT_GU = 10.2
+let SETTINGS_PANEL_CONTENT_HEIGHT_GU = 13.0
 let SETTINGS_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + SETTINGS_PANEL_CONTENT_HEIGHT_GU
 
 fn editor_settings_mode_row(row_name, label, mode_value) {
@@ -99,6 +99,44 @@ fn editor_settings_armature_row() {
     }
 }
 
+fn editor_settings_bounds_row() {
+    return T {
+        name = "editor_settings_bounds_visibility"
+        Data {
+            name = "editor_settings_payload"
+            row_kind = "GLTFBoundsVisibility"
+            visible = false
+            interactive = true
+        }
+        Raycastable.click_only()
+        Style {
+            display("block")
+            width(100%)
+            margin_xy(0.25, 0.20)
+            padding_xy(0.55, 0.45)
+            color([0, 0, 0, 1.0])
+            background_color([0.92, 0.97, 0.92, 1.0])
+            background_z(-0.01)
+            text_align("left")
+            vertical_align("middle")
+        }
+        T {
+            Style { display("block") }
+            T {
+                Style { display("inline-block") }
+                Text { "show bounds" }
+            }
+            T {
+                name = "bounds_toggle_slot"
+                Style {
+                    display("inline-block")
+                    margin_left(0.65)
+                }
+            }
+        }
+    }
+}
+
 export fn editor_settings_panel(title, title_color, panel_background_color) {
     return T {
         name = "editor_settings_panel_root"
@@ -148,6 +186,7 @@ export fn editor_settings_panel(title, title_color, panel_background_color) {
                 editor_settings_mode_row("editor_settings_mode_select_cursor", "Select + Cursor", "select_cursor")
             }
             editor_settings_armature_row()
+            editor_settings_bounds_row()
 
             Selection.root("#editor_settings_mode_rows") { name = "editor_settings_selection" }
         }

@@ -1,7 +1,9 @@
 use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::EditorInteractionMode;
-use crate::engine::ecs::component::{DataComponent, GLTFComponent, SelectionEntry};
+use crate::engine::ecs::component::{
+    DataComponent, EditorComponent, GLTFComponent, SelectionEntry,
+};
 use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor::world_panel::effective_editor_roots;
 use crate::engine::ecs::system::panel_system::{data_text, is_descendant_or_self};
@@ -18,6 +20,8 @@ pub(crate) const EDITOR_SETTINGS_SELECT_CURSOR_ROW_NAME: &str =
     "editor_settings_mode_select_cursor";
 pub(crate) const EDITOR_SETTINGS_ARMATURE_ROW_NAME: &str = "editor_settings_armature_visibility";
 pub(crate) const EDITOR_SETTINGS_ARMATURE_TOGGLE_SLOT_NAME: &str = "armature_toggle_slot";
+pub(crate) const EDITOR_SETTINGS_BOUNDS_ROW_NAME: &str = "editor_settings_bounds_visibility";
+pub(crate) const EDITOR_SETTINGS_BOUNDS_TOGGLE_SLOT_NAME: &str = "bounds_toggle_slot";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EditorSettingsOption {
@@ -58,6 +62,7 @@ pub(crate) struct EditorSettingsPanelState {
     pub(crate) active_editor: Option<ComponentId>,
     pub(crate) interaction_mode: EditorInteractionMode,
     pub(crate) armature_visible: bool,
+    pub(crate) bounds_visible: bool,
 }
 
 impl Default for EditorSettingsPanelState {
@@ -66,6 +71,7 @@ impl Default for EditorSettingsPanelState {
             active_editor: None,
             interaction_mode: EditorInteractionMode::Select,
             armature_visible: false,
+            bounds_visible: false,
         }
     }
 }
@@ -81,6 +87,9 @@ pub(crate) enum EditorSettingsPanelEvent {
         interaction_mode: EditorInteractionMode,
     },
     ArmatureVisibilityChanged {
+        visible: bool,
+    },
+    BoundsVisibilityChanged {
         visible: bool,
     },
 }
@@ -104,6 +113,9 @@ pub(crate) fn reduce_editor_settings_panel_state(
         }
         EditorSettingsPanelEvent::ArmatureVisibilityChanged { visible } => {
             new.armature_visible = *visible;
+        }
+        EditorSettingsPanelEvent::BoundsVisibilityChanged { visible } => {
+            new.bounds_visible = *visible;
         }
     }
     new
@@ -207,6 +219,81 @@ pub(crate) fn sync_editor_settings_armature_toggle(
     let _ = world.add_child(toggle_slot, root);
 }
 
+pub(crate) fn sync_editor_settings_bounds_toggle(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    editor_context: &EditorContextState,
+) {
+    sync_boolean_toggle(
+        world,
+        emit,
+        panel_query_root,
+        EDITOR_SETTINGS_BOUNDS_ROW_NAME,
+        EDITOR_SETTINGS_BOUNDS_TOGGLE_SLOT_NAME,
+        "bounds_toggle",
+        editor_context.bounds_visible,
+    );
+}
+
+fn sync_boolean_toggle(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    row_name: &str,
+    slot_name: &str,
+    toggle_name: &str,
+    on: bool,
+) {
+    use crate::engine::ecs::component::{Display, SizeDimension, StyleComponent, TextComponent};
+    let Some(panel) = world.find_component(panel_query_root, EDITOR_SETTINGS_PANEL_ROOT_SELECTOR)
+    else {
+        return;
+    };
+    let Some(row) = world.find_component(panel, &format!("#{row_name}")) else {
+        return;
+    };
+    let Some(slot) = world.find_component(row, &format!("#{slot_name}")) else {
+        return;
+    };
+    for child in world.children_of(slot).to_vec() {
+        emit.push_intent_now(
+            child,
+            IntentValue::RemoveSubtree {
+                component_ids: vec![child],
+            },
+        );
+    }
+    let root = world.add_component_boxed_named(
+        toggle_name,
+        Box::new(crate::engine::ecs::component::TransformComponent::new()),
+    );
+    let style = world.add_component({
+        let mut style = StyleComponent::default();
+        style.display = Some(Display::InlineBlock);
+        style.width = SizeDimension::GlyphUnits(3.5);
+        style.height = SizeDimension::GlyphUnits(2.0);
+        style.text_align = crate::engine::ecs::component::TextAlign::Center;
+        style.vertical_align = crate::engine::ecs::component::style::VerticalAlign::Middle;
+        style.background_color = Some(if on {
+            [0.95, 0.73, 0.16, 1.0]
+        } else {
+            [0.12, 0.36, 0.72, 1.0]
+        });
+        style.color = Some([0.96, 0.98, 0.96, 1.0]);
+        style
+    });
+    let text_root = world.add_component(
+        crate::engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.005),
+    );
+    let text =
+        world.add_component(TextComponent::new(if on { "On" } else { "Off" }).with_font_size(0.08));
+    let _ = world.add_child(root, style);
+    let _ = world.add_child(root, text_root);
+    let _ = world.add_child(text_root, text);
+    let _ = world.add_child(slot, root);
+}
+
 pub(crate) fn sync_editor_settings_panel_selection(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
@@ -250,6 +337,7 @@ pub(crate) fn sync_editor_settings_panel_selection(
     );
 
     sync_editor_settings_armature_toggle(world, emit, panel_query_root, editor_context);
+    sync_editor_settings_bounds_toggle(world, emit, panel_query_root, editor_context);
 }
 
 pub(crate) fn handle_editor_settings_panel_click(
@@ -285,6 +373,77 @@ pub(crate) fn handle_editor_settings_panel_click(
             return true;
         };
         let row_kind = data_text(payload, "row_kind").unwrap_or_default();
+        if row_kind == "EditorMode" {
+            let Some(option) = data_text(payload, "mode_value")
+                .as_deref()
+                .and_then(EditorSettingsOption::from_mode_value)
+            else {
+                return true;
+            };
+            let editor_roots = effective_editor_roots(world, installed_editor_roots);
+            let active_editor = editor_context_state
+                .lock()
+                .expect("editor context state mutex poisoned")
+                .active_editor
+                .or_else(|| editor_roots.first().copied());
+            if let Some(editor_root) = active_editor
+                && let Some(editor) =
+                    world.get_component_by_id_as_mut::<EditorComponent>(editor_root)
+            {
+                editor.interaction_mode = option.interaction_mode();
+            }
+            {
+                let mut context = editor_context_state
+                    .lock()
+                    .expect("editor context state mutex poisoned");
+                context.active_editor = active_editor;
+                context.interaction_mode = option.interaction_mode();
+            }
+            if let Some(selection_root) =
+                world.find_component(settings_panel_root, EDITOR_SETTINGS_SELECTION_SELECTOR)
+            {
+                apply_selection_set(
+                    world,
+                    emit,
+                    selection_root,
+                    vec![SelectionEntry {
+                        index: Some(match option {
+                            EditorSettingsOption::Select => 0,
+                            EditorSettingsOption::Cursor3d => 1,
+                            EditorSettingsOption::SelectAndCursor => 2,
+                        }),
+                        component: component_id,
+                    }],
+                    Some(component_id),
+                );
+            }
+            return true;
+        }
+        if row_kind == "GLTFBoundsVisibility" {
+            let visible = !editor_context_state
+                .lock()
+                .expect("editor context state mutex poisoned")
+                .bounds_visible;
+            editor_context_state
+                .lock()
+                .expect("editor context state mutex poisoned")
+                .bounds_visible = visible;
+            for editor_root in effective_editor_roots(world, installed_editor_roots) {
+                for gltf_component in find_gltf_components_under(world, editor_root) {
+                    if let Some(gltf) =
+                        world.get_component_by_id_as_mut::<GLTFComponent>(gltf_component)
+                    {
+                        gltf.bounds_visible = visible;
+                    }
+                }
+            }
+            let editor_context = editor_context_state
+                .lock()
+                .expect("editor context state mutex poisoned")
+                .clone();
+            sync_editor_settings_panel_selection(world, emit, panel_query_root, &editor_context);
+            return true;
+        }
         if row_kind != "GLTFArmatureVisibility" {
             return false;
         }

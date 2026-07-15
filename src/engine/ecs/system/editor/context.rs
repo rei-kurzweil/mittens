@@ -45,6 +45,7 @@ pub struct EditorContextState {
     pub focused_panel: Option<ComponentId>,
     pub interaction_mode: EditorInteractionMode,
     pub armature_visible: bool,
+    pub bounds_visible: bool,
     pub last_scene_interacted_editor: Option<ComponentId>,
     pub cursor_translation: Option<[f32; 3]>,
     pub cursor_rotation: Option<[f32; 4]>,

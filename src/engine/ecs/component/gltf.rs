@@ -21,6 +21,9 @@ pub struct GLTFComponent {
     /// Runtime-only: whether armature visualization should be shown for this instance.
     pub armature_visible: bool,
 
+    /// Runtime-only: whether imported renderable bounds should be visualized.
+    pub bounds_visible: bool,
+
     /// Runtime-only: spawned transform ids for imported glTF nodes in this instance.
     pub spawned_node_transforms: Vec<ComponentId>,
 
@@ -37,6 +40,7 @@ impl GLTFComponent {
             with_visualized_transforms: false,
             spawned: false,
             armature_visible: false,
+            bounds_visible: false,
             spawned_node_transforms: Vec::new(),
             armature_joint_transforms: Vec::new(),
             component: None,

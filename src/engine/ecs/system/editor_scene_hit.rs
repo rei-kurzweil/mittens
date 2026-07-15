@@ -34,6 +34,11 @@ fn debug_component_label(world: &World, component: ComponentId) -> String {
 }
 
 pub fn resolve_world_scene_hit(world: &World, renderable: ComponentId) -> Option<WorldSceneHit> {
+    // Runtime editor panels may be camera-anchored, but they are controls rather than
+    // scene geometry. Never let the global editor picker select their camera/anchor transform.
+    if has_named_ancestor(world, renderable, "editor_runtime_ui_root") {
+        return None;
+    }
     let editor_root = nearest_editor_ancestor(world, renderable);
     let blocked_by_selectable = has_selectable_off_ancestor(world, renderable);
     let blocked_by_gizmo = has_transform_gizmo_ancestor(world, renderable);
@@ -62,6 +67,17 @@ pub fn resolve_world_scene_hit(world: &World, renderable: ComponentId) -> Option
         target_renderable: renderable,
         target_transform,
     })
+}
+
+fn has_named_ancestor(world: &World, start: ComponentId, name: &str) -> bool {
+    let mut current = Some(start);
+    while let Some(component_id) = current {
+        if world.component_label(component_id) == Some(name) {
+            return true;
+        }
+        current = world.parent_of(component_id);
+    }
+    false
 }
 
 fn preferred_scene_selection_transform(world: &World, start: ComponentId) -> Option<ComponentId> {
@@ -152,6 +168,25 @@ mod tests {
     use crate::engine::ecs::component::{
         EditorComponent, RenderableComponent, SelectableComponent, TransformComponent,
     };
+
+    #[test]
+    fn runtime_editor_ui_is_not_a_world_scene_hit() {
+        let mut world = World::default();
+        let camera_anchor = world.add_component(TransformComponent::new());
+        let ui_root = world.add_component_boxed_named(
+            "editor_runtime_ui_root",
+            Box::new(TransformComponent::new()),
+        );
+        let title_bar = world.add_component(TransformComponent::new());
+        let renderable = world.add_component(RenderableComponent::cube());
+        world.add_child(camera_anchor, ui_root).expect("attach ui");
+        world.add_child(ui_root, title_bar).expect("attach title");
+        world
+            .add_child(title_bar, renderable)
+            .expect("attach renderable");
+
+        assert!(resolve_world_scene_hit(&world, renderable).is_none());
+    }
 
     #[test]
     fn painted_asset_hits_resolve_to_wrapper_root() {
