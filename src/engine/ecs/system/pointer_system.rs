@@ -153,8 +153,10 @@ pub struct PointerActivations {
 impl PointerSystem {
     /// Map each registered pointer to its trigger state this frame.
     ///
-    /// Desktop pointers (no controller driver in ancestry) use `InputState` mouse left button.
-    /// Controller-backed pointers use `XrInputState` indexed by hand.
+    /// Desktop pointers use `InputState` mouse left button. Controller-backed pointers use
+    /// `XrInputState` indexed by hand. A gaze-style pointer beneath `CameraXR` has no implicit
+    /// trigger source and must not consume desktop mouse input merely because it lacks a
+    /// `ControllerXR` ancestor.
     pub fn build_activations(
         &self,
         world: &World,
@@ -179,8 +181,8 @@ impl PointerSystem {
                 if xr.trigger_released[i] {
                     act.released.push(pointer_cid);
                 }
-            } else {
-                // Desktop / camera-anchored pointer: left mouse button.
+            } else if !topo.has_xr_camera_anchor && !topo.has_xr_input_driver {
+                // Desktop or otherwise non-XR pointer: left mouse button.
                 if input.mouse_pressed.contains(&MouseButton::Left) {
                     act.pressed.push(pointer_cid);
                 }

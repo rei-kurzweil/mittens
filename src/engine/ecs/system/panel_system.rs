@@ -215,7 +215,10 @@ pub fn decorate_panel_root_ce(
             component_property_assignment_only: false,
             ctor_method: Some("enabled".to_string()),
             ctor_args: Vec::new(),
-            calls: Vec::new(),
+            calls: vec![(
+                "interaction_priority".to_string(),
+                vec![Value::Number(100.0)],
+            )],
             named: Vec::new(),
             positionals: Vec::new(),
             deferred_block: None,

@@ -40,7 +40,7 @@ impl GLTFComponent {
             with_visualized_transforms: false,
             spawned: false,
             armature_visible: false,
-            bounds_visible: false,
+            bounds_visible: true,
             spawned_node_transforms: Vec::new(),
             armature_joint_transforms: Vec::new(),
             component: None,

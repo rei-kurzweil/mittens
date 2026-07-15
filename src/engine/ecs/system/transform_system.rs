@@ -190,11 +190,14 @@ impl TransformSystem {
             })
             .filter(|&cid| !Self::is_descendant_of(world, cid, changed_component))
             .filter(|&cid| {
-                world
+                let target_transform = world
                     .get_component_by_id_as::<TransformParentComponent>(cid)
                     .and_then(|tp| tp.resolve_target_component(world))
-                    .and_then(|target| Self::nearest_transform_self_or_ancestor(world, target))
-                    == Some(changed_component)
+                    .and_then(|target| Self::nearest_transform_self_or_ancestor(world, target));
+                target_transform.is_some_and(|target_transform| {
+                    target_transform == changed_component
+                        || Self::is_descendant_of(world, target_transform, changed_component)
+                })
             })
             .collect();
 

@@ -89,6 +89,7 @@ impl GltfBoundsVisualizationSystem {
                 if existing_targets.contains(&child)
                     || world
                         .get_component_by_id_as::<RenderableComponent>(child)
+                        .and_then(RenderableComponent::get_handle)
                         .is_none()
                     || !world.children_of(child).iter().any(|&sidecar| {
                         world

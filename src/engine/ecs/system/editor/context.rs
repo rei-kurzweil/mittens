@@ -36,7 +36,7 @@ const CURSOR_MARKER_ROOT_NAME: &str = "editor_cursor_marker";
 const CURSOR_MARKER_SIZE: f32 = 0.5;
 const CURSOR_MARKER_OPACITY: f32 = 0.9;
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct EditorContextState {
     pub active_editor: Option<ComponentId>,
     pub selected_component: Option<ComponentId>,
@@ -52,6 +52,27 @@ pub struct EditorContextState {
     pub cursor_frame: Option<SurfacePlacementFrame>,
     pub pending_grid_placement_editor: Option<ComponentId>,
     pub grid_preview_session: Option<PlacementPreviewSession>,
+}
+
+impl Default for EditorContextState {
+    fn default() -> Self {
+        Self {
+            active_editor: None,
+            selected_component: None,
+            active_grid_owner_transform: None,
+            selected_asset_payload: None,
+            focused_panel: None,
+            interaction_mode: EditorInteractionMode::default(),
+            armature_visible: false,
+            bounds_visible: true,
+            last_scene_interacted_editor: None,
+            cursor_translation: None,
+            cursor_rotation: None,
+            cursor_frame: None,
+            pending_grid_placement_editor: None,
+            grid_preview_session: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -218,7 +239,7 @@ impl EditorContextSystem {
                 &state,
                 &EditorContextEvent::ActiveEditorChanged {
                     editor: Some(editor_root),
-                    selected_component: Some(editor_root),
+                    selected_component: None,
                     interaction_mode,
                 },
             );
@@ -588,7 +609,7 @@ fn bootstrap_editor_context(
             state,
             &EditorContextEvent::ActiveEditorChanged {
                 editor: Some(editor_root),
-                selected_component: Some(editor_root),
+                selected_component: None,
                 interaction_mode: editor_interaction_mode(world, Some(editor_root)),
             },
         );
@@ -1126,7 +1147,7 @@ fn ensure_default_active_editor(
             &state,
             &EditorContextEvent::ActiveEditorChanged {
                 editor: Some(default_editor),
-                selected_component: Some(default_editor),
+                selected_component: None,
                 interaction_mode: EditorInteractionMode::Select,
             },
         );

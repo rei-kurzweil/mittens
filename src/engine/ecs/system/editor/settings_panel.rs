@@ -71,7 +71,7 @@ impl Default for EditorSettingsPanelState {
             active_editor: None,
             interaction_mode: EditorInteractionMode::Select,
             armature_visible: false,
-            bounds_visible: false,
+            bounds_visible: true,
         }
     }
 }

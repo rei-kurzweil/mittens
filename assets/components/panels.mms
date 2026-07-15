@@ -63,7 +63,7 @@ fn editor_settings_armature_row() {
         Data {
             name = "editor_settings_payload"
             row_kind = "GLTFArmatureVisibility"
-            visible = false
+            visible = true
             interactive = true
         }
         Raycastable.click_only()

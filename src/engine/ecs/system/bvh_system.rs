@@ -102,26 +102,34 @@ impl BvhSystem {
         world: &World,
         renderable_cid: ComponentId,
     ) -> Option<RaycastableComponent> {
-        if let Some(rc) = world.children_of(renderable_cid).iter().find_map(|&ch| {
-            world
-                .get_component_by_id_as::<RaycastableComponent>(ch)
-                .copied()
-        }) {
-            return if rc.enable { Some(rc) } else { None };
-        }
-
-        let mut cur = renderable_cid;
-        while let Some(parent) = world.parent_of(cur) {
-            if let Some(rc) = world
-                .get_component_by_id_as::<RaycastableComponent>(parent)
-                .copied()
-            {
-                return if rc.enable { Some(rc) } else { None };
+        // Raycastable is commonly authored as a sidecar of a transform/layout node rather
+        // than as a structural ancestor of the renderable generated for that node's Style.
+        // Treat an immediate child marker as belonging to its owner at every ancestry level.
+        // Nearest owner still wins, so a row can override its containing panel.
+        let mut owner = Some(renderable_cid);
+        let mut governing = None;
+        let mut inherited_priority = 0;
+        while let Some(component_id) = owner {
+            if let Some(rc) = raycastable_marker_on_node(world, component_id) {
+                if governing.is_none() {
+                    if !rc.enable {
+                        return None;
+                    }
+                    governing = Some(rc);
+                }
+                if rc.enable {
+                    inherited_priority = inherited_priority.max(rc.interaction_priority);
+                }
             }
-            cur = parent;
+            owner = world.parent_of(component_id);
         }
 
-        None
+        governing.map(|mut rc| {
+            // A close control owns enable/pointer-event behavior, while a containing interaction
+            // layer can raise its priority over scene geometry.
+            rc.interaction_priority = inherited_priority;
+            rc
+        })
     }
 
     pub fn queue_renderable_added(&mut self, component: ComponentId) {
@@ -519,6 +527,22 @@ impl BvhSystem {
     }
 }
 
+fn raycastable_marker_on_node(
+    world: &World,
+    component_id: ComponentId,
+) -> Option<RaycastableComponent> {
+    world
+        .get_component_by_id_as::<RaycastableComponent>(component_id)
+        .copied()
+        .or_else(|| {
+            world.children_of(component_id).iter().find_map(|&child| {
+                world
+                    .get_component_by_id_as::<RaycastableComponent>(child)
+                    .copied()
+            })
+        })
+}
+
 fn aabb_overlap_bvh(a: &AABB, b: &AABB) -> bool {
     !(a.max.x < b.min.x
         || a.min.x > b.max.x
@@ -598,7 +622,9 @@ fn ray_aabb(
 mod tests {
     use super::BvhSystem;
     use crate::engine::ecs::World;
-    use crate::engine::ecs::component::{BoundsComponent, RenderableComponent, TransformComponent};
+    use crate::engine::ecs::component::{
+        BoundsComponent, RaycastableComponent, RenderableComponent, TransformComponent,
+    };
     use crate::engine::graphics::bounds::Aabb;
     use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Renderable};
 
@@ -621,5 +647,66 @@ mod tests {
             .expect("cached imported bounds should produce a BVH shape");
         assert_eq!([aabb.min.x, aabb.min.y, aabb.min.z], [1.0, 1.0, 1.0]);
         assert_eq!([aabb.max.x, aabb.max.y, aabb.max.z], [3.0, 5.0, 7.0]);
+    }
+
+    #[test]
+    fn transform_raycastable_sidecar_governs_generated_descendant_renderable() {
+        let mut world = World::default();
+        let panel_row = world.add_component(TransformComponent::new());
+        let raycastable = world.add_component(RaycastableComponent::click_only());
+        let generated_style_transform = world.add_component(TransformComponent::new());
+        let generated_background = world.add_component(RenderableComponent::cube());
+        world.add_child(panel_row, raycastable).unwrap();
+        world
+            .add_child(panel_row, generated_style_transform)
+            .unwrap();
+        world
+            .add_child(generated_style_transform, generated_background)
+            .unwrap();
+
+        let governing = BvhSystem::find_raycastable_for_renderable(&world, generated_background)
+            .expect("panel row sidecar should govern its generated background");
+        assert_eq!(
+            governing.pointer_events,
+            crate::engine::ecs::component::PointerEvents::ClickOnly
+        );
+    }
+
+    #[test]
+    fn nearest_raycastable_sidecar_can_disable_parent_opt_in() {
+        let mut world = World::default();
+        let panel = world.add_component(TransformComponent::new());
+        let panel_raycastable = world.add_component(RaycastableComponent::enabled());
+        let marker = world.add_component(TransformComponent::new());
+        let marker_raycastable = world.add_component(RaycastableComponent::disabled());
+        let renderable = world.add_component(RenderableComponent::cube());
+        world.add_child(panel, panel_raycastable).unwrap();
+        world.add_child(panel, marker).unwrap();
+        world.add_child(marker, marker_raycastable).unwrap();
+        world.add_child(marker, renderable).unwrap();
+
+        assert!(BvhSystem::find_raycastable_for_renderable(&world, renderable).is_none());
+    }
+
+    #[test]
+    fn nearest_control_inherits_containing_interaction_layer_priority() {
+        let mut world = World::default();
+        let panel = world.add_component(TransformComponent::new());
+        let panel_layer =
+            world.add_component(RaycastableComponent::enabled().with_interaction_priority(100));
+        let row = world.add_component(TransformComponent::new());
+        let row_click = world.add_component(RaycastableComponent::click_only());
+        let renderable = world.add_component(RenderableComponent::cube());
+        world.add_child(panel, panel_layer).unwrap();
+        world.add_child(panel, row).unwrap();
+        world.add_child(row, row_click).unwrap();
+        world.add_child(row, renderable).unwrap();
+
+        let governing = BvhSystem::find_raycastable_for_renderable(&world, renderable).unwrap();
+        assert_eq!(
+            governing.pointer_events,
+            crate::engine::ecs::component::PointerEvents::ClickOnly
+        );
+        assert_eq!(governing.interaction_priority, 100);
     }
 }
