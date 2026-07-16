@@ -46,6 +46,15 @@ pub enum EvalRequest {
     /// Evaluate one interactive snippet while preserving the session's bindings and heap.
     EvalSnippet {
         source: String,
+        /// Dynamic REPL cursor. This is deliberately not installed in the
+        /// lexical environment, so closures cannot capture it.
+        cwd: Option<Value>,
+    },
+    /// Evaluate exactly one expression for `cd`. Unlike an ordinary snippet,
+    /// this never auto-emits or registers a component expression.
+    EvalNavigation {
+        source: String,
+        cwd: Option<Value>,
     },
     /// Parse only — returns a debug AST string (used in tests / tooling).
     ParseScript {
@@ -75,6 +84,11 @@ pub enum EvalResponse {
     SnippetComplete {
         result: Result<Option<Value>, String>,
     },
+    NavigationComplete {
+        result: Result<Value, String>,
+    },
+    /// Tells the engine-side REPL to reset its independently-owned cursor.
+    ReplReset,
     ShutdownAck,
     /// The evaluator needs the host to perform a side-effecting operation and
     /// return a result before evaluation can continue. The host must push a
@@ -227,11 +241,23 @@ fn evaluator_thread(requests: Consumer<EvalRequest>, responses: Producer<EvalRes
             }) => {
                 eval_script(&source, source_path.as_deref(), &mut ch);
             }
-            Ok(EvalRequest::EvalSnippet { source }) => {
-                let result = eval_snippet(&source, &mut session_world, &mut ch);
+            Ok(EvalRequest::EvalSnippet { source, cwd }) => {
+                let result = eval_snippet(&source, cwd, &mut session_world, &mut ch);
                 while ch
                     .responses
                     .push(EvalResponse::SnippetComplete {
+                        result: result.clone(),
+                    })
+                    .is_err()
+                {
+                    std::thread::yield_now();
+                }
+            }
+            Ok(EvalRequest::EvalNavigation { source, cwd }) => {
+                let result = eval_navigation(&source, cwd, &mut session_world, &mut ch);
+                while ch
+                    .responses
+                    .push(EvalResponse::NavigationComplete {
                         result: result.clone(),
                     })
                     .is_err()
@@ -345,10 +371,14 @@ struct EvalContext<'a> {
     exec_scope: Option<ComponentId>,
     /// Execution policy for deferred runtime closures such as `Keyframe` callbacks.
     runtime_closure_mode: RuntimeClosureExecMode,
+    /// Prompt-time navigation context. It propagates through functions called
+    /// by the prompt, but is absent from file and later handler evaluation.
+    implicit_cwd: Option<Value>,
 }
 
 thread_local! {
     static LIVE_SIGNAL_EMITTER: RefCell<Option<*mut dyn SignalEmitter>> = RefCell::new(None);
+    static NAVIGATION_EVAL_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 fn with_live_signal_emitter<R>(emit: Option<*mut dyn SignalEmitter>, f: impl FnOnce() -> R) -> R {
@@ -356,6 +386,15 @@ fn with_live_signal_emitter<R>(emit: Option<*mut dyn SignalEmitter>, f: impl FnO
         let prev = slot.replace(emit);
         let result = f();
         let _ = slot.replace(prev);
+        result
+    })
+}
+
+fn with_navigation_eval<R>(f: impl FnOnce() -> R) -> R {
+    NAVIGATION_EVAL_ACTIVE.with(|active| {
+        let previous = active.replace(true);
+        let result = f();
+        active.set(previous);
         result
     })
 }
@@ -466,6 +505,7 @@ fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
             host_world: None,
             exec_scope: None,
             runtime_closure_mode: RuntimeClosureExecMode::Full,
+            implicit_cwd: None,
         };
         eval_block_stmts(&stmts, &mut ctx)
     }; // ctx (and its borrow of ch) dropped here
@@ -494,19 +534,24 @@ fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
 /// echo instead of an implicit component attachment.
 fn eval_snippet(
     source: &str,
+    cwd: Option<Value>,
     object_world: &mut ObjectWorld,
     ch: &mut EvalChannels,
 ) -> Result<Option<Value>, String> {
-    let result = eval_snippet_inner(source, object_world, ch);
+    let result = eval_snippet_inner(source, cwd, object_world, ch);
     if object_world.take_reset_requested() {
         *object_world = ObjectWorld::new();
         object_world.bind("world", Value::Identifier("__mms_world__".into()));
+        while ch.responses.push(EvalResponse::ReplReset).is_err() {
+            std::thread::yield_now();
+        }
     }
     result
 }
 
 fn eval_snippet_inner(
     source: &str,
+    cwd: Option<Value>,
     object_world: &mut ObjectWorld,
     ch: &mut EvalChannels,
 ) -> Result<Option<Value>, String> {
@@ -525,6 +570,7 @@ fn eval_snippet_inner(
             host_world: None,
             exec_scope: None,
             runtime_closure_mode: RuntimeClosureExecMode::Full,
+            implicit_cwd: cwd.clone(),
         };
         if let Statement::Expression(expr) = stmt {
             let value = if let Expression::Call(call) = expr
@@ -569,6 +615,34 @@ fn eval_snippet_inner(
         flush_live_statement_emits(&mut ctx);
     }
     Ok(last)
+}
+
+fn eval_navigation(
+    source: &str,
+    cwd: Option<Value>,
+    object_world: &mut ObjectWorld,
+    ch: &mut EvalChannels,
+) -> Result<Value, String> {
+    let mut stmts = parse_source(source)?;
+    QueryDesugarTransform::apply(&mut stmts);
+    let [Statement::Expression(expr)] = stmts.as_slice() else {
+        return Err("cd: expected one MMS expression".into());
+    };
+    let mut emits = Vec::new();
+    let mut ctx = EvalContext {
+        emits: &mut emits,
+        source_path: None,
+        channels: Some(ch),
+        ce_builder: None,
+        object_world,
+        host_world: None,
+        exec_scope: None,
+        runtime_closure_mode: RuntimeClosureExecMode::Full,
+        implicit_cwd: cwd,
+    };
+    // Intentionally do not call maybe_register_live_component_value,
+    // push_component_emit, or flush_live_statement_emits here.
+    with_navigation_eval(|| eval_expr(expr, &mut ctx))
 }
 
 fn flush_live_statement_emits(ctx: &mut EvalContext<'_>) {
@@ -639,6 +713,9 @@ fn eval_block_stmts(stmts: &[Statement], ctx: &mut EvalContext<'_>) -> Result<St
 fn eval_stmt(stmt: &Statement, ctx: &mut EvalContext<'_>) -> Result<StmtEffect, String> {
     match stmt {
         Statement::Assignment(a) => {
+            if a.name.0 == "cwd" && ctx.implicit_cwd.is_some() {
+                return Err("cwd is reserved by the interactive REPL".into());
+            }
             let val = eval_expr(&a.value, ctx)?;
             let val = maybe_register_live_component_value(val, ctx);
             ctx.object_world.bind(a.name.0.clone(), val);
@@ -649,6 +726,11 @@ fn eval_stmt(stmt: &Statement, ctx: &mut EvalContext<'_>) -> Result<StmtEffect, 
             }
         }
         Statement::Reassign { target, value } => {
+            if matches!(target, Expression::Identifier(name) if name.0 == "cwd")
+                && ctx.implicit_cwd.is_some()
+            {
+                return Err("cwd is reserved by the interactive REPL".into());
+            }
             let val = eval_expr(value, ctx)?;
             if let Some(builder) = ctx.ce_builder.as_mut() {
                 if let Expression::Identifier(name) = target {
@@ -800,6 +882,9 @@ fn eval_stmt(stmt: &Statement, ctx: &mut EvalContext<'_>) -> Result<StmtEffect, 
 }
 
 fn maybe_register_live_component_value(val: Value, ctx: &mut EvalContext<'_>) -> Value {
+    if NAVIGATION_EVAL_ACTIVE.with(|active| active.get()) {
+        return val;
+    }
     // In live mode, binding or reassigning a CE should produce a live handle
     // rather than leave a dead ComponentExpr in scope.
     match val {
@@ -903,6 +988,9 @@ fn eval_expr_stmt(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<(), St
 }
 
 fn push_component_emit(val: Value, ctx: &mut EvalContext<'_>) {
+    if NAVIGATION_EVAL_ACTIVE.with(|active| active.get()) {
+        return;
+    }
     match val {
         Value::ComponentExpr(ce) => {
             push_eval_intent(
@@ -967,7 +1055,26 @@ fn assign_retarget(
     ctx: &mut EvalContext<'_>,
 ) -> Result<(), String> {
     match target {
-        Expression::Identifier(name) => ctx.object_world.reassign(&name.0, value),
+        Expression::Identifier(name) => {
+            if ctx.object_world.has(&name.0) {
+                return ctx.object_world.reassign(&name.0, value);
+            }
+            if let Some(cwd) = &ctx.implicit_cwd {
+                let updated = match cwd {
+                    Value::Object(id) => id
+                        .with_map_mut(|map| {
+                            map.get_mut(&name.0).map(|field| *field = value.clone())
+                        })
+                        .flatten()
+                        .is_some(),
+                    _ => false,
+                };
+                if updated {
+                    return Ok(());
+                }
+            }
+            ctx.object_world.reassign(&name.0, value)
+        }
         Expression::BinaryOp {
             op: BinOpKind::Dot, ..
         } => {
@@ -1175,6 +1282,7 @@ fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value,
             host_world: ctx.host_world,
             exec_scope: ctx.exec_scope,
             runtime_closure_mode: ctx.runtime_closure_mode,
+            implicit_cwd: ctx.implicit_cwd.clone(),
         };
         eval_block_stmts(&ce.body.statements, &mut body_ctx)
     };
@@ -1239,14 +1347,31 @@ fn eval_expr(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<Value, Stri
                 .ok_or_else(|| format!("index: {n} out of bounds for array of {}", items.len()))
         }
         Expression::Identifier(id) => {
+            if id.0 == "cwd" {
+                return Ok(ctx
+                    .implicit_cwd
+                    .clone()
+                    .unwrap_or_else(|| Value::Identifier("__mms_world__".into())));
+            }
             // Look up in scope chain; fall back to bare identifier value (for enum-like flags).
             match ctx.object_world.lookup(&id.0) {
                 Some(val) => Ok(val.clone()),
-                None => match id.0.as_str() {
-                    "Math" => Ok(Value::BuiltinTable(BuiltinTableKind::Math)),
-                    "MusicNote" => Ok(Value::BuiltinTable(BuiltinTableKind::MusicNote)),
-                    _ => Ok(Value::Identifier(id.0.clone())),
-                },
+                None => {
+                    if let Some(value) = ctx.implicit_cwd.as_ref().and_then(|cwd| match cwd {
+                        Value::Object(object) => {
+                            object.with_map(|map| map.get(&id.0).cloned()).flatten()
+                        }
+                        Value::Map(map) => map.get(&id.0).cloned(),
+                        _ => None,
+                    }) {
+                        return Ok(value);
+                    }
+                    match id.0.as_str() {
+                        "Math" => Ok(Value::BuiltinTable(BuiltinTableKind::Math)),
+                        "MusicNote" => Ok(Value::BuiltinTable(BuiltinTableKind::MusicNote)),
+                        _ => Ok(Value::Identifier(id.0.clone())),
+                    }
+                }
             }
         }
         Expression::Component(ce) => eval_ce(ce, ctx),
@@ -1409,10 +1534,27 @@ fn eval_call(call: &CallExpression, ctx: &mut EvalContext<'_>) -> Result<Value, 
             .iter()
             .map(|a| eval_expr(a, ctx))
             .collect::<Result<_, _>>()?;
+        let has_explicit_scope = args.first().is_some_and(|value| match value {
+            Value::ComponentObject { .. } => true,
+            Value::Identifier(value) => value == "__mms_world__",
+            _ => false,
+        });
+        if !has_explicit_scope && matches!(ctx.implicit_cwd, Some(Value::ComponentExpr(_))) {
+            return Err(format!(
+                "{}(): detached component expressions have no live query scope; emit it or pass world explicitly",
+                callee_name
+            ));
+        }
         let (scope, selector_index) = match args.first() {
             Some(Value::ComponentObject { id, .. }) => (Some(*id), 1),
             Some(Value::Identifier(s)) if s == "__mms_world__" => (None, 1),
-            _ => (None, 0),
+            _ => (
+                match &ctx.implicit_cwd {
+                    Some(Value::ComponentObject { id, .. }) => Some(*id),
+                    _ => None,
+                },
+                0,
+            ),
         };
         let selector = match args.get(selector_index) {
             Some(Value::String(s)) => s.clone(),
@@ -1578,6 +1720,7 @@ fn eval_call(call: &CallExpression, ctx: &mut EvalContext<'_>) -> Result<Value, 
                     host_world: ctx.host_world,
                     exec_scope: ctx.exec_scope,
                     runtime_closure_mode: ctx.runtime_closure_mode,
+                    implicit_cwd: ctx.implicit_cwd.clone(),
                 };
                 eval_block_stmts(&body.statements, &mut func_ctx)
             };
@@ -1739,6 +1882,7 @@ fn eval_user_fn(
             host_world: ctx.host_world,
             exec_scope: ctx.exec_scope,
             runtime_closure_mode: ctx.runtime_closure_mode,
+            implicit_cwd: ctx.implicit_cwd.clone(),
         };
         eval_block_stmts(&body.statements, &mut func_ctx)
     };
@@ -2482,6 +2626,7 @@ fn eval_binop(
                             host_world: None,
                             exec_scope: None,
                             runtime_closure_mode: RuntimeClosureExecMode::Full,
+                            implicit_cwd: ctx.implicit_cwd.clone(),
                         };
                         eval_block_stmts(&body.statements, &mut func_ctx)
                     };
@@ -3032,6 +3177,7 @@ pub(crate) fn eval_mms_fn(
         host_world: world_host.map(|world| world as *mut World),
         exec_scope: None,
         runtime_closure_mode: RuntimeClosureExecMode::Full,
+        implicit_cwd: None,
     };
     let live_emit = emit.as_mut().map(|em| unsafe {
         std::mem::transmute::<&mut dyn SignalEmitter, *mut dyn SignalEmitter>(&mut **em)
@@ -3070,6 +3216,7 @@ pub(crate) fn eval_runtime_closure(
         host_world: world_host.map(|world| world as *mut World),
         exec_scope,
         runtime_closure_mode: mode,
+        implicit_cwd: None,
     };
     let live_emit = emit.as_mut().map(|em| unsafe {
         std::mem::transmute::<&mut dyn SignalEmitter, *mut dyn SignalEmitter>(&mut **em)
@@ -3105,6 +3252,7 @@ pub(crate) fn eval_module_source(source: &str, source_path: Option<&str>) -> Res
         host_world: None,
         exec_scope: None,
         runtime_closure_mode: RuntimeClosureExecMode::Full,
+        implicit_cwd: None,
     };
 
     for stmt in &stmts {
@@ -3350,16 +3498,52 @@ export let total = total
         handle: &mut MeowMeowEvaluatorHandle,
         source: &str,
     ) -> Result<Option<Value>, String> {
+        run_test_snippet_with_cwd(handle, source, None)
+    }
+
+    fn run_test_snippet_with_cwd(
+        handle: &mut MeowMeowEvaluatorHandle,
+        source: &str,
+        cwd: Option<Value>,
+    ) -> Result<Option<Value>, String> {
         handle
             .requests
             .push(EvalRequest::EvalSnippet {
                 source: source.into(),
+                cwd,
             })
             .unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
         loop {
             match handle.responses.pop() {
                 Ok(EvalResponse::SnippetComplete { result }) => return result,
+                Ok(EvalResponse::HostCall { kind, .. }) => {
+                    panic!("navigation unexpectedly requested a host call: {kind:?}")
+                }
+                Ok(_) | Err(rtrb::PopError::Empty) if std::time::Instant::now() < deadline => {
+                    std::thread::yield_now()
+                }
+                other => panic!("snippet timed out or returned unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    fn run_test_navigation(
+        handle: &mut MeowMeowEvaluatorHandle,
+        source: &str,
+        cwd: Option<Value>,
+    ) -> Result<Value, String> {
+        handle
+            .requests
+            .push(EvalRequest::EvalNavigation {
+                source: source.into(),
+                cwd,
+            })
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        loop {
+            match handle.responses.pop() {
+                Ok(EvalResponse::NavigationComplete { result }) => return result,
                 Ok(EvalResponse::HostCall { id, .. }) => {
                     handle
                         .requests
@@ -3372,7 +3556,7 @@ export let total = total
                 Ok(_) | Err(rtrb::PopError::Empty) if std::time::Instant::now() < deadline => {
                     std::thread::yield_now()
                 }
-                other => panic!("snippet timed out or returned unexpected response: {other:?}"),
+                other => panic!("navigation timed out or returned unexpected response: {other:?}"),
             }
         }
     }
@@ -3398,6 +3582,59 @@ export let total = total
             Some(Value::Number(42.0))
         );
         assert!(run_test_snippet(&mut handle, "answer + 1").is_err());
+        handle.shutdown_and_join();
+    }
+
+    #[test]
+    fn repl_navigation_is_detached_and_supplies_dynamic_table_context() {
+        let mut handle = MeowMeowEvaluator::spawn(32);
+        run_test_snippet(
+            &mut handle,
+            r#"let settings = { theme = { tone = "dark" } }"#,
+        )
+        .unwrap();
+        let settings = run_test_navigation(&mut handle, "settings", None).unwrap();
+        let theme = run_test_navigation(&mut handle, "settings.theme", None).unwrap();
+        assert_eq!(
+            run_test_snippet_with_cwd(&mut handle, "tone", Some(theme.clone())).unwrap(),
+            Some(Value::String("dark".into()))
+        );
+        run_test_snippet_with_cwd(&mut handle, r#"tone = "light""#, Some(theme.clone())).unwrap();
+        assert_eq!(
+            run_test_navigation(&mut handle, "settings.theme.tone", Some(settings)).unwrap(),
+            Value::String("light".into())
+        );
+
+        run_test_snippet(&mut handle, "let read_tone = fn() { return tone }").unwrap();
+        assert_eq!(
+            run_test_snippet_with_cwd(&mut handle, "read_tone()", Some(theme.clone())).unwrap(),
+            Some(Value::String("light".into()))
+        );
+        run_test_snippet_with_cwd(
+            &mut handle,
+            r#"let tone = "lexical"
+tone = "shadowed""#,
+            Some(theme.clone()),
+        )
+        .unwrap();
+        assert_eq!(
+            run_test_snippet_with_cwd(&mut handle, "tone", Some(theme.clone())).unwrap(),
+            Some(Value::String("shadowed".into()))
+        );
+        assert_eq!(
+            run_test_navigation(&mut handle, "settings.theme.tone", None).unwrap(),
+            Value::String("light".into())
+        );
+
+        let detached = run_test_navigation(&mut handle, r#"T { Text { "x" } }"#, None).unwrap();
+        assert!(matches!(detached, Value::ComponentExpr(_)));
+        run_test_snippet(
+            &mut handle,
+            "let make_detached = fn() { let node = T {} return node }",
+        )
+        .unwrap();
+        let detached = run_test_navigation(&mut handle, "make_detached()", None).unwrap();
+        assert!(matches!(detached, Value::ComponentExpr(_)));
         handle.shutdown_and_join();
     }
 }

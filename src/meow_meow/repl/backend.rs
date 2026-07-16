@@ -5,13 +5,26 @@ use crate::meow_meow::evaluator::{
     EvalRequest, EvalResponse, HostCallKind, HostValue, MeowMeowEvaluator, MeowMeowEvaluatorHandle,
 };
 use crate::meow_meow::object::Value;
-use crate::meow_meow::repl::{MeowMeowReplFrontend, format_repl_value};
+use crate::meow_meow::repl::{
+    MeowMeowReplFrontend, NavigationState, ReplInput, format_repl_value, parse_repl_input,
+};
+
+enum ActiveInput {
+    Snippet {
+        source: String,
+    },
+    Navigation {
+        binding: Option<String>,
+        tail: Vec<String>,
+    },
+}
 
 pub struct MeowMeowRepl {
     frontend: MeowMeowReplFrontend,
     evaluator: MeowMeowEvaluatorHandle,
     pending: VecDeque<String>,
-    active_source: Option<String>,
+    active: Option<ActiveInput>,
+    navigation: NavigationState,
 }
 
 impl MeowMeowRepl {
@@ -20,7 +33,8 @@ impl MeowMeowRepl {
             frontend: MeowMeowReplFrontend::new()?,
             evaluator: MeowMeowEvaluator::spawn(128),
             pending: VecDeque::new(),
-            active_source: None,
+            active: None,
+            navigation: NavigationState::new(),
         })
     }
 
@@ -31,8 +45,11 @@ impl MeowMeowRepl {
         render_assets: &mut graphics::RenderAssets,
         emit: &mut dyn ecs::SignalEmitter,
     ) {
+        if let Some(message) = self.navigation.ensure_valid(world) {
+            eprintln!("[mms] {message}");
+        }
         self.pending.extend(self.frontend.try_recv_all());
-        self.start_next();
+        self.start_next(world);
         while let Ok(response) = self.evaluator.responses.pop() {
             match response {
                 EvalResponse::HostCall { id, kind } => {
@@ -53,7 +70,10 @@ impl MeowMeowRepl {
                     emit.push_intent_now(ecs::ComponentId::default(), intent)
                 }
                 EvalResponse::SnippetComplete { result } => {
-                    let source = self.active_source.take().unwrap_or_default();
+                    let source = match self.active.take() {
+                        Some(ActiveInput::Snippet { source }) => source,
+                        _ => String::new(),
+                    };
                     match result {
                         Ok(Some(Value::Null)) if is_control_call(&source) => {}
                         Ok(Some(value)) => match format_repl_value(&value, world) {
@@ -64,32 +84,137 @@ impl MeowMeowRepl {
                         Err(error) => eprintln!("[mms] {error}"),
                     }
                 }
+                EvalResponse::NavigationComplete { result } => {
+                    let (binding, tail) = match self.active.take() {
+                        Some(ActiveInput::Navigation { binding, tail }) => (binding, tail),
+                        _ => (None, Vec::new()),
+                    };
+                    match result {
+                        Ok(value) => {
+                            let previous = self.navigation.clone();
+                            let result = self
+                                .navigation
+                                .set_evaluated(value, binding, world)
+                                .and_then(|()| {
+                                    for segment in &tail {
+                                        self.navigation.cd_child(segment, world)?;
+                                    }
+                                    Ok(())
+                                });
+                            if let Err(error) = result {
+                                self.navigation = previous;
+                                eprintln!("[mms] {error}");
+                            }
+                        }
+                        Err(error) => eprintln!("[mms] {error}"),
+                    }
+                }
+                EvalResponse::ReplReset => self.navigation.reset(),
                 EvalResponse::Error { message } => eprintln!("[mms] {message}"),
                 EvalResponse::ParsedOk { .. } | EvalResponse::ShutdownAck => {}
             }
         }
+        self.start_next(world);
     }
 
-    fn start_next(&mut self) {
-        if self.active_source.is_some() {
+    fn start_next(&mut self, world: &ecs::World) {
+        if self.active.is_some() {
             return;
         }
-        let Some(source) = self.pending.pop_front() else {
-            return;
-        };
-        if self
-            .evaluator
-            .requests
-            .push(EvalRequest::EvalSnippet {
-                source: source.clone(),
-            })
-            .is_ok()
-        {
-            self.active_source = Some(source);
-        } else {
-            self.pending.push_front(source);
+        while let Some(source) = self.pending.pop_front() {
+            match parse_repl_input(source) {
+                ReplInput::Ls => match self.navigation.listing(world) {
+                    Ok(lines) if lines.is_empty() => println!("(empty)"),
+                    Ok(lines) => lines.into_iter().for_each(|line| println!("{line}")),
+                    Err(error) => eprintln!("[mms] ls: {error}"),
+                },
+                ReplInput::Pwd => println!("{}", self.navigation.pwd(world)),
+                ReplInput::Cd(operand) => {
+                    if self.start_cd(operand, world) {
+                        return;
+                    }
+                }
+                ReplInput::Snippet(source) => {
+                    let request = EvalRequest::EvalSnippet {
+                        source: source.clone(),
+                        cwd: Some(self.navigation.cwd_value()),
+                    };
+                    if self.evaluator.requests.push(request).is_ok() {
+                        self.active = Some(ActiveInput::Snippet { source });
+                    } else {
+                        self.pending.push_front(source);
+                    }
+                    return;
+                }
+            }
         }
     }
+
+    /// Returns true when an asynchronous expression evaluation was started.
+    fn start_cd(&mut self, operand: String, world: &ecs::World) -> bool {
+        match operand.as_str() {
+            "/" => {
+                self.navigation.cd_root();
+                return false;
+            }
+            "." => return false,
+            ".." => {
+                self.navigation.cd_parent(world);
+                return false;
+            }
+            _ if operand.contains('/') => {
+                if let Err(error) = self.navigation.cd_path(&operand, world) {
+                    eprintln!("[mms] cd: {error}");
+                }
+                return false;
+            }
+            _ => {}
+        }
+
+        // Simple names are children first. Dotted identifier chains are a
+        // binding anchor followed by deterministic table navigation.
+        let identifiers = operand.split('.').collect::<Vec<_>>();
+        let is_dotted_path = identifiers.len() > 1
+            && identifiers.iter().all(|part| {
+                !part.is_empty() && part.chars().all(|c| c == '_' || c.is_alphanumeric())
+            });
+        if !is_dotted_path && !operand.contains(['(', '[', '{', '"', '\'', ' ']) {
+            if self.navigation.cd_child(&operand, world).is_ok() {
+                return false;
+            }
+        }
+        let (source, binding, tail) = if is_dotted_path {
+            (
+                identifiers[0].to_string(),
+                Some(identifiers[0].to_string()),
+                identifiers[1..]
+                    .iter()
+                    .map(|part| (*part).to_string())
+                    .collect(),
+            )
+        } else {
+            let binding =
+                (operand != "cwd" && is_simple_identifier(&operand)).then(|| operand.clone());
+            (operand, binding, Vec::new())
+        };
+        let request = EvalRequest::EvalNavigation {
+            source,
+            cwd: Some(self.navigation.cwd_value()),
+        };
+        match self.evaluator.requests.push(request) {
+            Ok(()) => {
+                self.active = Some(ActiveInput::Navigation { binding, tail });
+                true
+            }
+            Err(_) => false,
+        }
+    }
+}
+
+fn is_simple_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    chars.next().is_some_and(|c| c == '_' || c.is_alphabetic())
+        && chars.all(|c| c == '_' || c.is_alphanumeric())
 }
 
 fn is_control_call(source: &str) -> bool {
@@ -190,7 +315,15 @@ fn service_host_call(
         }
         HostCallKind::ReplHelp => {
             println!("MMS REPL: persistent let bindings, expression echo, and live mutation");
+            println!("ls, pwd, cd /, cd .., cd path/to/item, cd <MMS expression>");
+            println!(
+                "Navigation supports tables, arrays, live components, and detached component expressions."
+            );
+            println!("cwd is the current value; table fields are implicit after lexical bindings.");
             println!("query(\"#name\"), query_all(world, \"Type\"), component.query_all(\"Text\")");
+            println!(
+                "At a live component, query(\"Text\") is scoped; query(world, \"Text\") is global."
+            );
             println!("tree(value[, max_depth]), dump(value), clear(), reset(), help()");
             HostValue::Null
         }

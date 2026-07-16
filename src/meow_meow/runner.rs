@@ -558,6 +558,7 @@ impl MeowMeowRunner {
                 Ok(EvalResponse::Error { message }) => output.errors.push(message),
                 Ok(EvalResponse::ParsedOk { .. }) => {}
                 Ok(EvalResponse::SnippetComplete { .. }) => {}
+                Ok(EvalResponse::NavigationComplete { .. } | EvalResponse::ReplReset) => {}
                 Ok(EvalResponse::ShutdownAck) => break,
                 Ok(EvalResponse::HostCall { id, kind }) => {
                     let reply = match kind {
@@ -801,6 +802,7 @@ impl MeowMeowRunner {
                 Ok(EvalResponse::Error { message }) => output.errors.push(message),
                 Ok(EvalResponse::ParsedOk { .. }) => {}
                 Ok(EvalResponse::SnippetComplete { .. }) => {}
+                Ok(EvalResponse::NavigationComplete { .. } | EvalResponse::ReplReset) => {}
                 Ok(EvalResponse::ShutdownAck) => break,
                 // Fire-and-forget runner has no world — reply null so the evaluator
                 // falls back to ComponentExpr and continues without blocking.
