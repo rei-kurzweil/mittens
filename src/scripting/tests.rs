@@ -3399,7 +3399,10 @@ fn roundtrip_editor() {
     use crate::engine::ecs::component::{EditorComponent, TransformGizmoCoordSpace};
     let original = EditorComponent::new()
         .with_transform_gizmo_translation_space(TransformGizmoCoordSpace::Local)
-        .with_transform_gizmo_rotation_space(TransformGizmoCoordSpace::World);
+        .with_transform_gizmo_rotation_space(TransformGizmoCoordSpace::World)
+        .with_panels(false)
+        .with_serialize_editor_panels(true)
+        .with_asset_dir("../custom-assets");
     let (world, id) = roundtrip_component(original);
     let got = world.get_component_by_id_as::<EditorComponent>(id).unwrap();
     assert_eq!(
@@ -3410,6 +3413,9 @@ fn roundtrip_editor() {
         got.transform_gizmo_rotation_space,
         TransformGizmoCoordSpace::World
     );
+    assert!(!got.spawn_panels);
+    assert!(got.serialize_editor_panels);
+    assert_eq!(got.asset_dir.as_deref(), Some("../custom-assets"));
 }
 
 #[test]

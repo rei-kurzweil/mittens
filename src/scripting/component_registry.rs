@@ -2696,6 +2696,9 @@ fn apply_call(
                 };
                 ed.transform_gizmo_rotation_space = space;
             }
+            "panels" => ed.spawn_panels = arg_bool(args, 0)?,
+            "serialize_editor_panels" => ed.serialize_editor_panels = arg_bool(args, 0)?,
+            "asset_dir" => ed.asset_dir = Some(arg_str(args, 0)?.to_string()),
             _ => {}
         }
         return Ok(());
@@ -2863,14 +2866,6 @@ fn apply_call(
     if let Some(text) = world.get_component_by_id_as_mut::<TextComponent>(id) {
         match method {
             "font_size" => text.set_font_size(arg_f32(args, 0)?),
-            _ => {}
-        }
-        return Ok(());
-    }
-    if let Some(editor) = world.get_component_by_id_as_mut::<EditorComponent>(id) {
-        match method {
-            "panels" => editor.spawn_panels = arg_bool(args, 0)?,
-            "serialize_editor_panels" => editor.serialize_editor_panels = arg_bool(args, 0)?,
             _ => {}
         }
         return Ok(());

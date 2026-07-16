@@ -32,7 +32,7 @@ impl Default for EditorInteractionMode {
 ///
 /// When a renderable under this subtree is clicked, the editor selection system can reattach
 /// the editor's gizmos (e.g. TransformGizmo) to the clicked target.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct EditorComponent {
     /// Declaratively prefer this editor as the active workspace editor.
     pub active: bool,
@@ -64,6 +64,9 @@ pub struct EditorComponent {
     /// Default: false.
     pub serialize_editor_panels: bool,
 
+    /// Optional asset directory to scan for MMS asset modules when this editor is registered.
+    pub asset_dir: Option<String>,
+
     /// World-space position of the world-tree panel. Default: (-0.7, 1.6, -1.2).
     pub world_panel_pos: (f32, f32, f32),
 
@@ -87,6 +90,7 @@ impl Default for EditorComponent {
             transform_gizmo_rotation_space: TransformGizmoCoordSpace::Local,
             spawn_panels: true,
             serialize_editor_panels: false,
+            asset_dir: None,
             world_panel_pos: (-0.7, 1.6, -1.2),
             // Same x as world_panel_pos intentionally — InspectorSystem::setup_panels_for_editor
             // detects this and auto-places the inspector to the right of the world panel using
@@ -133,6 +137,11 @@ impl EditorComponent {
 
     pub fn with_serialize_editor_panels(mut self, enabled: bool) -> Self {
         self.serialize_editor_panels = enabled;
+        self
+    }
+
+    pub fn with_asset_dir(mut self, path: impl Into<String>) -> Self {
+        self.asset_dir = Some(path.into());
         self
     }
 
@@ -202,6 +211,15 @@ impl Component for EditorComponent {
             .with_call("rotation_space", vec![s(rotation)]);
         if self.active {
             expr = expr.with_call("active", vec![]);
+        }
+        if !self.spawn_panels {
+            expr = expr.with_call("panels", vec![b(false)]);
+        }
+        if self.serialize_editor_panels {
+            expr = expr.with_call("serialize_editor_panels", vec![b(true)]);
+        }
+        if let Some(asset_dir) = &self.asset_dir {
+            expr = expr.with_call("asset_dir", vec![s(asset_dir)]);
         }
         expr
     }

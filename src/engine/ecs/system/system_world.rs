@@ -1363,11 +1363,29 @@ impl SystemWorld {
     ) {
         let panel_cfg = world
             .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(component)
-            .map(|ed| (ed.spawn_panels, ed.world_panel_pos, ed.inspector_panel_pos));
+            .map(|ed| {
+                (
+                    ed.spawn_panels,
+                    ed.world_panel_pos,
+                    ed.inspector_panel_pos,
+                    ed.asset_dir.clone(),
+                )
+            });
 
-        let Some((spawn_panels, world_panel_pos, inspector_panel_pos)) = panel_cfg else {
+        let Some((spawn_panels, world_panel_pos, inspector_panel_pos, asset_dir)) = panel_cfg
+        else {
             return;
         };
+
+        if let Some(asset_dir) = asset_dir {
+            let asset_dir = Path::new(&asset_dir);
+            if let Err(error) = self.asset_system.scan_assets_dir(asset_dir) {
+                eprintln!(
+                    "[SystemWorld] failed to scan editor asset dir '{}': {error}",
+                    asset_dir.display()
+                );
+            }
+        }
 
         self.editor_context
             .register_editor_identity(world, component);
