@@ -1,5 +1,5 @@
 use crate::engine::ecs::component::{
-    EditorComponent, GLTFComponent, PoseBoneEntry, PoseCaptureComponent,
+    BoneRestPoseComponent, EditorComponent, GLTFComponent, PoseBoneEntry, PoseCaptureComponent,
     PoseCaptureLibraryComponent, PoseCapturePoseComponent, PoseCaptureReconciliationState,
     PoseTargetRef, TransformComponent,
 };
@@ -10,6 +10,8 @@ use crate::scripting::object::{CeChild, MaterializedCE};
 use crate::scripting::runner::MeowMeowRunner;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+
+const POSE_CAPTURE_TRS_EPSILON: f32 = 1.0e-5;
 
 #[derive(Debug, Default)]
 pub struct PoseCaptureSystem;
@@ -23,6 +25,7 @@ impl PoseCaptureSystem {
         &self,
         world: &mut World,
         emit: &mut dyn SignalEmitter,
+        completion_scope: ComponentId,
         request_target: ComponentId,
         pose_name: Option<String>,
     ) {
@@ -43,11 +46,8 @@ impl PoseCaptureSystem {
                 };
 
             use crate::engine::ecs::EventSignal;
-            // Publish completion from the request origin. Editor panel handlers are
-            // scoped to their panel tree; publishing from the captured GLTF target
-            // leaves that tree and the new pose row never gets projected.
             emit.push_event(
-                request_target,
+                completion_scope,
                 EventSignal::DataEvent {
                     name: "pose_captured".to_string(),
                     payload: Some(pose_id),
@@ -126,6 +126,9 @@ impl PoseCaptureSystem {
         let mut queries = HashSet::new();
         for tc_id in transforms {
             if let Some(tc) = world.get_component_by_id_as::<TransformComponent>(tc_id) {
+                if joint_matches_imported_rest_pose(world, tc_id, tc) {
+                    continue;
+                }
                 if let Some(label) = world
                     .component_label(tc_id)
                     .filter(|label| !label.is_empty())
@@ -235,6 +238,48 @@ impl PoseCaptureSystem {
         }
         None
     }
+}
+
+fn joint_matches_imported_rest_pose(
+    world: &World,
+    joint: ComponentId,
+    current: &TransformComponent,
+) -> bool {
+    let Some(rest) = world
+        .children_of(joint)
+        .iter()
+        .find_map(|&child| world.get_component_by_id_as::<BoneRestPoseComponent>(child))
+    else {
+        // Hand-built/test armatures and nodes created without GLTFSystem
+        // rest-pose metadata have no baseline. Preserve capture-all for them.
+        return false;
+    };
+
+    vec3_nearly_equal(
+        current.transform.translation,
+        rest.translation,
+        POSE_CAPTURE_TRS_EPSILON,
+    ) && quat_nearly_equal(
+        current.transform.rotation,
+        rest.rotation,
+        POSE_CAPTURE_TRS_EPSILON,
+    ) && vec3_nearly_equal(
+        current.transform.scale,
+        rest.scale,
+        POSE_CAPTURE_TRS_EPSILON,
+    )
+}
+
+fn vec3_nearly_equal(a: [f32; 3], b: [f32; 3], epsilon: f32) -> bool {
+    a.into_iter().zip(b).all(|(a, b)| (a - b).abs() <= epsilon)
+}
+
+fn quat_nearly_equal(a: [f32; 4], b: [f32; 4], epsilon: f32) -> bool {
+    // q and -q encode the same rotation, so accept whichever representation
+    // is closer component-wise.
+    let same_sign = a.into_iter().zip(b).all(|(a, b)| (a - b).abs() <= epsilon);
+    let opposite_sign = a.into_iter().zip(b).all(|(a, b)| (a + b).abs() <= epsilon);
+    same_sign || opposite_sign
 }
 
 pub fn pose_assets_root() -> PathBuf {
@@ -726,7 +771,9 @@ fn resolve_joint_query(world: &World, gltf_id: ComponentId, query: &str) -> Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::ecs::component::{RenderableComponent, save_pose_library_asset};
+    use crate::engine::ecs::component::{
+        BoneRestPoseComponent, RenderableComponent, save_pose_library_asset,
+    };
     use std::time::{SystemTime, UNIX_EPOCH};
 
     struct PoseFixture {
@@ -837,6 +884,69 @@ mod tests {
         );
         assert_eq!(pose_asset_name_for_gltf_uri(""), "pose_library");
         assert_eq!(sanitize_pose_asset_name("..."), "pose_library");
+    }
+
+    #[test]
+    fn capture_omits_rest_pose_joints_and_keeps_changed_joints() {
+        let mut world = World::default();
+        let anchor = world.add_component(TransformComponent::new());
+        let gltf = world.add_component(GLTFComponent::new("avatar.glb"));
+        let target = world.add_component(PoseCaptureComponent::new());
+        let unchanged =
+            world.add_component_boxed_named("head", Box::new(TransformComponent::new()));
+        let changed =
+            world.add_component_boxed_named("left_arm", Box::new(TransformComponent::new()));
+        world.add_child(anchor, gltf).unwrap();
+        world.add_child(gltf, target).unwrap();
+        world.add_child(anchor, unchanged).unwrap();
+        world.add_child(anchor, changed).unwrap();
+        let unchanged_rest = world.add_component(BoneRestPoseComponent::new(
+            [0.0; 3],
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0; 3],
+        ));
+        let changed_rest = world.add_component(BoneRestPoseComponent::new(
+            [0.0; 3],
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0; 3],
+        ));
+        world.add_child(unchanged, unchanged_rest).unwrap();
+        world.add_child(changed, changed_rest).unwrap();
+        world
+            .get_component_by_id_as_mut::<TransformComponent>(changed)
+            .unwrap()
+            .transform
+            .rotation = [0.0, 0.0, 0.25, 0.96824586];
+        world
+            .get_component_by_id_as_mut::<GLTFComponent>(gltf)
+            .unwrap()
+            .armature_joint_transforms = vec![unchanged, changed];
+
+        let mut emit = NullEmitter;
+        let pose = PoseCaptureSystem::new()
+            .capture_target_pose(&mut world, &mut emit, target, Some("wave".into()))
+            .unwrap();
+        let pose = world
+            .get_component_by_id_as::<PoseCapturePoseComponent>(pose)
+            .unwrap();
+        assert_eq!(pose.entries.len(), 1);
+        assert_eq!(pose.entries[0].query, "#left_arm");
+    }
+
+    #[test]
+    fn rest_pose_comparison_accepts_quaternion_sign_and_import_noise() {
+        let mut world = World::default();
+        let joint = world.add_component(TransformComponent::new());
+        let rest = world.add_component(BoneRestPoseComponent::new(
+            [0.0; 3],
+            [0.0, 0.0, 0.0, -1.0],
+            [1.0; 3],
+        ));
+        world.add_child(joint, rest).unwrap();
+        let current = world
+            .get_component_by_id_as::<TransformComponent>(joint)
+            .unwrap();
+        assert!(joint_matches_imported_rest_pose(&world, joint, current));
     }
 
     #[test]

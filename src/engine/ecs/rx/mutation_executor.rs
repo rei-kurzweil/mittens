@@ -662,9 +662,13 @@ impl RxMutationExecutor {
                 }
             }
             IntentValue::PoseCapture { target, pose_name } => {
-                systems
-                    .pose_capture
-                    .handle_capture(world, emit, *target, pose_name.clone());
+                systems.pose_capture.handle_capture(
+                    world,
+                    emit,
+                    env.scope,
+                    *target,
+                    pose_name.clone(),
+                );
             }
             IntentValue::PoseApply { target, pose } => {
                 if let Err(error) = systems

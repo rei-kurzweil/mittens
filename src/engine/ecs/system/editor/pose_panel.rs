@@ -1,7 +1,7 @@
 use std::sync::{Arc, LazyLock, Mutex};
 
 use crate::engine::ecs::component::{
-    ColorComponent, DataComponent, DataValue, Display, EdgeInsets, OptionComponent,
+    AlignItems, ColorComponent, DataComponent, DataValue, Display, EdgeInsets, OptionComponent,
     PoseCaptureComponent, PoseCaptureLibraryComponent, PoseCapturePoseComponent,
     PoseCaptureReconciliationState, RaycastableComponent, SizeDimension, StyleComponent,
     TextComponent, TextInputComponent, TransformComponent, is_valid_pose_asset_name,
@@ -12,6 +12,7 @@ use crate::engine::ecs::system::data_renderer_system::{
 };
 use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor::world_panel::PANEL_CONTENT_SLOT_SELECTOR;
+use crate::engine::ecs::system::layout::AUTO_TEXT_LIFT_Z;
 use crate::engine::ecs::system::panel_system::{data_text, is_descendant_or_self};
 use crate::engine::ecs::system::pose_capture_system::{
     ensure_pose_capture_for_gltf_selection, gltf_for_visual_selection, pose_assets_root,
@@ -23,7 +24,9 @@ pub const POSE_PANEL_ROOT_SELECTOR: &str = "#pose_capture_panel_root";
 pub const POSE_PANEL_SELECTION_NAME: &str = "pose_capture_selection";
 pub const POSE_PANEL_PAYLOAD_NAME: &str = "pose_panel_payload";
 pub const POSE_PANEL_STATUS_VALUE_SELECTOR: &str = "#pose_panel_status_value";
+const POSE_PANEL_BASE_FONT_SIZE_WU: f32 = 0.08;
 const POSE_PANEL_ACTION_FONT_SIZE_GU: f32 = 0.9;
+const POSE_PANEL_LIBRARY_FONT_SIZE_GU: f32 = POSE_PANEL_ACTION_FONT_SIZE_GU * 2.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PosePanelActionKind {
@@ -137,12 +140,20 @@ fn add_payload(
 }
 
 fn spawn_text(world: &mut World, parent: ComponentId, name: &str, label: &str, color: [f32; 4]) {
-    let text = world.add_component_boxed_named(name, Box::new(TextComponent::new(label)));
+    let text_root = world.add_component_boxed_named(
+        format!("{name}_root"),
+        Box::new(TransformComponent::new().with_position(0.0, 0.0, AUTO_TEXT_LIFT_Z)),
+    );
+    let text = world.add_component_boxed_named(
+        name,
+        Box::new(TextComponent::new(label).with_font_size(POSE_PANEL_BASE_FONT_SIZE_WU)),
+    );
     let text_color = world.add_component_boxed_named(
         format!("{name}_color"),
         Box::new(ColorComponent::rgba(color[0], color[1], color[2], color[3])),
     );
-    let _ = world.add_child(parent, text);
+    let _ = world.add_child(parent, text_root);
+    let _ = world.add_child(text_root, text);
     let _ = world.add_child(text, text_color);
 }
 
@@ -167,7 +178,11 @@ fn spawn_action_button(
         Box::new({
             let mut style = StyleComponent::new();
             style.display = Some(Display::InlineBlock);
-            style.width = SizeDimension::GlyphUnits(width);
+            style.width = if width > 0.0 {
+                SizeDimension::GlyphUnits(width)
+            } else {
+                SizeDimension::Auto
+            };
             style.height = SizeDimension::GlyphUnits(2.2);
             style.margin = EdgeInsets::axes(0.2, 0.15);
             style.padding = EdgeInsets::axes(0.25, 0.35);
@@ -178,17 +193,12 @@ fn spawn_action_button(
             style
         }),
     );
-    let text_root = world.add_component_boxed_named(
-        format!("{name}_text_root"),
-        Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.005)),
-    );
     let _ = world.add_child(parent, root);
     let _ = world.add_child(root, raycastable);
     let _ = world.add_child(root, style);
-    let _ = world.add_child(root, text_root);
     spawn_text(
         world,
-        text_root,
+        root,
         &format!("{name}_text"),
         label,
         [0.75, 1.0, 0.45, 1.0],
@@ -209,14 +219,36 @@ fn spawn_library_header(
         "pose_library_header_style",
         Box::new({
             let mut style = StyleComponent::new();
-            style.display = Some(Display::Block);
+            style.display = Some(Display::Flex);
             style.width = SizeDimension::Percent(100.0);
+            style.height = SizeDimension::GlyphUnits(4.2);
             style.margin = EdgeInsets::axes(0.0, 0.35);
             style.padding = EdgeInsets::axes(0.25, 0.2);
+            style.align_items = AlignItems::Center;
+            style.column_gap = 0.35;
             style.background_color = Some([0.16, 0.20, 0.18, 1.0]);
             style.background_z = Some(0.001);
             style.color = Some([0.95, 0.98, 0.92, 1.0]);
             style.font_size = SizeDimension::GlyphUnits(1.0);
+            style
+        }),
+    );
+    let name_root = world.add_component_boxed_named(
+        "pose_library_name_wrap",
+        Box::new(TransformComponent::new()),
+    );
+    let name_root_style = world.add_component_boxed_named(
+        "pose_library_name_wrap_style",
+        Box::new({
+            let mut style = StyleComponent::new();
+            style.display = Some(Display::InlineBlock);
+            style.width = SizeDimension::GlyphUnits(14.5);
+            style.height = SizeDimension::GlyphUnits(3.0);
+            style.padding = EdgeInsets::axes(0.25, 0.35);
+            style.background_color = Some([0.94, 0.98, 0.92, 1.0]);
+            style.background_z = Some(0.001);
+            style.color = Some([0.02, 0.08, 0.03, 1.0]);
+            style.font_size = SizeDimension::GlyphUnits(POSE_PANEL_LIBRARY_FONT_SIZE_GU);
             style
         }),
     );
@@ -228,19 +260,15 @@ fn spawn_library_header(
         "pose_library_name_input_style",
         Box::new({
             let mut style = StyleComponent::new();
-            style.display = Some(Display::InlineBlock);
-            style.width = SizeDimension::GlyphUnits(14.5);
-            style.height = SizeDimension::GlyphUnits(2.2);
-            style.padding = EdgeInsets::axes(0.25, 0.35);
-            style.background_color = Some([0.94, 0.98, 0.92, 1.0]);
-            style.background_z = Some(0.001);
             style.color = Some([0.02, 0.08, 0.03, 1.0]);
-            style.font_size = SizeDimension::GlyphUnits(POSE_PANEL_ACTION_FONT_SIZE_GU);
+            style.font_size = SizeDimension::GlyphUnits(POSE_PANEL_LIBRARY_FONT_SIZE_GU);
             style
         }),
     );
     let _ = world.add_child(root, style);
-    let _ = world.add_child(root, name_input);
+    let _ = world.add_child(root, name_root);
+    let _ = world.add_child(name_root, name_root_style);
+    let _ = world.add_child(name_root, name_input);
     let _ = world.add_child(name_input, name_style);
     add_payload(
         world,
@@ -255,7 +283,7 @@ fn spawn_library_header(
         root,
         "pose_capture_action",
         "Capture",
-        5.5,
+        0.0,
         PosePanelActionKind::Capture,
         target,
         library,
@@ -266,7 +294,7 @@ fn spawn_library_header(
         root,
         "pose_save_action",
         "Save",
-        4.5,
+        0.0,
         PosePanelActionKind::Save,
         target,
         library,
@@ -283,6 +311,18 @@ fn spawn_pose_row(
     pose: ComponentId,
 ) -> ComponentId {
     let root = world.add_component_boxed_named("pose_row", Box::new(TransformComponent::new()));
+    let root_style = world.add_component_boxed_named(
+        "pose_row_container_style",
+        Box::new({
+            let mut style = StyleComponent::new();
+            style.display = Some(Display::Flex);
+            style.width = SizeDimension::Percent(100.0);
+            style.height = SizeDimension::GlyphUnits(3.2);
+            style.align_items = AlignItems::Center;
+            style.column_gap = 0.35;
+            style
+        }),
+    );
     let option =
         world.add_component_boxed_named("pose_row_option", Box::new(OptionComponent::new()));
     let body =
@@ -307,6 +347,7 @@ fn spawn_pose_row(
             style
         }),
     );
+    let _ = world.add_child(root, root_style);
     let _ = world.add_child(root, body);
     let _ = world.add_child(body, option);
     let _ = world.add_child(body, body_raycastable);
@@ -598,7 +639,7 @@ pub fn handle_pose_panel_click(
                     if let Some(target) = target {
                         set_pose_panel_status(world, panel_root, "capturing pose...");
                         emit.push_intent_now(
-                            target,
+                            panel_root,
                             IntentValue::PoseCapture {
                                 target,
                                 pose_name: None,
@@ -760,20 +801,38 @@ pub fn handle_pose_panel_text_input_changed(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::ecs::component::{PoseBoneEntry, PoseTargetRef};
+    use crate::engine::ecs::component::{LayoutComponent, PoseBoneEntry, PoseTargetRef};
+    use crate::engine::ecs::system::layout::LayoutSystem;
     use crate::engine::ecs::{EventSignal, IntentSignal};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     struct TestEmitter {
         intents: Vec<IntentValue>,
+        scopes: Vec<ComponentId>,
     }
 
     impl SignalEmitter for TestEmitter {
         fn push_event(&mut self, _scope: ComponentId, _event: EventSignal) {}
 
-        fn push_intent(&mut self, _scope: ComponentId, intent: IntentSignal) {
+        fn push_intent(&mut self, scope: ComponentId, intent: IntentSignal) {
+            self.scopes.push(scope);
             self.intents.push(intent.value);
         }
+    }
+
+    fn emitted_translation(emitter: &TestEmitter, component: ComponentId) -> [f32; 3] {
+        emitter
+            .intents
+            .iter()
+            .find_map(|intent| match intent {
+                IntentValue::UpdateTransform {
+                    component_ids,
+                    translation,
+                    ..
+                } if component_ids == &vec![component] => Some(*translation),
+                _ => None,
+            })
+            .unwrap()
     }
 
     #[test]
@@ -802,6 +861,7 @@ mod tests {
         assert_eq!(model.sections[0].library, library);
         let mut emit = TestEmitter {
             intents: Vec::new(),
+            scopes: Vec::new(),
         };
         let header =
             pose_panel_item_render_fn(&mut world, &mut emit, &pose_panel_items(&model)[0]).unwrap();
@@ -814,6 +874,19 @@ mod tests {
         let name_input = world
             .find_component(header, "#pose_library_name_input")
             .unwrap();
+        let name_wrap = world
+            .find_component(header, "#pose_library_name_wrap")
+            .unwrap();
+        assert_eq!(
+            world.parent_of(name_input),
+            Some(name_wrap),
+            "the text input must live inside a styled Transform so flex layout can position it"
+        );
+        let name_wrap_style = world
+            .find_component(name_wrap, "#pose_library_name_wrap_style")
+            .and_then(|id| world.get_component_by_id_as::<StyleComponent>(id))
+            .unwrap();
+        assert_eq!(name_wrap_style.width, SizeDimension::GlyphUnits(14.5));
         assert_eq!(
             world
                 .get_component_by_id_as::<TextInputComponent>(name_input)
@@ -827,8 +900,38 @@ mod tests {
             .unwrap();
         assert_eq!(
             name_style.font_size,
-            SizeDimension::GlyphUnits(POSE_PANEL_ACTION_FONT_SIZE_GU),
-            "library names should match action-button typography"
+            SizeDimension::GlyphUnits(POSE_PANEL_LIBRARY_FONT_SIZE_GU),
+            "library names should be twice the action-button text size"
+        );
+        let capture_style = world
+            .find_component(header, "#pose_capture_action_style")
+            .and_then(|id| world.get_component_by_id_as::<StyleComponent>(id))
+            .unwrap();
+        assert_eq!(capture_style.width, SizeDimension::Auto);
+        let save_style = world
+            .find_component(header, "#pose_save_action_style")
+            .and_then(|id| world.get_component_by_id_as::<StyleComponent>(id))
+            .unwrap();
+        assert_eq!(save_style.width, SizeDimension::Auto);
+        let header_style = world
+            .find_component(header, "#pose_library_header_style")
+            .and_then(|id| world.get_component_by_id_as::<StyleComponent>(id))
+            .unwrap();
+        assert_eq!(header_style.display, Some(Display::Flex));
+        assert_eq!(header_style.height, SizeDimension::GlyphUnits(4.2));
+        let layout = world.add_component(LayoutComponent::new(29.5).with_height(10.0));
+        world.add_child(layout, header).unwrap();
+        LayoutSystem::new().tick(&mut world, &mut emit);
+        let capture = world
+            .find_component(header, "#pose_capture_action")
+            .unwrap();
+        let save = world.find_component(header, "#pose_save_action").unwrap();
+        let name_x = emitted_translation(&emit, name_wrap)[0];
+        let capture_x = emitted_translation(&emit, capture)[0];
+        let save_x = emitted_translation(&emit, save)[0];
+        assert!(
+            name_x < capture_x && capture_x < save_x,
+            "header layout must place name, Capture, and Save in non-overlapping horizontal order"
         );
 
         let row =
@@ -841,17 +944,90 @@ mod tests {
                 .is_some()
         );
         let body = world.find_component(row, "#pose_row_body").unwrap();
+        let row_text = world
+            .find_component(body, "#pose_row_text")
+            .and_then(|id| world.get_component_by_id_as::<TextComponent>(id))
+            .unwrap();
+        assert_eq!(
+            row_text.authored_font_size, POSE_PANEL_BASE_FONT_SIZE_WU,
+            "pose labels should not render at the global 1.0-WU default before layout"
+        );
+        let row_text_root = world
+            .find_component(body, "#pose_row_text_root")
+            .and_then(|id| world.get_component_by_id_as::<TransformComponent>(id))
+            .unwrap();
+        assert_eq!(
+            row_text_root.transform.translation[2], AUTO_TEXT_LIFT_Z,
+            "pose labels must render in front of their generated row background"
+        );
         assert_eq!(
             world.parent_of(world.find_component(row, "#pose_row_option").unwrap()),
             Some(body),
             "only the row body should own the local-selection marker"
         );
         assert!(world.find_component(row, "#pose_apply_action").is_some());
+        let row_container_style = world
+            .find_component(row, "#pose_row_container_style")
+            .and_then(|id| world.get_component_by_id_as::<StyleComponent>(id))
+            .unwrap();
+        assert_eq!(row_container_style.display, Some(Display::Flex));
+        assert_eq!(row_container_style.height, SizeDimension::GlyphUnits(3.2));
         let row_style = world
             .find_component(row, "#pose_row_style")
             .and_then(|id| world.get_component_by_id_as::<StyleComponent>(id))
             .unwrap();
         assert_eq!(row_style.font_size, SizeDimension::GlyphUnits(1.0));
+    }
+
+    #[test]
+    fn capture_intent_uses_panel_scope_for_completion_rerender() {
+        let mut world = World::default();
+        let panel_root = world.add_component_boxed_named(
+            "pose_capture_panel_root",
+            Box::new(TransformComponent::new()),
+        );
+        let status = world.add_component_boxed_named(
+            "pose_panel_status_value",
+            Box::new(TextComponent::new("idle")),
+        );
+        let target = world.add_component(PoseCaptureComponent::new());
+        let library = world.add_component(PoseCaptureLibraryComponent::new(PoseTargetRef::Query(
+            "TODO".into(),
+        )));
+        world.add_child(target, library).unwrap();
+        let header = spawn_library_header(&mut world, "avatar", target, library);
+        world.add_child(panel_root, status).unwrap();
+        world.add_child(panel_root, header).unwrap();
+        let capture_button = world
+            .find_component(header, "#pose_capture_action")
+            .unwrap();
+        let mut emitter = TestEmitter {
+            intents: Vec::new(),
+            scopes: Vec::new(),
+        };
+        let context = Arc::new(Mutex::new(EditorContextState::default()));
+        let mut renderer = DataRendererSystem::new();
+
+        assert!(handle_pose_panel_click(
+            &mut world,
+            &mut emitter,
+            panel_root,
+            capture_button,
+            &context,
+            &mut renderer,
+        ));
+        assert!(matches!(
+            emitter.intents.last(),
+            Some(IntentValue::PoseCapture {
+                target: emitted_target,
+                ..
+            }) if *emitted_target == target
+        ));
+        assert_eq!(
+            emitter.scopes.last().copied(),
+            Some(panel_root),
+            "capture completion must remain in the panel's event scope"
+        );
     }
 
     #[test]
@@ -898,6 +1074,7 @@ mod tests {
         let context = Arc::new(Mutex::new(EditorContextState::default()));
         let mut emitter = TestEmitter {
             intents: Vec::new(),
+            scopes: Vec::new(),
         };
         let mut renderer = DataRendererSystem::new();
         assert!(handle_pose_panel_click(
@@ -955,6 +1132,7 @@ mod tests {
         }));
         let mut emitter = TestEmitter {
             intents: Vec::new(),
+            scopes: Vec::new(),
         };
         let mut renderer = DataRendererSystem::new();
         assert!(handle_pose_panel_click(
@@ -1021,6 +1199,7 @@ mod tests {
         let context = Arc::new(Mutex::new(EditorContextState::default()));
         let mut emitter = TestEmitter {
             intents: Vec::new(),
+            scopes: Vec::new(),
         };
         let mut renderer = DataRendererSystem::new();
 
@@ -1156,6 +1335,7 @@ mod tests {
         }));
         let mut emitter = TestEmitter {
             intents: Vec::new(),
+            scopes: Vec::new(),
         };
         let mut renderer = DataRendererSystem::new();
 
@@ -1272,6 +1452,7 @@ mod tests {
 
         let mut emitter = TestEmitter {
             intents: Vec::new(),
+            scopes: Vec::new(),
         };
         let mut renderer = DataRendererSystem::new();
         assert!(activate_pose_panel_for_selection(
@@ -1391,6 +1572,7 @@ mod tests {
         let context = Arc::new(Mutex::new(EditorContextState::default()));
         let mut emitter = TestEmitter {
             intents: Vec::new(),
+            scopes: Vec::new(),
         };
         let mut renderer = DataRendererSystem::new();
 

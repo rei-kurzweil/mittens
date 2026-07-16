@@ -24,7 +24,7 @@ Models without `PoseCapture` do not appear in the panel.
 
 Each opted-in target has one library header:
 
-- `Capture` records the current joint transforms into that library.
+- `Capture` records joints whose local transform differs from the glTF import/rest pose.
 - `Save` writes the complete library to disk.
 
 Each pose has a row body and an `Apply` button:
@@ -67,6 +67,6 @@ Each pose module exports one `pose()` function. `library.mms` imports every gene
 
 ## Interaction with live avatar control
 
-Capture records transforms at that moment. If `AVC`, `XRHand`, animation, constraints, or another system continues writing the same joints, it may immediately overwrite an applied pose. Pause or scope competing drivers when a persistent applied pose is required.
+Capture omits untouched rest-pose joints, so applying a pose does not reset unrelated bones such as an AVC-owned head joint. A joint that is actively moved away from its imported rest pose by `AVC`, `XRHand`, animation, constraints, or another system is still considered changed and will be captured. Those systems may also immediately overwrite an applied pose, so pause or scope competing drivers when a persistent applied pose is required.
 
 Pose capture does not replace rig setup. Configure bone names, pole directions, and wrist corrections first, then capture useful configurations.

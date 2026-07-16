@@ -5,6 +5,7 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::rx::TextInputCaretDirection;
 use crate::engine::ecs::system::TextSystem;
+use crate::engine::ecs::system::layout::AUTO_TEXT_LIFT_Z;
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, Signal, SignalEmitter, SignalKind, World,
 };
@@ -494,7 +495,7 @@ fn ensure_text_target(
 
     let content = world.add_component_boxed_named(
         OWNED_TEXT_INPUT_CONTENT_LABEL,
-        Box::new(TransformComponent::new().with_position(0.0, 0.0, 0.2)),
+        Box::new(TransformComponent::new().with_position(0.0, 0.0, AUTO_TEXT_LIFT_Z)),
     );
     let text = world.add_component_boxed_named(
         OWNED_TEXT_INPUT_TEXT_LABEL,
@@ -728,6 +729,24 @@ mod tests {
 
         assert!((text.font_size - 0.072).abs() < f32::EPSILON);
         assert!((text.authored_font_size - 0.072).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn generated_text_uses_standard_layout_depth_lift() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let input = world.add_component(TextInputComponent::new("shallow"));
+
+        ensure_text_target(&mut world, &mut emit, input).expect("generated text");
+        let content = resolve_named_descendant(&world, input, OWNED_TEXT_INPUT_CONTENT_LABEL)
+            .expect("generated text content transform");
+        let translation = world
+            .get_component_by_id_as::<TransformComponent>(content)
+            .expect("generated text content transform")
+            .transform
+            .translation;
+
+        assert_eq!(translation, [0.0, 0.0, AUTO_TEXT_LIFT_Z]);
     }
 
     #[test]
