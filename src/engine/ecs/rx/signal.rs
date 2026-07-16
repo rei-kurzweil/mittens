@@ -479,6 +479,9 @@ pub enum IntentValue {
         component_ids: Vec<ComponentId>,
     },
 
+    InitializePoseCapture {
+        target: ComponentId,
+    },
     PoseCapture {
         target: ComponentId,
         pose_name: Option<String>,
@@ -881,6 +884,7 @@ impl IntentValue {
             IntentValue::RegisterEditor { .. } => "register_editor",
             IntentValue::RegisterAction { .. } => "register_action",
 
+            IntentValue::InitializePoseCapture { .. } => "initialize_pose_capture",
             IntentValue::PoseCapture { .. } => "pose_capture",
             IntentValue::PoseApply { .. } => "pose_apply",
 

@@ -17,7 +17,38 @@ pub struct PoseCaptureComponent {
     pub include_scale: bool,
     pub store_rest_deltas: bool,
     #[serde(skip)]
+    pub runtime: PoseCaptureRuntime,
+    #[serde(skip)]
     component: Option<ComponentId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PoseCaptureReconciliationState {
+    Unreconciled,
+    Authored,
+    Hydrated,
+    New,
+    Unsaved,
+    LoadFailed {
+        asset_name: String,
+        error: String,
+        overwrite_warning_issued: bool,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PoseCaptureRuntime {
+    pub state: PoseCaptureReconciliationState,
+    pub asset_name_draft: Option<String>,
+}
+
+impl Default for PoseCaptureRuntime {
+    fn default() -> Self {
+        Self {
+            state: PoseCaptureReconciliationState::Unreconciled,
+            asset_name_draft: None,
+        }
+    }
 }
 
 impl PoseCaptureComponent {
@@ -28,6 +59,7 @@ impl PoseCaptureComponent {
             target_mode: PoseCaptureTargetMode::WholeSubtree,
             include_scale: true,
             store_rest_deltas: false,
+            runtime: PoseCaptureRuntime::default(),
             component: None,
         }
     }
@@ -46,6 +78,46 @@ impl PoseCaptureComponent {
         self.asset_name = Some(asset_name);
         self
     }
+
+    pub fn asset_name_draft(&self) -> &str {
+        self.runtime
+            .asset_name_draft
+            .as_deref()
+            .or(self.asset_name.as_deref())
+            .unwrap_or("")
+    }
+
+    pub fn set_asset_name_draft(&mut self, draft: impl Into<String>) -> bool {
+        let draft = draft.into();
+        let changed = self.asset_name.as_deref() != Some(draft.as_str());
+        self.runtime.asset_name_draft = Some(draft.clone());
+        if changed
+            && matches!(
+                self.runtime.state,
+                PoseCaptureReconciliationState::Authored
+                    | PoseCaptureReconciliationState::Hydrated
+                    | PoseCaptureReconciliationState::New
+                    | PoseCaptureReconciliationState::LoadFailed { .. }
+            )
+        {
+            self.runtime.state = PoseCaptureReconciliationState::Unsaved;
+        }
+        if !is_valid_pose_asset_name(&draft) {
+            return false;
+        }
+
+        self.asset_name = Some(draft);
+        true
+    }
+
+    pub fn mark_unsaved(&mut self) {
+        if !matches!(
+            self.runtime.state,
+            PoseCaptureReconciliationState::LoadFailed { .. }
+        ) {
+            self.runtime.state = PoseCaptureReconciliationState::Unsaved;
+        }
+    }
 }
 
 impl Component for PoseCaptureComponent {
@@ -63,6 +135,13 @@ impl Component for PoseCaptureComponent {
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::InitializePoseCapture { target: component },
+        );
     }
 
     fn to_mms_ast(
@@ -425,5 +504,27 @@ mod tests {
         for invalid in ["", "two words", "../escape", "café", "a/b"] {
             assert!(!is_valid_pose_asset_name(invalid), "{invalid}");
         }
+    }
+
+    #[test]
+    fn changing_draft_away_from_failed_asset_permanently_removes_overwrite_guard() {
+        let mut capture = PoseCaptureComponent::new().with_asset_name("broken");
+        capture.runtime.state = PoseCaptureReconciliationState::LoadFailed {
+            asset_name: "broken".into(),
+            error: "bad manifest".into(),
+            overwrite_warning_issued: false,
+        };
+        capture.runtime.asset_name_draft = Some("broken".into());
+
+        assert!(!capture.set_asset_name_draft("../temporary"));
+        assert!(matches!(
+            capture.runtime.state,
+            PoseCaptureReconciliationState::Unsaved
+        ));
+        assert!(capture.set_asset_name_draft("broken"));
+        assert!(matches!(
+            capture.runtime.state,
+            PoseCaptureReconciliationState::Unsaved
+        ));
     }
 }

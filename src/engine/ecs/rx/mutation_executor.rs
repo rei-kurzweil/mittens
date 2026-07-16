@@ -2,6 +2,9 @@ use crate::engine::ecs::component::{
     AnimationState, RenderableComponent, TextComponent, TransformComponent,
 };
 use crate::engine::ecs::system::SystemWorld;
+use crate::engine::ecs::system::pose_capture_system::{
+    pose_assets_root, reconcile_pose_capture_at_root,
+};
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, Signal, SignalEmitter, World};
 use crate::engine::graphics::VisualWorld;
 
@@ -651,6 +654,13 @@ impl RxMutationExecutor {
                 }
             }
 
+            IntentValue::InitializePoseCapture { target } => {
+                if let Err(error) =
+                    reconcile_pose_capture_at_root(world, emit, *target, &pose_assets_root())
+                {
+                    eprintln!("[PoseCaptureSystem] initialization failed: {error}");
+                }
+            }
             IntentValue::PoseCapture { target, pose_name } => {
                 systems
                     .pose_capture

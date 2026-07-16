@@ -1,10 +1,15 @@
 use crate::engine::ecs::component::{
     EditorComponent, GLTFComponent, PoseBoneEntry, PoseCaptureComponent,
-    PoseCaptureLibraryComponent, PoseCapturePoseComponent, PoseTargetRef, TransformComponent,
+    PoseCaptureLibraryComponent, PoseCapturePoseComponent, PoseCaptureReconciliationState,
+    PoseTargetRef, TransformComponent,
 };
 use crate::engine::ecs::rx::SignalEmitter;
 use crate::engine::ecs::{ComponentId, IntentValue, World};
+use crate::scripting::component_registry::spawn_tree_uninitialized;
+use crate::scripting::object::{CeChild, MaterializedCE};
+use crate::scripting::runner::MeowMeowRunner;
 use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Default)]
 pub struct PoseCaptureSystem;
@@ -167,6 +172,9 @@ impl PoseCaptureSystem {
             return None;
         }
         world.init_component_tree(pose_id, emit);
+        if let Some(capture) = world.get_component_by_id_as_mut::<PoseCaptureComponent>(target) {
+            capture.mark_unsaved();
+        }
         Some(pose_id)
     }
 
@@ -227,6 +235,392 @@ impl PoseCaptureSystem {
         }
         None
     }
+}
+
+pub fn pose_assets_root() -> PathBuf {
+    PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/components/poses"
+    ))
+}
+
+pub fn sanitize_pose_asset_name(value: &str) -> String {
+    let sanitized: String = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if sanitized.bytes().any(|byte| byte.is_ascii_alphanumeric()) {
+        sanitized
+    } else {
+        "pose_library".to_string()
+    }
+}
+
+pub fn gltf_uri_stem(uri: &str) -> Option<String> {
+    let without_fragment = uri.split(['?', '#']).next().unwrap_or(uri);
+    Path::new(without_fragment)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .map(str::to_string)
+}
+
+pub fn pose_asset_name_for_gltf_uri(uri: &str) -> String {
+    gltf_uri_stem(uri)
+        .map(|stem| sanitize_pose_asset_name(&stem))
+        .unwrap_or_else(|| "pose_library".to_string())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PoseSelectionActivation {
+    pub gltf: ComponentId,
+    pub captures: Vec<ComponentId>,
+    pub created_capture: Option<ComponentId>,
+}
+
+pub fn ensure_pose_capture_for_gltf_selection(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    selected: ComponentId,
+) -> Result<Option<PoseSelectionActivation>, String> {
+    ensure_pose_capture_for_gltf_selection_at_root(world, emit, selected, &pose_assets_root())
+}
+
+pub fn ensure_pose_capture_for_gltf_selection_at_root(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    selected: ComponentId,
+    assets_root: &Path,
+) -> Result<Option<PoseSelectionActivation>, String> {
+    let Some(gltf) = gltf_for_visual_selection(world, selected) else {
+        return Ok(None);
+    };
+
+    let mut captures: Vec<_> = world
+        .all_components()
+        .filter(|&id| {
+            world
+                .get_component_by_id_as::<PoseCaptureComponent>(id)
+                .is_some()
+                && owning_gltf(world, id) == Some(gltf)
+        })
+        .collect();
+    let mut created_capture = None;
+
+    if captures.is_empty() {
+        let (uri, label) = {
+            let gltf_component = world
+                .get_component_by_id_as::<GLTFComponent>(gltf)
+                .ok_or_else(|| format!("resolved glTF {gltf:?} no longer exists"))?;
+            let label = world
+                .component_label(gltf)
+                .filter(|label| !label.is_empty())
+                .map(str::to_string)
+                .or_else(|| gltf_uri_stem(&gltf_component.uri))
+                .unwrap_or_else(|| "Pose Library".to_string());
+            (gltf_component.uri.clone(), label)
+        };
+        let capture = world.add_component(
+            PoseCaptureComponent::new()
+                .with_label(label)
+                .with_asset_name(pose_asset_name_for_gltf_uri(&uri)),
+        );
+        if let Err(error) = world.add_child(gltf, capture) {
+            let _ = world.remove_component_subtree(capture);
+            return Err(format!(
+                "cannot attach pose capture to selected glTF: {error}"
+            ));
+        }
+        world.init_component_tree(capture, emit);
+        captures.push(capture);
+        created_capture = Some(capture);
+    }
+
+    let mut errors = Vec::new();
+    for &capture in &captures {
+        if let Err(error) = reconcile_pose_capture_at_root(world, emit, capture, assets_root) {
+            errors.push(format!("{capture:?}: {error}"));
+        }
+    }
+    if !errors.is_empty() {
+        return Err(format!(
+            "pose capture reconciliation failed: {}",
+            errors.join("; ")
+        ));
+    }
+
+    Ok(Some(PoseSelectionActivation {
+        gltf,
+        captures,
+        created_capture,
+    }))
+}
+
+pub fn reconcile_pose_captures(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+) -> Vec<(ComponentId, Result<ComponentId, String>)> {
+    reconcile_pose_captures_at_root(world, emit, &pose_assets_root())
+}
+
+pub fn reconcile_pose_captures_at_root(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    assets_root: &Path,
+) -> Vec<(ComponentId, Result<ComponentId, String>)> {
+    let targets: Vec<_> = world
+        .all_components()
+        .filter(|&id| {
+            world
+                .get_component_by_id_as::<PoseCaptureComponent>(id)
+                .is_some_and(|capture| {
+                    matches!(
+                        capture.runtime.state,
+                        PoseCaptureReconciliationState::Unreconciled
+                    )
+                })
+        })
+        .collect();
+    targets
+        .into_iter()
+        .map(|target| {
+            let result = reconcile_pose_capture_at_root(world, emit, target, assets_root);
+            (target, result)
+        })
+        .collect()
+}
+
+pub fn reconcile_pose_capture_at_root(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    target: ComponentId,
+    assets_root: &Path,
+) -> Result<ComponentId, String> {
+    if world
+        .get_component_by_id_as::<PoseCaptureComponent>(target)
+        .is_none()
+    {
+        return Err(format!("component {target:?} is not a PoseCapture"));
+    }
+    if !matches!(
+        world
+            .get_component_by_id_as::<PoseCaptureComponent>(target)
+            .unwrap()
+            .runtime
+            .state,
+        PoseCaptureReconciliationState::Unreconciled
+    ) {
+        return world
+            .children_of(target)
+            .iter()
+            .copied()
+            .find(|&child| {
+                world
+                    .get_component_by_id_as::<PoseCaptureLibraryComponent>(child)
+                    .is_some()
+            })
+            .ok_or_else(|| format!("reconciled PoseCapture {target:?} has no library"));
+    }
+
+    let gltf = owning_gltf(world, target);
+    let derived_name = gltf
+        .and_then(|gltf| world.get_component_by_id_as::<GLTFComponent>(gltf))
+        .map(|gltf| pose_asset_name_for_gltf_uri(&gltf.uri))
+        .unwrap_or_else(|| "pose_library".to_string());
+    {
+        let capture = world
+            .get_component_by_id_as_mut::<PoseCaptureComponent>(target)
+            .unwrap();
+        if capture.asset_name.is_none() {
+            capture.asset_name = Some(derived_name);
+        }
+        capture.runtime.asset_name_draft = capture.asset_name.clone();
+    }
+
+    let mut authored_libraries: Vec<_> = world
+        .children_of(target)
+        .iter()
+        .copied()
+        .filter(|&child| {
+            world
+                .get_component_by_id_as::<PoseCaptureLibraryComponent>(child)
+                .is_some()
+        })
+        .collect();
+    if let Some(library) = authored_libraries.first().copied() {
+        for duplicate in authored_libraries.drain(1..) {
+            let _ = world.remove_component_subtree(duplicate);
+        }
+        let capture = world
+            .get_component_by_id_as_mut::<PoseCaptureComponent>(target)
+            .unwrap();
+        capture.runtime.state = PoseCaptureReconciliationState::Authored;
+        return Ok(library);
+    }
+
+    let asset_name = world
+        .get_component_by_id_as::<PoseCaptureComponent>(target)
+        .and_then(|capture| capture.asset_name.clone())
+        .unwrap_or_else(|| "pose_library".to_string());
+    let manifest = assets_root.join(&asset_name).join("library.mms");
+    if !manifest.exists() {
+        let library = attach_empty_library(world, emit, target)?;
+        world
+            .get_component_by_id_as_mut::<PoseCaptureComponent>(target)
+            .unwrap()
+            .runtime
+            .state = PoseCaptureReconciliationState::New;
+        return Ok(library);
+    }
+
+    match load_validated_pose_library(&manifest, world, emit) {
+        Ok(library) => {
+            world
+                .add_child(target, library)
+                .map_err(|error| format!("cannot attach hydrated pose library: {error}"))?;
+            if world.is_initialized(target) {
+                world.init_component_tree(library, emit);
+            }
+            world
+                .get_component_by_id_as_mut::<PoseCaptureComponent>(target)
+                .unwrap()
+                .runtime
+                .state = PoseCaptureReconciliationState::Hydrated;
+            Ok(library)
+        }
+        Err(error) => {
+            let library = attach_empty_library(world, emit, target)?;
+            world
+                .get_component_by_id_as_mut::<PoseCaptureComponent>(target)
+                .unwrap()
+                .runtime
+                .state = PoseCaptureReconciliationState::LoadFailed {
+                asset_name,
+                error: error.clone(),
+                overwrite_warning_issued: false,
+            };
+            Ok(library)
+        }
+    }
+}
+
+fn attach_empty_library(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    target: ComponentId,
+) -> Result<ComponentId, String> {
+    let library = world.add_component(PoseCaptureLibraryComponent::new(PoseTargetRef::Query(
+        "TODO".to_string(),
+    )));
+    world
+        .add_child(target, library)
+        .map_err(|error| format!("cannot attach empty pose library: {error}"))?;
+    if world.is_initialized(target) {
+        world.init_component_tree(library, emit);
+    }
+    Ok(library)
+}
+
+fn load_validated_pose_library(
+    manifest: &Path,
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+) -> Result<ComponentId, String> {
+    let manifest_text = manifest.to_str().ok_or_else(|| {
+        format!(
+            "pose manifest path is not valid UTF-8: {}",
+            manifest.display()
+        )
+    })?;
+    let module = MeowMeowRunner::load_module_file(manifest_text)?;
+    if module.sequence.len() != 1 {
+        return Err(format!(
+            "pose manifest must contain exactly one library root; found {}",
+            module.sequence.len()
+        ));
+    }
+    validate_library_materialized(&module.sequence[0])?;
+
+    let mut validation_world = World::default();
+    let mut validation_emit = NullEmitter;
+    let validation_root = spawn_tree_uninitialized(
+        &module.sequence[0],
+        &mut validation_world,
+        &mut validation_emit,
+    )
+    .map_err(|error| format!("pose manifest validation failed: {error}"))?;
+    validate_library_world(&validation_world, validation_root)?;
+
+    spawn_tree_uninitialized(&module.sequence[0], world, emit)
+        .map_err(|error| format!("pose manifest hydration failed: {error}"))
+}
+
+fn validate_library_materialized(root: &MaterializedCE) -> Result<(), String> {
+    if !matches!(
+        root.component_type.as_str(),
+        "PoseCaptureLibrary" | "PoseCaptureLibraryComponent"
+    ) {
+        return Err(format!(
+            "pose manifest root must be PoseCaptureLibrary, found {}",
+            root.component_type
+        ));
+    }
+    for (index, child) in root.children.iter().enumerate() {
+        let CeChild::Spawn(child) = child else {
+            return Err(format!(
+                "pose manifest child {index} must be an authored pose"
+            ));
+        };
+        if !matches!(
+            child.component_type.as_str(),
+            "PoseCapturePose" | "PoseCapturePoseComponent"
+        ) {
+            return Err(format!(
+                "pose manifest child {index} must be PoseCapturePose, found {}",
+                child.component_type
+            ));
+        }
+        if !child.children.is_empty() {
+            return Err(format!(
+                "pose manifest pose child {index} may not contain nested components"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_library_world(world: &World, root: ComponentId) -> Result<(), String> {
+    if world
+        .get_component_by_id_as::<PoseCaptureLibraryComponent>(root)
+        .is_none()
+    {
+        return Err("pose manifest did not materialize a pose library".to_string());
+    }
+    for (index, &child) in world.children_of(root).iter().enumerate() {
+        if world
+            .get_component_by_id_as::<PoseCapturePoseComponent>(child)
+            .is_none()
+        {
+            return Err(format!(
+                "pose manifest child {index} did not materialize a pose"
+            ));
+        }
+    }
+    Ok(())
+}
+
+struct NullEmitter;
+
+impl SignalEmitter for NullEmitter {
+    fn push_event(&mut self, _scope: ComponentId, _event: crate::engine::ecs::EventSignal) {}
+
+    fn push_intent(&mut self, _scope: ComponentId, _intent: crate::engine::ecs::IntentSignal) {}
 }
 
 pub fn resolve_pose_apply_target(
@@ -332,7 +726,8 @@ fn resolve_joint_query(world: &World, gltf_id: ComponentId, query: &str) -> Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::ecs::component::RenderableComponent;
+    use crate::engine::ecs::component::{RenderableComponent, save_pose_library_asset};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     struct PoseFixture {
         world: World,
@@ -405,6 +800,292 @@ mod tests {
             selected_node,
             selected_joint,
         }
+    }
+
+    fn test_directory(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("mittens-{name}-{nonce}"))
+    }
+
+    fn write_pose_library(root: &Path, asset_name: &str, pose_name: &str) {
+        let mut source = World::default();
+        let library = source.add_component(PoseCaptureLibraryComponent::new(PoseTargetRef::Query(
+            "TODO".into(),
+        )));
+        let pose = source.add_component(PoseCapturePoseComponent::new(
+            pose_name,
+            PoseTargetRef::Query("TODO".into()),
+            Vec::new(),
+        ));
+        source.add_child(library, pose).unwrap();
+        let manifest = root.join(asset_name).join("library.mms");
+        save_pose_library_asset(&source, library, &manifest).unwrap();
+    }
+
+    #[test]
+    fn derives_sanitized_asset_names_from_gltf_uri_stems() {
+        assert_eq!(
+            pose_asset_name_for_gltf_uri("assets/models/bisket.11.0.glb"),
+            "bisket_11_0"
+        );
+        assert_eq!(
+            pose_asset_name_for_gltf_uri("https://example.test/cat girl.glb?v=2"),
+            "cat_girl"
+        );
+        assert_eq!(pose_asset_name_for_gltf_uri(""), "pose_library");
+        assert_eq!(sanitize_pose_asset_name("..."), "pose_library");
+    }
+
+    #[test]
+    fn reconciliation_preserves_authored_library_and_is_idempotent() {
+        let mut world = World::default();
+        let gltf = world.add_component(GLTFComponent::new("models/avatar.glb"));
+        let target = world.add_component(PoseCaptureComponent::new());
+        let authored = world.add_component(PoseCaptureLibraryComponent::new(PoseTargetRef::Query(
+            "TODO".into(),
+        )));
+        world.add_child(gltf, target).unwrap();
+        world.add_child(target, authored).unwrap();
+        let root = test_directory("pose-authored");
+        write_pose_library(&root, "avatar", "Disk");
+        let mut emit = NullEmitter;
+
+        assert_eq!(
+            reconcile_pose_capture_at_root(&mut world, &mut emit, target, &root).unwrap(),
+            authored
+        );
+        assert!(matches!(
+            world
+                .get_component_by_id_as::<PoseCaptureComponent>(target)
+                .unwrap()
+                .runtime
+                .state,
+            PoseCaptureReconciliationState::Authored
+        ));
+        assert_eq!(
+            reconcile_pose_capture_at_root(&mut world, &mut emit, target, &root).unwrap(),
+            authored
+        );
+        assert_eq!(
+            world
+                .children_of(target)
+                .iter()
+                .filter(|&&id| world
+                    .get_component_by_id_as::<PoseCaptureLibraryComponent>(id)
+                    .is_some())
+                .count(),
+            1
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn valid_manifests_hydrate_independent_runtime_copies() {
+        let root = test_directory("pose-hydrate");
+        write_pose_library(&root, "shared", "Idle");
+        let mut world = World::default();
+        let gltf_a = world.add_component(GLTFComponent::new("a.glb"));
+        let gltf_b = world.add_component(GLTFComponent::new("b.glb"));
+        let target_a = world.add_component(PoseCaptureComponent::new().with_asset_name("shared"));
+        let target_b = world.add_component(PoseCaptureComponent::new().with_asset_name("shared"));
+        world.add_child(gltf_a, target_a).unwrap();
+        world.add_child(gltf_b, target_b).unwrap();
+        let mut emit = NullEmitter;
+
+        let library_a =
+            reconcile_pose_capture_at_root(&mut world, &mut emit, target_a, &root).unwrap();
+        let library_b =
+            reconcile_pose_capture_at_root(&mut world, &mut emit, target_b, &root).unwrap();
+        assert_ne!(library_a, library_b);
+        assert_eq!(world.children_of(library_a).len(), 1);
+        assert_eq!(world.children_of(library_b).len(), 1);
+        let extra = world.add_component(PoseCapturePoseComponent::new(
+            "Extra",
+            PoseTargetRef::Query("TODO".into()),
+            Vec::new(),
+        ));
+        world.add_child(library_a, extra).unwrap();
+        assert_eq!(world.children_of(library_a).len(), 2);
+        assert_eq!(world.children_of(library_b).len(), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn malformed_manifest_attaches_empty_library_and_preserves_load_error() {
+        let root = test_directory("pose-malformed");
+        let directory = root.join("broken");
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(
+            directory.join("library.mms"),
+            "PoseCaptureLibrary.new()\nPoseCaptureLibrary.new()\n",
+        )
+        .unwrap();
+        let mut world = World::default();
+        let gltf = world.add_component(GLTFComponent::new("broken.glb"));
+        let target = world.add_component(PoseCaptureComponent::new());
+        world.add_child(gltf, target).unwrap();
+        let mut emit = NullEmitter;
+
+        let library = reconcile_pose_capture_at_root(&mut world, &mut emit, target, &root).unwrap();
+        assert!(world.children_of(library).is_empty());
+        assert!(matches!(
+            &world
+                .get_component_by_id_as::<PoseCaptureComponent>(target)
+                .unwrap()
+                .runtime
+                .state,
+            PoseCaptureReconciliationState::LoadFailed {
+                asset_name,
+                error,
+                overwrite_warning_issued: false,
+            } if asset_name == "broken" && error.contains("exactly one")
+        ));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn visual_selection_activation_creates_hydrates_and_reuses_one_capture() {
+        let root = test_directory("pose-selection-hydrate");
+        write_pose_library(&root, "selected", "Idle");
+        let mut fixture = fixture();
+        let marker = fixture.world.add_component_boxed_named(
+            "armature_joint_marker",
+            Box::new(TransformComponent::new()),
+        );
+        let marker_renderable = fixture.world.add_component(RenderableComponent::cube());
+        fixture
+            .world
+            .add_child(fixture.selected_joint, marker)
+            .unwrap();
+        fixture.world.add_child(marker, marker_renderable).unwrap();
+        let mut emit = NullEmitter;
+
+        let first = ensure_pose_capture_for_gltf_selection_at_root(
+            &mut fixture.world,
+            &mut emit,
+            marker_renderable,
+            &root,
+        )
+        .unwrap()
+        .unwrap();
+        let capture = first.created_capture.unwrap();
+        assert_eq!(first.gltf, fixture.selected_gltf);
+        assert_eq!(first.captures, vec![capture]);
+        assert_eq!(
+            fixture.world.parent_of(capture),
+            Some(fixture.selected_gltf)
+        );
+        let library = fixture
+            .world
+            .children_of(capture)
+            .iter()
+            .copied()
+            .find(|&id| {
+                fixture
+                    .world
+                    .get_component_by_id_as::<PoseCaptureLibraryComponent>(id)
+                    .is_some()
+            })
+            .unwrap();
+        assert_eq!(fixture.world.children_of(library).len(), 1);
+        assert!(matches!(
+            fixture
+                .world
+                .get_component_by_id_as::<PoseCaptureComponent>(capture)
+                .unwrap()
+                .runtime
+                .state,
+            PoseCaptureReconciliationState::Hydrated
+        ));
+
+        for selected in [marker, fixture.selected_node, fixture.selected_gltf] {
+            let activation = ensure_pose_capture_for_gltf_selection_at_root(
+                &mut fixture.world,
+                &mut emit,
+                selected,
+                &root,
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(activation.created_capture, None);
+            assert_eq!(activation.captures, vec![capture]);
+        }
+        assert_eq!(
+            fixture
+                .world
+                .all_components()
+                .filter(|&id| fixture
+                    .world
+                    .get_component_by_id_as::<PoseCaptureComponent>(id)
+                    .is_some()
+                    && owning_gltf(&fixture.world, id) == Some(fixture.selected_gltf))
+                .count(),
+            1
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn visual_selection_activation_is_unrelated_safe_and_keeps_gltfs_independent() {
+        let root = test_directory("pose-selection-independent");
+        let mut fixture = fixture();
+        let unrelated = fixture.world.add_component(TransformComponent::new());
+        let mut emit = NullEmitter;
+        let captures_before = fixture
+            .world
+            .all_components()
+            .filter(|&id| {
+                fixture
+                    .world
+                    .get_component_by_id_as::<PoseCaptureComponent>(id)
+                    .is_some()
+            })
+            .count();
+
+        assert!(
+            ensure_pose_capture_for_gltf_selection_at_root(
+                &mut fixture.world,
+                &mut emit,
+                unrelated,
+                &root,
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert_eq!(
+            fixture
+                .world
+                .all_components()
+                .filter(|&id| fixture
+                    .world
+                    .get_component_by_id_as::<PoseCaptureComponent>(id)
+                    .is_some())
+                .count(),
+            captures_before
+        );
+
+        let activation = ensure_pose_capture_for_gltf_selection_at_root(
+            &mut fixture.world,
+            &mut emit,
+            fixture.selected_gltf,
+            &root,
+        )
+        .unwrap()
+        .unwrap();
+        let selected_capture = activation.created_capture.unwrap();
+        assert_ne!(selected_capture, fixture.owner_target);
+        assert_eq!(
+            owning_gltf(&fixture.world, fixture.owner_target),
+            Some(fixture.owner_gltf)
+        );
+        assert_eq!(
+            owning_gltf(&fixture.world, selected_capture),
+            Some(fixture.selected_gltf)
+        );
+        std::fs::remove_dir_all(root).unwrap_or(());
     }
 
     #[test]

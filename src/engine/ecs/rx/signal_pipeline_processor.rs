@@ -173,6 +173,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterSignalRouteUpward { .. }
             | IntentValue::RemoveSignalRouteUpward { .. }
             | IntentValue::SpawnComponentTree { .. }
+            | IntentValue::InitializePoseCapture { .. }
             | IntentValue::PoseCapture { .. }
             | IntentValue::PoseApply { .. }
             | IntentValue::HttpClientRequest { .. }
@@ -293,6 +294,7 @@ impl SignalPipelineProcessor {
             IntentValue::TextInputMoveCaret { .. } => None,
             IntentValue::TextInputMoveCaretTo { .. } => None,
             IntentValue::SpawnComponentTree { .. }
+            | IntentValue::InitializePoseCapture { .. }
             | IntentValue::PoseCapture { .. }
             | IntentValue::PoseApply { .. }
             | IntentValue::HttpClientRequest { .. }

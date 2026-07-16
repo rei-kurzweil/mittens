@@ -1,7 +1,7 @@
 use crate::engine::ecs::component::{
-    ColorComponent, OpacityComponent, RaycastableComponent, RenderableComponent,
-    SerializeComponent, TextComponent, TextInputComponent, TextInputGlyphHitComponent,
-    TransformComponent,
+    ColorComponent, LayoutComponent, OpacityComponent, RaycastableComponent, RenderableComponent,
+    SerializeComponent, SizeDimension, StyleComponent, TextComponent, TextInputComponent,
+    TextInputGlyphHitComponent, TransformComponent,
 };
 use crate::engine::ecs::rx::TextInputCaretDirection;
 use crate::engine::ecs::system::TextSystem;
@@ -498,7 +498,7 @@ fn ensure_text_target(
     );
     let text = world.add_component_boxed_named(
         OWNED_TEXT_INPUT_TEXT_LABEL,
-        Box::new(TextComponent::new("")),
+        Box::new(TextComponent::new("").with_font_size(text_input_style_font_size_wu(world, root))),
     );
     let raycastable = world.add_component_boxed_named(
         "__text_input_raycastable",
@@ -511,6 +511,32 @@ fn ensure_text_target(
     world.init_component_tree(content, emit);
 
     Some(text)
+}
+
+fn text_input_style_font_size_wu(world: &World, root: ComponentId) -> f32 {
+    let style_font_size = world.children_of(root).iter().find_map(|&child| {
+        world
+            .get_component_by_id_as::<StyleComponent>(child)
+            .map(|style| style.font_size)
+    });
+    let unit_scale = {
+        let mut current = Some(root);
+        let mut scale = 1.0;
+        while let Some(component) = current {
+            if let Some(layout) = world.get_component_by_id_as::<LayoutComponent>(component) {
+                scale = layout.unit_scale;
+                break;
+            }
+            current = world.parent_of(component);
+        }
+        scale
+    };
+
+    match style_font_size {
+        Some(SizeDimension::GlyphUnits(value)) if value > 0.0 => value * unit_scale,
+        Some(SizeDimension::WorldUnits(value)) if value > 0.0 => value,
+        _ => TextComponent::DEFAULT_FONT_SIZE,
+    }
 }
 
 fn ensure_caret_bg(
@@ -589,7 +615,10 @@ fn char_to_byte_index(text: &str, char_index: usize) -> usize {
 mod tests {
     use super::*;
     use crate::engine::ecs::CommandQueue;
-    use crate::engine::ecs::component::{OpacityComponent, TransformComponent};
+    use crate::engine::ecs::component::{
+        Display, LayoutComponent, OpacityComponent, SizeDimension, StyleComponent,
+        TransformComponent,
+    };
     use crate::engine::ecs::system::SystemWorld;
     use crate::engine::graphics::{RenderAssets, VisualWorld};
 
@@ -675,6 +704,30 @@ mod tests {
             .get_component_by_id_as::<OpacityComponent>(caret_bg_opacity)
             .expect("caret bg opacity component after clear");
         assert!(caret_bg_opacity.opacity.abs() < 1e-6);
+    }
+
+    #[test]
+    fn generated_text_respects_input_style_font_size() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let layout = world.add_component(LayoutComponent::new(20.0).with_unit_scale(0.08));
+        let input = world.add_component(TextInputComponent::new("styled"));
+        let style = world.add_component({
+            let mut style = StyleComponent::new();
+            style.display = Some(Display::InlineBlock);
+            style.font_size = SizeDimension::GlyphUnits(0.9);
+            style
+        });
+        let _ = world.add_child(layout, input);
+        let _ = world.add_child(input, style);
+
+        let text = ensure_text_target(&mut world, &mut emit, input).expect("generated text");
+        let text = world
+            .get_component_by_id_as::<TextComponent>(text)
+            .expect("generated text component");
+
+        assert!((text.font_size - 0.072).abs() < f32::EPSILON);
+        assert!((text.authored_font_size - 0.072).abs() < f32::EPSILON);
     }
 
     #[test]

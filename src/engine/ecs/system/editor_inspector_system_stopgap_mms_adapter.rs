@@ -26,7 +26,8 @@ use crate::engine::ecs::system::editor::panel_ui::{
     PanelUiRowSpec, spawn_panel_ui_row_tree, spawn_panel_ui_section_header_tree,
 };
 use crate::engine::ecs::system::editor::pose_panel::{
-    handle_pose_panel_click, rerender_pose_panel,
+    activate_pose_panel_for_selection, handle_pose_panel_click,
+    handle_pose_panel_text_input_changed, rerender_pose_panel,
 };
 use crate::engine::ecs::system::editor::settings_panel::{
     EDITOR_SETTINGS_ARMATURE_ROW_NAME, EDITOR_SETTINGS_ARMATURE_TOGGLE_SLOT_NAME,
@@ -263,6 +264,12 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                         *path = PathBuf::from(text);
                     }
                 }
+                let _ = handle_pose_panel_text_input_changed(
+                    world,
+                    panel_query_root,
+                    *component_id,
+                    text,
+                );
             },
         );
 
@@ -684,8 +691,11 @@ impl EditorInspectorSystemStopgapMmsAdapter {
             SignalKind::SelectionChanged,
             panel_query_root,
             move |world, emit, signal| {
-                let Some(EventSignal::SelectionChanged { selection_root, .. }) =
-                    signal.event.as_ref()
+                let Some(EventSignal::SelectionChanged {
+                    selection_root,
+                    selected_component,
+                    ..
+                }) = signal.event.as_ref()
                 else {
                     return;
                 };
@@ -902,6 +912,41 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         let inspector_workspace_state = Arc::clone(&self.inspector_workspace_state);
         let rendered_inspector_models = Arc::clone(&self.rendered_inspector_models);
         let selection_data_renderer = Arc::clone(&self.data_renderer);
+        let pose_activation_panel_query_root = Arc::clone(&panel_query_root);
+        let pose_activation_data_renderer = Arc::clone(&self.data_renderer);
+        rx.add_handler_closure_named(
+            SignalKind::SelectionChanged,
+            editor_root,
+            Some("editor_pose_activation".to_string()),
+            move |world, emit, signal| {
+                let Some(EventSignal::SelectionChanged {
+                    selection_root,
+                    selected_component,
+                    ..
+                }) = signal.event.as_ref()
+                else {
+                    return;
+                };
+                if *selection_root != editor_root {
+                    return;
+                }
+                let Some(panel_query_root) = *pose_activation_panel_query_root
+                    .lock()
+                    .expect("runtime ui root mutex poisoned")
+                else {
+                    return;
+                };
+                activate_pose_panel_for_selection(
+                    world,
+                    emit,
+                    panel_query_root,
+                    *selected_component,
+                    &mut *pose_activation_data_renderer
+                        .lock()
+                        .expect("data renderer mutex poisoned"),
+                );
+            },
+        );
         rx.add_handler_closure_named(
             SignalKind::SelectionChanged,
             editor_root,
@@ -1345,10 +1390,122 @@ mod tests {
     use super::*;
     use crate::engine::ecs::command_queue::CommandQueue;
     use crate::engine::ecs::component::{
-        DataComponent, DataValue, EditorComponent, SelectionComponent, TransformComponent,
+        DataComponent, DataValue, EditorComponent, GLTFComponent, PoseCaptureComponent,
+        PoseCaptureLibraryComponent, RenderableComponent, SelectionComponent, SelectionEntry,
+        SelectionMode, SignalObserverRouterComponent, TextComponent, TransformComponent,
     };
-    use crate::engine::ecs::system::SystemWorld;
-    use crate::engine::graphics::{RenderAssets, VisualWorld};
+    use crate::engine::ecs::rx::Signal;
+    #[test]
+    fn editor_selection_event_activates_armature_marker_pose_library_and_rerenders_panel() {
+        let mut world = World::default();
+        let mut rx = RxWorld::default();
+        let mut adapter = EditorInspectorSystemStopgapMmsAdapter::default();
+        let editor_root =
+            world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
+        adapter.editor_context_state = Some(Arc::new(Mutex::new(EditorContextState::default())));
+        let runtime_ui_root = adapter
+            .workspace_runtime
+            .get_or_create_runtime_ui_root(&mut world);
+        let panel_root = world.add_component_boxed_named(
+            "pose_capture_panel_root",
+            Box::new(TransformComponent::new()),
+        );
+        let content_slot =
+            world.add_component_boxed_named("content_slot", Box::new(TransformComponent::new()));
+        let status = world.add_component_boxed_named(
+            "pose_panel_status_value",
+            Box::new(TextComponent::new("idle")),
+        );
+        world.add_child(runtime_ui_root, panel_root).unwrap();
+        world.add_child(panel_root, content_slot).unwrap();
+        world.add_child(panel_root, status).unwrap();
+
+        let anchor = world.add_component(TransformComponent::new());
+        let gltf = world.add_component(GLTFComponent::new("models/event-avatar.glb"));
+        let joint = world.add_component_boxed_named("hips", Box::new(TransformComponent::new()));
+        let marker = world.add_component_boxed_named(
+            "armature_joint_marker",
+            Box::new(TransformComponent::new()),
+        );
+        let marker_renderable = world.add_component(RenderableComponent::cube());
+        world.add_child(anchor, gltf).unwrap();
+        world.add_child(anchor, joint).unwrap();
+        world.add_child(joint, marker).unwrap();
+        world.add_child(marker, marker_renderable).unwrap();
+        world
+            .get_component_by_id_as_mut::<GLTFComponent>(gltf)
+            .unwrap()
+            .armature_joint_transforms = vec![joint];
+        let observer_router = world.add_component(
+            SignalObserverRouterComponent::new()
+                .with_blacklist(vec!["editor_panel_refresh".to_string()]),
+        );
+        world.add_child(editor_root, observer_router).unwrap();
+
+        adapter.install_editor_refresh_handlers(&mut rx, editor_root);
+        let event = Signal::event(
+            editor_root,
+            EventSignal::SelectionChanged {
+                selection_root: editor_root,
+                mode: SelectionMode::Single,
+                selected_entries: vec![SelectionEntry {
+                    index: None,
+                    component: marker,
+                }],
+                selected_component: Some(marker),
+                selected_payload: Some(marker),
+            },
+        );
+        rx.dispatch_event_handlers(&mut world, &event);
+
+        let capture = world
+            .children_of(gltf)
+            .iter()
+            .copied()
+            .find(|&id| {
+                world
+                    .get_component_by_id_as::<PoseCaptureComponent>(id)
+                    .is_some()
+            })
+            .expect("selection should create a capture directly under the glTF");
+        assert_eq!(
+            world
+                .children_of(capture)
+                .iter()
+                .filter(|&&id| world
+                    .get_component_by_id_as::<PoseCaptureLibraryComponent>(id)
+                    .is_some())
+                .count(),
+            1
+        );
+        let rendered_list = world
+            .all_components()
+            .find(|&id| {
+                world
+                    .component_label(id)
+                    .is_some_and(|label| label.starts_with("data_renderer_list_"))
+            })
+            .expect("pose panel should build a rendered list after activation");
+        assert!(
+            world
+                .find_component(rendered_list, "#pose_library_header")
+                .is_some(),
+            "the rerendered global model should include the activated library"
+        );
+
+        rx.dispatch_event_handlers(&mut world, &event);
+        assert_eq!(
+            world
+                .children_of(gltf)
+                .iter()
+                .filter(|&&id| world
+                    .get_component_by_id_as::<PoseCaptureComponent>(id)
+                    .is_some())
+                .count(),
+            1,
+            "repeated marker selection must be idempotent"
+        );
+    }
 
     #[test]
     fn world_panel_editor_root_target_does_not_attach_gizmo() {

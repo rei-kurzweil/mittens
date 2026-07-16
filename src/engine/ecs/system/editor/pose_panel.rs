@@ -1,11 +1,11 @@
-use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex};
 
 use crate::engine::ecs::component::{
     ColorComponent, DataComponent, DataValue, Display, EdgeInsets, OptionComponent,
-    PoseCaptureComponent, PoseCaptureLibraryComponent, PoseCapturePoseComponent, PoseTargetRef,
-    RaycastableComponent, SizeDimension, StyleComponent, TextComponent, TransformComponent,
-    is_valid_pose_asset_name, save_pose_library_asset,
+    PoseCaptureComponent, PoseCaptureLibraryComponent, PoseCapturePoseComponent,
+    PoseCaptureReconciliationState, RaycastableComponent, SizeDimension, StyleComponent,
+    TextComponent, TextInputComponent, TransformComponent, is_valid_pose_asset_name,
+    save_pose_library_asset,
 };
 use crate::engine::ecs::system::data_renderer_system::{
     DataRendererSystem, ItemRendererSpec, RendererSpec, UiItem, UiItemKind,
@@ -14,7 +14,8 @@ use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor::world_panel::PANEL_CONTENT_SLOT_SELECTOR;
 use crate::engine::ecs::system::panel_system::{data_text, is_descendant_or_self};
 use crate::engine::ecs::system::pose_capture_system::{
-    resolve_pose_apply_target, validate_pose_apply,
+    ensure_pose_capture_for_gltf_selection, gltf_for_visual_selection, pose_assets_root,
+    reconcile_pose_captures, resolve_pose_apply_target, validate_pose_apply,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 
@@ -22,9 +23,12 @@ pub const POSE_PANEL_ROOT_SELECTOR: &str = "#pose_capture_panel_root";
 pub const POSE_PANEL_SELECTION_NAME: &str = "pose_capture_selection";
 pub const POSE_PANEL_PAYLOAD_NAME: &str = "pose_panel_payload";
 pub const POSE_PANEL_STATUS_VALUE_SELECTOR: &str = "#pose_panel_status_value";
+const POSE_PANEL_ACTION_FONT_SIZE_GU: f32 = 0.9;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PosePanelActionKind {
+    NewLibrary,
+    Rename,
     Capture,
     Save,
     Select,
@@ -34,6 +38,8 @@ pub enum PosePanelActionKind {
 impl PosePanelActionKind {
     fn label(self) -> &'static str {
         match self {
+            Self::NewLibrary => "NewLibrary",
+            Self::Rename => "Rename",
             Self::Capture => "Capture",
             Self::Save => "Save",
             Self::Select => "Select",
@@ -52,6 +58,7 @@ pub struct PosePanelSection {
     pub target: ComponentId,
     pub library: ComponentId,
     pub label: String,
+    pub asset_name_draft: String,
     pub poses: Vec<PosePanelRow>,
 }
 
@@ -64,12 +71,21 @@ pub struct PosePanelRow {
 }
 
 fn pose_panel_items(model: &PosePanelModel) -> Vec<UiItem> {
+    if model.sections.is_empty() {
+        return vec![UiItem {
+            key: "pose_new_library".to_string(),
+            kind: UiItemKind::Info,
+            label: "New Pose Library".to_string(),
+            selected: false,
+            target_ref: None,
+        }];
+    }
     let mut items = Vec::new();
     for section in &model.sections {
         items.push(UiItem {
             key: "pose_library_header".to_string(),
             kind: UiItemKind::Info,
-            label: section.label.clone(),
+            label: section.asset_name_draft.clone(),
             selected: false,
             target_ref: Some(section.library),
         });
@@ -101,14 +117,18 @@ fn add_payload(
     world: &mut World,
     parent: ComponentId,
     action: PosePanelActionKind,
-    target: ComponentId,
-    library: ComponentId,
+    target: Option<ComponentId>,
+    library: Option<ComponentId>,
     pose: Option<ComponentId>,
 ) {
-    let mut data = DataComponent::new()
-        .with_entry("action", DataValue::Text(action.label().to_string()))
-        .with_entry("target_component", DataValue::Component(target))
-        .with_entry("library", DataValue::Component(library));
+    let mut data =
+        DataComponent::new().with_entry("action", DataValue::Text(action.label().to_string()));
+    if let Some(target) = target {
+        data.insert("target_component", DataValue::Component(target));
+    }
+    if let Some(library) = library {
+        data.insert("library", DataValue::Component(library));
+    }
     if let Some(pose) = pose {
         data.insert("pose", DataValue::Component(pose));
     }
@@ -154,7 +174,7 @@ fn spawn_action_button(
             style.background_color = Some([0.10, 0.55, 0.18, 1.0]);
             style.background_z = Some(0.001);
             style.color = Some([0.75, 1.0, 0.45, 1.0]);
-            style.font_size = SizeDimension::GlyphUnits(0.9);
+            style.font_size = SizeDimension::GlyphUnits(POSE_PANEL_ACTION_FONT_SIZE_GU);
             style
         }),
     );
@@ -173,13 +193,13 @@ fn spawn_action_button(
         label,
         [0.75, 1.0, 0.45, 1.0],
     );
-    add_payload(world, root, action, target, library, pose);
+    add_payload(world, root, action, Some(target), Some(library), pose);
     root
 }
 
 fn spawn_library_header(
     world: &mut World,
-    label: &str,
+    asset_name_draft: &str,
     target: ComponentId,
     library: ComponentId,
 ) -> ComponentId {
@@ -200,30 +220,35 @@ fn spawn_library_header(
             style
         }),
     );
-    let label_root = world.add_component_boxed_named(
-        "pose_library_header_label",
-        Box::new(TransformComponent::new()),
+    let name_input = world.add_component_boxed_named(
+        "pose_library_name_input",
+        Box::new(TextInputComponent::new(asset_name_draft)),
     );
-    let label_style = world.add_component_boxed_named(
-        "pose_library_header_label_style",
+    let name_style = world.add_component_boxed_named(
+        "pose_library_name_input_style",
         Box::new({
             let mut style = StyleComponent::new();
             style.display = Some(Display::InlineBlock);
-            style.width = SizeDimension::GlyphUnits(15.0);
+            style.width = SizeDimension::GlyphUnits(14.5);
             style.height = SizeDimension::GlyphUnits(2.2);
             style.padding = EdgeInsets::axes(0.25, 0.35);
+            style.background_color = Some([0.94, 0.98, 0.92, 1.0]);
+            style.background_z = Some(0.001);
+            style.color = Some([0.02, 0.08, 0.03, 1.0]);
+            style.font_size = SizeDimension::GlyphUnits(POSE_PANEL_ACTION_FONT_SIZE_GU);
             style
         }),
     );
     let _ = world.add_child(root, style);
-    let _ = world.add_child(root, label_root);
-    let _ = world.add_child(label_root, label_style);
-    spawn_text(
+    let _ = world.add_child(root, name_input);
+    let _ = world.add_child(name_input, name_style);
+    add_payload(
         world,
-        label_root,
-        "pose_library_header_text",
-        label,
-        [0.95, 0.98, 0.92, 1.0],
+        name_input,
+        PosePanelActionKind::Rename,
+        Some(target),
+        Some(library),
+        None,
     );
     spawn_action_button(
         world,
@@ -291,8 +316,8 @@ fn spawn_pose_row(
         world,
         body,
         PosePanelActionKind::Select,
-        target,
-        library,
+        Some(target),
+        Some(library),
         Some(pose),
     );
     spawn_action_button(
@@ -309,11 +334,58 @@ fn spawn_pose_row(
     root
 }
 
+fn spawn_new_library_button(world: &mut World) -> ComponentId {
+    let root = world.add_component_boxed_named(
+        "pose_new_library_action",
+        Box::new(TransformComponent::new()),
+    );
+    let raycastable = world.add_component_boxed_named(
+        "pose_new_library_action_raycastable",
+        Box::new(RaycastableComponent::click_only()),
+    );
+    let style = world.add_component_boxed_named(
+        "pose_new_library_action_style",
+        Box::new({
+            let mut style = StyleComponent::new();
+            style.display = Some(Display::Block);
+            style.width = SizeDimension::Percent(100.0);
+            style.height = SizeDimension::GlyphUnits(2.8);
+            style.margin = EdgeInsets::axes(0.0, 0.35);
+            style.padding = EdgeInsets::axes(0.45, 0.45);
+            style.background_color = Some([0.10, 0.55, 0.18, 1.0]);
+            style.background_z = Some(0.001);
+            style.color = Some([0.75, 1.0, 0.45, 1.0]);
+            style
+        }),
+    );
+    let _ = world.add_child(root, raycastable);
+    let _ = world.add_child(root, style);
+    spawn_text(
+        world,
+        root,
+        "pose_new_library_action_text",
+        "New Pose Library",
+        [0.75, 1.0, 0.45, 1.0],
+    );
+    add_payload(
+        world,
+        root,
+        PosePanelActionKind::NewLibrary,
+        None,
+        None,
+        None,
+    );
+    root
+}
+
 fn pose_panel_item_render_fn(
     world: &mut World,
     _emit: &mut dyn SignalEmitter,
     item: &UiItem,
 ) -> Result<ComponentId, String> {
+    if item.key == "pose_new_library" {
+        return Ok(spawn_new_library_button(world));
+    }
     match item.kind {
         UiItemKind::Info => {
             let library = item
@@ -340,31 +412,6 @@ fn pose_panel_item_render_fn(
 static POSE_PANEL_ITEM_SPEC: LazyLock<ItemRendererSpec> = LazyLock::new(|| RendererSpec::Rust {
     render_fn: Box::new(pose_panel_item_render_fn),
 });
-
-fn ensure_pose_libraries(world: &mut World, emit: &mut dyn SignalEmitter) {
-    let targets: Vec<_> = world
-        .all_components()
-        .filter(|&id| {
-            world
-                .get_component_by_id_as::<PoseCaptureComponent>(id)
-                .is_some()
-        })
-        .collect();
-    for target in targets {
-        let has_library = world.children_of(target).iter().any(|&child| {
-            world
-                .get_component_by_id_as::<PoseCaptureLibraryComponent>(child)
-                .is_some()
-        });
-        if !has_library {
-            let library = world.add_component(PoseCaptureLibraryComponent::new(
-                PoseTargetRef::Query("TODO".to_string()),
-            ));
-            let _ = world.add_child(target, library);
-            world.init_component_tree(library, emit);
-        }
-    }
-}
 
 pub fn build_pose_panel_model(world: &World) -> PosePanelModel {
     let mut sections = Vec::new();
@@ -404,6 +451,7 @@ pub fn build_pose_panel_model(world: &World) -> PosePanelModel {
             target: id,
             library,
             label,
+            asset_name_draft: pc.asset_name_draft().to_string(),
             poses,
         });
     }
@@ -422,13 +470,45 @@ pub fn rerender_pose_panel(
     let Some(content_slot) = world.find_component(panel_root, PANEL_CONTENT_SLOT_SELECTOR) else {
         return;
     };
-    ensure_pose_libraries(world, emit);
-    let items = pose_panel_items(&build_pose_panel_model(world));
+    let _ = reconcile_pose_captures(world, emit);
+    let model = build_pose_panel_model(world);
+    let items = pose_panel_items(&model);
     if let Err(error) =
         data_renderer.render_list(world, emit, content_slot, &POSE_PANEL_ITEM_SPEC, &items)
     {
         eprintln!("[InspectorSystem] pose panel content render error: {error}");
     }
+    let status = pose_panel_runtime_status(world, &model);
+    set_pose_panel_status(world, panel_root, status);
+}
+
+fn pose_panel_runtime_status(world: &World, model: &PosePanelModel) -> String {
+    if model.sections.is_empty() {
+        return "select a glTF and create a pose library".to_string();
+    }
+    for section in &model.sections {
+        let Some(capture) = world.get_component_by_id_as::<PoseCaptureComponent>(section.target)
+        else {
+            continue;
+        };
+        match &capture.runtime.state {
+            PoseCaptureReconciliationState::LoadFailed { error, .. } => {
+                return format!("load failed: {error}");
+            }
+            PoseCaptureReconciliationState::Unsaved => {
+                return format!("{} has unsaved changes", capture.asset_name_draft());
+            }
+            PoseCaptureReconciliationState::Hydrated => {
+                return format!("loaded {}", capture.asset_name_draft());
+            }
+            PoseCaptureReconciliationState::New => {
+                return format!("new library {}", capture.asset_name_draft());
+            }
+            PoseCaptureReconciliationState::Authored
+            | PoseCaptureReconciliationState::Unreconciled => {}
+        }
+    }
+    "idle".to_string()
 }
 
 fn set_pose_panel_status(world: &mut World, panel_root: ComponentId, status: impl Into<String>) {
@@ -439,11 +519,28 @@ fn set_pose_panel_status(world: &mut World, panel_root: ComponentId, status: imp
     }
 }
 
-fn pose_assets_root() -> PathBuf {
-    PathBuf::from(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/assets/components/poses"
-    ))
+pub fn activate_pose_panel_for_selection(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    panel_query_root: ComponentId,
+    selected: Option<ComponentId>,
+    data_renderer: &mut DataRendererSystem,
+) -> bool {
+    let Some(selected) = selected else {
+        return false;
+    };
+    if gltf_for_visual_selection(world, selected).is_none() {
+        return false;
+    }
+
+    let result = ensure_pose_capture_for_gltf_selection(world, emit, selected);
+    rerender_pose_panel(world, emit, panel_query_root, data_renderer);
+    if let Err(error) = result
+        && let Some(panel_root) = world.find_component(panel_query_root, POSE_PANEL_ROOT_SELECTOR)
+    {
+        set_pose_panel_status(world, panel_root, error);
+    }
+    true
 }
 
 pub fn handle_pose_panel_click(
@@ -452,7 +549,7 @@ pub fn handle_pose_panel_click(
     panel_query_root: ComponentId,
     clicked_node: ComponentId,
     editor_context_state: &Arc<Mutex<EditorContextState>>,
-    _data_renderer: &mut DataRendererSystem,
+    data_renderer: &mut DataRendererSystem,
 ) -> bool {
     let Some(panel_root) = world.find_component(panel_query_root, POSE_PANEL_ROOT_SELECTOR) else {
         return false;
@@ -476,6 +573,26 @@ pub fn handle_pose_panel_click(
             let library = data.get_component("library");
             let pose = data.get_component("pose");
             match action.as_str() {
+                "NewLibrary" => {
+                    let selected = editor_context_state
+                        .lock()
+                        .expect("editor context state mutex poisoned")
+                        .selected_component;
+                    if !activate_pose_panel_for_selection(
+                        world,
+                        emit,
+                        panel_query_root,
+                        selected,
+                        data_renderer,
+                    ) {
+                        set_pose_panel_status(
+                            world,
+                            panel_root,
+                            "new library failed: selection is not part of a glTF",
+                        );
+                    }
+                    return true;
+                }
                 "Select" => return true,
                 "Capture" => {
                     if let Some(target) = target {
@@ -492,23 +609,62 @@ pub fn handle_pose_panel_click(
                 }
                 "Save" => {
                     if let (Some(target), Some(library)) = (target, library) {
-                        let asset_name = world
+                        let draft = world
                             .get_component_by_id_as::<PoseCaptureComponent>(target)
-                            .and_then(|capture| capture.asset_name.clone());
-                        let status = match asset_name {
-                            None => "save failed: PoseCapture asset_name is required".to_string(),
-                            Some(asset_name) if !is_valid_pose_asset_name(&asset_name) => {
-                                "save failed: asset_name may contain only ASCII letters, digits, '_' or '-'"
+                            .map(|capture| capture.asset_name_draft().to_string())
+                            .unwrap_or_default();
+                        let status = if draft.is_empty() {
+                            "save failed: PoseCapture asset_name is required".to_string()
+                        } else if !is_valid_pose_asset_name(&draft) {
+                            "save failed: asset_name may contain only ASCII letters, digits, '_' or '-'"
                                     .to_string()
-                            }
-                            Some(asset_name) => {
-                                let directory = pose_assets_root().join(&asset_name);
+                        } else {
+                            let needs_warning = world
+                                .get_component_by_id_as::<PoseCaptureComponent>(target)
+                                .is_some_and(|capture| {
+                                    matches!(
+                                        &capture.runtime.state,
+                                        PoseCaptureReconciliationState::LoadFailed {
+                                            asset_name,
+                                            overwrite_warning_issued: false,
+                                            ..
+                                        } if asset_name == &draft
+                                    )
+                                });
+                            if needs_warning {
+                                if let Some(capture) =
+                                    world.get_component_by_id_as_mut::<PoseCaptureComponent>(target)
+                                    && let PoseCaptureReconciliationState::LoadFailed {
+                                        overwrite_warning_issued,
+                                        ..
+                                    } = &mut capture.runtime.state
+                                {
+                                    *overwrite_warning_issued = true;
+                                }
+                                format!(
+                                    "warning: {} failed to load; Save again to replace it",
+                                    draft
+                                )
+                            } else {
+                                let directory = pose_assets_root().join(&draft);
                                 let manifest = directory.join("library.mms");
                                 match save_pose_library_asset(world, library, &manifest) {
-                                    Ok(paths) => format!(
-                                        "saved {} poses to assets/components/poses/{asset_name}/",
-                                        paths.len()
-                                    ),
+                                    Ok(paths) => {
+                                        if let Some(capture) = world
+                                            .get_component_by_id_as_mut::<PoseCaptureComponent>(
+                                                target,
+                                            )
+                                        {
+                                            capture.asset_name = Some(draft.clone());
+                                            capture.runtime.asset_name_draft = Some(draft.clone());
+                                            capture.runtime.state =
+                                                PoseCaptureReconciliationState::Hydrated;
+                                        }
+                                        format!(
+                                            "saved {} poses to assets/components/poses/{draft}/",
+                                            paths.len()
+                                        )
+                                    }
                                     Err(error) => format!("save failed: {error}"),
                                 }
                             }
@@ -553,11 +709,60 @@ pub fn handle_pose_panel_click(
     false
 }
 
+pub fn handle_pose_panel_text_input_changed(
+    world: &mut World,
+    panel_query_root: ComponentId,
+    component_id: ComponentId,
+    text: &str,
+) -> bool {
+    let Some(panel_root) = world.find_component(panel_query_root, POSE_PANEL_ROOT_SELECTOR) else {
+        return false;
+    };
+    if !is_descendant_or_self(world, panel_root, component_id) {
+        return false;
+    }
+    let payload = world
+        .children_of(component_id)
+        .iter()
+        .copied()
+        .find(|&child| world.component_label(child) == Some(POSE_PANEL_PAYLOAD_NAME));
+    let Some(payload) = payload else {
+        return false;
+    };
+    let Some(data) = world.get_component_by_id_as::<DataComponent>(payload) else {
+        return false;
+    };
+    if data_text(data, "action").as_deref() != Some("Rename") {
+        return false;
+    }
+    let Some(target) = data.get_component("target_component") else {
+        return false;
+    };
+    let valid = world
+        .get_component_by_id_as_mut::<PoseCaptureComponent>(target)
+        .is_some_and(|capture| capture.set_asset_name_draft(text));
+    if valid {
+        set_pose_panel_status(
+            world,
+            panel_root,
+            format!("renamed in memory; next Save writes to {text}"),
+        );
+    } else {
+        set_pose_panel_status(
+            world,
+            panel_root,
+            "invalid name: use ASCII letters, digits, '_' or '-'",
+        );
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::ecs::component::PoseBoneEntry;
+    use crate::engine::ecs::component::{PoseBoneEntry, PoseTargetRef};
     use crate::engine::ecs::{EventSignal, IntentSignal};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     struct TestEmitter {
         intents: Vec<IntentValue>,
@@ -606,6 +811,25 @@ mod tests {
                 .is_some()
         );
         assert!(world.find_component(header, "#pose_save_action").is_some());
+        let name_input = world
+            .find_component(header, "#pose_library_name_input")
+            .unwrap();
+        assert_eq!(
+            world
+                .get_component_by_id_as::<TextInputComponent>(name_input)
+                .unwrap()
+                .text,
+            "avatar"
+        );
+        let name_style = world
+            .find_component(name_input, "#pose_library_name_input_style")
+            .and_then(|id| world.get_component_by_id_as::<StyleComponent>(id))
+            .unwrap();
+        assert_eq!(
+            name_style.font_size,
+            SizeDimension::GlyphUnits(POSE_PANEL_ACTION_FONT_SIZE_GU),
+            "library names should match action-button typography"
+        );
 
         let row =
             pose_panel_item_render_fn(&mut world, &mut emit, &pose_panel_items(&model)[1]).unwrap();
@@ -835,5 +1059,375 @@ mod tests {
                 .text
                 .contains("ASCII letters")
         );
+    }
+
+    #[test]
+    fn editable_name_draft_commits_valid_names_and_retains_invalid_text() {
+        let mut world = World::default();
+        let panel_root = world.add_component_boxed_named(
+            "pose_capture_panel_root",
+            Box::new(TransformComponent::new()),
+        );
+        let status = world.add_component_boxed_named(
+            "pose_panel_status_value",
+            Box::new(TextComponent::new("idle")),
+        );
+        world.add_child(panel_root, status).unwrap();
+        let target = world.add_component(PoseCaptureComponent::new().with_asset_name("avatar"));
+        let library = world.add_component(PoseCaptureLibraryComponent::new(
+            crate::engine::ecs::component::PoseTargetRef::Query("TODO".into()),
+        ));
+        let pose = world.add_component(PoseCapturePoseComponent::new(
+            "Idle",
+            crate::engine::ecs::component::PoseTargetRef::Query("TODO".into()),
+            Vec::new(),
+        ));
+        world.add_child(target, library).unwrap();
+        world.add_child(library, pose).unwrap();
+        let header = spawn_library_header(&mut world, "avatar", target, library);
+        world.add_child(panel_root, header).unwrap();
+        let input = world
+            .find_component(header, "#pose_library_name_input")
+            .unwrap();
+
+        assert!(handle_pose_panel_text_input_changed(
+            &mut world,
+            panel_root,
+            input,
+            "avatar_v2",
+        ));
+        let capture = world
+            .get_component_by_id_as::<PoseCaptureComponent>(target)
+            .unwrap();
+        assert_eq!(capture.asset_name.as_deref(), Some("avatar_v2"));
+        assert_eq!(capture.asset_name_draft(), "avatar_v2");
+        assert_eq!(world.parent_of(pose), Some(library));
+
+        assert!(handle_pose_panel_text_input_changed(
+            &mut world, panel_root, input, "../bad",
+        ));
+        let capture = world
+            .get_component_by_id_as::<PoseCaptureComponent>(target)
+            .unwrap();
+        assert_eq!(capture.asset_name.as_deref(), Some("avatar_v2"));
+        assert_eq!(capture.asset_name_draft(), "../bad");
+        assert!(
+            world
+                .get_component_by_id_as::<TextComponent>(status)
+                .unwrap()
+                .text
+                .contains("invalid name")
+        );
+    }
+
+    #[test]
+    fn new_library_uses_visual_selection_and_unrelated_selection_is_safe() {
+        let mut world = World::default();
+        let panel_root = world.add_component_boxed_named(
+            "pose_capture_panel_root",
+            Box::new(TransformComponent::new()),
+        );
+        let status = world.add_component_boxed_named(
+            "pose_panel_status_value",
+            Box::new(TextComponent::new("idle")),
+        );
+        world.add_child(panel_root, status).unwrap();
+        let gltf = world.add_component_boxed_named(
+            "Cat Avatar",
+            Box::new(crate::engine::ecs::component::GLTFComponent::new(
+                "models/cat.2.glb",
+            )),
+        );
+        let node = world.add_component_boxed_named("body", Box::new(TransformComponent::new()));
+        let primitive =
+            world.add_component(crate::engine::ecs::component::RenderableComponent::cube());
+        world.add_child(node, primitive).unwrap();
+        {
+            world
+                .get_component_by_id_as_mut::<crate::engine::ecs::component::GLTFComponent>(gltf)
+                .unwrap()
+                .spawned_node_transforms = vec![node];
+        }
+        let action = spawn_new_library_button(&mut world);
+        world.add_child(panel_root, action).unwrap();
+        let context = Arc::new(Mutex::new(EditorContextState {
+            selected_component: Some(primitive),
+            ..EditorContextState::default()
+        }));
+        let mut emitter = TestEmitter {
+            intents: Vec::new(),
+        };
+        let mut renderer = DataRendererSystem::new();
+
+        assert!(handle_pose_panel_click(
+            &mut world,
+            &mut emitter,
+            panel_root,
+            action,
+            &context,
+            &mut renderer,
+        ));
+        let capture = world
+            .children_of(gltf)
+            .iter()
+            .copied()
+            .find(|&id| {
+                world
+                    .get_component_by_id_as::<PoseCaptureComponent>(id)
+                    .is_some()
+            })
+            .unwrap();
+        let capture_component = world
+            .get_component_by_id_as::<PoseCaptureComponent>(capture)
+            .unwrap();
+        assert_eq!(capture_component.label.as_deref(), Some("Cat Avatar"));
+        assert_eq!(capture_component.asset_name.as_deref(), Some("cat_2"));
+        assert_eq!(
+            world
+                .children_of(capture)
+                .iter()
+                .filter(|&&id| world
+                    .get_component_by_id_as::<PoseCaptureLibraryComponent>(id)
+                    .is_some())
+                .count(),
+            1
+        );
+
+        let mut unrelated_world = World::default();
+        let unrelated_panel = unrelated_world.add_component_boxed_named(
+            "pose_capture_panel_root",
+            Box::new(TransformComponent::new()),
+        );
+        let unrelated_status = unrelated_world.add_component_boxed_named(
+            "pose_panel_status_value",
+            Box::new(TextComponent::new("idle")),
+        );
+        unrelated_world
+            .add_child(unrelated_panel, unrelated_status)
+            .unwrap();
+        let unrelated = unrelated_world.add_component(TransformComponent::new());
+        let action = spawn_new_library_button(&mut unrelated_world);
+        unrelated_world.add_child(unrelated_panel, action).unwrap();
+        let context = Arc::new(Mutex::new(EditorContextState {
+            selected_component: Some(unrelated),
+            ..EditorContextState::default()
+        }));
+        assert!(handle_pose_panel_click(
+            &mut unrelated_world,
+            &mut emitter,
+            unrelated_panel,
+            action,
+            &context,
+            &mut renderer,
+        ));
+        assert_eq!(
+            unrelated_world
+                .all_components()
+                .filter(|&id| unrelated_world
+                    .get_component_by_id_as::<PoseCaptureComponent>(id)
+                    .is_some())
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn selection_activation_keeps_all_gltf_libraries_in_the_global_model() {
+        let mut world = World::default();
+        let panel_root = world.add_component_boxed_named(
+            "pose_capture_panel_root",
+            Box::new(TransformComponent::new()),
+        );
+        let content_slot =
+            world.add_component_boxed_named("content_slot", Box::new(TransformComponent::new()));
+        let status = world.add_component_boxed_named(
+            "pose_panel_status_value",
+            Box::new(TextComponent::new("idle")),
+        );
+        world.add_child(panel_root, content_slot).unwrap();
+        world.add_child(panel_root, status).unwrap();
+
+        let gltf_a = world.add_component(crate::engine::ecs::component::GLTFComponent::new(
+            "selection_global_a.glb",
+        ));
+        let gltf_b = world.add_component(crate::engine::ecs::component::GLTFComponent::new(
+            "selection_global_b.glb",
+        ));
+        let node_a = world.add_component(TransformComponent::new());
+        let node_b = world.add_component(TransformComponent::new());
+        let primitive_a =
+            world.add_component(crate::engine::ecs::component::RenderableComponent::cube());
+        let primitive_b =
+            world.add_component(crate::engine::ecs::component::RenderableComponent::cube());
+        world.add_child(node_a, primitive_a).unwrap();
+        world.add_child(node_b, primitive_b).unwrap();
+        world
+            .get_component_by_id_as_mut::<crate::engine::ecs::component::GLTFComponent>(gltf_a)
+            .unwrap()
+            .spawned_node_transforms = vec![node_a];
+        world
+            .get_component_by_id_as_mut::<crate::engine::ecs::component::GLTFComponent>(gltf_b)
+            .unwrap()
+            .spawned_node_transforms = vec![node_b];
+
+        let mut emitter = TestEmitter {
+            intents: Vec::new(),
+        };
+        let mut renderer = DataRendererSystem::new();
+        assert!(activate_pose_panel_for_selection(
+            &mut world,
+            &mut emitter,
+            panel_root,
+            Some(primitive_a),
+            &mut renderer,
+        ));
+        assert!(activate_pose_panel_for_selection(
+            &mut world,
+            &mut emitter,
+            panel_root,
+            Some(primitive_b),
+            &mut renderer,
+        ));
+        let model = build_pose_panel_model(&world);
+        assert_eq!(model.sections.len(), 2);
+        assert!(
+            model
+                .sections
+                .iter()
+                .any(|section| { world.parent_of(section.target) == Some(gltf_a) })
+        );
+        assert!(
+            model
+                .sections
+                .iter()
+                .any(|section| { world.parent_of(section.target) == Some(gltf_b) })
+        );
+
+        let unrelated = world.add_component(TransformComponent::new());
+        assert!(!activate_pose_panel_for_selection(
+            &mut world,
+            &mut emitter,
+            panel_root,
+            Some(unrelated),
+            &mut renderer,
+        ));
+        assert_eq!(build_pose_panel_model(&world).sections.len(), 2);
+    }
+
+    #[test]
+    fn load_failure_status_remains_visible_with_an_empty_usable_library() {
+        let mut world = World::default();
+        let target = world.add_component(PoseCaptureComponent::new().with_asset_name("broken"));
+        let library = world.add_component(PoseCaptureLibraryComponent::new(PoseTargetRef::Query(
+            "TODO".into(),
+        )));
+        world.add_child(target, library).unwrap();
+        world
+            .get_component_by_id_as_mut::<PoseCaptureComponent>(target)
+            .unwrap()
+            .runtime
+            .state = PoseCaptureReconciliationState::LoadFailed {
+            asset_name: "broken".into(),
+            error: "malformed manifest".into(),
+            overwrite_warning_issued: false,
+        };
+
+        let model = build_pose_panel_model(&world);
+        assert_eq!(model.sections.len(), 1);
+        assert_eq!(
+            pose_panel_runtime_status(&world, &model),
+            "load failed: malformed manifest"
+        );
+        assert!(world.children_of(library).is_empty());
+    }
+
+    #[test]
+    fn failed_hydration_requires_two_saves_before_replacement() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let asset_name = format!("pose_overwrite_guard_{nonce}");
+        let directory = pose_assets_root().join(&asset_name);
+        let _ = std::fs::remove_dir_all(&directory);
+
+        let mut world = World::default();
+        let panel_root = world.add_component_boxed_named(
+            "pose_capture_panel_root",
+            Box::new(TransformComponent::new()),
+        );
+        let status = world.add_component_boxed_named(
+            "pose_panel_status_value",
+            Box::new(TextComponent::new("idle")),
+        );
+        world.add_child(panel_root, status).unwrap();
+        let target = world.add_component(PoseCaptureComponent::new().with_asset_name(&asset_name));
+        let library = world.add_component(PoseCaptureLibraryComponent::new(PoseTargetRef::Query(
+            "TODO".into(),
+        )));
+        world.add_child(target, library).unwrap();
+        {
+            let capture = world
+                .get_component_by_id_as_mut::<PoseCaptureComponent>(target)
+                .unwrap();
+            capture.runtime.asset_name_draft = Some(asset_name.clone());
+            capture.runtime.state = PoseCaptureReconciliationState::LoadFailed {
+                asset_name: asset_name.clone(),
+                error: "malformed manifest".into(),
+                overwrite_warning_issued: false,
+            };
+        }
+        let save = spawn_action_button(
+            &mut world,
+            panel_root,
+            "pose_save_action",
+            "Save",
+            4.5,
+            PosePanelActionKind::Save,
+            target,
+            library,
+            None,
+        );
+        let context = Arc::new(Mutex::new(EditorContextState::default()));
+        let mut emitter = TestEmitter {
+            intents: Vec::new(),
+        };
+        let mut renderer = DataRendererSystem::new();
+
+        assert!(handle_pose_panel_click(
+            &mut world,
+            &mut emitter,
+            panel_root,
+            save,
+            &context,
+            &mut renderer,
+        ));
+        assert!(!directory.join("library.mms").exists());
+        assert!(
+            world
+                .get_component_by_id_as::<TextComponent>(status)
+                .unwrap()
+                .text
+                .contains("Save again")
+        );
+
+        assert!(handle_pose_panel_click(
+            &mut world,
+            &mut emitter,
+            panel_root,
+            save,
+            &context,
+            &mut renderer,
+        ));
+        assert!(directory.join("library.mms").exists());
+        assert!(matches!(
+            world
+                .get_component_by_id_as::<PoseCaptureComponent>(target)
+                .unwrap()
+                .runtime
+                .state,
+            PoseCaptureReconciliationState::Hydrated
+        ));
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }
