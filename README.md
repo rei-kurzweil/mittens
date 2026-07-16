@@ -1,25 +1,41 @@
 
-# mittens-engine 0.6.0 "mittens"
+# mittens 0.6.0
 <img width="1920" height="745" alt="Screenshot_20260303_015535" src="https://github.com/user-attachments/assets/16d9656c-9df3-4a96-89bd-658d222e78d0" />
 
-An opinionated game engine specially made for social vr, vtubing, css-driven UI and 3D character animation.    
+An opinionated game engine specially made for social vr, vtubing, css-driven UI and 3D character animation.
+
+This repository is `rei-kurzweil/mittens`. The root crate is still published as
+`mittens-engine`; the repo name is the broader project name.
 
 ### Workspace crates
 
 - `mittens-engine` 0.6.0 at the workspace root: Vulkan/OpenXR rendering, ECS,
-  engine component materialization, and the engine-aware scripting adapter.
+  engine component materialization, and the Mittens-specific scripting host.
 - `meow-meow-script` 0.6.0 in `crates/meow-meow-script`: host-neutral syntax,
-  parser, runtime values, evaluator, and host protocol.
+  parser, runtime/session evaluator, configurable component/API catalogs, and
+  the generic host protocol.
 - `mittens-query` 0.6.0 in `crates/mittens-query`: CSS/MMQ parsing and
   host-neutral query-tree evaluation.
 
 The dependency graph is acyclic: `mittens-engine` depends on both standalone
 crates; neither standalone crate depends on the engine.
 
-For a release, publish in dependency order: `mittens-query`, then
-`meow-meow-script`, then `mittens-engine`. Local manifests deliberately pair
-each dependency's registry version with its workspace `path`. This repository
-change does not publish, tag, or push a release.
+### Scripting split
+
+`meow-meow-script` does not know about Mittens components. It provides the
+language runtime, typed catalog declarations, stateful sessions, host-boundary
+DTOs, callbacks, and the generic `Host` request/response contract.
+
+`mittens-engine` embeds that runtime by registering the Mittens catalog: engine
+component names, aliases, constructors, builder calls, properties, component
+methods, and host APIs. Its Mittens host maps script component handles to ECS
+components and implements the actual effects for emission, registration,
+attachment, queries, methods, signals, and callbacks.
+
+That split lets other hosts reuse `meow-meow-script` with their own component
+catalogs and semantics, while Mittens keeps its engine-specific behavior in the
+engine crate.
+
 
 (see docs/meow_meow for an overview of .mms scripts)
 
