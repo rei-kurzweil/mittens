@@ -25,14 +25,15 @@ Models without `PoseCapture` do not appear in the panel.
 Each opted-in target has one library header:
 
 - `Capture` records joints whose local transform differs from the glTF import/rest pose.
+- `Reset` restores every armature joint with imported rest-pose metadata before applying another pose.
 - `Save` writes the complete library to disk.
 
-Each pose has a row body and an `Apply` button:
+Each pose has an editable name and an `Apply` button. Renaming marks the library unsaved; the next `Save` renames the existing numbered pose module and rewrites the manifest without retaining a duplicate file.
 
 - Clicking the row body only selects and highlights that row inside the pose panel.
 - Clicking `Apply` applies the pose. It does not replace the editor or scene selection.
 
-Capture names are generated as `pose_0`, `pose_1`, and so on. Rename, delete, reorder, and per-pose save are not currently part of the panel workflow.
+Capture names are generated as `pose_0`, `pose_1`, and so on. Delete, reorder, and per-pose save are not currently part of the panel workflow.
 
 ## Apply target selection
 

@@ -78,6 +78,55 @@ impl PoseCaptureSystem {
         Ok(())
     }
 
+    pub fn handle_reset(
+        &self,
+        world: &World,
+        emit: &mut dyn SignalEmitter,
+        target: ComponentId,
+    ) -> Result<usize, String> {
+        let gltf_id = if world
+            .get_component_by_id_as::<GLTFComponent>(target)
+            .is_some()
+        {
+            target
+        } else {
+            owning_gltf(world, target)
+                .ok_or_else(|| format!("component {target:?} is not owned by a glTF"))?
+        };
+        let joints = world
+            .get_component_by_id_as::<GLTFComponent>(gltf_id)
+            .ok_or_else(|| format!("component {gltf_id:?} is not a glTF"))?
+            .armature_joint_transforms
+            .clone();
+        let mut reset_count = 0;
+        for joint in joints {
+            let Some(rest) = world
+                .children_of(joint)
+                .iter()
+                .find_map(|&child| world.get_component_by_id_as::<BoneRestPoseComponent>(child))
+                .copied()
+            else {
+                continue;
+            };
+            emit.push_intent_now(
+                joint,
+                IntentValue::UpdateTransform {
+                    component_ids: vec![joint],
+                    translation: rest.translation,
+                    rotation_quat_xyzw: rest.rotation,
+                    scale: rest.scale,
+                },
+            );
+            reset_count += 1;
+        }
+        if reset_count == 0 {
+            return Err(format!(
+                "glTF {gltf_id:?} has no armature joints with imported rest-pose metadata"
+            ));
+        }
+        Ok(reset_count)
+    }
+
     fn ensure_library(
         &self,
         world: &mut World,
@@ -774,6 +823,7 @@ mod tests {
     use crate::engine::ecs::component::{
         BoneRestPoseComponent, RenderableComponent, save_pose_library_asset,
     };
+    use crate::engine::ecs::{EventSignal, IntentSignal};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     struct PoseFixture {
@@ -947,6 +997,80 @@ mod tests {
             .get_component_by_id_as::<TransformComponent>(joint)
             .unwrap();
         assert!(joint_matches_imported_rest_pose(&world, joint, current));
+    }
+
+    #[test]
+    fn reset_restores_all_gltf_joints_with_imported_rest_poses() {
+        struct RecordingEmitter {
+            intents: Vec<(ComponentId, IntentValue)>,
+        }
+
+        impl SignalEmitter for RecordingEmitter {
+            fn push_event(&mut self, _scope: ComponentId, _event: EventSignal) {}
+
+            fn push_intent(&mut self, scope: ComponentId, intent: IntentSignal) {
+                self.intents.push((scope, intent.value));
+            }
+        }
+
+        let mut world = World::default();
+        let gltf = world.add_component(GLTFComponent::new("avatar.glb"));
+        let capture = world.add_component(PoseCaptureComponent::new());
+        let head = world.add_component(TransformComponent::new());
+        let hand = world.add_component(TransformComponent::new());
+        world.add_child(gltf, capture).unwrap();
+        world.add_child(gltf, head).unwrap();
+        world.add_child(gltf, hand).unwrap();
+        let head_rest = world.add_component(BoneRestPoseComponent::new(
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0; 3],
+        ));
+        let hand_rest = world.add_component(BoneRestPoseComponent::new(
+            [0.5, 0.5, 0.0],
+            [0.0, 0.0, 0.25, 0.96824586],
+            [1.0; 3],
+        ));
+        world.add_child(head, head_rest).unwrap();
+        world.add_child(hand, hand_rest).unwrap();
+        world
+            .get_component_by_id_as_mut::<GLTFComponent>(gltf)
+            .unwrap()
+            .armature_joint_transforms = vec![head, hand];
+
+        let mut emit = RecordingEmitter {
+            intents: Vec::new(),
+        };
+        assert_eq!(
+            PoseCaptureSystem::new()
+                .handle_reset(&world, &mut emit, capture)
+                .unwrap(),
+            2
+        );
+        assert!(emit.intents.iter().any(|(scope, intent)| {
+            *scope == head
+                && matches!(
+                    intent,
+                    IntentValue::UpdateTransform {
+                        component_ids,
+                        translation: [0.0, 1.0, 0.0],
+                        rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0],
+                        scale: [1.0, 1.0, 1.0],
+                    } if component_ids == &vec![head]
+                )
+        }));
+        assert!(emit.intents.iter().any(|(scope, intent)| {
+            *scope == hand
+                && matches!(
+                    intent,
+                    IntentValue::UpdateTransform {
+                        component_ids,
+                        translation: [0.5, 0.5, 0.0],
+                        rotation_quat_xyzw: [0.0, 0.0, 0.25, 0.96824586],
+                        scale: [1.0, 1.0, 1.0],
+                    } if component_ids == &vec![hand]
+                )
+        }));
     }
 
     #[test]

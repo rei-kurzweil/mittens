@@ -490,6 +490,9 @@ pub enum IntentValue {
         target: ComponentId,
         pose: ComponentId,
     },
+    PoseReset {
+        target: ComponentId,
+    },
 
     RegisterRouter {
         component_ids: Vec<ComponentId>,
@@ -887,6 +890,7 @@ impl IntentValue {
             IntentValue::InitializePoseCapture { .. } => "initialize_pose_capture",
             IntentValue::PoseCapture { .. } => "pose_capture",
             IntentValue::PoseApply { .. } => "pose_apply",
+            IntentValue::PoseReset { .. } => "pose_reset",
 
             IntentValue::RegisterSignalRouteUpward { .. } => "register_signal_route_upward",
             IntentValue::RemoveSignalRouteUpward { .. } => "remove_signal_route_upward",

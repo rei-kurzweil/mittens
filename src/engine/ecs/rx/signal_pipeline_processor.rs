@@ -176,6 +176,7 @@ impl SignalPipelineProcessor {
             | IntentValue::InitializePoseCapture { .. }
             | IntentValue::PoseCapture { .. }
             | IntentValue::PoseApply { .. }
+            | IntentValue::PoseReset { .. }
             | IntentValue::HttpClientRequest { .. }
             | IntentValue::HttpServerReply { .. } => None,
         }
@@ -297,6 +298,7 @@ impl SignalPipelineProcessor {
             | IntentValue::InitializePoseCapture { .. }
             | IntentValue::PoseCapture { .. }
             | IntentValue::PoseApply { .. }
+            | IntentValue::PoseReset { .. }
             | IntentValue::HttpClientRequest { .. }
             | IntentValue::HttpServerReply { .. } => None,
         }

@@ -355,7 +355,23 @@ pub fn save_pose_library_asset(
         } else {
             slug
         };
-        let path = parent.join(format!("{:03}-{slug}.pose.mms", paths.len()));
+        let index = paths.len();
+        let path = parent.join(format!("{index:03}-{slug}.pose.mms"));
+        if let Some(existing_path) = generated_pose_path_for_index(parent, index, &path)?
+            && existing_path != path
+        {
+            if path.exists() {
+                std::fs::remove_file(&path)
+                    .map_err(|error| format!("cannot replace {}: {error}", path.display()))?;
+            }
+            std::fs::rename(&existing_path, &path).map_err(|error| {
+                format!(
+                    "cannot rename {} to {}: {error}",
+                    existing_path.display(),
+                    path.display()
+                )
+            })?;
+        }
         save_pose_asset(world, child, &path)?;
         paths.push(path);
     }
@@ -400,6 +416,36 @@ pub fn save_pose_library_asset(
         }
     }
     Ok(paths)
+}
+
+fn generated_pose_path_for_index(
+    directory: &std::path::Path,
+    index: usize,
+    desired_path: &std::path::Path,
+) -> Result<Option<std::path::PathBuf>, String> {
+    let prefix = format!("{index:03}-");
+    let entries = match std::fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("cannot list {}: {error}", directory.display())),
+    };
+    let mut fallback = None;
+    for entry in entries {
+        let entry = entry
+            .map_err(|error| format!("cannot read entry in {}: {error}", directory.display()))?;
+        let path = entry.path();
+        if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(&prefix) && name.ends_with(".pose.mms"))
+        {
+            if path == desired_path {
+                return Ok(Some(path));
+            }
+            fallback.get_or_insert(path);
+        }
+    }
+    Ok(fallback)
 }
 
 fn write_asset_atomically(path: &std::path::Path, text: &str) -> Result<(), String> {
@@ -492,6 +538,26 @@ mod tests {
             "keep"
         );
         assert!(!directory.join("library.mmstmp").exists());
+
+        world
+            .get_component_by_id_as_mut::<PoseCapturePoseComponent>(first)
+            .unwrap()
+            .name = "Resting".to_string();
+        let renamed_paths = save_pose_library_asset(&world, library, &manifest).unwrap();
+        assert_eq!(renamed_paths[0], directory.join("000-Resting.pose.mms"));
+        assert!(!directory.join("000-Idle_Pose.pose.mms").exists());
+        assert!(directory.join("000-Resting.pose.mms").exists());
+        let generated_pose_count = std::fs::read_dir(&directory)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| name.ends_with(".pose.mms"))
+            })
+            .count();
+        assert_eq!(generated_pose_count, 2);
 
         std::fs::remove_dir_all(directory).unwrap();
     }

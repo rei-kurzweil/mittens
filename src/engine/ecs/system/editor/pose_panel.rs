@@ -26,13 +26,15 @@ pub const POSE_PANEL_PAYLOAD_NAME: &str = "pose_panel_payload";
 pub const POSE_PANEL_STATUS_VALUE_SELECTOR: &str = "#pose_panel_status_value";
 const POSE_PANEL_BASE_FONT_SIZE_WU: f32 = 0.08;
 const POSE_PANEL_ACTION_FONT_SIZE_GU: f32 = 0.9;
-const POSE_PANEL_LIBRARY_FONT_SIZE_GU: f32 = POSE_PANEL_ACTION_FONT_SIZE_GU * 2.0;
+const POSE_PANEL_LIBRARY_FONT_SIZE_GU: f32 = 1.2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PosePanelActionKind {
     NewLibrary,
     Rename,
+    RenamePose,
     Capture,
+    Reset,
     Save,
     Select,
     Apply,
@@ -43,7 +45,9 @@ impl PosePanelActionKind {
         match self {
             Self::NewLibrary => "NewLibrary",
             Self::Rename => "Rename",
+            Self::RenamePose => "RenamePose",
             Self::Capture => "Capture",
+            Self::Reset => "Reset",
             Self::Save => "Save",
             Self::Select => "Select",
             Self::Apply => "Apply",
@@ -242,7 +246,7 @@ fn spawn_library_header(
         Box::new({
             let mut style = StyleComponent::new();
             style.display = Some(Display::InlineBlock);
-            style.width = SizeDimension::GlyphUnits(14.5);
+            style.width = SizeDimension::GlyphUnits(10.5);
             style.height = SizeDimension::GlyphUnits(3.0);
             style.padding = EdgeInsets::axes(0.25, 0.35);
             style.background_color = Some([0.94, 0.98, 0.92, 1.0]);
@@ -285,6 +289,17 @@ fn spawn_library_header(
         "Capture",
         0.0,
         PosePanelActionKind::Capture,
+        target,
+        library,
+        None,
+    );
+    spawn_action_button(
+        world,
+        root,
+        "pose_reset_action",
+        "Reset",
+        0.0,
+        PosePanelActionKind::Reset,
         target,
         library,
         None,
@@ -352,7 +367,29 @@ fn spawn_pose_row(
     let _ = world.add_child(body, option);
     let _ = world.add_child(body, body_raycastable);
     let _ = world.add_child(body, body_style);
-    spawn_text(world, body, "pose_row_text", label, [0.0, 0.0, 0.0, 1.0]);
+    let name_input = world.add_component_boxed_named(
+        "pose_row_name_input",
+        Box::new(TextInputComponent::new(label)),
+    );
+    let name_style = world.add_component_boxed_named(
+        "pose_row_name_input_style",
+        Box::new({
+            let mut style = StyleComponent::new();
+            style.color = Some([0.0, 0.0, 0.0, 1.0]);
+            style.font_size = SizeDimension::GlyphUnits(1.0);
+            style
+        }),
+    );
+    let _ = world.add_child(body, name_input);
+    let _ = world.add_child(name_input, name_style);
+    add_payload(
+        world,
+        name_input,
+        PosePanelActionKind::RenamePose,
+        Some(target),
+        Some(library),
+        Some(pose),
+    );
     add_payload(
         world,
         body,
@@ -648,6 +685,17 @@ pub fn handle_pose_panel_click(
                         return true;
                     }
                 }
+                "Reset" => {
+                    if let Some(target) = target {
+                        set_pose_panel_status(
+                            world,
+                            panel_root,
+                            "resetting to imported rest pose...",
+                        );
+                        emit.push_intent_now(target, IntentValue::PoseReset { target });
+                        return true;
+                    }
+                }
                 "Save" => {
                     if let (Some(target), Some(library)) = (target, library) {
                         let draft = world
@@ -773,27 +821,54 @@ pub fn handle_pose_panel_text_input_changed(
     let Some(data) = world.get_component_by_id_as::<DataComponent>(payload) else {
         return false;
     };
-    if data_text(data, "action").as_deref() != Some("Rename") {
-        return false;
-    }
+    let action = data_text(data, "action").unwrap_or_default();
     let Some(target) = data.get_component("target_component") else {
         return false;
     };
-    let valid = world
-        .get_component_by_id_as_mut::<PoseCaptureComponent>(target)
-        .is_some_and(|capture| capture.set_asset_name_draft(text));
-    if valid {
-        set_pose_panel_status(
-            world,
-            panel_root,
-            format!("renamed in memory; next Save writes to {text}"),
-        );
-    } else {
-        set_pose_panel_status(
-            world,
-            panel_root,
-            "invalid name: use ASCII letters, digits, '_' or '-'",
-        );
+    match action.as_str() {
+        "Rename" => {
+            let valid = world
+                .get_component_by_id_as_mut::<PoseCaptureComponent>(target)
+                .is_some_and(|capture| capture.set_asset_name_draft(text));
+            if valid {
+                set_pose_panel_status(
+                    world,
+                    panel_root,
+                    format!("renamed in memory; next Save writes to {text}"),
+                );
+            } else {
+                set_pose_panel_status(
+                    world,
+                    panel_root,
+                    "invalid name: use ASCII letters, digits, '_' or '-'",
+                );
+            }
+        }
+        "RenamePose" => {
+            let Some(pose) = data.get_component("pose") else {
+                return false;
+            };
+            if text.trim().is_empty() {
+                set_pose_panel_status(world, panel_root, "pose name cannot be empty");
+                return true;
+            }
+            let Some(pose_component) =
+                world.get_component_by_id_as_mut::<PoseCapturePoseComponent>(pose)
+            else {
+                return false;
+            };
+            pose_component.name = text.to_string();
+            if let Some(capture) = world.get_component_by_id_as_mut::<PoseCaptureComponent>(target)
+            {
+                capture.mark_unsaved();
+            }
+            set_pose_panel_status(
+                world,
+                panel_root,
+                "pose renamed; Save renames its asset file",
+            );
+        }
+        _ => return false,
     }
     true
 }
@@ -870,6 +945,7 @@ mod tests {
                 .find_component(header, "#pose_capture_action")
                 .is_some()
         );
+        assert!(world.find_component(header, "#pose_reset_action").is_some());
         assert!(world.find_component(header, "#pose_save_action").is_some());
         let name_input = world
             .find_component(header, "#pose_library_name_input")
@@ -886,7 +962,7 @@ mod tests {
             .find_component(name_wrap, "#pose_library_name_wrap_style")
             .and_then(|id| world.get_component_by_id_as::<StyleComponent>(id))
             .unwrap();
-        assert_eq!(name_wrap_style.width, SizeDimension::GlyphUnits(14.5));
+        assert_eq!(name_wrap_style.width, SizeDimension::GlyphUnits(10.5));
         assert_eq!(
             world
                 .get_component_by_id_as::<TextInputComponent>(name_input)
@@ -901,7 +977,7 @@ mod tests {
         assert_eq!(
             name_style.font_size,
             SizeDimension::GlyphUnits(POSE_PANEL_LIBRARY_FONT_SIZE_GU),
-            "library names should be twice the action-button text size"
+            "library names should use the compact 1.2-GU size"
         );
         let capture_style = world
             .find_component(header, "#pose_capture_action_style")
@@ -925,13 +1001,15 @@ mod tests {
         let capture = world
             .find_component(header, "#pose_capture_action")
             .unwrap();
+        let reset = world.find_component(header, "#pose_reset_action").unwrap();
         let save = world.find_component(header, "#pose_save_action").unwrap();
         let name_x = emitted_translation(&emit, name_wrap)[0];
         let capture_x = emitted_translation(&emit, capture)[0];
+        let reset_x = emitted_translation(&emit, reset)[0];
         let save_x = emitted_translation(&emit, save)[0];
         assert!(
-            name_x < capture_x && capture_x < save_x,
-            "header layout must place name, Capture, and Save in non-overlapping horizontal order"
+            name_x < capture_x && capture_x < reset_x && reset_x < save_x,
+            "header layout must place name, Capture, Reset, and Save in horizontal order"
         );
 
         let row =
@@ -944,21 +1022,13 @@ mod tests {
                 .is_some()
         );
         let body = world.find_component(row, "#pose_row_body").unwrap();
-        let row_text = world
-            .find_component(body, "#pose_row_text")
-            .and_then(|id| world.get_component_by_id_as::<TextComponent>(id))
+        let row_name_input = world
+            .find_component(body, "#pose_row_name_input")
+            .and_then(|id| world.get_component_by_id_as::<TextInputComponent>(id))
             .unwrap();
         assert_eq!(
-            row_text.authored_font_size, POSE_PANEL_BASE_FONT_SIZE_WU,
-            "pose labels should not render at the global 1.0-WU default before layout"
-        );
-        let row_text_root = world
-            .find_component(body, "#pose_row_text_root")
-            .and_then(|id| world.get_component_by_id_as::<TransformComponent>(id))
-            .unwrap();
-        assert_eq!(
-            row_text_root.transform.translation[2], AUTO_TEXT_LIFT_Z,
-            "pose labels must render in front of their generated row background"
+            row_name_input.text, "Neutral",
+            "pose rows should expose their names through editable text inputs"
         );
         assert_eq!(
             world.parent_of(world.find_component(row, "#pose_row_option").unwrap()),
@@ -1028,6 +1098,22 @@ mod tests {
             Some(panel_root),
             "capture completion must remain in the panel's event scope"
         );
+
+        let reset_button = world.find_component(header, "#pose_reset_action").unwrap();
+        assert!(handle_pose_panel_click(
+            &mut world,
+            &mut emitter,
+            panel_root,
+            reset_button,
+            &context,
+            &mut renderer,
+        ));
+        assert!(matches!(
+            emitter.intents.last(),
+            Some(IntentValue::PoseReset {
+                target: emitted_target
+            }) if *emitted_target == target
+        ));
     }
 
     #[test]
@@ -1268,6 +1354,9 @@ mod tests {
         let input = world
             .find_component(header, "#pose_library_name_input")
             .unwrap();
+        let row = spawn_pose_row(&mut world, "Idle", target, library, pose);
+        world.add_child(panel_root, row).unwrap();
+        let pose_input = world.find_component(row, "#pose_row_name_input").unwrap();
 
         assert!(handle_pose_panel_text_input_changed(
             &mut world,
@@ -1296,6 +1385,39 @@ mod tests {
                 .unwrap()
                 .text
                 .contains("invalid name")
+        );
+
+        assert!(handle_pose_panel_text_input_changed(
+            &mut world,
+            panel_root,
+            pose_input,
+            "Relaxed Idle",
+        ));
+        assert_eq!(
+            world
+                .get_component_by_id_as::<PoseCapturePoseComponent>(pose)
+                .unwrap()
+                .name,
+            "Relaxed Idle"
+        );
+        assert!(matches!(
+            world
+                .get_component_by_id_as::<PoseCaptureComponent>(target)
+                .unwrap()
+                .runtime
+                .state,
+            PoseCaptureReconciliationState::Unsaved
+        ));
+
+        assert!(handle_pose_panel_text_input_changed(
+            &mut world, panel_root, pose_input, "   ",
+        ));
+        assert_eq!(
+            world
+                .get_component_by_id_as::<PoseCapturePoseComponent>(pose)
+                .unwrap()
+                .name,
+            "Relaxed Idle"
         );
     }
 

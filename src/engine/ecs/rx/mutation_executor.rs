@@ -678,6 +678,11 @@ impl RxMutationExecutor {
                     eprintln!("[PoseCaptureSystem] {error}");
                 }
             }
+            IntentValue::PoseReset { target } => {
+                if let Err(error) = systems.pose_capture.handle_reset(world, emit, *target) {
+                    eprintln!("[PoseCaptureSystem] {error}");
+                }
+            }
 
             // Not executed by the mutation executor.
             _ => {}
