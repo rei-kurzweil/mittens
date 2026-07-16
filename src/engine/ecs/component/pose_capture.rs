@@ -12,6 +12,7 @@ pub enum PoseCaptureTargetMode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PoseCaptureComponent {
     pub label: Option<String>,
+    pub asset_name: Option<String>,
     pub target_mode: PoseCaptureTargetMode,
     pub include_scale: bool,
     pub store_rest_deltas: bool,
@@ -23,6 +24,7 @@ impl PoseCaptureComponent {
     pub fn new() -> Self {
         Self {
             label: None,
+            asset_name: None,
             target_mode: PoseCaptureTargetMode::WholeSubtree,
             include_scale: true,
             store_rest_deltas: false,
@@ -32,6 +34,16 @@ impl PoseCaptureComponent {
 
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+
+    pub fn with_asset_name(mut self, asset_name: impl Into<String>) -> Self {
+        let asset_name = asset_name.into();
+        assert!(
+            is_valid_pose_asset_name(&asset_name),
+            "pose asset_name must contain only ASCII letters, digits, '_' or '-'"
+        );
+        self.asset_name = Some(asset_name);
         self
     }
 }
@@ -62,8 +74,18 @@ impl Component for PoseCaptureComponent {
         if let Some(label) = &self.label {
             ce = ce.with_call("with_label", vec![s(label)]);
         }
+        if let Some(asset_name) = &self.asset_name {
+            ce = ce.with_call("with_asset_name", vec![s(asset_name)]);
+        }
         ce
     }
+}
+
+pub fn is_valid_pose_asset_name(asset_name: &str) -> bool {
+    !asset_name.is_empty()
+        && asset_name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -233,10 +255,6 @@ pub fn save_pose_library_asset(
         return Err(format!("component {library_id:?} is not a pose library"));
     }
     let parent = manifest_path.parent().unwrap_or(std::path::Path::new("."));
-    let stem = manifest_path
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .unwrap_or("poses");
     let mut paths = Vec::new();
     for &child in world.children_of(library_id) {
         let Some(pose) = world.get_component_by_id_as::<PoseCapturePoseComponent>(child) else {
@@ -253,7 +271,12 @@ pub fn save_pose_library_asset(
                 }
             })
             .collect();
-        let path = parent.join(format!("{stem}.{:03}-{slug}.pose.mms", paths.len()));
+        let slug = if slug.is_empty() {
+            "pose".to_string()
+        } else {
+            slug
+        };
+        let path = parent.join(format!("{:03}-{slug}.pose.mms", paths.len()));
         save_pose_asset(world, child, &path)?;
         paths.push(path);
     }
@@ -275,6 +298,28 @@ pub fn save_pose_library_asset(
     }
     manifest.push_str("}\n");
     write_asset_atomically(manifest_path, &manifest)?;
+
+    let generated: std::collections::HashSet<_> = paths.iter().cloned().collect();
+    let entries = std::fs::read_dir(parent)
+        .map_err(|error| format!("cannot list {}: {error}", parent.display()))?;
+    for entry in entries {
+        let entry =
+            entry.map_err(|error| format!("cannot read entry in {}: {error}", parent.display()))?;
+        let path = entry.path();
+        let is_generated_pose =
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| {
+                    name.len() >= "000-.pose.mms".len()
+                        && name.as_bytes()[0..3].iter().all(u8::is_ascii_digit)
+                        && name.as_bytes().get(3) == Some(&b'-')
+                        && name.ends_with(".pose.mms")
+                });
+        if is_generated_pose && !generated.contains(&path) {
+            std::fs::remove_file(&path)
+                .map_err(|error| format!("cannot remove stale {}: {error}", path.display()))?;
+        }
+    }
     Ok(paths)
 }
 
@@ -293,4 +338,92 @@ fn write_asset_atomically(path: &std::path::Path, text: &str) -> Result<(), Stri
         .map_err(|error| format!("cannot write {}: {error}", tmp.display()))?;
     std::fs::rename(&tmp, path)
         .map_err(|error| format!("cannot replace {}: {error}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::ecs::World;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn test_directory(name: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("mittens-{name}-{nonce}"))
+    }
+
+    fn entry(query: &str, x: f32) -> PoseBoneEntry {
+        PoseBoneEntry {
+            query: query.to_string(),
+            translation: [x, 2.0, 3.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: [1.0; 3],
+        }
+    }
+
+    #[test]
+    fn saves_ordered_pose_modules_manifest_and_removes_stale_generated_files() {
+        let mut world = World::default();
+        let library = world.add_component(PoseCaptureLibraryComponent::new(PoseTargetRef::Query(
+            "#avatar".into(),
+        )));
+        let first = world.add_component(PoseCapturePoseComponent::new(
+            "Idle Pose",
+            PoseTargetRef::Query("#avatar".into()),
+            vec![entry("#hips", 1.0)],
+        ));
+        let second = world.add_component(PoseCapturePoseComponent::new(
+            "Wave",
+            PoseTargetRef::Query("#avatar".into()),
+            vec![entry("#hand", 4.0)],
+        ));
+        let _ = world.add_child(library, first);
+        let _ = world.add_child(library, second);
+
+        let directory = test_directory("pose-library-save");
+        std::fs::create_dir_all(&directory).unwrap();
+        let manifest = directory.join("library.mms");
+        std::fs::write(&manifest, "old manifest").unwrap();
+        std::fs::write(directory.join("009-stale.pose.mms"), "stale").unwrap();
+        std::fs::write(directory.join("notes.mms"), "keep").unwrap();
+
+        let paths = save_pose_library_asset(&world, library, &manifest).unwrap();
+        assert_eq!(
+            paths,
+            vec![
+                directory.join("000-Idle_Pose.pose.mms"),
+                directory.join("001-Wave.pose.mms"),
+            ]
+        );
+        let first_text = std::fs::read_to_string(&paths[0]).unwrap();
+        assert!(first_text.contains("PoseCapturePose.new(\"Idle Pose\")"));
+        assert!(first_text.contains("\"#hips\""));
+        let manifest_text = std::fs::read_to_string(&manifest).unwrap();
+        assert!(
+            manifest_text.contains("import { pose as pose_0 } from \"000-Idle_Pose.pose.mms\"")
+        );
+        assert!(manifest_text.contains("import { pose as pose_1 } from \"001-Wave.pose.mms\""));
+        assert!(manifest_text.find("pose_0()").unwrap() < manifest_text.find("pose_1()").unwrap());
+        assert!(manifest_text.contains("PoseCaptureLibrary.new()"));
+        assert!(!directory.join("009-stale.pose.mms").exists());
+        assert_eq!(
+            std::fs::read_to_string(directory.join("notes.mms")).unwrap(),
+            "keep"
+        );
+        assert!(!directory.join("library.mmstmp").exists());
+
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn pose_asset_name_validation_is_strict_ascii() {
+        for valid in ["bisket", "Bisket_2", "avatar-v3", "0"] {
+            assert!(is_valid_pose_asset_name(valid), "{valid}");
+        }
+        for invalid in ["", "two words", "../escape", "café", "a/b"] {
+            assert!(!is_valid_pose_asset_name(invalid), "{invalid}");
+        }
+    }
 }

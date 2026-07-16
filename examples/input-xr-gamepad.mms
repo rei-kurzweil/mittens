@@ -168,7 +168,7 @@ T {
                 T {
                     GLTF.new("assets/models/bisket.11.0.glb") {
                         EM.on()
-                        PoseCapture { label("Bisket") }
+                        PoseCapture { label("Bisket") asset_name("bisket") }
                     }
                 }
 

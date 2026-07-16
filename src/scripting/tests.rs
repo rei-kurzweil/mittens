@@ -2705,6 +2705,35 @@ fn roundtrip_pose_capture_pose_preserves_all_ordered_joints() {
 }
 
 #[test]
+fn roundtrip_pose_capture_preserves_asset_name() {
+    use crate::engine::ecs::component::PoseCaptureComponent;
+
+    let original = PoseCaptureComponent::new()
+        .with_label("Avatar")
+        .with_asset_name("bisket_v2");
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<PoseCaptureComponent>(id)
+        .expect("PoseCapture downcast");
+    assert_eq!(got.label.as_deref(), Some("Avatar"));
+    assert_eq!(got.asset_name.as_deref(), Some("bisket_v2"));
+}
+
+#[test]
+fn pose_capture_rejects_invalid_asset_name_from_mms() {
+    let prog = parse(r#"PoseCapture { asset_name("../escape") }"#);
+    let parsed_ce = as_component!(prog.into_iter().next().unwrap());
+    let mat = crate::scripting::component_registry::ce_ast_to_materialized(&parsed_ce)
+        .expect("materialize");
+    let mut world = World::default();
+    let mut emit = CommandQueue::new();
+    let error =
+        crate::scripting::component_registry::spawn_tree_uninitialized(&mat, &mut world, &mut emit)
+            .unwrap_err();
+    assert!(error.contains("asset_name"), "{error}");
+}
+
+#[test]
 fn pose_capture_pose_joint_appends_and_rejects_duplicates() {
     use crate::engine::ecs::component::{PoseBoneEntry, PoseCapturePoseComponent, PoseTargetRef};
     let entry = |query: &str| PoseBoneEntry {

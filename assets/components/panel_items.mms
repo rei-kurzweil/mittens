@@ -203,7 +203,7 @@ export fn inspector_panel_content(items, item_background_color) {
 
 // ── pose_capture_panel ────────────────────────────────────────────────────────
 
-export fn pose_capture_section_header(label) {
+fn pose_capture_section_header(label) {
     return T {
         name = "pose_capture_section_header"
         Style {
@@ -219,7 +219,7 @@ export fn pose_capture_section_header(label) {
     }
 }
 
-export fn pose_capture_row(label, bg) {
+fn pose_capture_row(label, bg) {
     return T {
         name = "pose_capture_row"
         Raycastable.click_only()
@@ -240,7 +240,7 @@ export fn pose_capture_row(label, bg) {
     }
 }
 
-export fn pose_capture_add_button(label) {
+fn pose_capture_add_button(label) {
     return T {
         name = "pose_capture_add_button"
         Raycastable.enabled()
@@ -258,4 +258,3 @@ export fn pose_capture_add_button(label) {
         }
     }
 }
-

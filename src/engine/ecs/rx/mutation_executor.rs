@@ -657,9 +657,12 @@ impl RxMutationExecutor {
                     .handle_capture(world, emit, *target, pose_name.clone());
             }
             IntentValue::PoseApply { target, pose } => {
-                systems
+                if let Err(error) = systems
                     .pose_capture
-                    .handle_apply(world, emit, *target, *pose);
+                    .handle_apply(world, emit, *target, *pose)
+                {
+                    eprintln!("[PoseCaptureSystem] {error}");
+                }
             }
 
             // Not executed by the mutation executor.

@@ -1,68 +1,72 @@
 # Pose capture and applying poses
 
-> Status: early-stage. The underlying pose-capture components and system exist, but the editor UI and authoring workflow are not fully implemented yet. Expect this guide and the APIs to expand.
-
-Pose capture records the local transforms in an opted-in avatar subtree and stores them as a reusable pose. Applying a stored pose writes those transforms back to the matching nodes.
+Pose capture records local joint transforms from an opted-in glTF instance, presents the resulting library in the editor, and can apply a stored pose to another compatible instance.
 
 ## Opt a model into pose capture
 
-Attach `PoseCapture` beneath the glTF component whose spawned subtree should be captured:
+Attach `PoseCapture` beneath the glTF component:
 
 ```mms
 GLTF.new("assets/models/avatar.glb") {
     EM.on()
     PoseCapture {
         label("Avatar")
+        asset_name("avatar")
     }
 }
 ```
 
-The label identifies the target in pose-capture UI. Pose capture is opt-in: models without this component are not presented as capture targets.
+`label` is the library header shown in the pose panel. `asset_name` is optional for capture and apply, but required by Save. It may contain only ASCII letters, digits, `_`, and `-`.
 
-Current examples include:
+Models without `PoseCapture` do not appear in the panel.
 
-- `examples/bisket-desktop-demo.mms`
-- `examples/bisket-vr-only-example.mms`
-- `examples/input-xr-gamepad.mms`
+## Use the pose panel
 
-## Current data model
+Each opted-in target has one library header:
 
-A capture target owns a pose library, and the library owns the captured poses:
+- `Capture` records the current joint transforms into that library.
+- `Save` writes the complete library to disk.
+
+Each pose has a row body and an `Apply` button:
+
+- Clicking the row body only selects and highlights that row inside the pose panel.
+- Clicking `Apply` applies the pose. It does not replace the editor or scene selection.
+
+Capture names are generated as `pose_0`, `pose_1`, and so on. Rename, delete, reorder, and per-pose save are not currently part of the panel workflow.
+
+## Apply target selection
+
+Apply first tries to identify the glTF instance represented by the current visual/editor selection. A direct glTF selection works, as do selections on:
+
+- imported mesh primitives;
+- imported spawned nodes;
+- armature joints;
+- armature visualization markers.
+
+This allows a pose captured from one instance to be applied to another compatible instance. The destination does not need its own `PoseCapture` component.
+
+If the current selection is unrelated to a glTF instance, Apply falls back to the glTF that originally owned the pose.
+
+Compatibility currently means every stored joint query must match exactly one joint in the destination instance. Validation is atomic: if any query is missing or ambiguous, no transforms are applied and the panel status reports the failure.
+
+## Saved files
+
+Save writes the full library under:
 
 ```text
-PoseCapture target
-└── PoseCaptureLibrary
-    ├── PoseCapturePose "pose 1"
-    └── PoseCapturePose "pose 2"
+assets/components/poses/<asset_name>/
+├── library.mms
+├── 000-<pose-name>.pose.mms
+├── 001-<pose-name>.pose.mms
+└── ...
 ```
 
-Each pose stores local transform entries addressed relative to the capture target. This lets a pose be applied back to the corresponding nodes without depending on transient component IDs.
+Pose names are sanitized for filenames. The numeric prefix preserves ECS child order.
 
-## Capturing and applying
-
-The runtime supports `PoseCapture` and `PoseApply` intents. The developing pose panel is intended to expose these operations:
-
-1. Select or locate a `PoseCapture` target.
-2. Capture the current local transforms into its library.
-3. Select a stored pose to apply it to that target.
-
-At present, treat this as an experimental editor-assisted workflow rather than a stable MMS-only authoring interface. The panel may be incomplete, and serialized pose-library syntax is not yet presented here as a supported workflow.
+Each pose module exports one `pose()` function. `library.mms` imports every generated module in order and materializes one `PoseCaptureLibrary`. Pose modules are replaced atomically, the manifest is published last, and stale generated pose modules are removed after the new manifest is in place.
 
 ## Interaction with live avatar control
 
-Capture represents the transforms at the moment of capture. If `AVC`, `XRHand`, animation, constraints, or another system continues writing the same bones, it may immediately overwrite an applied pose. For predictable results, capture and apply when competing drivers are paused or scoped away from the affected bones.
+Capture records transforms at that moment. If `AVC`, `XRHand`, animation, constraints, or another system continues writing the same joints, it may immediately overwrite an applied pose. Pause or scope competing drivers when a persistent applied pose is required.
 
-Pose capture does not replace rig setup. Configure `AVC`, bone names, pole directions, and wrist corrections first; then use pose capture to preserve useful configurations.
-
-## Planned expansion
-
-This guide should grow when the UI workflow stabilizes to cover:
-
-- naming and organizing poses;
-- selecting a specific capture target;
-- applying poses from MMS and events;
-- serialization and loading pose libraries;
-- combining poses with animation scopes;
-- resolving conflicts with live IK and XR input.
-
-For implementation design and unresolved details, see `docs/draft/pose-capture.md`.
+Pose capture does not replace rig setup. Configure bone names, pole directions, and wrist corrections first, then capture useful configurations.

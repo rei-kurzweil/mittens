@@ -333,6 +333,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     emit,
                     panel_query_root,
                     *renderable,
+                    &click_editor_context_state,
                     &mut *click_data_renderer
                         .lock()
                         .expect("data renderer mutex poisoned"),

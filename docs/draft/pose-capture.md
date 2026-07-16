@@ -1,8 +1,19 @@
 # Pose Capture
 
-Draft for capturing authored or edited armature poses from imported glTF subtrees, storing them as reusable pose libraries, exposing them in editor UI, and assembling animation trees from captured poses.
+Design record for capturing authored or edited armature poses from imported glTF subtrees, storing them as reusable pose libraries, exposing them in editor UI, and assembling animation trees from captured poses.
 
-This is a design note only. It does not implement the feature.
+The phase-1 capture, apply, panel, and standalone-library save workflow is implemented. Animation assembly remains future work. Where older exploratory alternatives remain below, the “Finalized phase-1 contract” section is authoritative.
+
+## Finalized phase-1 contract
+
+- `PoseCaptureComponent` has optional `label` and `asset_name` fields. `asset_name` accepts only ASCII letters, digits, `_`, and `-`.
+- Each opted-in target owns one `PoseCaptureLibraryComponent`; poses are ordered child `PoseCapturePoseComponent` nodes.
+- Every library header contains `Capture` and `Save`. Every pose row contains a separate `Apply` action.
+- Row-body clicks only update the pose panel’s local selection/highlight.
+- Apply prefers the glTF represented by `EditorContextState.selected_component`, recognizing direct glTF selections and descendants of registered spawned nodes or joints. This covers imported primitives and armature markers.
+- If selection does not identify a glTF, Apply falls back to the pose’s original glTF owner.
+- Every joint query must resolve exactly once before any update is emitted. Missing or ambiguous matches fail atomically.
+- Save writes `assets/components/poses/<asset_name>/library.mms` plus ordered `NNN-<pose-name>.pose.mms` modules. Modules are replaced atomically, the manifest is published last, and stale generated modules are then removed.
 
 ## Goal
 
@@ -81,6 +92,7 @@ Suggested fields:
 ```rust
 pub struct PoseCaptureComponent {
     pub label: Option<String>,
+    pub asset_name: Option<String>,
     pub target_mode: PoseCaptureTargetMode,
     pub include_scale: bool,
     pub store_rest_deltas: bool,
@@ -327,19 +339,16 @@ library per `PoseCaptureComponent` target.
 
 Section model:
 
-- section header divider: target/library label
-- section rows: captured poses for that target
-- section footer: `Capture Pose` button
+- library header: target/library label, `Capture`, and `Save`
+- pose row: selectable label body and explicit `Apply`
+- compact panel status bar
 
 Click behavior:
 
-- clicking `Capture Pose` emits `PoseCapture { target, pose_name: None }`
-- clicking a pose row emits `PoseApply { target, pose }`
-
-The capture button is only a trigger. The system decides whether that click means:
-
-- capture the currently gizmo-selected pose-capture target
-- or, if nothing relevant is selected, capture across all pose libraries
+- `Capture` emits `PoseCapture { target, pose_name: None }` for that header’s target
+- the pose row body only updates panel-local selection
+- `Apply` resolves the current editor/visual glTF selection, preflights every joint, then emits one `PoseApply` intent for the resolved glTF
+- `Save` synchronously writes the complete library and reports success or failure in the panel status
 
 ## Why this should be driven by `PoseCaptureComponent`
 
@@ -356,18 +365,12 @@ That keeps capture/editor semantics explicit and avoids cluttering the panel wit
 
 Use the existing `DataComponent` row payload pattern.
 
-Suggested payload keys:
+Final payload keys:
 
-- on section roots:
-  - `row_kind = "pose_capture_section"`
-  - `target_component = <PoseCapture root>`
-- on pose rows:
-  - `row_kind = "pose_capture_pose"`
-  - `target_component = <PoseCapture root>`
-  - `pose_component = <PoseCapturePose>`
-- on add button rows:
-  - `row_kind = "pose_capture_add"`
-  - `target_component = <panel root or other non-pose trigger scope>`
+- `action = "Capture" | "Save" | "Select" | "Apply"`
+- `target_component = <PoseCapture root>`
+- `library = <PoseCaptureLibrary>`
+- `pose = <PoseCapturePose>` for Select and Apply
 
 The stopgap editor panel adapter can decode these payloads the same way it already decodes world/grid/panel actions.
 
@@ -375,13 +378,11 @@ The stopgap editor panel adapter can decode these payloads the same way it alrea
 
 The pose capture panel should not overload scene selection.
 
-Recommended behavior:
+Final behavior:
 
-- clicking a pose row applies the pose
-- it may also focus the panel or highlight the row
-- it should not necessarily change the world selection unless that proves useful
-
-If row-selection state is needed, give the panel its own local `SelectionComponent` scope, like other editor panels.
+- clicking a pose row highlights it in the panel-local `SelectionComponent`
+- selection does not apply the pose and does not replace editor/glTF selection
+- only the explicit `Apply` control applies a pose
 
 ## Phase 2: Animation assembly
 
@@ -486,28 +487,16 @@ The user also wants to save pose lists independently of the full scene.
 
 That should be treated as a distinct export mode, not as a special case of full world save.
 
-Recommended shape:
-
-- add a helper that exports one `PoseCaptureLibraryComponent` subtree to MMS
-- or exports one synthetic root containing multiple selected libraries
-
-Example conceptual output:
+Implemented shape:
 
 ```text
-PoseLibrary {
-    name = "rei_poses"
-
-    PoseCaptureLibrary.for_target("#avatar_pose_capture") {
-        PoseCapturePose.named("idle") {
-            pose_entry("Armature/Hips", [0,0,0], [0,0,0,1], [1,1,1])
-            pose_entry("Armature/Hips/Spine", [...], [...], [...])
-        }
-        PoseCapturePose.named("step_left") {
-            ...
-        }
-    }
-}
+assets/components/poses/<asset_name>/
+├── library.mms
+├── 000-idle.pose.mms
+└── 001-step_left.pose.mms
 ```
+
+Each pose module exports `pose()`. The manifest imports every module in ECS child order and materializes one `PoseCaptureLibrary`.
 
 This is separate from animation export on purpose:
 
@@ -579,9 +568,9 @@ The first version can auto-name poses:
 
 Later we can add rename support in the panel.
 
-### 5. standalone export/import API
+### 5. standalone import UI
 
-The scene save path exists, but "save just this pose library" needs explicit API and likely a small REPL/editor command surface.
+Standalone export is implemented by the library-header Save action. Import UI remains future work.
 
 ## Recommended implementation order
 
@@ -589,11 +578,11 @@ The scene save path exists, but "save just this pose library" needs explicit API
 2. add `PoseCaptureLibraryComponent` + `PoseCapturePoseComponent`
 3. add `PoseCapture` and `PoseApply` intents
 4. implement `PoseCaptureSystem` capture/apply using subtree-relative path arrays
-5. add `pose_capture_panel` with grouped sections and per-section `Add` button
+5. add `pose_capture_panel` with grouped sections and per-library Capture/Save plus per-pose Apply
 6. phase 2: add animation assembly from pose lists
 7. phase 2+: improve animation target scoping for reusable generated animations
 8. phase 4: mark pose libraries scene-serializable and verify full scene export
-9. phase 4: add "export pose library subtree to MMS" as a separate operation
+9. add "export pose library subtree to MMS" as a separate operation (implemented)
 
 ## Recommendation summary
 

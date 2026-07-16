@@ -149,7 +149,7 @@ ED.active() {
         name = "desktop_scene_bisket"
         GLTF.new("assets/models/bisket.11.0.glb") {
             EM.on()
-            PoseCapture { label("Bisket Scene") }
+            PoseCapture { label("Bisket Scene") asset_name("bisket_scene") }
         }
     }
 }
@@ -172,7 +172,7 @@ I.speed(2.0) {
             name = "desktop_camera_rig_bisket"
             GLTF.new("assets/models/bisket.11.0.glb") {
                 EM.on()
-                PoseCapture { label("Bisket Camera Rig") }
+                PoseCapture { label("Bisket Camera Rig") asset_name("bisket_camera_rig") }
             }
         }
     }

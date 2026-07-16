@@ -2209,6 +2209,16 @@ fn apply_call(
     if let Some(pc) = world.get_component_by_id_as_mut::<PoseCaptureComponent>(id) {
         match method {
             "with_label" | "label" => pc.label = Some(arg_str(args, 0)?.to_string()),
+            "with_asset_name" | "asset_name" => {
+                let asset_name = arg_str(args, 0)?;
+                if !crate::engine::ecs::component::is_valid_pose_asset_name(asset_name) {
+                    return Err(
+                        "PoseCapture asset_name must contain only ASCII letters, digits, '_' or '-'"
+                            .to_string(),
+                    );
+                }
+                pc.asset_name = Some(asset_name.to_string());
+            }
             _ => {}
         }
         return Ok(());
