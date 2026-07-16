@@ -58,6 +58,7 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 fn main() {
+    mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
 
     // Usage:

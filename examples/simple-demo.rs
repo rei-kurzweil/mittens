@@ -278,6 +278,7 @@ fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
 }
 
 fn main() {
+    mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
 
     let world = engine::ecs::World::default();

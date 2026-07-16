@@ -15,6 +15,7 @@ use mittens_engine::{
 mod example_util;
 
 fn main() {
+    mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
 
     let output = scripting::MeowMeowRunner::eval(include_str!("mms-loops.mms"));

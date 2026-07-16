@@ -1,16 +1,16 @@
 
-# mittens-engine 0.5.1 "mittens"
+# mittens-engine 0.6.0 "mittens"
 <img width="1920" height="745" alt="Screenshot_20260303_015535" src="https://github.com/user-attachments/assets/16d9656c-9df3-4a96-89bd-658d222e78d0" />
 
 An opinionated game engine specially made for social vr, vtubing, css-driven UI and 3D character animation.    
 
 ### Workspace crates
 
-- `mittens-engine` 0.5.1 at the workspace root: Vulkan/OpenXR rendering, ECS,
+- `mittens-engine` 0.6.0 at the workspace root: Vulkan/OpenXR rendering, ECS,
   engine component materialization, and the engine-aware scripting adapter.
-- `meow-meow-script` 0.1.0 in `crates/meow-meow-script`: host-neutral syntax,
+- `meow-meow-script` 0.6.0 in `crates/meow-meow-script`: host-neutral syntax,
   parser, runtime values, evaluator, and host protocol.
-- `mittens-query` 0.1.0 in `crates/mittens-query`: CSS/MMQ parsing and
+- `mittens-query` 0.6.0 in `crates/mittens-query`: CSS/MMQ parsing and
   host-neutral query-tree evaluation.
 
 The dependency graph is acyclic: `mittens-engine` depends on both standalone
@@ -24,8 +24,15 @@ change does not publish, tag, or push a release.
 (see docs/meow_meow for an overview of .mms scripts)
 
 ## Running examples
+
 - Run examples in release mode by default: `cargo run --release --example <name>`.
 - Avoid debug example runs unless you specifically need debug-only diagnostics or faster compile iteration.
+- Large `.glb` model assets are omitted from the crates.io package. Every example
+  calls `mittens_engine::example_support::ensure_model_assets()` before scene
+  setup; if `assets/models` contains no `.glb` files, it runs
+  `scripts/download-model-assets.sh` to fetch the example model bundle from
+  GitHub. Run the script manually to prefetch models. Set
+  `MITTENS_MODEL_ASSET_BASE_URL` to override the download source.
 
 ## Windowing
 + uses winit to make a window and passes the RawDisplayHandle to renderer to render into the window

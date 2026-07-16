@@ -1,6 +1,7 @@
 use mittens_engine::{engine, engine::ecs::SignalEmitter, scripting, utils};
 
 fn main() {
+    mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
     // A path-aware evaluation is required so the scene can import its MMS preset module.
     let output = scripting::MeowMeowRunner::eval_file("examples/vtuber-secondary-motion.mms");

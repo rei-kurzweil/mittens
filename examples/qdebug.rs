@@ -1,5 +1,6 @@
 use mittens_engine::{engine, scripting, utils};
 fn main() {
+    mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);

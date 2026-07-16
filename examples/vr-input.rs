@@ -184,6 +184,7 @@ fn spawn_controller_cube(
 }
 
 fn main() {
+    mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
 
     let options = match parse_options() {

@@ -115,6 +115,7 @@ fn populate_scrolling(
 }
 
 fn main() {
+    mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
 
     let output = scripting::MeowMeowRunner::eval(include_str!("scrolling.mms"));

@@ -2,6 +2,7 @@ use mittens_engine::{engine, engine::ecs::SignalEmitter, scripting, utils};
 use std::time::Duration;
 
 fn main() {
+    mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
 
     let output = scripting::MeowMeowRunner::eval_file_with_timeout(

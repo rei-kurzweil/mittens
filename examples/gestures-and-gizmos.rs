@@ -232,6 +232,7 @@ fn build_gestures_and_gizmos_scene(universe: &mut engine::Universe) -> Scene {
 }
 
 fn main() {
+    mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
 
     let world = engine::ecs::World::default();

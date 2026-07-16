@@ -9,6 +9,7 @@
 use mittens_engine::{engine, engine::ecs::SignalEmitter, scripting, utils};
 
 fn main() {
+    mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
 
     println!("[audio-music-demo] start");

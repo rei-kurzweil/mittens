@@ -14,6 +14,7 @@ use mittens_engine::{engine, engine::ecs::SignalEmitter, scripting, utils};
 mod example_util;
 
 fn main() {
+    mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
 
     // eval_file passes the path so `import "cat.mms"` resolves relative to

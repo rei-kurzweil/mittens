@@ -4,6 +4,7 @@ use mittens_engine::{engine, utils};
 mod example_util;
 
 fn main() {
+    mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
 
     // Debug toggle: allow isolating stack overflows to audio vs. non-audio init.

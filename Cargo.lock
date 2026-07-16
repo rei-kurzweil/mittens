@@ -1381,7 +1381,7 @@ dependencies = [
 
 [[package]]
 name = "meow-meow-script"
-version = "0.1.0"
+version = "0.6.0"
 
 [[package]]
 name = "microfft"
@@ -1423,7 +1423,7 @@ dependencies = [
 
 [[package]]
 name = "mittens-engine"
-version = "0.5.1"
+version = "0.6.0"
 dependencies = [
  "ash",
  "bvh",
@@ -1454,7 +1454,7 @@ dependencies = [
 
 [[package]]
 name = "mittens-query"
-version = "0.1.0"
+version = "0.6.0"
 
 [[package]]
 name = "moxcms"

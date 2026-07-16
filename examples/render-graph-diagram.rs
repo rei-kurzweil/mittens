@@ -19,6 +19,7 @@ use mittens_engine::{engine, engine::ecs::SignalEmitter, scripting, utils};
 mod example_util;
 
 fn main() {
+    mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
 
     let output = scripting::MeowMeowRunner::eval_file("examples/render-graph-diagram.mms");

@@ -2,6 +2,7 @@ use mittens_engine::engine::ecs::SignalEmitter;
 use mittens_engine::{engine, scripting, utils};
 
 fn main() {
+    mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
 
     let mut universe = engine::Universe::new(engine::ecs::World::default());

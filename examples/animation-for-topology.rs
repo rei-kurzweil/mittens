@@ -78,6 +78,7 @@ fn spawn_detached_cube_prefab(
 }
 
 fn main() {
+    mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
 
     let world = engine::ecs::World::default();

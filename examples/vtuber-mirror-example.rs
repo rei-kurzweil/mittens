@@ -75,6 +75,7 @@ fn on_xr_pointer_event(world: &mut World, _emit: &mut dyn SignalEmitter, env: &S
 }
 
 fn main() {
+    mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
 
     let output = scripting::MeowMeowRunner::eval(include_str!("vtuber-mirror-example.mms"));

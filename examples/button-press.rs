@@ -437,6 +437,7 @@ fn spawn_button(
 }
 
 fn main() {
+    mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
 
     let world = engine::ecs::World::default();
