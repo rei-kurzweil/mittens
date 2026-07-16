@@ -13,7 +13,7 @@
 ///   docs/spec/render-graph-post-processing.md
 ///   docs/spec/render-graph-pipeline.svg
 ///   docs/spec/render-graph-pipeline-post-processing.svg
-use cat_engine::{engine, engine::ecs::SignalEmitter, meow_meow, utils};
+use mittens_engine::{engine, engine::ecs::SignalEmitter, scripting, utils};
 
 #[path = "example_util/mod.rs"]
 mod example_util;
@@ -21,7 +21,7 @@ mod example_util;
 fn main() {
     utils::logger::init();
 
-    let output = meow_meow::MeowMeowRunner::eval_file("examples/render-graph-diagram.mms");
+    let output = scripting::MeowMeowRunner::eval_file("examples/render-graph-diagram.mms");
 
     for error in &output.errors {
         eprintln!("[mms] error: {error}");

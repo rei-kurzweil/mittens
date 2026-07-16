@@ -290,35 +290,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cat-engine"
-version = "0.1.0"
-dependencies = [
- "ash",
- "bvh",
- "cpal",
- "ddsfile",
- "fundsp",
- "gltf",
- "heapless",
- "image",
- "openxr",
- "reqwest",
- "rspirv",
- "rtrb",
- "serde",
- "serde_json",
- "slotmap",
- "smallvec",
- "symphonia",
- "tiny_http",
- "uuid",
- "vulkano",
- "vulkano-shaders",
- "vulkano-util",
- "winit",
-]
-
-[[package]]
 name = "cc"
 version = "1.2.50"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1409,6 +1380,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "meow-meow-script"
+version = "0.1.0"
+
+[[package]]
 name = "microfft"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1445,6 +1420,41 @@ dependencies = [
  "wasi",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "mittens-engine"
+version = "0.5.1"
+dependencies = [
+ "ash",
+ "bvh",
+ "cpal",
+ "ddsfile",
+ "fundsp",
+ "gltf",
+ "heapless",
+ "image",
+ "meow-meow-script",
+ "mittens-query",
+ "openxr",
+ "reqwest",
+ "rspirv",
+ "rtrb",
+ "serde",
+ "serde_json",
+ "slotmap",
+ "smallvec",
+ "symphonia",
+ "tiny_http",
+ "uuid",
+ "vulkano",
+ "vulkano-shaders",
+ "vulkano-util",
+ "winit",
+]
+
+[[package]]
+name = "mittens-query"
+version = "0.1.0"
 
 [[package]]
 name = "moxcms"

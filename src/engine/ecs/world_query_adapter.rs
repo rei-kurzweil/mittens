@@ -1,4 +1,4 @@
-//! Bridge between `World` topology and the shared `src/query/` evaluator.
+//! Bridge between `World` topology and the `mittens-query` evaluator.
 //!
 //! `WorldQueryAdapter` lets `QueryEvaluator` walk the live ECS using the same
 //! adapter trait that the module CE-tree query uses. Engine subsystems that
@@ -6,7 +6,7 @@
 //! rather than rolling their own walks.
 
 use crate::engine::ecs::{ComponentId, World};
-use crate::query::{AttributeSelector, QueryTreeAdapter};
+use mittens_query::{AttributeSelector, QueryTreeAdapter};
 
 pub struct WorldQueryAdapter<'w> {
     world: &'w World,

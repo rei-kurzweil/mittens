@@ -8,7 +8,7 @@
 ///
 /// This example is the primary test bed for EventSignal::Click, which is
 /// emitted by GestureSystem at DragEnd time when pointer travel < 8 px.
-use cat_engine::{engine, utils};
+use mittens_engine::{engine, utils};
 
 #[path = "example_util/mod.rs"]
 mod example_util;

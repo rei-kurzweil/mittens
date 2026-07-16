@@ -498,7 +498,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
 
         let panel_query_root = world.add_component_boxed_named(

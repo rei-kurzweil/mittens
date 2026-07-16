@@ -1,8 +1,9 @@
 # Meow Meow Script (MMS) ᓚᘏᗢ
 
-MMS is the scripting + scene-authoring language for cat-engine. A script
+MMS is a host-neutral language in the `meow-meow-script` crate, with scene
+authoring capabilities supplied by `mittens-engine`. A script
 describes a component tree and wires up reactive behaviour; the evaluator
-runs on a worker thread and emits intents to the engine.
+runs through the host contract and emits requests to the engine adapter.
 
 For status, roadmap, and active task docs see [`task/status.md`](task/status.md).
 For language goals see [`objectives.md`](objectives.md).

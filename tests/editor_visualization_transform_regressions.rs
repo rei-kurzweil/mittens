@@ -1,16 +1,16 @@
-use cat_engine::engine::ecs::component::{
+use mittens_engine::engine::ecs::component::{
     Camera3DComponent, CameraXRComponent, ComponentRef, EditorComponent, GLTFComponent,
     PointerComponent, RenderableComponent, TransformComponent, TransformGizmoComponent,
     TransformParentComponent,
 };
-use cat_engine::engine::ecs::system::editor_scene_hit::resolve_world_scene_hit;
-use cat_engine::engine::ecs::system::{EditorContextSystem, PointerSystem, XrInputState};
-use cat_engine::engine::ecs::{CommandQueue, IntentValue, SignalEmitter, SystemWorld, World};
-use cat_engine::engine::graphics::{RenderAssets, VisualWorld};
-use cat_engine::engine::user_input::InputState;
+use mittens_engine::engine::ecs::system::editor_scene_hit::resolve_world_scene_hit;
+use mittens_engine::engine::ecs::system::{EditorContextSystem, PointerSystem, XrInputState};
+use mittens_engine::engine::ecs::{CommandQueue, IntentValue, SignalEmitter, SystemWorld, World};
+use mittens_engine::engine::graphics::{RenderAssets, VisualWorld};
+use mittens_engine::engine::user_input::InputState;
 use winit::event::MouseButton;
 
-fn translation(world: &World, component: cat_engine::engine::ecs::ComponentId) -> [f32; 3] {
+fn translation(world: &World, component: mittens_engine::engine::ecs::ComponentId) -> [f32; 3] {
     let matrix = world
         .get_component_by_id_as::<TransformComponent>(component)
         .expect("transform")
@@ -41,12 +41,18 @@ fn gltf_bounds_are_invisible_by_default() {
 #[test]
 fn wireframe_box_mesh_is_cached_by_thickness_and_retains_unit_extents() {
     let mut assets = RenderAssets::new();
-    let thin =
-        cat_engine::engine::ecs::component::RenderableComponent::wireframe_box(&mut assets, 0.02);
-    let thin_again =
-        cat_engine::engine::ecs::component::RenderableComponent::wireframe_box(&mut assets, 0.02);
-    let thick =
-        cat_engine::engine::ecs::component::RenderableComponent::wireframe_box(&mut assets, 0.08);
+    let thin = mittens_engine::engine::ecs::component::RenderableComponent::wireframe_box(
+        &mut assets,
+        0.02,
+    );
+    let thin_again = mittens_engine::engine::ecs::component::RenderableComponent::wireframe_box(
+        &mut assets,
+        0.02,
+    );
+    let thick = mittens_engine::engine::ecs::component::RenderableComponent::wireframe_box(
+        &mut assets,
+        0.08,
+    );
 
     assert_eq!(thin.renderable.mesh, thin_again.renderable.mesh);
     assert_ne!(thin.renderable.mesh, thick.renderable.mesh);

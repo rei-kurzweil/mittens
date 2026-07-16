@@ -1,10 +1,10 @@
-use cat_engine::{engine, engine::ecs::SignalEmitter, meow_meow, utils};
+use mittens_engine::{engine, engine::ecs::SignalEmitter, scripting, utils};
 use std::time::Duration;
 
 fn main() {
     utils::logger::init();
 
-    let output = meow_meow::MeowMeowRunner::eval_file_with_timeout(
+    let output = scripting::MeowMeowRunner::eval_file_with_timeout(
         "examples/camera-constraint.mms",
         Duration::from_secs(10),
     );

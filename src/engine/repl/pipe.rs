@@ -1,7 +1,7 @@
 use crate::engine::ecs;
-use crate::meow_meow::ast::ComponentExpression;
-use crate::meow_meow::component_registry::subtree_to_ce_ast;
-use crate::meow_meow::unparser::unparse_component;
+use crate::scripting::ast::ComponentExpression;
+use crate::scripting::component_registry::subtree_to_ce_ast;
+use crate::scripting::unparser::unparse_component;
 
 use super::repl_backend::ReplBackend;
 use super::util;
@@ -74,8 +74,8 @@ fn stage_grep(world: &ecs::World, input: Vec<PipeValue>, pattern: &str) -> Vec<P
                 return;
             }
             for stmt in &ce.body.statements {
-                if let crate::meow_meow::ast::Statement::Expression(
-                    crate::meow_meow::ast::Expression::Component(child),
+                if let crate::scripting::ast::Statement::Expression(
+                    crate::scripting::ast::Expression::Component(child),
                 ) = stmt
                 {
                     collect_matching(child, needle, out);

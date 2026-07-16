@@ -66,7 +66,7 @@ pub struct World {
     /// `find_component(&self, ...)` can mutate the cache without forcing
     /// every caller to thread `&mut World`. Single-threaded — World lives
     /// on the main thread.
-    mmq_parser: RefCell<crate::query::mmq::MmqQuerySyntax>,
+    mmq_parser: RefCell<mittens_query::mmq::MmqQuerySyntax>,
 }
 
 impl World {
@@ -271,7 +271,7 @@ impl World {
     /// Find the first component under `root` matching `selector`.
     ///
     /// `selector` is parsed as MMQ — `#name`, `Type`, `Type#name`, `[name='...']`, etc.
-    /// See `src/query/mmq/parser.rs`.
+    /// See `crates/mittens-query/src/mmq/parser.rs`.
     pub fn find_component(&self, root: ComponentId, selector: &str) -> Option<ComponentId> {
         let matches = self.run_query(root, selector);
         matches.into_iter().next()
@@ -294,8 +294,8 @@ impl World {
 
     fn run_query(&self, root: ComponentId, selector: &str) -> Vec<ComponentId> {
         use crate::engine::ecs::world_query_adapter::WorldQueryAdapter;
-        use crate::query::QueryEvaluator;
-        use crate::query::QuerySyntax;
+        use mittens_query::QueryEvaluator;
+        use mittens_query::QuerySyntax;
 
         if self.get_component_record(root).is_none() {
             return Vec::new();

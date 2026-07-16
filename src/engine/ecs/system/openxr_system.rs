@@ -2209,7 +2209,7 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
             .map_err(|e| format!("string_to_path(/user/hand/right): {e:?}"))?;
 
         let action_set = instance
-            .create_action_set("cat_engine", "Cat Engine", 0)
+            .create_action_set("mittens_engine", "Cat Engine", 0)
             .map_err(|e| format!("create_action_set: {e:?}"))?;
         let hand_subaction_paths = [left, right];
 

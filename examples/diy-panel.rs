@@ -1,4 +1,4 @@
-use cat_engine::{engine, engine::ecs::SignalEmitter, meow_meow, utils};
+use mittens_engine::{engine, engine::ecs::SignalEmitter, scripting, utils};
 
 const DEBUG_CLONE_WORLD_OFFSET: [f32; 3] = [0.0, 0.0, 0.1];
 
@@ -85,7 +85,7 @@ fn decompose_world_trs(matrix_world: [[f32; 4]; 4]) -> ([f32; 3], [f32; 4], [f32
             + matrix_world[2][2] * matrix_world[2][2])
             .sqrt(),
     ];
-    let rotation = cat_engine::utils::math::mat_to_quat(matrix_world);
+    let rotation = mittens_engine::utils::math::mat_to_quat(matrix_world);
     (translation, rotation, scale)
 }
 
@@ -93,11 +93,11 @@ fn spawn_container_item_debug_clones(
     universe: &mut engine::Universe,
     container: engine::ecs::ComponentId,
 ) {
-    use cat_engine::meow_meow::component_registry::{
-        ce_ast_to_materialized, spawn_tree, subtree_to_ce_ast,
-    };
     use engine::ecs::IntentValue;
     use engine::ecs::system::TransformSystem;
+    use mittens_engine::scripting::component_registry::{
+        ce_ast_to_materialized, spawn_tree, subtree_to_ce_ast,
+    };
 
     let items = collect_container_items(&universe.world, container);
     for (index, item) in items.into_iter().enumerate() {
@@ -176,7 +176,7 @@ fn spawn_container_item_debug_clones(
 fn main() {
     utils::logger::init();
 
-    let output = meow_meow::MeowMeowRunner::eval(include_str!("diy-panel.mms"));
+    let output = scripting::MeowMeowRunner::eval(include_str!("diy-panel.mms"));
 
     for error in &output.errors {
         eprintln!("[mms] {error}");

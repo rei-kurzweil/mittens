@@ -1,11 +1,11 @@
-use cat_engine::{engine, engine::ecs::SignalEmitter, meow_meow, utils};
+use mittens_engine::{engine, engine::ecs::SignalEmitter, scripting, utils};
 
 fn main() {
     utils::logger::init();
 
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
-    let output = meow_meow::MeowMeowRunner::eval_with_world_and_assets_at_path(
+    let output = scripting::MeowMeowRunner::eval_with_world_and_assets_at_path(
         include_str!("bisket-vr-only-example.mms"),
         Some("examples/bisket-vr-only-example.mms"),
         &mut universe.world,

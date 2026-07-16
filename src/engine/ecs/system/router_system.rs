@@ -208,7 +208,7 @@ mod tests {
     fn router_reroutes_initial_direct_children_to_target() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
 
@@ -244,7 +244,7 @@ mod tests {
     fn router_reroutes_late_attached_children_to_target() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
 
@@ -280,7 +280,7 @@ mod tests {
     fn router_does_not_reroute_non_transform_children() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
 

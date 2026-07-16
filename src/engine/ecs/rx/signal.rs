@@ -328,7 +328,7 @@ pub enum IntentValue {
     /// Spawn a component tree described by a fully-evaluated `MaterializedCE` and optionally
     /// attach it to a parent. If `parent` is `None` the root becomes a world root.
     SpawnComponentTree {
-        root: Box<crate::meow_meow::object::MaterializedCE>,
+        root: Box<crate::scripting::object::MaterializedCE>,
         parent: Option<ComponentId>,
     },
     Print {

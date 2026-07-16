@@ -88,9 +88,9 @@ impl Component for TransformParentComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::{CeBuilder, ce, ce_call};
-        use crate::meow_meow::ast::Expression;
+        use crate::scripting::ast::Expression;
 
         fn target_expr(t: &ComponentRef) -> Expression {
             match t {

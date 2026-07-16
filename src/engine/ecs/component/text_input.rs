@@ -96,9 +96,9 @@ impl Component for TextInputComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
-        use crate::meow_meow::ast::{Expression, Statement};
+        use crate::scripting::ast::{Expression, Statement};
 
         let mut node = ce("TextInput");
         if !self.text.is_empty() {

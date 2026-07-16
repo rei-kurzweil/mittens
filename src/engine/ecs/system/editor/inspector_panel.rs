@@ -28,7 +28,7 @@ use crate::engine::ecs::system::selection_system::{
     apply_selection_set, resolve_semantic_target_from_payload,
 };
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
-use crate::meow_meow::object::Value;
+use crate::scripting::object::Value;
 
 pub(crate) type InspectorPanelId = u64;
 

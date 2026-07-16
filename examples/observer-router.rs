@@ -1,5 +1,5 @@
-use cat_engine::engine::ecs::SignalEmitter;
-use cat_engine::{engine, meow_meow, utils};
+use mittens_engine::engine::ecs::SignalEmitter;
+use mittens_engine::{engine, scripting, utils};
 
 fn main() {
     utils::logger::init();
@@ -7,7 +7,7 @@ fn main() {
     let mut universe = engine::Universe::new(engine::ecs::World::default());
 
     // Load and run the observer-router scene.
-    let output = meow_meow::MeowMeowRunner::eval_with_world_at_path(
+    let output = scripting::MeowMeowRunner::eval_with_world_at_path(
         include_str!("observer-router.mms"),
         Some("examples/observer-router.mms"),
         &mut universe.world,

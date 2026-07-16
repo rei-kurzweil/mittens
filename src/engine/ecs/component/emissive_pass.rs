@@ -25,7 +25,7 @@ impl Component for EmissivePassComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         crate::engine::ecs::component::ce_helpers::ce("EmissivePass")
     }
 }

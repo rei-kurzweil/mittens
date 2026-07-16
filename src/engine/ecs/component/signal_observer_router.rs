@@ -46,7 +46,7 @@ impl Component for SignalObserverRouterComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         let mut ce = ce("ObserverRouter");
         if !self.blacklist.is_empty() {
             ce = ce.with_call("blacklist", vec![ls(&self.blacklist)]);

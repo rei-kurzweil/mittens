@@ -1,6 +1,6 @@
 use super::Component;
 use crate::engine::ecs::ComponentId;
-use crate::meow_meow::object::RuntimeClosure;
+use crate::scripting::object::RuntimeClosure;
 
 #[derive(Debug, Clone)]
 pub struct KeyframeComponent {
@@ -62,7 +62,7 @@ impl Component for KeyframeComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let mut ce = ce_call("Keyframe", "at", vec![num(self.beat)]);
         if let Some(callback) = &self.callback {

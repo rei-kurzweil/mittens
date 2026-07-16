@@ -51,7 +51,7 @@ impl Component for FitBoundsComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::{CeBuilder, array, ce_call, num};
 
         let mut expr = match self.mode {

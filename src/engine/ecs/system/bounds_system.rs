@@ -149,7 +149,7 @@ mod tests {
     #[test]
     fn renderable_measure_wraps_calculated_bounds() {
         let mut world = World::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
 
         let root = world.add_component(TransformComponent::new());
         let shape = world.add_component(TransformComponent::new().with_scale(0.25, 0.5, 0.1));

@@ -332,7 +332,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut editor_system = EditorSystem::new();
 

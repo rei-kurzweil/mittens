@@ -1,0 +1,612 @@
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, Mutex, Weak};
+
+use crate::ComponentHandle;
+use crate::ast::BlockStatement;
+use crate::block_effect_analyzer::BlockEffectAnalysis;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BuiltinTableKind {
+    Math,
+    MusicNote,
+}
+
+// ---------------------------------------------------------------------------
+// Materialized component expression
+// ---------------------------------------------------------------------------
+
+/// A fully-evaluated component expression: all values are concrete `Value`s,
+/// all control flow has been expanded, all constructor args evaluated.
+///
+/// Produced by the evaluator when a `ComponentExpression` AST node is
+/// evaluated. Passed to `spawn_tree` in the registry — no MMS expression
+/// evaluation needed on the main thread.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuntimeClosure {
+    pub body: BlockStatement,
+    pub captured_env: Arc<HashMap<String, Value>>,
+    pub heap: HeapHandle,
+    pub analysis: Option<BlockEffectAnalysis>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MaterializedCE {
+    /// Component type name (short or full, e.g. `"T"` / `"Transform"`).
+    pub component_type: String,
+    /// When true, `name = expr` inside the CE body is captured as a named
+    /// component property instead of a lexical reassignment.
+    pub component_property_assignment_only: bool,
+    /// First constructor call method, e.g. `"position"` from `T.position(...)`.
+    pub ctor_method: Option<String>,
+    /// First constructor call args, evaluated.
+    pub ctor_args: Vec<Value>,
+    /// Remaining chained constructor calls + body builder calls, in source order.
+    /// e.g. `.scale(...)` after `.position(...)`, plus `fps_rotation()` in the body.
+    pub calls: Vec<(String, Vec<Value>)>,
+    /// Named property assignments from the body, e.g. `intensity = 0.9`.
+    pub named: Vec<(String, Value)>,
+    /// String-type positional content (e.g. `Text { "hello " + name }`).
+    pub positionals: Vec<Value>,
+    /// Deferred executable block payload for components that own imperative
+    /// runtime bodies, such as `Keyframe.at(...) { ... }`.
+    pub deferred_block: Option<RuntimeClosure>,
+    /// Child component trees, in source order. Each entry is either a CE to
+    /// spawn fresh, or a pre-Registered `ComponentHandle` to splice in.
+    pub children: Vec<CeChild>,
+}
+
+/// A child slot inside a `MaterializedCE`.
+///
+/// `Spawn` is the normal case (the body produced a fresh CE). `Attach` is used
+/// when the body referenced a `Value::ComponentObject` — a previously
+/// `Register`ed component — that should be attached as a child rather than
+/// re-created.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CeChild {
+    Spawn(MaterializedCE),
+    Attach(ComponentHandle),
+}
+
+// ---------------------------------------------------------------------------
+// Runtime values
+// ---------------------------------------------------------------------------
+
+/// Runtime value representation for Meow Meow evaluation.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Value {
+    Null,
+    Bool(bool),
+    Number(f64),
+    /// Numeric value tagged with a source-level unit suffix (e.g. `50%`,
+    /// `20gu`, `30deg`). Produced by `Expression::Dimension`. Consumers
+    /// such as the Style setters use this to disambiguate `Percent` vs
+    /// `GlyphUnits` at the boundary between MMS values and engine types.
+    Dimension {
+        value: f64,
+        unit: crate::token::Unit,
+    },
+    String(String),
+    Array(Vec<Value>),
+    Map(HashMap<String, Value>),
+
+    /// A live engine component (already spawned). Holds the engine-side
+    /// `ComponentHandle` and the MMS component type name (e.g. `"Anim"`, `"T"`).
+    /// Produced when `let x = CE` is evaluated with a live reply channel
+    /// (`eval_with_world`). The `component_type` drives method dispatch.
+    ComponentObject {
+        id: ComponentHandle,
+        component_type: String,
+    },
+
+    /// Heap-allocated MMS object (map / record / instance).
+    Object(ObjectId),
+
+    /// Symbolic identifier value (e.g. enum-like flags passed to constructors).
+    Identifier(String),
+
+    /// Host-provided built-in namespace/table.
+    BuiltinTable(BuiltinTableKind),
+
+    /// A fully-evaluated component expression ready to spawn.
+    /// Produced whenever a `ComponentExpression` AST node is evaluated.
+    ComponentExpr(Box<MaterializedCE>),
+
+    /// A closure: params + body AST + captured environment snapshot.
+    Function {
+        params: Vec<String>,
+        body: crate::ast::BlockStatement,
+        captured_env: Arc<HashMap<String, Value>>,
+        heap: HeapHandle,
+    },
+
+    /// A loaded module: named exports + ordered sequence of root CE emits.
+    Module {
+        named: HashMap<String, Value>,
+        sequence: Vec<MaterializedCE>,
+        heap: HeapHandle,
+    },
+}
+
+// ---------------------------------------------------------------------------
+// MMS heap objects
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct ObjectId {
+    slot: u32,
+    heap: Weak<Mutex<Heap>>,
+}
+
+impl ObjectId {
+    pub fn as_u32(&self) -> u32 {
+        self.slot
+    }
+
+    pub fn get(&self) -> Option<Object> {
+        let heap = self.heap.upgrade()?;
+        heap.lock().ok()?.get(self.clone()).cloned()
+    }
+
+    pub fn with_map<R>(&self, f: impl FnOnce(&HashMap<String, Value>) -> R) -> Option<R> {
+        let heap = self.heap.upgrade()?;
+        let heap = heap.lock().ok()?;
+        let Object::Map(map) = heap.get(self.clone())?;
+        Some(f(map))
+    }
+
+    pub fn with_map_mut<R>(&self, f: impl FnOnce(&mut HashMap<String, Value>) -> R) -> Option<R> {
+        let heap = self.heap.upgrade()?;
+        let mut heap = heap.lock().ok()?;
+        let Object::Map(map) = heap.get_mut(self.clone())?;
+        Some(f(map))
+    }
+}
+
+impl PartialEq for ObjectId {
+    fn eq(&self, other: &Self) -> bool {
+        self.slot == other.slot && Weak::as_ptr(&self.heap) == Weak::as_ptr(&other.heap)
+    }
+}
+
+impl Eq for ObjectId {}
+
+impl Hash for ObjectId {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.slot.hash(state);
+        Weak::as_ptr(&self.heap).hash(state);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Object {
+    /// Simple string-keyed map.
+    Map(HashMap<String, Value>),
+}
+
+#[derive(Debug, Default)]
+pub struct Heap {
+    objects: Vec<Object>,
+}
+
+impl Heap {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn alloc_in(handle: &HeapHandle, object: Object) -> ObjectId {
+        let slot = {
+            let mut heap = handle.0.lock().expect("heap lock poisoned");
+            let slot = heap
+                .objects
+                .len()
+                .try_into()
+                .expect("too many heap objects");
+            heap.objects.push(object);
+            slot
+        };
+        ObjectId {
+            slot,
+            heap: Arc::downgrade(&handle.0),
+        }
+    }
+
+    pub fn get(&self, id: ObjectId) -> Option<&Object> {
+        self.objects.get(id.slot as usize)
+    }
+
+    pub fn get_mut(&mut self, id: ObjectId) -> Option<&mut Object> {
+        self.objects.get_mut(id.slot as usize)
+    }
+
+    pub fn len(&self) -> usize {
+        self.objects.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.objects.is_empty()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct HeapHandle(Arc<Mutex<Heap>>);
+
+impl HeapHandle {
+    pub fn new() -> Self {
+        Self(Arc::new(Mutex::new(Heap::new())))
+    }
+
+    pub fn alloc(&self, object: Object) -> ObjectId {
+        Heap::alloc_in(self, object)
+    }
+}
+
+impl Default for HeapHandle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PartialEq for HeapHandle {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ObjectWorld — the MMS worker thread's evaluated object layer
+// ---------------------------------------------------------------------------
+
+/// What a scope frame can do at its boundary.
+///
+/// - `Block` — fully transparent: read & reassign walk past it. Used for plain
+///   blocks, loops, if-bodies, and CE bodies (CE bodies are not write-barriered;
+///   children can mutate parent CE locals if they choose to).
+/// - `Function` — hard barrier: read & reassign both stop. Seeded with a closure's
+///   `captured_env`; the function body cannot see the caller's locals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameKind {
+    Block,
+    Function,
+}
+
+#[derive(Debug, Default)]
+struct Frame {
+    kind_or_root: Option<FrameKind>,
+    bindings: HashMap<String, Value>,
+    captured_bindings: Option<Arc<HashMap<String, Value>>>,
+}
+
+impl Frame {
+    fn new(kind: FrameKind) -> Self {
+        Self {
+            kind_or_root: Some(kind),
+            bindings: HashMap::new(),
+            captured_bindings: None,
+        }
+    }
+    fn root() -> Self {
+        Self {
+            kind_or_root: None,
+            bindings: HashMap::new(),
+            captured_bindings: None,
+        }
+    }
+    fn is_function_barrier(&self) -> bool {
+        matches!(self.kind_or_root, Some(FrameKind::Function))
+    }
+}
+
+/// The scripting-side runtime container. Lives on the MMS worker thread.
+///
+/// Holds the lexical scope chain (a stack of frames) and the MMS-side heap.
+/// Communication with the engine goes through intent channels owned by the
+/// evaluator — `ObjectWorld` itself never sends intents directly.
+///
+/// See `docs/meow_meow/spec/env-heap-object-world.md` for the full design and
+/// `docs/meow_meow/task/frame-stack-object-world.md` for the migration plan.
+#[derive(Debug)]
+pub struct ObjectWorld {
+    frames: Vec<Frame>,
+    heap: HeapHandle,
+    reset_requested: bool,
+}
+
+impl Default for ObjectWorld {
+    fn default() -> Self {
+        Self {
+            frames: vec![Frame::root()],
+            heap: HeapHandle::new(),
+            reset_requested: false,
+        }
+    }
+}
+
+impl ObjectWorld {
+    /// New `ObjectWorld` with one root frame already pushed.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_heap(heap: HeapHandle) -> Self {
+        Self {
+            frames: vec![Frame::root()],
+            heap,
+            reset_requested: false,
+        }
+    }
+
+    // --- Frame management ---
+
+    pub fn push_frame(&mut self, kind: FrameKind) {
+        self.frames.push(Frame::new(kind));
+    }
+
+    /// Push a function frame seeded with the closure's captured environment.
+    /// This is a hard barrier: lookups inside the function will not see past it.
+    pub fn push_function_frame(&mut self, captured: Arc<HashMap<String, Value>>) {
+        self.frames.push(Frame {
+            kind_or_root: Some(FrameKind::Function),
+            bindings: HashMap::new(),
+            captured_bindings: Some(captured),
+        });
+    }
+
+    pub fn pop_frame(&mut self) {
+        // Never pop the root frame.
+        if self.frames.len() > 1 {
+            self.frames.pop();
+        }
+    }
+
+    pub fn frame_depth(&self) -> usize {
+        self.frames.len()
+    }
+
+    pub fn request_reset(&mut self) {
+        self.reset_requested = true;
+    }
+
+    pub fn take_reset_requested(&mut self) -> bool {
+        std::mem::take(&mut self.reset_requested)
+    }
+
+    // --- Variable environment ---
+
+    /// Bind a name in the top (innermost) frame. Shadows outer bindings.
+    pub fn bind(&mut self, name: impl Into<String>, value: Value) {
+        let top = self.frames.last_mut().expect("ObjectWorld: no frames");
+        top.bindings.insert(name.into(), value);
+    }
+
+    /// Look up a name. Walks frames from innermost outward; stops at a
+    /// `Function` barrier (function bodies cannot see the caller's locals).
+    pub fn lookup(&self, name: &str) -> Option<&Value> {
+        for frame in self.frames.iter().rev() {
+            if let Some(v) = frame.bindings.get(name) {
+                return Some(v);
+            }
+            if let Some(v) = frame
+                .captured_bindings
+                .as_ref()
+                .and_then(|captured| captured.get(name))
+            {
+                return Some(v);
+            }
+            if frame.is_function_barrier() {
+                return None;
+            }
+        }
+        None
+    }
+
+    /// Whether `name` is reachable from the current scope (same walk as `lookup`).
+    pub fn has(&self, name: &str) -> bool {
+        self.lookup(name).is_some()
+    }
+
+    /// Reassign an existing binding. Walks frames inward-to-outward looking for
+    /// the declaring frame; stops at a `Function` barrier.
+    ///
+    /// Errors:
+    /// - name not declared anywhere reachable
+    /// - name declared only beyond the function barrier (caller's locals)
+    pub fn reassign(&mut self, name: &str, value: Value) -> Result<(), String> {
+        for frame in self.frames.iter_mut().rev() {
+            if frame.bindings.contains_key(name) {
+                frame.bindings.insert(name.to_string(), value);
+                return Ok(());
+            }
+            if frame
+                .captured_bindings
+                .as_ref()
+                .is_some_and(|captured| captured.contains_key(name))
+            {
+                frame.bindings.insert(name.to_string(), value);
+                return Ok(());
+            }
+            if matches!(frame.kind_or_root, Some(FrameKind::Function)) {
+                return Err(format!(
+                    "cannot reassign '{}' from inside function (only its captured snapshot is visible)",
+                    name
+                ));
+            }
+        }
+        Err(format!("reassignment: '{}' is not defined", name))
+    }
+
+    /// Flatten all frames visible from the current point into a single map for
+    /// closure capture. Walks innermost outward, **including** the first
+    /// `Function` barrier's frame (so a closure created inside a function sees
+    /// that function's captured snapshot), then stops. Inner names shadow outer.
+    pub fn snapshot_visible(&self) -> HashMap<String, Value> {
+        let mut out: HashMap<String, Value> = HashMap::new();
+        for frame in self.frames.iter().rev() {
+            for (k, v) in &frame.bindings {
+                out.entry(k.clone()).or_insert_with(|| v.clone());
+            }
+            if let Some(captured) = &frame.captured_bindings {
+                for (k, v) in captured.iter() {
+                    out.entry(k.clone()).or_insert_with(|| v.clone());
+                }
+            }
+            if frame.is_function_barrier() {
+                break;
+            }
+        }
+        out
+    }
+
+    // --- Heap access ---
+
+    pub fn heap(&self) -> &HeapHandle {
+        &self.heap
+    }
+
+    pub fn alloc_object(&self, object: Object) -> ObjectId {
+        self.heap.alloc(object)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    fn n(x: f64) -> Value {
+        Value::Number(x)
+    }
+
+    #[test]
+    fn root_frame_bind_and_lookup() {
+        let mut ow = ObjectWorld::new();
+        ow.bind("x", n(1.0));
+        assert_eq!(ow.lookup("x"), Some(&n(1.0)));
+        assert!(ow.has("x"));
+        assert!(!ow.has("y"));
+    }
+
+    #[test]
+    fn block_frame_is_transparent_for_read_and_write() {
+        let mut ow = ObjectWorld::new();
+        ow.bind("x", n(1.0));
+        ow.push_frame(FrameKind::Block);
+        // Read sees outer
+        assert_eq!(ow.lookup("x"), Some(&n(1.0)));
+        // Reassign writes through to outer
+        ow.reassign("x", n(2.0)).unwrap();
+        ow.pop_frame();
+        assert_eq!(ow.lookup("x"), Some(&n(2.0)));
+    }
+
+    #[test]
+    fn block_frame_local_let_does_not_leak() {
+        let mut ow = ObjectWorld::new();
+        ow.push_frame(FrameKind::Block);
+        ow.bind("local", n(42.0));
+        assert_eq!(ow.lookup("local"), Some(&n(42.0)));
+        ow.pop_frame();
+        assert_eq!(ow.lookup("local"), None);
+    }
+
+    #[test]
+    fn function_frame_blocks_read_of_caller_locals() {
+        let mut ow = ObjectWorld::new();
+        ow.bind("caller_var", n(1.0));
+        let mut captured = HashMap::new();
+        captured.insert("captured_var".to_string(), n(99.0));
+        ow.push_function_frame(Arc::new(captured));
+        assert_eq!(ow.lookup("captured_var"), Some(&n(99.0)));
+        assert_eq!(ow.lookup("caller_var"), None);
+    }
+
+    #[test]
+    fn function_frame_blocks_reassign_of_caller_locals() {
+        let mut ow = ObjectWorld::new();
+        ow.bind("caller_var", n(1.0));
+        ow.push_function_frame(Arc::new(HashMap::new()));
+        let err = ow.reassign("caller_var", n(2.0)).unwrap_err();
+        assert!(err.contains("inside function"), "got: {}", err);
+    }
+
+    #[test]
+    fn reassign_undefined_errors() {
+        let mut ow = ObjectWorld::new();
+        let err = ow.reassign("nope", n(1.0)).unwrap_err();
+        assert!(err.contains("not defined"), "got: {}", err);
+    }
+
+    #[test]
+    fn nested_block_reassign_walks_to_declaring_frame() {
+        let mut ow = ObjectWorld::new();
+        ow.bind("sum", n(0.0));
+        ow.push_frame(FrameKind::Block);
+        ow.push_frame(FrameKind::Block);
+        ow.reassign("sum", n(6.0)).unwrap();
+        ow.pop_frame();
+        ow.pop_frame();
+        assert_eq!(ow.lookup("sum"), Some(&n(6.0)));
+    }
+
+    #[test]
+    fn snapshot_visible_flattens_with_inner_shadowing() {
+        let mut ow = ObjectWorld::new();
+        ow.bind("a", n(1.0));
+        ow.bind("b", n(2.0));
+        ow.push_frame(FrameKind::Block);
+        ow.bind("b", n(20.0)); // shadows
+        ow.bind("c", n(3.0));
+        let snap = ow.snapshot_visible();
+        assert_eq!(snap.get("a"), Some(&n(1.0)));
+        assert_eq!(snap.get("b"), Some(&n(20.0))); // inner wins
+        assert_eq!(snap.get("c"), Some(&n(3.0)));
+    }
+
+    #[test]
+    fn snapshot_visible_stops_at_function_barrier() {
+        let mut ow = ObjectWorld::new();
+        ow.bind("caller", n(1.0));
+        let mut captured = HashMap::new();
+        captured.insert("cap".to_string(), n(2.0));
+        ow.push_function_frame(Arc::new(captured));
+        ow.bind("inner", n(3.0));
+        let snap = ow.snapshot_visible();
+        assert_eq!(snap.get("inner"), Some(&n(3.0)));
+        assert_eq!(snap.get("cap"), Some(&n(2.0)));
+        assert_eq!(snap.get("caller"), None);
+    }
+
+    #[test]
+    fn reassign_captured_binding_shadows_shared_snapshot_in_current_call() {
+        let mut ow = ObjectWorld::new();
+        let mut captured = HashMap::new();
+        captured.insert("cap".to_string(), n(2.0));
+        ow.push_function_frame(Arc::new(captured));
+        ow.reassign("cap", n(5.0)).unwrap();
+        assert_eq!(ow.lookup("cap"), Some(&n(5.0)));
+    }
+
+    #[test]
+    fn pop_frame_does_not_pop_root() {
+        let mut ow = ObjectWorld::new();
+        let depth0 = ow.frame_depth();
+        ow.pop_frame();
+        ow.pop_frame();
+        assert_eq!(ow.frame_depth(), depth0);
+    }
+
+    #[test]
+    fn bind_in_inner_frame_shadows_outer_for_lookup() {
+        let mut ow = ObjectWorld::new();
+        ow.bind("x", n(1.0));
+        ow.push_frame(FrameKind::Block);
+        ow.bind("x", n(2.0));
+        assert_eq!(ow.lookup("x"), Some(&n(2.0)));
+        ow.pop_frame();
+        assert_eq!(ow.lookup("x"), Some(&n(1.0)));
+    }
+}

@@ -48,7 +48,7 @@ impl Component for SelectionStyleStateComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         ce("SelectionStyleState")
     }
@@ -737,7 +737,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("time went backwards")
             .as_nanos();
-        let tmp_dir = std::env::temp_dir().join(format!("cat_engine_assets_{}", now));
+        let tmp_dir = std::env::temp_dir().join(format!("mittens_engine_assets_{}", now));
         std::fs::create_dir_all(&tmp_dir).expect("create temp dir");
         tmp_dir
     }
@@ -1090,7 +1090,7 @@ mod tests {
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let asset_system = crate::engine::ecs::system::AssetSystem::new();
 
         systems.selection.install_handlers(&mut systems.rx);
@@ -1181,7 +1181,7 @@ mod tests {
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let asset_system = crate::engine::ecs::system::AssetSystem::new();
 
         systems.selection.install_handlers(&mut systems.rx);
@@ -1329,7 +1329,7 @@ mod tests {
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
 
         systems
             .asset_system
@@ -1398,7 +1398,7 @@ mod tests {
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let asset_system = crate::engine::ecs::system::AssetSystem::new();
 
         systems.selection.install_handlers(&mut systems.rx);
@@ -1560,7 +1560,7 @@ mod tests {
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let asset_system = crate::engine::ecs::system::AssetSystem::new();
 
         systems.selection.install_handlers(&mut systems.rx);
@@ -1638,7 +1638,7 @@ mod tests {
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let asset_system = crate::engine::ecs::system::AssetSystem::new();
 
         systems.selection.install_handlers(&mut systems.rx);
@@ -1767,7 +1767,7 @@ mod tests {
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
 
         systems.selection.install_handlers(&mut systems.rx);
 
@@ -1876,7 +1876,7 @@ mod tests {
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
 
         systems.selection.install_handlers(&mut systems.rx);
 
@@ -1925,7 +1925,7 @@ mod tests {
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
 
         systems.selection.install_handlers(&mut systems.rx);
 
@@ -1977,7 +1977,7 @@ mod tests {
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
 
         systems.selection.install_handlers(&mut systems.rx);
 
@@ -2116,7 +2116,7 @@ mod tests {
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
 
         systems.selection.install_handlers(&mut systems.rx);
 
@@ -2174,7 +2174,7 @@ mod tests {
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
 
         systems.selection.install_handlers(&mut systems.rx);
 

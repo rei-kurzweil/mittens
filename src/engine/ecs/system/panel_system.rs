@@ -10,9 +10,9 @@ use crate::engine::ecs::system::data_renderer_system::{
 };
 use crate::engine::ecs::system::editor::world_panel::WorldPanelModel;
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
-use crate::meow_meow::component_registry::spawn_tree;
-use crate::meow_meow::object::{CeChild, MaterializedCE, Value};
-use crate::meow_meow::runner::MeowMeowRunner;
+use crate::scripting::component_registry::spawn_tree;
+use crate::scripting::object::{CeChild, MaterializedCE, Value};
+use crate::scripting::runner::MeowMeowRunner;
 
 pub const EDITOR_RUNTIME_UI_ROOT_NAME: &str = "editor_runtime_ui_root";
 pub const PANEL_LAYOUT_MOUNT_NAME: &str = "editor_panel_layout_mount";
@@ -52,7 +52,7 @@ pub struct PanelShellSpec {
     pub panel_kind: PanelKind,
     pub asset_path: String,
     pub export_name: String,
-    pub args: Vec<crate::meow_meow::object::Value>,
+    pub args: Vec<crate::scripting::object::Value>,
     pub root_selector: String,
     pub slot_selectors: HashMap<PanelSlotKind, String>,
     pub control_selectors: HashMap<PanelControlKind, String>,
@@ -774,7 +774,7 @@ pub fn spawn_editor_panel_layout_tree(
 #[cfg(test)]
 mod tests {
     use super::{PanelLayoutMountSpec, build_panel_layout_mount_ce};
-    use crate::meow_meow::object::{CeChild, Value};
+    use crate::scripting::object::{CeChild, Value};
 
     #[test]
     fn build_panel_layout_mount_ce_places_layout_root_directly_under_mount() {

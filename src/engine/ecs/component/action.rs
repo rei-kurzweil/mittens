@@ -187,9 +187,9 @@ impl Component for ActionComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
-        use crate::meow_meow::ast::Expression;
+        use crate::scripting::ast::Expression;
 
         // Render an ComponentRef back to the surface form the author wrote.
         // Guid → "@uuid:<hex>". Query → the original selector string. Both

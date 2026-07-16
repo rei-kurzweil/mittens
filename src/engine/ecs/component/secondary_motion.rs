@@ -1,6 +1,6 @@
 use super::{Component, ComponentRef, ce_helpers::*};
 use crate::engine::ecs::ComponentId;
-use crate::meow_meow::ast::Expression;
+use crate::scripting::ast::Expression;
 
 fn ref_expr(value: &ComponentRef) -> Expression {
     match value {
@@ -41,7 +41,7 @@ impl Component for SecondaryMotionComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         ce("SecondaryMotion")
     }
 }
@@ -93,7 +93,7 @@ impl Component for SpringBoneComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         let mut out = ce_call("SpringBone", "new", vec![s(&self.stable_name)]);
         if let Some(target) = &self.center {
             out = out.with_call("center", vec![ref_expr(target)]);
@@ -161,7 +161,7 @@ impl Component for SpringJointComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         ce_call("SpringJoint", "new", vec![ref_expr(&self.node)])
             .with_call("stiffness", vec![num(self.stiffness as f64)])
             .with_call("drag_force", vec![num(self.drag_force as f64)])

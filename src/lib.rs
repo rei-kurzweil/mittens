@@ -1,4 +1,4 @@
 pub mod engine;
-pub mod meow_meow;
-pub mod query;
+pub mod scripting;
+
 pub mod utils;

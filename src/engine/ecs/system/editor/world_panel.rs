@@ -21,11 +21,11 @@ use crate::engine::ecs::system::selection_system::{
     apply_selection_set, resolve_semantic_target_from_payload,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
-use crate::meow_meow::component_registry::{
+use crate::scripting::component_registry::{
     filtered_root_ids_for_roots, filtered_roots_to_ce_ast, spawn_tree,
 };
-use crate::meow_meow::object::{MaterializedCE, Value};
-use crate::meow_meow::runner::MeowMeowRunner;
+use crate::scripting::object::{MaterializedCE, Value};
+use crate::scripting::runner::MeowMeowRunner;
 
 pub const ITEM_PREFIX: &str = "item_";
 pub const WORLD_PANEL_PAYLOAD_NAME: &str = "world_panel_payload";
@@ -868,7 +868,7 @@ pub(crate) fn save_world_panel_scene_to_path(world: &World, path: &Path) -> Resu
         let component = components
             .pop()
             .ok_or_else(|| format!("missing serialized root for {:?}", root_id))?;
-        out.push_str(&crate::meow_meow::unparser::unparse_component(&component));
+        out.push_str(&crate::scripting::unparser::unparse_component(&component));
         out.push_str("\n\n");
     }
     println!(

@@ -1,4 +1,4 @@
-use cat_engine::{
+use mittens_engine::{
     engine::{self, ecs::component::AmbientLightComponent},
     utils,
 };

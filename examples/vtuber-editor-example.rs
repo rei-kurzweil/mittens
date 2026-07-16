@@ -1,6 +1,8 @@
-use cat_engine::engine::ecs::component::{ControllerHand, ControllerXRComponent};
-use cat_engine::engine::ecs::{ComponentId, EventSignal, Signal, SignalEmitter, SignalKind, World};
-use cat_engine::{engine, meow_meow, utils};
+use mittens_engine::engine::ecs::component::{ControllerHand, ControllerXRComponent};
+use mittens_engine::engine::ecs::{
+    ComponentId, EventSignal, Signal, SignalEmitter, SignalKind, World,
+};
+use mittens_engine::{engine, scripting, utils};
 
 #[path = "example_util/mod.rs"]
 mod example_util;
@@ -75,7 +77,7 @@ fn on_xr_pointer_event(world: &mut World, _emit: &mut dyn SignalEmitter, env: &S
 fn main() {
     utils::logger::init();
 
-    let output = meow_meow::MeowMeowRunner::eval(include_str!("vtuber-editor-example.mms"));
+    let output = scripting::MeowMeowRunner::eval(include_str!("vtuber-editor-example.mms"));
 
     for error in &output.errors {
         eprintln!("[mms] {error}");

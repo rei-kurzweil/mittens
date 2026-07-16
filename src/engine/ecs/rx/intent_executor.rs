@@ -89,9 +89,9 @@ fn handle_intent_signal(
         IntentValue::Noop => {}
 
         IntentValue::SpawnComponentTree { root, parent } => {
-            match crate::meow_meow::component_registry::with_live_render_assets(
+            match crate::scripting::component_registry::with_live_render_assets(
                 render_assets,
-                || crate::meow_meow::component_registry::spawn_tree(root, *parent, world, emit),
+                || crate::scripting::component_registry::spawn_tree(root, *parent, world, emit),
             ) {
                 Ok(id) => println!("[SpawnComponentTree] spawned root {id:?}"),
                 Err(e) => println!("[SpawnComponentTree] error: {e}"),
@@ -295,7 +295,7 @@ fn handle_intent_signal(
         } => {
             // Encode prefab subtree → MMS ComponentExpression AST → MaterializedCE.
             // Cloning then drops into the same `spawn_tree` path that MMS source uses.
-            let ce_ast = match crate::meow_meow::component_registry::subtree_to_ce_ast(
+            let ce_ast = match crate::scripting::component_registry::subtree_to_ce_ast(
                 &*world,
                 *prefab_root,
             ) {
@@ -306,7 +306,7 @@ fn handle_intent_signal(
                 }
             };
             let materialized =
-                match crate::meow_meow::component_registry::ce_ast_to_materialized(&ce_ast) {
+                match crate::scripting::component_registry::ce_ast_to_materialized(&ce_ast) {
                     Ok(m) => m,
                     Err(e) => {
                         println!("[IntentExecutor] attach_clone materialize failed: {e}");
@@ -315,10 +315,10 @@ fn handle_intent_signal(
                 };
 
             for &parent in parents.iter() {
-                let new_root = match crate::meow_meow::component_registry::with_live_render_assets(
+                let new_root = match crate::scripting::component_registry::with_live_render_assets(
                     render_assets,
                     || {
-                        crate::meow_meow::component_registry::spawn_tree(
+                        crate::scripting::component_registry::spawn_tree(
                             &materialized,
                             Some(parent),
                             world,

@@ -160,10 +160,10 @@ impl Component for LayoutComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
-        use crate::meow_meow::ast::Expression;
-        use crate::meow_meow::token::Unit;
+        use crate::scripting::ast::Expression;
+        use crate::scripting::token::Unit;
 
         fn layout_dim_expr(sd: SizeDimension) -> Expression {
             match sd {

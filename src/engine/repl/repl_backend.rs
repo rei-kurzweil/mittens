@@ -356,8 +356,8 @@ impl ReplBackend {
                     },
                 };
 
-                use crate::meow_meow::component_registry::subtree_to_ce_ast;
-                use crate::meow_meow::unparser::unparse_component;
+                use crate::scripting::component_registry::subtree_to_ce_ast;
+                use crate::scripting::unparser::unparse_component;
                 match target {
                     Some(root) => match subtree_to_ce_ast(world, root) {
                         Ok(ce) => println!("{}", unparse_component(&ce)),

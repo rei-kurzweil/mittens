@@ -597,7 +597,7 @@ mod tests {
     fn focused_text_input_mutates_backing_text() {
         let mut world = World::default();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
 
@@ -681,7 +681,7 @@ mod tests {
     fn text_input_glyph_click_moves_caret() {
         let mut world = World::default();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
 

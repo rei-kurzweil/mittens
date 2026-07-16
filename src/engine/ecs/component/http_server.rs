@@ -62,7 +62,7 @@ impl Component for HttpServerComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         let mut ce = if self.bind_addr.is_empty() {
             ce("HttpServer")
         } else {

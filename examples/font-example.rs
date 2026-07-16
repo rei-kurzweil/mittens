@@ -1,6 +1,6 @@
-use cat_engine::{engine, utils};
+use mittens_engine::{engine, utils};
 
-use cat_engine::engine::ecs::component::{
+use mittens_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, BackgroundComponent, Camera3DComponent,
     CameraXRComponent, ColorComponent, InputComponent, InputTransformModeComponent,
     InputXRComponent, PointerComponent, RaycastableComponent, TextComponent, TextShadowComponent,

@@ -4,7 +4,7 @@
 /// handlers via `on()`. Clicking a cube prints its name to stdout.
 ///
 /// Run: cargo run --release --example signal-handler
-use cat_engine::{engine, engine::ecs::SignalEmitter, meow_meow, utils};
+use mittens_engine::{engine, engine::ecs::SignalEmitter, scripting, utils};
 
 fn main() {
     utils::logger::init();
@@ -15,7 +15,7 @@ fn main() {
     // Evaluate the MMS script with live world access.
     // on() calls inside the script register Click handlers into universe.systems.rx.
     let source = include_str!("signal-handler.mms");
-    let output = meow_meow::MeowMeowRunner::eval_with_world(
+    let output = scripting::MeowMeowRunner::eval_with_world(
         source,
         &mut universe.world,
         &mut universe.systems.rx,

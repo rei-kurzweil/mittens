@@ -1,4 +1,4 @@
-use cat_engine::{engine, utils};
+use mittens_engine::{engine, utils};
 
 fn build_demo_scene_7_shapes(universe: &mut engine::Universe) {
     use engine::ecs::component::{
@@ -296,7 +296,7 @@ fn main() {
     // Scene files are MMS source — evaluated through the standard runner.
     if let engine::cli::CliCommand::Load { ref filename } = cli.command {
         println!("[CLI] Loading scene from '{}' (MMS)...", filename);
-        let out = cat_engine::meow_meow::runner::MeowMeowRunner::eval_with_world_at_path(
+        let out = mittens_engine::scripting::runner::MeowMeowRunner::eval_with_world_at_path(
             &std::fs::read_to_string(filename).unwrap_or_default(),
             Some(filename),
             &mut universe.world,
@@ -338,12 +338,12 @@ fn main() {
         } else {
             let mut out = String::new();
             for cid in &root_components {
-                match cat_engine::meow_meow::component_registry::subtree_to_ce_ast(
+                match mittens_engine::scripting::component_registry::subtree_to_ce_ast(
                     &universe.world,
                     *cid,
                 ) {
                     Ok(ce) => {
-                        out.push_str(&cat_engine::meow_meow::unparser::unparse_component(&ce));
+                        out.push_str(&mittens_engine::scripting::unparser::unparse_component(&ce));
                         out.push_str("\n\n");
                     }
                     Err(e) => eprintln!("[CLI] subtree encode failed: {e}"),

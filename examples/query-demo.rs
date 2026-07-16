@@ -5,7 +5,7 @@
 /// Text component via set_text(...).
 ///
 /// Run: cargo run --release --example query-demo
-use cat_engine::{engine, engine::ecs::SignalEmitter, meow_meow, utils};
+use mittens_engine::{engine, engine::ecs::SignalEmitter, scripting, utils};
 
 fn main() {
     utils::logger::init();
@@ -14,7 +14,7 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     let source = include_str!("query-demo.mms");
-    let output = meow_meow::MeowMeowRunner::eval_with_world(
+    let output = scripting::MeowMeowRunner::eval_with_world(
         source,
         &mut universe.world,
         &mut universe.systems.rx,

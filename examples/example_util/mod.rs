@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use cat_engine::engine::{
+use mittens_engine::engine::{
     self,
     ecs::component::{ColorComponent, TransparentCutoutComponent},
 };
@@ -212,7 +212,7 @@ pub fn spawn_desktop_camera_controls_hint(
     let local_offset = [0.65, 0.25, -1.7];
 
     // Rotate the offset by the camera rig's rotation so it appears in front-right of the view.
-    let world_offset = cat_engine::utils::math::quat_rotate_vec3(cam_rot, local_offset);
+    let world_offset = mittens_engine::utils::math::quat_rotate_vec3(cam_rot, local_offset);
     let world_pos = [
         cam_pos[0] + world_offset[0],
         cam_pos[1] + world_offset[1],

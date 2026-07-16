@@ -151,7 +151,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("system clock before unix epoch")
             .as_nanos();
-        std::env::temp_dir().join(format!("cat_engine_world_panel_{nanos}.mms"))
+        std::env::temp_dir().join(format!("mittens_engine_world_panel_{nanos}.mms"))
     }
 
     fn flush_runtime_updates(
@@ -290,7 +290,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
         systems.selection.install_handlers(&mut systems.rx);
@@ -401,7 +401,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
         systems.selection.install_handlers(&mut systems.rx);
@@ -469,7 +469,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
         systems.selection.install_handlers(&mut systems.rx);
@@ -510,7 +510,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
         systems.selection.install_handlers(&mut systems.rx);
@@ -600,7 +600,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
         systems.selection.install_handlers(&mut systems.rx);
@@ -711,7 +711,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
         systems.selection.install_handlers(&mut systems.rx);
@@ -814,7 +814,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
         systems.selection.install_handlers(&mut systems.rx);
@@ -899,7 +899,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
         systems.selection.install_handlers(&mut systems.rx);
@@ -1031,7 +1031,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
         systems.selection.install_handlers(&mut systems.rx);
@@ -1137,7 +1137,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
 
@@ -1191,7 +1191,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
 
@@ -1283,7 +1283,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
 
@@ -1363,7 +1363,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
 
@@ -1443,7 +1443,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
         systems.selection.install_handlers(&mut systems.rx);
@@ -1526,7 +1526,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
         systems.selection.install_handlers(&mut systems.rx);
@@ -1608,7 +1608,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
         systems.selection.install_handlers(&mut systems.rx);
@@ -1714,7 +1714,7 @@ mod tests {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::new();
         let mut inspector = EditorInspectorSystem::new();
         systems.selection.install_handlers(&mut systems.rx);

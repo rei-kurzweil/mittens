@@ -1,4 +1,4 @@
-use cat_engine::engine;
+use mittens_engine::engine;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PerlinNoise {

@@ -4,7 +4,8 @@
 module exports from Rust. It wraps `MeowMeowEvaluator`'s ring-buffer protocol
 into synchronous helper APIs.
 
-Implementation: `src/meow_meow/runner.rs`
+Engine implementation: `src/scripting/runner.rs`; host-neutral runner:
+`crates/meow-meow-script/src/runner.rs`.
 
 ---
 
@@ -249,8 +250,8 @@ This is still acceptable for authored shell factories that Rust wants to mount
 or decorate manually.
 
 ```rust
-use cat_engine::meow_meow::object::Value;
-use cat_engine::meow_meow::runner::MeowMeowRunner;
+use mittens_engine::scripting::object::Value;
+use mittens_engine::scripting::runner::MeowMeowRunner;
 
 let panel_ce = MeowMeowRunner::materialize_mms_module_component_from_file(
     "assets/components/panels.mms",
@@ -280,8 +281,8 @@ Why this is deprecated as a general pattern:
 Use this when the export should behave like ordinary live MMS now.
 
 ```rust
-use cat_engine::meow_meow::object::Value;
-use cat_engine::meow_meow::runner::MeowMeowRunner;
+use mittens_engine::scripting::object::Value;
+use mittens_engine::scripting::runner::MeowMeowRunner;
 
 let preview_root = MeowMeowRunner::spawn_mms_module_component_uninitialized_from_file(
     "assets/components/animated.mms",
@@ -344,13 +345,13 @@ Every script goes through three stages before evaluation:
 source: &str
   │
   ▼
-[Tokenizer]  →  Vec<Token>           (src/meow_meow/tokenizer.rs)
+[Tokenizer]  →  Vec<Token>           (crates/meow-meow-script/src/tokenizer.rs)
   │
   ▼
-[Parser]     →  Vec<Statement>       (src/meow_meow/parser.rs)
+[Parser]     →  Vec<Statement>       (crates/meow-meow-script/src/parser.rs)
   │            (raw AST — sugar intact)
   ▼
-[AstTransforms]  →  Vec<Statement>   (src/meow_meow/transform.rs)
+[AstTransforms]  →  Vec<Statement>   (crates/meow-meow-script/src/transform.rs)
   │
   ├─ EmitLiftTransform
   │    rewrites bare ComponentExpression statements → emit(ce) calls
@@ -359,7 +360,7 @@ source: &str
        rewrites -> query/dispatch sugar → query()/query_all() calls
   │
   ▼
-[Evaluator]  →  EvalOutput / Value   (src/meow_meow/evaluator.rs)
+[Evaluator]  →  Evaluation / Value   (crates/meow-meow-script/src/evaluator.rs)
 ```
 
 The parser produces a raw AST. Transform passes rewrite the AST into a normal

@@ -7,7 +7,7 @@
 /// Click the green cube → resume the spinning animation.
 ///
 /// Run: cargo run --release --example component-method-call
-use cat_engine::{engine, engine::ecs::SignalEmitter, meow_meow, utils};
+use mittens_engine::{engine, engine::ecs::SignalEmitter, scripting, utils};
 
 fn main() {
     utils::logger::init();
@@ -16,7 +16,7 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     let source = include_str!("component-method-call.mms");
-    let output = meow_meow::MeowMeowRunner::eval_with_world(
+    let output = scripting::MeowMeowRunner::eval_with_world(
         source,
         &mut universe.world,
         &mut universe.systems.rx,

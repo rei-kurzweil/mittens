@@ -1,11 +1,11 @@
-use cat_engine::engine::ecs::component::{
+use mittens_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, CameraXRComponent,
     ClockComponent, ColorComponent, DirectionalLightComponent, EditorComponent, EmissiveComponent,
     GLTFComponent, InputComponent, InputTransformModeComponent, InputXRComponent, MeshComponent,
     PointerComponent, RaycastableComponent, RenderableComponent, SkinnedMeshComponent,
     TransformComponent,
 };
-use cat_engine::{engine, utils};
+use mittens_engine::{engine, utils};
 use std::collections::{HashMap, HashSet};
 
 #[path = "example_util/mod.rs"]

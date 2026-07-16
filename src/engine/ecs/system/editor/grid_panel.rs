@@ -22,7 +22,7 @@ use crate::engine::ecs::system::panel_system::{
 };
 use crate::engine::ecs::system::selection_system::apply_selection_set;
 use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter, World};
-use crate::meow_meow::component_registry::spawn_tree;
+use crate::scripting::component_registry::spawn_tree;
 
 pub(crate) const GRID_PANEL_ROOT_SELECTOR: &str = "#grid_panel_root";
 pub(crate) const GRID_PANEL_SELECTION_SELECTOR: &str = "#grid_panel_selection";

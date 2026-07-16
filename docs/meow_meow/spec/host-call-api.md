@@ -1,12 +1,26 @@
-# ૮ ˙Ⱉ˙ ა HostCall API
+# ૮ ˙Ⱉ˙ ა Host API
 
-The HostCall protocol is the bidirectional channel between the MMS evaluator thread and
-the host (main) thread. The evaluator emits a `HostCall`, suspends, and resumes when the
-host pushes back a `HostCallResult`. This is the only mechanism by which the evaluator
-can read or mutate live engine state.
+The public FFI boundary is the synchronous, host-neutral contract owned by
+`meow-meow-script`:
 
-Implementation: `src/meow_meow/evaluator.rs` (call site), `src/meow_meow/runner.rs` (host
-servicer)
+```rust
+pub trait Host {
+    fn dispatch(&mut self, request: HostRequest)
+        -> Result<HostResponse, HostError>;
+}
+```
+
+`HostRequest`, `HostResponse`, `HostError`, runtime `Value`, materialized
+component DTOs, and the opaque `ComponentHandle(u64)` are all script-owned.
+No `World`, slotmap key, engine intent, layout, animation, or signal type
+crosses this API. `Hostless` returns
+`HostErrorKind::UnsupportedHostOperation` for capabilities a pure run does not
+provide.
+
+Implementation: `crates/meow-meow-script/src/host.rs`. The engine adapter is
+`mittens_engine::scripting::MittensHost` in `src/scripting/host.rs`; it converts
+the full generational slotmap key losslessly between `ComponentHandle` and
+`ComponentId`.
 
 Related specs:
 - [eval-with-world.md](eval-with-world.md) — when the channel is open and the threading model
@@ -15,7 +29,13 @@ Related specs:
 
 ---
 
-## Protocol shape
+## Engine worker compatibility
+
+The existing engine-aware worker runner continues to use a correlated channel
+internally. That is an implementation detail inside `mittens-engine`; custom
+hosts implement only the synchronous public contract above.
+
+## Legacy protocol shape
 
 ```
 evaluator thread                              host thread

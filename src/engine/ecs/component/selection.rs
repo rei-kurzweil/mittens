@@ -135,7 +135,7 @@ impl Component for SelectionComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let mut expr = match self.mode {
             SelectionMode::Single => {
@@ -153,8 +153,8 @@ impl Component for SelectionComponent {
                 ComponentRef::Query(selector) => s(selector),
             };
             expr.constructors
-                .push(crate::meow_meow::ast::ConstructorCall {
-                    method: crate::meow_meow::ast::Ident("root".to_string()),
+                .push(crate::scripting::ast::ConstructorCall {
+                    method: crate::scripting::ast::Ident("root".to_string()),
                     args: vec![arg],
                 });
         }

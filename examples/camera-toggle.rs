@@ -1,5 +1,5 @@
-use cat_engine::engine::ecs::SignalEmitter;
-use cat_engine::{engine, meow_meow, utils};
+use mittens_engine::engine::ecs::SignalEmitter;
+use mittens_engine::{engine, scripting, utils};
 
 #[path = "util/mod.rs"]
 mod util;
@@ -11,7 +11,7 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     let source = include_str!("camera-toggle.mms");
-    let output = meow_meow::MeowMeowRunner::eval_with_world_at_path(
+    let output = scripting::MeowMeowRunner::eval_with_world_at_path(
         source,
         Some("examples/camera-toggle.mms"),
         &mut universe.world,

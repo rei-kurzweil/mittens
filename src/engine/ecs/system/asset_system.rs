@@ -11,8 +11,8 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::system::bounds_system::{BoundsSystem, RenderableBoundsMeasure};
 use crate::engine::ecs::system::editor_paint_system::PaintAssetTemplate;
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
-use crate::meow_meow::object::Value;
-use crate::meow_meow::runner::{LoadedMmsModule, MeowMeowRunner};
+use crate::scripting::object::Value;
+use crate::scripting::runner::{LoadedMmsModule, MeowMeowRunner};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AssetModuleId(u32);
@@ -630,7 +630,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("time went backwards")
             .as_nanos();
-        let tmp_dir = std::env::temp_dir().join(format!("cat_engine_assets_{}", now));
+        let tmp_dir = std::env::temp_dir().join(format!("mittens_engine_assets_{}", now));
         std::fs::create_dir_all(&tmp_dir).expect("create temp dir");
         tmp_dir
     }
@@ -692,7 +692,7 @@ mod tests {
 
         let item = &system.items[0];
         let mut world = World::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut emit = CommandQueue::new();
         let _id = system
             .spawn_asset_component(item, vec![], &mut world, &mut emit)
@@ -718,7 +718,7 @@ mod tests {
 
         let item = &system.items[0];
         let mut world = World::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut emit = CommandQueue::new();
         let item_root = system
             .build_asset_item_shell(&mut world, &mut render_assets, &mut emit, item, 0)
@@ -749,7 +749,7 @@ mod tests {
 
         let item = &system.items[0];
         let mut world = World::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut emit = CommandQueue::new();
         let item_root = system
             .build_asset_item_shell(&mut world, &mut render_assets, &mut emit, item, 0)

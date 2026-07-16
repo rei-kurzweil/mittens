@@ -84,7 +84,7 @@ impl Component for GridComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         ce_call("Grid", "spacing", vec![num(self.spacing as f64)])
             .with_call("size_x", vec![num(self.size_x as f64)])

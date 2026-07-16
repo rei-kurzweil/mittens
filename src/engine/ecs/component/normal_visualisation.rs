@@ -90,7 +90,7 @@ impl Component for NormalVisualisationComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         ce_call("NormalVis", "thickness", vec![num(self.thickness as f64)])
     }

@@ -76,7 +76,7 @@ impl Component for DataComponent {
         self
     }
 
-    fn to_mms_ast(&self, _world: &World) -> crate::meow_meow::ast::ComponentExpression {
+    fn to_mms_ast(&self, _world: &World) -> crate::scripting::ast::ComponentExpression {
         crate::engine::ecs::component::ce_helpers::ce("Data")
     }
 }

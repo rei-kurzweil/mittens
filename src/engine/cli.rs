@@ -1,4 +1,4 @@
-//! Command-line interface for cat-engine.
+//! Command-line interface for mittens-engine.
 
 use crate::engine::graphics::MsaaMode;
 use std::env;
@@ -22,9 +22,9 @@ impl CLI {
     /// Parse command-line arguments.
     ///
     /// Supported commands:
-    /// - `./cat-engine save <filename>` - Save the current scene
-    /// - `./cat-engine load <filename>` - Load a scene from file
-    /// - `./cat-engine` (no args) - Run normally
+    /// - `./mittens-engine save <filename>` - Save the current scene
+    /// - `./mittens-engine load <filename>` - Load a scene from file
+    /// - `./mittens-engine` (no args) - Run normally
     pub fn parse() -> Self {
         let args: Vec<String> = env::args().skip(1).collect();
 

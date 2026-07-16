@@ -56,7 +56,7 @@ impl Component for PoseCaptureComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let mut ce = ce_call("PoseCapture", "new", vec![]);
         if let Some(label) = &self.label {
@@ -145,7 +145,7 @@ impl Component for PoseCapturePoseComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let mut ce = ce_call("PoseCapturePose", "new", vec![s(&self.name)]);
         for entry in &self.entries {
@@ -199,7 +199,7 @@ impl Component for PoseCaptureLibraryComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         ce_call("PoseCaptureLibrary", "new", vec![])
     }
@@ -214,7 +214,7 @@ pub fn save_pose_asset(
     let pose = world
         .get_component_by_id_as::<PoseCapturePoseComponent>(pose_id)
         .ok_or_else(|| format!("component {pose_id:?} is not a pose"))?;
-    let expression = crate::meow_meow::unparser::unparse_component(&pose.to_mms_ast(world));
+    let expression = crate::scripting::unparser::unparse_component(&pose.to_mms_ast(world));
     let text = format!("export fn pose() {{\n    return {expression}\n}}\n");
     write_asset_atomically(path, &text)
 }

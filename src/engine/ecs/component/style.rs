@@ -607,7 +607,7 @@ impl Component for StyleComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         // Style is highly complex (50+ fields); for now we emit an empty
         // `Style {}` so attach_clone/save produce something parseable.

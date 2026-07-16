@@ -4,7 +4,7 @@
 // and populates the scroll track with rows so the bug is observable: try to
 // click+drag the yellow viewport — the drag is intercepted by background cubes.
 
-use cat_engine::{engine, engine::ecs::SignalEmitter, meow_meow, utils};
+use mittens_engine::{engine, engine::ecs::SignalEmitter, scripting, utils};
 
 fn find_named(world: &engine::ecs::World, label: &str) -> engine::ecs::ComponentId {
     world
@@ -73,7 +73,7 @@ fn spawn_row(
 fn main() {
     utils::logger::init();
 
-    let output = meow_meow::MeowMeowRunner::eval(include_str!("panel-pierce.mms"));
+    let output = scripting::MeowMeowRunner::eval(include_str!("panel-pierce.mms"));
 
     for error in &output.errors {
         eprintln!("[mms] {error}");

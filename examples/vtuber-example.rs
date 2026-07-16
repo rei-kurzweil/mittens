@@ -1,9 +1,9 @@
-use cat_engine::engine::ecs::component::{
+use mittens_engine::engine::ecs::component::{
     AmbientLightComponent, BackgroundColorComponent, Camera3DComponent, CameraXRComponent,
     ColorComponent, DirectionalLightComponent, GLTFComponent, InputComponent,
     InputTransformModeComponent, InputXRComponent, RenderableComponent, TransformComponent,
 };
-use cat_engine::{engine, utils};
+use mittens_engine::{engine, utils};
 
 #[path = "example_util/mod.rs"]
 mod example_util;

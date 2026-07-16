@@ -43,7 +43,7 @@ impl Component for InputComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         ce_call("Input", "speed", vec![num(self.speed as f64)])
     }

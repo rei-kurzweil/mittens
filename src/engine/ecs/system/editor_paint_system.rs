@@ -30,8 +30,8 @@ use crate::engine::ecs::system::paint_placement::{
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, Signal, SignalEmitter, SignalKind, World,
 };
-use crate::meow_meow::object::Value;
-use crate::meow_meow::runner::{LoadedMmsModule, MeowMeowRunner};
+use crate::scripting::object::Value;
+use crate::scripting::runner::{LoadedMmsModule, MeowMeowRunner};
 
 const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
 const PAINT_TOOL_SELECTION_SELECTOR: &str = "#paint_tool_selection";
@@ -1949,7 +1949,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("time went backwards")
             .as_nanos();
-        let tmp_dir = std::env::temp_dir().join(format!("cat_engine_paint_assets_{}", now));
+        let tmp_dir = std::env::temp_dir().join(format!("mittens_engine_paint_assets_{}", now));
         std::fs::create_dir_all(&tmp_dir).expect("create temp dir");
         tmp_dir
     }
@@ -2089,7 +2089,7 @@ mod tests {
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
 
         systems
             .asset_system
@@ -2185,7 +2185,7 @@ mod tests {
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
 
         let editor_root =
             world.add_component_boxed_named("editor_root", Box::new(EditorComponent::new()));
@@ -2256,7 +2256,7 @@ mod tests {
             mut emit,
             mut visuals,
             mut systems,
-            render_assets,
+            mut render_assets,
             editor_root,
             _scene_root,
             renderable,
@@ -2286,7 +2286,7 @@ mod tests {
             mut emit,
             mut visuals,
             mut systems,
-            render_assets,
+            mut render_assets,
             editor_root,
             _scene_root,
             renderable,
@@ -2326,7 +2326,7 @@ mod tests {
             mut emit,
             mut visuals,
             mut systems,
-            render_assets,
+            mut render_assets,
             editor_root,
             _scene_root,
             renderable,
@@ -2395,7 +2395,7 @@ mod tests {
             mut emit,
             mut visuals,
             mut systems,
-            render_assets,
+            mut render_assets,
             editor_root,
             scene_root,
             renderable,
@@ -2485,7 +2485,7 @@ mod tests {
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
 
         systems
             .asset_system
@@ -2596,7 +2596,7 @@ mod tests {
             mut emit,
             mut visuals,
             mut systems,
-            render_assets,
+            mut render_assets,
             editor_root,
             _scene_root,
             renderable,
@@ -2655,7 +2655,7 @@ mod tests {
             mut emit,
             mut visuals,
             mut systems,
-            render_assets,
+            mut render_assets,
             editor_root,
             _scene_root,
             renderable,
@@ -2715,7 +2715,7 @@ mod tests {
             mut emit,
             mut visuals,
             mut systems,
-            render_assets,
+            mut render_assets,
             editor_root,
             _scene_root,
             renderable,

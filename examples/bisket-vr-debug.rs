@@ -22,17 +22,17 @@
 
 use std::env;
 
-use cat_engine::engine::ecs::component::{
+use mittens_engine::engine::ecs::component::{
     AvatarControlComponent, IKChainComponent, IKSolver, TransformComponent,
 };
-use cat_engine::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
-use cat_engine::engine::user_input::InputState;
-use cat_engine::utils::math::{
+use mittens_engine::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
+use mittens_engine::engine::user_input::InputState;
+use mittens_engine::utils::math::{
     mat_to_quat, mat4_identity, mat4_inverse, mat4_mul_vec4, quat_conjugate, quat_from_axis_angle,
     quat_mul, quat_rotate_vec3, quat_rotation_y, quat_to_axis_angle, vec3_len, vec3_normalize,
     vec3_sub,
 };
-use cat_engine::{engine, meow_meow, utils};
+use mittens_engine::{engine, scripting, utils};
 
 const SPINE_BONES: &[&str] = &[
     "J_Bip_C_Hips",
@@ -169,7 +169,7 @@ fn main() {
     let mut universe = engine::Universe::new(world);
 
     let source = include_str!("bisket-vr-debug.mms");
-    let output = meow_meow::MeowMeowRunner::eval_with_world_at_path(
+    let output = scripting::MeowMeowRunner::eval_with_world_at_path(
         source,
         Some("examples/bisket-vr-debug.mms"),
         &mut universe.world,
@@ -1209,10 +1209,10 @@ fn head_target_offset_in_target_local(world: &World, avc_id: ComponentId) -> [f3
         }
         let wraps_cam = world.children_of(ch).iter().any(|&gc| {
             world
-                .get_component_by_id_as::<cat_engine::engine::ecs::component::Camera3DComponent>(gc)
+                .get_component_by_id_as::<mittens_engine::engine::ecs::component::Camera3DComponent>(gc)
                 .is_some()
                 || world
-                    .get_component_by_id_as::<cat_engine::engine::ecs::component::CameraXRComponent>(gc)
+                    .get_component_by_id_as::<mittens_engine::engine::ecs::component::CameraXRComponent>(gc)
                     .is_some()
         });
         if wraps_cam {

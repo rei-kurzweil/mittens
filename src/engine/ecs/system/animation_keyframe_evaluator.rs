@@ -4,7 +4,7 @@ use crate::engine::ecs::component::{
     resolve_component_ref,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, RxWorld, SignalEmitter, World};
-use crate::meow_meow::evaluator::{RuntimeClosureExecMode, eval_runtime_closure};
+use crate::scripting::world_evaluator::{RuntimeClosureExecMode, eval_runtime_closure};
 
 #[derive(Debug, Default)]
 pub(crate) struct AnimationKeyframeEvaluator;

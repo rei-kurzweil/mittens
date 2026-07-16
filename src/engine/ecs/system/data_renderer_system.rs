@@ -4,9 +4,9 @@ use crate::engine::ecs::component::{
     Display, LayoutComponent, Overflow, SizeDimension, StyleComponent, TransformComponent,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
-use crate::meow_meow::component_registry::spawn_tree;
-use crate::meow_meow::object::Value;
-use crate::meow_meow::runner::MeowMeowRunner;
+use crate::scripting::component_registry::spawn_tree;
+use crate::scripting::object::Value;
+use crate::scripting::runner::MeowMeowRunner;
 
 // ── Payload types ──
 

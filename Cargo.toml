@@ -1,9 +1,42 @@
-[package]
-name = "cat-engine"
-version = "0.1.0"
+[workspace]
+members = ["crates/meow-meow-script", "crates/mittens-query"]
+resolver = "3"
+
+[workspace.package]
 edition = "2024"
+license = "MIT"
+authors = ["Rei Evans <ultr7a@gmail.com>"]
+repository = "https://github.com/rei-kurzweil/cat-engine"
+
+[package]
+name = "mittens-engine"
+version = "0.5.1"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.md"
+description = "A Vulkan and OpenXR scene engine with ECS, reactive signals, and Meow Meow scripting"
+exclude = [
+    "assets/audio/**",
+    "assets/images/**",
+    "assets/models/bisket.*.glb",
+    "assets/models/pc-rei.hoodie.glb",
+    "docs/.debug/**",
+    "docs/analysis/**",
+    "docs/bugs/**",
+    "docs/draft/**",
+    "docs/review/**",
+    "docs/task/**",
+]
+
+[[bin]]
+name = "mittens-engine"
+path = "src/main.rs"
 
 [dependencies]
+meow-meow-script = { path = "crates/meow-meow-script", version = "0.1.0" }
+mittens-query = { path = "crates/mittens-query", version = "0.1.0" }
 rspirv = "0.12"
 
 vulkano = "0.35"

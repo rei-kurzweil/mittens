@@ -179,7 +179,7 @@ mod tests {
     fn armature_visibility_spawns_once_and_removes_idempotently() {
         let mut world = World::default();
         let mut visuals = VisualWorld::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
 

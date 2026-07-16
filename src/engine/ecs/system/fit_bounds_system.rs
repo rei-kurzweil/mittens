@@ -248,7 +248,7 @@ mod tests {
     #[test]
     fn renderable_only_fit_updates_owned_content_transform_not_parent() {
         let mut world = World::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut fit_system = FitBoundsSystem;
         let mut queue = CommandQueue::new();
 
@@ -303,7 +303,7 @@ mod tests {
     #[test]
     fn to_container_reads_parent_padding_box() {
         let mut world = World::default();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut fit_system = FitBoundsSystem;
         let mut layout_system = LayoutSystem;
         let mut queue = CommandQueue::new();

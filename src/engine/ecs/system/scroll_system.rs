@@ -398,7 +398,7 @@ mod tests {
     fn scrolling_without_explicit_track_gets_owned_scroll_track() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut queue = CommandQueue::new();
         let mut systems = SystemWorld::default();
 
@@ -423,7 +423,7 @@ mod tests {
     fn explicit_scroll_track_is_preserved() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut queue = CommandQueue::new();
         let mut systems = SystemWorld::default();
 
@@ -453,7 +453,7 @@ mod tests {
     fn scrolling_late_attached_children_route_into_owned_track() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut queue = CommandQueue::new();
         let mut systems = SystemWorld::default();
 
@@ -483,7 +483,7 @@ mod tests {
     fn scrolling_prefers_sibling_layout_bg_renderable_for_drag_scope() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut queue = CommandQueue::new();
         let mut systems = SystemWorld::default();
 
@@ -512,7 +512,7 @@ mod tests {
     fn world_drag_is_converted_into_scroll_local_y() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut queue = CommandQueue::new();
         let mut systems = SystemWorld::default();
 

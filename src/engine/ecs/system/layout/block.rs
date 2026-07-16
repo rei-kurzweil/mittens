@@ -1133,7 +1133,7 @@ mod tests {
     fn block_layout_recurses_into_styled_container_children() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1191,7 +1191,7 @@ mod tests {
     fn block_layout_marks_owned_background_quad_serialize_off() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1242,7 +1242,7 @@ mod tests {
     fn block_layout_updates_existing_background_quad_color_when_style_changes() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1307,7 +1307,7 @@ mod tests {
     fn block_layout_does_not_reflow_unstyled_decorative_children() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1369,7 +1369,7 @@ mod tests {
     fn text_align_scales_offsets_by_layout_unit_scale() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1417,7 +1417,7 @@ mod tests {
     fn vertical_align_top_overrides_legacy_centering() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1464,7 +1464,7 @@ mod tests {
     fn vertical_align_middle_respects_text_font_size() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1516,7 +1516,7 @@ mod tests {
     fn auto_aligned_text_uses_content_box_top_left_origin() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1562,7 +1562,7 @@ mod tests {
     fn overflow_scroll_uses_sibling_layout_owned_stencil_clip() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1608,7 +1608,7 @@ mod tests {
     fn nested_inline_child_background_clamps_to_layoutroot_width_after_layout() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1700,7 +1700,7 @@ mod tests {
     fn inline_overflow_hidden_creates_clipped_content_root() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1782,7 +1782,7 @@ mod tests {
     fn vertical_align_middle_centers_multi_line_text_under_unit_scale() {
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1836,7 +1836,7 @@ mod tests {
         use crate::engine::ecs::component::TextComponent;
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();
@@ -1877,7 +1877,7 @@ mod tests {
         use crate::engine::ecs::component::TextComponent;
         let mut world = World::default();
         let mut visuals = VisualWorld::new();
-        let render_assets = RenderAssets::new();
+        let mut render_assets = RenderAssets::new();
         let mut systems = SystemWorld::default();
         let mut queue = CommandQueue::new();
         let mut layout_system = LayoutSystem::new();

@@ -101,7 +101,7 @@ impl Component for InputTransformModeComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let ctor = match self.forward_axis {
             ForwardAxis::Y => "forward_y",
@@ -120,9 +120,9 @@ impl Component for InputTransformModeComponent {
         if let Some(source) = &self.translation_basis_source {
             let expr = match source {
                 ComponentRef::Guid(u) => {
-                    crate::meow_meow::ast::Expression::String(format!("@uuid:{u}"))
+                    crate::scripting::ast::Expression::String(format!("@uuid:{u}"))
                 }
-                ComponentRef::Query(s) => crate::meow_meow::ast::Expression::String(s.clone()),
+                ComponentRef::Query(s) => crate::scripting::ast::Expression::String(s.clone()),
             };
             ce = ce.with_call("translation_basis", vec![expr]);
         }

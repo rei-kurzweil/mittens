@@ -1,10 +1,10 @@
-use cat_engine::{engine, meow_meow, utils};
+use mittens_engine::{engine, scripting, utils};
 fn main() {
     utils::logger::init();
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
     let src = include_str!("qdebug.mms");
-    let out = meow_meow::MeowMeowRunner::eval_with_world(
+    let out = scripting::MeowMeowRunner::eval_with_world(
         src,
         &mut universe.world,
         &mut universe.systems.rx,

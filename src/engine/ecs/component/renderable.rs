@@ -304,7 +304,7 @@ impl Component for RenderableComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         match &self.authored_shape {
             Some(AuthoredRenderableShape::Builtin(name)) => ce_call("Renderable", name, vec![]),
             Some(AuthoredRenderableShape::Cone { segments }) => {

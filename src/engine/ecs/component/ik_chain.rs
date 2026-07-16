@@ -193,9 +193,9 @@ impl Component for IKChainComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
-        use crate::meow_meow::ast::Expression;
+        use crate::scripting::ast::Expression;
         let solver_call = match self.solver {
             IKSolver::AimConstraint {
                 offset_yaw,

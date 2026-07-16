@@ -1,4 +1,4 @@
-use cat_engine::engine::ecs::component::{
+use mittens_engine::engine::ecs::component::{
     AmbientLightComponent, AvatarControlComponent, BackgroundColorComponent, BloomComponent,
     BlurPassComponent, Camera3DComponent, CameraXRComponent, ColorComponent, ControllerHand,
     ControllerPoseKind, ControllerXRComponent, DirectionalLightComponent, EditorComponent,
@@ -9,10 +9,10 @@ use cat_engine::engine::ecs::component::{
     TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
     XrComponent,
 };
-use cat_engine::engine::graphics::BuiltinMeshType;
-use cat_engine::engine::graphics::CameraTarget;
-use cat_engine::engine::graphics::primitives::{MaterialHandle, Renderable};
-use cat_engine::{engine, utils};
+use mittens_engine::engine::graphics::BuiltinMeshType;
+use mittens_engine::engine::graphics::CameraTarget;
+use mittens_engine::engine::graphics::primitives::{MaterialHandle, Renderable};
+use mittens_engine::{engine, utils};
 
 #[path = "example_util/mod.rs"]
 mod example_util;
@@ -283,7 +283,7 @@ fn main() {
     // --- XR rig (Aim controller debug cubes only; camera has moved to AVC) ---
     let xr_input = universe.world.add_component(InputXRComponent::on());
     let xr_gamepad = universe.world.add_component(
-        cat_engine::engine::ecs::component::InputXRGamepadComponent::new().speed(1.5),
+        mittens_engine::engine::ecs::component::InputXRGamepadComponent::new().speed(1.5),
     );
     let xr_rig = universe.world.add_component(TransformComponent::new());
     let _ = universe.attach(xr_input, xr_rig);
@@ -334,7 +334,7 @@ fn main() {
 
     let avatar_input_xr = universe.world.add_component(InputXRComponent::on());
     let avatar_xr_gamepad = universe.world.add_component(
-        cat_engine::engine::ecs::component::InputXRGamepadComponent::new().speed(1.5),
+        mittens_engine::engine::ecs::component::InputXRGamepadComponent::new().speed(1.5),
     );
     let avatar_driven_t = universe.world.add_component(TransformComponent::new());
     let _ = universe.attach(avatar_input_xr, avatar_driven_t);

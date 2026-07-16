@@ -1,4 +1,4 @@
-use cat_engine::{engine, utils};
+use mittens_engine::{engine, utils};
 
 #[path = "example_util/mod.rs"]
 mod example_util;

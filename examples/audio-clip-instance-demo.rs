@@ -8,7 +8,7 @@
 //
 // See docs/draft/audio-clip-instance-cloning.md.
 
-use cat_engine::{engine, engine::ecs::SignalEmitter, meow_meow, utils};
+use mittens_engine::{engine, engine::ecs::SignalEmitter, scripting, utils};
 
 fn main() {
     utils::logger::init();
@@ -48,7 +48,7 @@ fn main() {
     universe.add(clear);
 
     let source = include_str!("audio-clip-instance-demo.mms");
-    let output = meow_meow::MeowMeowRunner::eval_with_world_at_path(
+    let output = scripting::MeowMeowRunner::eval_with_world_at_path(
         source,
         Some("examples/audio-clip-instance-demo.mms"),
         &mut universe.world,

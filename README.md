@@ -1,13 +1,25 @@
 
-# cat-engine 0.5.1 "mittens"
+# mittens-engine 0.5.1 "mittens"
 <img width="1920" height="745" alt="Screenshot_20260303_015535" src="https://github.com/user-attachments/assets/16d9656c-9df3-4a96-89bd-658d222e78d0" />
 
 An opinionated game engine specially made for social vr, vtubing, css-driven UI and 3D character animation.    
 
-### Cat Engine has three main components:
-+ src/engine (vulkan renderer, components and ecs systems)
-+ src/meow_meow (a cute programming language for building scenes and wiring up events)
-+ src/query (a query engine supporting css or meow meow query language; used by engine and meow_meow
+### Workspace crates
+
+- `mittens-engine` 0.5.1 at the workspace root: Vulkan/OpenXR rendering, ECS,
+  engine component materialization, and the engine-aware scripting adapter.
+- `meow-meow-script` 0.1.0 in `crates/meow-meow-script`: host-neutral syntax,
+  parser, runtime values, evaluator, and host protocol.
+- `mittens-query` 0.1.0 in `crates/mittens-query`: CSS/MMQ parsing and
+  host-neutral query-tree evaluation.
+
+The dependency graph is acyclic: `mittens-engine` depends on both standalone
+crates; neither standalone crate depends on the engine.
+
+For a release, publish in dependency order: `mittens-query`, then
+`meow-meow-script`, then `mittens-engine`. Local manifests deliberately pair
+each dependency's registry version with its workspace `path`. This repository
+change does not publish, tag, or push a release.
 
 (see docs/meow_meow for an overview of .mms scripts)
 
@@ -45,7 +57,7 @@ prefab-style workflows and safe subtree removal:
 Example (prefab clone):
 
 ```rust
-use cat_engine::engine;
+use mittens_engine::engine;
 
 let prefab_root: engine::ecs::ComponentId = /* detached prefab subtree root */;
 let parent: engine::ecs::ComponentId = /* some TransformComponent in the live scene */;
@@ -104,7 +116,7 @@ See [docs/spec/components.md](docs/spec/components.md) for a full list of built-
 
 ## Transforms
 
-Transforms are central in cat-engine: most component subtrees are rooted at a `TransformComponent`, and many engine systems interpret the component tree as “a scene graph of nested transforms + things attached under them”.
+Transforms are central in Mittens: most component subtrees are rooted at a `TransformComponent`, and many engine systems interpret the component tree as “a scene graph of nested transforms + things attached under them”.
 
 0. **Brief intro: `TransformComponent`**
   - Stores local TRS (translation / rotation / scale) and a cached `matrix_world`.

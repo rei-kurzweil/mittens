@@ -58,7 +58,7 @@ impl Component for HttpClientComponent {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
+    ) -> crate::scripting::ast::ComponentExpression {
         let mut ce = ce("HttpClient");
         if !self.enabled {
             ce = ce.with_call("enabled", vec![b(false)]);

@@ -17,7 +17,7 @@ pub struct Universe {
 
     repl: Option<crate::engine::repl::Repl>,
     repl_backend: Option<crate::engine::repl::ReplBackend>,
-    meow_meow_repl: Option<crate::meow_meow::repl::MeowMeowRepl>,
+    meow_meow_repl: Option<crate::scripting::repl::MeowMeowRepl>,
 
     renderer: graphics::VulkanoRenderer,
 }
@@ -76,7 +76,7 @@ impl Universe {
             eprintln!("[mms] an stdin REPL is already active");
             return;
         }
-        match crate::meow_meow::repl::MeowMeowRepl::new() {
+        match crate::scripting::repl::MeowMeowRepl::new() {
             Ok(repl) => {
                 self.meow_meow_repl = Some(repl);
                 println!("[mms] Ready. Enter MMS expressions; help() lists capabilities.");

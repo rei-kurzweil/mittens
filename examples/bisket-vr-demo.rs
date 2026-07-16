@@ -1,11 +1,13 @@
-use cat_engine::engine::ecs::component::{
+use mittens_engine::engine::ecs::component::{
     AvatarControlComponent, ColorComponent, ControllerHand, ControllerXRComponent,
     EmissiveComponent, OverlayComponent, RaycastableComponent, RenderableComponent,
     TransformComponent,
 };
-use cat_engine::engine::ecs::{ComponentId, EventSignal, Signal, SignalEmitter, SignalKind, World};
-use cat_engine::utils::math::{mat_to_quat, quat_rotate_vec3, quat_rotation_y};
-use cat_engine::{engine, meow_meow, utils};
+use mittens_engine::engine::ecs::{
+    ComponentId, EventSignal, Signal, SignalEmitter, SignalKind, World,
+};
+use mittens_engine::utils::math::{mat_to_quat, quat_rotate_vec3, quat_rotation_y};
+use mittens_engine::{engine, scripting, utils};
 use std::sync::OnceLock;
 
 // Bones the dump-button reports.  Spine first, then arms — same ordering as
@@ -279,7 +281,7 @@ fn main() {
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
 
-    let output = meow_meow::MeowMeowRunner::eval_with_world_and_assets_at_path(
+    let output = scripting::MeowMeowRunner::eval_with_world_and_assets_at_path(
         include_str!("bisket-vr-demo.mms"),
         Some("examples/bisket-vr-demo.mms"),
         &mut universe.world,
@@ -397,7 +399,7 @@ fn main() {
             let cxr_id = universe.world.all_components().find(|&cid| {
                 universe
                     .world
-                    .get_component_by_id_as::<cat_engine::engine::ecs::component::CameraXRComponent>(cid)
+                    .get_component_by_id_as::<mittens_engine::engine::ecs::component::CameraXRComponent>(cid)
                     .is_some()
             });
             let camera_wrapper_t = cxr_id.and_then(|cid| {

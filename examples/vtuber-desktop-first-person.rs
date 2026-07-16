@@ -1,9 +1,9 @@
-use cat_engine::{engine, engine::ecs::SignalEmitter, meow_meow, utils};
+use mittens_engine::{engine, engine::ecs::SignalEmitter, scripting, utils};
 
 fn main() {
     utils::logger::init();
 
-    let output = meow_meow::MeowMeowRunner::eval(include_str!("vtuber-desktop-first-person.mms"));
+    let output = scripting::MeowMeowRunner::eval(include_str!("vtuber-desktop-first-person.mms"));
 
     for error in &output.errors {
         eprintln!("[mms] {error}");

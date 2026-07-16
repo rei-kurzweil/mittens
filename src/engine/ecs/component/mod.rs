@@ -360,11 +360,11 @@ pub trait Component: std::any::Any {
     fn to_mms_ast(
         &self,
         _world: &crate::engine::ecs::World,
-    ) -> crate::meow_meow::ast::ComponentExpression {
-        crate::meow_meow::ast::ComponentExpression {
-            component_type: crate::meow_meow::ast::Ident(self.name().to_string()),
+    ) -> crate::scripting::ast::ComponentExpression {
+        crate::scripting::ast::ComponentExpression {
+            component_type: crate::scripting::ast::Ident(self.name().to_string()),
             constructors: Vec::new(),
-            body: crate::meow_meow::ast::BlockStatement {
+            body: crate::scripting::ast::BlockStatement {
                 statements: Vec::new(),
             },
         }
@@ -377,7 +377,7 @@ pub trait Component: std::any::Any {
 // ---------------------------------------------------------------------------
 
 pub mod ce_helpers {
-    use crate::meow_meow::ast::{
+    use crate::scripting::ast::{
         BlockStatement, ComponentExpression, ConstructorCall, Expression, Ident, UnaryOpKind,
     };
 

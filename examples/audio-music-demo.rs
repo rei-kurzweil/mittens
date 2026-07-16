@@ -6,7 +6,7 @@
 // exist on disk — the AudioClip load path is expected to report missing
 // assets without crashing the scene.
 
-use cat_engine::{engine, engine::ecs::SignalEmitter, meow_meow, utils};
+use mittens_engine::{engine, engine::ecs::SignalEmitter, scripting, utils};
 
 fn main() {
     utils::logger::init();
@@ -47,7 +47,7 @@ fn main() {
     universe.add(clear);
 
     let source = include_str!("audio-music-demo.mms");
-    let output = meow_meow::MeowMeowRunner::eval_with_world_at_path(
+    let output = scripting::MeowMeowRunner::eval_with_world_at_path(
         source,
         Some("examples/audio-music-demo.mms"),
         &mut universe.world,

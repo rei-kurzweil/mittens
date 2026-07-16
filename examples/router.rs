@@ -1,4 +1,4 @@
-use cat_engine::{engine, engine::ecs::SignalEmitter, meow_meow, utils};
+use mittens_engine::{engine, engine::ecs::SignalEmitter, scripting, utils};
 
 fn spawn_runtime_text(
     universe: &mut engine::Universe,
@@ -44,7 +44,7 @@ fn main() {
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
 
-    let output = meow_meow::MeowMeowRunner::eval_with_world_at_path(
+    let output = scripting::MeowMeowRunner::eval_with_world_at_path(
         include_str!("router.mms"),
         Some("examples/router.mms"),
         &mut universe.world,
