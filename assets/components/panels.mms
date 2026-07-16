@@ -405,10 +405,11 @@ export fn pose_capture_panel(title, title_color, panel_background_color) {
         }
 
         T {
-            name = "content_slot"
+            name = "pose_panel_content_area"
             Raycastable.enabled()
             Style {
                 display("block")
+                width(100%)
                 height(POSE_PANEL_CONTENT_HEIGHT_GU)
                 margin_bottom(TITLE_CONTENT_GAP_GU)
                 overflow("scroll")
@@ -417,7 +418,7 @@ export fn pose_capture_panel(title, title_color, panel_background_color) {
             }
             Selection.root("#content_slot") { name = "pose_capture_selection" }
             T {
-                name = "content_area"
+                name = "content_slot"
                 Style {
                     display("block")
                     width(100%)

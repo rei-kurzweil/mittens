@@ -2,9 +2,10 @@
 
 ## Status
 
-Investigation note.
+Implemented; awaiting visual verification.
 
-No implementation yet.
+The pose panel now uses the same authored viewport, stable content slot, and
+`DataRendererSystem` projection pattern as the grid and world panels.
 
 ## Observed topology
 
@@ -34,44 +35,53 @@ runtime topology below the scroll content area.
 
 ## Current implementation mismatch
 
-The pose panel currently manually clears and adds dynamic children under:
+Before the fix, the pose panel manually cleared and added dynamic children
+under:
 
 ```text
 #content_area
 ```
 
-That differs from the newer grid and world panel direction, where panel content
-is rendered through `DataRendererSystem` into a stable slot and layout/routing is
-allowed to place children through the authored panel structure.
+That differed from the newer grid and world panel direction, where panel
+content is rendered through `DataRendererSystem` into a stable slot and
+layout/routing is allowed to place children through the authored panel
+structure.
 
 This mismatch is suspicious because scroll content measurement, style
 inheritance, and layout-owned child routing may not be following the same path as
 the grid/world panel rows.
 
-## Proposed investigation
+## Implemented change
 
-Compare the pose panel row and header path against the grid/world panel row
-path.
+The authored panel topology is now:
 
-Specific checks:
+```text
+pose_capture_panel_root
+`-- pose_panel_content_area
+    `-- content_slot
+        `-- data_renderer_list_*
+            |-- pose_section_header
+            `-- pose_row
+```
 
-- verify font size inherited by `pose_section_header` and `pose_row`
-- verify text wrapping behavior for captured pose labels and values
-- verify row height and padding after dynamic insertion
-- verify scroll content measurement for `content_area`
-- compare row/header style inheritance with grid/world rows
-- inspect whether direct mutation under `content_area` bypasses a slot or
-  routing rule that the other panels rely on
+`pose_panel_content_area` owns the fixed-height scroll viewport.
+`#content_slot` is the stable renderer mount beneath it. Pose headers and rows
+are flattened into `UiItem` values and rendered through a Rust
+`ItemRendererSpec`.
 
-## Possible fix direction
+The pose row renderer preserves the existing click payload:
 
-Decide whether pose capture results should render into `#content_slot` through
-`DataRendererSystem` instead of directly mutating `content_area`.
+- `target_component` identifies the captured pose
+- `pose_target` identifies the owning `PoseCaptureComponent`
 
-If the issue is only row styling, a smaller local style fix may be enough. If
-the issue is caused by bypassing the stable panel slot/routing model, the pose
-panel should be migrated to the same renderer-owned projection path used by the
-grid/world panel content.
+This keeps pose application behavior unchanged while moving subtree lifecycle,
+attachment, initialization, and layout invalidation under `DataRendererSystem`.
+
+## Verification
+
+- `cargo check` passes
+- focused Rust formatting and diff whitespace checks pass
+- visual verification after capturing one or more poses is still required
 
 ## Assumptions
 
