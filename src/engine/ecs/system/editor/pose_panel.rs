@@ -778,7 +778,11 @@ pub fn handle_pose_panel_click(
                                 set_pose_panel_status(world, panel_root, "applying pose...");
                                 emit.push_intent_now(
                                     gltf,
-                                    IntentValue::PoseApply { target: gltf, pose },
+                                    IntentValue::PoseApply {
+                                        target: gltf,
+                                        pose,
+                                        mode: crate::engine::ecs::PoseApplyMode::Replace,
+                                    },
                                 );
                             }
                             Err(error) => set_pose_panel_status(
@@ -1250,6 +1254,7 @@ mod tests {
             IntentValue::PoseApply {
                 target: emitted_target,
                 pose: emitted_pose,
+                mode: crate::engine::ecs::PoseApplyMode::Replace,
             } if emitted_target == selected_gltf && emitted_pose == pose
         ));
     }

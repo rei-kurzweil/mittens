@@ -2418,6 +2418,18 @@ impl SystemWorld {
         // world matrices / acceleration structures (e.g. raycasting).
         queue.flush(world, self, visuals, render_assets);
 
+        // Movement observers see input-driven local transforms from this frame, and run
+        // before animation sampling. Avoid allocating/dispatching a per-frame event when
+        // no script or system asked for it.
+        if self.rx.has_global_handlers(SignalKind::FrameTick) {
+            self.rx.push_event(
+                ComponentId::default(),
+                crate::engine::ecs::EventSignal::FrameTick { dt_sec },
+            );
+            let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);
+            queue.flush(world, self, visuals, render_assets);
+        }
+
         self.armature_visualization
             .tick_with_queue(world, &self.gltf, visuals, queue, dt_sec);
         self.gltf_bounds_visualization.tick_with_queue(

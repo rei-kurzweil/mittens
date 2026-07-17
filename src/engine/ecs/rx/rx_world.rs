@@ -243,6 +243,10 @@ impl RxWorld {
         !self.ready_intents.is_empty()
     }
 
+    pub fn has_global_handlers(&self, kind: SignalKind) -> bool {
+        self.global_handlers.get(&kind).is_some_and(|handlers| !handlers.is_empty())
+    }
+
     pub fn requeue_ready_events(&mut self, mut events: Vec<Signal>) {
         if events.is_empty() {
             return;

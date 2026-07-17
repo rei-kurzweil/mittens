@@ -127,6 +127,12 @@ pub enum HostCallKind {
         name: Option<String>,
         handler: Value,
     },
+    /// Register an MMS function without a component scope.
+    RegisterGlobalHandler {
+        signal_kind: SignalKind,
+        name: Option<String>,
+        handler: Value,
+    },
     /// Query the live ECS world. `scope = None` means search from the world's
     /// canonical roots; `scope = Some(id)` restricts the search to the
     /// subtree rooted at `id`. `multiple` selects between `query_all`
@@ -173,6 +179,7 @@ pub enum HostValue {
         component_type: String,
     },
     ComponentList(Vec<(ComponentId, String)>),
+    Value(Value),
     Null,
 }
 
@@ -1580,6 +1587,33 @@ fn eval_call(call: &CallExpression, ctx: &mut EvalContext<'_>) -> Result<Value, 
     }
 
     // Built-in:
+    //   on_global("SignalKind", fn(event) { ... })
+    //   on_global("SignalKind", "handler_name", fn(event) { ... })
+    if callee_name == "on_global" {
+        let args: Vec<Value> = call
+            .args
+            .iter()
+            .map(|a| eval_expr(a, ctx))
+            .collect::<Result<_, _>>()?;
+        let signal_kind = match args.first() {
+            Some(Value::String(s)) => parse_signal_kind(s)?,
+            other => return Err(format!("on_global(): arg 0 must be a signal kind string, got {other:?}")),
+        };
+        let (name, handler_idx) = match args.get(1) {
+            Some(Value::String(name)) => (Some(name.clone()), 2),
+            _ => (None, 1),
+        };
+        let handler = match args.get(handler_idx) {
+            Some(f @ Value::Function { .. }) => f.clone(),
+            other => return Err(format!("on_global(): arg {handler_idx} must be a function, got {other:?}")),
+        };
+        if let Some(ch) = ctx.channels.as_mut() {
+            ch.call(HostCallKind::RegisterGlobalHandler { signal_kind, name, handler });
+        }
+        return Ok(Value::Null);
+    }
+
+    // Built-in:
     //   on(component_object, "SignalKind", fn(event) { ... })
     //   on(component_object, "SignalKind", "handler_name", fn(event) { ... })
     if callee_name == "on" {
@@ -2038,6 +2072,7 @@ fn eval_method_call(
                                 component_type: component_type.clone(),
                             });
                         }
+                        Some(HostValue::Value(value)) => return Ok(value),
                         Some(other) => {
                             return Err(format!(
                                 "InvokeComponentMethod returned unexpected value {:?}",
@@ -3111,6 +3146,7 @@ fn num_cmp(l: Value, r: Value, f: impl Fn(f64, f64) -> bool) -> Result<Value, St
 
 fn parse_signal_kind(s: &str) -> Result<SignalKind, String> {
     match s {
+        "FrameTick" => Ok(SignalKind::FrameTick),
         "Click" => Ok(SignalKind::Click),
         "DragStart" => Ok(SignalKind::DragStart),
         "DragMove" => Ok(SignalKind::DragMove),

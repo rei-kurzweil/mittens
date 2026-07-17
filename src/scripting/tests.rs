@@ -1528,6 +1528,112 @@ fn handler_registered_inside_function_body_fires() {
 }
 
 #[test]
+fn global_frame_tick_handler_reads_translation_and_dt() {
+    let src = r##"
+        let driven = T.position(2.0, 3.0, 4.0) { name = "driven" }
+        driven
+        let initial_position = driven.translation()
+        Text { "waiting" name = "frame_status" }
+
+        on_global("FrameTick", fn(event) {
+            let position = driven.translation()
+            if position[0] == 2.0 && event.dt_sec == 0.25 {
+                let status = query("#frame_status")
+                status.set_text("frame-observed")
+            }
+        })
+    "##;
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert!(rx.has_global_handlers(crate::engine::ecs::SignalKind::FrameTick));
+
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            ComponentId::default(),
+            EventSignal::FrameTick { dt_sec: 0.25 },
+        ),
+    );
+    assert!(rx.drain_ready_intents().iter().any(|signal| matches!(
+        signal.intent.as_ref().map(|intent| &intent.value),
+        Some(crate::engine::ecs::IntentValue::SetText { text, .. }) if text == "frame-observed"
+    )));
+}
+
+#[test]
+fn live_pose_handles_expose_replace_overlay_and_clamped_blend() {
+    let src = r##"
+        let target = T {}
+        let pose = PoseCapturePose.new("run")
+        pose.apply(target)
+        pose.overlay(target)
+        pose.apply_blended(target, 4.0)
+    "##;
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert_eq!(out.intents.len(), 3);
+    assert!(matches!(
+        out.intents[0],
+        IntentValue::PoseApply { mode: crate::engine::ecs::PoseApplyMode::Replace, .. }
+    ));
+    assert!(matches!(
+        out.intents[1],
+        IntentValue::PoseApply { mode: crate::engine::ecs::PoseApplyMode::Overlay, .. }
+    ));
+    assert!(matches!(
+        out.intents[2],
+        IntentValue::PoseApply {
+            mode: crate::engine::ecs::PoseApplyMode::RestBlend { amount: 1.0 },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn gltf_pose_animation_example_imports_named_pose_factories() {
+    let source = include_str!("../../examples/gltf-pose-animation.mms");
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+    let mut render_assets = RenderAssets::new();
+    let out = MeowMeowRunner::eval_with_world_and_assets_at_path(
+        source,
+        Some("examples/gltf-pose-animation.mms"),
+        &mut world,
+        &mut rx,
+        Some(&mut render_assets),
+        &mut emit,
+    );
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    assert!(rx.has_global_handlers(crate::engine::ecs::SignalKind::FrameTick));
+    assert_eq!(
+        world
+            .all_components()
+            .filter(|&id| world
+                .get_component_by_id_as::<crate::engine::ecs::component::PoseCapturePoseComponent>(id)
+                .is_some())
+            .count(),
+        3
+    );
+    assert_eq!(
+        world
+            .all_components()
+            .filter(|&id| world
+                .get_component_by_id_as::<crate::engine::ecs::component::SecondaryMotionComponent>(id)
+                .is_some())
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn mms_named_handler_is_filtered_by_observer_router() {
     let src = r##"
         let router = ObserverRouter {}

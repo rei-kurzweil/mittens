@@ -330,6 +330,7 @@ impl mms::Host for MittensHost<'_> {
 
 fn signal_kind(name: &str) -> Option<SignalKind> {
     Some(match name {
+        "FrameTick" => SignalKind::FrameTick,
         "Click" => SignalKind::Click,
         "DataEvent" => SignalKind::DataEvent,
         "CollisionStarted" => SignalKind::CollisionStarted,

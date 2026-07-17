@@ -1,12 +1,16 @@
 use crate::engine::ecs::component::{EmissiveComponent, TransformComponent, TransitionComponent};
-use crate::engine::ecs::{ComponentId, IntentValue, World};
+use crate::engine::ecs::{ComponentId, IntentValue, PoseApplyMode, World};
 use crate::scripting::object::Value;
 
 pub(crate) fn supports_component_method(component_type: &str, method: &str) -> bool {
     (matches!(
         component_type,
         "T" | "Transform" | "TransformComponent" | "transform"
-    ) && matches!(method, "update_transform" | "look_at"))
+    ) && matches!(method, "update_transform" | "look_at" | "translation"))
+        || (matches!(
+            component_type,
+            "PoseCapturePose" | "PoseCapturePoseComponent" | "pose_capture_pose"
+        ) && matches!(method, "apply" | "overlay" | "apply_blended"))
         || (matches!(
             component_type,
             "EM" | "Emissive" | "EmissiveComponent" | "emissive"
@@ -30,6 +34,52 @@ pub(crate) fn invoke_component_method(
     mut emit_intent: impl FnMut(IntentValue),
 ) -> Result<Value, String> {
     match (component_type, method) {
+        (
+            "PoseCapturePose" | "PoseCapturePoseComponent" | "pose_capture_pose",
+            method @ ("apply" | "overlay" | "apply_blended"),
+        ) => {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::PoseCapturePoseComponent>(id)
+                .ok_or_else(|| format!("{method}(): not a PoseCapturePoseComponent"))?;
+            let target = match args.first() {
+                Some(Value::ComponentObject { id, .. }) => *id,
+                other => return Err(format!("{method}(): expected a component target, got {other:?}")),
+            };
+            let expected = if method == "apply_blended" { 2 } else { 1 };
+            if args.len() != expected {
+                return Err(format!("{method}(): expected {expected} argument(s), got {}", args.len()));
+            }
+            let mode = match method {
+                "apply" => PoseApplyMode::Replace,
+                "overlay" => PoseApplyMode::Overlay,
+                "apply_blended" => {
+                    let amount = match args.get(1) {
+                        Some(Value::Number(value)) => *value as f32,
+                        other => return Err(format!("apply_blended(): expected numeric amount, got {other:?}")),
+                    };
+                    PoseApplyMode::RestBlend { amount: amount.clamp(0.0, 1.0) }
+                }
+                _ => unreachable!(),
+            };
+            emit_intent(IntentValue::PoseApply { target, pose: id, mode });
+            Ok(Value::Null)
+        }
+        ("T" | "Transform" | "TransformComponent" | "transform", "translation") => {
+            if !args.is_empty() {
+                return Err(format!("translation(): expected no arguments, got {args:?}"));
+            }
+            let translation = world
+                .get_component_by_id_as::<TransformComponent>(id)
+                .ok_or_else(|| "translation(): not a TransformComponent".to_string())?
+                .transform
+                .translation;
+            Ok(Value::Array(
+                translation
+                    .into_iter()
+                    .map(|value| Value::Number(value as f64))
+                    .collect(),
+            ))
+        }
         ("T" | "Transform" | "TransformComponent" | "transform", "update_transform") => {
             let [translation, rotation_euler, scale] = match args {
                 [translation, rotation, scale] => [

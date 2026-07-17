@@ -670,10 +670,10 @@ impl RxMutationExecutor {
                     pose_name.clone(),
                 );
             }
-            IntentValue::PoseApply { target, pose } => {
+            IntentValue::PoseApply { target, pose, mode } => {
                 if let Err(error) = systems
                     .pose_capture
-                    .handle_apply(world, emit, *target, *pose)
+                    .handle_apply(world, emit, *target, *pose, *mode)
                 {
                     eprintln!("[PoseCaptureSystem] {error}");
                 }

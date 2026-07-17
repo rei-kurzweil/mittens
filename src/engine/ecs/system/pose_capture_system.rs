@@ -4,7 +4,7 @@ use crate::engine::ecs::component::{
     PoseTargetRef, TransformComponent,
 };
 use crate::engine::ecs::rx::SignalEmitter;
-use crate::engine::ecs::{ComponentId, IntentValue, World};
+use crate::engine::ecs::{ComponentId, IntentValue, PoseApplyMode, World};
 use crate::scripting::component_registry::spawn_tree_uninitialized;
 use crate::scripting::object::{CeChild, MaterializedCE};
 use crate::scripting::runner::MeowMeowRunner;
@@ -62,16 +62,49 @@ impl PoseCaptureSystem {
         emit: &mut dyn SignalEmitter,
         target: ComponentId,
         pose_id: ComponentId,
+        mode: PoseApplyMode,
     ) -> Result<(), String> {
-        let resolved = validate_pose_apply(world, target, pose_id)?;
-        for (tc_id, entry) in resolved {
+        let (gltf_id, resolved) = validate_pose_apply_with_target(world, target, pose_id)?;
+        let updates = match mode {
+            PoseApplyMode::Overlay => resolved
+                .into_iter()
+                .map(|(id, entry)| (id, entry.translation, entry.rotation, entry.scale))
+                .collect(),
+            PoseApplyMode::Replace => {
+                let mut updates = imported_rest_pose(world, gltf_id)?;
+                updates.extend(resolved.into_iter().map(|(id, entry)| {
+                    (id, entry.translation, entry.rotation, entry.scale)
+                }));
+                updates
+            }
+            PoseApplyMode::RestBlend { amount } => {
+                let amount = amount.clamp(0.0, 1.0);
+                let captured: std::collections::HashMap<_, _> =
+                    resolved.into_iter().collect();
+                imported_rest_pose(world, gltf_id)?
+                    .into_iter()
+                    .map(|(id, rt, rr, rs)| {
+                        let Some(entry) = captured.get(&id) else {
+                            return (id, rt, rr, rs);
+                        };
+                        (
+                            id,
+                            lerp3(rt, entry.translation, amount),
+                            nlerp_shortest(rr, entry.rotation, amount),
+                            lerp3(rs, entry.scale, amount),
+                        )
+                    })
+                    .collect()
+            }
+        };
+        for (tc_id, translation, rotation, scale) in updates {
             emit.push_intent_now(
                 tc_id,
                 IntentValue::UpdateTransform {
                     component_ids: vec![tc_id],
-                    translation: entry.translation,
-                    rotation_quat_xyzw: entry.rotation,
-                    scale: entry.scale,
+                    translation,
+                    rotation_quat_xyzw: rotation,
+                    scale,
                 },
             );
         }
@@ -286,6 +319,45 @@ impl PoseCaptureSystem {
             current = world.parent_of(id);
         }
         None
+    }
+}
+
+type JointTrs = (ComponentId, [f32; 3], [f32; 4], [f32; 3]);
+
+fn imported_rest_pose(world: &World, gltf_id: ComponentId) -> Result<Vec<JointTrs>, String> {
+    let gltf = world
+        .get_component_by_id_as::<GLTFComponent>(gltf_id)
+        .ok_or_else(|| format!("component {gltf_id:?} is not a glTF"))?;
+    let mut out = Vec::with_capacity(gltf.armature_joint_transforms.len());
+    for &joint in &gltf.armature_joint_transforms {
+        let rest = world
+            .children_of(joint)
+            .iter()
+            .find_map(|&child| world.get_component_by_id_as::<BoneRestPoseComponent>(child))
+            .copied()
+            .ok_or_else(|| format!("glTF {gltf_id:?} joint {joint:?} has no imported rest pose"))?;
+        out.push((joint, rest.translation, rest.rotation, rest.scale));
+    }
+    if out.is_empty() {
+        return Err(format!("glTF {gltf_id:?} has no imported armature rest pose"));
+    }
+    Ok(out)
+}
+
+fn lerp3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
+    std::array::from_fn(|i| a[i] + (b[i] - a[i]) * t)
+}
+
+fn nlerp_shortest(a: [f32; 4], mut b: [f32; 4], t: f32) -> [f32; 4] {
+    if a.iter().zip(b).map(|(x, y)| x * y).sum::<f32>() < 0.0 {
+        b = b.map(|v| -v);
+    }
+    let mixed = std::array::from_fn(|i| a[i] + (b[i] - a[i]) * t);
+    let len = mixed.iter().map(|v| v * v).sum::<f32>().sqrt();
+    if len > f32::EPSILON {
+        mixed.map(|v| v / len)
+    } else {
+        [0.0, 0.0, 0.0, 1.0]
     }
 }
 
@@ -773,11 +845,18 @@ pub fn validate_pose_apply(
     target: ComponentId,
     pose_id: ComponentId,
 ) -> Result<Vec<(ComponentId, PoseBoneEntry)>, String> {
+    validate_pose_apply_with_target(world, target, pose_id).map(|(_, entries)| entries)
+}
+
+fn validate_pose_apply_with_target(
+    world: &World,
+    target: ComponentId,
+    pose_id: ComponentId,
+) -> Result<(ComponentId, Vec<(ComponentId, PoseBoneEntry)>), String> {
     let pose = world
         .get_component_by_id_as::<PoseCapturePoseComponent>(pose_id)
         .ok_or_else(|| format!("component {pose_id:?} is not a pose"))?;
-    let gltf_id = owning_gltf(world, target)
-        .ok_or_else(|| format!("target {target:?} has no owning glTF"))?;
+    let gltf_id = resolve_unique_gltf_target(world, target)?;
     let mut resolved = Vec::with_capacity(pose.entries.len());
     for entry in &pose.entries {
         let matches = resolve_joint_query(world, gltf_id, &entry.query);
@@ -790,7 +869,62 @@ pub fn validate_pose_apply(
         }
         resolved.push((matches[0], entry.clone()));
     }
-    Ok(resolved)
+    Ok((gltf_id, resolved))
+}
+
+fn resolve_unique_gltf_target(world: &World, target: ComponentId) -> Result<ComponentId, String> {
+    if world.get_component_by_id_as::<GLTFComponent>(target).is_some() {
+        return Ok(target);
+    }
+
+    let mut ancestor = world.parent_of(target);
+    while let Some(id) = ancestor {
+        if world.get_component_by_id_as::<GLTFComponent>(id).is_some() {
+            return Ok(id);
+        }
+        ancestor = world.parent_of(id);
+    }
+
+    let owners: Vec<_> = world
+        .all_components()
+        .filter(|&id| {
+            world.get_component_by_id_as::<GLTFComponent>(id).is_some_and(|gltf| {
+                gltf.spawned_node_transforms
+                    .iter()
+                    .chain(&gltf.armature_joint_transforms)
+                    .any(|&owned| owned == target || is_ancestor(world, owned, target))
+            })
+        })
+        .collect();
+    if owners.len() == 1 {
+        return Ok(owners[0]);
+    }
+    if owners.len() > 1 {
+        return Err(format!("target {target:?} is owned by multiple glTF instances"));
+    }
+
+    let enclosed: Vec<_> = world
+        .all_components()
+        .filter(|&id| {
+            world.get_component_by_id_as::<GLTFComponent>(id).is_some()
+                && is_ancestor(world, target, id)
+        })
+        .collect();
+    match enclosed.as_slice() {
+        [gltf] => Ok(*gltf),
+        [] => Err(format!("target {target:?} contains no glTF instance")),
+        _ => Err(format!("target {target:?} contains multiple glTF instances")),
+    }
+}
+
+fn is_ancestor(world: &World, ancestor: ComponentId, mut node: ComponentId) -> bool {
+    while let Some(parent) = world.parent_of(node) {
+        if parent == ancestor {
+            return true;
+        }
+        node = parent;
+    }
+    false
 }
 
 fn owning_gltf(world: &World, start: ComponentId) -> Option<ComponentId> {
@@ -1071,6 +1205,106 @@ mod tests {
                     } if component_ids == &vec![hand]
                 )
         }));
+    }
+
+    #[test]
+    fn pose_modes_replace_overlay_and_blend_from_imported_rest() {
+        struct RecordingEmitter(Vec<IntentValue>);
+        impl SignalEmitter for RecordingEmitter {
+            fn push_event(&mut self, _scope: ComponentId, _event: EventSignal) {}
+            fn push_intent(&mut self, _scope: ComponentId, intent: IntentSignal) {
+                self.0.push(intent.value);
+            }
+        }
+
+        let mut world = World::default();
+        let root = world.add_component(TransformComponent::new());
+        let gltf = world.add_component(GLTFComponent::new("avatar.glb"));
+        let hips = world.add_component_boxed_named("hips", Box::new(TransformComponent::new()));
+        let hand = world.add_component_boxed_named("hand", Box::new(TransformComponent::new()));
+        world.add_child(root, gltf).unwrap();
+        world.add_child(root, hips).unwrap();
+        world.add_child(root, hand).unwrap();
+        for (joint, translation) in [(hips, [0.0, 1.0, 0.0]), (hand, [1.0, 0.0, 0.0])] {
+            let rest = world.add_component(BoneRestPoseComponent::new(
+                translation,
+                [0.0, 0.0, 0.0, 1.0],
+                [1.0; 3],
+            ));
+            world.add_child(joint, rest).unwrap();
+        }
+        {
+            let component = world.get_component_by_id_as_mut::<GLTFComponent>(gltf).unwrap();
+            component.spawned_node_transforms = vec![hips, hand];
+            component.armature_joint_transforms = vec![hips, hand];
+        }
+        let pose = world.add_component(PoseCapturePoseComponent::new(
+            "run",
+            PoseTargetRef::Query("TODO".into()),
+            vec![PoseBoneEntry {
+                query: "#hips".into(),
+                translation: [2.0, 3.0, 4.0],
+                rotation: [0.0, 0.0, 1.0, 0.0],
+                scale: [2.0; 3],
+            }],
+        ));
+        let system = PoseCaptureSystem::new();
+
+        let mut overlay = RecordingEmitter(Vec::new());
+        system
+            .handle_apply(&mut world, &mut overlay, hips, pose, PoseApplyMode::Overlay)
+            .unwrap();
+        assert_eq!(overlay.0.len(), 1);
+
+        let mut replace = RecordingEmitter(Vec::new());
+        system
+            .handle_apply(&mut world, &mut replace, root, pose, PoseApplyMode::Replace)
+            .unwrap();
+        assert_eq!(replace.0.len(), 3, "two rest writes plus the sparse override");
+
+        let mut blended = RecordingEmitter(Vec::new());
+        system
+            .handle_apply(
+                &mut world,
+                &mut blended,
+                gltf,
+                pose,
+                PoseApplyMode::RestBlend { amount: 0.5 },
+            )
+            .unwrap();
+        assert_eq!(blended.0.len(), 2);
+        assert!(blended.0.iter().any(|intent| matches!(
+            intent,
+            IntentValue::UpdateTransform {
+                component_ids,
+                translation: [1.0, 2.0, 2.0],
+                rotation_quat_xyzw,
+                scale: [1.5, 1.5, 1.5],
+            } if component_ids == &vec![hips]
+                && (rotation_quat_xyzw[2] - 0.70710677).abs() < 1.0e-5
+                && (rotation_quat_xyzw[3] - 0.70710677).abs() < 1.0e-5
+        )));
+        assert!(blended.0.iter().any(|intent| matches!(
+            intent,
+            IntentValue::UpdateTransform { component_ids, translation: [1.0, 0.0, 0.0], .. }
+                if component_ids == &vec![hand]
+        )));
+
+        let mut clamped = RecordingEmitter(Vec::new());
+        system
+            .handle_apply(
+                &mut world,
+                &mut clamped,
+                gltf,
+                pose,
+                PoseApplyMode::RestBlend { amount: -10.0 },
+            )
+            .unwrap();
+        assert!(clamped.0.iter().any(|intent| matches!(
+            intent,
+            IntentValue::UpdateTransform { component_ids, translation: [0.0, 1.0, 0.0], .. }
+                if component_ids == &vec![hips]
+        )));
     }
 
     #[test]
@@ -1403,5 +1637,21 @@ mod tests {
                 .unwrap_err()
                 .contains("matched 2")
         );
+    }
+
+    #[test]
+    fn apply_target_accepts_gltf_owned_component_and_unique_enclosing_tree() {
+        let mut fixture = fixture();
+        let enclosing = fixture.world.parent_of(fixture.selected_gltf).unwrap();
+        for target in [fixture.selected_gltf, fixture.selected_node, enclosing] {
+            let resolved = validate_pose_apply(&fixture.world, target, fixture.pose).unwrap();
+            assert_eq!(resolved.len(), 1);
+            assert_eq!(resolved[0].0, fixture.selected_joint);
+        }
+
+        let second = fixture.world.add_component(GLTFComponent::new("second.glb"));
+        fixture.world.add_child(enclosing, second).unwrap();
+        let error = validate_pose_apply(&fixture.world, enclosing, fixture.pose).unwrap_err();
+        assert!(error.contains("multiple glTF"), "{error}");
     }
 }

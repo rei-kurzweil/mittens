@@ -54,6 +54,10 @@ fn headers_to_value(headers: &[(String, String)]) -> Value {
 
 pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
     match signal.event.as_ref() {
+        Some(crate::engine::ecs::EventSignal::FrameTick { dt_sec }) => Value::Map(HashMap::from([(
+            "dt_sec".to_string(),
+            Value::Number(*dt_sec as f64),
+        )])),
         Some(crate::engine::ecs::EventSignal::DataEvent { name, .. }) => {
             Value::String(name.clone())
         }
@@ -693,6 +697,36 @@ impl MeowMeowRunner {
                             }
                             HostValue::Null
                         }
+                        HostCallKind::RegisterGlobalHandler {
+                            signal_kind,
+                            name,
+                            handler,
+                        } => {
+                            let callback = move |world: &mut World,
+                                                 emit: &mut dyn SignalEmitter,
+                                                 signal: &crate::engine::ecs::Signal| {
+                                let arg = event_arg_value(signal);
+                                if let Err(e) = eval_mms_fn(
+                                    &handler,
+                                    vec![arg],
+                                    None,
+                                    Some(world),
+                                    Some(emit),
+                                ) {
+                                    eprintln!("[mms] global handler error: {e}");
+                                }
+                            };
+                            if let Some(name) = name {
+                                rx.add_global_handler_closure_named(
+                                    signal_kind,
+                                    Some(name),
+                                    callback,
+                                );
+                            } else {
+                                rx.add_global_handler_closure(signal_kind, callback);
+                            }
+                            HostValue::Null
+                        }
                         HostCallKind::AudioClipInstance {
                             source,
                             start_beat,
@@ -738,13 +772,7 @@ impl MeowMeowRunner {
                                 Value::ComponentObject { id, component_type } => {
                                     HostValue::Component { id, component_type }
                                 }
-                                other => {
-                                    output.errors.push(format!(
-                                        "HostCall::InvokeComponentMethod returned unsupported value: {:?}",
-                                        other
-                                    ));
-                                    HostValue::Null
-                                }
+                                other => HostValue::Value(other),
                             },
                             Err(e) => {
                                 output

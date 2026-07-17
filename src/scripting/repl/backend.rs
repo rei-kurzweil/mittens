@@ -358,6 +358,32 @@ fn service_host_call(
             }
             HostValue::Null
         }
+        HostCallKind::RegisterGlobalHandler {
+            signal_kind,
+            name,
+            handler,
+        } => {
+            let callback = move |world: &mut ecs::World,
+                                 emit: &mut dyn ecs::SignalEmitter,
+                                 signal: &ecs::Signal| {
+                let arg = crate::scripting::runner::event_arg_value(signal);
+                if let Err(e) = crate::scripting::world_evaluator::eval_mms_fn(
+                    &handler,
+                    vec![arg],
+                    None,
+                    Some(world),
+                    Some(emit),
+                ) {
+                    eprintln!("[mms] global handler: {e}");
+                }
+            };
+            if let Some(name) = name {
+                rx.add_global_handler_closure_named(signal_kind, Some(name), callback);
+            } else {
+                rx.add_global_handler_closure(signal_kind, callback);
+            }
+            HostValue::Null
+        }
         HostCallKind::AudioClipInstance {
             source,
             start_beat,
@@ -393,7 +419,8 @@ fn service_host_call(
                 Ok(Value::ComponentObject { id, component_type }) => {
                     HostValue::Component { id, component_type }
                 }
-                Ok(_) => HostValue::Null,
+                Ok(crate::scripting::object::Value::Null) => HostValue::Null,
+                Ok(value) => HostValue::Value(value),
                 Err(e) => {
                     eprintln!("[mms] {e}");
                     HostValue::Null

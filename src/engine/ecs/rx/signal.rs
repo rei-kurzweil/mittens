@@ -13,6 +13,13 @@ pub enum TextInputCaretDirection {
 
 pub type HttpHeaders = Vec<(String, String)>;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PoseApplyMode {
+    Replace,
+    Overlay,
+    RestBlend { amount: f32 },
+}
+
 /// Signal envelope.
 ///
 /// Exactly one of `event` or `intent` should be `Some`.
@@ -48,6 +55,9 @@ impl Signal {
 /// Event signal: a fact/observation.
 #[derive(Debug, Clone)]
 pub enum EventSignal {
+    /// Emitted once per rendered frame when at least one global subscriber exists.
+    FrameTick { dt_sec: f32 },
+
     /// Topology changed.
     ParentChanged {
         child: ComponentId,
@@ -265,6 +275,7 @@ pub enum EventSignal {
 impl EventSignal {
     pub fn kind(&self) -> SignalKind {
         match self {
+            EventSignal::FrameTick { .. } => SignalKind::FrameTick,
             EventSignal::ParentChanged { .. } => SignalKind::ParentChanged,
             EventSignal::RayIntersected { .. } => SignalKind::RayIntersected,
             EventSignal::CollisionStarted { .. } => SignalKind::CollisionStarted,
@@ -489,6 +500,7 @@ pub enum IntentValue {
     PoseApply {
         target: ComponentId,
         pose: ComponentId,
+        mode: PoseApplyMode,
     },
     PoseReset {
         target: ComponentId,
@@ -912,6 +924,7 @@ impl IntentValue {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SignalKind {
     Any,
+    FrameTick,
     ParentChanged,
     RayIntersected,
     CollisionStarted,
