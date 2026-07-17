@@ -1,9 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use crate::engine::ecs::component::{
-    SelectionComponent, SelectionEntry, SelectionMode, TransformComponent,
-};
+use crate::engine::ecs::component::{SelectionEntry, TransformComponent};
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::system::GridSystem;
 use crate::engine::ecs::system::data_renderer_system::DataRendererSystem;
@@ -13,81 +11,46 @@ use crate::engine::ecs::system::editor::grid_panel::{
     GridPanelClickOutcome, handle_grid_panel_click, rerender_grid_panel_from_context,
 };
 use crate::engine::ecs::system::editor::inspector_panel::{
-    INSPECTOR_DETAIL_SPEC, INSPECTOR_ITEM_PREFIX, INSPECTOR_PANEL_INSTANCE_ID_KEY,
-    INSPECTOR_PANEL_PAYLOAD_NAME, INSPECTOR_ROW_SPEC, InspectorPanelDetailModel, InspectorPanelId,
-    InspectorPanelModel, InspectorPanelRow, InspectorPanelRowKind, InspectorWorkspaceEvent,
-    InspectorWorkspaceState, build_inspector_panel_models, clear_missing_inspector_targets,
+    InspectorPanelModel, InspectorWorkspaceState, build_inspector_panel_models,
     focus_panel_from_descendant_click, handle_inspector_panel_workspace_click,
-    inspector_panel_instance_id_on_root, reduce_inspector_workspace_state,
     rerender_inspector_panels, sync_and_refresh_inspector_panels,
     world_panel_selection_matches_editor_context,
 };
-use crate::engine::ecs::system::editor::panel_ui::{
-    PanelUiRowSpec, spawn_panel_ui_row_tree, spawn_panel_ui_section_header_tree,
-};
+use crate::engine::ecs::system::editor::panel_bootstrap::reconcile_editor_panel_layout;
 use crate::engine::ecs::system::editor::pose_panel::{
     activate_pose_panel_for_selection, handle_pose_panel_click,
     handle_pose_panel_text_input_changed, rerender_pose_panel,
 };
 use crate::engine::ecs::system::editor::settings_panel::{
-    EDITOR_SETTINGS_ARMATURE_ROW_NAME, EDITOR_SETTINGS_ARMATURE_TOGGLE_SLOT_NAME,
-    EDITOR_SETTINGS_PANEL_ROOT_SELECTOR, EDITOR_SETTINGS_PAYLOAD_NAME,
-    EDITOR_SETTINGS_SELECTION_SELECTOR, EditorSettingsOption, handle_editor_settings_panel_click,
-    sync_editor_settings_armature_toggle, sync_editor_settings_panel_selection,
+    EDITOR_SETTINGS_PANEL_ROOT_SELECTOR, EDITOR_SETTINGS_SELECTION_SELECTOR,
+    handle_editor_settings_panel_click, sync_editor_settings_panel_selection,
 };
-use crate::engine::ecs::system::editor::workspace::EditorWorkspaceRuntime;
+use crate::engine::ecs::system::editor::workspace::{
+    EditorWorkspaceRuntime, install_panel_focus_sync_handler,
+};
 use crate::engine::ecs::system::editor::world_panel::{
-    AuthoredWorldPanelSceneModel, ITEM_PREFIX, PANEL_CONTENT_SLOT_SELECTOR,
-    WORLD_PANEL_CONTENT_ROOT_SELECTOR, WORLD_PANEL_PAYLOAD_NAME, WORLD_PANEL_ROOT_SELECTOR,
-    WORLD_PANEL_SELECTION_NAME, WORLD_PANEL_SELECTION_SELECTOR, WorldPanelModel, WorldPanelRow,
-    WorldPanelRowKind, apply_world_panel_semantic_selection, build_world_panel_model,
-    effective_editor_roots, handle_panel_button_click, handle_world_panel_item_click,
-    mark_nearest_layout_dirty, panel_status_text, rebuild_world_panel_scene_model,
+    AuthoredWorldPanelSceneModel, PANEL_CONTENT_SLOT_SELECTOR, WORLD_PANEL_ROOT_SELECTOR,
+    WORLD_PANEL_SELECTION_NAME, WORLD_PANEL_SELECTION_SELECTOR,
+    apply_world_panel_semantic_selection, build_world_panel_model, handle_panel_button_click,
+    handle_world_panel_item_click, panel_status_text, rebuild_world_panel_scene_model,
     register_editor_root, rerender_world_panel_content, rerender_world_panel_status,
-    spawn_world_panel_content_tree, spawn_world_panel_row_tree, sync_world_panel_selection,
-    world_panel_scene_path,
+    sync_world_panel_selection, world_panel_scene_path,
 };
 use crate::engine::ecs::system::panel_system::{
     PANEL_LAYOUT_MOUNT_NAME, PANEL_LAYOUT_ROOT_NAME, PANEL_LAYOUT_SELECTION_NAME, PanelControlKind,
-    PanelKind, PanelSlotKind, ensure_panel_layout_selection, is_descendant_or_self,
-    panel_layout_root_id, panel_layout_selection_id, spawn_editor_panel_layout_tree,
-};
-use crate::engine::ecs::system::selection_system::{
-    apply_selection_set, resolve_semantic_target_from_payload,
+    PanelKind, PanelSlotKind, is_descendant_or_self, panel_layout_root_id,
 };
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
 
 const PAINT_PANEL_ROOT_SELECTOR: &str = "#paint_panel_root";
-const EDITOR_SETTINGS_PANEL_WIDTH_GU: f64 = 16.0;
-const EDITOR_SETTINGS_PANEL_TOTAL_HEIGHT_GU: f64 = 11.5;
 const INSPECTOR_PANEL_ROOT_SELECTOR: &str = "#inspector_panel_root";
 const INSPECTOR_PANEL_SELECTION_SELECTOR: &str = "#inspector_panel_selection";
-// Removed: INSPECTOR_DETAIL_WORLD_PANEL_MOUNT_NAME, INSPECTOR_DETAIL_WORLD_LAYOUT_ROOT_NAME
 const PANEL_STATUS_WRAP_SELECTOR: &str = "#save_status_wrap";
-const PAINT_STATUS_WRAP_SELECTOR: &str = "#paint_status_wrap";
 const PAINT_TOOL_SELECTION_SELECTOR: &str = "#paint_tool_selection";
 const PANEL_PATH_INPUT_SELECTOR: &str = "#path_input";
-const PANEL_LAYOUT_TEXT_SCALE: f64 = 0.08;
-const WORLD_PANEL_WIDTH_GU: f64 = 29.5;
-const WORLD_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
-const INSPECTOR_PANEL_WIDTH_GU: f64 = 44.0;
-const INSPECTOR_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
-const ASSET_PANEL_WIDTH_GU: f64 = 39.0;
-const ASSET_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
-const PAINT_PANEL_WIDTH_GU: f64 = 41.0;
-const PAINT_PANEL_TOTAL_HEIGHT_GU: f64 = 32.0;
-const GRID_PANEL_WIDTH_GU: f64 = 29.5;
-const GRID_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
-const POSE_PANEL_TOTAL_HEIGHT_GU: f64 = 60.5;
-const PANEL_LAYOUT_GAP_GU: f64 = 2.0;
-const PANEL_ROOT_MARGIN_X_GU: f64 = 0.5;
-const PANEL_ROOT_MARGIN_Y_GU: f64 = 0.5;
-const PANEL_LAYOUT_AVAILABLE_WIDTH_GU: f64 = 200000.0;
-const DISABLE_INSPECTOR_MOUNT_WRITES: bool = false;
 
 #[derive(Debug)]
 pub(crate) struct EditorInspectorSystemStopgapMmsAdapter {
-    reconciler: EditorInspectorSystemStopgapMmsReconciler,
     workspace_runtime: EditorWorkspaceRuntime,
     editor_context_state: Option<Arc<Mutex<EditorContextState>>>,
     working_file_path: Arc<Mutex<PathBuf>>,
@@ -100,7 +63,6 @@ pub(crate) struct EditorInspectorSystemStopgapMmsAdapter {
 impl Default for EditorInspectorSystemStopgapMmsAdapter {
     fn default() -> Self {
         Self {
-            reconciler: EditorInspectorSystemStopgapMmsReconciler,
             workspace_runtime: EditorWorkspaceRuntime::default(),
             editor_context_state: None,
             working_file_path: Arc::new(Mutex::new(world_panel_scene_path())),
@@ -111,9 +73,6 @@ impl Default for EditorInspectorSystemStopgapMmsAdapter {
         }
     }
 }
-
-#[derive(Debug, Default)]
-struct EditorInspectorSystemStopgapMmsReconciler;
 
 fn editor_memory_marker(label: &str) {
     let _ = label;
@@ -128,7 +87,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         emit: &mut dyn SignalEmitter,
         editor_root: ComponentId,
         world_panel_pos: (f32, f32, f32),
-        inspector_panel_pos: (f32, f32, f32),
+        _inspector_panel_pos: (f32, f32, f32),
         editor_context_state: Arc<Mutex<EditorContextState>>,
         asset_system: &crate::engine::ecs::system::AssetSystem,
     ) {
@@ -192,7 +151,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 .lock()
                 .expect("working file path mutex poisoned");
             editor_memory_marker("editor setup_panels_for_editor:before reconcile_panel_layout");
-            self.reconciler.reconcile_panel_layout(
+            reconcile_editor_panel_layout(
                 world,
                 render_assets,
                 emit,
@@ -200,7 +159,6 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 runtime_ui_root,
                 editor_root,
                 world_panel_pos,
-                inspector_panel_pos,
                 &model,
                 &inspector_models,
                 &self.rendered_inspector_models,
@@ -442,33 +400,6 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     return;
                 };
 
-                let Some(expected_selection_root) =
-                    world.find_component(panel_query_root, PAINT_TOOL_SELECTION_SELECTOR)
-                else {
-                    return;
-                };
-                if *selection_root != expected_selection_root {
-                    return;
-                }
-
-                let _ = emit;
-            },
-        );
-
-        rx.add_handler_closure(
-            SignalKind::SelectionChanged,
-            panel_query_root,
-            move |world, emit, signal| {
-                let Some(EventSignal::SelectionChanged {
-                    selection_root,
-                    selected_component: _,
-                    selected_payload: _,
-                    ..
-                }) = signal.event.as_ref()
-                else {
-                    return;
-                };
-
                 let is_world_panel_selection = world.component_label(*selection_root)
                     == Some(WORLD_PANEL_SELECTION_NAME)
                     || world.find_component(
@@ -538,259 +469,40 @@ impl EditorInspectorSystemStopgapMmsAdapter {
             },
         );
 
-        rx.add_handler_closure(
-            SignalKind::SelectionChanged,
+        install_panel_focus_sync_handler(
+            rx,
             panel_query_root,
-            move |world, emit, signal| {
-                let Some(EventSignal::SelectionChanged {
-                    selection_root,
-                    selected_component,
-                    selected_payload,
-                    ..
-                }) = signal.event.as_ref()
-                else {
-                    return;
-                };
-
-                let Some(expected_selection_root) =
-                    world.find_component(panel_query_root, EDITOR_SETTINGS_SELECTION_SELECTOR)
-                else {
-                    return;
-                };
-                if *selection_root != expected_selection_root {
-                    return;
-                }
-
-                let Some(panel_layout_selection) = world
-                    .find_component(panel_query_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
-                else {
-                    return;
-                };
-                let Some(settings_panel_root) =
-                    world.find_component(panel_query_root, EDITOR_SETTINGS_PANEL_ROOT_SELECTOR)
-                else {
-                    return;
-                };
-
-                emit.push_intent_now(
-                    panel_layout_selection,
-                    IntentValue::SelectionSet {
-                        component_ids: vec![panel_layout_selection],
-                        entries: vec![SelectionEntry {
-                            index: None,
-                            component: settings_panel_root,
-                        }],
-                        primary: Some(settings_panel_root),
-                    },
-                );
-            },
+            EDITOR_SETTINGS_SELECTION_SELECTOR,
+            EDITOR_SETTINGS_PANEL_ROOT_SELECTOR,
         );
-
-        rx.add_handler_closure(
-            SignalKind::SelectionChanged,
+        install_panel_focus_sync_handler(
+            rx,
             panel_query_root,
-            move |world, emit, signal| {
-                let Some(EventSignal::SelectionChanged {
-                    selection_root,
-                    selected_component,
-                    selected_payload,
-                    ..
-                }) =
-                    signal.event.as_ref()
-                else {
-                    return;
-                };
-
-                let Some(expected_selection_root) =
-                    world.find_component(panel_query_root, INSPECTOR_PANEL_SELECTION_SELECTOR)
-                else {
-                    return;
-                };
-                if *selection_root != expected_selection_root {
-                    return;
-                }
-
-                let Some(panel_layout_selection) = world
-                    .find_component(panel_query_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
-                else {
-                    return;
-                };
-                let Some(inspector_panel_root) =
-                    world.find_component(panel_query_root, INSPECTOR_PANEL_ROOT_SELECTOR)
-                else {
-                    return;
-                };
-
-                println!(
-                    "✨🫠🐈 [1/5] [InspectorPanel][SelectionChanged] sidebar selection_root={selection_root:?} panel_query_root={panel_query_root:?} inspector_panel_root={inspector_panel_root:?}",
-                );
-
-                emit.push_intent_now(
-                    panel_layout_selection,
-                    IntentValue::SelectionSet {
-                        component_ids: vec![panel_layout_selection],
-                        entries: vec![SelectionEntry {
-                            index: None,
-                            component: inspector_panel_root,
-                        }],
-                        primary: Some(inspector_panel_root),
-                    },
-                );
-            },
+            INSPECTOR_PANEL_SELECTION_SELECTOR,
+            INSPECTOR_PANEL_ROOT_SELECTOR,
         );
-
-        rx.add_handler_closure(
-            SignalKind::SelectionChanged,
+        install_panel_focus_sync_handler(
+            rx,
             panel_query_root,
-            move |world, emit, signal| {
-                let Some(EventSignal::SelectionChanged {
-                    selection_root,
-                    selected_component,
-                    selected_payload,
-                    ..
-                }) = signal.event.as_ref()
-                else {
-                    return;
-                };
-
-                let Some(expected_selection_root) =
-                    world.find_component(panel_query_root, PAINT_TOOL_SELECTION_SELECTOR)
-                else {
-                    return;
-                };
-                if *selection_root != expected_selection_root {
-                    return;
-                }
-
-                let Some(panel_layout_selection) = world
-                    .find_component(panel_query_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
-                else {
-                    return;
-                };
-                let Some(paint_panel_root) =
-                    world.find_component(panel_query_root, PAINT_PANEL_ROOT_SELECTOR)
-                else {
-                    return;
-                };
-
-                emit.push_intent_now(
-                    panel_layout_selection,
-                    IntentValue::SelectionSet {
-                        component_ids: vec![panel_layout_selection],
-                        entries: vec![SelectionEntry {
-                            index: None,
-                            component: paint_panel_root,
-                        }],
-                        primary: Some(paint_panel_root),
-                    },
-                );
-            },
+            PAINT_TOOL_SELECTION_SELECTOR,
+            PAINT_PANEL_ROOT_SELECTOR,
         );
-
-        rx.add_handler_closure(
-            SignalKind::SelectionChanged,
+        install_panel_focus_sync_handler(rx, panel_query_root, "#assets_selection", "#assets_root");
+        install_panel_focus_sync_handler(
+            rx,
             panel_query_root,
-            move |world, emit, signal| {
-                let Some(EventSignal::SelectionChanged {
-                    selection_root,
-                    selected_component,
-                    ..
-                }) = signal.event.as_ref()
-                else {
-                    return;
-                };
-
-                let Some(expected_selection_root) =
-                    world.find_component(panel_query_root, "#assets_selection")
-                else {
-                    return;
-                };
-                if *selection_root != expected_selection_root {
-                    return;
-                }
-
-                let Some(panel_layout_selection) = world
-                    .find_component(panel_query_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
-                else {
-                    return;
-                };
-                let Some(asset_panel_root) = world.find_component(panel_query_root, "#assets_root")
-                else {
-                    return;
-                };
-
-                emit.push_intent_now(
-                    panel_layout_selection,
-                    IntentValue::SelectionSet {
-                        component_ids: vec![panel_layout_selection],
-                        entries: vec![SelectionEntry {
-                            index: None,
-                            component: asset_panel_root,
-                        }],
-                        primary: Some(asset_panel_root),
-                    },
-                );
-            },
-        );
-
-        rx.add_handler_closure(
-            SignalKind::SelectionChanged,
-            panel_query_root,
-            move |world, emit, signal| {
-                let Some(EventSignal::SelectionChanged {
-                    selection_root,
-                    selected_component,
-                    selected_payload,
-                    ..
-                }) = signal.event.as_ref()
-                else {
-                    return;
-                };
-
-                let Some(expected_selection_root) =
-                    world.find_component(panel_query_root, GRID_PANEL_SELECTION_SELECTOR)
-                else {
-                    return;
-                };
-                if *selection_root != expected_selection_root {
-                    return;
-                }
-
-                let Some(panel_layout_selection) = world
-                    .find_component(panel_query_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
-                else {
-                    return;
-                };
-                let Some(grid_panel_root) =
-                    world.find_component(panel_query_root, GRID_PANEL_ROOT_SELECTOR)
-                else {
-                    return;
-                };
-
-                emit.push_intent_now(
-                    panel_layout_selection,
-                    IntentValue::SelectionSet {
-                        component_ids: vec![panel_layout_selection],
-                        entries: vec![SelectionEntry {
-                            index: None,
-                            component: grid_panel_root,
-                        }],
-                        primary: Some(grid_panel_root),
-                    },
-                );
-            },
+            GRID_PANEL_SELECTION_SELECTOR,
+            GRID_PANEL_ROOT_SELECTOR,
         );
 
         let layout_size_panel_query_root = panel_query_root;
-        let original_mount_y: Arc<Mutex<Option<f32>>> = Arc::new(Mutex::new(None));
-        let orig_mount_y = original_mount_y.clone();
         rx.add_handler_closure(
             SignalKind::LayoutRootSizeAvailable,
             layout_size_panel_query_root,
             move |world, emit, signal| {
                 let Some(EventSignal::LayoutRootSizeAvailable {
                     layout_id,
-                    width_wu,
+                    width_wu: _,
                     height_wu,
                 }) = signal.event.as_ref()
                 else {
@@ -818,19 +530,13 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     return;
                 };
 
-                let mut base = orig_mount_y.lock().expect("mount y mutex poisoned");
-                if base.is_none() {
-                    *base = Some(tc.transform.translation[1]);
-                }
-                let base_y = base.unwrap();
-
                 emit.push_intent_now(
                     mount_root,
                     IntentValue::UpdateTransform {
                         component_ids: vec![mount_root],
                         translation: [
                             tc.transform.translation[0],
-                            -1.75 + height_wu, // base_y + height_wu,
+                            -1.75 + height_wu,
                             tc.transform.translation[2],
                         ],
                         rotation_quat_xyzw: tc.transform.rotation,
@@ -1172,221 +878,9 @@ fn refresh_all_panel_models(
     );
 }
 
-impl EditorInspectorSystemStopgapMmsReconciler {
-    fn reconcile_panel_layout(
-        &self,
-        world: &mut World,
-        render_assets: &mut crate::engine::graphics::RenderAssets,
-        emit: &mut dyn SignalEmitter,
-        panel_layout_spawned: &mut bool,
-        panel_query_root: ComponentId,
-        editor_root: ComponentId,
-        world_panel_pos: (f32, f32, f32),
-        _inspector_panel_pos: (f32, f32, f32),
-        model: &WorldPanelModel,
-        inspector_models: &[InspectorPanelModel],
-        rendered_inspector_models: &Arc<Mutex<Vec<InspectorPanelModel>>>,
-        working_file_path: &Path,
-        asset_system: &crate::engine::ecs::system::AssetSystem,
-        data_renderer: &mut DataRendererSystem,
-    ) {
-        let existing_world_panel =
-            world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR);
-        let existing_panel_mount = world.all_components().find(|&component_id| {
-            world
-                .component_label(component_id)
-                .is_some_and(|label| label == PANEL_LAYOUT_MOUNT_NAME)
-        });
-
-        if *panel_layout_spawned {
-            if existing_world_panel.is_none() && existing_panel_mount.is_none() {
-                *panel_layout_spawned = false;
-            } else {
-                return;
-            }
-        }
-
-        if existing_world_panel.is_some() {
-            *panel_layout_spawned = true;
-            return;
-        }
-
-        if existing_panel_mount.is_some() {
-            *panel_layout_spawned = true;
-            return;
-        }
-
-        *panel_layout_spawned = true;
-
-        let (panel_mount_root, layout_root_id) = match spawn_editor_panel_layout_tree(
-            world,
-            emit,
-            model,
-            working_file_path,
-            world_panel_pos,
-        ) {
-            Some(ids) => ids,
-            None => return,
-        };
-
-        // Post-spawn work
-        let selection = ensure_panel_layout_selection(world, layout_root_id);
-        world.init_component_tree(selection, emit);
-
-        if let Some(inspector_panel_selection) =
-            world.find_component(panel_mount_root, INSPECTOR_PANEL_SELECTION_SELECTOR)
-        {
-            if let Some(selection) =
-                world.get_component_by_id_as_mut::<SelectionComponent>(inspector_panel_selection)
-            {
-                selection.mode = SelectionMode::Single;
-                selection.clear();
-            }
-        }
-        if let Some(asset_panel_root) = world.find_component(panel_mount_root, "#assets_root") {
-            if let Some(_content_slot) =
-                world.find_component(asset_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
-            {
-                if let Some(selection_root) =
-                    world.find_component(asset_panel_root, "#assets_content_area")
-                {
-                    let items_already_there = world.children_of(selection_root).len();
-                    if items_already_there <= 2 {
-                        let mut last_module_id = None;
-                        for (index, item) in asset_system.items.iter().enumerate() {
-                            if last_module_id != Some(item.module_id) {
-                                last_module_id = Some(item.module_id);
-                                if let Some(module_name) =
-                                    asset_system.get_module_name(item.module_id)
-                                {
-                                    match asset_system.build_asset_module_header(
-                                        world,
-                                        emit,
-                                        &module_name,
-                                    ) {
-                                        Ok(header_root) => {
-                                            world.init_component_tree(header_root, emit);
-                                            emit.push_intent_now(
-                                                header_root,
-                                                IntentValue::Attach {
-                                                    parents: vec![selection_root],
-                                                    child: header_root,
-                                                },
-                                            );
-                                        }
-                                        Err(e) => {
-                                            eprintln!(
-                                                "[InspectorSystem][error] failed to build asset header for {}: {}",
-                                                module_name, e
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-
-                            match asset_system.build_asset_item_shell(
-                                world,
-                                render_assets,
-                                emit,
-                                item,
-                                index,
-                            ) {
-                                Ok(item_root) => {
-                                    world.init_component_tree(item_root, emit);
-                                    emit.push_intent_now(
-                                        item_root,
-                                        IntentValue::Attach {
-                                            parents: vec![selection_root],
-                                            child: item_root,
-                                        },
-                                    );
-                                }
-                                Err(e) => {
-                                    eprintln!(
-                                        "[InspectorSystem][error] failed to build asset item {}: {}",
-                                        item.export_name, e
-                                    );
-                                }
-                            }
-                        }
-                        mark_nearest_layout_dirty(world, selection_root);
-                    }
-                }
-            }
-        }
-        if let Some(panel_layout_selection) = panel_layout_selection_id(world, panel_mount_root) {
-            if let Some(world_panel_root) =
-                world.find_component(panel_mount_root, WORLD_PANEL_ROOT_SELECTOR)
-            {
-                emit.push_intent_now(
-                    panel_layout_selection,
-                    IntentValue::SelectionSet {
-                        component_ids: vec![panel_layout_selection],
-                        entries: vec![SelectionEntry {
-                            index: Some(0),
-                            component: world_panel_root,
-                        }],
-                        primary: Some(world_panel_root),
-                    },
-                );
-            }
-        }
-
-        emit.push_intent_now(
-            panel_mount_root,
-            IntentValue::Attach {
-                parents: vec![panel_query_root],
-                child: panel_mount_root,
-            },
-        );
-
-        if let Some(world_panel_root) =
-            world.find_component(panel_mount_root, WORLD_PANEL_ROOT_SELECTOR)
-        {
-            if let Some(content_slot) =
-                world.find_component(world_panel_root, PANEL_CONTENT_SLOT_SELECTOR)
-                && let Some(selection_root) =
-                    world.find_component(world_panel_root, WORLD_PANEL_SELECTION_SELECTOR)
-            {
-                rerender_world_panel_content(
-                    world,
-                    emit,
-                    content_slot,
-                    selection_root,
-                    &model.rows,
-                    model.selected_index,
-                    data_renderer,
-                );
-            }
-        }
-        let _ = inspector_models;
-        let _ = rendered_inspector_models;
-
-        let grid_context = EditorContextState {
-            active_editor: Some(editor_root),
-            ..EditorContextState::default()
-        };
-        rerender_grid_panel_from_context(
-            world,
-            emit,
-            panel_mount_root,
-            &grid_context,
-            data_renderer,
-        );
-        sync_editor_settings_panel_selection(world, emit, panel_mount_root, &grid_context);
-
-        emit.push_intent_now(
-            panel_mount_root,
-            IntentValue::Attach {
-                parents: vec![panel_query_root],
-                child: panel_mount_root,
-            },
-        );
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    // Keep compatibility behavior covered while responsibilities migrate into editor modules.
     use super::*;
     use crate::engine::ecs::command_queue::CommandQueue;
     use crate::engine::ecs::component::{
@@ -1395,6 +889,7 @@ mod tests {
         SelectionMode, SignalObserverRouterComponent, TextComponent, TransformComponent,
     };
     use crate::engine::ecs::rx::Signal;
+    use crate::engine::ecs::system::editor::world_panel::WORLD_PANEL_PAYLOAD_NAME;
     #[test]
     fn editor_selection_event_activates_armature_marker_pose_library_and_rerenders_panel() {
         let mut world = World::default();

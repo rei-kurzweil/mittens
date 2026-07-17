@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use crate::engine::ecs::component::SelectionEntry;
+use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::system::editor::grid_panel::GRID_PANEL_ROOT_SELECTOR;
 use crate::engine::ecs::system::editor::pose_panel::POSE_PANEL_ROOT_SELECTOR;
 use crate::engine::ecs::system::panel_system::{
-    PanelControlKind, PanelInstance, PanelKind, PanelShellSpec, PanelSlotKind,
-    get_or_create_runtime_ui_root, resolve_panel_instance,
+    PANEL_LAYOUT_SELECTION_NAME, PanelControlKind, PanelInstance, PanelKind, PanelShellSpec,
+    PanelSlotKind, get_or_create_runtime_ui_root, resolve_panel_instance,
 };
-use crate::engine::ecs::{ComponentId, World};
+use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalKind, World};
 
 pub(crate) const PANEL_LAYOUT_MOUNT_NAME: &str = "editor_panel_layout_mount";
 pub(crate) const WORLD_PANEL_ROOT_SELECTOR: &str = "#world_panel_root";
@@ -24,8 +26,6 @@ pub(crate) struct EditorWorkspaceRuntime {
     refresh_handler_editor_roots: Arc<Mutex<Vec<ComponentId>>>,
     runtime_ui_root: Arc<Mutex<Option<ComponentId>>>,
     mounted_panels: HashMap<PanelKind, PanelInstance>,
-    panel_layout_mount_root: Option<ComponentId>,
-    focused_panel: Option<PanelKind>,
 }
 
 impl EditorWorkspaceRuntime {
@@ -71,18 +71,6 @@ impl EditorWorkspaceRuntime {
 
     pub(crate) fn panel_instance(&self, kind: PanelKind) -> Option<&PanelInstance> {
         self.mounted_panels.get(&kind)
-    }
-
-    pub(crate) fn panel_layout_mount_root(&self) -> Option<ComponentId> {
-        self.panel_layout_mount_root
-    }
-
-    pub(crate) fn focused_panel(&self) -> Option<PanelKind> {
-        self.focused_panel
-    }
-
-    pub(crate) fn set_focused_panel(&mut self, kind: PanelKind) {
-        self.focused_panel = Some(kind);
     }
 
     pub(crate) fn find_panel_mount_root(&self, world: &World) -> Option<ComponentId> {
@@ -151,6 +139,51 @@ impl EditorWorkspaceRuntime {
         }
 
         self.mounted_panels = mounted;
-        self.panel_layout_mount_root = Some(mount_root);
     }
+}
+
+pub(crate) fn install_panel_focus_sync_handler(
+    rx: &mut RxWorld,
+    panel_query_root: ComponentId,
+    panel_selection_selector: &'static str,
+    panel_root_selector: &'static str,
+) {
+    rx.add_handler_closure(
+        SignalKind::SelectionChanged,
+        panel_query_root,
+        move |world, emit, signal| {
+            let Some(EventSignal::SelectionChanged { selection_root, .. }) = signal.event.as_ref()
+            else {
+                return;
+            };
+
+            if world.find_component(panel_query_root, panel_selection_selector)
+                != Some(*selection_root)
+            {
+                return;
+            }
+
+            let Some(panel_layout_selection) =
+                world.find_component(panel_query_root, &format!("#{PANEL_LAYOUT_SELECTION_NAME}"))
+            else {
+                return;
+            };
+            let Some(panel_root) = world.find_component(panel_query_root, panel_root_selector)
+            else {
+                return;
+            };
+
+            emit.push_intent_now(
+                panel_layout_selection,
+                IntentValue::SelectionSet {
+                    component_ids: vec![panel_layout_selection],
+                    entries: vec![SelectionEntry {
+                        index: None,
+                        component: panel_root,
+                    }],
+                    primary: Some(panel_root),
+                },
+            );
+        },
+    );
 }
