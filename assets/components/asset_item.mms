@@ -12,7 +12,7 @@ export fn asset_item(display_label, payload_asset_key, item_background_color) {
                 row_kind = "Asset"
             }
         }
-        Raycastable.enabled()
+        Raycastable.click_only()
         Style {
             display("inline-block")
             width(8.5)
