@@ -1,6 +1,7 @@
 import { soft_hair_chain, soft_hair_chain_4, soft_bust_chain } from "spring_bone_presets.mms"
 
-// Bisket 11 heuristic. Override selectors without copying the tuned settings:
+// Bisket 11 heuristic. Passing false selects these tuned defaults; it does not
+// disable secondary motion. Override selectors without copying the settings:
 // bisket_secondary_motion({ hair_chains = [...] hair_chains_4 = [...] bust_chains = [...] })
 export fn bisket_secondary_motion(config) {
     let hair_chains = [

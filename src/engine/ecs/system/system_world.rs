@@ -144,10 +144,13 @@ mod tests {
     use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::World;
     use crate::engine::ecs::component::{
-        BoundsComponent, ColorComponent, MirrorComponent, RaycastableComponent,
-        RenderableComponent, StencilClipComponent, TextureComponent, TransformComponent,
+        AvatarControlComponent, BoneRestPoseComponent, ColorComponent, ComponentRef, GLTFComponent,
+        MirrorComponent, PoseCapturePoseComponent, PoseTargetRef, RaycastableComponent,
+        RenderableComponent, SecondaryMotionComponent, SpringBoneComponent, SpringJointComponent,
+        StencilClipComponent, TextureComponent, TransformComponent,
     };
     use crate::engine::ecs::system::System;
+    use crate::engine::ecs::{IntentValue, PoseApplyMode, SignalEmitter};
     use crate::engine::graphics::primitives::{MaterialHandle, MeshHandle, TextureHandle};
     use crate::engine::graphics::{
         CpuMesh, GpuRenderable, MeshUploader, RenderAssets, TextureUploader, VisualWorld,
@@ -238,6 +241,121 @@ mod tests {
             view,
             proj,
             transform,
+        );
+    }
+
+    #[test]
+    fn avatar_stage_flushes_avc_head_correction_before_body_follow() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::default();
+        let mut render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+
+        let driven = world.add_component(TransformComponent::new());
+        let model_root =
+            world.add_component_boxed_named("model_root", Box::new(TransformComponent::new()));
+        let displaced_head =
+            world.add_component_boxed_named("head", Box::new(TransformComponent::new()));
+        let head_rest = world.add_component(BoneRestPoseComponent::new(
+            [0.0, 2.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0],
+        ));
+        world.add_child(displaced_head, head_rest).unwrap();
+        let spring_tip = world.add_component_boxed_named(
+            "spring_tip",
+            Box::new(TransformComponent::new().with_position(0.0, 1.0, 0.0)),
+        );
+        let spring_tip_rest = world.add_component(BoneRestPoseComponent::new(
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0],
+        ));
+        world.add_child(displaced_head, spring_tip).unwrap();
+        world.add_child(spring_tip, spring_tip_rest).unwrap();
+        let gltf = world.add_component(GLTFComponent::new("synthetic-avatar.glb"));
+        {
+            let gltf = world
+                .get_component_by_id_as_mut::<GLTFComponent>(gltf)
+                .unwrap();
+            gltf.spawned_node_transforms = vec![displaced_head, spring_tip];
+            gltf.armature_joint_transforms = vec![displaced_head, spring_tip];
+        }
+        let sparse_pose = world.add_component(PoseCapturePoseComponent::new(
+            "sparse",
+            PoseTargetRef::Query("TODO".into()),
+            Vec::new(),
+        ));
+        let mut avatar = AvatarControlComponent::new();
+        // Mark this synthetic avatar initialized so the tick exercises the
+        // steady-state correction that follows a replace-mode pose write.
+        avatar.splice_head = Some(displaced_head);
+        avatar.displaced_head = Some(displaced_head);
+        avatar.model_root_id = Some(model_root);
+        avatar.model_root_local_y = 0.0;
+        let avatar = world.add_component(avatar);
+        world.add_child(driven, avatar).unwrap();
+        world.add_child(avatar, model_root).unwrap();
+        world.add_child(model_root, gltf).unwrap();
+        let secondary = world.add_component(SecondaryMotionComponent::new());
+        let spring = world.add_component(SpringBoneComponent::new("synthetic_head_spring"));
+        let spring_head_joint = world.add_component(
+            SpringJointComponent::new(ComponentRef::Query("[name='head']".into()))
+                .stiffness(0.0)
+                .drag_force(0.0)
+                .gravity(18.0, [1.0, 0.0, 0.0]),
+        );
+        let spring_tip_joint = world.add_component(
+            SpringJointComponent::new(ComponentRef::Query("[name='spring_tip']".into()))
+                .stiffness(0.0)
+                .drag_force(0.0)
+                .gravity(18.0, [1.0, 0.0, 0.0]),
+        );
+        world.add_child(gltf, secondary).unwrap();
+        world.add_child(secondary, spring).unwrap();
+        world.add_child(spring, spring_head_joint).unwrap();
+        world.add_child(spring, spring_tip_joint).unwrap();
+        world.add_child(avatar, displaced_head).unwrap();
+        systems.register_avatar_control(avatar);
+
+        // A sparse pose in replace mode first restores every imported joint,
+        // including AVC's reparented head, to its non-zero rest translation.
+        queue.push_intent_now(
+            sparse_pose,
+            IntentValue::PoseApply {
+                target: gltf,
+                pose: sparse_pose,
+                mode: PoseApplyMode::Replace,
+            },
+        );
+
+        systems.tick(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &Default::default(),
+            &mut queue,
+            1.0 / 60.0,
+        );
+
+        let head = world
+            .get_component_by_id_as::<TransformComponent>(displaced_head)
+            .unwrap();
+        assert_eq!(head.transform.translation, [0.0, 0.0, 0.0]);
+        assert_eq!(head.transform.matrix_world[3][1], 0.0);
+        assert_ne!(
+            head.transform.rotation,
+            [0.0, 0.0, 0.0, 1.0],
+            "secondary motion must write after replace-mode restoration and AVC correction"
+        );
+
+        let body = world
+            .get_component_by_id_as::<TransformComponent>(model_root)
+            .unwrap();
+        assert_eq!(
+            body.transform.matrix_world[3][1], 0.0,
+            "body-follow must sample the corrected head, not its queued rest translation"
         );
     }
 
@@ -2587,10 +2705,14 @@ impl SystemWorld {
         let phase_started = profile_systems.then(Instant::now);
         self.avatar_body_yaw.tick(world, queue, dt_sec);
         self.avatar_control.tick(world, input, queue, dt_sec);
+        // AVC can queue head-restoration and first-tick splice transforms. Commit
+        // them before body-follow samples the displaced head: body-follow must
+        // never consume queued/stale AVC transforms.
+        queue.flush(world, self, visuals, render_assets);
+        self.tick_transition_runtime(world, visuals);
         // head_pose_body_xz_follow owns model_root XZ translation + neck
         // rest-pin. Runs after AVC init so model_root_id / body_pipeline_id
-        // are populated. Currently Step 0 pass-through (see
-        // docs/task/avatar-control-simple-humanoid-body-follow.md).
+        // are populated and all of AVC's writes above have landed.
         self.head_pose_body_xz_follow.tick(world, queue, dt_sec);
         self.ik.tick(world, queue, dt_sec);
         if let Some(started) = phase_started {

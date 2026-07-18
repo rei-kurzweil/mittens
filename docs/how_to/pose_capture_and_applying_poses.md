@@ -66,8 +66,30 @@ Pose names are sanitized for filenames. The numeric prefix preserves ECS child o
 
 Each pose module exports one `pose()` function. `library.mms` imports every generated module in order and materializes one `PoseCaptureLibrary`. Pose modules are replaced atomically, the manifest is published last, and stale generated pose modules are removed after the new manifest is in place.
 
+## Declarative startup poses
+
+Place a pose directly inside a `GLTF` to overlay it automatically once that model's imported nodes and armature joints are initialized:
+
+```mms
+let relaxed = relaxed_pose_factory()
+
+let avatar = GLTF.new("assets/models/avatar.glb") {
+    relaxed
+}
+```
+
+Direct pose children are applied once per successful glTF spawn, in ECS child order. Each uses overlay semantics, so it changes only its captured joints; when multiple startup poses contain the same joint, the later child wins. Each pose is validated atomically and independently: a missing or ambiguous joint prevents that pose from writing any transforms, but does not prevent later startup poses from applying.
+
+Only immediate `PoseCapturePose` children have startup behavior. Indirect descendants, poses stored under a `PoseCaptureLibrary`, animation keyframes, and poses attached after the model has spawned are not applied automatically. Use explicit `apply`, `overlay`, or `apply_blended` calls for those cases and for any pose that should be reapplied or animated.
+
 ## Interaction with live avatar control
 
-Capture omits untouched rest-pose joints, so applying a pose does not reset unrelated bones such as an AVC-owned head joint. A joint that is actively moved away from its imported rest pose by `AVC`, `XRHand`, animation, constraints, or another system is still considered changed and will be captured. Those systems may also immediately overwrite an applied pose, so pause or scope competing drivers when a persistent applied pose is required.
+Capture omits untouched rest-pose joints, but the application mode determines what happens to omitted joints:
+
+- `pose.apply(target)` uses replace mode. It first restores every imported joint to its glTF rest transform, then writes the captured joints. This makes sparse poses deterministic and restores joints omitted by the next pose.
+- `pose.overlay(target)` uses sparse layering. It writes only captured joints and leaves every omitted joint unchanged.
+- `pose.apply_blended(target, amount)` blends every imported joint from rest toward the captured pose; omitted joints stay at rest.
+
+A joint that is actively moved away from its imported rest pose by `AVC`, `XRHand`, animation, constraints, or another system is considered changed and can be captured. Those systems may also overwrite an applied pose, so pause or scope competing drivers when a persistent applied pose is required.
 
 Pose capture does not replace rig setup. Configure bone names, pole directions, and wrist corrections first, then capture useful configurations.

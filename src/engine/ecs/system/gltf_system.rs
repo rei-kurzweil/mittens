@@ -2,7 +2,7 @@ use crate::engine::ecs::component::{
     ColorComponent, EmissiveComponent, GLTFComponent, MeshComponent, RenderableComponent,
     SerializeComponent, SkinnedMeshComponent, TextureComponent, TransformComponent,
 };
-use crate::engine::ecs::{ComponentId, SignalEmitter, World};
+use crate::engine::ecs::{ComponentId, IntentValue, PoseApplyMode, SignalEmitter, World};
 use crate::engine::graphics::mesh::{CpuMesh, CpuVertex};
 use crate::engine::graphics::primitives::TransformMatrix;
 use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Renderable};
@@ -480,6 +480,32 @@ impl GLTFSystem {
                     .iter()
                     .filter_map(|node_index| node_index_to_component.get(node_index).copied())
                     .collect();
+            }
+
+            // A pose authored directly inside a glTF is its declarative startup overlay.
+            // Queue these only after the imported joint lists above are complete, and only
+            // on this successful spawn path. Child order is significant for sparse layering.
+            let startup_poses: Vec<_> = world
+                .children_of(cid)
+                .iter()
+                .copied()
+                .filter(|child| {
+                    world
+                        .get_component_by_id_as::<
+                            crate::engine::ecs::component::PoseCapturePoseComponent,
+                        >(*child)
+                        .is_some()
+                })
+                .collect();
+            for pose in startup_poses {
+                emit.push_intent_now(
+                    pose,
+                    IntentValue::PoseApply {
+                        target: cid,
+                        pose,
+                        mode: PoseApplyMode::Overlay,
+                    },
+                );
             }
         }
     }
@@ -1102,6 +1128,156 @@ impl LoadedGltf {
             })
             .sum();
         self.gltf_name.capacity() + mesh_bytes + texture_key_bytes + texture_bytes + skin_bytes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::ecs::component::{PoseBoneEntry, PoseCapturePoseComponent, PoseTargetRef};
+    use crate::engine::ecs::system::{PoseCaptureSystem, SkinnedMeshSystem};
+    use crate::engine::ecs::{EventSignal, IntentSignal};
+
+    #[derive(Default)]
+    struct RecordingEmitter {
+        intents: Vec<(ComponentId, IntentValue)>,
+    }
+
+    impl SignalEmitter for RecordingEmitter {
+        fn push_event(&mut self, _scope: ComponentId, _event: EventSignal) {}
+
+        fn push_intent(&mut self, scope: ComponentId, intent: IntentSignal) {
+            self.intents.push((scope, intent.value));
+        }
+    }
+
+    fn pose_entry(query: &str, rotation: [f32; 4]) -> PoseBoneEntry {
+        PoseBoneEntry {
+            query: query.to_string(),
+            translation: [0.0, 0.07559478, 0.0],
+            rotation,
+            scale: [1.0; 3],
+        }
+    }
+
+    #[test]
+    fn direct_startup_poses_overlay_after_spawn_once_in_child_order() {
+        let mut world = World::default();
+        let anchor = world.add_component(TransformComponent::new());
+        let gltf = world.add_component(GLTFComponent::new("assets/models/bisket.11.0.glb"));
+        world.add_child(anchor, gltf).unwrap();
+
+        let first_rotation = [0.1, 0.0, 0.0, 0.9949874];
+        let last_rotation = [0.0, 0.2, 0.0, 0.9797959];
+        let first = world.add_component(PoseCapturePoseComponent::new(
+            "first",
+            PoseTargetRef::Query("unused".into()),
+            vec![pose_entry("#J_Bip_L_UpperArm", first_rotation)],
+        ));
+        let wrapper = world.add_component(TransformComponent::new());
+        let indirect = world.add_component(PoseCapturePoseComponent::new(
+            "indirect",
+            PoseTargetRef::Query("unused".into()),
+            vec![pose_entry("#J_Bip_R_UpperArm", first_rotation)],
+        ));
+        let invalid = world.add_component(PoseCapturePoseComponent::new(
+            "invalid",
+            PoseTargetRef::Query("unused".into()),
+            vec![pose_entry("#missing_joint", first_rotation)],
+        ));
+        let last = world.add_component(PoseCapturePoseComponent::new(
+            "last",
+            PoseTargetRef::Query("unused".into()),
+            vec![pose_entry("#J_Bip_L_UpperArm", last_rotation)],
+        ));
+        world.add_child(gltf, first).unwrap();
+        world.add_child(gltf, wrapper).unwrap();
+        world.add_child(wrapper, indirect).unwrap();
+        world.add_child(gltf, invalid).unwrap();
+        world.add_child(gltf, last).unwrap();
+
+        let mut system = GLTFSystem::new();
+        system.register_component(gltf);
+        let mut visuals = VisualWorld::default();
+        let mut skinned_mesh = SkinnedMeshSystem::new();
+        let mut startup = RecordingEmitter::default();
+        system.tick_with_queue(
+            &mut world,
+            &mut visuals,
+            &mut skinned_mesh,
+            &mut startup,
+            0.0,
+        );
+
+        let spawned = world.get_component_by_id_as::<GLTFComponent>(gltf).unwrap();
+        assert!(spawned.spawned);
+        assert!(!spawned.spawned_node_transforms.is_empty());
+        assert!(!spawned.armature_joint_transforms.is_empty());
+
+        let queued: Vec<_> = startup
+            .intents
+            .iter()
+            .filter_map(|(_, value)| match value {
+                IntentValue::PoseApply {
+                    target,
+                    pose,
+                    mode: PoseApplyMode::Overlay,
+                } => Some((*target, *pose)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(queued, vec![(gltf, first), (gltf, invalid), (gltf, last)]);
+        assert!(!queued.iter().any(|(_, pose)| *pose == indirect));
+
+        // Run the same existing application path used by the command processor.
+        // The invalid middle pose emits no partial writes and does not stop the last pose.
+        let poses = PoseCaptureSystem::new();
+        let mut writes = RecordingEmitter::default();
+        let mut errors = 0;
+        for (target, pose) in queued {
+            if poses
+                .handle_apply(
+                    &mut world,
+                    &mut writes,
+                    target,
+                    pose,
+                    PoseApplyMode::Overlay,
+                )
+                .is_err()
+            {
+                errors += 1;
+            }
+        }
+        assert_eq!(errors, 1);
+        assert_eq!(writes.intents.len(), 2);
+        assert_eq!(writes.intents[0].0, writes.intents[1].0);
+        let rotations: Vec<_> = writes
+            .intents
+            .iter()
+            .filter_map(|(_, value)| match value {
+                IntentValue::UpdateTransform {
+                    rotation_quat_xyzw, ..
+                } => Some(*rotation_quat_xyzw),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(rotations, vec![first_rotation, last_rotation]);
+
+        let attached_late = world.add_component(PoseCapturePoseComponent::new(
+            "attached_late",
+            PoseTargetRef::Query("unused".into()),
+            vec![pose_entry("#J_Bip_L_UpperArm", first_rotation)],
+        ));
+        world.add_child(gltf, attached_late).unwrap();
+        let mut subsequent = RecordingEmitter::default();
+        system.tick_with_queue(
+            &mut world,
+            &mut visuals,
+            &mut skinned_mesh,
+            &mut subsequent,
+            0.0,
+        );
+        assert!(subsequent.intents.is_empty());
     }
 }
 

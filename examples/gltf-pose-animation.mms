@@ -22,7 +22,10 @@ Clock.bpm(120) {}
 T.position(3.0, 5.0, 4.0) { DL {} }
 
 let avatar_gltf = GLTF.new("assets/models/bisket.11.0.glb") {
+    // A direct pose child is overlaid once, after this model's joints spawn.
+    relaxed_pose
     EM.on()
+    // false selects the tuned default Bisket hair and bust chains.
     bisket_secondary_motion(false)
 }
 let avatar_control = AVC {
@@ -54,13 +57,10 @@ BG {
 
 // Calling loop_anim() restarts from beat zero, so this stays paused until movement begins.
 let run_loop = Animation.paused().length(1.0) {
-    Keyframe.at(0.0) { run_pose_1.apply(avatar_gltf) }
-    Keyframe.at(0.4) { relaxed_pose.apply(avatar_gltf) }
-    Keyframe.at(0.5) { run_pose_2.apply(avatar_gltf) }
-    Keyframe.at(0.75) { relaxed_pose.apply(avatar_gltf) }
-    Keyframe.at(1.0) { run_pose_1.apply(avatar_gltf) }
-    Keyframe.at(1.5) { run_pose_2.apply(avatar_gltf) }
-    Keyframe.at(1.9) { relaxed_pose.apply(avatar_gltf) }
+    Keyframe.at(0.0) { run_pose_1.overlay(avatar_gltf) }
+    Keyframe.at(0.4) { relaxed_pose.overlay(avatar_gltf) }
+    Keyframe.at(0.5) { run_pose_2.overlay(avatar_gltf) }
+    Keyframe.at(0.75) { relaxed_pose.overlay(avatar_gltf) }
 }
 run_loop
 
@@ -81,7 +81,6 @@ on_global("FrameTick", fn(event) {
         movement.initialized = true
         movement.previous_x = x
         movement.previous_z = z
-        relaxed_pose.apply(avatar_gltf)
     } else {
         let dx = x - movement.previous_x
         let dz = z - movement.previous_z
@@ -92,9 +91,8 @@ on_global("FrameTick", fn(event) {
         }
         if !moving_now && movement.moving {
             run_loop.pause()
-            relaxed_pose.apply(avatar_gltf)
+            relaxed_pose.overlay(avatar_gltf)
         }
-
         movement.moving = moving_now
         movement.previous_x = x
         movement.previous_z = z

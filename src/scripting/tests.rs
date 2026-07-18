@@ -1581,11 +1581,17 @@ fn live_pose_handles_expose_replace_overlay_and_clamped_blend() {
     assert_eq!(out.intents.len(), 3);
     assert!(matches!(
         out.intents[0],
-        IntentValue::PoseApply { mode: crate::engine::ecs::PoseApplyMode::Replace, .. }
+        IntentValue::PoseApply {
+            mode: crate::engine::ecs::PoseApplyMode::Replace,
+            ..
+        }
     ));
     assert!(matches!(
         out.intents[1],
-        IntentValue::PoseApply { mode: crate::engine::ecs::PoseApplyMode::Overlay, .. }
+        IntentValue::PoseApply {
+            mode: crate::engine::ecs::PoseApplyMode::Overlay,
+            ..
+        }
     ));
     assert!(matches!(
         out.intents[2],
@@ -1613,23 +1619,449 @@ fn gltf_pose_animation_example_imports_named_pose_factories() {
     );
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert!(rx.has_global_handlers(crate::engine::ecs::SignalKind::FrameTick));
+    let poses: Vec<_> = world
+        .all_components()
+        .filter_map(|id| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::PoseCapturePoseComponent>(
+                    id,
+                )
+        })
+        .collect();
+    assert_eq!(poses.len(), 3);
+    let pose_sizes: std::collections::HashMap<_, _> = poses
+        .iter()
+        .map(|pose| (pose.name.as_str(), pose.entries.len()))
+        .collect();
+    assert_eq!(pose_sizes.get("relaxed"), Some(&6));
+    assert_eq!(pose_sizes.get("running_1"), Some(&7));
+    assert_eq!(pose_sizes.get("running_2"), Some(&8));
+    assert!(poses.iter().all(|pose| pose.entries.iter().all(|entry| {
+        !entry.query.contains("J_Bip_C_Head") && !entry.query.contains("J_Sec_")
+    })));
+    assert_eq!(source.matches(".overlay(avatar_gltf)").count(), 5);
+    assert_eq!(source.matches(".apply(avatar_gltf)").count(), 0);
+    let avatar_gltf = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(*id)
+                .is_some()
+        })
+        .expect("avatar glTF");
+    let direct_startup_poses: Vec<_> = world
+        .children_of(avatar_gltf)
+        .iter()
+        .filter_map(|id| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::PoseCapturePoseComponent>(
+                    *id,
+                )
+        })
+        .collect();
+    assert_eq!(direct_startup_poses.len(), 1);
+    assert_eq!(direct_startup_poses[0].name, "relaxed");
     assert_eq!(
         world
             .all_components()
             .filter(|&id| world
-                .get_component_by_id_as::<crate::engine::ecs::component::PoseCapturePoseComponent>(id)
-                .is_some())
-            .count(),
-        3
-    );
-    assert_eq!(
-        world
-            .all_components()
-            .filter(|&id| world
-                .get_component_by_id_as::<crate::engine::ecs::component::SecondaryMotionComponent>(id)
+                .get_component_by_id_as::<crate::engine::ecs::component::SecondaryMotionComponent>(
+                    id
+                )
                 .is_some())
             .count(),
         1
+    );
+
+    let animations: Vec<_> = world
+        .all_components()
+        .filter_map(|id| {
+            world.get_component_by_id_as::<crate::engine::ecs::component::AnimationComponent>(id)
+        })
+        .collect();
+    assert_eq!(animations.len(), 1);
+    assert_eq!(animations[0].length_beats, Some(1.0));
+    let mut keyframe_beats: Vec<_> = world
+        .all_components()
+        .filter_map(|id| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::KeyframeComponent>(id)
+                .map(|keyframe| keyframe.beat)
+        })
+        .collect();
+    keyframe_beats.sort_by(f64::total_cmp);
+    assert_eq!(keyframe_beats, vec![0.0, 0.4_f32 as f64, 0.5, 0.75]);
+}
+
+#[test]
+fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
+    use crate::engine::ecs::component::{
+        Camera3DComponent, CameraXRComponent, CollisionComponent, CollisionMode,
+        DirectionalLightComponent, InputComponent, InputTransformModeComponent, InputXRComponent,
+        KineticResponseComponent, KineticResponseMode, RenderableComponent,
+        SecondaryMotionComponent, SpringBoneComponent,
+    };
+    let source = include_str!("../../examples/secondary-motion-desktop.mms");
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+    let mut render_assets = RenderAssets::new();
+    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+        source,
+        Some("examples/secondary-motion-desktop.mms"),
+        &mut world,
+        &mut rx,
+        Some(&mut render_assets),
+        &mut emit,
+    );
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    assert!(!source.contains(".overlay(avatar_gltf)"));
+
+    let avatar_gltf = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(*id)
+                .is_some()
+        })
+        .expect("avatar glTF");
+    assert_eq!(
+        world
+            .children_of(avatar_gltf)
+            .iter()
+            .filter(|id| {
+                world
+                    .get_component_by_id_as::<
+                        crate::engine::ecs::component::PoseCapturePoseComponent,
+                    >(**id)
+                    .is_some()
+            })
+            .count(),
+        1
+    );
+
+    let ids: Vec<_> = world.all_components().collect();
+    let count = |predicate: &dyn Fn(crate::engine::ecs::ComponentId) -> bool| {
+        ids.iter().copied().filter(|id| predicate(*id)).count()
+    };
+    let named = |label: &str| {
+        ids.iter()
+            .copied()
+            .find(|id| world.component_label(*id) == Some(label))
+            .unwrap_or_else(|| panic!("missing named scene node {label}"))
+    };
+    let descendants = |root| {
+        let mut found = Vec::new();
+        let mut pending = vec![root];
+        while let Some(id) = pending.pop() {
+            found.push(id);
+            pending.extend(world.children_of(id).iter().copied());
+        }
+        found
+    };
+
+    assert_eq!(
+        count(&|id| world
+            .get_component_by_id_as::<SecondaryMotionComponent>(id)
+            .is_some()),
+        1
+    );
+    assert_eq!(
+        count(&|id| world
+            .get_component_by_id_as::<SpringBoneComponent>(id)
+            .is_some()),
+        16
+    );
+
+    for light_name in ["studio_key_light", "studio_fill_light", "studio_rim_light"] {
+        let tree = descendants(named(light_name));
+        assert_eq!(
+            tree.iter()
+                .filter(|&&id| world
+                    .get_component_by_id_as::<DirectionalLightComponent>(id)
+                    .is_some())
+                .count(),
+            1
+        );
+        assert!(
+            tree.iter()
+                .filter(|&&id| world
+                    .get_component_by_id_as::<RenderableComponent>(id)
+                    .is_some())
+                .count()
+                >= 6
+        );
+        assert!(
+            tree.iter()
+                .any(|&id| world.component_label(id) == Some("studio_light_housing"))
+        );
+        assert!(
+            tree.iter()
+                .any(|&id| world.component_label(id) == Some("studio_light_emissive_face"))
+        );
+    }
+
+    let scenery = [
+        "studio_floor",
+        "pile_a_base_left",
+        "pile_a_base_right",
+        "pile_a_top",
+        "pile_b_base_left",
+        "pile_b_base_right",
+        "pile_b_top",
+        "pile_c_base",
+        "pile_c_top",
+    ];
+    for name in scenery {
+        let tree = descendants(named(name));
+        assert_eq!(
+            tree.iter()
+                .filter(|&&id| world
+                    .get_component_by_id_as::<CollisionComponent>(id)
+                    .is_some_and(|collision| collision.mode == CollisionMode::Static))
+                .count(),
+            1,
+            "{name}"
+        );
+    }
+
+    let avatar_tree = descendants(named("avatar_driver"));
+    assert_eq!(
+        avatar_tree
+            .iter()
+            .filter(|&&id| world
+                .get_component_by_id_as::<CollisionComponent>(id)
+                .is_some_and(|collision| collision.mode == CollisionMode::Kinematic))
+            .count(),
+        1
+    );
+    assert_eq!(
+        avatar_tree
+            .iter()
+            .filter(|&&id| world
+                .get_component_by_id_as::<KineticResponseComponent>(id)
+                .is_some_and(|response| response.mode == KineticResponseMode::Slide))
+            .count(),
+        1
+    );
+
+    assert_eq!(
+        count(&|id| world.get_component_by_id_as::<InputComponent>(id).is_some()),
+        2
+    );
+    assert_eq!(
+        count(&|id| world
+            .get_component_by_id_as::<InputTransformModeComponent>(id)
+            .is_some()),
+        2
+    );
+
+    let locomotion_mode = world
+        .children_of(named("desktop_avatar_input"))
+        .iter()
+        .find_map(|id| world.get_component_by_id_as::<InputTransformModeComponent>(*id))
+        .expect("desktop locomotion mode");
+    assert!(!locomotion_mode.rotation_enabled);
+    assert!(matches!(
+        locomotion_mode.translation_basis_source.as_ref(),
+        Some(crate::engine::ecs::component::ComponentRef::Query(query))
+            if query == "../#avatar_head_driver"
+    ));
+
+    let head_mode = world
+        .children_of(named("desktop_head_input"))
+        .iter()
+        .find_map(|id| world.get_component_by_id_as::<InputTransformModeComponent>(*id))
+        .expect("desktop head mode");
+    assert!(head_mode.rotation_enabled && head_mode.fps_rotation);
+    assert_eq!(
+        count(&|id| world
+            .get_component_by_id_as::<Camera3DComponent>(id)
+            .is_some()),
+        1
+    );
+    assert_eq!(
+        count(&|id| world
+            .get_component_by_id_as::<InputXRComponent>(id)
+            .is_some()),
+        0
+    );
+    assert_eq!(
+        count(&|id| world
+            .get_component_by_id_as::<CameraXRComponent>(id)
+            .is_some()),
+        0
+    );
+}
+
+#[test]
+fn secondary_motion_desktop_avatar_separates_from_named_pile_cube() {
+    use crate::engine::ecs::component::{CollisionComponent, TransformComponent};
+    use winit::event::MouseButton;
+
+    let source = include_str!("../../examples/secondary-motion-desktop.mms");
+    let mut world = World::default();
+    let mut systems = crate::engine::ecs::system::SystemWorld::default();
+    let mut visuals = VisualWorld::default();
+    let mut render_assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+        source,
+        Some("examples/secondary-motion-desktop.mms"),
+        &mut world,
+        &mut systems.rx,
+        Some(&mut render_assets),
+        &mut queue,
+    );
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    for intent in output.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
+    systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
+
+    let named = |world: &World, label: &str| {
+        world
+            .all_components()
+            .find(|id| world.component_label(*id) == Some(label))
+            .unwrap_or_else(|| panic!("missing named scene node {label}"))
+    };
+    let avatar_driver = named(&world, "avatar_driver");
+    let avatar_head_driver = named(&world, "avatar_head_driver");
+    let obstacle_transform = named(&world, "pile_a_base_left");
+    let avatar_collider = world
+        .children_of(avatar_driver)
+        .iter()
+        .copied()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<CollisionComponent>(*id)
+                .is_some()
+        })
+        .expect("avatar collider directly under driver");
+    let obstacle_collider = world
+        .children_of(obstacle_transform)
+        .iter()
+        .copied()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<CollisionComponent>(*id)
+                .is_some()
+        })
+        .expect("pile cube collider");
+
+    // Right-drag rotates only the head-level driver. The body/collider root
+    // must neither rotate nor translate around the 0.8-unit head offset.
+    let body_before = world
+        .get_component_by_id_as::<TransformComponent>(avatar_driver)
+        .unwrap()
+        .transform;
+    let mut mouse_input = InputState::default();
+    mouse_input.cursor_pos = Some((0.0, 0.0));
+    mouse_input.start_frame();
+    mouse_input.mouse_down.insert(MouseButton::Right);
+    mouse_input.cursor_pos = Some((40.0, 20.0));
+    mouse_input.start_frame();
+    systems
+        .input
+        .process_input(&mut world, &mouse_input, &mut queue, 1.0 / 60.0);
+    queue.flush(&mut world, &mut systems, &mut visuals, &mut render_assets);
+
+    let body_after_mouse = world
+        .get_component_by_id_as::<TransformComponent>(avatar_driver)
+        .unwrap()
+        .transform;
+    let head_after_mouse = world
+        .get_component_by_id_as::<TransformComponent>(avatar_head_driver)
+        .unwrap()
+        .transform;
+    assert_eq!(body_after_mouse.translation, body_before.translation);
+    assert_eq!(body_after_mouse.rotation, body_before.rotation);
+    assert_ne!(head_after_mouse.rotation, [0.0, 0.0, 0.0, 1.0]);
+    assert_eq!(head_after_mouse.translation, [0.0, 0.8, 0.0]);
+
+    let obstacle_position = world
+        .get_component_by_id_as::<TransformComponent>(obstacle_transform)
+        .unwrap()
+        .transform
+        .translation;
+    {
+        let avatar = world
+            .get_component_by_id_as_mut::<TransformComponent>(avatar_driver)
+            .unwrap();
+        avatar.transform.translation = obstacle_position;
+        avatar.transform.recompute_model();
+    }
+
+    let input = InputState::default();
+    systems.transform.transform_changed(
+        &mut world,
+        &mut visuals,
+        avatar_driver,
+        &mut systems.transform_stream,
+        &mut systems.camera,
+        &mut systems.light,
+        &mut systems.collision,
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        systems.collision.tick_with_rx(
+            &mut world,
+            &mut visuals,
+            &input,
+            1.0 / 60.0,
+            &mut systems.rx,
+        );
+        if systems
+            .collision
+            .active_pairs_snapshot()
+            .iter()
+            .any(|&(a, b)| {
+                (a == avatar_collider && b == obstacle_collider)
+                    || (a == obstacle_collider && b == avatar_collider)
+            })
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "collision worker did not report overlap"
+        );
+        std::thread::yield_now();
+    }
+
+    systems.kinetic_response.tick_with_queue(
+        &mut world,
+        &mut visuals,
+        &input,
+        1.0 / 60.0,
+        &mut queue,
+        &systems.collision,
+    );
+    queue.flush(&mut world, &mut systems, &mut visuals, &mut render_assets);
+    systems.transform.transform_changed(
+        &mut world,
+        &mut visuals,
+        avatar_driver,
+        &mut systems.transform_stream,
+        &mut systems.camera,
+        &mut systems.light,
+        &mut systems.collision,
+    );
+
+    let separated = world
+        .get_component_by_id_as::<TransformComponent>(avatar_driver)
+        .unwrap()
+        .transform
+        .translation;
+    let delta = [
+        (separated[0] - obstacle_position[0]).abs(),
+        (separated[1] - obstacle_position[1]).abs(),
+        (separated[2] - obstacle_position[2]).abs(),
+    ];
+    assert!(
+        delta[0] >= 0.34 + 0.425 || delta[1] >= 0.8 + 0.4 || delta[2] >= 0.28 + 0.425,
+        "avatar remained inside pile_a_base_left: delta={delta:?}"
     );
 }
 
