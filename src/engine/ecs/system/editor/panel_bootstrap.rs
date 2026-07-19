@@ -1,7 +1,9 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use crate::engine::ecs::component::{SelectionComponent, SelectionEntry, SelectionMode};
+use crate::engine::ecs::component::{
+    EditorPanel, SelectionComponent, SelectionEntry, SelectionMode,
+};
 use crate::engine::ecs::system::data_renderer_system::DataRendererSystem;
 use crate::engine::ecs::system::editor::context::EditorContextState;
 use crate::engine::ecs::system::editor::grid_panel::rerender_grid_panel_from_context;
@@ -26,6 +28,7 @@ pub(crate) fn reconcile_editor_panel_layout(
     panel_query_root: ComponentId,
     editor_root: ComponentId,
     world_panel_pos: (f32, f32, f32),
+    selected_panels: &[EditorPanel],
     model: &WorldPanelModel,
     inspector_models: &[InspectorPanelModel],
     rendered_inspector_models: &Arc<Mutex<Vec<InspectorPanelModel>>>,
@@ -34,11 +37,8 @@ pub(crate) fn reconcile_editor_panel_layout(
     data_renderer: &mut DataRendererSystem,
 ) {
     let existing_world_panel = world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR);
-    let existing_panel_mount = world.all_components().find(|&component_id| {
-        world
-            .component_label(component_id)
-            .is_some_and(|label| label == PANEL_LAYOUT_MOUNT_NAME)
-    });
+    let existing_panel_mount =
+        world.find_component(panel_query_root, &format!("#{PANEL_LAYOUT_MOUNT_NAME}"));
 
     if *panel_layout_spawned {
         if existing_world_panel.is_none() && existing_panel_mount.is_none() {
@@ -55,9 +55,14 @@ pub(crate) fn reconcile_editor_panel_layout(
 
     *panel_layout_spawned = true;
 
-    let Some((panel_mount_root, layout_root_id)) =
-        spawn_editor_panel_layout_tree(world, emit, model, working_file_path, world_panel_pos)
-    else {
+    let Some((panel_mount_root, layout_root_id)) = spawn_editor_panel_layout_tree(
+        world,
+        emit,
+        model,
+        working_file_path,
+        world_panel_pos,
+        selected_panels,
+    ) else {
         return;
     };
 
@@ -92,7 +97,7 @@ pub(crate) fn reconcile_editor_panel_layout(
         );
     }
 
-    attach_panel_mount(emit, panel_query_root, panel_mount_root);
+    attach_panel_mount(world, emit, panel_query_root, panel_mount_root);
 
     if let Some(world_panel_root) =
         world.find_component(panel_mount_root, WORLD_PANEL_ROOT_SELECTOR)
@@ -120,12 +125,22 @@ pub(crate) fn reconcile_editor_panel_layout(
         active_editor: Some(editor_root),
         ..EditorContextState::default()
     };
-    rerender_grid_panel_from_context(world, emit, panel_mount_root, &grid_context, data_renderer);
-    sync_editor_settings_panel_selection(world, emit, panel_mount_root, &grid_context);
+    if selected_panels.contains(&EditorPanel::Grid) {
+        rerender_grid_panel_from_context(
+            world,
+            emit,
+            panel_mount_root,
+            &grid_context,
+            data_renderer,
+        );
+    }
+    if selected_panels.contains(&EditorPanel::Settings) {
+        sync_editor_settings_panel_selection(world, emit, panel_mount_root, &grid_context);
+    }
 
     // Initial projections enqueue additional intents under the new subtree. Reassert the mount
     // attachment last so command coalescing cannot leave the completed layout detached.
-    attach_panel_mount(emit, panel_query_root, panel_mount_root);
+    attach_panel_mount(world, emit, panel_query_root, panel_mount_root);
 }
 
 fn populate_asset_panel(
@@ -190,10 +205,14 @@ fn populate_asset_panel(
 }
 
 fn attach_panel_mount(
+    world: &mut World,
     emit: &mut dyn SignalEmitter,
     panel_query_root: ComponentId,
     panel_mount_root: ComponentId,
 ) {
+    // Make authored ancestry observable immediately for initial projection and handler setup.
+    // The intent is retained so downstream lifecycle observers see the normal attachment event.
+    let _ = world.add_child(panel_query_root, panel_mount_root);
     emit.push_intent_now(
         panel_mount_root,
         IntentValue::Attach {

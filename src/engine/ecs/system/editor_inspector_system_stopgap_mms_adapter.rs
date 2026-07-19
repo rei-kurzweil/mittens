@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use crate::engine::ecs::component::{SelectionEntry, TransformComponent};
+use crate::engine::ecs::component::{EditorPanel, EditorUIComponent, SelectionEntry};
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::system::GridSystem;
 use crate::engine::ecs::system::data_renderer_system::DataRendererSystem;
@@ -34,11 +34,11 @@ use crate::engine::ecs::system::editor::world_panel::{
     apply_world_panel_semantic_selection, build_world_panel_model, handle_panel_button_click,
     handle_world_panel_item_click, panel_status_text, rebuild_world_panel_scene_model,
     register_editor_root, rerender_world_panel_content, rerender_world_panel_status,
-    sync_world_panel_selection, world_panel_scene_path,
+    sync_world_panel_selection, world_panel_scene_path, WorldPanelModel,
 };
 use crate::engine::ecs::system::panel_system::{
-    PANEL_LAYOUT_MOUNT_NAME, PANEL_LAYOUT_ROOT_NAME, PANEL_LAYOUT_SELECTION_NAME, PanelControlKind,
-    PanelKind, PanelSlotKind, is_descendant_or_self, panel_layout_root_id,
+    PANEL_LAYOUT_SELECTION_NAME, PanelControlKind, PanelKind, PanelSlotKind, is_descendant_or_self,
+    panel_layout_root_id,
 };
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
 
@@ -58,6 +58,7 @@ pub(crate) struct EditorInspectorSystemStopgapMmsAdapter {
     inspector_workspace_state: Arc<Mutex<InspectorWorkspaceState>>,
     rendered_inspector_models: Arc<Mutex<Vec<InspectorPanelModel>>>,
     data_renderer: Arc<Mutex<DataRendererSystem>>,
+    selected_panels: Vec<EditorPanel>,
 }
 
 impl Default for EditorInspectorSystemStopgapMmsAdapter {
@@ -70,6 +71,7 @@ impl Default for EditorInspectorSystemStopgapMmsAdapter {
             inspector_workspace_state: Arc::new(Mutex::new(InspectorWorkspaceState::default())),
             rendered_inspector_models: Arc::new(Mutex::new(Vec::new())),
             data_renderer: Arc::new(Mutex::new(DataRendererSystem::new())),
+            selected_panels: EditorPanel::ALL.to_vec(),
         }
     }
 }
@@ -93,18 +95,30 @@ impl EditorInspectorSystemStopgapMmsAdapter {
     ) {
         editor_memory_marker("editor setup_panels_for_editor:start");
         self.editor_context_state = Some(Arc::clone(&editor_context_state));
-        let runtime_ui_root = self.workspace_runtime.get_or_create_runtime_ui_root(world);
+        let runtime_ui_root = self
+            .workspace_runtime
+            .get_or_create_editor_ui_root(world, world_panel_pos);
+        self.selected_panels = world
+            .get_component_by_id_as::<EditorUIComponent>(runtime_ui_root)
+            .map(|ui| ui.panels().to_vec())
+            .unwrap_or_else(|| EditorPanel::ALL.to_vec());
         editor_memory_marker("editor setup_panels_for_editor:after runtime ui root");
 
         register_editor_root(self.workspace_runtime.installed_editor_roots(), editor_root);
         editor_memory_marker("editor setup_panels_for_editor:after register_editor_root");
-        GridSystem::new().ensure_default_grid(world, emit, editor_root);
+        if self.selected_panels.contains(&EditorPanel::Grid) {
+            GridSystem::new().ensure_default_grid(world, emit, editor_root);
+        }
         editor_memory_marker("editor setup_panels_for_editor:after ensure_default_grid");
-        rebuild_world_panel_scene_model(
-            &self.world_panel_scene_model,
-            world,
-            self.workspace_runtime.installed_editor_roots(),
-        );
+        if self.selected_panels.contains(&EditorPanel::World)
+            || self.selected_panels.contains(&EditorPanel::Inspector)
+        {
+            rebuild_world_panel_scene_model(
+                &self.world_panel_scene_model,
+                world,
+                self.workspace_runtime.installed_editor_roots(),
+            );
+        }
         editor_memory_marker(
             "editor setup_panels_for_editor:after rebuild_world_panel_scene_model",
         );
@@ -115,34 +129,48 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 .inspector_workspace_state
                 .lock()
                 .expect("inspector workspace mutex poisoned");
-            workspace.ensure_default_panel(
-                editor_root,
-                editor_context
-                    .selected_component
-                    .or(editor_context.active_editor),
-            );
+            if self.selected_panels.contains(&EditorPanel::Inspector) {
+                workspace.ensure_default_panel(
+                    editor_root,
+                    editor_context
+                        .selected_component
+                        .or(editor_context.active_editor),
+                );
+            }
         }
         editor_memory_marker("editor setup_panels_for_editor:after ensure_default_panel");
-        let model = build_world_panel_model(
-            world,
-            &editor_context,
-            &self
-                .world_panel_scene_model
-                .lock()
-                .expect("world panel scene model mutex poisoned"),
-        );
+        let model = if self.selected_panels.contains(&EditorPanel::World) {
+            build_world_panel_model(
+                world,
+                &editor_context,
+                &self
+                    .world_panel_scene_model
+                    .lock()
+                    .expect("world panel scene model mutex poisoned"),
+            )
+        } else {
+            WorldPanelModel {
+                title: "World".to_string(),
+                rows: Vec::new(),
+                selected_index: None,
+            }
+        };
         editor_memory_marker("editor setup_panels_for_editor:after build_world_panel_model");
-        let inspector_models = build_inspector_panel_models(
-            world,
-            &self
-                .world_panel_scene_model
-                .lock()
-                .expect("world panel scene model mutex poisoned"),
-            &self
-                .inspector_workspace_state
-                .lock()
-                .expect("inspector workspace mutex poisoned"),
-        );
+        let inspector_models = if self.selected_panels.contains(&EditorPanel::Inspector) {
+            build_inspector_panel_models(
+                world,
+                &self
+                    .world_panel_scene_model
+                    .lock()
+                    .expect("world panel scene model mutex poisoned"),
+                &self
+                    .inspector_workspace_state
+                    .lock()
+                    .expect("inspector workspace mutex poisoned"),
+            )
+        } else {
+            Vec::new()
+        };
         editor_memory_marker("editor setup_panels_for_editor:after build_inspector_panel_models");
 
         {
@@ -158,7 +186,8 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 self.workspace_runtime.panel_layout_spawned_mut(),
                 runtime_ui_root,
                 editor_root,
-                world_panel_pos,
+                (0.0, 0.0, 0.0),
+                &self.selected_panels,
                 &model,
                 &inspector_models,
                 &self.rendered_inspector_models,
@@ -181,7 +210,11 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         self.refresh_world_panels(world, emit);
         editor_memory_marker("editor setup_panels_for_editor:after refresh_world_panels");
 
-        self.install_shared_panel_handlers(rx, runtime_ui_root);
+        let handler_root = world
+            .parent_of(runtime_ui_root)
+            .filter(|&parent| world.component_label(parent) == Some("editor_runtime_ui_root"))
+            .unwrap_or(runtime_ui_root);
+        self.install_shared_panel_handlers(rx, handler_root);
         editor_memory_marker("editor setup_panels_for_editor:after install_shared_panel_handlers");
         self.install_editor_refresh_handlers(rx, editor_root);
         editor_memory_marker("editor setup_panels_for_editor:end");
@@ -495,57 +528,6 @@ impl EditorInspectorSystemStopgapMmsAdapter {
             GRID_PANEL_ROOT_SELECTOR,
         );
 
-        let layout_size_panel_query_root = panel_query_root;
-        rx.add_handler_closure(
-            SignalKind::LayoutRootSizeAvailable,
-            layout_size_panel_query_root,
-            move |world, emit, signal| {
-                let Some(EventSignal::LayoutRootSizeAvailable {
-                    layout_id,
-                    width_wu: _,
-                    height_wu,
-                }) = signal.event.as_ref()
-                else {
-                    return;
-                };
-
-                if world.find_component(
-                    layout_size_panel_query_root,
-                    &format!("#{PANEL_LAYOUT_ROOT_NAME}"),
-                ) != Some(*layout_id)
-                {
-                    return;
-                }
-
-                let Some(mount_root) = world.all_components().find(|&id| {
-                    world
-                        .component_label(id)
-                        .is_some_and(|label| label == PANEL_LAYOUT_MOUNT_NAME)
-                }) else {
-                    return;
-                };
-
-                let Some(tc) = world.get_component_by_id_as::<TransformComponent>(mount_root)
-                else {
-                    return;
-                };
-
-                emit.push_intent_now(
-                    mount_root,
-                    IntentValue::UpdateTransform {
-                        component_ids: vec![mount_root],
-                        translation: [
-                            tc.transform.translation[0],
-                            -1.75 + height_wu,
-                            tc.transform.translation[2],
-                        ],
-                        rotation_quat_xyzw: tc.transform.rotation,
-                        scale: tc.transform.scale,
-                    },
-                );
-            },
-        );
-
         let pose_data_renderer = Arc::clone(&self.data_renderer);
         rx.add_handler_closure(
             SignalKind::DataEvent,
@@ -714,72 +696,73 @@ impl EditorInspectorSystemStopgapMmsAdapter {
             return;
         };
 
-        let Some(world_panel) = self.workspace_runtime.panel_instance(PanelKind::World) else {
-            return;
-        };
-        let Some(content_slot) = world_panel.slots.get(&PanelSlotKind::List).copied() else {
-            return;
-        };
-        let Some(selection_root) = world_panel
-            .controls
-            .get(&PanelControlKind::Selection)
-            .copied()
-        else {
-            return;
-        };
-
         let editor_context = self.editor_context();
-        let model = build_world_panel_model(
-            world,
-            &editor_context,
-            &self
-                .world_panel_scene_model
-                .lock()
-                .expect("world panel scene model mutex poisoned"),
-        );
-        editor_memory_marker("editor refresh_world_panels:after build_world_panel_model");
-        rerender_world_panel_content(
-            world,
-            emit,
-            content_slot,
-            selection_root,
-            &model.rows,
-            model.selected_index,
-            &mut *self
-                .data_renderer
-                .lock()
-                .expect("data renderer mutex poisoned"),
-        );
-        editor_memory_marker("editor refresh_world_panels:after rerender_world_panel_content");
+        if let Some(world_panel) = self.workspace_runtime.panel_instance(PanelKind::World)
+            && let Some(content_slot) = world_panel.slots.get(&PanelSlotKind::List).copied()
+            && let Some(selection_root) = world_panel
+                .controls
+                .get(&PanelControlKind::Selection)
+                .copied()
+        {
+            let model = build_world_panel_model(
+                world,
+                &editor_context,
+                &self
+                    .world_panel_scene_model
+                    .lock()
+                    .expect("world panel scene model mutex poisoned"),
+            );
+            rerender_world_panel_content(
+                world,
+                emit,
+                content_slot,
+                selection_root,
+                &model.rows,
+                model.selected_index,
+                &mut *self
+                    .data_renderer
+                    .lock()
+                    .expect("data renderer mutex poisoned"),
+            );
+        }
 
-        rerender_grid_panel_from_context(
-            world,
-            emit,
-            panel_query_root,
-            &editor_context,
-            &mut *self
-                .data_renderer
-                .lock()
-                .expect("data renderer mutex poisoned"),
-        );
+        if self.selected_panels.contains(&EditorPanel::Grid) {
+            rerender_grid_panel_from_context(
+                world,
+                emit,
+                panel_query_root,
+                &editor_context,
+                &mut *self
+                    .data_renderer
+                    .lock()
+                    .expect("data renderer mutex poisoned"),
+            );
+        }
         editor_memory_marker("editor refresh_world_panels:after rerender_grid_panel");
 
-        rerender_pose_panel(
-            world,
-            emit,
-            panel_query_root,
-            &mut *self
-                .data_renderer
-                .lock()
-                .expect("data renderer mutex poisoned"),
-        );
+        if self.selected_panels.contains(&EditorPanel::Pose) {
+            rerender_pose_panel(
+                world,
+                emit,
+                panel_query_root,
+                &mut *self
+                    .data_renderer
+                    .lock()
+                    .expect("data renderer mutex poisoned"),
+            );
+        }
         editor_memory_marker("editor refresh_world_panels:after rerender_pose_panel");
 
-        sync_editor_settings_panel_selection(world, emit, panel_query_root, &editor_context);
+        if self.selected_panels.contains(&EditorPanel::Settings) {
+            sync_editor_settings_panel_selection(world, emit, panel_query_root, &editor_context);
+        }
         editor_memory_marker(
             "editor refresh_world_panels:after sync_editor_settings_panel_selection",
         );
 
+        if !self.selected_panels.contains(&EditorPanel::Inspector) {
+            return;
+        }
         let inspector_models = build_inspector_panel_models(
             world,
             &self
@@ -900,7 +883,7 @@ mod tests {
         adapter.editor_context_state = Some(Arc::new(Mutex::new(EditorContextState::default())));
         let runtime_ui_root = adapter
             .workspace_runtime
-            .get_or_create_runtime_ui_root(&mut world);
+            .get_or_create_editor_ui_root(&mut world, (0.0, 0.0, 0.0));
         let panel_root = world.add_component_boxed_named(
             "pose_capture_panel_root",
             Box::new(TransformComponent::new()),

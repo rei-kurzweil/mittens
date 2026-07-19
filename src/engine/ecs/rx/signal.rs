@@ -737,6 +737,9 @@ pub enum IntentValue {
     RegisterEditor {
         component_ids: Vec<ComponentId>,
     },
+    RegisterEditorUI {
+        component_ids: Vec<ComponentId>,
+    },
 
     RegisterAction {
         component_ids: Vec<ComponentId>,
@@ -902,6 +905,7 @@ impl IntentValue {
             IntentValue::RegisterTransformGizmo { .. } => "register_transform_gizmo",
             IntentValue::RegisterNormalVis { .. } => "register_normal_vis",
             IntentValue::RegisterEditor { .. } => "register_editor",
+            IntentValue::RegisterEditorUI { .. } => "register_editor_ui",
             IntentValue::RegisterAction { .. } => "register_action",
 
             IntentValue::InitializePoseCapture { .. } => "initialize_pose_capture",

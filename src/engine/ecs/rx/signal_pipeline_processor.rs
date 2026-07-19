@@ -145,6 +145,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterTransformGizmo { component_ids }
             | IntentValue::RegisterNormalVis { component_ids }
             | IntentValue::RegisterEditor { component_ids }
+            | IntentValue::RegisterEditorUI { component_ids }
             | IntentValue::RegisterAction { component_ids }
             | IntentValue::ScheduleAudioOp { component_ids, .. }
             | IntentValue::ScheduleAudioGraphSwap { component_ids, .. }
@@ -266,6 +267,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterTransformGizmo { component_ids }
             | IntentValue::RegisterNormalVis { component_ids }
             | IntentValue::RegisterEditor { component_ids }
+            | IntentValue::RegisterEditorUI { component_ids }
             | IntentValue::RegisterAction { component_ids }
             | IntentValue::ScheduleAudioOp { component_ids, .. }
             | IntentValue::ScheduleAudioGraphSwap { component_ids, .. }

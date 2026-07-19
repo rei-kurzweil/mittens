@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::engine::ecs::component::{
-    DataComponent, DataValue, SelectableComponent, SelectionComponent, SerializeComponent,
-    TransformComponent,
+    DataComponent, DataValue, EditorPanel, EditorUIComponent, SelectableComponent,
+    SelectionComponent, SerializeComponent, TransformComponent,
 };
 use crate::engine::ecs::system::data_renderer_system::{
     DataRendererSystem, DetailRendererSpec, ItemRendererSpec, UiDetailItem, UiItem,
@@ -21,6 +21,7 @@ pub const PANEL_LAYOUT_SELECTION_NAME: &str = "editor_panel_layout_selection";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PanelKind {
+    Settings,
     World,
     Inspector,
     Paint,
@@ -136,6 +137,65 @@ pub fn get_or_create_runtime_ui_root(world: &mut World) -> ComponentId {
     let _ = world.add_child(runtime_ui_root, runtime_ui_serialize);
 
     runtime_ui_root
+}
+
+/// Resolve the single authored workspace root, or create the legacy-positioned fallback.
+pub fn get_or_create_editor_ui_root(
+    world: &mut World,
+    legacy_position: (f32, f32, f32),
+) -> ComponentId {
+    let all_ui: Vec<_> = world
+        .all_components()
+        .filter(|&id| {
+            world
+                .get_component_by_id_as::<EditorUIComponent>(id)
+                .is_some()
+        })
+        .collect();
+    let authored: Vec<_> = all_ui
+        .iter()
+        .copied()
+        .filter(|&id| world.component_label(id) != Some("editor_ui_fallback"))
+        .collect();
+    if let Some(&first) = authored.first() {
+        if authored.len() > 1 {
+            eprintln!(
+                "[EditorUI][warning] only one shared EditorUI is supported; ignoring {} additional instance(s)",
+                authored.len() - 1
+            );
+        }
+        // An explicit instance authored after an Editor was registered replaces the fallback.
+        let fallbacks: Vec<_> = all_ui
+            .iter()
+            .copied()
+            .filter(|&id| world.component_label(id) == Some("editor_ui_fallback"))
+            .collect();
+        for fallback in fallbacks {
+            if let Some(parent) = world.parent_of(fallback)
+                && world.component_label(parent) == Some(EDITOR_RUNTIME_UI_ROOT_NAME)
+            {
+                let _ = world.remove_component_subtree(parent);
+            }
+        }
+        return first;
+    }
+
+    if let Some(&fallback) = all_ui.first() {
+        return fallback;
+    }
+
+    let runtime_root = get_or_create_runtime_ui_root(world);
+    if let Some(transform) = world.get_component_by_id_as_mut::<TransformComponent>(runtime_root) {
+        *transform = TransformComponent::new().with_position(
+            legacy_position.0,
+            legacy_position.1,
+            legacy_position.2,
+        );
+    }
+    let editor_ui =
+        world.add_component_boxed_named("editor_ui_fallback", Box::new(EditorUIComponent::new()));
+    let _ = world.add_child(runtime_root, editor_ui);
+    editor_ui
 }
 
 pub fn panel_layout_root_id(world: &World, panel_query_root: ComponentId) -> Option<ComponentId> {
@@ -560,6 +620,7 @@ pub fn spawn_editor_panel_layout_tree(
     model: &WorldPanelModel,
     working_file_path: &Path,
     world_panel_pos: (f32, f32, f32),
+    selected_panels: &[EditorPanel],
 ) -> Option<(ComponentId, ComponentId)> {
     let world_panel_title_color = Value::Array(vec![
         Value::Number(0.90),
@@ -590,133 +651,140 @@ pub fn spawn_editor_panel_layout_tree(
 
     let working_file_path_str = working_file_path.to_string_lossy().to_string();
 
-    let world_panel = match build_editor_panel_component_expr(
-        world,
-        emit,
-        world_panel_asset_path(),
-        "world_panel",
-        vec![
-            Value::String(model.title.clone()),
-            Value::Array(Vec::new()),
-            world_panel_title_color.clone(),
-            world_panel_bg.clone(),
-            world_panel_item_bg.clone(),
-            Value::String(working_file_path_str),
-        ],
-        PanelKind::World,
-        "world panel",
-    ) {
-        Some(panel) => panel,
-        None => return None,
+    let world_panel = if selected_panels.contains(&EditorPanel::World) {
+        Some(build_editor_panel_component_expr(
+            world,
+            emit,
+            world_panel_asset_path(),
+            "world_panel",
+            vec![
+                Value::String(model.title.clone()),
+                Value::Array(Vec::new()),
+                world_panel_title_color.clone(),
+                world_panel_bg.clone(),
+                world_panel_item_bg.clone(),
+                Value::String(working_file_path_str),
+            ],
+            PanelKind::World,
+            "world panel",
+        )?)
+    } else {
+        None
     };
 
     let asset_items_val = Value::Array(Vec::new());
 
-    let asset_panel = match build_editor_panel_component_expr(
-        world,
-        emit,
-        asset_panel_asset_path(),
-        "asset_panel",
-        vec![
-            Value::String("Assets".to_string()),
-            asset_items_val,
-            asset_panel_title_color.clone(),
-            asset_panel_bg.clone(),
-            asset_panel_item_bg.clone(),
-        ],
-        PanelKind::Assets,
-        "asset panel",
-    ) {
-        Some(panel) => panel,
-        None => return None,
+    let asset_panel = if selected_panels.contains(&EditorPanel::Assets) {
+        Some(build_editor_panel_component_expr(
+            world,
+            emit,
+            asset_panel_asset_path(),
+            "asset_panel",
+            vec![
+                Value::String("Assets".to_string()),
+                asset_items_val,
+                asset_panel_title_color.clone(),
+                asset_panel_bg.clone(),
+                asset_panel_item_bg.clone(),
+            ],
+            PanelKind::Assets,
+            "asset panel",
+        )?)
+    } else {
+        None
     };
 
-    let paint_panel = match build_editor_panel_component_expr(
-        world,
-        emit,
-        paint_panel_asset_path(),
-        "paint_panel",
-        vec![
-            Value::String("Paint".to_string()),
-            paint_panel_title_color.clone(),
-            paint_panel_bg.clone(),
-            paint_panel_item_bg.clone(),
-        ],
-        PanelKind::Paint,
-        "paint panel",
-    ) {
-        Some(panel) => panel,
-        None => return None,
+    let paint_panel = if selected_panels.contains(&EditorPanel::Paint) {
+        Some(build_editor_panel_component_expr(
+            world,
+            emit,
+            paint_panel_asset_path(),
+            "paint_panel",
+            vec![
+                Value::String("Paint".to_string()),
+                paint_panel_title_color.clone(),
+                paint_panel_bg.clone(),
+                paint_panel_item_bg.clone(),
+            ],
+            PanelKind::Paint,
+            "paint panel",
+        )?)
+    } else {
+        None
     };
 
-    let color_panel = match build_editor_panel_component_expr(
-        world,
-        emit,
-        paint_panel_asset_path(),
-        "color_panel",
-        vec![
-            Value::String("Color".to_string()),
-            paint_panel_title_color.clone(),
-            paint_panel_bg.clone(),
-        ],
-        PanelKind::Color,
-        "color panel",
-    ) {
-        Some(panel) => panel,
-        None => return None,
+    let color_panel = if selected_panels.contains(&EditorPanel::Color) {
+        Some(build_editor_panel_component_expr(
+            world,
+            emit,
+            paint_panel_asset_path(),
+            "color_panel",
+            vec![
+                Value::String("Color".to_string()),
+                paint_panel_title_color.clone(),
+                paint_panel_bg.clone(),
+            ],
+            PanelKind::Color,
+            "color panel",
+        )?)
+    } else {
+        None
     };
 
-    let grid_panel = match build_editor_panel_component_expr(
-        world,
-        emit,
-        grid_panel_asset_path(),
-        "grid_panel",
-        vec![
-            Value::String("Grids".to_string()),
-            Value::Array(Vec::new()),
-            world_panel_title_color.clone(),
-            world_panel_bg.clone(),
-            world_panel_item_bg.clone(),
-        ],
-        PanelKind::Grid,
-        "grid panel",
-    ) {
-        Some(panel) => panel,
-        None => return None,
+    let grid_panel = if selected_panels.contains(&EditorPanel::Grid) {
+        Some(build_editor_panel_component_expr(
+            world,
+            emit,
+            grid_panel_asset_path(),
+            "grid_panel",
+            vec![
+                Value::String("Grids".to_string()),
+                Value::Array(Vec::new()),
+                world_panel_title_color.clone(),
+                world_panel_bg.clone(),
+                world_panel_item_bg.clone(),
+            ],
+            PanelKind::Grid,
+            "grid panel",
+        )?)
+    } else {
+        None
     };
 
-    let pose_panel = match build_editor_panel_component_expr(
-        world,
-        emit,
-        pose_panel_asset_path(),
-        "pose_capture_panel",
-        vec![
-            Value::String("Poses".to_string()),
-            world_panel_title_color.clone(),
-            world_panel_bg.clone(),
-        ],
-        PanelKind::Pose,
-        "pose capture panel",
-    ) {
-        Some(panel) => panel,
-        None => return None,
+    let pose_panel = if selected_panels.contains(&EditorPanel::Pose) {
+        Some(build_editor_panel_component_expr(
+            world,
+            emit,
+            pose_panel_asset_path(),
+            "pose_capture_panel",
+            vec![
+                Value::String("Poses".to_string()),
+                world_panel_title_color.clone(),
+                world_panel_bg.clone(),
+            ],
+            PanelKind::Pose,
+            "pose capture panel",
+        )?)
+    } else {
+        None
     };
 
-    let editor_settings_panel = match build_editor_panel_component_expr(
-        world,
-        emit,
-        editor_settings_panel_asset_path(),
-        "editor_settings_panel",
-        vec![
-            Value::String("Editor".to_string()),
-            world_panel_title_color.clone(),
-            world_panel_bg.clone(),
-        ],
-        PanelKind::Inspector,
-        "editor settings panel",
-    ) {
-        Some(panel) => panel,
-        None => return None,
+    let editor_settings_panel = if selected_panels.contains(&EditorPanel::Settings) {
+        Some(build_editor_panel_component_expr(
+            world,
+            emit,
+            editor_settings_panel_asset_path(),
+            "editor_settings_panel",
+            vec![
+                Value::String("Editor".to_string()),
+                world_panel_title_color.clone(),
+                world_panel_bg.clone(),
+            ],
+            PanelKind::Settings,
+            "editor settings panel",
+        )?)
+    } else {
+        None
     };
 
     let anchor_pos = world_panel_pos;
@@ -732,13 +800,24 @@ pub fn spawn_editor_panel_layout_tree(
         + 2.0
         + (0.5 * 2.0);
 
-    let world_panel = decorate_panel_root_ce(world_panel, 2.0);
-    let paint_panel = decorate_panel_root_ce(paint_panel, 2.0);
-    let color_panel = decorate_panel_root_ce(color_panel, 2.0);
-    let asset_panel = decorate_panel_root_ce(asset_panel, 2.0);
-    let grid_panel = decorate_panel_root_ce(grid_panel, 2.0);
-    let pose_panel = decorate_panel_root_ce(pose_panel, 2.0);
-    let editor_settings_panel = decorate_panel_root_ce(editor_settings_panel, 2.0);
+    let decorate =
+        |panel: Option<MaterializedCE>| panel.map(|panel| decorate_panel_root_ce(panel, 2.0));
+    let world_panel = decorate(world_panel);
+    let paint_panel = decorate(paint_panel);
+    let color_panel = decorate(color_panel);
+    let asset_panel = decorate(asset_panel);
+    let grid_panel = decorate(grid_panel);
+    let pose_panel = decorate(pose_panel);
+    let editor_settings_panel = decorate(editor_settings_panel);
+
+    let mut children = Vec::new();
+    children.extend(editor_settings_panel);
+    children.extend(paint_panel);
+    children.extend(color_panel);
+    children.extend(grid_panel);
+    children.extend(pose_panel);
+    children.extend(asset_panel);
+    children.extend(world_panel);
 
     let (panel_mount_root, layout_root_id) = match spawn_panel_layout_mount(
         world,
@@ -750,15 +829,7 @@ pub fn spawn_editor_panel_layout_tree(
             text_scale: 0.08,
             mount_name: PANEL_LAYOUT_MOUNT_NAME.to_string(),
             layout_name: PANEL_LAYOUT_ROOT_NAME.to_string(),
-            children: vec![
-                editor_settings_panel,
-                paint_panel,
-                color_panel,
-                grid_panel,
-                pose_panel,
-                asset_panel,
-                world_panel,
-            ],
+            children,
         },
     ) {
         Ok(ids) => ids,

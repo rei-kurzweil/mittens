@@ -1527,12 +1527,19 @@ impl SystemWorld {
                 editor_context_state.clone(),
                 &self.asset_system,
             );
-            let Some(panel_query_root) = world.all_components().find(|&component_id| {
-                world.parent_of(component_id).is_none()
-                    && world.component_label(component_id) == Some("editor_runtime_ui_root")
+            let Some(editor_ui_root) = world.all_components().find(|&component_id| {
+                world
+                    .get_component_by_id_as::<crate::engine::ecs::component::EditorUIComponent>(
+                        component_id,
+                    )
+                    .is_some()
             }) else {
                 return;
             };
+            let panel_query_root = world
+                .parent_of(editor_ui_root)
+                .filter(|&parent| world.component_label(parent) == Some("editor_runtime_ui_root"))
+                .unwrap_or(editor_ui_root);
             self.editor.install_scoped_handlers_for_editor(
                 &mut self.rx,
                 component,
@@ -1573,6 +1580,39 @@ impl SystemWorld {
                 component,
                 self.editor_context.shared_state(),
             );
+        }
+    }
+
+    pub fn register_editor_ui(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        render_assets: &mut crate::engine::graphics::RenderAssets,
+        component: ComponentId,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
+    ) {
+        if world
+            .get_component_by_id_as::<crate::engine::ecs::component::EditorUIComponent>(component)
+            .is_none()
+        {
+            return;
+        }
+        if world
+            .find_component(component, "#editor_panel_layout_mount")
+            .is_some()
+        {
+            return;
+        }
+        let editors: Vec<_> = world
+            .all_components()
+            .filter(|&id| {
+                world
+                    .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(id)
+                    .is_some_and(|editor| editor.spawn_panels)
+            })
+            .collect();
+        for editor in editors {
+            self.register_editor(world, visuals, render_assets, editor, emit);
         }
     }
 

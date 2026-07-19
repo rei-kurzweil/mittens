@@ -17,26 +17,26 @@ use crate::engine::ecs::component::{
     Camera2DComponent, Camera3DComponent, CameraXRComponent, ClockComponent, CollisionComponent,
     CollisionResponseComponent, CollisionShape, CollisionShapeComponent, ColorComponent,
     ControllerHand, ControllerPoseKind, DataComponent, DataValue, DirectionalLightComponent,
-    Display, EdgeInsets, EditorComponent, EditorInteractionMode, ElementType, EmissiveComponent,
-    EmissivePassComponent, FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection,
-    FlexWrap, GLTFComponent, GestureCoordTypeComponent, GravityComponent, GridComponent,
-    HtmlElementComponent, HttpClientComponent, HttpServerComponent, IKChainComponent, IKSolver,
-    InputComponent, InputTransformModeComponent, InputXRComponent, InputXRGamepadComponent,
-    InspectLayoutComponent, JustifyContent, KeyframeComponent, LayoutBoundsComponent,
-    LayoutComponent, LightQuantizationComponent, MeshComponent, MirrorComponent, MusicNote,
-    MusicNoteComponent, NormalVisualisationComponent, OpacityComponent, OptionComponent,
-    OscillatorType, Overflow, OverlayComponent, PointLightComponent, PointerComponent,
-    PointerEvents, PoseCaptureComponent, PoseCaptureLibraryComponent, PoseCapturePoseComponent,
-    Position, QuatTemporalFilterComponent, QuatYawFollowComponent, RayCastComponent,
-    RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType, RenderGraphComponent,
-    RenderableComponent, RendererSettingsComponent, RendererStatsComponent, RouterComponent,
-    ScrollingComponent, SecondaryMotionComponent, SelectableComponent, SelectionComponent,
-    SerializeComponent, SignalObserverRouterComponent, SignalRouteUpwardComponent, SizeDimension,
-    SkinnedMeshComponent, SpotLightComponent, SpringBoneComponent, SpringJointComponent,
-    StencilClipComponent, StyleComponent, TextAlign, TextComponent, TextInputComponent,
-    TextShadowComponent, TextureComponent, TextureFilteringComponent,
-    TransformCameraSpecificComponent, TransformComponent, TransformDropComponent,
-    TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
+    Display, EdgeInsets, EditorComponent, EditorInteractionMode, EditorPanel, EditorUIComponent,
+    ElementType, EmissiveComponent, EmissivePassComponent, FitBoundsComponent, FitBoundsMode,
+    FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent, GestureCoordTypeComponent,
+    GravityComponent, GridComponent, HtmlElementComponent, HttpClientComponent,
+    HttpServerComponent, IKChainComponent, IKSolver, InputComponent, InputTransformModeComponent,
+    InputXRComponent, InputXRGamepadComponent, InspectLayoutComponent, JustifyContent,
+    KeyframeComponent, LayoutBoundsComponent, LayoutComponent, LightQuantizationComponent,
+    MeshComponent, MirrorComponent, MusicNote, MusicNoteComponent, NormalVisualisationComponent,
+    OpacityComponent, OptionComponent, OscillatorType, Overflow, OverlayComponent,
+    PointLightComponent, PointerComponent, PointerEvents, PoseCaptureComponent,
+    PoseCaptureLibraryComponent, PoseCapturePoseComponent, Position, QuatTemporalFilterComponent,
+    QuatYawFollowComponent, RayCastComponent, RaycastableComponent, RaycastableShapeComponent,
+    RaycastableShapeType, RenderGraphComponent, RenderableComponent, RendererSettingsComponent,
+    RendererStatsComponent, RouterComponent, ScrollingComponent, SecondaryMotionComponent,
+    SelectableComponent, SelectionComponent, SerializeComponent, SignalObserverRouterComponent,
+    SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent, SpotLightComponent,
+    SpringBoneComponent, SpringJointComponent, StencilClipComponent, StyleComponent, TextAlign,
+    TextComponent, TextInputComponent, TextShadowComponent, TextureComponent,
+    TextureFilteringComponent, TransformCameraSpecificComponent, TransformComponent,
+    TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
     TransformGizmoCoordSpace, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
     TransformGizmoTranslateComponent, TransformMapRotationComponent, TransformMapScaleComponent,
     TransformMapTranslationComponent, TransformMergeTRSComponent, TransformParentComponent,
@@ -93,6 +93,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "Data",
     "DirectionalLight",
     "Editor",
+    "EditorUI",
     "Emissive",
     "EmissivePass",
     "FitBounds",
@@ -1574,6 +1575,13 @@ fn create_component(
             }
             Ok(id)
         }
+        "EditorUI" => {
+            let id = world.add_component(EditorUIComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
         "AssetPayload" => {
             let id = world.add_component(match ctor {
                 Some("new") => AssetPayloadComponent::new(arg_str(args, 0)?, arg_str(args, 1)?),
@@ -2744,6 +2752,20 @@ fn apply_call(
             "serialize_editor_panels" => ed.serialize_editor_panels = arg_bool(args, 0)?,
             "asset_dir" => ed.asset_dir = Some(arg_str(args, 0)?.to_string()),
             _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(editor_ui) = world.get_component_by_id_as_mut::<EditorUIComponent>(id) {
+        if method == "panels" {
+            let names =
+                val_as_str_vec(args.first().ok_or_else(|| {
+                    "EditorUI.panels expects one array of panel names".to_string()
+                })?)?;
+            let panels = names
+                .iter()
+                .map(|name| EditorPanel::parse(name))
+                .collect::<Result<Vec<_>, _>>()?;
+            editor_ui.set_panels(panels);
         }
         return Ok(());
     }

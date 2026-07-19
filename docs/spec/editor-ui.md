@@ -2,20 +2,24 @@
 
 Date: 2026-06-27
 
-Status: proposed v1 spec.
+Status: accepted v1 contract.
 
 ## Goal
 
 Define the first explicit `EditorUI` authored/runtime boundary.
 
-The first version is intentionally narrow:
+The first version defines authored placement and a configurable panel subset:
 
 - `EditorUI` should expose the shared editor panel `LayoutRoot` as authored topology
 - that topology should be placeable from MMS / scene graph code like any other subtree
 - editor initialization should auto-provide a default `EditorUI` when editor scopes exist but no authored `EditorUI` is present
-- shared editor workspace state, default panel composition, and panel refresh logic should remain in Rust for now
+- shared editor workspace state and panel refresh logic remain in Rust
+- `panels([...])` chooses which panel shells are materialized
 
-This is not yet a panel-preset or panel-subset spec.
+Supported names are `settings`, `paint`, `color`, `grid`, `pose`, `assets`,
+`world`, and `inspector`. Unknown names are evaluation errors, duplicate names
+are normalized, and shells always use that canonical order. `EditorUI {}` means
+all panels.
 
 ## Problem
 
@@ -46,7 +50,7 @@ Introduce an authored `EditorUI(...)` component export.
 
 Rust still owns:
 
-- which panel shells are instantiated by default
+- canonical panel ordering and panel shell materialization
 - panel shell materialization inputs
 - default `EditorUI` bootstrap when none is authored
 - runtime discovery of panel roots, slots, and controls
@@ -55,7 +59,7 @@ Rust still owns:
 
 ## V1 scope
 
-`EditorUI` v1 is only about authored placement and authored topology exposure.
+`EditorUI` v1 covers authored placement, topology exposure, and panel selection.
 
 It should enable:
 
@@ -66,14 +70,13 @@ It should enable:
 
 It should not yet decide:
 
-- default panel subsets
 - workspace presets
-- panel ordering policies exposed to users
+- user-defined panel ordering
 - panel-state persistence or per-instance panel configuration
 
 ## Required topology contract
 
-The authored `EditorUI` subtree must provide stable nodes that Rust can resolve after spawn.
+Every materialized `EditorUI` subtree provides these stable shared nodes:
 
 Minimum required nodes:
 
@@ -81,7 +84,7 @@ Minimum required nodes:
 - `#editor_panel_layout_root`
 - `#editor_panel_layout_selection`
 
-The subtree must also still contain the panel shell roots and existing panel-local selectors that runtime code already uses, such as:
+It contains only the selected panel shell roots and their existing panel-local selectors, such as:
 
 - `#world_panel_root`
 - `#paint_panel_root`
@@ -109,7 +112,7 @@ T { name = "editor_runtime_ui_root" ...default placement... }
   EditorUI { ...default args... }
 ```
 
-If an authored `EditorUI` already exists, runtime must not spawn a duplicate fallback shared editor UI.
+If an authored `EditorUI` already exists, runtime must not spawn a duplicate fallback shared editor UI. One shared workspace is supported; the first explicit instance wins and additional instances are ignored with a warning. `Editor.panels(false)` remains the master opt-out.
 
 ## Placement model
 
@@ -120,8 +123,8 @@ That means the effective shape should become conceptually:
 ```text
 T { ... parent-authored placement ... }
   EditorUI { ... }
-    Overlay
-      LayoutRoot { ... panels ... }
+    T { name = "editor_panel_layout_mount" }
+      LayoutRoot { ... selected panels ... }
 ```
 
 instead of:
@@ -129,8 +132,7 @@ instead of:
 ```text
 Rust spawn:
   T.position(...)
-    Overlay
-      LayoutRoot { ... panels ... }
+    LayoutRoot { ... panels ... }
 ```
 
 Rust may still pass sizing/configuration arguments into `EditorUI`, but the mount itself should be authored.
@@ -155,32 +157,14 @@ For bootstrap, the runtime sequence should be:
 3. if not, insert one fallback transform-wrapped `EditorUI`
 4. resolve the resulting shared layout root and panel nodes
 
-## Relationship to a later v2
+## Later work
 
-V2 may choose to move more ownership into MMS, including:
-
-- default panel sets
-- named panel subsets
-- optional panel inclusion
-- authored workspace presets
-
-That should be treated as a separate state/configuration problem.
-
-The v1 `EditorUI` contract should be designed so those later changes can happen without moving the root ownership back into Rust.
-
-## Implementation direction
-
-The likely implementation path is:
-
-1. add an MMS export such as `editor_ui(...)`
-2. move the current Rust-authored mount topology into that export
-3. keep Rust-side panel materialization and runtime resolution behavior intact
-4. replace direct `build_panel_layout_mount_ce(...)` usage for the shared editor UI path with `editor_ui(...)` materialization
+Named workspace presets, user-defined ordering, state persistence, and multiple
+independent workspaces remain later work.
 
 ## Non-goals
 
 - redesigning panel workspace state
 - adding panel presets
-- adding user-configurable panel subsets
 - solving multi-workspace editor ownership
 - changing panel-local authored shell structure beyond what is needed to preserve selectors

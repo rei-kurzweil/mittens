@@ -7,7 +7,7 @@ use crate::engine::ecs::system::editor::grid_panel::GRID_PANEL_ROOT_SELECTOR;
 use crate::engine::ecs::system::editor::pose_panel::POSE_PANEL_ROOT_SELECTOR;
 use crate::engine::ecs::system::panel_system::{
     PANEL_LAYOUT_SELECTION_NAME, PanelControlKind, PanelInstance, PanelKind, PanelShellSpec,
-    PanelSlotKind, get_or_create_runtime_ui_root, resolve_panel_instance,
+    PanelSlotKind, get_or_create_editor_ui_root, resolve_panel_instance,
 };
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalKind, World};
 
@@ -60,8 +60,12 @@ impl EditorWorkspaceRuntime {
             .expect("runtime ui root mutex poisoned")
     }
 
-    pub(crate) fn get_or_create_runtime_ui_root(&self, world: &mut World) -> ComponentId {
-        let runtime_ui_root = get_or_create_runtime_ui_root(world);
+    pub(crate) fn get_or_create_editor_ui_root(
+        &self,
+        world: &mut World,
+        legacy_position: (f32, f32, f32),
+    ) -> ComponentId {
+        let runtime_ui_root = get_or_create_editor_ui_root(world, legacy_position);
         *self
             .runtime_ui_root
             .lock()
@@ -89,7 +93,8 @@ impl EditorWorkspaceRuntime {
     ) {
         let mut mounted = HashMap::new();
 
-        let panel_roots: [(PanelKind, &str); 6] = [
+        let panel_roots: [(PanelKind, &str); 7] = [
+            (PanelKind::Settings, "#editor_settings_panel_root"),
             (PanelKind::World, WORLD_PANEL_ROOT_SELECTOR),
             (PanelKind::Grid, GRID_PANEL_ROOT_SELECTOR),
             (PanelKind::Paint, PAINT_PANEL_ROOT_SELECTOR),

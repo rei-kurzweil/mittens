@@ -100,20 +100,28 @@ on(avatar_gltf, "GLTFInitialized", fn(event) {
     }
 })
 
-I.speed(2.2) {
-    name = "desktop_avatar_input"
-    InputTransformMode.forward_z() {
-        roll_axis_y()
-        fps_rotation()
-    }
-    T.position(0.0, 0.0, 1.0) {
-        name = "avatar_head_driver"
-        AVC {
-            head_bone("J_Bip_C_Head")
-            initial_yaw(3.14159)
-            T { avatar_gltf }
+ED.active() {
+    I.speed(2.2) {
+        name = "desktop_avatar_input"
+        InputTransformMode.forward_z() {
+            roll_axis_y()
+            fps_rotation()
+        }
+        T.position(0.0, 0.0, 1.0) {
+            name = "avatar_head_driver"
+            AVC {
+                head_bone("J_Bip_C_Head")
+                initial_yaw(3.14159)
+                T { avatar_gltf }
+            }
         }
     }
+}
+
+// Keep the workspace outside the editable scene so bounds inspection discovers
+// Bisket without allowing the panel itself to become an editor target.
+T.position(-2.25, 1.25, 0.0) {
+    EditorUI { panels(["settings"]) }
 }
 
 // Fixed third-person desktop camera slot; movement controls only the avatar driver.

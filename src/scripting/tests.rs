@@ -4446,6 +4446,123 @@ fn roundtrip_editor() {
 }
 
 #[test]
+fn roundtrip_editor_ui_default_and_settings_only() {
+    use crate::engine::ecs::component::{EditorPanel, EditorUIComponent};
+
+    let (world, id) = roundtrip_component(EditorUIComponent::new());
+    let got = world
+        .get_component_by_id_as::<EditorUIComponent>(id)
+        .unwrap();
+    assert_eq!(got.panels(), EditorPanel::ALL.as_slice());
+
+    let (world, id) = roundtrip_component(
+        EditorUIComponent::new().with_panels([EditorPanel::Settings, EditorPanel::Settings]),
+    );
+    let got = world
+        .get_component_by_id_as::<EditorUIComponent>(id)
+        .unwrap();
+    assert_eq!(got.panels(), &[EditorPanel::Settings]);
+}
+
+#[test]
+fn editor_ui_rejects_unknown_panel_names() {
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+    let output = MeowMeowRunner::eval_with_world(
+        "EditorUI { panels([\"wat\"]) }",
+        &mut world,
+        &mut rx,
+        &mut emit,
+    );
+    assert!(
+        output
+            .errors
+            .iter()
+            .any(|error| error.contains("unknown EditorUI panel 'wat'")),
+        "{:?}",
+        output.errors
+    );
+}
+
+#[test]
+fn editor_ui_settings_only_materializes_under_authored_transform() {
+    let source = r#"
+        Editor.active() { T { name = "editable_scene" } }
+        T.position(-2.25, 1.25, 0.0) {
+            name = "authored_ui_position"
+            EditorUI { panels(["settings", "settings"]) }
+        }
+    "#;
+    let mut world = World::default();
+    let mut systems = crate::engine::ecs::system::SystemWorld::default();
+    let mut visuals = VisualWorld::default();
+    let mut render_assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+    let output = MeowMeowRunner::eval_with_world_and_assets(
+        source,
+        &mut world,
+        &mut systems.rx,
+        &mut render_assets,
+        &mut queue,
+    );
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    for intent in output.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
+    systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
+
+    let editor_ui = world
+        .all_components()
+        .find(|&id| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::EditorUIComponent>(id)
+                .is_some()
+        })
+        .expect("authored EditorUI");
+    let mount = world
+        .find_component(editor_ui, "#editor_panel_layout_mount")
+        .expect("layout mount");
+    let transform = world
+        .get_component_by_id_as::<TransformComponent>(mount)
+        .unwrap();
+    assert_eq!(transform.transform.translation, [0.0, 0.0, 0.0]);
+    assert_eq!(
+        world.component_label(world.parent_of(editor_ui).unwrap()),
+        Some("authored_ui_position")
+    );
+    assert!(
+        world
+            .find_component(editor_ui, "#editor_panel_layout_root")
+            .is_some()
+    );
+    assert!(
+        world
+            .find_component(editor_ui, "#editor_panel_layout_selection")
+            .is_some()
+    );
+    assert!(
+        world
+            .find_component(editor_ui, "#editor_settings_panel_root")
+            .is_some()
+    );
+    for omitted in [
+        "#paint_panel_root",
+        "#color_panel_root",
+        "#grid_panel_root",
+        "#pose_capture_panel_root",
+        "#assets_root",
+        "#world_panel_root",
+        "#inspector_panel_root",
+    ] {
+        assert!(
+            world.find_component(editor_ui, omitted).is_none(),
+            "unexpected {omitted}"
+        );
+    }
+}
+
+#[test]
 fn roundtrip_background() {
     use crate::engine::ecs::component::BackgroundComponent;
     let original = BackgroundComponent::new()

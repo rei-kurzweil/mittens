@@ -574,6 +574,12 @@ impl RxMutationExecutor {
                 }
             }
 
+            IntentValue::RegisterEditorUI { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.register_editor_ui(world, visuals, render_assets, component, emit);
+                }
+            }
+
             IntentValue::RegisterAction { component_ids } => {
                 for &component in component_ids.iter() {
                     crate::engine::ecs::system::action_system::register_action(
