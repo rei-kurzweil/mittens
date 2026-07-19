@@ -150,7 +150,7 @@ on(editor_root, "SelectionChanged", fn(e) {
 - [ ] Update or add an example demonstrating the workflow
   (`examples/signal-handler.mms` is the obvious place to grow).
 - [ ] Document the available event fields per kind in
-  `docs/spec/signals.md` (or a new `docs/spec/mms-handlers.md`).
+  `docs/how_to/guide/signals.md` (or a new `docs/spec/mms-handlers.md`).
 
 ## Out of scope (don't conflate with this task)
 

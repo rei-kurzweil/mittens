@@ -28,7 +28,7 @@ Important: `InputState` is intentionally **window + cursor** oriented today. It 
 
 ### “Intent” (signals-first)
 
-- Signals doc: `docs/spec/signals.md`
+- Signals doc: `docs/how_to/guide/signals.md`
   - **Intent signals** are requests.
   - **Event signals** are facts.
 

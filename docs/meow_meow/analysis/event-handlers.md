@@ -10,7 +10,7 @@ spec. The goal is to explore what the syntax *should feel like* before committin
 
 ## Background: the engine signal model
 
-(see `docs/spec/signals.md` for canonical detail)
+(see `docs/how_to/guide/signals.md` for canonical detail)
 
 The engine has two signal kinds:
 

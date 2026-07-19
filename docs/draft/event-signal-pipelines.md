@@ -4,7 +4,7 @@
 
 Draft only. This document describes a likely next step for the engine signal layer.
 
-It does **not** change the current runtime semantics in `docs/spec/signals.md`.
+It does **not** change the current runtime semantics in `docs/how_to/guide/signals.md`.
 It proposes an additional routing/projection layer for **events**, analogous to the existing
 intent pipeline.
 
@@ -51,7 +51,7 @@ It is **event routing / projection**.
 
 This proposal intentionally keeps the current event model intact.
 
-For the canonical runtime semantics, see [docs/spec/signals.md](../spec/signals.md).
+For the canonical runtime semantics, see the [MMS signal guide](../how_to/guide/signals.md).
 The key point for this draft is only:
 
 - current scoped dispatch is ancestor-bubbling only
@@ -454,7 +454,7 @@ signal-pipeline design remains a draft.
 
 ## 13. Recommended next steps
 
-1. Keep `docs/spec/signals.md` focused on current runtime semantics.
+1. Keep `docs/how_to/guide/signals.md` focused on current runtime semantics.
 2. Document event projection/routing separately as a draft.
 3. Treat scrolling as the first production example of this pattern.
 4. Later decide whether to formalize it as:

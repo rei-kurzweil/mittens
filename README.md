@@ -133,7 +133,7 @@ See [docs/render-phases.md](docs/render-phases.md) for details and the relevant 
 
 # Components
 
-See [docs/spec/components.md](docs/spec/components.md) for a full list of built-in components and their usage.
+See the [MMS component guide](docs/how_to/guide/components.md) for the exhaustive component catalog and current scripting support.
 
 ## Transforms
 
@@ -215,7 +215,7 @@ Implementation detail: intent execution is split into two layers:
 
 Scoped handler lifecycle: systems can install handlers rooted at a component subtree (e.g. gizmos). When a subtree is removed, any scoped handlers rooted in that deleted subtree are removed automatically.
 
-See [docs/signals.md](docs/signals.md) for the deeper rationale.
+See the [MMS signal guide](docs/how_to/guide/signals.md) for the architecture, exhaustive signal catalog, and current scripting support.
 
 
 # Building Widgets (Panels & Tools)

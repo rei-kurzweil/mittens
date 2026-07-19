@@ -4,7 +4,7 @@ use crate::engine::graphics::RenderAssets;
 /// Built-in executor for **intent** signals.
 ///
 /// This is intentionally minimal scaffolding for the ongoing refactor described in:
-/// - docs/signals.md
+/// - docs/how_to/guide/signals.md
 ///
 /// The goal is to keep handlers observers-only, and execute side effects via intent signals.
 #[derive(Debug, Default)]

@@ -427,4 +427,4 @@ No `MusicNoteComponent` lookup is involved in trigger dispatch.
 - [docs/draft/audio_decoding_thread.md](../draft/audio_decoding_thread.md) — decode thread + AudioAssets
 - [docs/task/audio-clip-terminology-and-effect-consolidation.md](../task/audio-clip-terminology-and-effect-consolidation.md) — terminology + effect consolidation
 - [docs/task/audio-decode-convert-normalize-split.md](../task/audio-decode-convert-normalize-split.md) — decode/convert/normalize layering
-- [docs/spec/signals.md](./signals.md) — intent/event model
+- [MMS signal guide](../how_to/guide/signals.md) — intent/event model and current MMS exposure

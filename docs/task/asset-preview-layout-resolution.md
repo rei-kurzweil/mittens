@@ -83,4 +83,4 @@ The scale fallback uses the same detection result: if bounds are None and the su
 
 - `assets/components/asset_item.mms` — the tile template with `preview_slot`
 - `docs/spec/file-tree-panel.md` — panel prefab pattern
-- `docs/spec/signals.md` — signal/intent pipeline (layout runs during the tick)
+- `docs/how_to/guide/signals.md` — signal/intent pipeline (layout runs during the tick)
