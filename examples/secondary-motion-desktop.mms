@@ -38,12 +38,9 @@ BG.occlusion_and_lighting() {
     star_kawaii_background([1.0, 0.82, 0.12, 1.0])
 }
 
-tripod_light("studio_key_light", [-4.2, 0.0, 2.8], [0.0, -0.35, 0.0],
-    SL.color(1.0, 0.78, 0.62).intensity(6.0).distance(11.0).angle(0.62).penumbra(0.35))
-tripod_light("studio_fill_light", [4.0, 0.0, 1.4], [0.0, -0.35, 0.0],
-    SL.color(0.48, 0.68, 1.0).intensity(4.5).distance(11.0).angle(0.62).penumbra(0.35))
-tripod_light("studio_rim_light", [1.8, 0.0, -4.2], [0.0, -0.35, 0.0],
-    SL.color(1.0, 0.42, 0.78).intensity(5.0).distance(11.0).angle(0.62).penumbra(0.35))
+tripod_light("studio_key_light", [-4.2, 0.0, 2.8], [0.0, -0.35, 0.0], SL.color(1.0, 0.78, 0.62).intensity(6.0).distance(11.0).angle(0.62).penumbra(0.35))
+tripod_light("studio_fill_light", [4.0, 0.0, 1.4], [0.0, -0.35, 0.0], SL.color(0.48, 0.68, 1.0).intensity(4.5).distance(11.0).angle(0.62).penumbra(0.35))
+tripod_light("studio_rim_light", [1.8, 0.0, -4.2], [0.0, -0.35, 0.0], SL.color(1.0, 0.42, 0.78).intensity(5.0).distance(11.0).angle(0.62).penumbra(0.35))
 
 // Floor top is y=-1.6, exactly touching the avatar collider's bottom face.
 static_cube("studio_floor", [0.0, -1.65, 0.0], [18.0, 0.1, 18.0], [0.025, 0.035, 0.075])
