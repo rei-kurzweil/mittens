@@ -3,8 +3,8 @@ use crate::engine::ecs::component::Component;
 
 /// Gravity field component.
 ///
-/// Any `KineticResponseComponent` nested under a `GravityComponent` will have gravity applied
-/// by `KineticResponseSystem`.
+/// Any `CollisionResponseComponent` nested under a `GravityComponent` will have gravity applied
+/// by `CollisionResponseSystem`.
 ///
 /// This component can live anywhere in the scene graph and can have arbitrary descendants.
 /// If multiple `GravityComponent`s exist in the ancestor chain, the nearest enabled one wins.

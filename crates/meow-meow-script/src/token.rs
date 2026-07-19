@@ -232,8 +232,8 @@ pub const COMPONENT_SHORTFORMS: &[ComponentShortformEntry] = &[
         full: "Gravity",
     },
     ComponentShortformEntry {
-        short: "KIN",
-        full: "KineticResponse",
+        short: "CRSP",
+        full: "CollisionResponse",
     },
     ComponentShortformEntry {
         short: "LQ",

@@ -1,8 +1,9 @@
 use crate::engine::ecs::component::{
-    CollisionComponent, CollisionMode, CollisionShape, CollisionShapeComponent,
-    KineticResponseComponent, KineticResponseMode, RenderableComponent, TransformComponent,
+    CollisionComponent, CollisionMode, CollisionResponseComponent, CollisionResponseMode,
+    CollisionShape, CollisionShapeComponent, QueryRootMode, RenderableComponent,
+    TransformComponent, resolve_component_ref,
 };
-use crate::engine::ecs::system::{CollisionSystem, TransformSystem};
+use crate::engine::ecs::system::{CollisionSystem, TransformSystem, collision_geometry};
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
@@ -10,16 +11,16 @@ use crate::utils::math;
 use std::collections::HashMap;
 
 #[derive(Debug, Default)]
-pub struct KineticResponseSystem {
+pub struct CollisionResponseSystem {
     responders: Vec<ComponentId>,
 }
 
-impl KineticResponseSystem {
+impl CollisionResponseSystem {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn register_kinetic_response(&mut self, world: &mut World, component: ComponentId) {
+    pub fn register_collision_response(&mut self, world: &mut World, component: ComponentId) {
         if !self.responders.iter().any(|c| *c == component) {
             self.responders.push(component);
         }
@@ -39,12 +40,12 @@ impl KineticResponseSystem {
             cur = parent;
         }
 
-        if let Some(r) = world.get_component_by_id_as_mut::<KineticResponseComponent>(component) {
+        if let Some(r) = world.get_component_by_id_as_mut::<CollisionResponseComponent>(component) {
             r.gravity_coefficient = gravity_coef;
         }
     }
 
-    pub fn remove_kinetic_response(&mut self, component: ComponentId) {
+    pub fn remove_collision_response(&mut self, component: ComponentId) {
         self.responders.retain(|c| *c != component);
     }
 
@@ -87,16 +88,19 @@ impl KineticResponseSystem {
 
         for response_cid in responder_ids {
             let Some(response) =
-                world.get_component_by_id_as::<KineticResponseComponent>(response_cid)
+                world.get_component_by_id_as::<CollisionResponseComponent>(response_cid)
             else {
                 continue;
             };
             if !response.enabled {
                 continue;
             }
+            let movement_target_source = response.movement_target_source.clone();
+            let runtime_movement_target = response.movement_target_id;
+            let movement_target_required = response.movement_target_required;
 
             // Required topology:
-            //   TransformComponent { CollisionComponent { KineticResponseComponent { ... } } }
+            //   TransformComponent { CollisionComponent { CollisionResponseComponent { ... } } }
             let Some(collider_cid) = world.parent_of(response_cid) else {
                 continue;
             };
@@ -112,6 +116,32 @@ impl KineticResponseSystem {
             };
             if world
                 .get_component_by_id_as::<TransformComponent>(transform_cid)
+                .is_none()
+            {
+                continue;
+            }
+
+            let movement_target_cid = if let Some(source) = movement_target_source.as_ref() {
+                let Some(target) = resolve_component_ref(
+                    world,
+                    source,
+                    Some(response_cid),
+                    QueryRootMode::SelfSubtree,
+                ) else {
+                    // An authored target is authoritative: do not integrate velocity while
+                    // it is temporarily unavailable.
+                    continue;
+                };
+                target
+            } else if let Some(target) = runtime_movement_target {
+                target
+            } else if movement_target_required {
+                continue;
+            } else {
+                transform_cid
+            };
+            if world
+                .get_component_by_id_as::<TransformComponent>(movement_target_cid)
                 .is_none()
             {
                 continue;
@@ -148,7 +178,7 @@ impl KineticResponseSystem {
             }
 
             // Slide mode only does static separation; no overlaps means no work.
-            if response.mode == KineticResponseMode::Slide && statics.is_empty() {
+            if response.mode == CollisionResponseMode::Slide && statics.is_empty() {
                 continue;
             }
 
@@ -169,7 +199,7 @@ impl KineticResponseSystem {
                 velocity[1] += GRAVITY_MPS2 * gravity_coef * dt_sec;
             }
 
-            if response.mode == KineticResponseMode::Push {
+            if response.mode == CollisionResponseMode::Push {
                 // Apply friction-like damping.
                 if dt_sec > 0.0 && response.friction > 0.0 {
                     let k = (1.0 - response.friction * dt_sec).clamp(0.0, 1.0);
@@ -234,7 +264,7 @@ impl KineticResponseSystem {
 
             // Slide mode typically does no integration; gravity-enabled colliders still need
             // vertical integration so they can fall onto static geometry.
-            if response.mode == KineticResponseMode::Slide && dt_sec > 0.0 {
+            if response.mode == CollisionResponseMode::Slide && dt_sec > 0.0 {
                 if velocity[1] != 0.0 {
                     desired_world_pos[1] += velocity[1] * dt_sec;
                     moved = true;
@@ -266,7 +296,7 @@ impl KineticResponseSystem {
                     let b_shape = resolve_shape(world, static_cid)
                         .unwrap_or_else(|| crate::engine::ecs::component::CollisionShape::CUBE());
 
-                    let Some(push) = compute_push_out_aabb(
+                    let Some(push) = collision_geometry::minimum_translation(
                         desired_world_pos,
                         a_shape,
                         b_world_pos,
@@ -280,27 +310,32 @@ impl KineticResponseSystem {
                     desired_world_pos[1] += push[1];
                     desired_world_pos[2] += push[2];
 
-                    let axis = if push[0] != 0.0 {
-                        0
-                    } else if push[1] != 0.0 {
-                        1
+                    let len = (push[0] * push[0] + push[1] * push[1] + push[2] * push[2]).sqrt();
+                    let normal = if len > f32::EPSILON {
+                        [push[0] / len, push[1] / len, push[2] / len]
                     } else {
-                        2
+                        [0.0, 1.0, 0.0]
                     };
+                    let vertical_contact = normal[1].abs() >= normal[0].abs().max(normal[2].abs());
 
-                    if axis == 1 {
+                    if vertical_contact {
                         // Floor/ceiling contact: dampen vertical velocity only.
                         if dt_sec > 0.0 && response.friction_y > 0.0 {
                             let k = (1.0 - response.friction_y * dt_sec).clamp(0.0, 1.0);
                             velocity[1] *= k;
                         }
-                    } else if response.mode == KineticResponseMode::Push {
+                    } else if response.mode == CollisionResponseMode::Push {
                         // Push-mode "bounce" on horizontal static contacts.
                         // Without this, a body with outward velocity will just keep trying to
                         // move into the wall and get corrected every tick (looks like sticking).
-                        if velocity[axis] * push[axis] < 0.0 {
+                        let into = velocity[0] * normal[0]
+                            + velocity[1] * normal[1]
+                            + velocity[2] * normal[2];
+                        if into < 0.0 {
                             const RESTITUTION: f32 = 0.85;
-                            velocity[axis] = -velocity[axis] * RESTITUTION;
+                            velocity[0] -= (1.0 + RESTITUTION) * into * normal[0];
+                            velocity[1] -= (1.0 + RESTITUTION) * into * normal[1];
+                            velocity[2] -= (1.0 + RESTITUTION) * into * normal[2];
                         }
                     }
                     any_overlap = true;
@@ -316,15 +351,35 @@ impl KineticResponseSystem {
                 continue;
             }
 
+            let displacement = [
+                desired_world_pos[0] - base_world_pos[0],
+                desired_world_pos[1] - base_world_pos[1],
+                desired_world_pos[2] - base_world_pos[2],
+            ];
+            let Some(target_world_pos) =
+                TransformSystem::world_position(world, movement_target_cid)
+            else {
+                continue;
+            };
+            let target_desired_world = [
+                target_world_pos[0] + displacement[0],
+                target_world_pos[1] + displacement[1],
+                target_world_pos[2] + displacement[2],
+            ];
             let new_local_translation =
-                world_to_local_translation(world, transform_cid, desired_world_pos);
+                world_to_local_translation(world, movement_target_cid, target_desired_world);
 
-            pending_updates.push((response_cid, transform_cid, new_local_translation, velocity));
+            pending_updates.push((
+                response_cid,
+                movement_target_cid,
+                new_local_translation,
+                velocity,
+            ));
         }
 
         for (response_cid, transform_cid, new_local_translation, new_velocity) in pending_updates {
             if let Some(r) =
-                world.get_component_by_id_as_mut::<KineticResponseComponent>(response_cid)
+                world.get_component_by_id_as_mut::<CollisionResponseComponent>(response_cid)
             {
                 r.velocity = new_velocity;
             }
@@ -371,66 +426,6 @@ fn resolve_shape(world: &World, collision_cid: ComponentId) -> Option<CollisionS
     }
 
     None
-}
-
-fn compute_push_out_aabb(
-    a_center: [f32; 3],
-    a_shape: CollisionShape,
-    b_center: [f32; 3],
-    b_shape: CollisionShape,
-    eps: f32,
-) -> Option<[f32; 3]> {
-    let (a_min, a_max) = aabb_world(a_center, a_shape);
-    let (b_min, b_max) = aabb_world(b_center, b_shape);
-
-    let overlap_x = f32::min(a_max[0], b_max[0]) - f32::max(a_min[0], b_min[0]);
-    let overlap_y = f32::min(a_max[1], b_max[1]) - f32::max(a_min[1], b_min[1]);
-    let overlap_z = f32::min(a_max[2], b_max[2]) - f32::max(a_min[2], b_min[2]);
-
-    if overlap_x <= 0.0 || overlap_y <= 0.0 || overlap_z <= 0.0 {
-        return None;
-    }
-
-    let mut axis = 0;
-    let mut min_overlap = overlap_x;
-    if overlap_y < min_overlap {
-        min_overlap = overlap_y;
-        axis = 1;
-    }
-    if overlap_z < min_overlap {
-        min_overlap = overlap_z;
-        axis = 2;
-    }
-
-    let mut out = [0.0f32; 3];
-    let dir = if a_center[axis] < b_center[axis] {
-        -1.0
-    } else {
-        1.0
-    };
-    out[axis] = dir * (min_overlap + eps);
-    Some(out)
-}
-
-fn aabb_world(center: [f32; 3], shape: CollisionShape) -> ([f32; 3], [f32; 3]) {
-    match shape {
-        CollisionShape::Cube { half_extents } => (
-            [
-                center[0] - half_extents[0],
-                center[1] - half_extents[1],
-                center[2] - half_extents[2],
-            ],
-            [
-                center[0] + half_extents[0],
-                center[1] + half_extents[1],
-                center[2] + half_extents[2],
-            ],
-        ),
-        CollisionShape::Sphere { radius } => (
-            [center[0] - radius, center[1] - radius, center[2] - radius],
-            [center[0] + radius, center[1] + radius, center[2] + radius],
-        ),
-    }
 }
 
 fn mat4_mul_vec4(m: [[f32; 4]; 4], v: [f32; 4]) -> [f32; 4] {

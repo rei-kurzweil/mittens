@@ -15,14 +15,14 @@ use crate::engine::ecs::component::{
     AudioTriggerMode, AvatarBodyYawComponent, AvatarControlComponent, BackgroundColorComponent,
     BackgroundComponent, BloomComponent, BlurPassComponent, BoundsComponent, BoxSizing,
     Camera2DComponent, Camera3DComponent, CameraXRComponent, ClockComponent, CollisionComponent,
-    CollisionShape, CollisionShapeComponent, ColorComponent, ControllerHand, ControllerPoseKind,
-    DataComponent, DataValue, DirectionalLightComponent, Display, EdgeInsets, EditorComponent,
-    EditorInteractionMode, ElementType, EmissiveComponent, EmissivePassComponent,
-    FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent,
-    GestureCoordTypeComponent, GravityComponent, GridComponent, HtmlElementComponent,
-    HttpClientComponent, HttpServerComponent, IKChainComponent, IKSolver, InputComponent,
-    InputTransformModeComponent, InputXRComponent, InputXRGamepadComponent, InspectLayoutComponent,
-    JustifyContent, KeyframeComponent, KineticResponseComponent, LayoutBoundsComponent,
+    CollisionResponseComponent, CollisionShape, CollisionShapeComponent, ColorComponent,
+    ControllerHand, ControllerPoseKind, DataComponent, DataValue, DirectionalLightComponent,
+    Display, EdgeInsets, EditorComponent, EditorInteractionMode, ElementType, EmissiveComponent,
+    EmissivePassComponent, FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection,
+    FlexWrap, GLTFComponent, GestureCoordTypeComponent, GravityComponent, GridComponent,
+    HtmlElementComponent, HttpClientComponent, HttpServerComponent, IKChainComponent, IKSolver,
+    InputComponent, InputTransformModeComponent, InputXRComponent, InputXRGamepadComponent,
+    InspectLayoutComponent, JustifyContent, KeyframeComponent, LayoutBoundsComponent,
     LayoutComponent, LightQuantizationComponent, MeshComponent, MirrorComponent, MusicNote,
     MusicNoteComponent, NormalVisualisationComponent, OpacityComponent, OptionComponent,
     OscillatorType, Overflow, OverlayComponent, PointLightComponent, PointerComponent,
@@ -33,15 +33,15 @@ use crate::engine::ecs::component::{
     ScrollingComponent, SecondaryMotionComponent, SelectableComponent, SelectionComponent,
     SerializeComponent, SignalObserverRouterComponent, SignalRouteUpwardComponent, SizeDimension,
     SkinnedMeshComponent, SpotLightComponent, SpringBoneComponent, SpringJointComponent,
-    StencilClipComponent,
-    StyleComponent, TextAlign, TextComponent, TextInputComponent, TextShadowComponent,
-    TextureComponent, TextureFilteringComponent, TransformCameraSpecificComponent,
-    TransformComponent, TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis,
-    TransformGizmoComponent, TransformGizmoCoordSpace, TransformGizmoRotateComponent,
-    TransformGizmoScaleComponent, TransformGizmoTranslateComponent, TransformMapRotationComponent,
-    TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
-    TransformParentComponent, TransformSampleAncestorComponent, TransitionComponent,
-    TransitionEasing, TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
+    StencilClipComponent, StyleComponent, TextAlign, TextComponent, TextInputComponent,
+    TextShadowComponent, TextureComponent, TextureFilteringComponent,
+    TransformCameraSpecificComponent, TransformComponent, TransformDropComponent,
+    TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
+    TransformGizmoCoordSpace, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
+    TransformGizmoTranslateComponent, TransformMapRotationComponent, TransformMapScaleComponent,
+    TransformMapTranslationComponent, TransformMergeTRSComponent, TransformParentComponent,
+    TransformSampleAncestorComponent, TransitionComponent, TransitionEasing,
+    TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
     Vector3TemporalFilterComponent, WordWrapMode, XRHandComponent, XrComponent, XrHandPreference,
 };
 use crate::engine::ecs::{ComponentId, World};
@@ -110,7 +110,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "InputXRGamepad",
     "InspectLayout",
     "Keyframe",
-    "KineticResponse",
+    "CollisionResponse",
     "LayoutBounds",
     "LayoutRoot",
     "LightQuantization",
@@ -1905,6 +1905,10 @@ fn create_component(
             Some("sphere") => add!(CollisionShapeComponent::new(CollisionShape::sphere_radius(
                 arg_f32(args, 0)?
             ))),
+            Some("capsule_y") => add!(CollisionShapeComponent::capsule_y(
+                arg_f32(args, 0)?,
+                arg_f32(args, 1)?
+            )),
             _ => add!(CollisionShapeComponent::cube()),
         },
         "RaycastableShape" => {
@@ -2078,11 +2082,11 @@ fn create_component(
         ))),
         "TransformGizmoRotate" => add!(TransformGizmoRotateComponent::new(parse_gizmo_axis(ctor))),
         "TransformGizmoScale" => add!(TransformGizmoScaleComponent::new(parse_gizmo_axis(ctor))),
-        "KineticResponse" => {
+        "CollisionResponse" => {
             let c = match ctor {
-                Some("push") => KineticResponseComponent::push(),
-                Some("slide") => KineticResponseComponent::slide(),
-                _ => KineticResponseComponent::slide(),
+                Some("push") => CollisionResponseComponent::push(),
+                Some("slide") => CollisionResponseComponent::slide(),
+                _ => CollisionResponseComponent::slide(),
             };
             let id = world.add_component(c);
             Ok(id)
@@ -2464,7 +2468,12 @@ fn apply_call(
         }
         return Ok(());
     }
-    if let Some(kr) = world.get_component_by_id_as_mut::<KineticResponseComponent>(id) {
+    let response_movement_target = if method == "movement_target" {
+        Some(arg_component_ref(world, args, 0)?)
+    } else {
+        None
+    };
+    if let Some(kr) = world.get_component_by_id_as_mut::<CollisionResponseComponent>(id) {
         match method {
             "enabled" => kr.enabled = arg_bool(args, 0)?,
             "max_iterations" => kr.max_iterations = arg_f32(args, 0)? as u32,
@@ -2473,6 +2482,7 @@ fn apply_call(
             "friction" => kr.friction = arg_f32(args, 0)?,
             "friction_y" => kr.friction_y = arg_f32(args, 0)?,
             "max_speed" => kr.max_speed = arg_f32(args, 0)?,
+            "movement_target" => kr.movement_target_source = response_movement_target,
             _ => {}
         }
         return Ok(());
@@ -2946,6 +2956,8 @@ fn apply_call(
             "initial_yaw" => *avc = avc.clone().with_initial_yaw(arg_f32(args, 0)?),
             "forward_plus_z" => *avc = avc.clone().with_forward_plus_z(),
             "ik_debug" => *avc = avc.clone().with_ik_debug(),
+            "collision_disabled" => *avc = avc.clone().with_collision_disabled(),
+            "capsule_radius" => *avc = avc.clone().with_capsule_radius(arg_f32(args, 0)?),
             "calibrate_hand_transforms" => *avc = avc.clone().with_calibrate_hand_transforms(),
             "body_yaw_threshold" => *avc = avc.clone().with_body_yaw_threshold(arg_f32(args, 0)?),
             "body_yaw_rate" => *avc = avc.clone().with_body_yaw_rate(arg_f32(args, 0)?),

@@ -28,13 +28,10 @@ use crate::engine::ecs::component::Component;
 /// ```text
 /// Input  (or  InputXR)                    ← primary driver
 ///   └── driven_t
-///         └── AvatarControlComponent
+///         ├── AvatarControlComponent
 ///               ├── model_root  (TransformComponent, Y offset)
 ///               │     └── GLTFComponent
 ///               │           └── [armature]
-///               │                 J_Bip_C_Neck
-///               │                   └── splice_head  ← injected by system
-///               │                         └── J_Bip_C_Head (displaced; aim-driven by driven_t)
 ///               │                 left_lower_arm
 ///               │                   └── ControllerXR (Left, Grip)  ← moved here by system
 ///               │                         └── controller_driven_t
@@ -45,13 +42,21 @@ use crate::engine::ecs::component::Component;
 ///               │                               └── J_Bip_R_Hand (displaced)
 ///               ├── ControllerXR (Left,  Grip) { T }  ← declared here; re-parented on init
 ///               └── ControllerXR (Right, Grip) { T }
+///         └── head_mount  ← injected by AVC; fixed offset from driven_t
+///               └── J_Bip_C_Head (displaced from the armature)
 /// ```
 #[derive(Debug, Clone)]
 pub struct AvatarControlComponent {
+    /// Whether AVC should generate an upright collision capsule. Enabled by default.
+    pub collision_enabled: bool,
+
+    /// Authored character-controller radius, capped to half the measured height.
+    pub capsule_radius: f32,
+
     /// Name of the bone to displace for head rotation. Default: "J_Bip_C_Head".
     ///
-    /// This bone receives the HMD/Input world rotation directly via an `AimConstraint`
-    /// IK chain. Rotating the head bone (not the neck) is critical for VR/desktop:
+    /// This bone is displaced under a mount beneath the HMD/Input-driven transform.
+    /// Rotating the head bone (not the neck) is critical for VR/desktop:
     /// rotating the neck twists the entire torso from the neck up, which looks wrong.
     /// The head's rotation is isolated from the spine so the body can yaw-follow
     /// underneath independently.
@@ -197,7 +202,7 @@ pub struct AvatarControlComponent {
     pub calibrate_hand_transforms: bool,
 
     // Runtime IDs set by AvatarControlSystem on first tick:
-    pub(crate) splice_head: Option<ComponentId>,
+    pub(crate) head_mount: Option<ComponentId>,
     pub(crate) displaced_head: Option<ComponentId>,
     /// Cached left hand bone id (end effector of left-arm TwoBoneIK).
     pub(crate) left_hand_bone_id: Option<ComponentId>,
@@ -255,12 +260,28 @@ pub struct AvatarControlComponent {
     /// Neck rest local translation cached at init for the rest-pin.
     pub(crate) neck_rest_translation: Option<[f32; 3]>,
 
+    /// Runtime-only generated upright capsule transform.
+    pub(crate) capsule_transform_id: Option<ComponentId>,
+
+    /// Runtime-only generated response, used to refresh XR movement routing.
+    pub(crate) capsule_response_id: Option<ComponentId>,
+
     component: Option<ComponentId>,
 }
 
 impl AvatarControlComponent {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_collision_disabled(mut self) -> Self {
+        self.collision_enabled = false;
+        self
+    }
+
+    pub fn with_capsule_radius(mut self, radius: f32) -> Self {
+        self.capsule_radius = radius.max(0.0);
+        self
     }
 
     pub fn with_head_bone(mut self, name: impl Into<String>) -> Self {
@@ -431,6 +452,8 @@ impl AvatarControlComponent {
 impl Default for AvatarControlComponent {
     fn default() -> Self {
         Self {
+            collision_enabled: true,
+            capsule_radius: 0.28,
             head_bone: "J_Bip_C_Head".to_string(),
             left_hand_bone: None,
             right_hand_bone: None,
@@ -451,7 +474,7 @@ impl Default for AvatarControlComponent {
             avatar_height: None,
             hips_bone: None,
             eye_height_from_head_bone: None,
-            splice_head: None,
+            head_mount: None,
             displaced_head: None,
             left_hand_bone_id: None,
             right_hand_bone_id: None,
@@ -469,6 +492,8 @@ impl Default for AvatarControlComponent {
             model_root_local_y: 0.0,
             neck_bone_id: None,
             neck_rest_translation: None,
+            capsule_transform_id: None,
+            capsule_response_id: None,
             hand_grip_rotation_left: None,
             hand_grip_rotation_right: None,
             calibrate_hand_transforms: false,
@@ -514,6 +539,12 @@ impl Component for AvatarControlComponent {
                 vec![num(self.body_yaw_threshold as f64)],
             )
             .with_call("body_yaw_rate", vec![num(self.body_yaw_rate as f64)]);
+        if !self.collision_enabled {
+            c = c.with_call("collision_disabled", vec![]);
+        }
+        if (self.capsule_radius - 0.28).abs() > f32::EPSILON {
+            c = c.with_call("capsule_radius", vec![num(self.capsule_radius as f64)]);
+        }
         if let Some(b) = &self.left_hand_bone {
             c = c.with_call("left_hand_bone", vec![s(b)]);
         }

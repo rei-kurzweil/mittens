@@ -53,7 +53,7 @@ converge before sampling.
 
 After each pose settles, the harness reads world-space `(y, z)` of every
 joint in `SPINE_BONES` (hips → spine → chest → upper_chest → neck → head)
-on both avatars, plus the AVC's `splice_head` and `driven_t`.  Output looks
+on both avatars, plus the AVC's `head_mount` and `driven_t`.  Output looks
 like:
 
 ```
@@ -91,13 +91,13 @@ direction.
 > `HMD - R(HMD) * eye_offset` — so the head pivot legitimately lands below
 > the neck whenever the HMD is at eye height.
 
-### 3. `splice_head` lands at predicted target  (tolerance: 10 mm)
+### 3. `head_mount` lands at predicted target  (tolerance: 10 mm)
 
-`splice_head.world_pos` should equal
+`head_mount.world_pos` should equal
 `driven_t.world_pos + R(driven_t.world_rot) * head_target_offset`,
 where `head_target_offset = R(rot_y(offset_yaw)) * -eye_offset`.  Confirms
-the spine FABRIK actually drove splice_head to the AimConstraint-defined
-target, rather than splice_head being grounded by a stale `copy_position`
+the spine FABRIK actually drove head_mount to the AimConstraint-defined
+target, rather than head_mount being grounded by a stale `copy_position`
 or the chain failing to reach.
 
 ## Reading the output (｡◕‿◕｡)
@@ -119,8 +119,8 @@ magnitude was.
 | ------- | -------------- |
 | `bone_length ... FAIL drift=+0.05` repeated across pose set | Solver pulling joints past their parent — e.g. FABRIK iteration count too low for an unreachable target, or chain order reversed (root vs end_effector swapped). |
 | `monotonic_y FAIL at J_Bip_C_Chest` only on extreme pitch | FABRIK extending the chain straight at the target with no pole hint — the spine is curling forward through itself.  Need a pole/midline constraint when we add one. |
-| `splice_head ... FAIL drift > 1cm` at rest | `copy_position` accidentally re-enabled on the head AimConstraint, OR `target_position_offset` not flowing into FABRIK, OR `head_target_offset_in_target_local` reading the wrong eye_offset (sample before AVC reparents the camera). |
-| Pose `rest` already failing | Almost always an init-order issue — bones queried before GLTF spawn, or AVC's `splice_head` not connecting because head bone wasn't found.  Check the `[AVC]` log lines. |
+| `head_mount ... FAIL drift > 1cm` at rest | `copy_position` accidentally re-enabled on the head AimConstraint, OR `target_position_offset` not flowing into FABRIK, OR `head_target_offset_in_target_local` reading the wrong eye_offset (sample before AVC reparents the camera). |
+| Pose `rest` already failing | Almost always an init-order issue — bones queried before GLTF spawn, or AVC's `head_mount` not connecting because head bone wasn't found.  Check the `[AVC]` log lines. |
 
 ## Limits to keep in mind
 
@@ -135,7 +135,7 @@ magnitude was.
 - **Only the spine chain is checked.**  Arms, fingers, root-yaw, and the
   hips translate-follow (still WIP) are not exercised here.  Add poses +
   bones for those when they land.
-- **The `splice_head` prediction depends on capturing `eye_offset` BEFORE
+- **The `head_mount` prediction depends on capturing `eye_offset` BEFORE
   AVC init**, because AVC re-parents the camera-wrapper T out from under
   itself during init.  See the comment in `main()` near the
   `head_target_offset_in_target_local` call.

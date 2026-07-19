@@ -3,7 +3,7 @@
 Date: 2026-05-07
 
 Sketch for promoting velocity from a private field hidden inside
-`KineticResponseComponent` to first-class components attached to a `TransformComponent`.
+`CollisionResponseComponent` to first-class components attached to a `TransformComponent`.
 Goal: a single source of truth for "this thing is moving" / "this thing is rotating",
 shared by kinetic response, dynamic chains (leash / spring), and any future system
 that needs motion state (collision response, audio doppler, motion blur, jiggle that
@@ -15,10 +15,10 @@ Not yet a task. This is the design surface to settle before refactoring `src/`.
 
 ## Today
 
-- `KineticResponseComponent` owns a private `velocity: [f32; 3]`
-  (`docs/spec/kinetic-response.md` lines 92-94, runtime-only, not serialized).
+- `CollisionResponseComponent` owns a private `velocity: [f32; 3]`
+  (`docs/spec/collision-response.md` lines 92-94, runtime-only, not serialized).
 - That velocity is integrated, damped, and consumed in
-  `KineticResponseSystem::tick_with_queue` and never exposed outside that system.
+  `CollisionResponseSystem::tick_with_queue` and never exposed outside that system.
 - Spring bones own their own per-stage angular-velocity state inside
   `TransformStreamSystem` (keyed by stage path).
 - IK is fully stateless — no velocity anywhere.
@@ -31,7 +31,7 @@ upcoming reasons that pressure starts to land:
    angular velocity for damping and momentum, and would benefit from reading the
    linear velocity of the anchor TC (so jerks propagate down the chain).
 2. **Audio / FX**: a system that triggers footstep events or doppler shifts
-   needs to read TC linear velocity without depending on `KineticResponseComponent`.
+   needs to read TC linear velocity without depending on `CollisionResponseComponent`.
 3. **History-aware behavior**: temporal IK, motion-blur authoring, predictive
    collision — all want "what was this transform doing N ticks ago?"
 
@@ -63,7 +63,7 @@ pub enum VelocitySource {
     /// TC is the source of truth for position; velocity is derived.
     DerivedFromTransform,
 
-    /// Owned by an external system (e.g. KineticResponseSystem). VelocitySystem
+    /// Owned by an external system (e.g. CollisionResponseSystem). VelocitySystem
     /// must not overwrite `current`. The owning system is responsible for
     /// pushing into history each tick.
     OwnedBy(SystemTag),
@@ -115,7 +115,7 @@ elsewhere.
 
 ```rust
 pub enum SystemTag {
-    KineticResponse,
+    CollisionResponse,
     DynamicChain,
     Animation,
     UserScript,
@@ -136,7 +136,7 @@ via `source`.
 - `DerivedFromTransform` → `VelocitySystem` writes after `TransformSystem` has
   propagated world matrices, by computing `(world_pos_now - world_pos_prev) / dt`.
   Authoritative for purely-animated TCs (skeletal animation, scripted move).
-- `OwnedBy(KineticResponse)` → `KineticResponseSystem` writes during its tick.
+- `OwnedBy(CollisionResponse)` → `CollisionResponseSystem` writes during its tick.
   `VelocitySystem` reads but does not overwrite. Pushing into history is the
   owner's responsibility (or `VelocitySystem` does the push pass last).
 - `OwnedBy(DynamicChain)` → analogous, for chain-driven TCs.
@@ -152,7 +152,7 @@ history (some writers pushing, others not).
 
 - `VelocitySystem::derive` must run **after** `TransformSystem` has settled all
   world matrices for the tick (so the position delta is real).
-- `KineticResponseSystem` must run **before** `VelocitySystem::push_history` (so
+- `CollisionResponseSystem` must run **before** `VelocitySystem::push_history` (so
   the latest value is the one history sees).
 - Dynamic-chain / IK consumers reading `previous()` see *last tick's* history,
   which is correct — current tick's value isn't pushed yet.
@@ -162,7 +162,7 @@ The natural placement in `SystemWorld::tick`:
 ```
 ... existing tick ...
 TransformPipeline / Transform / SkinnedMesh
-KineticResponse              ← writes velocity.current
+CollisionResponse              ← writes velocity.current
 DynamicChain (future)        ← writes angular_velocity.current
 ...
 VelocitySystem::derive       ← writes current for DerivedFromTransform sources
@@ -171,28 +171,28 @@ VelocitySystem::push_history ← snapshot all into history (final pass)
 
 ---
 
-## Refactor of `KineticResponseComponent`
+## Refactor of `CollisionResponseComponent`
 
-`KineticResponseComponent` stops owning velocity. It instead requires a sibling
+`CollisionResponseComponent` stops owning velocity. It instead requires a sibling
 `VelocityComponent` on its TC (authored explicitly, or auto-spawned at register
 time if missing).
 
 ```rust
 TransformComponent {
-    VelocityComponent::owned_by(KineticResponse).with_history(8) {}
+    VelocityComponent::owned_by(CollisionResponse).with_history(8) {}
     CollisionComponent::KINEMATIC() {
         CollisionShapeComponent { ... }
-        KineticResponseComponent::push() { ... }
+        CollisionResponseComponent::push() { ... }
     }
 }
 ```
 
-`KineticResponseSystem::tick_with_queue` reads/writes
+`CollisionResponseSystem::tick_with_queue` reads/writes
 `velocity_component.current` instead of `response.velocity`. Friction, gravity
 integration, push accumulation all stay in this system — `VelocityComponent`
 is the storage, not the integrator.
 
-What moves out of `KineticResponseComponent`:
+What moves out of `CollisionResponseComponent`:
 - `velocity: [f32; 3]` field → `VelocityComponent.current`
 
 What stays:
@@ -235,7 +235,7 @@ shows a problem.
 ## Encode / decode
 
 - `current` is **runtime-only** — not serialized (matches today's
-  `KineticResponseComponent.velocity` behavior).
+  `CollisionResponseComponent.velocity` behavior).
 - `history` is runtime-only.
 - `history_capacity` and `source` are serialized — they're authored config.
 

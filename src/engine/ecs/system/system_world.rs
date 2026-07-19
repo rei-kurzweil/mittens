@@ -10,6 +10,7 @@ use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::CameraSystem;
 use crate::engine::ecs::system::ClippingSystem;
 use crate::engine::ecs::system::ClockSystem;
+use crate::engine::ecs::system::CollisionResponseSystem;
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::system::GltfBoundsVisualizationSystem;
@@ -17,7 +18,6 @@ use crate::engine::ecs::system::HttpClientSystem;
 use crate::engine::ecs::system::HttpServerSystem;
 use crate::engine::ecs::system::InputSystem;
 use crate::engine::ecs::system::InputXRGamepadSystem;
-use crate::engine::ecs::system::KineticResponseSystem;
 use crate::engine::ecs::system::LightSystem;
 use crate::engine::ecs::system::MirrorSystem;
 use crate::engine::ecs::system::MusicSystem;
@@ -82,7 +82,7 @@ pub struct SystemWorld {
     pub transform: TransformSystem,
     pub bvh: BvhSystem,
     pub collision: CollisionSystem,
-    pub kinetic_response: KineticResponseSystem,
+    pub collision_response: CollisionResponseSystem,
     pub skinned_mesh: SkinnedMeshSystem,
     pub renderable: RenderableSystem,
     pub clipping: ClippingSystem,
@@ -290,7 +290,7 @@ mod tests {
         let mut avatar = AvatarControlComponent::new();
         // Mark this synthetic avatar initialized so the tick exercises the
         // steady-state correction that follows a replace-mode pose write.
-        avatar.splice_head = Some(displaced_head);
+        avatar.head_mount = Some(displaced_head);
         avatar.displaced_head = Some(displaced_head);
         avatar.model_root_id = Some(model_root);
         avatar.model_root_local_y = 0.0;
@@ -851,10 +851,10 @@ impl SystemWorld {
         root: ComponentId,
     ) {
         use crate::engine::ecs::component::{
-            CollisionComponent, ControllerXRComponent, HttpClientComponent, HttpServerComponent,
-            InputXRComponent, KineticResponseComponent, PointerComponent, RayCastComponent,
-            RenderableComponent, SignalRouteUpwardComponent, StencilClipComponent,
-            TransformComponent,
+            CollisionComponent, CollisionResponseComponent, ControllerXRComponent,
+            HttpClientComponent, HttpServerComponent, InputXRComponent, PointerComponent,
+            RayCastComponent, RenderableComponent, SignalRouteUpwardComponent,
+            StencilClipComponent, TransformComponent,
         };
 
         // Best-effort: remove system state for known component types before deleting.
@@ -894,10 +894,10 @@ impl SystemWorld {
                 self.remove_collision(world, visuals, n);
             }
             if world
-                .get_component_by_id_as::<KineticResponseComponent>(n)
+                .get_component_by_id_as::<CollisionResponseComponent>(n)
                 .is_some()
             {
-                self.remove_kinetic_response(world, visuals, n);
+                self.remove_collision_response(world, visuals, n);
             }
             if world
                 .get_component_by_id_as::<AvatarControlComponent>(n)
@@ -1305,11 +1305,11 @@ impl SystemWorld {
             IntentValue::RemoveCollision { component } => {
                 self.remove_collision(world, visuals, *component);
             }
-            IntentValue::RegisterKineticResponse { component } => {
-                self.register_kinetic_response(world, visuals, *component);
+            IntentValue::RegisterCollisionResponse { component } => {
+                self.register_collision_response(world, visuals, *component);
             }
-            IntentValue::RemoveKineticResponse { component } => {
-                self.remove_kinetic_response(world, visuals, *component);
+            IntentValue::RemoveCollisionResponse { component } => {
+                self.remove_collision_response(world, visuals, *component);
             }
 
             IntentValue::RemoveSubtree { target } => {
@@ -1951,25 +1951,25 @@ impl SystemWorld {
         self.collision.register_collision(world, visuals, component);
     }
 
-    /// Register a KineticResponseComponent instance with the KineticResponseSystem.
-    pub fn register_kinetic_response(
+    /// Register a CollisionResponseComponent instance with the CollisionResponseSystem.
+    pub fn register_collision_response(
         &mut self,
         world: &mut World,
         _visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.kinetic_response
-            .register_kinetic_response(world, component);
+        self.collision_response
+            .register_collision_response(world, component);
     }
 
-    /// Remove a KineticResponseComponent instance from the KineticResponseSystem.
-    pub fn remove_kinetic_response(
+    /// Remove a CollisionResponseComponent instance from the CollisionResponseSystem.
+    pub fn remove_collision_response(
         &mut self,
         _world: &mut World,
         _visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.kinetic_response.remove_kinetic_response(component);
+        self.collision_response.remove_collision_response(component);
     }
 
     /// Remove a CollisionComponent instance from the CollisionSystem.
@@ -2609,10 +2609,10 @@ impl SystemWorld {
         self.collision
             .tick_with_rx(world, visuals, input, dt_sec, &mut self.rx);
 
-        // Default kinematic-vs-static collision response (opt-in via KineticResponseComponent).
+        // Default kinematic-vs-static collision response (opt-in via CollisionResponseComponent).
         // This may enqueue transform updates; flush them immediately so camera/OpenXR
         // consume resolved transforms this frame.
-        self.kinetic_response.tick_with_queue(
+        self.collision_response.tick_with_queue(
             world,
             visuals,
             input,
@@ -2704,7 +2704,8 @@ impl SystemWorld {
         // Runs after OpenXR + raycasts + gestures so avatar_driven_t.matrix_world is current.
         let phase_started = profile_systems.then(Instant::now);
         self.avatar_body_yaw.tick(world, queue, dt_sec);
-        self.avatar_control.tick(world, input, queue, dt_sec);
+        self.avatar_control
+            .tick(world, input, render_assets, queue, dt_sec);
         // AVC can queue head-restoration and first-tick splice transforms. Commit
         // them before body-follow samples the displaced head: body-follow must
         // never consume queued/stale AVC transforms.

@@ -64,8 +64,8 @@ pub enum IKSolver {
 
     /// Iterative FABRIK solver — works for any chain length ≥ 2.
     ///
-    /// Used for spine bending: chain hips → ... → splice_head with the head pose
-    /// driver as the target.  The spine rotates so the end-effector (splice_head)
+    /// Used for spine bending: chain hips → ... → head_mount with the head pose
+    /// driver as the target.  The spine rotates so the end-effector (head_mount)
     /// FK-lands at the target position.
     ///
     /// `target_position_offset`: same semantics as `AimConstraint` — offset in the
@@ -81,7 +81,7 @@ pub enum IKSolver {
 
 /// Marks the root joint of an IK chain.
 ///
-/// Place this as a **child of the root joint TC** (e.g. `J_Bip_L_UpperArm`, `splice_head`).
+/// Place this as a **child of the root joint TC** (e.g. `J_Bip_L_UpperArm`, `head_mount`).
 /// The IKSystem finds this component, reads its parent TC as the root joint, walks down to
 /// `end_effector_id` to collect the chain, reads the target pose from `target_id`, solves,
 /// and emits `UpdateTransform` for each joint.

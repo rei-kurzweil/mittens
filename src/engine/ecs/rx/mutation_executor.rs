@@ -394,14 +394,14 @@ impl RxMutationExecutor {
                     systems.remove_collision(world, visuals, component);
                 }
             }
-            IntentValue::RegisterKineticResponse { component_ids } => {
+            IntentValue::RegisterCollisionResponse { component_ids } => {
                 for &component in component_ids.iter() {
-                    systems.register_kinetic_response(world, visuals, component);
+                    systems.register_collision_response(world, visuals, component);
                 }
             }
-            IntentValue::RemoveKineticResponse { component_ids } => {
+            IntentValue::RemoveCollisionResponse { component_ids } => {
                 for &component in component_ids.iter() {
-                    systems.remove_kinetic_response(world, visuals, component);
+                    systems.remove_collision_response(world, visuals, component);
                 }
             }
             IntentValue::RegisterAvatarControl { component_ids } => {

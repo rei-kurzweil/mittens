@@ -158,7 +158,7 @@ ED {
 //                       ├── TransformForkTRS (body yaw pipeline root)
 //                       │     └── … → T (model_root, y = -avatar_height)
 //                       │                └── GLTF { EM }
-//                       └── [sys] splice_head  (TC injected above J_Bip_C_Head)
+//                       └── [sys] head_mount  (TC injected above J_Bip_C_Head)
 //                                   └── IKChain { AimConstraint }
 ED {
     I.speed(1.5) {

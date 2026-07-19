@@ -1622,10 +1622,9 @@ fn gltf_pose_animation_example_imports_named_pose_factories() {
     let poses: Vec<_> = world
         .all_components()
         .filter_map(|id| {
-            world
-                .get_component_by_id_as::<crate::engine::ecs::component::PoseCapturePoseComponent>(
-                    id,
-                )
+            world.get_component_by_id_as::<crate::engine::ecs::component::PoseCapturePoseComponent>(
+                id,
+            )
         })
         .collect();
     assert_eq!(poses.len(), 3);
@@ -1653,10 +1652,9 @@ fn gltf_pose_animation_example_imports_named_pose_factories() {
         .children_of(avatar_gltf)
         .iter()
         .filter_map(|id| {
-            world
-                .get_component_by_id_as::<crate::engine::ecs::component::PoseCapturePoseComponent>(
-                    *id,
-                )
+            world.get_component_by_id_as::<crate::engine::ecs::component::PoseCapturePoseComponent>(
+                *id,
+            )
         })
         .collect();
     assert_eq!(direct_startup_poses.len(), 1);
@@ -1697,9 +1695,8 @@ fn gltf_pose_animation_example_imports_named_pose_factories() {
 fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
     use crate::engine::ecs::component::{
         Camera3DComponent, CameraXRComponent, CollisionComponent, CollisionMode,
-        InputComponent, InputTransformModeComponent, InputXRComponent, SpotLightComponent,
-        KineticResponseComponent, KineticResponseMode, RenderableComponent,
-        SecondaryMotionComponent, SpringBoneComponent,
+        InputComponent, InputTransformModeComponent, InputXRComponent, RenderableComponent,
+        SecondaryMotionComponent, SpotLightComponent, SpringBoneComponent,
     };
     let source = include_str!("../../examples/secondary-motion-desktop.mms");
     let mut world = World::default();
@@ -1829,7 +1826,7 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
         );
     }
 
-    let avatar_tree = descendants(named("avatar_driver"));
+    let avatar_tree = descendants(named("avatar_head_driver"));
     assert_eq!(
         avatar_tree
             .iter()
@@ -1837,27 +1834,20 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
                 .get_component_by_id_as::<CollisionComponent>(id)
                 .is_some_and(|collision| collision.mode == CollisionMode::Kinematic))
             .count(),
-        1
+        0
     );
-    assert_eq!(
-        avatar_tree
-            .iter()
-            .filter(|&&id| world
-                .get_component_by_id_as::<KineticResponseComponent>(id)
-                .is_some_and(|response| response.mode == KineticResponseMode::Slide))
-            .count(),
-        1
-    );
+    assert!(!source.contains("avatar_body_collider"));
+    assert!(!source.contains("I.speed(0.0)"));
 
     assert_eq!(
         count(&|id| world.get_component_by_id_as::<InputComponent>(id).is_some()),
-        2
+        1
     );
     assert_eq!(
         count(&|id| world
             .get_component_by_id_as::<InputTransformModeComponent>(id)
             .is_some()),
-        2
+        1
     );
 
     let locomotion_mode = world
@@ -1865,19 +1855,8 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
         .iter()
         .find_map(|id| world.get_component_by_id_as::<InputTransformModeComponent>(*id))
         .expect("desktop locomotion mode");
-    assert!(!locomotion_mode.rotation_enabled);
-    assert!(matches!(
-        locomotion_mode.translation_basis_source.as_ref(),
-        Some(crate::engine::ecs::component::ComponentRef::Query(query))
-            if query == "../#avatar_head_driver"
-    ));
-
-    let head_mode = world
-        .children_of(named("desktop_head_input"))
-        .iter()
-        .find_map(|id| world.get_component_by_id_as::<InputTransformModeComponent>(*id))
-        .expect("desktop head mode");
-    assert!(head_mode.rotation_enabled && head_mode.fps_rotation);
+    assert!(locomotion_mode.rotation_enabled && locomotion_mode.fps_rotation);
+    assert!(locomotion_mode.translation_basis_source.is_none());
     assert_eq!(
         count(&|id| world
             .get_component_by_id_as::<Camera3DComponent>(id)
@@ -1924,31 +1903,41 @@ fn lights_example_materializes_all_light_types_and_labeled_targets() {
     let ids: Vec<_> = world.all_components().collect();
     assert_eq!(
         ids.iter()
-            .filter(|&&id| world.get_component_by_id_as::<AmbientLightComponent>(id).is_some())
+            .filter(|&&id| world
+                .get_component_by_id_as::<AmbientLightComponent>(id)
+                .is_some())
             .count(),
         1
     );
     assert_eq!(
         ids.iter()
-            .filter(|&&id| world.get_component_by_id_as::<DirectionalLightComponent>(id).is_some())
+            .filter(|&&id| world
+                .get_component_by_id_as::<DirectionalLightComponent>(id)
+                .is_some())
             .count(),
         1
     );
     assert_eq!(
         ids.iter()
-            .filter(|&&id| world.get_component_by_id_as::<PointLightComponent>(id).is_some())
+            .filter(|&&id| world
+                .get_component_by_id_as::<PointLightComponent>(id)
+                .is_some())
             .count(),
         1
     );
     assert_eq!(
         ids.iter()
-            .filter(|&&id| world.get_component_by_id_as::<SpotLightComponent>(id).is_some())
+            .filter(|&&id| world
+                .get_component_by_id_as::<SpotLightComponent>(id)
+                .is_some())
             .count(),
         1
     );
     assert_eq!(
         ids.iter()
-            .filter(|&&id| world.get_component_by_id_as::<Camera3DComponent>(id).is_some())
+            .filter(|&&id| world
+                .get_component_by_id_as::<Camera3DComponent>(id)
+                .is_some())
             .count(),
         1
     );
@@ -1981,7 +1970,8 @@ fn lights_example_materializes_all_light_types_and_labeled_targets() {
         "lights_camera",
     ] {
         assert!(
-            ids.iter().any(|&id| world.component_label(id) == Some(name)),
+            ids.iter()
+                .any(|&id| world.component_label(id) == Some(name)),
             "missing {name}"
         );
     }
@@ -1991,12 +1981,19 @@ fn lights_example_materializes_all_light_types_and_labeled_targets() {
         .filter_map(|&id| world.get_component_by_id_as::<TextComponent>(id))
         .collect();
     assert_eq!(labels.len(), 4);
-    for expected in ["AmbientLight", "DirectionalLight", "PointLight", "SpotLight"] {
+    for expected in [
+        "AmbientLight",
+        "DirectionalLight",
+        "PointLight",
+        "SpotLight",
+    ] {
         assert!(labels.iter().any(|label| label.text == expected));
     }
     assert!(
         ids.iter()
-            .filter(|&&id| world.get_component_by_id_as::<EmissiveComponent>(id).is_some())
+            .filter(|&&id| world
+                .get_component_by_id_as::<EmissiveComponent>(id)
+                .is_some())
             .count()
             >= 12
     );
@@ -2028,9 +2025,11 @@ fn tripod_light_without_a_mounted_light_has_no_emissive_face() {
             .all_components()
             .all(|id| world.component_label(id) != Some("tripod_light_emissive_face"))
     );
-    assert!(world
-        .all_components()
-        .all(|id| world.get_component_by_id_as::<EmissiveComponent>(id).is_none()));
+    assert!(world.all_components().all(|id| {
+        world
+            .get_component_by_id_as::<EmissiveComponent>(id)
+            .is_none()
+    }));
 }
 
 #[test]
@@ -2070,14 +2069,18 @@ fn secondary_motion_desktop_avatar_separates_from_named_pile_cube() {
             -0.35 - light.position_ws[1],
             -light.position_ws[2],
         ];
-        let to_target_len =
-            (to_target[0] * to_target[0] + to_target[1] * to_target[1] + to_target[2] * to_target[2])
-                .sqrt();
+        let to_target_len = (to_target[0] * to_target[0]
+            + to_target[1] * to_target[1]
+            + to_target[2] * to_target[2])
+            .sqrt();
         let alignment = (light.direction_ws[0] * to_target[0]
             + light.direction_ws[1] * to_target[1]
             + light.direction_ws[2] * to_target[2])
             / to_target_len;
-        assert!(alignment > 0.999, "spotlight misses studio target: {alignment}");
+        assert!(
+            alignment > 0.999,
+            "spotlight misses studio target: {alignment}"
+        );
         assert!((light.angle - 0.62).abs() < 1e-6);
         assert!((light.penumbra - 0.35).abs() < 1e-6);
     }
@@ -2193,7 +2196,7 @@ fn secondary_motion_desktop_avatar_separates_from_named_pile_cube() {
         std::thread::yield_now();
     }
 
-    systems.kinetic_response.tick_with_queue(
+    systems.collision_response.tick_with_queue(
         &mut world,
         &mut visuals,
         &input,
@@ -4544,6 +4547,17 @@ fn roundtrip_collision_shape_sphere() {
 }
 
 #[test]
+fn roundtrip_collision_shape_capsule_clamps_dimensions() {
+    use crate::engine::ecs::component::{CollisionShape, CollisionShapeComponent};
+    let original = CollisionShapeComponent::capsule_y(-1.5, 2.25);
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<CollisionShapeComponent>(id)
+        .unwrap();
+    assert_eq!(got.shape, CollisionShape::capsule_y(0.0, 2.25));
+}
+
+#[test]
 fn roundtrip_raycastable_shape() {
     use crate::engine::ecs::component::{RaycastableShapeComponent, RaycastableShapeType};
     let (world, id) = roundtrip_component(RaycastableShapeComponent::cone());
@@ -4712,7 +4726,9 @@ fn roundtrip_avatar_control() {
         .with_forward_plus_z()
         .with_hand_rotation_smoothing(220.0)
         .with_camera_bone("J_Bip_C_Head")
-        .with_avatar_height(1.7);
+        .with_avatar_height(1.7)
+        .with_capsule_radius(0.31)
+        .with_collision_disabled();
     let (world, id) = roundtrip_component(original);
     let got = world
         .get_component_by_id_as::<AvatarControlComponent>(id)
@@ -4724,6 +4740,8 @@ fn roundtrip_avatar_control() {
     assert_eq!(got.hand_rotation_smoothing, Some(220.0));
     assert_eq!(got.camera_bone.as_deref(), Some("J_Bip_C_Head"));
     assert_eq!(got.avatar_height, Some(1.7));
+    assert_eq!(got.capsule_radius, 0.31);
+    assert!(!got.collision_enabled);
 }
 
 #[test]
@@ -4840,18 +4858,25 @@ fn roundtrip_renderer_stats() {
 }
 
 #[test]
-fn roundtrip_kinetic_response() {
-    use crate::engine::ecs::component::{KineticResponseComponent, KineticResponseMode};
-    let original = KineticResponseComponent::push()
+fn roundtrip_collision_response() {
+    use crate::engine::ecs::component::{
+        CollisionResponseComponent, CollisionResponseMode, ComponentRef,
+    };
+    let original = CollisionResponseComponent::push()
         .with_push_strength(8.0)
         .with_friction(0.5)
-        .with_friction_y(0.25);
+        .with_friction_y(0.25)
+        .movement_target(ComponentRef::Query("/#locomotion".to_string()));
     let (world, id) = roundtrip_component(original);
     let got = world
-        .get_component_by_id_as::<KineticResponseComponent>(id)
+        .get_component_by_id_as::<CollisionResponseComponent>(id)
         .unwrap();
-    assert_eq!(got.mode, KineticResponseMode::Push);
+    assert_eq!(got.mode, CollisionResponseMode::Push);
     assert!((got.push_strength - 8.0).abs() < 1e-6);
     assert!((got.friction - 0.5).abs() < 1e-6);
     assert!((got.friction_y - 0.25).abs() < 1e-6);
+    assert_eq!(
+        got.movement_target_source,
+        Some(ComponentRef::Query("/#locomotion".to_string()))
+    );
 }

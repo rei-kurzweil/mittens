@@ -165,7 +165,7 @@ I.speed(2.0) {
         name = "desktop_camera_rig"
         Collision.kinematic() {
             CollisionShape.sphere(0.22)
-            KineticResponse.slide() {}
+            CollisionResponse.slide() {}
         }
         C3D { Pointer {} }
         T.position(0.0, -1.7, 1.0).rotation(0.0, 3.14159, 0.0) {

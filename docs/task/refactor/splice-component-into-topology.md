@@ -420,7 +420,7 @@ Examples from the current codebase:
 
 | Splice site | Inserted tree root | Output node (where old child lands) |
 |---|---|---|
-| Head bone | `splice_head` (plain TC) | same — root IS the output |
+| Head bone | `head_mount` (plain TC) | same — root IS the output |
 | Hand bone | `ControllerXRComponent` | `driven_t` → `TransformPipelineOutput` → `smoothed_t` |
 | Body rotation | `TransformPipelineComponent` | `TransformPipelineOutputComponent` |
 

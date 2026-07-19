@@ -1,8 +1,8 @@
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::Component;
+use crate::engine::ecs::component::{Component, ComponentRef};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KineticResponseMode {
+pub enum CollisionResponseMode {
     /// Kinematic "slide" resolution: push the body out of static overlaps using AABB penetration.
     Slide,
 
@@ -15,11 +15,11 @@ pub enum KineticResponseMode {
 ///
 /// Preferred topology is nesting under the collider:
 ///
-/// `TransformComponent -> CollisionComponent -> KineticResponseComponent`
+/// `TransformComponent -> CollisionComponent -> CollisionResponseComponent`
 #[derive(Debug, Clone)]
-pub struct KineticResponseComponent {
+pub struct CollisionResponseComponent {
     pub enabled: bool,
-    pub mode: KineticResponseMode,
+    pub mode: CollisionResponseMode,
 
     /// Max number of correction iterations per tick (helps resolve corner cases).
     pub max_iterations: u32,
@@ -50,14 +50,22 @@ pub struct KineticResponseComponent {
     /// Runtime-only cached gravity coefficient from the nearest enabled `GravityComponent`
     /// ancestor.
     ///
-    /// This is set by `KineticResponseSystem` when the component is registered.
+    /// This is set by `CollisionResponseSystem` when the component is registered.
     pub gravity_coefficient: f32,
+
+    /// Authored movement destination, resolved again on every response frame.
+    pub movement_target_source: Option<ComponentRef>,
+
+    /// Runtime-only movement destination used by generated collider topologies.
+    pub movement_target_id: Option<ComponentId>,
+
+    pub(crate) movement_target_required: bool,
 
     component: Option<ComponentId>,
 }
 
-impl KineticResponseComponent {
-    pub fn new(mode: KineticResponseMode) -> Self {
+impl CollisionResponseComponent {
+    pub fn new(mode: CollisionResponseMode) -> Self {
         Self {
             enabled: true,
             mode,
@@ -69,12 +77,15 @@ impl KineticResponseComponent {
             max_speed: 6.0,
             velocity: [0.0, 0.0, 0.0],
             gravity_coefficient: 0.0,
+            movement_target_source: None,
+            movement_target_id: None,
+            movement_target_required: false,
             component: None,
         }
     }
 
     pub fn slide() -> Self {
-        let mut c = Self::new(KineticResponseMode::Slide);
+        let mut c = Self::new(CollisionResponseMode::Slide);
         c.push_strength = 0.0;
         c.friction = 0.0;
         c.max_speed = 0.0;
@@ -82,7 +93,7 @@ impl KineticResponseComponent {
     }
 
     pub fn push() -> Self {
-        Self::new(KineticResponseMode::Push)
+        Self::new(CollisionResponseMode::Push)
     }
 
     pub fn with_push_strength(mut self, push_strength: f32) -> Self {
@@ -99,17 +110,28 @@ impl KineticResponseComponent {
         self.friction_y = friction_y.max(0.0);
         self
     }
+
+    pub fn movement_target(mut self, target: ComponentRef) -> Self {
+        self.movement_target_source = Some(target);
+        self
+    }
+
+    pub(crate) fn with_runtime_movement_target(mut self, target: Option<ComponentId>) -> Self {
+        self.movement_target_id = target;
+        self.movement_target_required = true;
+        self
+    }
 }
 
-impl Default for KineticResponseComponent {
+impl Default for CollisionResponseComponent {
     fn default() -> Self {
         Self::slide()
     }
 }
 
-impl Component for KineticResponseComponent {
+impl Component for CollisionResponseComponent {
     fn name(&self) -> &'static str {
-        "kinetic_response"
+        "collision_response"
     }
 
     fn set_id(&mut self, component: ComponentId) {
@@ -127,7 +149,7 @@ impl Component for KineticResponseComponent {
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         emit.push_intent_now(
             component,
-            crate::engine::ecs::IntentValue::RegisterKineticResponse {
+            crate::engine::ecs::IntentValue::RegisterCollisionResponse {
                 component_ids: vec![component],
             },
         );
@@ -140,7 +162,7 @@ impl Component for KineticResponseComponent {
     ) {
         emit.push_intent_now(
             component,
-            crate::engine::ecs::IntentValue::RemoveKineticResponse {
+            crate::engine::ecs::IntentValue::RemoveCollisionResponse {
                 component_ids: vec![component],
             },
         );
@@ -152,16 +174,28 @@ impl Component for KineticResponseComponent {
     ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let ctor = match self.mode {
-            KineticResponseMode::Slide => "slide",
-            KineticResponseMode::Push => "push",
+            CollisionResponseMode::Slide => "slide",
+            CollisionResponseMode::Push => "push",
         };
-        ce_call("KineticResponse", ctor, vec![])
+        let mut ce = ce_call("CollisionResponse", ctor, vec![])
             .with_call("enabled", vec![b(self.enabled)])
             .with_call("max_iterations", vec![num(self.max_iterations as f64)])
             .with_call("push_out_epsilon", vec![num(self.push_out_epsilon as f64)])
             .with_call("push_strength", vec![num(self.push_strength as f64)])
             .with_call("friction", vec![num(self.friction as f64)])
             .with_call("friction_y", vec![num(self.friction_y as f64)])
-            .with_call("max_speed", vec![num(self.max_speed as f64)])
+            .with_call("max_speed", vec![num(self.max_speed as f64)]);
+        if let Some(target) = &self.movement_target_source {
+            let expr = match target {
+                ComponentRef::Guid(guid) => {
+                    crate::scripting::ast::Expression::String(format!("@uuid:{guid}"))
+                }
+                ComponentRef::Query(query) => {
+                    crate::scripting::ast::Expression::String(query.clone())
+                }
+            };
+            ce = ce.with_call("movement_target", vec![expr]);
+        }
+        ce
     }
 }

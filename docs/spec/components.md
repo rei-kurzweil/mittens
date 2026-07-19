@@ -91,8 +91,8 @@ This document provides a comprehensive inventory of all built-in components in c
 - **CollisionComponent**
   - Marks a transform as a physical body (STATIC, KINEMATIC, RIGGED).
 - **CollisionShapeComponent**
-  - Defines the primitive or mesh-based shape used for collision detection.
-- **KineticResponseComponent**
+  - Defines cube, sphere, or upright `CapsuleY` geometry used for collision detection.
+- **CollisionResponseComponent**
   - Automatically resolves overlaps by pushing the body out of collisions.
 - **GravityComponent**
   - Defines a local gravity field that affects children in its subtree.

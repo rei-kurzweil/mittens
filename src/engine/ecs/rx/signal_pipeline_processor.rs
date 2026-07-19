@@ -116,8 +116,8 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterTextInput { component_ids }
             | IntentValue::RegisterCollision { component_ids }
             | IntentValue::RemoveCollision { component_ids }
-            | IntentValue::RegisterKineticResponse { component_ids }
-            | IntentValue::RemoveKineticResponse { component_ids }
+            | IntentValue::RegisterCollisionResponse { component_ids }
+            | IntentValue::RemoveCollisionResponse { component_ids }
             | IntentValue::RegisterAvatarControl { component_ids }
             | IntentValue::RegisterAvatarBodyYaw { component_ids }
             | IntentValue::RegisterIkChain { component_ids }
@@ -237,8 +237,8 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterTextInput { component_ids }
             | IntentValue::RegisterCollision { component_ids }
             | IntentValue::RemoveCollision { component_ids }
-            | IntentValue::RegisterKineticResponse { component_ids }
-            | IntentValue::RemoveKineticResponse { component_ids }
+            | IntentValue::RegisterCollisionResponse { component_ids }
+            | IntentValue::RemoveCollisionResponse { component_ids }
             | IntentValue::RegisterAvatarControl { component_ids }
             | IntentValue::RegisterAvatarBodyYaw { component_ids }
             | IntentValue::RegisterIkChain { component_ids }

@@ -174,10 +174,6 @@ T {
 
                 T.position(0.0, 0.08, 0.12) {
                     name = "xr_camera_wrapper"
-                    Collision.kinematic() {
-                        CollisionShape.sphere(0.18)
-                        KineticResponse.slide() {}
-                    }
                     CXR { Pointer {} }
                 }
 

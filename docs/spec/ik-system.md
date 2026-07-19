@@ -65,7 +65,7 @@ pub enum IKSolver {
 ```
 
 `IKChainComponent` is placed on the **root joint** of the chain (e.g. `J_Bip_L_UpperArm`
-for arm IK, `splice_head` for neck/head aim). No marker components are needed on the
+for arm IK, `head_mount` for neck/head aim). No marker components are needed on the
 intermediate joints or end-effector — the chain is implicitly the TC path from root to
 `end_effector_id`.
 
@@ -73,19 +73,12 @@ intermediate joints or end-effector — the chain is implicitly the TC path from
 
 ## The three avatar IK cases
 
-### Neck / head — AimConstraint
+### Neck / head
 
-| | |
-|---|---|
-| Root joint | `splice_head` (plain TC inserted above `J_Bip_C_Neck` by AVC) |
-| End effector | same as root (1 bone, chain length = 1) |
-| Target | `driven_t` — the TC child of `InputXRComponent`, set to HMD stage pose each tick |
-| Offset | `offset_yaw: PI` — OpenXR −Z forward → VRM +Z forward handedness correction |
-
-The solve is: `splice_head world_rot = target_world_rot × rot_y(offset_yaw)`, then
-decomposed to local: `splice_local_rot = inv(parent_world_rot) × splice_head_world_rot`.
-
-This replaces the manual computation currently hardcoded in `AvatarControlSystem::tick_one`.
+AVC no longer authors an `AimConstraint` for the head. It reparents the head
+bone beneath a fixed `head_mount` under the Input/InputXR-driven transform, so
+the pose is inherited directly. `AimConstraint` remains available to authored
+non-AVC IK chains.
 
 ### Arms — TwoBoneIK
 
@@ -127,7 +120,7 @@ the spine chain has no positional gap to close.
 1258  openxr.tick + flush          — driven_t and controller_driven_t set to this frame's poses
 ...
 1288  avatar_control.tick + flush  — topology init only (try_init_splices); no longer solves head rot
- NEW  ik.tick + flush              — AimConstraint (head), TwoBoneIK (arms), FABRIK (spine)
+ NEW  ik.tick + flush              — authored AimConstraint, TwoBoneIK (arms), FABRIK (spine)
  OPT  skinned_mesh.tick (second)   — zero-lag skin palette; only worthwhile if lag is perceptible
 ```
 

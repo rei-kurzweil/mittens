@@ -69,13 +69,13 @@ fn set_renderable_color_rgba(
     );
 }
 
-fn kinetic_response_child_of_collider(
+fn collision_response_child_of_collider(
     world: &engine::ecs::World,
     collider_cid: engine::ecs::ComponentId,
 ) -> Option<engine::ecs::ComponentId> {
     for &ch in world.children_of(collider_cid).iter() {
         if world
-            .get_component_by_id_as::<engine::ecs::component::KineticResponseComponent>(ch)
+            .get_component_by_id_as::<engine::ecs::component::CollisionResponseComponent>(ch)
             .is_some()
         {
             return Some(ch);
@@ -154,11 +154,11 @@ fn on_collision_freeze_gravity(
         return;
     }
 
-    let Some(response_cid) = kinetic_response_child_of_collider(world, self_collider) else {
+    let Some(response_cid) = collision_response_child_of_collider(world, self_collider) else {
         return;
     };
     if let Some(r) = world
-        .get_component_by_id_as_mut::<engine::ecs::component::KineticResponseComponent>(
+        .get_component_by_id_as_mut::<engine::ecs::component::CollisionResponseComponent>(
             response_cid,
         )
     {
@@ -218,7 +218,7 @@ fn main() {
         .add_component(engine::ecs::component::CollisionComponent::RIGGED());
     let cam_response = universe
         .world
-        .add_component(engine::ecs::component::KineticResponseComponent::slide());
+        .add_component(engine::ecs::component::CollisionResponseComponent::slide());
     let cam_shape =
         universe
             .world
@@ -811,7 +811,7 @@ fn main() {
     }
 
     // Square boundary walls around the floor edges.
-    // Note: STATIC colliders don't need KineticResponse; they still collide with kinematic/rigged.
+    // Note: STATIC colliders don't need CollisionResponse; they still collide with kinematic/rigged.
     fn spawn_boundary_wall(
         universe: &mut engine::Universe,
         x: f32,
@@ -930,7 +930,7 @@ fn main() {
             .add_component(engine::ecs::component::CollisionComponent::KINEMATIC());
 
         let response = universe.world.add_component({
-            let mut r = engine::ecs::component::KineticResponseComponent::push()
+            let mut r = engine::ecs::component::CollisionResponseComponent::push()
                 .with_push_strength(3.0)
                 .with_friction_y(18.0);
             // Allow higher fall speeds so gravity coefficients are visible.

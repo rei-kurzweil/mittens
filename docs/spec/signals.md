@@ -74,7 +74,7 @@ Design goal: handlers should be observers/emitters, not “the place where mutat
 - If an intent can be fulfilled with a **small amount of code** and is **not system-specific** (e.g. topology helpers like attach/detach/remove), implement it directly in the **IntentExecutor**.
 - If fulfilling an intent is more than a few lines, or clearly belongs to a system, the **IntentExecutor should still “own” fulfilling the intent**, but it should delegate to the appropriate system.
   - Example: an intent that affects rendering should delegate to Renderable/Texture/Visual systems.
-  - Example: an intent that affects physics should delegate to Collision/KineticResponse systems.
+  - Example: an intent that affects physics should delegate to Collision/CollisionResponse systems.
 
 ### Scoped dispatch
 

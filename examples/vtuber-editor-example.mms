@@ -187,10 +187,6 @@ ED {
 
                 T.position(0.0, 0.08, 0.12) {
                     name = "xr_camera_wrapper"
-                    Collision.kinematic() {
-                        CollisionShape.sphere(0.18)
-                        KineticResponse.slide() {}
-                    }
                     CXR { Pointer {} }
                 }
 
@@ -278,10 +274,6 @@ I.speed(1.0) {
     }
     T.position(3.1, 1.45, 3.9).rotation(0.0, 0.58, 0.0) {
         name = "desktop_camera_rig"
-        Collision.kinematic() {
-            CollisionShape.sphere(0.22)
-            KineticResponse.slide() {}
-        }
         C3D {
             Pointer {}
         }

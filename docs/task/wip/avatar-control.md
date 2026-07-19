@@ -19,8 +19,8 @@ TransformStreamSystem do or don't share structure.
 | Created node | Type | Purpose |
 |---|---|---|
 | `body_pipeline` | `TransformPipelineComponent` subtree | Shapes `driven_t` → `model_root` (yaw only) |
-| `splice_head` | `TransformComponent` | Injected above neck bone; receives head rotation |
-| `head_ik` | `IKChainComponent { AimConstraint }` | Sets `splice_head` world rot to match HMD |
+| `head_mount` | `TransformComponent` | Injected above neck bone; receives head rotation |
+| `head_ik` | `IKChainComponent { AimConstraint }` | Sets `head_mount` world rot to match HMD |
 | `arm_ik_left` | `IKChainComponent { TwoBoneIK }` | Reaches left arm toward controller |
 | `arm_ik_right` | `IKChainComponent { TwoBoneIK }` | Reaches right arm toward controller |
 
@@ -38,7 +38,7 @@ In **simple splice mode** (no arm IK resolved), also creates:
 | `OpenXRSystem` | Writes `driven_t` world pose (HMD) and controller `driven_t` world poses |
 | `TransformSystem` | Propagates world matrices; calls into `TransformStreamSystem` for pipeline nodes |
 | `TransformStreamSystem` | Evaluates body pipeline: `driven_t` → `QuatYawFollow` → `model_root.world` |
-| `AvatarControlSystem` | No-op after init (`splice_head.is_some()` short-circuits) |
+| `AvatarControlSystem` | No-op after init (`head_mount.is_some()` short-circuits) |
 | `IKSystem` | AimConstraint: head world rot; TwoBoneIK: arm rotations |
 
 `TransformStreamSystem` does not write directly — `TransformSystem` calls
@@ -54,13 +54,13 @@ processed in the same tick's signal drain.
 
 ### What happens now
 
-`head_bone = "J_Bip_C_Neck"` means `splice_head` is injected **above the neck bone**.
-`AimConstraint` sets `splice_head.world_rot = driven_t.world_rot × rot_y(π)`.
+`head_bone = "J_Bip_C_Neck"` means `head_mount` is injected **above the neck bone**.
+`AimConstraint` sets `head_mount.world_rot = driven_t.world_rot × rot_y(π)`.
 
-`J_Bip_C_Neck` (the neck bone) is displaced under `splice_head`. Its local offset from
-`splice_head` is the neck bone vector — roughly `[0, neck_length, 0]` at rest.
+`J_Bip_C_Neck` (the neck bone) is displaced under `head_mount`. Its local offset from
+`head_mount` is the neck bone vector — roughly `[0, neck_length, 0]` at rest.
 
-When `splice_head` rotates (e.g. pitching down), the neck bone rotates with it. The
+When `head_mount` rotates (e.g. pitching down), the neck bone rotates with it. The
 HEAD bone (`J_Bip_C_Head`) sits at the tip of the neck bone, so it **arcs forward and
 down** relative to the HMD position. From the user's perspective: looking down causes the
 vtuber head to swing forward in front of them.
@@ -68,9 +68,9 @@ vtuber head to swing forward in front of them.
 ```
 HMD position (driven_t) — stays fixed
       ↑
-neck_base (splice_head.world_pos) — stays fixed
+neck_base (head_mount.world_pos) — stays fixed
       |
-      | neck bone vector — ROTATES with splice_head
+      | neck bone vector — ROTATES with head_mount
       ↓
 J_Bip_C_Head — ARCS when pitching
 ```
@@ -88,17 +88,17 @@ Change `head_bone` to `"J_Bip_C_Head"` (the actual head bone, one level up from 
 
 ```
 J_Bip_C_Neck  (stays at rest pose — no IK on it)
-  └── splice_head  (TC injected here)
+  └── head_mount  (TC injected here)
         ├── IKChain { AimConstraint }
-        └── J_Bip_C_Head  (displaced under splice_head, local_pos = [0,0,0])
+        └── J_Bip_C_Head  (displaced under head_mount, local_pos = [0,0,0])
 ```
 
-`splice_head.world_pos = J_Bip_C_Neck.world_pos + rot(J_Bip_C_Neck.world_rot, head_local_offset)`
+`head_mount.world_pos = J_Bip_C_Neck.world_pos + rot(J_Bip_C_Neck.world_rot, head_local_offset)`
 
-Since `J_Bip_C_Neck` has no IK (stays at rest), its world_rot is constant → `splice_head`
+Since `J_Bip_C_Neck` has no IK (stays at rest), its world_rot is constant → `head_mount`
 stays at a **fixed world position** relative to `model_root`. Only its rotation changes.
-`J_Bip_C_Head` has `local_pos = [0,0,0]` relative to `splice_head` → it inherits world
-position directly from `splice_head` → **head stays fixed, only rotates**. No arcing. ✓
+`J_Bip_C_Head` has `local_pos = [0,0,0]` relative to `head_mount` → it inherits world
+position directly from `head_mount` → **head stays fixed, only rotates**. No arcing. ✓
 
 Tradeoff: the neck bone (`J_Bip_C_Neck`) no longer bends visually when looking down.
 It stays at rest pose. This is acceptable for now and is how most simple VR avatar
@@ -134,7 +134,7 @@ then head corrects rotation). Deferred until spine IK design is clearer.
 
 ```
 driven_t  →  [body pipeline: yaw only]  →  model_root (translation + yaw)
-driven_t  →  [AimConstraint IK]         →  splice_head (full rotation)
+driven_t  →  [AimConstraint IK]         →  head_mount (full rotation)
 controller →  [TwoBoneIK]               →  upper/lower arm rotation
 ```
 
@@ -150,7 +150,7 @@ Proposed data flow (not yet designed):
 
 ```
 driven_t  →  [TranslationFollow: XZ lag]  →  model_root (lagged position + yaw)
-driven_t  →  [AimConstraint IK]           →  splice_head (full rotation)
+driven_t  →  [AimConstraint IK]           →  head_mount (full rotation)
 hips_world_pos + driven_t.pos             →  [FABRIK spine chain]  →  spine bone rotations
 controller →  [TwoBoneIK]                →  upper/lower arm rotation
 ```
@@ -177,7 +177,7 @@ AVC
   │     └── GLTF → armature
   │           ├── hips  ←  spine IK root
   │           │     └── spine chain ... neck_base
-  │           │                          └── splice_head
+  │           │                          └── head_mount
   │           │                                ├── IKChain { AimConstraint }
   │           │                                └── J_Bip_C_Head
   │           ├── J_Bip_L_UpperArm  ←  IKChain { TwoBoneIK }
@@ -273,10 +273,10 @@ It could in principle be expressed as a `TransformPipelineQuatOp`:
 QuatOp::CopyWorldRotFromTarget { target_id, offset_yaw }
 ```
 
-...evaluated as a pipeline stage on `splice_head`. The pipeline input would be `driven_t`
+...evaluated as a pipeline stage on `head_mount`. The pipeline input would be `driven_t`
 world matrix (via `TransformPipelineVec3Op::SampleAncestor`).
 
-But: it still needs to **write to a TC** (`splice_head`) that isn't the inline child of the
+But: it still needs to **write to a TC** (`head_mount`) that isn't the inline child of the
 pipeline. That requires `PipelineRoute` (a TC-targeting output — not yet built). And the
 cross-TC read (`target_id`) breaks the pipeline's assumption that its input is always the
 parent world matrix.

@@ -7,7 +7,7 @@ Historical note: references below to `TransformPipelineOutputComponent` describe
 `AvatarControlSystem` does two things every tick:
 
 1. Emits `UpdateTransform` on `model_root` — translation + yaw-only rotation derived from `driven_t`.
-2. Emits `UpdateTransform` on `splice_head` — full rotation derived from `driven_t`.
+2. Emits `UpdateTransform` on `head_mount` — full rotation derived from `driven_t`.
 
 This is imperative per-tick math mixed into a system that also does one-time topology init
 (bone finding, splice insertion, hand controller re-parenting). The two concerns are conflated.
@@ -28,7 +28,7 @@ before it ever propagated to children, neither problem would arise.
 
 If `driven_t`'s transform is consumed by a `TransformPipeline` node placed directly under it,
 the pipeline intercepts the input world matrix and decides what each output subtree sees.
-No raw world-matrix propagation reaches `model_root` or `splice_head` without going through
+No raw world-matrix propagation reaches `model_root` or `head_mount` without going through
 a shaped stream.
 
 This means:
@@ -36,7 +36,7 @@ This means:
 - The body branch can strip pitch/roll from the rotation before `model_root` ever inherits it.
   `model_root`'s local `(0, -1.6, 0)` offset is then only ever rotated by a pure-Y body_yaw
   rotation, which leaves the Y component unchanged. **The circle bug cannot occur.**
-- The head branch can keep full rotation and route it to `splice_head` independently.
+- The head branch can keep full rotation and route it to `head_mount` independently.
 - Temporal state (body yaw follow) lives in `TransformStreamSystem` keyed by stage path,
   consistent with how `QuatTemporalFilter` already works.
 - `AvatarControlSystem` is reduced to topology init only: find bones, create splices,
@@ -60,7 +60,7 @@ Input / InputXR
         │         GLTF { }
         │           … armature …
         │               neck_parent
-        │                 T  ← splice_head (inserted by AvatarControlSystem init)
+        │                 T  ← head_mount (inserted by AvatarControlSystem init)
         │                   J_Bip_C_Neck
         │
         └── TransformPipeline  ← head branch
@@ -69,13 +69,13 @@ Input / InputXR
                 MapRotation: Pass  (+ π handedness correction for VR, or identity for desktop)
                 MapScale: Drop
               MergeTRS
-              PipelineRoute { target: splice_head }  ← targeted output, not inline
+              PipelineRoute { target: head_mount }  ← targeted output, not inline
 ```
 
 Two sibling pipeline nodes under `driven_t`, both reading `ParentWorld` (driven_t's world matrix).
 
 The body branch output **does not contain pitch**, so `model_root`'s local offset is unaffected.
-The head branch writes full rotation to `splice_head` wherever it lives in the armature.
+The head branch writes full rotation to `head_mount` wherever it lives in the armature.
 
 ---
 
@@ -136,7 +136,7 @@ in the component tree. `TransformPipelineRoute` instead writes to a TC found by 
 string, searching from a configured anchor (default: the pipeline's owner component's subtree
 upward to the nearest named ancestor, or configurable).
 
-The result: the head branch can live under `driven_t` and still write to `splice_head` which
+The result: the head branch can live under `driven_t` and still write to `head_mount` which
 is deep inside `model_root → GLTF → armature → neck_parent`. No re-parenting needed.
 
 ```rust
@@ -161,9 +161,9 @@ bones are found):
 
 1. Find `model_root` (first TC child of AVC).
 2. Search model_root subtree for `head_bone` by name. Retry if GLTF hasn't spawned yet.
-3. Insert `splice_head` (plain TC) as sibling of head_bone, displace head_bone under it.
+3. Insert `head_mount` (plain TC) as sibling of head_bone, displace head_bone under it.
 4. For each hand bone: resolve controller or insert plain TC splice.
-5. Ensure `splice_head` has a stable name/identifier so `TransformPipelineRoute` can find it.
+5. Ensure `head_mount` has a stable name/identifier so `TransformPipelineRoute` can find it.
 
 No per-tick code. The system can even be removed after init if it has a "run once and unregister" mechanism.
 
@@ -171,16 +171,16 @@ No per-tick code. The system can even be removed after init if it has a "run onc
 
 ## Open questions
 
-**Q: How does the head pipeline find `splice_head` before it has a stable name?**
+**Q: How does the head pipeline find `head_mount` before it has a stable name?**
 
-`AvatarControlSystem` creates `splice_head` dynamically. Two options:
-- Give the created TC a synthetic name (e.g. `__splice_head_<avc_id>`) so the pipeline
+`AvatarControlSystem` creates `head_mount` dynamically. Two options:
+- Give the created TC a synthetic name (e.g. `__head_mount_<avc_id>`) so the pipeline
   can find it by selector.
 - Store the `ComponentId` on `AvatarControlComponent` and give `TransformPipelineRoute`
   a way to read it (e.g. via `ComponentId`-based target rather than selector). This works
   in Rust but not in MMS v1 (which cannot pass live IDs as constructor args).
 - Have `AvatarControlSystem` init patch the selector string into the pipeline route component
-  after creating splice_head. Slightly imperative but scoped to init.
+  after creating head_mount. Slightly imperative but scoped to init.
 
 **Q: Is `QuatYawFollow` the right level of abstraction?**
 

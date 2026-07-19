@@ -16,7 +16,7 @@ pub struct CollisionShapeComponent {
 impl CollisionShapeComponent {
     pub fn new(shape: CollisionShape) -> Self {
         Self {
-            shape,
+            shape: shape.normalized(),
             component: None,
         }
     }
@@ -27,6 +27,10 @@ impl CollisionShapeComponent {
 
     pub fn sphere() -> Self {
         Self::new(CollisionShape::SPHERE())
+    }
+
+    pub fn capsule_y(radius: f32, half_segment: f32) -> Self {
+        Self::new(CollisionShape::capsule_y(radius, half_segment))
     }
 }
 
@@ -61,6 +65,14 @@ impl Component for CollisionShapeComponent {
             CollisionShape::Sphere { radius } => {
                 ce_call("CollisionShape", "sphere", vec![num(radius as f64)])
             }
+            CollisionShape::CapsuleY {
+                radius,
+                half_segment,
+            } => ce_call(
+                "CollisionShape",
+                "capsule_y",
+                vec![num(radius as f64), num(half_segment as f64)],
+            ),
         }
     }
 }

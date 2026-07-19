@@ -157,10 +157,6 @@ ED {
 //         }
 //         T.position(3.0, 1.2, 3.5) {
 //             name = "desktop_camera_rig"
-//             Collision.kinematic() {
-//                 CollisionShape.sphere(0.22)
-//                 KineticResponse.slide() {}
-//             }
 //             T {
 //                 AVC {
 //                     head_bone("J_Bip_C_Head")
@@ -217,10 +213,6 @@ T {
 
                     T.position(0.0, 0.08, 0.12) {
                         name = "xr_camera_wrapper"
-                        Collision.kinematic() {
-                            CollisionShape.sphere(0.18)
-                            KineticResponse.slide() {}
-                        }
                         CXR { Pointer {} }
                     }
 

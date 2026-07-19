@@ -42,7 +42,7 @@ tripod_light("studio_key_light", [-4.2, 0.0, 2.8], [0.0, -0.35, 0.0], SL.color(1
 tripod_light("studio_fill_light", [4.0, 0.0, 1.4], [0.0, -0.35, 0.0], SL.color(0.48, 0.68, 1.0).intensity(4.5).distance(11.0).angle(0.62).penumbra(0.35))
 tripod_light("studio_rim_light", [1.8, 0.0, -4.2], [0.0, -0.35, 0.0], SL.color(1.0, 0.42, 0.78).intensity(5.0).distance(11.0).angle(0.62).penumbra(0.35))
 
-// Floor top is y=-1.6, exactly touching the avatar collider's bottom face.
+// Floor top is y=-1.6, where AVC's measured capsule places the avatar's feet.
 static_cube("studio_floor", [0.0, -1.65, 0.0], [18.0, 0.1, 18.0], [0.025, 0.035, 0.075])
 
 // Stable, static piles: useful obstacles without rigid-body stack noise.
@@ -65,40 +65,20 @@ let avatar_gltf = GLTF.new("assets/models/bisket.11.0.glb") {
     bisket_secondary_motion(false)
 }
 
-let avatar_driver = T.position(0.0, -0.8, 1.0) {
-    name = "avatar_driver"
-    // This input-driven body box starts flush with the floor (bottom y=-1.6).
-    // The AVC is offset upward so its own driver remains at head level.
-    Collision.kinematic() {
-        name = "avatar_body_collider"
-        CollisionShape.cube([0.34, 0.8, 0.28])
-        KineticResponse.slide() {}
-    }
-    // Mouse look lives on its own head-level transform. Keeping pitch off the
-    // body/collider root prevents the 0.8-unit head offset from orbiting.
-    I.speed(0.0) {
-        name = "desktop_head_input"
-        InputTransformMode.forward_z() { roll_axis_y() fps_rotation() }
-        T.position(0.0, 0.8, 0.0) {
-            name = "avatar_head_driver"
-            AVC {
-                head_bone("J_Bip_C_Head")
-                initial_yaw(3.14159)
-                T { avatar_gltf }
-            }
-        }
-    }
-}
-
 I.speed(2.2) {
     name = "desktop_avatar_input"
-    // WASD translates the collider/body root using head yaw as its basis, but
-    // right-mouse rotation is handled only by desktop_head_input above.
     InputTransformMode.forward_z() {
-        rotation_disabled()
-        translation_basis("../#avatar_head_driver")
+        roll_axis_y()
+        fps_rotation()
     }
-    avatar_driver
+    T.position(0.0, 0.0, 1.0) {
+        name = "avatar_head_driver"
+        AVC {
+            head_bone("J_Bip_C_Head")
+            initial_yaw(3.14159)
+            T { avatar_gltf }
+        }
+    }
 }
 
 // Fixed third-person desktop camera; movement controls only the avatar driver.

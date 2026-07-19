@@ -7,6 +7,7 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
+use crate::engine::ecs::system::collision_geometry;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 use bvh::Point3;
@@ -722,89 +723,9 @@ fn aabb_overlap_bvh(a: &AABB, b: &AABB) -> bool {
 }
 
 fn world_aabb_for_collision_object(obj: &StoredObject) -> ([f32; 3], [f32; 3]) {
-    match obj.shape {
-        CollisionShape::Sphere { radius } => (
-            [
-                obj.position_world[0] - radius,
-                obj.position_world[1] - radius,
-                obj.position_world[2] - radius,
-            ],
-            [
-                obj.position_world[0] + radius,
-                obj.position_world[1] + radius,
-                obj.position_world[2] + radius,
-            ],
-        ),
-        CollisionShape::Cube { half_extents } => world_aabb_cube(obj.position_world, half_extents),
-    }
+    collision_geometry::world_aabb(obj.position_world, obj.shape)
 }
 
 fn intersects(a: &StoredObject, b: &StoredObject) -> bool {
-    match (a.shape, b.shape) {
-        (CollisionShape::Sphere { radius: ra }, CollisionShape::Sphere { radius: rb }) => {
-            let dx = a.position_world[0] - b.position_world[0];
-            let dy = a.position_world[1] - b.position_world[1];
-            let dz = a.position_world[2] - b.position_world[2];
-            let r = ra + rb;
-            dx * dx + dy * dy + dz * dz <= r * r
-        }
-        (CollisionShape::Cube { half_extents: ea }, CollisionShape::Cube { half_extents: eb }) => {
-            aabb_overlap(
-                world_aabb_cube(a.position_world, ea),
-                world_aabb_cube(b.position_world, eb),
-            )
-        }
-        (CollisionShape::Cube { half_extents }, CollisionShape::Sphere { radius })
-        | (CollisionShape::Sphere { radius }, CollisionShape::Cube { half_extents }) => {
-            let (cube_center, sphere_center) = if matches!(a.shape, CollisionShape::Cube { .. }) {
-                (a.position_world, b.position_world)
-            } else {
-                (b.position_world, a.position_world)
-            };
-            cube_sphere_intersect(cube_center, half_extents, sphere_center, radius)
-        }
-    }
-}
-
-fn world_aabb_cube(center: [f32; 3], half_extents: [f32; 3]) -> ([f32; 3], [f32; 3]) {
-    let min = [
-        center[0] - half_extents[0],
-        center[1] - half_extents[1],
-        center[2] - half_extents[2],
-    ];
-    let max = [
-        center[0] + half_extents[0],
-        center[1] + half_extents[1],
-        center[2] + half_extents[2],
-    ];
-    (min, max)
-}
-
-fn aabb_overlap(a: ([f32; 3], [f32; 3]), b: ([f32; 3], [f32; 3])) -> bool {
-    let (amin, amax) = a;
-    let (bmin, bmax) = b;
-    !(amax[0] < bmin[0]
-        || amin[0] > bmax[0]
-        || amax[1] < bmin[1]
-        || amin[1] > bmax[1]
-        || amax[2] < bmin[2]
-        || amin[2] > bmax[2])
-}
-
-fn cube_sphere_intersect(
-    cube_center: [f32; 3],
-    half_extents: [f32; 3],
-    sphere_center: [f32; 3],
-    radius: f32,
-) -> bool {
-    let (min, max) = world_aabb_cube(cube_center, half_extents);
-
-    let cx = sphere_center[0].clamp(min[0], max[0]);
-    let cy = sphere_center[1].clamp(min[1], max[1]);
-    let cz = sphere_center[2].clamp(min[2], max[2]);
-
-    let dx = sphere_center[0] - cx;
-    let dy = sphere_center[1] - cy;
-    let dz = sphere_center[2] - cz;
-    dx * dx + dy * dy + dz * dz <= radius * radius
+    collision_geometry::intersects(a.position_world, a.shape, b.position_world, b.shape)
 }

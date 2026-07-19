@@ -114,7 +114,7 @@ impl InputXRGamepadSystem {
                 );
                 if moved {
                     self.logged_missing_locomotion_target.remove(&cid);
-                } else if locomotion_target_transform(world, input_xr_owner).is_none()
+                } else if xr_locomotion_target_transform(world, input_xr_owner).is_none()
                     && self.logged_missing_locomotion_target.insert(cid)
                 {
                     eprintln!(
@@ -330,7 +330,7 @@ fn apply_locomotion(
     dx = dx / len * scaled;
     dz = dz / len * scaled;
 
-    let Some(target_tcid) = locomotion_target_transform(world, input_xr_owner) else {
+    let Some(target_tcid) = xr_locomotion_target_transform(world, input_xr_owner) else {
         return false;
     };
 
@@ -405,7 +405,10 @@ fn nearest_ancestor_component<T: 'static>(
     None
 }
 
-fn locomotion_target_transform(world: &World, input_xr_owner: ComponentId) -> Option<ComponentId> {
+pub(crate) fn xr_locomotion_target_transform(
+    world: &World,
+    input_xr_owner: ComponentId,
+) -> Option<ComponentId> {
     let mut cur = world.parent_of(input_xr_owner);
     while let Some(cid) = cur {
         if world

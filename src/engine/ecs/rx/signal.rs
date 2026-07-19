@@ -639,10 +639,10 @@ pub enum IntentValue {
     RemoveCollision {
         component_ids: Vec<ComponentId>,
     },
-    RegisterKineticResponse {
+    RegisterCollisionResponse {
         component_ids: Vec<ComponentId>,
     },
-    RemoveKineticResponse {
+    RemoveCollisionResponse {
         component_ids: Vec<ComponentId>,
     },
     RegisterAvatarControl {
@@ -864,8 +864,8 @@ impl IntentValue {
 
             IntentValue::RegisterCollision { .. } => "register_collision",
             IntentValue::RemoveCollision { .. } => "remove_collision",
-            IntentValue::RegisterKineticResponse { .. } => "register_kinetic_response",
-            IntentValue::RemoveKineticResponse { .. } => "remove_kinetic_response",
+            IntentValue::RegisterCollisionResponse { .. } => "register_collision_response",
+            IntentValue::RemoveCollisionResponse { .. } => "remove_collision_response",
             IntentValue::RegisterAvatarControl { .. } => "register_avatar_control",
             IntentValue::RegisterAvatarBodyYaw { .. } => "register_avatar_body_yaw",
             IntentValue::RegisterIkChain { .. } => "register_ik_chain",

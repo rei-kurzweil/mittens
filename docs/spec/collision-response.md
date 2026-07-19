@@ -1,18 +1,18 @@
-# Kinetic response
+# Collision response
 
-Kinetic response is an **opt-in** behavior layer for kinematic colliders.
+Collision response is an **opt-in** behavior layer for movable colliders.
 
 - Collision detection/queries work without it.
 - Collision signals still emit without it.
-- Adding kinetic response controls **automatic movement** in response to overlaps (a simple character-controller / push-out / pushable-style behavior).
+- Adding collision response controls **automatic movement** in response to overlaps.
 
-This doc describes how `KineticResponseComponent` is expected to be used, its modes, and how it integrates with transforms/collision/gravity.
+This doc describes how `CollisionResponseComponent` is expected to be used, its modes, and how it integrates with transforms/collision/gravity.
 
 ## Topology and integration
 
 ### Required topology
 
-`KineticResponseComponent` must be attached as a direct child of a `CollisionComponent` (which itself should be a direct child of a `TransformComponent`).
+`CollisionResponseComponent` must be attached as a direct child of a `CollisionComponent` (which itself should be a direct child of a `TransformComponent`).
 
 Example topology:
 
@@ -20,7 +20,7 @@ Example topology:
 TransformComponent {
   CollisionComponent::KINEMATIC() {
     CollisionShapeComponent { ... }
-    KineticResponseComponent::push() { ... }
+    CollisionResponseComponent::push() { ... }
   }
   RenderableComponent { ... }
 }
@@ -29,7 +29,7 @@ GravityComponent {
   TransformComponent {
     CollisionComponent::KINEMATIC() {
       CollisionShapeComponent { ... }
-      KineticResponseComponent::push() { ... }
+      CollisionResponseComponent::push() { ... }
     }
   }
 }
@@ -37,31 +37,36 @@ GravityComponent {
 
 ### Transform updates
 
-Kinetic response ultimately moves objects by mutating the owning `TransformComponent` (via `UpdateTransform` intents).
+Collision response emits `UpdateTransform` for its selected movement target.
 
-- The kinematic collider’s transform is considered the *source of truth* for world position.
+- The collider transform remains the source of truth for contact geometry.
+- With `movement_target(...)`, the resulting world displacement is added to the
+  target's current world pose; the collider/transform-stream output is not mutated.
+- An unresolved authored target skips movement and velocity changes for that frame.
+- Without an authored or runtime target, the immediate parent transform is moved.
 - After the transform changes, `TransformSystem` recomputes cached world matrices and updates dependent systems.
 
 ### Gravity
 
-`GravityComponent` can influence kinetic response:
+`GravityComponent` can influence collision response:
 
-- Any `KineticResponseComponent` nested under a `GravityComponent` will have gravity applied.
+- Any `CollisionResponseComponent` nested under a `GravityComponent` will have gravity applied.
 - `GravityComponent` can live anywhere in the scene graph and affect an entire subtree.
 - If multiple gravity fields exist in the ancestor chain, the nearest enabled one wins.
 
 ## Modes
 
-`KineticResponseComponent` supports multiple response policies.
+`CollisionResponseComponent` supports multiple response policies.
 
-### `slide` (`KineticResponseComponent::slide()`)
+### `slide` (`CollisionResponseComponent::slide()`)
 
 Classic kinematic “push out of statics” behavior.
 
-- Each tick, if overlapping static colliders, pushes the transform out along the minimum-penetration axis (AABB).
+- Each tick, if overlapping static colliders, pushes out along the shared
+  shape-pair minimum translation vector.
 - Useful for camera rigs and players sliding along level geometry.
 
-### `push` (`KineticResponseComponent::push()`)
+### `push` (`CollisionResponseComponent::push()`)
 
 “Pushable” behavior.
 
@@ -87,6 +92,8 @@ Classic kinematic “push out of statics” behavior.
 - `friction_y: f32` — per-second damping applied to **Y velocity only**, and only when resolving a **vertical (Y-axis) static overlap** (e.g. floor/roof contact).
   - Off by default (`0.0`).
   - Builder: `with_friction_y(f32)`
+- `movement_target_source: Option<ComponentRef>` — optional authored transform
+  destination. Rust: `movement_target(ComponentRef)`; MMS: `movement_target(...)`.
 
 ## Runtime state
 
@@ -95,14 +102,14 @@ Classic kinematic “push out of statics” behavior.
 ## Related code
 
 - Component:
-  - src/engine/ecs/component/kinetic_response.rs
+  - src/engine/ecs/component/collision_response.rs
 - Systems:
-  - src/engine/ecs/system/kinetic_response_system.rs
+  - src/engine/ecs/system/collision_response_system.rs
   - src/engine/ecs/system/collision_system.rs
   - src/engine/ecs/system/transform_system.rs
 
 ## Notes / future work
 
-- More robust shape support (beyond AABB-style minimum penetration response).
+- Additional bounds-to-shape inference heuristics beyond AVC's upright capsule.
 - Better contact manifold handling (stability, stairs, slopes).
 - A dedicated character-controller component separate from general kinematic response.

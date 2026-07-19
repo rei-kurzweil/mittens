@@ -70,10 +70,10 @@ InputXR
               │                           └── [armature]
               │                                 │
               │                                 ├── neck_parent
-              │                                 │     └── [sys] splice_head  (TC)
+              │                                 │     └── [sys] head_mount  (TC)
               │                                 │           ├── [sys] IKChain { AimConstraint }
               │                                 │           │         target:        driven_t
-              │                                 │           │         end_effector:  splice_head
+              │                                 │           │         end_effector:  head_mount
               │                                 │           │         offset_yaw:    π (VR) / 0 (desktop)
               │                                 │           └── J_Bip_C_Neck  (displaced here)
               │                                 │
@@ -118,25 +118,20 @@ TransformPipeline  (input = driven_t world matrix, via nearest TC ancestor)
 Stripping pitch and roll before `model_root` means the model Y offset (`-camera_bone_height`)
 is only ever rotated by a pure-Y quaternion — feet cannot arc when looking up.
 
-**No transform pipeline for the head.** Head rotation is handled entirely by
-`IKSystem` via the `AimConstraint` solver — no `TransformPipeline` node is created
-for it.
+**No transform pipeline or AimConstraint for the head.** AVC creates a fixed
+`head_mount` beneath `driven_t` and reparents the head bone beneath that mount.
+It therefore inherits the input/HMD pose directly.
 
 ### Head IK detail
 
 ```
-splice_head  (TC, placed under neck_parent by try_init_splices)
-  IKChain { AimConstraint }
-    target_id:    driven_t          // Input/InputXR-driven TC
-    end_effector: splice_head       // root joint = end joint for AimConstraint
-    offset_yaw:   π by default for both desktop and XR
-    weight:       1.0
+driven_t  (Input/InputXR-driven TC)
+  head_mount  (fixed eye/head offset and forward-axis correction)
+    J_Bip_C_Head  (displaced from the armature)
 ```
 
-`IKSystem` runs each tick after `AvatarControlSystem`. It reads `driven_t`'s world
-rotation, post-multiplies by `rot_y(offset_yaw)`, cancels `neck_parent` world rotation,
-and emits `UpdateTransform` to set `splice_head`'s local rotation. `J_Bip_C_Neck`
-(displaced under `splice_head`) inherits the result.
+The mount inherits `driven_t` directly. `IKSystem` remains responsible for arm
+TwoBoneIK and spine/body solving, but does not drive this head mount.
 
 ### Arm IK detail
 
@@ -244,11 +239,11 @@ What is not the same:
 
 ## AvatarControlSystem responsibilities
 
-### Init phase (lazy — retries each tick until `splice_head` is set)
+### Init phase (lazy — retries each tick until `head_mount` is set)
 
 1. Find `model_root` (first TC child of AVC).
 2. Find `head_bone` by name under `model_root`; **retry silently if GLTF not yet spawned**.
-3. Inject `splice_head` TC under `neck_parent`; create `IKChain { AimConstraint }` under it.
+3. Create `head_mount` beneath `driven_t`; displace the head bone beneath it.
 4. Create body pipeline as child of AVC; re-parent `model_root` under its output.
 5. For each configured hand bone with a controller:
    - Call `BoneMappingSystem::resolve_arm_chain` (topology, `min_bone_length = 0.03`).
@@ -256,14 +251,14 @@ What is not the same:
    - **Simple splice mode**: re-parent controller under bone's original parent; displace bone.
 6. If `camera_bone` set: measure bone height; emit `UpdateTransform(model_root, y=-height)`;
    re-parent camera children under camera bone.
-7. Store all runtime IDs on `AvatarControlComponent`; `splice_head` being `Some` stops retries.
+7. Store all runtime IDs on `AvatarControlComponent`; `head_mount` being `Some` stops retries.
 
 ### Tick (after init)
 
-`AvatarControlSystem::tick` only re-attempts init until `splice_head` is live.
+`AvatarControlSystem::tick` only re-attempts init until `head_mount` is live.
 All per-frame pose work is handled by:
 - `TransformStreamSystem` — body pipeline (yaw follow) + hand smoothing pipeline
-- `IKSystem` — head AimConstraint + arm TwoBoneIK
+- `IKSystem` — arm TwoBoneIK and spine/body solving
 
 ---
 

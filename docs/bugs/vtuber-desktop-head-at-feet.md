@@ -42,7 +42,7 @@ The core issue is that AVC treats `Input` (Desktop) and `InputXR` (VR) identical
 ### 2. Conditional Head Splicing
 In `try_init_splices`:
 - If `is_xr`: Continue using the current "Rigid Splice" (re-parenting head bone to the driver).
-- If `!is_xr`: Use a "Rotation-Only Splice". Inject `splice_head` in-place (under the neck), and use an `IKChain { AimConstraint }` with `copy_position: false` to drive its rotation from the driver.
+- If `!is_xr`: Use a "Rotation-Only Splice". Inject `head_mount` in-place (under the neck), and use an `IKChain { AimConstraint }` with `copy_position: false` to drive its rotation from the driver.
 
 ### 3. Conditional Translation Follow
 In `HeadPoseBodyXzFollowSystem::tick_one`:

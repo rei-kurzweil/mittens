@@ -31,7 +31,7 @@ fn xr_rig_origin_world(world: &World, visuals: &VisualWorld) -> [[f32; 4]; 4] {
 
 Call chain for the avatar setup:
 1. Find active CXR — after init this is the CXR that was re-parented under `J_Bip_C_Head`.
-2. Walk up ancestors: `J_Bip_C_Head` → `splice_head` → various bones → `model_root` → pipeline output
+2. Walk up ancestors: `J_Bip_C_Head` → `head_mount` → various bones → `model_root` → pipeline output
    → `AVC` → **`driven_t`** → **`avatar_input_xr`** ← found.
 3. Find TC child of `avatar_input_xr` → `driven_t` itself.
 4. `transform_parent_world(world, driven_t)`:
@@ -104,7 +104,7 @@ let driven_world_rot = mat_to_quat(driven_t.transform.matrix_world);
 // For VR (-Z forward):
 let head_world_rot = quat_mul(driven_world_rot, quat_rotation_y(PI));
 let splice_local_rot = quat_mul(quat_inverse(neck_parent_world_rot), head_world_rot);
-// emit UpdateTransform(splice_head, rotation = splice_local_rot)
+// emit UpdateTransform(head_mount, rotation = splice_local_rot)
 ```
 
 ### What the handedness correction is doing
@@ -119,7 +119,7 @@ forward axis to +Z — bridging the OpenXR/VRM handedness gap.
 The computation as a world-space rotation:
 
 ```
-splice_head_world_rot = neck_parent_world_rot × splice_local_rot
+head_mount_world_rot = neck_parent_world_rot × splice_local_rot
                       = neck_parent_world_rot × inv(neck_parent_world_rot) × head_world_rot
                       = head_world_rot
                       = driven_world_rot × rot_y(π)
@@ -187,7 +187,7 @@ bone-local space through the armature hierarchy, the splice node should be drive
 rotation derived directly from the InputXR stage pose, without the intermediate decomposition
 through `neck_parent_world_rot`.
 
-The minimal version of this: set `splice_head` world rotation = `driven_world_rot × rot_y(π)`
+The minimal version of this: set `head_mount` world rotation = `driven_world_rot × rot_y(π)`
 — which is already what the code does. The deeper variant: bypass the neck-parent frame
 entirely and just directly set the bone's world rotation to match driven_t.
 
@@ -224,8 +224,8 @@ No ECS component affects this. This is the ground truth.
 ### Avatar head bone (visual representation)
 
 ```
-splice_head_world_rot = driven_t_world_rot × rot_y(π)
-splice_head_world_rot = hmd_stage_rot × rot_y(π)
+head_mount_world_rot = driven_t_world_rot × rot_y(π)
+head_mount_world_rot = hmd_stage_rot × rot_y(π)
 ```
 
 The head bone tries to visually match the physical head orientation, accounting for the
@@ -244,7 +244,7 @@ in apparent pitch range is a bug in the coordinate transform chain.
 The most correct approach for the splice node:
 
 ```
-splice_head_world_rot = hmd_stage_rot × rot_y(π)
+head_mount_world_rot = hmd_stage_rot × rot_y(π)
                       = driven_t_world_rot × rot_y(π)
 ```
 
@@ -252,7 +252,7 @@ This is already what `tick_one` computes. The question is whether `splice_local_
 correctly derived from this:
 
 ```
-splice_local_rot = inv(neck_parent_world_rot) × splice_head_world_rot
+splice_local_rot = inv(neck_parent_world_rot) × head_mount_world_rot
 ```
 
 This is correct **if** `neck_parent_world_rot` is exactly the world rotation of the node
@@ -314,10 +314,10 @@ The short answer: **the local decomposition already does this correctly.**
 splice_local_rot = inv(neck_parent_world_rot) × desired_head_world_rot
 ```
 
-After `UpdateTransform(splice_head, splice_local_rot)` propagates:
+After `UpdateTransform(head_mount, splice_local_rot)` propagates:
 
 ```
-splice_head world_rot = neck_parent_world_rot × splice_local_rot
+head_mount world_rot = neck_parent_world_rot × splice_local_rot
                       = neck_parent_world_rot × inv(neck_parent_world_rot) × desired_head_world_rot
                       = desired_head_world_rot
 ```
@@ -407,7 +407,7 @@ InputXR → driven_t → body_pipeline → model_root → skeleton propagation
        \                                                           ↓
         \                                              neck_parent_world_rot
          \                                                         ↓
-          ——————————— AVC tick_one: cancel parent, apply head rot ——→ splice_head world_rot
+          ——————————— AVC tick_one: cancel parent, apply head rot ——→ head_mount world_rot
 ```
 
 Desired conceptual data flow (head drives skeleton, body follows head):
@@ -488,7 +488,7 @@ The neck bone's world position is determined by model_root + skeleton propagatio
 model_root is at (0, 0, 0) but the head bone's world rotation is computed from the HMD
 pose at (0.15, 1.65, 0), the neck appears to teleport or stretch.
 
-The translation of `splice_head` is currently always `[0, 0, 0]` local — it only rotates.
+The translation of `head_mount` is currently always `[0, 0, 0]` local — it only rotates.
 The neck's world position comes entirely from the skeleton rest-pose chain under model_root.
 
 For small thresholds (a few cm) this is visually tolerable — the neck appears to compress
@@ -515,8 +515,8 @@ The user's observation: "the neck should only move indirectly as a result of the
 rotating / translating."
 
 In the current design, the head bone's world rotation is derived from InputXR, which IS the
-ground truth. The neck bone (J_Bip_C_Neck) is displaced under splice_head, so it inherits
-splice_head's world rotation. The neck effectively follows the head — not the other way.
+ground truth. The neck bone (J_Bip_C_Neck) is displaced under head_mount, so it inherits
+head_mount's world rotation. The neck effectively follows the head — not the other way.
 
 What doesn't follow is **neck world position**: it is always at the rest-pose skeleton offset
 under model_root. The head position itself (InputXR world XYZ) is what determines where the
@@ -525,7 +525,7 @@ player physically is; the skeleton just stretches to fill the space.
 For this to work correctly and look natural:
 1. `model_root` Y calibration ensures the head bone's rest-pose world Y = HMD world Y (done).
 2. `model_root` XZ = HMD XZ (done currently, no lag).
-3. Head bone world rot = HMD rot × handedness correction (done via splice_head).
+3. Head bone world rot = HMD rot × handedness correction (done via head_mount).
 
 The system is structurally correct. The gaps are:
 - Possible pitch attenuation from rest-pose bone offsets (empirical, model-dependent).
@@ -536,7 +536,7 @@ The system is structurally correct. The gaps are:
 
 ## 15. Recommended next investigative steps (no code changes)
 
-1. **Measure actual pitch transmission**: add a debug print of `splice_head.matrix_world`
+1. **Measure actual pitch transmission**: add a debug print of `head_mount.matrix_world`
    pitch angle vs `driven_t.matrix_world` pitch angle on each tick. If they differ by more
    than float noise, the decomposition has an error worth diagnosing.
 

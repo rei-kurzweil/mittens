@@ -22,7 +22,7 @@ fn main() {
     universe.add(bg_color);
 
     // Gravity field for the pushable cubes.
-    // Any KineticResponseComponent nested under this subtree will have gravity applied.
+    // Any CollisionResponseComponent nested under this subtree will have gravity applied.
     let gravity_field = universe
         .world
         .add_component(engine::ecs::component::GravityComponent::new().with_coefficient(0.5));
@@ -52,10 +52,10 @@ fn main() {
 
     // Opt-in to default kinematic-vs-static collision response.
     // Policy note: collisions still emit signals regardless; response only runs for entities
-    // that explicitly add a KineticResponseComponent.
+    // that explicitly add a CollisionResponseComponent.
     let rig_response = universe
         .world
-        .add_component(engine::ecs::component::KineticResponseComponent::slide());
+        .add_component(engine::ecs::component::CollisionResponseComponent::slide());
     let rig_shape =
         universe
             .world
@@ -217,7 +217,7 @@ fn main() {
             .world
             .add_component(engine::ecs::component::CollisionComponent::KINEMATIC());
         let response = universe.world.add_component(
-            engine::ecs::component::KineticResponseComponent::push()
+            engine::ecs::component::CollisionResponseComponent::push()
                 .with_push_strength(4.0)
                 .with_friction_y(10.0),
         );
@@ -267,7 +267,7 @@ fn main() {
         // are not responders).
         let response = universe
             .world
-            .add_component(engine::ecs::component::KineticResponseComponent::slide());
+            .add_component(engine::ecs::component::CollisionResponseComponent::slide());
 
         let _ = universe.attach(t, cn);
         let _ = universe.attach(cn, shape);

@@ -35,13 +35,13 @@ impl BoundsSystem {
         root: ComponentId,
     ) -> Option<Aabb> {
         let mut aggregate: Option<Aabb> = None;
-        let mut stack = vec![(root, mat4_identity())];
+        let mut stack = vec![(root, mat4_identity(), true)];
 
-        while let Some((node, parent_to_root)) = stack.pop() {
+        while let Some((node, parent_to_root, is_root)) = stack.pop() {
             let mut local_to_root = parent_to_root;
 
             // Compose the transform of this node into the root-relative matrix.
-            if let Some(tc) = world.get_component_by_id_as::<TransformComponent>(node) {
+            if !is_root && let Some(tc) = world.get_component_by_id_as::<TransformComponent>(node) {
                 local_to_root = mat4_mul(parent_to_root, tc.transform.model);
             }
 
@@ -73,7 +73,7 @@ impl BoundsSystem {
 
             // Recurse into children.
             for &child in world.children_of(node) {
-                stack.push((child, local_to_root));
+                stack.push((child, local_to_root, false));
             }
         }
 

@@ -229,7 +229,7 @@ fn main() {
         .iter()
         .position(|n| *n == "J_Bip_C_Head")
         .unwrap()];
-    let splice_head = universe
+    let head_mount = universe
         .world
         .parent_of(avc_head_bone)
         .expect("head_bone has no parent — splice didn't run?");
@@ -237,7 +237,7 @@ fn main() {
     run_spine_probes(
         &mut universe,
         driven_t,
-        splice_head,
+        head_mount,
         &ref_bones,
         &avc_bones,
         head_target_offset_world,
@@ -272,7 +272,7 @@ fn parse_args() -> HarnessOptions {
 fn run_spine_probes(
     universe: &mut engine::Universe,
     driven_t: ComponentId,
-    splice_head: ComponentId,
+    head_mount: ComponentId,
     ref_bones: &[ComponentId],
     avc_bones: &[ComponentId],
     head_target_offset_world: [f32; 3],
@@ -351,7 +351,7 @@ fn run_spine_probes(
             .iter()
             .map(|&id| world_pos(&universe.world, id))
             .collect();
-        let splice_pos = world_pos(&universe.world, splice_head);
+        let splice_pos = world_pos(&universe.world, head_mount);
         let driven_pos = world_pos(&universe.world, driven_t);
         let driven_rot = world_rot(&universe.world, driven_t);
 
@@ -471,7 +471,7 @@ fn run_spine_probes(
         };
         let splice_drift = vec3_dist(splice_pos, predicted_splice_world);
         println!(
-            "  splice_head  expected=[{:+.3},{:+.3},{:+.3}]  actual=[{:+.3},{:+.3},{:+.3}]  drift={:.4}m  {}",
+            "  head_mount  expected=[{:+.3},{:+.3},{:+.3}]  actual=[{:+.3},{:+.3},{:+.3}]  drift={:.4}m  {}",
             predicted_splice_world[0],
             predicted_splice_world[1],
             predicted_splice_world[2],

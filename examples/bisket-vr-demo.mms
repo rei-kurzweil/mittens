@@ -24,7 +24,7 @@ import { voxel_terrain } from "../assets/components/floors/voxel_terrain.mms"
 //                       │       T  ← model_root (y auto-calibrated from J_Bip_C_Head)
 //                       │             └── GLTF { EM } → ... → J_Bip_C_Head
 //                       │                                          └── CXR  ← re-parented here
-//                       ├── splice_head → J_Bip_C_Head (AimConstraint, offset π)
+//                       ├── head_mount → J_Bip_C_Head (fixed driver mount, yaw offset π)
 //                       ├── XRHand(Left,  Grip) ─→ TwoBoneIK on left arm chain
 //                       └── XRHand(Right, Grip) ─→ TwoBoneIK on right arm chain
 //
@@ -242,10 +242,6 @@ ED {
                 // upper torso with a head-only correction.
                 T.position(0.0, 0.08, 0.12) {
                     name = "xr_camera_wrapper"
-                    // Collision.kinematic() {
-                    //     CollisionShape.sphere(0.18)
-                    //     KineticResponse.slide() {}
-                    // }
                     CXR { Pointer {} }
                 }
                 
@@ -350,10 +346,6 @@ I.speed(2.0) {
     }
     T.position(3.0, 1.2, 3.5) {
         name = "desktop_camera_rig"
-        Collision.kinematic() {
-            CollisionShape.sphere(0.22)
-            KineticResponse.slide() {}
-        }
         C3D {
             Pointer {}
         }

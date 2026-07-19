@@ -65,7 +65,7 @@ ED {
 //                       ├── TransformForkTRS (body yaw pipeline root)
 //                       │     └── … → T (model_root, y = -1.6)
 //                       │                └── GLTF { EM }
-//                       └── [sys] splice_head  (TC injected above neck)
+//                       └── [sys] head_mount  (TC injected above neck)
 //                                   └── IKChain { AimConstraint }
 //
 // head_bone: VRM convention. Verify with the bisket skeleton — if the .glb

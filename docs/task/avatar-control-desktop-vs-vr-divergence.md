@@ -47,7 +47,7 @@ Each handler implements two primary lifecycle methods:
 
 ### 2. Body-Driven Handler (Desktop)
 - **Driver:** `InputComponent`
-- **`handle_init`**: **Soft/In-place Splice**. Keeps `head_bone` as a child of the neck. Injects `splice_head` in-place. Configures `AimConstraint` with `copy_position: false`.
+- **`handle_init`**: **Soft/In-place Splice**. Keeps `head_bone` as a child of the neck. Injects `head_mount` in-place. Configures `AimConstraint` with `copy_position: false`.
 - **`handle_pose`**: Likely a no-op or simple sync. The body inherits translation from the `Input` driver (locomotion) via standard parenting; the head inherits from the body.
 
 ---

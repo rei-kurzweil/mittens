@@ -84,7 +84,7 @@ and does not follow any avatar bone.  A first-person desktop camera would need t
    universe.find_component(model_root, "[name='J_Bip_C_Head']")
    ```
 3. Attach `Camera3DComponent` under that bone's **splice node** (the `TransformComponent`
-   injected by `AvatarControlSystem`, stored as `AVC.splice_head`), not the raw bone.
+   injected by `AvatarControlSystem`, stored as `AVC.head_mount`), not the raw bone.
    The splice TC carries the world rotation computed by AVC each tick, so the camera
    inherits the correct head orientation.
 
@@ -186,7 +186,7 @@ avatar_input_xr
               │                 └── GLTF
               │                       └── ...armature...
               │                             J_Bip_C_Neck_parent
-              │                               └── splice_head (TC)     ← head rotation driver
+              │                               └── head_mount (TC)     ← head rotation driver
               │                                     └── J_Bip_C_Neck
               │                                           └── J_Bip_C_Head
               │                                                 └── CXR  ← re-parented here
@@ -213,7 +213,7 @@ The only thing that changes is the avatar's head bone is now calibrated to also 
 #### Desktop first-person
 
 `Camera3D` re-parented under `J_Bip_C_Head` inherits the bone's world transform
-directly.  Because `J_Bip_C_Head` is a child of `splice_head` (which AVC drives with
+directly.  Because `J_Bip_C_Head` is a child of `head_mount` (which AVC drives with
 the computed head rotation), the camera automatically tracks head orientation each tick.
 No procedural post-spawn code, no hardcoded height constant.
 

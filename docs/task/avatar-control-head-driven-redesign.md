@@ -209,12 +209,12 @@ AimConstraint is rotation-only, and FABRIK chases the HMD target**.
 
 Concretely:
 
-- `splice_head` carries the rest neck→head offset (translation copied from
+- `head_mount` carries the rest neck→head offset (translation copied from
   `head_bone` at splice time, head_bone re-anchored with zero local
-  translation).  So splice_head IS the head pivot, and FK from neck places
-  splice_head at the rest head position.
+  translation).  So head_mount IS the head pivot, and FK from neck places
+  head_mount at the rest head position.
 - Head AimConstraint flipped to `copy_position: false, target_position_offset
-  = [0,0,0]` — splice_head's *rotation* matches the HMD, but its *position*
+  = [0,0,0]` — head_mount's *rotation* matches the HMD, but its *position*
   is whatever FK from the bent spine produces.
 - New `IKSolver::Fabrik { target_position_offset }` field (symmetric with
   `AimConstraint`), so the FABRIK chain can chase `HMD + R(HMD) *
@@ -232,7 +232,7 @@ Concretely:
   found).
 - AVC `try_init_splices`: after head IK, resolve hips, spawn
   `IKChain { Fabrik, target_id=driven_t, target_position_offset=head_target_offset,
-  end_effector_id=splice_head }` parented under the hips bone.
+  end_effector_id=head_mount }` parented under the hips bone.
 
 Files touched:
 - `src/engine/ecs/component/ik_chain.rs`
@@ -559,8 +559,8 @@ can see the rig from outside the headset while debugging.
 - Should FABRIK own head bone rotation, or leave it to the head AimConstraint?
   (Recommendation: leave to AimConstraint — it has the right input source and
   the eye-offset logic. FABRIK solves positions only.)
-- What's the right FABRIK target — `driven_t` directly, or the `splice_head`
-  that AimConstraint writes? (Recommendation: `splice_head` — it already has
+- What's the right FABRIK target — `driven_t` directly, or the `head_mount`
+  that AimConstraint writes? (Recommendation: `head_mount` — it already has
   the eye_offset applied, so FABRIK aims at where the head bone *will be*.)
 - How aggressive should the body-yaw threshold be when the spine bends? The
   visible swing from yaw-follow plus spine bend might double-count if both

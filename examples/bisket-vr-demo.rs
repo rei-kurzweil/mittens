@@ -32,8 +32,8 @@ struct DumpTargets {
     bones: Vec<(String, ComponentId)>,
     /// driven_t = parent of AVC — HMD pose source.
     driven_t: ComponentId,
-    /// splice_head — runtime AimConstraint sink (parent of head_bone).
-    splice_head: ComponentId,
+    /// head_mount — fixed runtime mount beneath the pose driver (parent of head_bone).
+    head_mount: ComponentId,
     /// Head bone for head-local camera offset checks.
     head_bone: ComponentId,
     /// Upper chest (if found) for torso tilt diagnostics.
@@ -150,7 +150,7 @@ fn on_dump_click(world: &mut World, _emit: &mut dyn SignalEmitter, env: &Signal)
 
     let driven_p = world_pos(world, targets.driven_t);
     let driven_q = world_rot_quat(world, targets.driven_t);
-    let splice_p = world_pos(world, targets.splice_head);
+    let splice_p = world_pos(world, targets.head_mount);
     let head_p = world_pos(world, targets.head_bone);
     let head_q = world_rot_quat(world, targets.head_bone);
 
@@ -223,7 +223,7 @@ fn on_dump_click(world: &mut World, _emit: &mut dyn SignalEmitter, env: &Signal)
         driven_p[0], driven_p[1], driven_p[2], driven_q[0], driven_q[1], driven_q[2], driven_q[3],
     );
     println!(
-        "splice_head  pos=[{:+.3},{:+.3},{:+.3}]  expected=[{:+.3},{:+.3},{:+.3}]  err=[{:+.3},{:+.3},{:+.3}] |err|={:.4}m",
+        "head_mount  pos=[{:+.3},{:+.3},{:+.3}]  expected=[{:+.3},{:+.3},{:+.3}]  err=[{:+.3},{:+.3},{:+.3}] |err|={:.4}m",
         splice_p[0],
         splice_p[1],
         splice_p[2],
@@ -378,8 +378,8 @@ fn main() {
                     eprintln!("[dump] bone not found: {}", name);
                 }
             }
-            // splice_head = parent of head bone (runtime-inserted by AVC).
-            let splice_head = bones
+            // head_mount = parent of head bone (runtime-inserted by AVC).
+            let head_mount = bones
                 .iter()
                 .find(|(n, _)| n == "J_Bip_C_Head")
                 .and_then(|(_, head)| universe.world.parent_of(*head))
@@ -389,7 +389,7 @@ fn main() {
                 .iter()
                 .find(|(n, _)| n == "J_Bip_C_Head")
                 .map(|(_, id)| *id)
-                .unwrap_or(splice_head);
+                .unwrap_or(head_mount);
 
             let upper_chest = bones
                 .iter()
@@ -423,7 +423,7 @@ fn main() {
             let _ = DUMP_TARGETS.set(DumpTargets {
                 bones,
                 driven_t,
-                splice_head,
+                head_mount,
                 head_bone,
                 upper_chest,
                 camera_wrapper_t,

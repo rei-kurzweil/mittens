@@ -90,7 +90,7 @@ pub struct ResolvedArmChain {
 
 ## 3. Head / neck chain (already resolved by AVC)
 
-AVC currently finds `head_bone` by explicit name and creates `splice_head` one level above
+AVC currently finds `head_bone` by explicit name and creates `head_mount` one level above
 it.  This is already tier-1 resolution.  No change needed here, but `BoneMappingSystem`
 could absorb this lookup in a future refactor for consistency.
 

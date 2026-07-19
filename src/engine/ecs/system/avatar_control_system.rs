@@ -1,10 +1,16 @@
 use crate::engine::ecs::component::{
     AvatarControlComponent, BoneRestPoseComponent, Camera3DComponent, CameraXRComponent,
-    ControllerHand, ControllerXRComponent, IKChainComponent, IKSolver, QuatYawFollowComponent,
-    SerializeComponent, TransformComponent, TransformForkTRSComponent,
-    TransformMapRotationComponent,
+    CollisionComponent, CollisionResponseComponent, CollisionShapeComponent, ControllerHand,
+    ControllerXRComponent, GLTFComponent, IKChainComponent, IKSolver, InputXRComponent,
+    QuatYawFollowComponent, SerializeComponent, TransformComponent, TransformDropComponent,
+    TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
+    TransformMapTranslationComponent,
 };
+use crate::engine::ecs::system::bounds_system::BoundsSystem;
+use crate::engine::ecs::system::collision_shape_inference::infer_upright_capsule;
+use crate::engine::ecs::system::input_xr_gamepad_system::xr_locomotion_target_transform;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
+use crate::engine::graphics::RenderAssets;
 use crate::engine::user_input::InputState;
 use crate::utils::math::{
     mat_to_quat, quat_conjugate, quat_mul, quat_rotate_vec3, quat_rotation_y,
@@ -26,6 +32,7 @@ impl AvatarControlSystem {
         &mut self,
         world: &mut World,
         input: &InputState,
+        render_assets: &RenderAssets,
         emit: &mut dyn SignalEmitter,
         dt_sec: f32,
     ) {
@@ -35,7 +42,7 @@ impl AvatarControlSystem {
         let calibrate_pressed = input.key_pressed(&Key::Named(NamedKey::Enter));
         for id in ids {
             let allow_calibration = calibrate_pressed && !calibration_consumed;
-            if tick_one(id, world, emit, dt_sec, allow_calibration) {
+            if tick_one(id, world, render_assets, emit, dt_sec, allow_calibration) {
                 calibration_consumed = true;
             }
         }
@@ -53,6 +60,7 @@ impl AvatarControlSystem {
 fn tick_one(
     id: ComponentId,
     world: &mut World,
+    render_assets: &RenderAssets,
     emit: &mut dyn SignalEmitter,
     _dt_sec: f32,
     allow_calibration: bool,
@@ -62,7 +70,7 @@ fn tick_one(
         let Some(c) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
             return false;
         };
-        c.splice_head.is_none()
+        c.head_mount.is_none()
     };
 
     if needs_init {
@@ -74,10 +82,11 @@ fn tick_one(
             return false;
         }
         try_init_splices(id, world, emit);
-        // Head rotation is handled by IKSystem (AimConstraint on splice_head) after init.
     }
 
-    // Keep the displaced head bone anchored under splice_head. This prevents
+    try_init_or_route_capsule(id, world, render_assets, emit);
+
+    // Keep the displaced head bone anchored under head_mount. This prevents
     // animation/FK from reintroducing a local head translation that would move
     // the camera wrapper relative to the solved head pivot.
     let displaced_head_id = world
@@ -103,6 +112,161 @@ fn tick_one(
         return true;
     }
     false
+}
+
+fn try_init_or_route_capsule(
+    avc_id: ComponentId,
+    world: &mut World,
+    render_assets: &RenderAssets,
+    emit: &mut dyn SignalEmitter,
+) {
+    let Some(avc) = world
+        .get_component_by_id_as::<AvatarControlComponent>(avc_id)
+        .cloned()
+    else {
+        return;
+    };
+    if !avc.collision_enabled {
+        return;
+    }
+
+    let model_root_id = avc.model_root_id.or_else(|| {
+        world.children_of(avc_id).iter().copied().find(|child| {
+            world
+                .get_component_by_id_as::<TransformComponent>(*child)
+                .is_some()
+        })
+    });
+    let Some(model_root_id) = model_root_id else {
+        return;
+    };
+    let movement_target = automatic_avc_movement_target(world, avc_id);
+
+    if let Some(response_id) = avc.capsule_response_id {
+        if let Some(response) =
+            world.get_component_by_id_as_mut::<CollisionResponseComponent>(response_id)
+        {
+            response.movement_target_id = movement_target;
+            response.movement_target_required = true;
+        }
+        return;
+    }
+
+    let inferred =
+        BoundsSystem::calculate_subtree_local_bounds(world, render_assets, model_root_id)
+            .and_then(|bounds| infer_upright_capsule(&bounds, avc.capsule_radius))
+            .or_else(|| {
+                spawned_gltf_exists(world, model_root_id)
+                    .then(|| fallback_avatar_height(world, avc_id, model_root_id, &avc))
+                    .flatten()
+                    .and_then(|height| {
+                        let bounds = crate::engine::graphics::bounds::Aabb {
+                            min: [0.0, 0.0, 0.0],
+                            max: [0.0, height.max(0.0), 0.0],
+                        };
+                        infer_upright_capsule(&bounds, avc.capsule_radius)
+                    })
+            });
+    let Some(inferred) = inferred else { return };
+
+    let fork = world.add_component(TransformForkTRSComponent::new());
+    let translation = world.add_component(TransformMapTranslationComponent::new());
+    let rotation = world.add_component(TransformMapRotationComponent::new());
+    let rotation_drop = world.add_component(TransformDropComponent::new());
+    let scale = world.add_component(TransformMapScaleComponent::new());
+    let scale_drop = world.add_component(TransformDropComponent::new());
+    let capsule_t =
+        world.add_component(TransformComponent::new().with_position(0.0, inferred.center_y, 0.0));
+    let serialize = world.add_component(SerializeComponent::off());
+    let collision = world.add_component(CollisionComponent::KINEMATIC());
+    let shape = world.add_component(CollisionShapeComponent::new(inferred.shape));
+    let response = world.add_component(
+        CollisionResponseComponent::slide().with_runtime_movement_target(movement_target),
+    );
+
+    let _ = world.set_parent(fork, Some(model_root_id));
+    let _ = world.set_parent(translation, Some(fork));
+    let _ = world.set_parent(rotation, Some(fork));
+    let _ = world.set_parent(rotation_drop, Some(rotation));
+    let _ = world.set_parent(scale, Some(fork));
+    let _ = world.set_parent(scale_drop, Some(scale));
+    let _ = world.set_parent(capsule_t, Some(fork));
+    let _ = world.set_parent(serialize, Some(capsule_t));
+    let _ = world.set_parent(collision, Some(capsule_t));
+    let _ = world.set_parent(shape, Some(collision));
+    let _ = world.set_parent(response, Some(collision));
+
+    if let Some(avc) = world.get_component_by_id_as_mut::<AvatarControlComponent>(avc_id) {
+        avc.model_root_id = Some(model_root_id);
+        avc.capsule_transform_id = Some(capsule_t);
+        avc.capsule_response_id = Some(response);
+    }
+    emit.push_intent_now(
+        collision,
+        IntentValue::RegisterCollision {
+            component_ids: vec![collision],
+        },
+    );
+    emit.push_intent_now(
+        response,
+        IntentValue::RegisterCollisionResponse {
+            component_ids: vec![response],
+        },
+    );
+}
+
+fn automatic_avc_movement_target(world: &World, avc_id: ComponentId) -> Option<ComponentId> {
+    let mut current = Some(avc_id);
+    while let Some(id) = current {
+        if world
+            .get_component_by_id_as::<InputXRComponent>(id)
+            .is_some()
+        {
+            return xr_locomotion_target_transform(world, id);
+        }
+        current = world.parent_of(id);
+    }
+    world.parent_of(avc_id).filter(|id| {
+        world
+            .get_component_by_id_as::<TransformComponent>(*id)
+            .is_some()
+    })
+}
+
+fn spawned_gltf_exists(world: &World, root: ComponentId) -> bool {
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        if world
+            .get_component_by_id_as::<GLTFComponent>(id)
+            .is_some_and(|gltf| gltf.spawned)
+        {
+            return true;
+        }
+        stack.extend(world.children_of(id).iter().copied());
+    }
+    false
+}
+
+fn fallback_avatar_height(
+    world: &World,
+    _avc_id: ComponentId,
+    model_root_id: ComponentId,
+    avc: &AvatarControlComponent,
+) -> Option<f32> {
+    if let Some(height) = avc.avatar_height {
+        return Some(height.max(0.0));
+    }
+    let bone_name = avc.camera_bone.as_deref().unwrap_or(&avc.head_bone);
+    let bone = world.find_component(model_root_id, &format!("#{bone_name}"))?;
+    let root_y = world
+        .get_component_by_id_as::<TransformComponent>(model_root_id)?
+        .transform
+        .matrix_world[3][1];
+    let bone_y = world
+        .get_component_by_id_as::<TransformComponent>(bone)?
+        .transform
+        .matrix_world[3][1];
+    Some((bone_y - root_y).abs())
 }
 
 fn ancestor_input_xr_is_ready(world: &World, start: ComponentId) -> bool {
@@ -205,7 +369,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             .unwrap_or(false)
     });
 
-    // driven_t is the parent of AVC — needed as IK target for the head AimConstraint.
+    // driven_t is the parent of AVC and owns the generated visible-head mount.
     let Some(driven_t_id) = world.parent_of(id) else {
         return;
     };
@@ -230,10 +394,6 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     let Some(head_bone_id) = world.find_component(model_root_id, &head_selector) else {
         return;
     };
-    let Some(head_parent_id) = world.parent_of(head_bone_id) else {
-        return;
-    };
-
     // Read head_bone's true bind-pose local TRS via the `BoneRestPoseComponent`
     // sidecar that `GLTFSystem` stamped at node-spawn time.  Falls back to the
     // current `TransformComponent` only if no rest-pose sidecar is present
@@ -241,12 +401,7 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     // pick up whatever pose `AnimationSystem` wrote earlier this tick, which
     // bakes the current animation frame into `head_rest_rot` and produces a
     // permanently rotated visible head.
-    let (head_rest_t, head_rest_rot, head_rest_s) = read_bone_rest_pose(world, head_bone_id);
-    let head_splice_id = world.add_component(TransformComponent::new().with_position(
-        head_rest_t[0],
-        head_rest_t[1],
-        head_rest_t[2],
-    ));
+    let (_, head_rest_rot, head_rest_s) = read_bone_rest_pose(world, head_bone_id);
 
     // Resolve hand bones + controller drivers for 2-bone arm IK.
     // The hand bone stays in the armature; IKSystem rotates UpperArm + LowerArm
@@ -406,7 +561,6 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
 
     // Store runtime IDs (body_pipeline_id stored after pipeline creation below).
     if let Some(c) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
-        c.splice_head = Some(head_splice_id);
         c.displaced_head = Some(head_bone_id);
         c.splice_camera_bone = camera_bone_id;
         c.model_root_id = Some(model_root_id);
@@ -486,13 +640,15 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             .with_rotation_quat(quat_rotation_y(head_ik_offset_yaw)),
     );
     let _ = world.set_parent(head_target_id, Some(driven_t_id));
+    if let Some(c) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
+        c.head_mount = Some(head_target_id);
+    }
 
-    emit_attach(emit, head_parent_id, head_splice_id);
     emit_attach(emit, driven_t_id, head_target_id);
     emit_attach(emit, head_target_id, head_bone_id);
 
-    // Zero head_bone's local translation — splice_head now carries the rest offset
-    // from neck. Preserve the authored head rest rotation/scale so the visible
+    // Zero head_bone's local translation — the driven head mount owns its offset.
+    // Preserve the authored head rest rotation/scale so the visible
     // head mesh and camera anchor share the same convention across desktop and XR.
     // Emitted *after* the reparent attach so the UpdateTransform lands on
     // head_bone in its new parent without fighting the attach intent's matrix recompute.
@@ -888,4 +1044,142 @@ fn tc_world_rot(world: &World, id: ComponentId) -> [f32; 4] {
         .get_component_by_id_as::<TransformComponent>(id)
         .map(|t| mat_to_quat(t.transform.matrix_world))
         .unwrap_or([0.0, 0.0, 0.0, 1.0])
+}
+
+#[cfg(test)]
+mod capsule_tests {
+    use super::*;
+    use crate::engine::ecs::CommandQueue;
+    use crate::engine::ecs::component::{CollisionShape, RenderableComponent};
+    use crate::engine::ecs::system::TransformStreamSystem;
+
+    fn attach(world: &mut World, parent: ComponentId, child: ComponentId) {
+        world.set_parent(child, Some(parent)).unwrap();
+    }
+
+    #[test]
+    fn generated_capsule_uses_height_once_and_routes_desktop_movement() {
+        let mut world = World::default();
+        let assets = RenderAssets::new();
+        let driven = world.add_component(TransformComponent::new());
+        let avc = world.add_component(AvatarControlComponent::new());
+        let model = world.add_component(TransformComponent::new());
+        let wide_mesh = world.add_component(
+            TransformComponent::new()
+                .with_position(0.0, 0.5, 0.0)
+                .with_scale(20.0, 3.0, 8.0),
+        );
+        let renderable = world.add_component(RenderableComponent::cube());
+        attach(&mut world, driven, avc);
+        attach(&mut world, avc, model);
+        attach(&mut world, model, wide_mesh);
+        attach(&mut world, wide_mesh, renderable);
+
+        let mut queue = CommandQueue::new();
+        try_init_or_route_capsule(avc, &mut world, &assets, &mut queue);
+        try_init_or_route_capsule(avc, &mut world, &assets, &mut queue);
+
+        let state = world
+            .get_component_by_id_as::<AvatarControlComponent>(avc)
+            .unwrap();
+        let capsule_t = state.capsule_transform_id.unwrap();
+        let response_id = state.capsule_response_id.unwrap();
+        let collision = world
+            .children_of(capsule_t)
+            .iter()
+            .copied()
+            .find(|id| {
+                world
+                    .get_component_by_id_as::<CollisionComponent>(*id)
+                    .is_some()
+            })
+            .unwrap();
+        let shapes: Vec<_> = world
+            .children_of(collision)
+            .iter()
+            .filter_map(|id| world.get_component_by_id_as::<CollisionShapeComponent>(*id))
+            .collect();
+        assert_eq!(shapes.len(), 1);
+        assert_eq!(shapes[0].shape, CollisionShape::capsule_y(0.28, 1.22));
+        let response = world
+            .get_component_by_id_as::<CollisionResponseComponent>(response_id)
+            .unwrap();
+        assert_eq!(response.movement_target_id, Some(driven));
+
+        let fork = world.parent_of(capsule_t).unwrap();
+        let arbitrary_pose = TransformComponent::new()
+            .with_position(3.0, 4.0, 5.0)
+            .with_rotation_euler(0.7, -0.4, 0.9)
+            .with_scale(2.0, 3.0, 4.0)
+            .transform
+            .model;
+        let (upright, outputs) = TransformStreamSystem::new()
+            .evaluate_stream_node(&world, fork, arbitrary_pose)
+            .unwrap();
+        assert_eq!(outputs, vec![capsule_t]);
+        assert_eq!([upright[3][0], upright[3][1], upright[3][2]], [3.0, 4.0, 5.0]);
+        assert_eq!(upright[0], [1.0, 0.0, 0.0, 0.0]);
+        assert_eq!(upright[1], [0.0, 1.0, 0.0, 0.0]);
+        assert_eq!(upright[2], [0.0, 0.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn disabled_and_delayed_fallback_behave_deterministically() {
+        let assets = RenderAssets::new();
+        let mut queue = CommandQueue::new();
+
+        let mut disabled_world = World::default();
+        let avc =
+            disabled_world.add_component(AvatarControlComponent::new().with_collision_disabled());
+        let model = disabled_world.add_component(TransformComponent::new());
+        attach(&mut disabled_world, avc, model);
+        try_init_or_route_capsule(avc, &mut disabled_world, &assets, &mut queue);
+        assert!(
+            disabled_world
+                .get_component_by_id_as::<AvatarControlComponent>(avc)
+                .unwrap()
+                .capsule_transform_id
+                .is_none()
+        );
+
+        let mut world = World::default();
+        let avc = world.add_component(AvatarControlComponent::new().with_avatar_height(1.4));
+        let model = world.add_component(TransformComponent::new());
+        let gltf = world.add_component(GLTFComponent::new("missing.glb"));
+        attach(&mut world, avc, model);
+        attach(&mut world, model, gltf);
+        try_init_or_route_capsule(avc, &mut world, &assets, &mut queue);
+        assert!(
+            world
+                .get_component_by_id_as::<AvatarControlComponent>(avc)
+                .unwrap()
+                .capsule_transform_id
+                .is_none()
+        );
+        world
+            .get_component_by_id_as_mut::<GLTFComponent>(gltf)
+            .unwrap()
+            .spawned = true;
+        try_init_or_route_capsule(avc, &mut world, &assets, &mut queue);
+        assert!(
+            world
+                .get_component_by_id_as::<AvatarControlComponent>(avc)
+                .unwrap()
+                .capsule_transform_id
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn xr_routes_to_transform_above_input_xr() {
+        let mut world = World::default();
+        let outer = world.add_component(TransformComponent::new());
+        let input_xr = world.add_component(InputXRComponent::on());
+        let driven = world.add_component(TransformComponent::new());
+        let avc = world.add_component(AvatarControlComponent::new());
+        attach(&mut world, outer, input_xr);
+        attach(&mut world, input_xr, driven);
+        attach(&mut world, driven, avc);
+        assert_eq!(automatic_avc_movement_target(&world, avc), Some(outer));
+    }
 }
