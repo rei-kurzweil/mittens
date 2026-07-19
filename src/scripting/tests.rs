@@ -1315,6 +1315,123 @@ fn live_handler_query_can_see_world() {
 }
 
 #[test]
+fn live_handler_component_attach_emits_reparent_intent() {
+    let src = r##"
+        let child = T { name = "camera_rig" }
+        let old_parent = T { name = "fixed_slot" child }
+        let new_parent = T { name = "first_person_slot" }
+        let btn = T { name = "toggle" }
+        old_parent
+        new_parent
+        btn
+
+        on(btn, "Click", fn(event) {
+            new_parent.attach(child)
+        })
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+    let named = |label: &str| {
+        world
+            .all_components()
+            .find(|id| world.component_label(*id) == Some(label))
+            .unwrap_or_else(|| panic!("missing #{label}"))
+    };
+    let child = named("camera_rig");
+    let new_parent = named("first_person_slot");
+    let btn = named("toggle");
+
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            btn,
+            EventSignal::Click {
+                raycaster: ComponentId::default(),
+                renderable: btn,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        ),
+    );
+
+    let intents = rx.drain_ready_intents();
+    assert!(intents.iter().any(|signal| matches!(
+        signal.intent.as_ref().map(|intent| &intent.value),
+        Some(IntentValue::Attach { parents, child: attached_child })
+            if parents.as_slice() == [new_parent] && *attached_child == child
+    )));
+}
+
+#[test]
+fn gltf_initialized_event_exposes_live_gltf_uri_and_scoped_query() {
+    let src = r##"
+        let avatar_gltf = GLTF.new("avatar.glb")
+        let camera_slot = T { name = "camera_slot" }
+        avatar_gltf
+        camera_slot
+
+        on(avatar_gltf, "GLTFInitialized", fn(event) {
+            if event.uri == "avatar.glb" {
+                let head = event.gltf.query("#J_Bip_C_Head")
+                if head {
+                    head.attach(camera_slot)
+                }
+            }
+        })
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+    let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+
+    let named = |world: &World, label: &str| {
+        world
+            .all_components()
+            .find(|id| world.component_label(*id) == Some(label))
+            .unwrap_or_else(|| panic!("missing #{label}"))
+    };
+    let gltf = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(*id)
+                .is_some()
+        })
+        .expect("avatar glTF");
+    let head = world.add_component_boxed_named("J_Bip_C_Head", Box::new(TransformComponent::new()));
+    world
+        .get_component_by_id_as_mut::<crate::engine::ecs::component::GLTFComponent>(gltf)
+        .unwrap()
+        .spawned_node_transforms = vec![head];
+
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            gltf,
+            EventSignal::GltfInitialized {
+                gltf,
+                uri: "avatar.glb".to_string(),
+            },
+        ),
+    );
+
+    let camera_slot = named(&world, "camera_slot");
+    let intents = rx.drain_ready_intents();
+    assert!(intents.iter().any(|signal| matches!(
+        signal.intent.as_ref().map(|intent| &intent.value),
+        Some(IntentValue::Attach { parents, child })
+            if parents.as_slice() == [head] && *child == camera_slot
+    )));
+}
+
+#[test]
 fn mms_layoutroot_available_width_and_percent_style_width_reach_live_components() {
     let src = r##"
         LayoutRoot {
@@ -1694,8 +1811,8 @@ fn gltf_pose_animation_example_imports_named_pose_factories() {
 #[test]
 fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
     use crate::engine::ecs::component::{
-        Camera3DComponent, CameraXRComponent, CollisionComponent, CollisionMode,
-        InputComponent, InputTransformModeComponent, InputXRComponent, RenderableComponent,
+        Camera3DComponent, CameraXRComponent, CollisionComponent, CollisionMode, InputComponent,
+        InputTransformModeComponent, InputXRComponent, RenderableComponent,
         SecondaryMotionComponent, SpotLightComponent, SpringBoneComponent,
     };
     let source = include_str!("../../examples/secondary-motion-desktop.mms");
@@ -1874,6 +1991,163 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
             .get_component_by_id_as::<CameraXRComponent>(id)
             .is_some()),
         0
+    );
+
+    let fixed_camera_slot = named("fixed_camera_slot");
+    let first_person_camera_slot = named("first_person_camera_slot");
+    let desktop_camera_rig = named("desktop_camera_rig");
+    let toggle = named("button_root");
+    assert_eq!(world.parent_of(desktop_camera_rig), Some(fixed_camera_slot));
+    let first_person_slot_transform = world
+        .get_component_by_id_as::<TransformComponent>(first_person_camera_slot)
+        .expect("first-person camera slot transform");
+    let camera_forward = crate::utils::math::quat_rotate_vec3(
+        first_person_slot_transform.transform.rotation,
+        [0.0, 0.0, -1.0],
+    );
+    let head_local_forward = [0.0, 0.0, 1.0];
+    let forward_alignment = camera_forward[0] * head_local_forward[0]
+        + camera_forward[1] * head_local_forward[1]
+        + camera_forward[2] * head_local_forward[2];
+    assert!(
+        forward_alignment > 0.9999,
+        "first-person camera must face head-local +Z: {camera_forward:?}"
+    );
+    assert!(first_person_slot_transform.transform.translation[2] > 0.0);
+
+    let head = world.add_component_boxed_named("J_Bip_C_Head", Box::new(TransformComponent::new()));
+    world
+        .get_component_by_id_as_mut::<crate::engine::ecs::component::GLTFComponent>(avatar_gltf)
+        .unwrap()
+        .spawned_node_transforms = vec![head];
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            avatar_gltf,
+            EventSignal::GltfInitialized {
+                gltf: avatar_gltf,
+                uri: "assets/models/bisket.11.0.glb".to_string(),
+            },
+        ),
+    );
+    let initialized = rx.drain_ready_intents();
+    assert!(initialized.iter().any(|signal| matches!(
+        signal.intent.as_ref().map(|intent| &intent.value),
+        Some(IntentValue::Attach { parents, child })
+            if parents.as_slice() == [head] && *child == first_person_camera_slot
+    )));
+
+    let click = || EventSignal::Click {
+        raycaster: ComponentId::default(),
+        renderable: toggle,
+        hit_point: [0.0, 0.0, 0.0],
+        screen_pos_px: None,
+    };
+    rx.dispatch_event_handlers(&mut world, &Signal::event(toggle, click()));
+    let first_toggle = rx.drain_ready_intents();
+    assert!(first_toggle.iter().any(|signal| matches!(
+        signal.intent.as_ref().map(|intent| &intent.value),
+        Some(IntentValue::Attach { parents, child })
+            if parents.as_slice() == [first_person_camera_slot] && *child == desktop_camera_rig
+    )));
+
+    rx.dispatch_event_handlers(&mut world, &Signal::event(toggle, click()));
+    let second_toggle = rx.drain_ready_intents();
+    assert!(second_toggle.iter().any(|signal| matches!(
+        signal.intent.as_ref().map(|intent| &intent.value),
+        Some(IntentValue::Attach { parents, child })
+            if parents.as_slice() == [fixed_camera_slot] && *child == desktop_camera_rig
+    )));
+}
+
+#[test]
+fn secondary_motion_desktop_head_camera_survives_gltf_and_avatar_initialization() {
+    let source = include_str!("../../examples/secondary-motion-desktop.mms");
+    let mut world = World::default();
+    let mut systems = crate::engine::ecs::system::SystemWorld::default();
+    let mut visuals = VisualWorld::default();
+    let mut render_assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+        source,
+        Some("examples/secondary-motion-desktop.mms"),
+        &mut world,
+        &mut systems.rx,
+        Some(&mut render_assets),
+        &mut queue,
+    );
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    for intent in output.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
+    systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
+    systems.tick(
+        &mut world,
+        &mut visuals,
+        &mut render_assets,
+        &InputState::default(),
+        &mut queue,
+        1.0 / 60.0,
+    );
+
+    let named = |world: &World, label: &str| {
+        world
+            .all_components()
+            .find(|id| world.component_label(*id) == Some(label))
+            .unwrap_or_else(|| panic!("missing named scene node {label}"))
+    };
+    let head = named(&world, "J_Bip_C_Head");
+    let camera_slot = named(&world, "first_person_camera_slot");
+    let camera_rig = named(&world, "desktop_camera_rig");
+    let avatar_driver = named(&world, "avatar_head_driver");
+    let toggle = named(&world, "button_root");
+    assert_eq!(world.parent_of(camera_slot), Some(head));
+
+    systems.rx.push_event(
+        toggle,
+        EventSignal::Click {
+            raycaster: ComponentId::default(),
+            renderable: toggle,
+            hit_point: [0.0; 3],
+            screen_pos_px: None,
+        },
+    );
+    systems.process_signals(
+        &mut world,
+        &mut visuals,
+        &mut render_assets,
+        &mut queue,
+        100_000,
+    );
+    queue.flush(&mut world, &mut systems, &mut visuals, &mut render_assets);
+    assert_eq!(world.parent_of(camera_rig), Some(camera_slot));
+
+    let camera_world = world
+        .get_component_by_id_as::<TransformComponent>(camera_rig)
+        .unwrap()
+        .transform
+        .matrix_world;
+    let driver_world = world
+        .get_component_by_id_as::<TransformComponent>(avatar_driver)
+        .unwrap()
+        .transform
+        .matrix_world;
+    let camera_forward = crate::utils::math::mat4_mul_vec4(camera_world, [0.0, 0.0, -1.0, 0.0]);
+    let avatar_forward = crate::utils::math::mat4_mul_vec4(driver_world, [0.0, 0.0, -1.0, 0.0]);
+    let dot = camera_forward[0] * avatar_forward[0]
+        + camera_forward[1] * avatar_forward[1]
+        + camera_forward[2] * avatar_forward[2];
+    let lengths = (camera_forward[0] * camera_forward[0]
+        + camera_forward[1] * camera_forward[1]
+        + camera_forward[2] * camera_forward[2])
+        .sqrt()
+        * (avatar_forward[0] * avatar_forward[0]
+            + avatar_forward[1] * avatar_forward[1]
+            + avatar_forward[2] * avatar_forward[2])
+            .sqrt();
+    assert!(
+        dot / lengths > 0.99,
+        "head camera and avatar forward diverged: camera={camera_forward:?} avatar={avatar_forward:?}"
     );
 }
 

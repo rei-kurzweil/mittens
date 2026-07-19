@@ -2,6 +2,7 @@ import { star_kawaii_background } from "../assets/components/backgrounds/star_ka
 import { bisket_secondary_motion } from "../assets/components/secondary_motion/bisket.mms"
 import { pose as relaxed_pose_factory } from "../assets/components/poses/bisket/000-relaxed.pose.mms"
 import { tripod_light } from "../assets/components/tripod_light.mms"
+import { button } from "../assets/components/button.mms"
 
 // Desktop Bisket secondary-motion studio. The light fixtures and collision
 // playground are deliberately visible so spring and locomotion behavior can be
@@ -65,6 +66,40 @@ let avatar_gltf = GLTF.new("assets/models/bisket.11.0.glb") {
     bisket_secondary_motion(false)
 }
 
+let camera_view_state = { first_person = false }
+let camera_view_toggle = button("toggle camera view", {
+    background_color = [0.16, 0.48, 0.88, 0.92]
+    color = [1.0, 1.0, 1.0, 1.0]
+})
+
+// The camera and its control travel together when the rig is reparented.
+let desktop_camera_rig = T {
+    name = "desktop_camera_rig"
+    C3D { Pointer {} }
+    T.position(-0.52, -0.30, -1.0).scale(0.035, 0.035, 0.035) {
+        LayoutRoot {
+            available_width(24.0)
+            available_height(5.0)
+            camera_view_toggle
+        }
+    }
+}
+
+// Bisket's head-local +Z points toward the face. C3D views along local -Z, so
+// the half-turn makes camera forward follow that authored head direction.
+let first_person_camera_slot = T.position(0.0, 0.08, 0.06).rotation(0.0, 3.14159, 0.0) {
+    name = "first_person_camera_slot"
+}
+
+on(avatar_gltf, "GLTFInitialized", fn(event) {
+    let head = event.gltf.query("#J_Bip_C_Head")
+    if head {
+        head.attach(first_person_camera_slot)
+    } else {
+        print("GLTFInitialized: expected Bisket head bone #J_Bip_C_Head was not found")
+    }
+})
+
 I.speed(2.2) {
     name = "desktop_avatar_input"
     InputTransformMode.forward_z() {
@@ -81,10 +116,23 @@ I.speed(2.2) {
     }
 }
 
-// Fixed third-person desktop camera; movement controls only the avatar driver.
+// Fixed third-person desktop camera slot; movement controls only the avatar driver.
 // C3D views along local -Z, so use an explicit downward pitch instead of
 // Transform.looking_at(), which aligns local +Z toward its target.
-T.position(0.0, 0.4, 5.5).rotation(-0.20, 0.0, 0.0) {
-    name = "desktop_third_person_camera"
-    C3D { Pointer {} }
+let fixed_camera_slot = T.position(0.0, 0.4, 5.5).rotation(-0.20, 0.0, 0.0) {
+    name = "fixed_camera_slot"
+    desktop_camera_rig
 }
+fixed_camera_slot
+
+on(camera_view_toggle, "Click", fn(event) {
+    if camera_view_state.first_person {
+        fixed_camera_slot.attach(desktop_camera_rig)
+        camera_view_state.first_person = false
+        print("camera attached to fixed_camera_slot")
+    } else {
+        first_person_camera_slot.attach(desktop_camera_rig)
+        camera_view_state.first_person = true
+        print("camera attached to first_person_camera_slot")
+    }
+})

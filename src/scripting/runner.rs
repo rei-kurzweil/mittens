@@ -58,6 +58,18 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
             "dt_sec".to_string(),
             Value::Number(*dt_sec as f64),
         )])),
+        Some(crate::engine::ecs::EventSignal::GltfInitialized { gltf, uri }) => {
+            Value::Map(HashMap::from([
+                (
+                    "gltf".to_string(),
+                    Value::ComponentObject {
+                        id: *gltf,
+                        component_type: "GLTF".to_string(),
+                    },
+                ),
+                ("uri".to_string(), Value::String(uri.clone())),
+            ]))
+        }
         Some(crate::engine::ecs::EventSignal::DataEvent { name, .. }) => {
             Value::String(name.clone())
         }
@@ -628,7 +640,7 @@ impl MeowMeowRunner {
                             multiple,
                         } => {
                             let roots: Vec<crate::engine::ecs::ComponentId> = match scope {
-                                Some(id) => vec![id],
+                                Some(id) => world.scripting_query_roots(id),
                                 None => world
                                     .all_components()
                                     .filter(|&id| world.parent_of(id).is_none())

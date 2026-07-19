@@ -2,7 +2,9 @@ use crate::engine::ecs::component::{
     ColorComponent, EmissiveComponent, GLTFComponent, MeshComponent, RenderableComponent,
     SerializeComponent, SkinnedMeshComponent, TextureComponent, TransformComponent,
 };
-use crate::engine::ecs::{ComponentId, IntentValue, PoseApplyMode, SignalEmitter, World};
+use crate::engine::ecs::{
+    ComponentId, EventSignal, IntentValue, PoseApplyMode, SignalEmitter, World,
+};
 use crate::engine::graphics::mesh::{CpuMesh, CpuVertex};
 use crate::engine::graphics::primitives::TransformMatrix;
 use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Renderable};
@@ -507,6 +509,14 @@ impl GLTFSystem {
                     },
                 );
             }
+
+            emit.push_event(
+                cid,
+                EventSignal::GltfInitialized {
+                    gltf: cid,
+                    uri: uri.clone(),
+                },
+            );
         }
     }
 
@@ -1140,11 +1150,14 @@ mod tests {
 
     #[derive(Default)]
     struct RecordingEmitter {
+        events: Vec<(ComponentId, EventSignal)>,
         intents: Vec<(ComponentId, IntentValue)>,
     }
 
     impl SignalEmitter for RecordingEmitter {
-        fn push_event(&mut self, _scope: ComponentId, _event: EventSignal) {}
+        fn push_event(&mut self, scope: ComponentId, event: EventSignal) {
+            self.events.push((scope, event));
+        }
 
         fn push_intent(&mut self, scope: ComponentId, intent: IntentSignal) {
             self.intents.push((scope, intent.value));
@@ -1213,6 +1226,15 @@ mod tests {
         assert!(spawned.spawned);
         assert!(!spawned.spawned_node_transforms.is_empty());
         assert!(!spawned.armature_joint_transforms.is_empty());
+        assert!(world.find_component(anchor, "#J_Bip_C_Head").is_some());
+        assert_eq!(startup.events.len(), 1);
+        assert!(matches!(
+            &startup.events[0],
+            (scope, EventSignal::GltfInitialized { gltf: initialized, uri })
+                if *scope == gltf
+                    && *initialized == gltf
+                    && uri == "assets/models/bisket.11.0.glb"
+        ));
 
         let queued: Vec<_> = startup
             .intents
@@ -1278,6 +1300,38 @@ mod tests {
             0.0,
         );
         assert!(subsequent.intents.is_empty());
+        assert!(subsequent.events.is_empty());
+    }
+
+    #[test]
+    fn failed_import_does_not_emit_initialized() {
+        let mut world = World::default();
+        let anchor = world.add_component(TransformComponent::new());
+        let gltf = world.add_component(GLTFComponent::new(
+            "/definitely/not/a/real/mittens-gltf-initialized-test.glb",
+        ));
+        world.add_child(anchor, gltf).unwrap();
+
+        let mut system = GLTFSystem::new();
+        system.register_component(gltf);
+        let mut visuals = VisualWorld::default();
+        let mut skinned_mesh = SkinnedMeshSystem::new();
+        let mut emitted = RecordingEmitter::default();
+        system.tick_with_queue(
+            &mut world,
+            &mut visuals,
+            &mut skinned_mesh,
+            &mut emitted,
+            0.0,
+        );
+
+        assert!(emitted.events.is_empty());
+        assert!(
+            !world
+                .get_component_by_id_as::<GLTFComponent>(gltf)
+                .unwrap()
+                .spawned
+        );
     }
 }
 

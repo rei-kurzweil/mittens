@@ -3,10 +3,11 @@ use crate::engine::ecs::{ComponentId, IntentValue, PoseApplyMode, World};
 use crate::scripting::object::Value;
 
 pub(crate) fn supports_component_method(component_type: &str, method: &str) -> bool {
-    (matches!(
-        component_type,
-        "T" | "Transform" | "TransformComponent" | "transform"
-    ) && matches!(method, "update_transform" | "look_at" | "translation"))
+    method == "attach"
+        || (matches!(
+            component_type,
+            "T" | "Transform" | "TransformComponent" | "transform"
+        ) && matches!(method, "update_transform" | "look_at" | "translation"))
         || (matches!(
             component_type,
             "PoseCapturePose" | "PoseCapturePoseComponent" | "pose_capture_pose"
@@ -34,6 +35,27 @@ pub(crate) fn invoke_component_method(
     mut emit_intent: impl FnMut(IntentValue),
 ) -> Result<Value, String> {
     match (component_type, method) {
+        (_, "attach") => {
+            let child = match args {
+                [Value::ComponentObject { id, .. }] => *id,
+                other => {
+                    return Err(format!(
+                        "attach(): expected one component child argument, got {other:?}"
+                    ));
+                }
+            };
+            if world.get_component_record(id).is_none() {
+                return Err("attach(): parent component does not exist".to_string());
+            }
+            if world.get_component_record(child).is_none() {
+                return Err("attach(): child component does not exist".to_string());
+            }
+            emit_intent(IntentValue::Attach {
+                parents: vec![id],
+                child,
+            });
+            Ok(Value::Null)
+        }
         (
             "PoseCapturePose" | "PoseCapturePoseComponent" | "pose_capture_pose",
             method @ ("apply" | "overlay" | "apply_blended"),

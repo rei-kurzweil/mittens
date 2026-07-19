@@ -1810,7 +1810,7 @@ fn run_world_query(
     let world = unsafe { &mut *world };
 
     let roots: Vec<ComponentId> = match scope {
-        Some(id) => vec![id],
+        Some(id) => world.scripting_query_roots(id),
         None => world
             .all_components()
             .filter(|&id| world.parent_of(id).is_none())
@@ -3147,6 +3147,7 @@ fn num_cmp(l: Value, r: Value, f: impl Fn(f64, f64) -> bool) -> Result<Value, St
 fn parse_signal_kind(s: &str) -> Result<SignalKind, String> {
     match s {
         "FrameTick" => Ok(SignalKind::FrameTick),
+        "GLTFInitialized" => Ok(SignalKind::GltfInitialized),
         "Click" => Ok(SignalKind::Click),
         "DragStart" => Ok(SignalKind::DragStart),
         "DragMove" => Ok(SignalKind::DragMove),

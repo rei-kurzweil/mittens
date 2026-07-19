@@ -282,6 +282,28 @@ impl World {
         self.run_query(root, selector)
     }
 
+    /// Roots searched by a live scripting query scoped to `component`.
+    ///
+    /// Imported glTF nodes are physically attached beneath the asset's transform anchor rather
+    /// than the `GLTFComponent` itself. Include the top-level imported nodes recorded in runtime
+    /// metadata so `gltf.query(...)` still has the expected asset-instance scope.
+    pub fn scripting_query_roots(&self, component: ComponentId) -> Vec<ComponentId> {
+        let Some(gltf) =
+            self.get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(component)
+        else {
+            return vec![component];
+        };
+
+        let spawned: std::collections::HashSet<_> =
+            gltf.spawned_node_transforms.iter().copied().collect();
+        let mut roots = vec![component];
+        roots.extend(gltf.spawned_node_transforms.iter().copied().filter(|node| {
+            self.parent_of(*node)
+                .is_none_or(|parent| !spawned.contains(&parent))
+        }));
+        roots
+    }
+
     pub fn component_matches_selector(&self, component: ComponentId, selector: &str) -> bool {
         self.run_query(component, selector).first().copied() == Some(component)
     }

@@ -152,7 +152,8 @@ impl mms::Host for MittensHost<'_> {
                 multiple,
             } => {
                 let roots = if let Some(scope) = scope {
-                    vec![self.existing_id(scope, "query")?]
+                    self.world
+                        .scripting_query_roots(self.existing_id(scope, "query")?)
                 } else {
                     self.world
                         .all_components()
@@ -331,6 +332,7 @@ impl mms::Host for MittensHost<'_> {
 fn signal_kind(name: &str) -> Option<SignalKind> {
     Some(match name {
         "FrameTick" => SignalKind::FrameTick,
+        "GLTFInitialized" => SignalKind::GltfInitialized,
         "Click" => SignalKind::Click,
         "DataEvent" => SignalKind::DataEvent,
         "CollisionStarted" => SignalKind::CollisionStarted,

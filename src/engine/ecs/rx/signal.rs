@@ -58,6 +58,10 @@ pub enum EventSignal {
     /// Emitted once per rendered frame when at least one global subscriber exists.
     FrameTick { dt_sec: f32 },
 
+    /// A glTF asset finished spawning and its runtime node metadata is queryable.
+    /// Scoped to `gltf`.
+    GltfInitialized { gltf: ComponentId, uri: String },
+
     /// Topology changed.
     ParentChanged {
         child: ComponentId,
@@ -276,6 +280,7 @@ impl EventSignal {
     pub fn kind(&self) -> SignalKind {
         match self {
             EventSignal::FrameTick { .. } => SignalKind::FrameTick,
+            EventSignal::GltfInitialized { .. } => SignalKind::GltfInitialized,
             EventSignal::ParentChanged { .. } => SignalKind::ParentChanged,
             EventSignal::RayIntersected { .. } => SignalKind::RayIntersected,
             EventSignal::CollisionStarted { .. } => SignalKind::CollisionStarted,
@@ -925,6 +930,7 @@ impl IntentValue {
 pub enum SignalKind {
     Any,
     FrameTick,
+    GltfInitialized,
     ParentChanged,
     RayIntersected,
     CollisionStarted,
