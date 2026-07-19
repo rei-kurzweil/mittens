@@ -22,11 +22,13 @@ layout(set = 0, binding = 0) uniform CameraUBO {
 
 const uint LIGHT_TYPE_POINT = 1u;
 const uint LIGHT_TYPE_DIRECTIONAL = 2u;
+const uint LIGHT_TYPE_SPOT = 3u;
 
 struct Light {
     vec4 pos_intensity;  // xyz position OR direction, w intensity
     vec4 color_distance; // rgb color, w distance (point range)
-    uvec4 meta;          // meta.x = light_type
+    vec4 direction_angle; // xyz spot direction, w outer cone cosine
+    uvec4 meta;          // x light_type, y inner cone cosine as float bits
 };
 
 layout(set = 0, binding = 1, std430) readonly buffer LightsSSBO {
@@ -89,6 +91,7 @@ void main() {
         float intensity = g_lights.lights[i].pos_intensity.w;
         vec3 lc = g_lights.lights[i].color_distance.rgb;
         float range = g_lights.lights[i].color_distance.w;
+        vec4 direction_angle = g_lights.lights[i].direction_angle;
 
         vec3 L;
         float att = 1.0;
@@ -119,6 +122,14 @@ void main() {
                 att = t * t;
             } else {
                 att = 1.0 / (1.0 + dist * dist);
+            }
+
+            if (light_type == LIGHT_TYPE_SPOT) {
+                vec3 spot_direction = normalize(direction_angle.xyz);
+                float outer_cos = direction_angle.w;
+                float inner_cos = uintBitsToFloat(g_lights.lights[i].meta.y);
+                float cone_cos = dot(-L, spot_direction);
+                att *= smoothstep(outer_cos, max(inner_cos, outer_cos + 1e-5), cone_cos);
             }
         }
 

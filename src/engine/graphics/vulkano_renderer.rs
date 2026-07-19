@@ -455,6 +455,7 @@ mod vulkano_backend {
 
     const LIGHT_TYPE_POINT: u32 = 1;
     const LIGHT_TYPE_DIRECTIONAL: u32 = 2;
+    const LIGHT_TYPE_SPOT: u32 = 3;
 
     #[derive(BufferContents, Clone, Copy, Debug, Default)]
     #[repr(C, align(16))]
@@ -463,8 +464,10 @@ mod vulkano_backend {
         pos_intensity: [f32; 4],
         // rgb color, w distance
         color_distance: [f32; 4],
+        // xyz spot direction (world), w outer cone cosine
+        direction_angle: [f32; 4],
         // Light metadata (matches `uvec4 meta` on the shader side).
-        // meta.x = light_type (1=point, 2=directional)
+        // meta.x = light type; meta.y = inner cone cosine as f32 bits
         meta: [u32; 4],
     }
 
@@ -3166,13 +3169,14 @@ mod vulkano_backend {
 
             // Lights storage buffer (set=0, binding=1).
             let mut lights_ssbo = LightsSSBO::default();
-            let lights = visual_world.point_lights();
+            let lights = visual_world.lights();
             let count = (lights.len()).min(MAX_LIGHTS);
             lights_ssbo.count = count as u32;
             for (i, l) in lights.iter().take(count).enumerate() {
                 let light_type = match l.light_type {
                     LIGHT_TYPE_POINT => LIGHT_TYPE_POINT,
                     LIGHT_TYPE_DIRECTIONAL => LIGHT_TYPE_DIRECTIONAL,
+                    LIGHT_TYPE_SPOT => LIGHT_TYPE_SPOT,
                     // Default to point for legacy/unknown values.
                     _ => LIGHT_TYPE_POINT,
                 };
@@ -3185,7 +3189,21 @@ mod vulkano_backend {
                         l.intensity,
                     ],
                     color_distance: [l.color[0], l.color[1], l.color[2], l.distance],
-                    meta: [light_type, 0, 0, 0],
+                    direction_angle: [
+                        l.direction_ws[0],
+                        l.direction_ws[1],
+                        l.direction_ws[2],
+                        l.angle.clamp(0.0, std::f32::consts::FRAC_PI_2).cos(),
+                    ],
+                    meta: [
+                        light_type,
+                        (l.angle * (1.0 - l.penumbra.clamp(0.0, 1.0)))
+                            .clamp(0.0, std::f32::consts::FRAC_PI_2)
+                            .cos()
+                            .to_bits(),
+                        0,
+                        0,
+                    ],
                 };
             }
 

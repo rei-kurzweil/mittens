@@ -55,7 +55,13 @@ fn studio_light(light_name, position, tint, light_intensity) {
                     EM.on() { intensity(2.5) }
                 }
             }
-            DL { color(tint[0], tint[1], tint[2]) intensity(light_intensity) }
+            SL {
+                color(tint[0], tint[1], tint[2])
+                intensity(light_intensity)
+                distance(11.0)
+                angle(0.62)
+                penumbra(0.35)
+            }
         }
     }
 }

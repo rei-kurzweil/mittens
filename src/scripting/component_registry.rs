@@ -32,7 +32,8 @@ use crate::engine::ecs::component::{
     RenderableComponent, RendererSettingsComponent, RendererStatsComponent, RouterComponent,
     ScrollingComponent, SecondaryMotionComponent, SelectableComponent, SelectionComponent,
     SerializeComponent, SignalObserverRouterComponent, SignalRouteUpwardComponent, SizeDimension,
-    SkinnedMeshComponent, SpringBoneComponent, SpringJointComponent, StencilClipComponent,
+    SkinnedMeshComponent, SpotLightComponent, SpringBoneComponent, SpringJointComponent,
+    StencilClipComponent,
     StyleComponent, TextAlign, TextComponent, TextInputComponent, TextShadowComponent,
     TextureComponent, TextureFilteringComponent, TransformCameraSpecificComponent,
     TransformComponent, TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis,
@@ -143,6 +144,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "Serialize",
     "SignalRouteUpward",
     "SkinnedMesh",
+    "SpotLight",
     "SpringBone",
     "SpringJoint",
     "StencilClip",
@@ -1384,6 +1386,13 @@ fn create_component(
             }
             Ok(id)
         }
+        "SpotLight" => {
+            let id = world.add_component(SpotLightComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
         "Emissive" => match ctor {
             Some("on") => add!(EmissiveComponent::on()),
             Some("off") => add!(EmissiveComponent::off()),
@@ -2368,6 +2377,21 @@ fn apply_call(
             "distance" => *pl = pl.clone().with_distance(arg_f32(args, 0)?),
             "color" => {
                 *pl = pl
+                    .clone()
+                    .with_color(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?)
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+    if let Some(sl) = world.get_component_by_id_as_mut::<SpotLightComponent>(id) {
+        match method {
+            "intensity" => *sl = sl.clone().with_intensity(arg_f32(args, 0)?),
+            "distance" => *sl = sl.clone().with_distance(arg_f32(args, 0)?),
+            "angle" => *sl = sl.clone().with_angle(arg_f32(args, 0)?),
+            "penumbra" => *sl = sl.clone().with_penumbra(arg_f32(args, 0)?),
+            "color" => {
+                *sl = sl
                     .clone()
                     .with_color(arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?)
             }

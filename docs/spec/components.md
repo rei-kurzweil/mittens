@@ -50,6 +50,8 @@ This document provides a comprehensive inventory of all built-in components in c
   - Omnidirectional light source with range and intensity.
 - **DirectionalLightComponent**
   - Infinite parallel light source (e.g., sun).
+- **SpotLightComponent**
+  - Local cone light with range, angle, edge softness, intensity, and transform-driven direction.
 - **AmbientLightComponent**
   - Base global illumination color.
 - **LightQuantizationComponent**

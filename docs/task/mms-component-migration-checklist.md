@@ -40,6 +40,7 @@ with no args.
 - [x] `AmbientLightComponent` — `AmbientLight.rgb(r,g,b)`
 - [x] `DirectionalLightComponent` — `DirectionalLight.intensity(x).color(r,g,b)`
 - [x] `PointLightComponent` — `PointLight.intensity(x).distance(x).color(r,g,b)`
+- [x] `SpotLightComponent` — `SpotLight.intensity(x).distance(x).angle(radians).penumbra(x).color(r,g,b)`
 - [x] `GLTFComponent` — `GLTF.new(uri)` + optional `.with_visualized_transforms(true)`
 
 ## Components still using default `to_mms_ast`

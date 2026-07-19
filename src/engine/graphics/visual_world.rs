@@ -143,8 +143,8 @@ pub struct VisualWorld {
 
     ambient_light: [f32; 3],
 
-    point_lights: Vec<VisualPointLight>,
-    point_light_index_by_component: std::collections::HashMap<ComponentId, usize>,
+    lights: Vec<VisualLight>,
+    light_index_by_component: std::collections::HashMap<ComponentId, usize>,
     dirty_lights: bool,
 
     // Target-scoped camera state. Window is typically mono; XR is stereo.
@@ -294,8 +294,8 @@ impl Default for VisualWorld {
 
             ambient_light: [0.0, 0.0, 0.0],
 
-            point_lights: Vec::new(),
-            point_light_index_by_component: std::collections::HashMap::new(),
+            lights: Vec::new(),
+            light_index_by_component: std::collections::HashMap::new(),
             dirty_lights: true,
 
             visual_cameras: vec![VisualCamera {
@@ -1373,17 +1373,24 @@ mod tests {
     }
 }
 #[derive(Debug, Clone, Copy, Default)]
-pub struct VisualPointLight {
+pub struct VisualLight {
     /// Light type discriminator for GPU shading.
     ///
     /// Matches shader constants in `assets/shaders/toon-mesh.frag`:
     /// - 1 = point
     /// - 2 = directional
+    /// - 3 = spot
     pub light_type: u32,
     pub position_ws: [f32; 3],
     pub intensity: f32,
     pub distance: f32,
     pub color: [f32; 3],
+    /// Spot direction in world space (local +Z transformed to world space).
+    pub direction_ws: [f32; 3],
+    /// Spot outer half-angle in radians.
+    pub angle: f32,
+    /// Fractional softness of the spot cone edge.
+    pub penumbra: f32,
 }
 
 impl VisualWorld {
@@ -1853,8 +1860,8 @@ impl VisualWorld {
         self.component_to_handle.clear();
         self.next_handle = 0;
 
-        self.point_lights.clear();
-        self.point_light_index_by_component.clear();
+        self.lights.clear();
+        self.light_index_by_component.clear();
         self.dirty_lights = true;
 
         self.ambient_light = [0.0, 0.0, 0.0];
@@ -1907,17 +1914,17 @@ impl VisualWorld {
         v
     }
 
-    pub fn point_lights(&self) -> &[VisualPointLight] {
-        &self.point_lights
+    pub fn lights(&self) -> &[VisualLight] {
+        &self.lights
     }
 
-    pub fn upsert_point_light(&mut self, cid: ComponentId, light: VisualPointLight) {
-        if let Some(&idx) = self.point_light_index_by_component.get(&cid) {
-            self.point_lights[idx] = light;
+    pub fn upsert_light(&mut self, cid: ComponentId, light: VisualLight) {
+        if let Some(&idx) = self.light_index_by_component.get(&cid) {
+            self.lights[idx] = light;
         } else {
-            let idx = self.point_lights.len();
-            self.point_lights.push(light);
-            self.point_light_index_by_component.insert(cid, idx);
+            let idx = self.lights.len();
+            self.lights.push(light);
+            self.light_index_by_component.insert(cid, idx);
         }
         self.dirty_lights = true;
     }

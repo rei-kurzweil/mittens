@@ -183,6 +183,10 @@ pub const COMPONENT_SHORTFORMS: &[ComponentShortformEntry] = &[
         full: "DirectionalLight",
     },
     ComponentShortformEntry {
+        short: "SL",
+        full: "SpotLight",
+    },
+    ComponentShortformEntry {
         short: "AL",
         full: "AmbientLight",
     },

@@ -78,6 +78,7 @@ pub mod transparent_cutout;
 pub mod xr;
 
 pub mod point_light;
+pub mod spot_light;
 pub mod pointer;
 pub mod raycast;
 pub mod raycastable;
@@ -177,6 +178,7 @@ pub use opacity::OpacityComponent;
 pub use option::OptionComponent;
 pub use overlay::OverlayComponent;
 pub use point_light::PointLightComponent;
+pub use spot_light::SpotLightComponent;
 pub use pointer::PointerComponent;
 pub use pose_capture::*;
 pub use raycast::{RayCastComponent, RayCastMode};

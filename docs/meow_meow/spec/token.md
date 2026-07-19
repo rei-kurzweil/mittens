@@ -72,6 +72,7 @@ Evaluation expands shortforms into canonical component type names before resolvi
 | `C2D` | `Camera2D` |
 | `PL` | `PointLight` |
 | `DL` | `DirectionalLight` |
+| `SL` | `SpotLight` |
 | `AL` | `AmbientLight` |
 | `ED` | `Editor` |
 | `GZM` | `Gizmo` |

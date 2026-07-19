@@ -1697,7 +1697,7 @@ fn gltf_pose_animation_example_imports_named_pose_factories() {
 fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
     use crate::engine::ecs::component::{
         Camera3DComponent, CameraXRComponent, CollisionComponent, CollisionMode,
-        DirectionalLightComponent, InputComponent, InputTransformModeComponent, InputXRComponent,
+        InputComponent, InputTransformModeComponent, InputXRComponent, SpotLightComponent,
         KineticResponseComponent, KineticResponseMode, RenderableComponent,
         SecondaryMotionComponent, SpringBoneComponent,
     };
@@ -1778,7 +1778,7 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
         assert_eq!(
             tree.iter()
                 .filter(|&&id| world
-                    .get_component_by_id_as::<DirectionalLightComponent>(id)
+                    .get_component_by_id_as::<SpotLightComponent>(id)
                     .is_some())
                 .count(),
             1
@@ -1918,6 +1918,30 @@ fn secondary_motion_desktop_avatar_separates_from_named_pile_cube() {
         queue.push_intent_now(ComponentId::default(), intent);
     }
     systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
+
+    let studio_spots: Vec<_> = visuals
+        .lights()
+        .iter()
+        .filter(|light| light.light_type == 3)
+        .collect();
+    assert_eq!(studio_spots.len(), 3);
+    for light in studio_spots {
+        let to_target = [
+            -light.position_ws[0],
+            -0.35 - light.position_ws[1],
+            -light.position_ws[2],
+        ];
+        let to_target_len =
+            (to_target[0] * to_target[0] + to_target[1] * to_target[1] + to_target[2] * to_target[2])
+                .sqrt();
+        let alignment = (light.direction_ws[0] * to_target[0]
+            + light.direction_ws[1] * to_target[1]
+            + light.direction_ws[2] * to_target[2])
+            / to_target_len;
+        assert!(alignment > 0.999, "spotlight misses studio target: {alignment}");
+        assert!((light.angle - 0.62).abs() < 1e-6);
+        assert!((light.penumbra - 0.35).abs() < 1e-6);
+    }
 
     let named = |world: &World, label: &str| {
         world
@@ -3411,6 +3435,26 @@ fn roundtrip_point_light() {
     assert!((got.color[0] - 0.25).abs() < 1e-6);
     assert!((got.color[1] - 0.5).abs() < 1e-6);
     assert!((got.color[2] - 0.75).abs() < 1e-6);
+}
+
+#[test]
+fn roundtrip_spot_light() {
+    use crate::engine::ecs::component::SpotLightComponent;
+    let original = SpotLightComponent::new()
+        .with_intensity(4.0)
+        .with_distance(12.0)
+        .with_angle(0.6)
+        .with_penumbra(0.3)
+        .with_color(0.25, 0.5, 0.75);
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<SpotLightComponent>(id)
+        .unwrap();
+    assert!((got.intensity - 4.0).abs() < 1e-6);
+    assert!((got.distance - 12.0).abs() < 1e-6);
+    assert!((got.angle - 0.6).abs() < 1e-6);
+    assert!((got.penumbra - 0.3).abs() < 1e-6);
+    assert_eq!(got.color, [0.25, 0.5, 0.75]);
 }
 
 #[test]
