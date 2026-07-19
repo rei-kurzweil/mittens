@@ -1,6 +1,7 @@
 import { star_kawaii_background } from "../assets/components/backgrounds/star_kawaii_background.mms"
 import { bisket_secondary_motion } from "../assets/components/secondary_motion/bisket.mms"
 import { pose as relaxed_pose_factory } from "../assets/components/poses/bisket/000-relaxed.pose.mms"
+import { tripod_light } from "../assets/components/tripod_light.mms"
 
 // Desktop Bisket secondary-motion studio. The light fixtures and collision
 // playground are deliberately visible so spring and locomotion behavior can be
@@ -23,49 +24,6 @@ RenderGraph {
     }
 }
 
-fn studio_light(light_name, position, tint, light_intensity) {
-    return T.position(position[0], 0.0, position[2]) {
-        name = light_name
-
-        // Three splayed tripod legs and a vertical stand.
-        T.position(-0.32, -1.28, 0.0).rotation(0.0, 0.0, -0.42).scale(0.09, 0.78, 0.09) {
-            R.cube() { C.rgba(0.20, 0.22, 0.27, 1.0) }
-        }
-        T.position(0.32, -1.28, 0.0).rotation(0.0, 0.0, 0.42).scale(0.09, 0.78, 0.09) {
-            R.cube() { C.rgba(0.20, 0.22, 0.27, 1.0) }
-        }
-        T.position(0.0, -1.28, 0.32).rotation(0.42, 0.0, 0.0).scale(0.09, 0.78, 0.09) {
-            R.cube() { C.rgba(0.20, 0.22, 0.27, 1.0) }
-        }
-        T.position(0.0, 0.0, 0.0).scale(0.10, 3.0, 0.10) {
-            R.cube() { C.rgba(0.16, 0.18, 0.22, 1.0) }
-        }
-
-        // The housing faces the avatar. The luminous panel sits just beyond
-        // its front surface to avoid z-fighting when viewed from the lit side.
-        T.position(0.0, 1.62, 0.0).looking_at([0.0, -0.35, 0.0]) {
-            name = "studio_light_housing"
-            T.scale(0.78, 0.52, 0.22) {
-                R.cube() { C.rgba(0.075, 0.08, 0.105, 1.0) }
-            }
-            T.position(0.0, 0.0, 0.116).scale(0.68, 0.42, 0.012) {
-                name = "studio_light_emissive_face"
-                R.cube() {
-                    C.rgba(1.0, 1.0, 1.0, 1.0)
-                    EM.on() { intensity(2.5) }
-                }
-            }
-            SL {
-                color(tint[0], tint[1], tint[2])
-                intensity(light_intensity)
-                distance(11.0)
-                angle(0.62)
-                penumbra(0.35)
-            }
-        }
-    }
-}
-
 fn static_cube(cube_name, position, size, color) {
     return T.position(position[0], position[1], position[2]).scale(size[0], size[1], size[2]) {
         name = cube_name
@@ -80,9 +38,12 @@ BG.occlusion_and_lighting() {
     star_kawaii_background([1.0, 0.82, 0.12, 1.0])
 }
 
-studio_light("studio_key_light", [-4.2, 0.0, 2.8], [1.0, 0.78, 0.62], 6.0)
-studio_light("studio_fill_light", [4.0, 0.0, 1.4], [0.48, 0.68, 1.0], 4.5)
-studio_light("studio_rim_light", [1.8, 0.0, -4.2], [1.0, 0.42, 0.78], 5.0)
+tripod_light("studio_key_light", [-4.2, 0.0, 2.8], [0.0, -0.35, 0.0],
+    SL.color(1.0, 0.78, 0.62).intensity(6.0).distance(11.0).angle(0.62).penumbra(0.35))
+tripod_light("studio_fill_light", [4.0, 0.0, 1.4], [0.0, -0.35, 0.0],
+    SL.color(0.48, 0.68, 1.0).intensity(4.5).distance(11.0).angle(0.62).penumbra(0.35))
+tripod_light("studio_rim_light", [1.8, 0.0, -4.2], [0.0, -0.35, 0.0],
+    SL.color(1.0, 0.42, 0.78).intensity(5.0).distance(11.0).angle(0.62).penumbra(0.35))
 
 // Floor top is y=-1.6, exactly touching the avatar collider's bottom face.
 static_cube("studio_floor", [0.0, -1.65, 0.0], [18.0, 0.1, 18.0], [0.025, 0.035, 0.075])

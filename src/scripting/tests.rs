@@ -1793,11 +1793,15 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
         );
         assert!(
             tree.iter()
-                .any(|&id| world.component_label(id) == Some("studio_light_housing"))
+                .any(|&id| world.component_label(id) == Some("tripod_light_housing"))
         );
         assert!(
             tree.iter()
-                .any(|&id| world.component_label(id) == Some("studio_light_emissive_face"))
+                .any(|&id| world.component_label(id) == Some("tripod_light_rear_mount"))
+        );
+        assert!(
+            tree.iter()
+                .any(|&id| world.component_label(id) == Some("tripod_light_emissive_face"))
         );
     }
 
@@ -1892,6 +1896,141 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
             .is_some()),
         0
     );
+}
+
+#[test]
+fn lights_example_materializes_all_light_types_and_labeled_targets() {
+    use crate::engine::ecs::component::{
+        AmbientLightComponent, Camera3DComponent, DirectionalLightComponent, EmissiveComponent,
+        InputComponent, InputTransformModeComponent, PointLightComponent, SpotLightComponent,
+        TextComponent,
+    };
+
+    let source = include_str!("../../examples/lights.mms");
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+    let mut render_assets = RenderAssets::new();
+    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+        source,
+        Some("examples/lights.mms"),
+        &mut world,
+        &mut rx,
+        Some(&mut render_assets),
+        &mut emit,
+    );
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+
+    let ids: Vec<_> = world.all_components().collect();
+    assert_eq!(
+        ids.iter()
+            .filter(|&&id| world.get_component_by_id_as::<AmbientLightComponent>(id).is_some())
+            .count(),
+        1
+    );
+    assert_eq!(
+        ids.iter()
+            .filter(|&&id| world.get_component_by_id_as::<DirectionalLightComponent>(id).is_some())
+            .count(),
+        1
+    );
+    assert_eq!(
+        ids.iter()
+            .filter(|&&id| world.get_component_by_id_as::<PointLightComponent>(id).is_some())
+            .count(),
+        1
+    );
+    assert_eq!(
+        ids.iter()
+            .filter(|&&id| world.get_component_by_id_as::<SpotLightComponent>(id).is_some())
+            .count(),
+        1
+    );
+    assert_eq!(
+        ids.iter()
+            .filter(|&&id| world.get_component_by_id_as::<Camera3DComponent>(id).is_some())
+            .count(),
+        1
+    );
+    assert_eq!(
+        ids.iter()
+            .filter(|&&id| world.get_component_by_id_as::<InputComponent>(id).is_some())
+            .count(),
+        1
+    );
+    assert_eq!(
+        ids.iter()
+            .filter(|&&id| world
+                .get_component_by_id_as::<InputTransformModeComponent>(id)
+                .is_some())
+            .count(),
+        1
+    );
+
+    for name in [
+        "ambient_target",
+        "directional_target",
+        "point_target",
+        "spot_target",
+        "ambient_fixture",
+        "directional_fixture",
+        "point_fixture",
+        "spot_fixture",
+        "lights_camera_input",
+        "lights_camera_rig",
+        "lights_camera",
+    ] {
+        assert!(
+            ids.iter().any(|&id| world.component_label(id) == Some(name)),
+            "missing {name}"
+        );
+    }
+
+    let labels: Vec<_> = ids
+        .iter()
+        .filter_map(|&id| world.get_component_by_id_as::<TextComponent>(id))
+        .collect();
+    assert_eq!(labels.len(), 4);
+    for expected in ["AmbientLight", "DirectionalLight", "PointLight", "SpotLight"] {
+        assert!(labels.iter().any(|label| label.text == expected));
+    }
+    assert!(
+        ids.iter()
+            .filter(|&&id| world.get_component_by_id_as::<EmissiveComponent>(id).is_some())
+            .count()
+            >= 12
+    );
+}
+
+#[test]
+fn tripod_light_without_a_mounted_light_has_no_emissive_face() {
+    use crate::engine::ecs::component::EmissiveComponent;
+
+    let source = r#"
+        import { tripod_light } from "../assets/components/tripod_light.mms"
+        tripod_light("empty_fixture", [0.0, 0.0, 0.0], [0.0, 1.0, -2.0])
+    "#;
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+    let mut render_assets = RenderAssets::new();
+    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+        source,
+        Some("examples/tripod-light-empty-test.mms"),
+        &mut world,
+        &mut rx,
+        Some(&mut render_assets),
+        &mut emit,
+    );
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    assert!(
+        world
+            .all_components()
+            .all(|id| world.component_label(id) != Some("tripod_light_emissive_face"))
+    );
+    assert!(world
+        .all_components()
+        .all(|id| world.get_component_by_id_as::<EmissiveComponent>(id).is_none()));
 }
 
 #[test]
