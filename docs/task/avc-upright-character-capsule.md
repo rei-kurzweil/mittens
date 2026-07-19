@@ -1,4 +1,4 @@
-# AVC upright character capsule, collision routing, and desktop input routing
+# AVC upright character capsule and collision routing
 
 Date: 2026-07-19
 
@@ -12,8 +12,8 @@ alignment, remain upright when the desktop camera or XR headset pitches and
 rolls, and send collision correction to the transform that owns locomotion.
 
 This task also removes the `I.speed(0.0)` adapter from
-`examples/secondary-motion-desktop.mms` by allowing one desktop `Input` to
-route translation and rotation to different transforms.
+`examples/secondary-motion-desktop.mms` by restoring the same single head-level
+driver topology already used successfully by `gltf-pose-animation.mms`.
 
 The chosen AVC contract remains head-anchored for both desktop and XR.  This
 task does not add a body-anchored desktop-only head topology.
@@ -28,10 +28,17 @@ task does not add a body-anchored desktop-only head topology.
 - AVC currently creates an empty transform stored as `splice_head`, while the
   actual head parent is a different `head_target` transform. Comments that say
   an `AimConstraint` drives `splice_head` are stale.
-- Desktop `Input` writes translation and rotation to one direct transform
-  child. The secondary-motion example therefore uses an outer translating
-  input and an inner zero-speed rotating input to manufacture the head-level
-  pose AVC expects without pitching the body collider.
+- `gltf-pose-animation.mms` demonstrates that a single desktop `Input` works
+  with the current head-anchored AVC design when its direct transform child is
+  also AVC's `driven_t`. Position and rotation both describe the head-level
+  anchor, and body-follow places `model_root` beneath it.
+- The secondary-motion example diverges by putting its input/collision origin
+  at the body center (`y = -0.8`) and AVC beneath a separate head child
+  (`y = +0.8`). Rotating the body-centered input rotates that offset, so the
+  head anchor orbits. Body-follow then correctly follows the already-orbited
+  head and cannot repair the upstream pivot.
+- Its two-input topology is therefore an example-level collision-origin
+  adapter, not evidence that desktop AVC must ignore driver position.
 - XR examples commonly put a sphere and `KineticResponse` on the camera
   wrapper. This makes the collision center follow the head, and collision
   response moves the wrapper instead of the outer transform moved by
@@ -76,6 +83,11 @@ Transform streams are deliberately one-way. Collision response must not write
 to the stream output because the next AVC/stream update would overwrite it.
 Instead, response applies the computed world-space correction delta to an
 explicit locomotion target.
+
+For a head-anchored desktop AVC, that locomotion target is also the single
+head-level transform driven by `Input`. The capsule can live at body height
+without moving the input origin down to the body because its pose is derived
+from `model_root` through the stream above.
 
 ## Public interfaces
 
@@ -153,31 +165,6 @@ For desktop, the target is the transform translated by `Input`. For XR, it is
 the outer transform selected by `InputXRGamepad::locomotion_target_transform`,
 not the HMD-driven transform or camera wrapper.
 
-### Routed desktop rotation
-
-Add to `InputTransformModeComponent`:
-
-```rust
-pub rotation_target_source: Option<ComponentRef>
-
-with_rotation_target_source(ComponentRef)
-```
-
-```mms
-rotation_target("../#avatar_head_driver")
-```
-
-Resolution uses the same containing-`Input` subtree scope as
-`translation_basis(...)`:
-
-- translation continues to update the direct transform child;
-- rotation updates the referenced transform;
-- no route preserves current single-target behavior;
-- an unresolved explicit route skips rotation rather than pitching the
-  translation/collider root;
-- when the translation basis and rotation target resolve to the same transform,
-  movement uses the newly calculated rotation in the same frame.
-
 ## Collision implementation
 
 ### Bounds and broad phase
@@ -251,11 +238,13 @@ than a camera-centered sphere.
 For `secondary-motion-desktop.mms`, also:
 
 - remove `desktop_head_input` and `I.speed(0.0)`;
-- use one `Input` with `rotation_target` set to `avatar_head_driver`;
-- translate the existing grounded locomotion root;
-- use the head target as the translation basis;
+- remove the separate body-centered `avatar_driver` plus `+0.8` head-child
+  pivot arrangement;
+- use one head-level transform as both the direct `Input` target and AVC
+  `driven_t`, matching `gltf-pose-animation.mms`;
+- let ordinary FPS input update both position and rotation on that transform;
 - keep the capsule stream beneath AVC's model root and route its response back
-  to the grounded locomotion root.
+  to the head-level input/locomotion transform.
 
 ## Implementation order
 
@@ -264,8 +253,8 @@ For `secondary-motion-desktop.mms`, also:
    around world-space deltas.
 3. Prove the model-root `TransformForkTRS` capsule follower in a focused
    synthetic AVC test for desktop and XR head poses.
-4. Add `InputTransformMode.rotation_target(...)` and remove the two-input
-   desktop workaround.
+4. Replace the secondary-motion demo's body-centered input pivot with the
+   proven single head-level driver topology.
 5. Clean up AVC's empty splice and stale topology documentation.
 6. Migrate the listed examples and shared Bisket capsule configuration.
 
@@ -288,8 +277,8 @@ For `secondary-motion-desktop.mms`, also:
   does not mutate the capsule offset transform.
 - An unresolved response target produces no movement.
 - Default response behavior remains compatible.
-- Routed input rotates only the head driver, translates only the locomotion
-  root, and uses current-frame head yaw for movement.
+- The single desktop input target supplies head position and rotation without
+  any intermediate translated pivot that can orbit.
 
 ### AVC alignment tests
 
@@ -309,8 +298,9 @@ pose-valid XR:
 - `secondary-motion-desktop` contains one desktop `Input`, one Bisket capsule,
   and no avatar cube collider.
 - Mouse pitch does not rotate or orbit the capsule.
+- The desktop topology matches `gltf-pose-animation`: the direct `Input`
+  transform child is AVC's `driven_t`.
 - WASD and XR thumbstick locomotion both collide through their owning outer
   transforms.
 - Existing XR pose-valid gating, camera alignment, hand IK, secondary motion,
   and static scenery collision tests continue to pass.
-
