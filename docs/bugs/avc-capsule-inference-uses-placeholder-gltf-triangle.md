@@ -2,7 +2,12 @@
 
 ## Status
 
-Open bug. Root cause confirmed with runtime diagnostics.
+Implemented in the engine; pending runtime validation against Bisket's displayed
+bounds and capsule diagnostics.
+
+The implementation registers imported CPU meshes before simulation-time geometry
+consumers run, treats `MeshComponent` as authoritative during bounds measurement,
+and prevents AVC from creating a capsule while any imported primitive is pending.
 
 ## Symptom
 

@@ -6,7 +6,7 @@ use crate::engine::ecs::component::{
     TransformDropComponent, TransformForkTRSComponent, TransformMapRotationComponent,
     TransformMapScaleComponent, TransformMapTranslationComponent,
 };
-use crate::engine::ecs::system::bounds_system::BoundsSystem;
+use crate::engine::ecs::system::bounds_system::{BoundsSystem, RenderableBoundsMeasure};
 use crate::engine::ecs::system::collision_shape_inference::infer_upright_capsule;
 use crate::engine::ecs::system::input_xr_gamepad_system::xr_locomotion_target_transform;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
@@ -167,27 +167,35 @@ fn try_init_or_route_capsule(
     }
 
     let measured_bounds =
-        BoundsSystem::calculate_subtree_local_bounds(world, render_assets, model_root_id);
-    let (bounds_source, inference_bounds, inferred) = if let Some(bounds) = measured_bounds
-        && let Some(inferred) = infer_upright_capsule(&bounds, avc.capsule_radius)
-    {
-        ("aggregate_render_bounds", bounds, inferred)
-    } else {
-        let Some(height) = spawned_gltf_exists(world, model_root_id)
-            .then(|| fallback_avatar_height(world, avc_id, model_root_id, &avc))
-            .flatten()
-        else {
-            return;
-        };
-        let bounds = crate::engine::graphics::bounds::Aabb {
-            min: [0.0, 0.0, 0.0],
-            max: [0.0, height.max(0.0), 0.0],
-        };
-        let Some(inferred) = infer_upright_capsule(&bounds, avc.capsule_radius) else {
-            return;
-        };
-        ("fallback_avatar_height", bounds, inferred)
+        BoundsSystem::measure_renderable_subtree_bounds(world, render_assets, model_root_id);
+    let measured_inference = match measured_bounds {
+        RenderableBoundsMeasure::Measured(bounds) => {
+            infer_upright_capsule(&bounds, avc.capsule_radius).map(|inferred| (bounds, inferred))
+        }
+        // Never infer from a partial import-backed subtree or substitute the
+        // avatar-height fallback merely because CPU mesh registration is late.
+        RenderableBoundsMeasure::Pending => return,
+        RenderableBoundsMeasure::Unmeasurable => None,
     };
+    let (bounds_source, inference_bounds, inferred) =
+        if let Some((bounds, inferred)) = measured_inference {
+            ("aggregate_render_bounds", bounds, inferred)
+        } else {
+            let Some(height) = spawned_gltf_exists(world, model_root_id)
+                .then(|| fallback_avatar_height(world, avc_id, model_root_id, &avc))
+                .flatten()
+            else {
+                return;
+            };
+            let bounds = crate::engine::graphics::bounds::Aabb {
+                min: [0.0, 0.0, 0.0],
+                max: [0.0, height.max(0.0), 0.0],
+            };
+            let Some(inferred) = infer_upright_capsule(&bounds, avc.capsule_radius) else {
+                return;
+            };
+            ("fallback_avatar_height", bounds, inferred)
+        };
     let (radius, half_segment) = match inferred.shape {
         CollisionShape::CapsuleY {
             radius,
@@ -1133,8 +1141,9 @@ fn tc_world_rot(world: &World, id: ComponentId) -> [f32; 4] {
 mod capsule_tests {
     use super::*;
     use crate::engine::ecs::CommandQueue;
-    use crate::engine::ecs::component::{CollisionShape, RenderableComponent};
+    use crate::engine::ecs::component::{CollisionShape, MeshComponent, RenderableComponent};
     use crate::engine::ecs::system::TransformStreamSystem;
+    use crate::engine::graphics::mesh::MeshFactory;
 
     fn attach(world: &mut World, parent: ComponentId, child: ComponentId) {
         world.set_parent(child, Some(parent)).unwrap();
@@ -1251,6 +1260,59 @@ mod capsule_tests {
                 .capsule_transform_id
                 .is_some()
         );
+    }
+
+    #[test]
+    fn generated_capsule_waits_for_and_uses_imported_mesh_bounds() {
+        let mut world = World::default();
+        let mut assets = RenderAssets::new();
+        let mut queue = CommandQueue::new();
+        let driven = world.add_component(TransformComponent::new());
+        let avc = world.add_component(AvatarControlComponent::new());
+        let model = world.add_component(TransformComponent::new());
+        let tall_shape = world.add_component(TransformComponent::new().with_scale(1.0, 2.0, 1.0));
+        let renderable = world.add_component(RenderableComponent::triangle());
+        let mesh = world.add_component(MeshComponent::new("avatar:body:prim0"));
+        attach(&mut world, driven, avc);
+        attach(&mut world, avc, model);
+        attach(&mut world, model, tall_shape);
+        attach(&mut world, tall_shape, renderable);
+        attach(&mut world, renderable, mesh);
+
+        try_init_or_route_capsule(avc, &mut world, &assets, &mut queue);
+        assert!(
+            world
+                .get_component_by_id_as::<AvatarControlComponent>(avc)
+                .unwrap()
+                .capsule_transform_id
+                .is_none(),
+            "unresolved imported geometry must not create a placeholder capsule"
+        );
+
+        assets.register_imported_mesh("avatar:body:prim0", MeshFactory::cube());
+        try_init_or_route_capsule(avc, &mut world, &assets, &mut queue);
+
+        let capsule_t = world
+            .get_component_by_id_as::<AvatarControlComponent>(avc)
+            .unwrap()
+            .capsule_transform_id
+            .expect("capsule after imported mesh registration");
+        let collision = world
+            .children_of(capsule_t)
+            .iter()
+            .copied()
+            .find(|id| {
+                world
+                    .get_component_by_id_as::<CollisionComponent>(*id)
+                    .is_some()
+            })
+            .expect("generated collision");
+        let shape = world
+            .children_of(collision)
+            .iter()
+            .find_map(|id| world.get_component_by_id_as::<CollisionShapeComponent>(*id))
+            .expect("generated collision shape");
+        assert_eq!(shape.shape, CollisionShape::capsule_y(0.28, 0.72));
     }
 
     #[test]

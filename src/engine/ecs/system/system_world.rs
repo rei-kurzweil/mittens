@@ -2577,6 +2577,12 @@ impl SystemWorld {
         self.gltf
             .tick_with_queue(world, visuals, &mut self.skinned_mesh, queue, dt_sec);
 
+        // Bounds, collision inference, and other simulation systems need imported
+        // CPU geometry independently of renderer/GPU readiness. Register it as soon
+        // as GLTF loading has produced it; prepare_render still owns texture upload,
+        // GPU mesh upload, and VisualWorld insertion.
+        self.gltf.flush_mesh_imports_only(render_assets);
+
         // Flush queued registrations/transform updates *before* systems that need current
         // world matrices / acceleration structures (e.g. raycasting).
         queue.flush(world, self, visuals, render_assets);
