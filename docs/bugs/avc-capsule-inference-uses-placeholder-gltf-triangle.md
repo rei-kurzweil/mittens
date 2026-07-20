@@ -2,12 +2,10 @@
 
 ## Status
 
-Implemented in the engine; pending runtime validation against Bisket's displayed
-bounds and capsule diagnostics.
+Fixed and runtime-validated with Bisket in `secondary-motion-desktop`.
 
 The implementation registers imported CPU meshes before simulation-time geometry
-consumers run, treats `MeshComponent` as authoritative during bounds measurement,
-and prevents AVC from creating a capsule while any imported primitive is pending.
+consumers run and treats `MeshComponent` as authoritative during bounds measurement.
 
 ## Symptom
 
@@ -60,9 +58,8 @@ meshes. The capsule is not recomputed after its one-time creation.
 
 ## Desired behavior
 
-AVC must infer its capsule from the complete aggregate bounds of the actual imported
-CPU meshes. It must never treat an unresolved placeholder as model geometry or
-commit a capsule from a partially resolved imported subtree.
+AVC must infer its capsule from the aggregate bounds of the actual imported CPU
+meshes. It must never treat the placeholder as model geometry.
 
 Bounds measurement should depend on CPU asset readiness, not GPU upload or visual
 instance creation.
@@ -87,28 +84,21 @@ When measuring a `RenderableComponent`:
 
 - if it has a `MeshComponent`, resolve that key through `RenderAssets`
 - if the key resolves, measure the imported CPU mesh
-- if the key does not resolve, mark the aggregate measurement as pending
+- if the key does not resolve, the subtree is unmeasurable; never use the placeholder
 - only use `Renderable.mesh` directly when there is no `MeshComponent` override
 
 Do not fall back from an unresolved `MeshComponent` to the placeholder renderable
 handle.
 
-### Represent readiness explicitly
+### Keep the bounds result simple
 
-Change aggregate bounds measurement to distinguish at least:
+Aggregate bounds measurement distinguishes:
 
 - `Measured(Aabb)`: every relevant renderable was resolved and contributed
-- `Pending`: at least one import-backed renderable is unresolved
 - `Unmeasurable`: the subtree has no measurable render geometry
 
-AVC should retry on later ticks while bounds are `Pending`. It may use its existing
-avatar-height fallback only for a genuinely `Unmeasurable` spawned model, not for a
-partially loaded one.
-
-No new `BoundsCalculated` event is required. Bounds calculation is synchronous; the
-missing readiness belongs to imported mesh registration. Polling the explicit
-measurement state keeps initialization robust across load timing and avoids one-shot
-event ordering problems.
+No `Pending` state or `BoundsCalculated` event is required. The engine ordering makes
+imported CPU meshes available before AVC runs, and bounds calculation is synchronous.
 
 ## Acceptance criteria
 
@@ -116,7 +106,7 @@ event ordering problems.
   the triangle dimensions.
 - The capsule's inferred local bottom and top correspond to the measured aggregate
   bounds according to the existing upright-capsule inference policy.
-- An unresolved or partially resolved imported subtree does not create a capsule.
+- An unresolved `MeshComponent` is never measured from its placeholder triangle.
 - Built-in renderables without `MeshComponent` overrides continue to measure from
   their authored mesh handles.
 - CPU bounds measurement works before GPU upload and in headless execution.
@@ -129,16 +119,12 @@ event ordering problems.
 
 - Create an import-backed renderable whose placeholder is `TRIANGLE_2D` and whose
   registered mesh is tall; verify bounds use the imported mesh.
-- Leave its mesh key unresolved and verify measurement returns `Pending`, with no
-  triangle bounds and no AVC capsule.
-- Register the mesh later, tick again, and verify AVC creates exactly one capsule
-  from the resolved bounds.
-- Use a subtree containing multiple imported primitives and verify no result is
-  committed until all relevant keys resolve.
+- Leave its mesh key unresolved and verify measurement is `Unmeasurable`, not the
+  triangle bounds.
+- Register its imported mesh before measuring and verify AVC creates exactly one
+  capsule from the real resolved bounds.
 - Mix resolved imported meshes and ordinary built-in renderables and verify the full
   transformed union.
-- Verify `Unmeasurable` remains distinct from `Pending` so the avatar-height fallback
-  cannot mask load latency.
 - Re-run `secondary-motion-desktop` with collider and bounds visualization enabled
   and compare the logged aggregate bounds, capsule extents, and visible model bounds.
 

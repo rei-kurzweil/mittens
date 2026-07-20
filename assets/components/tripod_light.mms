@@ -7,13 +7,13 @@ export fn tripod_light(light_name, position, look_target, mounted_light) {
         name = light_name
 
         // Three splayed tripod legs and a vertical stand.
-        T.position(-0.32, -1.78, 0.0).rotation(0.0, 0.0, -0.62).scale(0.09, 0.78, 0.09) {
+        T.position(-0.32, -1, 0.0).rotation(0.0, 0.0, -0.62).scale(0.09, 0.78, 0.09) {
             R.cube() { C.rgba(0.20, 0.22, 0.27, 1.0) }
         }
-        T.position(0.32, -1.78, 0.0).rotation(0.0, 0.0, 0.62).scale(0.09, 0.78, 0.09) {
+        T.position(0.32, -1, 0.0).rotation(0.0, 0.0, 0.62).scale(0.09, 0.78, 0.09) {
             R.cube() { C.rgba(0.20, 0.22, 0.27, 1.0) }
         }
-        T.position(0.0, -1.78, 0.32).rotation(-0.62, 0.0, 0.0).scale(0.09, 0.78, 0.09) {
+        T.position(0.0, -1, 0.32).rotation(-0.62, 0.0, 0.0).scale(0.09, 0.78, 0.09) {
             R.cube() { C.rgba(0.20, 0.22, 0.27, 1.0) }
         }
         // The wider stance supports a shaft 25% shorter than the original 3-unit pole.

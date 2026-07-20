@@ -19,10 +19,10 @@ AVC samples the spawned renderable subtree once in `model_root` coordinates:
 - `half_segment = height / 2 - effective_radius`
 
 X and Z bounds are intentionally ignored, so sleeves, hair, and a wide T-pose
-do not inflate the controller. If render bounds are delayed, AVC retries on
-later ticks. Once a GLTF reports that it spawned but remains unmeasurable, AVC
-falls back to the existing authored/head-bone height with floor Y at the
-model-root origin.
+do not inflate the controller. Imported CPU meshes are registered before AVC
+measures a spawned GLTF, so capsule inference does not depend on renderer/GPU
+readiness. If a spawned tree is genuinely unmeasurable, AVC falls back to the
+existing authored/head-bone height with floor Y at the model-root origin.
 
 The generated transform stream passes `model_root` translation, drops rotation
 and scale, then applies `center_y` in world-up space. It owns
@@ -45,7 +45,7 @@ target, response retains immediate-parent behavior.
 - [x] Hard-rename the legacy response API to `CollisionResponse*` without aliases.
 - [x] Add authored and runtime movement targets with world-displacement routing.
 - [x] Add reusable bounds-based upright-capsule inference.
-- [x] Generate exactly one runtime capsule per enabled AVC and retry delayed data.
+- [x] Generate exactly one runtime capsule per enabled AVC after CPU mesh registration.
 - [x] Route desktop and XR AVC correction to their locomotion transforms.
 - [x] Remove AVC's orphan head splice and store the real `head_mount`.
 - [x] Convert `secondary-motion-desktop` to one head-level input/driver.

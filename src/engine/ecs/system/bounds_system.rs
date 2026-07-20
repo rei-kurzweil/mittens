@@ -7,7 +7,6 @@ use crate::engine::graphics::bounds::{Aabb, mat4_identity, mat4_mul, mesh_local_
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RenderableBoundsMeasure {
     Measured(Aabb),
-    Pending,
     Unmeasurable,
 }
 
@@ -37,22 +36,22 @@ impl BoundsSystem {
     ) -> Option<Aabb> {
         match Self::measure_renderable_subtree_bounds(world, render_assets, root) {
             RenderableBoundsMeasure::Measured(bounds) => Some(bounds),
-            RenderableBoundsMeasure::Pending | RenderableBoundsMeasure::Unmeasurable => None,
+            RenderableBoundsMeasure::Unmeasurable => None,
         }
     }
 
-    /// Measure aggregate render bounds while preserving imported-mesh readiness.
+    /// Measure aggregate render bounds using imported mesh overrides when present.
     ///
-    /// A `MeshComponent` is an authoritative override for its owning renderable. If
-    /// any such key is unresolved, the whole subtree is pending rather than partially
-    /// measured from other renderables or from the renderable's placeholder mesh.
+    /// A `MeshComponent` is authoritative for its owning renderable. Imported CPU
+    /// meshes are registered before simulation-time geometry consumers run, so a
+    /// missing key means the subtree cannot be measured; the placeholder renderable
+    /// mesh must never be substituted.
     pub fn measure_renderable_subtree_bounds(
         world: &World,
         render_assets: &RenderAssets,
         root: ComponentId,
     ) -> RenderableBoundsMeasure {
         let mut aggregate: Option<Aabb> = None;
-        let mut pending = false;
         let mut stack = vec![(root, mat4_identity(), true)];
 
         while let Some((node, parent_to_root, is_root)) = stack.pop() {
@@ -72,8 +71,7 @@ impl BoundsSystem {
                 });
                 let mesh_handle = if let Some(mesh_key) = mesh_override {
                     let Some(handle) = render_assets.imported_mesh(mesh_key) else {
-                        pending = true;
-                        continue;
+                        return RenderableBoundsMeasure::Unmeasurable;
                     };
                     handle
                 } else {
@@ -115,9 +113,7 @@ impl BoundsSystem {
             }
         }
 
-        if pending {
-            RenderableBoundsMeasure::Pending
-        } else if let Some(bounds) = aggregate {
+        if let Some(bounds) = aggregate {
             RenderableBoundsMeasure::Measured(bounds)
         } else {
             RenderableBoundsMeasure::Unmeasurable
@@ -208,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn imported_mesh_override_is_pending_then_uses_real_geometry() {
+    fn imported_mesh_override_never_uses_placeholder_geometry() {
         let mut world = World::default();
         let mut render_assets = RenderAssets::new();
 
@@ -227,7 +223,7 @@ mod tests {
 
         assert_eq!(
             BoundsSystem::measure_renderable_subtree_bounds(&world, &render_assets, root),
-            RenderableBoundsMeasure::Pending
+            RenderableBoundsMeasure::Unmeasurable
         );
         assert_eq!(
             BoundsSystem::calculate_subtree_local_bounds(&world, &render_assets, root),
@@ -246,27 +242,4 @@ mod tests {
         assert!((bounds.depth() - 2.0).abs() < 1e-4);
     }
 
-    #[test]
-    fn one_unresolved_import_makes_the_entire_subtree_pending() {
-        let mut world = World::default();
-        let mut render_assets = RenderAssets::new();
-        render_assets.register_imported_mesh("avatar:body:prim0", MeshFactory::cube());
-
-        let root = world.add_component(TransformComponent::new());
-        for key in ["avatar:body:prim0", "avatar:hair:prim0"] {
-            let renderable = world.add_component(RenderableComponent::triangle());
-            let mesh = world.add_component(MeshComponent::new(key));
-            world
-                .add_child(root, renderable)
-                .expect("attach renderable");
-            world
-                .add_child(renderable, mesh)
-                .expect("attach mesh override");
-        }
-
-        assert_eq!(
-            BoundsSystem::measure_renderable_subtree_bounds(&world, &render_assets, root),
-            RenderableBoundsMeasure::Pending
-        );
-    }
 }

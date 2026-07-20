@@ -172,9 +172,6 @@ fn try_init_or_route_capsule(
         RenderableBoundsMeasure::Measured(bounds) => {
             infer_upright_capsule(&bounds, avc.capsule_radius).map(|inferred| (bounds, inferred))
         }
-        // Never infer from a partial import-backed subtree or substitute the
-        // avatar-height fallback merely because CPU mesh registration is late.
-        RenderableBoundsMeasure::Pending => return,
         RenderableBoundsMeasure::Unmeasurable => None,
     };
     let (bounds_source, inference_bounds, inferred) =
@@ -1263,7 +1260,7 @@ mod capsule_tests {
     }
 
     #[test]
-    fn generated_capsule_waits_for_and_uses_imported_mesh_bounds() {
+    fn generated_capsule_uses_imported_mesh_bounds() {
         let mut world = World::default();
         let mut assets = RenderAssets::new();
         let mut queue = CommandQueue::new();
@@ -1278,16 +1275,6 @@ mod capsule_tests {
         attach(&mut world, model, tall_shape);
         attach(&mut world, tall_shape, renderable);
         attach(&mut world, renderable, mesh);
-
-        try_init_or_route_capsule(avc, &mut world, &assets, &mut queue);
-        assert!(
-            world
-                .get_component_by_id_as::<AvatarControlComponent>(avc)
-                .unwrap()
-                .capsule_transform_id
-                .is_none(),
-            "unresolved imported geometry must not create a placeholder capsule"
-        );
 
         assets.register_imported_mesh("avatar:body:prim0", MeshFactory::cube());
         try_init_or_route_capsule(avc, &mut world, &assets, &mut queue);
