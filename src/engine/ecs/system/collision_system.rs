@@ -2,12 +2,11 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::EventSignal;
 use crate::engine::ecs::RxWorld;
 use crate::engine::ecs::World;
-use crate::engine::ecs::component::{
-    CollisionComponent, CollisionShapeComponent, RenderableComponent,
-};
+use crate::engine::ecs::component::CollisionComponent;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::collision_geometry;
+use crate::engine::ecs::system::collision_shape_resolver::resolve_collision_shape;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 use bvh::Point3;
@@ -224,7 +223,7 @@ impl CollisionSystem {
 
         let mode = collision_comp.mode;
 
-        let shape = resolve_shape(world, component).unwrap_or_else(|| {
+        let shape = resolve_collision_shape(world, component).unwrap_or_else(|| {
             crate::engine::ecs::system::model::collision_types::CollisionShape::CUBE()
         });
 
@@ -376,37 +375,6 @@ impl CollisionSystem {
 
         let _ = tx.send(CollisionMessage::Tick);
     }
-}
-
-fn resolve_shape(world: &World, collision_cid: ComponentId) -> Option<CollisionShape> {
-    // 1) Child CollisionShapeComponent.
-    for child in world.children_of(collision_cid) {
-        if let Some(s) = world.get_component_by_id_as::<CollisionShapeComponent>(*child) {
-            return Some(s.shape);
-        }
-    }
-
-    // 2) Sibling RenderableComponent with built-in mesh handles (cube only for now).
-    let parent = world.parent_of(collision_cid)?;
-    for sib in world.children_of(parent) {
-        if *sib == collision_cid {
-            continue;
-        }
-        let Some(r) = world.get_component_by_id_as::<RenderableComponent>(*sib) else {
-            continue;
-        };
-
-        // Built-in mesh handles (stable ids).
-        if r.renderable.base_mesh == crate::engine::graphics::primitives::CpuMeshHandle::CUBE {
-            return Some(CollisionShape::CUBE());
-        }
-
-        if r.renderable.base_mesh == crate::engine::graphics::primitives::CpuMeshHandle::SPHERE {
-            return Some(CollisionShape::SPHERE());
-        }
-    }
-
-    None
 }
 
 #[derive(Debug, Clone)]

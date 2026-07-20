@@ -1597,7 +1597,11 @@ fn eval_call(call: &CallExpression, ctx: &mut EvalContext<'_>) -> Result<Value, 
             .collect::<Result<_, _>>()?;
         let signal_kind = match args.first() {
             Some(Value::String(s)) => parse_signal_kind(s)?,
-            other => return Err(format!("on_global(): arg 0 must be a signal kind string, got {other:?}")),
+            other => {
+                return Err(format!(
+                    "on_global(): arg 0 must be a signal kind string, got {other:?}"
+                ));
+            }
         };
         let (name, handler_idx) = match args.get(1) {
             Some(Value::String(name)) => (Some(name.clone()), 2),
@@ -1605,10 +1609,18 @@ fn eval_call(call: &CallExpression, ctx: &mut EvalContext<'_>) -> Result<Value, 
         };
         let handler = match args.get(handler_idx) {
             Some(f @ Value::Function { .. }) => f.clone(),
-            other => return Err(format!("on_global(): arg {handler_idx} must be a function, got {other:?}")),
+            other => {
+                return Err(format!(
+                    "on_global(): arg {handler_idx} must be a function, got {other:?}"
+                ));
+            }
         };
         if let Some(ch) = ctx.channels.as_mut() {
-            ch.call(HostCallKind::RegisterGlobalHandler { signal_kind, name, handler });
+            ch.call(HostCallKind::RegisterGlobalHandler {
+                signal_kind,
+                name,
+                handler,
+            });
         }
         return Ok(Value::Null);
     }
@@ -3149,6 +3161,7 @@ fn parse_signal_kind(s: &str) -> Result<SignalKind, String> {
         "FrameTick" => Ok(SignalKind::FrameTick),
         "GLTFInitialized" => Ok(SignalKind::GltfInitialized),
         "Click" => Ok(SignalKind::Click),
+        "ToggleChanged" => Ok(SignalKind::ToggleChanged),
         "DragStart" => Ok(SignalKind::DragStart),
         "DragMove" => Ok(SignalKind::DragMove),
         "DragEnd" => Ok(SignalKind::DragEnd),

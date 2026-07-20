@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use crate::engine::ecs::component::{
-    DataComponent, EditorComponent, SelectionComponent, SelectionEntry, TransformGizmoComponent,
+    DataComponent, EditorComponent, GridComponent, SelectionComponent, SelectionEntry,
+    TransformGizmoComponent,
 };
 use crate::engine::ecs::system::data_renderer_system::{
     DataRendererSystem, ItemRendererSpec, RendererSpec, UiItem, UiItemKind,
@@ -172,6 +173,11 @@ pub fn authored_scene_node_policy(
     if world
         .get_component_by_id_as::<TransformGizmoComponent>(component_id)
         .is_some()
+        || world.children_of(component_id).iter().any(|child| {
+            world
+                .get_component_by_id_as::<GridComponent>(*child)
+                .is_some()
+        })
     {
         return AuthoredSceneNodePolicy::Skip;
     }
@@ -577,7 +583,6 @@ pub fn rerender_world_panel_content(
                 return;
             }
         };
-
     if let Some(index) = selected_index.and_then(|i| usize::try_from(i).ok()) {
         let row_selector = format!("#{ITEM_PREFIX}{index}");
         if let Some(row_root) = world.find_component(container, &row_selector) {

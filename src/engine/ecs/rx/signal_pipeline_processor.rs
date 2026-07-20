@@ -73,6 +73,8 @@ impl SignalPipelineProcessor {
             | IntentValue::SetLayoutAvailableHeight { component_ids, .. }
             | IntentValue::SetLayoutInspect { component_ids, .. }
             | IntentValue::SelectionSet { component_ids, .. }
+            | IntentValue::ToggleSet { component_ids, .. }
+            | IntentValue::CollisionVisualizationSet { component_ids, .. }
             | IntentValue::Detach { component_ids }
             | IntentValue::RemoveSubtree { component_ids }
             | IntentValue::AudioGraphRebuild { component_ids }
@@ -195,6 +197,8 @@ impl SignalPipelineProcessor {
             | IntentValue::SetLayoutAvailableHeight { component_ids, .. }
             | IntentValue::SetLayoutInspect { component_ids, .. }
             | IntentValue::SelectionSet { component_ids, .. }
+            | IntentValue::ToggleSet { component_ids, .. }
+            | IntentValue::CollisionVisualizationSet { component_ids, .. }
             | IntentValue::Detach { component_ids }
             | IntentValue::RemoveSubtree { component_ids }
             | IntentValue::AudioGraphRebuild { component_ids }

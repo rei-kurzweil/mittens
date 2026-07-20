@@ -54,10 +54,12 @@ fn headers_to_value(headers: &[(String, String)]) -> Value {
 
 pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
     match signal.event.as_ref() {
-        Some(crate::engine::ecs::EventSignal::FrameTick { dt_sec }) => Value::Map(HashMap::from([(
-            "dt_sec".to_string(),
-            Value::Number(*dt_sec as f64),
-        )])),
+        Some(crate::engine::ecs::EventSignal::FrameTick { dt_sec }) => {
+            Value::Map(HashMap::from([(
+                "dt_sec".to_string(),
+                Value::Number(*dt_sec as f64),
+            )]))
+        }
         Some(crate::engine::ecs::EventSignal::GltfInitialized { gltf, uri }) => {
             Value::Map(HashMap::from([
                 (
@@ -72,6 +74,18 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
         }
         Some(crate::engine::ecs::EventSignal::DataEvent { name, .. }) => {
             Value::String(name.clone())
+        }
+        Some(crate::engine::ecs::EventSignal::ToggleChanged { toggle, value }) => {
+            Value::Map(HashMap::from([
+                (
+                    "toggle".into(),
+                    Value::ComponentObject {
+                        id: *toggle,
+                        component_type: "Toggle".into(),
+                    },
+                ),
+                ("value".into(), Value::Bool(*value)),
+            ]))
         }
         Some(crate::engine::ecs::EventSignal::XrButtonDown {
             hand,

@@ -157,6 +157,9 @@ pub enum EventSignal {
         screen_pos_px: Option<(f32, f32)>,
     },
 
+    /// A generic boolean UI toggle changed value.
+    ToggleChanged { toggle: ComponentId, value: bool },
+
     /// A selection scope changed.
     SelectionChanged {
         selection_root: ComponentId,
@@ -289,6 +292,7 @@ impl EventSignal {
             EventSignal::DragMove { .. } => SignalKind::DragMove,
             EventSignal::DragEnd { .. } => SignalKind::DragEnd,
             EventSignal::Click { .. } => SignalKind::Click,
+            EventSignal::ToggleChanged { .. } => SignalKind::ToggleChanged,
             EventSignal::SelectionChanged { .. } => SignalKind::SelectionChanged,
             EventSignal::SelectionAdded { .. } => SignalKind::SelectionAdded,
             EventSignal::SelectionRemoved { .. } => SignalKind::SelectionRemoved,
@@ -398,6 +402,15 @@ pub enum IntentValue {
         component_ids: Vec<ComponentId>,
         entries: Vec<SelectionEntry>,
         primary: Option<ComponentId>,
+    },
+    ToggleSet {
+        component_ids: Vec<ComponentId>,
+        value: bool,
+    },
+    CollisionVisualizationSet {
+        component_ids: Vec<ComponentId>,
+        scope_roots: Vec<ComponentId>,
+        mode: Option<crate::engine::ecs::system::CollisionVisualizationMode>,
     },
 
     Attach {
@@ -803,6 +816,8 @@ impl IntentValue {
             IntentValue::SetLayoutInspect { .. } => "set_layout_inspect",
             IntentValue::GLTFArmatureVisible { .. } => "gltf_armature_visible",
             IntentValue::SelectionSet { .. } => "selection_set",
+            IntentValue::ToggleSet { .. } => "toggle_set",
+            IntentValue::CollisionVisualizationSet { .. } => "collision_visualization_set",
 
             IntentValue::Attach { .. } => "attach",
             IntentValue::QueryFindComponent { .. } => "query_find_component",
@@ -943,6 +958,7 @@ pub enum SignalKind {
     DragMove,
     DragEnd,
     Click,
+    ToggleChanged,
     SelectionChanged,
     SelectionAdded,
     SelectionRemoved,

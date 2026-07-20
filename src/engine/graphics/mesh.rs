@@ -245,6 +245,55 @@ impl CpuMesh {
 pub struct MeshFactory;
 
 impl MeshFactory {
+    /// Exact Y-aligned capsule with hemispherical ends and a cylindrical middle.
+    pub fn capsule_y(
+        radius: f32,
+        half_segment: f32,
+        radial_segments: u32,
+        hemisphere_segments: u32,
+    ) -> CpuMesh {
+        let radius = radius.max(0.0);
+        let half_segment = half_segment.max(0.0);
+        let radial = radial_segments.max(3) as usize;
+        let hemi = hemisphere_segments.max(2) as usize;
+        let mut vertices = Vec::with_capacity((hemi * 2 + 2) * (radial + 1));
+        let mut indices = Vec::with_capacity((hemi * 2 + 1) * radial * 6);
+        let mut push_ring = |latitude: f32, center_y: f32| {
+            let ring_radius = radius * latitude.cos();
+            let normal_y = latitude.sin();
+            let y = center_y + radius * normal_y;
+            for segment in 0..=radial {
+                let angle = std::f32::consts::TAU * segment as f32 / radial as f32;
+                let (sin, cos) = angle.sin_cos();
+                vertices.push(CpuVertex {
+                    pos: [ring_radius * cos, y, ring_radius * sin],
+                    uv: [
+                        segment as f32 / radial as f32,
+                        0.5 - latitude / std::f32::consts::PI,
+                    ],
+                    normal: [latitude.cos() * cos, normal_y, latitude.cos() * sin],
+                });
+            }
+        };
+        for i in 0..=hemi {
+            let latitude =
+                -std::f32::consts::FRAC_PI_2 + std::f32::consts::FRAC_PI_2 * i as f32 / hemi as f32;
+            push_ring(latitude, -half_segment);
+        }
+        for i in 0..=hemi {
+            let latitude = std::f32::consts::FRAC_PI_2 * i as f32 / hemi as f32;
+            push_ring(latitude, half_segment);
+        }
+        let rings = hemi * 2 + 2;
+        for ring in 0..rings - 1 {
+            for segment in 0..radial {
+                let a = (ring * (radial + 1) + segment) as u32;
+                let b = a + (radial + 1) as u32;
+                indices.extend_from_slice(&[a, b, a + 1, a + 1, b, b + 1]);
+            }
+        }
+        CpuMesh::new(vertices, indices)
+    }
     /// 2D equilateral triangle centered at origin.
     pub fn triangle_2d() -> CpuMesh {
         // Equilateral triangle of side length 1.0.
@@ -999,6 +1048,27 @@ mod tests {
 
         for vertex in &mesh.vertices {
             assert!((radius3(vertex.pos) - 0.5).abs() < 1.0e-4);
+        }
+    }
+
+    #[test]
+    fn capsule_y_has_exact_authored_extents() {
+        let radius = 0.3;
+        let half_segment = 0.8;
+        let mesh = MeshFactory::capsule_y(radius, half_segment, 32, 12);
+        let mut min = [f32::INFINITY; 3];
+        let mut max = [f32::NEG_INFINITY; 3];
+        for vertex in &mesh.vertices {
+            for axis in 0..3 {
+                min[axis] = min[axis].min(vertex.pos[axis]);
+                max[axis] = max[axis].max(vertex.pos[axis]);
+            }
+        }
+        let expected_min = [-radius, -half_segment - radius, -radius];
+        let expected_max = [radius, half_segment + radius, radius];
+        for axis in 0..3 {
+            assert!((min[axis] - expected_min[axis]).abs() < 1.0e-5);
+            assert!((max[axis] - expected_max[axis]).abs() < 1.0e-5);
         }
     }
 }

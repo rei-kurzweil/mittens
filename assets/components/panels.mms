@@ -23,8 +23,6 @@ let TITLE_BAR_HEIGHT_GU = 3.0
 let TITLE_CONTENT_GAP_GU = 0.5
 let TITLE_LABEL_PADDING_X_GU = 0.25
 let SETTINGS_PANEL_WIDTH_GU = 16.0
-let SETTINGS_PANEL_CONTENT_HEIGHT_GU = 13.0
-let SETTINGS_PANEL_TOTAL_HEIGHT_GU = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + SETTINGS_PANEL_CONTENT_HEIGHT_GU
 
 fn editor_settings_mode_row(row_name, label, mode_value) {
     return T {
@@ -67,6 +65,7 @@ fn editor_settings_armature_row() {
             interactive = true
         }
         Raycastable.click_only()
+        Toggle.off()
         Style {
             display("block")
             width(100%)
@@ -109,6 +108,7 @@ fn editor_settings_bounds_row() {
             interactive = true
         }
         Raycastable.click_only()
+        Toggle.off()
         Style {
             display("block")
             width(100%)
@@ -137,13 +137,54 @@ fn editor_settings_bounds_row() {
     }
 }
 
-export fn editor_settings_panel(title, title_color, panel_background_color) {
+fn editor_settings_collider_row(row_name, label, row_kind, slot_name) {
+    return T {
+        name = row_name
+        Data {
+            name = "editor_settings_payload"
+            row_kind = row_kind
+            interactive = true
+        }
+        Raycastable.click_only()
+        Toggle.off()
+        Style {
+            display("block")
+            width(100%)
+            margin_xy(0.25, 0.20)
+            padding_xy(0.55, 0.45)
+            color([0, 0, 0, 1.0])
+            background_color([0.92, 0.97, 0.92, 1.0])
+            background_z(-0.01)
+            text_align("left")
+            vertical_align("middle")
+        }
+        T {
+            Style { display("block") }
+            T {
+                Style { display("inline-block") }
+                Text { label }
+            }
+            T {
+                name = slot_name
+                Style { display("inline-block") margin_left(0.65) }
+            }
+        }
+    }
+}
+
+export fn editor_settings_panel(title, title_color, panel_background_color, config) {
+    let content_height = 7.8
+    if config.show_armature { content_height = content_height + 2.6 }
+    if config.show_bounds { content_height = content_height + 2.6 }
+    if config.show_colliders { content_height = content_height + 2.6 }
+    if config.show_gltf_colliders { content_height = content_height + 2.6 }
+    let total_height = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + content_height
     return T {
         name = "editor_settings_panel_root"
         Style {
             display("block")
             width(SETTINGS_PANEL_WIDTH_GU)
-            height(SETTINGS_PANEL_TOTAL_HEIGHT_GU)
+            height(total_height)
             margin_xy(0.5, 0.5)
         }
 
@@ -170,7 +211,7 @@ export fn editor_settings_panel(title, title_color, panel_background_color) {
             name = "content_slot"
             Style {
                 display("block")
-                height(SETTINGS_PANEL_CONTENT_HEIGHT_GU)
+                height(content_height)
                 background_color([0.96, 0.92, 0.18, 0.80])
                 background_z(-0.001)
                 padding(0.25)
@@ -185,8 +226,14 @@ export fn editor_settings_panel(title, title_color, panel_background_color) {
                 editor_settings_mode_row("editor_settings_mode_cursor_3d", "3D Cursor", "cursor_3d")
                 editor_settings_mode_row("editor_settings_mode_select_cursor", "Select + Cursor", "select_cursor")
             }
-            editor_settings_armature_row()
-            editor_settings_bounds_row()
+            if config.show_armature { editor_settings_armature_row() }
+            if config.show_bounds { editor_settings_bounds_row() }
+            if config.show_colliders {
+                editor_settings_collider_row("editor_settings_colliders_visibility", "show all colliders", "AllCollidersVisibility", "colliders_toggle_slot")
+            }
+            if config.show_gltf_colliders {
+                editor_settings_collider_row("editor_settings_gltf_colliders_visibility", "show GLTF colliders", "GltfCollidersVisibility", "gltf_colliders_toggle_slot")
+            }
 
             Selection.root("#editor_settings_mode_rows") { name = "editor_settings_selection" }
         }

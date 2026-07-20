@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use crate::engine::ecs::component::{EditorPanel, EditorUIComponent, SelectionEntry};
+use crate::engine::ecs::component::{
+    EditorPanel, EditorUIComponent, EditorUIPanelSpec, SelectionEntry,
+};
 use crate::engine::ecs::rx::RxWorld;
 use crate::engine::ecs::system::GridSystem;
 use crate::engine::ecs::system::data_renderer_system::DataRendererSystem;
@@ -30,11 +32,11 @@ use crate::engine::ecs::system::editor::workspace::{
 };
 use crate::engine::ecs::system::editor::world_panel::{
     AuthoredWorldPanelSceneModel, PANEL_CONTENT_SLOT_SELECTOR, WORLD_PANEL_ROOT_SELECTOR,
-    WORLD_PANEL_SELECTION_NAME, WORLD_PANEL_SELECTION_SELECTOR,
+    WORLD_PANEL_SELECTION_NAME, WORLD_PANEL_SELECTION_SELECTOR, WorldPanelModel,
     apply_world_panel_semantic_selection, build_world_panel_model, handle_panel_button_click,
     handle_world_panel_item_click, panel_status_text, rebuild_world_panel_scene_model,
     register_editor_root, rerender_world_panel_content, rerender_world_panel_status,
-    sync_world_panel_selection, world_panel_scene_path, WorldPanelModel,
+    sync_world_panel_selection, world_panel_scene_path,
 };
 use crate::engine::ecs::system::panel_system::{
     PANEL_LAYOUT_SELECTION_NAME, PanelControlKind, PanelKind, PanelSlotKind, is_descendant_or_self,
@@ -59,6 +61,7 @@ pub(crate) struct EditorInspectorSystemStopgapMmsAdapter {
     rendered_inspector_models: Arc<Mutex<Vec<InspectorPanelModel>>>,
     data_renderer: Arc<Mutex<DataRendererSystem>>,
     selected_panels: Vec<EditorPanel>,
+    selected_panel_specs: Vec<EditorUIPanelSpec>,
 }
 
 impl Default for EditorInspectorSystemStopgapMmsAdapter {
@@ -72,6 +75,10 @@ impl Default for EditorInspectorSystemStopgapMmsAdapter {
             rendered_inspector_models: Arc::new(Mutex::new(Vec::new())),
             data_renderer: Arc::new(Mutex::new(DataRendererSystem::new())),
             selected_panels: EditorPanel::ALL.to_vec(),
+            selected_panel_specs: EditorPanel::ALL
+                .into_iter()
+                .map(EditorUIPanelSpec::new)
+                .collect(),
         }
     }
 }
@@ -98,10 +105,20 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         let runtime_ui_root = self
             .workspace_runtime
             .get_or_create_editor_ui_root(world, world_panel_pos);
-        self.selected_panels = world
+        self.selected_panel_specs = world
             .get_component_by_id_as::<EditorUIComponent>(runtime_ui_root)
-            .map(|ui| ui.panels().to_vec())
-            .unwrap_or_else(|| EditorPanel::ALL.to_vec());
+            .map(|ui| ui.panel_specs().to_vec())
+            .unwrap_or_else(|| {
+                EditorPanel::ALL
+                    .into_iter()
+                    .map(EditorUIPanelSpec::new)
+                    .collect()
+            });
+        self.selected_panels = self
+            .selected_panel_specs
+            .iter()
+            .map(|spec| spec.panel)
+            .collect();
         editor_memory_marker("editor setup_panels_for_editor:after runtime ui root");
 
         register_editor_root(self.workspace_runtime.installed_editor_roots(), editor_root);
@@ -187,7 +204,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                 runtime_ui_root,
                 editor_root,
                 (0.0, 0.0, 0.0),
-                &self.selected_panels,
+                &self.selected_panel_specs,
                 &model,
                 &inspector_models,
                 &self.rendered_inspector_models,
@@ -210,11 +227,7 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         self.refresh_world_panels(world, emit);
         editor_memory_marker("editor setup_panels_for_editor:after refresh_world_panels");
 
-        let handler_root = world
-            .parent_of(runtime_ui_root)
-            .filter(|&parent| world.component_label(parent) == Some("editor_runtime_ui_root"))
-            .unwrap_or(runtime_ui_root);
-        self.install_shared_panel_handlers(rx, handler_root);
+        self.install_shared_panel_handlers(rx, runtime_ui_root);
         editor_memory_marker("editor setup_panels_for_editor:after install_shared_panel_handlers");
         self.install_editor_refresh_handlers(rx, editor_root);
         editor_memory_marker("editor setup_panels_for_editor:end");
@@ -272,10 +285,6 @@ impl EditorInspectorSystemStopgapMmsAdapter {
         let click_inspector_workspace_state = Arc::clone(&self.inspector_workspace_state);
         let click_rendered_inspector_models = Arc::clone(&self.rendered_inspector_models);
         let click_data_renderer = Arc::clone(&self.data_renderer);
-        let click_world_panel_root = self
-            .workspace_runtime
-            .panel_instance(PanelKind::World)
-            .map(|p| p.root);
         rx.add_handler_closure(
             SignalKind::Click,
             panel_query_root,
@@ -339,7 +348,9 @@ impl EditorInspectorSystemStopgapMmsAdapter {
                     return;
                 }
 
-                let Some(world_panel_root) = click_world_panel_root else {
+                let Some(world_panel_root) =
+                    world.find_component(panel_query_root, WORLD_PANEL_ROOT_SELECTOR)
+                else {
                     return;
                 };
                 if !is_descendant_or_self(world, world_panel_root, *renderable) {

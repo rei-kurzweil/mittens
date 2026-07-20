@@ -33,6 +33,7 @@ impl RxIntentExecutor {
                 | IntentValue::LookAt { .. }
                 | IntentValue::GLTFArmatureVisible { .. }
                 | IntentValue::SelectionSet { .. }
+                | IntentValue::ToggleSet { .. }
                 | IntentValue::Attach { .. }
                 | IntentValue::QueryFindComponent { .. }
                 | IntentValue::QueryFindAllComponents { .. }
@@ -230,6 +231,17 @@ fn handle_intent_signal(
                     selection_root,
                     entries.clone(),
                     *primary,
+                );
+            }
+        }
+
+        IntentValue::ToggleSet {
+            component_ids,
+            value,
+        } => {
+            for &toggle in component_ids {
+                crate::engine::ecs::system::toggle_system::apply_toggle_set(
+                    world, emit, toggle, *value,
                 );
             }
         }

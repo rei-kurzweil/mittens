@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::engine::ecs::component::{
-    DataComponent, DataValue, EditorPanel, EditorUIComponent, SelectableComponent,
-    SelectionComponent, SerializeComponent, TransformComponent,
+    DataComponent, DataValue, EditorPanel, EditorUIComponent, EditorUIPanelSpec, OptionComponent,
+    SelectableComponent, SelectionComponent, SerializeComponent, TransformComponent,
 };
 use crate::engine::ecs::system::data_renderer_system::{
     DataRendererSystem, DetailRendererSpec, ItemRendererSpec, UiDetailItem, UiItem,
@@ -472,11 +472,21 @@ pub fn decode_panel_action_payload(
 ) -> Option<PanelActionPayload> {
     let mut current = Some(node);
     while let Some(component_id) = current {
-        if let Some(payload) = world.children_of(component_id).iter().find_map(|&child| {
-            (world.component_label(child) == Some(payload_name))
-                .then_some(child)
-                .and_then(|id| world.get_component_by_id_as::<DataComponent>(id))
-        }) {
+        let payload = world.children_of(component_id).iter().find_map(|&child| {
+            if world.component_label(child) == Some(payload_name) {
+                return world.get_component_by_id_as::<DataComponent>(child);
+            }
+            world
+                .get_component_by_id_as::<OptionComponent>(child)
+                .and_then(|_| {
+                    world.children_of(child).iter().find_map(|&option_child| {
+                        (world.component_label(option_child) == Some(payload_name))
+                            .then(|| world.get_component_by_id_as::<DataComponent>(option_child))
+                            .flatten()
+                    })
+                })
+        });
+        if let Some(payload) = payload {
             return Some(PanelActionPayload {
                 panel_kind,
                 action_kind,
@@ -620,8 +630,9 @@ pub fn spawn_editor_panel_layout_tree(
     model: &WorldPanelModel,
     working_file_path: &Path,
     world_panel_pos: (f32, f32, f32),
-    selected_panels: &[EditorPanel],
+    selected_panel_specs: &[EditorUIPanelSpec],
 ) -> Option<(ComponentId, ComponentId)> {
+    let selected_panels: Vec<_> = selected_panel_specs.iter().map(|spec| spec.panel).collect();
     let world_panel_title_color = Value::Array(vec![
         Value::Number(0.90),
         Value::Number(1.00),
@@ -770,6 +781,11 @@ pub fn spawn_editor_panel_layout_tree(
     };
 
     let editor_settings_panel = if selected_panels.contains(&EditorPanel::Settings) {
+        let config = selected_panel_specs
+            .iter()
+            .find(|spec| spec.panel == EditorPanel::Settings)
+            .and_then(EditorUIPanelSpec::settings_config)
+            .unwrap_or_default();
         Some(build_editor_panel_component_expr(
             world,
             emit,
@@ -779,6 +795,15 @@ pub fn spawn_editor_panel_layout_tree(
                 Value::String("Editor".to_string()),
                 world_panel_title_color.clone(),
                 world_panel_bg.clone(),
+                Value::Map(std::collections::HashMap::from([
+                    ("show_armature".into(), Value::Bool(config.show_armature)),
+                    ("show_bounds".into(), Value::Bool(config.show_bounds)),
+                    ("show_colliders".into(), Value::Bool(config.show_colliders)),
+                    (
+                        "show_gltf_colliders".into(),
+                        Value::Bool(config.show_gltf_colliders),
+                    ),
+                ])),
             ],
             PanelKind::Settings,
             "editor settings panel",

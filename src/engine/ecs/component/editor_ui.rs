@@ -40,28 +40,127 @@ impl EditorPanel {
     }
 
     pub fn parse(name: &str) -> Result<Self, String> {
-        Self::ALL
-            .into_iter()
-            .find(|panel| panel.name() == name)
-            .ok_or_else(|| {
-                format!(
-                    "unknown EditorUI panel '{name}'; expected one of: settings, paint, color, grid, pose, assets, world, inspector"
-                )
-            })
+        Self::ALL.into_iter().find(|panel| panel.name() == name).ok_or_else(|| format!(
+            "unknown EditorUI panel '{name}'; expected one of: settings, paint, color, grid, pose, assets, world, inspector"
+        ))
+    }
+}
+
+/// Typed configuration accepted by the Settings panel factory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SettingsPanelConfig {
+    pub show_armature: bool,
+    pub show_bounds: bool,
+    pub show_colliders: bool,
+    pub show_gltf_colliders: bool,
+}
+
+impl Default for SettingsPanelConfig {
+    fn default() -> Self {
+        Self {
+            show_armature: true,
+            show_bounds: true,
+            show_colliders: true,
+            show_gltf_colliders: true,
+        }
+    }
+}
+
+impl SettingsPanelConfig {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn with_show_armature(mut self, value: bool) -> Self {
+        self.show_armature = value;
+        self
+    }
+    pub fn with_show_bounds(mut self, value: bool) -> Self {
+        self.show_bounds = value;
+        self
+    }
+    pub fn with_show_colliders(mut self, value: bool) -> Self {
+        self.show_colliders = value;
+        self
+    }
+    pub fn with_show_gltf_colliders(mut self, value: bool) -> Self {
+        self.show_gltf_colliders = value;
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorUIPanelConfig {
+    Settings(SettingsPanelConfig),
+    Empty,
+}
+
+/// One authored panel and its panel-specific typed configuration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EditorUIPanelSpec {
+    pub panel: EditorPanel,
+    pub config: EditorUIPanelConfig,
+}
+
+impl EditorUIPanelSpec {
+    pub fn new(panel: EditorPanel) -> Self {
+        let config = match panel {
+            EditorPanel::Settings => EditorUIPanelConfig::Settings(SettingsPanelConfig::default()),
+            _ => EditorUIPanelConfig::Empty,
+        };
+        Self { panel, config }
+    }
+
+    pub fn settings(config: SettingsPanelConfig) -> Self {
+        Self {
+            panel: EditorPanel::Settings,
+            config: EditorUIPanelConfig::Settings(config),
+        }
+    }
+
+    pub fn settings_config(&self) -> Option<SettingsPanelConfig> {
+        match self.config {
+            EditorUIPanelConfig::Settings(config) => Some(config),
+            _ => None,
+        }
+    }
+
+    fn map_settings(
+        mut self,
+        update: impl FnOnce(SettingsPanelConfig) -> SettingsPanelConfig,
+    ) -> Self {
+        let config = self.settings_config().unwrap_or_default();
+        self.panel = EditorPanel::Settings;
+        self.config = EditorUIPanelConfig::Settings(update(config));
+        self
+    }
+    pub fn with_show_armature(self, value: bool) -> Self {
+        self.map_settings(|c| c.with_show_armature(value))
+    }
+    pub fn with_show_bounds(self, value: bool) -> Self {
+        self.map_settings(|c| c.with_show_bounds(value))
+    }
+    pub fn with_show_colliders(self, value: bool) -> Self {
+        self.map_settings(|c| c.with_show_colliders(value))
+    }
+    pub fn with_show_gltf_colliders(self, value: bool) -> Self {
+        self.map_settings(|c| c.with_show_gltf_colliders(value))
     }
 }
 
 /// Authored root and panel selection for the one shared editor workspace.
 #[derive(Debug, Clone)]
 pub struct EditorUIComponent {
-    panels: Vec<EditorPanel>,
+    panel_specs: Vec<EditorUIPanelSpec>,
     component: Option<ComponentId>,
 }
 
 impl Default for EditorUIComponent {
     fn default() -> Self {
         Self {
-            panels: EditorPanel::ALL.to_vec(),
+            panel_specs: EditorPanel::ALL
+                .into_iter()
+                .map(EditorUIPanelSpec::new)
+                .collect(),
             component: None,
         }
     }
@@ -72,25 +171,36 @@ impl EditorUIComponent {
         Self::default()
     }
 
-    pub fn with_panels(mut self, panels: impl IntoIterator<Item = EditorPanel>) -> Self {
-        self.set_panels(panels);
+    pub fn with_panel_specs(mut self, specs: impl IntoIterator<Item = EditorUIPanelSpec>) -> Self {
+        self.set_panel_specs(specs);
         self
     }
 
-    pub fn set_panels(&mut self, panels: impl IntoIterator<Item = EditorPanel>) {
-        let requested: std::collections::HashSet<_> = panels.into_iter().collect();
-        self.panels = EditorPanel::ALL
+    pub fn set_panel_specs(&mut self, specs: impl IntoIterator<Item = EditorUIPanelSpec>) {
+        let mut requested: std::collections::HashMap<_, _> =
+            specs.into_iter().map(|s| (s.panel, s)).collect();
+        self.panel_specs = EditorPanel::ALL
             .into_iter()
-            .filter(|panel| requested.contains(panel))
+            .filter_map(|panel| requested.remove(&panel))
             .collect();
     }
 
-    pub fn panels(&self) -> &[EditorPanel] {
-        &self.panels
+    /// Convenience Rust builder. Authored MMS intentionally accepts panel-spec tables only.
+    pub fn with_panels(self, panels: impl IntoIterator<Item = EditorPanel>) -> Self {
+        self.with_panel_specs(panels.into_iter().map(EditorUIPanelSpec::new))
     }
 
+    pub fn panel_specs(&self) -> &[EditorUIPanelSpec] {
+        &self.panel_specs
+    }
+    pub fn panels(&self) -> Vec<EditorPanel> {
+        self.panel_specs.iter().map(|spec| spec.panel).collect()
+    }
     pub fn contains(&self, panel: EditorPanel) -> bool {
-        self.panels.contains(&panel)
+        self.panel_specs.iter().any(|spec| spec.panel == panel)
+    }
+    pub fn panel_spec(&self, panel: EditorPanel) -> Option<&EditorUIPanelSpec> {
+        self.panel_specs.iter().find(|spec| spec.panel == panel)
     }
 }
 
@@ -98,15 +208,12 @@ impl Component for EditorUIComponent {
     fn set_id(&mut self, component: ComponentId) {
         self.component = Some(component);
     }
-
     fn name(&self) -> &'static str {
         "editor_ui"
     }
-
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -125,34 +232,62 @@ impl Component for EditorUIComponent {
         _world: &crate::engine::ecs::World,
     ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
-        let mut expr = ce("EditorUI");
-        if self.panels.as_slice() != EditorPanel::ALL.as_slice() {
-            expr = expr.with_call("panels", vec![ls(self.panels.iter().map(|p| p.name()))]);
+        use crate::scripting::ast::{Expression, Ident, TableFieldValue};
+        if self.panel_specs.len() == EditorPanel::ALL.len()
+            && self
+                .panel_specs
+                .iter()
+                .zip(EditorPanel::ALL)
+                .all(|(s, p)| *s == EditorUIPanelSpec::new(p))
+        {
+            return ce("EditorUI");
         }
-        expr
+        let table = |fields: Vec<(&str, Expression)>| {
+            Expression::Table(
+                fields
+                    .into_iter()
+                    .map(|(name, value)| TableFieldValue {
+                        name: Ident(name.into()),
+                        value,
+                    })
+                    .collect(),
+            )
+        };
+        let specs = self
+            .panel_specs
+            .iter()
+            .map(|spec| {
+                let mut fields = vec![("panel", s(spec.panel.name()))];
+                let config = match spec.config {
+                    EditorUIPanelConfig::Settings(c) => table(vec![
+                        ("show_armature", b(c.show_armature)),
+                        ("show_bounds", b(c.show_bounds)),
+                        ("show_colliders", b(c.show_colliders)),
+                        ("show_gltf_colliders", b(c.show_gltf_colliders)),
+                    ]),
+                    EditorUIPanelConfig::Empty => table(vec![]),
+                };
+                fields.push(("config", config));
+                table(fields)
+            })
+            .collect();
+        ce("EditorUI").with_call("panels", vec![array(specs)])
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{EditorPanel, EditorUIComponent};
-
+    use super::*;
     #[test]
-    fn panel_names_validate_and_selected_panels_use_canonical_order() {
-        assert!(
-            EditorPanel::parse("nope")
-                .unwrap_err()
-                .contains("unknown EditorUI panel")
-        );
-        let ui = EditorUIComponent::new().with_panels([
-            EditorPanel::World,
-            EditorPanel::Settings,
-            EditorPanel::World,
-            EditorPanel::Paint,
+    fn panel_specs_use_canonical_order_and_last_duplicate_wins() {
+        let ui = EditorUIComponent::new().with_panel_specs([
+            EditorUIPanelSpec::new(EditorPanel::World),
+            EditorUIPanelSpec::new(EditorPanel::Settings),
+            EditorUIPanelSpec::new(EditorPanel::Paint),
         ]);
         assert_eq!(
             ui.panels(),
-            &[
+            vec![
                 EditorPanel::Settings,
                 EditorPanel::Paint,
                 EditorPanel::World

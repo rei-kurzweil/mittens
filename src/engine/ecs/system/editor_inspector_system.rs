@@ -46,8 +46,8 @@ mod tests {
     use super::EditorInspectorSystem;
     use crate::engine::ecs::command_queue::CommandQueue;
     use crate::engine::ecs::component::{
-        BoundsComponent, EditorComponent, GLTFComponent, RenderableComponent, SelectionComponent,
-        SerializeComponent, TransformComponent,
+        BoundsComponent, EditorComponent, EditorUIComponent, GLTFComponent, RenderableComponent,
+        SelectionComponent, SerializeComponent, TransformComponent,
     };
     use crate::engine::ecs::system::TransformSystem;
     use crate::engine::ecs::system::editor::inspector_panel::{
@@ -335,7 +335,14 @@ mod tests {
             .find_component(runtime_ui_root, "#world_panel_root")
             .expect("expected world panel root under runtime ui root");
         assert_eq!(world.parent_of(runtime_ui_root), None);
-        assert_eq!(world.parent_of(panel_mount), Some(runtime_ui_root));
+        let owning_editor_ui = world.parent_of(panel_mount).expect("panel mount owner");
+        assert!(
+            world
+                .get_component_by_id_as::<EditorUIComponent>(owning_editor_ui)
+                .is_some(),
+            "panel mount should be materialized under its owning EditorUI"
+        );
+        assert_eq!(world.parent_of(owning_editor_ui), Some(runtime_ui_root));
         let panel_shared_layout = world
             .find_component(runtime_ui_root, "#editor_panel_layout_root")
             .expect("expected shared panel layout root under runtime ui root");
@@ -369,10 +376,12 @@ mod tests {
                 .find_component(runtime_ui_root, "#panel_status_value")
                 .is_some()
         );
+        let content_slot = world
+            .find_component(panel_root, "#content_slot")
+            .expect("expected world panel content slot");
         assert!(
-            world
-                .find_component(runtime_ui_root, "#rows_mount")
-                .is_some()
+            !world.children_of(content_slot).is_empty(),
+            "expected rendered world-panel rows under the content slot"
         );
         let item0 = world
             .find_component(panel_root, "#item_0")

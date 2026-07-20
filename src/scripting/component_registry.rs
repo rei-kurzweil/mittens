@@ -18,30 +18,30 @@ use crate::engine::ecs::component::{
     CollisionResponseComponent, CollisionShape, CollisionShapeComponent, ColorComponent,
     ControllerHand, ControllerPoseKind, DataComponent, DataValue, DirectionalLightComponent,
     Display, EdgeInsets, EditorComponent, EditorInteractionMode, EditorPanel, EditorUIComponent,
-    ElementType, EmissiveComponent, EmissivePassComponent, FitBoundsComponent, FitBoundsMode,
-    FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent, GestureCoordTypeComponent,
-    GravityComponent, GridComponent, HtmlElementComponent, HttpClientComponent,
-    HttpServerComponent, IKChainComponent, IKSolver, InputComponent, InputTransformModeComponent,
-    InputXRComponent, InputXRGamepadComponent, InspectLayoutComponent, JustifyContent,
-    KeyframeComponent, LayoutBoundsComponent, LayoutComponent, LightQuantizationComponent,
-    MeshComponent, MirrorComponent, MusicNote, MusicNoteComponent, NormalVisualisationComponent,
-    OpacityComponent, OptionComponent, OscillatorType, Overflow, OverlayComponent,
-    PointLightComponent, PointerComponent, PointerEvents, PoseCaptureComponent,
+    EditorUIPanelConfig, EditorUIPanelSpec, ElementType, EmissiveComponent, EmissivePassComponent,
+    FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent,
+    GestureCoordTypeComponent, GravityComponent, GridComponent, HtmlElementComponent,
+    HttpClientComponent, HttpServerComponent, IKChainComponent, IKSolver, InputComponent,
+    InputTransformModeComponent, InputXRComponent, InputXRGamepadComponent, InspectLayoutComponent,
+    JustifyContent, KeyframeComponent, LayoutBoundsComponent, LayoutComponent,
+    LightQuantizationComponent, MeshComponent, MirrorComponent, MusicNote, MusicNoteComponent,
+    NormalVisualisationComponent, OpacityComponent, OptionComponent, OscillatorType, Overflow,
+    OverlayComponent, PointLightComponent, PointerComponent, PointerEvents, PoseCaptureComponent,
     PoseCaptureLibraryComponent, PoseCapturePoseComponent, Position, QuatTemporalFilterComponent,
     QuatYawFollowComponent, RayCastComponent, RaycastableComponent, RaycastableShapeComponent,
     RaycastableShapeType, RenderGraphComponent, RenderableComponent, RendererSettingsComponent,
     RendererStatsComponent, RouterComponent, ScrollingComponent, SecondaryMotionComponent,
-    SelectableComponent, SelectionComponent, SerializeComponent, SignalObserverRouterComponent,
-    SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent, SpotLightComponent,
-    SpringBoneComponent, SpringJointComponent, StencilClipComponent, StyleComponent, TextAlign,
-    TextComponent, TextInputComponent, TextShadowComponent, TextureComponent,
-    TextureFilteringComponent, TransformCameraSpecificComponent, TransformComponent,
-    TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
-    TransformGizmoCoordSpace, TransformGizmoRotateComponent, TransformGizmoScaleComponent,
-    TransformGizmoTranslateComponent, TransformMapRotationComponent, TransformMapScaleComponent,
-    TransformMapTranslationComponent, TransformMergeTRSComponent, TransformParentComponent,
-    TransformSampleAncestorComponent, TransitionComponent, TransitionEasing,
-    TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
+    SelectableComponent, SelectionComponent, SerializeComponent, SettingsPanelConfig,
+    SignalObserverRouterComponent, SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent,
+    SpotLightComponent, SpringBoneComponent, SpringJointComponent, StencilClipComponent,
+    StyleComponent, TextAlign, TextComponent, TextInputComponent, TextShadowComponent,
+    TextureComponent, TextureFilteringComponent, ToggleComponent, TransformCameraSpecificComponent,
+    TransformComponent, TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis,
+    TransformGizmoComponent, TransformGizmoCoordSpace, TransformGizmoRotateComponent,
+    TransformGizmoScaleComponent, TransformGizmoTranslateComponent, TransformMapRotationComponent,
+    TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
+    TransformParentComponent, TransformSampleAncestorComponent, TransitionComponent,
+    TransitionEasing, TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
     Vector3TemporalFilterComponent, WordWrapMode, XRHandComponent, XrComponent, XrHandPreference,
 };
 use crate::engine::ecs::{ComponentId, World};
@@ -152,6 +152,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "Style",
     "Text",
     "TextInput",
+    "Toggle",
     "TextShadow",
     "Texture",
     "TextureFiltering",
@@ -857,9 +858,12 @@ fn expression_to_value(e: &Expression) -> Result<Value, String> {
                 .collect::<Result<_, _>>()?;
             Ok(Value::Array(vals))
         }
-        Expression::Table(_) => {
-            Err("expression_to_value: table literals are not supported yet".into())
-        }
+        Expression::Table(fields) => Ok(Value::Map(
+            fields
+                .iter()
+                .map(|field| Ok((field.name.0.clone(), expression_to_value(&field.value)?)))
+                .collect::<Result<_, String>>()?,
+        )),
         Expression::Index { base, index } => {
             let base = expression_to_value(base)?;
             let index = expression_to_value(index)?;
@@ -1016,6 +1020,103 @@ fn arg_world_f32(args: &[Value], i: usize) -> Result<f32, String> {
 }
 fn arg_bool(args: &[Value], i: usize) -> Result<bool, String> {
     val_as_bool(arg(args, i)?)
+}
+
+fn editor_ui_bool(
+    map: &std::collections::HashMap<String, Value>,
+    key: &str,
+    default: bool,
+) -> Result<bool, String> {
+    match map.get(key) {
+        None => Ok(default),
+        Some(Value::Bool(value)) => Ok(*value),
+        Some(value) => Err(format!(
+            "EditorUI settings config '{key}' expects a boolean, got {value:?}"
+        )),
+    }
+}
+
+fn parse_editor_ui_panel_specs(args: &[Value]) -> Result<Vec<EditorUIPanelSpec>, String> {
+    let [Value::Array(entries)] = args else {
+        return Err("EditorUI.panels expects one array of panel-spec tables".into());
+    };
+    let mut seen = std::collections::HashSet::new();
+    let mut specs = Vec::with_capacity(entries.len());
+    for (index, entry) in entries.iter().enumerate() {
+        let fields = match entry {
+            Value::Map(fields) => fields.clone(),
+            Value::Object(object) => object
+                .with_map(Clone::clone)
+                .ok_or_else(|| format!("EditorUI.panels entry {index} must be a table"))?,
+            _ => return Err(format!("EditorUI.panels entry {index} must be a table")),
+        };
+        for key in fields.keys() {
+            if key != "panel" && key != "config" {
+                return Err(format!("unknown EditorUI panel-spec key '{key}'"));
+            }
+        }
+        let panel_name = match fields.get("panel") {
+            Some(Value::String(name)) => name.as_str(),
+            Some(value) => {
+                return Err(format!(
+                    "EditorUI panel-spec 'panel' expects a string, got {value:?}"
+                ));
+            }
+            None => return Err("EditorUI panel-spec is missing required 'panel'".into()),
+        };
+        let panel = EditorPanel::parse(panel_name)?;
+        if !seen.insert(panel) {
+            return Err(format!("duplicate EditorUI panel '{panel_name}'"));
+        }
+        let config = match fields.get("config") {
+            None => EditorUIPanelSpec::new(panel).config,
+            Some(value @ (Value::Map(_) | Value::Object(_))) => {
+                let config = match value {
+                    Value::Map(config) => config.clone(),
+                    Value::Object(object) => object.with_map(Clone::clone).ok_or_else(|| {
+                        format!("EditorUI panel '{panel_name}' config must be a table")
+                    })?,
+                    _ => unreachable!(),
+                };
+                match panel {
+                    EditorPanel::Settings => {
+                        const KEYS: [&str; 4] = [
+                            "show_armature",
+                            "show_bounds",
+                            "show_colliders",
+                            "show_gltf_colliders",
+                        ];
+                        if let Some(key) = config.keys().find(|key| !KEYS.contains(&key.as_str())) {
+                            return Err(format!("unknown EditorUI settings config key '{key}'"));
+                        }
+                        EditorUIPanelConfig::Settings(SettingsPanelConfig {
+                            show_armature: editor_ui_bool(&config, "show_armature", true)?,
+                            show_bounds: editor_ui_bool(&config, "show_bounds", true)?,
+                            show_colliders: editor_ui_bool(&config, "show_colliders", true)?,
+                            show_gltf_colliders: editor_ui_bool(
+                                &config,
+                                "show_gltf_colliders",
+                                true,
+                            )?,
+                        })
+                    }
+                    _ if config.is_empty() => EditorUIPanelConfig::Empty,
+                    _ => {
+                        return Err(format!(
+                            "EditorUI panel '{panel_name}' does not accept config keys"
+                        ));
+                    }
+                }
+            }
+            Some(value) => {
+                return Err(format!(
+                    "EditorUI panel '{panel_name}' config must be a table, got {value:?}"
+                ));
+            }
+        };
+        specs.push(EditorUIPanelSpec { panel, config });
+    }
+    Ok(specs)
 }
 fn arg_str(args: &[Value], i: usize) -> Result<&str, String> {
     val_as_str(arg(args, i)?)
@@ -1619,6 +1720,10 @@ fn create_component(
             Ok(id)
         }
         "Option" => add!(OptionComponent::new()),
+        "Toggle" => add!(match ctor {
+            Some("on") => ToggleComponent::on(),
+            _ => ToggleComponent::off(),
+        }),
         "ObserverRouter" => {
             let id = world.add_component(SignalObserverRouterComponent::new());
             if let Some(method) = ctor {
@@ -2757,15 +2862,8 @@ fn apply_call(
     }
     if let Some(editor_ui) = world.get_component_by_id_as_mut::<EditorUIComponent>(id) {
         if method == "panels" {
-            let names =
-                val_as_str_vec(args.first().ok_or_else(|| {
-                    "EditorUI.panels expects one array of panel names".to_string()
-                })?)?;
-            let panels = names
-                .iter()
-                .map(|name| EditorPanel::parse(name))
-                .collect::<Result<Vec<_>, _>>()?;
-            editor_ui.set_panels(panels);
+            let specs = parse_editor_ui_panel_specs(args)?;
+            editor_ui.set_panel_specs(specs);
         }
         return Ok(());
     }

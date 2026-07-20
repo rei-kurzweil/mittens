@@ -12,6 +12,7 @@ use crate::engine::ecs::system::ClippingSystem;
 use crate::engine::ecs::system::ClockSystem;
 use crate::engine::ecs::system::CollisionResponseSystem;
 use crate::engine::ecs::system::CollisionSystem;
+use crate::engine::ecs::system::CollisionVisualizationSystem;
 use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::system::GltfBoundsVisualizationSystem;
 use crate::engine::ecs::system::HttpClientSystem;
@@ -35,6 +36,7 @@ use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TextInputSystem;
 use crate::engine::ecs::system::TextSystem;
 use crate::engine::ecs::system::TextureSystem;
+use crate::engine::ecs::system::ToggleSystem;
 use crate::engine::ecs::system::TransformStreamSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::TransitionSystem;
@@ -82,6 +84,7 @@ pub struct SystemWorld {
     pub transform: TransformSystem,
     pub bvh: BvhSystem,
     pub collision: CollisionSystem,
+    pub collision_visualization: CollisionVisualizationSystem,
     pub collision_response: CollisionResponseSystem,
     pub skinned_mesh: SkinnedMeshSystem,
     pub renderable: RenderableSystem,
@@ -100,6 +103,7 @@ pub struct SystemWorld {
     pub editor_context: EditorContextSystem,
     pub editor_inspector: EditorInspectorSystem,
     pub selection: SelectionSystem,
+    pub toggle: ToggleSystem,
     pub asset_system: AssetSystem,
     pub fit_bounds: FitBoundsSystem,
     pub grid: GridSystem,
@@ -2564,6 +2568,7 @@ impl SystemWorld {
         self.gesture.begin_frame();
         self.text_input.install_handlers(&mut self.rx);
         self.selection.install_handlers(&mut self.rx);
+        self.toggle.install_handlers(&mut self.rx);
 
         // Process input first - it may queue commands
         self.input.process_input(world, input, queue, dt_sec);
@@ -2597,6 +2602,8 @@ impl SystemWorld {
             render_assets,
             queue,
         );
+        self.collision_visualization
+            .tick_with_queue(world, visuals, render_assets, queue);
         queue.flush(world, self, visuals, render_assets);
 
         // Audio clock takeover: once audio output is active, use it as the ClockDriver.

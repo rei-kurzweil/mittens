@@ -579,6 +579,23 @@ impl RxMutationExecutor {
                     systems.register_editor_ui(world, visuals, render_assets, component, emit);
                 }
             }
+            IntentValue::CollisionVisualizationSet {
+                component_ids,
+                scope_roots,
+                mode,
+            } => {
+                for owner in component_ids {
+                    if let Some(mode) = mode {
+                        systems.collision_visualization.set_request(
+                            *owner,
+                            scope_roots.clone(),
+                            *mode,
+                        );
+                    } else {
+                        systems.collision_visualization.remove_request(*owner);
+                    }
+                }
+            }
 
             IntentValue::RegisterAction { component_ids } => {
                 for &component in component_ids.iter() {

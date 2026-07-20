@@ -601,17 +601,15 @@ fn live_eval_emitted_tree_is_queryable_by_next_statement() {
 
     let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut rx, &mut emit);
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
-    assert!(
-        world
-            .find_component(
-                world
-                    .all_components()
-                    .find(|&id| world.parent_of(id).is_none())
-                    .unwrap(),
-                "#btn_a"
-            )
-            .is_some()
-    );
+    assert!(world
+        .find_component(
+            world
+                .all_components()
+                .find(|&id| world.parent_of(id).is_none())
+                .unwrap(),
+            "#btn_a"
+        )
+        .is_some());
 }
 
 #[test]
@@ -1188,8 +1186,8 @@ fn live_eval_imported_factory_keyframe_closure_captures_live_component_objects()
 
 #[test]
 fn live_keyframe_block_music_note_emits_audio_schedule_play() {
-    use crate::engine::ecs::IntentValue;
     use crate::engine::ecs::component::MusicNote;
+    use crate::engine::ecs::IntentValue;
 
     let src = r##"
         Clock.bpm(60) {}
@@ -1905,18 +1903,15 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
                 .count()
                 >= 6
         );
-        assert!(
-            tree.iter()
-                .any(|&id| world.component_label(id) == Some("tripod_light_housing"))
-        );
-        assert!(
-            tree.iter()
-                .any(|&id| world.component_label(id) == Some("tripod_light_rear_mount"))
-        );
-        assert!(
-            tree.iter()
-                .any(|&id| world.component_label(id) == Some("tripod_light_emissive_face"))
-        );
+        assert!(tree
+            .iter()
+            .any(|&id| world.component_label(id) == Some("tripod_light_housing")));
+        assert!(tree
+            .iter()
+            .any(|&id| world.component_label(id) == Some("tripod_light_rear_mount")));
+        assert!(tree
+            .iter()
+            .any(|&id| world.component_label(id) == Some("tripod_light_emissive_face")));
     }
 
     let scenery = [
@@ -2294,11 +2289,9 @@ fn tripod_light_without_a_mounted_light_has_no_emissive_face() {
         &mut emit,
     );
     assert!(output.errors.is_empty(), "{:?}", output.errors);
-    assert!(
-        world
-            .all_components()
-            .all(|id| world.component_label(id) != Some("tripod_light_emissive_face"))
-    );
+    assert!(world
+        .all_components()
+        .all(|id| world.component_label(id) != Some("tripod_light_emissive_face")));
     assert!(world.all_components().all(|id| {
         world
             .get_component_by_id_as::<EmissiveComponent>(id)
@@ -4080,10 +4073,10 @@ fn roundtrip_subtree(source_world: &World, root: ComponentId) -> (World, Compone
 
 #[test]
 fn roundtrip_action_query_selector_preserved_verbatim() {
-    use crate::engine::ecs::IntentValue;
     use crate::engine::ecs::component::{
         ActionComponent, ComponentRef, KeyframeComponent, TransformComponent,
     };
+    use crate::engine::ecs::IntentValue;
     use slotmap::Key;
 
     let mut w = World::default();
@@ -4117,10 +4110,10 @@ fn roundtrip_action_query_selector_preserved_verbatim() {
 
 #[test]
 fn roundtrip_action_handle_becomes_guid_and_target_keeps_guid() {
-    use crate::engine::ecs::IntentValue;
     use crate::engine::ecs::component::{
         ActionComponent, ComponentRef, KeyframeComponent, TransformComponent,
     };
+    use crate::engine::ecs::IntentValue;
     use slotmap::Key;
 
     let mut w = World::default();
@@ -4166,10 +4159,10 @@ fn roundtrip_action_handle_becomes_guid_and_target_keeps_guid() {
 
 #[test]
 fn roundtrip_action_named_and_guid_referenced_target_emits_both() {
-    use crate::engine::ecs::IntentValue;
     use crate::engine::ecs::component::{
         ActionComponent, ComponentRef, KeyframeComponent, TransformComponent,
     };
+    use crate::engine::ecs::IntentValue;
     use slotmap::Key;
 
     let mut w = World::default();
@@ -4228,8 +4221,8 @@ fn roundtrip_action_named_and_guid_referenced_target_emits_both() {
 
 #[test]
 fn roundtrip_action_unreferenced_component_does_not_get_guid_emit() {
-    use crate::engine::ecs::IntentValue;
     use crate::engine::ecs::component::{ActionComponent, TransformComponent};
+    use crate::engine::ecs::IntentValue;
 
     let mut w = World::default();
     let root = w.add_component(TransformComponent::new());
@@ -4447,13 +4440,13 @@ fn roundtrip_editor() {
 
 #[test]
 fn roundtrip_editor_ui_default_and_settings_only() {
-    use crate::engine::ecs::component::{EditorPanel, EditorUIComponent};
+    use crate::engine::ecs::component::{EditorPanel, EditorUIComponent, EditorUIPanelSpec};
 
     let (world, id) = roundtrip_component(EditorUIComponent::new());
     let got = world
         .get_component_by_id_as::<EditorUIComponent>(id)
         .unwrap();
-    assert_eq!(got.panels(), EditorPanel::ALL.as_slice());
+    assert_eq!(got.panels(), EditorPanel::ALL.to_vec());
 
     let (world, id) = roundtrip_component(
         EditorUIComponent::new().with_panels([EditorPanel::Settings, EditorPanel::Settings]),
@@ -4461,7 +4454,58 @@ fn roundtrip_editor_ui_default_and_settings_only() {
     let got = world
         .get_component_by_id_as::<EditorUIComponent>(id)
         .unwrap();
-    assert_eq!(got.panels(), &[EditorPanel::Settings]);
+    assert_eq!(got.panels(), vec![EditorPanel::Settings]);
+
+    let expected = EditorUIPanelSpec::new(EditorPanel::Settings)
+        .with_show_armature(false)
+        .with_show_bounds(true)
+        .with_show_colliders(false)
+        .with_show_gltf_colliders(true);
+    let (world, id) =
+        roundtrip_component(EditorUIComponent::new().with_panel_specs([expected.clone()]));
+    let got = world
+        .get_component_by_id_as::<EditorUIComponent>(id)
+        .unwrap();
+    assert_eq!(got.panel_specs(), &[expected]);
+}
+
+#[test]
+fn editor_ui_panel_specs_validate_tables_configs_and_types_strictly() {
+    let invalid = [
+        ("EditorUI { panels([\"settings\"]) }", "must be a table"),
+        ("EditorUI { panels([{}]) }", "missing required 'panel'"),
+        (
+            "EditorUI { panels([{ panel = \"settings\" }, { panel = \"settings\" }]) }",
+            "duplicate EditorUI panel",
+        ),
+        (
+            "EditorUI { panels([{ panel = \"settings\" nope = true }]) }",
+            "unknown EditorUI panel-spec key",
+        ),
+        (
+            "EditorUI { panels([{ panel = \"paint\" config = { nope = true } }]) }",
+            "does not accept config keys",
+        ),
+        (
+            "EditorUI { panels([{ panel = \"settings\" config = false }]) }",
+            "config must be a table",
+        ),
+        (
+            "EditorUI { panels([{ panel = \"settings\" config = { show_bounds = 1 } }]) }",
+            "expects a boolean",
+        ),
+    ];
+    for (source, expected) in invalid {
+        let mut world = World::default();
+        let mut rx = RxWorld::default();
+        let mut emit = CommandQueue::new();
+        let output = MeowMeowRunner::eval_with_world(source, &mut world, &mut rx, &mut emit);
+        assert!(
+            output.errors.iter().any(|error| error.contains(expected)),
+            "{source}: {:?}",
+            output.errors
+        );
+    }
 }
 
 #[test]
@@ -4470,7 +4514,7 @@ fn editor_ui_rejects_unknown_panel_names() {
     let mut rx = RxWorld::default();
     let mut emit = CommandQueue::new();
     let output = MeowMeowRunner::eval_with_world(
-        "EditorUI { panels([\"wat\"]) }",
+        "EditorUI { panels([{ panel = \"wat\" }]) }",
         &mut world,
         &mut rx,
         &mut emit,
@@ -4491,7 +4535,7 @@ fn editor_ui_settings_only_materializes_under_authored_transform() {
         Editor.active() { T { name = "editable_scene" } }
         T.position(-2.25, 1.25, 0.0) {
             name = "authored_ui_position"
-            EditorUI { panels(["settings", "settings"]) }
+            EditorUI { panels([{ panel = "settings" }]) }
         }
     "#;
     let mut world = World::default();
@@ -4531,21 +4575,26 @@ fn editor_ui_settings_only_materializes_under_authored_transform() {
         world.component_label(world.parent_of(editor_ui).unwrap()),
         Some("authored_ui_position")
     );
-    assert!(
-        world
-            .find_component(editor_ui, "#editor_panel_layout_root")
-            .is_some()
-    );
-    assert!(
-        world
-            .find_component(editor_ui, "#editor_panel_layout_selection")
-            .is_some()
-    );
-    assert!(
-        world
-            .find_component(editor_ui, "#editor_settings_panel_root")
-            .is_some()
-    );
+    assert!(world
+        .find_component(editor_ui, "#editor_panel_layout_root")
+        .is_some());
+    assert!(world
+        .find_component(editor_ui, "#editor_panel_layout_selection")
+        .is_some());
+    assert!(world
+        .find_component(editor_ui, "#editor_settings_panel_root")
+        .is_some());
+    for default_row in [
+        "#editor_settings_armature_visibility",
+        "#editor_settings_bounds_visibility",
+        "#editor_settings_colliders_visibility",
+        "#editor_settings_gltf_colliders_visibility",
+    ] {
+        assert!(
+            world.find_component(editor_ui, default_row).is_some(),
+            "missing default Settings row {default_row}"
+        );
+    }
     for omitted in [
         "#paint_panel_root",
         "#color_panel_root",
@@ -4554,6 +4603,64 @@ fn editor_ui_settings_only_materializes_under_authored_transform() {
         "#assets_root",
         "#world_panel_root",
         "#inspector_panel_root",
+    ] {
+        assert!(
+            world.find_component(editor_ui, omitted).is_none(),
+            "unexpected {omitted}"
+        );
+    }
+}
+
+#[test]
+fn editor_ui_settings_config_conditionally_authors_diagnostic_rows() {
+    let source = r#"
+        Editor.active() { T { name = "editable_scene" } }
+        T {
+            EditorUI {
+                panels([{
+                    panel = "settings"
+                    config = {
+                        show_armature = false
+                        show_bounds = true
+                        show_colliders = false
+                        show_gltf_colliders = false
+                    }
+                }])
+            }
+        }
+    "#;
+    let mut world = World::default();
+    let mut systems = crate::engine::ecs::system::SystemWorld::default();
+    let mut visuals = VisualWorld::default();
+    let mut render_assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+    let output = MeowMeowRunner::eval_with_world_and_assets(
+        source,
+        &mut world,
+        &mut systems.rx,
+        &mut render_assets,
+        &mut queue,
+    );
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    for intent in output.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
+    systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
+    let editor_ui = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::EditorUIComponent>(*id)
+                .is_some()
+        })
+        .unwrap();
+    assert!(world
+        .find_component(editor_ui, "#editor_settings_bounds_visibility")
+        .is_some());
+    for omitted in [
+        "#editor_settings_armature_visibility",
+        "#editor_settings_colliders_visibility",
+        "#editor_settings_gltf_colliders_visibility",
     ] {
         assert!(
             world.find_component(editor_ui, omitted).is_none(),
@@ -5153,8 +5260,8 @@ fn roundtrip_music_note_c5() {
 #[cfg(any())]
 #[test]
 fn roundtrip_ik_chain_aim() {
-    use crate::engine::ecs::ComponentId;
     use crate::engine::ecs::component::{IKChainComponent, IKSolver};
+    use crate::engine::ecs::ComponentId;
     use slotmap::Key;
     let sentinel = ComponentId::null();
     let original = IKChainComponent::new(

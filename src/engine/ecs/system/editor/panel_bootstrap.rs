@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use crate::engine::ecs::component::{
-    EditorPanel, SelectionComponent, SelectionEntry, SelectionMode,
+    EditorPanel, EditorUIPanelSpec, SelectionComponent, SelectionEntry, SelectionMode,
 };
 use crate::engine::ecs::system::data_renderer_system::DataRendererSystem;
 use crate::engine::ecs::system::editor::context::EditorContextState;
@@ -28,7 +28,7 @@ pub(crate) fn reconcile_editor_panel_layout(
     panel_query_root: ComponentId,
     editor_root: ComponentId,
     world_panel_pos: (f32, f32, f32),
-    selected_panels: &[EditorPanel],
+    selected_panels: &[EditorUIPanelSpec],
     model: &WorldPanelModel,
     inspector_models: &[InspectorPanelModel],
     rendered_inspector_models: &Arc<Mutex<Vec<InspectorPanelModel>>>,
@@ -125,7 +125,10 @@ pub(crate) fn reconcile_editor_panel_layout(
         active_editor: Some(editor_root),
         ..EditorContextState::default()
     };
-    if selected_panels.contains(&EditorPanel::Grid) {
+    if selected_panels
+        .iter()
+        .any(|spec| spec.panel == EditorPanel::Grid)
+    {
         rerender_grid_panel_from_context(
             world,
             emit,
@@ -134,7 +137,10 @@ pub(crate) fn reconcile_editor_panel_layout(
             data_renderer,
         );
     }
-    if selected_panels.contains(&EditorPanel::Settings) {
+    if selected_panels
+        .iter()
+        .any(|spec| spec.panel == EditorPanel::Settings)
+    {
         sync_editor_settings_panel_selection(world, emit, panel_mount_root, &grid_context);
     }
 

@@ -38,6 +38,7 @@ pub struct RenderAssets {
 
     /// Procedural unit wireframe boxes keyed by the exact authored thickness bits.
     wireframe_box_meshes: HashMap<u32, CpuMeshHandle>,
+    capsule_y_meshes: HashMap<(u32, u32), CpuMeshHandle>,
 }
 
 impl RenderAssets {
@@ -106,6 +107,19 @@ impl RenderAssets {
         }
         let handle = self.register_mesh(MeshFactory::wireframe_box(thickness));
         self.wireframe_box_meshes.insert(key, handle);
+        handle
+    }
+
+    /// Shared exact upright capsule mesh, keyed by normalized shape dimensions.
+    pub fn capsule_y_mesh(&mut self, radius: f32, half_segment: f32) -> CpuMeshHandle {
+        let radius = radius.max(0.0);
+        let half_segment = half_segment.max(0.0);
+        let key = (radius.to_bits(), half_segment.to_bits());
+        if let Some(handle) = self.capsule_y_meshes.get(&key).copied() {
+            return handle;
+        }
+        let handle = self.register_mesh(MeshFactory::capsule_y(radius, half_segment, 32, 12));
+        self.capsule_y_meshes.insert(key, handle);
         handle
     }
 

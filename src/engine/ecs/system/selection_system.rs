@@ -425,7 +425,11 @@ fn remove_selection_overlay(world: &World, emit: &mut dyn SignalEmitter, item_id
     }
 }
 
-fn add_selection_highlight(world: &mut World, emit: &mut dyn SignalEmitter, item_id: ComponentId) {
+pub(crate) fn add_selection_highlight(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    item_id: ComponentId,
+) {
     if set_styled_selection(world, emit, item_id, true) {
         remove_selection_overlay(world, emit, item_id);
         return;
@@ -433,7 +437,7 @@ fn add_selection_highlight(world: &mut World, emit: &mut dyn SignalEmitter, item
     ensure_selection_overlay(world, emit, item_id);
 }
 
-fn remove_selection_highlight(
+pub(crate) fn remove_selection_highlight(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
     item_id: ComponentId,

@@ -92,6 +92,7 @@ pub mod text_input;
 pub mod text_shadow;
 pub mod texture;
 pub mod texture_filtering;
+pub mod toggle;
 pub mod transform;
 pub mod transform_camera_specific;
 pub mod transform_parent;
@@ -145,7 +146,9 @@ pub use directional_light::DirectionalLightComponent;
 pub use editor::EditorComponent;
 pub use editor::EditorInteractionMode;
 pub use editor::TransformGizmoCoordSpace;
-pub use editor_ui::{EditorPanel, EditorUIComponent};
+pub use editor_ui::{
+    EditorPanel, EditorUIComponent, EditorUIPanelConfig, EditorUIPanelSpec, SettingsPanelConfig,
+};
 pub use emissive::EmissiveComponent;
 pub use emissive_pass::EmissivePassComponent;
 pub use fit_bounds::{FitBoundsComponent, FitBoundsMode, FitBoundsTarget};
@@ -212,6 +215,7 @@ pub use text_input::{TextInputComponent, TextInputGlyphHitComponent};
 pub use text_shadow::TextShadowComponent;
 pub use texture::{CatEngineTextureFormat, TextureComponent};
 pub use texture_filtering::TextureFilteringComponent;
+pub use toggle::ToggleComponent;
 pub use transform::TransformComponent;
 pub use transform_camera_specific::{
     TransformCameraSpecificComponent, TransformCameraSpecificMode,

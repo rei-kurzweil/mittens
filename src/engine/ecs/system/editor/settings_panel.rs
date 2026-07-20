@@ -22,6 +22,12 @@ pub(crate) const EDITOR_SETTINGS_ARMATURE_ROW_NAME: &str = "editor_settings_arma
 pub(crate) const EDITOR_SETTINGS_ARMATURE_TOGGLE_SLOT_NAME: &str = "armature_toggle_slot";
 pub(crate) const EDITOR_SETTINGS_BOUNDS_ROW_NAME: &str = "editor_settings_bounds_visibility";
 pub(crate) const EDITOR_SETTINGS_BOUNDS_TOGGLE_SLOT_NAME: &str = "bounds_toggle_slot";
+pub(crate) const EDITOR_SETTINGS_COLLIDERS_ROW_NAME: &str = "editor_settings_colliders_visibility";
+pub(crate) const EDITOR_SETTINGS_COLLIDERS_TOGGLE_SLOT_NAME: &str = "colliders_toggle_slot";
+pub(crate) const EDITOR_SETTINGS_GLTF_COLLIDERS_ROW_NAME: &str =
+    "editor_settings_gltf_colliders_visibility";
+pub(crate) const EDITOR_SETTINGS_GLTF_COLLIDERS_TOGGLE_SLOT_NAME: &str =
+    "gltf_colliders_toggle_slot";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EditorSettingsOption {
@@ -163,6 +169,24 @@ pub(crate) fn sync_editor_settings_armature_toggle(
     ) else {
         return;
     };
+    if let Some(toggle) = world
+        .children_of(armature_row_root)
+        .iter()
+        .copied()
+        .find(|child| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::ToggleComponent>(*child)
+                .is_some()
+        })
+    {
+        emit.push_intent_now(
+            toggle,
+            IntentValue::ToggleSet {
+                component_ids: vec![toggle],
+                value: editor_context.armature_visible,
+            },
+        );
+    }
 
     let existing_children = world.children_of(toggle_slot).to_vec();
     for child in existing_children {
@@ -256,6 +280,19 @@ fn sync_boolean_toggle(
     let Some(slot) = world.find_component(row, &format!("#{slot_name}")) else {
         return;
     };
+    if let Some(toggle) = world.children_of(row).iter().copied().find(|child| {
+        world
+            .get_component_by_id_as::<crate::engine::ecs::component::ToggleComponent>(*child)
+            .is_some()
+    }) {
+        emit.push_intent_now(
+            toggle,
+            IntentValue::ToggleSet {
+                component_ids: vec![toggle],
+                value: on,
+            },
+        );
+    }
     for child in world.children_of(slot).to_vec() {
         emit.push_intent_now(
             child,
@@ -338,6 +375,44 @@ pub(crate) fn sync_editor_settings_panel_selection(
 
     sync_editor_settings_armature_toggle(world, emit, panel_query_root, editor_context);
     sync_editor_settings_bounds_toggle(world, emit, panel_query_root, editor_context);
+    sync_boolean_toggle(
+        world,
+        emit,
+        panel_query_root,
+        EDITOR_SETTINGS_COLLIDERS_ROW_NAME,
+        EDITOR_SETTINGS_COLLIDERS_TOGGLE_SLOT_NAME,
+        "colliders_toggle",
+        editor_context.collider_visibility
+            == Some(crate::engine::ecs::system::CollisionVisualizationMode::All),
+    );
+    sync_boolean_toggle(
+        world,
+        emit,
+        panel_query_root,
+        EDITOR_SETTINGS_GLTF_COLLIDERS_ROW_NAME,
+        EDITOR_SETTINGS_GLTF_COLLIDERS_TOGGLE_SLOT_NAME,
+        "gltf_colliders_toggle",
+        editor_context.collider_visibility
+            == Some(crate::engine::ecs::system::CollisionVisualizationMode::GltfOwned),
+    );
+}
+
+fn owning_editor_ui(world: &World, start: ComponentId) -> Option<ComponentId> {
+    let mut current = Some(start);
+    while let Some(id) = current {
+        if world
+            .get_component_by_id_as::<crate::engine::ecs::component::EditorUIComponent>(id)
+            .is_some()
+        {
+            return Some(id);
+        }
+        current = world.parent_of(id);
+    }
+    world.all_components().find(|id| {
+        world
+            .get_component_by_id_as::<crate::engine::ecs::component::EditorUIComponent>(*id)
+            .is_some()
+    })
 }
 
 pub(crate) fn handle_editor_settings_panel_click(
@@ -444,6 +519,41 @@ pub(crate) fn handle_editor_settings_panel_click(
             sync_editor_settings_panel_selection(world, emit, panel_query_root, &editor_context);
             return true;
         }
+        if row_kind == "AllCollidersVisibility" || row_kind == "GltfCollidersVisibility" {
+            use crate::engine::ecs::system::CollisionVisualizationMode;
+            let clicked = if row_kind == "AllCollidersVisibility" {
+                CollisionVisualizationMode::All
+            } else {
+                CollisionVisualizationMode::GltfOwned
+            };
+            let mode = {
+                let mut context = editor_context_state
+                    .lock()
+                    .expect("editor context state mutex poisoned");
+                context.collider_visibility = if context.collider_visibility == Some(clicked) {
+                    None
+                } else {
+                    Some(clicked)
+                };
+                context.collider_visibility
+            };
+            if let Some(owner) = owning_editor_ui(world, settings_panel_root) {
+                emit.push_intent_now(
+                    owner,
+                    IntentValue::CollisionVisualizationSet {
+                        component_ids: vec![owner],
+                        scope_roots: effective_editor_roots(world, installed_editor_roots),
+                        mode,
+                    },
+                );
+            }
+            let context = editor_context_state
+                .lock()
+                .expect("editor context state mutex poisoned")
+                .clone();
+            sync_editor_settings_panel_selection(world, emit, panel_query_root, &context);
+            return true;
+        }
         if row_kind != "GLTFArmatureVisibility" {
             return false;
         }
@@ -490,7 +600,7 @@ mod tests {
     use super::*;
     use crate::engine::ecs::command_queue::CommandQueue;
     use crate::engine::ecs::component::{DataValue, EditorComponent};
-    use crate::engine::ecs::system::SystemWorld;
+    use crate::engine::ecs::system::{CollisionVisualizationMode, SystemWorld};
     use crate::engine::graphics::{RenderAssets, VisualWorld};
 
     #[test]
@@ -607,5 +717,72 @@ mod tests {
             !world.children_of(toggle_slot).is_empty(),
             "expected toggle button to still be rendered when armature is hidden (shows Off)"
         );
+    }
+
+    #[test]
+    fn collider_settings_are_exclusive_and_clicking_active_mode_turns_them_off() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let mut visuals = VisualWorld::default();
+        let mut render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::default();
+        let editor_ui = world.add_component(
+            crate::engine::ecs::component::EditorUIComponent::new()
+                .with_panels([crate::engine::ecs::component::EditorPanel::Settings]),
+        );
+        let settings_panel = world.add_component_boxed_named(
+            "editor_settings_panel_root",
+            Box::new(crate::engine::ecs::component::TransformComponent::new()),
+        );
+        world.add_child(editor_ui, settings_panel).unwrap();
+
+        let make_row = |world: &mut World, name: &str, kind: &str| {
+            let row = world.add_component_boxed_named(
+                name,
+                Box::new(crate::engine::ecs::component::TransformComponent::new()),
+            );
+            let payload = world.add_component_boxed_named(
+                EDITOR_SETTINGS_PAYLOAD_NAME,
+                Box::new(
+                    DataComponent::new().with_entry("row_kind", DataValue::Text(kind.to_string())),
+                ),
+            );
+            world.add_child(row, payload).unwrap();
+            world.add_child(settings_panel, row).unwrap();
+            row
+        };
+        let all_row = make_row(
+            &mut world,
+            EDITOR_SETTINGS_COLLIDERS_ROW_NAME,
+            "AllCollidersVisibility",
+        );
+        let gltf_row = make_row(
+            &mut world,
+            EDITOR_SETTINGS_GLTF_COLLIDERS_ROW_NAME,
+            "GltfCollidersVisibility",
+        );
+        let editor_root = world.add_component(EditorComponent::new());
+        let context = Arc::new(Mutex::new(EditorContextState::default()));
+        let roots = Arc::new(Mutex::new(vec![editor_root]));
+
+        for (clicked, expected) in [
+            (all_row, Some(CollisionVisualizationMode::All)),
+            (gltf_row, Some(CollisionVisualizationMode::GltfOwned)),
+            (gltf_row, None),
+        ] {
+            assert!(handle_editor_settings_panel_click(
+                &mut world, &mut emit, editor_ui, clicked, &context, &roots,
+            ));
+            systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
+            assert_eq!(context.lock().unwrap().collider_visibility, expected);
+            assert_eq!(
+                systems
+                    .collision_visualization
+                    .requests()
+                    .get(&editor_ui)
+                    .map(|request| request.mode),
+                expected
+            );
+        }
     }
 }

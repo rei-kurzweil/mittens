@@ -84,17 +84,29 @@ impl mms::Host for MittensHost<'_> {
                 let component_type = tree.component_type.clone();
                 let response = self.dispatch(R::Spawn { tree })?;
                 let S::Component { handle: native, .. } = response else {
-                    return Err(mms::HostError::failure("emit", "spawn did not return a component"));
+                    return Err(mms::HostError::failure(
+                        "emit",
+                        "spawn did not return a component",
+                    ));
                 };
-                Ok(S::Component { handle: native, component_type })
+                Ok(S::Component {
+                    handle: native,
+                    component_type,
+                })
             }
             R::RegisterComponent { tree } => {
                 let component_type = tree.component_type.clone();
                 let response = self.dispatch(R::Register { tree })?;
                 let S::Component { handle: native, .. } = response else {
-                    return Err(mms::HostError::failure("register_component", "registration did not return a component"));
+                    return Err(mms::HostError::failure(
+                        "register_component",
+                        "registration did not return a component",
+                    ));
                 };
-                Ok(S::Component { handle: native, component_type })
+                Ok(S::Component {
+                    handle: native,
+                    component_type,
+                })
             }
             R::CallApi { api_id, .. } => Err(mms::HostError::unsupported(api_id)),
             R::Spawn { tree } => {
@@ -334,6 +346,7 @@ fn signal_kind(name: &str) -> Option<SignalKind> {
         "FrameTick" => SignalKind::FrameTick,
         "GLTFInitialized" => SignalKind::GltfInitialized,
         "Click" => SignalKind::Click,
+        "ToggleChanged" => SignalKind::ToggleChanged,
         "DataEvent" => SignalKind::DataEvent,
         "CollisionStarted" => SignalKind::CollisionStarted,
         "CollisionEnded" => SignalKind::CollisionEnded,

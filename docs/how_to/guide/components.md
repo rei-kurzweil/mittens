@@ -444,6 +444,14 @@ Internal selection-system state used to restore visual styles after deselection.
 Selection {}
 ```
 
+### `ToggleComponent`
+<!-- catalog:component source="ToggleComponent" mms="direct" names="Toggle" -->
+Carries an independent boolean UI value. Clicking its styled owner flips the value, updates the standard active highlight, and emits `ToggleChanged`; `ToggleSet` synchronizes it programmatically.
+**Directly constructible** as `Toggle.on()` or `Toggle.off()`. Sources: [Rust implementation](../../../src/engine/ecs/component/toggle.rs), [toggle system](../../../src/engine/ecs/system/toggle_system.rs), and [MMS registry](../../../src/scripting/component_registry.rs).
+```mms parse-only
+Toggle.on()
+```
+
 ### `TextInputComponent`
 <!-- catalog:component source="TextInputComponent" mms="direct" names="TextInput" -->
 Carries text input state used when that engine feature is present in a component tree. Use it when a tree needs this state or behavior. Text-input system; focus/edit intents and `TextInputFocusChanged`/`TextInputChanged` are relevant.
@@ -912,6 +920,14 @@ Carries editor state used when that engine feature is present in a component tre
 **Directly constructible** as `Editor`. Sources: [Rust implementation](../../../src/engine/ecs/component/editor.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
 ```mms parse-only
 Editor {}
+```
+
+### `EditorUIComponent`
+<!-- catalog:component source="EditorUIComponent" mms="direct" names="EditorUI" -->
+Owns the shared editor workspace and its canonically ordered typed panel specifications. `EditorUI {}` enables every panel with default configuration.
+**Directly constructible** as `EditorUI`. Sources: [Rust implementation](../../../src/engine/ecs/component/editor_ui.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
+```mms parse-only
+EditorUI { panels([{ panel = "settings" config = {} }]) }
 ```
 
 ### `GridComponent`

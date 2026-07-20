@@ -121,7 +121,17 @@ ED.active() {
 // Keep the workspace outside the editable scene so bounds inspection discovers
 // Bisket without allowing the panel itself to become an editor target.
 T.position(-2.25, 1.25, 0.0) {
-    EditorUI { panels(["settings"]) }
+    EditorUI {
+        panels([{
+            panel = "settings"
+            config = {
+                show_armature = true
+                show_bounds = true
+                show_colliders = true
+                show_gltf_colliders = true
+            }
+        }])
+    }
 }
 
 // Fixed third-person desktop camera slot; movement controls only the avatar driver.

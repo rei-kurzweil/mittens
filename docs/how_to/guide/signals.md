@@ -304,6 +304,15 @@ on(scope, "Click", fn(event) { print(event) })
 scope
 ```
 
+#### `ToggleChanged`
+<!-- catalog:signal source="ToggleChanged" kind="event" mms="observable-payload" -->
+**Event.** A `Toggle` changed value. The payload contains the live toggle component and its boolean `value`.
+```mms parse-only
+let scope = Transform {}
+on(scope, "ToggleChanged", fn(event) { print(event.value) })
+scope
+```
+
 #### `SelectionChanged`
 <!-- catalog:signal source="SelectionChanged" kind="event" mms="observable-null" -->
 **Event.** The complete state of a selection scope changed. The interaction and physics subsystem produces it; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. Related components are the producers or scopes named by the variant and its subsystem. MMS `on(...)` accepts this event. Handler exposure: **Observable with `null`**. Sources: [event definition](../../../src/engine/ecs/rx/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), and [payload conversion](../../../src/scripting/runner.rs).
@@ -515,6 +524,13 @@ Transform {}
 **Intent — Indirectly emitted by component lifecycle.** Requests the `RegisterEditor` operation. Component creation, initialization, teardown, or topology work emits this intent indirectly; user MMS does not author the enum variant. It is scoped to the requesting/affected component and executes at an explicit drain point; `AtBeat` delays eligibility when the producer supplies timed metadata. Related components and systems are the targets named by the variant; see executor matching for exact effects. Sources: [intent definition](../../../src/engine/ecs/rx/signal.rs), [intent interpretation](../../../src/engine/ecs/rx/intent_executor.rs), [mutation execution](../../../src/engine/ecs/rx/mutation_executor.rs), and [MMS action registry](../../../src/scripting/component_registry.rs).
 ```mms parse-only
 Transform {}
+```
+
+#### `RegisterEditorUI`
+<!-- catalog:signal source="RegisterEditorUI" kind="intent" mms="component-lifecycle" -->
+**Intent — Indirectly emitted by component lifecycle.** Registers an authored `EditorUI` and materializes its configured shared panel workspace.
+```mms parse-only
+EditorUI {}
 ```
 
 #### `RegisterAction`
@@ -825,6 +841,20 @@ Transform {}
 **Intent — Available through a live method/builtin.** Requests the `SelectionSet` operation. A live component method or evaluator builtin requests this intent; the RX/default executor or owning system consumes it. It is scoped to the requesting/affected component and executes at an explicit drain point; `AtBeat` delays eligibility when the producer supplies timed metadata. Related components and systems are the targets named by the variant; see executor matching for exact effects. Sources: [intent definition](../../../src/engine/ecs/rx/signal.rs), [intent interpretation](../../../src/engine/ecs/rx/intent_executor.rs), [mutation execution](../../../src/engine/ecs/rx/mutation_executor.rs), and [MMS action registry](../../../src/scripting/component_registry.rs).
 ```mms parse-only
 Transform {}
+```
+
+#### `ToggleSet`
+<!-- catalog:signal source="ToggleSet" kind="intent" mms="live-api" -->
+**Intent — Available through engine UI synchronization.** Sets one or more `Toggle` values, updates their active highlight, and emits `ToggleChanged` only when the value changes.
+```mms parse-only
+Toggle.off()
+```
+
+#### `CollisionVisualizationSet`
+<!-- catalog:signal source="CollisionVisualizationSet" kind="intent" mms="engine-only" -->
+**Intent — Engine-only.** Adds, updates, or removes an EditorUI-owned collider visualization request.
+```mms parse-only
+EditorUI {}
 ```
 
 #### `RequestRaycast`
