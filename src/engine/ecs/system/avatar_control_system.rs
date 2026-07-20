@@ -1,10 +1,10 @@
 use crate::engine::ecs::component::{
     AvatarControlComponent, BoneRestPoseComponent, Camera3DComponent, CameraXRComponent,
-    CollisionComponent, CollisionResponseComponent, CollisionShapeComponent, ControllerHand,
-    ControllerXRComponent, GLTFComponent, IKChainComponent, IKSolver, InputXRComponent,
-    QuatYawFollowComponent, SerializeComponent, TransformComponent, TransformDropComponent,
-    TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
-    TransformMapTranslationComponent,
+    CollisionComponent, CollisionResponseComponent, CollisionShape, CollisionShapeComponent,
+    ControllerHand, ControllerXRComponent, GLTFComponent, IKChainComponent, IKSolver,
+    InputXRComponent, QuatYawFollowComponent, SerializeComponent, TransformComponent,
+    TransformDropComponent, TransformForkTRSComponent, TransformMapRotationComponent,
+    TransformMapScaleComponent, TransformMapTranslationComponent,
 };
 use crate::engine::ecs::system::bounds_system::BoundsSystem;
 use crate::engine::ecs::system::collision_shape_inference::infer_upright_capsule;
@@ -21,6 +21,7 @@ use winit::keyboard::{Key, NamedKey};
 #[derive(Debug, Default)]
 pub struct AvatarControlSystem {
     avatars: HashSet<ComponentId>,
+    pending_capsule_diagnostics: HashSet<ComponentId>,
 }
 
 impl AvatarControlSystem {
@@ -41,9 +42,21 @@ impl AvatarControlSystem {
         let mut calibration_consumed = false;
         let calibrate_pressed = input.key_pressed(&Key::Named(NamedKey::Enter));
         for id in ids {
+            if self.pending_capsule_diagnostics.remove(&id) {
+                log_settled_capsule_diagnostics(id, world);
+            }
+            let capsule_before = world
+                .get_component_by_id_as::<AvatarControlComponent>(id)
+                .and_then(|avc| avc.capsule_transform_id);
             let allow_calibration = calibrate_pressed && !calibration_consumed;
             if tick_one(id, world, render_assets, emit, dt_sec, allow_calibration) {
                 calibration_consumed = true;
+            }
+            let capsule_after = world
+                .get_component_by_id_as::<AvatarControlComponent>(id)
+                .and_then(|avc| avc.capsule_transform_id);
+            if capsule_before.is_none() && capsule_after.is_some() {
+                self.pending_capsule_diagnostics.insert(id);
             }
         }
     }
@@ -54,6 +67,7 @@ impl AvatarControlSystem {
 
     pub fn remove(&mut self, component: ComponentId) {
         self.avatars.remove(&component);
+        self.pending_capsule_diagnostics.remove(&component);
     }
 }
 
@@ -152,22 +166,44 @@ fn try_init_or_route_capsule(
         return;
     }
 
-    let inferred =
-        BoundsSystem::calculate_subtree_local_bounds(world, render_assets, model_root_id)
-            .and_then(|bounds| infer_upright_capsule(&bounds, avc.capsule_radius))
-            .or_else(|| {
-                spawned_gltf_exists(world, model_root_id)
-                    .then(|| fallback_avatar_height(world, avc_id, model_root_id, &avc))
-                    .flatten()
-                    .and_then(|height| {
-                        let bounds = crate::engine::graphics::bounds::Aabb {
-                            min: [0.0, 0.0, 0.0],
-                            max: [0.0, height.max(0.0), 0.0],
-                        };
-                        infer_upright_capsule(&bounds, avc.capsule_radius)
-                    })
-            });
-    let Some(inferred) = inferred else { return };
+    let measured_bounds =
+        BoundsSystem::calculate_subtree_local_bounds(world, render_assets, model_root_id);
+    let (bounds_source, inference_bounds, inferred) = if let Some(bounds) = measured_bounds
+        && let Some(inferred) = infer_upright_capsule(&bounds, avc.capsule_radius)
+    {
+        ("aggregate_render_bounds", bounds, inferred)
+    } else {
+        let Some(height) = spawned_gltf_exists(world, model_root_id)
+            .then(|| fallback_avatar_height(world, avc_id, model_root_id, &avc))
+            .flatten()
+        else {
+            return;
+        };
+        let bounds = crate::engine::graphics::bounds::Aabb {
+            min: [0.0, 0.0, 0.0],
+            max: [0.0, height.max(0.0), 0.0],
+        };
+        let Some(inferred) = infer_upright_capsule(&bounds, avc.capsule_radius) else {
+            return;
+        };
+        ("fallback_avatar_height", bounds, inferred)
+    };
+    let (radius, half_segment) = match inferred.shape {
+        CollisionShape::CapsuleY {
+            radius,
+            half_segment,
+        } => (radius, half_segment),
+        _ => unreachable!("upright capsule inference returned a non-capsule shape"),
+    };
+    let half_height = radius + half_segment;
+    eprintln!(
+        "[AVC][capsule][inferred] avc={avc_id:?} model_root={model_root_id:?} source={bounds_source} bounds_min={:?} bounds_max={:?} center_y={:.6} radius={radius:.6} half_segment={half_segment:.6} local_bottom={:.6} local_top={:.6} movement_target={movement_target:?}",
+        inference_bounds.min,
+        inference_bounds.max,
+        inferred.center_y,
+        inferred.center_y - half_height,
+        inferred.center_y + half_height,
+    );
 
     let fork = world.add_component(TransformForkTRSComponent::new());
     let translation = world.add_component(TransformMapTranslationComponent::new());
@@ -212,6 +248,53 @@ fn try_init_or_route_capsule(
         IntentValue::RegisterCollisionResponse {
             component_ids: vec![response],
         },
+    );
+}
+
+fn log_settled_capsule_diagnostics(avc_id: ComponentId, world: &World) {
+    let Some(avc) = world.get_component_by_id_as::<AvatarControlComponent>(avc_id) else {
+        return;
+    };
+    let Some(capsule_transform) = avc.capsule_transform_id else {
+        return;
+    };
+    let Some(collision) = world
+        .children_of(capsule_transform)
+        .iter()
+        .copied()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<CollisionComponent>(*id)
+                .is_some()
+        })
+    else {
+        return;
+    };
+    let Some(shape) = world.children_of(collision).iter().find_map(|id| {
+        world
+            .get_component_by_id_as::<CollisionShapeComponent>(*id)
+            .map(|shape| shape.shape)
+    }) else {
+        return;
+    };
+    let CollisionShape::CapsuleY {
+        radius,
+        half_segment,
+    } = shape
+    else {
+        return;
+    };
+    let local_center_y = world
+        .get_component_by_id_as::<TransformComponent>(capsule_transform)
+        .map(|transform| transform.transform.translation[1]);
+    let world_center =
+        crate::engine::ecs::system::TransformSystem::world_position(world, capsule_transform);
+    let world_extents = world_center.map(|center| {
+        let half_height = radius + half_segment;
+        (center[1] - half_height, center[1] + half_height)
+    });
+    eprintln!(
+        "[AVC][capsule][settled] avc={avc_id:?} capsule_transform={capsule_transform:?} collision={collision:?} local_center_y={local_center_y:?} world_center={world_center:?} radius={radius:.6} half_segment={half_segment:.6} world_bottom_top={world_extents:?}"
     );
 }
 
