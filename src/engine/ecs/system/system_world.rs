@@ -1601,6 +1601,23 @@ impl SystemWorld {
         {
             return;
         }
+
+        // EditorUI is interactive editor chrome, not editable scene geometry. Keep the
+        // selection policy on the subtree itself so authored EditorUI instances receive the
+        // same protection as the fallback instance under editor_runtime_ui_root.
+        let has_selectable_off = world.children_of(component).iter().copied().any(|child| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::SelectableComponent>(child)
+                .is_some_and(|selectable| !selectable.enabled)
+        });
+        if !has_selectable_off {
+            let selectable = world.add_component_boxed_named(
+                "editor_ui_selectable",
+                Box::new(crate::engine::ecs::component::SelectableComponent::off()),
+            );
+            let _ = world.add_child(component, selectable);
+        }
+
         if world
             .find_component(component, "#editor_panel_layout_mount")
             .is_some()

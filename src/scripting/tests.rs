@@ -4684,6 +4684,33 @@ fn editor_ui_settings_only_materializes_under_authored_transform() {
         world.component_label(world.parent_of(editor_ui).unwrap()),
         Some("authored_ui_position")
     );
+    let selectable_off_count = |world: &World| {
+        world
+            .children_of(editor_ui)
+            .iter()
+            .copied()
+            .filter(|&child| {
+                world
+                    .get_component_by_id_as::<crate::engine::ecs::component::SelectableComponent>(
+                        child,
+                    )
+                    .is_some_and(|selectable| !selectable.enabled)
+            })
+            .count()
+    };
+    assert_eq!(selectable_off_count(&world), 1);
+    systems.register_editor_ui(
+        &mut world,
+        &mut visuals,
+        &mut render_assets,
+        editor_ui,
+        &mut queue,
+    );
+    assert_eq!(
+        selectable_off_count(&world),
+        1,
+        "re-registering EditorUI must not duplicate its selection marker"
+    );
     assert!(world
         .find_component(editor_ui, "#editor_panel_layout_root")
         .is_some());
@@ -4718,6 +4745,26 @@ fn editor_ui_settings_only_materializes_under_authored_transform() {
             "unexpected {omitted}"
         );
     }
+
+    let panel_renderable = world
+        .all_components()
+        .find(|&id| {
+            crate::engine::ecs::system::panel_system::is_descendant_or_self(&world, editor_ui, id)
+                && world
+                    .get_component_by_id_as::<crate::engine::ecs::component::RenderableComponent>(
+                        id,
+                    )
+                    .is_some()
+        })
+        .expect("renderable in authored EditorUI");
+    assert!(
+        crate::engine::ecs::system::editor_scene_hit::resolve_world_scene_hit(
+            &world,
+            panel_renderable,
+        )
+        .is_none(),
+        "authored EditorUI renderables must not resolve as editable scene hits"
+    );
 }
 
 #[test]
