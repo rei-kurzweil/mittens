@@ -173,18 +173,11 @@ fn editor_settings_collider_row(row_name, label, row_kind, slot_name) {
 }
 
 export fn editor_settings_panel(title, title_color, panel_background_color, config) {
-    let content_height = 7.8
-    if config.show_armature { content_height = content_height + 2.6 }
-    if config.show_bounds { content_height = content_height + 2.6 }
-    if config.show_colliders { content_height = content_height + 2.6 }
-    if config.show_gltf_colliders { content_height = content_height + 2.6 }
-    let total_height = TITLE_BAR_HEIGHT_GU + TITLE_CONTENT_GAP_GU + content_height
     return T {
         name = "editor_settings_panel_root"
         Style {
             display("block")
             width(SETTINGS_PANEL_WIDTH_GU)
-            height(total_height)
             margin_xy(0.5, 0.5)
         }
 
@@ -211,7 +204,6 @@ export fn editor_settings_panel(title, title_color, panel_background_color, conf
             name = "content_slot"
             Style {
                 display("block")
-                height(content_height)
                 background_color([0.96, 0.92, 0.18, 0.80])
                 background_z(-0.001)
                 padding(0.25)
