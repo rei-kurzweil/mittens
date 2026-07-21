@@ -44,9 +44,13 @@ impl SecondaryMotionSystem {
             .retain(|chain, state| *chain != target && state.gltf != target);
     }
 
-    pub fn tick(&mut self, world: &mut World, dt: f32) {
+    /// Advances active chains and returns unique chain roots whose world-transform
+    /// subtrees must be propagated before skinning consumes the solved pose.
+    pub fn tick(&mut self, world: &mut World, dt: f32) -> Vec<ComponentId> {
         self.debug_frames = self.debug_frames.wrapping_add(1);
         let mut max_correction_radians = 0.0f32;
+        let mut dirty_roots = Vec::new();
+        let mut dirty_root_set = HashSet::new();
         let roots: Vec<_> = world
             .all_components()
             .filter(|id| {
@@ -120,6 +124,11 @@ impl SecondaryMotionSystem {
                     state.accumulator -= STEP;
                 }
                 max_correction_radians = max_correction_radians.max(apply_rotations(world, state));
+                if let Some(root) = state.joints.first().map(|joint| joint.id)
+                    && dirty_root_set.insert(root)
+                {
+                    dirty_roots.push(root);
+                }
             }
         }
         self.states.retain(|id, _| live.contains(id));
@@ -140,6 +149,7 @@ impl SecondaryMotionSystem {
                 eprintln!("[SecondaryMotion][debug] failed '{name}': {error}");
             }
         }
+        dirty_roots
     }
 }
 

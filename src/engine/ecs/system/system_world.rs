@@ -353,6 +353,15 @@ mod tests {
             [0.0, 0.0, 0.0, 1.0],
             "secondary motion must write after replace-mode restoration and AVC correction"
         );
+        let spring_tip_world_x = world
+            .get_component_by_id_as::<TransformComponent>(spring_tip)
+            .unwrap()
+            .transform
+            .matrix_world[3][0];
+        assert!(
+            spring_tip_world_x.abs() > 1e-5,
+            "secondary motion must propagate its local rotation into descendant world matrices"
+        );
 
         let body = world
             .get_component_by_id_as::<TransformComponent>(model_root)
@@ -360,6 +369,109 @@ mod tests {
         assert_eq!(
             body.transform.matrix_world[3][1], 0.0,
             "body-follow must sample the corrected head, not its queued rest translation"
+        );
+    }
+
+    #[test]
+    fn secondary_motion_propagates_stationary_chain_without_transform_intents() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::default();
+        let mut render_assets = RenderAssets::new();
+        let mut systems = SystemWorld::default();
+        let mut queue = CommandQueue::new();
+
+        let anchor = world.add_component(TransformComponent::new());
+        let gltf = world.add_component(GLTFComponent::new("stationary-secondary-motion.glb"));
+        let root = world.add_component_boxed_named(
+            "stationary_spring_root",
+            Box::new(TransformComponent::new()),
+        );
+        let root_rest = world.add_component(BoneRestPoseComponent::new(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0],
+        ));
+        let tip = world.add_component_boxed_named(
+            "stationary_spring_tip",
+            Box::new(TransformComponent::new().with_position(0.0, 1.0, 0.0)),
+        );
+        let tip_rest = world.add_component(BoneRestPoseComponent::new(
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0],
+        ));
+        let secondary = world.add_component(SecondaryMotionComponent::new());
+        let spring = world.add_component(SpringBoneComponent::new("stationary_spring"));
+        let root_joint = world.add_component(
+            SpringJointComponent::new(ComponentRef::Query(
+                "[name='stationary_spring_root']".into(),
+            ))
+            .stiffness(0.0)
+            .drag_force(0.0)
+            .gravity(18.0, [1.0, 0.0, 0.0]),
+        );
+        let tip_joint = world.add_component(
+            SpringJointComponent::new(ComponentRef::Query("[name='stationary_spring_tip']".into()))
+                .stiffness(0.0)
+                .drag_force(0.0)
+                .gravity(18.0, [1.0, 0.0, 0.0]),
+        );
+
+        world.add_child(anchor, gltf).unwrap();
+        world.add_child(gltf, root).unwrap();
+        world.add_child(root, root_rest).unwrap();
+        world.add_child(root, tip).unwrap();
+        world.add_child(tip, tip_rest).unwrap();
+        world.add_child(gltf, secondary).unwrap();
+        world.add_child(secondary, spring).unwrap();
+        world.add_child(spring, root_joint).unwrap();
+        world.add_child(spring, tip_joint).unwrap();
+        {
+            let gltf = world
+                .get_component_by_id_as_mut::<GLTFComponent>(gltf)
+                .unwrap();
+            gltf.spawned_node_transforms = vec![root, tip];
+            gltf.armature_joint_transforms = vec![root, tip];
+        }
+
+        // Establish the imported rest-pose matrices once. No transform signal is
+        // emitted during either simulation frame below.
+        systems.transform_changed(&mut world, &mut visuals, anchor);
+
+        systems.tick(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &Default::default(),
+            &mut queue,
+            1.0 / 60.0,
+        );
+        let first_tip_world_x = world
+            .get_component_by_id_as::<TransformComponent>(tip)
+            .unwrap()
+            .transform
+            .matrix_world[3][0];
+        assert!(
+            first_tip_world_x.abs() > 1e-5,
+            "gravity must affect the cached world pose without an input transform update"
+        );
+
+        systems.tick(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &Default::default(),
+            &mut queue,
+            1.0 / 60.0,
+        );
+        let second_tip_world_x = world
+            .get_component_by_id_as::<TransformComponent>(tip)
+            .unwrap()
+            .transform
+            .matrix_world[3][0];
+        assert!(
+            (second_tip_world_x - first_tip_world_x).abs() > 1e-5,
+            "secondary motion must continue advancing while the owning transform is stationary"
         );
     }
 
@@ -2792,11 +2904,15 @@ impl SystemWorld {
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
 
-        // Post-pose stage: propagate primary pose, solve tails, propagate final pose,
-        // then refresh skin palettes for the frame that will actually be rendered.
+        // Post-pose stage: propagate primary pose, solve tails, explicitly propagate
+        // the affected spring subtrees, then refresh skin palettes for the frame that
+        // will actually be rendered. TransformSystem::tick is event-driven/no-op, so
+        // secondary-motion writes must identify the roots that need propagation.
         self.transform.tick(world, visuals, input, dt_sec);
-        self.secondary_motion.tick(world, dt_sec);
-        self.transform.tick(world, visuals, input, dt_sec);
+        let secondary_motion_roots = self.secondary_motion.tick(world, dt_sec);
+        for root in secondary_motion_roots {
+            self.transform_changed(world, visuals, root);
+        }
         self.skinned_mesh.tick(world, visuals, input, dt_sec);
 
         if profile_systems {
