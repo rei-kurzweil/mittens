@@ -39,24 +39,24 @@ BG.occlusion_and_lighting() {
     star_kawaii_background([1.0, 0.82, 0.12, 1.0])
 }
 
-tripod_light("studio_key_light", [-4.2, 0.0, 2.8], [0.0, -0.35, 0.0], SL.color(1.0, 0.78, 0.62).intensity(6.0).distance(11.0).angle(0.62).penumbra(0.35))
-tripod_light("studio_fill_light", [4.0, 0.0, 1.4], [0.0, -0.35, 0.0], SL.color(0.48, 0.68, 1.0).intensity(4.5).distance(11.0).angle(0.62).penumbra(0.35))
-tripod_light("studio_rim_light", [1.8, 0.0, -4.2], [0.0, -0.35, 0.0], SL.color(1.0, 0.42, 0.78).intensity(5.0).distance(11.0).angle(0.62).penumbra(0.35))
+tripod_light("studio_key_light", [-4.2, 0.0, 2.8], [0.0, 1.25, 0.0], SL.color(1.0, 0.78, 0.62).intensity(6.0).distance(11.0).angle(0.62).penumbra(0.35))
+tripod_light("studio_fill_light", [4.0, 0.0, 1.4], [0.0, 1.25, 0.0], SL.color(0.48, 0.68, 1.0).intensity(4.5).distance(11.0).angle(0.62).penumbra(0.35))
+tripod_light("studio_rim_light", [1.8, 0.0, -4.2], [0.0, 1.25, 0.0], SL.color(1.0, 0.42, 0.78).intensity(5.0).distance(11.0).angle(0.62).penumbra(0.35))
 
-// Floor top is y=-1.6, where AVC's measured capsule places the avatar's feet.
-static_cube("studio_floor", [0.0, -1.65, 0.0], [18.0, 0.1, 18.0], [0.025, 0.035, 0.075])
+// The floor's top face is the world-space y=0 ground plane.
+static_cube("studio_floor", [0.0, -0.05, 0.0], [18.0, 0.1, 18.0], [0.025, 0.035, 0.075])
 
 // Stable, static piles: useful obstacles without rigid-body stack noise.
-static_cube("pile_a_base_left",  [-2.8, -1.20, -1.7], [0.85, 0.80, 0.85], [0.95, 0.25, 0.38])
-static_cube("pile_a_base_right", [-1.9, -1.20, -1.7], [0.85, 0.80, 0.85], [1.00, 0.62, 0.15])
-static_cube("pile_a_top",        [-2.35, -0.38, -1.7], [0.85, 0.80, 0.85], [1.00, 0.88, 0.22])
+static_cube("pile_a_base_left",  [-2.8, 0.40, -1.7], [0.85, 0.80, 0.85], [0.95, 0.25, 0.38])
+static_cube("pile_a_base_right", [-1.9, 0.40, -1.7], [0.85, 0.80, 0.85], [1.00, 0.62, 0.15])
+static_cube("pile_a_top",        [-2.35, 1.22, -1.7], [0.85, 0.80, 0.85], [1.00, 0.88, 0.22])
 
-static_cube("pile_b_base_left",  [1.7, -1.20, -2.8], [0.9, 0.8, 0.9], [0.18, 0.78, 0.96])
-static_cube("pile_b_base_right", [2.65, -1.20, -2.8], [0.9, 0.8, 0.9], [0.28, 0.52, 1.00])
-static_cube("pile_b_top",        [2.18, -0.38, -2.8], [0.9, 0.8, 0.9], [0.62, 0.38, 1.00])
+static_cube("pile_b_base_left",  [1.7, 0.40, -2.8], [0.9, 0.8, 0.9], [0.18, 0.78, 0.96])
+static_cube("pile_b_base_right", [2.65, 0.40, -2.8], [0.9, 0.8, 0.9], [0.28, 0.52, 1.00])
+static_cube("pile_b_top",        [2.18, 1.22, -2.8], [0.9, 0.8, 0.9], [0.62, 0.38, 1.00])
 
-static_cube("pile_c_base", [3.2, -1.15, 2.5], [1.25, 0.9, 0.9], [0.20, 0.92, 0.62])
-static_cube("pile_c_top",  [3.2, -0.23, 2.5], [0.9, 0.9, 0.9], [0.78, 1.00, 0.34])
+static_cube("pile_c_base", [3.2, 0.45, 2.5], [1.25, 0.9, 0.9], [0.20, 0.92, 0.62])
+static_cube("pile_c_top",  [3.2, 1.37, 2.5], [0.9, 0.9, 0.9], [0.78, 1.00, 0.34])
 
 let avatar_gltf = GLTF.new("assets/models/bisket.11.0.glb") {
     // Direct pose children establish one-shot startup overlays after import.
@@ -107,7 +107,7 @@ ED.active() {
             roll_axis_y()
             fps_rotation()
         }
-        T.position(0.0, 0.0, 1.0) {
+        T.position(0.0, 1.6, 1.0) {
             name = "avatar_head_driver"
             AVC {
                 head_bone("J_Bip_C_Head")
@@ -120,7 +120,7 @@ ED.active() {
 
 // Keep the workspace outside the editable scene so bounds inspection discovers
 // Bisket without allowing the panel itself to become an editor target.
-T.position(-2.25, 1.25, 0.0) {
+T.position(-2.25, 2.85, 0.0) {
     EditorUI {
         panels([{
             panel = "settings"
@@ -137,7 +137,7 @@ T.position(-2.25, 1.25, 0.0) {
 // Fixed third-person desktop camera slot; movement controls only the avatar driver.
 // C3D views along local -Z, so use an explicit downward pitch instead of
 // Transform.looking_at(), which aligns local +Z toward its target.
-let fixed_camera_slot = T.position(0.0, 0.4, 5.5).rotation(-0.20, 0.0, 0.0) {
+let fixed_camera_slot = T.position(0.0, 2.0, 5.5).rotation(-0.20, 0.0, 0.0) {
     name = "fixed_camera_slot"
     desktop_camera_rig
 }

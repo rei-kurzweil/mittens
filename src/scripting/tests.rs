@@ -1937,6 +1937,11 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
             "{name}"
         );
     }
+    let floor = world
+        .get_component_by_id_as::<TransformComponent>(named("studio_floor"))
+        .expect("studio floor transform");
+    assert_eq!(floor.transform.translation[1], -0.05);
+    assert_eq!(floor.transform.scale[1], 0.1);
 
     let avatar_tree = descendants(named("avatar_head_driver"));
     assert_eq!(
@@ -2270,7 +2275,7 @@ fn lights_example_materializes_all_light_types_and_labeled_targets() {
 
 #[test]
 fn tripod_light_without_a_mounted_light_has_no_emissive_face() {
-    use crate::engine::ecs::component::EmissiveComponent;
+    use crate::engine::ecs::component::{EmissiveComponent, TransformComponent};
 
     let source = r#"
         import { tripod_light } from "../assets/components/tripod_light.mms"
@@ -2297,6 +2302,52 @@ fn tripod_light_without_a_mounted_light_has_no_emissive_face() {
             .get_component_by_id_as::<EmissiveComponent>(id)
             .is_none()
     }));
+
+    let leg_transforms: Vec<_> = world
+        .all_components()
+        .filter(|id| {
+            world
+                .get_component_by_id_as::<TransformComponent>(*id)
+                .is_some_and(|transform| transform.transform.scale == [0.09, 0.78, 0.09])
+        })
+        .collect();
+    assert_eq!(leg_transforms.len(), 3);
+    for leg in leg_transforms {
+        let model = world
+            .get_component_by_id_as::<TransformComponent>(leg)
+            .expect("leg transform")
+            .transform
+            .model;
+        let mut minimum_y = f32::INFINITY;
+        for x in [-0.5, 0.5] {
+            for y in [-0.5, 0.5] {
+                for z in [-0.5, 0.5] {
+                    minimum_y =
+                        minimum_y.min(crate::utils::math::mat4_mul_vec4(model, [x, y, z, 1.0])[1]);
+                }
+            }
+        }
+        assert!(minimum_y.abs() < 1e-5, "tripod foot is at y={minimum_y}");
+    }
+
+    let leg_height = 0.78 * 0.62_f32.cos() + 0.09 * 0.62_f32.sin();
+    let shaft = world
+        .all_components()
+        .find(|id| world.component_label(*id) == Some("tripod_light_shaft"))
+        .and_then(|id| world.get_component_by_id_as::<TransformComponent>(id))
+        .expect("tripod shaft transform");
+    assert!((shaft.transform.translation[1] - (leg_height + 2.25 / 2.0)).abs() < 1e-5);
+    assert!((shaft.transform.translation[1] - 2.25 / 2.0 - leg_height).abs() < 1e-5);
+
+    let rear_mount = world
+        .all_components()
+        .find(|id| world.component_label(*id) == Some("tripod_light_rear_mount"))
+        .expect("tripod rear mount");
+    let head = world.parent_of(rear_mount).expect("tripod rotating head");
+    let head = world
+        .get_component_by_id_as::<TransformComponent>(head)
+        .expect("tripod head transform");
+    assert!((head.transform.translation[1] - (leg_height + 2.25)).abs() < 1e-5);
 }
 
 #[test]
@@ -2333,7 +2384,7 @@ fn secondary_motion_desktop_avatar_separates_from_named_pile_cube() {
     for light in studio_spots {
         let to_target = [
             -light.position_ws[0],
-            -0.35 - light.position_ws[1],
+            1.25 - light.position_ws[1],
             -light.position_ws[2],
         ];
         let to_target_len = (to_target[0] * to_target[0]
