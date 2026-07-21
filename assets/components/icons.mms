@@ -1,5 +1,35 @@
 // assets/components/icons.mms — basic UI icons (=^･ω･^=)
 
+export fn on_icon(plane_color, wireframe_color) {
+    if plane_color == null { plane_color = [1.0, 1.0, 1.0, 1.0] }
+    if wireframe_color == null { wireframe_color = [0.0, 0.0, 0.0, 1.0] }
+    return T {
+        name = "on_icon"
+        R.plane() { C.rgba(plane_color[0], plane_color[1], plane_color[2], plane_color[3]) }
+        // 0.10 GU frame thickness with an equal outer margin on a unit plane.
+        T.position(0.0, 0.0, 0.001).scale(0.8, 0.8, 1.0) {
+            R.wireframe_square(0.125) {
+                C.rgba(wireframe_color[0], wireframe_color[1], wireframe_color[2], wireframe_color[3])
+            }
+        }
+    }
+}
+
+export fn off_icon(plane_color, wireframe_color) {
+    if plane_color == null { plane_color = [0.0, 0.0, 0.0, 1.0] }
+    if wireframe_color == null { wireframe_color = [1.0, 1.0, 1.0, 1.0] }
+    return T {
+        name = "off_icon"
+        R.plane() { C.rgba(plane_color[0], plane_color[1], plane_color[2], plane_color[3]) }
+        // 0.10 GU frame thickness with an equal outer margin on a unit plane.
+        T.position(0.0, 0.0, 0.001).scale(0.8, 0.8, 1.0) {
+            R.wireframe_square(0.125) {
+                C.rgba(wireframe_color[0], wireframe_color[1], wireframe_color[2], wireframe_color[3])
+            }
+        }
+    }
+}
+
 export fn pencil_icon() {
     return T {
         name = "pencil_icon"

@@ -36,6 +36,9 @@ pub enum AuthoredRenderableShape {
     WireframeBox {
         thickness: f32,
     },
+    WireframeSquare {
+        thickness: f32,
+    },
 }
 
 /// Renderable component.
@@ -126,6 +129,18 @@ impl RenderableComponent {
             Renderable::new(handle, MaterialHandle::TOON_MESH).with_base_mesh(CpuMeshHandle::CUBE),
         );
         component.authored_shape = Some(AuthoredRenderableShape::WireframeBox { thickness });
+        component
+    }
+
+    /// Unit wireframe square in the XY plane with configurable relative edge thickness.
+    pub fn wireframe_square(render_assets: &mut RenderAssets, thickness: f32) -> Self {
+        let thickness = thickness.clamp(1.0e-4, 0.5);
+        let handle = render_assets.wireframe_square_mesh(thickness);
+        let mut component = Self::new(
+            Renderable::new(handle, MaterialHandle::TOON_MESH)
+                .with_base_mesh(CpuMeshHandle::QUAD_2D),
+        );
+        component.authored_shape = Some(AuthoredRenderableShape::WireframeSquare { thickness });
         component
     }
 
@@ -356,6 +371,11 @@ impl Component for RenderableComponent {
             Some(AuthoredRenderableShape::WireframeBox { thickness }) => {
                 ce_call("Renderable", "wireframe_box", vec![num(*thickness as f64)])
             }
+            Some(AuthoredRenderableShape::WireframeSquare { thickness }) => ce_call(
+                "Renderable",
+                "wireframe_square",
+                vec![num(*thickness as f64)],
+            ),
             None => ce("Renderable"),
         }
     }

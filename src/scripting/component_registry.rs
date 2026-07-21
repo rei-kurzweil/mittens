@@ -1329,6 +1329,13 @@ fn create_component(
                 Ok(world
                     .add_component(RenderableComponent::wireframe_box(render_assets, thickness)))
             }),
+            Some("wireframe_square") => with_render_assets_mut(|render_assets| {
+                let thickness = arg_f32(args, 0).unwrap_or(0.1);
+                Ok(world.add_component(RenderableComponent::wireframe_square(
+                    render_assets,
+                    thickness,
+                )))
+            }),
             Some("circle2d") => add!(RenderableComponent::circle2d()),
             Some("cone") => {
                 if args.is_empty() {

@@ -12,8 +12,8 @@ export fn tripod_light(light_name, position, look_target, mounted_light) {
         let leg_thickness = 0.09
         let leg_pitch = -0.62
         let leg_vertical_height =
-            leg_length * Math.cos(leg_pitch) +
-            leg_thickness * Math.abs(Math.sin(leg_pitch))
+            leg_length    * Math.cos(leg_pitch) +
+            leg_thickness * Math.abs(Math.sin(leg_pitch)) - leg_thickness * 2.0
         let leg_center_y = leg_vertical_height / 2.0
 
         // Three identical splayed legs, evenly spaced around the vertical stand.

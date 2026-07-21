@@ -38,6 +38,8 @@ pub struct RenderAssets {
 
     /// Procedural unit wireframe boxes keyed by the exact authored thickness bits.
     wireframe_box_meshes: HashMap<u32, CpuMeshHandle>,
+    /// Procedural unit wireframe squares keyed by the exact authored thickness bits.
+    wireframe_square_meshes: HashMap<u32, CpuMeshHandle>,
     capsule_y_meshes: HashMap<(u32, u32), CpuMeshHandle>,
 }
 
@@ -107,6 +109,18 @@ impl RenderAssets {
         }
         let handle = self.register_mesh(MeshFactory::wireframe_box(thickness));
         self.wireframe_box_meshes.insert(key, handle);
+        handle
+    }
+
+    /// Return a shared unit wireframe-square mesh for the requested relative edge thickness.
+    pub fn wireframe_square_mesh(&mut self, thickness: f32) -> CpuMeshHandle {
+        let thickness = thickness.clamp(1.0e-4, 0.5);
+        let key = thickness.to_bits();
+        if let Some(handle) = self.wireframe_square_meshes.get(&key).copied() {
+            return handle;
+        }
+        let handle = self.register_mesh(MeshFactory::wireframe_square(thickness));
+        self.wireframe_square_meshes.insert(key, handle);
         handle
     }
 

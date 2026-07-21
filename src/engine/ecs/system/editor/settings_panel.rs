@@ -150,7 +150,7 @@ pub(crate) fn sync_editor_settings_armature_toggle(
     panel_query_root: ComponentId,
     editor_context: &EditorContextState,
 ) {
-    use crate::engine::ecs::component::{Display, SizeDimension, StyleComponent, TextComponent};
+    use crate::engine::ecs::component::{Display, SizeDimension, StyleComponent};
 
     let Some(settings_panel_root) =
         world.find_component(panel_query_root, EDITOR_SETTINGS_PANEL_ROOT_SELECTOR)
@@ -201,7 +201,6 @@ pub(crate) fn sync_editor_settings_armature_toggle(
     }
 
     let on = editor_context.armature_visible;
-    let label = if on { "On" } else { "Off" };
     let bg = if on {
         [0.95, 0.73, 0.16, 1.0]
     } else {
@@ -226,20 +225,7 @@ pub(crate) fn sync_editor_settings_armature_toggle(
             style
         }),
     );
-    let text_root = world.add_component_boxed_named(
-        "armature_toggle_text_root",
-        Box::new(
-            crate::engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.005),
-        ),
-    );
-    let text_component = world.add_component_boxed_named(
-        "armature_toggle_text",
-        Box::new(TextComponent::new(label.to_string()).with_font_size(0.08)),
-    );
-
     let _ = world.add_child(root, style);
-    let _ = world.add_child(root, text_root);
-    let _ = world.add_child(text_root, text_component);
     let _ = world.add_child(toggle_slot, root);
 }
 
@@ -269,7 +255,7 @@ fn sync_boolean_toggle(
     toggle_name: &str,
     on: bool,
 ) {
-    use crate::engine::ecs::component::{Display, SizeDimension, StyleComponent, TextComponent};
+    use crate::engine::ecs::component::{Display, SizeDimension, StyleComponent};
     let Some(panel) = world.find_component(panel_query_root, EDITOR_SETTINGS_PANEL_ROOT_SELECTOR)
     else {
         return;
@@ -320,14 +306,7 @@ fn sync_boolean_toggle(
         style.color = Some([0.96, 0.98, 0.96, 1.0]);
         style
     });
-    let text_root = world.add_component(
-        crate::engine::ecs::component::TransformComponent::new().with_position(0.0, 0.0, 0.005),
-    );
-    let text =
-        world.add_component(TextComponent::new(if on { "On" } else { "Off" }).with_font_size(0.08));
     let _ = world.add_child(root, style);
-    let _ = world.add_child(root, text_root);
-    let _ = world.add_child(text_root, text);
     let _ = world.add_child(slot, root);
 }
 
@@ -715,7 +694,7 @@ mod tests {
         systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
         assert!(
             !world.children_of(toggle_slot).is_empty(),
-            "expected toggle button to still be rendered when armature is hidden (shows Off)"
+            "expected toggle button to still be rendered when armature is hidden"
         );
     }
 

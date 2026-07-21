@@ -3024,6 +3024,64 @@ fn load_module_file_exposes_named_exports_as_evaluated_values() {
 }
 
 #[test]
+fn toggle_icon_factories_accept_default_and_custom_colors() {
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let module_path = workspace_root.join("assets/components/icons.mms");
+    let module = MeowMeowRunner::load_module_file(module_path.to_str().unwrap())
+        .expect("expected icon module to load");
+
+    let on = MeowMeowRunner::call_mms_module_fn(&module, "on_icon", vec![], None, None, None)
+        .expect("default on icon should materialize");
+    let off = MeowMeowRunner::call_mms_module_fn(
+        &module,
+        "off_icon",
+        vec![
+            Value::Array(vec![Value::Number(0.2); 4]),
+            Value::Array(vec![Value::Number(0.8); 4]),
+        ],
+        None,
+        None,
+        None,
+    )
+    .expect("custom-color off icon should materialize");
+
+    assert!(matches!(on, Value::ComponentExpr(_)));
+    assert!(matches!(off, Value::ComponentExpr(_)));
+}
+
+#[test]
+fn primitives_module_spawns_wireframe_square_through_the_renderable_registry() {
+    use crate::engine::ecs::component::RenderableComponent;
+    use crate::engine::ecs::component::renderable::AuthoredRenderableShape;
+
+    let module_path = repo_path("assets/components/primitives.mms");
+    let module = MeowMeowRunner::load_module_file(module_path.to_str().unwrap())
+        .expect("expected primitives module to load");
+    let mut world = World::default();
+    let mut render_assets = RenderAssets::new();
+    let mut emit = CommandQueue::new();
+    let root = MeowMeowRunner::spawn_mms_module_component_uninitialized_with_assets(
+        &module,
+        "wireframe_square",
+        vec![],
+        &mut world,
+        Some(&mut render_assets),
+        &mut emit,
+    )
+    .expect("wireframe square primitive should spawn");
+
+    let renderable = world
+        .children_of(root)
+        .iter()
+        .find_map(|child| world.get_component_by_id_as::<RenderableComponent>(*child))
+        .expect("primitive should contain a renderable");
+    assert_eq!(
+        renderable.authored_shape,
+        Some(AuthoredRenderableShape::WireframeSquare { thickness: 0.1 })
+    );
+}
+
+#[test]
 fn call_mms_module_fn_invokes_exported_factory_function() {
     let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let module_path = workspace_root.join("assets/components/panels.mms");

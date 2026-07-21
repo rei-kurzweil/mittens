@@ -357,6 +357,65 @@ impl MeshFactory {
         CpuMesh::new(vertices, vec![0, 1, 2, 0, 2, 3])
     }
 
+    /// Unit wireframe square centered in the XY plane, represented by four solid edges.
+    ///
+    /// `thickness` is relative to the unit square dimensions. Triangles keep the shape on
+    /// the normal mesh rendering path while providing consistent, visible edge thickness.
+    pub fn wireframe_square(thickness: f32) -> CpuMesh {
+        let thickness = thickness.clamp(1.0e-4, 0.5);
+        let inner = 0.5 - thickness;
+        let vertices = vec![
+            CpuVertex {
+                pos: [-0.5, -0.5, 0.0],
+                uv: [0.0, 1.0],
+                normal: [0.0, 0.0, 1.0],
+            },
+            CpuVertex {
+                pos: [0.5, -0.5, 0.0],
+                uv: [1.0, 1.0],
+                normal: [0.0, 0.0, 1.0],
+            },
+            CpuVertex {
+                pos: [0.5, 0.5, 0.0],
+                uv: [1.0, 0.0],
+                normal: [0.0, 0.0, 1.0],
+            },
+            CpuVertex {
+                pos: [-0.5, 0.5, 0.0],
+                uv: [0.0, 0.0],
+                normal: [0.0, 0.0, 1.0],
+            },
+            CpuVertex {
+                pos: [-inner, -inner, 0.0],
+                uv: [thickness, 1.0 - thickness],
+                normal: [0.0, 0.0, 1.0],
+            },
+            CpuVertex {
+                pos: [inner, -inner, 0.0],
+                uv: [1.0 - thickness, 1.0 - thickness],
+                normal: [0.0, 0.0, 1.0],
+            },
+            CpuVertex {
+                pos: [inner, inner, 0.0],
+                uv: [1.0 - thickness, thickness],
+                normal: [0.0, 0.0, 1.0],
+            },
+            CpuVertex {
+                pos: [-inner, inner, 0.0],
+                uv: [thickness, thickness],
+                normal: [0.0, 0.0, 1.0],
+            },
+        ];
+        let indices = vec![
+            0, 1, 5, 0, 5, 4, // bottom
+            1, 2, 6, 1, 6, 5, // right
+            2, 3, 7, 2, 7, 6, // top
+            3, 0, 4, 3, 4, 7, // left
+        ];
+
+        CpuMesh::new(vertices, indices)
+    }
+
     /// Unit-ish cube centered at origin.
     ///
     /// This is a cube with per-face vertices (24 vertices, 12 triangles) so normals are flat.

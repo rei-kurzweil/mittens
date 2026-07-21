@@ -41,6 +41,12 @@ export fn square() {
     })
 }
 
+export fn wireframe_square() {
+    return primitive_shell("primitive_wireframe_square", R.wireframe_square(0.1) {
+        C.rgba(0.12, 0.12, 0.12, 1.0)
+    })
+}
+
 export fn circle2d() {
     return primitive_shell("primitive_circle2d", R.circle2d() {
         C.rgba(0.96, 0.56, 0.72, 1.0)

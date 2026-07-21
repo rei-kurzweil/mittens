@@ -79,6 +79,38 @@ fn wireframe_box_mesh_is_cached_by_thickness_and_retains_unit_extents() {
 }
 
 #[test]
+fn wireframe_square_mesh_is_cached_and_lies_in_the_unit_xy_plane() {
+    let mut assets = RenderAssets::new();
+    let thin = RenderableComponent::wireframe_square(&mut assets, 0.1);
+    let thin_again = RenderableComponent::wireframe_square(&mut assets, 0.1);
+    let thick = RenderableComponent::wireframe_square(&mut assets, 0.2);
+
+    assert_eq!(thin.renderable.mesh, thin_again.renderable.mesh);
+    assert_ne!(thin.renderable.mesh, thick.renderable.mesh);
+
+    let mesh = assets
+        .cpu_mesh(thin.renderable.mesh)
+        .expect("wireframe square mesh");
+    assert_eq!(mesh.vertices.len(), 8);
+    assert_eq!(mesh.indices_u32.len(), 24);
+    for axis in 0..2 {
+        let min = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.pos[axis])
+            .fold(f32::INFINITY, f32::min);
+        let max = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.pos[axis])
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!((min + 0.5).abs() < 1.0e-6);
+        assert!((max - 0.5).abs() < 1.0e-6);
+    }
+    assert!(mesh.vertices.iter().all(|vertex| vertex.pos[2] == 0.0));
+}
+
+#[test]
 fn desktop_mouse_does_not_activate_xr_camera_pointer() {
     let mut world = World::default();
     let mut queue = CommandQueue::new();
