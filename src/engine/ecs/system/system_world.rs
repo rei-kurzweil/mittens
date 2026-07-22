@@ -2918,8 +2918,8 @@ impl SystemWorld {
         // will actually be rendered. TransformSystem::tick is event-driven/no-op, so
         // secondary-motion writes must identify the roots that need propagation.
         self.transform.tick(world, visuals, input, dt_sec);
-        let secondary_motion_roots = self.secondary_motion.tick(world, dt_sec);
-        for root in secondary_motion_roots {
+        let dirty_chain_transform_roots = self.secondary_motion.tick(world, dt_sec);
+        for root in dirty_chain_transform_roots {
             self.transform_changed(world, visuals, root);
         }
         self.skinned_mesh.tick(world, visuals, input, dt_sec);

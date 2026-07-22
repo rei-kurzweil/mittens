@@ -61,8 +61,8 @@ impl SecondaryMotionSystem {
     pub fn tick(&mut self, world: &mut World, dt: f32) -> Vec<ComponentId> {
         self.debug_frames = self.debug_frames.wrapping_add(1);
         let mut max_correction_radians = 0.0f32;
-        let mut dirty_roots = Vec::new();
-        let mut dirty_root_set = HashSet::new();
+        let mut dirty_chain_transform_roots = Vec::new();
+        let mut dirty_chain_transform_root_set = HashSet::new();
         let mut stale_roots = Vec::new();
         let mut live = HashSet::new();
         for &root in &self.roots {
@@ -137,9 +137,9 @@ impl SecondaryMotionSystem {
                 }
                 max_correction_radians = max_correction_radians.max(apply_rotations(world, state));
                 if let Some(root) = state.joints.first().map(|joint| joint.id)
-                    && dirty_root_set.insert(root)
+                    && dirty_chain_transform_root_set.insert(root)
                 {
-                    dirty_roots.push(root);
+                    dirty_chain_transform_roots.push(root);
                 }
             }
         }
@@ -164,7 +164,7 @@ impl SecondaryMotionSystem {
                 eprintln!("[SecondaryMotion][debug] failed '{name}': {error}");
             }
         }
-        dirty_roots
+        dirty_chain_transform_roots
     }
 }
 
