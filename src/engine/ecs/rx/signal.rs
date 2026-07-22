@@ -675,6 +675,21 @@ pub enum IntentValue {
     RegisterSecondaryMotion {
         component_ids: Vec<ComponentId>,
     },
+    SecondaryMotionConfigurationChanged {
+        component_ids: Vec<ComponentId>,
+    },
+    SecondaryMotionTopologyChanged {
+        component_ids: Vec<ComponentId>,
+    },
+    SecondaryMotionGltfInitialized {
+        component_ids: Vec<ComponentId>,
+    },
+    UnregisterSecondaryMotion {
+        component_ids: Vec<ComponentId>,
+    },
+    ResetSecondaryMotion {
+        component_ids: Vec<ComponentId>,
+    },
 
     RegisterXr {
         component_ids: Vec<ComponentId>,
@@ -896,6 +911,17 @@ impl IntentValue {
             IntentValue::RegisterAvatarBodyYaw { .. } => "register_avatar_body_yaw",
             IntentValue::RegisterIkChain { .. } => "register_ik_chain",
             IntentValue::RegisterSecondaryMotion { .. } => "register_secondary_motion",
+            IntentValue::SecondaryMotionConfigurationChanged { .. } => {
+                "secondary_motion_configuration_changed"
+            }
+            IntentValue::SecondaryMotionTopologyChanged { .. } => {
+                "secondary_motion_topology_changed"
+            }
+            IntentValue::SecondaryMotionGltfInitialized { .. } => {
+                "secondary_motion_gltf_initialized"
+            }
+            IntentValue::UnregisterSecondaryMotion { .. } => "unregister_secondary_motion",
+            IntentValue::ResetSecondaryMotion { .. } => "reset_secondary_motion",
 
             IntentValue::RegisterXr { .. } => "register_xr",
             IntentValue::RegisterInputXr { .. } => "register_input_xr",

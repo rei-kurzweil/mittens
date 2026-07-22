@@ -124,6 +124,11 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterAvatarBodyYaw { component_ids }
             | IntentValue::RegisterIkChain { component_ids }
             | IntentValue::RegisterSecondaryMotion { component_ids }
+            | IntentValue::SecondaryMotionConfigurationChanged { component_ids }
+            | IntentValue::SecondaryMotionTopologyChanged { component_ids }
+            | IntentValue::SecondaryMotionGltfInitialized { component_ids }
+            | IntentValue::UnregisterSecondaryMotion { component_ids }
+            | IntentValue::ResetSecondaryMotion { component_ids }
             | IntentValue::RegisterXr { component_ids }
             | IntentValue::RegisterInputXr { component_ids }
             | IntentValue::RegisterControllerXr { component_ids }
@@ -249,6 +254,11 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterAvatarBodyYaw { component_ids }
             | IntentValue::RegisterIkChain { component_ids }
             | IntentValue::RegisterSecondaryMotion { component_ids }
+            | IntentValue::SecondaryMotionConfigurationChanged { component_ids }
+            | IntentValue::SecondaryMotionTopologyChanged { component_ids }
+            | IntentValue::SecondaryMotionGltfInitialized { component_ids }
+            | IntentValue::UnregisterSecondaryMotion { component_ids }
+            | IntentValue::ResetSecondaryMotion { component_ids }
             | IntentValue::RegisterXr { component_ids }
             | IntentValue::RegisterInputXr { component_ids }
             | IntentValue::RegisterControllerXr { component_ids }

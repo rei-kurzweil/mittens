@@ -4,6 +4,22 @@ The host-neutral Meow Meow Script language crate. It owns syntax, parsing,
 runtime values, evaluation, and the synchronous host protocol. Engine-specific
 component construction is provided by `mittens-engine`.
 
+## Mittens integration
+
+`meow-meow-script` does not know about Mittens components. It provides the
+language runtime, typed catalog declarations, stateful sessions, host-boundary
+DTOs, callbacks, and the generic `Host` request/response contract.
+
+`mittens-engine` embeds that runtime by registering the Mittens catalog: engine
+component names, aliases, constructors, builder calls, properties, component
+methods, and host APIs. Its Mittens host maps script component handles to ECS
+components and implements the actual effects for emission, registration,
+attachment, queries, methods, signals, and callbacks.
+
+This lets other hosts reuse `meow-meow-script` with their own component
+catalogs and semantics, while Mittens keeps its engine-specific behavior in the
+engine crate.
+
 ## Configurable runtime
 
 Embedders create a `Runtime` with `Runtime::builder()` and register the script

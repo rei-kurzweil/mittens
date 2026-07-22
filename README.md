@@ -9,33 +9,18 @@ A hypermedia / web development inspired game engine specially made for social vr
 
 - `mittens-engine` 0.6.0 at the workspace root: Vulkan/OpenXR rendering, ECS,
   engine component materialization, and the Mittens-specific scripting host.
-- `meow-meow-script` 0.6.0 in `crates/meow-meow-script`: host-neutral syntax,
-  parser, runtime/session evaluator, configurable component/API catalogs, and
-  the generic host protocol.
-- `mittens-query` 0.6.0 in `crates/mittens-query`: CSS/MMQ parsing and
+- [`meow-meow-script`](crates/meow-meow-script/README.md) 0.6.0:
+  host-neutral syntax, parser, runtime/session evaluator, configurable
+  component/API catalogs, and the generic host protocol.
+- [`mittens-query`](crates/mittens-query/README.md) 0.6.0: CSS/MMQ parsing and
   host-neutral query-tree evaluation.
 
 The dependency graph is acyclic: `mittens-engine` depends on both standalone
 crates; neither standalone crate depends on the engine.
 
-### Scripting split
-
-`meow-meow-script` does not know about Mittens components. It provides the
-language runtime, typed catalog declarations, stateful sessions, host-boundary
-DTOs, callbacks, and the generic `Host` request/response contract.
-
-`mittens-engine` embeds that runtime by registering the Mittens catalog: engine
-component names, aliases, constructors, builder calls, properties, component
-methods, and host APIs. Its Mittens host maps script component handles to ECS
-components and implements the actual effects for emission, registration,
-attachment, queries, methods, signals, and callbacks.
-
-That split lets other hosts reuse `meow-meow-script` with their own component
-catalogs and semantics, while Mittens keeps its engine-specific behavior in the
-engine crate.
-
-
-(see docs/meow_meow for an overview of .mms scripts)
+For scripting, see the [MMS language overview](docs/meow_meow/README.md), the
+[`meow-meow-script` crate and its Mittens integration](crates/meow-meow-script/README.md),
+and the [host API boundary](docs/meow_meow/spec/host-call-api.md).
 
 ## Running examples
 

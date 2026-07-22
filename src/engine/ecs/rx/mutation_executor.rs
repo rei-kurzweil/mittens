@@ -421,7 +421,34 @@ impl RxMutationExecutor {
             }
             IntentValue::RegisterSecondaryMotion { component_ids } => {
                 for &component in component_ids {
-                    systems.secondary_motion.register(component);
+                    systems.secondary_motion.register(world, component);
+                }
+            }
+            IntentValue::SecondaryMotionConfigurationChanged { component_ids } => {
+                for &component in component_ids {
+                    systems
+                        .secondary_motion
+                        .configuration_changed(world, component);
+                }
+            }
+            IntentValue::SecondaryMotionTopologyChanged { component_ids } => {
+                for &component in component_ids {
+                    systems.secondary_motion.topology_changed(world, component);
+                }
+            }
+            IntentValue::SecondaryMotionGltfInitialized { component_ids } => {
+                for &component in component_ids {
+                    systems.secondary_motion.gltf_initialized(world, component);
+                }
+            }
+            IntentValue::UnregisterSecondaryMotion { component_ids } => {
+                for &component in component_ids {
+                    systems.secondary_motion.component_removed(world, component);
+                }
+            }
+            IntentValue::ResetSecondaryMotion { component_ids } => {
+                for &component in component_ids {
+                    systems.secondary_motion.reset(world, component);
                 }
             }
 

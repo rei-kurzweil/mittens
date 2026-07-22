@@ -1098,10 +1098,30 @@ Transform {}
 
 #### `RegisterSecondaryMotion`
 <!-- catalog:signal source="RegisterSecondaryMotion" kind="intent" mms="component-lifecycle" -->
-**Intent — Indirectly emitted by component lifecycle.** Requests the `RegisterSecondaryMotion` operation. Component creation and initialization emit this intent indirectly; user MMS does not author the enum variant. It is scoped to the requesting secondary-motion root and executes at an explicit drain point. The secondary-motion system retains registered roots so its frame tick does not scan the ECS world. Sources: [intent definition](../../../src/engine/ecs/rx/signal.rs), [mutation execution](../../../src/engine/ecs/rx/mutation_executor.rs), and [component lifecycle](../../../src/engine/ecs/component/secondary_motion.rs).
+**Intent — Indirectly emitted by component lifecycle.** Requests the `RegisterSecondaryMotion` operation. `SecondaryMotion`, `SpringBone`, and `SpringJoint` creation and initialization emit this intent indirectly; user MMS does not author the enum variant. It is scoped to the requesting component and executes at an explicit drain point. The secondary-motion system retains root, child, joint, GLTF, and resolved-transform ownership so its frame tick performs no graph discovery. Sources: [intent definition](../../../src/engine/ecs/rx/signal.rs), [mutation execution](../../../src/engine/ecs/rx/mutation_executor.rs), and [component lifecycle](../../../src/engine/ecs/component/secondary_motion.rs).
 ```mms parse-only
 SecondaryMotion {}
 ```
+
+#### `SecondaryMotionConfigurationChanged`
+<!-- catalog:signal source="SecondaryMotionConfigurationChanged" kind="intent" mms="component-lifecycle" -->
+**Intent — Emitted by engine/editor mutation paths.** Announces an in-place `SpringBone` or `SpringJoint` field edit. The mutation executor uses retained reverse ownership to rebind only the affected chain. Builder calls made before component initialization require no notification. Direct unsignaled mutation is outside the runtime contract. Sources: [intent definition](../../../src/engine/ecs/rx/signal.rs) and [mutation execution](../../../src/engine/ecs/rx/mutation_executor.rs).
+
+#### `SecondaryMotionTopologyChanged`
+<!-- catalog:signal source="SecondaryMotionTopologyChanged" kind="intent" mms="component-lifecycle" -->
+**Intent — Indirectly emitted by topology lifecycle.** The global `ParentChanged` handler targets the affected retained root, chain, joint configuration, or imported transform. Sources: [intent definition](../../../src/engine/ecs/rx/signal.rs) and [retained runtime](../../../src/engine/ecs/system/secondary_motion_system.rs).
+
+#### `SecondaryMotionGltfInitialized`
+<!-- catalog:signal source="SecondaryMotionGltfInitialized" kind="intent" mms="component-lifecycle" -->
+**Intent — Indirectly emitted by GLTF lifecycle.** Retries only roots retained under the initialized or respawned GLTF. Sources: [intent definition](../../../src/engine/ecs/rx/signal.rs) and [retained runtime](../../../src/engine/ecs/system/secondary_motion_system.rs).
+
+#### `UnregisterSecondaryMotion`
+<!-- catalog:signal source="UnregisterSecondaryMotion" kind="intent" mms="component-lifecycle" -->
+**Intent — Emitted by component teardown.** Removes retained ownership and binding state for affected roots, chains, joint configurations, GLTFs, or imported transforms. The current subtree-removal coordinator also invokes the same cleanup directly. Sources: [intent definition](../../../src/engine/ecs/rx/signal.rs) and [mutation execution](../../../src/engine/ecs/rx/mutation_executor.rs).
+
+#### `ResetSecondaryMotion`
+<!-- catalog:signal source="ResetSecondaryMotion" kind="intent" mms="component-lifecycle" -->
+**Intent — Emitted by explicit engine reset paths.** Rebinds the targeted chain, root, or GLTF-owned roots without enabling frame-time discovery. Sources: [intent definition](../../../src/engine/ecs/rx/signal.rs) and [mutation execution](../../../src/engine/ecs/rx/mutation_executor.rs).
 
 #### `RegisterAnimation`
 <!-- catalog:signal source="RegisterAnimation" kind="intent" mms="component-lifecycle" -->

@@ -1,8 +1,7 @@
 # Secondary Motion System
 
-Status: **draft architecture**. `SpringBone` is the only supported secondary-motion simulation
-type today. The **Current state inventory** and **TODO** sections are temporary and should be
-removed after the retained-runtime architecture is implemented.
+Status: **implemented retained runtime**. `SpringBone` is the only supported secondary-motion
+simulation type today.
 
 ## Purpose
 
@@ -53,9 +52,9 @@ primary pose writes (animation / AVC / IK)
 Secondary motion writes final local joint rotations for the frame. World-matrix and skin-palette
 consumers must observe those writes in the same frame.
 
-## Proposed retained-runtime architecture
+## Retained-runtime architecture
 
-The system should retain the complete runtime ownership graph. Frame ticks must not discover roots,
+The system retains the complete runtime ownership graph. Frame ticks do not discover roots,
 simulation children, chains, or joints by scanning ECS components or enumerating authored children.
 
 An illustrative layout is:
@@ -214,43 +213,10 @@ not yet implemented.
 - Registration, binding, invalidation, and cleanup should be separately measurable from simulation
   time when system profiling is enabled.
 
-## Current state inventory — remove after migration
+## Remaining lifecycle dependency
 
-This section describes temporary implementation details, not the target contract.
-
-- `SecondaryMotionSystem.roots` caches registered `SecondaryMotionComponent` IDs in a `HashSet`.
-- `states` caches bound `SpringBone` chain state keyed by `SpringBoneComponent` ID.
-- Every frame, the system iterates cached roots but still enumerates each root's immediate children
-  and filters them by `SpringBoneComponent` to rediscover chain membership.
-- The nearest GLTF ancestor is rediscovered for each root every frame.
-- Bound joint references, rest poses, lengths, and simulation arrays are cached.
-- Unbound/failed chains retry binding during frame ticks instead of waiting for a relevant lifecycle
-  event.
-- A per-frame `live` set retains/removes chain states based on rediscovered children.
-- Root cleanup is registered through `RegisterSecondaryMotion`; `SystemWorld` also has explicit
-  best-effort removal, with missing-root pruning as a fallback for raw world deletion.
-- `tick` returns deduplicated `dirty_chain_transform_roots`, and `SystemWorld` propagates them before
-  skinning.
-
-## TODO — remove after completion
-
-- [ ] Replace the root `HashSet` plus global chain-state map with retained root runtime entries and
-      an O(1) child-to-root ownership index.
-- [ ] Add lifecycle registration/unregistration for `SpringBoneComponent` as a supported
-      secondary-motion child.
-- [ ] Populate each root's simulation children during lifecycle handling and remove per-frame
-      `children_of(root)` enumeration/type filtering.
-- [ ] Cache the owning GLTF on the root and invalidate it only on relevant topology/GLTF events.
-- [ ] Represent waiting, bound, and invalid binding states explicitly.
-- [ ] Retry failed/unresolved bindings only after relevant dependency events.
-- [ ] Add SpringJoint configuration/topology invalidation so dynamic edits rebind exactly one chain.
-- [ ] Remove the per-frame `live` discovery set and discovery-driven state retention.
-- [ ] Integrate cleanup with unified subtree removal and reduce stale-ID pruning to temporary
-      defensive checks or debug assertions.
-- [ ] Add tests for root/child initialization order, dynamic chain addition/removal, joint edits,
-      GLTF respawn, root reparenting, duplicate registration, and cleanup.
-- [ ] Add a performance regression proving frame ticks do not call full-world or authored-child
-      discovery once roots and children are registered.
-- [ ] Update diagnostics/profiling to separate binding/invalidation cost from steady-state physics.
-- [ ] Remove the **Current state inventory** and **TODO** sections when all checklist items are
-      complete and the implemented architecture matches this spec.
+Secondary motion participates in the current subtree-removal coordinator and also accepts explicit
+component cleanup intents. The separate unified subtree-removal project remains responsible for
+making that cleanup contract common to every retained engine system. Cached-record existence checks
+in the frame path are temporary defensive protection for callers that bypass the coordinator; they
+do not perform discovery or binding retries.

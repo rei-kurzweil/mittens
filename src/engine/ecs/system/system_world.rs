@@ -322,7 +322,7 @@ mod tests {
         world.add_child(spring, spring_tip_joint).unwrap();
         world.add_child(avatar, displaced_head).unwrap();
         systems.register_avatar_control(avatar);
-        systems.secondary_motion.register(secondary);
+        systems.secondary_motion.register(&world, secondary);
 
         // A sparse pose in replace mode first restores every imported joint,
         // including AVC's reparented head, to its non-zero rest translation.
@@ -972,8 +972,8 @@ impl SystemWorld {
         use crate::engine::ecs::component::{
             CollisionComponent, CollisionResponseComponent, ControllerXRComponent,
             HttpClientComponent, HttpServerComponent, InputXRComponent, PointerComponent,
-            RayCastComponent, RenderableComponent, SecondaryMotionComponent,
-            SignalRouteUpwardComponent, StencilClipComponent, TransformComponent,
+            RayCastComponent, RenderableComponent, SignalRouteUpwardComponent,
+            StencilClipComponent, TransformComponent,
         };
 
         // Best-effort: remove system state for known component types before deleting.
@@ -1037,12 +1037,9 @@ impl SystemWorld {
             {
                 self.ik.remove(n);
             }
-            if world
-                .get_component_by_id_as::<SecondaryMotionComponent>(n)
-                .is_some()
-            {
-                self.secondary_motion.remove(n);
-            }
+            // Retained secondary-motion indexes cover roots, chains, joint
+            // configurations, owning GLTFs, and imported transforms.
+            self.secondary_motion.component_removed(world, n);
             if world
                 .get_component_by_id_as::<PointerComponent>(n)
                 .is_some()
@@ -1099,6 +1096,7 @@ impl SystemWorld {
     pub fn new() -> Self {
         let mut systems = Self::default();
         systems.grid.install_handlers(&mut systems.rx);
+        SecondaryMotionSystem::install_handlers(&mut systems.rx);
         let asset_dir = Path::new("assets/components/");
         if let Err(error) = systems.asset_system.scan_assets_dir(asset_dir) {
             eprintln!("[SystemWorld] failed to scan assets dir: {error}");
@@ -2702,6 +2700,7 @@ impl SystemWorld {
         // Per-frame caches are reset here; global handlers are installed idempotently.
         // (Per-gizmo scoped handlers are installed when the gizmo is registered.)
         self.rx.begin_frame();
+        SecondaryMotionSystem::install_handlers(&mut self.rx);
         self.gesture.install_handlers(&mut self.rx);
         self.gesture.begin_frame();
         self.text_input.install_handlers(&mut self.rx);

@@ -92,6 +92,14 @@ impl Component for SpringBoneComponent {
     fn set_id(&mut self, id: ComponentId) {
         self.component = Some(id);
     }
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterSecondaryMotion {
+                component_ids: vec![component],
+            },
+        );
+    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -159,6 +167,14 @@ impl Component for SpringJointComponent {
     }
     fn set_id(&mut self, id: ComponentId) {
         self.component = Some(id);
+    }
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterSecondaryMotion {
+                component_ids: vec![component],
+            },
+        );
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
