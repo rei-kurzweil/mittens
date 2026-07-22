@@ -212,6 +212,7 @@ export fn editor_settings_panel(title, title_color, panel_background_color, conf
 
         T {
             name = "title_bar"
+            Grabbable.parent()
             Raycastable.enabled()
             Style {
                 display("block")
@@ -296,6 +297,7 @@ export fn paint_panel(title, title_color, panel_background_color, item_backgroun
 
         T {
             name = "title_bar"
+            Grabbable.parent()
             Raycastable.enabled()
             Style {
                 display("block")
@@ -394,6 +396,7 @@ export fn color_panel(title, title_color, panel_background_color) {
         }
         T {
             name = "title_bar"
+            Grabbable.parent()
             Raycastable.enabled()
             Style {
                 display("block")
@@ -456,6 +459,7 @@ export fn pose_capture_panel(title, title_color, panel_background_color) {
 
         T {
             name = "title_bar"
+            Grabbable.parent()
             Raycastable.enabled()
             Style {
                 display("block")
@@ -598,6 +602,7 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
 
         T {
             name = "title_bar"
+            Grabbable.parent()
             Raycastable.enabled()
             Style {
                 display("block")
@@ -696,6 +701,7 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
 
         T {
             name = "title_bar"
+            Grabbable.parent()
             Raycastable.enabled()
             Style {
                 display("block")
@@ -823,6 +829,7 @@ export fn asset_panel(title, items, title_color, panel_background_color, item_ba
 
         T {
             name = "title_bar"
+            Grabbable.parent()
             Raycastable.enabled()
             Style {
                 display("block")
@@ -878,6 +885,7 @@ export fn grid_panel(title, items, title_color, panel_background_color, item_bac
 
         T {
             name = "title_bar"
+            Grabbable.parent()
             Raycastable.enabled()
             Style {
                 display("block")

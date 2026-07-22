@@ -4836,6 +4836,14 @@ fn editor_ui_settings_config_conditionally_authors_diagnostic_rows() {
     assert!(world
         .find_component(editor_ui, "#editor_settings_bounds_visibility")
         .is_some());
+    let title_bar = world
+        .find_component(editor_ui, "#title_bar")
+        .expect("settings panel title bar");
+    assert!(world.children_of(title_bar).iter().any(|child| {
+        world
+            .get_component_by_id_as::<crate::engine::ecs::component::GrabbableComponent>(*child)
+            .is_some_and(|grabbable| grabbable.enabled && grabbable.move_parent)
+    }));
     for omitted in [
         "#editor_settings_armature_visibility",
         "#editor_settings_cameras_visibility",
@@ -5567,6 +5575,20 @@ fn roundtrip_grabbable() {
         world
             .get_component_by_id_as::<GrabbableComponent>(id)
             .is_some()
+    );
+
+    let (world, id) = roundtrip_component(GrabbableComponent::parent());
+    assert!(
+        world
+            .get_component_by_id_as::<GrabbableComponent>(id)
+            .is_some_and(|grabbable| grabbable.move_parent)
+    );
+
+    let (world, id) = roundtrip_component(GrabbableComponent::off());
+    assert!(
+        world
+            .get_component_by_id_as::<GrabbableComponent>(id)
+            .is_some_and(|grabbable| !grabbable.enabled)
     );
 }
 

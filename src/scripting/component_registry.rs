@@ -1784,7 +1784,12 @@ fn create_component(
             }
             add!(layout)
         }
-        "Grabbable" => add!(GrabbableComponent::new()),
+        "Grabbable" => match ctor {
+            Some("parent") => add!(GrabbableComponent::parent()),
+            Some("off") => add!(GrabbableComponent::off()),
+            Some("on") => add!(GrabbableComponent::on()),
+            _ => add!(GrabbableComponent::new()),
+        },
         "Raycastable" => match ctor {
             Some("disabled") => add!(RaycastableComponent::disabled()),
             Some("drag_only") => add!(RaycastableComponent::drag_only()),
