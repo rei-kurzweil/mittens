@@ -123,6 +123,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterAvatarControl { component_ids }
             | IntentValue::RegisterAvatarBodyYaw { component_ids }
             | IntentValue::RegisterIkChain { component_ids }
+            | IntentValue::RegisterSecondaryMotion { component_ids }
             | IntentValue::RegisterXr { component_ids }
             | IntentValue::RegisterInputXr { component_ids }
             | IntentValue::RegisterControllerXr { component_ids }
@@ -247,6 +248,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterAvatarControl { component_ids }
             | IntentValue::RegisterAvatarBodyYaw { component_ids }
             | IntentValue::RegisterIkChain { component_ids }
+            | IntentValue::RegisterSecondaryMotion { component_ids }
             | IntentValue::RegisterXr { component_ids }
             | IntentValue::RegisterInputXr { component_ids }
             | IntentValue::RegisterControllerXr { component_ids }

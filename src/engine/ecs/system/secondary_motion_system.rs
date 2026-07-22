@@ -21,6 +21,7 @@ struct JointConfig {
 }
 #[derive(Debug, Clone)]
 struct ChainState {
+    secondary_root: ComponentId,
     gltf: ComponentId,
     joints: Vec<JointConfig>,
     previous: Vec<[f32; 3]>,
@@ -32,6 +33,7 @@ struct ChainState {
 
 #[derive(Debug, Default)]
 pub struct SecondaryMotionSystem {
+    roots: HashSet<ComponentId>,
     states: HashMap<ComponentId, ChainState>,
     warned: HashSet<ComponentId>,
     failures: HashMap<ComponentId, String>,
@@ -39,9 +41,19 @@ pub struct SecondaryMotionSystem {
 }
 
 impl SecondaryMotionSystem {
+    pub fn register(&mut self, root: ComponentId) {
+        self.roots.insert(root);
+    }
+
+    pub fn remove(&mut self, root: ComponentId) {
+        self.roots.remove(&root);
+        self.reset(root);
+    }
+
     pub fn reset(&mut self, target: ComponentId) {
-        self.states
-            .retain(|chain, state| *chain != target && state.gltf != target);
+        self.states.retain(|chain, state| {
+            *chain != target && state.secondary_root != target && state.gltf != target
+        });
     }
 
     /// Advances active chains and returns unique chain roots whose world-transform
@@ -51,16 +63,16 @@ impl SecondaryMotionSystem {
         let mut max_correction_radians = 0.0f32;
         let mut dirty_roots = Vec::new();
         let mut dirty_root_set = HashSet::new();
-        let roots: Vec<_> = world
-            .all_components()
-            .filter(|id| {
-                world
-                    .get_component_by_id_as::<SecondaryMotionComponent>(*id)
-                    .is_some()
-            })
-            .collect();
+        let mut stale_roots = Vec::new();
         let mut live = HashSet::new();
-        for root in roots {
+        for &root in &self.roots {
+            if world
+                .get_component_by_id_as::<SecondaryMotionComponent>(root)
+                .is_none()
+            {
+                stale_roots.push(root);
+                continue;
+            }
             let Some(gltf_id) = nearest_gltf(world, root) else {
                 continue;
             };
@@ -78,7 +90,7 @@ impl SecondaryMotionSystem {
             for chain_id in chains {
                 live.insert(chain_id);
                 if !self.states.contains_key(&chain_id) {
-                    match bind_chain(world, gltf_id, chain_id, &mut owned) {
+                    match bind_chain(world, root, gltf_id, chain_id, &mut owned) {
                         Ok(state) => {
                             self.states.insert(chain_id, state);
                             self.warned.remove(&chain_id);
@@ -130,6 +142,9 @@ impl SecondaryMotionSystem {
                     dirty_roots.push(root);
                 }
             }
+        }
+        for root in stale_roots {
+            self.remove(root);
         }
         self.states.retain(|id, _| live.contains(id));
         self.failures.retain(|id, _| live.contains(id));
@@ -253,6 +268,7 @@ fn resolve_in_gltf(
 
 fn bind_chain(
     world: &World,
+    secondary_root: ComponentId,
     gltf_id: ComponentId,
     chain_id: ComponentId,
     owned: &mut HashSet<ComponentId>,
@@ -345,6 +361,7 @@ fn bind_chain(
         current.push(tail);
     }
     Ok(ChainState {
+        secondary_root,
         gltf: gltf_id,
         joints,
         previous: current.clone(),

@@ -672,6 +672,9 @@ pub enum IntentValue {
     RegisterIkChain {
         component_ids: Vec<ComponentId>,
     },
+    RegisterSecondaryMotion {
+        component_ids: Vec<ComponentId>,
+    },
 
     RegisterXr {
         component_ids: Vec<ComponentId>,
@@ -892,6 +895,7 @@ impl IntentValue {
             IntentValue::RegisterAvatarControl { .. } => "register_avatar_control",
             IntentValue::RegisterAvatarBodyYaw { .. } => "register_avatar_body_yaw",
             IntentValue::RegisterIkChain { .. } => "register_ik_chain",
+            IntentValue::RegisterSecondaryMotion { .. } => "register_secondary_motion",
 
             IntentValue::RegisterXr { .. } => "register_xr",
             IntentValue::RegisterInputXr { .. } => "register_input_xr",

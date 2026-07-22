@@ -419,6 +419,11 @@ impl RxMutationExecutor {
                     systems.ik.register(component);
                 }
             }
+            IntentValue::RegisterSecondaryMotion { component_ids } => {
+                for &component in component_ids {
+                    systems.secondary_motion.register(component);
+                }
+            }
 
             IntentValue::RemoveSubtree { component_ids } => {
                 let mut roots: Vec<ComponentId> = component_ids.iter().copied().collect();

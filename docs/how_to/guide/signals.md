@@ -1096,6 +1096,13 @@ Transform {}
 Transform {}
 ```
 
+#### `RegisterSecondaryMotion`
+<!-- catalog:signal source="RegisterSecondaryMotion" kind="intent" mms="component-lifecycle" -->
+**Intent — Indirectly emitted by component lifecycle.** Requests the `RegisterSecondaryMotion` operation. Component creation and initialization emit this intent indirectly; user MMS does not author the enum variant. It is scoped to the requesting secondary-motion root and executes at an explicit drain point. The secondary-motion system retains registered roots so its frame tick does not scan the ECS world. Sources: [intent definition](../../../src/engine/ecs/rx/signal.rs), [mutation execution](../../../src/engine/ecs/rx/mutation_executor.rs), and [component lifecycle](../../../src/engine/ecs/component/secondary_motion.rs).
+```mms parse-only
+SecondaryMotion {}
+```
+
 #### `RegisterAnimation`
 <!-- catalog:signal source="RegisterAnimation" kind="intent" mms="component-lifecycle" -->
 **Intent — Indirectly emitted by component lifecycle.** Requests the `RegisterAnimation` operation. Component creation, initialization, teardown, or topology work emits this intent indirectly; user MMS does not author the enum variant. It is scoped to the requesting/affected component and executes at an explicit drain point; `AtBeat` delays eligibility when the producer supplies timed metadata. Related components and systems are the targets named by the variant; see executor matching for exact effects. Sources: [intent definition](../../../src/engine/ecs/rx/signal.rs), [intent interpretation](../../../src/engine/ecs/rx/intent_executor.rs), [mutation execution](../../../src/engine/ecs/rx/mutation_executor.rs), and [MMS action registry](../../../src/scripting/component_registry.rs).

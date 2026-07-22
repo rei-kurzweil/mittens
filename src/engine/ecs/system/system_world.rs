@@ -322,6 +322,7 @@ mod tests {
         world.add_child(spring, spring_tip_joint).unwrap();
         world.add_child(avatar, displaced_head).unwrap();
         systems.register_avatar_control(avatar);
+        systems.secondary_motion.register(secondary);
 
         // A sparse pose in replace mode first restores every imported joint,
         // including AVC's reparented head, to its non-zero rest translation.
@@ -433,6 +434,8 @@ mod tests {
             gltf.spawned_node_transforms = vec![root, tip];
             gltf.armature_joint_transforms = vec![root, tip];
         }
+        world.init_component_tree(secondary, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
         // Establish the imported rest-pose matrices once. No transform signal is
         // emitted during either simulation frame below.
@@ -969,8 +972,8 @@ impl SystemWorld {
         use crate::engine::ecs::component::{
             CollisionComponent, CollisionResponseComponent, ControllerXRComponent,
             HttpClientComponent, HttpServerComponent, InputXRComponent, PointerComponent,
-            RayCastComponent, RenderableComponent, SignalRouteUpwardComponent,
-            StencilClipComponent, TransformComponent,
+            RayCastComponent, RenderableComponent, SecondaryMotionComponent,
+            SignalRouteUpwardComponent, StencilClipComponent, TransformComponent,
         };
 
         // Best-effort: remove system state for known component types before deleting.
@@ -1033,6 +1036,12 @@ impl SystemWorld {
                 .is_some()
             {
                 self.ik.remove(n);
+            }
+            if world
+                .get_component_by_id_as::<SecondaryMotionComponent>(n)
+                .is_some()
+            {
+                self.secondary_motion.remove(n);
             }
             if world
                 .get_component_by_id_as::<PointerComponent>(n)
