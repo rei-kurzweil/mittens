@@ -20,7 +20,7 @@ use crate::engine::ecs::component::{
     Display, EdgeInsets, EditorComponent, EditorInteractionMode, EditorPanel, EditorUIComponent,
     EditorUIPanelConfig, EditorUIPanelSpec, ElementType, EmissiveComponent, EmissivePassComponent,
     FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent,
-    GestureCoordTypeComponent, GrabbableComponent, GravityComponent, GridComponent,
+    GestureCoordTypeComponent, GrabbableComponent, GrabbablePlane, GravityComponent, GridComponent,
     HtmlElementComponent, HttpClientComponent, HttpServerComponent, IKChainComponent, IKSolver,
     InputComponent, InputTransformModeComponent, InputXRComponent, InputXRGamepadComponent,
     InspectLayoutComponent, JustifyContent, KeyframeComponent, LayoutBoundsComponent,
@@ -997,6 +997,42 @@ fn val_as_f32_array<const N: usize>(v: &Value) -> Result<[f32; N], String> {
     }
 }
 
+fn parse_grabbable_plane(args: &[Value]) -> Result<GrabbablePlane, String> {
+    let value = arg(args, 0)?;
+    if let Ok(name) = val_as_str(value) {
+        return match name {
+            "object" => Ok(GrabbablePlane::Object),
+            "camera" => Ok(GrabbablePlane::Camera),
+            _ => Err(format!(
+                "Grabbable.plane expected \"camera\", \"object\", or two world axes; got {name:?}"
+            )),
+        };
+    }
+    let Value::Array(axes) = value else {
+        return Err("Grabbable.plane expected a string or [[f32; 3]; 2]".to_string());
+    };
+    if axes.len() != 2 {
+        return Err(format!(
+            "Grabbable.plane expected exactly two world axes, got {}",
+            axes.len()
+        ));
+    }
+    let axes = [
+        val_as_f32_array::<3>(&axes[0])?,
+        val_as_f32_array::<3>(&axes[1])?,
+    ];
+    let length_sq = |axis: [f32; 3]| axis.iter().map(|value| value * value).sum::<f32>();
+    let cross = [
+        axes[0][1] * axes[1][2] - axes[0][2] * axes[1][1],
+        axes[0][2] * axes[1][0] - axes[0][0] * axes[1][2],
+        axes[0][0] * axes[1][1] - axes[0][1] * axes[1][0],
+    ];
+    if length_sq(axes[0]) <= 1e-8 || length_sq(axes[1]) <= 1e-8 || length_sq(cross) <= 1e-8 {
+        return Err("Grabbable.plane world axes must be non-zero and non-parallel".to_string());
+    }
+    Ok(GrabbablePlane::WorldAxes(axes))
+}
+
 // ---------------------------------------------------------------------------
 // Argument helpers
 // ---------------------------------------------------------------------------
@@ -1788,6 +1824,9 @@ fn create_component(
             Some("parent") => add!(GrabbableComponent::parent()),
             Some("off") => add!(GrabbableComponent::off()),
             Some("on") => add!(GrabbableComponent::on()),
+            Some("plane") => {
+                add!(GrabbableComponent::new().with_plane(parse_grabbable_plane(args)?))
+            }
             _ => add!(GrabbableComponent::new()),
         },
         "Raycastable" => match ctor {
@@ -2316,6 +2355,13 @@ fn apply_call(
     method: &str,
     args: &[Value],
 ) -> Result<(), String> {
+    if let Some(grabbable) = world.get_component_by_id_as_mut::<GrabbableComponent>(id) {
+        if method == "plane" {
+            grabbable.plane = parse_grabbable_plane(args)?;
+        }
+        return Ok(());
+    }
+
     if let Some(fit_bounds) = world.get_component_by_id_as_mut::<FitBoundsComponent>(id) {
         match method {
             "renderable_only" => fit_bounds.mode = FitBoundsMode::RenderableOnly,

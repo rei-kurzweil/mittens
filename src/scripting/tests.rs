@@ -5569,7 +5569,7 @@ fn roundtrip_collision_response() {
 
 #[test]
 fn roundtrip_grabbable() {
-    use crate::engine::ecs::component::GrabbableComponent;
+    use crate::engine::ecs::component::{GrabbableComponent, GrabbablePlane};
     let (world, id) = roundtrip_component(GrabbableComponent::new());
     assert!(
         world
@@ -5589,6 +5589,54 @@ fn roundtrip_grabbable() {
         world
             .get_component_by_id_as::<GrabbableComponent>(id)
             .is_some_and(|grabbable| !grabbable.enabled)
+    );
+
+    for plane in [
+        GrabbablePlane::Camera,
+        GrabbablePlane::WorldAxes([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
+    ] {
+        let (world, id) = roundtrip_component(GrabbableComponent::new().with_plane(plane));
+        assert_eq!(
+            world
+                .get_component_by_id_as::<GrabbableComponent>(id)
+                .map(|grabbable| grabbable.plane),
+            Some(plane)
+        );
+    }
+}
+
+#[test]
+fn grabbable_plane_builder_accepts_object_camera_and_world_axes() {
+    use crate::engine::ecs::component::{GrabbableComponent, GrabbablePlane};
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut queue = CommandQueue::new();
+    let mut assets = RenderAssets::new();
+    let output = MeowMeowRunner::eval_with_world_and_assets(
+        r#"
+            T { Grabbable.plane("object") }
+            T { Grabbable.plane("camera") }
+            T { Grabbable.plane([[1, 0, 0], [0, 0, 1]]) }
+        "#,
+        &mut world,
+        &mut rx,
+        &mut assets,
+        &mut queue,
+    );
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    let mut planes = world.all_components().filter_map(|id| {
+        world
+            .get_component_by_id_as::<GrabbableComponent>(id)
+            .map(|grabbable| grabbable.plane)
+    });
+    assert_eq!(planes.next(), Some(GrabbablePlane::Object));
+    assert_eq!(planes.next(), Some(GrabbablePlane::Camera));
+    assert_eq!(
+        planes.next(),
+        Some(GrabbablePlane::WorldAxes([
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0]
+        ]))
     );
 }
 

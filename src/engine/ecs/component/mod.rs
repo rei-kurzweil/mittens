@@ -158,7 +158,7 @@ pub use gizmo::{
     TransformGizmoAxis, TransformGizmoComponent, TransformGizmoRotateComponent,
     TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
 };
-pub use grabbable::GrabbableComponent;
+pub use grabbable::{GrabbableComponent, GrabbablePlane};
 pub use gravity::GravityComponent;
 pub use grid::GridComponent;
 pub use html_element::{ElementType, HtmlElementComponent};
