@@ -75,6 +75,7 @@ impl SignalPipelineProcessor {
             | IntentValue::SelectionSet { component_ids, .. }
             | IntentValue::ToggleSet { component_ids, .. }
             | IntentValue::CollisionVisualizationSet { component_ids, .. }
+            | IntentValue::CameraVisualizationSet { component_ids, .. }
             | IntentValue::Detach { component_ids }
             | IntentValue::RemoveSubtree { component_ids }
             | IntentValue::AudioGraphRebuild { component_ids }
@@ -139,6 +140,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterRaycast { component_ids }
             | IntentValue::RegisterRaycastable { component_ids }
             | IntentValue::RegisterPointer { component_ids }
+            | IntentValue::RegisterGrabbable { component_ids }
             | IntentValue::RemoveRaycast { component_ids }
             | IntentValue::RemoveRaycastable { component_ids }
             | IntentValue::RegisterAnimation { component_ids }
@@ -205,6 +207,7 @@ impl SignalPipelineProcessor {
             | IntentValue::SelectionSet { component_ids, .. }
             | IntentValue::ToggleSet { component_ids, .. }
             | IntentValue::CollisionVisualizationSet { component_ids, .. }
+            | IntentValue::CameraVisualizationSet { component_ids, .. }
             | IntentValue::Detach { component_ids }
             | IntentValue::RemoveSubtree { component_ids }
             | IntentValue::AudioGraphRebuild { component_ids }
@@ -269,6 +272,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterRaycast { component_ids }
             | IntentValue::RegisterRaycastable { component_ids }
             | IntentValue::RegisterPointer { component_ids }
+            | IntentValue::RegisterGrabbable { component_ids }
             | IntentValue::RemoveRaycast { component_ids }
             | IntentValue::RemoveRaycastable { component_ids }
             | IntentValue::RegisterAnimation { component_ids }

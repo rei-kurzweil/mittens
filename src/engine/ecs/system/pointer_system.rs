@@ -148,6 +148,9 @@ pub struct PointerActivations {
     pub pressed: Vec<ComponentId>,
     pub down: Vec<ComponentId>,
     pub released: Vec<ComponentId>,
+    pub grip_pressed: Vec<ComponentId>,
+    pub grip_down: Vec<ComponentId>,
+    pub grip_released: Vec<ComponentId>,
 }
 
 impl PointerSystem {
@@ -181,6 +184,15 @@ impl PointerSystem {
                 if xr.trigger_released[i] {
                     act.released.push(pointer_cid);
                 }
+                if xr.grip_pressed[i] {
+                    act.grip_pressed.push(pointer_cid);
+                }
+                if xr.grip_down[i] {
+                    act.grip_down.push(pointer_cid);
+                }
+                if xr.grip_released[i] {
+                    act.grip_released.push(pointer_cid);
+                }
             } else if !topo.has_xr_camera_anchor && !topo.has_xr_input_driver {
                 // Desktop or otherwise non-XR pointer: left mouse button.
                 if input.mouse_pressed.contains(&MouseButton::Left) {
@@ -210,5 +222,37 @@ fn controller_hand_index(world: &World, start: ComponentId) -> Option<usize> {
             });
         }
         cur = world.parent_of(cur)?;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::ecs::component::{ControllerHand, ControllerPoseKind};
+
+    #[test]
+    fn controller_grip_edges_are_exposed_separately_from_trigger_edges() {
+        let mut world = World::default();
+        let controller = world.add_component(ControllerXRComponent::new(
+            true,
+            ControllerHand::Right,
+            ControllerPoseKind::Grip,
+        ));
+        let pointer = world.add_component(PointerComponent::default());
+        let raycast = world.add_component(RayCastComponent::event_driven());
+        world.add_child(controller, pointer).unwrap();
+        let mut system = PointerSystem::default();
+        system.pointer_to_raycast.insert(pointer, raycast);
+        let xr = XrInputState {
+            grip_pressed: [false, true],
+            grip_down: [false, true],
+            grip_released: [false, true],
+            ..Default::default()
+        };
+        let activations = system.build_activations(&world, &InputState::default(), &xr);
+        assert!(activations.pressed.is_empty());
+        assert_eq!(activations.grip_pressed, vec![pointer]);
+        assert_eq!(activations.grip_down, vec![pointer]);
+        assert_eq!(activations.grip_released, vec![pointer]);
     }
 }

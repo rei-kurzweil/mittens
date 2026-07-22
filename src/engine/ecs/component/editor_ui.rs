@@ -51,6 +51,7 @@ impl EditorPanel {
 pub struct SettingsPanelConfig {
     pub show_armature: bool,
     pub show_bounds: bool,
+    pub show_cameras: bool,
     pub show_colliders: bool,
     pub show_gltf_colliders: bool,
 }
@@ -60,6 +61,7 @@ impl Default for SettingsPanelConfig {
         Self {
             show_armature: true,
             show_bounds: true,
+            show_cameras: true,
             show_colliders: true,
             show_gltf_colliders: true,
         }
@@ -76,6 +78,10 @@ impl SettingsPanelConfig {
     }
     pub fn with_show_bounds(mut self, value: bool) -> Self {
         self.show_bounds = value;
+        self
+    }
+    pub fn with_show_cameras(mut self, value: bool) -> Self {
+        self.show_cameras = value;
         self
     }
     pub fn with_show_colliders(mut self, value: bool) -> Self {
@@ -138,6 +144,9 @@ impl EditorUIPanelSpec {
     }
     pub fn with_show_bounds(self, value: bool) -> Self {
         self.map_settings(|c| c.with_show_bounds(value))
+    }
+    pub fn with_show_cameras(self, value: bool) -> Self {
+        self.map_settings(|c| c.with_show_cameras(value))
     }
     pub fn with_show_colliders(self, value: bool) -> Self {
         self.map_settings(|c| c.with_show_colliders(value))
@@ -262,6 +271,7 @@ impl Component for EditorUIComponent {
                     EditorUIPanelConfig::Settings(c) => table(vec![
                         ("show_armature", b(c.show_armature)),
                         ("show_bounds", b(c.show_bounds)),
+                        ("show_cameras", b(c.show_cameras)),
                         ("show_colliders", b(c.show_colliders)),
                         ("show_gltf_colliders", b(c.show_gltf_colliders)),
                     ]),

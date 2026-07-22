@@ -40,6 +40,7 @@ pub mod fit_bounds;
 pub mod gesture_coord_type;
 pub mod gizmo;
 pub mod gltf;
+pub mod grabbable;
 pub mod gravity;
 pub mod grid;
 pub mod html_element;
@@ -157,6 +158,7 @@ pub use gizmo::{
     TransformGizmoAxis, TransformGizmoComponent, TransformGizmoRotateComponent,
     TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
 };
+pub use grabbable::GrabbableComponent;
 pub use gravity::GravityComponent;
 pub use grid::GridComponent;
 pub use html_element::{ElementType, HtmlElementComponent};

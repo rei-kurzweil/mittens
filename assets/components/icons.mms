@@ -1,5 +1,25 @@
 // assets/components/icons.mms — basic UI icons (=^･ω･^=)
 
+// A compact movie-camera silhouette authored along the camera axis. The
+// translucent warm body sits behind the half-width cone, whose aperture faces
+// local -Z (the Camera3D forward direction).
+export fn camera_icon() {
+    let camera_color = [0.94, 0.43, 0.12, 0.72]
+    return T {
+        name = "camera_icon"
+        T.position(0.0, 0.0, 0.30).scale(0.70, 0.70, 0.70) {
+            R.cube() {
+                C.rgba(camera_color[0], camera_color[1], camera_color[2], camera_color[3])
+            }
+        }
+        T.position(0.0, 0.0, -0.42).scale(0.42, 0.42, 0.72) {
+            R.cone() {
+                C.rgba(camera_color[0], camera_color[1], camera_color[2], camera_color[3])
+            }
+        }
+    }
+}
+
 export fn on_icon(plane_color, wireframe_color) {
     if plane_color == null { plane_color = [1.0, 1.0, 1.0, 1.0] }
     if wireframe_color == null { wireframe_color = [0.0, 0.0, 0.0, 1.0] }

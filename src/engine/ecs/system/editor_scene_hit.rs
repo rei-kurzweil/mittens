@@ -83,6 +83,13 @@ fn has_named_ancestor(world: &World, start: ComponentId, name: &str) -> bool {
 fn preferred_scene_selection_transform(world: &World, start: ComponentId) -> Option<ComponentId> {
     let mut cur = Some(start);
     while let Some(node) = cur {
+        if world.component_label(node) == Some("camera_visualization_marker") {
+            return world.parent_of(node).filter(|parent| {
+                world
+                    .get_component_by_id_as::<TransformComponent>(*parent)
+                    .is_some()
+            });
+        }
         if world.component_label(node) == Some("painted_asset_root") {
             return Some(node);
         }

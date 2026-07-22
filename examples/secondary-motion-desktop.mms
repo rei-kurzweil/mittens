@@ -3,6 +3,7 @@ import { bisket_secondary_motion } from "../assets/components/secondary_motion/b
 import { pose as relaxed_pose_factory } from "../assets/components/poses/bisket/000-relaxed.pose.mms"
 import { tripod_light } from "../assets/components/tripod_light.mms"
 import { button } from "../assets/components/button.mms"
+import { camera_icon } from "../assets/components/icons.mms"
 
 // Desktop Bisket secondary-motion studio. The light fixtures and collision
 // playground are deliberately visible so spring and locomotion behavior can be
@@ -127,6 +128,7 @@ T.position(-2.25, 2.85, 0.0) {
             config = {
                 show_armature = true
                 show_bounds = true
+                show_cameras = true
                 show_colliders = true
                 show_gltf_colliders = true
             }
@@ -137,8 +139,19 @@ T.position(-2.25, 2.85, 0.0) {
 // Fixed third-person desktop camera slot; movement controls only the avatar driver.
 // C3D views along local -Z, so use an explicit downward pitch instead of
 // Transform.looking_at(), which aligns local +Z toward its target.
+let fixed_camera_icon = T.scale(0.45, 0.45, 0.45) {
+    name = "fixed_camera_slot_icon"
+    camera_icon()
+}
+let hidden_camera_icon_parking = T.scale(0.0, 0.0, 0.0) {
+    name = "hidden_camera_icon_parking"
+    fixed_camera_icon
+}
+hidden_camera_icon_parking
+
 let fixed_camera_slot = T.position(0.0, 2.0, 5.5).rotation(-0.20, 0.0, 0.0) {
     name = "fixed_camera_slot"
+    Grabbable {}
     desktop_camera_rig
 }
 fixed_camera_slot
@@ -146,10 +159,12 @@ fixed_camera_slot
 on(camera_view_toggle, "Click", fn(event) {
     if camera_view_state.first_person {
         fixed_camera_slot.attach(desktop_camera_rig)
+        hidden_camera_icon_parking.attach(fixed_camera_icon)
         camera_view_state.first_person = false
         print("camera attached to fixed_camera_slot")
     } else {
         first_person_camera_slot.attach(desktop_camera_rig)
+        fixed_camera_slot.attach(fixed_camera_icon)
         camera_view_state.first_person = true
         print("camera attached to first_person_camera_slot")
     }

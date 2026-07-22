@@ -108,6 +108,7 @@ fn on_xr_pointer_event(world: &mut World, _emit: &mut dyn SignalEmitter, env: &S
             raycaster,
             renderable,
             hit_point,
+            ..
         } => ("DragEnd", *raycaster, *renderable, *hit_point),
         EventSignal::Click {
             raycaster,

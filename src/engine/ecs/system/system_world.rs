@@ -85,6 +85,7 @@ pub struct SystemWorld {
     pub bvh: BvhSystem,
     pub collision: CollisionSystem,
     pub collision_visualization: CollisionVisualizationSystem,
+    pub camera_visualization: crate::engine::ecs::system::CameraVisualizationSystem,
     pub collision_response: CollisionResponseSystem,
     pub skinned_mesh: SkinnedMeshSystem,
     pub renderable: RenderableSystem,
@@ -96,6 +97,7 @@ pub struct SystemWorld {
     pub scrolling: ScrollingSystem,
 
     pub pointer: PointerSystem,
+    pub grabbable: crate::engine::ecs::system::GrabbableSystem,
     pub raycast: RayCastSystem,
 
     pub editor: EditorSystem,
@@ -2706,6 +2708,7 @@ impl SystemWorld {
         self.text_input.install_handlers(&mut self.rx);
         self.selection.install_handlers(&mut self.rx);
         self.toggle.install_handlers(&mut self.rx);
+        self.grabbable.install_handlers(&mut self.rx);
 
         // Process input first - it may queue commands
         self.input.process_input(world, input, queue, dt_sec);
@@ -2747,6 +2750,8 @@ impl SystemWorld {
         );
         self.collision_visualization
             .tick_with_queue(world, visuals, render_assets, queue);
+        self.camera_visualization
+            .tick_with_queue(world, &self.camera, queue);
         queue.flush(world, self, visuals, render_assets);
 
         // Audio clock takeover: once audio output is active, use it as the ClockDriver.
@@ -2869,8 +2874,14 @@ impl SystemWorld {
         let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);
 
         // Gestures interpret ray hits + input into drag events.
-        self.gesture
-            .tick_with_rx(visuals, input, &activations, &self.pointer, &mut self.rx);
+        self.gesture.tick_with_rx(
+            world,
+            visuals,
+            input,
+            &activations,
+            &self.pointer,
+            &mut self.rx,
+        );
 
         // Execute/dispatch gesture-produced signals immediately (e.g. DragStart/DragMove/DragEnd).
         let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);

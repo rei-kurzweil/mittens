@@ -105,8 +105,8 @@ pub struct CameraSystem {
     cameras: Vec<(CameraHandle, AnyCamera)>,
     camera2d_components: std::collections::HashMap<CameraHandle, ComponentId>,
     camera3d_components: std::collections::HashMap<CameraHandle, ComponentId>,
-    pub active_window_camera: Option<CameraHandle>,
-    pub active_xr_camera: Option<ComponentId>,
+    active_window_camera: Option<CameraHandle>,
+    active_xr_camera: Option<ComponentId>,
 
     // Track viewport changes for the no-camera fallback projection.
     last_viewport: Option<[f32; 2]>,
@@ -376,6 +376,15 @@ impl CameraSystem {
 
     pub fn has_active_window_camera(&self) -> bool {
         self.active_window_camera_matrices().is_some()
+    }
+
+    pub fn active_window_camera_component(&self) -> Option<ComponentId> {
+        self.active_window_camera
+            .and_then(|handle| self.camera3d_components.get(&handle).copied())
+    }
+
+    pub fn active_xr_camera_component(&self) -> Option<ComponentId> {
+        self.active_xr_camera
     }
 
     /// Update Camera3D view/proj from the component tree.

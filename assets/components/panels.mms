@@ -172,6 +172,35 @@ fn editor_settings_collider_row(row_name, label, row_kind, slot_name) {
     }
 }
 
+fn editor_settings_camera_row() {
+    return T {
+        name = "editor_settings_cameras_visibility"
+        Data {
+            name = "editor_settings_payload"
+            row_kind = "CameraVisibility"
+            interactive = true
+        }
+        Raycastable.click_only()
+        Toggle.off()
+        Style {
+            display("block")
+            width(100%)
+            margin_xy(0.25, 0.20)
+            padding_xy(0.55, 0.45)
+            color([0, 0, 0, 1.0])
+            background_color([0.92, 0.97, 0.92, 1.0])
+            background_z(-0.01)
+            text_align("left")
+            vertical_align("middle")
+        }
+        T { Style { display("inline-block") } Text { "show cameras" } }
+        T {
+            name = "cameras_toggle_slot"
+            Style { display("inline-block") margin_left(0.65) }
+        }
+    }
+}
+
 export fn editor_settings_panel(title, title_color, panel_background_color, config) {
     return T {
         name = "editor_settings_panel_root"
@@ -220,6 +249,7 @@ export fn editor_settings_panel(title, title_color, panel_background_color, conf
             }
             if config.show_armature { editor_settings_armature_row() }
             if config.show_bounds { editor_settings_bounds_row() }
+            if config.show_cameras { editor_settings_camera_row() }
             if config.show_colliders {
                 editor_settings_collider_row("editor_settings_colliders_visibility", "show all colliders", "AllCollidersVisibility", "colliders_toggle_slot")
             }

@@ -9,6 +9,9 @@ pub struct XrInputState {
     pub trigger_pressed: [bool; 2],
     pub trigger_down: [bool; 2],
     pub trigger_released: [bool; 2],
+    pub grip_pressed: [bool; 2],
+    pub grip_down: [bool; 2],
+    pub grip_released: [bool; 2],
 }
 
 #[derive(Default, Debug, Clone, Copy)]

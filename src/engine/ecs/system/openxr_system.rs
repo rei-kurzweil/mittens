@@ -3049,6 +3049,7 @@ impl OpenXRSystem {
             // Select is a semantic trigger action: prefer the dedicated select action when it is
             // live, otherwise fall back to trigger click or trigger analog threshold.
             let prev = self.xr_input_state.trigger_down;
+            let prev_grip = self.xr_input_state.grip_down;
             self.xr_gamepad_state = XrGamepadState {
                 active: true,
                 hands: [XrHandGamepadState::default(), XrHandGamepadState::default()],
@@ -3097,6 +3098,12 @@ impl OpenXRSystem {
                     grip_value_state,
                     XR_GRIP_PRESS_THRESHOLD,
                 );
+                let grip_down = self.xr_gamepad_state.hands[i]
+                    .grip_pressed
+                    .is_some_and(|(pressed, _)| pressed);
+                self.xr_input_state.grip_down[i] = grip_down;
+                self.xr_input_state.grip_pressed[i] = grip_down && !prev_grip[i];
+                self.xr_input_state.grip_released[i] = !grip_down && prev_grip[i];
             }
             self.xr_gamepad_state.hands[0].button_x = ci
                 .button_x

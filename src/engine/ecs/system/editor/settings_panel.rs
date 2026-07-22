@@ -22,6 +22,8 @@ pub(crate) const EDITOR_SETTINGS_ARMATURE_ROW_NAME: &str = "editor_settings_arma
 pub(crate) const EDITOR_SETTINGS_ARMATURE_TOGGLE_SLOT_NAME: &str = "armature_toggle_slot";
 pub(crate) const EDITOR_SETTINGS_BOUNDS_ROW_NAME: &str = "editor_settings_bounds_visibility";
 pub(crate) const EDITOR_SETTINGS_BOUNDS_TOGGLE_SLOT_NAME: &str = "bounds_toggle_slot";
+pub(crate) const EDITOR_SETTINGS_CAMERAS_ROW_NAME: &str = "editor_settings_cameras_visibility";
+pub(crate) const EDITOR_SETTINGS_CAMERAS_TOGGLE_SLOT_NAME: &str = "cameras_toggle_slot";
 pub(crate) const EDITOR_SETTINGS_COLLIDERS_ROW_NAME: &str = "editor_settings_colliders_visibility";
 pub(crate) const EDITOR_SETTINGS_COLLIDERS_TOGGLE_SLOT_NAME: &str = "colliders_toggle_slot";
 pub(crate) const EDITOR_SETTINGS_GLTF_COLLIDERS_ROW_NAME: &str =
@@ -358,6 +360,15 @@ pub(crate) fn sync_editor_settings_panel_selection(
         world,
         emit,
         panel_query_root,
+        EDITOR_SETTINGS_CAMERAS_ROW_NAME,
+        EDITOR_SETTINGS_CAMERAS_TOGGLE_SLOT_NAME,
+        "cameras_toggle",
+        editor_context.cameras_visible,
+    );
+    sync_boolean_toggle(
+        world,
+        emit,
+        panel_query_root,
         EDITOR_SETTINGS_COLLIDERS_ROW_NAME,
         EDITOR_SETTINGS_COLLIDERS_TOGGLE_SLOT_NAME,
         "colliders_toggle",
@@ -523,6 +534,31 @@ pub(crate) fn handle_editor_settings_panel_click(
                         component_ids: vec![owner],
                         scope_roots: effective_editor_roots(world, installed_editor_roots),
                         mode,
+                    },
+                );
+            }
+            let context = editor_context_state
+                .lock()
+                .expect("editor context state mutex poisoned")
+                .clone();
+            sync_editor_settings_panel_selection(world, emit, panel_query_root, &context);
+            return true;
+        }
+        if row_kind == "CameraVisibility" {
+            let visible = {
+                let mut context = editor_context_state
+                    .lock()
+                    .expect("editor context state mutex poisoned");
+                context.cameras_visible = !context.cameras_visible;
+                context.cameras_visible
+            };
+            if let Some(owner) = owning_editor_ui(world, settings_panel_root) {
+                emit.push_intent_now(
+                    owner,
+                    IntentValue::CameraVisualizationSet {
+                        component_ids: vec![owner],
+                        scope_roots: effective_editor_roots(world, installed_editor_roots),
+                        visible,
                     },
                 );
             }

@@ -798,6 +798,7 @@ pub fn spawn_editor_panel_layout_tree(
                 Value::Map(std::collections::HashMap::from([
                     ("show_armature".into(), Value::Bool(config.show_armature)),
                     ("show_bounds".into(), Value::Bool(config.show_bounds)),
+                    ("show_cameras".into(), Value::Bool(config.show_cameras)),
                     ("show_colliders".into(), Value::Bool(config.show_colliders)),
                     (
                         "show_gltf_colliders".into(),

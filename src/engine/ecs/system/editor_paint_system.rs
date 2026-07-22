@@ -1998,6 +1998,7 @@ mod tests {
         systems.rx.push_event(
             renderable,
             EventSignal::DragStart {
+                activation_source: crate::engine::ecs::PointerActivationSource::Trigger,
                 raycaster: renderable,
                 renderable,
                 hit_point: [0.0, 0.0, 0.5],
@@ -2008,6 +2009,7 @@ mod tests {
         systems.rx.push_event(
             renderable,
             EventSignal::DragMove {
+                activation_source: crate::engine::ecs::PointerActivationSource::Trigger,
                 raycaster: renderable,
                 renderable,
                 hit_point: [0.2, 0.0, 0.5],
@@ -2019,6 +2021,7 @@ mod tests {
         systems.rx.push_event(
             renderable,
             EventSignal::DragEnd {
+                activation_source: crate::engine::ecs::PointerActivationSource::Trigger,
                 raycaster: renderable,
                 renderable,
                 hit_point: Some([0.2, 0.0, 0.5]),
@@ -2336,6 +2339,7 @@ mod tests {
         systems.rx.push_event(
             renderable,
             EventSignal::DragStart {
+                activation_source: crate::engine::ecs::PointerActivationSource::Trigger,
                 raycaster: renderable,
                 renderable,
                 hit_point: [0.0, 0.0, 0.5],
@@ -2346,6 +2350,7 @@ mod tests {
         systems.rx.push_event(
             renderable,
             EventSignal::DragMove {
+                activation_source: crate::engine::ecs::PointerActivationSource::Trigger,
                 raycaster: renderable,
                 renderable,
                 hit_point: [0.1, 0.0, 0.5],
@@ -2357,6 +2362,7 @@ mod tests {
         systems.rx.push_event(
             renderable,
             EventSignal::DragMove {
+                activation_source: crate::engine::ecs::PointerActivationSource::Trigger,
                 raycaster: renderable,
                 renderable,
                 hit_point: [0.2, 0.0, 0.5],
@@ -2368,6 +2374,7 @@ mod tests {
         systems.rx.push_event(
             renderable,
             EventSignal::DragEnd {
+                activation_source: crate::engine::ecs::PointerActivationSource::Trigger,
                 raycaster: renderable,
                 renderable,
                 hit_point: Some([0.2, 0.0, 0.5]),
@@ -2413,6 +2420,7 @@ mod tests {
         systems.rx.push_event(
             renderable,
             EventSignal::DragStart {
+                activation_source: crate::engine::ecs::PointerActivationSource::Trigger,
                 raycaster: renderable,
                 renderable,
                 hit_point: [0.0, 0.0, 0.5],
@@ -2423,6 +2431,7 @@ mod tests {
         systems.rx.push_event(
             renderable,
             EventSignal::DragMove {
+                activation_source: crate::engine::ecs::PointerActivationSource::Trigger,
                 raycaster: renderable,
                 renderable,
                 hit_point: [0.1, 0.1, 0.5],
@@ -2434,6 +2443,7 @@ mod tests {
         systems.rx.push_event(
             renderable,
             EventSignal::DragMove {
+                activation_source: crate::engine::ecs::PointerActivationSource::Trigger,
                 raycaster: renderable,
                 renderable,
                 hit_point: [0.15, 0.1, 0.5],
@@ -2445,6 +2455,7 @@ mod tests {
         systems.rx.push_event(
             renderable,
             EventSignal::DragMove {
+                activation_source: crate::engine::ecs::PointerActivationSource::Trigger,
                 raycaster: renderable,
                 renderable,
                 hit_point: [0.6, 0.1, 0.5],
@@ -2456,6 +2467,7 @@ mod tests {
         systems.rx.push_event(
             renderable,
             EventSignal::DragEnd {
+                activation_source: crate::engine::ecs::PointerActivationSource::Trigger,
                 raycaster: renderable,
                 renderable,
                 hit_point: Some([0.6, 0.1, 0.5]),

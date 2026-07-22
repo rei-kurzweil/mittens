@@ -20,22 +20,23 @@ use crate::engine::ecs::component::{
     Display, EdgeInsets, EditorComponent, EditorInteractionMode, EditorPanel, EditorUIComponent,
     EditorUIPanelConfig, EditorUIPanelSpec, ElementType, EmissiveComponent, EmissivePassComponent,
     FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent,
-    GestureCoordTypeComponent, GravityComponent, GridComponent, HtmlElementComponent,
-    HttpClientComponent, HttpServerComponent, IKChainComponent, IKSolver, InputComponent,
-    InputTransformModeComponent, InputXRComponent, InputXRGamepadComponent, InspectLayoutComponent,
-    JustifyContent, KeyframeComponent, LayoutBoundsComponent, LayoutComponent,
-    LightQuantizationComponent, MeshComponent, MirrorComponent, MusicNote, MusicNoteComponent,
-    NormalVisualisationComponent, OpacityComponent, OptionComponent, OscillatorType, Overflow,
-    OverlayComponent, PointLightComponent, PointerComponent, PointerEvents, PoseCaptureComponent,
-    PoseCaptureLibraryComponent, PoseCapturePoseComponent, Position, QuatTemporalFilterComponent,
-    QuatYawFollowComponent, RayCastComponent, RaycastableComponent, RaycastableShapeComponent,
-    RaycastableShapeType, RenderGraphComponent, RenderableComponent, RendererSettingsComponent,
-    RendererStatsComponent, RouterComponent, ScrollingComponent, SecondaryMotionComponent,
-    SelectableComponent, SelectionComponent, SerializeComponent, SettingsPanelConfig,
-    SignalObserverRouterComponent, SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent,
-    SpotLightComponent, SpringBoneComponent, SpringJointComponent, StencilClipComponent,
-    StyleComponent, TextAlign, TextComponent, TextInputComponent, TextShadowComponent,
-    TextureComponent, TextureFilteringComponent, ToggleComponent, TransformCameraSpecificComponent,
+    GestureCoordTypeComponent, GrabbableComponent, GravityComponent, GridComponent,
+    HtmlElementComponent, HttpClientComponent, HttpServerComponent, IKChainComponent, IKSolver,
+    InputComponent, InputTransformModeComponent, InputXRComponent, InputXRGamepadComponent,
+    InspectLayoutComponent, JustifyContent, KeyframeComponent, LayoutBoundsComponent,
+    LayoutComponent, LightQuantizationComponent, MeshComponent, MirrorComponent, MusicNote,
+    MusicNoteComponent, NormalVisualisationComponent, OpacityComponent, OptionComponent,
+    OscillatorType, Overflow, OverlayComponent, PointLightComponent, PointerComponent,
+    PointerEvents, PoseCaptureComponent, PoseCaptureLibraryComponent, PoseCapturePoseComponent,
+    Position, QuatTemporalFilterComponent, QuatYawFollowComponent, RayCastComponent,
+    RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType, RenderGraphComponent,
+    RenderableComponent, RendererSettingsComponent, RendererStatsComponent, RouterComponent,
+    ScrollingComponent, SecondaryMotionComponent, SelectableComponent, SelectionComponent,
+    SerializeComponent, SettingsPanelConfig, SignalObserverRouterComponent,
+    SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent, SpotLightComponent,
+    SpringBoneComponent, SpringJointComponent, StencilClipComponent, StyleComponent, TextAlign,
+    TextComponent, TextInputComponent, TextShadowComponent, TextureComponent,
+    TextureFilteringComponent, ToggleComponent, TransformCameraSpecificComponent,
     TransformComponent, TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis,
     TransformGizmoComponent, TransformGizmoCoordSpace, TransformGizmoRotateComponent,
     TransformGizmoScaleComponent, TransformGizmoTranslateComponent, TransformMapRotationComponent,
@@ -100,6 +101,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "GLTF",
     "GestureCoordType",
     "Gravity",
+    "Grabbable",
     "Grid",
     "HtmlElement",
     "HttpClient",
@@ -1080,9 +1082,10 @@ fn parse_editor_ui_panel_specs(args: &[Value]) -> Result<Vec<EditorUIPanelSpec>,
                 };
                 match panel {
                     EditorPanel::Settings => {
-                        const KEYS: [&str; 4] = [
+                        const KEYS: [&str; 5] = [
                             "show_armature",
                             "show_bounds",
+                            "show_cameras",
                             "show_colliders",
                             "show_gltf_colliders",
                         ];
@@ -1092,6 +1095,7 @@ fn parse_editor_ui_panel_specs(args: &[Value]) -> Result<Vec<EditorUIPanelSpec>,
                         EditorUIPanelConfig::Settings(SettingsPanelConfig {
                             show_armature: editor_ui_bool(&config, "show_armature", true)?,
                             show_bounds: editor_ui_bool(&config, "show_bounds", true)?,
+                            show_cameras: editor_ui_bool(&config, "show_cameras", true)?,
                             show_colliders: editor_ui_bool(&config, "show_colliders", true)?,
                             show_gltf_colliders: editor_ui_bool(
                                 &config,
@@ -1780,6 +1784,7 @@ fn create_component(
             }
             add!(layout)
         }
+        "Grabbable" => add!(GrabbableComponent::new()),
         "Raycastable" => match ctor {
             Some("disabled") => add!(RaycastableComponent::disabled()),
             Some("drag_only") => add!(RaycastableComponent::drag_only()),

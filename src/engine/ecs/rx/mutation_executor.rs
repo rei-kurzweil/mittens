@@ -526,6 +526,11 @@ impl RxMutationExecutor {
                     systems.register_pointer(world, visuals, component, emit);
                 }
             }
+            IntentValue::RegisterGrabbable { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.grabbable.register(world, component, emit);
+                }
+            }
             IntentValue::RemoveRaycast { component_ids } => {
                 for &component in component_ids.iter() {
                     systems.remove_raycast(world, visuals, component);
@@ -625,6 +630,21 @@ impl RxMutationExecutor {
                         );
                     } else {
                         systems.collision_visualization.remove_request(*owner);
+                    }
+                }
+            }
+            IntentValue::CameraVisualizationSet {
+                component_ids,
+                scope_roots,
+                visible,
+            } => {
+                for owner in component_ids {
+                    if *visible {
+                        systems
+                            .camera_visualization
+                            .set_request(*owner, scope_roots.clone());
+                    } else {
+                        systems.camera_visualization.remove_request(*owner);
                     }
                 }
             }

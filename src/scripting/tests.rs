@@ -1994,10 +1994,17 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
     );
 
     let fixed_camera_slot = named("fixed_camera_slot");
+    let fixed_camera_icon = named("fixed_camera_slot_icon");
+    let hidden_camera_icon_parking = named("hidden_camera_icon_parking");
     let first_person_camera_slot = named("first_person_camera_slot");
     let desktop_camera_rig = named("desktop_camera_rig");
     let toggle = named("button_root");
     assert_eq!(world.parent_of(desktop_camera_rig), Some(fixed_camera_slot));
+    assert_eq!(
+        world.parent_of(fixed_camera_icon),
+        Some(hidden_camera_icon_parking),
+        "the fixed-camera handle starts hidden while the camera occupies its slot"
+    );
     let first_person_slot_transform = world
         .get_component_by_id_as::<TransformComponent>(first_person_camera_slot)
         .expect("first-person camera slot transform");
@@ -2050,6 +2057,11 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
         Some(IntentValue::Attach { parents, child })
             if parents.as_slice() == [first_person_camera_slot] && *child == desktop_camera_rig
     )));
+    assert!(first_toggle.iter().any(|signal| matches!(
+        signal.intent.as_ref().map(|intent| &intent.value),
+        Some(IntentValue::Attach { parents, child })
+            if parents.as_slice() == [fixed_camera_slot] && *child == fixed_camera_icon
+    )));
 
     rx.dispatch_event_handlers(&mut world, &Signal::event(toggle, click()));
     let second_toggle = rx.drain_ready_intents();
@@ -2057,6 +2069,11 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
         signal.intent.as_ref().map(|intent| &intent.value),
         Some(IntentValue::Attach { parents, child })
             if parents.as_slice() == [fixed_camera_slot] && *child == desktop_camera_rig
+    )));
+    assert!(second_toggle.iter().any(|signal| matches!(
+        signal.intent.as_ref().map(|intent| &intent.value),
+        Some(IntentValue::Attach { parents, child })
+            if parents.as_slice() == [hidden_camera_icon_parking] && *child == fixed_camera_icon
     )));
 }
 
@@ -3047,6 +3064,10 @@ fn toggle_icon_factories_accept_default_and_custom_colors() {
 
     assert!(matches!(on, Value::ComponentExpr(_)));
     assert!(matches!(off, Value::ComponentExpr(_)));
+    let camera =
+        MeowMeowRunner::call_mms_module_fn(&module, "camera_icon", vec![], None, None, None)
+            .expect("camera icon should materialize");
+    assert!(matches!(camera, Value::ComponentExpr(_)));
 }
 
 #[test]
@@ -4568,6 +4589,7 @@ fn roundtrip_editor_ui_default_and_settings_only() {
     let expected = EditorUIPanelSpec::new(EditorPanel::Settings)
         .with_show_armature(false)
         .with_show_bounds(true)
+        .with_show_cameras(false)
         .with_show_colliders(false)
         .with_show_gltf_colliders(true);
     let (world, id) =
@@ -4778,6 +4800,7 @@ fn editor_ui_settings_config_conditionally_authors_diagnostic_rows() {
                     config = {
                         show_armature = false
                         show_bounds = true
+                        show_cameras = false
                         show_colliders = false
                         show_gltf_colliders = false
                     }
@@ -4815,6 +4838,7 @@ fn editor_ui_settings_config_conditionally_authors_diagnostic_rows() {
         .is_some());
     for omitted in [
         "#editor_settings_armature_visibility",
+        "#editor_settings_cameras_visibility",
         "#editor_settings_colliders_visibility",
         "#editor_settings_gltf_colliders_visibility",
     ] {
@@ -5533,4 +5557,49 @@ fn roundtrip_collision_response() {
         got.movement_target_source,
         Some(ComponentRef::Query("/#locomotion".to_string()))
     );
+}
+
+#[test]
+fn roundtrip_grabbable() {
+    use crate::engine::ecs::component::GrabbableComponent;
+    let (world, id) = roundtrip_component(GrabbableComponent::new());
+    assert!(
+        world
+            .get_component_by_id_as::<GrabbableComponent>(id)
+            .is_some()
+    );
+}
+
+#[test]
+fn xr_grab_demo_evaluates_and_authors_grabbables_outside_editor() {
+    use crate::engine::ecs::component::{EditorComponent, GrabbableComponent};
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut queue = CommandQueue::new();
+    let mut assets = RenderAssets::new();
+    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+        include_str!("../../examples/xr-grab-demo.mms"),
+        Some("examples/xr-grab-demo.mms"),
+        &mut world,
+        &mut rx,
+        Some(&mut assets),
+        &mut queue,
+    );
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    assert!(
+        world
+            .all_components()
+            .filter(|id| {
+                world
+                    .get_component_by_id_as::<GrabbableComponent>(*id)
+                    .is_some()
+            })
+            .count()
+            >= 3
+    );
+    assert!(!world.all_components().any(|id| {
+        world
+            .get_component_by_id_as::<EditorComponent>(id)
+            .is_some()
+    }));
 }

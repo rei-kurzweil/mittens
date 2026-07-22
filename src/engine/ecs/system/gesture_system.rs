@@ -1,11 +1,14 @@
 use crate::engine::ecs::component::PointerEvents;
-use crate::engine::ecs::system::BvhSystem;
+use crate::engine::ecs::system::grabbable_system::grabbable_owner_for_hit;
 use crate::engine::ecs::system::pointer_system::{PointerActivations, PointerSystem};
-use crate::engine::ecs::{ComponentId, EventSignal, RxWorld, SignalKind};
+use crate::engine::ecs::system::{BvhSystem, TransformSystem};
+use crate::engine::ecs::{
+    ComponentId, EventSignal, PointerActivationSource, RxWorld, SignalKind, World,
+};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
 use crate::utils::math;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
 
@@ -50,6 +53,8 @@ pub struct GestureState {
 pub struct GestureSystem {
     /// Per-pointer gesture state, keyed by PointerComponent id.
     states: HashMap<ComponentId, GestureState>,
+    grip_states: HashMap<ComponentId, GripGestureState>,
+    grabbed_owners: HashSet<ComponentId>,
     pub drag_update_policy: DragUpdatePolicy,
 
     /// All ray hits this frame, sorted by interaction priority first, then front-to-back by t.
@@ -68,6 +73,15 @@ pub struct GestureSystem {
         >,
     >,
     immediate_handlers_installed: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct GripGestureState {
+    raycaster: ComponentId,
+    renderable: ComponentId,
+    owner: ComponentId,
+    last_controller_world: [f32; 3],
+    last_hit_point: [f32; 3],
 }
 
 impl GestureSystem {
@@ -242,6 +256,7 @@ impl GestureSystem {
     /// `activations` drives press/down/release for each pointer regardless of input source.
     pub fn tick_with_rx(
         &mut self,
+        world: &World,
         visuals: &VisualWorld,
         input: &InputState,
         activations: &PointerActivations,
@@ -263,7 +278,109 @@ impl GestureSystem {
             .map(|g| g.clone())
             .unwrap_or_default();
 
-        // --- Press: start a new drag per activated pointer ---
+        // --- Grip press: capture only hits governed by a Grabbable owner. ---
+        for &pointer_cid in &activations.grip_pressed {
+            if self.grip_states.contains_key(&pointer_cid) {
+                continue;
+            }
+            let Some(raycaster) = pointer_system.raycast_for_pointer(pointer_cid) else {
+                continue;
+            };
+            let Some(hit) = hits.iter().find(|h| {
+                h.2 == raycaster
+                    && h.6.captures_drag()
+                    && grabbable_owner_for_hit(world, h.3)
+                        .is_some_and(|owner| !self.grabbed_owners.contains(&owner))
+            }) else {
+                continue;
+            };
+            let Some(owner) = grabbable_owner_for_hit(world, hit.3) else {
+                continue;
+            };
+            let Some(controller_world) = TransformSystem::world_position(world, pointer_cid) else {
+                continue;
+            };
+            let hit_point = [
+                hit.4[0] + hit.5[0] * hit.1,
+                hit.4[1] + hit.5[1] * hit.1,
+                hit.4[2] + hit.5[2] * hit.1,
+            ];
+            self.grabbed_owners.insert(owner);
+            self.grip_states.insert(
+                pointer_cid,
+                GripGestureState {
+                    raycaster,
+                    renderable: hit.3,
+                    owner,
+                    last_controller_world: controller_world,
+                    last_hit_point: hit_point,
+                },
+            );
+            rx.push_event(
+                hit.3,
+                EventSignal::DragStart {
+                    activation_source: PointerActivationSource::Grip,
+                    raycaster,
+                    renderable: hit.3,
+                    hit_point,
+                    ray_dir_world: hit.5,
+                    screen_pos_px: None,
+                },
+            );
+        }
+
+        // Grip motion follows controller translation and does not require continued ray contact.
+        for &pointer_cid in &activations.grip_down {
+            let Some(mut state) = self.grip_states.get(&pointer_cid).copied() else {
+                continue;
+            };
+            let Some(controller_world) = TransformSystem::world_position(world, pointer_cid) else {
+                continue;
+            };
+            let delta = [
+                controller_world[0] - state.last_controller_world[0],
+                controller_world[1] - state.last_controller_world[1],
+                controller_world[2] - state.last_controller_world[2],
+            ];
+            if delta != [0.0; 3] {
+                state.last_hit_point = [
+                    state.last_hit_point[0] + delta[0],
+                    state.last_hit_point[1] + delta[1],
+                    state.last_hit_point[2] + delta[2],
+                ];
+                rx.push_event(
+                    state.renderable,
+                    EventSignal::DragMove {
+                        activation_source: PointerActivationSource::Grip,
+                        raycaster: state.raycaster,
+                        renderable: state.renderable,
+                        hit_point: state.last_hit_point,
+                        delta_world: delta,
+                        screen_pos_px: None,
+                        screen_delta_px: None,
+                    },
+                );
+            }
+            state.last_controller_world = controller_world;
+            self.grip_states.insert(pointer_cid, state);
+        }
+
+        for &pointer_cid in &activations.grip_released {
+            if let Some(state) = self.grip_states.remove(&pointer_cid) {
+                self.grabbed_owners.remove(&state.owner);
+                rx.push_event(
+                    state.renderable,
+                    EventSignal::DragEnd {
+                        activation_source: PointerActivationSource::Grip,
+                        raycaster: state.raycaster,
+                        renderable: state.renderable,
+                        hit_point: Some(state.last_hit_point),
+                    },
+                );
+            }
+        }
+
+        // --- Trigger press: start a new drag per activated pointer ---
         for &pointer_cid in &activations.pressed {
             // Only start a gesture if this pointer isn't already dragging.
             if self
@@ -344,6 +461,7 @@ impl GestureSystem {
                 rx.push_event(
                     renderable,
                     EventSignal::DragStart {
+                        activation_source: PointerActivationSource::Trigger,
                         raycaster,
                         renderable,
                         hit_point: p,
@@ -427,6 +545,7 @@ impl GestureSystem {
                                     rx.push_event(
                                         active_renderable,
                                         EventSignal::DragMove {
+                                            activation_source: PointerActivationSource::Trigger,
                                             raycaster: active_rc,
                                             renderable: active_renderable,
                                             hit_point: cur,
@@ -481,6 +600,7 @@ impl GestureSystem {
                                 rx.push_event(
                                     active_renderable,
                                     EventSignal::DragMove {
+                                        activation_source: PointerActivationSource::Trigger,
                                         raycaster: active_rc,
                                         renderable: active_renderable,
                                         hit_point: cur,
@@ -507,6 +627,7 @@ impl GestureSystem {
                             rx.push_event(
                                 active_renderable,
                                 EventSignal::DragEnd {
+                                    activation_source: PointerActivationSource::Trigger,
                                     raycaster: active_rc,
                                     renderable: active_renderable,
                                     hit_point: state.last_hit_point,
@@ -576,6 +697,8 @@ impl Default for GestureSystem {
     fn default() -> Self {
         Self {
             states: HashMap::new(),
+            grip_states: HashMap::new(),
+            grabbed_owners: HashSet::new(),
             drag_update_policy: DragUpdatePolicy::StartPlaneProjection,
             ray_hits_sorted: Arc::new(Mutex::new(Vec::new())),
             immediate_handlers_installed: false,

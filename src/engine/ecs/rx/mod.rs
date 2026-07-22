@@ -9,7 +9,7 @@ pub use intent_executor::RxIntentExecutor;
 pub use mutation_executor::RxMutationExecutor;
 pub use rx_world::RxWorld;
 pub use signal::{
-    EventSignal, IntentSignal, IntentValue, PoseApplyMode, Signal, SignalEmitter, SignalHandler,
-    SignalKind, SignalWhen, TextInputCaretDirection,
+    EventSignal, IntentSignal, IntentValue, PointerActivationSource, PoseApplyMode, Signal,
+    SignalEmitter, SignalHandler, SignalKind, SignalWhen, TextInputCaretDirection,
 };
 pub use signal_pipeline_processor::SignalPipelineProcessor;

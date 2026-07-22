@@ -98,6 +98,7 @@ pub enum EventSignal {
 
     /// A drag gesture started.
     DragStart {
+        activation_source: PointerActivationSource,
         raycaster: ComponentId,
         renderable: ComponentId,
         hit_point: [f32; 3],
@@ -119,6 +120,7 @@ pub enum EventSignal {
     ///
     /// `delta_world` is the world-space movement since the last DragMove for this gesture.
     DragMove {
+        activation_source: PointerActivationSource,
         raycaster: ComponentId,
         renderable: ComponentId,
         hit_point: [f32; 3],
@@ -136,6 +138,7 @@ pub enum EventSignal {
 
     /// A drag gesture ended.
     DragEnd {
+        activation_source: PointerActivationSource,
         raycaster: ComponentId,
         renderable: ComponentId,
         hit_point: Option<[f32; 3]>,
@@ -279,6 +282,13 @@ pub enum EventSignal {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PointerActivationSource {
+    #[default]
+    Trigger,
+    Grip,
+}
+
 impl EventSignal {
     pub fn kind(&self) -> SignalKind {
         match self {
@@ -411,6 +421,11 @@ pub enum IntentValue {
         component_ids: Vec<ComponentId>,
         scope_roots: Vec<ComponentId>,
         mode: Option<crate::engine::ecs::system::CollisionVisualizationMode>,
+    },
+    CameraVisualizationSet {
+        component_ids: Vec<ComponentId>,
+        scope_roots: Vec<ComponentId>,
+        visible: bool,
     },
 
     Attach {
@@ -722,6 +737,9 @@ pub enum IntentValue {
     RegisterPointer {
         component_ids: Vec<ComponentId>,
     },
+    RegisterGrabbable {
+        component_ids: Vec<ComponentId>,
+    },
     RemoveRaycast {
         component_ids: Vec<ComponentId>,
     },
@@ -836,6 +854,7 @@ impl IntentValue {
             IntentValue::SelectionSet { .. } => "selection_set",
             IntentValue::ToggleSet { .. } => "toggle_set",
             IntentValue::CollisionVisualizationSet { .. } => "collision_visualization_set",
+            IntentValue::CameraVisualizationSet { .. } => "camera_visualization_set",
 
             IntentValue::Attach { .. } => "attach",
             IntentValue::QueryFindComponent { .. } => "query_find_component",
@@ -934,6 +953,7 @@ impl IntentValue {
             IntentValue::RegisterRaycast { .. } => "register_raycast",
             IntentValue::RegisterRaycastable { .. } => "register_raycastable",
             IntentValue::RegisterPointer { .. } => "register_pointer",
+            IntentValue::RegisterGrabbable { .. } => "register_grabbable",
             IntentValue::RemoveRaycast { .. } => "remove_raycast",
             IntentValue::RemoveRaycastable { .. } => "remove_raycastable",
 
