@@ -6008,9 +6008,9 @@ fn draggable_plane_builder_accepts_object_camera_and_world_axes() {
 #[test]
 fn xr_grab_demo_evaluates_and_authors_grabbables_outside_editor() {
     use crate::engine::ecs::component::{
-        ControllerXRComponent, EditorComponent, GLTFComponent, GrabbableComponent,
-        InputXRGamepadComponent, PoseCapturePoseComponent, SecondaryMotionComponent,
-        SpotLightComponent, SpringColliderComponent,
+        ControllerXRComponent, EditorComponent, EditorPanel, EditorUIComponent, GLTFComponent,
+        GrabbableComponent, InputXRGamepadComponent, PoseCapturePoseComponent,
+        SecondaryMotionComponent, SpotLightComponent, SpringColliderComponent,
     };
     let mut world = World::default();
     let mut systems = crate::engine::ecs::system::SystemWorld::default();
@@ -6128,6 +6128,12 @@ fn xr_grab_demo_evaluates_and_authors_grabbables_outside_editor() {
             .get_component_by_id_as::<EditorComponent>(id)
             .is_some()
     }));
+    let editor_ui = world
+        .all_components()
+        .find_map(|id| world.get_component_by_id_as::<EditorUIComponent>(id))
+        .expect("xr-grab demo should author its settings panel");
+    assert_eq!(editor_ui.panels().len(), 1);
+    assert_eq!(editor_ui.panels()[0], EditorPanel::Settings);
     for intent in output.intents {
         queue.push_intent_now(ComponentId::default(), intent);
     }

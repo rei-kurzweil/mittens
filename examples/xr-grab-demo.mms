@@ -5,6 +5,7 @@ import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisk
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { pose as relaxed_pose_factory } from "../assets/components/poses/bisket/000-relaxed.pose.mms"
 import { tripod_light } from "../assets/components/tripod_light.mms"
+import { star_kawaii_background } from "../assets/components/backgrounds/star_kawaii_background.mms"
 
 RendererSettings { window_size(960, 640) }
 BGC.rgba(0.035, 0.045, 0.085, 1.0)
@@ -15,9 +16,21 @@ RenderGraph {
     Bloom { intensity(0.8) emissive_scale(1.2) }
 }
 
+BG.occlusion_and_lighting() {
+    star_kawaii_background([1.0, 0.68, 0.12, 1.0])
+}
+
 tripod_light("studio_key_light", [-4.2, 0.0, 2.8], [0.0, 1.25, -1.5], SL.color(1.0, 0.78, 0.62).intensity(6.0).distance(11.0).angle(0.62).penumbra(0.35))
 tripod_light("studio_fill_light", [4.0, 0.0, 1.4], [0.0, 1.25, -1.5], SL.color(0.48, 0.68, 1.0).intensity(4.5).distance(11.0).angle(0.62).penumbra(0.35))
 tripod_light("studio_rim_light", [1.8, 0.0, -4.2], [0.0, 1.25, -1.5], SL.color(1.0, 0.42, 0.78).intensity(5.0).distance(11.0).angle(0.62).penumbra(0.35))
+
+T.position(-2.75, 2.8, -1.5) {
+    EditorUI {
+        panels([{
+            panel = "settings"
+        }])
+    }
+}
 
 // Desktop fallback camera.
 I.speed(2.0) {
