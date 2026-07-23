@@ -141,6 +141,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterRaycastable { component_ids }
             | IntentValue::RegisterPointer { component_ids }
             | IntentValue::RegisterGrabbable { component_ids }
+            | IntentValue::RegisterDraggable { component_ids }
             | IntentValue::RemoveRaycast { component_ids }
             | IntentValue::RemoveRaycastable { component_ids }
             | IntentValue::RegisterAnimation { component_ids }
@@ -273,6 +274,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterRaycastable { component_ids }
             | IntentValue::RegisterPointer { component_ids }
             | IntentValue::RegisterGrabbable { component_ids }
+            | IntentValue::RegisterDraggable { component_ids }
             | IntentValue::RemoveRaycast { component_ids }
             | IntentValue::RemoveRaycastable { component_ids }
             | IntentValue::RegisterAnimation { component_ids }

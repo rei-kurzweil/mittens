@@ -17,26 +17,26 @@ use crate::engine::ecs::component::{
     Camera2DComponent, Camera3DComponent, CameraXRComponent, ClockComponent, CollisionComponent,
     CollisionResponseComponent, CollisionShape, CollisionShapeComponent, ColorComponent,
     ControllerHand, ControllerPoseKind, DataComponent, DataValue, DirectionalLightComponent,
-    Display, EdgeInsets, EditorComponent, EditorInteractionMode, EditorPanel, EditorUIComponent,
-    EditorUIPanelConfig, EditorUIPanelSpec, ElementType, EmissiveComponent, EmissivePassComponent,
-    FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent,
-    GestureCoordTypeComponent, GrabbableComponent, GrabbablePlane, GravityComponent, GridComponent,
-    HtmlElementComponent, HttpClientComponent, HttpServerComponent, IKChainComponent, IKSolver,
-    InputComponent, InputTransformModeComponent, InputXRComponent, InputXRGamepadComponent,
-    InspectLayoutComponent, JustifyContent, KeyframeComponent, LayoutBoundsComponent,
-    LayoutComponent, LightQuantizationComponent, MeshComponent, MirrorComponent, MusicNote,
-    MusicNoteComponent, NormalVisualisationComponent, OpacityComponent, OptionComponent,
-    OscillatorType, Overflow, OverlayComponent, PointLightComponent, PointerComponent,
-    PointerEvents, PoseCaptureComponent, PoseCaptureLibraryComponent, PoseCapturePoseComponent,
-    Position, QuatTemporalFilterComponent, QuatYawFollowComponent, RayCastComponent,
-    RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType, RenderGraphComponent,
-    RenderableComponent, RendererSettingsComponent, RendererStatsComponent, RouterComponent,
-    ScrollingComponent, SecondaryMotionComponent, SelectableComponent, SelectionComponent,
-    SerializeComponent, SettingsPanelConfig, SignalObserverRouterComponent,
-    SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent, SpotLightComponent,
-    SpringBoneComponent, SpringJointComponent, StencilClipComponent, StyleComponent, TextAlign,
-    TextComponent, TextInputComponent, TextShadowComponent, TextureComponent,
-    TextureFilteringComponent, ToggleComponent, TransformCameraSpecificComponent,
+    Display, DraggableComponent, DraggablePlane, EdgeInsets, EditorComponent,
+    EditorInteractionMode, EditorPanel, EditorUIComponent, EditorUIPanelConfig, EditorUIPanelSpec,
+    ElementType, EmissiveComponent, EmissivePassComponent, FitBoundsComponent, FitBoundsMode,
+    FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent, GestureCoordTypeComponent,
+    GrabbableComponent, GravityComponent, GridComponent, HtmlElementComponent, HttpClientComponent,
+    HttpServerComponent, IKChainComponent, IKSolver, InputComponent, InputTransformModeComponent,
+    InputXRComponent, InputXRGamepadComponent, InspectLayoutComponent, JustifyContent,
+    KeyframeComponent, LayoutBoundsComponent, LayoutComponent, LightQuantizationComponent,
+    MeshComponent, MirrorComponent, MusicNote, MusicNoteComponent, NormalVisualisationComponent,
+    OpacityComponent, OptionComponent, OscillatorType, Overflow, OverlayComponent,
+    PointLightComponent, PointerComponent, PointerEvents, PoseCaptureComponent,
+    PoseCaptureLibraryComponent, PoseCapturePoseComponent, Position, QuatTemporalFilterComponent,
+    QuatYawFollowComponent, RayCastComponent, RaycastableComponent, RaycastableShapeComponent,
+    RaycastableShapeType, RenderGraphComponent, RenderableComponent, RendererSettingsComponent,
+    RendererStatsComponent, RouterComponent, ScrollingComponent, SecondaryMotionComponent,
+    SelectableComponent, SelectionComponent, SerializeComponent, SettingsPanelConfig,
+    SignalObserverRouterComponent, SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent,
+    SpotLightComponent, SpringBoneComponent, SpringJointComponent, StencilClipComponent,
+    StyleComponent, TextAlign, TextComponent, TextInputComponent, TextShadowComponent,
+    TextureComponent, TextureFilteringComponent, ToggleComponent, TransformCameraSpecificComponent,
     TransformComponent, TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis,
     TransformGizmoComponent, TransformGizmoCoordSpace, TransformGizmoRotateComponent,
     TransformGizmoScaleComponent, TransformGizmoTranslateComponent, TransformMapRotationComponent,
@@ -93,6 +93,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "Color",
     "Data",
     "DirectionalLight",
+    "Draggable",
     "Editor",
     "EditorUI",
     "Emissive",
@@ -997,23 +998,23 @@ fn val_as_f32_array<const N: usize>(v: &Value) -> Result<[f32; N], String> {
     }
 }
 
-fn parse_grabbable_plane(args: &[Value]) -> Result<GrabbablePlane, String> {
+fn parse_draggable_plane(args: &[Value]) -> Result<DraggablePlane, String> {
     let value = arg(args, 0)?;
     if let Ok(name) = val_as_str(value) {
         return match name {
-            "object" => Ok(GrabbablePlane::Object),
-            "camera" => Ok(GrabbablePlane::Camera),
+            "object" => Ok(DraggablePlane::Object),
+            "camera" => Ok(DraggablePlane::Camera),
             _ => Err(format!(
-                "Grabbable.plane expected \"camera\", \"object\", or two world axes; got {name:?}"
+                "Draggable.plane expected \"camera\", \"object\", or two world axes; got {name:?}"
             )),
         };
     }
     let Value::Array(axes) = value else {
-        return Err("Grabbable.plane expected a string or [[f32; 3]; 2]".to_string());
+        return Err("Draggable.plane expected a string or [[f32; 3]; 2]".to_string());
     };
     if axes.len() != 2 {
         return Err(format!(
-            "Grabbable.plane expected exactly two world axes, got {}",
+            "Draggable.plane expected exactly two world axes, got {}",
             axes.len()
         ));
     }
@@ -1028,9 +1029,9 @@ fn parse_grabbable_plane(args: &[Value]) -> Result<GrabbablePlane, String> {
         axes[0][0] * axes[1][1] - axes[0][1] * axes[1][0],
     ];
     if length_sq(axes[0]) <= 1e-8 || length_sq(axes[1]) <= 1e-8 || length_sq(cross) <= 1e-8 {
-        return Err("Grabbable.plane world axes must be non-zero and non-parallel".to_string());
+        return Err("Draggable.plane world axes must be non-zero and non-parallel".to_string());
     }
-    Ok(GrabbablePlane::WorldAxes(axes))
+    Ok(DraggablePlane::WorldAxes(axes))
 }
 
 // ---------------------------------------------------------------------------
@@ -1607,6 +1608,13 @@ fn create_component(
         },
         "Pointer" => match ctor {
             Some("disabled") => add!(PointerComponent::disabled()),
+            Some("min_grab_distance") => {
+                let distance = val_as_f32(arg(args, 0)?)?;
+                if !distance.is_finite() || distance < 0.0 {
+                    return Err("Pointer.min_grab_distance must be finite and non-negative".into());
+                }
+                add!(PointerComponent::new().min_grab_distance(distance))
+            }
             _ => add!(PointerComponent::new()),
         },
         "XR" | "VR" | "OpenXR" => match ctor {
@@ -1616,7 +1624,7 @@ fn create_component(
         },
         "XRHand" | "XrHand" | "VRHand" | "VrHand" => match ctor {
             Some("new") => {
-                let _enabled = arg_bool(args, 0)?;
+                let enabled = arg_bool(args, 0)?;
                 let hand = match arg_str(args, 1)? {
                     "Left" => ControllerHand::Left,
                     "Right" => ControllerHand::Right,
@@ -1627,7 +1635,7 @@ fn create_component(
                     "Grip" => ControllerPoseKind::Grip,
                     s => return Err(format!("unknown ControllerPoseKind: {s}")),
                 };
-                add!(XRHandComponent::new(true, hand, pose))
+                add!(XRHandComponent::new(enabled, hand, pose))
             }
             _ => Err("XRHand requires .new(enabled, hand, pose)".into()),
         },
@@ -1824,10 +1832,16 @@ fn create_component(
             Some("parent") => add!(GrabbableComponent::parent()),
             Some("off") => add!(GrabbableComponent::off()),
             Some("on") => add!(GrabbableComponent::on()),
-            Some("plane") => {
-                add!(GrabbableComponent::new().with_plane(parse_grabbable_plane(args)?))
-            }
             _ => add!(GrabbableComponent::new()),
+        },
+        "Draggable" => match ctor {
+            Some("parent") => add!(DraggableComponent::parent()),
+            Some("off") => add!(DraggableComponent::off()),
+            Some("on") => add!(DraggableComponent::on()),
+            Some("plane") => {
+                add!(DraggableComponent::new().with_plane(parse_draggable_plane(args)?))
+            }
+            _ => add!(DraggableComponent::new()),
         },
         "Raycastable" => match ctor {
             Some("disabled") => add!(RaycastableComponent::disabled()),
@@ -2355,9 +2369,27 @@ fn apply_call(
     method: &str,
     args: &[Value],
 ) -> Result<(), String> {
-    if let Some(grabbable) = world.get_component_by_id_as_mut::<GrabbableComponent>(id) {
+    if let Some(draggable) = world.get_component_by_id_as_mut::<DraggableComponent>(id) {
         if method == "plane" {
-            grabbable.plane = parse_grabbable_plane(args)?;
+            draggable.plane = parse_draggable_plane(args)?;
+        }
+        return Ok(());
+    }
+
+    if let Some(pointer) = world.get_component_by_id_as_mut::<PointerComponent>(id) {
+        if method == "min_grab_distance" {
+            let distance = val_as_f32(arg(args, 0)?)?;
+            if !distance.is_finite() || distance < 0.0 {
+                return Err("Pointer.min_grab_distance must be finite and non-negative".into());
+            }
+            pointer.min_grab_distance = Some(distance);
+        }
+        return Ok(());
+    }
+
+    if let Some(hand) = world.get_component_by_id_as_mut::<XRHandComponent>(id) {
+        if method == "laser" {
+            hand.laser = true;
         }
         return Ok(());
     }

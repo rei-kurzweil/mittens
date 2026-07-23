@@ -32,6 +32,7 @@ pub mod component_ref;
 pub mod controller_xr;
 pub mod data;
 pub mod directional_light;
+pub mod draggable;
 pub mod editor;
 pub mod editor_ui;
 pub mod emissive;
@@ -144,6 +145,7 @@ pub use component_ref::{
 pub use controller_xr::{ControllerHand, ControllerPoseKind, ControllerXRComponent};
 pub use data::{DataComponent, DataEntry, DataValue};
 pub use directional_light::DirectionalLightComponent;
+pub use draggable::{DraggableComponent, DraggablePlane};
 pub use editor::EditorComponent;
 pub use editor::EditorInteractionMode;
 pub use editor::TransformGizmoCoordSpace;
@@ -158,7 +160,7 @@ pub use gizmo::{
     TransformGizmoAxis, TransformGizmoComponent, TransformGizmoRotateComponent,
     TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
 };
-pub use grabbable::{GrabbableComponent, GrabbablePlane};
+pub use grabbable::GrabbableComponent;
 pub use gravity::GravityComponent;
 pub use grid::GridComponent;
 pub use html_element::{ElementType, HtmlElementComponent};

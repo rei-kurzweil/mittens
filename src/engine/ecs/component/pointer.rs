@@ -9,6 +9,8 @@ use crate::engine::ecs::component::Component;
 #[derive(Debug, Clone, Copy)]
 pub struct PointerComponent {
     pub enabled: bool,
+    /// Override for the clearance between a held object's ray-facing surface and pointer origin.
+    pub min_grab_distance: Option<f32>,
 
     component: Option<ComponentId>,
 }
@@ -17,6 +19,7 @@ impl PointerComponent {
     pub fn new() -> Self {
         Self {
             enabled: true,
+            min_grab_distance: None,
             component: None,
         }
     }
@@ -24,12 +27,22 @@ impl PointerComponent {
     pub fn disabled() -> Self {
         Self {
             enabled: false,
+            min_grab_distance: None,
             component: None,
         }
     }
 
     pub fn with_enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
+        self
+    }
+
+    pub fn min_grab_distance(mut self, meters: f32) -> Self {
+        assert!(
+            meters.is_finite() && meters >= 0.0,
+            "minimum grab distance must be finite and non-negative"
+        );
+        self.min_grab_distance = Some(meters);
         self
     }
 }
@@ -72,10 +85,14 @@ impl Component for PointerComponent {
         _world: &crate::engine::ecs::World,
     ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
-        if self.enabled {
+        let expression = if self.enabled {
             ce("Pointer")
         } else {
             ce_call("Pointer", "disabled", vec![])
+        };
+        match self.min_grab_distance {
+            Some(distance) => expression.with_call("min_grab_distance", vec![num(distance as f64)]),
+            None => expression,
         }
     }
 }

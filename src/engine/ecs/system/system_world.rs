@@ -98,6 +98,7 @@ pub struct SystemWorld {
 
     pub pointer: PointerSystem,
     pub grabbable: crate::engine::ecs::system::GrabbableSystem,
+    pub draggable: crate::engine::ecs::system::DraggableSystem,
     pub raycast: RayCastSystem,
 
     pub editor: EditorSystem,
@@ -1471,7 +1472,7 @@ impl SystemWorld {
                 self.register_input_xr(world, visuals, *component);
             }
             IntentValue::RegisterControllerXr { component } => {
-                self.register_controller_xr(world, visuals, *component);
+                self.register_controller_xr(world, visuals, *component, emit);
             }
             IntentValue::RegisterInputXrGamepad { component } => {
                 self.register_input_xr_gamepad(world, visuals, *component);
@@ -2190,8 +2191,10 @@ impl SystemWorld {
         world: &mut World,
         visuals: &mut VisualWorld,
         component: ComponentId,
+        emit: &mut dyn crate::engine::ecs::SignalEmitter,
     ) {
         self.xr.register_controller_xr(world, visuals, component);
+        crate::engine::ecs::system::pointer_system::ensure_xr_hand_laser(world, component, emit);
     }
 
     pub fn register_input_xr_gamepad(
@@ -2709,6 +2712,7 @@ impl SystemWorld {
         self.selection.install_handlers(&mut self.rx);
         self.toggle.install_handlers(&mut self.rx);
         self.grabbable.install_handlers(&mut self.rx);
+        self.draggable.install_handlers(&mut self.rx);
 
         // Process input first - it may queue commands
         self.input.process_input(world, input, queue, dt_sec);
@@ -2884,6 +2888,11 @@ impl SystemWorld {
         );
 
         // Execute/dispatch gesture-produced signals immediately (e.g. DragStart/DragMove/DragEnd).
+        let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);
+
+        // Apply grab attachment/release and clearance easing after grab lifecycle events land.
+        self.grabbable
+            .tick(world, render_assets, &mut self.rx, dt_sec);
         let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);
 
         // Gizmos consume drag events and apply transform changes.

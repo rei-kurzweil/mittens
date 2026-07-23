@@ -393,7 +393,30 @@ Option {}
 Carries pointer state used when that engine feature is present in a component tree. Use it when a tree needs this state or behavior. Raycast, pointer, and gesture systems; `RayIntersected`, `DragStart`, `DragMove`, `DragEnd`, and `Click` are relevant.
 **Directly constructible** as `Pointer`. Sources: [Rust implementation](../../../src/engine/ecs/component/pointer.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
 ```mms parse-only
-Pointer {}
+Pointer.min_grab_distance(0.05) {}
+```
+
+Controller/hand pointers default to 0.05 m grab clearance. Desktop-camera and XR-head
+pointers default to 0.75 m. `min_grab_distance` overrides that value per pointer.
+
+### `GrabbableComponent`
+
+`Grabbable`, `Grabbable.on()`, and `Grabbable.parent()` mark transforms for attachment-style
+grabbing. XR grip and desktop left mouse temporarily reparent the resolved target beneath the
+pointer-driving transform while preserving world pose; release restores the original parent.
+
+```mms parse-only
+T { Grabbable {} }
+```
+
+### `DraggableComponent`
+
+`Draggable` retains planar translation behavior. XR trigger and desktop left mouse drag it;
+`.parent()` targets the next parent transform and `.plane("object" | "camera")` or two authored
+world axes constrain movement.
+
+```mms parse-only
+T { Draggable.plane("camera") {} }
 ```
 
 ### `RayCastComponent`
@@ -499,8 +522,10 @@ CameraXR {}
 Carries controller xr state used when that engine feature is present in a component tree. Use it when a tree needs this state or behavior. Camera/XR systems; registration intents and XR button/axis events are relevant.
 **Available through an alias.** Construct this Rust type as `XRHand`; compatibility aliases are `XrHand`, `VRHand`, and `VrHand`. Sources: [Rust implementation](../../../src/engine/ecs/component/controller_xr.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
 ```mms parse-only
-XRHand.new(true, "Left", "Aim")
+XRHand.new(true, "Left", "Aim").laser()
 ```
+
+`.laser()` adds one runtime-only, noninteractive cyan direction laser along local `-Z`.
 
 ### `XrComponent`
 <!-- catalog:component source="XrComponent" mms="direct" names="XR" -->

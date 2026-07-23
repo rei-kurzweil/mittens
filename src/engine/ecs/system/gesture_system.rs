@@ -1,6 +1,9 @@
 use crate::engine::ecs::component::PointerEvents;
+use crate::engine::ecs::system::draggable_system::draggable_owner_for_hit;
 use crate::engine::ecs::system::grabbable_system::grabbable_owner_for_hit;
-use crate::engine::ecs::system::pointer_system::{PointerActivations, PointerSystem};
+use crate::engine::ecs::system::pointer_system::{
+    PointerActivations, PointerSystem, pointer_topology_context,
+};
 use crate::engine::ecs::system::{BvhSystem, TransformSystem};
 use crate::engine::ecs::{
     ComponentId, EventSignal, PointerActivationSource, RxWorld, SignalKind, World,
@@ -47,6 +50,8 @@ pub struct GestureState {
     // Click detection: position at DragStart.
     pub drag_start_screen_pos: Option<(f32, f32)>,
     pub drag_start_hit_point: Option<[f32; 3]>,
+    pub xr_draggable: bool,
+    pub last_controller_world: Option<[f32; 3]>,
 }
 
 #[derive(Debug)]
@@ -77,11 +82,9 @@ pub struct GestureSystem {
 
 #[derive(Debug, Clone, Copy)]
 struct GripGestureState {
-    raycaster: ComponentId,
     renderable: ComponentId,
     owner: ComponentId,
-    last_controller_world: [f32; 3],
-    last_hit_point: [f32; 3],
+    desktop: bool,
 }
 
 impl GestureSystem {
@@ -278,8 +281,28 @@ impl GestureSystem {
             .map(|g| g.clone())
             .unwrap_or_default();
 
-        // --- Grip press: capture only hits governed by a Grabbable owner. ---
-        for &pointer_cid in &activations.grip_pressed {
+        // --- Grip (XR) and left mouse (desktop): capture Grabbable targets. ---
+        let mut grab_presses: Vec<(ComponentId, bool)> = activations
+            .grip_pressed
+            .iter()
+            .copied()
+            .map(|p| (p, false))
+            .collect();
+        grab_presses.extend(
+            activations
+                .pressed
+                .iter()
+                .copied()
+                .filter(|p| {
+                    let topology = pointer_topology_context(world, *p);
+                    !topology.has_controller_driver
+                        && !topology.has_xr_camera_anchor
+                        && !topology.has_xr_input_driver
+                })
+                .map(|p| (p, true)),
+        );
+        let mut desktop_grab_consumed = HashSet::new();
+        for (pointer_cid, desktop) in grab_presses {
             if self.grip_states.contains_key(&pointer_cid) {
                 continue;
             }
@@ -297,84 +320,47 @@ impl GestureSystem {
             let Some(owner) = grabbable_owner_for_hit(world, hit.3) else {
                 continue;
             };
-            let Some(controller_world) = TransformSystem::world_position(world, pointer_cid) else {
-                continue;
-            };
-            let hit_point = [
-                hit.4[0] + hit.5[0] * hit.1,
-                hit.4[1] + hit.5[1] * hit.1,
-                hit.4[2] + hit.5[2] * hit.1,
-            ];
             self.grabbed_owners.insert(owner);
             self.grip_states.insert(
                 pointer_cid,
                 GripGestureState {
-                    raycaster,
                     renderable: hit.3,
                     owner,
-                    last_controller_world: controller_world,
-                    last_hit_point: hit_point,
+                    desktop,
                 },
             );
+            if desktop {
+                desktop_grab_consumed.insert(pointer_cid);
+            }
             rx.push_event(
                 hit.3,
-                EventSignal::DragStart {
-                    activation_source: PointerActivationSource::Grip,
+                EventSignal::GrabStart {
+                    pointer: pointer_cid,
                     raycaster,
                     renderable: hit.3,
-                    hit_point,
+                    target: owner,
+                    ray_origin_world: hit.4,
                     ray_dir_world: hit.5,
-                    screen_pos_px: None,
                 },
             );
         }
 
-        // Grip motion follows controller translation and does not require continued ray contact.
-        for &pointer_cid in &activations.grip_down {
-            let Some(mut state) = self.grip_states.get(&pointer_cid).copied() else {
-                continue;
-            };
-            let Some(controller_world) = TransformSystem::world_position(world, pointer_cid) else {
-                continue;
-            };
-            let delta = [
-                controller_world[0] - state.last_controller_world[0],
-                controller_world[1] - state.last_controller_world[1],
-                controller_world[2] - state.last_controller_world[2],
-            ];
-            if delta != [0.0; 3] {
-                state.last_hit_point = [
-                    state.last_hit_point[0] + delta[0],
-                    state.last_hit_point[1] + delta[1],
-                    state.last_hit_point[2] + delta[2],
-                ];
-                rx.push_event(
-                    state.renderable,
-                    EventSignal::DragMove {
-                        activation_source: PointerActivationSource::Grip,
-                        raycaster: state.raycaster,
-                        renderable: state.renderable,
-                        hit_point: state.last_hit_point,
-                        delta_world: delta,
-                        screen_pos_px: None,
-                        screen_delta_px: None,
-                    },
-                );
-            }
-            state.last_controller_world = controller_world;
-            self.grip_states.insert(pointer_cid, state);
-        }
-
-        for &pointer_cid in &activations.grip_released {
+        let mut grab_releases = activations.grip_released.clone();
+        grab_releases.extend(
+            activations
+                .released
+                .iter()
+                .copied()
+                .filter(|p| self.grip_states.get(p).is_some_and(|s| s.desktop)),
+        );
+        for pointer_cid in grab_releases {
             if let Some(state) = self.grip_states.remove(&pointer_cid) {
                 self.grabbed_owners.remove(&state.owner);
                 rx.push_event(
                     state.renderable,
-                    EventSignal::DragEnd {
-                        activation_source: PointerActivationSource::Grip,
-                        raycaster: state.raycaster,
-                        renderable: state.renderable,
-                        hit_point: Some(state.last_hit_point),
+                    EventSignal::GrabEnd {
+                        pointer: pointer_cid,
+                        target: state.owner,
                     },
                 );
             }
@@ -382,6 +368,9 @@ impl GestureSystem {
 
         // --- Trigger press: start a new drag per activated pointer ---
         for &pointer_cid in &activations.pressed {
+            if desktop_grab_consumed.contains(&pointer_cid) {
+                continue;
+            }
             // Only start a gesture if this pointer isn't already dragging.
             if self
                 .states
@@ -399,7 +388,18 @@ impl GestureSystem {
             // Hits from this pointer's raycaster only.
             let pointer_hits: Vec<_> = hits.iter().filter(|h| h.2 == raycaster_cid).collect();
 
-            let drag_hit = pointer_hits.iter().find(|h| h.6.captures_drag());
+            let topology = pointer_topology_context(world, pointer_cid);
+            let controller_pointer = topology.has_controller_driver;
+            let drag_hit = pointer_hits.iter().find(|h| {
+                if !h.6.captures_drag() {
+                    return false;
+                }
+                // XR trigger never activates a Grabbable-only target. Draggable (including a
+                // target carrying both markers) and ordinary unmarked targets retain trigger UI.
+                !controller_pointer
+                    || draggable_owner_for_hit(world, h.3).is_some()
+                    || grabbable_owner_for_hit(world, h.3).is_none()
+            });
             let click_hit = pointer_hits.iter().find(|h| h.6.captures_click());
             if Self::debug_gesture_enabled() {
                 let summary: Vec<String> = pointer_hits
@@ -432,8 +432,10 @@ impl GestureSystem {
             ]);
 
             // Determine if this is a screen-space pointer (has cursor_pos).
-            let screen_pos = input.cursor_pos;
-            let is_screen_pointer = screen_pos.is_some();
+            let is_screen_pointer = !controller_pointer
+                && !topology.has_xr_camera_anchor
+                && !topology.has_xr_input_driver;
+            let screen_pos = is_screen_pointer.then_some(input.cursor_pos).flatten();
 
             let state = self.states.entry(pointer_cid).or_default();
             state.dragging = true;
@@ -444,6 +446,12 @@ impl GestureSystem {
             state.last_cursor_pos = if is_screen_pointer { screen_pos } else { None };
             state.drag_start_screen_pos = if is_screen_pointer { screen_pos } else { None };
             state.drag_start_hit_point = drag_hit_point;
+            state.xr_draggable =
+                controller_pointer && draggable_owner_for_hit(world, renderable).is_some();
+            state.last_controller_world = state
+                .xr_draggable
+                .then(|| TransformSystem::world_position(world, pointer_cid))
+                .flatten();
 
             // StartPlaneProjection only makes sense for screen-space pointers; XR uses RequireTargetContact.
             if self.drag_update_policy == DragUpdatePolicy::StartPlaneProjection
@@ -503,6 +511,51 @@ impl GestureSystem {
                     .get(&pointer_cid)
                     .and_then(|s| s.drag_start_screen_pos)
                     .is_some();
+
+                // Controller Draggable capture follows controller translation after press and
+                // deliberately does not require the ray to remain over the target.
+                if self
+                    .states
+                    .get(&pointer_cid)
+                    .is_some_and(|s| s.xr_draggable)
+                {
+                    if let Some(current_controller) =
+                        TransformSystem::world_position(world, pointer_cid)
+                    {
+                        let state = self.states.get_mut(&pointer_cid).unwrap();
+                        if let Some(previous_controller) = state.last_controller_world {
+                            let delta = [
+                                current_controller[0] - previous_controller[0],
+                                current_controller[1] - previous_controller[1],
+                                current_controller[2] - previous_controller[2],
+                            ];
+                            if delta != [0.0; 3] {
+                                let previous_hit =
+                                    state.last_hit_point.unwrap_or(current_controller);
+                                let hit_point = [
+                                    previous_hit[0] + delta[0],
+                                    previous_hit[1] + delta[1],
+                                    previous_hit[2] + delta[2],
+                                ];
+                                rx.push_event(
+                                    active_renderable,
+                                    EventSignal::DragMove {
+                                        activation_source: PointerActivationSource::Trigger,
+                                        raycaster: active_rc,
+                                        renderable: active_renderable,
+                                        hit_point,
+                                        delta_world: delta,
+                                        screen_pos_px: None,
+                                        screen_delta_px: None,
+                                    },
+                                );
+                                state.last_hit_point = Some(hit_point);
+                            }
+                        }
+                        state.last_controller_world = Some(current_controller);
+                    }
+                    continue;
+                }
 
                 let effective_policy = if is_screen_pointer {
                     self.drag_update_policy
@@ -691,6 +744,8 @@ static EMPTY_GESTURE_STATE: GestureState = GestureState {
     drag_plane_normal_world: None,
     drag_start_screen_pos: None,
     drag_start_hit_point: None,
+    xr_draggable: false,
+    last_controller_world: None,
 };
 
 impl Default for GestureSystem {

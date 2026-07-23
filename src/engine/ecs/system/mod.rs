@@ -27,6 +27,7 @@ pub mod collision_system;
 pub mod collision_visualization_system;
 pub mod cursor_3d;
 pub mod data_renderer_system;
+pub mod draggable_system;
 pub mod editor;
 pub mod editor_inspector_system;
 pub(crate) mod editor_inspector_system_stopgap_mms_adapter;
@@ -99,6 +100,7 @@ pub use data_renderer_system::{
     DataRendererSystem, DetailRendererSpec, ItemRendererSpec, RendererSpec, UiDetailItem, UiItem,
     UiItemKind,
 };
+pub use draggable_system::DraggableSystem;
 pub use editor::EditorContextSystem;
 pub use editor_inspector_system::EditorInspectorSystem;
 pub use editor_paint_system::EditorPaintSystem;

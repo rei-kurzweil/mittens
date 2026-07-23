@@ -351,6 +351,8 @@ fn signal_kind(name: &str) -> Option<SignalKind> {
         "CollisionStarted" => SignalKind::CollisionStarted,
         "CollisionEnded" => SignalKind::CollisionEnded,
         "DragStart" => SignalKind::DragStart,
+        "GrabStart" => SignalKind::GrabStart,
+        "GrabEnd" => SignalKind::GrabEnd,
         "DragMove" => SignalKind::DragMove,
         "DragEnd" => SignalKind::DragEnd,
         "ParentChanged" => SignalKind::ParentChanged,

@@ -1,5 +1,7 @@
 use crate::engine::ecs::component::{
-    ControllerXRComponent, InputComponent, InputXRComponent, PointerComponent, RayCastComponent,
+    ColorComponent, ControllerXRComponent, EmissiveComponent, InputComponent, InputXRComponent,
+    OpacityComponent, PointerComponent, RayCastComponent, RenderableComponent, SerializeComponent,
+    TransformComponent,
 };
 use crate::engine::ecs::system::XrInputState;
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
@@ -18,6 +20,76 @@ use winit::event::MouseButton;
 #[derive(Debug, Default)]
 pub struct PointerSystem {
     pointer_to_raycast: HashMap<ComponentId, ComponentId>,
+}
+
+/// Spawn the optional runtime-only controller laser under the transform driving its pointer.
+pub fn ensure_xr_hand_laser(world: &mut World, hand: ComponentId, emit: &mut dyn SignalEmitter) {
+    let Some(config) = world.get_component_by_id_as::<ControllerXRComponent>(hand) else {
+        return;
+    };
+    if !config.enabled || !config.laser {
+        return;
+    }
+    let mut stack = world.children_of(hand).to_vec();
+    let mut pointer = None;
+    while let Some(node) = stack.pop() {
+        if world
+            .get_component_by_id_as::<PointerComponent>(node)
+            .is_some()
+        {
+            pointer = Some(node);
+            break;
+        }
+        stack.extend_from_slice(world.children_of(node));
+    }
+    let driver = pointer
+        .and_then(|p| world.parent_of(p))
+        .and_then(|p| nearest_ancestor_transform(world, p))
+        .or_else(|| {
+            world.children_of(hand).iter().copied().find(|c| {
+                world
+                    .get_component_by_id_as::<TransformComponent>(*c)
+                    .is_some()
+            })
+        });
+    let Some(driver) = driver else {
+        return;
+    };
+    if world
+        .children_of(driver)
+        .iter()
+        .any(|c| world.component_label(*c) == Some("xr_pointer_laser"))
+    {
+        return;
+    }
+
+    // Keep the laser's authored origin exactly on the pointer-driving transform.
+    // The centered cube mesh is offset separately so its near face starts at the
+    // origin and extends ten metres along the pointer ray's local -Z.
+    let laser =
+        world.add_component_boxed_named("xr_pointer_laser", Box::new(TransformComponent::new()));
+    let serialize = world.add_component(SerializeComponent::off());
+    let mesh_transform = world.add_component_boxed_named(
+        "xr_pointer_laser_mesh",
+        Box::new(
+            TransformComponent::new()
+                .with_position(0.0, 0.0, -5.0)
+                .with_scale(0.002, 0.002, 5.0),
+        ),
+    );
+    let renderable = world.add_component(RenderableComponent::cube());
+    let color = world.add_component(ColorComponent::rgba(0.0, 1.0, 1.0, 0.55));
+    let opacity = world.add_component(OpacityComponent::new().with_opacity(0.55));
+    let emissive = world.add_component(EmissiveComponent::on());
+    let _ = world.add_child(laser, serialize);
+    let _ = world.add_child(laser, mesh_transform);
+    let _ = world.add_child(mesh_transform, renderable);
+    let _ = world.add_child(renderable, color);
+    let _ = world.add_child(renderable, opacity);
+    let _ = world.add_child(renderable, emissive);
+    if world.add_child(driver, laser).is_ok() {
+        world.init_component_tree(laser, emit);
+    }
 }
 
 impl PointerSystem {
@@ -139,7 +211,7 @@ pub fn pointer_topology_context(world: &World, cid: ComponentId) -> PointerTopol
     }
 }
 
-/// Which `PointerComponent` ids have an active trigger state this frame.
+/// Which `PointerComponent` ids have active trigger or grip state this frame.
 ///
 /// Built by `PointerSystem::build_activations` from `InputState` (mouse) and `XrInputState`
 /// (XR controllers). `GestureSystem` consumes this without knowing the underlying input source.
@@ -151,6 +223,15 @@ pub struct PointerActivations {
     pub grip_pressed: Vec<ComponentId>,
     pub grip_down: Vec<ComponentId>,
     pub grip_released: Vec<ComponentId>,
+}
+
+impl PointerActivations {
+    pub(crate) fn raycast_active(&self, pointer: ComponentId) -> bool {
+        self.down.contains(&pointer)
+            || self.pressed.contains(&pointer)
+            || self.grip_down.contains(&pointer)
+            || self.grip_pressed.contains(&pointer)
+    }
 }
 
 impl PointerSystem {
@@ -228,6 +309,7 @@ fn controller_hand_index(world: &World, start: ComponentId) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::component::{ControllerHand, ControllerPoseKind};
 
     #[test]
@@ -254,5 +336,75 @@ mod tests {
         assert_eq!(activations.grip_pressed, vec![pointer]);
         assert_eq!(activations.grip_down, vec![pointer]);
         assert_eq!(activations.grip_released, vec![pointer]);
+        assert!(activations.raycast_active(pointer));
+    }
+
+    #[test]
+    fn xr_laser_is_single_runtime_noninteractive_visual_aligned_to_negative_z() {
+        let mut world = World::default();
+        let hand = world.add_component(
+            ControllerXRComponent::new(true, ControllerHand::Left, ControllerPoseKind::Aim).laser(),
+        );
+        let driver = world.add_component(TransformComponent::new());
+        let pointer = world.add_component(PointerComponent::new());
+        world.add_child(hand, driver).unwrap();
+        world.add_child(driver, pointer).unwrap();
+        let mut queue = CommandQueue::new();
+        ensure_xr_hand_laser(&mut world, hand, &mut queue);
+        ensure_xr_hand_laser(&mut world, hand, &mut queue);
+        let lasers: Vec<_> = world
+            .children_of(driver)
+            .iter()
+            .copied()
+            .filter(|c| world.component_label(*c) == Some("xr_pointer_laser"))
+            .collect();
+        assert_eq!(lasers.len(), 1);
+        let laser = lasers[0];
+        let transform = world
+            .get_component_by_id_as::<TransformComponent>(laser)
+            .unwrap();
+        assert_eq!(transform.transform.translation, [0.0, 0.0, 0.0]);
+        assert_eq!(transform.transform.scale, [1.0, 1.0, 1.0]);
+        assert!(world.children_of(laser).iter().any(|c| {
+            world
+                .get_component_by_id_as::<SerializeComponent>(*c)
+                .is_some_and(|s| !s.enabled)
+        }));
+        assert!(!world.children_of(laser).iter().any(|c| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::RaycastableComponent>(*c)
+                .is_some()
+        }));
+        let mesh_transform = world
+            .children_of(laser)
+            .iter()
+            .copied()
+            .find(|c| world.component_label(*c) == Some("xr_pointer_laser_mesh"))
+            .unwrap();
+        let mesh = world
+            .get_component_by_id_as::<TransformComponent>(mesh_transform)
+            .unwrap();
+        assert_eq!(mesh.transform.translation, [0.0, 0.0, -5.0]);
+        assert_eq!(mesh.transform.scale, [0.002, 0.002, 5.0]);
+        let renderable = world
+            .children_of(mesh_transform)
+            .iter()
+            .copied()
+            .find(|c| {
+                world
+                    .get_component_by_id_as::<RenderableComponent>(*c)
+                    .is_some()
+            })
+            .unwrap();
+        assert!(world.children_of(renderable).iter().any(|c| {
+            world
+                .get_component_by_id_as::<EmissiveComponent>(*c)
+                .is_some_and(|e| e.intensity > 0.0)
+        }));
+        assert!(world.children_of(renderable).iter().any(|c| {
+            world
+                .get_component_by_id_as::<OpacityComponent>(*c)
+                .is_some_and(|o| o.opacity < 1.0)
+        }));
     }
 }

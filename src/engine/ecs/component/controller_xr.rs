@@ -39,6 +39,7 @@ pub struct ControllerXRComponent {
     pub pose_valid: bool,
     pub hand: ControllerHand,
     pub pose: ControllerPoseKind,
+    pub laser: bool,
 
     // Cached ECS id (runtime-only). Filled during init.
     pub component_id: Option<ComponentId>,
@@ -51,8 +52,14 @@ impl ControllerXRComponent {
             pose_valid: false,
             hand,
             pose,
+            laser: false,
             component_id: None,
         }
+    }
+
+    pub fn laser(mut self) -> Self {
+        self.laser = true;
+        self
     }
 
     pub fn on_left_aim() -> Self {
@@ -117,6 +124,11 @@ impl Component for ControllerXRComponent {
             ControllerPoseKind::Aim => "Aim",
             ControllerPoseKind::Grip => "Grip",
         };
-        ce_call("XRHand", "new", vec![b(self.enabled), s(hand), s(pose)])
+        let expression = ce_call("XRHand", "new", vec![b(self.enabled), s(hand), s(pose)]);
+        if self.laser {
+            expression.with_call("laser", vec![])
+        } else {
+            expression
+        }
     }
 }

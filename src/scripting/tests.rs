@@ -4121,6 +4121,19 @@ fn roundtrip_xr_hand() {
 }
 
 #[test]
+fn roundtrip_xr_hand_laser() {
+    use crate::engine::ecs::component::{ControllerHand, ControllerPoseKind, XRHandComponent};
+    let (world, id) = roundtrip_component(
+        XRHandComponent::new(true, ControllerHand::Left, ControllerPoseKind::Aim).laser(),
+    );
+    assert!(
+        world
+            .get_component_by_id_as::<XRHandComponent>(id)
+            .is_some_and(|hand| hand.laser)
+    );
+}
+
+#[test]
 fn roundtrip_input_xr_off() {
     use crate::engine::ecs::component::InputXRComponent;
     let (world, id) = roundtrip_component(InputXRComponent::off());
@@ -4833,16 +4846,18 @@ fn editor_ui_settings_config_conditionally_authors_diagnostic_rows() {
                 .is_some()
         })
         .unwrap();
-    assert!(world
-        .find_component(editor_ui, "#editor_settings_bounds_visibility")
-        .is_some());
+    assert!(
+        world
+            .find_component(editor_ui, "#editor_settings_bounds_visibility")
+            .is_some()
+    );
     let title_bar = world
         .find_component(editor_ui, "#title_bar")
         .expect("settings panel title bar");
     assert!(world.children_of(title_bar).iter().any(|child| {
         world
-            .get_component_by_id_as::<crate::engine::ecs::component::GrabbableComponent>(*child)
-            .is_some_and(|grabbable| grabbable.enabled && grabbable.move_parent)
+            .get_component_by_id_as::<crate::engine::ecs::component::DraggableComponent>(*child)
+            .is_some_and(|draggable| draggable.enabled && draggable.move_parent)
     }));
     for omitted in [
         "#editor_settings_armature_visibility",
@@ -5285,6 +5300,18 @@ fn roundtrip_pointer_disabled() {
 }
 
 #[test]
+fn roundtrip_pointer_min_grab_distance() {
+    use crate::engine::ecs::component::PointerComponent;
+    let (world, id) = roundtrip_component(PointerComponent::new().min_grab_distance(0.125));
+    assert_eq!(
+        world
+            .get_component_by_id_as::<PointerComponent>(id)
+            .and_then(|p| p.min_grab_distance),
+        Some(0.125)
+    );
+}
+
+#[test]
 fn roundtrip_skinned_mesh() {
     use crate::engine::ecs::component::SkinnedMeshComponent;
     let (world, id) = roundtrip_component(SkinnedMeshComponent::new(7));
@@ -5569,7 +5596,7 @@ fn roundtrip_collision_response() {
 
 #[test]
 fn roundtrip_grabbable() {
-    use crate::engine::ecs::component::{GrabbableComponent, GrabbablePlane};
+    use crate::engine::ecs::component::GrabbableComponent;
     let (world, id) = roundtrip_component(GrabbableComponent::new());
     assert!(
         world
@@ -5590,33 +5617,37 @@ fn roundtrip_grabbable() {
             .get_component_by_id_as::<GrabbableComponent>(id)
             .is_some_and(|grabbable| !grabbable.enabled)
     );
+}
 
+#[test]
+fn roundtrip_draggable() {
+    use crate::engine::ecs::component::{DraggableComponent, DraggablePlane};
     for plane in [
-        GrabbablePlane::Camera,
-        GrabbablePlane::WorldAxes([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
+        DraggablePlane::Camera,
+        DraggablePlane::WorldAxes([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
     ] {
-        let (world, id) = roundtrip_component(GrabbableComponent::new().with_plane(plane));
+        let (world, id) = roundtrip_component(DraggableComponent::new().with_plane(plane));
         assert_eq!(
             world
-                .get_component_by_id_as::<GrabbableComponent>(id)
-                .map(|grabbable| grabbable.plane),
+                .get_component_by_id_as::<DraggableComponent>(id)
+                .map(|draggable| draggable.plane),
             Some(plane)
         );
     }
 }
 
 #[test]
-fn grabbable_plane_builder_accepts_object_camera_and_world_axes() {
-    use crate::engine::ecs::component::{GrabbableComponent, GrabbablePlane};
+fn draggable_plane_builder_accepts_object_camera_and_world_axes() {
+    use crate::engine::ecs::component::{DraggableComponent, DraggablePlane};
     let mut world = World::default();
     let mut rx = RxWorld::default();
     let mut queue = CommandQueue::new();
     let mut assets = RenderAssets::new();
     let output = MeowMeowRunner::eval_with_world_and_assets(
         r#"
-            T { Grabbable.plane("object") }
-            T { Grabbable.plane("camera") }
-            T { Grabbable.plane([[1, 0, 0], [0, 0, 1]]) }
+            T { Draggable.plane("object") }
+            T { Draggable.plane("camera") }
+            T { Draggable.plane([[1, 0, 0], [0, 0, 1]]) }
         "#,
         &mut world,
         &mut rx,
@@ -5626,14 +5657,14 @@ fn grabbable_plane_builder_accepts_object_camera_and_world_axes() {
     assert!(output.errors.is_empty(), "{:?}", output.errors);
     let mut planes = world.all_components().filter_map(|id| {
         world
-            .get_component_by_id_as::<GrabbableComponent>(id)
-            .map(|grabbable| grabbable.plane)
+            .get_component_by_id_as::<DraggableComponent>(id)
+            .map(|draggable| draggable.plane)
     });
-    assert_eq!(planes.next(), Some(GrabbablePlane::Object));
-    assert_eq!(planes.next(), Some(GrabbablePlane::Camera));
+    assert_eq!(planes.next(), Some(DraggablePlane::Object));
+    assert_eq!(planes.next(), Some(DraggablePlane::Camera));
     assert_eq!(
         planes.next(),
-        Some(GrabbablePlane::WorldAxes([
+        Some(DraggablePlane::WorldAxes([
             [1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0]
         ]))
@@ -5642,7 +5673,10 @@ fn grabbable_plane_builder_accepts_object_camera_and_world_axes() {
 
 #[test]
 fn xr_grab_demo_evaluates_and_authors_grabbables_outside_editor() {
-    use crate::engine::ecs::component::{EditorComponent, GrabbableComponent};
+    use crate::engine::ecs::component::{
+        ControllerXRComponent, EditorComponent, GLTFComponent, GrabbableComponent,
+        InputXRGamepadComponent, SecondaryMotionComponent, SpotLightComponent,
+    };
     let mut world = World::default();
     let mut rx = RxWorld::default();
     let mut queue = CommandQueue::new();
@@ -5666,6 +5700,43 @@ fn xr_grab_demo_evaluates_and_authors_grabbables_outside_editor() {
             })
             .count()
             >= 3
+    );
+    assert!(world.all_components().any(|id| {
+        world
+            .get_component_by_id_as::<GLTFComponent>(id)
+            .is_some_and(|gltf| gltf.uri == "assets/models/bisket.11.0.glb")
+    }));
+    assert_eq!(
+        world
+            .all_components()
+            .filter(|id| world
+                .get_component_by_id_as::<SecondaryMotionComponent>(*id)
+                .is_some())
+            .count(),
+        1
+    );
+    assert_eq!(
+        world
+            .all_components()
+            .filter(|id| world
+                .get_component_by_id_as::<SpotLightComponent>(*id)
+                .is_some())
+            .count(),
+        3
+    );
+    assert!(world.all_components().any(|id| {
+        world
+            .get_component_by_id_as::<InputXRGamepadComponent>(id)
+            .is_some_and(|gamepad| gamepad.locomotion && gamepad.speed == 1.5)
+    }));
+    assert_eq!(
+        world
+            .all_components()
+            .filter(|id| world
+                .get_component_by_id_as::<ControllerXRComponent>(*id)
+                .is_some_and(|controller| controller.laser))
+            .count(),
+        2
     );
     assert!(!world.all_components().any(|id| {
         world

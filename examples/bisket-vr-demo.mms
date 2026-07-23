@@ -247,8 +247,8 @@ ED {
                 
                 // Tracked Grip controllers — re-parented to lower-arm bones
                 // by AVC, drive J_Bip_{L,R}_Hand via TwoBoneIK.
-                XRHand.new(true, Left,  Grip) { T { Pointer {} } }
-                XRHand.new(true, Right, Grip) { T { Pointer {} } }
+                XRHand.new(true, Left,  Grip).laser() { T { Pointer {} } }
+                XRHand.new(true, Right, Grip).laser() { T { Pointer {} } }
             }
             
             // debug camera marker

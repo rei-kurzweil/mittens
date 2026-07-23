@@ -144,6 +144,22 @@ pub enum EventSignal {
         hit_point: Option<[f32; 3]>,
     },
 
+    /// A pointer attached a Grabbable target.
+    GrabStart {
+        pointer: ComponentId,
+        raycaster: ComponentId,
+        renderable: ComponentId,
+        target: ComponentId,
+        ray_origin_world: [f32; 3],
+        ray_dir_world: [f32; 3],
+    },
+
+    /// A pointer released its attached Grabbable target.
+    GrabEnd {
+        pointer: ComponentId,
+        target: ComponentId,
+    },
+
     /// A click: a drag gesture that ended close to where it started.
     ///
     /// Emitted by `GestureSystem` at `DragEnd` time when the net pointer displacement is below
@@ -301,6 +317,8 @@ impl EventSignal {
             EventSignal::DragStart { .. } => SignalKind::DragStart,
             EventSignal::DragMove { .. } => SignalKind::DragMove,
             EventSignal::DragEnd { .. } => SignalKind::DragEnd,
+            EventSignal::GrabStart { .. } => SignalKind::GrabStart,
+            EventSignal::GrabEnd { .. } => SignalKind::GrabEnd,
             EventSignal::Click { .. } => SignalKind::Click,
             EventSignal::ToggleChanged { .. } => SignalKind::ToggleChanged,
             EventSignal::SelectionChanged { .. } => SignalKind::SelectionChanged,
@@ -740,6 +758,9 @@ pub enum IntentValue {
     RegisterGrabbable {
         component_ids: Vec<ComponentId>,
     },
+    RegisterDraggable {
+        component_ids: Vec<ComponentId>,
+    },
     RemoveRaycast {
         component_ids: Vec<ComponentId>,
     },
@@ -954,6 +975,7 @@ impl IntentValue {
             IntentValue::RegisterRaycastable { .. } => "register_raycastable",
             IntentValue::RegisterPointer { .. } => "register_pointer",
             IntentValue::RegisterGrabbable { .. } => "register_grabbable",
+            IntentValue::RegisterDraggable { .. } => "register_draggable",
             IntentValue::RemoveRaycast { .. } => "remove_raycast",
             IntentValue::RemoveRaycastable { .. } => "remove_raycastable",
 
@@ -1007,6 +1029,8 @@ pub enum SignalKind {
     DragStart,
     DragMove,
     DragEnd,
+    GrabStart,
+    GrabEnd,
     Click,
     ToggleChanged,
     SelectionChanged,

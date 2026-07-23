@@ -3163,6 +3163,8 @@ fn parse_signal_kind(s: &str) -> Result<SignalKind, String> {
         "Click" => Ok(SignalKind::Click),
         "ToggleChanged" => Ok(SignalKind::ToggleChanged),
         "DragStart" => Ok(SignalKind::DragStart),
+        "GrabStart" => Ok(SignalKind::GrabStart),
+        "GrabEnd" => Ok(SignalKind::GrabEnd),
         "DragMove" => Ok(SignalKind::DragMove),
         "DragEnd" => Ok(SignalKind::DragEnd),
         "RayIntersected" => Ok(SignalKind::RayIntersected),

@@ -1,14 +1,47 @@
 use crate::engine::ecs::component::{
-    Camera3DComponent, CameraXRComponent, GrabbableComponent, GrabbablePlane, RaycastableComponent,
-    SelectableComponent, SerializeComponent, TransformComponent,
+    GrabbableComponent, PointerComponent, RaycastableComponent, SerializeComponent,
+    TransformComponent,
 };
 use crate::engine::ecs::system::TransformSystem;
-use crate::engine::ecs::{ComponentId, SignalEmitter, World};
-use crate::engine::ecs::{EventSignal, IntentValue, PointerActivationSource, RxWorld, SignalKind};
+use crate::engine::ecs::system::bounds_system::BoundsSystem;
+use crate::engine::ecs::system::pointer_system::{
+    nearest_ancestor_transform, pointer_topology_context,
+};
+use crate::engine::ecs::{
+    ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
+};
+use crate::engine::graphics::RenderAssets;
+use crate::utils::math::{mat_to_quat, mat4_inverse, mat4_mul, vec3_dot, vec3_len, vec3_normalize};
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
+
+#[derive(Debug, Clone, Copy)]
+enum GrabCommand {
+    Start {
+        pointer: ComponentId,
+        target: ComponentId,
+        ray_origin: [f32; 3],
+        ray_dir: [f32; 3],
+    },
+    End {
+        pointer: ComponentId,
+    },
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ActiveGrab {
+    target: ComponentId,
+    pointer_parent: ComponentId,
+    original_parent: Option<ComponentId>,
+    destination_local: [f32; 3],
+}
 
 #[derive(Debug, Default)]
 pub struct GrabbableSystem {
     handlers_installed: bool,
+    commands: Arc<Mutex<Vec<GrabCommand>>>,
+    active: HashMap<ComponentId, ActiveGrab>,
+    owned: HashSet<ComponentId>,
 }
 
 impl GrabbableSystem {
@@ -16,51 +49,35 @@ impl GrabbableSystem {
         if self.handlers_installed {
             return;
         }
-        rx.add_global_handler_closure(SignalKind::DragMove, |world, emit, env| {
-            let Some(EventSignal::DragMove {
-                activation_source,
-                raycaster,
-                renderable,
-                delta_world,
-                screen_pos_px,
+        let starts = self.commands.clone();
+        rx.add_global_handler_closure(SignalKind::GrabStart, move |_world, _emit, env| {
+            let Some(EventSignal::GrabStart {
+                pointer,
+                target,
+                ray_origin_world,
+                ray_dir_world,
                 ..
             }) = env.event.as_ref()
             else {
                 return;
             };
-            let supported_activation = *activation_source == PointerActivationSource::Grip
-                || (*activation_source == PointerActivationSource::Trigger
-                    && screen_pos_px.is_some());
-            if !supported_activation {
-                return;
+            if let Ok(mut commands) = starts.lock() {
+                commands.push(GrabCommand::Start {
+                    pointer: *pointer,
+                    target: *target,
+                    ray_origin: *ray_origin_world,
+                    ray_dir: *ray_dir_world,
+                });
             }
-            let Some(resolved) = resolve_grabbable_for_hit(world, *renderable) else {
+        });
+        let ends = self.commands.clone();
+        rx.add_global_handler_closure(SignalKind::GrabEnd, move |_world, _emit, env| {
+            let Some(EventSignal::GrabEnd { pointer, .. }) = env.event.as_ref() else {
                 return;
             };
-            let owner = resolved.target;
-            let local_delta = constrained_parent_local_delta(
-                world,
-                owner,
-                resolved.plane,
-                *delta_world,
-                Some(*raycaster),
-            );
-            let Some(transform) = world.get_component_by_id_as::<TransformComponent>(owner) else {
-                return;
-            };
-            let mut translation = transform.transform.translation;
-            for i in 0..3 {
-                translation[i] += local_delta[i];
+            if let Ok(mut commands) = ends.lock() {
+                commands.push(GrabCommand::End { pointer: *pointer });
             }
-            emit.push_intent_now(
-                owner,
-                IntentValue::UpdateTransform {
-                    component_ids: vec![owner],
-                    translation,
-                    rotation_quat_xyzw: transform.transform.rotation,
-                    scale: transform.transform.scale,
-                },
-            );
         });
         self.handlers_installed = true;
     }
@@ -73,7 +90,7 @@ impl GrabbableSystem {
     ) {
         if world
             .get_component_by_id_as::<GrabbableComponent>(grabbable)
-            .is_some_and(|component| !component.enabled)
+            .is_some_and(|c| !c.enabled)
         {
             return;
         }
@@ -84,177 +101,244 @@ impl GrabbableSystem {
         }) else {
             return;
         };
-        let has_immediate_raycastable = world.children_of(owner).iter().any(|child| {
-            world
-                .get_component_by_id_as::<RaycastableComponent>(*child)
-                .is_some()
-        });
-        if has_immediate_raycastable {
+        ensure_generated_raycastable(world, owner, "grabbable_generated_raycastable", emit);
+    }
+
+    pub fn tick(
+        &mut self,
+        world: &mut World,
+        render_assets: &RenderAssets,
+        emit: &mut dyn SignalEmitter,
+        dt: f32,
+    ) {
+        let commands = self
+            .commands
+            .lock()
+            .map(|mut q| std::mem::take(&mut *q))
+            .unwrap_or_default();
+        for command in commands {
+            match command {
+                GrabCommand::Start {
+                    pointer,
+                    target,
+                    ray_origin,
+                    ray_dir,
+                } => self.start(
+                    world,
+                    render_assets,
+                    emit,
+                    pointer,
+                    target,
+                    ray_origin,
+                    ray_dir,
+                ),
+                GrabCommand::End { pointer } => self.release(world, emit, pointer),
+            }
+        }
+
+        let invalid: Vec<_> = self
+            .active
+            .iter()
+            .filter_map(|(&pointer, grab)| {
+                let valid = world.get_component_record(pointer).is_some()
+                    && world
+                        .get_component_by_id_as::<TransformComponent>(grab.target)
+                        .is_some()
+                    && world.get_component_record(grab.pointer_parent).is_some()
+                    && world.parent_of(grab.target) == Some(grab.pointer_parent);
+                (!valid).then_some(pointer)
+            })
+            .collect();
+        for pointer in invalid {
+            self.release(world, emit, pointer);
+        }
+
+        let alpha = 1.0 - (-12.0 * dt.max(0.0)).exp();
+        for grab in self.active.values() {
+            let Some(transform) =
+                world.get_component_by_id_as_mut::<TransformComponent>(grab.target)
+            else {
+                continue;
+            };
+            let current = transform.transform.translation;
+            let mut next = [0.0; 3];
+            for axis in 0..3 {
+                next[axis] = current[axis] + (grab.destination_local[axis] - current[axis]) * alpha;
+            }
+            if vec3_len([
+                next[0] - grab.destination_local[0],
+                next[1] - grab.destination_local[1],
+                next[2] - grab.destination_local[2],
+            ]) <= 0.001
+            {
+                next = grab.destination_local;
+            }
+            transform.transform.translation = next;
+            transform.transform.recompute_model();
+            emit.push_intent_now(
+                grab.target,
+                IntentValue::UpdateTransform {
+                    component_ids: vec![grab.target],
+                    translation: next,
+                    rotation_quat_xyzw: transform.transform.rotation,
+                    scale: transform.transform.scale,
+                },
+            );
+        }
+    }
+
+    fn start(
+        &mut self,
+        world: &mut World,
+        render_assets: &RenderAssets,
+        emit: &mut dyn SignalEmitter,
+        pointer: ComponentId,
+        target: ComponentId,
+        ray_origin: [f32; 3],
+        ray_dir: [f32; 3],
+    ) {
+        if self.active.contains_key(&pointer) || self.owned.contains(&target) {
             return;
         }
-        let raycastable = world.add_component_boxed_named(
-            "grabbable_generated_raycastable",
-            Box::new(RaycastableComponent::enabled()),
+        let Some(pointer_parent) = world
+            .parent_of(pointer)
+            .and_then(|p| nearest_ancestor_transform(world, p))
+        else {
+            return;
+        };
+        let Some(target_world) = TransformSystem::world_model(world, target) else {
+            return;
+        };
+        let original_parent = world.parent_of(target);
+        let dir = vec3_normalize(ray_dir);
+        if !dir.iter().all(|v| v.is_finite()) {
+            return;
+        }
+
+        let target_origin = [target_world[3][0], target_world[3][1], target_world[3][2]];
+        let along = vec3_dot(
+            [
+                target_origin[0] - ray_origin[0],
+                target_origin[1] - ray_origin[1],
+                target_origin[2] - ray_origin[2],
+            ],
+            dir,
         );
-        let serialize = world.add_component(SerializeComponent::off());
-        let _ = world.add_child(raycastable, serialize);
-        if world.add_child(owner, raycastable).is_ok() {
-            world.init_component_tree(raycastable, emit);
+        let transverse = [
+            target_origin[0] - ray_origin[0] - dir[0] * along,
+            target_origin[1] - ray_origin[1] - dir[1] * along,
+            target_origin[2] - ray_origin[2] - dir[2] * along,
+        ];
+        let min_projection =
+            BoundsSystem::calculate_subtree_local_bounds(world, render_assets, target)
+                .map(|bounds| {
+                    let mut min = f32::INFINITY;
+                    for x in [bounds.min[0], bounds.max[0]] {
+                        for y in [bounds.min[1], bounds.max[1]] {
+                            for z in [bounds.min[2], bounds.max[2]] {
+                                let p = transform_point(target_world, [x, y, z]);
+                                min = min.min(vec3_dot(
+                                    [
+                                        p[0] - target_origin[0],
+                                        p[1] - target_origin[1],
+                                        p[2] - target_origin[2],
+                                    ],
+                                    dir,
+                                ));
+                            }
+                        }
+                    }
+                    min
+                })
+                .unwrap_or(0.0);
+        let clearance = pointer_grab_distance(world, pointer);
+        let distance = clearance - min_projection;
+        let desired_world = [
+            ray_origin[0] + dir[0] * distance + transverse[0],
+            ray_origin[1] + dir[1] * distance + transverse[1],
+            ray_origin[2] + dir[2] * distance + transverse[2],
+        ];
+
+        if reparent_preserving_world(world, target, Some(pointer_parent), emit).is_err() {
+            return;
+        }
+        let Some(parent_world_inv) =
+            TransformSystem::world_model(world, pointer_parent).and_then(mat4_inverse)
+        else {
+            let _ = reparent_preserving_world(world, target, original_parent, emit);
+            return;
+        };
+        let destination_local = transform_point(parent_world_inv, desired_world);
+        self.owned.insert(target);
+        self.active.insert(
+            pointer,
+            ActiveGrab {
+                target,
+                pointer_parent,
+                original_parent,
+                destination_local,
+            },
+        );
+    }
+
+    fn release(&mut self, world: &mut World, emit: &mut dyn SignalEmitter, pointer: ComponentId) {
+        let Some(grab) = self.active.remove(&pointer) else {
+            return;
+        };
+        self.owned.remove(&grab.target);
+        if world.get_component_record(grab.target).is_none() {
+            return;
+        }
+        let parent = grab
+            .original_parent
+            .filter(|p| world.get_component_record(*p).is_some());
+        if reparent_preserving_world(world, grab.target, parent, emit).is_err() {
+            let _ = reparent_preserving_world(world, grab.target, None, emit);
         }
     }
 }
 
-fn world_delta_to_parent_local(
-    world: &World,
-    owner: ComponentId,
-    delta_world: [f32; 3],
-) -> [f32; 3] {
-    let Some(parent) = world.parent_of(owner) else {
-        return delta_world;
-    };
-    let Some(parent_world) = TransformSystem::world_model(world, parent) else {
-        return delta_world;
-    };
-    let Some(inv) = crate::utils::math::mat4_inverse(parent_world) else {
-        return delta_world;
-    };
-    [
-        inv[0][0] * delta_world[0] + inv[1][0] * delta_world[1] + inv[2][0] * delta_world[2],
-        inv[0][1] * delta_world[0] + inv[1][1] * delta_world[1] + inv[2][1] * delta_world[2],
-        inv[0][2] * delta_world[0] + inv[1][2] * delta_world[1] + inv[2][2] * delta_world[2],
-    ]
-}
-
-fn constrained_parent_local_delta(
-    world: &World,
-    target: ComponentId,
-    plane: GrabbablePlane,
-    delta_world: [f32; 3],
-    raycaster: Option<ComponentId>,
-) -> [f32; 3] {
-    match plane {
-        GrabbablePlane::Object => {
-            let mut local = world_delta_to_parent_local(world, target, delta_world);
-            local[2] = 0.0;
-            local
-        }
-        GrabbablePlane::Camera => {
-            let constrained_world = raycaster
-                .and_then(|raycaster| camera_plane_world_axes(world, raycaster))
-                .map(|axes| project_onto_world_axes(delta_world, axes))
-                .unwrap_or(delta_world);
-            world_delta_to_parent_local(world, target, constrained_world)
-        }
-        GrabbablePlane::WorldAxes(axes) => {
-            let projected_world = project_onto_world_axes(delta_world, axes);
-            world_delta_to_parent_local(world, target, projected_world)
-        }
+pub fn pointer_grab_distance(world: &World, pointer: ComponentId) -> f32 {
+    if let Some(value) = world
+        .get_component_by_id_as::<PointerComponent>(pointer)
+        .and_then(|p| p.min_grab_distance)
+    {
+        return value;
+    }
+    let topology = pointer_topology_context(world, pointer);
+    if topology.has_controller_driver {
+        0.05
+    } else {
+        0.75
     }
 }
 
-fn camera_plane_world_axes(world: &World, raycaster: ComponentId) -> Option<[[f32; 3]; 2]> {
-    let mut current = Some(raycaster);
-    while let Some(id) = current {
-        if world
-            .get_component_by_id_as::<Camera3DComponent>(id)
-            .is_some()
-            || world
-                .get_component_by_id_as::<CameraXRComponent>(id)
-                .is_some()
-        {
-            return TransformSystem::world_model(world, id).map(world_xy_axes);
-        }
-        current = world.parent_of(id);
-    }
-
-    world
-        .all_components()
-        .find(|id| {
-            world
-                .get_component_by_id_as::<CameraXRComponent>(*id)
-                .is_some_and(|camera| camera.enabled)
-        })
-        .and_then(|camera| TransformSystem::world_model(world, camera))
-        .map(world_xy_axes)
-}
-
-fn world_xy_axes(model: [[f32; 4]; 4]) -> [[f32; 3]; 2] {
-    [
-        [model[0][0], model[0][1], model[0][2]],
-        [model[1][0], model[1][1], model[1][2]],
-    ]
-}
-
-fn project_onto_world_axes(delta: [f32; 3], axes: [[f32; 3]; 2]) -> [f32; 3] {
-    let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    let normalize = |v: [f32; 3]| {
-        let length = dot(v, v).sqrt();
-        [v[0] / length, v[1] / length, v[2] / length]
-    };
-    let first = normalize(axes[0]);
-    let second_rejected = {
-        let along_first = dot(axes[1], first);
-        [
-            axes[1][0] - first[0] * along_first,
-            axes[1][1] - first[1] * along_first,
-            axes[1][2] - first[2] * along_first,
-        ]
-    };
-    let second = normalize(second_rejected);
-    let first_amount = dot(delta, first);
-    let second_amount = dot(delta, second);
-    [
-        first[0] * first_amount + second[0] * second_amount,
-        first[1] * first_amount + second[1] * second_amount,
-        first[2] * first_amount + second[2] * second_amount,
-    ]
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ResolvedGrabbable {
-    target: ComponentId,
-    plane: GrabbablePlane,
-}
-
-/// Resolve a renderable hit to its grabbable movement target.
-///
-/// An enabled Selectable sidecar on the same owner wins over Grabbable. Handle-style
-/// `Grabbable.parent()` markers resolve to the owner's parent Transform.
 pub fn grabbable_owner_for_hit(world: &World, renderable: ComponentId) -> Option<ComponentId> {
-    resolve_grabbable_for_hit(world, renderable).map(|resolved| resolved.target)
+    resolve_marker_target::<GrabbableComponent>(world, renderable, |c| (c.enabled, c.move_parent))
 }
 
-fn resolve_grabbable_for_hit(world: &World, renderable: ComponentId) -> Option<ResolvedGrabbable> {
+pub(crate) fn resolve_marker_target<T: 'static>(
+    world: &World,
+    renderable: ComponentId,
+    fields: impl Fn(&T) -> (bool, bool),
+) -> Option<ComponentId> {
     let mut current = Some(renderable);
     while let Some(id) = current {
         if world
             .get_component_by_id_as::<TransformComponent>(id)
             .is_some()
         {
-            let selectable_wins = world
-                .get_component_by_id_as::<SelectableComponent>(id)
-                .is_some_and(|selectable| selectable.enabled)
-                || world.children_of(id).iter().any(|child| {
-                    world
-                        .get_component_by_id_as::<SelectableComponent>(*child)
-                        .is_some_and(|selectable| selectable.enabled)
-                });
-            if selectable_wins {
-                return None;
-            }
-            if let Some(grabbable) = world
+            if let Some(marker) = world
                 .children_of(id)
                 .iter()
-                .find_map(|child| world.get_component_by_id_as::<GrabbableComponent>(*child))
+                .find_map(|c| world.get_component_by_id_as::<T>(*c))
             {
-                if !grabbable.enabled {
+                let (enabled, move_parent) = fields(marker);
+                if !enabled {
                     return None;
                 }
-                if !grabbable.move_parent {
-                    return Some(ResolvedGrabbable {
-                        target: id,
-                        plane: grabbable.plane,
-                    });
+                if !move_parent {
+                    return Some(id);
                 }
                 let mut parent = world.parent_of(id);
                 while let Some(candidate) = parent {
@@ -262,10 +346,7 @@ fn resolve_grabbable_for_hit(world: &World, renderable: ComponentId) -> Option<R
                         .get_component_by_id_as::<TransformComponent>(candidate)
                         .is_some()
                     {
-                        return Some(ResolvedGrabbable {
-                            target: candidate,
-                            plane: grabbable.plane,
-                        });
+                        return Some(candidate);
                     }
                     parent = world.parent_of(candidate);
                 }
@@ -277,185 +358,250 @@ fn resolve_grabbable_for_hit(world: &World, renderable: ComponentId) -> Option<R
     None
 }
 
+pub(crate) fn ensure_generated_raycastable(
+    world: &mut World,
+    owner: ComponentId,
+    label: &str,
+    emit: &mut dyn SignalEmitter,
+) {
+    if world.children_of(owner).iter().any(|c| {
+        world
+            .get_component_by_id_as::<RaycastableComponent>(*c)
+            .is_some()
+    }) {
+        return;
+    }
+    let raycastable =
+        world.add_component_boxed_named(label, Box::new(RaycastableComponent::enabled()));
+    let serialize = world.add_component(SerializeComponent::off());
+    let _ = world.add_child(raycastable, serialize);
+    if world.add_child(owner, raycastable).is_ok() {
+        world.init_component_tree(raycastable, emit);
+    }
+}
+
+/// Reparent a Transform while keeping its current world-space pose.
+pub fn reparent_preserving_world(
+    world: &mut World,
+    child: ComponentId,
+    new_parent: Option<ComponentId>,
+    emit: &mut dyn SignalEmitter,
+) -> Result<(), &'static str> {
+    let world_matrix =
+        TransformSystem::world_model(world, child).ok_or("child has no world transform")?;
+    let old_parent = world.parent_of(child);
+    let local = if let Some(parent) = new_parent {
+        let parent_world =
+            TransformSystem::world_model(world, parent).ok_or("parent has no world transform")?;
+        mat4_mul(
+            mat4_inverse(parent_world).ok_or("parent transform is singular")?,
+            world_matrix,
+        )
+    } else {
+        world_matrix
+    };
+    world.set_parent(child, new_parent)?;
+    let (translation, rotation, scale) = decompose(local);
+    let transform = world
+        .get_component_by_id_as_mut::<TransformComponent>(child)
+        .ok_or("child is not a transform")?;
+    transform.transform.translation = translation;
+    transform.transform.rotation = rotation;
+    transform.transform.scale = scale;
+    transform.transform.recompute_model();
+    transform.transform.matrix_world = world_matrix;
+    emit.push_event(
+        child,
+        EventSignal::ParentChanged {
+            child,
+            old_parent,
+            new_parent,
+        },
+    );
+    emit.push_intent_now(
+        child,
+        IntentValue::UpdateTransform {
+            component_ids: vec![child],
+            translation,
+            rotation_quat_xyzw: rotation,
+            scale,
+        },
+    );
+    if let Some(parent) = old_parent {
+        emit.push_intent_now(
+            parent,
+            IntentValue::AudioGraphDirtyImmediate {
+                component_ids: vec![parent],
+            },
+        );
+    }
+    if let Some(parent) = new_parent {
+        emit.push_intent_now(
+            parent,
+            IntentValue::AudioGraphDirtyImmediate {
+                component_ids: vec![parent],
+            },
+        );
+    }
+    Ok(())
+}
+
+fn decompose(m: [[f32; 4]; 4]) -> ([f32; 3], [f32; 4], [f32; 3]) {
+    let translation = [m[3][0], m[3][1], m[3][2]];
+    let scale = [
+        vec3_len([m[0][0], m[0][1], m[0][2]]).max(1e-8),
+        vec3_len([m[1][0], m[1][1], m[1][2]]).max(1e-8),
+        vec3_len([m[2][0], m[2][1], m[2][2]]).max(1e-8),
+    ];
+    let mut rotation_matrix = m;
+    for c in 0..3 {
+        for r in 0..3 {
+            rotation_matrix[c][r] /= scale[c];
+        }
+    }
+    (translation, mat_to_quat(rotation_matrix), scale)
+}
+
+fn transform_point(m: [[f32; 4]; 4], p: [f32; 3]) -> [f32; 3] {
+    [
+        m[0][0] * p[0] + m[1][0] * p[1] + m[2][0] * p[2] + m[3][0],
+        m[0][1] * p[0] + m[1][1] * p[1] + m[2][1] * p[2] + m[3][1],
+        m[0][2] * p[0] + m[1][2] * p[1] + m[2][2] * p[2] + m[3][2],
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::ecs::component::{RenderableComponent, SelectableComponent};
-    use crate::engine::ecs::{CommandQueue, Signal};
+    use crate::engine::ecs::CommandQueue;
+    use crate::engine::ecs::component::{
+        ControllerHand, ControllerPoseKind, ControllerXRComponent, RenderableComponent,
+    };
 
-    #[test]
-    fn registration_generates_runtime_raycastable_and_nested_hits_resolve_to_owner() {
-        let mut world = World::default();
-        let owner = world.add_component(TransformComponent::new());
-        let grabbable = world.add_component(GrabbableComponent::new());
-        let nested = world.add_component(TransformComponent::new());
-        let deep = world.add_component(TransformComponent::new());
-        let renderable = world.add_component(RenderableComponent::cube());
-        world.add_child(owner, grabbable).unwrap();
-        world.add_child(owner, nested).unwrap();
-        world.add_child(nested, deep).unwrap();
-        world.add_child(deep, renderable).unwrap();
-
-        let mut queue = CommandQueue::new();
-        let mut system = GrabbableSystem::default();
-        system.register(&mut world, grabbable, &mut queue);
-
-        let generated = world
-            .children_of(owner)
-            .iter()
-            .copied()
-            .find(|child| world.component_label(*child) == Some("grabbable_generated_raycastable"))
-            .expect("generated raycastable");
-        assert!(world
-            .get_component_by_id_as::<RaycastableComponent>(generated)
-            .is_some());
-        assert!(world.children_of(generated).iter().any(|child| {
-            world
-                .get_component_by_id_as::<SerializeComponent>(*child)
-                .is_some_and(|serialize| !serialize.enabled)
-        }));
-        assert_eq!(grabbable_owner_for_hit(&world, renderable), Some(owner));
-    }
-
-    #[test]
-    fn explicit_owner_raycastable_is_preserved() {
-        let mut world = World::default();
-        let owner = world.add_component(TransformComponent::new());
-        let grabbable = world.add_component(GrabbableComponent::new());
-        let explicit = world.add_component(RaycastableComponent::disabled());
-        world.add_child(owner, grabbable).unwrap();
-        world.add_child(owner, explicit).unwrap();
-        let mut queue = CommandQueue::new();
-        GrabbableSystem::default().register(&mut world, grabbable, &mut queue);
-        assert_eq!(
-            world
-                .children_of(owner)
-                .iter()
-                .filter(|child| {
-                    world
-                        .get_component_by_id_as::<RaycastableComponent>(**child)
-                        .is_some()
-                })
-                .count(),
-            1
-        );
-        assert!(
-            !world
-                .get_component_by_id_as::<RaycastableComponent>(explicit)
-                .unwrap()
-                .enable
-        );
-    }
-
-    #[test]
-    fn selectable_on_wins_over_grabbable_but_selectable_off_does_not() {
-        let mut world = World::default();
-        let owner = world.add_component(TransformComponent::new());
-        let grabbable = world.add_component(GrabbableComponent::new());
-        let selectable = world.add_component(SelectableComponent::on());
-        let renderable = world.add_component(RenderableComponent::cube());
-        world.add_child(owner, grabbable).unwrap();
-        world.add_child(owner, selectable).unwrap();
-        world.add_child(owner, renderable).unwrap();
-
-        assert_eq!(grabbable_owner_for_hit(&world, renderable), None);
-        world
-            .get_component_by_id_as_mut::<SelectableComponent>(selectable)
+    fn sync_world(world: &mut World, id: ComponentId, parent_world: Option<[[f32; 4]; 4]>) {
+        let local = world
+            .get_component_by_id_as::<TransformComponent>(id)
             .unwrap()
-            .enabled = false;
-        assert_eq!(grabbable_owner_for_hit(&world, renderable), Some(owner));
+            .transform
+            .model;
+        let matrix = parent_world.map(|p| mat4_mul(p, local)).unwrap_or(local);
+        world
+            .get_component_by_id_as_mut::<TransformComponent>(id)
+            .unwrap()
+            .transform
+            .matrix_world = matrix;
     }
 
     #[test]
-    fn parent_handle_resolves_to_the_complete_parent_transform() {
+    fn reparent_preserves_world_pose_across_rotated_scaled_parents() {
         let mut world = World::default();
-        let panel = world.add_component(TransformComponent::new());
-        let title_bar = world.add_component(TransformComponent::new());
-        let grabbable = world.add_component(GrabbableComponent::parent());
-        let renderable = world.add_component(RenderableComponent::cube());
-        world.add_child(panel, title_bar).unwrap();
-        world.add_child(title_bar, grabbable).unwrap();
-        world.add_child(title_bar, renderable).unwrap();
-
-        assert_eq!(grabbable_owner_for_hit(&world, renderable), Some(panel));
+        let old = world.add_component(
+            TransformComponent::new()
+                .with_position(3.0, 1.0, -2.0)
+                .with_scale(2.0, 2.0, 2.0),
+        );
+        let new = world.add_component(
+            TransformComponent::new()
+                .with_position(-4.0, 2.0, 1.0)
+                .with_rotation_euler(0.0, 0.7, 0.0),
+        );
+        let child = world.add_component(TransformComponent::new().with_position(0.5, 1.0, -0.25));
+        world.add_child(old, child).unwrap();
+        sync_world(&mut world, old, None);
+        sync_world(&mut world, new, None);
+        let old_world = TransformSystem::world_model(&world, old).unwrap();
+        sync_world(&mut world, child, Some(old_world));
+        let before = TransformSystem::world_model(&world, child).unwrap();
+        let mut queue = CommandQueue::new();
+        reparent_preserving_world(&mut world, child, Some(new), &mut queue).unwrap();
+        assert_eq!(world.parent_of(child), Some(new));
+        assert_eq!(TransformSystem::world_model(&world, child), Some(before));
+        reparent_preserving_world(&mut world, child, Some(old), &mut queue).unwrap();
+        assert_eq!(world.parent_of(child), Some(old));
+        assert_eq!(TransformSystem::world_model(&world, child), Some(before));
     }
 
     #[test]
-    fn desktop_trigger_drag_moves_grabbable_but_xr_trigger_does_not() {
+    fn pointer_clearance_uses_topology_defaults_and_override() {
         let mut world = World::default();
-        let owner = world.add_component(TransformComponent::new());
-        let grabbable = world.add_component(GrabbableComponent::new());
-        let renderable = world.add_component(RenderableComponent::cube());
-        world.add_child(owner, grabbable).unwrap();
-        world.add_child(owner, renderable).unwrap();
-
-        let mut rx = RxWorld::default();
-        GrabbableSystem::default().install_handlers(&mut rx);
-        let drag = |screen_pos_px| {
-            Signal::event(
-                renderable,
-                EventSignal::DragMove {
-                    activation_source: PointerActivationSource::Trigger,
-                    raycaster: ComponentId::default(),
-                    renderable,
-                    hit_point: [1.0, 2.0, 3.0],
-                    delta_world: [0.25, -0.5, 1.0],
-                    screen_pos_px,
-                    screen_delta_px: Some((4.0, 8.0)),
-                },
-            )
-        };
-
-        rx.dispatch_event_handlers(&mut world, &drag(Some((20.0, 30.0))));
-        let intents = rx.drain_ready_intents();
-        assert!(intents.iter().any(|signal| matches!(
-            signal.intent.as_ref().map(|intent| &intent.value),
-            Some(IntentValue::UpdateTransform { component_ids, translation, .. })
-                if component_ids.as_slice() == [owner]
-                    && *translation == [0.25, -0.5, 0.0]
-        )));
-
-        rx.dispatch_event_handlers(&mut world, &drag(None));
-        assert!(rx.drain_ready_intents().is_empty());
+        let desktop = world.add_component(PointerComponent::new());
+        assert_eq!(pointer_grab_distance(&world, desktop), 0.75);
+        let controller = world.add_component(ControllerXRComponent::new(
+            true,
+            ControllerHand::Left,
+            ControllerPoseKind::Grip,
+        ));
+        let xr_pointer = world.add_component(PointerComponent::new());
+        world.add_child(controller, xr_pointer).unwrap();
+        assert_eq!(pointer_grab_distance(&world, xr_pointer), 0.05);
+        world
+            .get_component_by_id_as_mut::<PointerComponent>(xr_pointer)
+            .unwrap()
+            .min_grab_distance = Some(0.2);
+        assert_eq!(pointer_grab_distance(&world, xr_pointer), 0.2);
     }
 
     #[test]
-    fn camera_and_world_axis_planes_constrain_deltas() {
+    fn unmeasurable_target_eases_its_origin_to_clearance() {
         let mut world = World::default();
-        let owner = world.add_component(TransformComponent::new());
+        let driver = world.add_component(TransformComponent::new());
+        let pointer = world.add_component(PointerComponent::new().min_grab_distance(0.25));
+        let target = world.add_component(TransformComponent::new().with_position(0.0, 0.0, -2.0));
+        world.add_child(driver, pointer).unwrap();
+        sync_world(&mut world, driver, None);
+        sync_world(&mut world, target, None);
+        let mut system = GrabbableSystem::default();
+        let mut queue = CommandQueue::new();
+        system.start(
+            &mut world,
+            &RenderAssets::new(),
+            &mut queue,
+            pointer,
+            target,
+            [0.0; 3],
+            [0.0, 0.0, -1.0],
+        );
+        assert_eq!(world.parent_of(target), Some(driver));
+        system.tick(&mut world, &RenderAssets::new(), &mut queue, 10.0);
+        let position = world
+            .get_component_by_id_as::<TransformComponent>(target)
+            .unwrap()
+            .transform
+            .translation;
+        assert!((position[2] + 0.25).abs() < 0.001);
+    }
 
-        assert_eq!(
-            constrained_parent_local_delta(
-                &world,
-                owner,
-                GrabbablePlane::Camera,
-                [1.0, 2.0, 3.0],
-                None,
-            ),
-            [1.0, 2.0, 3.0]
+    #[test]
+    fn primitive_bounds_keep_ray_facing_surface_at_clearance() {
+        let mut world = World::default();
+        let driver = world.add_component(TransformComponent::new());
+        let pointer = world.add_component(PointerComponent::new().min_grab_distance(0.1));
+        let target = world.add_component(TransformComponent::new().with_position(0.0, 0.0, -2.0));
+        let cube = world.add_component(RenderableComponent::cube());
+        world.add_child(driver, pointer).unwrap();
+        world.add_child(target, cube).unwrap();
+        sync_world(&mut world, driver, None);
+        sync_world(&mut world, target, None);
+        let mut system = GrabbableSystem::default();
+        let mut queue = CommandQueue::new();
+        system.start(
+            &mut world,
+            &RenderAssets::new(),
+            &mut queue,
+            pointer,
+            target,
+            [0.0; 3],
+            [0.0, 0.0, -1.0],
         );
-        let camera_rig = world.add_component(TransformComponent::new());
-        let camera = world.add_component(Camera3DComponent::default());
-        world.add_child(camera_rig, camera).unwrap();
-        assert_eq!(
-            constrained_parent_local_delta(
-                &world,
-                owner,
-                GrabbablePlane::Camera,
-                [1.0, 2.0, 3.0],
-                Some(camera),
-            ),
-            [1.0, 2.0, 0.0]
+        system.tick(&mut world, &RenderAssets::new(), &mut queue, 10.0);
+        let z = world
+            .get_component_by_id_as::<TransformComponent>(target)
+            .unwrap()
+            .transform
+            .translation[2];
+        assert!(
+            (z + 0.6).abs() < 0.001,
+            "center should be clearance plus cube half extent: {z}"
         );
-        let projected = constrained_parent_local_delta(
-            &world,
-            owner,
-            GrabbablePlane::WorldAxes([[1.0, 0.0, 0.0], [0.0, 0.0, 2.0]]),
-            [1.0, 2.0, 3.0],
-            None,
-        );
-        assert!((projected[0] - 1.0).abs() < 1e-6);
-        assert!(projected[1].abs() < 1e-6);
-        assert!((projected[2] - 3.0).abs() < 1e-6);
     }
 }

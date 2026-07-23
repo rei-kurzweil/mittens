@@ -922,12 +922,12 @@ impl RayCastSystem {
 
                 let source = Self::inferred_source_kind(world, rcid);
 
-                // A pointer's trigger being down should auto-cast the same way mouse-down does.
-                let pointer_trigger_active = pointer_system
+                // Either XR action must be able to acquire its own interaction target.
+                // In particular, grip grabbing must not depend on the trigger first
+                // waking this event-driven raycaster.
+                let pointer_action_active = pointer_system
                     .raycast_to_pointer(rcid)
-                    .map(|ptr| {
-                        activations.down.contains(&ptr) || activations.pressed.contains(&ptr)
-                    })
+                    .map(|ptr| activations.raycast_active(ptr))
                     .unwrap_or(false);
 
                 let (origin, dir) = match source {
@@ -945,7 +945,7 @@ impl RayCastSystem {
                     }
                 };
 
-                if !Self::should_cast(mode, input, cast_requested, source, pointer_trigger_active) {
+                if !Self::should_cast(mode, input, cast_requested, source, pointer_action_active) {
                     continue;
                 }
 

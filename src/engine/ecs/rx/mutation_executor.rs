@@ -492,7 +492,7 @@ impl RxMutationExecutor {
             }
             IntentValue::RegisterControllerXr { component_ids } => {
                 for &component in component_ids.iter() {
-                    systems.register_controller_xr(world, visuals, component);
+                    systems.register_controller_xr(world, visuals, component, emit);
                 }
             }
             IntentValue::RegisterInputXrGamepad { component_ids } => {
@@ -529,6 +529,11 @@ impl RxMutationExecutor {
             IntentValue::RegisterGrabbable { component_ids } => {
                 for &component in component_ids.iter() {
                     systems.grabbable.register(world, component, emit);
+                }
+            }
+            IntentValue::RegisterDraggable { component_ids } => {
+                for &component in component_ids.iter() {
+                    systems.draggable.register(world, component, emit);
                 }
             }
             IntentValue::RemoveRaycast { component_ids } => {
