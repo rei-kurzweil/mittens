@@ -69,6 +69,7 @@ pub mod scroll_system;
 pub mod secondary_motion_system;
 pub mod selection_system;
 pub mod skinned_mesh_system;
+pub mod spring_bone_visualization_system;
 pub mod system_world;
 pub mod text_input_system;
 pub mod text_system;
@@ -133,8 +134,14 @@ pub use renderer_stats_system::RendererStatsSystem;
 pub use router_system::RouterSystem;
 pub use scroll_system::ScrollingSystem;
 pub use secondary_motion_system::SecondaryMotionSystem;
+pub use secondary_motion_system::{
+    SecondaryMotionChainSnapshot, SecondaryMotionColliderSnapshot, SecondaryMotionSegmentSnapshot,
+};
 pub use selection_system::SelectionSystem;
 pub use skinned_mesh_system::SkinnedMeshSystem;
+pub use spring_bone_visualization_system::{
+    SpringBoneVisualizationRequest, SpringBoneVisualizationSystem,
+};
 pub use system_world::SystemWorld;
 pub use text_input_system::TextInputSystem;
 pub use text_system::TextSystem;

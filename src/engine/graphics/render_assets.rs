@@ -40,6 +40,8 @@ pub struct RenderAssets {
     wireframe_box_meshes: HashMap<u32, CpuMeshHandle>,
     /// Procedural unit wireframe squares keyed by the exact authored thickness bits.
     wireframe_square_meshes: HashMap<u32, CpuMeshHandle>,
+    wireframe_sphere_meshes: HashMap<(u32, u32, u32), CpuMeshHandle>,
+    wireframe_icosahedron_meshes: HashMap<(u32, u32, u32), CpuMeshHandle>,
     capsule_y_meshes: HashMap<(u32, u32), CpuMeshHandle>,
 }
 
@@ -121,6 +123,49 @@ impl RenderAssets {
         }
         let handle = self.register_mesh(MeshFactory::wireframe_square(thickness));
         self.wireframe_square_meshes.insert(key, handle);
+        handle
+    }
+
+    pub fn wireframe_sphere_mesh(
+        &mut self,
+        latitude_segments: u32,
+        longitude_segments: u32,
+        thickness: f32,
+    ) -> CpuMeshHandle {
+        let latitude_segments = latitude_segments.max(2);
+        let longitude_segments = longitude_segments.max(3);
+        let thickness = thickness.clamp(1.0e-4, 0.5);
+        let key = (latitude_segments, longitude_segments, thickness.to_bits());
+        if let Some(handle) = self.wireframe_sphere_meshes.get(&key).copied() {
+            return handle;
+        }
+        let handle = self.register_mesh(MeshFactory::wireframe_sphere(
+            latitude_segments,
+            longitude_segments,
+            thickness,
+        ));
+        self.wireframe_sphere_meshes.insert(key, handle);
+        handle
+    }
+
+    pub fn wireframe_icosahedron_mesh(
+        &mut self,
+        tessellations: u32,
+        sphericalness: f32,
+        thickness: f32,
+    ) -> CpuMeshHandle {
+        let sphericalness = sphericalness.clamp(0.0, 1.0);
+        let thickness = thickness.clamp(1.0e-4, 0.5);
+        let key = (tessellations, sphericalness.to_bits(), thickness.to_bits());
+        if let Some(handle) = self.wireframe_icosahedron_meshes.get(&key).copied() {
+            return handle;
+        }
+        let handle = self.register_mesh(MeshFactory::wireframe_icosahedron(
+            tessellations,
+            sphericalness,
+            thickness,
+        ));
+        self.wireframe_icosahedron_meshes.insert(key, handle);
         handle
     }
 

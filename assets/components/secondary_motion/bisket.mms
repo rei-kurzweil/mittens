@@ -54,7 +54,7 @@ export fn bisket_secondary_motion_with(config, extra_chains) {
             .drag_force(0.25)
             .gravity(0.8, [0, -1, 0])
             .colliders(["[name='bisket_collider_spine']", "[name='bisket_collider_hips']", "[name='bisket_colliders_upper_legs']"])
-            .hit_radius(0.03)
+            .hit_radius(0.0375)
         if extra_chains {
             for chain in extra_chains {
                 SpringBone.from_root(chain.root)

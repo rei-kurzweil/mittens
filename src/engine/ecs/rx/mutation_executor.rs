@@ -638,6 +638,21 @@ impl RxMutationExecutor {
                     }
                 }
             }
+            IntentValue::SpringBoneVisualizationSet {
+                component_ids,
+                scope_roots,
+                visible,
+            } => {
+                for owner in component_ids {
+                    if *visible {
+                        systems
+                            .spring_bone_visualization
+                            .set_request(*owner, scope_roots.clone());
+                    } else {
+                        systems.spring_bone_visualization.remove_request(*owner);
+                    }
+                }
+            }
             IntentValue::CameraVisualizationSet {
                 component_ids,
                 scope_roots,

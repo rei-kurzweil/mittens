@@ -804,6 +804,10 @@ pub fn spawn_editor_panel_layout_tree(
                         "show_gltf_colliders".into(),
                         Value::Bool(config.show_gltf_colliders),
                     ),
+                    (
+                        "show_spring_bones".into(),
+                        Value::Bool(config.show_spring_bones),
+                    ),
                 ])),
             ],
             PanelKind::Settings,

@@ -440,6 +440,11 @@ pub enum IntentValue {
         scope_roots: Vec<ComponentId>,
         mode: Option<crate::engine::ecs::system::CollisionVisualizationMode>,
     },
+    SpringBoneVisualizationSet {
+        component_ids: Vec<ComponentId>,
+        scope_roots: Vec<ComponentId>,
+        visible: bool,
+    },
     CameraVisualizationSet {
         component_ids: Vec<ComponentId>,
         scope_roots: Vec<ComponentId>,
@@ -875,6 +880,7 @@ impl IntentValue {
             IntentValue::SelectionSet { .. } => "selection_set",
             IntentValue::ToggleSet { .. } => "toggle_set",
             IntentValue::CollisionVisualizationSet { .. } => "collision_visualization_set",
+            IntentValue::SpringBoneVisualizationSet { .. } => "spring_bone_visualization_set",
             IntentValue::CameraVisualizationSet { .. } => "camera_visualization_set",
 
             IntentValue::Attach { .. } => "attach",

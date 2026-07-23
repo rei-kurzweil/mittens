@@ -103,6 +103,53 @@ fn normalize3(v: [f32; 3]) -> [f32; 3] {
     [v[0] / len, v[1] / len, v[2] / len]
 }
 
+fn append_tube_segment(
+    vertices: &mut Vec<CpuVertex>,
+    indices: &mut Vec<u32>,
+    start: [f32; 3],
+    end: [f32; 3],
+    radius: f32,
+) {
+    const SIDES: u32 = 6;
+    let direction = normalize3(sub3(end, start));
+    if !direction.iter().all(|value| value.is_finite()) || len3(sub3(end, start)) <= f32::EPSILON {
+        return;
+    }
+    let reference = if direction[1].abs() < 0.9 {
+        [0.0, 1.0, 0.0]
+    } else {
+        [1.0, 0.0, 0.0]
+    };
+    let tangent = normalize3(cross3(direction, reference));
+    let bitangent = normalize3(cross3(direction, tangent));
+    let base = vertices.len() as u32;
+    for endpoint in [start, end] {
+        for side in 0..SIDES {
+            let angle = std::f32::consts::TAU * side as f32 / SIDES as f32;
+            let normal = add3(mul3(tangent, angle.cos()), mul3(bitangent, angle.sin()));
+            vertices.push(CpuVertex {
+                pos: add3(endpoint, mul3(normal, radius)),
+                uv: [
+                    side as f32 / SIDES as f32,
+                    u32::from(endpoint == end) as f32,
+                ],
+                normal,
+            });
+        }
+    }
+    for side in 0..SIDES {
+        let next = (side + 1) % SIDES;
+        indices.extend_from_slice(&[
+            base + side,
+            base + SIDES + side,
+            base + SIDES + next,
+            base + side,
+            base + SIDES + next,
+            base + next,
+        ]);
+    }
+}
+
 fn cross3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
     [
         a[1] * b[2] - a[2] * b[1],
@@ -538,6 +585,114 @@ impl MeshFactory {
             }
         }
 
+        CpuMesh::new(vertices, indices)
+    }
+
+    /// Unit wireframe sphere made from solid latitude rings and longitude arcs.
+    pub fn wireframe_sphere(
+        latitude_segments: u32,
+        longitude_segments: u32,
+        thickness: f32,
+    ) -> CpuMesh {
+        let latitude_segments = latitude_segments.max(2);
+        let longitude_segments = longitude_segments.max(3);
+        let thickness = thickness.clamp(1.0e-4, 0.5);
+        let center_radius = 0.5 - thickness * 0.5;
+        let tube_radius = thickness * 0.5;
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        for latitude in 1..latitude_segments {
+            let phi = -std::f32::consts::FRAC_PI_2
+                + std::f32::consts::PI * latitude as f32 / latitude_segments as f32;
+            let (sin_phi, cos_phi) = phi.sin_cos();
+            for longitude in 0..longitude_segments {
+                let next = (longitude + 1) % longitude_segments;
+                let point = |segment: u32| {
+                    let theta = std::f32::consts::TAU * segment as f32 / longitude_segments as f32;
+                    let (sin_theta, cos_theta) = theta.sin_cos();
+                    [
+                        center_radius * cos_phi * cos_theta,
+                        center_radius * sin_phi,
+                        center_radius * cos_phi * sin_theta,
+                    ]
+                };
+                append_tube_segment(
+                    &mut vertices,
+                    &mut indices,
+                    point(longitude),
+                    point(next),
+                    tube_radius,
+                );
+            }
+        }
+
+        for longitude in 0..longitude_segments {
+            let theta = std::f32::consts::TAU * longitude as f32 / longitude_segments as f32;
+            let (sin_theta, cos_theta) = theta.sin_cos();
+            for latitude in 0..latitude_segments {
+                let point = |segment: u32| {
+                    let phi = -std::f32::consts::FRAC_PI_2
+                        + std::f32::consts::PI * segment as f32 / latitude_segments as f32;
+                    let (sin_phi, cos_phi) = phi.sin_cos();
+                    [
+                        center_radius * cos_phi * cos_theta,
+                        center_radius * sin_phi,
+                        center_radius * cos_phi * sin_theta,
+                    ]
+                };
+                append_tube_segment(
+                    &mut vertices,
+                    &mut indices,
+                    point(latitude),
+                    point(latitude + 1),
+                    tube_radius,
+                );
+            }
+        }
+        CpuMesh::new(vertices, indices)
+    }
+
+    /// Thick wireframe matching [`Self::icosahedron`] tessellation and sphericalness.
+    pub fn wireframe_icosahedron(
+        tessellations: u32,
+        sphericalness: f32,
+        thickness: f32,
+    ) -> CpuMesh {
+        use std::collections::HashSet;
+
+        let sphericalness = sphericalness.clamp(0.0, 1.0);
+        let thickness = thickness.clamp(1.0e-4, 0.5);
+        let filled = Self::icosahedron(tessellations, sphericalness);
+        let inset = (0.5 - thickness * 0.5) / 0.5;
+        let tube_radius = thickness * 0.5;
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        let mut edges = HashSet::new();
+
+        let key = |position: [f32; 3]| position.map(f32::to_bits);
+        for triangle in filled.indices_u32.chunks_exact(3) {
+            for (a, b) in [(0, 1), (1, 2), (2, 0)] {
+                let start = filled.vertices[triangle[a] as usize].pos;
+                let end = filled.vertices[triangle[b] as usize].pos;
+                let start_key = key(start);
+                let end_key = key(end);
+                let edge = if start_key <= end_key {
+                    (start_key, end_key)
+                } else {
+                    (end_key, start_key)
+                };
+                if edges.insert(edge) {
+                    append_tube_segment(
+                        &mut vertices,
+                        &mut indices,
+                        mul3(start, inset),
+                        mul3(end, inset),
+                        tube_radius,
+                    );
+                }
+            }
+        }
         CpuMesh::new(vertices, indices)
     }
 
@@ -1108,6 +1263,34 @@ mod tests {
         for vertex in &mesh.vertices {
             assert!((radius3(vertex.pos) - 0.5).abs() < 1.0e-4);
         }
+    }
+
+    #[test]
+    fn wireframe_sphere_is_finite_bounded_and_parameterized() {
+        let coarse = MeshFactory::wireframe_sphere(4, 8, 0.02);
+        let fine = MeshFactory::wireframe_sphere(8, 16, 0.02);
+        assert!(!coarse.vertices.is_empty());
+        assert!(fine.vertices.len() > coarse.vertices.len());
+        assert!(coarse.indices_u32.len() % 3 == 0);
+        for vertex in &coarse.vertices {
+            assert!(vertex.pos.into_iter().all(f32::is_finite));
+            assert!(vertex.normal.into_iter().all(f32::is_finite));
+            assert!(vertex.pos.into_iter().all(|value| value.abs() <= 0.5001));
+        }
+    }
+
+    #[test]
+    fn wireframe_icosahedron_emits_each_shared_edge_once() {
+        let base = MeshFactory::wireframe_icosahedron(0, 0.0, 0.02);
+        let tessellated = MeshFactory::wireframe_icosahedron(1, 1.0, 0.02);
+        // Six-sided tubes have twelve vertices per unique edge. An icosahedron
+        // has 30 edges; one subdivision has 120.
+        assert_eq!(base.vertices.len(), 30 * 12);
+        assert_eq!(tessellated.vertices.len(), 120 * 12);
+        assert!(base.vertices.iter().all(|vertex| {
+            vertex.pos.into_iter().all(f32::is_finite)
+                && vertex.pos.into_iter().all(|value| value.abs() <= 0.5001)
+        }));
     }
 
     #[test]

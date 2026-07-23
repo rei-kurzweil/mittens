@@ -857,6 +857,13 @@ Toggle.off()
 EditorUI {}
 ```
 
+#### `SpringBoneVisualizationSet`
+<!-- catalog:signal source="SpringBoneVisualizationSet" kind="intent" mms="engine-only" -->
+**Intent — Engine-only.** Adds, updates, or removes an EditorUI-owned spring-bone visualization request.
+```mms parse-only
+EditorUI {}
+```
+
 #### `RequestRaycast`
 <!-- catalog:signal source="RequestRaycast" kind="intent" mms="action" -->
 **Intent — Directly authorable through `Action`.** Requests the `RequestRaycast` operation. An `Action` constructor authors this intent; the action system resolves targets and the intent executor performs it. It is scoped to the requesting/affected component and executes at an explicit drain point; `AtBeat` delays eligibility when the producer supplies timed metadata. Related components and systems are the targets named by the variant; see executor matching for exact effects. Sources: [intent definition](../../../src/engine/ecs/rx/signal.rs), [intent interpretation](../../../src/engine/ecs/rx/intent_executor.rs), [mutation execution](../../../src/engine/ecs/rx/mutation_executor.rs), and [MMS action registry](../../../src/scripting/component_registry.rs).

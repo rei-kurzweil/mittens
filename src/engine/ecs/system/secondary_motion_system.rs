@@ -100,7 +100,83 @@ pub struct SecondaryMotionSystem {
     debug_frames: u64,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct SecondaryMotionColliderSnapshot {
+    pub config: ComponentId,
+    pub target: ComponentId,
+    pub center: [f32; 3],
+    pub scaled_base_radius: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SecondaryMotionSegmentSnapshot {
+    pub head: [f32; 3],
+    pub end: [f32; 3],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SecondaryMotionChainSnapshot {
+    pub gltf: ComponentId,
+    pub chain: ComponentId,
+    pub enabled: bool,
+    pub hit_radius: f32,
+    pub scaled_hit_radius: f32,
+    pub segments: Vec<SecondaryMotionSegmentSnapshot>,
+    pub colliders: Vec<SecondaryMotionColliderSnapshot>,
+}
+
 impl SecondaryMotionSystem {
+    /// Read-only projection of successfully bound solver state in current world space.
+    pub fn bound_snapshot(&self, world: &World) -> Vec<SecondaryMotionChainSnapshot> {
+        let mut snapshot = Vec::new();
+        for (&chain, runtime) in &self.chains {
+            let ChainStatus::Bound(state) = &runtime.status else {
+                continue;
+            };
+            let hit_scale = world
+                .parent_of(state.gltf)
+                .map(|anchor| world_max_scale(world, anchor))
+                .unwrap_or(1.0);
+            let segments = state
+                .joints
+                .iter()
+                .enumerate()
+                .map(|(index, joint)| SecondaryMotionSegmentSnapshot {
+                    head: if index == 0 {
+                        pos(world, joint.id).unwrap_or(state.current[index])
+                    } else {
+                        state.current[index - 1]
+                    },
+                    end: state.current[index],
+                })
+                .collect();
+            let colliders = state
+                .colliders
+                .iter()
+                .filter_map(|collider| {
+                    Some(SecondaryMotionColliderSnapshot {
+                        config: collider.config,
+                        target: collider.target,
+                        center: pos(world, collider.target)?,
+                        scaled_base_radius: collider.radius
+                            * world_max_scale(world, collider.target),
+                    })
+                })
+                .collect();
+            snapshot.push(SecondaryMotionChainSnapshot {
+                gltf: state.gltf,
+                chain,
+                enabled: state.enabled,
+                hit_radius: state.hit_radius,
+                scaled_hit_radius: state.hit_radius * hit_scale,
+                segments,
+                colliders,
+            });
+        }
+        snapshot.sort_by_key(|entry| entry.chain);
+        snapshot
+    }
+
     pub fn install_handlers(rx: &mut RxWorld) {
         rx.add_global_handler_named(
             SignalKind::ParentChanged,
@@ -1726,6 +1802,42 @@ mod tests {
         let (bound, warnings) = build_chain(&world, gltf, chain, &[]).unwrap();
         assert!(bound.colliders.is_empty());
         assert_eq!(warnings.len(), 1);
+    }
+
+    #[test]
+    fn bound_snapshot_projects_only_resolved_solver_geometry() {
+        let mut fixture = fixture();
+        let gltf = nearest_gltf(&fixture.world, fixture.root).unwrap();
+        let collider = fixture.world.add_component_boxed_named(
+            "snapshot_collider",
+            Box::new(SpringColliderComponent::sphere(
+                ComponentRef::Query("#retained_first".into()),
+                0.25,
+            )),
+        );
+        fixture.world.add_child(gltf, collider).unwrap();
+        let collider_guid = fixture.world.get_component_record(collider).unwrap().guid;
+        {
+            let chain = fixture
+                .world
+                .get_component_by_id_as_mut::<SpringBoneComponent>(fixture.chain)
+                .unwrap();
+            chain.colliders = vec![ComponentRef::Guid(collider_guid)];
+            chain.hit_radius = 0.05;
+        }
+        fixture.system.register(&fixture.world, fixture.root);
+
+        let snapshot = fixture.system.bound_snapshot(&fixture.world);
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot[0].gltf, gltf);
+        assert_eq!(snapshot[0].chain, fixture.chain);
+        assert!(snapshot[0].enabled);
+        assert_eq!(snapshot[0].hit_radius, 0.05);
+        assert_eq!(snapshot[0].segments.len(), 2);
+        assert_eq!(snapshot[0].colliders.len(), 1);
+        assert_eq!(snapshot[0].colliders[0].config, collider);
+        assert_eq!(snapshot[0].colliders[0].target, fixture.imported[0]);
+        assert_eq!(snapshot[0].colliders[0].scaled_base_radius, 0.25);
     }
 
     #[test]

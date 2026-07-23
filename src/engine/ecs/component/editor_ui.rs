@@ -54,6 +54,7 @@ pub struct SettingsPanelConfig {
     pub show_cameras: bool,
     pub show_colliders: bool,
     pub show_gltf_colliders: bool,
+    pub show_spring_bones: bool,
 }
 
 impl Default for SettingsPanelConfig {
@@ -64,6 +65,7 @@ impl Default for SettingsPanelConfig {
             show_cameras: true,
             show_colliders: true,
             show_gltf_colliders: true,
+            show_spring_bones: true,
         }
     }
 }
@@ -90,6 +92,10 @@ impl SettingsPanelConfig {
     }
     pub fn with_show_gltf_colliders(mut self, value: bool) -> Self {
         self.show_gltf_colliders = value;
+        self
+    }
+    pub fn with_show_spring_bones(mut self, value: bool) -> Self {
+        self.show_spring_bones = value;
         self
     }
 }
@@ -153,6 +159,9 @@ impl EditorUIPanelSpec {
     }
     pub fn with_show_gltf_colliders(self, value: bool) -> Self {
         self.map_settings(|c| c.with_show_gltf_colliders(value))
+    }
+    pub fn with_show_spring_bones(self, value: bool) -> Self {
+        self.map_settings(|c| c.with_show_spring_bones(value))
     }
 }
 
@@ -274,6 +283,7 @@ impl Component for EditorUIComponent {
                         ("show_cameras", b(c.show_cameras)),
                         ("show_colliders", b(c.show_colliders)),
                         ("show_gltf_colliders", b(c.show_gltf_colliders)),
+                        ("show_spring_bones", b(c.show_spring_bones)),
                     ]),
                     EditorUIPanelConfig::Empty => table(vec![]),
                 };

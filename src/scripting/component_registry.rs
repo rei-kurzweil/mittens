@@ -1122,12 +1122,13 @@ fn parse_editor_ui_panel_specs(args: &[Value]) -> Result<Vec<EditorUIPanelSpec>,
                 };
                 match panel {
                     EditorPanel::Settings => {
-                        const KEYS: [&str; 5] = [
+                        const KEYS: [&str; 6] = [
                             "show_armature",
                             "show_bounds",
                             "show_cameras",
                             "show_colliders",
                             "show_gltf_colliders",
+                            "show_spring_bones",
                         ];
                         if let Some(key) = config.keys().find(|key| !KEYS.contains(&key.as_str())) {
                             return Err(format!("unknown EditorUI settings config key '{key}'"));
@@ -1140,6 +1141,11 @@ fn parse_editor_ui_panel_specs(args: &[Value]) -> Result<Vec<EditorUIPanelSpec>,
                             show_gltf_colliders: editor_ui_bool(
                                 &config,
                                 "show_gltf_colliders",
+                                true,
+                            )?,
+                            show_spring_bones: editor_ui_bool(
+                                &config,
+                                "show_spring_bones",
                                 true,
                             )?,
                         })
@@ -1377,6 +1383,28 @@ fn create_component(
                 let thickness = arg_f32(args, 0).unwrap_or(0.1);
                 Ok(world.add_component(RenderableComponent::wireframe_square(
                     render_assets,
+                    thickness,
+                )))
+            }),
+            Some("wireframe_sphere") => with_render_assets_mut(|render_assets| {
+                let latitude_segments = arg_u32(args, 0).unwrap_or(16);
+                let longitude_segments = arg_u32(args, 1).unwrap_or(32);
+                let thickness = arg_f32(args, 2).unwrap_or(0.02);
+                Ok(world.add_component(RenderableComponent::wireframe_sphere(
+                    render_assets,
+                    latitude_segments,
+                    longitude_segments,
+                    thickness,
+                )))
+            }),
+            Some("wireframe_icosahedron") => with_render_assets_mut(|render_assets| {
+                let tessellations = arg_u32(args, 0).unwrap_or(0);
+                let sphericalness = arg_f32(args, 1).unwrap_or(0.0);
+                let thickness = arg_f32(args, 2).unwrap_or(0.02);
+                Ok(world.add_component(RenderableComponent::wireframe_icosahedron(
+                    render_assets,
+                    tessellations,
+                    sphericalness,
                     thickness,
                 )))
             }),

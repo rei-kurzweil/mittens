@@ -39,6 +39,16 @@ pub enum AuthoredRenderableShape {
     WireframeSquare {
         thickness: f32,
     },
+    WireframeSphere {
+        latitude_segments: u32,
+        longitude_segments: u32,
+        thickness: f32,
+    },
+    WireframeIcosahedron {
+        tessellations: u32,
+        sphericalness: f32,
+        thickness: f32,
+    },
 }
 
 /// Renderable component.
@@ -141,6 +151,45 @@ impl RenderableComponent {
                 .with_base_mesh(CpuMeshHandle::QUAD_2D),
         );
         component.authored_shape = Some(AuthoredRenderableShape::WireframeSquare { thickness });
+        component
+    }
+
+    pub fn wireframe_sphere(
+        render_assets: &mut RenderAssets,
+        latitude_segments: u32,
+        longitude_segments: u32,
+        thickness: f32,
+    ) -> Self {
+        let latitude_segments = latitude_segments.max(2);
+        let longitude_segments = longitude_segments.max(3);
+        let thickness = thickness.clamp(1.0e-4, 0.5);
+        let handle =
+            render_assets.wireframe_sphere_mesh(latitude_segments, longitude_segments, thickness);
+        let mut component = Self::new(Renderable::new(handle, MaterialHandle::TOON_MESH));
+        component.authored_shape = Some(AuthoredRenderableShape::WireframeSphere {
+            latitude_segments,
+            longitude_segments,
+            thickness,
+        });
+        component
+    }
+
+    pub fn wireframe_icosahedron(
+        render_assets: &mut RenderAssets,
+        tessellations: u32,
+        sphericalness: f32,
+        thickness: f32,
+    ) -> Self {
+        let sphericalness = sphericalness.clamp(0.0, 1.0);
+        let thickness = thickness.clamp(1.0e-4, 0.5);
+        let handle =
+            render_assets.wireframe_icosahedron_mesh(tessellations, sphericalness, thickness);
+        let mut component = Self::new(Renderable::new(handle, MaterialHandle::TOON_MESH));
+        component.authored_shape = Some(AuthoredRenderableShape::WireframeIcosahedron {
+            tessellations,
+            sphericalness,
+            thickness,
+        });
         component
     }
 
@@ -375,6 +424,32 @@ impl Component for RenderableComponent {
                 "Renderable",
                 "wireframe_square",
                 vec![num(*thickness as f64)],
+            ),
+            Some(AuthoredRenderableShape::WireframeSphere {
+                latitude_segments,
+                longitude_segments,
+                thickness,
+            }) => ce_call(
+                "Renderable",
+                "wireframe_sphere",
+                vec![
+                    num(*latitude_segments as f64),
+                    num(*longitude_segments as f64),
+                    num(*thickness as f64),
+                ],
+            ),
+            Some(AuthoredRenderableShape::WireframeIcosahedron {
+                tessellations,
+                sphericalness,
+                thickness,
+            }) => ce_call(
+                "Renderable",
+                "wireframe_icosahedron",
+                vec![
+                    num(*tessellations as f64),
+                    num(*sphericalness as f64),
+                    num(*thickness as f64),
+                ],
             ),
             None => ce("Renderable"),
         }

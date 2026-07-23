@@ -79,6 +79,23 @@ fn wireframe_box_mesh_is_cached_by_thickness_and_retains_unit_extents() {
 }
 
 #[test]
+fn curved_wireframe_meshes_reuse_normalized_cache_keys() {
+    let mut assets = RenderAssets::new();
+    let sphere = RenderableComponent::wireframe_sphere(&mut assets, 1, 2, 0.0);
+    let sphere_normalized =
+        RenderableComponent::wireframe_sphere(&mut assets, 2, 3, 0.0001);
+    let sphere_detailed =
+        RenderableComponent::wireframe_sphere(&mut assets, 3, 3, 0.0001);
+    assert_eq!(sphere.renderable.mesh, sphere_normalized.renderable.mesh);
+    assert_ne!(sphere.renderable.mesh, sphere_detailed.renderable.mesh);
+
+    let ico = RenderableComponent::wireframe_icosahedron(&mut assets, 1, 2.0, 0.8);
+    let ico_normalized =
+        RenderableComponent::wireframe_icosahedron(&mut assets, 1, 1.0, 0.5);
+    assert_eq!(ico.renderable.mesh, ico_normalized.renderable.mesh);
+}
+
+#[test]
 fn wireframe_square_mesh_is_cached_and_lies_in_the_unit_xy_plane() {
     let mut assets = RenderAssets::new();
     let thin = RenderableComponent::wireframe_square(&mut assets, 0.1);

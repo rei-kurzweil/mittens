@@ -1926,7 +1926,7 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
                     "[name='bisket_collider_hips']",
                     "[name='bisket_colliders_upper_legs']",
                 ],
-                0.03,
+                0.0375,
             )
         };
         let actual: Vec<_> = chain
@@ -1940,6 +1940,15 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
         assert_eq!(actual, expected.0, "{}", chain.stable_name);
         assert_eq!(chain.hit_radius, expected.1, "{}", chain.stable_name);
     }
+    assert_eq!(
+        world
+            .get_component_by_id_as::<SpringColliderComponent>(named(
+                "bisket_collider_hips"
+            ))
+            .unwrap()
+            .radius,
+        0.1375
+    );
 
     for light_name in ["studio_key_light", "studio_fill_light", "studio_rim_light"] {
         let tree = descendants(named(light_name));
@@ -3343,6 +3352,10 @@ export fn procedural_defaults() {
         R.heart() {}
         R.star() {}
         R.partial_annulus_2d() {}
+        R.wireframe_sphere() {}
+        R.wireframe_sphere(5, 9, 0.03) {}
+        R.wireframe_icosahedron() {}
+        R.wireframe_icosahedron(2, 0.75, 0.04) {}
     }
 }
 "#,
@@ -3364,7 +3377,38 @@ export fn procedural_defaults() {
     .expect("spawn procedural defaults");
 
     assert!(world.get_component_record(root).is_some());
-    assert_eq!(world.children_of(root).len(), 5);
+    assert_eq!(world.children_of(root).len(), 9);
+    use crate::engine::ecs::component::renderable::AuthoredRenderableShape;
+    use crate::engine::ecs::component::RenderableComponent;
+    let authored: Vec<_> = world
+        .children_of(root)
+        .iter()
+        .filter_map(|id| {
+            world
+                .get_component_by_id_as::<RenderableComponent>(*id)
+                .and_then(|renderable| renderable.authored_shape.clone())
+        })
+        .collect();
+    assert!(authored.contains(&AuthoredRenderableShape::WireframeSphere {
+        latitude_segments: 16,
+        longitude_segments: 32,
+        thickness: 0.02,
+    }));
+    assert!(authored.contains(&AuthoredRenderableShape::WireframeSphere {
+        latitude_segments: 5,
+        longitude_segments: 9,
+        thickness: 0.03,
+    }));
+    assert!(authored.contains(&AuthoredRenderableShape::WireframeIcosahedron {
+        tessellations: 0,
+        sphericalness: 0.0,
+        thickness: 0.02,
+    }));
+    assert!(authored.contains(&AuthoredRenderableShape::WireframeIcosahedron {
+        tessellations: 2,
+        sphericalness: 0.75,
+        thickness: 0.04,
+    }));
 }
 
 #[test]
@@ -5047,6 +5091,7 @@ fn editor_ui_settings_only_materializes_under_authored_transform() {
         "#editor_settings_bounds_visibility",
         "#editor_settings_colliders_visibility",
         "#editor_settings_gltf_colliders_visibility",
+        "#editor_settings_spring_bones_visibility",
     ] {
         assert!(
             world.find_component(editor_ui, default_row).is_some(),
@@ -5103,6 +5148,7 @@ fn editor_ui_settings_config_conditionally_authors_diagnostic_rows() {
                         show_cameras = false
                         show_colliders = false
                         show_gltf_colliders = false
+                        show_spring_bones = false
                     }
                 }])
             }
@@ -5151,6 +5197,7 @@ fn editor_ui_settings_config_conditionally_authors_diagnostic_rows() {
         "#editor_settings_cameras_visibility",
         "#editor_settings_colliders_visibility",
         "#editor_settings_gltf_colliders_visibility",
+        "#editor_settings_spring_bones_visibility",
     ] {
         assert!(
             world.find_component(editor_ui, omitted).is_none(),

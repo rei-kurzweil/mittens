@@ -85,6 +85,7 @@ pub struct SystemWorld {
     pub bvh: BvhSystem,
     pub collision: CollisionSystem,
     pub collision_visualization: CollisionVisualizationSystem,
+    pub spring_bone_visualization: crate::engine::ecs::system::SpringBoneVisualizationSystem,
     pub camera_visualization: crate::engine::ecs::system::CameraVisualizationSystem,
     pub collision_response: CollisionResponseSystem,
     pub skinned_mesh: SkinnedMeshSystem,
@@ -2941,6 +2942,12 @@ impl SystemWorld {
         for root in dirty_chain_transform_roots {
             self.transform_changed(world, visuals, root);
         }
+        self.spring_bone_visualization.tick_with_queue(
+            world,
+            &self.secondary_motion,
+            render_assets,
+            queue,
+        );
         self.skinned_mesh.tick(world, visuals, input, dt_sec);
 
         if profile_systems {
