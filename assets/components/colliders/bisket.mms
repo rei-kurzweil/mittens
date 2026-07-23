@@ -12,6 +12,6 @@ export fn bisket_colliders() {
         SpringCollider.spheres(["[name='J_Bip_L_UpperArm']", "[name='J_Bip_R_UpperArm']"], 0.05) { name = "bisket_colliders_upper_arms" }
         SpringCollider.spheres(["[name='J_Bip_L_UpperLeg']", "[name='J_Bip_R_UpperLeg']"], 0.075) { name = "bisket_colliders_upper_legs" }
         // Bisket has no authored hips collider node, so use the hips bone center.
-        SpringCollider.sphere("[name='J_Bip_C_Hips']", 0.11) { name = "bisket_collider_hips" }
+        SpringCollider.sphere("[name='J_Bip_C_Hips']", 0.1375) { name = "bisket_collider_hips" }
     }
 }
