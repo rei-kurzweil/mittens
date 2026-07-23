@@ -35,7 +35,7 @@ ED {
     // for the lifetime of the harness, so they form the comparison baseline.
     T.position(-1.2, 0.0, 0.0) {
         T {
-            GLTF.new("assets/models/bisket.8.0.glb")
+            GLTF.new("assets/models/bisket.glb")
         }
     }
 
@@ -61,7 +61,7 @@ ED {
                 hand_grip_rotation_right([-0.6408564, -0.29883623, -0.29883623, 0.6408564])
 
                 T {
-                    GLTF.new("assets/models/bisket.8.0.glb")
+                    GLTF.new("assets/models/bisket.glb")
                 }
 
                 // Eye-offset T-wrapper, mirroring bisket-vr-demo.  The

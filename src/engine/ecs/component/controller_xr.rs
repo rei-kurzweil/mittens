@@ -1,5 +1,5 @@
 use crate::engine::ecs::ComponentId;
-use crate::engine::ecs::component::Component;
+use crate::engine::ecs::component::{Component, ComponentRef};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ControllerHand {
@@ -40,6 +40,9 @@ pub struct ControllerXRComponent {
     pub hand: ControllerHand,
     pub pose: ControllerPoseKind,
     pub laser: bool,
+    /// Optional avatar middle-finger chain used to place and orient the ray.
+    pub avatar_finger: Option<[ComponentRef; 3]>,
+    pub(crate) avatar_laser_warned: bool,
 
     // Cached ECS id (runtime-only). Filled during init.
     pub component_id: Option<ComponentId>,
@@ -53,12 +56,25 @@ impl ControllerXRComponent {
             hand,
             pose,
             laser: false,
+            avatar_finger: None,
+            avatar_laser_warned: false,
             component_id: None,
         }
     }
 
     pub fn laser(mut self) -> Self {
         self.laser = true;
+        self
+    }
+
+    pub fn laser_from_avatar_finger(
+        mut self,
+        root: ComponentRef,
+        middle: ComponentRef,
+        tip: ComponentRef,
+    ) -> Self {
+        self.laser = true;
+        self.avatar_finger = Some([root, middle, tip]);
         self
     }
 
@@ -125,7 +141,16 @@ impl Component for ControllerXRComponent {
             ControllerPoseKind::Grip => "Grip",
         };
         let expression = ce_call("XRHand", "new", vec![b(self.enabled), s(hand), s(pose)]);
-        if self.laser {
+        if let Some([root, middle, tip]) = &self.avatar_finger {
+            let reference = |value: &ComponentRef| match value {
+                ComponentRef::Guid(guid) => s(&format!("@uuid:{guid}")),
+                ComponentRef::Query(query) => s(query),
+            };
+            expression.with_call(
+                "laser_from_avatar_finger",
+                vec![reference(root), reference(middle), reference(tip)],
+            )
+        } else if self.laser {
             expression.with_call("laser", vec![])
         } else {
             expression

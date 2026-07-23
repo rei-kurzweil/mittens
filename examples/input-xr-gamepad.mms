@@ -166,7 +166,7 @@ T {
                 hand_grip_rotation_right([-0.6408564, -0.29883623, -0.29883623, 0.6408564])
 
                 T {
-                    GLTF.new("assets/models/bisket.11.0.glb") {
+                    GLTF.new("assets/models/bisket.glb") {
                         EM.on()
                         PoseCapture { label("Bisket") asset_name("bisket") }
                     }

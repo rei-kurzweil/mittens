@@ -1882,7 +1882,7 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
         count(&|id| world
             .get_component_by_id_as::<SpringBoneComponent>(id)
             .is_some()),
-        16
+        17
     );
 
     for light_name in ["studio_key_light", "studio_fill_light", "studio_rim_light"] {
@@ -2033,7 +2033,7 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
             avatar_gltf,
             EventSignal::GltfInitialized {
                 gltf: avatar_gltf,
-                uri: "assets/models/bisket.11.0.glb".to_string(),
+                uri: "assets/models/bisket.glb".to_string(),
             },
         ),
     );
@@ -2075,6 +2075,40 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
         Some(IntentValue::Attach { parents, child })
             if parents.as_slice() == [hidden_camera_icon_parking] && *child == fixed_camera_icon
     )));
+}
+
+#[test]
+fn every_bisket_example_uses_the_canonical_model_uri() {
+    fn visit(directory: &std::path::Path, checked: &mut usize) {
+        for entry in std::fs::read_dir(directory).expect("read examples directory") {
+            let path = entry.expect("read examples entry").path();
+            if path.is_dir() {
+                visit(&path, checked);
+                continue;
+            }
+            let Ok(source) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            for (index, line) in source.lines().enumerate() {
+                if !line.contains("assets/models/bisket") {
+                    continue;
+                }
+                *checked += 1;
+                let remainder = line.replace("assets/models/bisket.glb", "");
+                assert!(
+                    !remainder.contains("assets/models/bisket"),
+                    "{}:{} contains a non-canonical Bisket URI: {}",
+                    path.display(),
+                    index + 1,
+                    line.trim()
+                );
+            }
+        }
+    }
+
+    let mut checked = 0;
+    visit(std::path::Path::new("examples"), &mut checked);
+    assert!(checked > 0, "expected Bisket example references");
 }
 
 #[test]
@@ -4134,6 +4168,52 @@ fn roundtrip_xr_hand_laser() {
 }
 
 #[test]
+fn roundtrip_xr_hand_avatar_finger_laser() {
+    use crate::engine::ecs::component::{
+        ComponentRef, ControllerHand, ControllerPoseKind, XRHandComponent,
+    };
+    let original = XRHandComponent::new(true, ControllerHand::Left, ControllerPoseKind::Grip)
+        .laser_from_avatar_finger(
+            ComponentRef::Query("[name='root']".into()),
+            ComponentRef::Query("[name='middle']".into()),
+            ComponentRef::Query("[name='tip']".into()),
+        );
+    let (world, id) = roundtrip_component(original);
+    let got = world.get_component_by_id_as::<XRHandComponent>(id).unwrap();
+    assert!(got.laser);
+    assert!(matches!(
+        &got.avatar_finger,
+        Some([ComponentRef::Query(root), ComponentRef::Query(middle), ComponentRef::Query(tip)])
+            if root == "[name='root']"
+                && middle == "[name='middle']"
+                && tip == "[name='tip']"
+    ));
+}
+
+#[test]
+fn roundtrip_spring_bone_from_root_preserves_chain_tuning() {
+    use crate::engine::ecs::component::{ComponentRef, SpringBoneComponent};
+    let original = SpringBoneComponent::from_root(ComponentRef::Query("[name='tail']".into()))
+        .virtual_end_length_ratio(1.0)
+        .stiffness(2.0)
+        .drag_force(0.35)
+        .gravity(3.0, [0.0, -1.0, 0.0]);
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<SpringBoneComponent>(id)
+        .unwrap();
+    assert!(matches!(
+        &got.root,
+        Some(ComponentRef::Query(root)) if root == "[name='tail']"
+    ));
+    assert_eq!(got.virtual_end_length_ratio, Some(1.0));
+    assert_eq!(got.stiffness, 2.0);
+    assert_eq!(got.drag_force, 0.35);
+    assert_eq!(got.gravity_power, 3.0);
+    assert_eq!(got.gravity_dir, [0.0, -1.0, 0.0]);
+}
+
+#[test]
 fn roundtrip_input_xr_off() {
     use crate::engine::ecs::component::InputXRComponent;
     let (world, id) = roundtrip_component(InputXRComponent::off());
@@ -5679,14 +5759,14 @@ fn xr_grab_demo_evaluates_and_authors_grabbables_outside_editor() {
         SpotLightComponent,
     };
     let mut world = World::default();
-    let mut rx = RxWorld::default();
+    let mut systems = crate::engine::ecs::system::SystemWorld::default();
     let mut queue = CommandQueue::new();
     let mut assets = RenderAssets::new();
     let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
         include_str!("../../examples/xr-grab-demo.mms"),
         Some("examples/xr-grab-demo.mms"),
         &mut world,
-        &mut rx,
+        &mut systems.rx,
         Some(&mut assets),
         &mut queue,
     );
@@ -5705,7 +5785,7 @@ fn xr_grab_demo_evaluates_and_authors_grabbables_outside_editor() {
     assert!(world.all_components().any(|id| {
         world
             .get_component_by_id_as::<GLTFComponent>(id)
-            .is_some_and(|gltf| gltf.uri == "assets/models/bisket.11.0.glb")
+            .is_some_and(|gltf| gltf.uri == "assets/models/bisket.glb")
     }));
     assert!(world.all_components().any(|id| {
         world
@@ -5720,6 +5800,15 @@ fn xr_grab_demo_evaluates_and_authors_grabbables_outside_editor() {
                 .is_some())
             .count(),
         1
+    );
+    assert_eq!(
+        world
+            .all_components()
+            .filter(|id| world
+                .get_component_by_id_as::<crate::engine::ecs::component::SpringBoneComponent>(*id)
+                .is_some())
+            .count(),
+        23
     );
     assert_eq!(
         world
@@ -5749,4 +5838,18 @@ fn xr_grab_demo_evaluates_and_authors_grabbables_outside_editor() {
             .get_component_by_id_as::<EditorComponent>(id)
             .is_some()
     }));
+    for intent in output.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
+    let mut visuals = VisualWorld::default();
+    systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+    systems.tick(
+        &mut world,
+        &mut visuals,
+        &mut assets,
+        &InputState::default(),
+        &mut queue,
+        1.0 / 60.0,
+    );
+    assert_eq!(systems.secondary_motion.runtime_counts(), (1, 23, 23, 0, 0));
 }

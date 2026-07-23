@@ -1,7 +1,7 @@
 // XR grip-ray grabbing demo. Aim either controller ray at a colored object,
 // squeeze grip, and the object attaches to the controller and levitates to a
 // safe clearance. Move/rotate the controller, then release. Trigger does not grab.
-import { bisket_secondary_motion } from "../assets/components/secondary_motion/bisket.mms"
+import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
 import { pose as relaxed_pose_factory } from "../assets/components/poses/bisket/000-relaxed.pose.mms"
 import { tripod_light } from "../assets/components/tripod_light.mms"
 
@@ -45,12 +45,12 @@ T {
                 hand_rotation_smoothing(220.0)
 
                 T {
-                    GLTF.new("assets/models/bisket.11.0.glb") {
+                    GLTF.new("assets/models/bisket.glb") {
                         // Establish a relaxed lower-body/rest posture before XR
                         // head and hand tracking take ownership of tracked joints.
                         relaxed_pose_factory()
                         EM.on()
-                        bisket_secondary_motion(false)
+                        bisket_shirt_physics(false)
                     }
                 }
 
@@ -59,8 +59,14 @@ T {
                     CXR { Pointer {} }
                 }
 
-                XRHand.new(true, Left, Grip).laser() { T { Pointer {} } }
-                XRHand.new(true, Right, Grip).laser() { T { Pointer {} } }
+                XRHand.new(true, Left, Grip)
+                    .laser_from_avatar_finger("[name='J_Bip_L_Middle1']", "[name='J_Bip_L_Middle2']", "[name='J_Bip_L_Middle3']") {
+                    T { Pointer {} }
+                }
+                XRHand.new(true, Right, Grip)
+                    .laser_from_avatar_finger("[name='J_Bip_R_Middle1']", "[name='J_Bip_R_Middle2']", "[name='J_Bip_R_Middle3']") {
+                    T { Pointer {} }
+                }
             }
         }
     }

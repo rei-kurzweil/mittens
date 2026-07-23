@@ -70,7 +70,7 @@ grabbable_cube("pile_b_top",        [2.18, 1.22, -2.8], [0.9, 0.8, 0.9], [0.62, 
 grabbable_cube("pile_c_base", [3.2, 0.45, 2.5], [1.25, 0.9, 0.9], [0.20, 0.92, 0.62])
 grabbable_cube("pile_c_top",  [3.2, 1.37, 2.5], [0.9, 0.9, 0.9], [0.78, 1.00, 0.34])
 
-let avatar_gltf = GLTF.new("assets/models/bisket.11.0.glb") {
+let avatar_gltf = GLTF.new("assets/models/bisket.glb") {
     // Direct pose children establish one-shot startup overlays after import.
     relaxed_pose_factory()
     EM.on()

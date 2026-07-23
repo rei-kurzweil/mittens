@@ -21,7 +21,7 @@ Clock.bpm(120) {}
 
 T.position(3.0, 5.0, 4.0) { DL {} }
 
-let avatar_gltf = GLTF.new("assets/models/bisket.11.0.glb") {
+let avatar_gltf = GLTF.new("assets/models/bisket.glb") {
     // A direct pose child is overlaid once, after this model's joints spawn.
     relaxed_pose
     EM.on()

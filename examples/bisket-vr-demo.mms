@@ -3,7 +3,7 @@ import { voxel_terrain } from "../assets/components/floors/voxel_terrain.mms"
 
 // bisket-vr-demo scene
 //
-// Shared VR room-scale demo using the bisket avatar (bisket.8.0.glb).
+// Shared VR room-scale demo using the canonical bisket avatar (bisket.glb).
 // Mirrors examples/vr-input.{rs,mms} topology but with the head-driven
 // AVC convention (head_bone="J_Bip_C_Head") and the bisket model.
 //
@@ -226,7 +226,7 @@ ED {
                 hand_grip_rotation_right([-0.6408564, -0.29883623, -0.29883623, 0.6408564])
 
                 T {
-                    GLTF.new("assets/models/bisket.11.0.glb") { 
+                    GLTF.new("assets/models/bisket.glb") {
                         EM.on() 
                         PoseCapture { label("Bisket") asset_name("bisket") }
                     }
@@ -247,8 +247,14 @@ ED {
                 
                 // Tracked Grip controllers — re-parented to lower-arm bones
                 // by AVC, drive J_Bip_{L,R}_Hand via TwoBoneIK.
-                XRHand.new(true, Left,  Grip).laser() { T { Pointer {} } }
-                XRHand.new(true, Right, Grip).laser() { T { Pointer {} } }
+                XRHand.new(true, Left, Grip)
+                    .laser_from_avatar_finger("[name='J_Bip_L_Middle1']", "[name='J_Bip_L_Middle2']", "[name='J_Bip_L_Middle3']") {
+                    T { Pointer {} }
+                }
+                XRHand.new(true, Right, Grip)
+                    .laser_from_avatar_finger("[name='J_Bip_R_Middle1']", "[name='J_Bip_R_Middle2']", "[name='J_Bip_R_Middle3']") {
+                    T { Pointer {} }
+                }
             }
             
             // debug camera marker

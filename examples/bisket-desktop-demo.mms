@@ -147,7 +147,7 @@ BG.occlusion_and_lighting() {
 ED.active() {
     T.position(0.0, -0.5, 0.0).rotation(0.0, 3.14159, 0.0) {
         name = "desktop_scene_bisket"
-        GLTF.new("assets/models/bisket.11.0.glb") {
+        GLTF.new("assets/models/bisket.glb") {
             EM.on()
             PoseCapture { label("Bisket Scene") asset_name("bisket_scene") }
         }
@@ -170,7 +170,7 @@ I.speed(2.0) {
         C3D { Pointer {} }
         T.position(0.0, -1.7, 1.0).rotation(0.0, 3.14159, 0.0) {
             name = "desktop_camera_rig_bisket"
-            GLTF.new("assets/models/bisket.11.0.glb") {
+            GLTF.new("assets/models/bisket.glb") {
                 EM.on()
                 PoseCapture { label("Bisket Camera Rig") asset_name("bisket_camera_rig") }
             }

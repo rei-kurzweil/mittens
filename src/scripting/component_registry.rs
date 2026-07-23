@@ -1677,7 +1677,10 @@ fn create_component(
         "SecondaryMotion" => add!(SecondaryMotionComponent::new()),
         "SpringBone" => match ctor {
             Some("new") => add!(SpringBoneComponent::new(arg_str(args, 0)?)),
-            _ => Err("SpringBone requires .new(\"stable_name\")".into()),
+            Some("from_root") => add!(SpringBoneComponent::from_root(arg_component_ref(
+                world, args, 0,
+            )?)),
+            _ => Err("SpringBone requires .new(\"stable_name\") or .from_root(selector)".into()),
         },
         "SpringJoint" => match ctor {
             Some("new") => add!(SpringJointComponent::new(arg_component_ref(
@@ -2387,9 +2390,21 @@ fn apply_call(
         return Ok(());
     }
 
+    let avatar_finger = if method == "laser_from_avatar_finger" {
+        Some([
+            arg_component_ref(world, args, 0)?,
+            arg_component_ref(world, args, 1)?,
+            arg_component_ref(world, args, 2)?,
+        ])
+    } else {
+        None
+    };
     if let Some(hand) = world.get_component_by_id_as_mut::<XRHandComponent>(id) {
         if method == "laser" {
             hand.laser = true;
+        } else if let Some(finger) = avatar_finger {
+            hand.laser = true;
+            hand.avatar_finger = Some(finger);
         }
         return Ok(());
     }
@@ -3006,6 +3021,16 @@ fn apply_call(
             "enabled" => chain.enabled = arg_bool(args, 0)?,
             "virtual_end_length_ratio" => {
                 chain.virtual_end_length_ratio = Some(arg_f32(args, 0)?.max(0.0))
+            }
+            "stiffness" => chain.stiffness = arg_f32(args, 0)?.max(0.0),
+            "drag_force" => chain.drag_force = arg_f32(args, 0)?.clamp(0.0, 1.0),
+            "gravity" => {
+                chain.gravity_power = arg_f32(args, 0)?;
+                chain.gravity_dir = if args.len() == 2 {
+                    val_as_f32_array::<3>(&args[1])?
+                } else {
+                    [arg_f32(args, 1)?, arg_f32(args, 2)?, arg_f32(args, 3)?]
+                };
             }
             _ => {}
         }

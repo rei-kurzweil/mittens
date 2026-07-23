@@ -131,6 +131,19 @@ They serve different purposes and can be used together:
 - `InputXRGamepad` consumes controller buttons and analog axes. With `locomotion()`, it moves the rig transform. It can also emit XR button and axis events to MMS handlers.
 - `InputXR` owns the HMD/controller input context. Both components must be descendants of the relevant `InputXR`.
 
+Use `.laser()` for a legacy controller-space ray. For avatar-aligned rays, configure the three middle-finger joints; the ray and visible beam are mounted under AVC's corrected hand target:
+
+```mms
+XRHand.new(true, Left, Grip)
+    .laser_from_avatar_finger(
+        "[name='J_Bip_L_Middle1']",
+        "[name='J_Bip_L_Middle2']",
+        "[name='J_Bip_L_Middle3']",
+    ) { T { Pointer {} } }
+```
+
+If the finger chain cannot be resolved uniquely inside the avatar GLTF, XRHand warns once and falls back to controller-space laser behavior.
+
 For a seated experience, omit `InputXRGamepad` or disable locomotion. For head tracking without avatar arms, omit `XRHand`. `XR.on()` is still required to initialize the OpenXR runtime.
 
 ## Arm configuration and debugging
@@ -156,4 +169,3 @@ Working references are `examples/bisket-vr-only-example.mms`, `examples/bisket-v
 - **Hands track but elbows bend incorrectly:** adjust the body-local pole directions.
 - **Wrists are twisted:** calibrate `hand_grip_rotation_left` and `hand_grip_rotation_right` for the avatar.
 - **No XR input:** include `XR.on()` and verify that the OpenXR runtime reports active input.
-

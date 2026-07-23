@@ -1,6 +1,6 @@
 // bisket-bones-and-ik scene
 //
-// Loads assets/models/bisket.5.0.glb wrapped in I { AVC { ... } } so the body
+// Loads assets/models/bisket.glb wrapped in I { AVC { ... } } so the body
 // drives via WASD + right-mouse look (desktop input mode), the head splices via
 // AimConstraint IK, and the arms get TwoBoneIK once controllers / hands resolve.
 //
@@ -84,7 +84,7 @@ ED {
                 body_yaw_threshold(3.14 / 7.5)
 
                 T.position(0.0, -1.6, 0.0) {
-                    GLTF.new("assets/models/bisket.8.0.glb") { EM.on() }
+                    GLTF.new("assets/models/bisket.glb") { EM.on() }
                 }
 
                 // Camera reparented under J_Bip_C_Head by AVC.

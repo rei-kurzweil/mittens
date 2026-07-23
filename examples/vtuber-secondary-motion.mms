@@ -50,7 +50,7 @@ ED {
                     hand_rotation_smoothing(220.0)
 
                     T {
-                        GLTF.new("assets/models/bisket.11.0.glb") {
+                        GLTF.new("assets/models/bisket.glb") {
                             EM.on()
                             bisket_secondary_motion(false)
                         }

@@ -163,7 +163,7 @@ ED {
 //                     camera_bone("J_Bip_C_Head")
 
 //                     T {
-//                         GLTF.new("assets/models/bisket.11.0.glb") {
+//                         GLTF.new("assets/models/bisket.glb") {
 //                             EM.on()
 //                             PoseCapture { label("BisketDesktop") }
 //                         }
@@ -205,7 +205,7 @@ T {
 
 
                     T {
-                        GLTF.new("assets/models/bisket.11.0.glb") {
+                        GLTF.new("assets/models/bisket.glb") {
                             EM.on()
                             PoseCapture { label("Bisket") asset_name("bisket") }
                         }

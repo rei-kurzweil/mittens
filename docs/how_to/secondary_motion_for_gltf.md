@@ -16,6 +16,18 @@ GLTF.new("assets/avatar.glb") {
 
 Selectors must uniquely match nodes spawned by that GLTF instance. Chains must be ancestral and must not overlap. A virtual endpoint lets the final imported joint rotate.
 
+For an unbranched skin-joint subtree, `from_root` discovers the chain automatically. Collider and helper children outside the GLTF skin are ignored. Chain-level tuning is copied to every discovered joint:
+
+```mms
+SpringBone.from_root("[name='tail']")
+    .virtual_end_length_ratio(1.0)
+    .stiffness(1.0)
+    .drag_force(0.25)
+    .gravity(0.8, [0, -1, 0])
+```
+
+An automatic leaf root requires `virtual_end_length_ratio`; a branch is rejected with a binding diagnostic.
+
 ## Presets
 
 Functions exported by MMS modules can return a complete `SecondaryMotion` subtree:
@@ -23,7 +35,7 @@ Functions exported by MMS modules can return a complete `SecondaryMotion` subtre
 ```mms
 import { bisket_secondary_motion } from "../assets/components/secondary_motion/bisket.mms"
 
-GLTF.new("assets/models/bisket.11.0.glb") {
+GLTF.new("assets/models/bisket.glb") {
     bisket_secondary_motion(false)
 }
 ```

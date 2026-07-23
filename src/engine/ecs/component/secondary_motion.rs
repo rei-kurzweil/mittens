@@ -57,19 +57,38 @@ impl Component for SecondaryMotionComponent {
 #[derive(Debug, Clone)]
 pub struct SpringBoneComponent {
     pub stable_name: String,
+    /// When set, the chain is discovered from this skin joint down to its leaf.
+    /// Explicit `SpringJoint` children continue to take precedence when present.
+    pub root: Option<ComponentRef>,
     pub center: Option<ComponentRef>,
     pub enabled: bool,
     pub virtual_end_length_ratio: Option<f32>,
+    pub stiffness: f32,
+    pub drag_force: f32,
+    pub gravity_power: f32,
+    pub gravity_dir: [f32; 3],
     component: Option<ComponentId>,
 }
 impl SpringBoneComponent {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             stable_name: name.into(),
+            root: None,
             center: None,
             enabled: true,
             virtual_end_length_ratio: None,
+            stiffness: 1.0,
+            drag_force: 0.4,
+            gravity_power: 0.0,
+            gravity_dir: [0.0, -1.0, 0.0],
             component: None,
+        }
+    }
+    pub fn from_root(root: ComponentRef) -> Self {
+        let stable_name = format!("auto:{}", ref_surface(&root));
+        Self {
+            root: Some(root),
+            ..Self::new(stable_name)
         }
     }
     pub fn center(mut self, target: ComponentRef) -> Self {
@@ -82,6 +101,19 @@ impl SpringBoneComponent {
     }
     pub fn virtual_end_length_ratio(mut self, ratio: f32) -> Self {
         self.virtual_end_length_ratio = Some(ratio.max(0.0));
+        self
+    }
+    pub fn stiffness(mut self, value: f32) -> Self {
+        self.stiffness = value.max(0.0);
+        self
+    }
+    pub fn drag_force(mut self, value: f32) -> Self {
+        self.drag_force = value.clamp(0.0, 1.0);
+        self
+    }
+    pub fn gravity(mut self, power: f32, direction: [f32; 3]) -> Self {
+        self.gravity_power = power;
+        self.gravity_dir = direction;
         self
     }
 }
@@ -110,7 +142,11 @@ impl Component for SpringBoneComponent {
         &self,
         _world: &crate::engine::ecs::World,
     ) -> crate::scripting::ast::ComponentExpression {
-        let mut out = ce_call("SpringBone", "new", vec![s(&self.stable_name)]);
+        let mut out = if let Some(root) = &self.root {
+            ce_call("SpringBone", "from_root", vec![ref_expr(root)])
+        } else {
+            ce_call("SpringBone", "new", vec![s(&self.stable_name)])
+        };
         if let Some(target) = &self.center {
             out = out.with_call("center", vec![ref_expr(target)]);
         }
@@ -119,6 +155,20 @@ impl Component for SpringBoneComponent {
         }
         if let Some(r) = self.virtual_end_length_ratio {
             out = out.with_call("virtual_end_length_ratio", vec![num(r as f64)]);
+        }
+        if self.root.is_some() {
+            out = out
+                .with_call("stiffness", vec![num(self.stiffness as f64)])
+                .with_call("drag_force", vec![num(self.drag_force as f64)])
+                .with_call(
+                    "gravity",
+                    vec![
+                        num(self.gravity_power as f64),
+                        num(self.gravity_dir[0] as f64),
+                        num(self.gravity_dir[1] as f64),
+                        num(self.gravity_dir[2] as f64),
+                    ],
+                );
         }
         out
     }

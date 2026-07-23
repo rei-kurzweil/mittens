@@ -526,6 +526,7 @@ XRHand.new(true, "Left", "Aim").laser()
 ```
 
 `.laser()` adds one runtime-only, noninteractive cyan direction laser along local `-Z`.
+`.laser_from_avatar_finger(root, middle, tip)` instead aligns the ray and visual to an avatar finger beneath AVC's corrected hand target, with controller-space fallback when binding fails.
 
 ### `XrComponent`
 <!-- catalog:component source="XrComponent" mms="direct" names="XR" -->
@@ -582,7 +583,7 @@ SecondaryMotion {}
 Carries spring bone state used when that engine feature is present in a component tree. Use it when a tree needs this state or behavior. glTF, animation, avatar, IK, or pose systems; lifecycle intents and `GltfInitialized` are relevant.
 **Directly constructible** as `SpringBone`. Sources: [Rust implementation](../../../src/engine/ecs/component/secondary_motion.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
 ```mms parse-only
-SpringBone {}
+SpringBone.from_root("[name='tail']").virtual_end_length_ratio(1.0)
 ```
 
 ### `SpringJointComponent`

@@ -191,9 +191,46 @@ impl SecondaryMotionSystem {
         if let Some(owners) = self.resolved_transform_chains.get(&component) {
             chains.extend(owners.iter().copied());
         }
+        // A newly attached/detached skin joint is not in the previous resolved
+        // list yet. Walking its ancestors makes automatic chains re-discover
+        // topology after ParentChanged events.
+        let mut ancestor = world.parent_of(component);
+        for _ in 0..64 {
+            let Some(id) = ancestor else { break };
+            if let Some(owners) = self.resolved_transform_chains.get(&id) {
+                chains.extend(owners.iter().copied());
+            }
+            ancestor = world.parent_of(id);
+        }
         if let Some(roots) = self.gltf_roots.get(&component) {
             for root in roots {
                 chains.extend(self.roots[root].children.iter().copied());
+            }
+        }
+        // Automatic chains depend on the imported skin topology, including
+        // children which may not have belonged to the last successful bind.
+        // ParentChanged also schedules this hook for old/new parents, so a
+        // detached branch can recover an invalid chain.
+        for (&candidate, runtime) in &self.chains {
+            let automatic = runtime.joint_config_ids.is_empty()
+                && world
+                    .get_component_by_id_as::<SpringBoneComponent>(candidate)
+                    .is_some_and(|chain| chain.root.is_some());
+            if !automatic {
+                continue;
+            }
+            let Some(gltf) = runtime
+                .root
+                .and_then(|root| self.roots.get(&root))
+                .and_then(|root| root.gltf)
+            else {
+                continue;
+            };
+            if world
+                .get_component_by_id_as::<GLTFComponent>(gltf)
+                .is_some_and(|gltf| gltf.armature_joint_transforms.contains(&component))
+            {
+                chains.insert(candidate);
             }
         }
         for chain in chains {
@@ -481,6 +518,11 @@ impl SecondaryMotionSystem {
                 world
                     .get_component_by_id_as::<SpringBoneComponent>(chain)
                     .is_some_and(|chain| chain.center.is_some()),
+            )
+            + u64::from(
+                world
+                    .get_component_by_id_as::<SpringBoneComponent>(chain)
+                    .is_some_and(|chain| chain.root.is_some() && joint_config_ids.is_empty()),
             );
         match build_chain(world, gltf, chain, &joint_config_ids) {
             Ok(bound) => {
@@ -671,13 +713,23 @@ fn secondary_motion_parent_changed(
     emit: &mut dyn SignalEmitter,
     signal: &Signal,
 ) {
-    if let Some(EventSignal::ParentChanged { child, .. }) = signal.event.as_ref() {
-        emit.push_intent_now(
-            *child,
-            IntentValue::SecondaryMotionTopologyChanged {
-                component_ids: vec![*child],
-            },
-        );
+    if let Some(EventSignal::ParentChanged {
+        child,
+        old_parent,
+        new_parent,
+    }) = signal.event.as_ref()
+    {
+        for component in [Some(*child), *old_parent, *new_parent]
+            .into_iter()
+            .flatten()
+        {
+            emit.push_intent_now(
+                component,
+                IntentValue::SecondaryMotionTopologyChanged {
+                    component_ids: vec![component],
+                },
+            );
+        }
     }
 }
 
@@ -852,42 +904,111 @@ fn build_chain(
             message: format!("center {}", failure.message),
         })?;
     }
-    if joint_config_ids.is_empty() {
-        return Err(BindFailure::invalid("has no SpringJoint children"));
-    }
+    let auto_ids = if joint_config_ids.is_empty() {
+        let root_ref = chain
+            .root
+            .as_ref()
+            .ok_or_else(|| BindFailure::invalid("has no SpringJoint children"))?;
+        let root_id = resolve_in_gltf(world, gltf_id, root_ref)?;
+        let skin_joints: HashSet<_> = world
+            .get_component_by_id_as::<GLTFComponent>(gltf_id)
+            .ok_or_else(|| BindFailure::waiting("owning GLTF disappeared"))?
+            .armature_joint_transforms
+            .iter()
+            .copied()
+            .collect();
+        if !skin_joints.contains(&root_id) {
+            return Err(BindFailure::invalid(format!(
+                "automatic root '{}' is not a joint in the owning GLTF skin",
+                ref_surface(root_ref)
+            )));
+        }
+        let mut ids = vec![root_id];
+        let mut cursor = root_id;
+        loop {
+            // Imported collider and visualization helpers may be parented below a
+            // bone. Only direct children belonging to the main skin define chain
+            // topology.
+            let children: Vec<_> = world
+                .children_of(cursor)
+                .iter()
+                .copied()
+                .filter(|id| skin_joints.contains(id))
+                .collect();
+            match children.as_slice() {
+                [] => break,
+                [child] => {
+                    ids.push(*child);
+                    cursor = *child;
+                }
+                _ => {
+                    let labels = children
+                        .iter()
+                        .map(|id| world.component_label(*id).unwrap_or("<unnamed>"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    return Err(BindFailure::invalid(format!(
+                        "automatic chain from '{}' branches at '{}' into skin joints [{}]",
+                        ref_surface(root_ref),
+                        world.component_label(cursor).unwrap_or("<unnamed>"),
+                        labels
+                    )));
+                }
+            }
+        }
+        ids
+    } else {
+        Vec::new()
+    };
     let mut joints = Vec::new();
     let mut local_ids = HashSet::new();
-    for joint_config_id in joint_config_ids {
-        let config = world
-            .get_component_by_id_as::<SpringJointComponent>(*joint_config_id)
-            .ok_or_else(|| BindFailure::waiting("SpringJoint configuration disappeared"))?;
-        let id = resolve_in_gltf(world, gltf_id, &config.node)?;
+    let mut resolved = Vec::new();
+    if auto_ids.is_empty() {
+        for joint_config_id in joint_config_ids {
+            let config = world
+                .get_component_by_id_as::<SpringJointComponent>(*joint_config_id)
+                .ok_or_else(|| BindFailure::waiting("SpringJoint configuration disappeared"))?;
+            resolved.push((
+                resolve_in_gltf(world, gltf_id, &config.node)?,
+                ref_surface(&config.node),
+                config.stiffness,
+                config.drag_force,
+                config.gravity_power,
+                config.gravity_dir,
+            ));
+        }
+    } else {
+        for id in auto_ids {
+            resolved.push((
+                id,
+                world.component_label(id).unwrap_or("<unnamed>").to_string(),
+                chain.stiffness,
+                chain.drag_force,
+                chain.gravity_power,
+                chain.gravity_dir,
+            ));
+        }
+    }
+    for (id, surface, stiffness, drag_force, gravity_power, gravity_dir) in resolved {
         if !local_ids.insert(id) {
             return Err(BindFailure::invalid(format!(
                 "joint '{}' occurs more than once in the chain",
-                ref_surface(&config.node)
+                surface
             )));
         }
-        let rest_pose = rest(world, id).ok_or_else(|| {
-            BindFailure::waiting(format!(
-                "joint '{}' has no rest pose",
-                ref_surface(&config.node)
-            ))
-        })?;
+        let rest_pose = rest(world, id)
+            .ok_or_else(|| BindFailure::waiting(format!("joint '{}' has no rest pose", surface)))?;
         let parent_id = world.parent_of(id).ok_or_else(|| {
-            BindFailure::waiting(format!(
-                "joint '{}' has no transform parent",
-                ref_surface(&config.node)
-            ))
+            BindFailure::waiting(format!("joint '{}' has no transform parent", surface))
         })?;
         joints.push(JointConfig {
             id,
             parent_id,
             rest_rotation: rest_pose.rotation,
             rest_direction: [0.0; 3],
-            stiffness: config.stiffness,
-            drag: config.drag_force,
-            gravity: vec3_scale(vec3_normalize(config.gravity_dir), config.gravity_power),
+            stiffness,
+            drag: drag_force,
+            gravity: vec3_scale(vec3_normalize(gravity_dir), gravity_power),
         });
     }
     for pair in joints.windows(2) {
@@ -1163,6 +1284,142 @@ mod tests {
             first_config,
             imported: vec![first, second],
         }
+    }
+
+    fn automatic_fixture() -> (World, ComponentId, ComponentId, ComponentId, ComponentId) {
+        let mut fixture = fixture();
+        let gltf = nearest_gltf(&fixture.world, fixture.root).unwrap();
+        fixture
+            .world
+            .get_component_by_id_as_mut::<SpringBoneComponent>(fixture.chain)
+            .unwrap()
+            .root = Some(ComponentRef::Query("#retained_first".into()));
+        let explicit_configs: Vec<_> = fixture
+            .world
+            .children_of(fixture.chain)
+            .iter()
+            .copied()
+            .filter(|id| {
+                fixture
+                    .world
+                    .get_component_by_id_as::<SpringJointComponent>(*id)
+                    .is_some()
+            })
+            .collect();
+        for config in explicit_configs {
+            fixture.world.detach_from_parent(config);
+        }
+        // Helpers below a joint must not participate in automatic skin topology.
+        let collider = fixture.world.add_component_boxed_named(
+            "retained_first_collider",
+            Box::new(TransformComponent::new()),
+        );
+        fixture
+            .world
+            .add_child(fixture.imported[0], collider)
+            .unwrap();
+        (
+            fixture.world,
+            gltf,
+            fixture.chain,
+            fixture.imported[0],
+            fixture.imported[1],
+        )
+    }
+
+    #[test]
+    fn automatic_chain_follows_skin_descendants_and_ignores_helpers() {
+        let (world, gltf, chain, first, second) = automatic_fixture();
+        let bound = build_chain(&world, gltf, chain, &[]).unwrap();
+        assert_eq!(
+            bound
+                .joints
+                .iter()
+                .map(|joint| joint.id)
+                .collect::<Vec<_>>(),
+            vec![first, second]
+        );
+    }
+
+    #[test]
+    fn automatic_leaf_chain_uses_virtual_endpoint_and_chain_tuning() {
+        let (mut world, gltf, chain, _first, second) = automatic_fixture();
+        {
+            let component = world
+                .get_component_by_id_as_mut::<SpringBoneComponent>(chain)
+                .unwrap();
+            component.root = Some(ComponentRef::Query("#retained_second".into()));
+            component.virtual_end_length_ratio = Some(1.0);
+            component.stiffness = 2.0;
+            component.drag_force = 0.35;
+            component.gravity_power = 3.0;
+        }
+        let bound = build_chain(&world, gltf, chain, &[]).unwrap();
+        assert_eq!(bound.joints.len(), 1);
+        assert_eq!(bound.joints[0].id, second);
+        assert_eq!(bound.joints[0].stiffness, 2.0);
+        assert_eq!(bound.joints[0].drag, 0.35);
+        assert_eq!(bound.joints[0].gravity, [0.0, -3.0, 0.0]);
+    }
+
+    #[test]
+    fn automatic_chain_rejects_skin_branches_with_diagnostic() {
+        let (mut world, gltf, chain, first, _second) = automatic_fixture();
+        let branch =
+            world.add_component_boxed_named("retained_branch", Box::new(TransformComponent::new()));
+        let rest = world.add_component(BoneRestPoseComponent::new(
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0; 3],
+        ));
+        world.add_child(first, branch).unwrap();
+        world.add_child(branch, rest).unwrap();
+        {
+            let component = world
+                .get_component_by_id_as_mut::<GLTFComponent>(gltf)
+                .unwrap();
+            component.spawned_node_transforms.push(branch);
+            component.armature_joint_transforms.push(branch);
+        }
+        let error = build_chain(&world, gltf, chain, &[]).unwrap_err();
+        assert!(error.message.contains("branches"), "{}", error.message);
+        assert!(
+            error.message.contains("retained_branch"),
+            "{}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn automatic_chain_rebinds_after_skin_topology_changes() {
+        let (mut world, gltf, chain, first, _second) = automatic_fixture();
+        let root = world.parent_of(chain).unwrap();
+        let mut system = SecondaryMotionSystem::default();
+        system.register(&world, root);
+        assert_eq!(system.runtime_counts(), (1, 1, 1, 0, 0));
+
+        let branch =
+            world.add_component_boxed_named("late_branch", Box::new(TransformComponent::new()));
+        let rest = world.add_component(BoneRestPoseComponent::new(
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0; 3],
+        ));
+        world.add_child(first, branch).unwrap();
+        world.add_child(branch, rest).unwrap();
+        {
+            let component = world
+                .get_component_by_id_as_mut::<GLTFComponent>(gltf)
+                .unwrap();
+            component.spawned_node_transforms.push(branch);
+            component.armature_joint_transforms.push(branch);
+        }
+        system.topology_changed(&world, first);
+        assert_eq!(system.runtime_counts(), (1, 1, 0, 0, 1));
+
+        world.detach_from_parent(branch);
+        system.topology_changed(&world, first);
+        assert_eq!(system.runtime_counts(), (1, 1, 1, 0, 0));
     }
 
     #[test]

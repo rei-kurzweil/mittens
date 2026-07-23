@@ -671,6 +671,12 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
             c.right_hand_visual_target_id = Some(hand_driver);
         }
     }
+    // Avatar-finger lasers need the final quaternion-corrected hand targets
+    // cached above. Controller registration happens earlier, so retry their
+    // runtime mount now that AVC and the imported skeleton are both ready.
+    for controller in [left_ctrl, right_ctrl].into_iter().flatten() {
+        crate::engine::ecs::system::pointer_system::ensure_xr_hand_laser(world, controller, emit);
+    }
 
     // -----------------------------------------------------------------------
     // Body pipeline: created as a child of AVC; model_root re-parented under it.

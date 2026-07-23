@@ -1177,7 +1177,7 @@ mod tests {
     fn direct_startup_poses_overlay_after_spawn_once_in_child_order() {
         let mut world = World::default();
         let anchor = world.add_component(TransformComponent::new());
-        let gltf = world.add_component(GLTFComponent::new("assets/models/bisket.11.0.glb"));
+        let gltf = world.add_component(GLTFComponent::new("assets/models/bisket.glb"));
         world.add_child(anchor, gltf).unwrap();
 
         let first_rotation = [0.1, 0.0, 0.0, 0.9949874];
@@ -1227,13 +1227,29 @@ mod tests {
         assert!(!spawned.spawned_node_transforms.is_empty());
         assert!(!spawned.armature_joint_transforms.is_empty());
         assert!(world.find_component(anchor, "#J_Bip_C_Head").is_some());
+        let hips = world
+            .find_component(anchor, "#J_Bip_C_Hips")
+            .expect("canonical hips");
+        let tail = world
+            .find_component(anchor, "#tail")
+            .expect("canonical tail");
+        assert_eq!(world.parent_of(tail), Some(hips));
+        for branch in ["J_Bip_C_Spine", "J_Bip_L_UpperLeg", "J_Bip_R_UpperLeg"] {
+            assert!(
+                world
+                    .children_of(hips)
+                    .iter()
+                    .any(|id| world.component_label(*id) == Some(branch)),
+                "canonical hips is missing direct branch {branch}"
+            );
+        }
         assert_eq!(startup.events.len(), 1);
         assert!(matches!(
             &startup.events[0],
             (scope, EventSignal::GltfInitialized { gltf: initialized, uri })
                 if *scope == gltf
                     && *initialized == gltf
-                    && uri == "assets/models/bisket.11.0.glb"
+                    && uri == "assets/models/bisket.glb"
         ));
 
         let queued: Vec<_> = startup
