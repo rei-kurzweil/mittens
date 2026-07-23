@@ -20,8 +20,14 @@ tripod_light("studio_fill_light", [4.0, 0.0, 1.4], [0.0, 1.25, -1.5], SL.color(0
 tripod_light("studio_rim_light", [1.8, 0.0, -4.2], [0.0, 1.25, -1.5], SL.color(1.0, 0.42, 0.78).intensity(5.0).distance(11.0).angle(0.62).penumbra(0.35))
 
 // Desktop fallback camera.
-T.position(0.0, 1.8, 6.0) {
-    C3D { Pointer {} }
+I.speed(2.0) {
+    InputTransformMode.forward_z() {
+        roll_axis_y()
+        fps_rotation()
+    }
+    T.position(0.0, 1.8, 6.0) {
+        C3D { Pointer {} }
+    }
 }
 
 // Tracked Bisket avatar. The left stick moves the entire avatar/controller rig,
