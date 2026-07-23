@@ -1812,6 +1812,7 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
         Camera3DComponent, CameraXRComponent, CollisionComponent, CollisionMode, InputComponent,
         InputTransformModeComponent, InputXRComponent, RenderableComponent,
         SecondaryMotionComponent, SpotLightComponent, SpringBoneComponent,
+        SpringColliderComponent,
     };
     let source = include_str!("../../examples/secondary-motion-desktop.mms");
     let mut world = World::default();
@@ -1884,6 +1885,61 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
             .is_some()),
         17
     );
+    assert_eq!(
+        count(&|id| world
+            .get_component_by_id_as::<SpringColliderComponent>(id)
+            .is_some()),
+        9
+    );
+    for chain in ids
+        .iter()
+        .filter_map(|id| world.get_component_by_id_as::<SpringBoneComponent>(*id))
+    {
+        let expected = if chain.stable_name.contains("Hair") {
+            (
+                vec![
+                    "[name='bisket_collider_head']",
+                    "[name='bisket_collider_neck']",
+                    "[name='bisket_collider_upper_chest']",
+                    "[name='bisket_collider_spine']",
+                    "[name='bisket_colliders_hands']",
+                    "[name='bisket_colliders_lower_arms']",
+                    "[name='bisket_colliders_upper_arms']",
+                ],
+                0.015,
+            )
+        } else if chain.stable_name.contains("Bust") {
+            (
+                vec![
+                    "[name='bisket_collider_upper_chest']",
+                    "[name='bisket_collider_spine']",
+                    "[name='bisket_colliders_hands']",
+                    "[name='bisket_colliders_lower_arms']",
+                    "[name='bisket_colliders_upper_arms']",
+                ],
+                0.025,
+            )
+        } else {
+            (
+                vec![
+                    "[name='bisket_collider_spine']",
+                    "[name='bisket_collider_hips']",
+                    "[name='bisket_colliders_upper_legs']",
+                ],
+                0.03,
+            )
+        };
+        let actual: Vec<_> = chain
+            .colliders
+            .iter()
+            .map(|reference| match reference {
+                crate::engine::ecs::component::ComponentRef::Query(query) => query.as_str(),
+                crate::engine::ecs::component::ComponentRef::Guid(_) => "<guid>",
+            })
+            .collect();
+        assert_eq!(actual, expected.0, "{}", chain.stable_name);
+        assert_eq!(chain.hit_radius, expected.1, "{}", chain.stable_name);
+    }
 
     for light_name in ["studio_key_light", "studio_fill_light", "studio_rim_light"] {
         let tree = descendants(named(light_name));
@@ -2326,7 +2382,9 @@ fn lights_example_materializes_all_light_types_and_labeled_targets() {
 
 #[test]
 fn tripod_light_without_a_mounted_light_has_no_emissive_face() {
-    use crate::engine::ecs::component::{EmissiveComponent, TransformComponent};
+    use crate::engine::ecs::component::{
+        EmissiveComponent, GrabbableComponent, TransformComponent,
+    };
 
     let source = r#"
         import { tripod_light } from "../assets/components/tripod_light.mms"
@@ -2348,6 +2406,15 @@ fn tripod_light_without_a_mounted_light_has_no_emissive_face() {
     assert!(world
         .all_components()
         .all(|id| world.component_label(id) != Some("tripod_light_emissive_face")));
+    let fixture = world
+        .all_components()
+        .find(|id| world.component_label(*id) == Some("empty_fixture"))
+        .expect("tripod fixture");
+    assert!(world.children_of(fixture).iter().any(|id| {
+        world
+            .get_component_by_id_as::<GrabbableComponent>(*id)
+            .is_some()
+    }));
     assert!(world.all_components().all(|id| {
         world
             .get_component_by_id_as::<EmissiveComponent>(id)
@@ -2399,6 +2466,42 @@ fn tripod_light_without_a_mounted_light_has_no_emissive_face() {
         .get_component_by_id_as::<TransformComponent>(head)
         .expect("tripod head transform");
     assert!((head.transform.translation[1] - (leg_height + 2.25)).abs() < 1e-5);
+}
+
+#[test]
+fn tripod_light_factory_marks_fixture_grabbable() {
+    use crate::engine::ecs::component::GrabbableComponent;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+    let mut render_assets = RenderAssets::new();
+    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+        r#"
+            import { tripod_light } from "../assets/components/tripod_light.mms"
+            tripod_light("grabbable_fixture", [0, 0, 0], [0, 1, -2])
+        "#,
+        Some("examples/tripod-light-grabbable-test.mms"),
+        &mut world,
+        &mut rx,
+        Some(&mut render_assets),
+        &mut emit,
+    );
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    let fixture = world
+        .all_components()
+        .find(|id| world.component_label(*id) == Some("grabbable_fixture"))
+        .expect("tripod fixture");
+    assert_eq!(
+        world
+            .children_of(fixture)
+            .iter()
+            .filter(|id| world
+                .get_component_by_id_as::<GrabbableComponent>(**id)
+                .is_some())
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -4214,6 +4317,110 @@ fn roundtrip_spring_bone_from_root_preserves_chain_tuning() {
 }
 
 #[test]
+fn roundtrip_spring_collision_configuration() {
+    use crate::engine::ecs::component::{
+        ComponentRef, SpringBoneComponent, SpringColliderComponent,
+    };
+    let target_a = ComponentRef::Query("[name='head']".into());
+    let target_b = ComponentRef::Query("[name='neck']".into());
+    let (world, id) = roundtrip_component(SpringColliderComponent::spheres(
+        vec![target_a.clone(), target_b.clone()],
+        0.11,
+    ));
+    let collider = world
+        .get_component_by_id_as::<SpringColliderComponent>(id)
+        .unwrap();
+    assert_eq!(collider.radius, 0.11);
+    assert_eq!(collider.targets, vec![target_a, target_b]);
+
+    let original = SpringBoneComponent::from_root(ComponentRef::Query("[name='tail']".into()))
+        .colliders(vec![
+            ComponentRef::Query("[name='torso_colliders']".into()),
+            ComponentRef::Query("[name='hips_collider']".into()),
+        ])
+        .hit_radius(0.03);
+    let (world, id) = roundtrip_component(original);
+    let chain = world
+        .get_component_by_id_as::<SpringBoneComponent>(id)
+        .unwrap();
+    assert_eq!(chain.hit_radius, 0.03);
+    assert_eq!(chain.colliders.len(), 2);
+}
+
+#[test]
+fn all_bisket_secondary_motion_examples_evaluate_with_explicit_colliders() {
+    use crate::engine::ecs::component::{
+        SpringBoneComponent, SpringColliderComponent, SpringCollidersComponent,
+    };
+    for (path, source, expected_chains) in [
+        (
+            "examples/secondary-motion-desktop.mms",
+            include_str!("../../examples/secondary-motion-desktop.mms"),
+            17,
+        ),
+        (
+            "examples/gltf-pose-animation.mms",
+            include_str!("../../examples/gltf-pose-animation.mms"),
+            17,
+        ),
+        (
+            "examples/vtuber-secondary-motion.mms",
+            include_str!("../../examples/vtuber-secondary-motion.mms"),
+            17,
+        ),
+        (
+            "examples/xr-grab-demo.mms",
+            include_str!("../../examples/xr-grab-demo.mms"),
+            23,
+        ),
+    ] {
+        let mut world = World::default();
+        let mut rx = RxWorld::default();
+        let mut emit = CommandQueue::new();
+        let mut render_assets = RenderAssets::new();
+        let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+            source,
+            Some(path),
+            &mut world,
+            &mut rx,
+            Some(&mut render_assets),
+            &mut emit,
+        );
+        assert!(output.errors.is_empty(), "{path}: {:?}", output.errors);
+        assert_eq!(
+            world
+                .all_components()
+                .filter(|id| world
+                    .get_component_by_id_as::<SpringBoneComponent>(*id)
+                    .is_some())
+                .count(),
+            expected_chains,
+            "{path}"
+        );
+        assert_eq!(
+            world
+                .all_components()
+                .filter(|id| world
+                    .get_component_by_id_as::<SpringColliderComponent>(*id)
+                    .is_some())
+                .count(),
+            9,
+            "{path}"
+        );
+        assert_eq!(
+            world
+                .all_components()
+                .filter(|id| world
+                    .get_component_by_id_as::<SpringCollidersComponent>(*id)
+                    .is_some())
+                .count(),
+            1,
+            "{path}"
+        );
+    }
+}
+
+#[test]
 fn roundtrip_input_xr_off() {
     use crate::engine::ecs::component::InputXRComponent;
     let (world, id) = roundtrip_component(InputXRComponent::off());
@@ -5756,7 +5963,7 @@ fn xr_grab_demo_evaluates_and_authors_grabbables_outside_editor() {
     use crate::engine::ecs::component::{
         ControllerXRComponent, EditorComponent, GLTFComponent, GrabbableComponent,
         InputXRGamepadComponent, PoseCapturePoseComponent, SecondaryMotionComponent,
-        SpotLightComponent,
+        SpotLightComponent, SpringColliderComponent,
     };
     let mut world = World::default();
     let mut systems = crate::engine::ecs::system::SystemWorld::default();
@@ -5810,6 +6017,42 @@ fn xr_grab_demo_evaluates_and_authors_grabbables_outside_editor() {
             .count(),
         23
     );
+    assert_eq!(
+        world
+            .all_components()
+            .filter(|id| world
+                .get_component_by_id_as::<SpringColliderComponent>(*id)
+                .is_some())
+            .count(),
+        9
+    );
+    let shirt_chains: Vec<_> = world
+        .all_components()
+        .filter_map(|id| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::SpringBoneComponent>(id)
+        })
+        .filter(|chain| chain.stable_name.contains("TopsUpperLeg"))
+        .collect();
+    assert_eq!(shirt_chains.len(), 6);
+    assert!(shirt_chains.iter().all(|chain| {
+        let groups: Vec<_> = chain
+            .colliders
+            .iter()
+            .filter_map(|reference| match reference {
+                crate::engine::ecs::component::ComponentRef::Query(query) => Some(query.as_str()),
+                crate::engine::ecs::component::ComponentRef::Guid(_) => None,
+            })
+            .collect();
+        groups
+            == [
+                "[name='bisket_collider_upper_chest']",
+                "[name='bisket_collider_spine']",
+                "[name='bisket_collider_hips']",
+                "[name='bisket_colliders_upper_legs']",
+            ]
+            && chain.hit_radius == 0.02
+    }));
     assert_eq!(
         world
             .all_components()

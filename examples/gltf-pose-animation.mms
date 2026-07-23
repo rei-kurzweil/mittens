@@ -9,6 +9,7 @@ import { pose as relaxed_pose_factory } from "../assets/components/poses/bisket/
 import { pose as run_pose_1_factory } from "../assets/components/poses/bisket/002-running_1.pose.mms"
 import { pose as run_pose_2_factory } from "../assets/components/poses/bisket/003-running_2.pose.mms"
 import { bisket_secondary_motion } from "../assets/components/secondary_motion/bisket.mms"
+import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 
 let relaxed_pose = relaxed_pose_factory()
 let run_pose_1 = run_pose_1_factory()
@@ -25,6 +26,7 @@ let avatar_gltf = GLTF.new("assets/models/bisket.glb") {
     // A direct pose child is overlaid once, after this model's joints spawn.
     relaxed_pose
     EM.on()
+    bisket_colliders()
     // false selects the tuned default Bisket hair and bust chains.
     bisket_secondary_motion(false)
 }

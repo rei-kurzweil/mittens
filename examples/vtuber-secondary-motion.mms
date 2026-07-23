@@ -3,6 +3,7 @@
 // should sag visibly under gravity, lag behind the primary avatar pose, keep
 // their lengths, and oscillate briefly before settling.
 import { bisket_secondary_motion } from "../assets/components/secondary_motion/bisket.mms"
+import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 
 RendererSettings { window_size(640, 480) }
 BGC.rgba(0.12, 0.16, 0.24, 1.0)
@@ -52,6 +53,7 @@ ED {
                     T {
                         GLTF.new("assets/models/bisket.glb") {
                             EM.on()
+                            bisket_colliders()
                             bisket_secondary_motion(false)
                         }
                     }

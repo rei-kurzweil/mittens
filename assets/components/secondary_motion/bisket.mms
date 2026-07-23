@@ -35,22 +35,26 @@ export fn bisket_secondary_motion_with(config, extra_chains) {
 
     return SecondaryMotion {
         for chain in hair_chains {
-            soft_hair_chain({ root = chain[0] middle = chain[1] tip = chain[2] })
+            soft_hair_chain({ root = chain[0] middle = chain[1] tip = chain[2] colliders = ["[name='bisket_collider_head']", "[name='bisket_collider_neck']", "[name='bisket_collider_upper_chest']", "[name='bisket_collider_spine']", "[name='bisket_colliders_hands']", "[name='bisket_colliders_lower_arms']", "[name='bisket_colliders_upper_arms']"] hit_radius = 0.015 })
         }
         for chain in hair_chains_4 {
-            soft_hair_chain_4({ root = chain[0] middle = chain[1] tip = chain[2] end = chain[3] })
+            soft_hair_chain_4({ root = chain[0] middle = chain[1] tip = chain[2] end = chain[3] colliders = ["[name='bisket_collider_head']", "[name='bisket_collider_neck']", "[name='bisket_collider_upper_chest']", "[name='bisket_collider_spine']", "[name='bisket_colliders_hands']", "[name='bisket_colliders_lower_arms']", "[name='bisket_colliders_upper_arms']"] hit_radius = 0.015 })
         }
         for chain in bust_chains {
             SpringBone.from_root(chain[0])
                 .stiffness(4.0)
                 .drag_force(0.60)
                 .gravity(0.35, [0, -1, 0])
+                .colliders(["[name='bisket_collider_upper_chest']", "[name='bisket_collider_spine']", "[name='bisket_colliders_hands']", "[name='bisket_colliders_lower_arms']", "[name='bisket_colliders_upper_arms']"])
+                .hit_radius(0.025)
         }
         SpringBone.from_root("[name='tail']")
             .virtual_end_length_ratio(1.0)
             .stiffness(1.0)
             .drag_force(0.25)
             .gravity(0.8, [0, -1, 0])
+            .colliders(["[name='bisket_collider_spine']", "[name='bisket_collider_hips']", "[name='bisket_colliders_upper_legs']"])
+            .hit_radius(0.03)
         if extra_chains {
             for chain in extra_chains {
                 SpringBone.from_root(chain.root)
@@ -58,6 +62,8 @@ export fn bisket_secondary_motion_with(config, extra_chains) {
                     .stiffness(chain.stiffness)
                     .drag_force(chain.drag_force)
                     .gravity(chain.gravity_power, chain.gravity_dir)
+                    .colliders(["[name='bisket_collider_upper_chest']", "[name='bisket_collider_spine']", "[name='bisket_collider_hips']", "[name='bisket_colliders_upper_legs']"])
+                    .hit_radius(0.02)
             }
         }
     }

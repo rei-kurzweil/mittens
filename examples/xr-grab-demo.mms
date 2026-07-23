@@ -2,6 +2,7 @@
 // squeeze grip, and the object attaches to the controller and levitates to a
 // safe clearance. Move/rotate the controller, then release. Trigger does not grab.
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
+import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { pose as relaxed_pose_factory } from "../assets/components/poses/bisket/000-relaxed.pose.mms"
 import { tripod_light } from "../assets/components/tripod_light.mms"
 
@@ -50,6 +51,7 @@ T {
                         // head and hand tracking take ownership of tracked joints.
                         relaxed_pose_factory()
                         EM.on()
+                        bisket_colliders()
                         bisket_shirt_physics(false)
                     }
                 }

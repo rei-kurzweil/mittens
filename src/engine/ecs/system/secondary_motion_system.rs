@@ -1,6 +1,7 @@
 use crate::engine::ecs::component::{
     BoneRestPoseComponent, ComponentRef, GLTFComponent, QueryRootMode, SecondaryMotionComponent,
-    SpringBoneComponent, SpringJointComponent, TransformComponent, resolve_component_ref,
+    SpringBoneComponent, SpringColliderComponent, SpringJointComponent, TransformComponent,
+    resolve_component_ref,
 };
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, Signal, SignalEmitter, SignalKind, World,
@@ -33,6 +34,16 @@ struct BoundChain {
     lengths: Vec<f32>,
     accumulator: f32,
     enabled: bool,
+    gltf: ComponentId,
+    hit_radius: f32,
+    colliders: Vec<BoundCollider>,
+}
+
+#[derive(Debug, Clone)]
+struct BoundCollider {
+    config: ComponentId,
+    target: ComponentId,
+    radius: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +95,7 @@ pub struct SecondaryMotionSystem {
     resolved_transform_chains: HashMap<ComponentId, HashSet<ComponentId>>,
     joint_claims: HashMap<ComponentId, ComponentId>,
     diagnostics: HashMap<ComponentId, String>,
+    collider_diagnostics: HashSet<String>,
     profile: Profile,
     debug_frames: u64,
 }
@@ -161,6 +173,28 @@ impl SecondaryMotionSystem {
                     self.reconcile_chain(world, chain);
                 }
             }
+            return;
+        }
+        if world
+            .get_component_by_id_as::<SpringColliderComponent>(component)
+            .is_some()
+        {
+            let owning_gltf = nearest_gltf(world, component);
+            let chains: Vec<_> = self
+                .chains
+                .iter()
+                .filter_map(|(&chain, runtime)| {
+                    let root = runtime.root?;
+                    (self.roots.get(&root)?.gltf == owning_gltf
+                        && world
+                            .get_component_by_id_as::<SpringBoneComponent>(chain)
+                            .is_some_and(|chain| !chain.colliders.is_empty()))
+                    .then_some(chain)
+                })
+                .collect();
+            for chain in chains {
+                self.bind_chain(world, chain);
+            }
         }
     }
 
@@ -169,6 +203,36 @@ impl SecondaryMotionSystem {
         let binding_before = self.profile.binding;
         self.profile.invalidations += 1;
         let mut chains = HashSet::new();
+        if world
+            .get_component_by_id_as::<SpringColliderComponent>(component)
+            .is_some()
+        {
+            let owning_gltf = nearest_gltf(world, component);
+            for (&chain, runtime) in &self.chains {
+                let same_gltf = runtime
+                    .root
+                    .and_then(|root| self.roots.get(&root))
+                    .and_then(|root| root.gltf)
+                    == owning_gltf;
+                if same_gltf
+                    && world
+                        .get_component_by_id_as::<SpringBoneComponent>(chain)
+                        .is_some_and(|chain| !chain.colliders.is_empty())
+                {
+                    chains.insert(chain);
+                }
+            }
+        }
+        for (&chain, runtime) in &self.chains {
+            if let ChainStatus::Bound(bound) = &runtime.status
+                && bound
+                    .colliders
+                    .iter()
+                    .any(|collider| collider.config == component || collider.target == component)
+            {
+                chains.insert(chain);
+            }
+        }
         if self.roots.contains_key(&component) {
             self.reconcile_root(world, component);
             chains.extend(self.roots[&component].children.iter().copied());
@@ -245,6 +309,21 @@ impl SecondaryMotionSystem {
         let started = Instant::now();
         let binding_before = self.profile.binding;
         self.profile.invalidations += 1;
+        let collider_chains: Vec<_> = self
+            .chains
+            .iter()
+            .filter_map(|(&chain, runtime)| match &runtime.status {
+                ChainStatus::Bound(bound)
+                    if bound
+                        .colliders
+                        .iter()
+                        .any(|collider| collider.config == component) =>
+                {
+                    Some(chain)
+                }
+                _ => None,
+            })
+            .collect();
         if self.chains.contains_key(&component) {
             self.reconcile_chain(world, component);
         } else if let Some(chain) = self.joint_owner.get(&component).copied() {
@@ -254,6 +333,9 @@ impl SecondaryMotionSystem {
             for chain in chains {
                 self.bind_chain(world, chain);
             }
+        }
+        for chain in collider_chains {
+            self.bind_chain(world, chain);
         }
         self.profile.invalidation += started
             .elapsed()
@@ -278,6 +360,20 @@ impl SecondaryMotionSystem {
 
     /// Cleanup hook used by subtree removal before graph records disappear.
     pub fn component_removed(&mut self, world: &World, component: ComponentId) {
+        let collider_chains: Vec<_> = self
+            .chains
+            .iter()
+            .filter_map(|(&chain, runtime)| match &runtime.status {
+                ChainStatus::Bound(bound)
+                    if bound.colliders.iter().any(|collider| {
+                        collider.config == component || collider.target == component
+                    }) =>
+                {
+                    Some(chain)
+                }
+                _ => None,
+            })
+            .collect();
         self.registered.remove(&component);
         if self.roots.contains_key(&component) {
             self.remove_root(component);
@@ -330,6 +426,11 @@ impl SecondaryMotionSystem {
             }
         }
         self.diagnostics.remove(&component);
+        for chain in collider_chains {
+            if self.chains.contains_key(&chain) {
+                self.bind_chain(world, chain);
+            }
+        }
     }
 
     pub fn reset(&mut self, world: &World, target: ComponentId) {
@@ -525,7 +626,12 @@ impl SecondaryMotionSystem {
                     .is_some_and(|chain| chain.root.is_some() && joint_config_ids.is_empty()),
             );
         match build_chain(world, gltf, chain, &joint_config_ids) {
-            Ok(bound) => {
+            Ok((bound, warnings)) => {
+                for warning in warnings {
+                    if self.collider_diagnostics.insert(warning.clone()) {
+                        eprintln!("[SecondaryMotion] {warning}");
+                    }
+                }
                 let resolved_ids: Vec<_> = bound.joints.iter().map(|joint| joint.id).collect();
                 let overlap = bound.joints.iter().find_map(|joint| {
                     self.joint_claims
@@ -606,6 +712,7 @@ impl SecondaryMotionSystem {
         let mut dirty_roots = Vec::new();
         let mut dirty_set = HashSet::new();
         let mut stale = Vec::new();
+        let mut collider_stale = Vec::new();
         for (&chain_id, runtime) in &mut self.chains {
             let ChainStatus::Bound(state) = &mut runtime.status else {
                 continue;
@@ -617,6 +724,13 @@ impl SecondaryMotionSystem {
                     .any(|joint| world.get_component_record(joint.id).is_none())
             {
                 stale.push(chain_id);
+                continue;
+            }
+            if state.colliders.iter().any(|collider| {
+                world.get_component_record(collider.config).is_none()
+                    || world.get_component_record(collider.target).is_none()
+            }) {
+                collider_stale.push(chain_id);
                 continue;
             }
             let enabled = world
@@ -646,6 +760,9 @@ impl SecondaryMotionSystem {
         }
         for chain in stale {
             self.component_removed(world, chain);
+        }
+        for chain in collider_stale {
+            self.bind_chain(world, chain);
         }
         self.profile.simulation += started.elapsed();
         if self.debug_frames % 120 == 0 && std::env::var_os("CAT_DEBUG_SECONDARY_MOTION").is_some()
@@ -872,32 +989,120 @@ fn resolve_in_gltf(
     Ok(id)
 }
 
+fn resolve_collider_config_in_gltf(
+    world: &World,
+    gltf_id: ComponentId,
+    reference: &ComponentRef,
+) -> Result<ComponentId, String> {
+    let id = match reference {
+        ComponentRef::Guid(guid) => world.component_id_by_guid(*guid).ok_or_else(|| {
+            format!(
+                "collider configuration '{}' did not resolve",
+                ref_surface(reference)
+            )
+        })?,
+        ComponentRef::Query(query) => {
+            let matches = world.find_all_components(gltf_id, query);
+            if matches.len() != 1 {
+                return Err(format!(
+                    "collider query '{}' matched {} configurations in the owning GLTF instance (expected exactly one)",
+                    query,
+                    matches.len()
+                ));
+            }
+            matches[0]
+        }
+    };
+    if world
+        .get_component_by_id_as::<SpringColliderComponent>(id)
+        .is_none()
+        || nearest_gltf(world, id) != Some(gltf_id)
+    {
+        return Err(format!(
+            "collider configuration '{}' resolved outside the owning GLTF instance or is not a SpringCollider",
+            ref_surface(reference)
+        ));
+    }
+    Ok(id)
+}
+
+fn world_max_scale(world: &World, id: ComponentId) -> f32 {
+    world
+        .get_component_by_id_as::<TransformComponent>(id)
+        .map(|transform| {
+            let matrix = transform.transform.matrix_world;
+            [
+                vec3_len([matrix[0][0], matrix[0][1], matrix[0][2]]),
+                vec3_len([matrix[1][0], matrix[1][1], matrix[1][2]]),
+                vec3_len([matrix[2][0], matrix[2][1], matrix[2][2]]),
+            ]
+            .into_iter()
+            .fold(0.0, f32::max)
+        })
+        .filter(|scale| scale.is_finite() && *scale > f32::EPSILON)
+        .unwrap_or(1.0)
+}
+
 fn build_chain(
     world: &World,
     gltf_id: ComponentId,
     chain_id: ComponentId,
     joint_config_ids: &[ComponentId],
-) -> Result<BoundChain, BindFailure> {
+) -> Result<(BoundChain, Vec<String>), BindFailure> {
     if let Some(anchor) = world
         .parent_of(gltf_id)
         .and_then(|id| world.get_component_by_id_as::<TransformComponent>(id))
     {
         let matrix = anchor.transform.matrix_world;
-        let sx = vec3_len([matrix[0][0], matrix[0][1], matrix[0][2]]);
-        let sy = vec3_len([matrix[1][0], matrix[1][1], matrix[1][2]]);
-        let sz = vec3_len([matrix[2][0], matrix[2][1], matrix[2][2]]);
         let det = matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1])
             - matrix[1][0] * (matrix[0][1] * matrix[2][2] - matrix[0][2] * matrix[2][1])
             + matrix[2][0] * (matrix[0][1] * matrix[1][2] - matrix[0][2] * matrix[1][1]);
-        if det <= 0.0 || (sx - sy).abs() > 1e-4 || (sx - sz).abs() > 1e-4 {
+        if det <= 0.0 {
             return Err(BindFailure::invalid(
-                "non-uniform or negative GLTF instance scale is unsupported",
+                "negative GLTF instance scale is unsupported",
             ));
         }
     }
     let chain = world
         .get_component_by_id_as::<SpringBoneComponent>(chain_id)
         .ok_or_else(|| BindFailure::waiting("missing SpringBone"))?;
+    let mut warnings = Vec::new();
+    let mut colliders = Vec::new();
+    let mut seen_configs = HashSet::new();
+    let mut seen_colliders = HashSet::new();
+    for collider_ref in &chain.colliders {
+        let config_id = match resolve_collider_config_in_gltf(world, gltf_id, collider_ref) {
+            Ok(id) => id,
+            Err(message) => {
+                warnings.push(format!("chain {chain_id:?}: {message}; skipping"));
+                continue;
+            }
+        };
+        if !seen_configs.insert(config_id) {
+            continue;
+        }
+        let config = world
+            .get_component_by_id_as::<SpringColliderComponent>(config_id)
+            .expect("validated collider configuration");
+        for target_ref in &config.targets {
+            match resolve_in_gltf(world, gltf_id, target_ref) {
+                Ok(target) => {
+                    if seen_colliders.insert((target, config.radius.to_bits())) {
+                        colliders.push(BoundCollider {
+                            config: config_id,
+                            target,
+                            radius: config.radius,
+                        });
+                    }
+                }
+                Err(failure) => warnings.push(format!(
+                    "collider {config_id:?} target '{}': {}; skipping",
+                    ref_surface(target_ref),
+                    failure.message
+                )),
+            }
+        }
+    }
     if let Some(center) = &chain.center {
         resolve_in_gltf(world, gltf_id, center).map_err(|failure| BindFailure {
             waiting: failure.waiting,
@@ -1054,7 +1259,13 @@ fn build_chain(
         .and_then(|id| world.get_component_by_id_as::<TransformComponent>(id))
         .map(|anchor| {
             let matrix = anchor.transform.matrix_world;
-            vec3_len([matrix[0][0], matrix[0][1], matrix[0][2]])
+            [
+                vec3_len([matrix[0][0], matrix[0][1], matrix[0][2]]),
+                vec3_len([matrix[1][0], matrix[1][1], matrix[1][2]]),
+                vec3_len([matrix[2][0], matrix[2][1], matrix[2][2]]),
+            ]
+            .into_iter()
+            .fold(0.0, f32::max)
         })
         .filter(|scale| *scale > f32::EPSILON)
         .unwrap_or(1.0);
@@ -1097,14 +1308,20 @@ fn build_chain(
         lengths.push(length);
         current.push(tail);
     }
-    Ok(BoundChain {
-        joints,
-        previous: current.clone(),
-        current,
-        lengths,
-        accumulator: 0.0,
-        enabled: chain.enabled,
-    })
+    Ok((
+        BoundChain {
+            joints,
+            previous: current.clone(),
+            current,
+            lengths,
+            accumulator: 0.0,
+            enabled: chain.enabled,
+            gltf: gltf_id,
+            hit_radius: chain.hit_radius,
+            colliders,
+        },
+        warnings,
+    ))
 }
 
 fn reset_state(world: &World, state: &mut BoundChain) {
@@ -1179,6 +1396,100 @@ fn simulate_step(world: &World, state: &mut BoundChain) {
         let direction = vec3_normalize(vec3_sub(next, head));
         state.current[index] = vec3_add(head, vec3_scale(direction, state.lengths[index]));
     }
+    if state.colliders.is_empty() {
+        return;
+    }
+    let hit_scale = world
+        .parent_of(state.gltf)
+        .map(|anchor| world_max_scale(world, anchor))
+        .unwrap_or(1.0);
+    let hit_radius = state.hit_radius * hit_scale;
+    for _ in 0..2 {
+        for index in 0..state.joints.len() {
+            let head = if index == 0 {
+                pos(world, state.joints[index].id).unwrap_or(state.current[index])
+            } else {
+                state.current[index - 1]
+            };
+            let mut endpoint = state.current[index];
+            for collider in &state.colliders {
+                let Some(center) = pos(world, collider.target) else {
+                    continue;
+                };
+                let radius = collider.radius * world_max_scale(world, collider.target) + hit_radius;
+                let delta = vec3_sub(endpoint, center);
+                let distance = vec3_len(delta);
+                if distance < radius {
+                    endpoint = exclude_sphere_at_length(
+                        head,
+                        endpoint,
+                        state.lengths[index],
+                        center,
+                        radius,
+                    );
+                }
+            }
+            let delta = vec3_sub(endpoint, head);
+            let direction = if vec3_len(delta) > f32::EPSILON {
+                vec3_normalize(delta)
+            } else {
+                [1.0, 0.0, 0.0]
+            };
+            state.current[index] = vec3_add(head, vec3_scale(direction, state.lengths[index]));
+        }
+    }
+}
+
+fn exclude_sphere_at_length(
+    head: [f32; 3],
+    endpoint: [f32; 3],
+    length: f32,
+    center: [f32; 3],
+    radius: f32,
+) -> [f32; 3] {
+    if length <= f32::EPSILON {
+        return endpoint;
+    }
+    let to_center = vec3_sub(center, head);
+    let center_distance = vec3_len(to_center);
+    let desired = {
+        let delta = vec3_sub(endpoint, head);
+        if vec3_len(delta) > f32::EPSILON {
+            vec3_normalize(delta)
+        } else {
+            [1.0, 0.0, 0.0]
+        }
+    };
+    if center_distance <= f32::EPSILON {
+        return vec3_add(head, vec3_scale(desired, length));
+    }
+    let axis = vec3_scale(to_center, 1.0 / center_distance);
+    // Points on the segment-length sphere are outside the collider when their
+    // direction has dot(axis) <= this boundary cosine.
+    let boundary_cos = ((center_distance * center_distance + length * length - radius * radius)
+        / (2.0 * center_distance * length))
+        .clamp(-1.0, 1.0);
+    let desired_cos = desired[0] * axis[0] + desired[1] * axis[1] + desired[2] * axis[2];
+    if desired_cos <= boundary_cos {
+        return vec3_add(head, vec3_scale(desired, length));
+    }
+    let mut perpendicular = vec3_sub(desired, vec3_scale(axis, desired_cos));
+    if vec3_len(perpendicular) <= f32::EPSILON {
+        let basis = if axis[0].abs() < 0.9 {
+            [1.0, 0.0, 0.0]
+        } else {
+            [0.0, 1.0, 0.0]
+        };
+        let projection = axis[0] * basis[0] + axis[1] * basis[1] + axis[2] * basis[2];
+        perpendicular = vec3_sub(basis, vec3_scale(axis, projection));
+    }
+    perpendicular = vec3_normalize(perpendicular);
+    let tangent = (1.0 - boundary_cos * boundary_cos).max(0.0).sqrt();
+    let direction = vec3_add(
+        vec3_scale(axis, boundary_cos),
+        vec3_scale(perpendicular, tangent),
+    );
+    vec3_add(head, vec3_scale(direction, length))
 }
 
 fn apply_rotations(world: &mut World, state: &BoundChain) -> f32 {
@@ -1330,7 +1641,7 @@ mod tests {
     #[test]
     fn automatic_chain_follows_skin_descendants_and_ignores_helpers() {
         let (world, gltf, chain, first, second) = automatic_fixture();
-        let bound = build_chain(&world, gltf, chain, &[]).unwrap();
+        let (bound, _) = build_chain(&world, gltf, chain, &[]).unwrap();
         assert_eq!(
             bound
                 .joints
@@ -1339,6 +1650,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![first, second]
         );
+        assert!(bound.colliders.is_empty());
     }
 
     #[test]
@@ -1354,12 +1666,119 @@ mod tests {
             component.drag_force = 0.35;
             component.gravity_power = 3.0;
         }
-        let bound = build_chain(&world, gltf, chain, &[]).unwrap();
+        let (bound, _) = build_chain(&world, gltf, chain, &[]).unwrap();
         assert_eq!(bound.joints.len(), 1);
         assert_eq!(bound.joints[0].id, second);
         assert_eq!(bound.joints[0].stiffness, 2.0);
         assert_eq!(bound.joints[0].drag, 0.35);
         assert_eq!(bound.joints[0].gravity, [0.0, -3.0, 0.0]);
+    }
+
+    #[test]
+    fn explicit_collider_queries_are_gltf_scoped_deduplicated_and_skip_bad_targets() {
+        let (mut world, gltf, chain, first, _second) = automatic_fixture();
+        let config = world.add_component_boxed_named(
+            "explicit_group",
+            Box::new(SpringColliderComponent::spheres(
+                vec![
+                    ComponentRef::Query("#retained_first".into()),
+                    ComponentRef::Query("#retained_first".into()),
+                    ComponentRef::Query("#missing_target".into()),
+                ],
+                0.25,
+            )),
+        );
+        world.add_child(gltf, config).unwrap();
+        let config_guid = world.get_component_record(config).unwrap().guid;
+        {
+            let spring = world
+                .get_component_by_id_as_mut::<SpringBoneComponent>(chain)
+                .unwrap();
+            spring.colliders = vec![
+                ComponentRef::Query("#explicit_group".into()),
+                ComponentRef::Guid(config_guid),
+                ComponentRef::Query("#missing_group".into()),
+            ];
+            spring.hit_radius = 0.05;
+        }
+        let (bound, warnings) = build_chain(&world, gltf, chain, &[]).unwrap();
+        assert_eq!(bound.colliders.len(), 1);
+        assert_eq!(bound.colliders[0].target, first);
+        assert_eq!(bound.hit_radius, 0.05);
+        assert_eq!(warnings.len(), 2);
+
+        let other_anchor = world.add_component(TransformComponent::new());
+        let other_gltf = world.add_component(GLTFComponent::new("other.glb"));
+        let outside = world.add_component_boxed_named(
+            "outside_group",
+            Box::new(SpringColliderComponent::sphere(
+                ComponentRef::Query("#retained_first".into()),
+                1.0,
+            )),
+        );
+        world.add_child(other_anchor, other_gltf).unwrap();
+        world.add_child(other_gltf, outside).unwrap();
+        let outside_guid = world.get_component_record(outside).unwrap().guid;
+        world
+            .get_component_by_id_as_mut::<SpringBoneComponent>(chain)
+            .unwrap()
+            .colliders = vec![ComponentRef::Guid(outside_guid)];
+        let (bound, warnings) = build_chain(&world, gltf, chain, &[]).unwrap();
+        assert!(bound.colliders.is_empty());
+        assert_eq!(warnings.len(), 1);
+    }
+
+    #[test]
+    fn sphere_exclusion_adds_hit_radius_and_preserves_segment_length() {
+        let head = [0.0, 0.0, 0.0];
+        let center = [0.0, 0.75, 0.0];
+        let endpoint = [0.0, 1.0, 0.0];
+        let projected = exclude_sphere_at_length(head, endpoint, 1.0, center, 0.5 + 0.1);
+        assert!((vec3_len(vec3_sub(projected, head)) - 1.0).abs() < 1e-5);
+        assert!((vec3_len(vec3_sub(projected, center)) - 0.6).abs() < 1e-5);
+    }
+
+    #[test]
+    fn coincident_sphere_center_has_a_deterministic_finite_result() {
+        let first = exclude_sphere_at_length([0.0; 3], [0.0; 3], 1.0, [0.0; 3], 0.5);
+        let second = exclude_sphere_at_length([0.0; 3], [0.0; 3], 1.0, [0.0; 3], 0.5);
+        assert_eq!(first, second);
+        assert_eq!(first, [1.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn collider_target_topology_and_configuration_changes_rebind_the_chain() {
+        let mut fixture = fixture();
+        let gltf = nearest_gltf(&fixture.world, fixture.root).unwrap();
+        let config = fixture.world.add_component_boxed_named(
+            "live_group",
+            Box::new(SpringColliderComponent::sphere(
+                ComponentRef::Query("#retained_first".into()),
+                0.25,
+            )),
+        );
+        fixture.world.add_child(gltf, config).unwrap();
+        let guid = fixture.world.get_component_record(config).unwrap().guid;
+        fixture
+            .world
+            .get_component_by_id_as_mut::<SpringBoneComponent>(fixture.chain)
+            .unwrap()
+            .colliders = vec![ComponentRef::Guid(guid)];
+        fixture.system.register(&fixture.world, fixture.root);
+
+        let before = fixture.system.discovery_counts().0;
+        fixture
+            .system
+            .topology_changed(&fixture.world, fixture.imported[0]);
+        assert_eq!(fixture.system.discovery_counts().0, before + 1);
+
+        fixture
+            .world
+            .get_component_by_id_as_mut::<SpringColliderComponent>(config)
+            .unwrap()
+            .radius = 0.5;
+        fixture.system.configuration_changed(&fixture.world, config);
+        assert_eq!(fixture.system.discovery_counts().0, before + 2);
     }
 
     #[test]

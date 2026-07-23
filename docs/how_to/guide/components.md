@@ -586,6 +586,22 @@ Carries spring bone state used when that engine feature is present in a componen
 SpringBone.from_root("[name='tail']").virtual_end_length_ratio(1.0)
 ```
 
+### `SpringCollidersComponent`
+<!-- catalog:component source="SpringCollidersComponent" mms="direct" names="SpringColliders" -->
+Groups explicitly authored spring collider configurations within a glTF instance.
+**Directly constructible** as `SpringColliders`. Sources: [Rust implementation](../../../src/engine/ecs/component/secondary_motion.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
+```mms parse-only
+SpringColliders {}
+```
+
+### `SpringColliderComponent`
+<!-- catalog:component source="SpringColliderComponent" mms="direct" names="SpringCollider" -->
+Defines one or more spherical secondary-motion colliders at explicit glTF node targets.
+**Directly constructible** as `SpringCollider`. Sources: [Rust implementation](../../../src/engine/ecs/component/secondary_motion.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
+```mms parse-only
+SpringCollider.sphere("[name='J_Bip_C_Hips']", 0.11)
+```
+
 ### `SpringJointComponent`
 <!-- catalog:component source="SpringJointComponent" mms="direct" names="SpringJoint" -->
 Carries spring joint state used when that engine feature is present in a component tree. Use it when a tree needs this state or behavior. The Spring Joint engine subsystem; its component lifecycle is processed at signal drain points.

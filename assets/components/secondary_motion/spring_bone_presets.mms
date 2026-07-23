@@ -6,12 +6,16 @@ export fn soft_hair_chain(config) {
     let root = "[name='Hair1']"
     let middle = "[name='Hair2']"
     let tip = "[name='Hair3']"
+    let colliders = []
+    let hit_radius = 0
     if config {
         root = config.root
         middle = config.middle
         tip = config.tip
+        colliders = config.colliders
+        hit_radius = config.hit_radius
     }
-    return SpringBone.new(root).virtual_end_length_ratio(1.0) {
+    return SpringBone.new(root).virtual_end_length_ratio(1.0).colliders(colliders).hit_radius(hit_radius) {
         SpringJoint.new(root).stiffness(1.0).drag_force(0.35).gravity(3.0, [0, -1, 0])
         SpringJoint.new(middle).stiffness(1.0).drag_force(0.35).gravity(3.0, [0, -1, 0])
         SpringJoint.new(tip).stiffness(1.0).drag_force(0.35).gravity(3.0, [0, -1, 0])
@@ -23,13 +27,17 @@ export fn soft_hair_chain_4(config) {
     let middle = "[name='Hair2']"
     let tip = "[name='Hair3']"
     let end = "[name='Hair4']"
+    let colliders = []
+    let hit_radius = 0
     if config {
         root = config.root
         middle = config.middle
         tip = config.tip
         end = config.end
+        colliders = config.colliders
+        hit_radius = config.hit_radius
     }
-    return SpringBone.new(root).virtual_end_length_ratio(1.0) {
+    return SpringBone.new(root).virtual_end_length_ratio(1.0).colliders(colliders).hit_radius(hit_radius) {
         SpringJoint.new(root).stiffness(1.0).drag_force(0.35).gravity(3.0, [0, -1, 0])
         SpringJoint.new(middle).stiffness(1.0).drag_force(0.35).gravity(3.0, [0, -1, 0])
         SpringJoint.new(tip).stiffness(1.0).drag_force(0.35).gravity(3.0, [0, -1, 0])

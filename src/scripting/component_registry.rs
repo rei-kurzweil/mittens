@@ -34,7 +34,8 @@ use crate::engine::ecs::component::{
     RendererStatsComponent, RouterComponent, ScrollingComponent, SecondaryMotionComponent,
     SelectableComponent, SelectionComponent, SerializeComponent, SettingsPanelConfig,
     SignalObserverRouterComponent, SignalRouteUpwardComponent, SizeDimension, SkinnedMeshComponent,
-    SpotLightComponent, SpringBoneComponent, SpringJointComponent, StencilClipComponent,
+    SpotLightComponent, SpringBoneComponent, SpringColliderComponent, SpringCollidersComponent,
+    SpringJointComponent, StencilClipComponent,
     StyleComponent, TextAlign, TextComponent, TextInputComponent, TextShadowComponent,
     TextureComponent, TextureFilteringComponent, ToggleComponent, TransformCameraSpecificComponent,
     TransformComponent, TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis,
@@ -150,6 +151,8 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "SkinnedMesh",
     "SpotLight",
     "SpringBone",
+    "SpringCollider",
+    "SpringColliders",
     "SpringJoint",
     "StencilClip",
     "Style",
@@ -1675,6 +1678,18 @@ fn create_component(
             _ => Err("GLTF requires .new(\"uri\")".into()),
         },
         "SecondaryMotion" => add!(SecondaryMotionComponent::new()),
+        "SpringColliders" => add!(SpringCollidersComponent::new()),
+        "SpringCollider" => match ctor {
+            Some("sphere") => add!(SpringColliderComponent::sphere(
+                arg_component_ref(world, args, 0)?,
+                arg_f32(args, 1)?,
+            )),
+            Some("spheres") => add!(SpringColliderComponent::spheres(
+                arg_component_ref_vec(world, args, 0)?,
+                arg_f32(args, 1)?,
+            )),
+            _ => Err("SpringCollider requires .sphere(target, radius) or .spheres(targets, radius)".into()),
+        },
         "SpringBone" => match ctor {
             Some("new") => add!(SpringBoneComponent::new(arg_str(args, 0)?)),
             Some("from_root") => add!(SpringBoneComponent::from_root(arg_component_ref(
@@ -3015,6 +3030,11 @@ fn apply_call(
     } else {
         None
     };
+    let spring_colliders = if method == "colliders" {
+        Some(arg_component_ref_vec(world, args, 0)?)
+    } else {
+        None
+    };
     if let Some(chain) = world.get_component_by_id_as_mut::<SpringBoneComponent>(id) {
         match method {
             "center" => chain.center = spring_center,
@@ -3032,6 +3052,8 @@ fn apply_call(
                     [arg_f32(args, 1)?, arg_f32(args, 2)?, arg_f32(args, 3)?]
                 };
             }
+            "colliders" => chain.colliders = spring_colliders.unwrap_or_default(),
+            "hit_radius" => chain.hit_radius = arg_f32(args, 0)?.max(0.0),
             _ => {}
         }
         return Ok(());

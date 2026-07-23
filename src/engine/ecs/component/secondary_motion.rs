@@ -54,6 +54,106 @@ impl Component for SecondaryMotionComponent {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct SpringCollidersComponent {
+    component: Option<ComponentId>,
+}
+impl SpringCollidersComponent {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+impl Component for SpringCollidersComponent {
+    fn name(&self) -> &'static str {
+        "spring_colliders"
+    }
+    fn set_id(&mut self, id: ComponentId) {
+        self.component = Some(id);
+    }
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterSecondaryMotion {
+                component_ids: vec![component],
+            },
+        );
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::scripting::ast::ComponentExpression {
+        ce("SpringColliders")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SpringColliderComponent {
+    pub targets: Vec<ComponentRef>,
+    pub radius: f32,
+    component: Option<ComponentId>,
+}
+impl SpringColliderComponent {
+    pub fn sphere(target: ComponentRef, radius: f32) -> Self {
+        Self::spheres(vec![target], radius)
+    }
+    pub fn spheres(targets: Vec<ComponentRef>, radius: f32) -> Self {
+        Self {
+            targets,
+            radius: radius.max(0.0),
+            component: None,
+        }
+    }
+}
+impl Component for SpringColliderComponent {
+    fn name(&self) -> &'static str {
+        "spring_collider"
+    }
+    fn set_id(&mut self, id: ComponentId) {
+        self.component = Some(id);
+    }
+    fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
+        emit.push_intent_now(
+            component,
+            crate::engine::ecs::IntentValue::RegisterSecondaryMotion {
+                component_ids: vec![component],
+            },
+        );
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::scripting::ast::ComponentExpression {
+        if self.targets.len() == 1 {
+            ce_call(
+                "SpringCollider",
+                "sphere",
+                vec![ref_expr(&self.targets[0]), num(self.radius as f64)],
+            )
+        } else {
+            ce_call(
+                "SpringCollider",
+                "spheres",
+                vec![
+                    array(self.targets.iter().map(ref_expr).collect()),
+                    num(self.radius as f64),
+                ],
+            )
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SpringBoneComponent {
     pub stable_name: String,
@@ -67,6 +167,8 @@ pub struct SpringBoneComponent {
     pub drag_force: f32,
     pub gravity_power: f32,
     pub gravity_dir: [f32; 3],
+    pub colliders: Vec<ComponentRef>,
+    pub hit_radius: f32,
     component: Option<ComponentId>,
 }
 impl SpringBoneComponent {
@@ -81,6 +183,8 @@ impl SpringBoneComponent {
             drag_force: 0.4,
             gravity_power: 0.0,
             gravity_dir: [0.0, -1.0, 0.0],
+            colliders: Vec::new(),
+            hit_radius: 0.0,
             component: None,
         }
     }
@@ -114,6 +218,14 @@ impl SpringBoneComponent {
     pub fn gravity(mut self, power: f32, direction: [f32; 3]) -> Self {
         self.gravity_power = power;
         self.gravity_dir = direction;
+        self
+    }
+    pub fn colliders(mut self, colliders: Vec<ComponentRef>) -> Self {
+        self.colliders = colliders;
+        self
+    }
+    pub fn hit_radius(mut self, radius: f32) -> Self {
+        self.hit_radius = radius.max(0.0);
         self
     }
 }
@@ -155,6 +267,15 @@ impl Component for SpringBoneComponent {
         }
         if let Some(r) = self.virtual_end_length_ratio {
             out = out.with_call("virtual_end_length_ratio", vec![num(r as f64)]);
+        }
+        if !self.colliders.is_empty() {
+            out = out.with_call(
+                "colliders",
+                vec![array(self.colliders.iter().map(ref_expr).collect())],
+            );
+        }
+        if self.hit_radius != 0.0 {
+            out = out.with_call("hit_radius", vec![num(self.hit_radius as f64)]);
         }
         if self.root.is_some() {
             out = out

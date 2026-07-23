@@ -5,6 +5,7 @@
 export fn tripod_light(light_name, position, look_target, mounted_light) {
     return T.position(position[0], position[1], position[2]) {
         name = light_name
+        Grabbable {}
 
         // The fixture origin is the ground plane under its feet. Account for
         // both the leg's length and thickness when finding its rotated Y extent.

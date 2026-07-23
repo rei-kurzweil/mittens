@@ -1,5 +1,6 @@
 import { star_kawaii_background } from "../assets/components/backgrounds/star_kawaii_background.mms"
 import { bisket_secondary_motion } from "../assets/components/secondary_motion/bisket.mms"
+import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { pose as relaxed_pose_factory } from "../assets/components/poses/bisket/000-relaxed.pose.mms"
 import { tripod_light } from "../assets/components/tripod_light.mms"
 import { button } from "../assets/components/button.mms"
@@ -74,6 +75,7 @@ let avatar_gltf = GLTF.new("assets/models/bisket.glb") {
     // Direct pose children establish one-shot startup overlays after import.
     relaxed_pose_factory()
     EM.on()
+    bisket_colliders()
     // false means "use Bisket defaults": 14 hair chains and two bust chains.
     bisket_secondary_motion(false)
 }
