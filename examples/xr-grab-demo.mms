@@ -2,6 +2,7 @@
 // squeeze grip, and the object attaches to the controller and levitates to a
 // safe clearance. Move/rotate the controller, then release. Trigger does not grab.
 import { bisket_secondary_motion } from "../assets/components/secondary_motion/bisket.mms"
+import { pose as relaxed_pose_factory } from "../assets/components/poses/bisket/000-relaxed.pose.mms"
 import { tripod_light } from "../assets/components/tripod_light.mms"
 
 RendererSettings { window_size(960, 640) }
@@ -45,6 +46,9 @@ T {
 
                 T {
                     GLTF.new("assets/models/bisket.11.0.glb") {
+                        // Establish a relaxed lower-body/rest posture before XR
+                        // head and hand tracking take ownership of tracked joints.
+                        relaxed_pose_factory()
                         EM.on()
                         bisket_secondary_motion(false)
                     }

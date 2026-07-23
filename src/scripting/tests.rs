@@ -5675,7 +5675,8 @@ fn draggable_plane_builder_accepts_object_camera_and_world_axes() {
 fn xr_grab_demo_evaluates_and_authors_grabbables_outside_editor() {
     use crate::engine::ecs::component::{
         ControllerXRComponent, EditorComponent, GLTFComponent, GrabbableComponent,
-        InputXRGamepadComponent, SecondaryMotionComponent, SpotLightComponent,
+        InputXRGamepadComponent, PoseCapturePoseComponent, SecondaryMotionComponent,
+        SpotLightComponent,
     };
     let mut world = World::default();
     let mut rx = RxWorld::default();
@@ -5705,6 +5706,11 @@ fn xr_grab_demo_evaluates_and_authors_grabbables_outside_editor() {
         world
             .get_component_by_id_as::<GLTFComponent>(id)
             .is_some_and(|gltf| gltf.uri == "assets/models/bisket.11.0.glb")
+    }));
+    assert!(world.all_components().any(|id| {
+        world
+            .get_component_by_id_as::<PoseCapturePoseComponent>(id)
+            .is_some_and(|pose| pose.name == "relaxed")
     }));
     assert_eq!(
         world

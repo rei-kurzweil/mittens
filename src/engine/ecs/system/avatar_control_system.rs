@@ -10,10 +10,11 @@ use crate::engine::ecs::system::bounds_system::{BoundsSystem, RenderableBoundsMe
 use crate::engine::ecs::system::collision_shape_inference::infer_upright_capsule;
 use crate::engine::ecs::system::input_xr_gamepad_system::xr_locomotion_target_transform;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
-use crate::engine::graphics::RenderAssets;
+use crate::engine::graphics::{RenderAssets, primitives::Transform};
 use crate::engine::user_input::InputState;
 use crate::utils::math::{
-    mat_to_quat, quat_conjugate, quat_mul, quat_rotate_vec3, quat_rotation_y,
+    mat_to_quat, mat4_identity, mat4_mul, quat_conjugate, quat_mul, quat_rotate_vec3,
+    quat_rotation_y,
 };
 use std::collections::HashSet;
 use winit::keyboard::{Key, NamedKey};
@@ -587,16 +588,16 @@ fn try_init_splices(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmi
     let model_root_translation: Option<[f32; 3]> = if let Some(h) = avatar_height_override {
         Some([0.0, -h, 0.0])
     } else if let Some(cam_bone_id) = camera_bone_id {
-        let cam_bone_world_y = world
-            .get_component_by_id_as::<TransformComponent>(cam_bone_id)
-            .map(|t| t.transform.matrix_world[3][1])
-            .unwrap_or(0.0);
-        let model_root_world_y = world
-            .get_component_by_id_as::<TransformComponent>(model_root_id)
-            .map(|t| t.transform.matrix_world[3][1])
-            .unwrap_or(0.0);
-        let bone_local_y = cam_bone_world_y - model_root_world_y;
-        Some([0.0, -bone_local_y, 0.0])
+        // AVC initialization waits for a valid XR pose. At that boundary the
+        // XR-driven parent and freshly imported GLTF descendants can have
+        // cached world matrices from different propagation stages, so
+        // subtracting their world Y values can move the body up to the HMD.
+        //
+        // Derive avatar height entirely from the immutable GLTF rest-pose
+        // locals instead. This is independent of headset position, animation,
+        // startup poses, and transform-system tick ordering.
+        rest_model_relative_to(world, model_root_id, cam_bone_id)
+            .map(|bone_in_model| [0.0, -bone_in_model[3][1], 0.0])
     } else {
         None
     };
@@ -1127,6 +1128,61 @@ fn read_bone_rest_pose(world: &World, bone_id: ComponentId) -> ([f32; 3], [f32; 
         .unwrap_or(([0.0; 3], [0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0]))
 }
 
+/// Compose `descendant`'s authored/rest transform relative to `ancestor`.
+///
+/// GLTF transforms use their immutable `BoneRestPoseComponent` snapshot.
+/// Non-GLTF transforms fall back to their local model matrix. World matrices
+/// are deliberately ignored because XR may update an ancestor before the
+/// imported subtree has been propagated for the same frame.
+fn rest_model_relative_to(
+    world: &World,
+    ancestor: ComponentId,
+    descendant: ComponentId,
+) -> Option<[[f32; 4]; 4]> {
+    let mut transforms = Vec::new();
+    let mut current = Some(descendant);
+    let mut found_ancestor = false;
+
+    while let Some(id) = current {
+        if id == ancestor {
+            found_ancestor = true;
+            break;
+        }
+        if world
+            .get_component_by_id_as::<TransformComponent>(id)
+            .is_some()
+        {
+            transforms.push(id);
+        }
+        current = world.parent_of(id);
+    }
+    if !found_ancestor {
+        return None;
+    }
+
+    transforms.reverse();
+    Some(transforms.into_iter().fold(mat4_identity(), |model, id| {
+        let local = if let Some(rest) = world
+            .children_of(id)
+            .iter()
+            .find_map(|&child| world.get_component_by_id_as::<BoneRestPoseComponent>(child))
+        {
+            let mut transform = Transform::default();
+            transform.translation = rest.translation;
+            transform.rotation = rest.rotation;
+            transform.scale = rest.scale;
+            transform.recompute_model();
+            transform.model
+        } else {
+            world
+                .get_component_by_id_as::<TransformComponent>(id)
+                .map(|transform| transform.transform.model)
+                .unwrap_or_else(mat4_identity)
+        };
+        mat4_mul(model, local)
+    }))
+}
+
 fn tc_world_rot(world: &World, id: ComponentId) -> [f32; 4] {
     world
         .get_component_by_id_as::<TransformComponent>(id)
@@ -1144,6 +1200,46 @@ mod capsule_tests {
 
     fn attach(world: &mut World, parent: ComponentId, child: ComponentId) {
         world.set_parent(child, Some(parent)).unwrap();
+    }
+
+    #[test]
+    fn rest_relative_height_ignores_stale_xr_world_matrices_and_live_pose() {
+        let mut world = World::default();
+        let model_root = world.add_component(TransformComponent::new());
+        let hips = world.add_component(
+            TransformComponent::new()
+                .with_position(0.0, 99.0, 0.0)
+                .with_rotation_euler(0.0, 0.4, 0.0),
+        );
+        let hips_rest = world.add_component(BoneRestPoseComponent::new(
+            [0.0, 0.9, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0],
+        ));
+        let head = world.add_component(TransformComponent::new().with_position(0.0, -42.0, 0.0));
+        let head_rest = world.add_component(BoneRestPoseComponent::new(
+            [0.0, 0.7, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0],
+        ));
+        attach(&mut world, model_root, hips);
+        attach(&mut world, hips, hips_rest);
+        attach(&mut world, hips, head);
+        attach(&mut world, head, head_rest);
+
+        world
+            .get_component_by_id_as_mut::<TransformComponent>(model_root)
+            .unwrap()
+            .transform
+            .matrix_world[3][1] = 1.75;
+        world
+            .get_component_by_id_as_mut::<TransformComponent>(head)
+            .unwrap()
+            .transform
+            .matrix_world[3][1] = 0.0;
+
+        let relative = rest_model_relative_to(&world, model_root, head).unwrap();
+        assert!((relative[3][1] - 1.6).abs() < 1e-6);
     }
 
     #[test]
@@ -1206,7 +1302,10 @@ mod capsule_tests {
             .evaluate_stream_node(&world, fork, arbitrary_pose)
             .unwrap();
         assert_eq!(outputs, vec![capsule_t]);
-        assert_eq!([upright[3][0], upright[3][1], upright[3][2]], [3.0, 4.0, 5.0]);
+        assert_eq!(
+            [upright[3][0], upright[3][1], upright[3][2]],
+            [3.0, 4.0, 5.0]
+        );
         assert_eq!(upright[0], [1.0, 0.0, 0.0, 0.0]);
         assert_eq!(upright[1], [0.0, 1.0, 0.0, 0.0]);
         assert_eq!(upright[2], [0.0, 0.0, 1.0, 0.0]);
