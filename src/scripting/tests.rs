@@ -6006,7 +6006,7 @@ fn draggable_plane_builder_accepts_object_camera_and_world_axes() {
 }
 
 #[test]
-fn xr_grab_demo_evaluates_and_authors_grabbables_outside_editor() {
+fn xr_grab_demo_evaluates_with_editor_settings_and_grabbable_playground() {
     use crate::engine::ecs::component::{
         ControllerXRComponent, EditorComponent, EditorPanel, EditorUIComponent, GLTFComponent,
         GrabbableComponent, InputXRGamepadComponent, PoseCapturePoseComponent,
@@ -6123,17 +6123,38 @@ fn xr_grab_demo_evaluates_and_authors_grabbables_outside_editor() {
             .count(),
         2
     );
-    assert!(!world.all_components().any(|id| {
-        world
-            .get_component_by_id_as::<EditorComponent>(id)
-            .is_some()
-    }));
+    let editor_root = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<EditorComponent>(*id)
+                .is_some_and(|editor| editor.active)
+        })
+        .expect("xr-grab demo should author an active editor root");
+    for name in ["pile_a_top", "pile_b_top", "pile_c_top"] {
+        let cube = world
+            .all_components()
+            .find(|id| world.component_label(*id) == Some(name))
+            .unwrap_or_else(|| panic!("xr-grab demo should author {name}"));
+        let mut ancestor = world.parent_of(cube);
+        while ancestor.is_some() && ancestor != Some(editor_root) {
+            ancestor = ancestor.and_then(|id| world.parent_of(id));
+        }
+        assert_eq!(ancestor, Some(editor_root));
+    }
     let editor_ui = world
         .all_components()
-        .find_map(|id| world.get_component_by_id_as::<EditorUIComponent>(id))
+        .find(|id| {
+            world
+                .get_component_by_id_as::<EditorUIComponent>(*id)
+                .is_some()
+        })
         .expect("xr-grab demo should author its settings panel");
-    assert_eq!(editor_ui.panels().len(), 1);
-    assert_eq!(editor_ui.panels()[0], EditorPanel::Settings);
+    let editor_ui_component = world
+        .get_component_by_id_as::<EditorUIComponent>(editor_ui)
+        .unwrap();
+    assert_eq!(editor_ui_component.panels().len(), 1);
+    assert_eq!(editor_ui_component.panels()[0], EditorPanel::Settings);
     for intent in output.intents {
         queue.push_intent_now(ComponentId::default(), intent);
     }
@@ -6146,6 +6167,12 @@ fn xr_grab_demo_evaluates_and_authors_grabbables_outside_editor() {
         &InputState::default(),
         &mut queue,
         1.0 / 60.0,
+    );
+    assert!(
+        world
+            .find_component(editor_ui, "#editor_panel_layout_mount")
+            .is_some(),
+        "active editor should materialize the authored settings panel"
     );
     assert_eq!(systems.secondary_motion.runtime_counts(), (1, 23, 23, 0, 0));
 }
