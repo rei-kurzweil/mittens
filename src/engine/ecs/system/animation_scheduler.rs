@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::engine::ecs::component::{AnimationComponent, AnimationState, KeyframeComponent};
+use crate::engine::ecs::component::{
+    AnimationComponent, AnimationState, KeyframeComponent, MusicNoteComponent,
+};
 use crate::engine::ecs::{ComponentId, World};
 
 #[derive(Debug, Clone, Copy)]
@@ -58,6 +60,9 @@ impl AnimationScheduler {
             let Some(kf) = world.get_component_by_id_as::<KeyframeComponent>(kf_id) else {
                 continue;
             };
+            if !kf.effect_profile.runs_in_visual_phase() && !has_music_note_child(world, kf_id) {
+                continue;
+            }
             let kf_local_beat = kf.beat - min_beat;
             if kf_local_beat <= local_beat + 1e-9 {
                 out.push(kf_id);
@@ -105,6 +110,9 @@ impl AnimationScheduler {
             let Some(kf) = world.get_component_by_id_as::<KeyframeComponent>(kf_id) else {
                 continue;
             };
+            if !kf.effect_profile.runs_in_audio_phase() && !has_music_note_child(world, kf_id) {
+                continue;
+            }
             let kf_local_beat = kf.beat - min_beat;
 
             if kf_local_beat >= local_beat - 1e-9 && kf_local_beat <= local_end + 1e-9 {
@@ -125,5 +133,65 @@ impl AnimationScheduler {
             }
         }
         out
+    }
+}
+
+fn has_music_note_child(world: &World, keyframe: ComponentId) -> bool {
+    world.children_of(keyframe).iter().copied().any(|child| {
+        world
+            .get_component_by_id_as::<MusicNoteComponent>(child)
+            .is_some()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::ecs::component::{AnimationComponent, KeyframeComponent};
+    use meow_meow_script::{
+        CallbackHandle, KeyframeEffectProfile, SessionCallbackRef, SessionHandle,
+    };
+
+    fn keyframe(world: &mut World, beat: f64, profile: KeyframeEffectProfile) -> ComponentId {
+        world.add_component(KeyframeComponent::new_with_session_callback(
+            beat,
+            SessionCallbackRef {
+                session: SessionHandle::from_raw(1),
+                callback: CallbackHandle::from_raw(1),
+            },
+            profile,
+        ))
+    }
+
+    #[test]
+    fn phase_pure_callbacks_are_not_returned_for_the_irrelevant_phase() {
+        let mut world = World::default();
+        let animation = world.add_component(AnimationComponent::new());
+        let audio = keyframe(&mut world, 0.0, KeyframeEffectProfile::AudioOnly);
+        let visual = keyframe(&mut world, 0.0, KeyframeEffectProfile::VisualOnly);
+        let none = keyframe(&mut world, 0.0, KeyframeEffectProfile::None);
+        let unknown = keyframe(&mut world, 0.0, KeyframeEffectProfile::Unknown);
+        let keyframes = [audio, visual, none, unknown];
+        let scheduler = AnimationScheduler::new().with_lookahead_sec(0.1);
+
+        let audio_due = scheduler.audio_due_keyframes(
+            &world,
+            animation,
+            &keyframes,
+            &BTreeMap::new(),
+            0,
+            0.0,
+            0.0,
+            60.0,
+            1.0,
+        );
+        assert_eq!(
+            audio_due.iter().map(|(id, _, _)| *id).collect::<Vec<_>>(),
+            vec![audio, unknown]
+        );
+
+        let visual_due =
+            scheduler.visual_due_keyframes(&world, &keyframes, &BTreeSet::new(), 0.0, 0.0);
+        assert_eq!(visual_due, vec![visual, unknown]);
     }
 }

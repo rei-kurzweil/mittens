@@ -63,6 +63,29 @@ impl std::fmt::Display for DeferredCallbackError {
 }
 
 impl RuntimeSpecSession {
+    /// Invoke a retained keyframe callback only in a phase its session-owned
+    /// profile permits.  The engine supplies the opaque reference and plain
+    /// metadata only; it never inspects or re-analyzes the callback body.
+    pub fn invoke_keyframe_callback(
+        &mut self,
+        callback_ref: mms::SessionCallbackRef,
+        effect_profile: mms::KeyframeEffectProfile,
+        mode: DeferredCallbackMode,
+        world: &mut World,
+        rx: &mut RxWorld,
+        render_assets: Option<&mut RenderAssets>,
+        emit: &mut dyn SignalEmitter,
+    ) -> Result<Vec<IntentValue>, DeferredCallbackError> {
+        let permitted = match mode {
+            DeferredCallbackMode::AudioOnly { .. } => effect_profile.runs_in_audio_phase(),
+            DeferredCallbackMode::VisualOnly => effect_profile.runs_in_visual_phase(),
+        };
+        if !permitted {
+            return Ok(Vec::new());
+        }
+        self.invoke_deferred_callback(callback_ref, mode, world, rx, render_assets, emit)
+    }
+
     /// Start a retained MMS execution using the default Mittens runtime.
     ///
     /// This compatibility convenience preserves the original immediate
@@ -215,11 +238,20 @@ impl RuntimeSpecSession {
         }
 
         let mut intents = Vec::new();
+        let host_phase = match mode {
+            DeferredCallbackMode::AudioOnly { .. } => {
+                crate::scripting::host::DeferredCallbackHostPhase::Audio
+            }
+            DeferredCallbackMode::VisualOnly => {
+                crate::scripting::host::DeferredCallbackHostPhase::Visual
+            }
+        };
         let mut host = crate::scripting::host::MittensHost::new(world, emit, &mut intents)
             .with_rx(rx)
             .with_bindings(self.configured.bindings())
             .with_callback_invocations(Arc::clone(&self.callback_invocations))
-            .with_callback_delivery_enabled(Arc::clone(&self.callback_delivery_enabled));
+            .with_callback_delivery_enabled(Arc::clone(&self.callback_delivery_enabled))
+            .with_deferred_callback_phase(host_phase);
         if let Some(render_assets) = render_assets {
             host = host.with_render_assets(render_assets);
         }

@@ -1,3 +1,4 @@
+use crate::KeyframeEffectProfile;
 use crate::ast::{BinOpKind, BlockStatement, Expression, Statement};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,6 +46,22 @@ impl BlockEffectAnalyzer {
                 .iter()
                 .any(|s| matches!(s.effect_kind, EffectKind::Unknown)),
             statements,
+        }
+    }
+}
+
+impl From<&BlockEffectAnalysis> for KeyframeEffectProfile {
+    fn from(analysis: &BlockEffectAnalysis) -> Self {
+        if analysis.contains_unknown_effects {
+            Self::Unknown
+        } else if analysis.contains_audio_effects && analysis.contains_visual_effects {
+            Self::Mixed
+        } else if analysis.contains_audio_effects {
+            Self::AudioOnly
+        } else if analysis.contains_visual_effects {
+            Self::VisualOnly
+        } else {
+            Self::None
         }
     }
 }
@@ -98,6 +115,13 @@ fn classify_expr(expr: &Expression) -> EffectKind {
                     && matches!(rhs.as_ref(), Expression::Identifier(id) if matches!(id.0.as_str(), "a" | "b" | "c" | "d" | "e" | "f" | "g"))
                 {
                     EffectKind::Audio
+                } else if matches!(lhs.as_ref(), Expression::Identifier(_))
+                    && matches!(rhs.as_ref(), Expression::Identifier(id) if is_known_visual_method(&id.0))
+                {
+                    // Only methods with an explicit engine-side visual/world
+                    // contract are phase-pure.  A lookalike table method or a
+                    // helper function remains Unknown.
+                    EffectKind::Visual
                 } else {
                     EffectKind::Unknown
                 }
@@ -106,6 +130,20 @@ fn classify_expr(expr: &Expression) -> EffectKind {
         },
         _ => EffectKind::None,
     }
+}
+
+fn is_known_visual_method(name: &str) -> bool {
+    matches!(
+        name,
+        "update_transform"
+            | "set_intensity"
+            | "set_text"
+            | "attach"
+            | "detach"
+            | "remove"
+            | "set_visible"
+            | "set_enabled"
+    )
 }
 
 fn summarize(effects: impl IntoIterator<Item = EffectKind>) -> EffectKind {

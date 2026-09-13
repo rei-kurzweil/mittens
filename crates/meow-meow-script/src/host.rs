@@ -59,6 +59,36 @@ pub struct SessionCallbackRef {
     pub callback: CallbackHandle,
 }
 
+/// Immutable, transport-safe classification of a deferred keyframe callback.
+///
+/// This is deliberately metadata only: the callback body, captured scope, and
+/// any execution plan stay in the session which allocated `SessionCallbackRef`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum KeyframeEffectProfile {
+    /// The retained body has no host-visible effects.
+    None,
+    /// The retained body can only schedule audio work.
+    AudioOnly,
+    /// The retained body can only perform visual/world work.
+    VisualOnly,
+    /// The retained body has both audio and visual work.
+    Mixed,
+    /// The analyzer could not prove a phase-pure body. Never optimize this
+    /// profile away.
+    #[default]
+    Unknown,
+}
+
+impl KeyframeEffectProfile {
+    pub const fn runs_in_audio_phase(self) -> bool {
+        matches!(self, Self::AudioOnly | Self::Mixed | Self::Unknown)
+    }
+
+    pub const fn runs_in_visual_phase(self) -> bool {
+        matches!(self, Self::VisualOnly | Self::Mixed | Self::Unknown)
+    }
+}
+
 /// Values that are safe to own outside the MMS heap. In particular, tables
 /// are snapshots and closures are represented only by opaque handles.
 #[derive(Debug, Clone, PartialEq)]

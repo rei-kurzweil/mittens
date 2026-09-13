@@ -1873,6 +1873,10 @@ mod tests {
         let callback = tree
             .deferred_callback
             .expect("retained deferred callback reference");
+        assert_eq!(
+            tree.deferred_callback_effect_profile,
+            Some(crate::KeyframeEffectProfile::None)
+        );
         assert_eq!(callback.session, session_handle);
         assert!(session.context().owns_callback(callback.callback));
         session

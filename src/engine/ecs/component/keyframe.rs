@@ -8,6 +8,8 @@ pub struct KeyframeComponent {
     /// Opaque callback retained by a `meow-meow-script` session. This carries
     /// no executable state into the ECS.
     pub session_callback: Option<meow_meow_script::SessionCallbackRef>,
+    /// Session-computed classification for `session_callback`.
+    pub effect_profile: meow_meow_script::KeyframeEffectProfile,
 
     component: Option<ComponentId>,
 }
@@ -17,6 +19,7 @@ impl KeyframeComponent {
         Self {
             beat,
             session_callback: None,
+            effect_profile: meow_meow_script::KeyframeEffectProfile::None,
             component: None,
         }
     }
@@ -24,10 +27,12 @@ impl KeyframeComponent {
     pub fn new_with_session_callback(
         beat: f64,
         callback: meow_meow_script::SessionCallbackRef,
+        effect_profile: meow_meow_script::KeyframeEffectProfile,
     ) -> Self {
         Self {
             beat,
             session_callback: Some(callback),
+            effect_profile,
             component: None,
         }
     }

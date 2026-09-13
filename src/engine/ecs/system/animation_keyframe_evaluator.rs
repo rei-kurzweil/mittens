@@ -21,14 +21,20 @@ impl AnimationKeyframeEvaluator {
         kf_global_beat: f64,
         mut executor: Option<&mut SessionCallbackExecutor<'_>>,
     ) {
-        let session_callback = world
+        let callback = world
             .get_component_by_id_as::<KeyframeComponent>(kf_id)
-            .and_then(|kf| kf.session_callback);
+            .and_then(|kf| {
+                kf.session_callback
+                    .map(|callback| (callback, kf.effect_profile))
+            });
 
-        if let Some(callback) = session_callback {
+        if let Some((callback, effect_profile)) = callback
+            && effect_profile.runs_in_audio_phase()
+        {
             if let Some(executor) = executor.as_mut() {
-                match executor.session.invoke_deferred_callback(
+                match executor.session.invoke_keyframe_callback(
                     callback,
+                    effect_profile,
                     DeferredCallbackMode::AudioOnly {
                         beat_context: kf_global_beat,
                     },
@@ -63,14 +69,20 @@ impl AnimationKeyframeEvaluator {
         audio_already_scheduled_this_cycle: bool,
         mut executor: Option<&mut SessionCallbackExecutor<'_>>,
     ) {
-        let session_callback = world
+        let callback = world
             .get_component_by_id_as::<KeyframeComponent>(kf_id)
-            .and_then(|kf| kf.session_callback);
+            .and_then(|kf| {
+                kf.session_callback
+                    .map(|callback| (callback, kf.effect_profile))
+            });
 
-        if let Some(callback) = session_callback {
+        if let Some((callback, effect_profile)) = callback
+            && effect_profile.runs_in_visual_phase()
+        {
             if let Some(executor) = executor.as_mut() {
-                match executor.session.invoke_deferred_callback(
+                match executor.session.invoke_keyframe_callback(
                     callback,
+                    effect_profile,
                     DeferredCallbackMode::VisualOnly,
                     world,
                     rx,

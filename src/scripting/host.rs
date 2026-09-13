@@ -20,6 +20,15 @@ pub struct SignalCallbackRoute {
     pub callback: mms::CallbackHandle,
 }
 
+/// Capability lease applied while a retained keyframe callback is evaluated.
+/// The evaluator may still inspect its session-owned closure, but a lease
+/// prevents host-visible work from crossing into the wrong animation phase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeferredCallbackHostPhase {
+    Audio,
+    Visual,
+}
+
 /// Engine implementation of the host-neutral Meow Meow host contract.
 pub struct MittensHost<'a> {
     pub world: &'a mut World,
@@ -31,6 +40,7 @@ pub struct MittensHost<'a> {
     signal_routes: Option<&'a mut Vec<SignalCallbackRoute>>,
     callback_invocations: Option<Arc<Mutex<Vec<mms::CallbackInvocation>>>>,
     callback_delivery_enabled: Option<Arc<AtomicBool>>,
+    deferred_callback_phase: Option<DeferredCallbackHostPhase>,
     legacy_component_fallbacks: usize,
     legacy_method_fallbacks: usize,
 }
@@ -51,6 +61,7 @@ impl<'a> MittensHost<'a> {
             signal_routes: None,
             callback_invocations: None,
             callback_delivery_enabled: None,
+            deferred_callback_phase: None,
             legacy_component_fallbacks: 0,
             legacy_method_fallbacks: 0,
         }
@@ -96,6 +107,32 @@ impl<'a> MittensHost<'a> {
     pub fn with_callback_delivery_enabled(mut self, enabled: Arc<AtomicBool>) -> Self {
         self.callback_delivery_enabled = Some(enabled);
         self
+    }
+
+    pub fn with_deferred_callback_phase(mut self, phase: DeferredCallbackHostPhase) -> Self {
+        self.deferred_callback_phase = Some(phase);
+        self
+    }
+
+    fn phase_blocks_tree(&self, tree: &mms::MaterializedCE) -> bool {
+        matches!(
+            self.deferred_callback_phase,
+            Some(DeferredCallbackHostPhase::Audio)
+        ) && tree.component_type != "MusicNote"
+            || matches!(
+                self.deferred_callback_phase,
+                Some(DeferredCallbackHostPhase::Visual)
+            ) && tree.component_type == "MusicNote"
+    }
+
+    fn inert_component(component_type: String) -> mms::HostResponse {
+        // The value only lets evaluation continue past a deliberately gated
+        // expression. It is never registered with the world, so any later
+        // attempt to use it is correctly rejected as stale.
+        mms::HostResponse::Component {
+            handle: mms::ComponentHandle::from_raw(u64::MAX),
+            component_type,
+        }
     }
 
     pub fn legacy_component_fallbacks(&self) -> usize {
@@ -268,6 +305,9 @@ impl mms::Host for MittensHost<'_> {
             }
             R::CallApi { api_id, .. } => Err(mms::HostError::unsupported(api_id)),
             R::CallApiById { operation_id, args } => {
+                if self.deferred_callback_phase == Some(DeferredCallbackHostPhase::Audio) {
+                    return Ok(S::Unit);
+                }
                 let Some(binding) = self
                     .bindings
                     .and_then(|bindings| bindings.get(operation_id))
@@ -312,6 +352,9 @@ impl mms::Host for MittensHost<'_> {
                 }
             }
             R::Spawn { tree } => {
+                if self.phase_blocks_tree(&tree) {
+                    return Ok(Self::inert_component(tree.component_type));
+                }
                 if let Some(bindings) = self.bindings {
                     if let Some(result) = super::configured_registry::try_spawn_tree(
                         &tree, bindings, self.world, self.emit, true,
@@ -345,6 +388,9 @@ impl mms::Host for MittensHost<'_> {
                 })
             }
             R::Register { tree } => {
+                if self.phase_blocks_tree(&tree) {
+                    return Ok(Self::inert_component(tree.component_type));
+                }
                 if let Some(bindings) = self.bindings {
                     if let Some(result) = super::configured_registry::try_spawn_tree(
                         &tree, bindings, self.world, self.emit, false,
@@ -379,6 +425,9 @@ impl mms::Host for MittensHost<'_> {
                 })
             }
             R::Attach { parent, child } => {
+                if self.deferred_callback_phase == Some(DeferredCallbackHostPhase::Audio) {
+                    return Ok(S::Unit);
+                }
                 let child = self.existing_id(child, "attach")?;
                 if let Some(parent) = parent {
                     let parent = self.existing_id(parent, "attach")?;
@@ -442,7 +491,6 @@ impl mms::Host for MittensHost<'_> {
                 component,
                 args,
             } => {
-                let id = self.existing_id(component, "invoke_component_method")?;
                 let Some(binding) = self
                     .bindings
                     .and_then(|bindings| bindings.get(operation_id))
@@ -465,6 +513,16 @@ impl mms::Host for MittensHost<'_> {
                         message: format!("{binding:?} cannot be invoked as a component method"),
                     });
                 };
+                let is_audio = matches!(
+                    *component_type,
+                    "AudioOscillator" | "AudioClip" | "AudioGain"
+                );
+                if matches!(self.deferred_callback_phase, Some(DeferredCallbackHostPhase::Audio) if !is_audio)
+                    || matches!(self.deferred_callback_phase, Some(DeferredCallbackHostPhase::Visual) if is_audio)
+                {
+                    return Ok(S::Value(mms::Value::Null));
+                }
+                let id = self.existing_id(component, "invoke_component_method")?;
                 let args = args
                     .into_iter()
                     .map(external_value_to_legacy)
@@ -486,6 +544,15 @@ impl mms::Host for MittensHost<'_> {
                 method,
                 args,
             } => {
+                let is_audio = matches!(
+                    component_type.as_str(),
+                    "AudioOscillator" | "AudioClip" | "AudioGain"
+                );
+                if matches!(self.deferred_callback_phase, Some(DeferredCallbackHostPhase::Audio) if !is_audio)
+                    || matches!(self.deferred_callback_phase, Some(DeferredCallbackHostPhase::Visual) if is_audio)
+                {
+                    return Ok(S::Value(mms::Value::Null));
+                }
                 self.legacy_method_fallbacks += 1;
                 let id = self.existing_id(component, "invoke_component_method")?;
                 let args = args

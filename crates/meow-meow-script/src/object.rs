@@ -89,6 +89,9 @@ pub struct MaterializedCE {
     /// Session-owned deferred body. Configured retained sessions use this
     /// transport-safe reference instead of copying `deferred_block` to a host.
     pub deferred_callback: Option<crate::SessionCallbackRef>,
+    /// Immutable phase classification retained alongside `deferred_callback`.
+    /// It is absent for callback-free component trees.
+    pub deferred_callback_effect_profile: Option<crate::KeyframeEffectProfile>,
     /// Child component trees, in source order. Each entry is either a CE to
     /// spawn fresh, or a pre-Registered `ComponentHandle` to splice in.
     pub children: Vec<CeChild>,

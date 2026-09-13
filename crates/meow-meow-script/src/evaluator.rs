@@ -1053,14 +1053,17 @@ impl<'a, H: Host> Evaluator<'a, H> {
             positionals: Vec::new(),
             deferred_block: None,
             deferred_callback: None,
+            deferred_callback_effect_profile: None,
             children: Vec::new(),
         };
         if body_mode == ComponentBodyMode::Deferred {
+            let analysis = BlockEffectAnalyzer::analyze_keyframe_block(&component.body);
+            let effect_profile = crate::KeyframeEffectProfile::from(&analysis);
             let closure = RuntimeClosure {
                 body: component.body.clone(),
                 captured_env: Arc::new(self.snapshot()),
                 heap: self.heap.clone(),
-                analysis: Some(BlockEffectAnalyzer::analyze_keyframe_block(&component.body)),
+                analysis: Some(analysis),
             };
             if let Some(context) = self.context.as_deref_mut() {
                 let callback = context.allocate_callback();
@@ -1077,6 +1080,7 @@ impl<'a, H: Host> Evaluator<'a, H> {
                     session: context.session_handle(),
                     callback,
                 });
+                tree.deferred_callback_effect_profile = Some(effect_profile);
             } else {
                 tree.deferred_block = Some(closure);
             }

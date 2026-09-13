@@ -1,3 +1,4 @@
+use crate::KeyframeEffectProfile;
 use crate::ast::{Expression, Statement};
 use crate::block_effect_analyzer::{BlockEffectAnalyzer, EffectKind};
 use crate::parser::MeowMeowParser;
@@ -8,6 +9,28 @@ fn parse(src: &str) -> Vec<Statement> {
     MeowMeowParser::new(tokens)
         .parse_program()
         .expect("parse ok")
+}
+
+#[test]
+fn keyframe_effect_profiles_are_conservative_and_phase_specific() {
+    let audio = parse("Keyframe.at(0) { MusicNote.c(4, 1, lead) }");
+    let visual = parse("Keyframe.at(0) { cube.set_intensity(0.5) }");
+    let none = parse("Keyframe.at(0) { let local = 1 }");
+    let unknown = parse("Keyframe.at(0) { helper() }");
+
+    let profile = |program: &[Statement]| {
+        let Statement::Expression(Expression::Component(component)) = &program[0] else {
+            panic!("expected keyframe component expression");
+        };
+        KeyframeEffectProfile::from(&BlockEffectAnalyzer::analyze_keyframe_block(
+            &component.body,
+        ))
+    };
+
+    assert_eq!(profile(&audio), KeyframeEffectProfile::AudioOnly);
+    assert_eq!(profile(&visual), KeyframeEffectProfile::VisualOnly);
+    assert_eq!(profile(&none), KeyframeEffectProfile::None);
+    assert_eq!(profile(&unknown), KeyframeEffectProfile::Unknown);
 }
 
 #[test]

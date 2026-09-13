@@ -75,6 +75,12 @@ fn tree_is_direct(
             tree.component_type
         ));
     }
+    if tree.deferred_callback.is_some() != tree.deferred_callback_effect_profile.is_some() {
+        return Err(format!(
+            "{} deferred callback and effect profile must be supplied together",
+            tree.component_type
+        ));
+    }
     let Some(operation_id) = tree.constructor.operation_id else {
         return Ok(false);
     };
@@ -178,6 +184,7 @@ fn spawn_tree_uninitialized(
         tree.constructor.name.as_deref(),
         &tree.constructor.arguments,
         tree.deferred_callback,
+        tree.deferred_callback_effect_profile,
     )?;
 
     for call in &tree.initializer_calls {
@@ -208,6 +215,7 @@ fn create_component(
     constructor: Option<&str>,
     args: &[mms::Value],
     deferred_callback: Option<mms::SessionCallbackRef>,
+    deferred_callback_effect_profile: Option<mms::KeyframeEffectProfile>,
 ) -> Result<ComponentId, String> {
     let id = match component {
         "Transform" => world.add_component(TransformComponent::new()),
@@ -233,9 +241,14 @@ fn create_component(
             let callback = deferred_callback.ok_or_else(|| {
                 "direct Keyframe.at requires a session-owned deferred callback".to_string()
             })?;
+            let effect_profile = deferred_callback_effect_profile.ok_or_else(|| {
+                "direct Keyframe.at requires the session-computed callback effect profile"
+                    .to_string()
+            })?;
             world.add_component(KeyframeComponent::new_with_session_callback(
                 f64_arg(args, 0)?,
                 callback,
+                effect_profile,
             ))
         }
         "Keyframe" => return Err("direct Keyframe requires .at(beat)".into()),
