@@ -20,7 +20,6 @@ use crate::scripting::ast::{
     BinOpKind, CallExpression, ComponentExpression, ElseBranch, Expression, IfStatement,
     ImportItem, Statement, UnaryOpKind,
 };
-use crate::scripting::block_effect_analyzer::BlockEffectAnalyzer;
 use crate::scripting::component_method_registry::{
     invoke_component_method, legacy_supports_component_method,
 };
@@ -28,8 +27,7 @@ use crate::scripting::component_registry::{
     component_expr_uses_property_assignment_only, is_universal_component_named_prop,
 };
 use crate::scripting::object::{
-    BuiltinTableKind, CeChild, FrameKind, MaterializedCE, Object, ObjectWorld, RuntimeClosure,
-    Value,
+    BuiltinTableKind, CeChild, FrameKind, MaterializedCE, Object, ObjectWorld, Value,
 };
 use crate::scripting::parser::{MeowMeowParser, ParseError};
 use crate::scripting::token::TokenizeError;
@@ -210,13 +208,6 @@ impl MeowMeowEvaluatorHandle {
 
 pub struct MeowMeowEvaluator;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum RuntimeClosureExecMode {
-    Full,
-    KeyframeAudioOnly { beat_context: f64 },
-    KeyframeVisualOnly,
-}
-
 impl MeowMeowEvaluator {
     pub fn spawn(queue_capacity: usize) -> MeowMeowEvaluatorHandle {
         let (req_prod, req_cons) = RingBuffer::<EvalRequest>::new(queue_capacity);
@@ -381,8 +372,6 @@ struct EvalContext<'a> {
     host_world: Option<*mut World>,
     /// Live component subtree that owns the currently executing imperative block.
     exec_scope: Option<ComponentId>,
-    /// Execution policy for deferred runtime closures such as `Keyframe` callbacks.
-    runtime_closure_mode: RuntimeClosureExecMode,
     /// Prompt-time navigation context. It propagates through functions called
     /// by the prompt, but is absent from file and later handler evaluation.
     implicit_cwd: Option<Value>,
@@ -411,31 +400,7 @@ fn with_navigation_eval<R>(f: impl FnOnce() -> R) -> R {
     })
 }
 
-fn push_eval_intent(ctx: &mut EvalContext<'_>, mut intent: IntentValue) {
-    match ctx.runtime_closure_mode {
-        RuntimeClosureExecMode::Full => {}
-        RuntimeClosureExecMode::KeyframeAudioOnly { beat_context } => match &mut intent {
-            IntentValue::AudioSchedulePlay {
-                beat_context: signal_beat_context,
-                ..
-            }
-            | IntentValue::OscillatorScheduleSetPitch {
-                beat_context: signal_beat_context,
-                ..
-            } => {
-                *signal_beat_context = Some(beat_context);
-            }
-            _ => return,
-        },
-        RuntimeClosureExecMode::KeyframeVisualOnly => match intent {
-            IntentValue::AudioSchedulePlay { .. }
-            | IntentValue::OscillatorScheduleSetPitch { .. } => {
-                return;
-            }
-            _ => {}
-        },
-    }
-
+fn push_eval_intent(ctx: &mut EvalContext<'_>, intent: IntentValue) {
     ctx.emits.push(intent);
 }
 
@@ -500,6 +465,11 @@ fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
         }
     };
 
+    if let Err(message) = reject_legacy_animation_or_keyframe_statements(&stmts) {
+        let _ = ch.responses.push(EvalResponse::Error { message });
+        return;
+    }
+
     EmitLiftTransform::apply(&mut stmts);
     QueryDesugarTransform::apply(&mut stmts);
 
@@ -516,7 +486,6 @@ fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
             object_world: &mut world,
             host_world: None,
             exec_scope: None,
-            runtime_closure_mode: RuntimeClosureExecMode::Full,
             implicit_cwd: None,
         };
         eval_block_stmts(&stmts, &mut ctx)
@@ -539,6 +508,113 @@ fn eval_script(source: &str, source_path: Option<&str>, ch: &mut EvalChannels) {
             std::thread::yield_now();
         }
     }
+}
+
+/// Reject Animation/Keyframe before legacy evaluation can register an earlier
+/// sibling component into a live world. RuntimeSpec owns their deferred bodies.
+pub(crate) fn reject_legacy_animation_or_keyframe_statements(
+    values: &[Statement],
+) -> Result<(), String> {
+    fn reject_component(component: &ComponentExpression) -> Result<(), String> {
+        let name = component.component_type.0.as_str();
+        if matches!(
+            name,
+            "A" | "Animation" | "animation" | "KF" | "Keyframe" | "keyframe"
+        ) {
+            return Err(format!(
+                "legacy {name} evaluation is unsupported: executable animation requires the RuntimeSpec runtime (use RuntimeSpecSession)"
+            ));
+        }
+        for constructor in &component.constructors {
+            for argument in &constructor.args {
+                reject_expression(argument)?;
+            }
+        }
+        reject_statements(&component.body.statements)
+    }
+
+    fn reject_expression(value: &Expression) -> Result<(), String> {
+        match value {
+            Expression::Array(values) => {
+                for value in values {
+                    reject_expression(value)?;
+                }
+            }
+            Expression::Table(fields) => {
+                for field in fields {
+                    reject_expression(&field.value)?;
+                }
+            }
+            Expression::Index { base, index } => {
+                reject_expression(base)?;
+                reject_expression(index)?;
+            }
+            Expression::Call(call) => {
+                reject_expression(&call.callee)?;
+                for argument in &call.args {
+                    reject_expression(argument)?;
+                }
+            }
+            Expression::Component(component) => reject_component(component)?,
+            Expression::BinaryOp { lhs, rhs, .. } => {
+                reject_expression(lhs)?;
+                reject_expression(rhs)?;
+            }
+            Expression::UnaryOp { operand, .. } => reject_expression(operand)?,
+            Expression::Function { body, .. } => reject_statements(&body.statements)?,
+            Expression::String(_)
+            | Expression::Number(_)
+            | Expression::Dimension(_, _)
+            | Expression::Bool(_)
+            | Expression::Null
+            | Expression::Identifier(_) => {}
+        }
+        Ok(())
+    }
+
+    fn reject_if(value: &IfStatement) -> Result<(), String> {
+        reject_expression(&value.condition)?;
+        reject_statements(&value.then_branch.statements)?;
+        if let Some(else_branch) = &value.else_branch {
+            match else_branch {
+                ElseBranch::Block(block) => reject_statements(&block.statements)?,
+                ElseBranch::If(next) => reject_if(next)?,
+            }
+        }
+        Ok(())
+    }
+
+    fn reject_statements(values: &[Statement]) -> Result<(), String> {
+        for value in values {
+            match value {
+                Statement::Assignment(assignment) => reject_expression(&assignment.value)?,
+                Statement::Reassign { target, value } => {
+                    reject_expression(target)?;
+                    reject_expression(value)?;
+                }
+                Statement::Return(value) => {
+                    if let Some(value) = &value.value {
+                        reject_expression(value)?;
+                    }
+                }
+                Statement::If(value) => reject_if(value)?,
+                Statement::Block(value) => reject_statements(&value.statements)?,
+                Statement::Expression(value) => reject_expression(value)?,
+                Statement::ForIn { iterable, body, .. } => {
+                    reject_expression(iterable)?;
+                    reject_statements(&body.statements)?;
+                }
+                Statement::While { condition, body } => {
+                    reject_expression(condition)?;
+                    reject_statements(&body.statements)?;
+                }
+                Statement::Break | Statement::Continue | Statement::Import { .. } => {}
+            }
+        }
+        Ok(())
+    }
+
+    reject_statements(values)
 }
 
 /// Interactive evaluation differs from file evaluation in two deliberate ways:
@@ -568,6 +644,7 @@ fn eval_snippet_inner(
     ch: &mut EvalChannels,
 ) -> Result<Option<Value>, String> {
     let mut stmts = parse_source(source)?;
+    reject_legacy_animation_or_keyframe_statements(&stmts)?;
     QueryDesugarTransform::apply(&mut stmts);
     let mut emits = Vec::new();
     let mut last = None;
@@ -581,7 +658,6 @@ fn eval_snippet_inner(
             object_world,
             host_world: None,
             exec_scope: None,
-            runtime_closure_mode: RuntimeClosureExecMode::Full,
             implicit_cwd: cwd.clone(),
         };
         if let Statement::Expression(expr) = stmt {
@@ -649,7 +725,6 @@ fn eval_navigation(
         object_world,
         host_world: None,
         exec_scope: None,
-        runtime_closure_mode: RuntimeClosureExecMode::Full,
         implicit_cwd: cwd,
     };
     // Intentionally do not call maybe_register_live_component_value,
@@ -1264,7 +1339,15 @@ fn eval_if(if_stmt: &IfStatement, ctx: &mut EvalContext<'_>) -> Result<StmtEffec
 fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value, String> {
     let component_property_assignment_only =
         component_expr_uses_property_assignment_only(&ce.component_type.0);
-    let is_keyframe = matches!(ce.component_type.0.as_str(), "KF" | "Keyframe");
+    let component_type = ce.component_type.0.as_str();
+    if matches!(
+        component_type,
+        "A" | "Animation" | "animation" | "KF" | "Keyframe" | "keyframe"
+    ) {
+        return Err(format!(
+            "legacy {component_type} evaluation is unsupported: executable animation requires the RuntimeSpec runtime (use RuntimeSpecSession)"
+        ));
+    }
     // Evaluate all constructor calls.
     let mut ctor_method: Option<String> = None;
     let mut ctor_args: Vec<Value> = vec![];
@@ -1281,26 +1364,6 @@ fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value,
         } else {
             extra_ctor_calls.push((ctor.method.0.clone(), args));
         }
-    }
-
-    if is_keyframe {
-        let mce = MaterializedCE {
-            component_type: ce.component_type.0.clone(),
-            component_property_assignment_only,
-            ctor_method,
-            ctor_args,
-            calls: extra_ctor_calls,
-            named: vec![],
-            positionals: vec![],
-            deferred_block: Some(RuntimeClosure {
-                body: ce.body.clone(),
-                captured_env: Arc::new(ctx.object_world.snapshot_visible()),
-                heap: ctx.object_world.heap().clone(),
-                analysis: Some(BlockEffectAnalyzer::analyze_keyframe_block(&ce.body)),
-            }),
-            children: vec![],
-        };
-        return Ok(Value::ComponentExpr(Box::new(mce)));
     }
 
     // Evaluate the body block with a CE builder context.
@@ -1324,7 +1387,6 @@ fn eval_ce(ce: &ComponentExpression, ctx: &mut EvalContext<'_>) -> Result<Value,
             object_world: ctx.object_world,
             host_world: ctx.host_world,
             exec_scope: ctx.exec_scope,
-            runtime_closure_mode: ctx.runtime_closure_mode,
             implicit_cwd: ctx.implicit_cwd.clone(),
         };
         eval_block_stmts(&ce.body.statements, &mut body_ctx)
@@ -1814,7 +1876,6 @@ fn eval_call(call: &CallExpression, ctx: &mut EvalContext<'_>) -> Result<Value, 
                     object_world: ctx.object_world,
                     host_world: ctx.host_world,
                     exec_scope: ctx.exec_scope,
-                    runtime_closure_mode: ctx.runtime_closure_mode,
                     implicit_cwd: ctx.implicit_cwd.clone(),
                 };
                 eval_block_stmts(&body.statements, &mut func_ctx)
@@ -1977,7 +2038,6 @@ fn eval_user_fn(
             object_world: ctx.object_world,
             host_world: ctx.host_world,
             exec_scope: ctx.exec_scope,
-            runtime_closure_mode: ctx.runtime_closure_mode,
             implicit_cwd: ctx.implicit_cwd.clone(),
         };
         eval_block_stmts(&body.statements, &mut func_ctx)
@@ -2729,7 +2789,6 @@ fn eval_binop(
                             object_world: ctx.object_world,
                             host_world: None,
                             exec_scope: None,
-                            runtime_closure_mode: RuntimeClosureExecMode::Full,
                             implicit_cwd: ctx.implicit_cwd.clone(),
                         };
                         eval_block_stmts(&body.statements, &mut func_ctx)
@@ -3287,6 +3346,7 @@ pub(crate) fn eval_mms_fn(
     else {
         return Err(format!("eval_mms_fn: expected Function, got {:?}", fn_val));
     };
+    reject_legacy_animation_or_keyframe_statements(&body.statements)?;
     let mut emits: Vec<IntentValue> = Vec::new();
     let mut world = ObjectWorld::with_heap(heap.clone());
     world.push_function_frame(captured_env.clone());
@@ -3302,7 +3362,6 @@ pub(crate) fn eval_mms_fn(
         object_world: &mut world,
         host_world: world_host.map(|world| world as *mut World),
         exec_scope: None,
-        runtime_closure_mode: RuntimeClosureExecMode::Full,
         implicit_cwd: None,
     };
     let live_emit = emit.as_mut().map(|em| unsafe {
@@ -3324,43 +3383,6 @@ pub(crate) fn eval_mms_fn(
     Ok(result)
 }
 
-pub(crate) fn eval_runtime_closure(
-    closure: &RuntimeClosure,
-    channels: Option<&mut EvalChannels>,
-    world_host: Option<&mut World>,
-    mut emit: Option<&mut dyn SignalEmitter>,
-    exec_scope: Option<ComponentId>,
-    mode: RuntimeClosureExecMode,
-) -> Result<(), String> {
-    let mut emits: Vec<IntentValue> = Vec::new();
-    let mut world = ObjectWorld::with_heap(closure.heap.clone());
-    world.push_function_frame(closure.captured_env.clone());
-    let mut ctx = EvalContext {
-        emits: &mut emits,
-        source_path: None,
-        channels,
-        ce_builder: None,
-        object_world: &mut world,
-        host_world: world_host.map(|world| world as *mut World),
-        exec_scope,
-        runtime_closure_mode: mode,
-        implicit_cwd: None,
-    };
-    let live_emit = emit.as_mut().map(|em| unsafe {
-        std::mem::transmute::<&mut dyn SignalEmitter, *mut dyn SignalEmitter>(&mut **em)
-    });
-    with_live_signal_emitter(live_emit, || {
-        let _ = eval_block_stmts(&closure.body.statements, &mut ctx)?;
-        Ok::<(), String>(())
-    })?;
-    if let Some(em) = emit {
-        for iv in emits {
-            em.push_intent_now(ComponentId::default(), iv);
-        }
-    }
-    Ok(())
-}
-
 /// Evaluate a source file as a module (sandboxed — emits go to `sequence`, not the engine).
 /// Returns `Value::Module { named, sequence }`.
 pub(crate) fn eval_module_source(source: &str, source_path: Option<&str>) -> Result<Value, String> {
@@ -3379,7 +3401,6 @@ pub(crate) fn eval_module_source(source: &str, source_path: Option<&str>) -> Res
         object_world: &mut world,
         host_world: None,
         exec_scope: None,
-        runtime_closure_mode: RuntimeClosureExecMode::Full,
         implicit_cwd: None,
     };
 

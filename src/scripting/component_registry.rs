@@ -246,14 +246,9 @@ pub fn spawn_tree(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
 ) -> Result<ComponentId, String> {
+    reject_legacy_animation_or_keyframe_tree(ce)?;
     let type_name = resolve_type_name(&ce.component_type);
     let id = create_component(world, &type_name, ce.ctor_method.as_deref(), &ce.ctor_args)?;
-
-    if let Some(block) = &ce.deferred_block {
-        if let Some(keyframe) = world.get_component_by_id_as_mut::<KeyframeComponent>(id) {
-            keyframe.callback = Some(block.clone());
-        }
-    }
 
     // Extra ctor calls + body builder calls (already evaluated).
     for (method, args) in &ce.calls {
@@ -349,14 +344,9 @@ pub fn spawn_tree_uninitialized(
     world: &mut World,
     emit: &mut dyn SignalEmitter,
 ) -> Result<ComponentId, String> {
+    reject_legacy_animation_or_keyframe_tree(ce)?;
     let type_name = resolve_type_name(&ce.component_type);
     let id = create_component(world, &type_name, ce.ctor_method.as_deref(), &ce.ctor_args)?;
-
-    if let Some(block) = &ce.deferred_block {
-        if let Some(keyframe) = world.get_component_by_id_as_mut::<KeyframeComponent>(id) {
-            keyframe.callback = Some(block.clone());
-        }
-    }
 
     for (method, args) in &ce.calls {
         apply_call(world, id, method, args)?;
@@ -461,6 +451,21 @@ fn resolve_type_name(raw: &str) -> String {
     snake_to_pascal(raw)
 }
 
+fn reject_legacy_animation_or_keyframe_tree(ce: &MaterializedCE) -> Result<(), String> {
+    let component = resolve_type_name(&ce.component_type);
+    if matches!(component.as_str(), "Animation" | "Keyframe") {
+        return Err(format!(
+            "legacy {component} evaluation is unsupported: executable animation requires the RuntimeSpec runtime (use RuntimeSpecSession)"
+        ));
+    }
+    for child in &ce.children {
+        if let CeChild::Spawn(child) = child {
+            reject_legacy_animation_or_keyframe_tree(child)?;
+        }
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Subtree → AST encoding (the reverse direction of `spawn_tree`)
 // ---------------------------------------------------------------------------
@@ -505,6 +510,7 @@ pub fn filtered_roots_to_ce_ast(
 
     let mut out = Vec::new();
     for &root in roots {
+        ensure_subtree_has_no_opaque_keyframe_callback(world, root)?;
         out.extend(filtered_ce_ast_inner(world, root, &referenced_guids)?);
     }
     Ok(out)
@@ -700,12 +706,31 @@ pub fn subtree_to_ce_ast_limited(
     root: ComponentId,
     max_depth: usize,
 ) -> Result<ComponentExpression, String> {
+    ensure_subtree_has_no_opaque_keyframe_callback(world, root)?;
     // First pass: collect GUIDs referenced by serializable component references.
     let mut referenced_guids: std::collections::HashSet<uuid::Uuid> =
         std::collections::HashSet::new();
     collect_referenced_guids_limited(world, root, 0, max_depth, &mut referenced_guids);
 
     subtree_to_ce_ast_inner_limited(world, root, &referenced_guids, 0, max_depth)
+}
+
+fn ensure_subtree_has_no_opaque_keyframe_callback(
+    world: &World,
+    root: ComponentId,
+) -> Result<(), String> {
+    if world
+        .get_component_by_id_as::<KeyframeComponent>(root)
+        .is_some_and(|keyframe| keyframe.session_callback.is_some())
+    {
+        return Err(format!(
+            "cannot serialize callback-bearing Keyframe {root:?}: its executable body is owned by a RuntimeSpecSession"
+        ));
+    }
+    for &child in world.children_of(root) {
+        ensure_subtree_has_no_opaque_keyframe_callback(world, child)?;
+    }
+    Ok(())
 }
 
 fn collect_referenced_guids_limited(
@@ -894,24 +919,10 @@ pub fn ce_ast_to_materialized(ce: &ComponentExpression) -> Result<MaterializedCE
     }
 
     if is_keyframe {
-        return Ok(MaterializedCE {
-            component_type: ce.component_type.0.clone(),
-            component_property_assignment_only,
-            ctor_method,
-            ctor_args,
-            calls,
-            named: Vec::new(),
-            positionals: Vec::new(),
-            deferred_block: Some(crate::scripting::object::RuntimeClosure {
-                body: ce.body.clone(),
-                captured_env: std::sync::Arc::new(std::collections::HashMap::new()),
-                heap: crate::scripting::object::HeapHandle::new(),
-                analysis: Some(
-                    crate::scripting::block_effect_analyzer::BlockEffectAnalyzer::analyze_keyframe_block(&ce.body),
-                ),
-            }),
-            children: Vec::new(),
-        });
+        return Err(
+            "legacy Keyframe evaluation is unsupported: executable animation requires the RuntimeSpec runtime (use RuntimeSpecSession)"
+                .into(),
+        );
     }
 
     let mut children: Vec<CeChild> = Vec::new();
@@ -2332,22 +2343,9 @@ fn create_component(
             }
             add!(c)
         }
-        "Animation" => {
-            let mut c = AnimationComponent::new();
-            match ctor {
-                Some("playing") => c = c.with_state(AnimationState::Playing),
-                Some("paused") => c = c.with_state(AnimationState::Paused),
-                Some("looping") => c = c.with_state(AnimationState::Looping),
-                Some("length") => c = c.with_length_beats(arg_f32(args, 0)? as f64),
-                Some("scope") => c = c.with_scope_source(arg_component_ref(world, args, 0)?),
-                _ => {}
-            }
-            add!(c)
-        }
-        "Keyframe" => match ctor {
-            Some("at") => add!(KeyframeComponent::new(arg_f32(args, 0)? as f64)),
-            _ => Err("Keyframe requires .at(beat)".into()),
-        },
+        "Animation" | "Keyframe" => Err(format!(
+            "legacy {type_name} evaluation is unsupported: executable animation requires the RuntimeSpec runtime (use RuntimeSpecSession)"
+        )),
         "NormalVis" => {
             let mut c = NormalVisualisationComponent::new();
             if let Some("thickness") = ctor {
@@ -4431,13 +4429,8 @@ fn apply_layout_bounds_ctor(
 mod tests {
     use super::*;
     use crate::engine::ecs::component::RayCastComponent;
-    use crate::scripting::ast::BlockStatement;
-    use crate::scripting::object::RuntimeClosure;
-    use std::collections::HashMap;
-    use std::sync::Arc;
-
     #[test]
-    fn spawn_tree_installs_keyframe_callback() {
+    fn legacy_keyframe_spawn_is_rejected_before_world_mutation() {
         let ce = MaterializedCE {
             component_type: "Keyframe".to_string(),
             component_property_assignment_only: false,
@@ -4446,23 +4439,15 @@ mod tests {
             calls: vec![],
             named: vec![],
             positionals: vec![],
-            deferred_block: Some(RuntimeClosure {
-                body: BlockStatement { statements: vec![] },
-                captured_env: Arc::new(HashMap::new()),
-                heap: crate::scripting::object::HeapHandle::new(),
-                analysis: None,
-            }),
+            deferred_block: None,
             children: vec![],
         };
 
         let mut world = World::default();
         let mut emit = crate::engine::ecs::RxWorld::default();
-        let id = spawn_tree(&ce, None, &mut world, &mut emit).expect("spawn keyframe");
-
-        let keyframe = world
-            .get_component_by_id_as::<KeyframeComponent>(id)
-            .expect("spawned keyframe exists");
-        assert!(keyframe.callback.is_some());
+        let error = spawn_tree(&ce, None, &mut world, &mut emit).unwrap_err();
+        assert!(error.contains("RuntimeSpecSession"));
+        assert_eq!(world.all_components().count(), 0);
     }
 
     #[test]

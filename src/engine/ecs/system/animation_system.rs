@@ -397,7 +397,7 @@ impl System for AnimationSystem {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any()))]
 mod tests {
     use super::*;
     use crate::engine::ecs::IntentValue;

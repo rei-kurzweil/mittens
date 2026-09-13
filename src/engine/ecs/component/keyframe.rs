@@ -1,14 +1,12 @@
 use super::Component;
 use crate::engine::ecs::ComponentId;
-use crate::scripting::object::RuntimeClosure;
 
 #[derive(Debug, Clone)]
 pub struct KeyframeComponent {
     /// When this keyframe should fire, in beats.
     pub beat: f64,
-    pub callback: Option<RuntimeClosure>,
-    /// Opaque callback retained by a `meow-meow-script` session.  Unlike the
-    /// legacy callback above, this carries no executable state into the ECS.
+    /// Opaque callback retained by a `meow-meow-script` session. This carries
+    /// no executable state into the ECS.
     pub session_callback: Option<meow_meow_script::SessionCallbackRef>,
 
     component: Option<ComponentId>,
@@ -18,16 +16,6 @@ impl KeyframeComponent {
     pub fn new(beat: f64) -> Self {
         Self {
             beat,
-            callback: None,
-            session_callback: None,
-            component: None,
-        }
-    }
-
-    pub fn new_with_callback(beat: f64, callback: RuntimeClosure) -> Self {
-        Self {
-            beat,
-            callback: Some(callback),
             session_callback: None,
             component: None,
         }
@@ -39,7 +27,6 @@ impl KeyframeComponent {
     ) -> Self {
         Self {
             beat,
-            callback: None,
             session_callback: Some(callback),
             component: None,
         }
@@ -81,10 +68,6 @@ impl Component for KeyframeComponent {
         _world: &crate::engine::ecs::World,
     ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
-        let mut ce = ce_call("Keyframe", "at", vec![num(self.beat)]);
-        if let Some(callback) = &self.callback {
-            ce.body = callback.body.clone();
-        }
-        ce
+        ce_call("Keyframe", "at", vec![num(self.beat)])
     }
 }

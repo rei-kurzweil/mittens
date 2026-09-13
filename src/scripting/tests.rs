@@ -1495,13 +1495,15 @@ fn ambient_eye_saccade_factory_materializes_a_32_keyframe_loop() {
     let mut world = World::default();
     let mut rx = RxWorld::default();
     let mut emit = CommandQueue::new();
-    let out = MeowMeowRunner::eval_with_world_at_path(
+    let (_session, out) = RuntimeSpecSession::start_at_path(
         src,
-        Some("examples/_mms_test_ambient_eye_saccades.mms"),
+        "examples/_mms_test_ambient_eye_saccades.mms",
         &mut world,
         &mut rx,
+        None,
         &mut emit,
-    );
+    )
+    .expect("ambient eye factory should start a retained RuntimeSpec session");
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
 
     let animation = world
@@ -1583,9 +1585,15 @@ fn retained_callback_materializes_ambient_eye_animation_without_legacy_closures(
         let keyframe = world
             .get_component_by_id_as::<crate::engine::ecs::component::KeyframeComponent>(keyframe)
             .expect("Animation children must be Keyframes");
-        assert!(keyframe.callback.is_none());
         assert!(keyframe.session_callback.is_some());
     }
+    let serialization = crate::scripting::component_registry::subtree_to_ce_ast(&world, animation);
+    assert!(
+        serialization
+            .unwrap_err()
+            .contains("callback-bearing Keyframe"),
+        "opaque callback serialization must fail rather than lose its body"
+    );
 
     let callback = world
         .get_component_by_id_as::<crate::engine::ecs::component::KeyframeComponent>(keyframes[0])
@@ -5669,7 +5677,7 @@ fn spawn_mms_module_component_initialises_live_root() {
 }
 
 #[test]
-fn spawn_mms_module_component_uninitialized_captures_live_component_objects_in_keyframes() {
+fn legacy_module_animation_factory_is_rejected_before_world_mutation() {
     let module = MeowMeowRunner::load_module_source(
         r#"
 export fn animated_preview() {
@@ -5693,45 +5701,17 @@ export fn animated_preview() {
 
     let mut world = World::default();
     let mut emit = CommandQueue::new();
-    let root_id = MeowMeowRunner::spawn_mms_module_component_uninitialized(
+    let error = MeowMeowRunner::spawn_mms_module_component_uninitialized(
         &module,
         "animated_preview",
         vec![],
         &mut world,
         &mut emit,
     )
-    .expect("spawn live preview root");
+    .unwrap_err();
 
-    assert!(world.get_component_record(root_id).is_some());
-    assert!(!world.is_initialized(root_id));
-
-    let keyframe_id = world
-        .all_components()
-        .find(|&id| {
-            world
-                .get_component_by_id_as::<crate::engine::ecs::component::KeyframeComponent>(id)
-                .is_some()
-        })
-        .expect("keyframe exists");
-    let keyframe = world
-        .get_component_by_id_as::<crate::engine::ecs::component::KeyframeComponent>(keyframe_id)
-        .expect("keyframe component exists");
-    let callback = keyframe
-        .callback
-        .as_ref()
-        .expect("keyframe callback exists");
-    let captured = callback
-        .captured_env
-        .get("glow")
-        .expect("captured glow binding exists");
-
-    match captured {
-        Value::ComponentObject { id, component_type } => {
-            assert_eq!(component_type, "Emissive");
-            assert!(world.get_component_record(*id).is_some());
-        }
-        other => panic!("expected live ComponentObject capture, got {other:?}"),
-    }
+    assert!(error.contains("RuntimeSpecSession"));
+    assert_eq!(world.all_components().count(), 0);
 }
 
 #[test]

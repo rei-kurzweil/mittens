@@ -2,7 +2,6 @@ use crate::engine::ecs::component::{KeyframeComponent, MusicNoteComponent};
 use crate::engine::ecs::{ComponentId, IntentValue, RxWorld, SignalEmitter, World};
 use crate::engine::graphics::RenderAssets;
 use crate::scripting::runner::{DeferredCallbackMode, RuntimeSpecSession};
-use crate::scripting::world_evaluator::{RuntimeClosureExecMode, eval_runtime_closure};
 
 #[derive(Debug, Default)]
 pub(crate) struct AnimationKeyframeEvaluator;
@@ -22,10 +21,9 @@ impl AnimationKeyframeEvaluator {
         kf_global_beat: f64,
         mut executor: Option<&mut SessionCallbackExecutor<'_>>,
     ) {
-        let (runtime_closure, session_callback) = world
+        let session_callback = world
             .get_component_by_id_as::<KeyframeComponent>(kf_id)
-            .map(|kf| (kf.callback.clone(), kf.session_callback))
-            .unwrap_or((None, None));
+            .and_then(|kf| kf.session_callback);
 
         if let Some(callback) = session_callback {
             if let Some(executor) = executor.as_mut() {
@@ -53,23 +51,6 @@ impl AnimationKeyframeEvaluator {
             }
         }
 
-        if let Some(runtime_closure) = runtime_closure {
-            if let Err(error) = eval_runtime_closure(
-                &runtime_closure,
-                None,
-                Some(world),
-                Some(rx),
-                Some(kf_id),
-                RuntimeClosureExecMode::KeyframeAudioOnly {
-                    beat_context: kf_global_beat,
-                },
-            ) {
-                eprintln!(
-                    "[AnimationSystem] keyframe runtime closure audio lookahead failed for {kf_id:?}: {error}"
-                );
-            }
-        }
-
         fire_music_note_children(world, rx, kf_id, Some(kf_global_beat));
     }
 
@@ -82,10 +63,9 @@ impl AnimationKeyframeEvaluator {
         audio_already_scheduled_this_cycle: bool,
         mut executor: Option<&mut SessionCallbackExecutor<'_>>,
     ) {
-        let (runtime_closure, session_callback) = world
+        let session_callback = world
             .get_component_by_id_as::<KeyframeComponent>(kf_id)
-            .map(|kf| (kf.callback.clone(), kf.session_callback))
-            .unwrap_or((None, None));
+            .and_then(|kf| kf.session_callback);
 
         if let Some(callback) = session_callback {
             if let Some(executor) = executor.as_mut() {
@@ -108,21 +88,6 @@ impl AnimationKeyframeEvaluator {
                 }
             } else {
                 eprintln!("[AnimationSystem] no MMS session executor for keyframe {kf_id:?}");
-            }
-        }
-
-        if let Some(runtime_closure) = runtime_closure {
-            if let Err(error) = eval_runtime_closure(
-                &runtime_closure,
-                None,
-                Some(world),
-                Some(rx),
-                Some(kf_id),
-                RuntimeClosureExecMode::KeyframeVisualOnly,
-            ) {
-                eprintln!(
-                    "[AnimationSystem] keyframe runtime closure failed for {kf_id:?}: {error}"
-                );
             }
         }
 

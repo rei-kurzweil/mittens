@@ -837,6 +837,12 @@ fn legacy_event_value_to_transport(
 fn external_tree_to_legacy(
     tree: mms::MaterializedCE,
 ) -> Result<legacy::MaterializedCE, mms::HostError> {
+    if matches!(tree.component_type.as_str(), "Animation" | "Keyframe") {
+        return Err(mms::HostError::failure(
+            "legacy component conversion",
+            "Animation/Keyframe trees must use the RuntimeSpec direct path",
+        ));
+    }
     let ctor_method = tree.constructor.name;
     let ctor_args = tree.constructor.arguments;
     Ok(legacy::MaterializedCE {
