@@ -1403,6 +1403,14 @@ pub struct Session<H: Host> {
 }
 
 impl<H: Host> Session<H> {
+    pub fn handle(&self) -> crate::SessionHandle {
+        self.context.session_handle()
+    }
+
+    /// Stop retaining a callback. Existing host references become stale.
+    pub fn release_callback(&mut self, handle: CallbackHandle) -> bool {
+        self.callbacks.remove(&handle).is_some()
+    }
     /// Temporarily service this session through another host.
     ///
     /// The active session is scoped to `service` and cannot escape it. Once
@@ -1585,7 +1593,10 @@ fn adopt_transport_components(context: &mut HostContext, value: &crate::Transpor
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CeChild, EventStreamHost, HostError, HostRequest, HostResponse, TransportValue};
+    use crate::{
+        CeChild, EventStreamHost, HostError, HostErrorKind, HostEvent, HostRequest, HostResponse,
+        TransportValue,
+    };
 
     struct FixedHandleHost {
         handle: crate::ComponentHandle,
@@ -1834,6 +1845,50 @@ mod tests {
         let deferred = tree.deferred_block.expect("deferred keyframe body");
         assert_eq!(deferred.body.statements.len(), 1);
         assert!(deferred.analysis.is_some());
+    }
+
+    #[test]
+    fn retained_deferred_component_body_is_an_opaque_session_callback() {
+        let mut builder = RuntimeSpec::builder::<()>();
+        builder
+            .with_standard_builtins()
+            .component("Keyframe", |component| {
+                component
+                    .body_mode(ComponentBodyMode::Deferred)
+                    .host_constructor(
+                        "at",
+                        ValueSignature::new(vec![ValueType::Number], ValueType::Component),
+                        (),
+                    );
+            });
+        let runtime = builder.build().unwrap();
+        let mut session = runtime.runtime().session(EventStreamHost::new());
+        let session_handle = session.handle();
+        session.eval("Keyframe.at(1) { let captured = 7 }").unwrap();
+
+        let HostEvent::Emit { tree, .. } = &session.host().events[0] else {
+            panic!("expected emitted Keyframe")
+        };
+        assert!(tree.deferred_block.is_none());
+        let callback = tree
+            .deferred_callback
+            .expect("retained deferred callback reference");
+        assert_eq!(callback.session, session_handle);
+        assert!(session.context().owns_callback(callback.callback));
+        session
+            .invoke_callback(callback.callback, Vec::new())
+            .unwrap();
+        assert!(session.release_callback(callback.callback));
+        let error = session
+            .invoke_callback(callback.callback, Vec::new())
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            EvalError::Host(HostError {
+                kind: HostErrorKind::StaleHandle,
+                ..
+            })
+        ));
     }
 
     #[test]

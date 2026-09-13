@@ -324,6 +324,7 @@ impl mms::Host for MittensHost<'_> {
                         });
                     }
                 }
+                reject_animation_legacy_fallback(&tree, "spawn")?;
                 self.legacy_component_fallbacks += 1;
                 let tree = external_tree_to_legacy(tree)?;
                 let result = if let Some(assets) = self.render_assets.as_deref_mut() {
@@ -357,6 +358,7 @@ impl mms::Host for MittensHost<'_> {
                         });
                     }
                 }
+                reject_animation_legacy_fallback(&tree, "register")?;
                 self.legacy_component_fallbacks += 1;
                 let tree = external_tree_to_legacy(tree)?;
                 let result = if let Some(assets) = self.render_assets.as_deref_mut() {
@@ -571,6 +573,26 @@ impl mms::Host for MittensHost<'_> {
             }
         }
     }
+}
+
+fn reject_animation_legacy_fallback(
+    tree: &mms::MaterializedCE,
+    operation: &str,
+) -> Result<(), mms::HostError> {
+    fn contains_animation(tree: &mms::MaterializedCE) -> bool {
+        matches!(tree.component_type.as_str(), "Animation" | "Keyframe")
+            || tree.children.iter().any(|child| match child {
+                mms::CeChild::Spawn(child) => contains_animation(child),
+                mms::CeChild::Attach(_) => false,
+            })
+    }
+    if contains_animation(tree) {
+        return Err(mms::HostError::failure(
+            operation,
+            "Animation/Keyframe trees must use the RuntimeSpec direct path",
+        ));
+    }
+    Ok(())
 }
 
 fn file_read_text(args: Vec<mms::TransportValue>) -> Result<mms::HostResponse, mms::HostError> {

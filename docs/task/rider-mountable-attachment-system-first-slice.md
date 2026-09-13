@@ -75,9 +75,9 @@ Rider
 
 // Authored on the independent mech/car owner.
 Mountable
-    .entry_zone("[name='left_display_car_front_zone']")
+    .entry_zone("[name='car_entry_zone']")
     .mount_anchor("[name='left_display_car_cxr_mount']")
-    .dismount_anchor("[name='left_display_car_dismount']")
+    .dismount_anchor("[name='car_dismount']")
     .on_grip() {}
 ```
 
@@ -267,7 +267,7 @@ vehicle action modifier. No ray hit is required. Dismount must:
 4. clear occupancy and publish `MountEnded`;
 5. leave both rider and mountable eligible for another complete cycle.
 
-The car fixture authors `left_display_car_dismount` just outside the front
+The car fixture authors `car_dismount` just outside the front
 entry zone. This is preferable to a magic engine offset: it makes safe exit
 placement visible in the scene, handles vehicle rotation naturally, and can be
 reused when the eject button arrives. If the anchor disappears, cleanup still

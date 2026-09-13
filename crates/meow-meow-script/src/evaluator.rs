@@ -1052,15 +1052,34 @@ impl<'a, H: Host> Evaluator<'a, H> {
             properties: Vec::new(),
             positionals: Vec::new(),
             deferred_block: None,
+            deferred_callback: None,
             children: Vec::new(),
         };
         if body_mode == ComponentBodyMode::Deferred {
-            tree.deferred_block = Some(RuntimeClosure {
+            let closure = RuntimeClosure {
                 body: component.body.clone(),
                 captured_env: Arc::new(self.snapshot()),
                 heap: self.heap.clone(),
                 analysis: Some(BlockEffectAnalyzer::analyze_keyframe_block(&component.body)),
-            });
+            };
+            if let Some(context) = self.context.as_deref_mut() {
+                let callback = context.allocate_callback();
+                self.callbacks.insert(
+                    callback,
+                    Value::Function {
+                        params: Vec::new(),
+                        body: closure.body,
+                        captured_env: closure.captured_env,
+                        heap: closure.heap,
+                    },
+                );
+                tree.deferred_callback = Some(crate::SessionCallbackRef {
+                    session: context.session_handle(),
+                    callback,
+                });
+            } else {
+                tree.deferred_block = Some(closure);
+            }
         } else {
             let flow = self.eval_component_body_block(
                 &component.body,

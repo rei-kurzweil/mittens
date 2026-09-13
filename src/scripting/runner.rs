@@ -37,6 +37,31 @@ pub struct RuntimeSpecSession {
     callback_delivery_enabled: Arc<AtomicBool>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DeferredCallbackMode {
+    AudioOnly { beat_context: f64 },
+    VisualOnly,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeferredCallbackError {
+    ClosedSession,
+    ForeignSession,
+    StaleCallback,
+    Evaluation(String),
+}
+
+impl std::fmt::Display for DeferredCallbackError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ClosedSession => f.write_str("Mittens RuntimeSpec session is closed"),
+            Self::ForeignSession => f.write_str("deferred callback belongs to another MMS session"),
+            Self::StaleCallback => f.write_str("deferred callback is stale"),
+            Self::Evaluation(error) => f.write_str(error),
+        }
+    }
+}
+
 impl RuntimeSpecSession {
     /// Start a retained MMS execution using the default Mittens runtime.
     ///
@@ -167,6 +192,70 @@ impl RuntimeSpecSession {
 
     pub fn is_closed(&self) -> bool {
         self.session.is_none()
+    }
+
+    /// Invoke one component-owned callback immediately through its originating
+    /// session. Calls raised by this callback remain in the ordinary queue and
+    /// are not recursively serviced here.
+    pub fn invoke_deferred_callback(
+        &mut self,
+        callback_ref: mms::SessionCallbackRef,
+        mode: DeferredCallbackMode,
+        world: &mut World,
+        rx: &mut RxWorld,
+        render_assets: Option<&mut RenderAssets>,
+        emit: &mut dyn SignalEmitter,
+    ) -> Result<Vec<IntentValue>, DeferredCallbackError> {
+        let Some(idle) = self.session.take() else {
+            return Err(DeferredCallbackError::ClosedSession);
+        };
+        if idle.handle() != callback_ref.session {
+            self.session = Some(idle);
+            return Err(DeferredCallbackError::ForeignSession);
+        }
+
+        let mut intents = Vec::new();
+        let mut host = crate::scripting::host::MittensHost::new(world, emit, &mut intents)
+            .with_rx(rx)
+            .with_bindings(self.configured.bindings())
+            .with_callback_invocations(Arc::clone(&self.callback_invocations))
+            .with_callback_delivery_enabled(Arc::clone(&self.callback_delivery_enabled));
+        if let Some(render_assets) = render_assets {
+            host = host.with_render_assets(render_assets);
+        }
+        let (idle, result) = idle.with_host(host, |session| {
+            session.invoke_callback(callback_ref.callback, Vec::new())
+        });
+        self.session = Some(idle);
+        result.map_err(|error| match error {
+            mms::EvalError::Host(error) if error.kind == mms::HostErrorKind::StaleHandle => {
+                DeferredCallbackError::StaleCallback
+            }
+            error => DeferredCallbackError::Evaluation(error.to_string()),
+        })?;
+
+        intents.retain_mut(|intent| match mode {
+            DeferredCallbackMode::AudioOnly { beat_context } => match intent {
+                IntentValue::AudioSchedulePlay {
+                    beat_context: context,
+                    ..
+                }
+                | IntentValue::OscillatorScheduleSetPitch {
+                    beat_context: context,
+                    ..
+                } => {
+                    *context = Some(beat_context);
+                    true
+                }
+                _ => false,
+            },
+            DeferredCallbackMode::VisualOnly => !matches!(
+                intent,
+                IntentValue::AudioSchedulePlay { .. }
+                    | IntentValue::OscillatorScheduleSetPitch { .. }
+            ),
+        });
+        Ok(intents)
     }
 
     /// Drain callback invocations queued by Rx and run them against the live

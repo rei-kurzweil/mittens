@@ -177,15 +177,16 @@ visualization performance work.
 ## `mittens-corp` validation
 
 After enabling the row included by `show_zones = true`, the independent car
-should display one translucent red front-entry box derived from:
+should display one translucent red front-entry box from
+`assets/components/vehicles/display_car.mms`:
 
 ```mms
-let car_front_zone_frame = T.position(0.0, 0.15, -3.5) {
-    name = "left_display_car_front_zone_frame"
+let entry_zone_frame = T.position(0.0, 1.0, -1.4) {
+    name = "car_entry_zone_frame"
 }
-car_front_zone_frame
-Zone.cube([4.6, 3.8, 0.8])
-    .at(car_front_zone_frame)
+entry_zone_frame
+Zone.cube([4.6, 1.4, 1.4])
+    .at(entry_zone_frame)
     .role("vehicle_entry")
 ```
 
@@ -193,9 +194,10 @@ The rendered box must move and rotate with the car and agree with mount
 eligibility at its visible boundary. The relevant probe is the world position
 of `bisket_rider_cxr_anchor`, not either hand or ray-hit position.
 
-XR inspection showed that local `+Z` is the car's back. The entry frame now
-uses `z = -3.5` as the first semantic-front correction, and the dismount anchor
-now uses the corresponding `z = -4.6`. Visually validate both before finalizing
+XR inspection showed that local `+Z` is the car's back. The shared entry box is
+intentionally biased toward local `-Z`, but overlaps the car's lower front
+bounds instead of floating entirely ahead of it. The dismount anchor remains
+at local `z = -4.6`. Visually validate both before finalizing
 the numbers.
 
 If Bisket's anchor is visibly inside the red region and gripping the car still

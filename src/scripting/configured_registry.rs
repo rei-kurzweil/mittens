@@ -7,11 +7,12 @@
 use meow_meow_script as mms;
 
 use crate::engine::ecs::component::{
-    AmbientLightComponent, BackgroundColorComponent, BloomComponent, BlurPassComponent,
-    Camera3DComponent, ColorComponent, DirectionalLightComponent, EmissiveComponent,
-    EmissivePassComponent, PointerComponent, RaycastableComponent, RefractionComponent,
-    RenderGraphComponent, RenderableComponent, RendererSettingsComponent,
-    RoughTransmissionComponent, TransformComponent, UnlitComponent,
+    AmbientLightComponent, AnimationComponent, AnimationState, BackgroundColorComponent,
+    BloomComponent, BlurPassComponent, Camera3DComponent, ColorComponent,
+    DirectionalLightComponent, EmissiveComponent, EmissivePassComponent, KeyframeComponent,
+    PointerComponent, RaycastableComponent, RefractionComponent, RenderGraphComponent,
+    RenderableComponent, RendererSettingsComponent, RoughTransmissionComponent, TransformComponent,
+    UnlitComponent,
 };
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 
@@ -20,6 +21,7 @@ use super::runtime_config::{ComponentInitializerKind, MittensBinding};
 
 const DIRECT_COMPONENTS: &[&str] = &[
     "AmbientLight",
+    "Animation",
     "BackgroundColor",
     "Bloom",
     "BlurPass",
@@ -29,6 +31,7 @@ const DIRECT_COMPONENTS: &[&str] = &[
     "Emissive",
     "EmissivePass",
     "Pointer",
+    "Keyframe",
     "Raycastable",
     "Refraction",
     "RenderGraph",
@@ -65,6 +68,12 @@ fn tree_is_direct(
 ) -> Result<bool, String> {
     if tree.deferred_block.is_some() || !tree.positionals.is_empty() {
         return Ok(false);
+    }
+    if tree.deferred_callback.is_some() && tree.component_type != "Keyframe" {
+        return Err(format!(
+            "{} is not declared to own a deferred callback",
+            tree.component_type
+        ));
     }
     let Some(operation_id) = tree.constructor.operation_id else {
         return Ok(false);
@@ -168,6 +177,7 @@ fn spawn_tree_uninitialized(
         component,
         tree.constructor.name.as_deref(),
         &tree.constructor.arguments,
+        tree.deferred_callback,
     )?;
 
     for call in &tree.initializer_calls {
@@ -197,9 +207,38 @@ fn create_component(
     component: &str,
     constructor: Option<&str>,
     args: &[mms::Value],
+    deferred_callback: Option<mms::SessionCallbackRef>,
 ) -> Result<ComponentId, String> {
     let id = match component {
         "Transform" => world.add_component(TransformComponent::new()),
+        "Animation" => {
+            let mut animation = AnimationComponent::new();
+            match constructor {
+                Some("playing") => animation = animation.with_state(AnimationState::Playing),
+                Some("paused") => animation = animation.with_state(AnimationState::Paused),
+                Some("looping") | None => animation = animation.with_state(AnimationState::Looping),
+                Some("length") => animation = animation.with_length_beats(f64_arg(args, 0)?),
+                Some("scope") => {
+                    animation = animation.with_scope_source(component_ref_arg(world, args, 0)?)
+                }
+                Some(other) => {
+                    return Err(format!(
+                        "unsupported direct Animation constructor '{other}'"
+                    ));
+                }
+            }
+            world.add_component(animation)
+        }
+        "Keyframe" if constructor == Some("at") => {
+            let callback = deferred_callback.ok_or_else(|| {
+                "direct Keyframe.at requires a session-owned deferred callback".to_string()
+            })?;
+            world.add_component(KeyframeComponent::new_with_session_callback(
+                f64_arg(args, 0)?,
+                callback,
+            ))
+        }
+        "Keyframe" => return Err("direct Keyframe requires .at(beat)".into()),
         "Renderable" if constructor == Some("cube") => {
             world.add_component(RenderableComponent::cube())
         }
@@ -271,7 +310,11 @@ fn create_component(
     if let Some(constructor) = constructor {
         let factory_only = matches!(
             (component, constructor),
-            ("Renderable", "cube")
+            (
+                "Animation",
+                "playing" | "paused" | "looping" | "length" | "scope"
+            ) | ("Keyframe", "at")
+                | ("Renderable", "cube")
                 | ("Color", "rgba")
                 | ("BackgroundColor", "rgba")
                 | ("Emissive", "on" | "off")
@@ -299,6 +342,27 @@ fn apply_call(
     args: &[mms::Value],
 ) -> Result<(), String> {
     match component {
+        "Animation" => {
+            let scope = if method == "scope" {
+                Some(component_ref_arg(world, args, 0)?)
+            } else {
+                None
+            };
+            let animation = world
+                .get_component_by_id_as_mut::<AnimationComponent>(id)
+                .ok_or("missing Animation after construction")?;
+            match method {
+                "playing" => animation.state = AnimationState::Playing,
+                "paused" => animation.state = AnimationState::Paused,
+                "looping" => animation.state = AnimationState::Looping,
+                "length" => animation.length_beats = Some(f64_arg(args, 0)?),
+                "scope" => {
+                    animation.scope_source = scope;
+                    animation.resolved_scope = None;
+                }
+                _ => return Err(format!("unsupported direct Animation call '{method}'")),
+            }
+        }
         "Transform" => {
             let current = world
                 .get_component_by_id_as::<TransformComponent>(id)
@@ -464,6 +528,47 @@ fn f32_arg(args: &[mms::Value], index: usize) -> Result<f32, String> {
         Some(mms::Value::Number(value)) => Ok(*value as f32),
         value => Err(format!(
             "expected f32 argument {}, got {value:?}",
+            index + 1
+        )),
+    }
+}
+
+fn f64_arg(args: &[mms::Value], index: usize) -> Result<f64, String> {
+    match args.get(index) {
+        Some(mms::Value::Number(value)) => Ok(*value),
+        value => Err(format!(
+            "expected f64 argument {}, got {value:?}",
+            index + 1
+        )),
+    }
+}
+
+fn component_ref_arg(
+    world: &World,
+    args: &[mms::Value],
+    index: usize,
+) -> Result<crate::engine::ecs::component::ComponentRef, String> {
+    use crate::engine::ecs::component::ComponentRef;
+    match args.get(index) {
+        Some(mms::Value::ComponentObject { id, .. }) => {
+            let id = MittensHost::component_id(*id);
+            let guid = world
+                .get_component_record(id)
+                .ok_or_else(|| format!("Animation.scope component {id:?} is stale"))?
+                .guid;
+            Ok(ComponentRef::Guid(guid))
+        }
+        Some(mms::Value::String(value)) | Some(mms::Value::Identifier(value)) => {
+            if let Some(raw) = value.strip_prefix("@uuid:") {
+                uuid::Uuid::parse_str(raw)
+                    .map(ComponentRef::Guid)
+                    .map_err(|error| format!("invalid component UUID '{value}': {error}"))
+            } else {
+                Ok(ComponentRef::Query(value.clone()))
+            }
+        }
+        value => Err(format!(
+            "expected component or selector argument {}, got {value:?}",
             index + 1
         )),
     }

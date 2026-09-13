@@ -7,6 +7,9 @@ pub struct KeyframeComponent {
     /// When this keyframe should fire, in beats.
     pub beat: f64,
     pub callback: Option<RuntimeClosure>,
+    /// Opaque callback retained by a `meow-meow-script` session.  Unlike the
+    /// legacy callback above, this carries no executable state into the ECS.
+    pub session_callback: Option<meow_meow_script::SessionCallbackRef>,
 
     component: Option<ComponentId>,
 }
@@ -16,6 +19,7 @@ impl KeyframeComponent {
         Self {
             beat,
             callback: None,
+            session_callback: None,
             component: None,
         }
     }
@@ -24,6 +28,19 @@ impl KeyframeComponent {
         Self {
             beat,
             callback: Some(callback),
+            session_callback: None,
+            component: None,
+        }
+    }
+
+    pub fn new_with_session_callback(
+        beat: f64,
+        callback: meow_meow_script::SessionCallbackRef,
+    ) -> Self {
+        Self {
+            beat,
+            callback: None,
+            session_callback: Some(callback),
             component: None,
         }
     }

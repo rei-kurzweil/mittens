@@ -34,6 +34,31 @@ impl CallbackHandle {
     }
 }
 
+/// Opaque identity for one retained MMS session.
+///
+/// Callback handles are deliberately session-local.  Carrying this identity
+/// beside a callback lets a host reject a callback that belongs to a different
+/// (or already closed) session without inspecting the callback representation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct SessionHandle(u32);
+
+impl SessionHandle {
+    pub fn from_raw(raw: u32) -> Self {
+        Self(raw)
+    }
+    pub fn into_raw(self) -> u32 {
+        self.0
+    }
+}
+
+/// A host-storable reference to a closure retained by its originating MMS
+/// session.  It contains no body, captured environment, or heap state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct SessionCallbackRef {
+    pub session: SessionHandle,
+    pub callback: CallbackHandle,
+}
+
 /// Values that are safe to own outside the MMS heap. In particular, tables
 /// are snapshots and closures are represented only by opaque handles.
 #[derive(Debug, Clone, PartialEq)]
@@ -129,6 +154,9 @@ impl HostContext {
     }
     pub fn owns_callback(&self, handle: CallbackHandle) -> bool {
         self.callbacks.contains(&handle)
+    }
+    pub fn session_handle(&self) -> SessionHandle {
+        SessionHandle::from_raw(self.session_tag)
     }
 }
 

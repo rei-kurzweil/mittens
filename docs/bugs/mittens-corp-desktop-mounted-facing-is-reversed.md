@@ -38,9 +38,9 @@ The desktop Rider references:
 
 The car's `Mountable` references:
 
-- eligibility zone: `left_display_car_front_zone`;
+- eligibility zone: `car_entry_zone`;
 - destination mount point: `left_display_car_desktop_mount`;
-- dismount point: `left_display_car_dismount`.
+- dismount point: `car_dismount`.
 
 The destination point is an ordinary authored Transform today.  Its meaning
 comes from `Mountable.mount_anchor(...)`; there is no first-class mount-point

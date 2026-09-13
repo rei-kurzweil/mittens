@@ -2869,6 +2869,19 @@ impl SystemWorld {
         queue: &mut crate::engine::ecs::CommandQueue,
         dt_sec: f32,
     ) {
+        self.tick_with_runtime_session(world, visuals, render_assets, input, queue, None, dt_sec);
+    }
+
+    pub fn tick_with_runtime_session(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        render_assets: &mut crate::engine::graphics::RenderAssets,
+        input: &InputState,
+        queue: &mut crate::engine::ecs::CommandQueue,
+        runtime_session: Option<&mut crate::scripting::runner::RuntimeSpecSession>,
+        dt_sec: f32,
+    ) {
         if self.vr_perf_enabled {
             self.vr_perf_pre_xr = VrPerfPreXrCpu::default();
         }
@@ -2992,8 +3005,28 @@ impl SystemWorld {
 
         let profile_systems = Self::profile_systems_enabled();
         let phase_started = profile_systems.then(Instant::now);
-        self.animation
-            .tick_with_beat(world, self.clock.beat_now(), self.clock.bpm(), &mut self.rx);
+        if let Some(session) = runtime_session {
+            let mut executor =
+                crate::engine::ecs::system::animation_keyframe_evaluator::SessionCallbackExecutor {
+                    session,
+                    render_assets,
+                    emit: queue,
+                };
+            self.animation.tick_with_beat_and_executor(
+                world,
+                self.clock.beat_now(),
+                self.clock.bpm(),
+                &mut self.rx,
+                Some(&mut executor),
+            );
+        } else {
+            self.animation.tick_with_beat(
+                world,
+                self.clock.beat_now(),
+                self.clock.bpm(),
+                &mut self.rx,
+            );
+        }
         if let Some(started) = phase_started {
             self.phase_profile.animation += started.elapsed();
         }

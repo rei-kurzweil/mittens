@@ -12,6 +12,7 @@ import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_map
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { suspended_platform } from "../assets/components/platforms/suspended_platform.mms"
 import { pose as relaxed_pose_factory } from "../assets/components/poses/bisket/000-relaxed.pose.mms"
+import { display_car } from "../assets/components/vehicles/display_car.mms"
 
 // Optional sources stay neutral when the runtime or hardware is unavailable.
 let microphone = AudioInput {}
@@ -180,40 +181,16 @@ ED.active() {
             }
         }
     }
-}
 
-// The car remains a generic desktop mount fixture. Its former controller-stick,
-// grip, and laser bindings are deliberately omitted, so this version has no driving
-// controls yet. Walk into the front zone and left-click the car to mount; a
-// subsequent left-click dismounts and restores desktop locomotion.
-let desktop_car_mountable = Mountable
-    .entry_zone("[name='left_display_car_front_zone']")
-    .mount_anchor("[name='left_display_car_desktop_mount']")
-    .dismount_anchor("[name='left_display_car_dismount']")
-    .on_grip() {}
-
-T.position(-19.0, -0.75, -1.5).rotation(0.0, 0.30, 0.0) {
-    name = "left_display_car"
-    desktop_car_mountable
-    let car_front_zone_frame = T.position(0.0, 0.15, -3.5) {
-        name = "left_display_car_front_zone_frame"
-    }
-    car_front_zone_frame
-    Zone.cube([4.6, 3.8, 0.8]).at(car_front_zone_frame).role("vehicle_entry") {
-        name = "left_display_car_front_zone"
-    }
-    T.position(0.0, 4.5, -1.0) {
-        name = "left_display_car_desktop_mount"
-    }
-    T.position(0.0, 2.4, -4.6) {
-        name = "left_display_car_dismount"
-    }
-    T {
-        name = "left_display_car_model"
-        GLTF.new("assets/models/car.glb") {
-            bisket_anime_shading()
-        }
-    }
+    // The prefab owns the car mesh, entry volume, and mount/dismount points.
+    // Left click enters only while the Rider is in its visualized entry zone.
+    display_car(
+        "left_display_car",
+        [-19.0, -0.75, -1.5],
+        0.30,
+        "left_display_car_desktop_mount",
+        [],
+    )
 }
 
 // Explicit selection disables every editor window except the two needed for

@@ -5,6 +5,7 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::animation_keyframe_evaluator::AnimationKeyframeEvaluator;
+use crate::engine::ecs::system::animation_keyframe_evaluator::SessionCallbackExecutor;
 use crate::engine::ecs::system::animation_scheduler::AnimationScheduler;
 use crate::engine::ecs::{ComponentId, RxWorld, World};
 use crate::engine::graphics::VisualWorld;
@@ -124,6 +125,17 @@ impl AnimationSystem {
     }
 
     pub fn tick_with_beat(&mut self, world: &mut World, beat_now: f64, bpm: f64, rx: &mut RxWorld) {
+        self.tick_with_beat_and_executor(world, beat_now, bpm, rx, None);
+    }
+
+    pub(crate) fn tick_with_beat_and_executor(
+        &mut self,
+        world: &mut World,
+        beat_now: f64,
+        bpm: f64,
+        rx: &mut RxWorld,
+        mut executor: Option<&mut SessionCallbackExecutor<'_>>,
+    ) {
         // If time jumps backwards, reset fired state.
         if beat_now + 1e-9 < self.last_beat {
             for runtime in self.animations.values_mut() {
@@ -206,8 +218,14 @@ impl AnimationSystem {
 
                         // Manual stepping is intentionally visual-only. Passing `true` here
                         // suppresses MusicNote child playback as well as closure audio intents.
-                        self.keyframe_evaluator
-                            .evaluate_visual_due_keyframe(world, rx, keyframe, beat_now, true);
+                        self.keyframe_evaluator.evaluate_visual_due_keyframe(
+                            world,
+                            rx,
+                            keyframe,
+                            beat_now,
+                            true,
+                            executor.as_deref_mut(),
+                        );
                     }
                 }
             }
@@ -305,6 +323,7 @@ impl AnimationSystem {
                         rx,
                         kf_id,
                         kf_global_beat,
+                        executor.as_deref_mut(),
                     );
 
                     runtime
@@ -339,6 +358,7 @@ impl AnimationSystem {
                         kf_id,
                         beat_now,
                         already_scheduled,
+                        executor.as_deref_mut(),
                     );
 
                     runtime.fired_keyframes.insert(kf_id);

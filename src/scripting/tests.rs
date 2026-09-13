@@ -1292,6 +1292,11 @@ fn live_eval_nested_let_attached_transform_animates_via_keyframe_block() {
     let mut render_assets = RenderAssets::new();
     let mut queue = CommandQueue::new();
     let input = InputState::default();
+    let driver = TestClockDriver::default();
+    systems.clock.set_driver(Arc::new(driver.clone()));
+    systems.clock.set_bpm(60.0);
+    driver.set_time_sec(0.0);
+    systems.clock.sample();
 
     let out = MeowMeowRunner::eval_with_world(src, &mut world, &mut systems.rx, &mut queue);
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
@@ -1312,6 +1317,7 @@ fn live_eval_nested_let_attached_transform_animates_via_keyframe_block() {
         .expect("cube_t exists");
     assert_eq!(world.parent_of(cube_t), Some(parent_t));
 
+    driver.set_time_sec(0.1);
     systems.tick(
         &mut world,
         &mut visuals,
@@ -1320,6 +1326,7 @@ fn live_eval_nested_let_attached_transform_animates_via_keyframe_block() {
         &mut queue,
         0.1,
     );
+    driver.set_time_sec(1.0);
     systems.tick(
         &mut world,
         &mut visuals,
@@ -1328,6 +1335,7 @@ fn live_eval_nested_let_attached_transform_animates_via_keyframe_block() {
         &mut queue,
         1.0,
     );
+    driver.set_time_sec(1.5);
     systems.tick(
         &mut world,
         &mut visuals,
@@ -1402,15 +1410,10 @@ fn live_eval_attached_emissive_transition_interpolates_set_intensity() {
         .expect("glow emissive exists");
     assert_eq!(initial.intensity, 0.0);
 
-    driver.set_time_sec(0.5);
-    systems.tick(
-        &mut world,
-        &mut visuals,
-        &mut render_assets,
-        &input,
-        &mut queue,
-        0.0,
-    );
+    systems
+        .animation
+        .tick_with_beat(&mut world, 0.5, 60.0, &mut systems.rx);
+    systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
 
     let halfway = world
         .get_component_by_id_as::<crate::engine::ecs::component::EmissiveComponent>(glow)
@@ -1510,6 +1513,102 @@ fn ambient_eye_saccade_factory_materializes_a_32_keyframe_loop() {
         })
         .expect("ambient eye factory should return an Animation");
     assert_eq!(world.children_of(animation).len(), 32);
+}
+
+#[test]
+fn retained_callback_materializes_ambient_eye_animation_without_legacy_closures() {
+    let source = r##"
+        import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
+
+        let avatar = T {
+            name = "avatar"
+            T { name = "left_eye" }
+            T { name = "right_eye" }
+        }
+        on(avatar, "GLTFInitialized", fn(event) {
+            let left_eye = event.gltf.query("#left_eye")
+            let right_eye = event.gltf.query("#right_eye")
+            avatar.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
+        })
+        avatar
+    "##;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut queue = CommandQueue::new();
+    let mut assets = RenderAssets::new();
+    let (mut session, output) = RuntimeSpecSession::start_at_path(
+        source,
+        "examples/_mms_test_retained_ambient_eye_saccades.mms",
+        &mut world,
+        &mut rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .expect("retained ambient-eye fixture should start");
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+
+    let avatar = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("avatar"))
+        .expect("avatar fixture root");
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            avatar,
+            EventSignal::GltfInitialized {
+                gltf: avatar,
+                uri: "fixture.glb".into(),
+            },
+        ),
+    );
+    let callback_output = session.service_callbacks(&mut world, &mut rx, None, &mut queue);
+    assert!(
+        callback_output.errors.is_empty(),
+        "{:?}",
+        callback_output.errors
+    );
+
+    let animation = world
+        .all_components()
+        .find(|&id| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::AnimationComponent>(id)
+                .is_some()
+        })
+        .expect("callback should attach an animation");
+    let keyframes = world.children_of(animation);
+    assert_eq!(keyframes.len(), 32);
+    for &keyframe in keyframes {
+        let keyframe = world
+            .get_component_by_id_as::<crate::engine::ecs::component::KeyframeComponent>(keyframe)
+            .expect("Animation children must be Keyframes");
+        assert!(keyframe.callback.is_none());
+        assert!(keyframe.session_callback.is_some());
+    }
+
+    let callback = world
+        .get_component_by_id_as::<crate::engine::ecs::component::KeyframeComponent>(keyframes[0])
+        .unwrap()
+        .session_callback
+        .unwrap();
+    let intents = session
+        .invoke_deferred_callback(
+            callback,
+            crate::scripting::runner::DeferredCallbackMode::VisualOnly,
+            &mut world,
+            &mut rx,
+            Some(&mut assets),
+            &mut queue,
+        )
+        .expect("nested pose closure should remain callable in its originating session");
+    assert_eq!(
+        intents
+            .iter()
+            .filter(|intent| matches!(intent, IntentValue::UpdateTransform { .. }))
+            .count(),
+        2
+    );
 }
 
 #[test]
@@ -2355,11 +2454,12 @@ fn live_eval_imported_factory_keyframe_closure_captures_live_component_objects()
     driver.set_time_sec(0.0);
     systems.clock.sample();
 
-    let out = MeowMeowRunner::eval_with_world_at_path(
+    let out = MeowMeowRunner::eval_with_world_and_assets_at_path(
         src,
         Some("examples/_mms_test_imported_factory_keyframe_live_handles.mms"),
         &mut world,
         &mut systems.rx,
+        Some(&mut render_assets),
         &mut queue,
     );
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
@@ -2378,6 +2478,17 @@ fn live_eval_imported_factory_keyframe_closure_captures_live_component_objects()
         &input,
         &mut queue,
         0.0,
+    );
+    // The factory attaches a one-beat Transition to every glow. The first
+    // tick starts it; advance once more to sample an interpolated value.
+    driver.set_time_sec(0.75);
+    systems.tick(
+        &mut world,
+        &mut visuals,
+        &mut render_assets,
+        &input,
+        &mut queue,
+        0.25,
     );
 
     let intensities: Vec<f32> = world
@@ -8903,9 +9014,10 @@ fn draggable_plane_builder_accepts_object_camera_and_world_axes() {
 fn mittens_corp_desktop_evaluates_with_a_desktop_camera_and_no_xr_player_components() {
     use crate::engine::ecs::component::{
         AvatarControlComponent, Camera3DComponent, CameraXRComponent, ControllerXRComponent,
-        GLTFComponent, HTCEyeTrackingComponent, HumanoidBoneMapComponent, InputComponent,
-        InputXRComponent, InputXRGamepadComponent, MountableComponent, RayCastComponent,
-        RiderComponent, VRChatOSCEyeTrackingComponent, XREyeTrackingComponent, XrComponent,
+        EditorComponent, GLTFComponent, HTCEyeTrackingComponent, HumanoidBoneMapComponent,
+        InputComponent, InputXRComponent, InputXRGamepadComponent, MountableComponent,
+        RayCastComponent, RiderComponent, VRChatOSCEyeTrackingComponent, XREyeTrackingComponent,
+        XrComponent, ZoneComponent,
     };
 
     let mut world = World::default();
@@ -9012,6 +9124,27 @@ fn mittens_corp_desktop_evaluates_with_a_desktop_camera_and_no_xr_player_compone
             .get_component_by_id_as::<GLTFComponent>(id)
             .is_some_and(|gltf| gltf.uri == "assets/models/car.glb")
     }));
+    let car_zone = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("car_entry_zone"))
+        .expect("desktop car prefab should expose its entry zone");
+    assert!(
+        world
+            .get_component_by_id_as::<ZoneComponent>(car_zone)
+            .is_some()
+    );
+    let mut ancestor = world.parent_of(car_zone);
+    while ancestor.is_some_and(|id| {
+        !world
+            .get_component_by_id_as::<EditorComponent>(id)
+            .is_some_and(|editor| editor.active)
+    }) {
+        ancestor = ancestor.and_then(|id| world.parent_of(id));
+    }
+    assert!(
+        ancestor.is_some(),
+        "the desktop car must be under the active editor so Show Zones can render it"
+    );
     assert!(world.all_components().any(|id| {
         world
             .get_component_by_id_as::<RayCastComponent>(id)
@@ -9179,17 +9312,17 @@ fn mittens_corp_evaluates_with_bisket_player_and_car_mount_fixture() {
         .find_map(|id| {
             world
                 .get_component_by_id_as::<ZoneComponent>(id)
-                .filter(|_| world.component_label(id) == Some("left_display_car_front_zone"))
+                .filter(|_| world.component_label(id) == Some("car_entry_zone"))
         })
         .expect("car should expose a detection-only front entry zone");
     assert_eq!(
         car_zone.shape,
-        CollisionShape::cube_half_extents([4.6, 3.8, 0.8])
+        CollisionShape::cube_half_extents([4.6, 1.4, 1.4])
     );
     assert_eq!(car_zone.roles, vec!["vehicle_entry"]);
     let zone_frame = world
         .all_components()
-        .find(|&id| world.component_label(id) == Some("left_display_car_front_zone_frame"))
+        .find(|&id| world.component_label(id) == Some("car_entry_zone_frame"))
         .unwrap();
     assert_eq!(
         car_zone.frame_source,
@@ -9202,12 +9335,12 @@ fn mittens_corp_evaluates_with_bisket_player_and_car_mount_fixture() {
             .get_component_by_id_as::<TransformComponent>(zone_frame)
             .unwrap()
             .translation(),
-        [0.0, 0.15, -3.5],
-        "the entry zone should be on the car's semantic front (-Z)"
+        [0.0, 1.0, -1.4],
+        "the entry zone should overlap the lower front of the car while projecting along local -Z"
     );
     let dismount_anchor = world
         .all_components()
-        .find(|&id| world.component_label(id) == Some("left_display_car_dismount"))
+        .find(|&id| world.component_label(id) == Some("car_dismount"))
         .unwrap();
     assert_eq!(
         world
@@ -9408,7 +9541,7 @@ fn mittens_corp_evaluates_with_bisket_player_and_car_mount_fixture() {
     // Import only the car and publish its bounds without starting audio or XR.
     let car_model = world
         .all_components()
-        .find(|&id| world.component_label(id) == Some("left_display_car_model"))
+        .find(|&id| world.component_label(id) == Some("car_model"))
         .unwrap();
     let car_gltf = world
         .children_of(car_model)
@@ -9541,7 +9674,19 @@ fn mittens_corp_evaluates_with_bisket_player_and_car_mount_fixture() {
         animation_id,
         crate::engine::ecs::component::AnimationState::Playing,
     );
-    animation.tick_with_beat(&mut world, 0.0, 60.0, &mut rx);
+    let mut animation_executor =
+        crate::engine::ecs::system::animation_keyframe_evaluator::SessionCallbackExecutor {
+            session: &mut session,
+            render_assets: &mut assets,
+            emit: &mut queue,
+        };
+    animation.tick_with_beat_and_executor(
+        &mut world,
+        0.0,
+        60.0,
+        &mut rx,
+        Some(&mut animation_executor),
+    );
     let shot_output = session.service_callbacks(&mut world, &mut rx, None, &mut queue);
     assert!(shot_output.errors.is_empty(), "{:?}", shot_output.errors);
     let mut shot_intents = shot_output.intents;

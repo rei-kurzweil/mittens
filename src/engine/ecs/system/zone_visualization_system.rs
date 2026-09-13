@@ -51,6 +51,11 @@ impl ZoneVisualizationSystem {
         &self.requests
     }
 
+    /// Retained marker count for opt-in runtime growth diagnostics.
+    pub fn marker_count(&self) -> usize {
+        self.markers.len()
+    }
+
     pub fn tick_with_queue(
         &mut self,
         world: &mut World,

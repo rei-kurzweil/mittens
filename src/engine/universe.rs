@@ -451,14 +451,17 @@ impl Universe {
         // 2. Let systems call methods on components,
         //      for example, to update transforms or renderables, which
         //      will update VisualWorld can update draw_batches and give Renderer a snapshot
-        self.systems.tick(
+        let mut runtime_session = self.runtime_spec_session.take();
+        self.systems.tick_with_runtime_session(
             &mut self.world,
             &mut self.visuals,
             &mut self.render_assets,
             input,
             &mut self.command_queue,
+            runtime_session.as_mut(),
             dt_sec,
         );
+        self.runtime_spec_session = runtime_session;
 
         // Systems dispatch Rx events during tick. Run queued MMS callbacks
         // before the command drain so their intents take effect this frame.

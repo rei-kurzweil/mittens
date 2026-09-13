@@ -14,6 +14,7 @@ import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { suspended_platform } from "../assets/components/platforms/suspended_platform.mms"
+import { display_car } from "../assets/components/vehicles/display_car.mms"
 
 // Optional sources stay neutral when the runtime or hardware is unavailable.
 let microphone = AudioInput {}
@@ -205,14 +206,6 @@ ED.active() {
         }
     }
 
-    // The independent car is the next vehicle-mounting fixture. Its front zone
-    // is detection-only; it does not register a physical collision response.
-    let car_mountable = Mountable
-        .entry_zone("[name='left_display_car_front_zone']")
-        .mount_anchor("[name='left_display_car_cxr_mount']")
-        .dismount_anchor("[name='left_display_car_dismount']")
-        .on_grip() {}
-
     // Measure once after import; animate within a positioned muzzle frame so
     // keyframe closures do not need to capture late-loaded placement values.
     let laser_placement = { ready = false }
@@ -347,47 +340,21 @@ ED.active() {
         laser_beam_glow
     }
 
-    let car_root = T.position(-19.0, -0.75, -1.5).rotation(0.0, 0.30, 0.0) {
-        name = "left_display_car"
-        car_mountable
-        let car_front_zone_frame = T.position(0.0, 0.15, -3.5) {
-            name = "left_display_car_front_zone_frame"
-        }
-        car_front_zone_frame
-        Zone.cube([4.6, 3.8, 0.8]).at(car_front_zone_frame).role("vehicle_entry") {
-            name = "left_display_car_front_zone"
-        }
-
-        // This is the old car-rig CXR offset, retained as a vehicle-side target.
-        // It is intentionally only a transform: the rider keeps the sole CXR.
-        T.position(0.0, 4.5, -1.0) {
-            name = "left_display_car_cxr_mount"
-        }
-
-        // Temporary exit target used by grip-anywhere dismount. It is outside
-        // the front entry zone and rotates/moves with the car.
-        T.position(0.0, 2.4, -4.6) {
-            name = "left_display_car_dismount"
-        }
-
-        // Isolate imported geometry from effects and mounting/entry helpers.
-        T {
-            name = "left_display_car_model"
-            GLTF.new("assets/models/car.glb") {
-                bisket_anime_shading()
-            }
-        }
-        laser_origin
-        laser_shot
-    }
+    let car_root = display_car(
+        "left_display_car",
+        [-19.0, -0.75, -1.5],
+        0.30,
+        "left_display_car_cxr_mount",
+        [laser_origin, laser_shot],
+    )
     car_root
 
-    on(car_mountable, "MountStarted", fn(event) {
+    on(car_root, "MountStarted", fn(event) {
         vehicle_state.mounted = true
         vehicle_state.left_stick = [0.0, 0.0]
     })
 
-    on(car_mountable, "MountEnded", fn(event) {
+    on(car_root, "MountEnded", fn(event) {
         vehicle_state.mounted = false
         vehicle_state.left_stick = [0.0, 0.0]
         vehicle_state.right_grip_held = false
@@ -415,7 +382,7 @@ ED.active() {
         }
     })
 
-    let car_model = car_root.query("#left_display_car_model")
+    let car_model = car_root.query("#car_model")
     let muzzle_origin = car_root.query("#car_laser_origin")
     on_global("FrameTick", fn(event) {
         if !laser_placement.ready {

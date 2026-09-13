@@ -68,6 +68,11 @@ impl AssetSystem {
         Self::default()
     }
 
+    /// Loaded module count for opt-in runtime growth diagnostics.
+    pub fn module_count(&self) -> usize {
+        self.modules.len()
+    }
+
     pub fn scan_assets_dir(&mut self, path: &Path) -> Result<(), String> {
         self.asset_dir = Some(path.to_path_buf());
         let entries = std::fs::read_dir(path)

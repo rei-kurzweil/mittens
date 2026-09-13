@@ -735,10 +735,11 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 }
                 "Clock" => constructor_and_builder(component, "bpm", floats(1)),
                 "Animation" => {
-                    no_arg_constructors(component, &["playing", "paused", "looping"]);
-                    no_arg_builders(component, &["playing", "paused", "looping"]);
-                    constructor_and_builder(component, "length", floats(1));
-                    constructor_and_builder(component, "scope", any(1));
+                    for name in ["playing", "paused", "looping"] {
+                        host_constructor_and_builder(component, canonical, name, no_args());
+                    }
+                    host_constructor_and_builder(component, canonical, "length", floats(1));
+                    host_constructor_and_builder(component, canonical, "scope", any(1));
                     for name in ["play", "loop_anim", "pause", "next", "previous"] {
                         host_method(component, canonical, name, no_args());
                     }
@@ -1089,7 +1090,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     );
                 }
                 "Keyframe" => {
-                    component.constructor("at", floats(1));
+                    host_constructor(component, canonical, "at", floats(1));
                 }
                 "NormalVis" => {
                     component.constructor("thickness", floats(1));

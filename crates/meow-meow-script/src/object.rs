@@ -86,6 +86,9 @@ pub struct MaterializedCE {
     /// Deferred executable block payload for components that own imperative
     /// runtime bodies, such as `Keyframe.at(...) { ... }`.
     pub deferred_block: Option<RuntimeClosure>,
+    /// Session-owned deferred body. Configured retained sessions use this
+    /// transport-safe reference instead of copying `deferred_block` to a host.
+    pub deferred_callback: Option<crate::SessionCallbackRef>,
     /// Child component trees, in source order. Each entry is either a CE to
     /// spawn fresh, or a pre-Registered `ComponentHandle` to splice in.
     pub children: Vec<CeChild>,
