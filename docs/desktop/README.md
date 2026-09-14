@@ -22,6 +22,7 @@ every tracked item a release blocker.
 | 3 | [Adaptive mirror detail](adaptive-mirrors.md) | Ready for measurement/design after baseline correctness | Measure projected mirror coverage and define stable resolution/crop bands |
 | 4 | [Keyboard and regular gamepad events](keyboard-and-gamepad-input.md) | Keyboard state exists; authored handlers and non-XR gamepads need a tracker/implementation | Define one normalized event surface, then land keyboard handlers first |
 | 5 | [Locomotion and armature animation](locomotion-and-armature-animation.md) | Planned; pose-layer work is the main prerequisite | Prove an interruptible whole-armature pose blend, then drive it from locomotion |
+| 6 | [Non-tracked locomotion actions and vehicle behavior assets](../task/non-tracked-locomotion-actions-and-vehicle-behaviors.md) | Design proposal | Keep V1 keyboard/XR car assets separate, then converge them on a normalized `Vec2` action surface |
 
 The numbering records the current list, not a strict execution order. In
 particular, workstream 1 can advance through design and loopback tests while a
