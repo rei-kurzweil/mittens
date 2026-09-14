@@ -9142,18 +9142,16 @@ fn mittens_corp_desktop_wasd_moves_its_input_driver() {
     let mut visuals = VisualWorld::default();
     let mut assets = RenderAssets::new();
     let mut queue = CommandQueue::new();
-    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+    let (_session, output) = RuntimeSpecSession::start_at_path(
         include_str!("../../examples/mittens-corp-desktop.mms"),
-        Some("examples/mittens-corp-desktop.mms"),
+        "examples/mittens-corp-desktop.mms",
         &mut world,
         &mut systems.rx,
         Some(&mut assets),
         &mut queue,
-    );
+    )
+    .expect("mittens-corp desktop scene should start");
     assert!(output.errors.is_empty(), "{:?}", output.errors);
-    for intent in output.intents {
-        queue.push_intent_now(ComponentId::default(), intent);
-    }
     let desktop_input = world
         .all_components()
         .find(|&id| world.get_component_by_id_as::<InputComponent>(id).is_some())
@@ -9188,6 +9186,110 @@ fn mittens_corp_desktop_wasd_moves_its_input_driver() {
         .transform
         .translation;
     assert_ne!(after, before, "WASD should move the desktop driver");
+}
+
+#[test]
+fn mittens_corp_desktop_routes_mounted_wasd_to_the_car() {
+    use crate::engine::ecs::component::{MountableComponent, TransformComponent};
+    use crate::engine::ecs::{EventSignal, KeyboardEvent, Signal};
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut queue = CommandQueue::new();
+    let mut assets = RenderAssets::new();
+    let (mut session, output) = RuntimeSpecSession::start_at_path(
+        include_str!("../../examples/mittens-corp-desktop.mms"),
+        "examples/mittens-corp-desktop.mms",
+        &mut world,
+        &mut rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .expect("mittens-corp desktop scene should start");
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+
+    let car_root = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("left_display_car"))
+        .expect("desktop scene should expose the display car");
+    let mountable = world
+        .all_components()
+        .find(|&id| {
+            world
+                .get_component_by_id_as::<MountableComponent>(id)
+                .is_some()
+        })
+        .expect("desktop scene should expose a mountable car");
+    let before = world
+        .get_component_by_id_as::<TransformComponent>(car_root)
+        .expect("car transform")
+        .translation();
+
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            mountable,
+            EventSignal::MountStarted {
+                rider: ComponentId::default(),
+                mountable,
+            },
+        ),
+    );
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            ComponentId::default(),
+            EventSignal::KeyDown(KeyboardEvent {
+                code: Some("KeyW".to_string()),
+                key: "w".to_string(),
+            }),
+        ),
+    );
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            ComponentId::default(),
+            EventSignal::FrameTick { dt_sec: 1.0 },
+        ),
+    );
+    let drive_output = session.service_callbacks(&mut world, &mut rx, None, &mut queue);
+    assert!(drive_output.errors.is_empty(), "{:?}", drive_output.errors);
+    assert!(drive_output.intents.iter().any(|intent| matches!(
+        intent,
+        IntentValue::UpdateTransform {
+            component_id,
+            translation,
+            ..
+        } if *component_id == car_root && *translation != before
+    )));
+
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            mountable,
+            EventSignal::MountEnded {
+                rider: ComponentId::default(),
+                mountable,
+            },
+        ),
+    );
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            ComponentId::default(),
+            EventSignal::FrameTick { dt_sec: 1.0 },
+        ),
+    );
+    let dismount_output = session.service_callbacks(&mut world, &mut rx, None, &mut queue);
+    assert!(
+        dismount_output.errors.is_empty(),
+        "{:?}",
+        dismount_output.errors
+    );
+    assert!(dismount_output.intents.iter().all(|intent| !matches!(
+        intent,
+        IntentValue::UpdateTransform { component_id, .. } if *component_id == car_root
+    )));
 }
 
 #[test]
