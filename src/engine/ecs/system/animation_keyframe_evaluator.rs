@@ -32,18 +32,34 @@ impl AnimationKeyframeEvaluator {
             && effect_profile.runs_in_audio_phase()
         {
             if let Some(executor) = executor.as_mut() {
-                match executor.session.invoke_keyframe_callback(
-                    callback,
-                    effect_profile,
-                    DeferredCallbackMode::AudioOnly {
-                        beat_context: kf_global_beat,
-                    },
-                    world,
-                    rx,
-                    Some(executor.render_assets),
-                    executor.emit,
-                ) {
-                    Ok(intents) => {
+                let mut intents = Vec::new();
+                let result = {
+                    let host = crate::scripting::host::MittensHost::runtime_lease(
+                        world,
+                        rx,
+                        executor.render_assets,
+                        executor.emit,
+                        &mut intents,
+                    );
+                    executor.session.invoke_keyframe_callback_with_host(
+                        callback,
+                        effect_profile,
+                        DeferredCallbackMode::AudioOnly {
+                            beat_context: kf_global_beat,
+                        },
+                        host,
+                    )
+                };
+                match result {
+                    Ok(()) => {
+                        intents.retain_mut(|intent| match intent {
+                            IntentValue::AudioSchedulePlay { beat_context, .. }
+                            | IntentValue::OscillatorScheduleSetPitch { beat_context, .. } => {
+                                *beat_context = Some(kf_global_beat);
+                                true
+                            }
+                            _ => false,
+                        });
                         for intent in intents {
                             rx.push_intent_now(ComponentId::default(), intent);
                         }
@@ -80,16 +96,31 @@ impl AnimationKeyframeEvaluator {
             && effect_profile.runs_in_visual_phase()
         {
             if let Some(executor) = executor.as_mut() {
-                match executor.session.invoke_keyframe_callback(
-                    callback,
-                    effect_profile,
-                    DeferredCallbackMode::VisualOnly,
-                    world,
-                    rx,
-                    Some(executor.render_assets),
-                    executor.emit,
-                ) {
-                    Ok(intents) => {
+                let mut intents = Vec::new();
+                let result = {
+                    let host = crate::scripting::host::MittensHost::runtime_lease(
+                        world,
+                        rx,
+                        executor.render_assets,
+                        executor.emit,
+                        &mut intents,
+                    );
+                    executor.session.invoke_keyframe_callback_with_host(
+                        callback,
+                        effect_profile,
+                        DeferredCallbackMode::VisualOnly,
+                        host,
+                    )
+                };
+                match result {
+                    Ok(()) => {
+                        intents.retain(|intent| {
+                            !matches!(
+                                intent,
+                                IntentValue::AudioSchedulePlay { .. }
+                                    | IntentValue::OscillatorScheduleSetPitch { .. }
+                            )
+                        });
                         for intent in intents {
                             rx.push_intent_now(ComponentId::default(), intent);
                         }

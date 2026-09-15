@@ -30,7 +30,7 @@ impl mms::Host for IdleMittensHost {}
 /// The idle session owns script scopes, tables, and callbacks without
 /// borrowing the engine. `service_callbacks` lends it a live Mittens host only
 /// for the duration of queued callback evaluation.
-pub struct RuntimeSpecSession {
+pub(crate) struct RuntimeSpecSession {
     configured: Arc<crate::scripting::runtime_config::MittensRuntime>,
     session: Option<mms::Session<IdleMittensHost>>,
     callback_invocations: Arc<Mutex<Vec<mms::CallbackInvocation>>>,
@@ -63,10 +63,137 @@ impl std::fmt::Display for DeferredCallbackError {
 }
 
 impl RuntimeSpecSession {
+    /// Create a retained RuntimeSpec session and evaluate its initial source
+    /// through a caller-supplied, short-lived Mittens host lease.
+    ///
+    /// This is the canonical entry point.  The session retains only MMS state;
+    /// the caller owns construction of the live engine host for this operation.
+    pub(crate) fn start_at_path_with_host(
+        source: &str,
+        path: &str,
+        host: crate::scripting::host::MittensHost<'_, '_>,
+    ) -> Result<Self, String> {
+        Self::start_with_source_id_and_host(source, Some(source_identity(path)?), host)
+    }
+
+    /// Like [`Self::start_at_path_with_host`], with an already-resolved root
+    /// source identity. `None` is appropriate only for source which cannot
+    /// perform relative imports.
+    pub(crate) fn start_with_source_id_and_host(
+        source: &str,
+        source_id: Option<mms::SourceId>,
+        host: crate::scripting::host::MittensHost<'_, '_>,
+    ) -> Result<Self, String> {
+        let configured = Arc::new(
+            crate::scripting::runtime_config::build_mittens_runtime()
+                .map_err(|error| format!("Mittens RuntimeSpec build failed: {error}"))?,
+        );
+        Self::start_with_runtime_and_host(configured, source, source_id, host)
+    }
+
+    /// Start with a shared immutable runtime configuration and one host lease.
+    pub(crate) fn start_with_runtime_and_host(
+        configured: Arc<crate::scripting::runtime_config::MittensRuntime>,
+        source: &str,
+        source_id: Option<mms::SourceId>,
+        host: crate::scripting::host::MittensHost<'_, '_>,
+    ) -> Result<Self, String> {
+        let callback_invocations = Arc::new(Mutex::new(Vec::new()));
+        let callback_delivery_enabled = Arc::new(AtomicBool::new(true));
+        let session = configured.runtime().session(IdleMittensHost);
+        let mut retained = Self {
+            configured,
+            session: Some(session),
+            callback_invocations,
+            callback_delivery_enabled,
+        };
+        retained.evaluate_with_host(host, source, source_id)?;
+        Ok(retained)
+    }
+
+    /// Evaluate source against one live host lease. The lease is consumed
+    /// before this call returns and is never retained in the session.
+    pub(crate) fn evaluate_with_host(
+        &mut self,
+        host: crate::scripting::host::MittensHost<'_, '_>,
+        source: &str,
+        source_id: Option<mms::SourceId>,
+    ) -> Result<(), String> {
+        let Some(idle) = self.session.take() else {
+            return Err("Mittens RuntimeSpec session is closed".into());
+        };
+        let host = host
+            .with_bindings(self.configured.bindings())
+            .with_callback_invocations(Arc::clone(&self.callback_invocations))
+            .with_callback_delivery_enabled(Arc::clone(&self.callback_delivery_enabled));
+        let (idle, result) = idle.with_host(host, |session| {
+            session.eval_with_source_id(source, source_id)
+        });
+        self.session = Some(idle);
+        result.map(|_| ()).map_err(|error| error.to_string())
+    }
+
+    /// Invoke a keyframe callback with one live host lease. Intent collection
+    /// belongs to that lease's owner, so the engine may apply phase filtering
+    /// without making MMS aware of audio or visual systems.
+    pub(crate) fn invoke_keyframe_callback_with_host(
+        &mut self,
+        callback_ref: mms::SessionCallbackRef,
+        effect_profile: mms::KeyframeEffectProfile,
+        mode: DeferredCallbackMode,
+        host: crate::scripting::host::MittensHost<'_, '_>,
+    ) -> Result<(), DeferredCallbackError> {
+        let permitted = match mode {
+            DeferredCallbackMode::AudioOnly { .. } => effect_profile.runs_in_audio_phase(),
+            DeferredCallbackMode::VisualOnly => effect_profile.runs_in_visual_phase(),
+        };
+        if !permitted {
+            return Ok(());
+        }
+        self.invoke_deferred_callback_with_host(callback_ref, mode, host)
+    }
+
+    /// Service queued signal callbacks using one live host lease. Returned
+    /// strings are diagnostics only; effects were written to the lease's
+    /// intent sink.
+    pub(crate) fn service_callbacks_with_host(
+        &mut self,
+        host: crate::scripting::host::MittensHost<'_, '_>,
+    ) -> Vec<String> {
+        if self.is_closed() {
+            return vec!["Mittens RuntimeSpec session is closed".into()];
+        }
+        let invocations = {
+            let mut queued = self.callback_invocations.lock().unwrap();
+            std::mem::take(&mut *queued)
+        };
+        if invocations.is_empty() {
+            return Vec::new();
+        }
+
+        let idle = self.session.take().expect("checked above");
+        let host = host
+            .with_bindings(self.configured.bindings())
+            .with_callback_invocations(Arc::clone(&self.callback_invocations))
+            .with_callback_delivery_enabled(Arc::clone(&self.callback_delivery_enabled));
+        let (idle, errors) = idle.with_host(host, |session| {
+            invocations
+                .into_iter()
+                .filter_map(|invocation| session.invoke_callback_invocation(invocation).err())
+                .map(|error| error.to_string())
+                .collect()
+        });
+        self.session = Some(idle);
+        errors
+    }
+
     /// Invoke a retained keyframe callback only in a phase its session-owned
     /// profile permits.  The engine supplies the opaque reference and plain
     /// metadata only; it never inspects or re-analyzes the callback body.
-    pub fn invoke_keyframe_callback(
+    /// Test-only compatibility adapter for older low-level session tests.
+    /// Production RuntimeSpec paths use the host-lease method above.
+    #[cfg(test)]
+    pub(crate) fn invoke_keyframe_callback(
         &mut self,
         callback_ref: mms::SessionCallbackRef,
         effect_profile: mms::KeyframeEffectProfile,
@@ -91,7 +218,8 @@ impl RuntimeSpecSession {
     /// This compatibility convenience preserves the original immediate
     /// intent result. New callers that need a canonical root source identity
     /// should use [`Self::start_at_path`] or [`Self::start_with_source_id`].
-    pub fn start(
+    #[cfg(test)]
+    pub(crate) fn start(
         source: &str,
         world: &mut World,
         rx: &mut RxWorld,
@@ -112,7 +240,8 @@ impl RuntimeSpecSession {
     /// The path is canonicalized before evaluation, so nested imports are
     /// resolved relative to the source rather than the process working
     /// directory.
-    pub fn start_at_path(
+    #[cfg(test)]
+    pub(crate) fn start_at_path(
         source: &str,
         path: &str,
         world: &mut World,
@@ -133,7 +262,8 @@ impl RuntimeSpecSession {
     /// Start a retained execution with an explicit canonical root identity.
     ///
     /// Pass `None` only for source that cannot import relative modules.
-    pub fn start_with_source_id(
+    #[cfg(test)]
+    pub(crate) fn start_with_source_id(
         source: &str,
         source_id: Option<mms::SourceId>,
         world: &mut World,
@@ -161,7 +291,8 @@ impl RuntimeSpecSession {
     /// A configured runtime is immutable and may be shared by independent
     /// sessions. Each returned session retains its own callbacks, module
     /// cache, captured tables, and source identity.
-    pub fn start_with_runtime(
+    #[cfg(test)]
+    pub(crate) fn start_with_runtime(
         configured: Arc<crate::scripting::runtime_config::MittensRuntime>,
         source: &str,
         source_id: Option<mms::SourceId>,
@@ -206,21 +337,61 @@ impl RuntimeSpecSession {
     /// Existing engine-side Rx registrations become inert immediately. Their
     /// physical removal remains the responsibility of the owning engine
     /// lifecycle, but they cannot enqueue or execute callbacks after close.
-    pub fn close(&mut self) {
+    pub(crate) fn close(&mut self) {
         self.callback_delivery_enabled
             .store(false, Ordering::Release);
         self.callback_invocations.lock().unwrap().clear();
         self.session = None;
     }
 
-    pub fn is_closed(&self) -> bool {
+    pub(crate) fn is_closed(&self) -> bool {
         self.session.is_none()
+    }
+
+    fn invoke_deferred_callback_with_host(
+        &mut self,
+        callback_ref: mms::SessionCallbackRef,
+        mode: DeferredCallbackMode,
+        host: crate::scripting::host::MittensHost<'_, '_>,
+    ) -> Result<(), DeferredCallbackError> {
+        let Some(idle) = self.session.take() else {
+            return Err(DeferredCallbackError::ClosedSession);
+        };
+        if idle.handle() != callback_ref.session {
+            self.session = Some(idle);
+            return Err(DeferredCallbackError::ForeignSession);
+        }
+
+        let host_phase = match mode {
+            DeferredCallbackMode::AudioOnly { .. } => {
+                crate::scripting::host::DeferredCallbackHostPhase::Audio
+            }
+            DeferredCallbackMode::VisualOnly => {
+                crate::scripting::host::DeferredCallbackHostPhase::Visual
+            }
+        };
+        let host = host
+            .with_bindings(self.configured.bindings())
+            .with_callback_invocations(Arc::clone(&self.callback_invocations))
+            .with_callback_delivery_enabled(Arc::clone(&self.callback_delivery_enabled))
+            .with_deferred_callback_phase(host_phase);
+        let (idle, result) = idle.with_host(host, |session| {
+            session.invoke_callback(callback_ref.callback, Vec::new())
+        });
+        self.session = Some(idle);
+        result.map(|_| ()).map_err(|error| match error {
+            mms::EvalError::Host(error) if error.kind == mms::HostErrorKind::StaleHandle => {
+                DeferredCallbackError::StaleCallback
+            }
+            error => DeferredCallbackError::Evaluation(error.to_string()),
+        })
     }
 
     /// Invoke one component-owned callback immediately through its originating
     /// session. Calls raised by this callback remain in the ordinary queue and
     /// are not recursively serviced here.
-    pub fn invoke_deferred_callback(
+    #[cfg(test)]
+    pub(crate) fn invoke_deferred_callback(
         &mut self,
         callback_ref: mms::SessionCallbackRef,
         mode: DeferredCallbackMode,
@@ -292,7 +463,8 @@ impl RuntimeSpecSession {
 
     /// Drain callback invocations queued by Rx and run them against the live
     /// engine host. Script table and closure identity persist across calls.
-    pub fn service_callbacks(
+    #[cfg(test)]
+    pub(crate) fn service_callbacks(
         &mut self,
         world: &mut World,
         rx: &mut RxWorld,

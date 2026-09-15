@@ -1,31 +1,16 @@
-use mittens_engine::engine::ecs::SignalEmitter;
 use mittens_engine::engine::ecs::component::EmissiveComponent;
 use mittens_engine::engine::{self, ecs::World};
-use mittens_engine::scripting::RuntimeSpecSession;
 
 fn main() {
     let world = World::default();
     let mut universe = engine::Universe::new(world);
 
-    let (_script_session, intents) = RuntimeSpecSession::start(
-        include_str!("runtime-spec-smoke.mms"),
-        &mut universe.world,
-        &mut universe.systems.rx,
-        Some(&mut universe.render_assets),
-        &mut universe.command_queue,
-    )
-    .expect("RuntimeSpec evaluation failed");
-    for intent in intents {
-        universe
-            .command_queue
-            .push_intent_now(engine::ecs::ComponentId::default(), intent);
-    }
-    universe.systems.process_commands(
-        &mut universe.world,
-        &mut universe.visuals,
-        &mut universe.render_assets,
-        &mut universe.command_queue,
-    );
+    universe
+        .load_mms_source_at_path(
+            include_str!("runtime-spec-smoke.mms"),
+            "examples/runtime-spec-smoke.mms",
+        )
+        .expect("RuntimeSpec evaluation failed");
 
     let normalized_names: Vec<_> = universe
         .world

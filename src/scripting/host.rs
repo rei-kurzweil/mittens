@@ -30,13 +30,13 @@ pub enum DeferredCallbackHostPhase {
 }
 
 /// Engine implementation of the host-neutral Meow Meow host contract.
-pub struct MittensHost<'a> {
+pub(crate) struct MittensHost<'a, 'bindings> {
     pub world: &'a mut World,
     pub rx: Option<&'a mut RxWorld>,
     pub render_assets: Option<&'a mut RenderAssets>,
     pub emit: &'a mut dyn SignalEmitter,
     pub intents: &'a mut Vec<IntentValue>,
-    bindings: Option<&'a mms::ImplementationBindings<super::runtime_config::MittensBinding>>,
+    bindings: Option<&'bindings mms::ImplementationBindings<super::runtime_config::MittensBinding>>,
     signal_routes: Option<&'a mut Vec<SignalCallbackRoute>>,
     callback_invocations: Option<Arc<Mutex<Vec<mms::CallbackInvocation>>>>,
     callback_delivery_enabled: Option<Arc<AtomicBool>>,
@@ -45,7 +45,22 @@ pub struct MittensHost<'a> {
     legacy_method_fallbacks: usize,
 }
 
-impl<'a> MittensHost<'a> {
+impl<'a, 'bindings> MittensHost<'a, 'bindings> {
+    /// Assemble the standard live-engine lease used by RuntimeSpec work.
+    /// Keeping this bundle here prevents session and application layers from
+    /// learning which Mittens services each host operation borrows.
+    pub(crate) fn runtime_lease(
+        world: &'a mut World,
+        rx: &'a mut RxWorld,
+        render_assets: &'a mut RenderAssets,
+        emit: &'a mut dyn SignalEmitter,
+        intents: &'a mut Vec<IntentValue>,
+    ) -> MittensHost<'a, 'a> {
+        MittensHost::new(world, emit, intents)
+            .with_rx(rx)
+            .with_render_assets(render_assets)
+    }
+
     pub fn new(
         world: &'a mut World,
         emit: &'a mut dyn SignalEmitter,
@@ -76,12 +91,24 @@ impl<'a> MittensHost<'a> {
         self
     }
 
-    pub fn with_bindings(
-        mut self,
-        bindings: &'a mms::ImplementationBindings<super::runtime_config::MittensBinding>,
-    ) -> Self {
-        self.bindings = Some(bindings);
-        self
+    pub fn with_bindings<'next>(
+        self,
+        bindings: &'next mms::ImplementationBindings<super::runtime_config::MittensBinding>,
+    ) -> MittensHost<'a, 'next> {
+        MittensHost {
+            world: self.world,
+            rx: self.rx,
+            render_assets: self.render_assets,
+            emit: self.emit,
+            intents: self.intents,
+            bindings: Some(bindings),
+            signal_routes: self.signal_routes,
+            callback_invocations: self.callback_invocations,
+            callback_delivery_enabled: self.callback_delivery_enabled,
+            deferred_callback_phase: self.deferred_callback_phase,
+            legacy_component_fallbacks: self.legacy_component_fallbacks,
+            legacy_method_fallbacks: self.legacy_method_fallbacks,
+        }
     }
 
     pub fn with_signal_routes(mut self, routes: &'a mut Vec<SignalCallbackRoute>) -> Self {
@@ -249,7 +276,7 @@ impl<'a> MittensHost<'a> {
     }
 }
 
-impl mms::Host for MittensHost<'_> {
+impl mms::Host for MittensHost<'_, '_> {
     fn dispatch_with_context(
         &mut self,
         context: &mut mms::HostContext,

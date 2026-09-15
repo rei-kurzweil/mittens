@@ -88,13 +88,54 @@ impl Universe {
         }
     }
 
-    /// Retain one file-backed MMS session so its `on(...)` callbacks can be
-    /// serviced on later engine frames. Replacing a session closes the old one.
-    pub fn set_runtime_spec_session(
+    fn mittens_host<'a>(
+        &'a mut self,
+        intents: &'a mut Vec<ecs::IntentValue>,
+    ) -> crate::scripting::host::MittensHost<'a, 'a> {
+        crate::scripting::host::MittensHost::runtime_lease(
+            &mut self.world,
+            &mut self.systems.rx,
+            &mut self.render_assets,
+            &mut self.command_queue,
+            intents,
+        )
+    }
+
+    /// Load and retain one MMS source file through the engine-owned scripting
+    /// facade. Live ECS services are assembled only for the evaluation lease.
+    pub fn load_mms_source_at_path(
         &mut self,
-        session: crate::scripting::runner::RuntimeSpecSession,
-    ) {
+        source: &str,
+        path: &str,
+    ) -> Result<crate::scripting::runner::EvalOutput, String> {
+        let mut intents = Vec::new();
+        let session = {
+            let host = self.mittens_host(&mut intents);
+            crate::scripting::runner::RuntimeSpecSession::start_at_path_with_host(
+                source, path, host,
+            )?
+        };
+
+        self.close_mms_session();
         self.runtime_spec_session = Some(session);
+
+        let output = crate::scripting::runner::EvalOutput {
+            intents: intents.clone(),
+            errors: Vec::new(),
+        };
+        for intent in intents {
+            self.command_queue
+                .push_intent_now(ecs::ComponentId::default(), intent);
+        }
+        self.drain_pending_signals();
+        Ok(output)
+    }
+
+    /// Stop the retained MMS session and make all of its callback routes inert.
+    pub fn close_mms_session(&mut self) {
+        if let Some(mut session) = self.runtime_spec_session.take() {
+            session.close();
+        }
     }
 
     /// Explicitly retry OpenXR initialization after launching without a runtime.
@@ -359,18 +400,17 @@ impl Universe {
         let Some(mut session) = self.runtime_spec_session.take() else {
             return;
         };
-        let output = session.service_callbacks(
-            &mut self.world,
-            &mut self.systems.rx,
-            Some(&mut self.render_assets),
-            &mut self.command_queue,
-        );
+        let mut intents = Vec::new();
+        let errors = {
+            let host = self.mittens_host(&mut intents);
+            session.service_callbacks_with_host(host)
+        };
         self.runtime_spec_session = Some(session);
 
-        for error in output.errors {
+        for error in errors {
             eprintln!("[mms] callback error: {error}");
         }
-        for intent in output.intents {
+        for intent in intents {
             self.command_queue
                 .push_intent_now(ecs::ComponentId::default(), intent);
         }
@@ -522,5 +562,89 @@ impl Universe {
                 .expect("render failed");
         }
         log_startup_progress(StartupCheckpoint::WindowRenderCompleted);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::ecs::component::EmissiveComponent;
+    use crate::engine::ecs::{ComponentId, EventSignal, Signal};
+
+    #[test]
+    fn mms_facade_installs_replaces_and_closes_the_retained_session() {
+        let mut universe = Universe::new(ecs::World::default());
+        let source = r#"Transform { name = "universe-mms-session" }"#;
+
+        let output = universe
+            .load_mms_source_at_path(source, "Cargo.toml")
+            .unwrap();
+        assert!(output.errors.is_empty());
+        assert!(universe.runtime_spec_session.is_some());
+        assert!(
+            universe
+                .world
+                .all_components()
+                .any(|id| { universe.world.component_label(id) == Some("universe-mms-session") })
+        );
+
+        universe
+            .load_mms_source_at_path(
+                r#"Transform { name = "replacement-mms-session" }"#,
+                "Cargo.toml",
+            )
+            .unwrap();
+        assert!(universe.runtime_spec_session.is_some());
+
+        universe.close_mms_session();
+        assert!(universe.runtime_spec_session.is_none());
+    }
+
+    #[test]
+    fn mms_facade_services_retained_callbacks_with_a_fresh_host_lease() {
+        let mut universe = Universe::new(ecs::World::default());
+        universe
+            .load_mms_source_at_path(
+                r#"
+                    let glow = Emissive.on() { name = "facade-glow" intensity(1.0) }
+                    let root = Transform { name = "facade-root" glow }
+                    on(root, "Click", fn(event) { glow.set_intensity(2.0) })
+                    root
+                "#,
+                "Cargo.toml",
+            )
+            .unwrap();
+        let root = universe
+            .world
+            .all_components()
+            .find(|&id| universe.world.component_label(id) == Some("facade-root"))
+            .unwrap();
+        let glow = universe
+            .world
+            .all_components()
+            .find(|&id| universe.world.component_label(id) == Some("facade-glow"))
+            .unwrap();
+
+        universe.systems.rx.dispatch_event_handlers(
+            &mut universe.world,
+            &Signal::event(
+                root,
+                EventSignal::Click {
+                    raycaster: ComponentId::default(),
+                    renderable: root,
+                    hit_point: [0.0; 3],
+                    screen_pos_px: None,
+                },
+            ),
+        );
+        universe.service_runtime_spec_callbacks();
+        assert_eq!(
+            universe
+                .world
+                .get_component_by_id_as::<EmissiveComponent>(glow)
+                .unwrap()
+                .intensity,
+            2.0
+        );
     }
 }

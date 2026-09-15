@@ -2872,7 +2872,7 @@ impl SystemWorld {
         self.tick_with_runtime_session(world, visuals, render_assets, input, queue, None, dt_sec);
     }
 
-    pub fn tick_with_runtime_session(
+    pub(crate) fn tick_with_runtime_session(
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
