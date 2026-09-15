@@ -2,7 +2,7 @@
 
 Date: 2026-09-13
 
-Status: ready for implementation and maintainer smoke testing
+Status: blocked on the host-boundary prerequisite
 
 ## Goal
 
@@ -46,9 +46,12 @@ use `RuntimeSpecSession`.
 
 ## Scope
 
-### 1. Add one Universe-owned launch operation
+### 1. Consume the Universe-owned launch operation
 
-Add a library-level operation with an API equivalent to:
+First complete
+[Hide live ECS access behind `MittensHost`](mms-hide-world-behind-mittens-host.md),
+which owns the boundary change and adds a library-level operation equivalent
+to:
 
 ```rust,ignore
 impl Universe {
@@ -60,10 +63,11 @@ impl Universe {
 }
 ```
 
-The exact name and error wrapper may change during implementation, but the
-ownership behavior must not:
+This launcher task consumes that operation. It must preserve the following
+ownership behavior:
 
-1. Start evaluation through `RuntimeSpecSession::start_at_path`.
+1. Start evaluation through the crate-owned session using the Universe-owned
+   `MittensHost` boundary.
 2. Preserve the canonical root `SourceId` used for nested relative imports.
 3. Retain the returned session in `Universe` before the next engine frame.
 4. Queue the immediate returned intents and process them through the normal
@@ -157,8 +161,6 @@ as part of this work.
 
 ## Files expected to change
 
-- `src/engine/universe.rs`
-- `src/scripting/runner.rs`, only if a small launch/result adapter is needed
 - `examples/mms_live_launcher.inc`
 - `examples/signal-handler.rs`
 - `examples/gltf-pose-animation.rs`
@@ -277,6 +279,7 @@ REPL migration remain separate focused tasks.
 
 ## Related tasks
 
+- [Hide live ECS access behind `MittensHost`](mms-hide-world-behind-mittens-host.md)
 - [MMS/Mittens runtime cutover and legacy deletion](mms-mittens-runtime-cutover-and-legacy-deletion.md)
 - [MMS/Mittens 0.8 contract cutover](mms-mittens-0.8-contract-cutover.md)
 - [MMS evaluator deduplication checklist](mms-evaluator-deduplication.md)

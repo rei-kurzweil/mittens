@@ -37,11 +37,13 @@ mapping, for example desktop `Input` WASD translation or
 `InputXRGamepad.locomotion()`. It is distinct from observing the same
 non-tracked input as an action.
 
-## V1: device-specific behavior assets
+## V1: device-specific behavior assets (implemented module layout)
 
 V1 does not introduce a movement-authority system or a universal input event.
-It makes the temporary difference explicit and moves only reusable car behavior
-out of the examples.
+The mounted-car behavior now lives in the existing display-car module as two
+explicit public constructors; see [Vehicle behaviors](../spec/vehicle_behaviors.md).
+The two-file layout below remains a possible later organization, not the current
+implementation.
 
 ```text
 assets/components/
@@ -52,9 +54,10 @@ assets/components/
     car_xr.mms                   InputXRGamepad adapter + car behavior
 ```
 
-`display_car.mms` remains input-neutral. It owns the car model and its authored
+`display_car()` remains input-neutral. It owns the car model and its authored
 spatial affordances, including entry zone, mount anchor, and dismount anchor.
-It must not import or inspect desktop or XR input.
+The module additionally exports explicit desktop and XR controlled constructors;
+calling the base spatial factory does not attach any behavior.
 
 `vehicle_behaviors/car.mms` is the desktop behavior asset. It may subscribe to
 global `KeyDown`/`KeyUp`, retain W/A/S/D state, fire on `Space` down, and update
@@ -64,7 +67,7 @@ the supplied car's transform only while its supplied car is mounted.
 supplied `InputXRGamepad`, retain `LeftStick`, fire from its XR button/chord
 policy, and update the supplied car only while mounted.
 
-Both V1 assets own the same car-local concerns:
+If the two-file layout is chosen, both V1 assets own the same car-local concerns:
 
 - mounted/unmounted lifecycle reset;
 - planar steering and throttle integration;

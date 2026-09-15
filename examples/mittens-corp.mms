@@ -14,7 +14,7 @@ import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { suspended_platform } from "../assets/components/platforms/suspended_platform.mms"
-import { display_car } from "../assets/components/vehicles/display_car.mms"
+import { display_car_xr } from "../assets/components/vehicles/display_car.mms"
 
 // Optional sources stay neutral when the runtime or hardware is unavailable.
 let microphone = AudioInput {}
@@ -111,18 +111,6 @@ ED.active() {
         locomotion()
         speed(1.5)
     }
-    // MMS tables are heap-backed, so every deferred handler below observes the
-    // same mutable vehicle state rather than its own captured scalar snapshot.
-    let vehicle_state = {
-        mounted = false
-        left_stick = [0.0, 0.0]
-        right_grip_held = false
-        position = [-19.0, -0.75, -1.5]
-        yaw = 0.30
-    }
-    let car_drive_speed = 5.0
-    let car_turn_speed = 1.25
-    let car_stick_deadzone = 0.16
 
     T.position(-5.0, 0.0, 0.0) {
         name = "bisket_locomotion_root"
@@ -206,217 +194,14 @@ ED.active() {
         }
     }
 
-    // Measure once after import; animate within a positioned muzzle frame so
-    // keyframe closures do not need to capture late-loaded placement values.
-    let laser_placement = { ready = false }
-    // `R.square()` is a unit XY quad. After the beam root's X rotation, the
-    // child Y scale is therefore the complete visible beam length, not its
-    // half-length. Keep the center one half-length down local -Z so its near
-    // edge stays exactly at the muzzle.
-    let laser_length = 40.0
-    let muzzle_clearance = 0.10
-    let muzzle_height_fraction = 0.56
-
-    let muzzle_flash_0_emissive = Emissive.off()
-    let muzzle_flash_1_emissive = Emissive.off()
-    let laser_outer_emissive = Emissive.off()
-    let laser_middle_emissive = Emissive.off()
-    let laser_core_emissive = Emissive.off()
-
-    let muzzle_flash_0 = T.position(0.0, 0.0, 0.0).scale(0.0, 0.0, 0.0) {
-        name = "car_laser_muzzle_flash_0"
-        R.square() {
-            C.rgba(1.0, 1.0, 1.0, 1.0)
-            Texture.with_uri("assets/images/flash_red_0.png")
-            TextureFiltering.linear()
-            // Texture alpha needs the blended pass. The slight reduction
-            // keeps this out of the opaque pass while preserving full visual
-            // intensity from the texture and emissive material.
-            Opacity.opacity(0.99)
-            muzzle_flash_0_emissive
-        }
-    }
-    let muzzle_flash_1 = T.position(0.0, 0.0, 0.002).scale(0.0, 0.0, 0.0) {
-        name = "car_laser_muzzle_flash_1"
-        R.square() {
-            C.rgba(1.0, 1.0, 1.0, 1.0)
-            Texture.with_uri("assets/images/flash_red_1.png")
-            TextureFiltering.linear()
-            Opacity.opacity(0.99)
-            muzzle_flash_1_emissive
-        }
-    }
-    // Squares have a local +Z normal. The vehicle fires along local -Z, so
-    // turn the shared flash frame around to present its textured face outward.
-    let muzzle_flash = T.position(0.0, 0.0, 0.0).rotation(0.0, 3.14159, 0.0) {
-        name = "car_laser_muzzle_flash"
-        muzzle_flash_0
-        muzzle_flash_1
-    }
-
-    // The beam extends along the car's semantic local -Z axis. Nested widths
-    // approximate an emissive falloff until a textured beam asset replaces it.
-    let laser_beam_glow = T.position(0.0, 0.0, 0.0)
-        .rotation(-1.5708, 0.0, 0.0).scale(0.0, 0.0, 0.0) {
-        name = "laser_beam_glow"
-        T.scale(0.16, laser_length, 1.0) {
-            R.square() {
-                C.rgba(1.0, 0.06, 0.03, 1.0)
-                Opacity.opacity(0.18)
-                laser_outer_emissive
-            }
-        }
-        T.position(0.0, 0.0, 0.002).scale(0.08, laser_length, 1.0) {
-            R.square() {
-                C.rgba(1.0, 0.22, 0.08, 1.0)
-                Opacity.opacity(0.38)
-                laser_middle_emissive
-            }
-        }
-        T.position(0.0, 0.0, 0.004).scale(0.028, laser_length, 1.0) {
-            R.square() {
-                C.rgba(1.0, 0.88, 0.58, 1.0)
-                Opacity.opacity(0.88)
-                laser_core_emissive
-            }
-        }
-    }
-
-    let laser_shot = Animation.paused().length(0.22) {
-        Keyframe.at(0.0) {
-            muzzle_flash.update_transform(
-                [0.0, 0.0, 0.0], [0.0, 3.14159, 0.0], [1.0, 1.0, 1.0]
-            )
-            muzzle_flash_0.update_transform(
-                [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.90, 0.90, 0.90]
-            )
-            muzzle_flash_1.update_transform(
-                [0.0, 0.0, 0.002], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
-            )
-            laser_beam_glow.update_transform(
-                [0.0, 0.0, -laser_length * 0.5], [-1.5708, 0.0, 0.0], [1.0, 1.0, 1.0]
-            )
-            muzzle_flash_0_emissive.set_intensity(8.0)
-            muzzle_flash_1_emissive.off()
-            laser_outer_emissive.set_intensity(3.0)
-            laser_middle_emissive.set_intensity(6.0)
-            laser_core_emissive.set_intensity(12.0)
-        }
-        Keyframe.at(0.05) {
-            muzzle_flash_0.update_transform(
-                [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
-            )
-            muzzle_flash_1.update_transform(
-                [0.0, 0.0, 0.002], [0.0, 0.0, 0.0], [0.90, 0.90, 0.90]
-            )
-            muzzle_flash_0_emissive.off()
-            muzzle_flash_1_emissive.set_intensity(8.0)
-        }
-        Keyframe.at(0.10) {
-            muzzle_flash_0.update_transform(
-                [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
-            )
-            muzzle_flash_1.update_transform(
-                [0.0, 0.0, 0.002], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
-            )
-            laser_beam_glow.update_transform(
-                [0.0, 0.0, -laser_length * 0.5], [-1.5708, 0.0, 0.0], [0.0, 0.0, 0.0]
-            )
-            muzzle_flash_0_emissive.off()
-            muzzle_flash_1_emissive.off()
-            laser_outer_emissive.off()
-            laser_middle_emissive.off()
-            laser_core_emissive.off()
-        }
-    }
-
-    fn fire_laser() {
-        if laser_placement.ready { laser_shot.play() }
-    }
-
-    let laser_origin = T {
-        name = "car_laser_origin"
-        muzzle_flash
-        laser_beam_glow
-    }
-
-    let car_root = display_car(
+    let car_root = display_car_xr(
         "left_display_car",
         [-19.0, -0.75, -1.5],
         0.30,
         "left_display_car_cxr_mount",
-        [laser_origin, laser_shot],
+        vehicle_controls,
     )
     car_root
-
-    on(car_root, "MountStarted", fn(event) {
-        vehicle_state.mounted = true
-        vehicle_state.left_stick = [0.0, 0.0]
-    })
-
-    on(car_root, "MountEnded", fn(event) {
-        vehicle_state.mounted = false
-        vehicle_state.left_stick = [0.0, 0.0]
-        vehicle_state.right_grip_held = false
-    })
-
-    on(vehicle_controls, "XrAxisChanged", fn(event) {
-        if event.control == "LeftStick" {
-            vehicle_state.left_stick = event.value
-        }
-    })
-
-    on(vehicle_controls, "XrButtonDown", fn(event) {
-        if event.control == "RightGrip" {
-            vehicle_state.right_grip_held = true
-        } else if event.control == "RightTrigger" {
-            if vehicle_state.mounted && vehicle_state.right_grip_held {
-                fire_laser()
-            }
-        }
-    })
-
-    on(vehicle_controls, "XrButtonUp", fn(event) {
-        if event.control == "RightGrip" {
-            vehicle_state.right_grip_held = false
-        }
-    })
-
-    let car_model = car_root.query("#car_model")
-    let muzzle_origin = car_root.query("#car_laser_origin")
-    on_global("FrameTick", fn(event) {
-        if !laser_placement.ready {
-            let model_box = car_model.local_bounds()
-            if model_box {
-                let x = (model_box["min"][0] + model_box["max"][0]) * 0.5
-                let y = model_box["min"][1] + (model_box["max"][1] - model_box["min"][1]) * muzzle_height_fraction
-                let front_z = model_box["min"][2] - muzzle_clearance
-                muzzle_origin.update_transform(
-                    [x, y, front_z], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0],
-                )
-                laser_placement.ready = true
-            }
-        }
-        if vehicle_state.mounted {
-            let steering = vehicle_state.left_stick[0]
-            let throttle = vehicle_state.left_stick[1]
-            let stick_length = Math.sqrt(steering * steering + throttle * throttle)
-            if stick_length > car_stick_deadzone {
-                vehicle_state.yaw = vehicle_state.yaw - steering * car_turn_speed * event.dt_sec
-                let distance = throttle * car_drive_speed * event.dt_sec
-                vehicle_state.position = [
-                    vehicle_state.position[0] - Math.sin(vehicle_state.yaw) * distance,
-                    -0.75,
-                    vehicle_state.position[2] - Math.cos(vehicle_state.yaw) * distance,
-                ]
-                car_root.update_transform(
-                    vehicle_state.position,
-                    [0.0, vehicle_state.yaw, 0.0],
-                    [1.0, 1.0, 1.0],
-                )
-            }
-        }
-    })
 }
 
 // Explicit selection disables every editor window except the two needed for
