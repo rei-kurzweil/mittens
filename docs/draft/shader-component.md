@@ -2,7 +2,7 @@
 
 Status: draft for the first custom material slice. This records the intended authoring contract; it is **not implemented** today.
 
-Related work: [Unified `Shading` and cascade](../task/shading-model-components-and-cascade.md), [Materials v2](../task/epic/materials-v2.md), and [animated shader inputs](../task/animated-shader-material-inputs-mms-animation-system.md).
+Related work: [first testable custom-fragment slice](../task/mms-custom-fragment-shader-first-slice.md), [Unified `Shading` and cascade](../task/shading-model-components-and-cascade.md), [Materials v2](../task/epic/materials-v2.md), and [animated shader inputs](../task/animated-shader-material-inputs-mms-animation-system.md).
 
 ## Purpose
 
