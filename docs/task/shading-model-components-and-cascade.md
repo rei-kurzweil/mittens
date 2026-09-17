@@ -192,5 +192,6 @@ not required for these controls.
 - [Transmission authoring contract](transmissive-materials-ecs-mms-authoring-contract.md):
   existing implementation; this task supersedes its separate-type/non-cascading
   authoring decisions for the planned migration.
-- [Shader component draft](../draft/shader-component.md): historical exploration;
-  this task establishes `Shader` as the custom-shading authoring name.
+- [Shader component draft](../draft/shader-component.md): V1 custom fragment
+  material contract; this task establishes `Shader` as the custom-shading
+  authoring name and its shared cascade rules.
