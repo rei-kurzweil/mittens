@@ -1,4 +1,4 @@
-# ToonOutline component and shared deformation
+# ToonOutline component and shared render instance
 
 Date: 2026-09-18
 
@@ -7,39 +7,43 @@ Status: proposed
 ## Goal
 
 Add a `ToonOutline` graphics modifier that can style one renderable or all renderables below a
-wrapper. An outlined renderable produces two visual instances:
+wrapper. An outlined renderable produces two draws from one persistent visual instance:
 
-1. an outline instance, drawn in a dedicated outline phase; and
-2. the ordinary foreground instance, drawn unchanged in its existing opaque, cutout, emissive,
+1. an outline draw, recorded as `RenderOp::DrawOutlineBatch` in a dedicated outline phase; and
+2. the ordinary foreground draw, recorded unchanged in its existing opaque, cutout, emissive,
    transmission, transparent, or overlay phase.
 
-The two instances must reference the same uploaded GPU mesh. When the source is morphed or
-skinned, they must also consume the same post-morph, post-skinning position and normal range rather
-than allocate and compute a second deformation result.
+Both draws reference the same `VisualInstance`, uploaded GPU mesh, transform, and deformation-cache
+range. An outline must never create a second mesh upload, skinning allocation, morph input set, or
+deformation compute job.
 
 `GLTFSystem` must project a `ToonOutline` authored on or around a `GLTFComponent` onto each imported
 primitive, following the existing `ShadingComponent` projection model.
 
 ## Current architecture findings
 
-The requested design fits the current renderer, but simple duplicate registration is not enough.
+The requested design fits the current renderer without duplicate visual registration.
 
 - `RenderableSystem::flush_pending` resolves one CPU mesh, calls
   `RenderAssets::gpu_mesh_handle`, and registers one `VisualWorld` instance. `RenderAssets` caches
-  the resulting `MeshHandle` by `CpuMeshHandle`. Registering an outline from the same resolved CPU
-  mesh can therefore share vertex and index buffers without another upload.
-- `VisualWorld` currently assumes one visual handle per ECS renderable:
+  the resulting `MeshHandle` by `CpuMeshHandle`. The outline operation can use that instance's
+  resolved handle and therefore the same vertex and index buffers without another upload.
+- `VisualWorld` assumes one visual handle per ECS renderable:
   `component_to_handle: HashMap<ComponentId, InstanceHandle>`, and `RenderableComponent` stores one
-  `handle`. Transform, texture, skin, morph, and removal paths all rely on that assumption.
+  `handle`. Transform, texture, skin, morph, and removal paths all rely on that assumption. The
+  outline design can preserve it.
 - The deformation cache is currently owned per `VisualInstance`. `sync_deformation_ranges`
   allocates a range for every instance with bones, and `record_dirty_deformations` emits one compute
-  job per dirty instance. Two otherwise identical skinned instances would therefore duplicate the
-  SSBO output and skinning work unless aliasing is made explicit.
+  job per dirty instance. Reusing the foreground instance means the existing ownership model
+  already produces exactly one range and one job.
 - The compute output already contains exactly what an outline vertex stage needs: a deformed
   position and packed deformed normal. The regular cached-skinned vertex shader reads it through
   `i_deformed_base + gl_VertexIndex`.
 - Draw lists are built in `VisualWorld::prepare_draw_cache`, then recorded in a fixed order in
-  `VulkanoRenderer`. There is no outline phase today.
+  `VulkanoRenderer`. A single instance can already be referenced by multiple render operations:
+  stencil clip sources participate in `EnterClip`, an ordinary `DrawBatch`, and `ExitClip`. An
+  outline is the same kind of renderer-level reuse, expressed as `DrawOutlineBatch` plus the
+  instance's ordinary foreground operation.
 - `GLTFSystem` already resolves `ShadingComponent` at the GLTF scope, creates a non-serialized
   projected copy below every generated primitive renderable, and retains a source-component link
   so live source changes can fan out. Imported node transforms are attached to the nearest
@@ -61,8 +65,9 @@ pub struct ToonOutlineComponent {
 ```
 
 Suggested defaults are opaque near-black (`[0.02, 0.02, 0.03, 1.0]`) and `width = 0.01`. Width must
-be finite and non-negative. Zero width disables creation of the derived instance. Alpha is retained
-in the authoring type for a future blended-outline path; the first slice requires an opaque outline.
+be finite and non-negative. Zero width removes the renderable from the outline stream without
+removing its visual instance. Alpha is retained in the authoring type for a future blended-outline
+path; the first slice requires an opaque outline.
 
 Suggested MMS:
 
@@ -113,8 +118,8 @@ occlusion: a closer foreground surface can overwrite a farther outline.
 
 The initial width is in world units. Constant-pixel width is a later vertex-stage option because it
 needs projection/viewport-aware clip-space expansion and a decision about stereo consistency.
-World-space expansion is enough to prove instance pairing, phase routing, mesh reuse, and shared
-deformation.
+World-space expansion is enough to prove multi-phase instance reuse, phase routing, mesh reuse, and
+shared deformation.
 
 The outline pipelines need:
 
@@ -129,103 +134,113 @@ Do not generate an expanded CPU mesh, reverse indices, or upload an outline-spec
 
 ## Visual identity and lifetime
 
-Keep the ordinary foreground handle as the canonical handle stored on `RenderableComponent`.
-Introduce a role-aware visual group for auxiliary instances rather than changing
-`component_to_handle` to silently overwrite one of two handles. One possible shape is:
+Keep exactly one `VisualInstance` and one `InstanceHandle` for each ECS renderable. Add optional
+outline parameters to that instance:
 
 ```rust
-pub enum VisualInstanceRole {
-    Foreground,
-    ToonOutline,
+pub struct ToonOutlineParams {
+    pub color: [f32; 4],
+    pub width: f32,
 }
 
-pub struct RenderableVisualHandles {
-    pub foreground: InstanceHandle,
-    pub toon_outline: Option<InstanceHandle>,
+pub struct VisualInstance {
+    // existing fields ...
+    pub toon_outline: Option<ToonOutlineParams>,
 }
 ```
 
-The exact storage can live in `VisualWorld` or `RenderableSystem`, but these invariants are
-required:
+The component-to-handle map and `RenderableComponent::handle` remain unchanged. Adding or removing
+an outline only changes `toon_outline` and dirties the outline draw cache/instance data; it does not
+register or remove a visual instance.
 
-- stable `ComponentId` lookup returns the foreground handle by default;
-- role lookup can find the outline handle;
-- removal of an ECS renderable removes both handles;
-- model-matrix updates reach both handles;
-- foreground-only changes such as texture, shading material, transmission parameters, opacity,
-  and emissive routing do not overwrite outline state;
-- outline color/width changes update only the outline instance;
-- adding, removing, or setting width to zero creates/removes only the derived instance without
-  re-uploading the mesh or replacing the foreground handle; and
-- picking, bounds, raycasting, mirrors' source-instance exclusion, and semantic selection continue
-  to treat the foreground renderable as the ECS object. The outline must not become a second
-  selectable object.
+Required invariants:
 
-Avoid putting two independent general-purpose handles into every existing update path. Instead,
-separate shared instance state (mesh identity, model, deformation source) from role-specific state
-(material, color, width, phase), and provide explicit grouped operations for shared updates.
+- one ECS renderable maps to one `InstanceHandle` and one `VisualInstance`;
+- model, mesh, texture, material, bones, morphs, bounds, and lifetime remain ordinary instance
+  state;
+- outline color and width are additional per-instance draw parameters, not a second material
+  identity on the instance;
+- removal of the ECS renderable removes the one instance and therefore both of its phase
+  appearances;
+- setting width to zero or removing the component removes the instance index from the outline
+  stream while leaving its foreground phase unchanged;
+- picking, bounds, raycasting, mirror source exclusion, and semantic selection require no duplicate
+  suppression because the outline introduces no second selectable instance; and
+- foreground-only updates cannot accidentally overwrite outline parameters, while an outline
+  update cannot change the foreground material.
 
 ## Sharing the GPU mesh
 
-Both registrations pass the same resolved `MeshHandle`:
+Both draw operations address the mesh on the same instance:
 
 ```text
 CpuMeshHandle
   -> RenderAssets::gpu_mesh_handle (cached upload)
   -> one MeshHandle
-       -> foreground VisualInstance
-       -> outline VisualInstance
+       -> one VisualInstance
+            -> DrawOutlineBatch
+            -> ordinary DrawBatch
 ```
 
-This is already supported by the renderer's mesh map and draw batches. A test uploader should
-assert that creating the pair performs one upload and that both instances contain the same
-`MeshHandle`.
+This is already supported by the renderer's mesh map. A test uploader should assert that enabling
+an outline performs no additional upload and that both render operations resolve the same
+instance index and `MeshHandle`.
 
 UV-baked variants are also safe: share the final resolved variant handle used by the foreground,
 not `Renderable::base_mesh`.
 
 ## Sharing post-morph/post-skinning deformation
 
-Model deformation as owned output plus aliases. The foreground instance owns the deformation
-inputs and range; its outline instance aliases that owner:
+No deformation alias type is needed. The one `VisualInstance` continues to own its existing
+`bones_base`, active morph inputs, `deformed_base`, and `deformed_count`. The compute scheduler sees
+one dirty instance and emits one `GpuDeformationJob` exactly as it does today.
 
-```rust
-pub enum DeformationBinding {
-    None,
-    Owned,
-    Alias(InstanceHandle),
-}
+When the outline phase builds instance data, it copies the same `deformed_base` and
+`deformed_count` already used by the foreground phase. The cached-deformed outline vertex shader
+then reads the same post-morph/post-skinning position and normal:
+
+```text
+one dirty VisualInstance
+  -> one DeformationRange
+  -> one GpuDeformationJob
+  -> one cached position/normal range
+       -> DrawOutlineBatch cached-deformed vertex shader
+       -> ordinary DrawBatch cached-deformed vertex shader
 ```
 
-Equivalent internal representations are acceptable, but behavior must be:
-
-- only `Owned` instances allocate/free a `DeformationRange`;
-- only owners hold/update bones and active morph inputs;
-- only dirty owners produce `GpuDeformationJob`s;
-- instance-buffer construction resolves an alias to the owner's `deformed_base` and
-  `deformed_count`;
-- the outline cached-deformed vertex shader reads that resolved base;
-- removing an alias never frees the owner's range;
-- removing an owner first removes or detaches all aliases, so no dangling handle can reach a
-  recycled range; and
-- changing the owner's mesh reconciles the owner range and keeps the alias paired with it.
-
-The alias is valid because the outline is derived from the same renderable and therefore has the
-same mesh, morph weights, skin matrices, and vertex indexing. Assert these conditions in debug
-builds rather than permitting arbitrary public aliasing.
-
-Do not copy `bones_base` onto the outline and let it allocate its own output. That shares the bone
-palette but still doubles the expensive vertex result. Also do not have `SkinnedMeshSystem` update
-both handles: it should continue to update only the canonical foreground/owner.
-
-The present allocator is per instance and its accounting assumes unique ranges. Alias-aware
-allocation is therefore required before enabling outlines for skinned GLTF primitives.
+`SkinnedMeshSystem`, morph updates, allocator ownership, and removal do not need outline-specific
+branches. This is an important reason to model the outline as a second render operation rather
+than a second visual instance.
 
 ## Draw-phase integration
 
-Add an explicit `outline_order`, `outline_batches`, and outline instance buffer to `VisualWorld` and
-the renderer. Outline instances must be excluded from all existing phase classifiers even if their
-fields happen to resemble an opaque object.
+Add an explicit `outline_order`, outline render stream, and outline instance buffer to `VisualWorld`
+and the renderer. `outline_order` contains the same instance indices used by existing foreground
+streams; it is not another instance collection. Existing phase classification remains unchanged,
+and outline eligibility independently adds an instance index to the outline stream.
+
+Extend the existing operation vocabulary as assumed by this proposal:
+
+```rust
+pub enum RenderOp {
+    EnterClip {
+        instance_index: u32,
+        parent_ref: u8,
+        new_ref: u8,
+    },
+    DrawBatch(DrawBatch),
+    DrawOutlineBatch(OutlineDrawBatch),
+    ExitClip {
+        instance_index: u32,
+        ref_value: u8,
+    },
+}
+```
+
+`OutlineDrawBatch` addresses a range in the outline stream's instance-index array. It carries only
+batch-wide state such as static versus cached-deformed pipeline selection, mesh, and eventual
+stencil state. Color and width should remain per-instance data so differently styled outlines can
+still batch when the pipeline and mesh match.
 
 For the normal scene domain, record:
 
@@ -251,7 +266,8 @@ should not be allowed to fall accidentally into the scene outline phase; each ge
 explicit supported policy or an explicit first-slice exclusion.
 
 Mirrors and XR use the same `VisualWorld` render streams, so they should receive the outline phase
-automatically. Mirror source exclusion must exclude both roles belonging to the source renderable.
+automatically. Mirror source exclusion already identifies the one instance; outline-stream
+filtering must apply that same exclusion before recording `DrawOutlineBatch`.
 
 ## GLTF projection
 
@@ -264,8 +280,8 @@ Extend the existing GLTF-scoped modifier flow rather than relying on the generat
    `value.projected_from(source_component)` plus `Serialize.off()`.
 4. Let normal component initialization emit `RegisterToonOutline`; do not call renderer APIs
    directly from the importer.
-5. When the authored source changes, update every projection that references it and reconcile the
-   corresponding visual pair.
+5. When the authored source changes, update every projection that references it and update the
+   corresponding instance's outline parameters and stream membership.
 
 A primitive-local authored outline, if generated or attached later, overrides the projection using
 the same nearest-scope rule. Re-registering a GLTF-scoped source must update existing imported
@@ -283,21 +299,20 @@ the engine's component modifier is projected onto spawned primitives.
   `width`/`color` methods.
 - ECS signals and mutation execution: register/update/reconcile intent.
 - `src/engine/ecs/system/gltf_system.rs`: scoped resolution and primitive projections.
-- `src/engine/ecs/system/renderable_system.rs`: resolve the effective outline, create/reconcile the
-  foreground/outline pair after the final mesh resolves, and remove the pair.
-- `src/engine/ecs/system/transform_system.rs`: use a grouped model update so both roles move
-  together.
-- `src/engine/graphics/visual_world.rs`: visual roles, group lookup, outline stream, and owned/alias
-  deformation lifetime.
-- `src/engine/graphics/vulkano_renderer.rs`: outline pipelines, buffers, and recording before
-  foreground.
+- `src/engine/ecs/system/renderable_system.rs`: resolve the effective outline and attach/update its
+  parameters on the ordinary visual instance after the final mesh resolves.
+- `src/engine/graphics/visual_world.rs`: optional per-instance outline parameters,
+  `OutlineDrawBatch`, `RenderOp::DrawOutlineBatch`, and outline stream construction from ordinary
+  instance indices.
+- `src/engine/graphics/vulkano_renderer.rs`: outline pipelines, per-phase instance buffer, and
+  `DrawOutlineBatch` recording before foreground.
 - `assets/shaders/`: static and cached-deformed outline vertex stages plus flat fragment stage.
 
 ## First implementation slice
 
 The smallest useful slice should still be vertical and should include cached-deformed GLTF. A
-static-only slice would validate inverted-hull rendering but leave the central ownership question
-unanswered and encourage a per-instance deformation design that later has to be replaced.
+static-only slice would validate inverted-hull rendering but would not prove that the same instance
+and cached deformation can be consumed by both render operations.
 
 Implement one end-to-end slice with these boundaries:
 
@@ -305,25 +320,26 @@ Implement one end-to-end slice with these boundaries:
   and live source updates.
 - It resolves as an immediate renderable child or ancestor wrapper.
 - `GLTFSystem` projects it onto every imported primitive using source-linked non-serialized copies.
-- Ordinary opaque static renderables and opaque static/skinned GLTF primitives create a foreground
-  and outline visual pair.
-- Both instances use exactly one uploaded `MeshHandle`.
-- Skinned/morphed pairs use one owned deformation range and one compute job; the outline aliases
-  the cached position/normal result.
+- Ordinary opaque static renderables and opaque static/skinned GLTF primitives retain one visual
+  instance that appears in both the outline and foreground streams.
+- Both render operations use the instance's one uploaded `MeshHandle`.
+- Skinned/morphed content keeps one deformation range and one compute job; both operations read the
+  instance's cached position/normal result.
 - One scene outline phase is recorded after the foreground depth clear and before opaque/cutout
-  foreground.
+  foreground using `RenderOp::DrawOutlineBatch`.
 - Width is world-space, the shader uses inverted hulls, and the pipeline culls front faces.
-- Transform updates and removal affect the pair atomically.
-- The outline instance is excluded from bounds, picking, raycasting, emissive extraction, and all
-  ordinary draw lists.
+- Transform updates and removal need no duplication because both draws reference the same
+  instance.
+- The outline draw does not create additional bounds, picking, raycasting, emissive extraction, or
+  ordinary draw-list entries.
 - The slice explicitly rejects or skips outlines on overlay/background, blended transparency,
   transmission, stencil-clipped content, and alpha-shaped cutouts. These need phase- and
   alpha-specific decisions rather than accidental opaque behavior.
 
-Although this crosses several files, splitting before the shared-deformation path lands gives no
-representative result for the motivating humanoid case. The slice can still be kept narrow by not
-adding pixel-width outlines, multiple outline layers, per-material glTF extensions, alpha-aware
-outline fragments, or overlay routing.
+Although this crosses several files, splitting before the shared-deformation path is exercised
+gives no representative result for the motivating humanoid case. The slice can still be kept
+narrow by not adding pixel-width outlines, multiple outline layers, per-material glTF extensions,
+alpha-aware outline fragments, or overlay routing.
 
 ## Test plan
 
@@ -332,7 +348,8 @@ outline fragments, or overlay routing.
 - Defaults, finite/range validation, builders, serialization, and round-trip MMS.
 - Immediate-child and ancestor-wrapper resolution, nearest override, and equal-scope duplicate
   error.
-- Setting width to zero removes the derived visual while preserving the foreground handle.
+- Setting width to zero removes `DrawOutlineBatch` membership while preserving the instance and
+  its foreground membership.
 
 ### GLTF tests
 
@@ -344,23 +361,24 @@ outline fragments, or overlay routing.
 
 ### VisualWorld and renderer-structure tests
 
-- Registration creates two handles with distinct roles and the same `MeshHandle`.
-- A counting uploader observes one upload.
-- The outline role appears only in `outline_order`; the foreground remains in its prior phase.
-- Draw ordering records outlines before opaque foreground.
-- Model updates reach both roles, while texture/emissive/material updates remain foreground-only.
-- Removing the renderable removes both handles and all role/group lookup entries.
-- Mirror exclusion removes both roles from the mirror view.
+- Registration creates one handle and one instance with optional outline parameters.
+- A counting uploader observes one upload before and after outline enablement.
+- The same instance index appears in `outline_order` and its ordinary foreground stream.
+- The outline stream contains `DrawOutlineBatch`, while existing streams retain `DrawBatch`.
+- Draw ordering records `DrawOutlineBatch` operations before opaque foreground operations.
+- Model updates need one write and are observed by both draws; texture/emissive/material updates
+  affect only ordinary pipeline selection.
+- Removing the renderable removes the one handle and both stream appearances.
+- Mirror exclusion removes the one instance index from both outline and foreground streams.
 
 ### Deformation tests
 
-- A skinned pair allocates one live vertex range, and both emitted instance records reference the
-  same `deformed_base`/count.
-- One dirty source produces one deformation job, not two.
-- Morph changes dirty the owner once and are visible to both vertex paths.
-- Alias removal does not free the range; owner removal frees it once and cannot leave a dangling
-  alias.
-- Allocator reuse after removal cannot make a surviving outline read another renderable's range.
+- An outlined skinned instance allocates the same one live vertex range as an unoutlined instance.
+- One dirty outlined instance produces one deformation job, not two.
+- Outline and foreground phase instance records contain the same `deformed_base`/count.
+- Morph changes dirty the instance once and are visible to both vertex paths.
+- Enabling/disabling an outline does not allocate or free a deformation range; removing the
+  renderable frees its range once.
 
 ### Visual validation
 
@@ -379,15 +397,17 @@ render-test harness can do so; otherwise retain it as a manual Vulkan validation
 
 - An authored ordinary renderable or GLTF-scoped modifier visibly produces an inverted-hull
   outline and leaves the original foreground material unchanged.
-- Every outlined ECS renderable has exactly one foreground and at most one outline visual role.
-- The pair has the same GPU `MeshHandle`; no outline geometry upload occurs.
-- A skinned/morphed pair has one deformation allocation and one deformation compute job per dirty
-  update, and both draws consume the same cached result.
+- Every outlined ECS renderable has exactly one `VisualInstance` and one `InstanceHandle`.
+- `DrawOutlineBatch` and the ordinary `DrawBatch` reference that same instance and GPU
+  `MeshHandle`; no outline geometry upload occurs.
+- An outlined skinned/morphed instance has one deformation allocation and one deformation compute
+  job per dirty update, and both draws consume the same cached result.
 - Outlines for multiple primitives/characters batch in a dedicated phase before normal foreground
   phases.
 - GLTF projection and source updates work without serializing generated copies or re-importing the
   asset.
-- Transform, removal, and mirror exclusion cannot leave one half of a visual pair behind.
+- Transform, removal, and mirror exclusion apply consistently to both stream appearances of the
+  instance.
 - Unsupported phase/material combinations are deterministic and diagnosed, not silently routed as
   opaque outlines.
 
@@ -405,8 +425,9 @@ render-test harness can do so; otherwise retain it as a manual Vulkan validation
 
 ## Stop condition
 
-Stop the first slice when the static and animated/skinned example both render through the dedicated
-outline phase, structural tests prove one mesh upload and one deformation result per pair, GLTF
-projection/live updates work, and unsupported phase combinations are explicitly rejected or
-skipped. Do not broaden the slice to solve alpha silhouettes, pixel-constant width, overlay
-clipping, or general custom-material authoring.
+Stop the first slice when the static and animated/skinned example both render through
+`DrawOutlineBatch` in the dedicated outline phase, structural tests prove one visual instance, one
+mesh upload, and one deformation result per renderable, GLTF projection/live updates work, and
+unsupported phase combinations are explicitly rejected or skipped. Do not broaden the slice to
+solve alpha silhouettes, pixel-constant width, overlay clipping, or general custom-material
+authoring.
