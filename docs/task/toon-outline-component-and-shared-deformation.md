@@ -413,7 +413,9 @@ render-test harness can do so; otherwise retain it as a manual Vulkan validation
 - Non-uniform-scale-correct normal transformation (inverse transpose) if the first visual tests
   expose unacceptable width distortion.
 - Optional crease-aware or authored outline normals for hard seams and split vertices.
-- Multiple outline layers or per-primitive opt-out.
+- Multiple outline layers.
+- Per-renderable opt-out and selector-scoped settings are specified in the follow-on
+  [ToonOutline selector exclusions and per-renderable overrides](toon-outline-selector-overrides.md).
 
 ## Stop condition
 
