@@ -3,6 +3,24 @@
 Date: 2026-09-19
 Status: design sketch
 
+## Working integration scene
+
+`examples/mittens-corp-volume-normalization.mms` is the live tuning scene. It
+is copied from `mittens-corp.mms` and adds the kawaii star background plus
+three `color-cat.2.glb` spectators. Until the MMS component is registered, the
+scene aliases `voice_level` to `raw_voice_level`; the intended
+`VolumeNormalization.from(raw_voice_level)` construction is left immediately
+beside that fallback so the switch is explicit and localized.
+
+### Traffic-light follow-up
+
+`assets/components/traffic_light.mms` contains the first horizontal
+red/yellow/green fixture draft: emissive circular lenses, a yellow enclosure
+and hood per lens, five inward black planes, and five matching outward yellow
+planes. When the asset is first staged, verify plane winding/back-face culling,
+close any visible corner seams, tune hood depth/pitch, and decide whether each
+signal needs an authored on/off state instead of all three lenses emitting.
+
 ## Goal
 
 Add a source-analysis component that adapts microphone level into a useful,
