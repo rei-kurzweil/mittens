@@ -60,11 +60,24 @@ ToonOutline
 }
 ```
 
+The target arguments also accept live component values. These are retained as GUID-backed
+`ComponentRef` values rather than flattened into selector strings:
+
+```mms
+let special_mesh_group = T { class = "hero" R.capsule() }
+
+ToonOutline
+    .excluding_renderables([special_mesh_group])
+    .for_matching(special_mesh_group, { width = 0.02 }) {
+    special_mesh_group
+}
+```
+
 ## Why repeated `for_matching` calls
 
 Prefer repeated builder calls over an array of generic rule tables.
 
-- Each call reads as one ordered rule: selector first, settings second.
+- Each call reads as one ordered rule: target reference first, settings second.
 - Authors do not have to assemble a JavaScript-like array of anonymous records.
 - MMS already preserves repeated builder calls in authored order. Components such as
   `MorphTargetMap` and `HumanoidBoneMap` use repeated `.slot(...)` calls as precedent.
@@ -73,7 +86,7 @@ Prefer repeated builder calls over an array of generic rule tables.
 - Adding another rule creates a small diff without restructuring an array.
 
 Repeated calls are therefore part of the proposed contract, not an accidental parser behavior.
-Calling `excluding_renderables` more than once should likewise append selectors rather than replace
+Calling `excluding_renderables` more than once should likewise append references rather than replace
 the previous list.
 
 Do not add an alternative `matching_rules([{ selector = ..., settings = ... }])` API in the first
@@ -135,13 +148,16 @@ The existing component-scope rule still applies before this internal cascade: th
 `ToonOutline` component wins over an inherited or GLTF-projected policy. Rules from two different
 `ToonOutline` components are not merged.
 
-## What a selector matches
+## Target references and what they match
 
-Selectors use the engine's existing component query syntax. Matching needs renderable-oriented
-semantics because useful GLTF names commonly belong to imported node transforms rather than the
-primitive `RenderableComponent` itself.
+Store every exclusion target and match-rule target as `ComponentRef`. A string argument uses the
+engine's existing component query syntax and becomes `ComponentRef::Query`. A component-object
+argument becomes `ComponentRef::Guid`, following the existing durable-reference convention.
 
-A rule matches a renderable when its selector selects either:
+Matching still needs renderable-oriented semantics because useful GLTF names commonly belong to
+imported node transforms rather than the primitive `RenderableComponent` itself.
+
+A rule matches a renderable when its resolved target is either:
 
 - that renderable directly; or
 - an owning/container node in scope whose descendant primitive is that renderable.
@@ -151,12 +167,13 @@ a `GLTF`, scope is that specific GLTF instance's imported-node set—the same in
 by `event.gltf.query(...)`. A rule must never leak into another instance of the same asset or into
 an unrelated sibling tree.
 
-When a selector matches a container with several primitive children, the rule applies to all of
-those primitives. When it directly matches one primitive, only that primitive is affected.
+When a reference resolves to a container with several primitive children, the rule applies to all
+of those primitives. When it resolves directly to one primitive, only that primitive is affected.
 
-An unmatched selector is allowed because optional meshes vary between avatar exports. Record it in
-debug diagnostics, preferably once after GLTF initialization, rather than failing scene loading.
-Malformed selectors and invalid settings are authoring errors.
+An unresolved query reference is allowed because optional meshes vary between avatar exports.
+Record it in debug diagnostics, preferably once after GLTF initialization, rather than failing
+scene loading. Malformed queries, out-of-scope GUID references, and invalid settings are authoring
+errors.
 
 ## Component data model
 
@@ -171,14 +188,14 @@ pub struct ToonOutlineOverride {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToonOutlineMatchRule {
-    pub selector: String,
+    pub target: ComponentRef,
     pub settings: ToonOutlineOverride,
 }
 
 pub struct ToonOutlineComponent {
     pub color: [f32; 4],
     pub width: f32,
-    pub excluded_renderable_selectors: Vec<String>,
+    pub excluded_renderables: Vec<ComponentRef>,
     pub matching_rules: Vec<ToonOutlineMatchRule>,
     source_component: Option<ComponentId>,
 }
@@ -192,6 +209,55 @@ projection preserves source-update fan-out and makes later policy changes able t
 Do not place selector strings or rule tables in `VisualInstance`. They are ECS authoring policy,
 not renderer state.
 
+Do not store resolved `ComponentId` values in the serialized component either. Component IDs are
+runtime-local and imported GLTF targets do not exist when the authored component is initially
+materialized. Keep durable `ComponentRef` values in the component and keep any resolved target
+sets in `RenderableSystem` runtime state.
+
+## Reference-resolution plan
+
+`ComponentRef` is the right stored type, but the existing `resolve_component_ref` helper returns
+only one component. `for_matching` and `excluding_renderables` intentionally allow one query to
+match several nodes, so add a dedicated internal resolver:
+
+```rust
+fn resolve_outline_targets(
+    world: &World,
+    scope: ToonOutlineScope,
+    target: &ComponentRef,
+) -> Result<Vec<ComponentId>, OutlineTargetError>;
+```
+
+Resolution behavior:
+
+- `ComponentRef::Guid` performs the normal O(1) GUID lookup, then verifies that the result belongs
+  to this modifier's ordinary-wrapper or GLTF-instance scope.
+- `ComponentRef::Query` runs an all-results query within the scope. It must not call the existing
+  first-result-only helper.
+- A GLTF scope uses that component's `scripting_query_roots`, which includes the imported roots
+  tracked by `GLTFComponent::spawned_node_transforms` without leaking into another asset instance.
+- An ordinary wrapper scope uses the modifier's authored subtree/root.
+- Results are deduplicated while preserving deterministic DFS order.
+- A matched renderable is a direct target. A matched container expands to only the descendant
+  renderables belonging to the same policy scope.
+- A GUID resolving outside the scope is an error. A query with zero results is allowed and may
+  produce a once-per-initialization diagnostic.
+
+At registration or source-policy update, resolve the policy in one pass:
+
+1. Collect the renderables governed by this authored source component.
+2. Resolve every exclusion/reference rule to scoped component IDs.
+3. Expand container targets to a deduplicated set of governed renderable IDs.
+4. Initialize each governed renderable with the base outline parameters.
+5. Apply ordered match-rule field overrides to the matching renderable IDs.
+6. Replace excluded renderables with `None` after all overrides.
+7. Compare these effective results with the current visual values and update only changed
+   instances.
+
+The first implementation can hold the temporary target sets only for the duration of this pass.
+If repeated live policy editing later makes resolution measurable, cache a compiled mapping keyed
+by the source component and invalidate it on policy or relevant topology changes.
+
 ## GLTF integration
 
 The current GLTF projection point remains the right ownership boundary:
@@ -199,8 +265,14 @@ The current GLTF projection point remains the right ownership boundary:
 1. Resolve the authored `ToonOutline` policy at the `GLTFComponent`.
 2. Spawn the imported node/primitive tree.
 3. Add a non-serialized, source-linked projection below every generated renderable as today.
-4. Evaluate that primitive against the source policy within this GLTF instance's query scope.
+4. Resolve the policy's `ComponentRef` targets within this GLTF instance's query scope and evaluate
+   that primitive against the resulting target sets.
 5. Send either `Some(ToonOutlineParams)` or `None` to its one `VisualInstance`.
+
+Do not resolve references inside `spawn_node_recursive`: at that point the complete imported-node
+set has not yet been written to `GLTFComponent::spawned_node_transforms`. Resolution should happen
+from the queued projection-registration intents after the GLTF tick has completed that metadata,
+or from one explicit post-spawn policy-application step after the metadata assignment.
 
 Selector evaluation should occur when projections/renderables are registered, not every frame.
 Cache the effective result on the visual instance through the existing `toon_outline` field.
@@ -235,10 +307,10 @@ This feature must not add per-frame selector queries or per-rule draw lists.
 
 Implement one vertical slice:
 
-1. Add ordered exclusion selectors and match rules to `ToonOutlineComponent`.
+1. Add ordered exclusion references and match rules to `ToonOutlineComponent`.
 2. Register repeatable MMS builders:
-   - `excluding_renderables(string-or-array)`;
-   - `for_matching(selector, settings-table)`.
+   - `excluding_renderables(component-ref-or-array)` using `arg_component_ref_vec`;
+   - `for_matching(component-ref, settings-table)` using `arg_component_ref`.
 3. Validate and normalize rule settings through the same helpers used by base `width` and `color`.
 4. Serialize exclusions and repeated rules without losing authored order.
 5. Resolve direct renderable and container-node matches for ordinary wrapper scopes.
@@ -254,24 +326,25 @@ the source/projection representation compatible with later whole-policy updates.
 
 Add focused tests for:
 
+- query-backed and GUID-backed component references materialize and serialize correctly;
 - repeated `for_matching` calls are preserved in order;
 - repeated `excluding_renderables` calls append;
 - omitted fields inherit the previously resolved value;
 - later matching rules win per field;
 - exclusion wins regardless of builder-call position;
 - selecting an imported container affects all primitive renderables beneath it;
-- selectors do not cross between two instances of the same GLTF;
-- unmatched selectors do not fail GLTF initialization;
+- references do not cross between two instances of the same GLTF;
+- unmatched query references do not fail GLTF initialization;
 - excluded primitives retain their projected component but have
   `VisualInstance.toon_outline == None`;
 - included and overridden primitives still use one visual instance, mesh handle, and deformation
   range each; and
-- serialization/materialization round-trips ordered rules and exclusion selectors.
+- serialization/materialization round-trips ordered rules and exclusion references.
 
 ## Follow-up roadmap
 
 - Live methods to append, replace, remove, or clear rules with source-linked projection updates.
-- Editor presentation of the resolved rule and source selector for a selected primitive.
+- Editor presentation of the resolved rule and source reference for a selected primitive.
 - Once-per-load diagnostics listing selectors that matched no renderables.
 - A source-to-projected-consumer index if policy updates become expensive on large scenes.
 - Optional named rules if targeted live editing proves awkward with order-only identity.
@@ -279,10 +352,11 @@ Add focused tests for:
 
 ## Decisions captured by this draft
 
-- Use repeated `.for_matching(selector, settings)` calls, not an array of rule records.
+- Store targets as `ComponentRef` and use repeated `.for_matching(target, settings)` calls, not an
+  array of rule records.
 - Preserve call order and use later-match-wins, per-field cascading.
 - Keep `excluding_renderables` separate and absolute.
 - Treat matched imported container nodes as selecting their descendant primitives.
-- Evaluate selectors on ECS/GLTF changes, never during rendering.
+- Resolve references on ECS/GLTF changes, never during rendering.
 - Keep one projected component and one visual instance per primitive; store only effective outline
   parameters in the renderer.
