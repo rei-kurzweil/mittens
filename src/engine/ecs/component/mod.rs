@@ -88,6 +88,7 @@ pub mod stencil_clip;
 pub mod style;
 pub mod transmission;
 pub mod transparent_cutout;
+pub mod volume_normalization;
 pub mod xr;
 pub mod xr_eye_tracking;
 pub mod zone;
@@ -126,6 +127,42 @@ pub use self::gltf::GLTFComponent;
 pub use crate::engine::ecs::system::model::collision_types::{CollisionMode, CollisionShape};
 pub use ambient_light::AmbientLightComponent;
 pub use amplitude::{AmplitudeComponent, AmplitudeSample, AmplitudeStatus};
+pub use volume_normalization::VolumeNormalizationComponent;
+
+/// Returns a current sample from either raw or normalized level provider.
+/// This is the intentionally small shared seam used by AVC; consumers retain
+/// their durable reference to the actual authored component.
+pub(crate) fn retained_level_sample(
+    world: &crate::engine::ecs::World,
+    id: crate::engine::ecs::ComponentId,
+) -> Option<AmplitudeSample> {
+    if let Some(amplitude) = world.get_component_by_id_as::<AmplitudeComponent>(id) {
+        return (amplitude.enabled
+            && amplitude.retained.generation == amplitude.generation
+            && amplitude.retained.is_live())
+        .then_some(amplitude.retained);
+    }
+    world
+        .get_component_by_id_as::<VolumeNormalizationComponent>(id)
+        .filter(|normalization| {
+            normalization.enabled
+                && normalization.retained.generation == normalization.generation
+                && normalization.retained.is_live()
+        })
+        .map(|normalization| normalization.retained)
+}
+
+pub(crate) fn is_level_provider(
+    world: &crate::engine::ecs::World,
+    id: crate::engine::ecs::ComponentId,
+) -> bool {
+    world
+        .get_component_by_id_as::<AmplitudeComponent>(id)
+        .is_some()
+        || world
+            .get_component_by_id_as::<VolumeNormalizationComponent>(id)
+            .is_some()
+}
 pub use animation::AnimationComponent;
 pub use animation::AnimationState;
 pub use animation::AnimationStepDirection;

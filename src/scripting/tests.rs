@@ -8785,6 +8785,48 @@ fn roundtrip_amplitude_preserves_authored_source_and_window_only() {
 }
 
 #[test]
+fn roundtrip_volume_normalization_preserves_policy_but_not_runtime_state() {
+    use crate::engine::ecs::component::{ComponentRef, VolumeNormalizationComponent};
+    let original = VolumeNormalizationComponent::from(ComponentRef::Query("#raw_voice".into()))
+        .with_gain_limits(-3.0, 18.0)
+        .unwrap()
+        .with_target_rms(0.02, 0.10)
+        .unwrap()
+        .with_nonnegative("quiet_hold", 1.25)
+        .unwrap()
+        .with_enabled(false);
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<VolumeNormalizationComponent>(id)
+        .unwrap();
+    assert_eq!(got.source, Some(ComponentRef::Query("#raw_voice".into())));
+    assert_eq!((got.min_gain_db, got.max_gain_db), (-3.0, 18.0));
+    assert_eq!((got.target_rms_low, got.target_rms_high), (0.02, 0.10));
+    assert_eq!(got.quiet_hold_sec, 1.25);
+    assert!(!got.enabled);
+    assert!(!got.retained.is_live());
+}
+
+#[test]
+fn volume_normalization_rejects_a_known_non_amplitude_source() {
+    use crate::engine::ecs::component::AudioInputComponent;
+    let program = parse("VolumeNormalization.from(\"#input\") {}");
+    let materialized = crate::scripting::component_registry::ce_ast_to_materialized(
+        &as_component!(program.into_iter().last().unwrap()),
+    )
+    .expect("materialize");
+    let mut world = World::default();
+    world.add_component_boxed_named("input", Box::new(AudioInputComponent::new()));
+    let mut emit = CommandQueue::new();
+    let result = crate::scripting::component_registry::spawn_tree_uninitialized(
+        &materialized,
+        &mut world,
+        &mut emit,
+    );
+    assert!(result.is_err());
+}
+
+#[test]
 fn roundtrip_humanoid_bone_map_preserves_authored_policy() {
     use crate::engine::ecs::component::{
         AuthoredSlot, ComponentRef, HumanoidBoneMapComponent, HumanoidSlot,

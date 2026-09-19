@@ -1239,6 +1239,23 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         .builder_call("from", any(1))
                         .builder_call("enabled", booleans(1));
                 }
+                "VolumeNormalization" => {
+                    component
+                        .constructor("from", any(1))
+                        .builder_call("enabled", booleans(1))
+                        .builder_call("gain_limits", floats(2))
+                        .builder_call("target_rms", floats(2));
+                    for method in [
+                        "activity_gate",
+                        "quiet_hold",
+                        "high_hold",
+                        "gain_rise",
+                        "gain_fall",
+                        "peak_headroom",
+                    ] {
+                        component.builder_call(method, floats(1));
+                    }
+                }
                 "AudioGain" => {
                     // Legacy construction uses the first argument regardless
                     // of constructor spelling; `new` is the canonical form.

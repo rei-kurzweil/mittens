@@ -52,9 +52,9 @@ use crate::engine::ecs::component::{
     TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
     TransformParentComponent, TransformSampleAncestorComponent, TransitionComponent,
     TransitionEasing, TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
-    UnlitComponent, VRChatOSCEyeTrackingComponent, Vector3TemporalFilterComponent, WordWrapMode,
-    XREyeTrackingComponent, XREyeTrackingHtcComponent, XRHandComponent, XrComponent,
-    XrHandPreference, ZoneComponent,
+    UnlitComponent, VRChatOSCEyeTrackingComponent, Vector3TemporalFilterComponent,
+    VolumeNormalizationComponent, WordWrapMode, XREyeTrackingComponent, XREyeTrackingHtcComponent,
+    XRHandComponent, XrComponent, XrHandPreference, ZoneComponent,
 };
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::CameraTarget;
@@ -83,6 +83,7 @@ pub fn with_live_render_assets<R>(render_assets: &mut RenderAssets, f: impl FnOn
 pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "AmbientLight",
     "Amplitude",
+    "VolumeNormalization",
     "AnimeShading",
     "Shading",
     "ToonOutline",
@@ -2595,6 +2596,25 @@ fn create_component(
             None | Some("default") => add!(AmplitudeComponent::default()),
             Some(other) => Err(format!("unknown Amplitude constructor '.{other}'")),
         },
+        "VolumeNormalization" => match ctor {
+            Some("from") => {
+                let source = arg_component_ref(world, args, 0)?;
+                if let Some(source_id) = resolve_component_ref(world, &source) {
+                    if world
+                        .get_component_by_id_as::<AmplitudeComponent>(source_id)
+                        .is_none()
+                    {
+                        return Err(
+                            "VolumeNormalization.from(source) requires an Amplitude component"
+                                .into(),
+                        );
+                    }
+                }
+                add!(VolumeNormalizationComponent::from(source))
+            }
+            None | Some("default") => Err("VolumeNormalization requires .from(amplitude)".into()),
+            Some(other) => Err(format!("unknown VolumeNormalization constructor '.{other}'")),
+        },
         "AudioGain" => {
             add!(AudioGainComponent::new(arg_f32(args, 0)?))
         }
@@ -3987,12 +4007,9 @@ fn apply_call(
     {
         let source = arg_component_ref(world, args, 0)?;
         if let Some(source_id) = resolve_component_ref(world, &source) {
-            if world
-                .get_component_by_id_as::<AmplitudeComponent>(source_id)
-                .is_none()
-            {
+            if !crate::engine::ecs::component::is_level_provider(world, source_id) {
                 return Err(
-                    "AvatarControl.mouth_open_from_amplitude requires an Amplitude component"
+                    "AvatarControl.mouth_open_from_amplitude requires an Amplitude or VolumeNormalization component"
                         .into(),
                 );
             }
@@ -4141,6 +4158,31 @@ fn apply_call(
             }
             _ => return Err(format!("unknown Amplitude builder '.{method}'")),
         }
+        return Ok(());
+    }
+    if world
+        .get_component_by_id_as::<VolumeNormalizationComponent>(id)
+        .is_some()
+    {
+        let current = world
+            .get_component_by_id_as::<VolumeNormalizationComponent>(id)
+            .unwrap()
+            .clone();
+        let updated = match method {
+            "enabled" => current.with_enabled(arg_bool(args, 0)?),
+            "gain_limits" => current.with_gain_limits(arg_f32(args, 0)?, arg_f32(args, 1)?)?,
+            "target_rms" => current.with_target_rms(arg_f32(args, 0)?, arg_f32(args, 1)?)?,
+            "activity_gate" => current.with_nonnegative("activity_gate", arg_f32(args, 0)?)?,
+            "quiet_hold" => current.with_nonnegative("quiet_hold", arg_f32(args, 0)?)?,
+            "high_hold" => current.with_nonnegative("high_hold", arg_f32(args, 0)?)?,
+            "gain_rise" => current.with_nonnegative("gain_rise", arg_f32(args, 0)?)?,
+            "gain_fall" => current.with_nonnegative("gain_fall", arg_f32(args, 0)?)?,
+            "peak_headroom" => current.with_peak_headroom(arg_f32(args, 0)?)?,
+            _ => return Err(format!("unknown VolumeNormalization builder '.{method}'")),
+        };
+        *world
+            .get_component_by_id_as_mut::<VolumeNormalizationComponent>(id)
+            .unwrap() = updated;
         return Ok(());
     }
 

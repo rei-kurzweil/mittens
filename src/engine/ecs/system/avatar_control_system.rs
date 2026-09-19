@@ -1,5 +1,4 @@
 use crate::engine::ecs::component::HumanoidSlot;
-use crate::engine::ecs::component::{AmplitudeComponent, QueryRootMode, resolve_component_ref};
 use crate::engine::ecs::component::{
     AvatarControlComponent, BoneRestPoseComponent, Camera3DComponent, CameraXRComponent,
     CollisionComponent, CollisionResponseComponent, CollisionShape, CollisionShapeComponent,
@@ -9,6 +8,9 @@ use crate::engine::ecs::component::{
     TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
     TransformMapTranslationComponent, VRChatOSCEyeTrackingComponent, XREyeTrackingComponent,
     XREyeTrackingHtcComponent,
+};
+use crate::engine::ecs::component::{
+    QueryRootMode, is_level_provider, resolve_component_ref, retained_level_sample,
 };
 use crate::engine::ecs::system::bounds_system::{BoundsSystem, RenderableBoundsMeasure};
 use crate::engine::ecs::system::collision_shape_inference::infer_upright_capsule;
@@ -182,28 +184,15 @@ fn update_amplitude_mouth_open(
     };
     let Some(authored) = authored else { return };
     let source = cached
-        .filter(|&id| {
-            world
-                .get_component_by_id_as::<AmplitudeComponent>(id)
-                .is_some()
-        })
+        .filter(|&id| is_level_provider(world, id))
         .or_else(|| {
             resolve_component_ref(world, &authored, Some(avc_id), QueryRootMode::WorldRoot)
         });
-    let source = source.filter(|&id| {
-        world
-            .get_component_by_id_as::<AmplitudeComponent>(id)
-            .is_some()
-    });
+    let source = source.filter(|&id| is_level_provider(world, id));
     let target = source
-        .and_then(|id| world.get_component_by_id_as::<AmplitudeComponent>(id))
-        .filter(|amplitude| {
-            amplitude.enabled
-                && amplitude.retained.generation == amplitude.generation
-                && amplitude.retained.is_live()
-        })
-        .map_or(0.0, |amplitude| {
-            ((amplitude.retained.rms - floor) / (ceiling - floor)).clamp(0.0, 1.0)
+        .and_then(|id| retained_level_sample(world, id))
+        .map_or(0.0, |sample| {
+            ((sample.rms - floor) / (ceiling - floor)).clamp(0.0, 1.0)
         });
     let alpha = if smoothing <= 0.0 {
         1.0
@@ -1915,9 +1904,9 @@ mod hand_pose_correction_tests {
     use super::*;
     use crate::engine::ecs::component::xr_eye_tracking::{EyeClosureSample, EyeGazeSample};
     use crate::engine::ecs::component::{
-        AmplitudeSample, AmplitudeStatus, ComponentRef, EyeRotationLimits, MorphFactorState,
-        MorphTargetInfo, MorphTargetKey, MorphTargetMapComponent, RestAttachmentComponent,
-        XREyeTrackingComponent, XREyeTrackingHtcComponent,
+        AmplitudeComponent, AmplitudeSample, AmplitudeStatus, ComponentRef, EyeRotationLimits,
+        MorphFactorState, MorphTargetInfo, MorphTargetKey, MorphTargetMapComponent,
+        RestAttachmentComponent, XREyeTrackingComponent, XREyeTrackingHtcComponent,
     };
     use crate::engine::ecs::system::{
         HumanoidSlotProvenance, HumanoidSlotReport, HumanoidSlotStatus, ResolvedHumanoidTarget,
