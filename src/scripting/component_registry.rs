@@ -43,10 +43,11 @@ use crate::engine::ecs::component::{
     SpotLightComponent, SpringBoneComponent, SpringColliderComponent, SpringCollidersComponent,
     SpringJointComponent, StencilClipComponent, StyleComponent, TextAlign, TextComponent,
     TextInputComponent, TextShadowComponent, TextureComponent, TextureFilteringComponent,
-    ToggleComponent, TransformApplyInverseLocalComponent, TransformCameraSpecificComponent,
-    TransformComponent, TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis,
-    TransformGizmoComponent, TransformGizmoCoordSpace, TransformGizmoPlane,
-    TransformGizmoRotateComponent, TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
+    ToggleComponent, ToonOutlineComponent, TransformApplyInverseLocalComponent,
+    TransformCameraSpecificComponent, TransformComponent, TransformDropComponent,
+    TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
+    TransformGizmoCoordSpace, TransformGizmoPlane, TransformGizmoRotateComponent,
+    TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
     TransformGizmoTranslatePlaneComponent, TransformMapRotationComponent,
     TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
     TransformParentComponent, TransformSampleAncestorComponent, TransitionComponent,
@@ -84,6 +85,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "Amplitude",
     "AnimeShading",
     "Shading",
+    "ToonOutline",
     "Animation",
     "AssetPayload",
     "AudioBandPassFilter",
@@ -2376,6 +2378,13 @@ fn create_component(
             }
             Ok(id)
         }
+        "ToonOutline" => {
+            let id = world.add_component(ToonOutlineComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
         "Bounds" => {
             let (min, max) = match ctor {
                 Some("aabb") => (arg_f32_arr::<3>(args, 0)?, arg_f32_arr::<3>(args, 1)?),
@@ -2783,6 +2792,14 @@ fn apply_call(
             "rim_strength" => component.with_rim_strength(arg_f32(args, 0)?),
             "rim_power" => component.with_rim_power(arg_f32(args, 0)?),
             _ => return Err(format!("AnimeShading: unknown builder '{method}'")),
+        };
+        return Ok(());
+    }
+    if let Some(component) = world.get_component_by_id_as_mut::<ToonOutlineComponent>(id) {
+        *component = match method {
+            "width" => component.with_width(arg_f32(args, 0)?),
+            "color" => component.with_color(arg_f32_arr::<4>(args, 0)?),
+            _ => return Err(format!("ToonOutline: unknown builder '{method}'")),
         };
         return Ok(());
     }

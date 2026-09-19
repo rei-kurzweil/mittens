@@ -325,6 +325,10 @@ impl RxMutationExecutor {
                 let component = *component_id;
                 systems.register_anime_shading(world, visuals, component);
             }
+            IntentValue::RegisterToonOutline { component_id } => {
+                let component = *component_id;
+                systems.register_toon_outline(world, visuals, component);
+            }
 
             IntentValue::RegisterTexture { component_id } => {
                 let component = *component_id;

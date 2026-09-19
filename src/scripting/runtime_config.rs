@@ -1141,6 +1141,10 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         }
                     }
                 }
+                "ToonOutline" => {
+                    constructor_and_builder(component, "width", floats(1));
+                    constructor_and_builder(component, "color", any(1));
+                }
                 "Bounds" => {
                     component.constructor("aabb", any(2));
                 }

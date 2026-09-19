@@ -5,8 +5,9 @@ use crate::engine::ecs::component::morph_target::active_factors;
 use crate::engine::ecs::component::{
     AnimeShadingComponent, BackgroundComponent, BoundsComponent, ColorComponent, EmissiveComponent,
     LayoutVisualPlacementComponent, LightQuantizationComponent, MeshComponent, OpacityComponent,
-    RenderableComponent, RendererSettingsComponent, TransformComponent, TransmissiveModel,
-    TransparentCutoutComponent, UVComponent, UnlitComponent, resolve_transmissive_model,
+    RenderableComponent, RendererSettingsComponent, ToonOutlineComponent, TransformComponent,
+    TransmissiveModel, TransparentCutoutComponent, UVComponent, UnlitComponent,
+    resolve_transmissive_model,
 };
 use crate::engine::ecs::component::{GLTFComponent, MorphTargetBindingComponent};
 
@@ -78,6 +79,9 @@ pub struct RenderableSystem {
 
     /// Per-renderable albedo-derived anime material parameters.
     pending_anime_shading: HashMap<ComponentId, AnimeShadingComponent>,
+
+    /// Per-renderable inverted-hull outline parameters.
+    pending_toon_outline: HashMap<ComponentId, ToonOutlineComponent>,
 
     /// NormalVisualisationComponents waiting for their subtree to be spawned.
     ///
@@ -359,6 +363,28 @@ impl RenderableSystem {
         None
     }
 
+    pub(crate) fn resolve_toon_outline(
+        world: &World,
+        renderable: ComponentId,
+    ) -> Option<(ComponentId, ToonOutlineComponent)> {
+        let mut current = Some(renderable);
+        while let Some(node) = current {
+            if let Some(outline) = world.get_component_by_id_as::<ToonOutlineComponent>(node) {
+                return Some((node, *outline));
+            }
+            if let Some(outline) = world.children_of(node).iter().find_map(|&child| {
+                world
+                    .get_component_by_id_as::<ToonOutlineComponent>(child)
+                    .copied()
+                    .map(|outline| (child, outline))
+            }) {
+                return Some(outline);
+            }
+            current = world.parent_of(node);
+        }
+        None
+    }
+
     fn resolve_effective_renderable_style(
         world: &World,
         renderable_cid: ComponentId,
@@ -544,6 +570,26 @@ impl RenderableSystem {
             }
             let _ = visuals.update_anime_shading(handle, params.gpu_params());
             let _ = self.pending_anime_shading.remove(&renderable_cid);
+        }
+    }
+
+    fn apply_pending_outline_updates_to_registered_renderables(
+        &mut self,
+        world: &World,
+        visuals: &mut VisualWorld,
+    ) {
+        let keys: Vec<ComponentId> = self.pending_toon_outline.keys().copied().collect();
+        for renderable_cid in keys {
+            let Some(handle) = world
+                .get_component_by_id_as::<RenderableComponent>(renderable_cid)
+                .and_then(RenderableComponent::get_handle)
+            else {
+                continue;
+            };
+            let Some(outline) = self.pending_toon_outline.remove(&renderable_cid) else {
+                continue;
+            };
+            let _ = visuals.update_toon_outline(handle, Some(outline.gpu_params()));
         }
     }
 
@@ -1013,6 +1059,71 @@ impl RenderableSystem {
         self.apply_pending_anime_updates_to_registered_renderables(world, visuals);
     }
 
+    pub fn register_toon_outline(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        let Some(component_value) = world
+            .get_component_by_id_as::<ToonOutlineComponent>(component)
+            .copied()
+        else {
+            return;
+        };
+        let source_component = component_value.source_component().unwrap_or(component);
+        let source_value = world
+            .get_component_by_id_as::<ToonOutlineComponent>(source_component)
+            .copied()
+            .unwrap_or(component_value);
+
+        if component != source_component {
+            if let Some(projection) =
+                world.get_component_by_id_as_mut::<ToonOutlineComponent>(component)
+            {
+                *projection = source_value.projected_from(source_component);
+            }
+        } else {
+            let projections: Vec<_> = world
+                .all_components()
+                .filter(|&id| {
+                    world
+                        .get_component_by_id_as::<ToonOutlineComponent>(id)
+                        .is_some_and(|candidate| {
+                            candidate.source_component() == Some(source_component)
+                        })
+                })
+                .collect();
+            for projection_id in projections {
+                if let Some(projection) =
+                    world.get_component_by_id_as_mut::<ToonOutlineComponent>(projection_id)
+                {
+                    *projection = source_value.projected_from(source_component);
+                }
+            }
+        }
+
+        let renderables: Vec<_> = world
+            .all_components()
+            .filter(|&id| {
+                world
+                    .get_component_by_id_as::<RenderableComponent>(id)
+                    .is_some()
+            })
+            .collect();
+        for renderable in renderables {
+            let Some((resolved_id, resolved)) = Self::resolve_toon_outline(world, renderable)
+            else {
+                continue;
+            };
+            let resolved_source = resolved.source_component().unwrap_or(resolved_id);
+            if resolved_source == source_component {
+                self.pending_toon_outline.insert(renderable, resolved);
+            }
+        }
+        self.apply_pending_outline_updates_to_registered_renderables(world, visuals);
+    }
+
     pub fn register_emissive(
         &mut self,
         world: &mut World,
@@ -1208,6 +1319,7 @@ impl RenderableSystem {
         let _ = self.pending_emissive.remove(&component);
         let _ = self.pending_quant_steps.remove(&component);
         let _ = self.pending_anime_shading.remove(&component);
+        let _ = self.pending_toon_outline.remove(&component);
 
         if let Some(r) = world.get_component_by_id_as_mut::<RenderableComponent>(component) {
             if let Some(handle) = r.handle.take() {
@@ -1298,6 +1410,9 @@ impl RenderableSystem {
         );
         if let Some((_, shading)) = Self::resolve_anime_shading(world, component) {
             self.pending_anime_shading.insert(component, shading);
+        }
+        if let Some((_, outline)) = Self::resolve_toon_outline(world, component) {
+            self.pending_toon_outline.insert(component, outline);
         }
 
         // Mark draw cache dirty only when we actually insert into visuals.
@@ -1616,6 +1731,7 @@ impl RenderableSystem {
         self.apply_pending_emissive_updates_to_registered_renderables(world, visuals);
         self.apply_pending_quant_updates_to_registered_renderables(world, visuals);
         self.apply_pending_anime_updates_to_registered_renderables(world, visuals);
+        self.apply_pending_outline_updates_to_registered_renderables(world, visuals);
 
         self.spawn_pending_normal_vis(world, render_assets, queue);
 

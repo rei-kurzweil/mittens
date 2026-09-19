@@ -114,7 +114,7 @@ mod vulkano_backend {
     };
     use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
     use vulkano::pipeline::graphics::multisample::MultisampleState;
-    use vulkano::pipeline::graphics::rasterization::RasterizationState;
+    use vulkano::pipeline::graphics::rasterization::{CullMode, RasterizationState};
     use vulkano::pipeline::graphics::subpass::PipelineRenderingCreateInfo;
     use vulkano::pipeline::graphics::subpass::PipelineSubpassType;
     use vulkano::pipeline::graphics::vertex_input::{
@@ -244,6 +244,27 @@ mod vulkano_backend {
         }
     }
 
+    mod toon_outline_vs {
+        vulkano_shaders::shader! {
+            ty: "vertex",
+            path: "assets/shaders/toon-outline.vert",
+        }
+    }
+
+    mod skinned_toon_outline_vs {
+        vulkano_shaders::shader! {
+            ty: "vertex",
+            path: "assets/shaders/cached-skinned-toon-outline.vert",
+        }
+    }
+
+    mod toon_outline_fs {
+        vulkano_shaders::shader! {
+            ty: "fragment",
+            path: "assets/shaders/toon-outline.frag",
+        }
+    }
+
     mod mesh_deformation_cs {
         vulkano_shaders::shader! {
             ty: "compute",
@@ -343,6 +364,11 @@ mod vulkano_backend {
         pub i_transmission: [f32; 4],
         #[format(R32_SFLOAT)]
         pub i_transmission_roughness: f32,
+
+        #[format(R32_SFLOAT)]
+        pub i_outline_width: f32,
+        #[format(R32G32B32A32_SFLOAT)]
+        pub i_outline_color: [f32; 4],
     }
 
     #[derive(BufferContents, Debug, Clone, Copy, Default)]
@@ -500,6 +526,9 @@ mod vulkano_backend {
         pub pipeline_rough_transmission_mesh: Arc<GraphicsPipeline>,
         pub pipeline_skinned_rough_transmission_mesh: Arc<GraphicsPipeline>,
 
+        pub pipeline_toon_outline: Arc<GraphicsPipeline>,
+        pub pipeline_skinned_toon_outline: Arc<GraphicsPipeline>,
+
         /// Writes stencil INCR (enter clip region). Color write off, depth test off.
         pub pipeline_stencil_incr: Arc<GraphicsPipeline>,
         /// Writes stencil DECR (exit clip region). Color write off, depth test off.
@@ -523,6 +552,9 @@ mod vulkano_backend {
         // --- Per-frame CPU work reduction ---
         cached_instance_buffer: Option<Subbuffer<[InstanceData]>>,
         cached_instance_count: usize,
+
+        cached_outline_instance_buffer: Option<Subbuffer<[InstanceData]>>,
+        cached_outline_instance_count: usize,
 
         cached_background_instance_buffer: Option<Subbuffer<[InstanceData]>>,
         cached_background_instance_count: usize,
@@ -996,6 +1028,9 @@ mod vulkano_backend {
             let grid_fs = grid_square_mesh_fs::load(device.clone())?;
 
             let skinned_vs = skinned_toon_mesh_vs::load(device.clone())?;
+            let outline_vs = toon_outline_vs::load(device.clone())?;
+            let skinned_outline_vs = skinned_toon_outline_vs::load(device.clone())?;
+            let outline_fs = toon_outline_fs::load(device.clone())?;
             let deformation_cs = mesh_deformation_cs::load(device.clone())?;
             let deformation_stage = PipelineShaderStageCreateInfo::new(
                 deformation_cs
@@ -1070,6 +1105,32 @@ mod vulkano_backend {
                 PipelineShaderStageCreateInfo::new(
                     fs.entry_point("main")
                         .ok_or("missing toon-mesh.frag entry point")?,
+                ),
+            ];
+
+            let outline_stages = vec![
+                PipelineShaderStageCreateInfo::new(
+                    outline_vs
+                        .entry_point("main")
+                        .ok_or("missing toon-outline.vert entry point")?,
+                ),
+                PipelineShaderStageCreateInfo::new(
+                    outline_fs
+                        .entry_point("main")
+                        .ok_or("missing toon-outline.frag entry point")?,
+                ),
+            ];
+
+            let skinned_outline_stages = vec![
+                PipelineShaderStageCreateInfo::new(
+                    skinned_outline_vs
+                        .entry_point("main")
+                        .ok_or("missing cached-skinned-toon-outline.vert entry point")?,
+                ),
+                PipelineShaderStageCreateInfo::new(
+                    outline_fs
+                        .entry_point("main")
+                        .ok_or("missing toon-outline.frag entry point")?,
                 ),
             ];
 
@@ -1331,6 +1392,24 @@ mod vulkano_backend {
                         offset: 112,
                         ..Default::default()
                     },
+                )
+                .attribute(
+                    14,
+                    VertexInputAttributeDescription {
+                        binding: 1,
+                        format: Format::R32_SFLOAT,
+                        offset: 116,
+                        ..Default::default()
+                    },
+                )
+                .attribute(
+                    15,
+                    VertexInputAttributeDescription {
+                        binding: 1,
+                        format: Format::R32G32B32A32_SFLOAT,
+                        offset: 120,
+                        ..Default::default()
+                    },
                 );
 
             // Skinned pipeline: add a separate per-vertex skinning buffer (binding=1),
@@ -1542,6 +1621,28 @@ mod vulkano_backend {
 
             let pipeline_toon_mesh =
                 GraphicsPipeline::new(device.clone(), None, pipeline_ci.clone())?;
+            let mut pipeline_ci_outline = pipeline_ci.clone();
+            pipeline_ci_outline.stages = outline_stages.into();
+            pipeline_ci_outline.rasterization_state = Some(RasterizationState {
+                cull_mode: CullMode::Front,
+                ..Default::default()
+            });
+            pipeline_ci_outline.color_blend_state = Some(ColorBlendState::with_attachment_states(
+                1,
+                ColorBlendAttachmentState {
+                    blend: None,
+                    color_write_enable: true,
+                    color_write_mask: ColorComponents::all(),
+                },
+            ));
+            let pipeline_toon_outline =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_outline.clone())?;
+            let mut pipeline_ci_skinned_outline = pipeline_ci_outline;
+            pipeline_ci_skinned_outline.stages = skinned_outline_stages.into();
+            pipeline_ci_skinned_outline.vertex_input_state =
+                Some(vertex_input_state_skinned.clone());
+            let pipeline_skinned_toon_outline =
+                GraphicsPipeline::new(device.clone(), None, pipeline_ci_skinned_outline)?;
             let mut pipeline_ci_anime = pipeline_ci.clone();
             pipeline_ci_anime.stages = anime_stages.clone().into();
             let pipeline_anime_mesh =
@@ -2252,6 +2353,9 @@ mod vulkano_backend {
                 pipeline_rough_transmission_mesh,
                 pipeline_skinned_rough_transmission_mesh,
 
+                pipeline_toon_outline,
+                pipeline_skinned_toon_outline,
+
                 pipeline_stencil_incr,
                 pipeline_stencil_decr,
                 pipeline_overlay_clipped,
@@ -2268,6 +2372,9 @@ mod vulkano_backend {
 
                 cached_instance_buffer: None,
                 cached_instance_count: 0,
+
+                cached_outline_instance_buffer: None,
+                cached_outline_instance_count: 0,
 
                 cached_background_instance_buffer: None,
                 cached_background_instance_count: 0,
@@ -3377,6 +3484,10 @@ mod vulkano_backend {
                     i_deformed_count: inst.deformed_count,
                     i_transmission: inst.transmission,
                     i_transmission_roughness: inst.transmission_roughness,
+                    i_outline_width: inst.toon_outline.map_or(0.0, |outline| outline.width),
+                    i_outline_color: inst
+                        .toon_outline
+                        .map_or([0.0, 0.0, 0.0, 0.0], |outline| outline.color),
                 }
             });
 
@@ -3880,6 +3991,10 @@ mod vulkano_backend {
                         i_deformed_count: inst.deformed_count,
                         i_transmission: inst.transmission,
                         i_transmission_roughness: inst.transmission_roughness,
+                        i_outline_width: inst.toon_outline.map_or(0.0, |outline| outline.width),
+                        i_outline_color: inst
+                            .toon_outline
+                            .map_or([0.0, 0.0, 0.0, 0.0], |outline| outline.color),
                     }
                 });
 
@@ -3926,6 +4041,10 @@ mod vulkano_backend {
                     i_deformed_count: inst.deformed_count,
                     i_transmission: inst.transmission,
                     i_transmission_roughness: inst.transmission_roughness,
+                    i_outline_width: inst.toon_outline.map_or(0.0, |outline| outline.width),
+                    i_outline_color: inst
+                        .toon_outline
+                        .map_or([0.0, 0.0, 0.0, 0.0], |outline| outline.color),
                 }
             });
 
@@ -4463,6 +4582,17 @@ mod vulkano_backend {
                 };
             let instance_count = opaque_instances.len();
 
+            // --- Toon outline pass ---
+            let owned_outline_stream = excluded_instance
+                .map(|excluded| visual_world.outline_stream_excluding(Some(excluded)));
+            let (outline_ops, outline_instances) =
+                if let Some((ops, instances)) = owned_outline_stream.as_ref() {
+                    (&ops[..], &instances[..])
+                } else {
+                    visual_world.outline_stream()
+                };
+            let outline_instance_count = outline_instances.len();
+
             // --- Background pass ---
             // Background instances are stored in their own draw order/batches.
             let background_instance_count = visual_world.background_order().len();
@@ -4569,6 +4699,20 @@ mod vulkano_backend {
                 self.cached_instance_count = instance_count;
                 self.cached_instance_buffer = Some(buf.clone());
                 buf
+            };
+
+            let need_outline_instance_buffer = instance_data_dirty
+                || draw_cache_rebuilt
+                || self.cached_outline_instance_buffer.is_none()
+                || self.cached_outline_instance_count != outline_instance_count;
+            let outline_instance_buffer = if !need_outline_instance_buffer {
+                self.cached_outline_instance_buffer.clone()
+            } else {
+                let buffer =
+                    self.build_instance_buffer_for_order_opt(&*visual_world, outline_instances)?;
+                self.cached_outline_instance_count = outline_instance_count;
+                self.cached_outline_instance_buffer = buffer.clone();
+                buffer
             };
 
             let need_background_instance_buffer = instance_data_dirty
@@ -5144,6 +5288,18 @@ mod vulkano_backend {
                         extent: [extent[0], extent[1]],
                         array_layers: 0..1,
                     }],
+                )?;
+            }
+
+            if let Some(outline_instance_buffer) = outline_instance_buffer.as_ref() {
+                self.record_outline_draws(
+                    &mut cbb,
+                    visual_world,
+                    &global_set_fg,
+                    &rig_set,
+                    outline_instance_buffer,
+                    outline_instance_count,
+                    Some((outline_ops, outline_instances)),
                 )?;
             }
 

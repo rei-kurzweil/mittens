@@ -9872,6 +9872,42 @@ fn mittens_corp_evaluates_with_bisket_player_and_car_mount_fixture() {
 }
 
 #[test]
+fn toon_outline_bisket_example_materializes_the_gltf_scoped_modifier() {
+    use crate::engine::ecs::component::{GLTFComponent, ToonOutlineComponent};
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut queue = CommandQueue::new();
+    let mut assets = RenderAssets::new();
+    let (_session, output) = RuntimeSpecSession::start_at_path(
+        include_str!("../../examples/toon-outline-bisket.mms"),
+        "examples/toon-outline-bisket.mms",
+        &mut world,
+        &mut rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .expect("toon outline Bisket retained runtime should start");
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+
+    let bisket = world
+        .all_components()
+        .find(|&id| {
+            world
+                .get_component_by_id_as::<GLTFComponent>(id)
+                .is_some_and(|gltf| gltf.uri == "assets/models/bisket.glb")
+        })
+        .expect("example should author the Bisket GLTF");
+    let outline = world
+        .children_of(bisket)
+        .iter()
+        .find_map(|&id| world.get_component_by_id_as::<ToonOutlineComponent>(id))
+        .expect("Bisket GLTF should own a ToonOutline modifier");
+    assert_eq!(outline.width, 0.012);
+    assert_eq!(outline.color, [0.015, 0.008, 0.025, 1.0]);
+}
+
+#[test]
 fn xr_grab_demo_evaluates_with_editor_settings_and_grabbable_playground() {
     use crate::engine::ecs::component::{
         ControllerXRComponent, EditorComponent, EditorPanel, EditorUIComponent, GLTFComponent,

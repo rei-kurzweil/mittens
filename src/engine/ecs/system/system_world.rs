@@ -1506,6 +1506,9 @@ impl SystemWorld {
             IntentValue::RegisterAnimeShading { component } => {
                 self.register_anime_shading(world, visuals, *component);
             }
+            IntentValue::RegisterToonOutline { component } => {
+                self.register_toon_outline(world, visuals, *component);
+            }
 
             IntentValue::RegisterTexture { component } => {
                 self.register_texture(world, visuals, *component);
@@ -2247,6 +2250,17 @@ impl SystemWorld {
     ) {
         self.renderable
             .register_anime_shading(world, visuals, component);
+    }
+
+    /// Register a ToonOutlineComponent and apply it to its target renderables.
+    pub fn register_toon_outline(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        component: ComponentId,
+    ) {
+        self.renderable
+            .register_toon_outline(world, visuals, component);
     }
 
     /// Register a CollisionComponent instance with the CollisionSystem.

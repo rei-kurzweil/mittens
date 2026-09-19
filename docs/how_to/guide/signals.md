@@ -949,6 +949,13 @@ Transform {}
 Transform {}
 ```
 
+#### `RegisterToonOutline`
+<!-- catalog:signal source="RegisterToonOutline" kind="intent" mms="component-lifecycle" -->
+**Intent — Indirectly emitted by component lifecycle.** Registers a `ToonOutline` modifier and propagates its effective parameters to matching renderables and source-linked GLTF projections. User MMS authors the component rather than this enum variant. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [MMS component registry](../../../src/scripting/component_registry.rs).
+```mms parse-only
+ToonOutline.width(0.012) {}
+```
+
 #### `RegisterGLTF`
 <!-- catalog:signal source="RegisterGLTF" kind="intent" mms="component-lifecycle" -->
 **Intent — Indirectly emitted by component lifecycle.** Requests the `RegisterGLTF` operation. Component creation, initialization, teardown, or topology work emits this intent indirectly; user MMS does not author the enum variant. It is scoped to the requesting/affected component and executes at an explicit drain point; `AtBeat` delays eligibility when the producer supplies timed metadata. Related components and systems are the targets named by the variant; see executor matching for exact effects. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [intent interpretation](../../../src/engine/ecs/signals/intent_executor.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [MMS component registry](../../../src/scripting/component_registry.rs).

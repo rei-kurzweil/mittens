@@ -500,6 +500,44 @@ impl VulkanoState {
         )
     }
 
+    pub(super) fn record_outline_draws(
+        &mut self,
+        cbb: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
+        visual_world: &VisualWorld,
+        global_set: &Arc<DescriptorSet>,
+        rig_set: &Arc<DescriptorSet>,
+        instance_buffer: &Subbuffer<[InstanceData]>,
+        instance_count: usize,
+        stream_override: Option<(&[crate::engine::graphics::visual_world::RenderOp], &[u32])>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if instance_count == 0 {
+            return Ok(());
+        }
+
+        let (ops, stream_instances) =
+            stream_override.unwrap_or_else(|| visual_world.outline_stream());
+        self.record_phase_stream_draws(
+            cbb,
+            visual_world,
+            global_set,
+            rig_set,
+            instance_buffer,
+            ops,
+            stream_instances,
+            self.pipeline_toon_outline.clone(),
+            self.pipeline_toon_outline.clone(),
+            self.pipeline_toon_outline.clone(),
+            self.pipeline_toon_outline.clone(),
+            self.pipeline_toon_outline.clone(),
+            self.pipeline_skinned_toon_outline.clone(),
+            self.pipeline_skinned_toon_outline.clone(),
+            self.pipeline_toon_outline.clone(),
+            self.pipeline_toon_outline.clone(),
+            self.pipeline_toon_outline.clone(),
+            self.pipeline_toon_outline.clone(),
+        )
+    }
+
     pub(super) fn record_cutout_draws(
         &mut self,
         cbb: &mut AutoCommandBufferBuilder<vulkano::command_buffer::PrimaryAutoCommandBuffer>,

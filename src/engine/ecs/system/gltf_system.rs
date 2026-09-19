@@ -1,7 +1,7 @@
 use crate::engine::ecs::component::{
     AnimeShadingComponent, ColorComponent, EmissiveComponent, GLTFComponent, MeshComponent,
     MorphTargetBindingComponent, RenderableComponent, SerializeComponent, TextureComponent,
-    TransformComponent,
+    ToonOutlineComponent, TransformComponent,
 };
 use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, PoseApplyMode, SignalEmitter, World,
@@ -324,6 +324,8 @@ impl GLTFSystem {
 
             let anime_shading =
                 crate::engine::ecs::system::RenderableSystem::resolve_anime_shading(world, cid);
+            let toon_outline =
+                crate::engine::ecs::system::RenderableSystem::resolve_toon_outline(world, cid);
 
             let Some(uri) = world
                 .get_component_by_id_as::<GLTFComponent>(cid)
@@ -405,6 +407,7 @@ impl GLTFSystem {
                     &mut pending_morph_bindings,
                     serialize_spawned_nodes,
                     anime_shading,
+                    toon_outline,
                 );
                 if let Some(root) = root {
                     world.init_component_tree(root, emit);
@@ -1056,6 +1059,7 @@ impl GLTFSystem {
         pending_morph_bindings: &mut Vec<(ComponentId, ComponentId, MorphTargetBindingComponent)>,
         serialize_spawned_nodes: bool,
         anime_shading: Option<(ComponentId, AnimeShadingComponent)>,
+        toon_outline: Option<(ComponentId, ToonOutlineComponent)>,
     ) -> Option<ComponentId> {
         let node_display_name = node
             .name()
@@ -1124,6 +1128,12 @@ impl GLTFSystem {
                 let _ = world.add_child(this_transform, renderable);
                 let _ = world.add_child(renderable, mesh_ref);
                 if let Some((source_component, modifier)) = anime_shading {
+                    let projection = world.add_component(modifier.projected_from(source_component));
+                    let serialize_off = world.add_component(SerializeComponent::off());
+                    let _ = world.add_child(renderable, projection);
+                    let _ = world.add_child(projection, serialize_off);
+                }
+                if let Some((source_component, modifier)) = toon_outline {
                     let projection = world.add_component(modifier.projected_from(source_component));
                     let serialize_off = world.add_component(SerializeComponent::off());
                     let _ = world.add_child(renderable, projection);
@@ -1237,6 +1247,7 @@ impl GLTFSystem {
                 pending_morph_bindings,
                 serialize_spawned_nodes,
                 anime_shading,
+                toon_outline,
             );
         }
 
@@ -1458,7 +1469,7 @@ mod tests {
     }
 
     #[test]
-    fn direct_anime_shading_is_projected_to_imported_visuals() {
+    fn direct_graphics_modifiers_are_projected_to_imported_visuals() {
         #[derive(Default)]
         struct TestMeshUploader(u32);
 
@@ -1483,8 +1494,14 @@ mod tests {
             .with_lit_threshold(0.63);
         let expected_params = modifier_value.gpu_params();
         let modifier = world.add_component(modifier_value);
+        let outline_value = ToonOutlineComponent::new()
+            .with_width(0.018)
+            .with_color([0.04, 0.02, 0.08, 1.0]);
+        let expected_outline = outline_value.gpu_params();
+        let outline = world.add_component(outline_value);
         world.add_child(anchor, gltf).unwrap();
         world.add_child(gltf, modifier).unwrap();
+        world.add_child(gltf, outline).unwrap();
 
         let mut system = GLTFSystem::new();
         system.register_component(gltf);
@@ -1518,6 +1535,13 @@ mod tests {
                 .expect("imported renderable should have an anime material projection");
             assert_eq!(projection.source_component(), Some(modifier));
             assert_eq!(projection.gpu_params(), expected_params);
+            let outline_projection = world
+                .children_of(*renderable)
+                .iter()
+                .find_map(|&child| world.get_component_by_id_as::<ToonOutlineComponent>(child))
+                .expect("imported renderable should have a toon outline projection");
+            assert_eq!(outline_projection.source_component(), Some(outline));
+            assert_eq!(outline_projection.gpu_params(), expected_outline);
         }
 
         for (_, intent) in &emitted.intents {
@@ -1531,6 +1555,13 @@ mod tests {
                 }
                 IntentValue::RegisterAnimeShading { component_id } => {
                     renderable_system.register_anime_shading(
+                        &mut world,
+                        &mut visuals,
+                        *component_id,
+                    );
+                }
+                IntentValue::RegisterToonOutline { component_id } => {
+                    renderable_system.register_toon_outline(
                         &mut world,
                         &mut visuals,
                         *component_id,
@@ -1561,6 +1592,7 @@ mod tests {
                 instance.renderable.material,
                 MaterialHandle::ANIME_MESH | MaterialHandle::SKINNED_ANIME_MESH
             ) && instance.anime_shading == expected_params
+                && instance.toon_outline == Some(expected_outline)
         }));
 
         let updated_modifier = modifier_value.with_rim_strength(0.71);
@@ -1575,13 +1607,33 @@ mod tests {
                 .iter()
                 .all(|instance| instance.anime_shading == updated_params)
         );
+        let updated_outline_value = outline_value
+            .with_width(0.026)
+            .with_color([0.08, 0.03, 0.12, 1.0]);
+        let updated_outline = updated_outline_value.gpu_params();
+        *world
+            .get_component_by_id_as_mut::<ToonOutlineComponent>(outline)
+            .unwrap() = updated_outline_value;
+        renderable_system.register_toon_outline(&mut world, &mut visuals, outline);
+        assert!(
+            visuals
+                .instances()
+                .iter()
+                .all(|instance| instance.toon_outline == Some(updated_outline))
+        );
         for renderable in renderables {
-            let projection = world
+            let anime_projection = world
                 .children_of(renderable)
                 .iter()
                 .find_map(|&child| world.get_component_by_id_as::<AnimeShadingComponent>(child))
                 .unwrap();
-            assert_eq!(projection.gpu_params(), updated_params);
+            assert_eq!(anime_projection.gpu_params(), updated_params);
+            let outline_projection = world
+                .children_of(renderable)
+                .iter()
+                .find_map(|&child| world.get_component_by_id_as::<ToonOutlineComponent>(child))
+                .unwrap();
+            assert_eq!(outline_projection.gpu_params(), updated_outline);
         }
     }
 

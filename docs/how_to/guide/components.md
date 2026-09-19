@@ -415,6 +415,19 @@ normalization and update source-linked GLTF primitives; getters return effective
 state immediately. These live methods reject a Toon target. Live color inputs
 remain planned.
 
+### `ToonOutlineComponent`
+<!-- catalog:component source="ToonOutlineComponent" mms="direct" names="ToonOutline" -->
+
+Adds a batched inverted-hull outline to a renderable or to descendant renderables. When attached to
+a `GLTF`, the importer projects the modifier onto each generated primitive. `width` is expressed in
+world-space engine units and `color` is RGBA. Sources: [Rust implementation](../../../src/engine/ecs/component/toon_outline.rs), [MMS registry](../../../src/scripting/component_registry.rs), and [implementation notes](../../task/toon-outline-component-and-shared-deformation.md).
+
+```mms parse-only
+ToonOutline.width(0.012).color([0.015, 0.008, 0.025, 1.0]) {
+    R.cube() {}
+}
+```
+
 ### `LightQuantizationComponent`
 <!-- catalog:component source="LightQuantizationComponent" mms="direct" names="LightQuantization" -->
 Carries light quantization state used when that engine feature is present in a component tree. Use it when a tree needs this state or behavior. Rendering systems; lifecycle registration/removal intents connect it to visual state.

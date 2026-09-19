@@ -102,6 +102,12 @@ pub struct AnimeShadingParams {
     pub controls: [f32; 4],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ToonOutlineParams {
+    pub color: [f32; 4],
+    pub width: f32,
+}
+
 impl AnimeShadingParams {
     pub fn key_bits(self) -> [u32; 12] {
         let values = [self.shade_color_strength, self.rim_color, self.controls];
@@ -221,6 +227,11 @@ pub struct VisualWorld {
     emissive_draw_order: Vec<u32>,
     emissive_draw_batches: Vec<DrawBatch>,
 
+    // Inverted-hull outlines, drawn after the foreground depth clear and before opaque content.
+    outline_order: Vec<u32>,
+    outline_stream: Vec<RenderOp>,
+    outline_stream_instances: Vec<u32>,
+
     // Alpha-to-coverage cutout draw data (rebuilt when dirty).
     cutout_order: Vec<u32>,
 
@@ -285,6 +296,7 @@ pub struct VisualInstance {
     pub texture_filtering: TextureFiltering,
     pub quant_steps: f32,
     pub anime_shading: AnimeShadingParams,
+    pub toon_outline: Option<ToonOutlineParams>,
     /// IOR, effective thickness, strength, and viewport-edge fade.
     pub transmission: [f32; 4],
     /// Rough-transmission filtering control. Non-rough material models ignore it.
@@ -394,6 +406,9 @@ impl Default for VisualWorld {
             draw_order: Vec::new(),
             emissive_draw_order: Vec::new(),
             emissive_draw_batches: Vec::new(),
+            outline_order: Vec::new(),
+            outline_stream: Vec::new(),
+            outline_stream_instances: Vec::new(),
 
             cutout_order: Vec::new(),
             emissive_cutout_order: Vec::new(),
@@ -753,7 +768,7 @@ impl VisualWorld {
 
 #[cfg(test)]
 mod tests {
-    use super::{RenderOp, VisualWorld};
+    use super::{RenderOp, ToonOutlineParams, VisualWorld};
     use crate::engine::ecs::ComponentId;
     use crate::engine::graphics::primitives::{
         GpuRenderable, MaterialHandle, MeshHandle, Transform,
@@ -1026,6 +1041,74 @@ mod tests {
                 .sum::<usize>();
             assert_eq!(drawn_instances, order.len());
         }
+    }
+
+    #[test]
+    fn outline_stream_reuses_visual_instances_and_separates_static_from_skinned_batches() {
+        let mut visuals = VisualWorld::default();
+        let static_handle = visuals.register(
+            cid(130),
+            dummy_renderable(),
+            Transform::default(),
+            [1.0; 4],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+        let skinned_handle = visuals.register(
+            cid(131),
+            GpuRenderable::new(MeshHandle::SQUARE, MaterialHandle::SKINNED_TOON_MESH),
+            Transform::default(),
+            [1.0; 4],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+        let outline = ToonOutlineParams {
+            color: [0.03, 0.02, 0.05, 1.0],
+            width: 0.015,
+        };
+        assert!(visuals.update_toon_outline(static_handle, Some(outline)));
+        assert!(visuals.update_toon_outline(skinned_handle, Some(outline)));
+
+        visuals.prepare_draw_cache();
+
+        let (ops, outline_instances) = visuals.outline_stream();
+        assert_eq!(outline_instances.len(), 2);
+        assert_eq!(visuals.outline_order(), outline_instances);
+        assert!(
+            outline_instances
+                .iter()
+                .all(|index| visuals.draw_order().contains(index))
+        );
+        assert_eq!(ops.len(), 2);
+        assert!(matches!(
+            ops[0],
+            RenderOp::DrawBatch(batch)
+                if batch.material == MaterialHandle::TOON_MESH
+                    && batch.mesh == MeshHandle::SQUARE
+                    && batch.count == 1
+        ));
+        assert!(matches!(
+            ops[1],
+            RenderOp::DrawBatch(batch)
+                if batch.material == MaterialHandle::SKINNED_TOON_MESH
+                    && batch.mesh == MeshHandle::SQUARE
+                    && batch.count == 1
+        ));
+        assert_eq!(visuals.instances().len(), 2);
     }
 
     #[test]
@@ -1825,6 +1908,68 @@ impl VisualWorld {
         }
     }
 
+    fn uses_cached_deformation(material: crate::engine::graphics::MaterialHandle) -> bool {
+        use crate::engine::graphics::MaterialHandle;
+        matches!(
+            material,
+            MaterialHandle::SKINNED_TOON_MESH
+                | MaterialHandle::SKINNED_EMISSIVE_TOON_MESH
+                | MaterialHandle::SKINNED_ANIME_MESH
+                | MaterialHandle::SKINNED_REFRACTION_MESH
+                | MaterialHandle::SKINNED_ROUGH_TRANSMISSION_MESH
+        )
+    }
+
+    fn build_outline_render_stream(
+        instances: &[VisualInstance],
+        order: &[u32],
+        ops: &mut Vec<RenderOp>,
+        stream_instances: &mut Vec<u32>,
+    ) {
+        use crate::engine::graphics::MaterialHandle;
+
+        ops.clear();
+        stream_instances.clear();
+        stream_instances.extend_from_slice(order);
+
+        let mut cursor = 0usize;
+        while cursor < order.len() {
+            let first = instances[order[cursor] as usize];
+            let material = if Self::uses_cached_deformation(first.renderable.material) {
+                MaterialHandle::SKINNED_TOON_MESH
+            } else {
+                MaterialHandle::TOON_MESH
+            };
+            let mesh = first.renderable.mesh;
+            let start = cursor;
+            cursor += 1;
+            while cursor < order.len() {
+                let instance = instances[order[cursor] as usize];
+                let candidate_material =
+                    if Self::uses_cached_deformation(instance.renderable.material) {
+                        MaterialHandle::SKINNED_TOON_MESH
+                    } else {
+                        MaterialHandle::TOON_MESH
+                    };
+                if candidate_material != material || instance.renderable.mesh != mesh {
+                    break;
+                }
+                cursor += 1;
+            }
+            ops.push(RenderOp::DrawBatch(DrawBatch {
+                material,
+                mesh,
+                texture: None,
+                texture_filtering: TextureFiltering::Linear,
+                quant_steps: 1.0,
+                anime_shading: AnimeShadingParams::default(),
+                stencil_ref: 0,
+                start,
+                count: cursor - start,
+            }));
+        }
+    }
+
     fn filtered_phase_order(
         &self,
         order: &[u32],
@@ -2267,6 +2412,9 @@ impl VisualWorld {
         self.draw_order.clear();
         self.emissive_draw_order.clear();
         self.emissive_draw_batches.clear();
+        self.outline_order.clear();
+        self.outline_stream.clear();
+        self.outline_stream_instances.clear();
         self.cutout_order.clear();
         self.emissive_cutout_order.clear();
         self.emissive_cutout_batches.clear();
@@ -2508,6 +2656,25 @@ impl VisualWorld {
 
     pub fn instances(&self) -> &[VisualInstance] {
         &self.instances
+    }
+
+    pub fn outline_order(&self) -> &[u32] {
+        &self.outline_order
+    }
+
+    pub fn outline_stream(&self) -> (&[RenderOp], &[u32]) {
+        (&self.outline_stream, &self.outline_stream_instances)
+    }
+
+    pub fn outline_stream_excluding(
+        &self,
+        excluded_instance: Option<InstanceHandle>,
+    ) -> (Vec<RenderOp>, Vec<u32>) {
+        let order = self.filtered_phase_order(&self.outline_order, excluded_instance);
+        let mut ops = Vec::new();
+        let mut instances = Vec::new();
+        Self::build_outline_render_stream(&self.instances, &order, &mut ops, &mut instances);
+        (ops, instances)
     }
 
     /// Reconciles persistent output ranges with the current skinned instances.
@@ -2859,6 +3026,7 @@ impl VisualWorld {
         self.background_occluded_lit_emissive_batches.clear();
         self.draw_order.clear();
         self.emissive_draw_order.clear();
+        self.outline_order.clear();
         self.cutout_order.clear();
         self.emissive_cutout_order.clear();
         self.refraction_order.clear();
@@ -2869,6 +3037,16 @@ impl VisualWorld {
         // Opaque pass: exclude anything that is transparent.
         for i in 0..self.instances.len() {
             let inst = &self.instances[i];
+            if inst.toon_outline.is_some_and(|outline| outline.width > 0.0)
+                && !inst.overlay
+                && !inst.background
+                && !inst.transparent_cutout
+                && !Self::is_transparent(inst)
+                && !inst.renderable.material.is_transmissive()
+                && inst.stencil_ref == 0
+            {
+                self.outline_order.push(i as u32);
+            }
             if inst.is_stencil_clip {
                 self.stencil_clip_order.push(i as u32);
             }
@@ -2895,6 +3073,20 @@ impl VisualWorld {
         self.stencil_clip_order
             .sort_by_key(|&i| self.instances[i as usize].stencil_ref);
         let has_stencil_clips = !self.stencil_clip_order.is_empty();
+
+        self.outline_order.sort_by_key(|&i| {
+            let instance = self.instances[i as usize];
+            (
+                u8::from(Self::uses_cached_deformation(instance.renderable.material)),
+                instance.renderable.mesh.0,
+            )
+        });
+        Self::build_outline_render_stream(
+            &self.instances,
+            &self.outline_order,
+            &mut self.outline_stream,
+            &mut self.outline_stream_instances,
+        );
 
         // Background pass: batch aggressively (order does not depend on view).
         // NOTE: Background instances are excluded from the normal opaque/transparent lists.
@@ -3224,6 +3416,7 @@ impl VisualWorld {
             texture_filtering: TextureFiltering::default(),
             quant_steps: sanitize_quant_steps(quant_steps),
             anime_shading: AnimeShadingParams::default(),
+            toon_outline: None,
             transmission: [1.5, 0.1, 1.0, 0.02],
             transmission_roughness: 0.0,
 
@@ -3275,6 +3468,23 @@ impl VisualWorld {
         } else {
             false
         }
+    }
+
+    pub fn update_toon_outline(
+        &mut self,
+        handle: InstanceHandle,
+        outline: Option<ToonOutlineParams>,
+    ) -> bool {
+        let Some(&idx) = self.handle_to_index.get(&handle) else {
+            return false;
+        };
+        if self.instances[idx].toon_outline == outline {
+            return true;
+        }
+        self.instances[idx].toon_outline = outline;
+        self.dirty_draw_cache = true;
+        self.dirty_instance_data = true;
+        true
     }
 
     pub fn remove(&mut self, handle: InstanceHandle) -> bool {
@@ -3549,6 +3759,7 @@ impl VisualWorld {
             let texture_filtering = self.instances[idx].texture_filtering;
             let quant_steps = self.instances[idx].quant_steps;
             let anime_shading = self.instances[idx].anime_shading;
+            let toon_outline = self.instances[idx].toon_outline;
             let transmission = self.instances[idx].transmission;
             let transmission_roughness = self.instances[idx].transmission_roughness;
             let bones_base = self.instances[idx].bones_base;
@@ -3574,6 +3785,7 @@ impl VisualWorld {
                 texture_filtering,
                 quant_steps,
                 anime_shading,
+                toon_outline,
                 transmission,
                 transmission_roughness,
                 bones_base,

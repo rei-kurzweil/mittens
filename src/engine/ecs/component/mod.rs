@@ -110,6 +110,7 @@ pub mod text_shadow;
 pub mod texture;
 pub mod texture_filtering;
 pub mod toggle;
+pub mod toon_outline;
 pub mod transform;
 pub mod transform_apply_inverse_local;
 pub mod transform_camera_specific;
@@ -257,6 +258,7 @@ pub use text_shadow::TextShadowComponent;
 pub use texture::{CatEngineTextureFormat, TextureComponent};
 pub use texture_filtering::TextureFilteringComponent;
 pub use toggle::ToggleComponent;
+pub use toon_outline::ToonOutlineComponent;
 pub use transform::TransformComponent;
 pub use transform_apply_inverse_local::TransformApplyInverseLocalComponent;
 pub use transform_camera_specific::{
