@@ -9,7 +9,8 @@ Status: proposed
 Add a `ToonOutline` graphics modifier that can style one renderable or all renderables below a
 wrapper. An outlined renderable produces two draws from one persistent visual instance:
 
-1. an outline draw, recorded as `RenderOp::DrawOutlineBatch` in a dedicated outline phase; and
+1. an outline draw, recorded as an ordinary `RenderOp::DrawBatch` in a dedicated outline phase;
+   and
 2. the ordinary foreground draw, recorded unchanged in its existing opaque, cutout, emissive,
    transmission, transparent, or overlay phase.
 
@@ -42,8 +43,8 @@ The requested design fits the current renderer without duplicate visual registra
 - Draw lists are built in `VisualWorld::prepare_draw_cache`, then recorded in a fixed order in
   `VulkanoRenderer`. A single instance can already be referenced by multiple render operations:
   stencil clip sources participate in `EnterClip`, an ordinary `DrawBatch`, and `ExitClip`. An
-  outline is the same kind of renderer-level reuse, expressed as `DrawOutlineBatch` plus the
-  instance's ordinary foreground operation.
+  outline is the same kind of renderer-level reuse, expressed as a `DrawBatch` in the outline
+  stream plus a `DrawBatch` in the instance's ordinary foreground stream.
 - `GLTFSystem` already resolves `ShadingComponent` at the GLTF scope, creates a non-serialized
   projected copy below every generated primitive renderable, and retains a source-component link
   so live source changes can fan out. Imported node transforms are attached to the nearest
@@ -178,8 +179,8 @@ CpuMeshHandle
   -> RenderAssets::gpu_mesh_handle (cached upload)
   -> one MeshHandle
        -> one VisualInstance
-            -> DrawOutlineBatch
-            -> ordinary DrawBatch
+            -> outline-stream DrawBatch
+            -> foreground-stream DrawBatch
 ```
 
 This is already supported by the renderer's mesh map. A test uploader should assert that enabling
@@ -204,8 +205,8 @@ one dirty VisualInstance
   -> one DeformationRange
   -> one GpuDeformationJob
   -> one cached position/normal range
-       -> DrawOutlineBatch cached-deformed vertex shader
-       -> ordinary DrawBatch cached-deformed vertex shader
+       -> outline-stream DrawBatch cached-deformed vertex shader
+       -> foreground-stream DrawBatch cached-deformed vertex shader
 ```
 
 `SkinnedMeshSystem`, morph updates, allocator ownership, and removal do not need outline-specific
@@ -219,28 +220,18 @@ and the renderer. `outline_order` contains the same instance indices used by exi
 streams; it is not another instance collection. Existing phase classification remains unchanged,
 and outline eligibility independently adds an instance index to the outline stream.
 
-Extend the existing operation vocabulary as assumed by this proposal:
+Do not extend `RenderOp`. The outline stream contains ordinary `RenderOp::DrawBatch` operations.
+The phase already tells the renderer that these batches are outlines; a distinct operation would
+duplicate that information. `EnterClip` and `ExitClip` are special operations because they mutate
+stencil state inside a stream, while an outline is an ordinary graphics batch recorded in a
+different phase.
 
-```rust
-pub enum RenderOp {
-    EnterClip {
-        instance_index: u32,
-        parent_ref: u8,
-        new_ref: u8,
-    },
-    DrawBatch(DrawBatch),
-    DrawOutlineBatch(OutlineDrawBatch),
-    ExitClip {
-        instance_index: u32,
-        ref_value: u8,
-    },
-}
-```
-
-`OutlineDrawBatch` addresses a range in the outline stream's instance-index array. It carries only
-batch-wide state such as static versus cached-deformed pipeline selection, mesh, and eventual
-stencil state. Color and width should remain per-instance data so differently styled outlines can
-still batch when the pipeline and mesh match.
+Outline batch construction cannot blindly copy the instance's foreground material. Build the
+outline stream with an outline-specific batch builder that retains the instance's mesh and chooses
+the static or cached-deformed outline material/pipeline. Dedicated internal material handles such
+as `TOON_OUTLINE` and `SKINNED_TOON_OUTLINE` fit the existing `DrawBatch.material` dispatch model.
+Color and width should remain per-instance data so differently styled outlines can still batch
+when the outline material and mesh match.
 
 For the normal scene domain, record:
 
@@ -267,7 +258,7 @@ explicit supported policy or an explicit first-slice exclusion.
 
 Mirrors and XR use the same `VisualWorld` render streams, so they should receive the outline phase
 automatically. Mirror source exclusion already identifies the one instance; outline-stream
-filtering must apply that same exclusion before recording `DrawOutlineBatch`.
+filtering must apply that same exclusion before recording its `DrawBatch` operations.
 
 ## GLTF projection
 
@@ -302,10 +293,10 @@ the engine's component modifier is projected onto spawned primitives.
 - `src/engine/ecs/system/renderable_system.rs`: resolve the effective outline and attach/update its
   parameters on the ordinary visual instance after the final mesh resolves.
 - `src/engine/graphics/visual_world.rs`: optional per-instance outline parameters,
-  `OutlineDrawBatch`, `RenderOp::DrawOutlineBatch`, and outline stream construction from ordinary
-  instance indices.
+  outline-specific `DrawBatch` construction, and outline stream construction from ordinary instance
+  indices without changing `RenderOp`.
 - `src/engine/graphics/vulkano_renderer.rs`: outline pipelines, per-phase instance buffer, and
-  `DrawOutlineBatch` recording before foreground.
+  outline-stream `DrawBatch` recording before foreground.
 - `assets/shaders/`: static and cached-deformed outline vertex stages plus flat fragment stage.
 
 ## First implementation slice
@@ -326,7 +317,7 @@ Implement one end-to-end slice with these boundaries:
 - Skinned/morphed content keeps one deformation range and one compute job; both operations read the
   instance's cached position/normal result.
 - One scene outline phase is recorded after the foreground depth clear and before opaque/cutout
-  foreground using `RenderOp::DrawOutlineBatch`.
+  foreground using ordinary `RenderOp::DrawBatch` operations.
 - Width is world-space, the shader uses inverted hulls, and the pipeline culls front faces.
 - Transform updates and removal need no duplication because both draws reference the same
   instance.
@@ -348,8 +339,8 @@ alpha-aware outline fragments, or overlay routing.
 - Defaults, finite/range validation, builders, serialization, and round-trip MMS.
 - Immediate-child and ancestor-wrapper resolution, nearest override, and equal-scope duplicate
   error.
-- Setting width to zero removes `DrawOutlineBatch` membership while preserving the instance and
-  its foreground membership.
+- Setting width to zero removes outline-stream membership while preserving the instance and its
+  foreground membership.
 
 ### GLTF tests
 
@@ -364,8 +355,9 @@ alpha-aware outline fragments, or overlay routing.
 - Registration creates one handle and one instance with optional outline parameters.
 - A counting uploader observes one upload before and after outline enablement.
 - The same instance index appears in `outline_order` and its ordinary foreground stream.
-- The outline stream contains `DrawOutlineBatch`, while existing streams retain `DrawBatch`.
-- Draw ordering records `DrawOutlineBatch` operations before opaque foreground operations.
+- The outline and foreground streams both contain ordinary `DrawBatch` operations, with their
+  respective outline and foreground materials.
+- Draw ordering records the outline stream before opaque foreground operations.
 - Model updates need one write and are observed by both draws; texture/emissive/material updates
   affect only ordinary pipeline selection.
 - Removing the renderable removes the one handle and both stream appearances.
@@ -398,8 +390,8 @@ render-test harness can do so; otherwise retain it as a manual Vulkan validation
 - An authored ordinary renderable or GLTF-scoped modifier visibly produces an inverted-hull
   outline and leaves the original foreground material unchanged.
 - Every outlined ECS renderable has exactly one `VisualInstance` and one `InstanceHandle`.
-- `DrawOutlineBatch` and the ordinary `DrawBatch` reference that same instance and GPU
-  `MeshHandle`; no outline geometry upload occurs.
+- The outline-stream and foreground-stream `DrawBatch` operations reference that same instance and
+  GPU `MeshHandle`; no outline geometry upload occurs.
 - An outlined skinned/morphed instance has one deformation allocation and one deformation compute
   job per dirty update, and both draws consume the same cached result.
 - Outlines for multiple primitives/characters batch in a dedicated phase before normal foreground
@@ -425,9 +417,9 @@ render-test harness can do so; otherwise retain it as a manual Vulkan validation
 
 ## Stop condition
 
-Stop the first slice when the static and animated/skinned example both render through
-`DrawOutlineBatch` in the dedicated outline phase, structural tests prove one visual instance, one
-mesh upload, and one deformation result per renderable, GLTF projection/live updates work, and
+Stop the first slice when the static and animated/skinned example both render through ordinary
+`DrawBatch` operations in the dedicated outline phase, structural tests prove one visual instance,
+one mesh upload, and one deformation result per renderable, GLTF projection/live updates work, and
 unsupported phase combinations are explicitly rejected or skipped. Do not broaden the slice to
 solve alpha silhouettes, pixel-constant width, overlay clipping, or general custom-material
 authoring.
