@@ -2,7 +2,7 @@
 
 Date: 2026-09-19
 
-Status: exclusion slice implemented; per-match settings proposed
+Status: exclusion and per-match settings slice implemented
 
 Parent task: [ToonOutline component and shared render instance](toon-outline-component-and-shared-deformation.md)
 
@@ -303,9 +303,9 @@ range.
 
 This feature must not add per-frame selector queries or per-rule draw lists.
 
-## Implemented exclusion slice
+## Implemented selector-policy slice
 
-The first vertical slice implements only the exclusion half of this proposal:
+The vertical selector-policy slice implements both exclusions and ordered per-target settings:
 
 1. `ToonOutlineComponent` stores ordered `Vec<ComponentRef>` exclusions.
 2. Repeatable `.excluding_renderables(component-ref-or-array)` calls append through
@@ -317,10 +317,12 @@ The first vertical slice implements only the exclusion half of this proposal:
    parameters or `None` to the existing visual instance. It does not query during frame rendering.
 6. The Bisket example excludes `[name='Face.001']`; the asset-backed test verifies that the target
    exists, owns renderables, and only those renderables receive `toon_outline = None`.
-
-This slice deliberately leaves `.for_matching(...)` and per-target width/color overrides for the
-next implementation step. It keeps projected components and source-policy fan-out compatible with
-that addition.
+7. Repeatable `.for_matching(component-ref, settings-table)` calls append typed rules containing
+   optional `width` and `color` fields. Empty tables, unknown fields, and invalid values are errors.
+8. Rules cascade in authored order, later matches win per field, and exclusion is applied last.
+9. The Bisket example gives `[name='Hair']` a narrower red outline through two repeated rules,
+   demonstrating that one rule can override width while a later rule independently overrides color.
+10. Query- and GUID-backed rules serialize and materialize without losing their authored order.
 
 ## Tests
 

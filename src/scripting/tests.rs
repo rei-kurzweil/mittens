@@ -6294,9 +6294,7 @@ fn roundtrip_opacity_default_multiple_layers_omitted() {
 
 #[test]
 fn roundtrip_toon_outline_preserves_ordered_matching_rules_and_references() {
-    use crate::engine::ecs::component::{
-        ComponentRef, ToonOutlineComponent, ToonOutlineOverride,
-    };
+    use crate::engine::ecs::component::{ComponentRef, ToonOutlineComponent, ToonOutlineOverride};
 
     let original = ToonOutlineComponent::new()
         .with_width(0.02)
@@ -6321,6 +6319,39 @@ fn roundtrip_toon_outline_preserves_ordered_matching_rules_and_references() {
         .get_component_by_id_as::<ToonOutlineComponent>(id)
         .expect("ToonOutline downcast");
     assert_eq!(got, &expected);
+}
+
+#[test]
+fn toon_outline_for_matching_rejects_invalid_settings_tables() {
+    for (source, expected) in [
+        (
+            "ToonOutline.for_matching(\"#hair\", {})",
+            "must contain width or color",
+        ),
+        (
+            "ToonOutline.for_matching(\"#hair\", { opacity = 0.5 })",
+            "unknown setting 'opacity'",
+        ),
+        (
+            "ToonOutline.for_matching(\"#hair\", { width = -0.1 })",
+            "width must be finite and non-negative",
+        ),
+        (
+            "ToonOutline.for_matching(\"#hair\", { color = [1.0, 0.5] })",
+            "expected array of 4",
+        ),
+    ] {
+        let mut world = World::default();
+        let mut rx = RxWorld::default();
+        let mut emit = CommandQueue::new();
+        let output =
+            MeowMeowRunner::eval_with_runtime_spec(source, &mut world, &mut rx, None, &mut emit);
+        assert!(
+            output.errors.iter().any(|error| error.contains(expected)),
+            "expected {expected:?} from {source:?}, got {:?}",
+            output.errors
+        );
+    }
 }
 
 #[test]
