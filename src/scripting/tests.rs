@@ -9873,7 +9873,7 @@ fn mittens_corp_evaluates_with_bisket_player_and_car_mount_fixture() {
 
 #[test]
 fn toon_outline_bisket_example_materializes_the_gltf_scoped_modifier() {
-    use crate::engine::ecs::component::{GLTFComponent, ToonOutlineComponent};
+    use crate::engine::ecs::component::{ComponentRef, GLTFComponent, ToonOutlineComponent};
 
     let mut world = World::default();
     let mut rx = RxWorld::default();
@@ -9905,6 +9905,10 @@ fn toon_outline_bisket_example_materializes_the_gltf_scoped_modifier() {
         .expect("Bisket GLTF should own a ToonOutline modifier");
     assert_eq!(outline.width, 0.012);
     assert_eq!(outline.color, [0.015, 0.008, 0.025, 1.0]);
+    assert_eq!(
+        outline.excluded_renderables,
+        vec![ComponentRef::Query("[name='Face.001']".to_string())]
+    );
 }
 
 #[test]

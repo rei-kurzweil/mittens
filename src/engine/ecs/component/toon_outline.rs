@@ -1,13 +1,17 @@
-use crate::engine::ecs::component::Component;
+use crate::engine::ecs::component::{Component, ComponentRef};
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter};
 
 /// Inverted-hull outline applied to a renderable or inherited by descendant renderables.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ToonOutlineComponent {
     pub color: [f32; 4],
     /// Hull expansion in world-space engine units.
     pub width: f32,
+    /// Renderables (or ancestors of renderables) that should not receive this outline.
+    pub excluded_renderables: Vec<ComponentRef>,
     source_component: Option<ComponentId>,
+    /// The imported asset instance that owns a projected copy of this modifier.
+    gltf_scope: Option<ComponentId>,
 }
 
 impl ToonOutlineComponent {
@@ -18,7 +22,9 @@ impl ToonOutlineComponent {
         Self {
             color: Self::DEFAULT_COLOR,
             width: Self::DEFAULT_WIDTH,
+            excluded_renderables: Vec::new(),
             source_component: None,
+            gltf_scope: None,
         }
     }
 
@@ -38,16 +44,33 @@ impl ToonOutlineComponent {
         self
     }
 
-    pub(crate) fn projected_from(mut self, source_component: ComponentId) -> Self {
-        self.source_component = Some(source_component);
+    pub fn with_excluded_renderables(
+        mut self,
+        excluded_renderables: impl IntoIterator<Item = ComponentRef>,
+    ) -> Self {
+        self.excluded_renderables.extend(excluded_renderables);
         self
     }
 
-    pub(crate) fn source_component(self) -> Option<ComponentId> {
+    pub(crate) fn projected_from(
+        mut self,
+        source_component: ComponentId,
+        gltf_scope: Option<ComponentId>,
+    ) -> Self {
+        self.source_component = Some(source_component);
+        self.gltf_scope = gltf_scope;
+        self
+    }
+
+    pub(crate) fn source_component(&self) -> Option<ComponentId> {
         self.source_component
     }
 
-    pub(crate) fn gpu_params(self) -> crate::engine::graphics::visual_world::ToonOutlineParams {
+    pub(crate) fn gltf_scope(&self) -> Option<ComponentId> {
+        self.gltf_scope
+    }
+
+    pub(crate) fn gpu_params(&self) -> crate::engine::graphics::visual_world::ToonOutlineParams {
         crate::engine::graphics::visual_world::ToonOutlineParams {
             color: self.color,
             width: self.width,
@@ -97,6 +120,20 @@ impl Component for ToonOutlineComponent {
             expression = expression.with_call(
                 "color",
                 vec![array(self.color.map(|value| num(value as f64)).to_vec())],
+            );
+        }
+        if !self.excluded_renderables.is_empty() {
+            expression = expression.with_call(
+                "excluding_renderables",
+                vec![array(
+                    self.excluded_renderables
+                        .iter()
+                        .map(|reference| match reference {
+                            ComponentRef::Guid(guid) => s(&format!("@uuid:{guid}")),
+                            ComponentRef::Query(query) => s(query),
+                        })
+                        .collect(),
+                )],
             );
         }
         expression

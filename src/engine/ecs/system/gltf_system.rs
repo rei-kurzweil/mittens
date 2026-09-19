@@ -407,7 +407,7 @@ impl GLTFSystem {
                     &mut pending_morph_bindings,
                     serialize_spawned_nodes,
                     anime_shading,
-                    toon_outline,
+                    toon_outline.as_ref(),
                 );
                 if let Some(root) = root {
                     world.init_component_tree(root, emit);
@@ -1059,7 +1059,7 @@ impl GLTFSystem {
         pending_morph_bindings: &mut Vec<(ComponentId, ComponentId, MorphTargetBindingComponent)>,
         serialize_spawned_nodes: bool,
         anime_shading: Option<(ComponentId, AnimeShadingComponent)>,
-        toon_outline: Option<(ComponentId, ToonOutlineComponent)>,
+        toon_outline: Option<&(ComponentId, ToonOutlineComponent)>,
     ) -> Option<ComponentId> {
         let node_display_name = node
             .name()
@@ -1134,7 +1134,11 @@ impl GLTFSystem {
                     let _ = world.add_child(projection, serialize_off);
                 }
                 if let Some((source_component, modifier)) = toon_outline {
-                    let projection = world.add_component(modifier.projected_from(source_component));
+                    let projection = world.add_component(
+                        modifier
+                            .clone()
+                            .projected_from(*source_component, Some(gltf_component)),
+                    );
                     let serialize_off = world.add_component(SerializeComponent::off());
                     let _ = world.add_child(renderable, projection);
                     let _ = world.add_child(projection, serialize_off);
@@ -1290,7 +1294,9 @@ impl LoadedGltf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::ecs::component::{PoseBoneEntry, PoseCapturePoseComponent, PoseTargetRef};
+    use crate::engine::ecs::component::{
+        ComponentRef, PoseBoneEntry, PoseCapturePoseComponent, PoseTargetRef,
+    };
     use crate::engine::ecs::system::{PoseCaptureSystem, RenderableSystem, SkinnedMeshSystem};
     use crate::engine::ecs::{EventSignal, IntentSignal};
 
@@ -1496,9 +1502,10 @@ mod tests {
         let modifier = world.add_component(modifier_value);
         let outline_value = ToonOutlineComponent::new()
             .with_width(0.018)
-            .with_color([0.04, 0.02, 0.08, 1.0]);
+            .with_color([0.04, 0.02, 0.08, 1.0])
+            .with_excluded_renderables([ComponentRef::Query("[name='Face.001']".to_string())]);
         let expected_outline = outline_value.gpu_params();
-        let outline = world.add_component(outline_value);
+        let outline = world.add_component(outline_value.clone());
         world.add_child(anchor, gltf).unwrap();
         world.add_child(gltf, modifier).unwrap();
         world.add_child(gltf, outline).unwrap();
@@ -1527,6 +1534,40 @@ mod tests {
             })
             .collect();
         assert!(!renderables.is_empty());
+        let face_targets: Vec<_> = world
+            .scripting_query_roots(gltf)
+            .into_iter()
+            .flat_map(|root| world.find_all_components(root, "[name='Face.001']"))
+            .collect();
+        assert!(
+            !face_targets.is_empty(),
+            "Bisket should contain the deliberately type-ambiguous Face.001 target"
+        );
+        let is_descendant_or_self = |ancestor: ComponentId, mut node: ComponentId| {
+            if ancestor == node {
+                return true;
+            }
+            while let Some(parent) = world.parent_of(node) {
+                if parent == ancestor {
+                    return true;
+                }
+                node = parent;
+            }
+            false
+        };
+        let excluded_renderables: HashSet<_> = renderables
+            .iter()
+            .copied()
+            .filter(|renderable| {
+                face_targets
+                    .iter()
+                    .any(|target| is_descendant_or_self(*target, *renderable))
+            })
+            .collect();
+        assert!(
+            !excluded_renderables.is_empty(),
+            "Face.001 should own at least one renderable"
+        );
         for renderable in &renderables {
             let projection = world
                 .children_of(*renderable)
@@ -1587,13 +1628,22 @@ mod tests {
         assert!(visuals.instances().iter().any(|instance| {
             instance.renderable.material == MaterialHandle::SKINNED_ANIME_MESH
         }));
-        assert!(visuals.instances().iter().all(|instance| {
-            matches!(
+        for renderable in &renderables {
+            let handle = world
+                .get_component_by_id_as::<RenderableComponent>(*renderable)
+                .and_then(RenderableComponent::get_handle)
+                .expect("imported renderable should have a visual instance");
+            let instance = visuals.instance(handle).unwrap();
+            assert!(matches!(
                 instance.renderable.material,
                 MaterialHandle::ANIME_MESH | MaterialHandle::SKINNED_ANIME_MESH
-            ) && instance.anime_shading == expected_params
-                && instance.toon_outline == Some(expected_outline)
-        }));
+            ));
+            assert_eq!(instance.anime_shading, expected_params);
+            assert_eq!(
+                instance.toon_outline,
+                (!excluded_renderables.contains(renderable)).then_some(expected_outline)
+            );
+        }
 
         let updated_modifier = modifier_value.with_rim_strength(0.71);
         let updated_params = updated_modifier.gpu_params();
@@ -1615,12 +1665,16 @@ mod tests {
             .get_component_by_id_as_mut::<ToonOutlineComponent>(outline)
             .unwrap() = updated_outline_value;
         renderable_system.register_toon_outline(&mut world, &mut visuals, outline);
-        assert!(
-            visuals
-                .instances()
-                .iter()
-                .all(|instance| instance.toon_outline == Some(updated_outline))
-        );
+        for renderable in &renderables {
+            let handle = world
+                .get_component_by_id_as::<RenderableComponent>(*renderable)
+                .and_then(RenderableComponent::get_handle)
+                .unwrap();
+            assert_eq!(
+                visuals.instance(handle).unwrap().toon_outline,
+                (!excluded_renderables.contains(renderable)).then_some(updated_outline)
+            );
+        }
         for renderable in renderables {
             let anime_projection = world
                 .children_of(renderable)

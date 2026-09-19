@@ -81,7 +81,7 @@ pub struct RenderableSystem {
     pending_anime_shading: HashMap<ComponentId, AnimeShadingComponent>,
 
     /// Per-renderable inverted-hull outline parameters.
-    pending_toon_outline: HashMap<ComponentId, ToonOutlineComponent>,
+    pending_toon_outline: HashMap<ComponentId, (ComponentId, ToonOutlineComponent)>,
 
     /// NormalVisualisationComponents waiting for their subtree to be spawned.
     ///
@@ -370,12 +370,12 @@ impl RenderableSystem {
         let mut current = Some(renderable);
         while let Some(node) = current {
             if let Some(outline) = world.get_component_by_id_as::<ToonOutlineComponent>(node) {
-                return Some((node, *outline));
+                return Some((node, outline.clone()));
             }
             if let Some(outline) = world.children_of(node).iter().find_map(|&child| {
                 world
                     .get_component_by_id_as::<ToonOutlineComponent>(child)
-                    .copied()
+                    .cloned()
                     .map(|outline| (child, outline))
             }) {
                 return Some(outline);
@@ -383,6 +383,81 @@ impl RenderableSystem {
             current = world.parent_of(node);
         }
         None
+    }
+
+    fn is_descendant_or_self(
+        world: &World,
+        ancestor: ComponentId,
+        mut component: ComponentId,
+    ) -> bool {
+        if ancestor == component {
+            return true;
+        }
+        while let Some(parent) = world.parent_of(component) {
+            if parent == ancestor {
+                return true;
+            }
+            component = parent;
+        }
+        false
+    }
+
+    fn subtree_contains_renderable(world: &World, root: ComponentId) -> bool {
+        let mut queue = VecDeque::from([root]);
+        while let Some(component) = queue.pop_front() {
+            if world
+                .get_component_by_id_as::<RenderableComponent>(component)
+                .is_some()
+            {
+                return true;
+            }
+            queue.extend(world.children_of(component).iter().copied());
+        }
+        false
+    }
+
+    fn toon_outline_excludes_renderable(
+        world: &World,
+        outline_component: ComponentId,
+        outline: &ToonOutlineComponent,
+        renderable: ComponentId,
+    ) -> bool {
+        use crate::engine::ecs::component::ComponentRef;
+
+        if outline.excluded_renderables.is_empty() {
+            return false;
+        }
+
+        let source = outline.source_component().unwrap_or(outline_component);
+        let scope = outline.gltf_scope().unwrap_or_else(|| {
+            if Self::subtree_contains_renderable(world, source) {
+                source
+            } else {
+                world.parent_of(source).unwrap_or(source)
+            }
+        });
+        let roots = world.scripting_query_roots(scope);
+
+        outline.excluded_renderables.iter().any(|reference| {
+            let targets = match reference {
+                ComponentRef::Guid(guid) => world
+                    .component_id_by_guid(*guid)
+                    .filter(|target| {
+                        roots
+                            .iter()
+                            .any(|root| Self::is_descendant_or_self(world, *root, *target))
+                    })
+                    .into_iter()
+                    .collect::<Vec<_>>(),
+                ComponentRef::Query(selector) => roots
+                    .iter()
+                    .flat_map(|root| world.find_all_components(*root, selector))
+                    .collect(),
+            };
+            targets
+                .into_iter()
+                .any(|target| Self::is_descendant_or_self(world, target, renderable))
+        })
     }
 
     fn resolve_effective_renderable_style(
@@ -586,10 +661,19 @@ impl RenderableSystem {
             else {
                 continue;
             };
-            let Some(outline) = self.pending_toon_outline.remove(&renderable_cid) else {
+            let Some((outline_component, outline)) =
+                self.pending_toon_outline.remove(&renderable_cid)
+            else {
                 continue;
             };
-            let _ = visuals.update_toon_outline(handle, Some(outline.gpu_params()));
+            let params = (!Self::toon_outline_excludes_renderable(
+                world,
+                outline_component,
+                &outline,
+                renderable_cid,
+            ))
+            .then(|| outline.gpu_params());
+            let _ = visuals.update_toon_outline(handle, params);
         }
     }
 
@@ -1067,21 +1151,24 @@ impl RenderableSystem {
     ) {
         let Some(component_value) = world
             .get_component_by_id_as::<ToonOutlineComponent>(component)
-            .copied()
+            .cloned()
         else {
             return;
         };
         let source_component = component_value.source_component().unwrap_or(component);
         let source_value = world
             .get_component_by_id_as::<ToonOutlineComponent>(source_component)
-            .copied()
-            .unwrap_or(component_value);
+            .cloned()
+            .unwrap_or_else(|| component_value.clone());
 
         if component != source_component {
             if let Some(projection) =
                 world.get_component_by_id_as_mut::<ToonOutlineComponent>(component)
             {
-                *projection = source_value.projected_from(source_component);
+                let gltf_scope = projection.gltf_scope();
+                *projection = source_value
+                    .clone()
+                    .projected_from(source_component, gltf_scope);
             }
         } else {
             let projections: Vec<_> = world
@@ -1095,10 +1182,15 @@ impl RenderableSystem {
                 })
                 .collect();
             for projection_id in projections {
+                let gltf_scope = world
+                    .get_component_by_id_as::<ToonOutlineComponent>(projection_id)
+                    .and_then(ToonOutlineComponent::gltf_scope);
                 if let Some(projection) =
                     world.get_component_by_id_as_mut::<ToonOutlineComponent>(projection_id)
                 {
-                    *projection = source_value.projected_from(source_component);
+                    *projection = source_value
+                        .clone()
+                        .projected_from(source_component, gltf_scope);
                 }
             }
         }
@@ -1118,7 +1210,8 @@ impl RenderableSystem {
             };
             let resolved_source = resolved.source_component().unwrap_or(resolved_id);
             if resolved_source == source_component {
-                self.pending_toon_outline.insert(renderable, resolved);
+                self.pending_toon_outline
+                    .insert(renderable, (resolved_id, resolved));
             }
         }
         self.apply_pending_outline_updates_to_registered_renderables(world, visuals);
@@ -1411,8 +1504,9 @@ impl RenderableSystem {
         if let Some((_, shading)) = Self::resolve_anime_shading(world, component) {
             self.pending_anime_shading.insert(component, shading);
         }
-        if let Some((_, outline)) = Self::resolve_toon_outline(world, component) {
-            self.pending_toon_outline.insert(component, outline);
+        if let Some((outline_component, outline)) = Self::resolve_toon_outline(world, component) {
+            self.pending_toon_outline
+                .insert(component, (outline_component, outline));
         }
 
         // Mark draw cache dirty only when we actually insert into visuals.

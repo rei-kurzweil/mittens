@@ -116,7 +116,11 @@ ED.active() {
                 name = "bisket_xr_driver"
                 let bisket_avatar = GLTF.new("assets/models/bisket.glb") {
                     bisket_anime_shading()
-                    ToonOutline.width(0.012).color([0.015, 0.008, 0.025, 1.0]) {}
+                    ToonOutline
+                        .width(0.012)
+                        .color([0.015, 0.008, 0.025, 1.0])
+                        .excluding_renderables(["[name='Face.001']"])
+                    {}
                     bisket_humanoid_bone_map()
                     MorphTargetMap.new()
                         .slot("left_eye_blink", "Fcl_EYE_Close_L")

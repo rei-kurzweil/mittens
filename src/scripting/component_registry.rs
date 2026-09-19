@@ -2795,12 +2795,19 @@ fn apply_call(
         };
         return Ok(());
     }
-    if let Some(component) = world.get_component_by_id_as_mut::<ToonOutlineComponent>(id) {
-        *component = match method {
+    if let Some(component) = world.get_component_by_id_as::<ToonOutlineComponent>(id) {
+        let component = component.clone();
+        let updated = match method {
             "width" => component.with_width(arg_f32(args, 0)?),
             "color" => component.with_color(arg_f32_arr::<4>(args, 0)?),
+            "excluding_renderables" => {
+                component.with_excluded_renderables(arg_component_ref_vec(world, args, 0)?)
+            }
             _ => return Err(format!("ToonOutline: unknown builder '{method}'")),
         };
+        *world
+            .get_component_by_id_as_mut::<ToonOutlineComponent>(id)
+            .unwrap() = updated;
         return Ok(());
     }
     if let Some(component) = world.get_component_by_id_as_mut::<RefractionComponent>(id) {

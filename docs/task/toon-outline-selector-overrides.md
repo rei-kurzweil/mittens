@@ -2,7 +2,7 @@
 
 Date: 2026-09-19
 
-Status: proposed follow-on
+Status: exclusion slice implemented; per-match settings proposed
 
 Parent task: [ToonOutline component and shared render instance](toon-outline-component-and-shared-deformation.md)
 
@@ -303,24 +303,24 @@ range.
 
 This feature must not add per-frame selector queries or per-rule draw lists.
 
-## First implementation slice
+## Implemented exclusion slice
 
-Implement one vertical slice:
+The first vertical slice implements only the exclusion half of this proposal:
 
-1. Add ordered exclusion references and match rules to `ToonOutlineComponent`.
-2. Register repeatable MMS builders:
-   - `excluding_renderables(component-ref-or-array)` using `arg_component_ref_vec`;
-   - `for_matching(component-ref, settings-table)` using `arg_component_ref`.
-3. Validate and normalize rule settings through the same helpers used by base `width` and `color`.
-4. Serialize exclusions and repeated rules without losing authored order.
-5. Resolve direct renderable and container-node matches for ordinary wrapper scopes.
-6. Resolve the same semantics inside one GLTF instance and recompute projected effective values.
-7. Keep excluded projections but set their visual outline value to `None`.
-8. Extend the Bisket outline example with at least one confirmed exclusion and two visibly
-   different matching settings.
+1. `ToonOutlineComponent` stores ordered `Vec<ComponentRef>` exclusions.
+2. Repeatable `.excluding_renderables(component-ref-or-array)` calls append through
+   `arg_component_ref_vec` and serialize back to MMS.
+3. Projected outline components retain the owning GLTF component as their query scope.
+4. A target can be a renderable or any ancestor/container of renderables. Type-ambiguous selectors
+   intentionally match all applicable components in the GLTF instance.
+5. Resolution happens when outline state is registered or refreshed, and writes either the base
+   parameters or `None` to the existing visual instance. It does not query during frame rendering.
+6. The Bisket example excludes `[name='Face.001']`; the asset-backed test verifies that the target
+   exists, owns renderables, and only those renderables receive `toon_outline = None`.
 
-The first slice does not need live mutation methods for individual rules. It must, however, keep
-the source/projection representation compatible with later whole-policy updates.
+This slice deliberately leaves `.for_matching(...)` and per-target width/color overrides for the
+next implementation step. It keeps projected components and source-policy fan-out compatible with
+that addition.
 
 ## Tests
 
