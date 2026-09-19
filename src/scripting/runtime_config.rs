@@ -1145,6 +1145,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     constructor_and_builder(component, "width", floats(1));
                     constructor_and_builder(component, "color", any(1));
                     constructor_and_builder(component, "excluding_renderables", any(1));
+                    constructor_and_builder(component, "for_matching", any(2));
                 }
                 "Bounds" => {
                     component.constructor("aabb", any(2));

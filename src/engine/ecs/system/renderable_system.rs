@@ -416,18 +416,11 @@ impl RenderableSystem {
         false
     }
 
-    fn toon_outline_excludes_renderable(
+    fn toon_outline_scope_roots(
         world: &World,
         outline_component: ComponentId,
         outline: &ToonOutlineComponent,
-        renderable: ComponentId,
-    ) -> bool {
-        use crate::engine::ecs::component::ComponentRef;
-
-        if outline.excluded_renderables.is_empty() {
-            return false;
-        }
-
+    ) -> Vec<ComponentId> {
         let source = outline.source_component().unwrap_or(outline_component);
         let scope = outline.gltf_scope().unwrap_or_else(|| {
             if Self::subtree_contains_renderable(world, source) {
@@ -436,28 +429,66 @@ impl RenderableSystem {
                 world.parent_of(source).unwrap_or(source)
             }
         });
-        let roots = world.scripting_query_roots(scope);
+        world.scripting_query_roots(scope)
+    }
 
-        outline.excluded_renderables.iter().any(|reference| {
-            let targets = match reference {
-                ComponentRef::Guid(guid) => world
-                    .component_id_by_guid(*guid)
-                    .filter(|target| {
-                        roots
-                            .iter()
-                            .any(|root| Self::is_descendant_or_self(world, *root, *target))
-                    })
-                    .into_iter()
-                    .collect::<Vec<_>>(),
-                ComponentRef::Query(selector) => roots
-                    .iter()
-                    .flat_map(|root| world.find_all_components(*root, selector))
-                    .collect(),
-            };
-            targets
+    fn outline_reference_matches_renderable(
+        world: &World,
+        roots: &[ComponentId],
+        reference: &crate::engine::ecs::component::ComponentRef,
+        renderable: ComponentId,
+    ) -> bool {
+        use crate::engine::ecs::component::ComponentRef;
+
+        let targets = match reference {
+            ComponentRef::Guid(guid) => world
+                .component_id_by_guid(*guid)
+                .filter(|target| {
+                    roots
+                        .iter()
+                        .any(|root| Self::is_descendant_or_self(world, *root, *target))
+                })
                 .into_iter()
-                .any(|target| Self::is_descendant_or_self(world, target, renderable))
-        })
+                .collect::<Vec<_>>(),
+            ComponentRef::Query(selector) => roots
+                .iter()
+                .flat_map(|root| world.find_all_components(*root, selector))
+                .collect(),
+        };
+        targets
+            .into_iter()
+            .any(|target| Self::is_descendant_or_self(world, target, renderable))
+    }
+
+    fn effective_toon_outline(
+        world: &World,
+        outline_component: ComponentId,
+        outline: &ToonOutlineComponent,
+        renderable: ComponentId,
+    ) -> Option<crate::engine::graphics::visual_world::ToonOutlineParams> {
+        let roots = Self::toon_outline_scope_roots(world, outline_component, outline);
+        let mut params = outline.gpu_params();
+
+        for rule in &outline.matching_rules {
+            if !Self::outline_reference_matches_renderable(world, &roots, &rule.target, renderable)
+            {
+                continue;
+            }
+            if let Some(width) = rule.settings.width {
+                params.width = width;
+            }
+            if let Some(color) = rule.settings.color {
+                params.color = color;
+            }
+        }
+
+        if outline.excluded_renderables.iter().any(|reference| {
+            Self::outline_reference_matches_renderable(world, &roots, reference, renderable)
+        }) {
+            None
+        } else {
+            Some(params)
+        }
     }
 
     fn resolve_effective_renderable_style(
@@ -666,13 +697,8 @@ impl RenderableSystem {
             else {
                 continue;
             };
-            let params = (!Self::toon_outline_excludes_renderable(
-                world,
-                outline_component,
-                &outline,
-                renderable_cid,
-            ))
-            .then(|| outline.gpu_params());
+            let params =
+                Self::effective_toon_outline(world, outline_component, &outline, renderable_cid);
             let _ = visuals.update_toon_outline(handle, params);
         }
     }

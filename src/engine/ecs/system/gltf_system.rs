@@ -1295,7 +1295,7 @@ impl LoadedGltf {
 mod tests {
     use super::*;
     use crate::engine::ecs::component::{
-        ComponentRef, PoseBoneEntry, PoseCapturePoseComponent, PoseTargetRef,
+        ComponentRef, PoseBoneEntry, PoseCapturePoseComponent, PoseTargetRef, ToonOutlineOverride,
     };
     use crate::engine::ecs::system::{PoseCaptureSystem, RenderableSystem, SkinnedMeshSystem};
     use crate::engine::ecs::{EventSignal, IntentSignal};
@@ -1503,6 +1503,20 @@ mod tests {
         let outline_value = ToonOutlineComponent::new()
             .with_width(0.018)
             .with_color([0.04, 0.02, 0.08, 1.0])
+            .with_matching_rule(
+                ComponentRef::Query("[name='Hair']".to_string()),
+                ToonOutlineOverride {
+                    width: Some(0.006),
+                    color: None,
+                },
+            )
+            .with_matching_rule(
+                ComponentRef::Query("[name='Hair']".to_string()),
+                ToonOutlineOverride {
+                    width: None,
+                    color: Some([0.12, 0.025, 0.05, 1.0]),
+                },
+            )
             .with_excluded_renderables([ComponentRef::Query("[name='Face.001']".to_string())]);
         let expected_outline = outline_value.gpu_params();
         let outline = world.add_component(outline_value.clone());
@@ -1567,6 +1581,24 @@ mod tests {
         assert!(
             !excluded_renderables.is_empty(),
             "Face.001 should own at least one renderable"
+        );
+        let matching_targets: Vec<_> = world
+            .scripting_query_roots(gltf)
+            .into_iter()
+            .flat_map(|root| world.find_all_components(root, "[name='Hair']"))
+            .collect();
+        let matched_renderables: HashSet<_> = renderables
+            .iter()
+            .copied()
+            .filter(|renderable| {
+                matching_targets
+                    .iter()
+                    .any(|target| is_descendant_or_self(*target, *renderable))
+            })
+            .collect();
+        assert!(
+            !matched_renderables.is_empty(),
+            "Hair should own at least one renderable"
         );
         for renderable in &renderables {
             let projection = world
@@ -1639,9 +1671,14 @@ mod tests {
                 MaterialHandle::ANIME_MESH | MaterialHandle::SKINNED_ANIME_MESH
             ));
             assert_eq!(instance.anime_shading, expected_params);
+            let mut expected_renderable_outline = expected_outline;
+            if matched_renderables.contains(renderable) {
+                expected_renderable_outline.width = 0.006;
+                expected_renderable_outline.color = [0.12, 0.025, 0.05, 1.0];
+            }
             assert_eq!(
                 instance.toon_outline,
-                (!excluded_renderables.contains(renderable)).then_some(expected_outline)
+                (!excluded_renderables.contains(renderable)).then_some(expected_renderable_outline)
             );
         }
 
@@ -1670,9 +1707,14 @@ mod tests {
                 .get_component_by_id_as::<RenderableComponent>(*renderable)
                 .and_then(RenderableComponent::get_handle)
                 .unwrap();
+            let mut expected_renderable_outline = updated_outline;
+            if matched_renderables.contains(renderable) {
+                expected_renderable_outline.width = 0.006;
+                expected_renderable_outline.color = [0.12, 0.025, 0.05, 1.0];
+            }
             assert_eq!(
                 visuals.instance(handle).unwrap().toon_outline,
-                (!excluded_renderables.contains(renderable)).then_some(updated_outline)
+                (!excluded_renderables.contains(renderable)).then_some(expected_renderable_outline)
             );
         }
         for renderable in renderables {

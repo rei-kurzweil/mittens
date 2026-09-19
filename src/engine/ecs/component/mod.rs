@@ -258,7 +258,7 @@ pub use text_shadow::TextShadowComponent;
 pub use texture::{CatEngineTextureFormat, TextureComponent};
 pub use texture_filtering::TextureFilteringComponent;
 pub use toggle::ToggleComponent;
-pub use toon_outline::ToonOutlineComponent;
+pub use toon_outline::{ToonOutlineComponent, ToonOutlineMatchRule, ToonOutlineOverride};
 pub use transform::TransformComponent;
 pub use transform_apply_inverse_local::TransformApplyInverseLocalComponent;
 pub use transform_camera_specific::{

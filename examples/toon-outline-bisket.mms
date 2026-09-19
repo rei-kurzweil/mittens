@@ -119,6 +119,10 @@ ED.active() {
                     ToonOutline
                         .width(0.012)
                         .color([0.015, 0.008, 0.025, 1.0])
+                        .for_matching("[name='Hair']", { width = 0.006 })
+                        .for_matching("[name='Hair']", {
+                            color = [0.12, 0.025, 0.05, 1.0]
+                        })
                         .excluding_renderables(["[name='Face.001']"])
                     {}
                     bisket_humanoid_bone_map()

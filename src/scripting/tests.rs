@@ -6293,6 +6293,37 @@ fn roundtrip_opacity_default_multiple_layers_omitted() {
 }
 
 #[test]
+fn roundtrip_toon_outline_preserves_ordered_matching_rules_and_references() {
+    use crate::engine::ecs::component::{
+        ComponentRef, ToonOutlineComponent, ToonOutlineOverride,
+    };
+
+    let original = ToonOutlineComponent::new()
+        .with_width(0.02)
+        .with_excluded_renderables([ComponentRef::Query("#eyes".into())])
+        .with_matching_rule(
+            ComponentRef::Query(".hair".into()),
+            ToonOutlineOverride {
+                width: Some(0.006),
+                color: None,
+            },
+        )
+        .with_matching_rule(
+            ComponentRef::Guid(uuid::Uuid::from_u128(42)),
+            ToonOutlineOverride {
+                width: None,
+                color: Some([0.1, 0.2, 0.3, 1.0]),
+            },
+        );
+    let expected = original.clone();
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<ToonOutlineComponent>(id)
+        .expect("ToonOutline downcast");
+    assert_eq!(got, &expected);
+}
+
+#[test]
 fn roundtrip_emissive_on() {
     use crate::engine::ecs::component::EmissiveComponent;
     let (world, id) = roundtrip_component(EmissiveComponent::on());
@@ -9873,7 +9904,10 @@ fn mittens_corp_evaluates_with_bisket_player_and_car_mount_fixture() {
 
 #[test]
 fn toon_outline_bisket_example_materializes_the_gltf_scoped_modifier() {
-    use crate::engine::ecs::component::{ComponentRef, GLTFComponent, ToonOutlineComponent};
+    use crate::engine::ecs::component::{
+        ComponentRef, GLTFComponent, ToonOutlineComponent, ToonOutlineMatchRule,
+        ToonOutlineOverride,
+    };
 
     let mut world = World::default();
     let mut rx = RxWorld::default();
@@ -9908,6 +9942,25 @@ fn toon_outline_bisket_example_materializes_the_gltf_scoped_modifier() {
     assert_eq!(
         outline.excluded_renderables,
         vec![ComponentRef::Query("[name='Face.001']".to_string())]
+    );
+    assert_eq!(
+        outline.matching_rules,
+        vec![
+            ToonOutlineMatchRule {
+                target: ComponentRef::Query("[name='Hair']".to_string()),
+                settings: ToonOutlineOverride {
+                    width: Some(0.006),
+                    color: None,
+                },
+            },
+            ToonOutlineMatchRule {
+                target: ComponentRef::Query("[name='Hair']".to_string()),
+                settings: ToonOutlineOverride {
+                    width: None,
+                    color: Some([0.12, 0.025, 0.05, 1.0]),
+                },
+            },
+        ]
     );
 }
 

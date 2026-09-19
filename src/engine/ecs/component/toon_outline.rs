@@ -1,6 +1,18 @@
 use crate::engine::ecs::component::{Component, ComponentRef};
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter};
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ToonOutlineOverride {
+    pub width: Option<f32>,
+    pub color: Option<[f32; 4]>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToonOutlineMatchRule {
+    pub target: ComponentRef,
+    pub settings: ToonOutlineOverride,
+}
+
 /// Inverted-hull outline applied to a renderable or inherited by descendant renderables.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToonOutlineComponent {
@@ -9,6 +21,8 @@ pub struct ToonOutlineComponent {
     pub width: f32,
     /// Renderables (or ancestors of renderables) that should not receive this outline.
     pub excluded_renderables: Vec<ComponentRef>,
+    /// Ordered per-target overrides. Later matching rules win per field.
+    pub matching_rules: Vec<ToonOutlineMatchRule>,
     source_component: Option<ComponentId>,
     /// The imported asset instance that owns a projected copy of this modifier.
     gltf_scope: Option<ComponentId>,
@@ -23,6 +37,7 @@ impl ToonOutlineComponent {
             color: Self::DEFAULT_COLOR,
             width: Self::DEFAULT_WIDTH,
             excluded_renderables: Vec::new(),
+            matching_rules: Vec::new(),
             source_component: None,
             gltf_scope: None,
         }
@@ -49,6 +64,16 @@ impl ToonOutlineComponent {
         excluded_renderables: impl IntoIterator<Item = ComponentRef>,
     ) -> Self {
         self.excluded_renderables.extend(excluded_renderables);
+        self
+    }
+
+    pub fn with_matching_rule(
+        mut self,
+        target: ComponentRef,
+        settings: ToonOutlineOverride,
+    ) -> Self {
+        self.matching_rules
+            .push(ToonOutlineMatchRule { target, settings });
         self
     }
 
@@ -135,6 +160,29 @@ impl Component for ToonOutlineComponent {
                         .collect(),
                 )],
             );
+        }
+        for rule in &self.matching_rules {
+            use crate::scripting::ast::{Expression, Ident, TableFieldValue};
+
+            let target = match &rule.target {
+                ComponentRef::Guid(guid) => s(&format!("@uuid:{guid}")),
+                ComponentRef::Query(query) => s(query),
+            };
+            let mut fields = Vec::new();
+            if let Some(width) = rule.settings.width {
+                fields.push(TableFieldValue {
+                    name: Ident("width".into()),
+                    value: num(width as f64),
+                });
+            }
+            if let Some(color) = rule.settings.color {
+                fields.push(TableFieldValue {
+                    name: Ident("color".into()),
+                    value: array(color.map(|value| num(value as f64)).to_vec()),
+                });
+            }
+            expression =
+                expression.with_call("for_matching", vec![target, Expression::Table(fields)]);
         }
         expression
     }

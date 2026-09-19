@@ -43,9 +43,9 @@ use crate::engine::ecs::component::{
     SpotLightComponent, SpringBoneComponent, SpringColliderComponent, SpringCollidersComponent,
     SpringJointComponent, StencilClipComponent, StyleComponent, TextAlign, TextComponent,
     TextInputComponent, TextShadowComponent, TextureComponent, TextureFilteringComponent,
-    ToggleComponent, ToonOutlineComponent, TransformApplyInverseLocalComponent,
-    TransformCameraSpecificComponent, TransformComponent, TransformDropComponent,
-    TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
+    ToggleComponent, ToonOutlineComponent, ToonOutlineOverride,
+    TransformApplyInverseLocalComponent, TransformCameraSpecificComponent, TransformComponent,
+    TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
     TransformGizmoCoordSpace, TransformGizmoPlane, TransformGizmoRotateComponent,
     TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
     TransformGizmoTranslatePlaneComponent, TransformMapRotationComponent,
@@ -1458,6 +1458,59 @@ pub(crate) fn arg_component_ref_vec(
     }
 }
 
+fn toon_outline_override_arg(args: &[Value], i: usize) -> Result<ToonOutlineOverride, String> {
+    let fields = match arg(args, i)? {
+        Value::Map(fields) => fields.clone(),
+        Value::Object(object) => object
+            .with_map(Clone::clone)
+            .ok_or_else(|| "ToonOutline.for_matching settings must be a table".to_string())?,
+        other => {
+            return Err(format!(
+                "ToonOutline.for_matching settings must be a table, got {other:?}"
+            ));
+        }
+    };
+
+    if fields.is_empty() {
+        return Err("ToonOutline.for_matching settings must contain width or color".to_string());
+    }
+    if let Some(key) = fields
+        .keys()
+        .find(|key| key.as_str() != "width" && key.as_str() != "color")
+    {
+        return Err(format!(
+            "ToonOutline.for_matching has unknown setting '{key}'"
+        ));
+    }
+
+    let width = fields
+        .get("width")
+        .map(val_as_f32)
+        .transpose()?
+        .map(|width| {
+            if width.is_finite() && width >= 0.0 {
+                Ok(width)
+            } else {
+                Err("ToonOutline.for_matching width must be finite and non-negative".to_string())
+            }
+        })
+        .transpose()?;
+    let color = fields
+        .get("color")
+        .map(val_as_f32_array::<4>)
+        .transpose()?
+        .map(|color| {
+            if color.iter().all(|value| value.is_finite()) {
+                Ok(color.map(|value| value.clamp(0.0, 1.0)))
+            } else {
+                Err("ToonOutline.for_matching color must contain finite channels".to_string())
+            }
+        })
+        .transpose()?;
+
+    Ok(ToonOutlineOverride { width, color })
+}
+
 /// Handle `guid = "8c4f3e72-..."` on a component CE. Replaces the freshly
 /// minted GUID with the authored one so `@uuid:` selectors saved against
 /// this component still resolve across save/load.
@@ -2803,6 +2856,10 @@ fn apply_call(
             "excluding_renderables" => {
                 component.with_excluded_renderables(arg_component_ref_vec(world, args, 0)?)
             }
+            "for_matching" => component.with_matching_rule(
+                arg_component_ref(world, args, 0)?,
+                toon_outline_override_arg(args, 1)?,
+            ),
             _ => return Err(format!("ToonOutline: unknown builder '{method}'")),
         };
         *world
