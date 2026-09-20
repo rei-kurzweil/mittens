@@ -64,6 +64,238 @@ fn constructive_solid_geometry_example_is_valid_mms_syntax() {
 }
 
 #[test]
+fn volume_normalization_example_evaluates_and_binds_avc_to_normalized_level() {
+    use crate::engine::ecs::component::{
+        AmplitudeComponent, AmplitudeSample, AmplitudeStatus, AvatarControlComponent,
+        ControllerHand, EmissiveComponent, InputXRGamepadComponent, VolumeNormalizationComponent,
+        XrButtonControl,
+    };
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+    let (mut session, output) = RuntimeSpecSession::start_at_path(
+        include_str!("../../examples/mittens-corp-volume-normalization.mms"),
+        "examples/mittens-corp-volume-normalization.mms",
+        &mut world,
+        &mut rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .expect("volume normalization scene should start");
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    assert!(world.all_components().any(|id| {
+        world
+            .get_component_by_id_as::<EmissiveComponent>(id)
+            .is_some_and(|glow| (glow.intensity - 2.4).abs() < f32::EPSILON)
+    }));
+
+    let raw = world
+        .all_components()
+        .find(|&id| {
+            world
+                .get_component_by_id_as::<AmplitudeComponent>(id)
+                .is_some()
+        })
+        .expect("scene should author the raw microphone level");
+    let normalizer = world
+        .all_components()
+        .find(|&id| {
+            world
+                .get_component_by_id_as::<VolumeNormalizationComponent>(id)
+                .is_some()
+        })
+        .expect("scene should author a normalized voice level");
+    let avc_id = world
+        .all_components()
+        .find(|&id| {
+            world
+                .get_component_by_id_as::<AvatarControlComponent>(id)
+                .is_some()
+        })
+        .expect("scene should author AVC");
+    let avc = world
+        .get_component_by_id_as::<AvatarControlComponent>(avc_id)
+        .unwrap();
+    let source = avc.mouth_open_amplitude.as_ref().unwrap();
+    assert_eq!(
+        crate::engine::ecs::component::resolve_component_ref(
+            &world,
+            source,
+            Some(avc_id),
+            crate::engine::ecs::component::QueryRootMode::WorldRoot
+        ),
+        Some(normalizer),
+    );
+
+    let response_panel = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("agc_response_panel"))
+        .expect("scene should author the AGC response info panel");
+    let response_anchor = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("agc_response_panel_anchor"))
+        .expect("response panel should have a movable outer anchor");
+    assert!(world.children_of(response_anchor).iter().any(|id| {
+        world
+            .get_component_by_id_as::<crate::engine::ecs::component::GrabbableComponent>(*id)
+            .is_some()
+    }));
+    assert_eq!(
+        world.find_component(response_anchor, "#agc_response_panel"),
+        Some(response_panel),
+        "the grabbable anchor should own the info-panel shell"
+    );
+    let title_bar = world
+        .find_component(response_panel, "#title_bar")
+        .expect("response panel should have an info-panel title bar");
+    assert!(world.children_of(title_bar).iter().any(|id| {
+        world
+            .get_component_by_id_as::<crate::engine::ecs::component::DraggableComponent>(*id)
+            .is_some()
+    }));
+    let graph_layers = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("agc_gain_history_layers"))
+        .expect("scene should author a fixed AGC history viewport");
+    let normalizer_component = world
+        .get_component_by_id_as_mut::<VolumeNormalizationComponent>(normalizer)
+        .unwrap();
+    normalizer_component.retained = AmplitudeSample {
+        generation: normalizer_component.generation,
+        sequence: 1,
+        timestamp_sec: 1.0,
+        valid_frames: 480,
+        rms: 0.08,
+        peak: 0.12,
+        status: AmplitudeStatus::Live,
+    };
+    normalizer_component.current_gain_db = 6.0;
+
+    let mut graph_replacements = 0;
+    let mut graph_removals = 0;
+    let mut saw_gain_readout = false;
+    for (frame_index, dt_sec) in std::iter::once(0.35_f32)
+        .chain(std::iter::repeat_n(0.1_f32, 48))
+        .enumerate()
+    {
+        rx.dispatch_event_handlers(
+            &mut world,
+            &Signal::event(ComponentId::default(), EventSignal::FrameTick { dt_sec }),
+        );
+        let graph_output =
+            session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+        assert!(graph_output.errors.is_empty(), "{:?}", graph_output.errors);
+        let frame_replacements = graph_output
+            .intents
+            .iter()
+            .filter(|intent| matches!(intent, IntentValue::Attach { parent, .. } if *parent == graph_layers))
+            .count();
+        if frame_index == 0 {
+            assert_eq!(
+                frame_replacements, 1,
+                "a long frame must not catch up with duplicate history views"
+            );
+        }
+        graph_replacements += frame_replacements;
+        graph_removals += graph_output
+            .intents
+            .iter()
+            .filter(|intent| matches!(intent, IntentValue::RemoveChild { parent, index } if *parent == graph_layers && *index == 0))
+            .count();
+        saw_gain_readout |= graph_output.intents.iter().any(|intent| {
+            matches!(intent, IntentValue::SetText { text, .. }
+                if text.starts_with("current applied gain: +6"))
+        });
+    }
+    assert_eq!(graph_replacements, 49);
+    assert_eq!(
+        graph_removals, 49,
+        "each sample should atomically replace the one fixed-width history view"
+    );
+    let graph_view = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("agc_gain_history_view"))
+        .expect("history viewport should retain its current view");
+    assert_eq!(
+        world.children_of(graph_view).len(),
+        12,
+        "the response graph should always contain exactly twelve explicit snapshot columns"
+    );
+    assert!(
+        saw_gain_readout,
+        "the response panel should visibly report the retained normalizer gain"
+    );
+    for bar in world.children_of(graph_view) {
+        let transform = world
+            .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(*bar)
+            .expect("history column transform");
+        let [x, y, _] = transform.transform.translation;
+        let [width, height, _] = transform.transform.scale;
+        assert!(
+            x - width / 2.0 >= -f32::EPSILON && x + width / 2.0 <= 28.7 * 0.08 + f32::EPSILON,
+            "history column must remain within the plot horizontally: x={x}, width={width}"
+        );
+        assert!(
+            y - height / 2.0 >= -10.0 * 0.08 - f32::EPSILON && y + height / 2.0 <= f32::EPSILON,
+            "history column must remain within the plot vertically: y={y}, height={height}"
+        );
+    }
+
+    let gamepad = world
+        .all_components()
+        .find(|&id| {
+            world
+                .get_component_by_id_as::<InputXRGamepadComponent>(id)
+                .is_some()
+        })
+        .expect("scene should author an XR gamepad");
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            gamepad,
+            EventSignal::XrButtonDown {
+                source_component: gamepad,
+                hand: ControllerHand::Right,
+                control: XrButtonControl::ButtonB,
+                value: 1.0,
+            },
+        ),
+    );
+    let callback_output =
+        session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+    assert!(
+        callback_output.errors.is_empty(),
+        "{:?}",
+        callback_output.errors
+    );
+    let avc = world
+        .get_component_by_id_as::<AvatarControlComponent>(avc_id)
+        .unwrap();
+    assert_eq!(
+        crate::engine::ecs::component::resolve_component_ref(
+            &world,
+            avc.mouth_open_amplitude.as_ref().unwrap(),
+            Some(avc_id),
+            crate::engine::ecs::component::QueryRootMode::WorldRoot
+        ),
+        Some(raw),
+    );
+    assert!(callback_output.intents.into_iter().any(|intent| {
+        matches!(
+            intent,
+            IntentValue::SetText { text, .. } if text == "AGC = OFF\nB: normalized AGC"
+        )
+    }));
+    assert!(world.all_components().any(|id| {
+        world
+            .get_component_by_id_as::<EmissiveComponent>(id)
+            .is_some_and(|glow| (glow.intensity - 0.28).abs() < f32::EPSILON)
+    }));
+}
+
+#[test]
 fn implicit_surface_example_is_valid_mms_syntax() {
     let path = repo_path("examples/implicit-surface.mms");
     let source = fs::read_to_string(&path).expect("read implicit-surface example");
@@ -3262,6 +3494,102 @@ fn global_frame_tick_handler_reads_translation_and_dt() {
         signal.intent.as_ref().map(|intent| &intent.value),
         Some(crate::engine::ecs::IntentValue::SetText { text, .. }) if text == "frame-observed"
     )));
+}
+
+#[test]
+fn live_frame_tick_can_use_audio_analysis_reads_as_numbers() {
+    use crate::engine::ecs::component::{
+        AmplitudeComponent, AmplitudeSample, AmplitudeStatus, VolumeNormalizationComponent,
+    };
+
+    let src = r##"
+        let microphone = AudioInput {}
+        let raw_level = Amplitude.rolling_window(0.080).from(microphone) {}
+        let voice_level = VolumeNormalization.from(raw_level) {}
+        raw_level
+        voice_level
+        Text { name = "audio_scalar_status" "waiting" }
+
+        on_global("FrameTick", fn(event) {
+            let raw = raw_level.value()
+            let normalized = voice_level.value()
+            let gain = voice_level.gain_db()
+            if raw + normalized + gain >= 0.0 {
+                query("#audio_scalar_status").set_text("audio-scalars-read")
+            }
+        })
+    "##;
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut queue = CommandQueue::new();
+    let (mut session, intents) =
+        RuntimeSpecSession::start(src, &mut world, &mut rx, None, &mut queue)
+            .expect("audio scalar fixture should start");
+    assert!(intents.is_empty());
+    assert!(rx.has_global_handlers(crate::engine::ecs::SignalKind::FrameTick));
+
+    let raw = world
+        .all_components()
+        .find(|&id| {
+            world
+                .get_component_by_id_as::<AmplitudeComponent>(id)
+                .is_some()
+        })
+        .expect("raw amplitude");
+    let normalizer = world
+        .all_components()
+        .find(|&id| {
+            world
+                .get_component_by_id_as::<VolumeNormalizationComponent>(id)
+                .is_some()
+        })
+        .expect("volume normalization");
+    let sample = AmplitudeSample {
+        generation: 0,
+        sequence: 1,
+        timestamp_sec: 1.0,
+        valid_frames: 480,
+        rms: 0.04,
+        peak: 0.08,
+        status: AmplitudeStatus::Live,
+    };
+    world
+        .get_component_by_id_as_mut::<AmplitudeComponent>(raw)
+        .unwrap()
+        .retained = sample;
+    let normalizer_component = world
+        .get_component_by_id_as_mut::<VolumeNormalizationComponent>(normalizer)
+        .unwrap();
+    normalizer_component.retained = AmplitudeSample {
+        rms: 0.08,
+        ..sample
+    };
+    normalizer_component.current_gain_db = 6.0;
+    assert_eq!(
+        crate::scripting::component_method_registry::invoke_component_method(
+            &mut world,
+            normalizer,
+            "VolumeNormalization",
+            "gain_db",
+            &[],
+            |_| {},
+        )
+        .unwrap(),
+        Value::Number(6.0)
+    );
+
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            ComponentId::default(),
+            EventSignal::FrameTick { dt_sec: 0.1 },
+        ),
+    );
+    let output = session.service_callbacks(&mut world, &mut rx, None, &mut queue);
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    assert!(output.intents.into_iter().any(|intent| {
+        matches!(intent, IntentValue::SetText { text, .. } if text == "audio-scalars-read")
+    }));
 }
 
 #[test]

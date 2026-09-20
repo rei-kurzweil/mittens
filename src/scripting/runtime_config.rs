@@ -1238,6 +1238,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         .constructor("rolling_window", floats(1))
                         .builder_call("from", any(1))
                         .builder_call("enabled", booleans(1));
+                    host_method(
+                        component,
+                        canonical,
+                        "value",
+                        method(vec![], mms::ValueType::F32),
+                    );
                 }
                 "VolumeNormalization" => {
                     component
@@ -1254,6 +1260,14 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         "peak_headroom",
                     ] {
                         component.builder_call(method, floats(1));
+                    }
+                    for name in ["value", "gain_db"] {
+                        host_method(
+                            component,
+                            canonical,
+                            name,
+                            method(vec![], mms::ValueType::F32),
+                        );
                     }
                 }
                 "AudioGain" => {
@@ -1356,6 +1370,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     }
                     constructor_and_builder(component, "head_motion_gaze_policy", strings(1));
                     constructor_and_builder(component, "mouth_open_from_amplitude", any(1));
+                    host_method(
+                        component,
+                        canonical,
+                        "mouth_open_from_amplitude",
+                        method(vec![mms::ValueType::Component], mms::ValueType::Null),
+                    );
                     no_arg_constructors_and_builders(
                         component,
                         &[

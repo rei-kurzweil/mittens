@@ -16,15 +16,282 @@ import { ambient_eye_saccades } from "../assets/components/animations/ambient_ey
 import { suspended_platform } from "../assets/components/platforms/suspended_platform.mms"
 import { display_car_xr } from "../assets/components/vehicles/display_car.mms"
 import { star_kawaii_background } from "../assets/components/backgrounds/star_kawaii_background.mms"
+import { info_panel, info_panel_body } from "../assets/components/ui/info_panel.mms"
 
 // Optional sources stay neutral when the runtime or hardware is unavailable.
 let microphone = AudioInput {}
 let raw_voice_level = Amplitude.rolling_window(0.080).from(microphone) {}
 
-// First integration seam: keep this scene runnable until VolumeNormalization
-// is registered in MMS, then replace the fallback with:
-// let voice_level = VolumeNormalization.from(raw_voice_level) {}
-let voice_level = raw_voice_level
+// Keep the raw observer alive for diagnostics; AVC consumes only this adaptive
+// analysis view. It changes no audible microphone samples.
+let voice_level = VolumeNormalization.from(raw_voice_level) {}
+let agc_mode = { enabled = true }
+
+// The response panel samples retained main-thread diagnostics rather than
+// audio callback data. The graph is rebuilt from twelve scalar snapshots at
+// 10 Hz, so the columns are always left-to-right chronological: oldest on the
+// left, newest on the right. It continues to show the normalizer's decision
+// even while B routes AVC to the raw meter.
+fn make_gain_history_bar(gain_db, index, visible, config) {
+    let magnitude = Math.abs(gain_db)
+    if magnitude > config.db_extent {
+        magnitude = config.db_extent
+    }
+    let bar_height = magnitude * config.units_per_db
+    if bar_height < config.min_bar_height {
+        bar_height = config.min_bar_height
+    }
+    let zero_y = -config.chart_height / 2.0
+    let is_boost = gain_db > 0.0
+    let is_cut = gain_db < 0.0
+    let y = zero_y
+    let colour = [0.95, 0.62, 0.16, 0.0]
+    if is_boost {
+        y = zero_y + bar_height / 2.0
+        colour = [0.20, 1.00, 0.48, 1.0]
+    } else if is_cut {
+        y = zero_y - bar_height / 2.0
+        colour = [1.00, 0.30, 0.18, 1.0]
+    } else if visible {
+        colour = [0.95, 0.62, 0.16, 1.0]
+    }
+
+    // Layout dimensions above are glyph/layout units, while authored child
+    // transforms are world units. The LayoutRoot does not scale these manual
+    // cube transforms for us, so convert both position and size explicitly.
+    let x_gu = config.column_width / 2.0 + index * (config.column_width + config.column_gap)
+    return T.position(x_gu * config.unit_scale, y * config.unit_scale, 0.03).scale(
+        config.column_width * config.unit_scale,
+        bar_height * config.unit_scale,
+        config.column_depth * config.unit_scale,
+    ) {
+        R.cube() { C.rgba(colour[0], colour[1], colour[2], colour[3]) }
+    }
+}
+
+fn make_gain_history_view(history, config) {
+    let first_visible = config.max_samples - history.sample_count
+    return T {
+        name = "agc_gain_history_view"
+        make_gain_history_bar(history.s0, 0.0, 0.0 >= first_visible, config)
+        make_gain_history_bar(history.s1, 1.0, 1.0 >= first_visible, config)
+        make_gain_history_bar(history.s2, 2.0, 2.0 >= first_visible, config)
+        make_gain_history_bar(history.s3, 3.0, 3.0 >= first_visible, config)
+        make_gain_history_bar(history.s4, 4.0, 4.0 >= first_visible, config)
+        make_gain_history_bar(history.s5, 5.0, 5.0 >= first_visible, config)
+        make_gain_history_bar(history.s6, 6.0, 6.0 >= first_visible, config)
+        make_gain_history_bar(history.s7, 7.0, 7.0 >= first_visible, config)
+        make_gain_history_bar(history.s8, 8.0, 8.0 >= first_visible, config)
+        make_gain_history_bar(history.s9, 9.0, 9.0 >= first_visible, config)
+        make_gain_history_bar(history.s10, 10.0, 10.0 >= first_visible, config)
+        make_gain_history_bar(history.s11, 11.0, 11.0 >= first_visible, config)
+    }
+}
+
+fn make_gain_history_content(history, config) {
+    return T {
+        name = "agc_response_content"
+        Style {
+            display("flex")
+            flex_direction("column")
+            width(100%)
+            row_gap(0.30)
+        }
+        Text {
+            name = "agc_current_gain_text"
+            "current applied gain: +0.0 dB"
+        }
+        T {
+            Style {
+                display("block")
+                width(100%)
+                color([0.75, 0.80, 0.90, 1.0])
+            }
+            Text { "12 samples / 1.2 s  ·  boost green  ·  cut red  ·  zero amber" }
+        }
+        T {
+            name = "agc_gain_history_plot"
+            Style {
+                display("block")
+                width(config.plot_width)
+                height(config.chart_height)
+                margin_top(0.20)
+                background_color([0.025, 0.030, 0.040, 0.96])
+                background_z(-0.01)
+            }
+            // All graph children use explicit local coordinates. They are not
+            // inline or inline-block layout items, so layout cannot move a
+            // historical column outside the plot.
+            T.position(
+                config.plot_width / 2.0 * config.unit_scale,
+                -config.chart_height / 2.0 * config.unit_scale,
+                0.01,
+            ).scale(
+                config.plot_width * config.unit_scale,
+                0.05 * config.unit_scale,
+                0.04 * config.unit_scale,
+            ) {
+                R.cube() { C.rgba(0.92, 0.70, 0.25, 0.72) }
+            }
+            T {
+                name = "agc_gain_history_layers"
+                make_gain_history_view(history, config)
+            }
+        }
+        T {
+            Style {
+                display("block")
+                width(100%)
+                color([0.70, 0.74, 0.82, 1.0])
+            }
+            Text { "oldest ←                         → newest" }
+        }
+    }
+}
+
+fn gain_db_label(gain_db) {
+    let rounded = Math.round(gain_db * 10.0) / 10.0
+    let sign = ""
+    if rounded >= 0.0 { sign = "+" }
+    return sign + rounded + " dB"
+}
+
+fn make_gain_history_graph(level, config) {
+    let history = {
+        elapsed_sec = 0.0
+        sample_count = 0.0
+        s0 = 0.0 s1 = 0.0 s2 = 0.0 s3 = 0.0 s4 = 0.0 s5 = 0.0
+        s6 = 0.0 s7 = 0.0 s8 = 0.0 s9 = 0.0 s10 = 0.0 s11 = 0.0
+    }
+    let initial_content = make_gain_history_content(history, config)
+    let response_panel = info_panel({
+        root_name = "agc_response_panel"
+        width_gu = config.panel_width
+        unit_scale = config.unit_scale
+        title = "AGC response"
+        background_color = [0.12, 0.20, 0.17, 0.98]
+        toggle_background_color = [0.18, 0.42, 0.30, 1.0]
+        content = initial_content
+    })
+    let graph = T.position(config.panel_x, config.panel_y, config.panel_z) {
+        name = "agc_response_panel_anchor"
+        // This marker makes the whole info panel grip-grabbable in XR. Its
+        // built-in title bar remains desktop-draggable.
+        Grabbable {}
+        response_panel
+    }
+    let body_mount = graph.query("#accordion_body_mount")
+
+    on_global("FrameTick", fn(event) {
+        history.elapsed_sec = history.elapsed_sec + event.dt_sec
+        let should_sample = false
+        if config.sample_period_sec == 0.0 {
+            should_sample = true
+        } else if history.elapsed_sec >= config.sample_period_sec {
+            // Retain only the remainder: a long frame produces one current
+            // visual sample, never a burst of duplicate historical columns.
+            history.elapsed_sec = history.elapsed_sec - config.sample_period_sec
+            should_sample = true
+        }
+        if should_sample {
+            let gain_db = level.gain_db()
+            history.s0 = history.s1
+            history.s1 = history.s2
+            history.s2 = history.s3
+            history.s3 = history.s4
+            history.s4 = history.s5
+            history.s5 = history.s6
+            history.s6 = history.s7
+            history.s7 = history.s8
+            history.s8 = history.s9
+            history.s9 = history.s10
+            history.s10 = history.s11
+            history.s11 = gain_db
+            if history.sample_count < config.max_samples {
+                history.sample_count = history.sample_count + 1.0
+            }
+            let history_layers = graph.query("#agc_gain_history_layers")
+            if history_layers {
+                // Replace one contained view rather than adding individual
+                // layout-flow children. This preserves a true, fixed-width
+                // twelve-snapshot history even after it fills.
+                history_layers.remove_child(0)
+                history_layers.attach(make_gain_history_view(history, config))
+            }
+            let current_gain_text = graph.query("#agc_current_gain_text")
+            if current_gain_text {
+                current_gain_text.set_text("current applied gain: " + gain_db_label(gain_db))
+            }
+        }
+    })
+
+    on(graph, "DataEvent", fn(event) {
+        if event == "AccordionRestoreRequested" {
+            // The info-panel asset intentionally removes its body while
+            // minimized. Recreate this dynamic body and resume sampling on
+            // its next normal 100 ms update.
+            body_mount.attach(info_panel_body({
+                content = make_gain_history_content(history, config)
+            }))
+        }
+    })
+
+    return graph
+}
+
+let agc_gain_graph = make_gain_history_graph(voice_level, {
+    sample_period_sec = 0.100
+    max_samples = 12.0
+    db_extent = 24.0
+    column_width = 2.05
+    column_gap = 0.34
+    column_depth = 0.22
+    // ±24 dB must fit within the 10-unit plot height around its zero line.
+    units_per_db = 0.20
+    min_bar_height = 0.12
+    chart_height = 10.0
+    plot_width = 28.7
+    panel_width = 32.0
+    unit_scale = 0.08
+    panel_x = -1.30
+    panel_y = 2.05
+    panel_z = 1.35
+})
+agc_gain_graph
+
+// A deliberately authored layout panel, rather than a default/debug label:
+// black backing makes the amber readout legible in both the studio and mirror.
+// B on the XR gamepad changes this label and the actual AVC source together.
+let agc_status_glow = EM.on() { intensity(2.4) }
+let agc_status_text = Text {
+    name = "agc_status_text"
+    "AGC = ON\nB: raw amplitude"
+    C.rgba(1.0, 0.56, 0.10, 1.0)
+    agc_status_glow
+}
+let agc_status_panel = T.position(0.0, 2.35, 1.35) {
+    name = "agc_status_panel"
+    LayoutRoot {
+        available_width(22.0)
+        unit_scale(0.08)
+        T {
+            name = "agc_status_backing"
+            Style {
+                display("flex")
+                width(22.0)
+                height(6.5)
+                align_items("center")
+                justify_content("center")
+                background_color([0.0, 0.0, 0.0, 0.96])
+                background_z(-0.02)
+                text_align("center")
+                color([1.0, 0.56, 0.10, 1.0])
+            }
+            T.position(0.0, 0.0, 0.03) { agc_status_text }
+        }
+    }
+}
+agc_status_panel
 
 RendererSettings { window_size(1440, 810) }
 BGC.rgba(0.055, 0.055, 0.060, 1.0)
@@ -206,6 +473,24 @@ ED.active() {
                 }
                 bisket_avatar_control
 
+                on(vehicle_controls, "XrButtonDown", fn(event) {
+                    if event.control == "ButtonB" {
+                        if agc_mode.enabled {
+                            // Keep normalization live for its diagnostics, but
+                            // route AVC to the raw observer for A/B tuning.
+                            agc_mode.enabled = false
+                            bisket_avatar_control.mouth_open_from_amplitude(raw_voice_level)
+                            agc_status_text.set_text("AGC = OFF\nB: normalized AGC")
+                            agc_status_glow.set_intensity(0.28)
+                        } else {
+                            agc_mode.enabled = true
+                            bisket_avatar_control.mouth_open_from_amplitude(voice_level)
+                            agc_status_text.set_text("AGC = ON\nB: raw amplitude")
+                            agc_status_glow.set_intensity(2.4)
+                        }
+                    }
+                })
+
                 // The explicit Bisket humanoid map above declares these two
                 // skin-joint targets. Query only this GLTF instance after it
                 // finishes importing, so another avatar cannot be animated.
@@ -245,4 +530,3 @@ T.position(1.25, 2.8, -1.5) {
 }
 
 XR.on()
-

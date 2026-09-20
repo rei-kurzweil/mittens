@@ -1,8 +1,9 @@
 use crate::engine::ecs::component::{
-    AnimationComponent, AnimationState, AnimationStepDirection, AudioBandPassFilterComponent,
-    AudioInputComponent, BoneRestPoseComponent, EmissiveComponent, InputComponent,
-    InputXRGamepadComponent, RayCastComponent, ShadingComponent, ShadingModel, SliderComponent,
-    TextComponent, TransformComponent, TransitionComponent,
+    AmplitudeComponent, AnimationComponent, AnimationState, AnimationStepDirection,
+    AudioBandPassFilterComponent, AudioInputComponent, BoneRestPoseComponent, EmissiveComponent,
+    InputComponent, InputXRGamepadComponent, RayCastComponent, ShadingComponent, ShadingModel,
+    SliderComponent, TextComponent, TransformComponent, TransitionComponent,
+    VolumeNormalizationComponent,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, PoseApplyMode, World};
 use crate::engine::transform::TransformSpace;
@@ -49,6 +50,11 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                 method,
                 "value" | "set_value" | "sync_value" | "track_mount" | "thumb_mount"
             ))
+        || (matches!(component_type, "Amplitude" | "amplitude") && method == "value")
+        || (matches!(
+            component_type,
+            "VolumeNormalization" | "volume_normalization"
+        ) && matches!(method, "value" | "gain_db"))
         || (matches!(component_type, "Raycast" | "RayCast" | "raycast")
             && method == "request_raycast")
         || (matches!(
@@ -67,6 +73,8 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                 | "InputVrGamepad"
                 | "input_vr_gamepad"
         ) && matches!(method, "enable" | "disable"))
+        || (matches!(component_type, "AvatarControl" | "AVC" | "avatar_control")
+            && method == "mouth_open_from_amplitude")
         || (matches!(component_type, "HttpClient" | "http_client")
             && matches!(method, "get" | "post" | "put" | "delete"))
         || (matches!(component_type, "HttpServer" | "http_server")
@@ -82,6 +90,55 @@ pub(crate) fn invoke_component_method(
     mut emit_intent: impl FnMut(IntentValue),
 ) -> Result<Value, String> {
     match (component_type, method) {
+        ("Amplitude" | "amplitude", "value") => {
+            if !args.is_empty() {
+                return Err(format!("value(): expected no arguments, got {args:?}"));
+            }
+            world
+                .get_component_by_id_as::<AmplitudeComponent>(id)
+                .ok_or_else(|| "value(): not an AmplitudeComponent".to_string())?;
+            let diagnostics = crate::engine::ecs::component::read_level_diagnostics(world, id)
+                .expect("confirmed AmplitudeComponent has diagnostics");
+            Ok(Value::Number(diagnostics.rms as f64))
+        }
+        ("VolumeNormalization" | "volume_normalization", "value" | "gain_db") => {
+            if !args.is_empty() {
+                return Err(format!("{method}(): expected no arguments, got {args:?}"));
+            }
+            world
+                .get_component_by_id_as::<VolumeNormalizationComponent>(id)
+                .ok_or_else(|| format!("{method}(): not a VolumeNormalizationComponent"))?;
+            let diagnostics = crate::engine::ecs::component::read_level_diagnostics(world, id)
+                .expect("confirmed VolumeNormalizationComponent has diagnostics");
+            let value = if method == "value" {
+                diagnostics.rms
+            } else {
+                diagnostics
+                    .gain_db
+                    .expect("normalization diagnostics always include gain")
+            };
+            Ok(Value::Number(value as f64))
+        }
+        ("AvatarControl" | "AVC" | "avatar_control", "mouth_open_from_amplitude") => {
+            let source = crate::scripting::component_registry::arg_component_ref(world, args, 0)?;
+            if let Some(source_id) = crate::engine::ecs::component::resolve_component_ref(
+                world,
+                &source,
+                Some(id),
+                crate::engine::ecs::component::QueryRootMode::WorldRoot,
+            ) && !crate::engine::ecs::component::is_level_provider(world, source_id)
+            {
+                return Err(
+                    "AvatarControl.mouth_open_from_amplitude requires an Amplitude or VolumeNormalization component"
+                        .into(),
+                );
+            }
+            let avc = world
+                .get_component_by_id_as_mut::<crate::engine::ecs::component::AvatarControlComponent>(id)
+                .ok_or_else(|| "mouth_open_from_amplitude(): not an AvatarControlComponent".to_string())?;
+            *avc = avc.clone().with_mouth_open_from_amplitude(source);
+            Ok(Value::Null)
+        }
         ("T" | "Transform" | "transform", "local_bounds") => {
             if !args.is_empty() {
                 return Err("local_bounds(): expected no arguments".into());
@@ -838,8 +895,98 @@ fn request_id_from_value(value: &Value) -> Result<u64, String> {
 mod tests {
     use super::*;
     use crate::engine::ecs::component::{
-        AudioBandPassFilterComponent, ColorComponent, RayCastComponent, TransformComponent,
+        AmplitudeSample, AmplitudeStatus, AudioBandPassFilterComponent, ColorComponent,
+        ComponentRef, RayCastComponent, TransformComponent, VolumeNormalizationComponent,
     };
+
+    #[test]
+    fn audio_analysis_scalar_reads_are_finite_and_expose_only_normalizer_gain() {
+        let mut world = World::default();
+        let raw_id = world.add_component(AmplitudeComponent::rolling_window(0.08).unwrap());
+        let normalization_id = world.add_component(VolumeNormalizationComponent::from(
+            ComponentRef::Query("#raw".into()),
+        ));
+
+        let live = AmplitudeSample {
+            generation: 0,
+            sequence: 1,
+            timestamp_sec: 1.0,
+            valid_frames: 480,
+            rms: 0.04,
+            peak: 0.10,
+            status: AmplitudeStatus::Live,
+        };
+        world
+            .get_component_by_id_as_mut::<AmplitudeComponent>(raw_id)
+            .unwrap()
+            .retained = live;
+        let normalized = world
+            .get_component_by_id_as_mut::<VolumeNormalizationComponent>(normalization_id)
+            .unwrap();
+        normalized.retained = AmplitudeSample { rms: 0.08, ..live };
+        normalized.current_gain_db = 6.0;
+
+        for (id, ty, method, expected) in [
+            (raw_id, "Amplitude", "value", 0.04),
+            (normalization_id, "VolumeNormalization", "value", 0.08),
+            (normalization_id, "VolumeNormalization", "gain_db", 6.0),
+        ] {
+            let Value::Number(value) =
+                invoke_component_method(&mut world, id, ty, method, &[], |_| {}).unwrap()
+            else {
+                panic!("{ty}.{method}() should return a number");
+            };
+            assert!(
+                (value - expected).abs() < 1e-6,
+                "{ty}.{method}() returned {value}"
+            );
+        }
+
+        for status in [
+            AmplitudeStatus::Pending,
+            AmplitudeStatus::Neutral,
+            AmplitudeStatus::Invalid,
+        ] {
+            let sample_for = |generation| match status {
+                AmplitudeStatus::Pending => AmplitudeSample::pending(generation),
+                AmplitudeStatus::Neutral | AmplitudeStatus::Invalid => {
+                    AmplitudeSample::neutral(generation, status)
+                }
+                AmplitudeStatus::Live => unreachable!(),
+            };
+            let raw = world
+                .get_component_by_id_as_mut::<AmplitudeComponent>(raw_id)
+                .unwrap();
+            raw.retained = sample_for(raw.generation);
+            let normalization = world
+                .get_component_by_id_as_mut::<VolumeNormalizationComponent>(normalization_id)
+                .unwrap();
+            normalization.retained = sample_for(normalization.generation);
+            normalization.current_gain_db = f32::NAN;
+
+            for (id, ty, method) in [
+                (raw_id, "Amplitude", "value"),
+                (normalization_id, "VolumeNormalization", "value"),
+                (normalization_id, "VolumeNormalization", "gain_db"),
+            ] {
+                let Value::Number(value) =
+                    invoke_component_method(&mut world, id, ty, method, &[], |_| {}).unwrap()
+                else {
+                    panic!("{ty}.{method}() should return a number");
+                };
+                assert!(
+                    value.is_finite(),
+                    "{status:?}: {ty}.{method}() returned {value}"
+                );
+                assert_eq!(value, 0.0);
+            }
+        }
+
+        let error =
+            invoke_component_method(&mut world, raw_id, "Amplitude", "gain_db", &[], |_| {})
+                .expect_err("Amplitude must not invent a gain diagnostic");
+        assert!(error.contains("unsupported live component method 'Amplitude.gain_db'"));
+    }
 
     #[test]
     fn transform_local_bounds_waits_for_complete_geometry_and_uses_root_local_space() {

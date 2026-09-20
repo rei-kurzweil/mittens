@@ -1,0 +1,41 @@
+ fn snapshot(
++        &mut self,
++        source: ComponentId,
++        timestamp_sec: f64,
++        valid_frames: u32,
++        sample_rate: u32,
++    ) -> VolumeNormalizationSnapshot {
++        self.sequence = self.sequence.wrapping_add(1);
++        let raw_rms = (self.sum_squares.max(0.0) / self.filled.max(1) as f64).sqrt() as f32;
++        let raw_peak = self.peaks[..self.filled]
++            .iter()
++            .copied()
++            .fold(0.0_f32, f32::max);
++        let dt = valid_frames as f32 / sample_rate.max(1) as f32;
++        let (rms, peak, status, reason) = if raw_rms <= f32::EPSILON {
++            // Digital silence is neutral and deliberately never teaches gain.
++            self.quiet_sec = 0.0;
++            self.high_sec = 0.0;
++            self.high_latched = false;
++            (
++                0.0,
++                0.0,
++                AmplitudeStatus::Neutral,
++                VolumeNormalizationReason::Holding,
++            )
++        } else {
++            let reason = self.advance_controller(raw_rms, raw_peak, dt);
++            let gain = db_to_linear(self.gain_db);
++            (
++                raw_rms * gain,
++                raw_peak * gain,
++                AmplitudeStatus::Live,
++                reason,
++            )
++        };
++        VolumeNormalizationSnapshot {
++            normalizer: self.consumer.normalizer,
++            source,
++            sample: AmplitudeSample {
++                generation: self.consumer.generation,
+

@@ -3,6 +3,21 @@
 Date: 2026-09-19
 Status: design sketch
 
+## Naming decision
+
+The canonical component remains **`VolumeNormalization`**. **AGC** is the
+short form for its automatic-gain-control behaviour in labels, comments,
+diagnostics, and discussion. This is a bounded adaptive control signal for an
+avatar, not integrated audio-program loudness normalization:
+
+```mms
+let voice_level = VolumeNormalization.from(raw_voice_level) {}
+```
+
+Do not rename the Rust component, module/file, MMS registry entry, builders,
+tests, or existing example paths. The implementation documents precisely that
+this `VolumeNormalization` is AGC-style control, not loudness normalization.
+
 ## Working integration scene
 
 `examples/mittens-corp-volume-normalization.mms` is the live tuning scene. It
@@ -50,9 +65,8 @@ AVC {
   gain for downstream control signals, not an audio graph effect.
 
 In signal-processing terms this is a bounded automatic gain control (AGC), not
-integrated loudness/LUFS normalization. Keep the user-facing
-`VolumeNormalization` name if that is the clearer MMS vocabulary, but document
-the AGC behavior precisely.
+integrated loudness/LUFS normalization. The user-facing name is
+`VolumeNormalization`; document its AGC behavior precisely.
 
 ## Why this is a separate component
 
@@ -105,6 +119,22 @@ Its retained runtime state should include:
 Runtime state is never serialized. Disable, upstream invalidation, source
 replacement, discontinuity, or removal starts a new generation and clears the
 normalized result instead of retaining stale mouth movement.
+
+### Minimal MMS diagnostics
+
+The first public scalar surface deliberately has only the reads needed by AVC
+debugging and the gain-history graph:
+
+```mms
+raw_level.value()    // raw retained RMS
+voice_level.value()  // AGC-adjusted retained RMS
+voice_level.gain_db() // signed gain currently applied by AGC
+```
+
+`gain_db()` belongs on `VolumeNormalization`, not `Amplitude`: it reports the
+controller's own decision, rather than a changing difference between two speech
+measurements. Do not expose peak, sample timestamp/sequence, liveness, reason,
+or linear gain until a concrete MMS consumer requires one.
 
 ## AVC compatibility
 
@@ -243,7 +273,8 @@ than copied as unrelated magic numbers. With today's AVC defaults
 (`floor = 0.015`, `ceiling = 0.12`), an initial experiment could use:
 
 - useful normalized RMS band: approximately `0.03 .. 0.09`;
-- activity gate: approximately `0.005` raw RMS;
+- activity gate: approximately `0.003` raw RMS (40% below the initial
+  calibration, to admit quieter speech while still freezing on silence);
 - gain limits: `0 dB .. +24 dB` (no attenuation below unity in the first
   experiment unless loud-source handling proves it necessary);
 - quiet hold: `0.75 s`;

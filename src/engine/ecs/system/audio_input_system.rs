@@ -8,8 +8,12 @@ use rtrb::{Consumer, Producer};
 
 use crate::engine::ecs::component::{
     AmplitudeSample, AmplitudeStatus, AudioInputComponent, AudioInputDeviceSelector,
+    VolumeNormalizationReason,
 };
-use crate::engine::ecs::system::amplitude_system::{AmplitudeSnapshot, InputAmplitudeConsumer};
+use crate::engine::ecs::system::amplitude_system::{
+    AmplitudeSnapshot, InputAmplitudeConsumer, InputNormalizationConsumer,
+    VolumeNormalizationSnapshot,
+};
 use crate::engine::ecs::{ComponentId, World};
 
 use super::AmplitudeSystem;
@@ -23,6 +27,19 @@ struct CaptureSignature {
     device: AudioInputDeviceSelector,
     selection_generation: u64,
     consumers: Vec<InputAmplitudeConsumer>,
+    normalizers: Vec<InputNormalizationConsumer>,
+}
+
+#[derive(Default)]
+struct DesiredConsumers {
+    consumers: Vec<InputAmplitudeConsumer>,
+    normalizers: Vec<InputNormalizationConsumer>,
+}
+
+#[derive(Clone, Copy)]
+enum CaptureSnapshot {
+    Amplitude(AmplitudeSnapshot),
+    Normalization(VolumeNormalizationSnapshot),
 }
 
 /// A capture backend can report a stream as successfully created but never
@@ -48,7 +65,7 @@ impl From<&CaptureSignature> for UnavailableCapture {
 struct CaptureRuntime {
     signature: CaptureSignature,
     _stream: cpal::Stream,
-    snapshots: Consumer<AmplitudeSnapshot>,
+    snapshots: Consumer<CaptureSnapshot>,
     failed: Arc<AtomicBool>,
     dropped: Arc<AtomicU64>,
     reported_dropped: u64,
@@ -58,7 +75,8 @@ struct CaptureRuntime {
 pub struct AudioInputSystem {
     runtimes: HashMap<ComponentId, CaptureRuntime>,
     unavailable: HashMap<ComponentId, UnavailableCapture>,
-    last_diagnostic: HashMap<ComponentId, (Instant, AmplitudeStatus)>,
+    last_diagnostic:
+        HashMap<ComponentId, (Instant, AmplitudeStatus, Option<VolumeNormalizationReason>)>,
 }
 
 impl std::fmt::Debug for AudioInputSystem {
@@ -89,9 +107,20 @@ impl AudioInputSystem {
 
     pub fn tick(&mut self, world: &mut World, amplitude: &mut AmplitudeSystem) {
         amplitude.refresh_consumers(world);
-        let mut desired: HashMap<ComponentId, Vec<InputAmplitudeConsumer>> = HashMap::new();
+        let mut desired: HashMap<ComponentId, DesiredConsumers> = HashMap::new();
         for consumer in amplitude.input_consumers(world) {
-            desired.entry(consumer.source).or_default().push(consumer);
+            desired
+                .entry(consumer.source)
+                .or_default()
+                .consumers
+                .push(consumer);
+        }
+        for consumer in amplitude.input_normalization_consumers(world) {
+            desired
+                .entry(consumer.source)
+                .or_default()
+                .normalizers
+                .push(consumer);
         }
 
         self.runtimes
@@ -99,10 +128,16 @@ impl AudioInputSystem {
         self.unavailable
             .retain(|source, _| desired.contains_key(source));
         self.last_diagnostic.retain(|observer, _| {
-            desired
-                .values()
-                .flatten()
-                .any(|consumer| consumer.observer == *observer)
+            desired.values().any(|group| {
+                group
+                    .consumers
+                    .iter()
+                    .any(|consumer| consumer.observer == *observer)
+                    || group
+                        .normalizers
+                        .iter()
+                        .any(|consumer| consumer.normalizer == *observer)
+            })
         });
 
         for (&source, consumers) in &desired {
@@ -112,7 +147,8 @@ impl AudioInputSystem {
             let mut signature = CaptureSignature {
                 device: input.device.clone(),
                 selection_generation: input.selection_generation,
-                consumers: consumers.clone(),
+                consumers: consumers.consumers.clone(),
+                normalizers: consumers.normalizers.clone(),
             };
             if self.is_unavailable(source, &signature) {
                 continue;
@@ -137,6 +173,11 @@ impl AudioInputSystem {
                 amplitude.refresh_consumers(world);
                 signature.consumers = amplitude
                     .input_consumers(world)
+                    .into_iter()
+                    .filter(|consumer| consumer.source == source)
+                    .collect();
+                signature.normalizers = amplitude
+                    .input_normalization_consumers(world)
                     .into_iter()
                     .filter(|consumer| consumer.source == source)
                     .collect();
@@ -180,26 +221,54 @@ impl AudioInputSystem {
         for runtime in self.runtimes.values_mut() {
             while let Ok(snapshot) = runtime.snapshots.pop() {
                 runtime.last_snapshot = Instant::now();
-                let diagnostic = self.last_diagnostic.entry(snapshot.observer).or_insert((
+                let (observer, source, sample, normalization) = match snapshot {
+                    CaptureSnapshot::Amplitude(snapshot) => {
+                        (snapshot.observer, snapshot.source, snapshot.sample, None)
+                    }
+                    CaptureSnapshot::Normalization(snapshot) => (
+                        snapshot.normalizer,
+                        snapshot.source,
+                        snapshot.sample,
+                        Some((snapshot.gain_db, snapshot.reason)),
+                    ),
+                };
+                let reason = normalization.map(|(_, reason)| reason);
+                let diagnostic = self.last_diagnostic.entry(observer).or_insert((
                     Instant::now() - DIAGNOSTIC_INTERVAL,
                     AmplitudeStatus::Pending,
+                    None,
                 ));
-                if diagnostic.1 != snapshot.sample.status
+                if diagnostic.1 != sample.status
+                    || diagnostic.2 != reason
                     || diagnostic.0.elapsed() >= DIAGNOSTIC_INTERVAL
                 {
-                    eprintln!(
-                        "[Amplitude] observer={:?} source={:?} status={:?} rms={:.6} peak={:.6} frames={} dropped={}",
-                        snapshot.observer,
-                        snapshot.source,
-                        snapshot.sample.status,
-                        snapshot.sample.rms,
-                        snapshot.sample.peak,
-                        snapshot.sample.valid_frames,
-                        runtime.dropped.load(Ordering::Relaxed),
-                    );
-                    *diagnostic = (Instant::now(), snapshot.sample.status);
+                    if let Some((gain_db, reason)) = normalization {
+                        eprintln!(
+                            "[VolumeNormalization] observer={observer:?} source={source:?} status={:?} rms={:.6} peak={:.6} gain_db={gain_db:.2} reason={reason:?} frames={} dropped={}",
+                            sample.status,
+                            sample.rms,
+                            sample.peak,
+                            sample.valid_frames,
+                            runtime.dropped.load(Ordering::Relaxed),
+                        );
+                    } else {
+                        eprintln!(
+                            "[Amplitude] observer={observer:?} source={source:?} status={:?} rms={:.6} peak={:.6} frames={} dropped={}",
+                            sample.status,
+                            sample.rms,
+                            sample.peak,
+                            sample.valid_frames,
+                            runtime.dropped.load(Ordering::Relaxed),
+                        );
+                    }
+                    *diagnostic = (Instant::now(), sample.status, reason);
                 }
-                amplitude.submit_snapshot(snapshot);
+                match snapshot {
+                    CaptureSnapshot::Amplitude(snapshot) => amplitude.submit_snapshot(snapshot),
+                    CaptureSnapshot::Normalization(snapshot) => {
+                        amplitude.submit_normalized_snapshot(snapshot)
+                    }
+                }
             }
             let dropped = runtime.dropped.load(Ordering::Relaxed);
             let new_drops = dropped.wrapping_sub(runtime.reported_dropped);
@@ -245,6 +314,11 @@ fn start_capture(
         .iter()
         .map(|consumer| RollingRms::new(*consumer, sample_rate))
         .collect::<Vec<_>>();
+    let normalizers = signature
+        .normalizers
+        .iter()
+        .map(|consumer| NormalizingRms::new(*consumer, sample_rate))
+        .collect::<Vec<_>>();
     let windows = signature
         .consumers
         .iter()
@@ -266,6 +340,7 @@ fn start_capture(
                 channels,
                 sample_rate,
                 accumulators,
+                normalizers,
                 producer,
                 dropped.clone(),
             );
@@ -282,6 +357,7 @@ fn start_capture(
                 channels,
                 sample_rate,
                 accumulators,
+                normalizers,
                 producer,
                 dropped.clone(),
             );
@@ -298,6 +374,7 @@ fn start_capture(
                 channels,
                 sample_rate,
                 accumulators,
+                normalizers,
                 producer,
                 dropped.clone(),
             );
@@ -336,7 +413,8 @@ struct CaptureCallback {
     sample_rate: u32,
     frame_count: u64,
     accumulators: Vec<RollingRms>,
-    snapshots: Producer<AmplitudeSnapshot>,
+    normalizers: Vec<NormalizingRms>,
+    snapshots: Producer<CaptureSnapshot>,
     dropped: Arc<AtomicU64>,
 }
 
@@ -346,7 +424,8 @@ impl CaptureCallback {
         channels: usize,
         sample_rate: u32,
         accumulators: Vec<RollingRms>,
-        snapshots: Producer<AmplitudeSnapshot>,
+        normalizers: Vec<NormalizingRms>,
+        snapshots: Producer<CaptureSnapshot>,
         dropped: Arc<AtomicU64>,
     ) -> Self {
         Self {
@@ -355,6 +434,7 @@ impl CaptureCallback {
             sample_rate,
             frame_count: 0,
             accumulators,
+            normalizers,
             snapshots,
             dropped,
         }
@@ -379,6 +459,9 @@ impl CaptureCallback {
             for accumulator in &mut self.accumulators {
                 accumulator.push(mean_square, peak);
             }
+            for normalizer in &mut self.normalizers {
+                normalizer.push(mean_square, peak);
+            }
             self.frame_count = self.frame_count.wrapping_add(1);
         }
         let valid_frames = self.frame_count.wrapping_sub(before) as u32;
@@ -388,7 +471,22 @@ impl CaptureCallback {
         let timestamp_sec = self.frame_count as f64 / self.sample_rate.max(1) as f64;
         for accumulator in &mut self.accumulators {
             let snapshot = accumulator.snapshot(self.source, timestamp_sec, valid_frames);
-            if self.snapshots.push(snapshot).is_err() {
+            if self
+                .snapshots
+                .push(CaptureSnapshot::Amplitude(snapshot))
+                .is_err()
+            {
+                self.dropped.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        for normalizer in &mut self.normalizers {
+            let snapshot =
+                normalizer.snapshot(self.source, timestamp_sec, valid_frames, self.sample_rate);
+            if self
+                .snapshots
+                .push(CaptureSnapshot::Normalization(snapshot))
+                .is_err()
+            {
                 self.dropped.fetch_add(1, Ordering::Relaxed);
             }
         }
@@ -466,9 +564,195 @@ impl RollingRms {
     }
 }
 
+/// A fused rolling measurement and bounded AGC controller.  It is built on the
+/// control thread and then used only by the capture callback.
+struct NormalizingRms {
+    consumer: InputNormalizationConsumer,
+    squares: Vec<f32>,
+    peaks: Vec<f32>,
+    cursor: usize,
+    filled: usize,
+    sum_squares: f64,
+    sequence: u64,
+    gain_db: f32,
+    quiet_sec: f32,
+    high_sec: f32,
+    high_latched: bool,
+}
+
+impl NormalizingRms {
+    fn new(consumer: InputNormalizationConsumer, sample_rate: u32) -> Self {
+        let frames = (consumer.window_sec as f64 * sample_rate as f64)
+            .round()
+            .clamp(1.0, usize::MAX as f64) as usize;
+        Self {
+            gain_db: consumer.policy.min_gain_db,
+            consumer,
+            squares: vec![0.0; frames],
+            peaks: vec![0.0; frames],
+            cursor: 0,
+            filled: 0,
+            sum_squares: 0.0,
+            sequence: 0,
+            quiet_sec: 0.0,
+            high_sec: 0.0,
+            high_latched: false,
+        }
+    }
+
+    fn push(&mut self, square: f32, peak: f32) {
+        if self.filled == self.squares.len() {
+            self.sum_squares -= self.squares[self.cursor] as f64;
+        } else {
+            self.filled += 1;
+        }
+        self.squares[self.cursor] = square;
+        self.peaks[self.cursor] = peak;
+        self.sum_squares += square as f64;
+        self.cursor = (self.cursor + 1) % self.squares.len();
+    }
+
+    fn snapshot(
+        &mut self,
+        source: ComponentId,
+        timestamp_sec: f64,
+        valid_frames: u32,
+        sample_rate: u32,
+    ) -> VolumeNormalizationSnapshot {
+        self.sequence = self.sequence.wrapping_add(1);
+        let raw_rms = (self.sum_squares.max(0.0) / self.filled.max(1) as f64).sqrt() as f32;
+        let raw_peak = self.peaks[..self.filled]
+            .iter()
+            .copied()
+            .fold(0.0_f32, f32::max);
+        let dt = valid_frames as f32 / sample_rate.max(1) as f32;
+        let (rms, peak, status, reason) = if raw_rms <= f32::EPSILON {
+            // Digital silence is neutral and deliberately never teaches gain.
+            self.quiet_sec = 0.0;
+            self.high_sec = 0.0;
+            self.high_latched = false;
+            (
+                0.0,
+                0.0,
+                AmplitudeStatus::Neutral,
+                VolumeNormalizationReason::Holding,
+            )
+        } else {
+            let reason = self.advance_controller(raw_rms, raw_peak, dt);
+            let gain = db_to_linear(self.gain_db);
+            (
+                raw_rms * gain,
+                raw_peak * gain,
+                AmplitudeStatus::Live,
+                reason,
+            )
+        };
+        VolumeNormalizationSnapshot {
+            normalizer: self.consumer.normalizer,
+            source,
+            sample: AmplitudeSample {
+                generation: self.consumer.generation,
+                sequence: self.sequence,
+                timestamp_sec,
+                valid_frames,
+                rms,
+                peak,
+                status,
+            },
+            gain_db: self.gain_db,
+            reason,
+        }
+    }
+
+    fn advance_controller(
+        &mut self,
+        raw_rms: f32,
+        raw_peak: f32,
+        dt: f32,
+    ) -> VolumeNormalizationReason {
+        let policy = self.consumer.policy;
+        let gain = db_to_linear(self.gain_db);
+        let normalized_rms = raw_rms * gain;
+        let normalized_peak = raw_peak * gain;
+
+        // A peak breach is corrected in this callback, without waiting for a
+        // long RMS hold.  The gain caps still bound the correction.
+        if raw_peak > f32::EPSILON && normalized_peak > policy.peak_headroom {
+            let safe_gain_db = linear_to_db(policy.peak_headroom / raw_peak);
+            let next = safe_gain_db.clamp(policy.min_gain_db, policy.max_gain_db);
+            self.gain_db = self.gain_db.min(next);
+            self.quiet_sec = 0.0;
+            self.high_sec = 0.0;
+            self.high_latched = false;
+            return if (raw_peak * db_to_linear(self.gain_db))
+                > policy.peak_headroom * (1.0 + 1.0e-5)
+            {
+                VolumeNormalizationReason::Capped
+            } else {
+                VolumeNormalizationReason::PeakReducing
+            };
+        }
+
+        if normalized_rms >= policy.target_rms_high {
+            self.high_latched = true;
+        } else if normalized_rms <= policy.target_rms_high * 0.90 {
+            self.high_latched = false;
+        }
+        if self.high_latched {
+            self.high_sec += dt;
+            self.quiet_sec = 0.0;
+            if self.high_sec >= policy.high_hold_sec {
+                let target = linear_to_db(policy.target_rms_high / raw_rms);
+                let next = (self.gain_db - policy.gain_fall_db_per_sec * dt)
+                    .max(target)
+                    .max(policy.min_gain_db);
+                if next < self.gain_db {
+                    self.gain_db = next;
+                    return VolumeNormalizationReason::SustainedReducing;
+                }
+                return VolumeNormalizationReason::Capped;
+            }
+            return VolumeNormalizationReason::Holding;
+        }
+        self.high_sec = 0.0;
+
+        if raw_rms >= policy.activity_gate
+            && normalized_rms < policy.target_rms_low
+            && normalized_peak < policy.peak_headroom
+        {
+            self.quiet_sec += dt;
+            if self.quiet_sec >= policy.quiet_hold_sec {
+                let target = linear_to_db(policy.target_rms_low / raw_rms);
+                let next = (self.gain_db + policy.gain_rise_db_per_sec * dt)
+                    .min(target)
+                    .min(policy.max_gain_db);
+                if next > self.gain_db {
+                    self.gain_db = next;
+                    return VolumeNormalizationReason::Raising;
+                }
+                return VolumeNormalizationReason::Capped;
+            }
+        } else {
+            // Below-gate noise and ordinary in-band activity must not accrue
+            // a future gain increase.
+            self.quiet_sec = 0.0;
+        }
+        VolumeNormalizationReason::Holding
+    }
+}
+
+fn db_to_linear(db: f32) -> f32 {
+    10.0_f32.powf(db / 20.0)
+}
+
+fn linear_to_db(linear: f32) -> f32 {
+    20.0 * linear.max(f32::MIN_POSITIVE).log10()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::ecs::component::volume_normalization::VolumeNormalizationPolicy;
     use crate::engine::ecs::component::{AmplitudeComponent, AudioInputComponent, ComponentRef};
 
     fn consumer(window_sec: f32) -> InputAmplitudeConsumer {
@@ -477,6 +761,31 @@ mod tests {
             source: ComponentId::default(),
             generation: 3,
             window_sec,
+        }
+    }
+
+    fn normalizer_consumer(policy: VolumeNormalizationPolicy) -> InputNormalizationConsumer {
+        InputNormalizationConsumer {
+            normalizer: ComponentId::default(),
+            source: ComponentId::default(),
+            generation: 4,
+            window_sec: 0.01,
+            policy,
+        }
+    }
+
+    fn policy() -> VolumeNormalizationPolicy {
+        VolumeNormalizationPolicy {
+            min_gain_db: 0.0,
+            max_gain_db: 24.0,
+            target_rms_low: 0.03,
+            target_rms_high: 0.09,
+            activity_gate: 0.005,
+            quiet_hold_sec: 0.75,
+            high_hold_sec: 0.20,
+            gain_rise_db_per_sec: 3.0,
+            gain_fall_db_per_sec: 12.0,
+            peak_headroom: 0.9,
         }
     }
 
@@ -505,15 +814,78 @@ mod tests {
     }
 
     #[test]
+    fn normalizer_raises_only_after_hold_and_never_from_silence_or_noise() {
+        let mut normalizer = NormalizingRms::new(normalizer_consumer(policy()), 100);
+        for i in 0..7 {
+            normalizer.push(0.0001, 0.01);
+            let snapshot = normalizer.snapshot(ComponentId::default(), i as f64 * 0.1, 10, 100);
+            assert_eq!(snapshot.reason, VolumeNormalizationReason::Holding);
+            assert_eq!(snapshot.gain_db, 0.0);
+        }
+        normalizer.push(0.0001, 0.01);
+        let raised = normalizer.snapshot(ComponentId::default(), 0.8, 10, 100);
+        assert_eq!(raised.reason, VolumeNormalizationReason::Raising);
+        assert!(raised.gain_db > 0.0);
+
+        let learned_gain = raised.gain_db;
+        normalizer.push(0.0, 0.0);
+        let silence = normalizer.snapshot(ComponentId::default(), 0.9, 10, 100);
+        assert_eq!(silence.sample.status, AmplitudeStatus::Neutral);
+        assert_eq!(silence.gain_db, learned_gain);
+
+        let mut noise = NormalizingRms::new(normalizer_consumer(policy()), 100);
+        for i in 0..12 {
+            noise.push(0.000016, 0.004);
+            let snapshot = noise.snapshot(ComponentId::default(), i as f64 * 0.1, 10, 100);
+            assert_eq!(snapshot.gain_db, 0.0);
+        }
+    }
+
+    #[test]
+    fn normalizer_reduces_peak_immediately_and_sustained_high_after_hold() {
+        let mut peak_policy = policy();
+        peak_policy.min_gain_db = -24.0;
+        let mut peak = NormalizingRms::new(normalizer_consumer(peak_policy), 100);
+        peak.gain_db = 12.0;
+        peak.push(0.04, 0.8);
+        let safe = peak.snapshot(ComponentId::default(), 0.1, 10, 100);
+        assert_eq!(safe.reason, VolumeNormalizationReason::PeakReducing);
+        assert!(safe.sample.peak <= 0.9001);
+        assert!(safe.gain_db < 12.0);
+
+        let mut high_policy = policy();
+        high_policy.min_gain_db = -24.0;
+        let mut high = NormalizingRms::new(normalizer_consumer(high_policy), 100);
+        high.gain_db = 12.0;
+        high.push(0.0064, 0.08); // RMS 0.08 -> comfortably above the high band with gain.
+        let held = high.snapshot(ComponentId::default(), 0.1, 10, 100);
+        assert_eq!(held.reason, VolumeNormalizationReason::Holding);
+        high.push(0.0064, 0.08);
+        let reduced = high.snapshot(ComponentId::default(), 0.2, 10, 100);
+        assert_eq!(reduced.reason, VolumeNormalizationReason::SustainedReducing);
+        assert!(reduced.gain_db < 12.0);
+    }
+
+    #[test]
     fn callback_converts_stereo_frames_and_queue_overflow_never_blocks() {
         let source = ComponentId::default();
         let accumulator = RollingRms::new(consumer(1.0), 2);
         let (producer, mut snapshots) = rtrb::RingBuffer::new(1);
         let dropped = Arc::new(AtomicU64::new(0));
-        let mut callback =
-            CaptureCallback::new(source, 2, 2, vec![accumulator], producer, dropped.clone());
+        let mut callback = CaptureCallback::new(
+            source,
+            2,
+            2,
+            vec![accumulator],
+            vec![],
+            producer,
+            dropped.clone(),
+        );
         callback.process(&[1.0_f32, -1.0, 0.5, 0.5], |value| value);
-        let sample = snapshots.pop().unwrap().sample;
+        let CaptureSnapshot::Amplitude(snapshot) = snapshots.pop().unwrap() else {
+            panic!("raw accumulator must publish an amplitude snapshot");
+        };
+        let sample = snapshot.sample;
         assert!((sample.rms - 0.625_f32.sqrt()).abs() < 1e-6);
         assert_eq!(sample.peak, 1.0);
 
@@ -529,6 +901,7 @@ mod tests {
             device: AudioInputDeviceSelector::DeviceNumber(2),
             selection_generation: 4,
             consumers: vec![consumer(0.08)],
+            normalizers: vec![],
         };
         let mut system = AudioInputSystem::default();
         system

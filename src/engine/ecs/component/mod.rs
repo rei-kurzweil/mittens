@@ -127,7 +127,64 @@ pub use self::gltf::GLTFComponent;
 pub use crate::engine::ecs::system::model::collision_types::{CollisionMode, CollisionShape};
 pub use ambient_light::AmbientLightComponent;
 pub use amplitude::{AmplitudeComponent, AmplitudeSample, AmplitudeStatus};
-pub use volume_normalization::VolumeNormalizationComponent;
+pub use volume_normalization::{VolumeNormalizationComponent, VolumeNormalizationReason};
+
+/// Current scalar diagnostics copied from a retained level provider.
+///
+/// This is deliberately a main-thread, read-only seam.  It does not drain an
+/// audio handoff, access callback state, or imply a generic scalar graph.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct LevelDiagnostics {
+    pub rms: f32,
+    pub gain_db: Option<f32>,
+}
+
+/// Read finite MMS-safe diagnostics from either supported level provider.
+///
+/// RMS is meaningful only for a current live sample.  A normalizer retains
+/// its gain through a deliberate neutral/silence sample, so diagnostics can
+/// continue to show its current controller decision between utterances.
+pub(crate) fn read_level_diagnostics(
+    world: &crate::engine::ecs::World,
+    id: crate::engine::ecs::ComponentId,
+) -> Option<LevelDiagnostics> {
+    if let Some(amplitude) = world.get_component_by_id_as::<AmplitudeComponent>(id) {
+        return Some(LevelDiagnostics {
+            rms: retained_live_rms(amplitude.enabled, amplitude.generation, amplitude.retained),
+            gain_db: None,
+        });
+    }
+    world
+        .get_component_by_id_as::<VolumeNormalizationComponent>(id)
+        .map(|normalization| {
+            let current_generation = normalization.retained.generation == normalization.generation;
+            let gain_is_current = normalization.enabled
+                && current_generation
+                && matches!(
+                    normalization.retained.status,
+                    AmplitudeStatus::Live | AmplitudeStatus::Neutral
+                )
+                && normalization.current_gain_db.is_finite();
+            LevelDiagnostics {
+                rms: retained_live_rms(
+                    normalization.enabled,
+                    normalization.generation,
+                    normalization.retained,
+                ),
+                gain_db: Some(
+                    gain_is_current
+                        .then_some(normalization.current_gain_db)
+                        .unwrap_or(0.0),
+                ),
+            }
+        })
+}
+
+fn retained_live_rms(enabled: bool, generation: u64, sample: AmplitudeSample) -> f32 {
+    (enabled && sample.generation == generation && sample.is_live())
+        .then_some(sample.rms)
+        .unwrap_or(0.0)
+}
 
 /// Returns a current sample from either raw or normalized level provider.
 /// This is the intentionally small shared seam used by AVC; consumers retain
