@@ -1269,6 +1269,32 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                             method(vec![], mms::ValueType::F32),
                         );
                     }
+                    for name in [
+                        "set_activity_gate",
+                        "set_quiet_hold",
+                        "set_high_hold",
+                        "set_gain_rise",
+                        "set_gain_fall",
+                        "set_peak_headroom",
+                    ] {
+                        host_method(
+                            component,
+                            canonical,
+                            name,
+                            method(vec![mms::ValueType::F32], mms::ValueType::Null),
+                        );
+                    }
+                    for name in ["set_gain_limits", "set_target_rms"] {
+                        host_method(
+                            component,
+                            canonical,
+                            name,
+                            method(
+                                vec![mms::ValueType::F32, mms::ValueType::F32],
+                                mms::ValueType::Null,
+                            ),
+                        );
+                    }
                 }
                 "AudioGain" => {
                     // Legacy construction uses the first argument regardless
@@ -1364,17 +1390,34 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         "head_ik_eye_height",
                         "mouth_open_rms_floor",
                         "mouth_open_rms_ceiling",
+                        "mouth_open_amount",
                         "mouth_open_smoothing",
                     ] {
                         constructor_and_builder(component, method, floats(1));
                     }
                     constructor_and_builder(component, "head_motion_gaze_policy", strings(1));
                     constructor_and_builder(component, "mouth_open_from_amplitude", any(1));
+                    constructor_and_builder(component, "mouth_open_rms_center_range", floats(2));
                     host_method(
                         component,
                         canonical,
                         "mouth_open_from_amplitude",
                         method(vec![mms::ValueType::Component], mms::ValueType::Null),
+                    );
+                    host_method(
+                        component,
+                        canonical,
+                        "set_mouth_open_rms_center_range",
+                        method(
+                            vec![mms::ValueType::F32, mms::ValueType::F32],
+                            mms::ValueType::Null,
+                        ),
+                    );
+                    host_method(
+                        component,
+                        canonical,
+                        "set_mouth_open_amount",
+                        method(vec![mms::ValueType::F32], mms::ValueType::Null),
                     );
                     no_arg_constructors_and_builders(
                         component,

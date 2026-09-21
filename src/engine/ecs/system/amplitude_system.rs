@@ -1,12 +1,13 @@
 use std::collections::{HashMap, VecDeque};
 
-use crate::engine::ecs::component::volume_normalization::VolumeNormalizationPolicy;
+use crate::engine::ecs::component::volume_normalization::LiveVolumeNormalizationPolicy;
 use crate::engine::ecs::component::{
     AmplitudeComponent, AmplitudeSample, AmplitudeStatus, AudioClipComponent, AudioInputComponent,
     AudioOscillatorComponent, QueryRootMode, VolumeNormalizationComponent,
     VolumeNormalizationReason, resolve_component_ref,
 };
 use crate::engine::ecs::{ComponentId, World};
+use std::sync::Arc;
 
 /// A source-runtime measurement awaiting main-thread validation and retention.
 /// The future real-time handoff feeds this same bounded protocol.
@@ -42,13 +43,23 @@ pub(crate) struct InputAmplitudeConsumer {
     pub window_sec: f32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone)]
 pub(crate) struct InputNormalizationConsumer {
     pub normalizer: ComponentId,
     pub source: ComponentId,
     pub generation: u64,
     pub window_sec: f32,
-    pub policy: VolumeNormalizationPolicy,
+    pub policy: Arc<LiveVolumeNormalizationPolicy>,
+}
+
+impl PartialEq for InputNormalizationConsumer {
+    fn eq(&self, other: &Self) -> bool {
+        self.normalizer == other.normalizer
+            && self.source == other.source
+            && self.generation == other.generation
+            && self.window_sec == other.window_sec
+            && Arc::ptr_eq(&self.policy, &other.policy)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -343,7 +354,7 @@ impl AmplitudeSystem {
                     window_sec: world
                         .get_component_by_id_as::<AmplitudeComponent>(state.upstream)?
                         .window_sec,
-                    policy: component.policy(),
+                    policy: component.live_policy(),
                 })
             })
             .collect();

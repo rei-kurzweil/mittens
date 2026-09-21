@@ -4066,6 +4066,12 @@ fn apply_call(
             "mouth_open_rms_ceiling" => {
                 *avc = avc.clone().with_mouth_open_rms_ceiling(arg_f32(args, 0)?)?
             }
+            "mouth_open_rms_center_range" => {
+                *avc = avc
+                    .clone()
+                    .with_mouth_open_rms_center_range(arg_f32(args, 0)?, arg_f32(args, 1)?)?
+            }
+            "mouth_open_amount" => *avc = avc.clone().with_mouth_open_amount(arg_f32(args, 0)?)?,
             "mouth_open_smoothing" => {
                 *avc = avc.clone().with_mouth_open_smoothing(arg_f32(args, 0)?)?
             }

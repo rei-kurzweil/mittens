@@ -10,6 +10,8 @@ import { bisket_secondary_motion } from "../assets/components/secondary_motion/b
 import { pose as relaxed_pose_factory } from "../assets/components/poses/bisket/000-relaxed.pose.mms"
 import { tripod_light } from "../assets/components/tripod_light.mms"
 
+
+
 RendererSettings { window_size(1280, 720) }
 BGC.rgba(0.055, 0.070, 0.105, 1.0)
 AL.rgb(0.20, 0.23, 0.30)
@@ -81,19 +83,28 @@ room_cube("e2_tablet_plinth", [0.0, 0.42, -1.15], [1.55, 0.84, 1.20], [0.32, 0.2
 T.position(0.0, 0.93, -1.15).rotation(0.0, 0.45, 0.0).scale(1.0, 1.0, 1.0) {
     name = "estradiol_tablet"
     Grabbable {}
-    GLTF.new("assets/models/estradiol-tablet.glb") {}
+
+    
+
+    GLTF.new("assets/models/estradiol-tablet.glb") {
+        bisket_anime_shading()
+    }
 }
 
 T.position(-2, 5, -2) {
     name = "preroll"
     Grabbable {}
-    GLTF.new("assets/models/sativa-preroll.glb") {}
+    GLTF.new("assets/models/preroll.glb") {
+        bisket_anime_shading()
+    }
 }
 
 T.position(2, 5, -2) {
     name = "broom"
     Grabbable {}
-    GLTF.new("assets/models/broomstick.glb") {}
+    GLTF.new("assets/models/broom.glb") {
+        bisket_anime_shading()
+    }
 }
 
 // Full-body mirror facing the desktop avatar and the tablet presentation.

@@ -64,6 +64,214 @@ fn constructive_solid_geometry_example_is_valid_mms_syntax() {
 }
 
 #[test]
+fn agc_desktop_example_evaluates_and_live_policy_methods_preserve_the_running_unit() {
+    use crate::engine::ecs::component::{
+        AvatarControlComponent, EditorPanel, EditorUIComponent, InputComponent,
+        PoseCapturePoseComponent, SliderComponent, VolumeNormalizationComponent,
+    };
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+    let (mut session, output) = RuntimeSpecSession::start_at_path(
+        include_str!("../../examples/mittens-corp-agc-desktop.mms"),
+        "examples/mittens-corp-agc-desktop.mms",
+        &mut world,
+        &mut rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .expect("desktop AGC scene should start");
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    assert!(
+        world
+            .all_components()
+            .any(|id| { world.get_component_by_id_as::<InputComponent>(id).is_some() })
+    );
+    assert!(world.all_components().any(|id| {
+        world
+            .get_component_by_id_as::<AvatarControlComponent>(id)
+            .is_some()
+    }));
+    let editor_ui = world
+        .all_components()
+        .find_map(|id| world.get_component_by_id_as::<EditorUIComponent>(id))
+        .expect("desktop AGC scene should author EditorUI");
+    assert_eq!(editor_ui.panels(), vec![EditorPanel::Settings]);
+    assert_eq!(
+        world
+            .all_components()
+            .filter(|&id| world
+                .get_component_by_id_as::<PoseCapturePoseComponent>(id)
+                .is_some())
+            .count(),
+        1,
+        "desktop Bisket should start in the captured relaxed pose"
+    );
+    assert_eq!(
+        world
+            .all_components()
+            .filter(|&id| world
+                .get_component_by_id_as::<SliderComponent>(id)
+                .is_some())
+            .count(),
+        3,
+        "desktop panel should expose only the small mouth-response control set"
+    );
+    for label in [
+        "mouth_rms_center_slider",
+        "mouth_rms_range_slider",
+        "mouth_amount_slider",
+    ] {
+        let slider = world
+            .all_components()
+            .find(|&id| world.component_label(id) == Some(label))
+            .expect("named compact mouth-response slider");
+        assert_eq!(
+            world
+                .get_component_by_id_as::<SliderComponent>(slider)
+                .expect("slider component")
+                .width(),
+            4.0,
+            "{label} should use the compact in-panel track width"
+        );
+    }
+    let normalizer = world
+        .all_components()
+        .find(|&id| {
+            world
+                .get_component_by_id_as::<VolumeNormalizationComponent>(id)
+                .is_some()
+        })
+        .expect("desktop scene should author its AGC component");
+    let before = world
+        .get_component_by_id_as::<VolumeNormalizationComponent>(normalizer)
+        .expect("normalizer")
+        .clone();
+    let policy_handle = before.live_policy();
+    let avc = world
+        .all_components()
+        .find(|&id| {
+            world
+                .get_component_by_id_as::<AvatarControlComponent>(id)
+                .is_some()
+        })
+        .expect("desktop scene should author its AVC");
+    let initial_avc = world
+        .get_component_by_id_as::<AvatarControlComponent>(avc)
+        .expect("AVC");
+    assert!(
+        (initial_avc.mouth_open_rms_floor - 0.008).abs() < f32::EPSILON
+            && (initial_avc.mouth_open_rms_ceiling - 0.068).abs() < f32::EPSILON
+            && (initial_avc.mouth_open_amount - 1.0).abs() < f32::EPSILON,
+        "desktop scene should apply the rei_2026.9 mouth-response preset"
+    );
+    let center_slider = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("mouth_rms_center_slider"))
+        .expect("named RMS-centre slider");
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            center_slider,
+            EventSignal::SliderChanged {
+                slider: center_slider,
+                value: 0.04,
+            },
+        ),
+    );
+    let callback_output =
+        session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+    assert!(
+        callback_output.errors.is_empty(),
+        "{:?}",
+        callback_output.errors
+    );
+    let avc_after_center = world
+        .get_component_by_id_as::<AvatarControlComponent>(avc)
+        .expect("AVC");
+    assert!(
+        (avc_after_center.mouth_open_rms_floor - 0.010).abs() < f32::EPSILON
+            && (avc_after_center.mouth_open_rms_ceiling - 0.070).abs() < f32::EPSILON,
+        "RMS centre should shift floor and ceiling by half the retained range"
+    );
+    let range_slider = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("mouth_rms_range_slider"))
+        .expect("named RMS-range slider");
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            range_slider,
+            EventSignal::SliderChanged {
+                slider: range_slider,
+                value: 0.02,
+            },
+        ),
+    );
+    let amount_slider = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("mouth_amount_slider"))
+        .expect("named mouth-amount slider");
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            amount_slider,
+            EventSignal::SliderChanged {
+                slider: amount_slider,
+                value: 0.65,
+            },
+        ),
+    );
+    let callback_output =
+        session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+    assert!(
+        callback_output.errors.is_empty(),
+        "{:?}",
+        callback_output.errors
+    );
+    let avc_after_response = world
+        .get_component_by_id_as::<AvatarControlComponent>(avc)
+        .expect("AVC");
+    assert!(
+        (avc_after_response.mouth_open_rms_floor - 0.03).abs() < f32::EPSILON
+            && (avc_after_response.mouth_open_rms_ceiling - 0.05).abs() < f32::EPSILON,
+        "RMS range should expand equally below and above the RMS centre"
+    );
+    assert!((avc_after_response.mouth_open_amount - 0.65).abs() < f32::EPSILON);
+    crate::scripting::component_method_registry::invoke_component_method(
+        &mut world,
+        normalizer,
+        "VolumeNormalization",
+        "set_target_rms",
+        &[Value::Number(0.018), Value::Number(0.021)],
+        |_| {},
+    )
+    .expect("live target setter should succeed");
+    crate::scripting::component_method_registry::invoke_component_method(
+        &mut world,
+        normalizer,
+        "VolumeNormalization",
+        "set_high_hold",
+        &[Value::Number(1.25)],
+        |_| {},
+    )
+    .expect("live high-hold setter should succeed");
+    let after = world
+        .get_component_by_id_as::<VolumeNormalizationComponent>(normalizer)
+        .expect("normalizer");
+    assert_eq!(after.generation, before.generation);
+    assert!(Arc::ptr_eq(&policy_handle, &after.live_policy()));
+    assert_eq!(
+        (after.target_rms_low, after.target_rms_high),
+        (0.018, 0.021)
+    );
+    assert_eq!(after.high_hold_sec, 1.25);
+    assert_eq!(after.live_policy().load(), after.policy());
+}
+
+#[test]
 fn volume_normalization_example_evaluates_and_binds_avc_to_normalized_level() {
     use crate::engine::ecs::component::{
         AmplitudeComponent, AmplitudeSample, AmplitudeStatus, AvatarControlComponent,
@@ -118,6 +326,11 @@ fn volume_normalization_example_evaluates_and_binds_avc_to_normalized_level() {
     let avc = world
         .get_component_by_id_as::<AvatarControlComponent>(avc_id)
         .unwrap();
+    assert!(
+        (avc.mouth_open_rms_floor - 0.003).abs() < f32::EPSILON
+            && (avc.mouth_open_rms_ceiling - 0.06).abs() < f32::EPSILON,
+        "the example should use a more responsive RMS-to-mouth calibration"
+    );
     let source = avc.mouth_open_amplitude.as_ref().unwrap();
     assert_eq!(
         crate::engine::ecs::component::resolve_component_ref(
@@ -155,10 +368,14 @@ fn volume_normalization_example_evaluates_and_binds_avc_to_normalized_level() {
             .get_component_by_id_as::<crate::engine::ecs::component::DraggableComponent>(*id)
             .is_some()
     }));
-    let graph_layers = world
+    let input_layers = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("agc_input_history_layers"))
+        .expect("scene should author a fixed input history viewport");
+    let gain_layers = world
         .all_components()
         .find(|&id| world.component_label(id) == Some("agc_gain_history_layers"))
-        .expect("scene should author a fixed AGC history viewport");
+        .expect("scene should author a fixed gain history viewport");
     let normalizer_component = world
         .get_component_by_id_as_mut::<VolumeNormalizationComponent>(normalizer)
         .unwrap();
@@ -172,14 +389,30 @@ fn volume_normalization_example_evaluates_and_binds_avc_to_normalized_level() {
         status: AmplitudeStatus::Live,
     };
     normalizer_component.current_gain_db = 6.0;
+    let raw_component = world
+        .get_component_by_id_as_mut::<AmplitudeComponent>(raw)
+        .unwrap();
+    raw_component.retained = AmplitudeSample {
+        generation: raw_component.generation,
+        sequence: 1,
+        timestamp_sec: 1.0,
+        valid_frames: 480,
+        rms: 0.04,
+        peak: 0.06,
+        status: AmplitudeStatus::Live,
+    };
 
-    let mut graph_replacements = 0;
+    let mut input_replacements = 0;
+    let mut gain_replacements = 0;
     let mut graph_removals = 0;
-    let mut saw_gain_readout = false;
     for (frame_index, dt_sec) in std::iter::once(0.35_f32)
         .chain(std::iter::repeat_n(0.1_f32, 48))
         .enumerate()
     {
+        let normalized = world
+            .get_component_by_id_as_mut::<VolumeNormalizationComponent>(normalizer)
+            .unwrap();
+        normalized.current_gain_db = if frame_index % 2 == 0 { 6.0 } else { -3.0 };
         rx.dispatch_event_handlers(
             &mut world,
             &Signal::event(ComponentId::default(), EventSignal::FrameTick { dt_sec }),
@@ -187,61 +420,258 @@ fn volume_normalization_example_evaluates_and_binds_avc_to_normalized_level() {
         let graph_output =
             session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
         assert!(graph_output.errors.is_empty(), "{:?}", graph_output.errors);
-        let frame_replacements = graph_output
+        let frame_input_replacements = graph_output
             .intents
             .iter()
-            .filter(|intent| matches!(intent, IntentValue::Attach { parent, .. } if *parent == graph_layers))
+            .filter(|intent| matches!(intent, IntentValue::Attach { parent, .. } if *parent == input_layers))
+            .count();
+        let frame_gain_replacements = graph_output
+            .intents
+            .iter()
+            .filter(|intent| matches!(intent, IntentValue::Attach { parent, .. } if *parent == gain_layers))
             .count();
         if frame_index == 0 {
             assert_eq!(
-                frame_replacements, 1,
-                "a long frame must not catch up with duplicate history views"
+                frame_input_replacements, 1,
+                "a long frame must not catch up with duplicate input history views"
             );
+            assert_eq!(frame_gain_replacements, 1);
         }
-        graph_replacements += frame_replacements;
+        input_replacements += frame_input_replacements;
+        gain_replacements += frame_gain_replacements;
         graph_removals += graph_output
             .intents
             .iter()
-            .filter(|intent| matches!(intent, IntentValue::RemoveChild { parent, index } if *parent == graph_layers && *index == 0))
+            .filter(|intent| matches!(intent, IntentValue::RemoveSubtree { .. }))
             .count();
-        saw_gain_readout |= graph_output.intents.iter().any(|intent| {
-            matches!(intent, IntentValue::SetText { text, .. }
-                if text.starts_with("current applied gain: +6"))
-        });
     }
-    assert_eq!(graph_replacements, 49);
+    assert_eq!(input_replacements, 49);
+    assert_eq!(gain_replacements, 49);
     assert_eq!(
-        graph_removals, 49,
-        "each sample should atomically replace the one fixed-width history view"
+        graph_removals, 98,
+        "each sample should atomically replace both fixed-width history views"
     );
-    let graph_view = world
+    let input_view = world
         .all_components()
-        .find(|&id| world.component_label(id) == Some("agc_gain_history_view"))
-        .expect("history viewport should retain its current view");
+        .filter(|&id| world.component_label(id) == Some("agc_input_history_view"))
+        .last()
+        .expect("input viewport should retain its current view");
+    let gain_view = world
+        .all_components()
+        .filter(|&id| world.component_label(id) == Some("agc_gain_history_view"))
+        .last()
+        .expect("gain viewport should retain its current view");
+    let input_bars = world
+        .children_of(input_view)
+        .iter()
+        .copied()
+        .filter(|id| world.component_label(*id) == Some("agc_level_history_sample"))
+        .collect::<Vec<_>>();
     assert_eq!(
-        world.children_of(graph_view).len(),
+        input_bars.len(),
         12,
-        "the response graph should always contain exactly twelve explicit snapshot columns"
+        "input graph should contain exactly twelve snapshot columns"
     );
-    assert!(
-        saw_gain_readout,
-        "the response panel should visibly report the retained normalizer gain"
+    let gain_bars = world
+        .children_of(gain_view)
+        .iter()
+        .copied()
+        .filter(|id| world.component_label(*id) == Some("agc_gain_history_sample"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        gain_bars.len(),
+        12,
+        "gain graph should align with input history"
     );
-    for bar in world.children_of(graph_view) {
-        let transform = world
+    for bar in &input_bars {
+        let column_transform = world
             .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(*bar)
             .expect("history column transform");
-        let [x, y, _] = transform.transform.translation;
-        let [width, height, _] = transform.transform.scale;
+        let x = column_transform.transform.translation[0];
+        let level_block = world
+            .find_component(*bar, "#agc_level_history_block")
+            .expect("level block");
+        let level_transform = world
+            .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(
+                level_block,
+            )
+            .expect("raw-level block transform");
+        let y = level_transform.transform.translation[1];
+        let [width, height, _] = level_transform.transform.scale;
         assert!(
             x - width / 2.0 >= -f32::EPSILON && x + width / 2.0 <= 28.7 * 0.08 + f32::EPSILON,
             "history column must remain within the plot horizontally: x={x}, width={width}"
         );
         assert!(
-            y - height / 2.0 >= -10.0 * 0.08 - f32::EPSILON && y + height / 2.0 <= f32::EPSILON,
+            y - height / 2.0 >= -5.0 * 0.08 - f32::EPSILON && y + height / 2.0 <= f32::EPSILON,
             "history column must remain within the plot vertically: y={y}, height={height}"
         );
     }
+    assert!(
+        input_bars.iter().all(|bar| world
+            .find_component(*bar, "#agc_level_history_sample_text")
+            .is_none()),
+        "input numeric labels should default off"
+    );
+    assert!(
+        gain_bars.iter().all(|bar| world
+            .find_component(*bar, "#agc_gain_history_sample_text")
+            .is_none()),
+        "gain numeric labels should default off"
+    );
+    for (index, bar) in gain_bars.iter().enumerate() {
+        let block = world
+            .find_component(*bar, "#agc_gain_history_block")
+            .expect("gain block");
+        let transform = world
+            .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(block)
+            .expect("gain block transform");
+        let y = transform.transform.translation[1];
+        let [_width, height, _] = transform.transform.scale;
+        assert!(
+            y - height / 2.0 >= -5.0 * 0.08 - f32::EPSILON && y + height / 2.0 <= f32::EPSILON,
+            "gain bar must remain within its centered plot"
+        );
+        if index % 2 == 0 {
+            assert!(y < -2.5 * 0.08, "negative gain should extend below zero");
+        } else {
+            assert!(y > -2.5 * 0.08, "positive gain should extend above zero");
+        }
+    }
+
+    let numeric_toggle = world
+        .find_component(response_panel, "#agc_numeric_toggle")
+        .and_then(|slot| world.find_component(slot, "#button_root"))
+        .expect("response panel should offer a numeric-label toggle");
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            numeric_toggle,
+            EventSignal::Click {
+                raycaster: ComponentId::default(),
+                renderable: numeric_toggle,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        ),
+    );
+    let toggle_output =
+        session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+    assert!(
+        toggle_output.errors.is_empty(),
+        "{:?}",
+        toggle_output.errors
+    );
+    assert!(
+        toggle_output.intents.iter().any(|intent| {
+            matches!(intent, IntentValue::SetText { text, .. } if text == "hide numeric labels")
+        }),
+        "numeric-label toggle click should update its button text: {:?}",
+        toggle_output.intents
+    );
+    // The toggle changes sampling policy immediately; the graph view is
+    // refreshed on its regular 100 ms sample boundary.
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            ComponentId::default(),
+            EventSignal::FrameTick { dt_sec: 0.1 },
+        ),
+    );
+    let labels_on_tick =
+        session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+    assert!(
+        labels_on_tick.errors.is_empty(),
+        "{:?}",
+        labels_on_tick.errors
+    );
+    let labels_on_view = world
+        .all_components()
+        .filter(|&id| world.component_label(id) == Some("agc_input_history_view"))
+        .last()
+        .expect("toggle should replace the visible history once");
+    let labels_on_gain_view = world
+        .all_components()
+        .filter(|&id| world.component_label(id) == Some("agc_gain_history_view"))
+        .last()
+        .expect("toggle should replace the visible gain history once");
+    assert!(
+        world
+            .children_of(labels_on_view)
+            .iter()
+            .filter(|bar| world.component_label(**bar) == Some("agc_level_history_sample"))
+            .all(|bar| {
+                world
+                    .find_component(*bar, "#agc_level_history_sample_text")
+                    .is_some()
+            }),
+        "numeric-label toggle should restore input text subtrees"
+    );
+    assert!(
+        world
+            .children_of(labels_on_gain_view)
+            .iter()
+            .filter(|bar| world.component_label(**bar) == Some("agc_gain_history_sample"))
+            .all(|bar| {
+                world
+                    .find_component(*bar, "#agc_gain_history_sample_text")
+                    .is_some()
+            }),
+        "numeric-label toggle should restore gain text subtrees"
+    );
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            numeric_toggle,
+            EventSignal::Click {
+                raycaster: ComponentId::default(),
+                renderable: numeric_toggle,
+                hit_point: [0.0, 0.0, 0.0],
+                screen_pos_px: None,
+            },
+        ),
+    );
+    let second_toggle_output =
+        session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+    assert!(
+        second_toggle_output.errors.is_empty(),
+        "{:?}",
+        second_toggle_output.errors
+    );
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            ComponentId::default(),
+            EventSignal::FrameTick { dt_sec: 0.1 },
+        ),
+    );
+    let labels_off_tick =
+        session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+    assert!(
+        labels_off_tick.errors.is_empty(),
+        "{:?}",
+        labels_off_tick.errors
+    );
+    assert!(
+        !labels_off_tick.intents.iter().any(|intent| {
+            matches!(intent, IntentValue::SetText { text, .. } if text.starts_with("input: "))
+        }),
+        "numeric readout should not update while the label toggle is off"
+    );
+    let second_marker = world
+        .all_components()
+        .filter(|&id| world.component_label(id) == Some("agc_second_marker"))
+        .last()
+        .expect("rolling graph should retain a whole-second boundary marker");
+    let marker_x = world
+        .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(second_marker)
+        .expect("second marker transform")
+        .transform
+        .translation[0];
+    assert!(
+        (marker_x - 10.0 * (2.05 + 0.34) * 0.08).abs() < 1e-5,
+        "the labels-off sample must keep moving the whole-second boundary"
+    );
 
     let gamepad = world
         .all_components()
@@ -9073,6 +9503,8 @@ fn roundtrip_avatar_control() {
         .unwrap()
         .with_mouth_open_rms_ceiling(0.2)
         .unwrap()
+        .with_mouth_open_amount(0.65)
+        .unwrap()
         .with_mouth_open_smoothing(12.0)
         .unwrap()
         .with_collision_disabled();
@@ -9092,6 +9524,7 @@ fn roundtrip_avatar_control() {
     );
     assert_eq!(got.mouth_open_rms_floor, 0.02);
     assert_eq!(got.mouth_open_rms_ceiling, 0.2);
+    assert_eq!(got.mouth_open_amount, 0.65);
     assert_eq!(got.mouth_open_smoothing, 12.0);
 }
 

@@ -317,7 +317,7 @@ fn start_capture(
     let normalizers = signature
         .normalizers
         .iter()
-        .map(|consumer| NormalizingRms::new(*consumer, sample_rate))
+        .map(|consumer| NormalizingRms::new(consumer.clone(), sample_rate))
         .collect::<Vec<_>>();
     let windows = signature
         .consumers
@@ -585,8 +585,11 @@ impl NormalizingRms {
         let frames = (consumer.window_sec as f64 * sample_rate as f64)
             .round()
             .clamp(1.0, usize::MAX as f64) as usize;
+        let policy = consumer.policy.load();
         Self {
-            gain_db: consumer.policy.min_gain_db,
+            // Start at unity even when policy permits attenuation. The
+            // controller then learns either direction from actual input.
+            gain_db: 0.0_f32.clamp(policy.min_gain_db, policy.max_gain_db),
             consumer,
             squares: vec![0.0; frames],
             peaks: vec![0.0; frames],
@@ -670,7 +673,7 @@ impl NormalizingRms {
         raw_peak: f32,
         dt: f32,
     ) -> VolumeNormalizationReason {
-        let policy = self.consumer.policy;
+        let policy = self.consumer.policy.load();
         let gain = db_to_linear(self.gain_db);
         let normalized_rms = raw_rms * gain;
         let normalized_peak = raw_peak * gain;
@@ -752,8 +755,11 @@ fn linear_to_db(linear: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::ecs::component::volume_normalization::VolumeNormalizationPolicy;
+    use crate::engine::ecs::component::volume_normalization::{
+        LiveVolumeNormalizationPolicy, VolumeNormalizationPolicy,
+    };
     use crate::engine::ecs::component::{AmplitudeComponent, AudioInputComponent, ComponentRef};
+    use std::sync::Arc;
 
     fn consumer(window_sec: f32) -> InputAmplitudeConsumer {
         InputAmplitudeConsumer {
@@ -770,19 +776,19 @@ mod tests {
             source: ComponentId::default(),
             generation: 4,
             window_sec: 0.01,
-            policy,
+            policy: Arc::new(LiveVolumeNormalizationPolicy::new(policy)),
         }
     }
 
     fn policy() -> VolumeNormalizationPolicy {
         VolumeNormalizationPolicy {
-            min_gain_db: 0.0,
+            min_gain_db: -24.0,
             max_gain_db: 24.0,
-            target_rms_low: 0.03,
-            target_rms_high: 0.09,
-            activity_gate: 0.005,
+            target_rms_low: 0.027,
+            target_rms_high: 0.03,
+            activity_gate: 0.003,
             quiet_hold_sec: 0.75,
-            high_hold_sec: 0.20,
+            high_hold_sec: 0.75,
             gain_rise_db_per_sec: 3.0,
             gain_fall_db_per_sec: 12.0,
             peak_headroom: 0.9,
@@ -835,7 +841,7 @@ mod tests {
 
         let mut noise = NormalizingRms::new(normalizer_consumer(policy()), 100);
         for i in 0..12 {
-            noise.push(0.000016, 0.004);
+            noise.push(0.000004, 0.004);
             let snapshot = noise.snapshot(ComponentId::default(), i as f64 * 0.1, 10, 100);
             assert_eq!(snapshot.gain_db, 0.0);
         }
@@ -854,7 +860,7 @@ mod tests {
         assert!(safe.gain_db < 12.0);
 
         let mut high_policy = policy();
-        high_policy.min_gain_db = -24.0;
+        high_policy.high_hold_sec = 0.20;
         let mut high = NormalizingRms::new(normalizer_consumer(high_policy), 100);
         high.gain_db = 12.0;
         high.push(0.0064, 0.08); // RMS 0.08 -> comfortably above the high band with gain.
@@ -864,6 +870,46 @@ mod tests {
         let reduced = high.snapshot(ComponentId::default(), 0.2, 10, 100);
         assert_eq!(reduced.reason, VolumeNormalizationReason::SustainedReducing);
         assert!(reduced.gain_db < 12.0);
+    }
+
+    #[test]
+    fn default_normalizer_attenuates_after_point_zero_three_for_three_quarters_second() {
+        let mut normalizer = NormalizingRms::new(normalizer_consumer(policy()), 100);
+        for step in 0..7 {
+            normalizer.push(0.04_f32.powi(2), 0.06);
+            let snapshot = normalizer.snapshot(ComponentId::default(), step as f64 * 0.1, 10, 100);
+            assert_eq!(snapshot.reason, VolumeNormalizationReason::Holding);
+            assert_eq!(snapshot.gain_db, 0.0);
+        }
+        normalizer.push(0.04_f32.powi(2), 0.06);
+        let reduced = normalizer.snapshot(ComponentId::default(), 0.8, 10, 100);
+        assert_eq!(reduced.reason, VolumeNormalizationReason::SustainedReducing);
+        assert!(reduced.gain_db < 0.0);
+    }
+
+    #[test]
+    fn normalizer_observes_live_policy_changes_without_reconstruction() {
+        let consumer = normalizer_consumer(policy());
+        let live_policy = consumer.policy.clone();
+        let mut normalizer = NormalizingRms::new(consumer, 100);
+
+        // Change the policy after the rolling buffers and controller exist.
+        // A 20 ms RMS is initially in the old target band, but must begin
+        // attenuation immediately under this new 10 ms upper target.
+        let mut updated = live_policy.load();
+        updated.target_rms_low = 0.008;
+        updated.target_rms_high = 0.010;
+        updated.high_hold_sec = 0.0;
+        updated.gain_fall_db_per_sec = 12.0;
+        live_policy.store(updated);
+
+        normalizer.push(0.02_f32.powi(2), 0.04);
+        let snapshot = normalizer.snapshot(ComponentId::default(), 0.1, 10, 100);
+        assert_eq!(
+            snapshot.reason,
+            VolumeNormalizationReason::SustainedReducing
+        );
+        assert!(snapshot.gain_db < 0.0);
     }
 
     #[test]

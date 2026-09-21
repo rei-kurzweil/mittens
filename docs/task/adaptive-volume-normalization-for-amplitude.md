@@ -20,12 +20,15 @@ this `VolumeNormalization` is AGC-style control, not loudness normalization.
 
 ## Working integration scene
 
-`examples/mittens-corp-volume-normalization.mms` is the live tuning scene. It
-is copied from `mittens-corp.mms` and adds the kawaii star background plus
-three `color-cat.2.glb` spectators. Until the MMS component is registered, the
-scene aliases `voice_level` to `raw_voice_level`; the intended
-`VolumeNormalization.from(raw_voice_level)` construction is left immediately
-beside that fallback so the switch is explicit and localized.
+`examples/mittens-corp-volume-normalization.mms` is the XR history and A/B
+scene: it keeps raw input visible while AVC consumes
+`VolumeNormalization.from(raw_voice_level)`.
+
+`examples/mittens-corp-agc-desktop.mms` is the desktop-only tuning scene. It
+uses the ordinary `Input` pose driver, microphone input, and Bisket's AVC
+mouth fallback; no XR runtime is required. Its title-only draggable “Bisket
+mouth response” info panel edits the AVC's RMS mapping while leaving the AGC
+policy at its current defaults.
 
 ### Traffic-light follow-up
 
@@ -136,6 +139,27 @@ controller's own decision, rather than a changing difference between two speech
 measurements. Do not expose peak, sample timestamp/sequence, liveness, reason,
 or linear gain until a concrete MMS consumer requires one.
 
+### Live MMS policy updates
+
+The same live component handle accepts validated control updates:
+
+```mms
+voice_level.set_gain_limits(-24.0, 24.0)
+voice_level.set_target_rms(0.027, 0.030)
+voice_level.set_activity_gate(0.003)
+voice_level.set_quiet_hold(0.75)
+voice_level.set_high_hold(0.75)
+voice_level.set_gain_rise(3.0)
+voice_level.set_gain_fall(12.0)
+voice_level.set_peak_headroom(0.9)
+```
+
+These calls validate on the main thread and publish the scalar policy through
+a stable lock-free handle. The capture callback reads it at its next control
+step; the stream, rolling buffers, AGC timers, gain state, and component
+generation are retained. Source, window, enable, and lifecycle changes still
+rebuild or reset the unit as appropriate.
+
 ## AVC compatibility
 
 AVC currently requires an `AmplitudeComponent` in
@@ -183,7 +207,7 @@ fused, preallocated analysis unit for the same source and window:
 VolumeNormalization
   -> resolves upstream Amplitude
   -> resolves that Amplitude's AudioSource and rolling-window request
-  -> registers (normalizer id, generation, source, window, AGC config)
+  -> registers (normalizer id, generation, source, window, live AGC policy handle)
   -> callback-owned RollingRms + fixed-size AGC state
   -> bounded normalized snapshot queue
   -> main thread validates generation and retains newest result
@@ -192,8 +216,9 @@ VolumeNormalization
 The callback unit may share a source stream but owns independent fixed-size
 window and control state. Construct/rebuild buffers on the main/control thread
 before capture starts. Callback work remains fixed arithmetic and bounded queue
-pushes: no allocation, ECS access, logging, locks, blocking, or dynamic
-reconfiguration.
+pushes: no allocation, ECS access, logging, locks, or blocking. Live scalar
+policy reads are atomic; they do not dynamically reconfigure the stream or its
+preallocated buffers.
 
 The raw upstream `Amplitude` should remain a live observer as authored, so raw
 and normalized meters can be shown together. An optimization that shares its
@@ -266,27 +291,26 @@ enter/exit thresholds to prevent chatter.
   from a documented safe initial gain rather than carrying calibration across
   unrelated devices.
 
-## Suggested first-slice defaults to validate, not lock blindly
+## Current tuning defaults
 
-The useful target should be expressed relative to the AVC calibration rather
-than copied as unrelated magic numbers. With today's AVC defaults
-(`floor = 0.015`, `ceiling = 0.12`), an initial experiment could use:
+The useful target is expressed relative to the AVC calibration rather than
+copied as unrelated magic numbers. The current microphone experiment uses:
 
-- useful normalized RMS band: approximately `0.03 .. 0.09`;
+- useful normalized RMS band: `0.027 .. 0.03`; the narrow band creates
+  hysteresis around the desired `0.03` upper bound;
 - activity gate: approximately `0.003` raw RMS (40% below the initial
   calibration, to admit quieter speech while still freezing on silence);
-- gain limits: `0 dB .. +24 dB` (no attenuation below unity in the first
-  experiment unless loud-source handling proves it necessary);
+- gain limits: `−24 dB .. +24 dB`, while each fresh source starts at unity
+  (`0 dB`) and learns attenuation only after receiving live input;
 - quiet hold: `0.75 s`;
-- high hold: `0.20 s`;
+- high hold: `0.75 s`; and
 - gain rise: `3 dB/s`;
 - sustained gain fall: `12 dB/s`; and
 - peak headroom: `0.9` linear peak with immediate corrective reduction.
 
-These values need deterministic tests and live measurements. In particular,
-allowing negative minimum gain may be desirable for consistently loud devices,
-and the target band may belong directly on `VolumeNormalization` rather than
-being coupled to one AVC instance.
+These values need deterministic tests and live measurements. The target band
+may later belong directly on `VolumeNormalization` rather than being coupled
+to one AVC instance.
 
 ## Proposed implementation slices
 
@@ -312,7 +336,8 @@ being coupled to one AVC instance.
 - Add normalized-consumer registration beside `InputAmplitudeConsumer`.
 - Preallocate rolling window and AGC state during stream construction.
 - Emit fixed-size generation-tagged snapshots through the bounded ring.
-- Rebuild/teardown safely on config, source, enable, and lifecycle changes.
+- Rebuild/teardown safely on source, window, enable, and lifecycle changes;
+  publish validated scalar policy edits to the existing callback unit.
 
 ### 4. Controller policy and diagnostics
 

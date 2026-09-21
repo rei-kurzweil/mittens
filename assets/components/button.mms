@@ -6,6 +6,7 @@
 //   let accent_btn = button("Accent", {
 //       background_color = [0.18, 0.48, 0.88, 1.0]
 //       color = [0.98, 0.98, 0.98, 1.0]
+//       compact = true
 //   })
 //   T.position(x, y, z) { btn }
 //   on(btn, "Click", fn(e) { ... })
@@ -23,6 +24,9 @@
 export fn button(label, options) {
     let bg_rgba = [0.88, 0.18, 0.18, 1.0]
     let text_rgba = [0.98, 0.98, 0.98, 1.0]
+    let padding_x = 0.6
+    let padding_y = 0.6
+    let text_size = 1.0
 
     if options {
         if options.background_color {
@@ -31,6 +35,11 @@ export fn button(label, options) {
         if options.color {
             text_rgba = options.color
         }
+        if options.compact {
+            padding_x = 0.22
+            padding_y = 0.16
+            text_size = 0.60
+        }
     }
 
     let root = T {
@@ -38,7 +47,8 @@ export fn button(label, options) {
         Raycastable.enabled()
         Style {
             display("inline-block")
-            padding_xy(0.6, 0.6)
+            padding_xy(padding_x, padding_y)
+            font_size(text_size)
             text_align("center")
             vertical_align("middle")
             background_color(bg_rgba)

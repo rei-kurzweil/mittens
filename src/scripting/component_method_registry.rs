@@ -9,6 +9,16 @@ use crate::engine::ecs::{ComponentId, IntentValue, PoseApplyMode, World};
 use crate::engine::transform::TransformSpace;
 use crate::scripting::object::Value;
 
+fn arg_f32(args: &[Value], index: usize) -> Result<f32, String> {
+    match args.get(index) {
+        Some(Value::Number(value)) if value.is_finite() => Ok(*value as f32),
+        Some(value) => Err(format!(
+            "argument {index} must be a finite number, got {value:?}"
+        )),
+        None => Err(format!("missing argument {index}")),
+    }
+}
+
 /// Compatibility vocabulary used only by the legacy engine-owned evaluator.
 /// Configured MMS runtimes validate methods through RuntimeSpec and dispatch
 /// them by OperationId without consulting this predicate.
@@ -54,7 +64,19 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
         || (matches!(
             component_type,
             "VolumeNormalization" | "volume_normalization"
-        ) && matches!(method, "value" | "gain_db"))
+        ) && matches!(
+            method,
+            "value"
+                | "gain_db"
+                | "set_gain_limits"
+                | "set_target_rms"
+                | "set_activity_gate"
+                | "set_quiet_hold"
+                | "set_high_hold"
+                | "set_gain_rise"
+                | "set_gain_fall"
+                | "set_peak_headroom"
+        ))
         || (matches!(component_type, "Raycast" | "RayCast" | "raycast")
             && method == "request_raycast")
         || (matches!(
@@ -74,7 +96,12 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                 | "input_vr_gamepad"
         ) && matches!(method, "enable" | "disable"))
         || (matches!(component_type, "AvatarControl" | "AVC" | "avatar_control")
-            && method == "mouth_open_from_amplitude")
+            && matches!(
+                method,
+                "mouth_open_from_amplitude"
+                    | "set_mouth_open_rms_center_range"
+                    | "set_mouth_open_amount"
+            ))
         || (matches!(component_type, "HttpClient" | "http_client")
             && matches!(method, "get" | "post" | "put" | "delete"))
         || (matches!(component_type, "HttpServer" | "http_server")
@@ -119,6 +146,37 @@ pub(crate) fn invoke_component_method(
             };
             Ok(Value::Number(value as f64))
         }
+        (
+            "VolumeNormalization" | "volume_normalization",
+            "set_gain_limits" | "set_target_rms" | "set_activity_gate" | "set_quiet_hold"
+            | "set_high_hold" | "set_gain_rise" | "set_gain_fall" | "set_peak_headroom",
+        ) => {
+            let current = world
+                .get_component_by_id_as::<VolumeNormalizationComponent>(id)
+                .ok_or_else(|| format!("{method}(): not a VolumeNormalizationComponent"))?
+                .clone();
+            let updated = match method {
+                "set_gain_limits" => {
+                    current.with_gain_limits(arg_f32(args, 0)?, arg_f32(args, 1)?)?
+                }
+                "set_target_rms" => {
+                    current.with_target_rms(arg_f32(args, 0)?, arg_f32(args, 1)?)?
+                }
+                "set_activity_gate" => {
+                    current.with_nonnegative("activity_gate", arg_f32(args, 0)?)?
+                }
+                "set_quiet_hold" => current.with_nonnegative("quiet_hold", arg_f32(args, 0)?)?,
+                "set_high_hold" => current.with_nonnegative("high_hold", arg_f32(args, 0)?)?,
+                "set_gain_rise" => current.with_nonnegative("gain_rise", arg_f32(args, 0)?)?,
+                "set_gain_fall" => current.with_nonnegative("gain_fall", arg_f32(args, 0)?)?,
+                "set_peak_headroom" => current.with_peak_headroom(arg_f32(args, 0)?)?,
+                _ => unreachable!("match arm restricts VolumeNormalization setters"),
+            };
+            *world
+                .get_component_by_id_as_mut::<VolumeNormalizationComponent>(id)
+                .expect("component was inspected above") = updated;
+            Ok(Value::Null)
+        }
         ("AvatarControl" | "AVC" | "avatar_control", "mouth_open_from_amplitude") => {
             let source = crate::scripting::component_registry::arg_component_ref(world, args, 0)?;
             if let Some(source_id) = crate::engine::ecs::component::resolve_component_ref(
@@ -137,6 +195,32 @@ pub(crate) fn invoke_component_method(
                 .get_component_by_id_as_mut::<crate::engine::ecs::component::AvatarControlComponent>(id)
                 .ok_or_else(|| "mouth_open_from_amplitude(): not an AvatarControlComponent".to_string())?;
             *avc = avc.clone().with_mouth_open_from_amplitude(source);
+            Ok(Value::Null)
+        }
+        ("AvatarControl" | "AVC" | "avatar_control", "set_mouth_open_rms_center_range") => {
+            let updated = world
+                .get_component_by_id_as::<crate::engine::ecs::component::AvatarControlComponent>(id)
+                .ok_or_else(|| {
+                    "set_mouth_open_rms_center_range(): not an AvatarControlComponent".to_string()
+                })?
+                .clone()
+                .with_mouth_open_rms_center_range(arg_f32(args, 0)?, arg_f32(args, 1)?)?;
+            *world
+                .get_component_by_id_as_mut::<crate::engine::ecs::component::AvatarControlComponent>(id)
+                .expect("component was inspected above") = updated;
+            Ok(Value::Null)
+        }
+        ("AvatarControl" | "AVC" | "avatar_control", "set_mouth_open_amount") => {
+            let updated = world
+                .get_component_by_id_as::<crate::engine::ecs::component::AvatarControlComponent>(id)
+                .ok_or_else(|| {
+                    "set_mouth_open_amount(): not an AvatarControlComponent".to_string()
+                })?
+                .clone()
+                .with_mouth_open_amount(arg_f32(args, 0)?)?;
+            *world
+                .get_component_by_id_as_mut::<crate::engine::ecs::component::AvatarControlComponent>(id)
+                .expect("component was inspected above") = updated;
             Ok(Value::Null)
         }
         ("T" | "Transform" | "transform", "local_bounds") => {

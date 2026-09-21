@@ -66,6 +66,12 @@ pub struct AvatarControlComponent {
     pub mouth_open_rms_floor: f32,
     /// Linear PCM RMS that maps to a fully open mouth.
     pub mouth_open_rms_ceiling: f32,
+    /// Maximum `viseme_aa` weight produced by the amplitude fallback.
+    ///
+    /// This deliberately controls visual extent independently from the input
+    /// calibration: a performer can retain a sensitive response without
+    /// necessarily driving the mouth all the way to its morph's full weight.
+    pub mouth_open_amount: f32,
     /// Exponential response rate in 1/seconds. Zero disables smoothing.
     pub mouth_open_smoothing: f32,
     pub(crate) resolved_mouth_open_amplitude: Option<ComponentId>,
@@ -261,6 +267,42 @@ impl AvatarControlComponent {
         Ok(self)
     }
 
+    /// Configure the amplitude response as a centre RMS and full RMS range.
+    ///
+    /// This is equivalent to setting the floor and ceiling directly, but is
+    /// often more natural when the useful microphone level is known first:
+    /// `floor = center_rms - range_rms / 2`,
+    /// `ceiling = center_rms + range_rms / 2`.
+    pub fn with_mouth_open_rms_center_range(
+        mut self,
+        center_rms: f32,
+        range_rms: f32,
+    ) -> Result<Self, String> {
+        if !center_rms.is_finite() || center_rms <= 0.0 {
+            return Err(
+                "AvatarControl.mouth_open_rms_center_range requires a finite center_rms > 0".into(),
+            );
+        }
+        if !range_rms.is_finite() || range_rms <= 0.0 || range_rms * 0.5 > center_rms {
+            return Err(
+                "AvatarControl.mouth_open_rms_center_range requires finite range_rms > 0 with range_rms / 2 <= center_rms".into(),
+            );
+        }
+        let half_range = range_rms * 0.5;
+        self.mouth_open_rms_floor = center_rms - half_range;
+        self.mouth_open_rms_ceiling = center_rms + half_range;
+        Ok(self)
+    }
+
+    /// Set the maximum visual mouth-open contribution of the amplitude fallback.
+    pub fn with_mouth_open_amount(mut self, amount: f32) -> Result<Self, String> {
+        if !amount.is_finite() || !(0.0..=1.0).contains(&amount) {
+            return Err("AvatarControl.mouth_open_amount requires a finite value in 0..=1".into());
+        }
+        self.mouth_open_amount = amount;
+        Ok(self)
+    }
+
     pub fn with_mouth_open_smoothing(mut self, rate: f32) -> Result<Self, String> {
         if !rate.is_finite() || rate < 0.0 {
             return Err(
@@ -384,6 +426,7 @@ impl Default for AvatarControlComponent {
             mouth_open_amplitude: None,
             mouth_open_rms_floor: 0.015,
             mouth_open_rms_ceiling: 0.12,
+            mouth_open_amount: 1.0,
             mouth_open_smoothing: 18.0,
             resolved_mouth_open_amplitude: None,
             mouth_open_weight: 0.0,
@@ -546,6 +589,12 @@ impl Component for AvatarControlComponent {
             c = c.with_call(
                 "mouth_open_rms_ceiling",
                 vec![num(self.mouth_open_rms_ceiling as f64)],
+            );
+        }
+        if (self.mouth_open_amount - 1.0).abs() > f32::EPSILON {
+            c = c.with_call(
+                "mouth_open_amount",
+                vec![num(self.mouth_open_amount as f64)],
             );
         }
         if (self.mouth_open_smoothing - 18.0).abs() > f32::EPSILON {

@@ -169,7 +169,7 @@ fn update_amplitude_mouth_open(
     humanoid_maps: &mut HumanoidBoneMapSystem,
     dt_sec: f32,
 ) {
-    let (authored, cached, floor, ceiling, smoothing, previous) = {
+    let (authored, cached, floor, ceiling, amount, smoothing, previous) = {
         let Some(avc) = world.get_component_by_id_as::<AvatarControlComponent>(avc_id) else {
             return;
         };
@@ -178,6 +178,7 @@ fn update_amplitude_mouth_open(
             avc.resolved_mouth_open_amplitude,
             avc.mouth_open_rms_floor,
             avc.mouth_open_rms_ceiling,
+            avc.mouth_open_amount,
             avc.mouth_open_smoothing,
             avc.mouth_open_weight,
         )
@@ -192,7 +193,7 @@ fn update_amplitude_mouth_open(
     let target = source
         .and_then(|id| retained_level_sample(world, id))
         .map_or(0.0, |sample| {
-            ((sample.rms - floor) / (ceiling - floor)).clamp(0.0, 1.0)
+            ((sample.rms - floor) / (ceiling - floor)).clamp(0.0, 1.0) * amount
         });
     let alpha = if smoothing <= 0.0 {
         1.0

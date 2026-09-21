@@ -65,8 +65,9 @@ gain.
 - Negative dB: attenuation applied; downward red/orange bar.
 - Zero dB: unity gain; small amber neutral bar.
 
-The default policy is currently `0 dB .. +24 dB`, but the graph must support
-negative values because later policy may use a negative minimum gain.
+The default policy is `−24 dB .. +24 dB`, starting each fresh capture at
+unity (`0 dB`). The graph therefore shows learned attenuation below zero as
+well as learned boost above it.
 
 ## Engine seam
 
