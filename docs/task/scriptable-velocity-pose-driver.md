@@ -40,15 +40,33 @@ persistent acceleration/throttle API will use time explicitly at fixed steps.
 The first XR slice implements `translate` and linear integration; `rotate`
 and angular integration remain follow-up work.
 
-The unsuffixed methods interpret their delta in the driven transform's local
-orientation at command time. They convert that delta to world space and add
-it to world-space velocity state. An existing velocity vector does not turn
-when the object later turns. Expose explicit `translate_world(delta)` and,
-when angular motion arrives, `rotate_world(delta)` for world-axis commands.
-Ignore scale when mapping a local direction; rotated/scaled parents must not
-change commanded world speed. An HMD turning *inside* an outer grounding root
-does not turn that root's local basis. HMD-facing thrust needs a separate
-reference-orientation policy or an explicit world-space direction.
+By default, `translate(delta)` interprets the delta in the driven
+transform's local orientation at command time. An optional component
+reference overrides that command basis:
+
+```mms
+let xr_input = InputXR.on() { /* tracked rig */ }
+let vel = Velocity.rotation_basis(xr_input).horizontal() {}
+T { name = "grounding_root" vel T { xr_input } }
+```
+
+For an `InputXR` reference, resolve the active published XR eye orientation
+belonging to that rig; `InputXR` itself is only a pose-driver marker.
+`.horizontal()` projects local translation commands onto world XZ and
+normalizes the heading, so HMD pitch cannot create vertical thrust. Without
+the option, use the driven root's effective world orientation. A referenced
+transform may supply its effective world rotation as a non-XR basis. If the
+source is missing, disabled, ambiguous, or has no valid pose, reject the
+command rather than falling back silently. This read-only descendant
+reference does not change the transform hierarchy or the target Velocity
+integrates.
+
+Convert the selected basis and local delta to a world-space change, ignoring
+translation and scale, then add it to world-space velocity state. Existing
+momentum does not turn when the source later turns. Expose explicit
+`translate_world(delta)` to bypass the configured basis; when angular motion
+arrives, define `rotate_world(delta)` and whether `rotation_basis` also applies
+to `rotate`. Rotated/scaled parents must not change commanded world speed.
 
 Provide explicit read/set/zero access to current velocity without requiring
 an inverse `translate` call. The exact MMS spelling of those accessors and
@@ -76,10 +94,11 @@ component needs explicit enable/disable and cleanup behavior. Angular
 integration, when added, must use world-space angular state and convert the
 result to the target's local rotation without scale affecting angular speed.
 
-## Orientation helpers
+## Orientation helpers beyond the configured basis
 
-For steering relative to a *different* object, MMS eventually needs a way to
-obtain a world-space direction from its orientation:
+The configured `rotation_basis` covers the first XR velocity button scene.
+For arithmetic involving several orientations, MMS may also need a reusable
+way to obtain a world-space direction from an arbitrary object's orientation:
 
 ```text
 direction = rotate_vector(orientation_xyzw, local_forward_axis)

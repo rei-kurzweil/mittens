@@ -145,9 +145,11 @@ outer grounding transform. This pair is the outer root's **pose driver**.
 The first active version integrates XYZ linear velocity without gravity:
 `vel.translate(local_delta_mps)` changes velocity once on a button click,
 and `vel.translate_world(world_delta_mps)` is the explicit world-space form.
-Velocity state remains world-space after the local command is converted using
-the driven root's current orientation. The forward/back XR panel and a
-standalone headless test demonstrate commanded motion without gravity.
+The XR example configures `Velocity.rotation_basis(xr_input).horizontal()`
+so local forward/back commands use the inner rig's active eye heading; without
+a configured basis, they use the driven root's orientation. Velocity state
+remains world-space after the command's basis is sampled. The forward/back XR
+panel and a standalone headless test demonstrate motion without gravity.
 
 Use a bounded fixed timestep and a deterministic update order. Convert the
 world-space displacement into the root's parent-local translation if needed.

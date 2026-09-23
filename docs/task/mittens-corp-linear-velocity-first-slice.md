@@ -17,17 +17,19 @@ contact are later independent velocity-driver/contact slices.
 
 Use a `Velocity` component directly under the transform it drives. The named
 outer grounding root is the motion target, while gamepad XZ remains on the
-inner locomotion root:
+inner locomotion root. A retained `InputXR` component reference selects the
+inner rig's current heading as the velocity command's rotation basis:
 
 ```mms
-let vel = Velocity {} // retained live reference; zero linear velocity initially
+let xr_input = InputXR.on() { /* existing Bisket rig */ }
+let vel = Velocity.rotation_basis(xr_input).horizontal() {}
 ED.active() {
     T {
         name = "bisket_grounding_root"
         vel
         T.position(-5.0, 0.0, 0.0) {
             name = "bisket_locomotion_root"
-            InputXR.on() { /* existing Bisket rig */ }
+            xr_input
         }
     }
 }
@@ -46,48 +48,68 @@ matching back click cancels one forward click. Motion persists after release
 until another command changes it; there is no implicit friction or braking.
 Reject non-finite deltas and overflow to non-finite state.
 
-The unsuffixed `translate` command uses the driven transform's **local
-orientation at command time**. Convert the local vector to a world-space
-velocity delta, ignoring translation and scale, then add it to the stored
-world-space linear velocity. This is a snapshot, not a continuously rotating
-body-fixed velocity: subsequent yaw changes do not turn existing momentum.
-Expose `translate_world(delta)` for intentional world-axis changes; do not
-make authors rewrite/reparent transforms to obtain world-space behavior.
+Without `rotation_basis`, the unsuffixed `translate` command uses the driven
+transform's local orientation. With `rotation_basis(xr_input)`, it instead
+uses the referenced rig's **active published XR eye orientation** at command
+time; `InputXR` itself is a pose-driver marker, not an orientation value.
+The optional `.horizontal()` projects the resulting direction onto world XZ
+and normalizes it, removing headset pitch/roll so a forward/back click adds
+no vertical velocity. It changes command interpretation, not the velocity
+integrator's allowed axes. Resolve the basis after the XR pose is valid;
+reject an unavailable, disabled, or ambiguous XR source or degenerate
+horizontal projection with a diagnostic, without silently falling back to
+the grounding root or world -Z.
+
+Convert the local vector to a world-space velocity delta, ignoring
+translation and scale, then add it to the stored world-space linear velocity.
+This is a snapshot, not a continuously rotating body-fixed velocity:
+subsequent yaw changes do not turn existing momentum. Expose
+`translate_world(delta)` for intentional world-axis changes; it bypasses the
+configured rotation basis. A `ComponentRef` to a transform can use that
+transform's effective world rotation as a non-XR basis, subject to the same
+validity checks. Do not make authors rewrite/reparent transforms to obtain
+world-space behavior.
 Later, `rotate(delta)` may analogously add local angular velocity in rad/s;
 its contract must explicitly say it changes angular velocity rather than
 rotating the linear-velocity vector. Angular integration is not required for
 this two-button test. A persistent acceleration/throttle API is separate from
 these one-shot velocity increments.
 
-Important XR distinction: `bisket_grounding_root` does not rotate when the
-HMD turns inside it. Therefore local `vel.translate([0, 0, -0.25])` follows
-the grounding root's -Z, **not** the headset gaze. This first panel tests
-component-local semantics. HMD-facing thrust later needs an explicit
-orientation reference (or an HMD-forward vector converted into a world-space
-delta); parenting the outer root under its tracked descendant would create a
-cycle. Do not label this button "headset forward" until that policy exists.
+This read-only reference from an ancestor's `Velocity` to a descendant's
+`InputXR` creates no transform-parenting cycle: integration still moves only
+the outer root. Because velocity is stored in world space, pressing **back**
+after turning applies reverse thrust along the *new* heading; it is not a
+general brake for existing velocity in another direction. While heading is
+unchanged, one back click cancels one forward click.
 
 ## Proposed Rust boundary
 
-`VelocityComponent` owns enabled state and finite `linear_world_mps: [f32; 3]`
-with a zero default. The first slice resolves exactly one *immediate parent*
-`TransformComponent` as its target and reports a missing/ambiguous authority
-rather than searching arbitrary descendants. Its state is not hidden in
+`VelocityComponent` owns enabled state, finite `linear_world_mps: [f32; 3]`
+with a zero default, an optional `rotation_basis: ComponentRef`, and a
+horizontal-command flag. The first slice resolves exactly one *immediate
+parent* `TransformComponent` as its target and reports a missing or ambiguous
+authority rather than searching arbitrary descendants. Its state is not hidden in
 `CollisionResponseSystem`. The authored initial velocity is distinct from the
 mutable runtime velocity so scene serialization does not capture incidental
 button presses.
 
-`VelocitySystem` owns the resolved component-to-transform binding, applies
+`VelocitySystem` owns the resolved component-to-transform binding, resolves
+the optional rotation-basis reference on each accepted local command, applies
 validated `AddLinearLocal`, `AddLinearWorld`, and `SetLinearWorld` commands,
 and integrates the stored world velocity once per fixed substep. Rust callers
 should use explicit methods/command variants such as
 `add_linear_local(velocity_id, delta_mps)` and
 `add_linear_world(velocity_id, delta_mps)`; MMS exposes the shorter
-`translate` and `translate_world`. Resolve the effective world rotation of
-the driven transform when accepting a local command, then queue its converted
-world delta for the next substep. Apply accepted commands exactly once before
-that substep, never once per render frame or again on callback replay. The
-same-frame scheduling requirement in the grounding task still applies to
+`translate` and `translate_world`. Resolve the configured source when
+accepting a local command: an `InputXR` reference selects the current active
+published eye orientation for that rig (not another rig's active camera),
+while the unconfigured default uses the driven transform's effective world
+orientation. Reuse the authoritative horizontal XR basis policy already used
+by gamepad locomotion rather than
+reconstructing the rendered eye pose from an ECS ancestor chain. Queue the
+converted world delta for the next substep. Apply accepted commands exactly
+once before that substep, never once per render frame or again on callback
+replay. The same-frame scheduling requirement in the grounding task still applies to
 world transform and XR camera publication.
 
 Convert each integrated world displacement back through the target's parent
@@ -120,11 +142,15 @@ minimize, so `AccordionRestoreRequested` must rebuild it with fresh click
 handlers, without duplicating handlers on the old buttons.
 
 Headless tests should prove default zero, live MMS reference dispatch, one
-click = one velocity increment, back cancels forward, fixed-step integration
-at different render rates, world-speed preservation under a rotated/scaled
-parent, finite-value rejection, and composition with inner gamepad movement.
+click = one velocity increment, back cancels forward at constant heading,
+quarter-turn XR heading changes the world-space delta, pitch does not add Y
+under `.horizontal()`, invalid/missing poses do not fall back silently,
+fixed-step integration at different render rates, world-speed preservation
+under a rotated/scaled parent, finite-value rejection, and composition with
+inner gamepad movement.
 An XR smoke test should confirm both buttons are ray-clickable, the panel can
-be grabbed/minimized/restored, Bisket moves along grounding-root -Z, normal
+be grabbed/minimized/restored, Bisket moves along the current horizontal XR
+eye heading, normal
 gamepad/HMD/hand motion continues, and the mirror/camera see the same-frame
 outer-root motion. There is no floor stop in this slice; avoid claiming that
 the avatar is grounded.
@@ -135,4 +161,5 @@ The broader [scriptable Velocity pose-driver task](scriptable-velocity-pose-driv
 now uses the same single-component, direct-child attachment and
 `translate`/`rotate` naming. This focused XR slice implements only linear
 `translate` and integration; angular `rotate` follows later. Both documents
-use local-default *change commands* over world-space stored velocity.
+use local *change commands*, optionally relative to an explicitly referenced
+rotation basis, over world-space stored velocity.

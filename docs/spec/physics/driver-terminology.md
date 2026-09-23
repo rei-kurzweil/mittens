@@ -54,9 +54,12 @@ friction, and contact impulses are separate velocity-changing mechanisms.
 
 The proposed live `vel.translate(delta_mps)` is a **one-shot velocity change**,
 not a pose translation and not acceleration integrated over time. A click
-therefore supplies no `dt`. Its unsuffixed delta is expressed in the driven
-transform's local orientation at command time, then added to world-space
-velocity state; `vel.translate_world(delta_mps)` names the world-axis form.
+therefore supplies no `dt`. Its unsuffixed delta uses the driven transform's
+orientation by default, or an explicit `rotation_basis(component_ref)` such
+as the inner `InputXR` rig's active eye orientation; optional `.horizontal()`
+removes vertical thrust from that command. The basis is sampled at command
+time, and the resulting delta is added to world-space velocity state;
+`vel.translate_world(delta_mps)` bypasses the basis for a world-axis change.
 The analogous proposed `vel.rotate(delta_radps)` would change angular
 velocity, not rotate the linear-velocity vector. These names are defined in
 the [XR linear-velocity task](../../task/mittens-corp-linear-velocity-first-slice.md);
