@@ -11,6 +11,12 @@ resulting motion to descendant transforms through the existing pose/transform
 pipeline. Descendants inherit motion once, not once per ancestor. Preserve
 authored offsets, rotation, and scale.
 
+Terminology follow-up: [pose and velocity drivers](../spec/physics/driver-terminology.md)
+calls the active `Velocity` integrator a **pose driver**. Gravity, throttle,
+and other inputs that change its velocity are **velocity drivers**. The older
+uses of "velocity driver" below mean the active `Velocity` pose driver and
+should be reconciled when this task is implemented.
+
 ## Authoring shape and driven-transform boundary
 
 Prefer the pose-driver wrapper form. It composes naturally with the existing

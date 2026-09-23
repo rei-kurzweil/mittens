@@ -15,6 +15,8 @@ This is the focused implementation path for
 [skinned-mesh grounding and floor contact](./skinned-mesh-grounding-and-floor-contact.md).
 The capsule stick figure stays a separate static scale reference while the XR
 Bisket path is established.
+Use the [pose/velocity driver terminology](../spec/physics/driver-terminology.md)
+when defining the new components and systems.
 
 ## Actual starting point
 
@@ -68,8 +70,8 @@ the contract:
 
 | Component | First-slice responsibility |
 | --- | --- |
-| `VelocityComponent` | Holds the current world-space linear velocity and opts the named outer transform into integration; initially writes Y only. `VelocitySystem` can also run it with a commanded velocity and no gravity. |
-| `GravityAccelerationComponent` | Applies a configured downward acceleration to that velocity once per fixed substep. It does not move a transform itself. |
+| `VelocityComponent` | Holds the current world-space linear velocity and opts the named outer transform into integration; initially writes Y only. Together with `VelocitySystem`, it is the outer root's pose driver. It can also run with a commanded velocity and no gravity. |
+| `GravityAccelerationComponent` | A linear velocity driver: applies configured downward acceleration to that velocity once per fixed substep. It does not move a transform itself. |
 | `GroundContactComponent` | Names the floor/proxy and outer movement target. Contact correction writes the same outer root and cancels velocity into the floor normal. |
 | `Collision`/capsule proxy | Supplies geometry for contact. It carries no gravity or private velocity. AVC's existing inferred capsule may be reused after its old response is explicitly disabled or migrated. |
 
@@ -131,8 +133,9 @@ gravity and collision complicate diagnosis.
 ## Slice B — a usable vertical VelocitySystem
 
 Add a first-class world-space `VelocityComponent` and dedicated
-`VelocitySystem` for one explicitly nominated transform. The first active
-driver integrates only the outer root's Y channel. A standalone headless test
+`VelocitySystem` for one explicitly nominated transform. This pair is the
+outer root's **pose driver**; the first active version integrates only Y.
+A standalone headless test
 must also demonstrate commanded constant velocity without gravity, so the
 velocity path is useful on its own.
 
@@ -142,8 +145,9 @@ Document the accumulator limit and report dropped time; reject non-finite
 values and two active Y writers on the same transform. Store current velocity
 in `VelocityComponent`, not in a collision component or ad hoc system map.
 
-Gravity is an opt-in, named acceleration provider that changes velocity once
-per substep (`v_y += g * dt`). For this slice it may be a single uniform world
+Gravity is an opt-in **velocity driver**: a named acceleration provider that
+changes linear velocity once per substep (`v_y += g * dt`) and never writes
+the grounding transform. For this slice it may be a single uniform world
 gravity configuration; a general force accumulator, mass, torque, and impulses
 can follow when there is a second consumer. Mark that future extension with a
 short `TODO` at the provider boundary if the code needs one. Gravity must not
