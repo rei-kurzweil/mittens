@@ -2,6 +2,12 @@
 
 Status: proposed.
 
+The implementation begins with the focused
+[XR avatar grounding first slices](./xr-avatar-grounding-first-slices.md).
+That task establishes the outer Bisket grounding root, a dedicated vertical
+velocity path, and one static floor contact before generalizing this design
+to other skinned models.
+
 ## Goal
 
 Make an opt-in skinned-model placement rig settle onto a named static floor so
@@ -94,10 +100,9 @@ step**, not one writer per avatar:
 
 Where two sources genuinely need the same channel, introduce another explicit
 wrapper or define a composition operator; never have both systems write the
-same `TransformComponent` opportunistically. The grounding task's initial XR
-mode remains `static_contact_only` until the exact current hierarchy proves
-that floor correction reaches the intended grounding root without fighting the
-tracked HMD pose.
+same `TransformComponent` opportunistically. The focused XR slice first proves
+the hierarchy with an inert outer root, then enables gravity and floor contact
+on that root while leaving the tracked HMD pose on its existing descendant.
 
 ## One authoritative ground plane
 
@@ -181,11 +186,11 @@ The initial policy has two explicit modes:
 | `settle_with_gravity` | static comparison subjects and released models | Integrate downward velocity and rest on static floors. |
 | `static_contact_only` | externally pose-driven subjects | Correct static penetration but do not add gravity or alter externally authored airborne motion. |
 
-An XR head-driven Bisket must begin in `static_contact_only` unless/until a
-separate XR locomotion authority design proves how standing height, crouching,
-teleportation, and tracked HMD Y compose with gravity. Do not make the tracked
-avatar continuously fall away from its HMD pose merely to satisfy a comparison
-test.
+The XR Bisket acceptance path uses `settle_with_gravity` on a dedicated outer
+root after the inert-hierarchy check. It must prove how standing height,
+crouching, recentering, and tracked HMD Y compose with gravity before enabling
+that mode in the scene. `static_contact_only` remains useful for externally
+posed subjects whose roots should not fall.
 
 ## Integration plan
 
@@ -204,8 +209,9 @@ test.
 6. Connect `settle_with_gravity` to a static capsule subject and verify it falls
    from several starting heights without tunneling through the floor or
    oscillating at rest.
-7. Connect `static_contact_only` to the Bisket comparison rig and verify floor
-   correction does not fight XR head/hand tracking or pose capture.
+7. Connect `settle_with_gravity` to Bisket's new outer grounding root and verify
+   floor correction does not fight XR head/hand tracking, gamepad locomotion,
+   or pose capture.
 8. Add a comparison overlay/log with measured height and bottom-to-floor error;
    only then decide whether the capsule scene needs an authored scale change.
 
@@ -219,9 +225,8 @@ test.
 - [ ] The capsule's scale is unchanged by grounding; the final diagnostics make
   any height discrepancy numerically obvious.
 - [ ] Static floors block groundable proxies but never move themselves.
-- [ ] `static_contact_only` corrects a Bisket floor penetration without adding
-  free-fall motion or disrupting the XR camera, hand IK, locomotion, or pose
-  capture.
+- [ ] Bisket's outer grounding root settles under gravity without disrupting
+  the XR camera, hand IK, gamepad locomotion, or pose capture.
 - [ ] Removing/reloading a GLTF or floor cleans up proxy, velocity, constraint,
   and visualization state without orphan colliders.
 - [ ] Unit tests cover capsule bottom inference, floor MTV/contact-normal
