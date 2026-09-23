@@ -134,6 +134,9 @@ scene:
 
 - [Component picker](./component-picker.md) — reusable scene-component field,
   pick mode, reference persistence, clear action, and selection feedback.
+- [Skinned-mesh grounding and static floor contact](./skinned-mesh-grounding-and-floor-contact.md)
+  — place the Bisket reference and A-pose capsule on one measured ground plane
+  before interpreting their visual height difference.
 
 ## Out of scope for this first example
 
