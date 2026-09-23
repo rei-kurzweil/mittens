@@ -69,13 +69,32 @@ override. On Apply, resolve it to a glTF root: accept the picked glTF itself or
 its owning glTF, then run the same unique-joint preflight currently used for
 pose application. The capture-library section remains the source of the pose.
 
+## ComponentPickerSystem
+
+Add a dedicated `ComponentPickerSystem` under the editor systems. This is not
+the responsibility of `SelectionSystem`, `TransformGizmoSystem`, or the Pose
+panel:
+
+- `SelectionSystem` owns selection of known `Option` entries in bounded UI
+  subtrees.
+- the ordinary editor scene-selection path owns the editor's
+  `selected_component` and transform-gizmo target;
+- `ComponentPickerSystem` owns temporary, editor-scoped component-pick
+  sessions and their one-shot scene-hit consumption;
+- a consumer panel owns its persisted `ComponentRef` and supplies the
+  acceptance/resolution policy for its field.
+
+This separation lets the same picker serve future component-reference fields
+without coupling them to pose capture, and prevents a generic scene-pick mode
+from changing ordinary editor selection as a side effect.
+
 ## Pick-mode interaction contract
 
-Starting pick mode registers one editor-scoped, exclusive scene-hit consumer.
-It has priority over ordinary editor selection for the next eligible world
-click/ray hit, consumes that hit, and then exits. This prevents a picker click
-from simultaneously moving the transform gizmo or replacing the editor's
-ordinary `selected_component`.
+Starting pick mode asks `ComponentPickerSystem` to register one editor-scoped,
+exclusive scene-hit consumer. It has priority over ordinary editor selection
+for the next eligible world click/ray hit, consumes that hit, and then exits.
+This prevents a picker click from simultaneously moving the transform gizmo or
+replacing the editor's ordinary `selected_component`.
 
 Existing `resolve_world_scene_hit` behavior is the starting filter: it already
 rejects runtime editor UI, gizmo subtrees, and `Selectable.off()` helpers, and
@@ -94,6 +113,11 @@ While mode is active:
 - only one picker session is active per editor workspace. Starting another
   picker cancels the old session rather than leaving two consumers racing for a
   hit.
+
+`ComponentPickerSystem` publishes explicit lifecycle results to the initiating
+field/consumer: started, candidate-rejected with reason, committed, cancelled,
+and invalidated. The panel turns those into its field state and status text;
+the system must not contain pose-panel-specific labels or glTF rules.
 
 `SelectionComponent` remains useful for bounded, authored option lists. It is
 not the implementation vehicle for this control: its scope is a known subtree,
@@ -121,8 +145,8 @@ when the picker field is distant from the object in XR.
 
 ## Implementation slices
 
-1. Add picker state and an editor-scoped pick-session coordinator, with a
-   deterministic scene-hit priority/consumption rule.
+1. Add `ComponentPickerSystem`, picker state, and an editor-scoped pick-session
+   coordinator, with a deterministic scene-hit priority/consumption rule.
 2. Add reusable compact field rendering: idle, picking, resolved, unresolved,
    and clear states.
 3. Add reference storage/resolution and lifecycle handling for GUID/query
