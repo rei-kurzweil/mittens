@@ -137,6 +137,30 @@ fn agc_desktop_example_evaluates_and_live_policy_methods_preserve_the_running_un
             "{label} should use the compact in-panel track width"
         );
     }
+    let settings_panel = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("agc_desktop_settings_panel"))
+        .expect("desktop scene should retain the mouth-response settings panel");
+    let response_panel = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("agc_response_panel"))
+        .expect("desktop scene should separately author the AGC response panel");
+    assert_ne!(settings_panel, response_panel);
+    assert!(
+        world
+            .find_component(response_panel, "#agc_input_history_layers")
+            .is_some()
+            && world
+                .find_component(response_panel, "#agc_gain_history_layers")
+                .is_some(),
+        "the separate response panel should own both rolling input and gain tracks"
+    );
+    assert!(
+        world
+            .find_component(settings_panel, "#agc_input_history_layers")
+            .is_none(),
+        "the settings panel should contain only mouth-response controls"
+    );
     let normalizer = world
         .all_components()
         .find(|&id| {
@@ -272,7 +296,7 @@ fn agc_desktop_example_evaluates_and_live_policy_methods_preserve_the_running_un
 }
 
 #[test]
-fn volume_normalization_example_evaluates_and_binds_avc_to_normalized_level() {
+fn agc_xr_example_evaluates_and_binds_avc_to_normalized_level() {
     use crate::engine::ecs::component::{
         AmplitudeComponent, AmplitudeSample, AmplitudeStatus, AvatarControlComponent,
         ControllerHand, EmissiveComponent, InputXRGamepadComponent, VolumeNormalizationComponent,
@@ -284,14 +308,14 @@ fn volume_normalization_example_evaluates_and_binds_avc_to_normalized_level() {
     let mut assets = RenderAssets::new();
     let mut queue = CommandQueue::new();
     let (mut session, output) = RuntimeSpecSession::start_at_path(
-        include_str!("../../examples/mittens-corp-volume-normalization.mms"),
-        "examples/mittens-corp-volume-normalization.mms",
+        include_str!("../../examples/mittens-corp-agc.mms"),
+        "examples/mittens-corp-agc.mms",
         &mut world,
         &mut rx,
         Some(&mut assets),
         &mut queue,
     )
-    .expect("volume normalization scene should start");
+    .expect("XR AGC scene should start");
     assert!(output.errors.is_empty(), "{:?}", output.errors);
     assert!(world.all_components().any(|id| {
         world
@@ -327,9 +351,10 @@ fn volume_normalization_example_evaluates_and_binds_avc_to_normalized_level() {
         .get_component_by_id_as::<AvatarControlComponent>(avc_id)
         .unwrap();
     assert!(
-        (avc.mouth_open_rms_floor - 0.003).abs() < f32::EPSILON
-            && (avc.mouth_open_rms_ceiling - 0.06).abs() < f32::EPSILON,
-        "the example should use a more responsive RMS-to-mouth calibration"
+        (avc.mouth_open_rms_floor - 0.008).abs() < f32::EPSILON
+            && (avc.mouth_open_rms_ceiling - 0.068).abs() < f32::EPSILON
+            && (avc.mouth_open_amount - 1.0).abs() < f32::EPSILON,
+        "the XR scene should apply the rei_2026.9 mouth-response preset"
     );
     let source = avc.mouth_open_amplitude.as_ref().unwrap();
     assert_eq!(
@@ -359,6 +384,23 @@ fn volume_normalization_example_evaluates_and_binds_avc_to_normalized_level() {
         world.find_component(response_anchor, "#agc_response_panel"),
         Some(response_panel),
         "the grabbable anchor should own the info-panel shell"
+    );
+    let settings_panel = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("agc_mouth_response_settings_panel"))
+        .expect("XR scene should author a separate mouth-response settings panel");
+    assert_ne!(settings_panel, response_panel);
+    assert!(
+        world
+            .find_component(settings_panel, "#mouth_rms_center_slider")
+            .is_some()
+            && world
+                .find_component(settings_panel, "#mouth_rms_range_slider")
+                .is_some()
+            && world
+                .find_component(settings_panel, "#mouth_amount_slider")
+                .is_some(),
+        "the XR settings panel should retain the compact three-control mouth-response UI"
     );
     let title_bar = world
         .find_component(response_panel, "#title_bar")
@@ -671,6 +713,42 @@ fn volume_normalization_example_evaluates_and_binds_avc_to_normalized_level() {
     assert!(
         (marker_x - 10.0 * (2.05 + 0.34) * 0.08).abs() < 1e-5,
         "the labels-off sample must keep moving the whole-second boundary"
+    );
+
+    // Accordion minimization stops the graph sampler itself: the next tick
+    // must neither rebuild either viewport nor remove its current view.
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            response_anchor,
+            EventSignal::DataEvent {
+                name: "AccordionMinimized".into(),
+                payload: None,
+            },
+        ),
+    );
+    let minimize_output =
+        session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+    assert!(
+        minimize_output.errors.is_empty(),
+        "{:?}",
+        minimize_output.errors
+    );
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            ComponentId::default(),
+            EventSignal::FrameTick { dt_sec: 0.1 },
+        ),
+    );
+    let paused_tick = session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+    assert!(paused_tick.errors.is_empty(), "{:?}", paused_tick.errors);
+    assert!(
+        !paused_tick.intents.iter().any(|intent| {
+            matches!(intent, IntentValue::Attach { parent, .. } if *parent == input_layers || *parent == gain_layers)
+                || matches!(intent, IntentValue::RemoveSubtree { .. })
+        }),
+        "a minimized response accordion must not update or rebuild graph views"
     );
 
     let gamepad = world

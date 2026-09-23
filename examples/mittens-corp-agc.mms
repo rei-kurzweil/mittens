@@ -1,7 +1,7 @@
-// mittens-corp-volume-normalization — XR car/controller regression scene and Bisket pose-authoring tool.
+// mittens-corp-agc — XR car/controller regression scene and Bisket pose-authoring tool.
 //
 // Run with:
-//   cargo run --release -- load examples/mittens-corp-volume-normalization.mms
+//   cargo run --release -- load examples/mittens-corp-agc.mms
 //
 // The vehicle uses the generic inverse-local anchor operator rather than AVC:
 // the rigid car has no humanoid specialization for AVC to perform.
@@ -12,6 +12,7 @@ import { bisket_anime_shading } from "../assets/components/materials/bisket_anim
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
+import { rei_2026_9 } from "../assets/components/mouth_response/rei_2026.9.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { suspended_platform } from "../assets/components/platforms/suspended_platform.mms"
 import { display_car_xr } from "../assets/components/vehicles/display_car.mms"
@@ -27,6 +28,12 @@ let raw_voice_level = Amplitude.rolling_window(0.080).from(microphone) {}
 // analysis view. It changes no audible microphone samples.
 let voice_level = VolumeNormalization.from(raw_voice_level) {}
 let agc_mode = { enabled = true }
+let mouth_response_preset = rei_2026_9()
+let mouth_tuning = {
+    center_rms = mouth_response_preset.rms_center
+    range_rms = mouth_response_preset.rms_range
+    amount = mouth_response_preset.mouth_movement_amount
+}
 
 // The response panel samples retained main-thread diagnostics rather than
 // audio callback data. The graph is rebuilt from twelve scalar snapshots at
@@ -50,6 +57,120 @@ fn fixed_3(value) {
         sign = "-"
     }
     return sign + whole + "." + padding + fraction
+}
+
+let MOUTH_PANEL_WIDTH = 40.0
+let MOUTH_ROW_HEIGHT = 3.0
+let MOUTH_LABEL_WIDTH = 11.0
+let MOUTH_SLIDER_SLOT_WIDTH = 18.0
+let MOUTH_READOUT_WIDTH = 4.0
+let MOUTH_CONTROL_FONT_SIZE = 0.8
+
+fn mouth_response_slider(slider_name, initial, minimum, maximum, step) {
+    let track = T.scale(2.0, 0.025, 0.10) {
+        R.cube() {
+            C.rgba(0.24, 0.45, 0.65, 1.0)
+            Raycastable.enabled() { interaction_priority(120.0) }
+        }
+    }
+    let thumb = T.scale(0.1125, 0.225, 0.30) {
+        R.sphere() {
+            C.rgba(1.0, 0.46, 0.64, 1.0)
+            Raycastable.enabled() { interaction_priority(120.0) }
+        }
+    }
+    return Slider.range(minimum, maximum).step(step).value(initial).width(4.0)
+        .track(track)
+        .thumb(thumb) { name = slider_name }
+}
+
+fn mouth_response_row(text, slider, readout) {
+    return T {
+        Style {
+            display("flex") flex_direction("row") width(100%) height(MOUTH_ROW_HEIGHT)
+            align_items("center") gap(0.5)
+            background_color([0.055, 0.075, 0.10, 0.94]) background_z(-0.02)
+        }
+        T {
+            Style {
+                display("flex") width(MOUTH_LABEL_WIDTH) height(MOUTH_ROW_HEIGHT)
+                align_items("center") padding_xy(0.25, 0.0) font_size(MOUTH_CONTROL_FONT_SIZE)
+            }
+            T.position(0.0, 0.0, 0.03) { Text { text } }
+        }
+        T {
+            Style {
+                display("flex") width(MOUTH_SLIDER_SLOT_WIDTH) height(MOUTH_ROW_HEIGHT)
+                flex_grow(1.0) align_items("center") justify_content("center")
+            }
+            slider
+        }
+        T {
+            Style {
+                display("flex") width(MOUTH_READOUT_WIDTH) height(MOUTH_ROW_HEIGHT)
+                align_items("center") justify_content("center") font_size(MOUTH_CONTROL_FONT_SIZE)
+                color([0.76, 0.92, 1.0, 1.0])
+            }
+            T.position(0.0, 0.0, 0.03) { readout }
+        }
+    }
+}
+
+fn apply_mouth_tuning(mouth_tuning) {
+    let avatar = query("#bisket_avatar_control")
+    if avatar {
+        avatar.set_mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
+        avatar.set_mouth_open_amount(mouth_tuning.amount)
+    }
+}
+
+// The avatar is authored later in the XR rig. Resolve it only while a slider
+// changes so the settings panel stays a world-space, independently grabbable
+// tool rather than becoming a child of the player rig.
+fn make_mouth_response_content(mouth_tuning) {
+    let center_slider = mouth_response_slider("mouth_rms_center_slider", mouth_tuning.center_rms, 0.001, 0.120, 0.001)
+    let center_readout = Text { name = "mouth_rms_center_readout" fixed_3(mouth_tuning.center_rms) + " RMS" }
+    let range_slider = mouth_response_slider("mouth_rms_range_slider", mouth_tuning.range_rms, 0.001, 0.120, 0.001)
+    let range_readout = Text { name = "mouth_rms_range_readout" fixed_3(mouth_tuning.range_rms) + " RMS" }
+    let amount_slider = mouth_response_slider("mouth_amount_slider", mouth_tuning.amount, 0.0, 1.0, 0.01)
+    let amount_readout = Text { name = "mouth_amount_readout" fixed_3(mouth_tuning.amount) }
+
+    on(center_slider, "SliderChanged", fn(event) {
+        mouth_tuning.center_rms = event.value
+        if mouth_tuning.range_rms * 0.5 > mouth_tuning.center_rms {
+            mouth_tuning.range_rms = mouth_tuning.center_rms * 2.0
+            range_slider.sync_value(mouth_tuning.range_rms)
+            range_readout.set_text(fixed_3(mouth_tuning.range_rms) + " RMS")
+        }
+        apply_mouth_tuning(mouth_tuning)
+        center_readout.set_text(fixed_3(mouth_tuning.center_rms) + " RMS")
+    })
+    on(range_slider, "SliderChanged", fn(event) {
+        mouth_tuning.range_rms = event.value
+        if mouth_tuning.range_rms * 0.5 > mouth_tuning.center_rms {
+            mouth_tuning.range_rms = mouth_tuning.center_rms * 2.0
+            range_slider.sync_value(mouth_tuning.range_rms)
+        }
+        apply_mouth_tuning(mouth_tuning)
+        range_readout.set_text(fixed_3(mouth_tuning.range_rms) + " RMS")
+    })
+    on(amount_slider, "SliderChanged", fn(event) {
+        mouth_tuning.amount = event.value
+        apply_mouth_tuning(mouth_tuning)
+        amount_readout.set_text(fixed_3(mouth_tuning.amount))
+    })
+
+    return T {
+        name = "mouth_response_settings_content"
+        Style { display("flex") flex_direction("column") width(100%) row_gap(0.20) }
+        T {
+            Style { display("block") width(100%) font_size(0.60) color([0.78, 0.84, 0.92, 1.0]) }
+            Text { "Map the AGC-adjusted microphone level to Bisket's mouth. These controls do not alter AGC policy or audio input." }
+        }
+        mouth_response_row("RMS centre", center_slider, center_readout)
+        mouth_response_row("RMS range", range_slider, range_readout)
+        mouth_response_row("mouth amount", amount_slider, amount_readout)
+    }
 }
 
 // A blue history column represents one raw RMS snapshot entering the AGC.
@@ -319,7 +440,7 @@ fn make_level_history_content(history, config) {
                 width(100%)
                 color([0.70, 0.74, 0.82, 1.0])
             }
-            Text { "oldest ←                         → newest" }
+            Text { "oldest <-                         -> newest" }
         }
     }
 }
@@ -334,6 +455,7 @@ fn gain_db_label(gain_db) {
 fn make_level_history_graph(raw_level, level, config) {
     let history = {
         elapsed_sec = 0.0
+        active = true
         sample_count = 0.0
         samples_until_second = 10.0
         second_marker_index = -1.0
@@ -363,17 +485,20 @@ fn make_level_history_graph(raw_level, level, config) {
     let body_mount = graph.query("#accordion_body_mount")
 
     on_global("FrameTick", fn(event) {
-        history.elapsed_sec = history.elapsed_sec + event.dt_sec
-        let should_sample = false
-        if config.sample_period_sec == 0.0 {
-            should_sample = true
-        } else if history.elapsed_sec >= config.sample_period_sec {
-            // Retain only the remainder: a long frame produces one current
-            // visual sample, never a burst of duplicate historical columns.
-            history.elapsed_sec = history.elapsed_sec - config.sample_period_sec
-            should_sample = true
-        }
-        if should_sample {
+        // A minimized accordion has no graph body to update. More importantly,
+        // it must not continue doing the retained reads or rebuilding views.
+        if history.active {
+            history.elapsed_sec = history.elapsed_sec + event.dt_sec
+            let should_sample = false
+            if config.sample_period_sec == 0.0 {
+                should_sample = true
+            } else if history.elapsed_sec >= config.sample_period_sec {
+                // Retain only the remainder: a long frame produces one current
+                // visual sample, never a burst of duplicate historical columns.
+                history.elapsed_sec = history.elapsed_sec - config.sample_period_sec
+                should_sample = true
+            }
+            if should_sample {
             let input_rms = raw_level.value()
             let gain_db = level.gain_db()
             history.i0 = history.i1
@@ -430,14 +555,19 @@ fn make_level_history_graph(raw_level, level, config) {
                     current_gain_text.set_text("input: " + fixed_3(input_rms) + "  ·  gain: " + gain_db_label(gain_db))
                 }
             }
+            }
         }
     })
 
     on(graph, "DataEvent", fn(event) {
-        if event == "AccordionRestoreRequested" {
+        if event == "AccordionMinimized" {
+            history.active = false
+        } else if event == "AccordionRestoreRequested" {
             // The info-panel asset intentionally removes its body while
             // minimized. Recreate this dynamic body and resume sampling on
             // its next normal 100 ms update.
+            history.active = true
+            history.elapsed_sec = 0.0
             body_mount.attach(info_panel_body({
                 content = make_level_history_content(history, config)
             }))
@@ -468,6 +598,29 @@ let agc_level_graph = make_level_history_graph(raw_voice_level, voice_level, {
     panel_z = 1.35
 })
 agc_level_graph
+
+let mouth_response_settings = info_panel({
+    root_name = "agc_mouth_response_settings_panel"
+    width_gu = MOUTH_PANEL_WIDTH
+    unit_scale = 0.08
+    title = "AGC mouth response"
+    background_color = [0.10, 0.20, 0.28, 0.98]
+    toggle_background_color = [0.16, 0.38, 0.54, 1.0]
+    content = make_mouth_response_content(mouth_tuning)
+})
+T.position(1.60, 2.05, 1.35) {
+    name = "agc_mouth_response_settings_anchor"
+    Grabbable {}
+    mouth_response_settings
+}
+let mouth_response_settings_body_mount = mouth_response_settings.query("#accordion_body_mount")
+on(mouth_response_settings, "DataEvent", fn(event) {
+    if event == "AccordionRestoreRequested" {
+        mouth_response_settings_body_mount.attach(info_panel_body({
+            content = make_mouth_response_content(mouth_tuning)
+        }))
+    }
+})
 
 // A deliberately authored layout panel, rather than a default/debug label:
 // black backing makes the amber readout legible in both the studio and mirror.
@@ -641,12 +794,10 @@ ED.active() {
                     bisket_shirt_physics(false)
                 }
                 let bisket_avatar_control = AVC {
+                    name = "bisket_avatar_control"
                     mouth_open_from_amplitude(voice_level)
-                    // This is an explicit RMS-to-mouth mapping, independent
-                    // from AGC.  Full mouth-open at 0.06 makes the microphone
-                    // model noticeably more responsive to ordinary speech.
-                    mouth_open_rms_floor(0.003)
-                    mouth_open_rms_ceiling(0.06)
+                    mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
+                    mouth_open_amount(mouth_tuning.amount)
                     mouth_open_smoothing(16.0)
                     voice_level
                     

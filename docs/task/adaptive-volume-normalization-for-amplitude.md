@@ -20,7 +20,7 @@ this `VolumeNormalization` is AGC-style control, not loudness normalization.
 
 ## Working integration scene
 
-`examples/mittens-corp-volume-normalization.mms` is the XR history and A/B
+`examples/mittens-corp-agc.mms` is the XR history and A/B
 scene: it keeps raw input visible while AVC consumes
 `VolumeNormalization.from(raw_voice_level)`.
 

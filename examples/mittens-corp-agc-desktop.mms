@@ -18,6 +18,7 @@ import { tripod_light } from "../assets/components/tripod_light.mms"
 import { truss } from "../assets/components/truss.mms"
 import { suspended_platform } from "../assets/components/platforms/suspended_platform.mms"
 import { star_kawaii_background } from "../assets/components/backgrounds/star_kawaii_background.mms"
+import { button } from "../assets/components/button.mms"
 import { info_panel, info_panel_body } from "../assets/components/ui/info_panel.mms"
 
 let microphone = AudioInput {}
@@ -121,7 +122,6 @@ fn make_mouth_response_content(avatar, mouth_tuning) {
         "mouth_amount_slider", mouth_tuning.amount, 0.0, 1.0, 0.01,
     )
     let amount_readout = Text { name = "mouth_amount_readout" "1.000" }
-    let live_readout = Text { name = "agc_live_readout" "waiting for microphone…" }
 
     on(center_slider, "SliderChanged", fn(event) {
         mouth_tuning.center_rms = event.value
@@ -159,11 +159,269 @@ fn make_mouth_response_content(avatar, mouth_tuning) {
         mouth_response_row("RMS centre", center_slider, center_readout)
         mouth_response_row("RMS range", range_slider, range_readout)
         mouth_response_row("mouth amount", amount_slider, amount_readout)
-        T {
-            Style { display("block") width(100%) margin_top(0.25) font_size(0.60) color([0.88, 0.96, 1.0, 1.0]) }
-            live_readout
+    }
+}
+
+// The response monitor is intentionally independent from the mouth-response
+// settings panel. It samples retained main-thread diagnostics at 10 Hz: blue
+// bars are input RMS and the dB track is the normalizer's signed gain.
+fn make_level_history_bar(level_rms, index, visible, labels_enabled, colour, config) {
+    let level = level_rms
+    if level > config.level_extent { level = config.level_extent }
+    if level < 0.0 { level = 0.0 }
+    let height = level / config.level_extent * config.plot_height
+    let y = -config.plot_height + height / 2.0
+    let alpha = 0.0
+    if visible { alpha = 1.0 }
+    let x_gu = config.column_width / 2.0 + index * (config.column_width + config.column_gap)
+    return T.position(x_gu * config.unit_scale, 0.0, 0.0) {
+        name = "agc_level_history_sample"
+        T.position(0.0, y * config.unit_scale, 0.03).scale(
+            config.column_width * config.unit_scale,
+            height * config.unit_scale,
+            config.column_depth * config.unit_scale,
+        ) {
+            R.cube() { C.rgba(colour[0], colour[1], colour[2], alpha) }
+        }
+        if labels_enabled && visible {
+            T.position(0.0, y * config.unit_scale, 0.075)
+                .rotation(0.0, 0.0, 1.570796)
+                .scale(config.value_text_scale, config.value_text_scale, 1.0) {
+                Text { fixed_3(level_rms) C.rgba(0.98, 0.99, 1.0, 1.0) TextureFiltering.linear() }
+            }
         }
     }
+}
+
+fn make_second_marker(index, config) {
+    let x_gu = index * (config.column_width + config.column_gap)
+    return T.position(x_gu * config.unit_scale, -config.plot_height / 2.0 * config.unit_scale, 0.045).scale(
+        config.second_marker_width * config.unit_scale,
+        config.plot_height * config.unit_scale,
+        config.column_depth * config.unit_scale,
+    ) {
+        name = "agc_second_marker"
+        R.cube() { C.rgba(0.28, 0.78, 1.0, 0.90) EM.on() { intensity(1.8) } }
+    }
+}
+
+fn make_input_history_view(history, labels_enabled, config) {
+    let first_visible = config.max_samples - history.sample_count
+    return T {
+        name = "agc_input_history_view"
+        make_level_history_bar(history.i0, 0.0, 0.0 >= first_visible, labels_enabled, [0.20, 0.60, 1.00], config)
+        make_level_history_bar(history.i1, 1.0, 1.0 >= first_visible, labels_enabled, [0.20, 0.60, 1.00], config)
+        make_level_history_bar(history.i2, 2.0, 2.0 >= first_visible, labels_enabled, [0.20, 0.60, 1.00], config)
+        make_level_history_bar(history.i3, 3.0, 3.0 >= first_visible, labels_enabled, [0.20, 0.60, 1.00], config)
+        make_level_history_bar(history.i4, 4.0, 4.0 >= first_visible, labels_enabled, [0.20, 0.60, 1.00], config)
+        make_level_history_bar(history.i5, 5.0, 5.0 >= first_visible, labels_enabled, [0.20, 0.60, 1.00], config)
+        make_level_history_bar(history.i6, 6.0, 6.0 >= first_visible, labels_enabled, [0.20, 0.60, 1.00], config)
+        make_level_history_bar(history.i7, 7.0, 7.0 >= first_visible, labels_enabled, [0.20, 0.60, 1.00], config)
+        make_level_history_bar(history.i8, 8.0, 8.0 >= first_visible, labels_enabled, [0.20, 0.60, 1.00], config)
+        make_level_history_bar(history.i9, 9.0, 9.0 >= first_visible, labels_enabled, [0.20, 0.60, 1.00], config)
+        make_level_history_bar(history.i10, 10.0, 10.0 >= first_visible, labels_enabled, [0.20, 0.60, 1.00], config)
+        make_level_history_bar(history.i11, 11.0, 11.0 >= first_visible, labels_enabled, [0.20, 0.60, 1.00], config)
+        if history.second_marker_index >= 0.0 { make_second_marker(history.second_marker_index, config) }
+    }
+}
+
+fn make_gain_history_bar(gain_db, index, visible, labels_enabled, config) {
+    let magnitude = Math.abs(gain_db)
+    if magnitude > config.db_extent { magnitude = config.db_extent }
+    let height = magnitude / config.db_extent * config.plot_height / 2.0
+    let zero_y = -config.plot_height / 2.0
+    let y = zero_y
+    let colour = [0.20, 1.00, 0.48, 0.0]
+    if visible && gain_db > config.gain_epsilon_db {
+        y = zero_y + height / 2.0
+        colour = [0.20, 1.00, 0.48, 1.0]
+    } else if visible && gain_db < -config.gain_epsilon_db {
+        y = zero_y - height / 2.0
+        colour = [1.00, 0.62, 0.62, 1.0]
+    }
+    let x_gu = config.column_width / 2.0 + index * (config.column_width + config.column_gap)
+    return T.position(x_gu * config.unit_scale, 0.0, 0.0) {
+        name = "agc_gain_history_sample"
+        T.position(0.0, y * config.unit_scale, 0.03).scale(
+            config.column_width * config.unit_scale,
+            height * config.unit_scale,
+            config.column_depth * config.unit_scale,
+        ) {
+            R.cube() { C.rgba(colour[0], colour[1], colour[2], colour[3]) }
+        }
+        if labels_enabled && visible {
+            T.position(0.0, y * config.unit_scale, 0.075)
+                .rotation(0.0, 0.0, 1.570796)
+                .scale(config.value_text_scale, config.value_text_scale, 1.0) {
+                Text { fixed_3(gain_db) C.rgba(0.98, 0.99, 1.0, 1.0) TextureFiltering.linear() }
+            }
+        }
+    }
+}
+
+fn make_gain_history_view(history, labels_enabled, config) {
+    let first_visible = config.max_samples - history.sample_count
+    return T {
+        name = "agc_gain_history_view"
+        make_gain_history_bar(history.g0, 0.0, 0.0 >= first_visible, labels_enabled, config)
+        make_gain_history_bar(history.g1, 1.0, 1.0 >= first_visible, labels_enabled, config)
+        make_gain_history_bar(history.g2, 2.0, 2.0 >= first_visible, labels_enabled, config)
+        make_gain_history_bar(history.g3, 3.0, 3.0 >= first_visible, labels_enabled, config)
+        make_gain_history_bar(history.g4, 4.0, 4.0 >= first_visible, labels_enabled, config)
+        make_gain_history_bar(history.g5, 5.0, 5.0 >= first_visible, labels_enabled, config)
+        make_gain_history_bar(history.g6, 6.0, 6.0 >= first_visible, labels_enabled, config)
+        make_gain_history_bar(history.g7, 7.0, 7.0 >= first_visible, labels_enabled, config)
+        make_gain_history_bar(history.g8, 8.0, 8.0 >= first_visible, labels_enabled, config)
+        make_gain_history_bar(history.g9, 9.0, 9.0 >= first_visible, labels_enabled, config)
+        make_gain_history_bar(history.g10, 10.0, 10.0 >= first_visible, labels_enabled, config)
+        make_gain_history_bar(history.g11, 11.0, 11.0 >= first_visible, labels_enabled, config)
+        if history.second_marker_index >= 0.0 { make_second_marker(history.second_marker_index, config) }
+    }
+}
+
+fn make_history_plot(name, layers_name, view, zero_line_y, config) {
+    return T {
+        name = name
+        Style {
+            display("block") width(config.plot_width) height(config.plot_height) margin_top(0.10)
+            background_color([0.025, 0.030, 0.040, 0.96]) background_z(-0.01)
+        }
+        T.position(config.plot_width / 2.0 * config.unit_scale, zero_line_y * config.unit_scale, 0.01).scale(
+            config.plot_width * config.unit_scale, 0.05 * config.unit_scale, 0.04 * config.unit_scale,
+        ) { R.cube() { C.rgba(0.76, 0.82, 0.94, 0.62) } }
+        T { name = layers_name view }
+    }
+}
+
+fn rebuild_history_views(history, config) {
+    let input_layers = query("#agc_input_history_layers")
+    if input_layers {
+        let previous_view = input_layers.query("#agc_input_history_view")
+        if previous_view { previous_view.remove_subtree() }
+        input_layers.attach(make_input_history_view(history, history.labels_enabled, config))
+    }
+    let gain_layers = query("#agc_gain_history_layers")
+    if gain_layers {
+        let previous_view = gain_layers.query("#agc_gain_history_view")
+        if previous_view { previous_view.remove_subtree() }
+        gain_layers.attach(make_gain_history_view(history, history.labels_enabled, config))
+    }
+}
+
+fn make_agc_response_content(history, config) {
+    let toggle_label = "show numeric labels"
+    if history.labels_enabled { toggle_label = "hide numeric labels" }
+    let numeric_toggle = button(toggle_label, {
+        background_color = [0.13, 0.35, 0.48, 1.0] color = [0.94, 0.98, 1.0, 1.0] compact = true
+    })
+    let toggle_text = numeric_toggle.query("Text")
+    on(numeric_toggle, "Click", fn(event) {
+        history.labels_enabled = !history.labels_enabled
+        if history.labels_enabled { toggle_text.set_text("hide numeric labels") } else { toggle_text.set_text("show numeric labels") }
+        rebuild_history_views(history, config)
+    })
+    return T {
+        name = "agc_response_content"
+        Style { display("flex") flex_direction("column") width(100%) row_gap(0.30) }
+        Text { name = "agc_current_gain_text" "" }
+        T { name = "agc_numeric_toggle" numeric_toggle }
+        T {
+            Style { display("block") width(100%) color([0.75, 0.80, 0.90, 1.0]) font_size(0.60) }
+            Text { "12 × 100 ms · green = added gain · pale red = removed gain · blue = input RMS" }
+        }
+        T { Text { "gain adjustment (dB)" } }
+        make_history_plot("agc_gain_history_plot", "agc_gain_history_layers", make_gain_history_view(history, history.labels_enabled, config), -config.plot_height / 2.0, config)
+        T { Text { "input to AGC" } }
+        make_history_plot("agc_input_history_plot", "agc_input_history_layers", make_input_history_view(history, history.labels_enabled, config), -config.plot_height, config)
+        T {
+            Style { display("block") width(100%) color([0.70, 0.74, 0.82, 1.0]) }
+            Text { "oldest <-                     -> newest" }
+        }
+    }
+}
+
+fn gain_db_label(gain_db) {
+    let rounded = Math.round(gain_db * 10.0) / 10.0
+    let sign = ""
+    if rounded >= 0.0 { sign = "+" }
+    return sign + rounded + " dB"
+}
+
+fn make_level_history_graph(raw_level, level, config) {
+    let history = {
+        elapsed_sec = 0.0 sample_count = 0.0 samples_until_second = 10.0 second_marker_index = -1.0 labels_enabled = false
+        i0 = 0.0 i1 = 0.0 i2 = 0.0 i3 = 0.0 i4 = 0.0 i5 = 0.0 i6 = 0.0 i7 = 0.0 i8 = 0.0 i9 = 0.0 i10 = 0.0 i11 = 0.0
+        g0 = 0.0 g1 = 0.0 g2 = 0.0 g3 = 0.0 g4 = 0.0 g5 = 0.0 g6 = 0.0 g7 = 0.0 g8 = 0.0 g9 = 0.0 g10 = 0.0 g11 = 0.0
+    }
+    let response_panel = info_panel({
+        root_name = "agc_response_panel" width_gu = config.panel_width unit_scale = config.unit_scale title = "AGC response"
+        background_color = [0.12, 0.20, 0.17, 0.98] toggle_background_color = [0.18, 0.42, 0.30, 1.0]
+        content = make_agc_response_content(history, config)
+    })
+    let graph = T.position(config.panel_x, config.panel_y, config.panel_z) {
+        name = "agc_response_panel_anchor"
+        response_panel
+    }
+    let body_mount = graph.query("#accordion_body_mount")
+
+    on_global("FrameTick", fn(event) {
+        history.elapsed_sec = history.elapsed_sec + event.dt_sec
+        let should_sample = false
+        if config.sample_period_sec == 0.0 {
+            should_sample = true
+        } else if history.elapsed_sec >= config.sample_period_sec {
+            history.elapsed_sec = history.elapsed_sec - config.sample_period_sec
+            should_sample = true
+        }
+        if should_sample {
+            let input_rms = raw_level.value()
+            let gain_db = level.gain_db()
+
+            history.i0 = history.i1
+            history.i1 = history.i2
+            history.i2 = history.i3
+            history.i3 = history.i4
+            history.i4 = history.i5
+            history.i5 = history.i6
+            history.i6 = history.i7
+            history.i7 = history.i8
+            history.i8 = history.i9
+            history.i9 = history.i10
+            history.i10 = history.i11
+            history.i11 = input_rms
+            history.g0 = history.g1
+            history.g1 = history.g2
+            history.g2 = history.g3
+            history.g3 = history.g4
+            history.g4 = history.g5
+            history.g5 = history.g6
+            history.g6 = history.g7
+            history.g7 = history.g8
+            history.g8 = history.g9
+            history.g9 = history.g10
+            history.g10 = history.g11
+            history.g11 = gain_db
+            history.samples_until_second = history.samples_until_second - 1.0
+            if history.samples_until_second <= 0.0 {
+                history.samples_until_second = 10.0
+                history.second_marker_index = 11.0
+            } else if history.second_marker_index >= 0.0 {
+                history.second_marker_index = history.second_marker_index - 1.0
+            }
+            if history.sample_count < config.max_samples { history.sample_count = history.sample_count + 1.0 }
+            rebuild_history_views(history, config)
+            if history.labels_enabled {
+                let current_text = graph.query("#agc_current_gain_text")
+                if current_text { current_text.set_text("input: " + fixed_3(input_rms) + " · gain: " + gain_db_label(gain_db)) }
+            }
+        }
+    })
+    on(graph, "DataEvent", fn(event) {
+        if event == "AccordionRestoreRequested" {
+            body_mount.attach(info_panel_body({ content = make_agc_response_content(history, config) }))
+        }
+    })
+    return graph
 }
 
 RendererSettings { window_size(1440, 810) }
@@ -328,21 +586,26 @@ on(settings_panel, "DataEvent", fn(event) {
     }
 })
 
-let readout_clock = { elapsed = 0.0 }
-on_global("FrameTick", fn(event) {
-    readout_clock.elapsed = readout_clock.elapsed + event.dt_sec
-    if readout_clock.elapsed >= 0.10 {
-        readout_clock.elapsed = readout_clock.elapsed - 0.10
-        let live_readout = settings_panel.query("#agc_live_readout")
-        if live_readout {
-            live_readout.set_text(
-                "raw " + fixed_3(raw_voice_level.value())
-                    + " RMS  ·  normalized " + fixed_3(voice_level.value())
-                    + " RMS  ·  gain " + fixed_3(voice_level.gain_db()) + " dB"
-            )
-        }
-    }
+let agc_level_graph = make_level_history_graph(raw_voice_level, voice_level, {
+    sample_period_sec = 0.100
+    max_samples = 12.0
+    level_extent = 0.10
+    db_extent = 24.0
+    gain_epsilon_db = 0.05
+    column_width = 2.05
+    column_gap = 0.34
+    column_depth = 0.22
+    second_marker_width = 0.12
+    value_text_scale = 0.018
+    plot_height = 5.0
+    plot_width = 28.7
+    panel_width = 32.0
+    unit_scale = 0.08
+    panel_x = 2.10
+    panel_y = 1.72
+    panel_z = 1.35
 })
+agc_level_graph
 
 // Keep the desktop workspace deliberately narrow: only the editor Settings
 // panel is available while tuning AGC, never the broader pose/scene panels.

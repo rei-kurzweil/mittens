@@ -7,7 +7,7 @@ Status: design sketch
 ## Goal
 
 Expose retained audio-analysis values as MMS numbers, then use that seam in
-`examples/mittens-corp-volume-normalization.mms` for a bounded history of
+`examples/mittens-corp-agc.mms` for a bounded history of
 automatic-gain-control bars.
 
 Each point is ordinary world content: a narrow renderable cube, stacked along X
@@ -216,6 +216,6 @@ Required tests:
 ## Exit
 
 MMS can read finite retained audio-analysis values and signed AGC gain in a
-callback. The volume-normalization example renders a bounded, configurable
+callback. The AGC example renders a bounded, configurable
 history of signed-gain cube renderables while retaining raw-versus-normalized
 AVC comparison.
