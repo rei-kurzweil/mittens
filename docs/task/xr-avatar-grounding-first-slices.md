@@ -43,6 +43,52 @@ bisket_grounding_root                  ← VelocitySystem + ground contact own Y
                     └── AVC + GLTF     ← body/hand IK, animation, pose overlays
 ```
 
+## Proposed opt-in components
+
+The opt-in is attached to the **outer grounding transform**, regardless of
+whether its descendant is a skinned model or an ordinary component tree.
+Provisional MMS shape (these constructors do not exist yet):
+
+```mms
+T {
+    name = "bisket_grounding_root"
+    Velocity.vertical([0.0, 0.0, 0.0]) {}   // world-space velocity state and Y integration
+    GravityAcceleration.world([0.0, -9.81, 0.0]) {} // opt-in acceleration provider
+    GroundContact {
+        proxy("#bisket_runtime_capsule")
+        floor("#stage_deck_collision")
+        movement_target("#bisket_grounding_root")
+    }
+    T { name = "bisket_locomotion_root" /* existing InputXR subtree */ }
+}
+```
+
+The spelling and proxy reference mechanism are provisional. The ownership is
+the contract:
+
+| Component | First-slice responsibility |
+| --- | --- |
+| `VelocityComponent` | Holds the current world-space linear velocity and opts the named outer transform into integration; initially writes Y only. `VelocitySystem` can also run it with a commanded velocity and no gravity. |
+| `GravityAccelerationComponent` | Applies a configured downward acceleration to that velocity once per fixed substep. It does not move a transform itself. |
+| `GroundContactComponent` | Names the floor/proxy and outer movement target. Contact correction writes the same outer root and cancels velocity into the floor normal. |
+| `Collision`/capsule proxy | Supplies geometry for contact. It carries no gravity or private velocity. AVC's existing inferred capsule may be reused after its old response is explicitly disabled or migrated. |
+
+This proposed gravity component is distinct from today's `GravityComponent`,
+whose only current consumer is `CollisionResponseSystem`: that system searches
+for an ancestor gravity field and stores velocity privately on each response.
+Do not make the new velocity path inherit that behavior by accident. During
+implementation, either migrate the existing `Gravity` API to the new
+acceleration-provider contract with compatibility tests or give the new
+component an explicit name and retire the old API with collision response.
+
+For arbitrary physical forces, the next additive components would be a
+`PhysicsBodyComponent` with mass/inverse mass and a per-step
+`ForceAccumulatorComponent`. The future integration rule is
+`acceleration = gravity + accumulated_force / mass`, followed by velocity and
+position integration. The first test only needs uniform gravity, so it does
+not introduce a mass value or pretend that gravity is already a general
+force/impulse API. AVC itself needs no `Velocity` or force component.
+
 `bisket_grounding_root` is a plain world transform. No XR, gamepad, AVC, or
 skeletal component needs a reference to it for normal pose production.
 Gamepad movement still resolves the nearer `bisket_locomotion_root`; the new
@@ -161,6 +207,37 @@ For the XR example, report or overlay grounding-root world Y, vertical
 velocity, proxy bottom Y, floor top Y, grounded state, and correction amount.
 Log the resolved gamepad and contact movement targets once at startup. This
 makes authority mistakes and a real model-scale mismatch distinguishable.
+
+## Mittens-corp example migration
+
+After the focused XR scene works, migrate the four Bisket scenes that share
+the studio stage:
+
+- [`mittens-corp.mms`](../../examples/mittens-corp.mms) and
+  [`mittens-corp-agc.mms`](../../examples/mittens-corp-agc.mms) use `InputXR`,
+  `InputXRGamepad`, AVC, and a `Rider` anchor. Verify walking, mounting,
+  dismounting, and vehicle control ownership with the new outer root.
+- [`mittens-corp-desktop.mms`](../../examples/mittens-corp-desktop.mms) and
+  [`mittens-corp-agc-desktop.mms`](../../examples/mittens-corp-agc-desktop.mms)
+  use desktop input/camera topology. Reuse the grounding behavior, but resolve
+  their locomotion targets explicitly instead of copying the XR hierarchy.
+
+Keep authoring small: prefer one reusable grounding wrapper/factory or compact
+component configuration that accepts the existing rig subtree, the movement
+root, and the floor/proxy policy. A scene should not need to repeat fixed-step
+settings, gravity math, capsule construction, and contact routing. Preserve
+the existing scene-specific AVC, Rider, microphone, and editor configuration.
+The visible deck should use one reusable static-floor definition so all four
+scenes agree on its top Y. Only Bisket opts in; vehicles and stage props retain
+their own motion policy.
+
+Migration acceptance includes all four scenes loading, no duplicate avatar
+capsule/contact responder, grounded pedestrian movement, and correct authority
+handoff when a rider mounts or dismounts. If mounting intentionally suspends
+gravity, the wrapper must expose that transition and define how vertical
+velocity resumes; it cannot quietly keep integrating behind the mounted pose.
+Add a short code `TODO` at a deliberately narrow migration seam only when its
+later generalization is genuinely deferred.
 
 ## Deferred architecture
 
