@@ -7771,6 +7771,118 @@ fn assert_xr_gamepad_locomotion_targets(world: &World, path: &str) {
 }
 
 #[test]
+fn capsule_stick_figure_grounding_boundary_preserves_xr_locomotion_and_local_poses() {
+    use crate::engine::ecs::component::InputXRComponent;
+    use crate::engine::ecs::system::input_xr_gamepad_system::xr_locomotion_target_transform;
+    use crate::engine::ecs::system::{
+        CameraSystem, CollisionSystem, LightSystem, TransformStreamSystem, TransformSystem,
+    };
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut queue = CommandQueue::new();
+    let mut assets = RenderAssets::new();
+    let path = "examples/capsule-stick-figure.mms";
+    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+        include_str!("../../examples/capsule-stick-figure.mms"),
+        Some(path),
+        &mut world,
+        &mut rx,
+        Some(&mut assets),
+        &mut queue,
+    );
+    assert!(output.errors.is_empty(), "{path}: {:?}", output.errors);
+
+    let named = |world: &World, label: &str| {
+        world
+            .all_components()
+            .find(|id| world.component_label(*id) == Some(label))
+            .unwrap_or_else(|| panic!("{path}: missing {label}"))
+    };
+    let grounding = named(&world, "bisket_grounding_root");
+    let locomotion = named(&world, "bisket_locomotion_root");
+    let driver = named(&world, "bisket_xr_driver");
+    let camera_anchor = named(&world, "bisket_xr_camera_anchor");
+    let input_xr = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<InputXRComponent>(*id)
+                .is_some()
+        })
+        .expect("capsule scene should contain InputXR");
+    assert_eq!(world.parent_of(locomotion), Some(grounding));
+    assert_eq!(world.parent_of(input_xr), Some(locomotion));
+    assert_eq!(
+        xr_locomotion_target_transform(&world, input_xr),
+        Some(locomotion)
+    );
+    assert_eq!(world.parent_of(driver), Some(input_xr));
+    assert_eq!(
+        world
+            .get_component_by_id_as::<TransformComponent>(grounding)
+            .unwrap()
+            .translation(),
+        [0.0, 0.0, 0.0],
+    );
+
+    let mut transforms = TransformSystem::new();
+    let mut streams = TransformStreamSystem::new();
+    let mut cameras = CameraSystem::new();
+    let mut lights = LightSystem::new();
+    let mut collisions = CollisionSystem::new();
+    let mut visuals = VisualWorld::default();
+    transforms.transform_changed(
+        &mut world,
+        &mut visuals,
+        grounding,
+        &mut streams,
+        &mut cameras,
+        &mut lights,
+        &mut collisions,
+    );
+    let watched = [locomotion, driver, camera_anchor];
+    let before: Vec<_> = watched
+        .iter()
+        .map(|id| {
+            let transform = world
+                .get_component_by_id_as::<TransformComponent>(*id)
+                .unwrap();
+            (
+                transform.translation(),
+                TransformSystem::world_position(&world, *id).unwrap(),
+            )
+        })
+        .collect();
+
+    world
+        .get_component_by_id_as_mut::<TransformComponent>(grounding)
+        .unwrap()
+        .set_position(&mut rx, 0.0, 0.25, 0.0);
+    transforms.transform_changed(
+        &mut world,
+        &mut visuals,
+        grounding,
+        &mut streams,
+        &mut cameras,
+        &mut lights,
+        &mut collisions,
+    );
+    for (id, (local_before, world_before)) in watched.into_iter().zip(before) {
+        let local_after = world
+            .get_component_by_id_as::<TransformComponent>(id)
+            .unwrap()
+            .translation();
+        let world_after = TransformSystem::world_position(&world, id).unwrap();
+        assert_eq!(local_after, local_before, "descendant local pose changed");
+        for axis in [0, 2] {
+            assert!((world_after[axis] - world_before[axis]).abs() < 1e-5);
+        }
+        assert!((world_after[1] - world_before[1] - 0.25).abs() < 1e-5);
+    }
+}
+
+#[test]
 fn all_bisket_secondary_motion_examples_evaluate_with_explicit_colliders() {
     use crate::engine::ecs::component::{
         ControllerXRComponent, PointerComponent, SpringBoneComponent, SpringColliderComponent,

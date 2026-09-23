@@ -1,172 +1,135 @@
 # Task: scriptable Velocity pose driver
 
-Status: planned, 2026-09-07. Supports [broom flight](broom-flight-followup.md).
+Status: planned, revised 2026-09-23. The
+[XR linear-velocity slice](mittens-corp-linear-velocity-first-slice.md) defines
+the first implementation. This task also tracks later angular motion and
+[broom flight](broom-flight-followup.md).
 
 ## Contract
 
-Introduce `Velocity` as a pose driver that does not require user input. It
-integrates configured linear velocity in world units per second and angular
-velocity in radians per second using frame elapsed time, then applies the
-resulting motion to descendant transforms through the existing pose/transform
-pipeline. Descendants inherit motion once, not once per ancestor. Preserve
-authored offsets, rotation, and scale.
+`VelocityComponent` holds active linear and, later, angular velocity.
+`VelocitySystem` integrates that state into one transform. Together they are
+a **pose driver**; gravity, throttle, and other inputs that change velocity
+are **velocity drivers** under the
+[physics terminology](../spec/physics/driver-terminology.md). Descendants
+inherit the resulting pose once, while authored local offsets, rotations,
+and scales remain intact.
 
-Terminology follow-up: [pose and velocity drivers](../spec/physics/driver-terminology.md)
-calls the active `Velocity` integrator a **pose driver**. Gravity, throttle,
-and other inputs that change its velocity are **velocity drivers**. The older
-uses of "velocity driver" below mean the active `Velocity` pose driver and
-should be reconciled when this task is implemented.
-
-## Authoring shape and driven-transform boundary
-
-Prefer the pose-driver wrapper form. It composes naturally with the existing
-`Input` authoring style and makes motion authority visible from the tree:
+One `Velocity {}` component attaches directly beneath the transform it
+drives. Its default state is zero. There are no separate linear/angular
+component flavors, nested velocity wrappers, or descendant-transform search:
 
 ```mms
-Velocity.linear(0.0, 0.0, 1.0) {
-    T {
-        C3D {}
-    }
+let vel = Velocity {}
+T {
+    name = "vehicle_motion_root"
+    vel
+    T { C3D {} }
 }
 
-Velocity.angular(0.01, 0.0, 0.0, 1.0) {
-    T {
-        C3D {}
-    }
-}
+// Live methods on the retained component reference:
+vel.translate([0.0, 0.0, -0.25]) // add linear velocity, m/s
+vel.rotate([0.0, 0.5, 0.0])      // later: add angular velocity, rad/s
 ```
 
-For `angular(speed_radians_per_second, axis_x, axis_y, axis_z)`, the four
-arguments are axis-angle velocity, not a quaternion: the first is angular speed
-and the remaining three form the rotation axis. Normalize a finite non-zero
-axis and reject invalid values. This exact spelling remains subject to the MMS
-component registration pass, but it is the target API for this task.
+`translate` and `rotate` name the *state being driven*. Neither immediately
+translates nor rotates the transform. Each call adds a one-shot change to
+velocity; neither multiplies its argument by `dt`. `rotate` means a change to
+angular velocity, **not** a rotation of the linear-velocity vector. A future
+persistent acceleration/throttle API will use time explicitly at fixed steps.
+The first XR slice implements `translate` and linear integration; `rotate`
+and angular integration remain follow-up work.
 
-Do not switch to `T { Velocity... }` merely because some existing systems assume
-an immediate transform relationship. Instead, make the wrapper topology work
-deliberately and test it. A velocity driver resolves exactly one first
-descendant `Transform` boundary, traversing only explicitly documented
-transparent pose-driver/configuration nodes. It stops descending after reaching
-that transform, so nested transforms inherit the result normally and are not
-integrated again.
+The unsuffixed methods interpret their delta in the driven transform's local
+orientation at command time. They convert that delta to world space and add
+it to world-space velocity state. An existing velocity vector does not turn
+when the object later turns. Expose explicit `translate_world(delta)` and,
+when angular motion arrives, `rotate_world(delta)` for world-axis commands.
+Ignore scale when mapping a local direction; rotated/scaled parents must not
+change commanded world speed. An HMD turning *inside* an outer grounding root
+does not turn that root's local basis. HMD-facing thrust needs a separate
+reference-orientation policy or an explicit world-space direction.
 
-Nested linear and angular drivers must compose around one transform:
+Provide explicit read/set/zero access to current velocity without requiring
+an inverse `translate` call. The exact MMS spelling of those accessors and
+authored initial nonzero state should be specified with their first consumer;
+do not introduce channel-specific constructors for them. Keep authored
+initial configuration distinct from transient live state so serialization
+does not save accidental button presses.
 
-```mms
-Velocity.linear(0.0, 0.0, 1.0) {
-    Velocity.angular(0.01, 0.0, 0.0, 1.0) {
-        T { C3D {} }
-    }
-}
-```
+## Transform and update boundary
 
-This requires an explicit resolver rather than an unrestricted descendant
-search. Reject an ambiguous driver branch with multiple first transforms unless
-multi-target behavior is intentionally added later. Detect two drivers trying
-to integrate the same degree of freedom and report the authority conflict
-instead of silently applying motion twice.
+Resolve the component's immediate parent transform as its single target.
+Reject a missing parent or competing writer to the same transform/channel;
+do not integrate a shared ancestor/descendant channel twice. Store current
+velocity in `VelocityComponent`, not in a collision system's private map.
+Live component references must update that stored state, not a copied
+construction value, and must work without rebuilding the tree. Define the
+command's apply step so a click changes velocity exactly once before the next
+fixed substep, regardless of render rate or callback replay.
 
-The compatibility audit must cover systems that encode structural assumptions.
-In particular, desktop `InputSystem` currently searches for a direct
-`Transform` child of `Input`, whereas XR locomotion searches upward for an
-ancestor transform. Adding a velocity wrapper must not silently break camera,
-pointer, grabbable, layout, transform propagation, serialization, or component
-reference resolution. Where a system genuinely requires a direct relationship,
-document the valid nesting order or migrate it to the shared pose-driver
-boundary resolver rather than adding one-off recursive searches.
-
-Expose construction and live get/set through an MMS component reference.
-Live component references update either mode without rebuilding the tree:
-
-```mms
-let flight = Velocity.linear(0.0, 0.0, 0.0) {
-    T { name = "vehicle" }
-}
-flight.set_linear([0.0, 0.0, 2.0])
-flight.set_linear([0.0, 0.0, 0.0])
-```
-
-Updates change the live component, not a copied value or just its construction
-configuration. Specify update ordering and whether a handler's update applies
-this tick or next. Default to zero velocity; provide explicit enable/disable
-semantics, finite-value validation, and cleanup when the driver is removed.
-Serialize authored initial configuration separately from transient scripted state.
-
-Start with explicitly world-space linear velocity. Correctly convert displacement
-through the effective parent basis; parent rotation/scale must not silently
-change commanded world speed. Angular integration is also world-space for the
-first slice and must be converted into the driven transform's local rotation
-without scale affecting angular speed. Document handling of singular parent
-transforms. If local-space velocity is added, expose its space rather than infer
-it.
+Use a bounded fixed timestep and deterministic order. Convert each
+world-space displacement through the effective parent basis before writing
+local translation; parent rotation/scale must not alter speed. Reject
+non-finite deltas/state and singular bases with a clear diagnostic. The
+component needs explicit enable/disable and cleanup behavior. Angular
+integration, when added, must use world-space angular state and convert the
+result to the target's local rotation without scale affecting angular speed.
 
 ## Orientation helpers
 
-MMS needs a reusable way to rotate a chosen local axis by a quaternion and
-obtain a direction vector. This is not truncating a vec4 to a vec3:
+For steering relative to a *different* object, MMS eventually needs a way to
+obtain a world-space direction from its orientation:
 
 ```text
 direction = rotate_vector(orientation_xyzw, local_forward_axis)
-velocity = direction * speed
+world_delta_velocity = direction * speed_change
 ```
 
-Names above are provisional. Normalize valid quaternions, reject invalid/zero
-quaternions, and document `xyzw` ordering and the selected forward-axis convention.
-Allow reading an object's local or world orientation through existing transform
-accessors. A transform/matrix direction convenience should ignore translation
-and yield a unit direction without scale changing speed; specify behavior for
-shear, mirrored, and degenerate bases. Prefer reusing
+This is not truncating a vec4 to vec3. Normalize valid quaternions, reject
+invalid/zero ones, and document `xyzw` ordering. A transform/matrix direction
+helper should ignore translation and scale and define behavior for shear,
+mirrors, and degenerate bases. Prefer reusing
 [transform accessors](../draft/transform-component-accessors-engine-api.md).
-
-Provide an easy direction-and-speed setter or a helper composition from MMS;
-avoid requiring authors to implement quaternion math themselves. A setter using
-an orientation snapshots it unless explicitly documented as a live binding.
-Continuous steering must refresh the velocity when orientation changes.
+An orientation used by a one-shot command is a snapshot; continuous steering
+needs a persistent velocity driver that refreshes its request.
 
 ## Motion authority and existing draft
 
-The older [velocity-components WIP](wip/velocity-components.md) proposes storage,
-history, and derived motion observations, explicitly not integration. This task
-defines the requested active driver. Reconcile naming/shared storage during
-implementation without making observed-velocity history or collision-system
-migration prerequisites. Commanded angular integration in this ticket likewise
-must not depend on migrating the WIP's observed `AngularVelocityComponent`.
-Observed velocity and commanded velocity must not be confused or fed back into
-two integrators.
-
-Exactly one owner integrates a driven transform. For the broom, enable the
-driver only after the mount handoff has removed the pointer attachment and
-established independent vehicle motion. Dismount disables/zeros it according
-to the flight example's policy.
+The older [velocity-components WIP](wip/velocity-components.md) proposes
+observed velocity/history, explicitly not active integration. Reconcile
+storage/naming later without making telemetry or collision-system migration
+prerequisites for this pose driver. Do not feed measured velocity back into a
+second integrator. For the broom, enable the driver only after mount handoff
+has removed the pointer attachment and established independent vehicle
+motion; dismount disables/zeros it according to that example's policy.
 
 ## Acceptance
 
-- An input-free MMS scene moves or rotates a wrapped descendant at the configured
-  linear or angular speed.
-- Changing the component by reference changes motion; zero stops it.
-- Nested descendants inherit displacement once, including rotated/scaled parents.
-- Nested linear and angular wrappers compose without double integration.
-- Wrapper insertion does not break camera, pointer, grabbable, layout,
-  serialization, transform propagation, or component-reference behavior that
-  previously relied on an immediate transform relationship.
-- Ambiguous transform boundaries and competing motion authorities fail clearly.
-- Equal elapsed time at different frame rates yields equivalent displacement.
-- Identity and quarter-turn orientations produce the documented directions;
-  invalid values fail clearly, and scale does not change commanded speed.
-- Disable/removal and mount/dismount leave no stale motion or competing driver.
+- The XR [two-button scene](mittens-corp-linear-velocity-first-slice.md) adds
+  and cancels linear velocity by live reference without gravity or floor
+  contact; one click is one change independent of `dt`.
+- Nested descendants inherit displacement once, including with rotated and
+  scaled parents. Equal elapsed time at different render rates produces
+  equivalent displacement.
+- Local and explicit world changes use their documented bases; invalid
+  values and competing pose writers fail clearly.
+- Disabling/removing the driver stops its writes without changing authored
+  descendant locals or leaving stale motion authority.
+- Later angular tests show `rotate` changes angular velocity, angular motion
+  composes with linear motion in the same component, and neither channel is
+  integrated twice.
+- Mount/dismount and ordinary XR camera, pointer, grabbable, layout, transform
+  propagation, serialization, and component-reference behavior remain intact.
 
 ## Related work
 
 - [Velocity, forces, and pluggable physics](velocity-forces-and-pluggable-physics.md):
   longer-term authority, integration, backend, and performance boundary.
 - [Global MMS keyboard events first slice](mms-keyboard-events-first-slice.md):
-  implemented input edges that can update a live `Velocity` reference.
+  input edges that can update a live `Velocity` reference.
 - [MMS keyboard and regular gamepad events](mms-keyboard-and-gamepad-events.md):
   parent input task; regular desktop gamepads remain planned.
-- [Broom flight follow-up](broom-flight-followup.md): first intended consumer of
-  scripted velocity and the place to verify mount/dismount motion authority.
 - [Velocity / AngularVelocity components WIP](wip/velocity-components.md):
-  observed velocity, history, collision, and solver ownership; related storage,
-  but not the active integration contract defined here.
-- [Transform component accessors](../draft/transform-component-accessors-engine-api.md):
-  orientation/direction helpers needed for steering-relative velocity.
+  observed velocity, history, collision, and solver ownership; related
+  storage, not the active integration contract here.

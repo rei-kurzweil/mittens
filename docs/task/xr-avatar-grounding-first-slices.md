@@ -54,9 +54,9 @@ Provisional MMS shape (these constructors do not exist yet):
 ```mms
 T {
     name = "bisket_grounding_root"
-    Velocity.vertical([0.0, 0.0, 0.0]) {}   // world-space velocity state and Y integration
-    GravityAcceleration.world([0.0, -9.81, 0.0]) {} // opt-in acceleration provider
-    GroundContact {
+    let vel = Velocity {}                     // Slice B: zero initial linear velocity
+    GravityAcceleration.world([0.0, -9.81, 0.0]) {} // Slice B2: opt-in provider
+    GroundContact {                          // Slice C: floor constraint
         proxy("#bisket_runtime_capsule")
         floor("#stage_deck_collision")
         movement_target("#bisket_grounding_root")
@@ -70,7 +70,7 @@ the contract:
 
 | Component | First-slice responsibility |
 | --- | --- |
-| `VelocityComponent` | Holds the current world-space linear velocity and opts the named outer transform into integration; initially writes Y only. Together with `VelocitySystem`, it is the outer root's pose driver. It can also run with a commanded velocity and no gravity. |
+| `VelocityComponent` | Holds the current world-space linear velocity and integrates the immediate parent outer transform in XYZ. Together with `VelocitySystem`, it is the outer root's pose driver. It first runs with button-commanded velocity and no gravity. |
 | `GravityAccelerationComponent` | A linear velocity driver: applies configured downward acceleration to that velocity once per fixed substep. It does not move a transform itself. |
 | `GroundContactComponent` | Names the floor/proxy and outer movement target. Contact correction writes the same outer root and cancels velocity into the floor normal. |
 | `Collision`/capsule proxy | Supplies geometry for contact. It carries no gravity or private velocity. AVC's existing inferred capsule may be reused after its old response is explicitly disabled or migrated. |
@@ -130,22 +130,36 @@ Tests and smoke checks:
 This slice can land independently. It verifies transform composition before
 gravity and collision complicate diagnosis.
 
-## Slice B — a usable vertical VelocitySystem
+Implementation note (2026-09-23): the identity `bisket_grounding_root` is now
+in `capsule-stick-figure.mms`. A headless scene test verifies the XR/gamepad
+parent chain and a scripted 0.25 m Y displacement of the outer root without
+changing the sampled inner local transforms. The headset/controller, hand IK,
+mirror, and pose-capture smoke checks still require an XR runtime; Slice B has
+not been implemented.
 
-Add a first-class world-space `VelocityComponent` and dedicated
-`VelocitySystem` for one explicitly nominated transform. This pair is the
-outer root's **pose driver**; the first active version integrates only Y.
-A standalone headless test
-must also demonstrate commanded constant velocity without gravity, so the
-velocity path is useful on its own.
+## Slice B — scriptable linear VelocitySystem, before gravity
+
+Follow the [MMS/Rust API and XR two-button test](mittens-corp-linear-velocity-first-slice.md).
+Add a first-class `VelocityComponent` and dedicated `VelocitySystem` on the
+outer grounding transform. This pair is the outer root's **pose driver**.
+The first active version integrates XYZ linear velocity without gravity:
+`vel.translate(local_delta_mps)` changes velocity once on a button click,
+and `vel.translate_world(world_delta_mps)` is the explicit world-space form.
+Velocity state remains world-space after the local command is converted using
+the driven root's current orientation. The forward/back XR panel and a
+standalone headless test demonstrate commanded motion without gravity.
 
 Use a bounded fixed timestep and a deterministic update order. Convert the
-world-space Y displacement into the root's parent-local translation if needed.
+world-space displacement into the root's parent-local translation if needed.
 Document the accumulator limit and report dropped time; reject non-finite
-values and two active Y writers on the same transform. Store current velocity
-in `VelocityComponent`, not in a collision component or ad hoc system map.
+values and two active writers on the same transform/channel. Store current
+velocity in `VelocityComponent`, not in a collision component or ad hoc system
+map.
 
-Gravity is an opt-in **velocity driver**: a named acceleration provider that
+## Slice B2 — opt-in gravity velocity driver
+
+After the button-driven velocity path works without gravity, add gravity as
+an opt-in **velocity driver**: a named acceleration provider that
 changes linear velocity once per substep (`v_y += g * dt`) and never writes
 the grounding transform. For this slice it may be a single uniform world
 gravity configuration; a general force accumulator, mass, torque, and impulses
@@ -155,7 +169,7 @@ be applied to XR tracking transforms, gamepad transforms, or bones.
 
 Tests: equal elapsed simulation time at different render rates produces the
 same vertical velocity/height within fixed-step tolerance; disabling gravity
-leaves commanded velocity working; disabling the velocity driver stops its
+leaves commanded velocity working; disabling `Velocity` integration stops its
 transform writes without changing descendants' authored local transforms.
 
 ## Slice C — one floor and resting contact

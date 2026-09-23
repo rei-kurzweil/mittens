@@ -114,72 +114,77 @@ let microphone = AudioInput {}
 let voice_level = Amplitude.rolling_window(0.080).from(microphone) {}
 
 ED.active() {
-    T.position(-5.0, 0.0, 0.0) {
-        name = "bisket_locomotion_root"
-        InputXR.on() {
-            InputXRGamepad {
-                locomotion()
-                speed(1.5)
-            }
-            T {
-                name = "bisket_xr_driver"
-                let bisket_avatar = GLTF.new("assets/models/bisket.glb") {
-                    bisket_anime_shading()
-                    bisket_humanoid_bone_map()
-                    MorphTargetMap.new()
-                        .slot("left_eye_blink", "Fcl_EYE_Close_L")
-                        .slot("right_eye_blink", "Fcl_EYE_Close_R")
-                        .slot("viseme_aa", "Fcl_MTH_A")
-                    EM.on()
-                    PoseCapture { label("Bisket XR source") asset_name("bisket") }
-                    bisket_colliders()
-                    bisket_shirt_physics(false)
+    // Slice A: an identity grounding boundary. Gamepad XZ still resolves the
+    // nearer locomotion transform; later gravity/contact will move this root.
+    T {
+        name = "bisket_grounding_root"
+        T.position(-5.0, 0.0, 0.0) {
+            name = "bisket_locomotion_root"
+            InputXR.on() {
+                InputXRGamepad {
+                    locomotion()
+                    speed(1.5)
                 }
-                let bisket_avatar_control = AVC {
-                    mouth_open_from_amplitude(voice_level)
-                    mouth_open_rms_floor(0.005)
-                    mouth_open_rms_ceiling(0.09)
-                    mouth_open_smoothing(16.0)
-                    voice_level
-                    initial_yaw(3.14159)
-                    left_arm_pole_direction([1, -0.35, 1])
-                    right_arm_pole_direction([-1, -0.35, 1])
-                    hand_rotation_smoothing(220.0)
-
-                    T { bisket_avatar }
-
-                    T.position(0.0, 0.08, 0.12) {
-                        name = "bisket_xr_camera_anchor"
-                        CXR { Pointer {} }
+                T {
+                    name = "bisket_xr_driver"
+                    let bisket_avatar = GLTF.new("assets/models/bisket.glb") {
+                        bisket_anime_shading()
+                        bisket_humanoid_bone_map()
+                        MorphTargetMap.new()
+                            .slot("left_eye_blink", "Fcl_EYE_Close_L")
+                            .slot("right_eye_blink", "Fcl_EYE_Close_R")
+                            .slot("viseme_aa", "Fcl_MTH_A")
+                        EM.on()
+                        PoseCapture { label("Bisket XR source") asset_name("bisket") }
+                        bisket_colliders()
+                        bisket_shirt_physics(false)
                     }
-                    HTCEyeTracking.on().enable_pupil_direction_tracking(false)
+                    let bisket_avatar_control = AVC {
+                        mouth_open_from_amplitude(voice_level)
+                        mouth_open_rms_floor(0.005)
+                        mouth_open_rms_ceiling(0.09)
+                        mouth_open_smoothing(16.0)
+                        voice_level
+                        initial_yaw(3.14159)
+                        left_arm_pole_direction([1, -0.35, 1])
+                        right_arm_pole_direction([-1, -0.35, 1])
+                        hand_rotation_smoothing(220.0)
 
-                    XRHand.new(true, "Left", "GripAim").laser() {
-                        T {
-                            RestAttachment.new("[name='J_Bip_L_Hand']", "[name='J_Bip_L_Middle3']") {
-                                Pointer {}
+                        T { bisket_avatar }
+
+                        T.position(0.0, 0.08, 0.12) {
+                            name = "bisket_xr_camera_anchor"
+                            CXR { Pointer {} }
+                        }
+                        HTCEyeTracking.on().enable_pupil_direction_tracking(false)
+
+                        XRHand.new(true, "Left", "GripAim").laser() {
+                            T {
+                                RestAttachment.new("[name='J_Bip_L_Hand']", "[name='J_Bip_L_Middle3']") {
+                                    Pointer {}
+                                }
+                            }
+                        }
+                        XRHand.new(true, "Right", "GripAim").laser() {
+                            T {
+                                RestAttachment.new("[name='J_Bip_R_Hand']", "[name='J_Bip_R_Middle3']") {
+                                    Pointer {}
+                                }
                             }
                         }
                     }
-                    XRHand.new(true, "Right", "GripAim").laser() {
-                        T {
-                            RestAttachment.new("[name='J_Bip_R_Hand']", "[name='J_Bip_R_Middle3']") {
-                                Pointer {}
-                            }
-                        }
-                    }
-                }
-                bisket_avatar_control
+                    bisket_avatar_control
 
-                on(bisket_avatar, "GLTFInitialized", fn(event) {
-                    let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
-                    let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
-                    if left_eye && right_eye {
-                        bisket_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
-                    } else {
-                        print("GLTFInitialized: Bisket mapped eye bones were not found; ambient eye animation was not attached")
-                    }
-                })
+                    on(bisket_avatar, "GLTFInitialized", fn(event) {
+                        let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
+                        let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
+                        if left_eye && right_eye {
+                            bisket_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
+                        } else {
+                            print("GLTFInitialized: Bisket mapped eye bones were not found; ambient eye animation was not attached")
+                        }
+                    })
+                }
             }
         }
     }

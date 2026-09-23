@@ -52,6 +52,16 @@ change and not necessarily a command to set speed. Releasing it stops adding
 acceleration; it does not automatically set velocity to zero. Braking, drag,
 friction, and contact impulses are separate velocity-changing mechanisms.
 
+The proposed live `vel.translate(delta_mps)` is a **one-shot velocity change**,
+not a pose translation and not acceleration integrated over time. A click
+therefore supplies no `dt`. Its unsuffixed delta is expressed in the driven
+transform's local orientation at command time, then added to world-space
+velocity state; `vel.translate_world(delta_mps)` names the world-axis form.
+The analogous proposed `vel.rotate(delta_radps)` would change angular
+velocity, not rotate the linear-velocity vector. These names are defined in
+the [XR linear-velocity task](../../task/mittens-corp-linear-velocity-first-slice.md);
+the methods and component are not implemented yet.
+
 Gravity is a persistent **linear acceleration** provider in the first slice.
 For a mass-bearing dynamic body it can be represented as force `mass × g`,
 which produces the same acceleration. This avoids requiring a mass value just
