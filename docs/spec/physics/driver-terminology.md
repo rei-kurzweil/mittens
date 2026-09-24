@@ -47,39 +47,41 @@ child pose relative to that rig. Moving one's head sideways does not add
 linear velocity to the vehicle or require a `Velocity` on the HMD. Roughly,
 `head_world = vehicle_mount_world × rider_local × tracked_head_local`.
 
-A `Velocity` has no pose or coordinate frame of its own. It drives the
-immediate parent `Transform` in the current component topology; that
-transform is the **motion target**. The target's translation channel is
-relative to *its parent* transform. This is distinct from a command's
-**direction basis**: by default `translate(delta)` may interpret `delta`
-along the driven transform's own rotated axes, while
-`rotation_basis(source)` can select another orientation. The intended
-stored linear-velocity state is expressed in the motion target's
-parent-local axes; convert command directions into that space before
-accumulation. A parent rotation then turns the inherited motion, while a
-physical metres-per-second interpretation needs explicit compensation for
-parent scale. The currently implemented world-space storage is a known
-design gap, tracked in the
-[velocity-space correction task](../../task/xr-linear-velocity-button-click-and-readback.md).
+A `Velocity` has no pose of its own. As a pose driver, its intended topology
+is `Velocity { T { ... } }`: it drives its **child** transform, as `InputXR`
+does. The nearest transform **ancestor** of `Velocity` supplies the
+parent-local coordinate frame for that child's translation and the default
+orientation basis for `translate(delta)`. An explicit
+`rotation_basis(source)` can interpret a command using another orientation,
+but converts the result into that same stored parent-local velocity; it does
+not change the target or reparent the transform. A parent rotation then
+turns the inherited motion, while a physical metres-per-second
+interpretation needs explicit compensation for parent scale. If there is
+no transform ancestor, use the world frame as the parent frame. The current
+implementation reverses the edge (`T { Velocity {} }`) and stores
+world-space velocity; both are known design gaps tracked in the
+[velocity correction task](../../task/xr-linear-velocity-button-click-and-readback.md).
 
 Separate velocity layers need separate transform targets:
 
 ```text
-T.outer                  ← vehicle / grounding pose
-  Velocity.outer          → drives T.outer
-  T.inner                 ← rider / locomotion pose
-    Velocity.inner        → drives T.inner relative to T.outer
-    XR rig                → inherits both poses
+T.basis                    ← vehicle / grounding parent frame
+  Velocity.outer
+    T.outer_motion         ← driven relative to T.basis
+      Velocity.inner
+        T.inner_motion     ← driven relative to T.outer_motion
+          XR rig           ← inherits both poses
 ```
 
 The inner layer's world displacement composes with the outer layer's
-transform; it is not a second write to `T.outer`. Two `Velocity` components
-under the same `Transform` would compete for one target/channel, and nesting
-one `Velocity` directly under another provides no new transform to drive.
-The current implementation requires each `Velocity` to be a direct child of
-its target transform and rejects competing active writers. If a future
-topology allows a more distant nearest-transform ancestor, it must retain
-this one-target/one-authority rule.
+transform; it is not a second write to `T.outer_motion`. Two `Velocity`
+components can share a transform ancestor if each owns a different child
+transform. Nesting `Velocity { Velocity { T { ... } } }` does **not** create
+two independent pose layers: both drivers would target the same nearest
+child transform unless a distinct transform is inserted between them.
+The implementation must define one motion authority per target/channel and
+reject an ambiguous or missing child transform. The current implementation
+instead requires `Velocity` to be a direct child of its target transform.
 
 ## Velocity driver kinds
 
@@ -98,16 +100,14 @@ friction, and contact impulses are separate velocity-changing mechanisms.
 
 The proposed live `vel.translate(delta_mps)` is a **one-shot velocity change**,
 not a pose translation and not acceleration integrated over time. A click
-therefore supplies no `dt`. Its unsuffixed delta uses the driven transform's
-orientation by default, or an explicit `rotation_basis(component_ref)` such
+therefore supplies no `dt`. Its unsuffixed delta should use the nearest
+transform ancestor's orientation by default, or an explicit `rotation_basis(component_ref)` such
 as the inner `InputXR` rig's active eye orientation; optional `.horizontal()`
 removes vertical thrust from that command. The basis is sampled at command
-time, and the resulting delta is added to world-space velocity state;
-`vel.translate_world(delta_mps)` bypasses the basis for a world-axis change.
-This describes the current linear slice, not the settled storage invariant:
-the intended state is parent-local velocity, and both local-basis and
-world-axis commands should convert into that state. See the
-[velocity-space correction task](../../task/xr-linear-velocity-button-click-and-readback.md).
+time, and the resulting delta should be converted into parent-local
+velocity state. `vel.translate_world(delta_mps)` bypasses the command basis
+but still converts the world-axis change into that state. The current
+linear slice instead stores world-space velocity.
 The analogous proposed `vel.rotate(delta_radps)` would change angular
 velocity, not rotate the linear-velocity vector. These names are defined in
 the [XR linear-velocity task](../../task/mittens-corp-linear-velocity-first-slice.md);

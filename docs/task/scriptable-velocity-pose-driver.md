@@ -5,9 +5,10 @@ Status: linear XR slice implemented, revised 2026-09-23. The
 the current implementation. This task also tracks later angular motion and
 [broom flight](broom-flight-followup.md).
 
-Design correction: the intended invariant is **parent-local stored velocity**;
-the current world-space implementation and world-space descriptions below
-must be reconciled under the
+Design correction: the intended invariants are **pose-driver parent topology**
+(`Velocity { T { ... } }`) and **parent-local stored velocity**. The current
+child-of-target/world-space implementation and descriptions below must be
+reconciled under the
 [XR button/readback follow-up](xr-linear-velocity-button-click-and-readback.md)
 before adding readback, gravity, or other drivers.
 
@@ -21,17 +22,16 @@ are **velocity drivers** under the
 inherit the resulting pose once, while authored local offsets, rotations,
 and scales remain intact.
 
-One `Velocity {}` component attaches directly beneath the transform it
-drives. Its default state is zero. There are no separate linear/angular
-component flavors, nested velocity wrappers, or descendant-transform search:
+One `Velocity {}` wraps the child transform it drives, like other pose
+drivers. The nearest transform ancestor supplies the parent-local frame.
+Its default state is zero. There are no separate linear/angular component
+flavors or implicit target searches through arbitrary descendants:
 
 ```mms
-let vel = Velocity {}
-T {
-    name = "vehicle_motion_root"
-    vel
-    T { C3D {} }
+let vel = Velocity {
+    T { name = "vehicle_motion_root" C3D {} }
 }
+T { name = "vehicle_parent_frame" vel }
 
 // Live methods on the retained component reference:
 vel.translate([0.0, 0.0, -0.25]) // add linear velocity, m/s
@@ -46,31 +46,34 @@ persistent acceleration/throttle API will use time explicitly at fixed steps.
 The first XR slice implements `translate` and linear integration; `rotate`
 and angular integration remain follow-up work.
 
-By default, `translate(delta)` interprets the delta in the driven
-transform's local orientation at command time. An optional component
+By default, `translate(delta)` interprets the delta in the nearest transform
+ancestor's orientation at command time. An optional component
 reference overrides that command basis:
 
 ```mms
 let xr_input = InputXR.on() { /* tracked rig */ }
-let vel = Velocity.rotation_basis(xr_input).horizontal() {}
-T { name = "grounding_root" vel T { xr_input } }
+let vel = Velocity.rotation_basis(xr_input).horizontal() {
+    T { name = "grounding_root" T { xr_input } }
+}
+T { name = "grounding_parent_frame" vel }
 ```
 
 For an `InputXR` reference, resolve the active published XR eye orientation
 belonging to that rig; `InputXR` itself is only a pose-driver marker.
 `.horizontal()` projects local translation commands onto world XZ and
 normalizes the heading, so HMD pitch cannot create vertical thrust. Without
-the option, use the driven root's effective world orientation. A referenced
+the option, use the nearest transform ancestor's effective world orientation. A referenced
 transform may supply its effective world rotation as a non-XR basis. If the
 source is missing, disabled, ambiguous, or has no valid pose, reject the
 command rather than falling back silently. This read-only descendant
 reference does not change the transform hierarchy or the target Velocity
 integrates.
 
-Convert the selected basis and local delta to a world-space change, ignoring
-translation and scale, then add it to world-space velocity state. Existing
-momentum does not turn when the source later turns. Expose explicit
-`translate_world(delta)` to bypass the configured basis; when angular motion
+Convert the selected basis and local delta into parent-local velocity,
+ignoring translation and scale. Existing momentum does not turn when the
+command source later turns, but it *does* turn if the parent transform
+rotates. Expose explicit `translate_world(delta)` to bypass the configured
+basis while still converting its delta into parent-local state; when angular motion
 arrives, define `rotate_world(delta)` and whether `rotation_basis` also applies
 to `rotate`. Rotated/scaled parents must not change commanded world speed.
 
@@ -85,22 +88,24 @@ does not save accidental button presses.
 
 ## Transform and update boundary
 
-Resolve the component's immediate parent transform as its single target.
-Reject a missing parent or competing writer to the same transform/channel;
-do not integrate a shared ancestor/descendant channel twice. Store current
+Resolve the component's child transform as its single target and its nearest
+transform ancestor as the parent-local frame. Reject a missing/ambiguous
+child target or competing writer to the same transform/channel; distinct
+velocity layers require distinct intervening transforms. Store current
 velocity in `VelocityComponent`, not in a collision system's private map.
 Live component references must update that stored state, not a copied
 construction value, and must work without rebuilding the tree. Define the
 command's apply step so a click changes velocity exactly once before the next
 fixed substep, regardless of render rate or callback replay.
 
-Use a bounded fixed timestep and deterministic order. Convert each
-world-space displacement through the effective parent basis before writing
-local translation; parent rotation/scale must not alter speed. Reject
+Use a bounded fixed timestep and deterministic order. Integrate parent-local
+velocity into the child target's local translation; compensate for parent
+scale so it does not alter physical speed, while parent rotation turns the
+inherited motion. Reject
 non-finite deltas/state and singular bases with a clear diagnostic. The
 component needs explicit enable/disable and cleanup behavior. Angular
-integration, when added, must use world-space angular state and convert the
-result to the target's local rotation without scale affecting angular speed.
+integration, when added, must define parent-local angular state and write
+the target's local rotation without scale affecting angular speed.
 
 ## Orientation helpers beyond the configured basis
 

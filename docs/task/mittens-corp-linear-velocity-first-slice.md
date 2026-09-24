@@ -5,10 +5,11 @@ pass and the scene runs in XR. Headset button clicks/readback still need the
 [focused interaction follow-up](xr-linear-velocity-button-click-and-readback.md).
 Gravity, contact, and angular motion are separate later slices.
 
-Design correction: the follow-up records the intended **parent-local stored
-velocity** invariant. The world-space storage described below documents the
-current implementation, not the target contract. Reconcile that gap before
-building more velocity APIs or physics drivers on top of it.
+Design correction: the follow-up records the intended **pose-driver parent
+topology** (`Velocity { T { ... } }`) and **parent-local stored velocity**.
+The child-of-target topology and world-space storage described below document
+the current implementation, not the target contract. Reconcile both gaps
+before building more velocity APIs or physics drivers on top of it.
 
 ## Outcome and order
 
@@ -20,7 +21,7 @@ Two XR-clickable buttons change Bisket's *velocity state* by reference. The
 avatar moves without gravity, floor contact, or a physics body. Gravity and
 contact are later independent velocity-driver/contact slices.
 
-## Proposed MMS contract
+## Initial MMS contract (implemented; topology revision pending)
 
 Use a `Velocity` component directly under the transform it drives. The named
 outer grounding root is the motion target, while gamepad XZ remains on the
@@ -95,7 +96,7 @@ after turning applies reverse thrust along the *new* heading; it is not a
 general brake for existing velocity in another direction. While heading is
 unchanged, one back click cancels one forward click.
 
-## Proposed Rust boundary
+## Initial Rust boundary (implemented; topology revision pending)
 
 `VelocityComponent` owns enabled state, finite `linear_world_mps: [f32; 3]`
 with a zero default, an optional `rotation_basis: ComponentRef`, and a
