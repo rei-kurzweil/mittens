@@ -1,9 +1,15 @@
 # Task: scriptable Velocity pose driver
 
-Status: planned, revised 2026-09-23. The
+Status: linear XR slice implemented, revised 2026-09-23. The
 [XR linear-velocity slice](mittens-corp-linear-velocity-first-slice.md) defines
-the first implementation. This task also tracks later angular motion and
+the current implementation. This task also tracks later angular motion and
 [broom flight](broom-flight-followup.md).
+
+Design correction: the intended invariant is **parent-local stored velocity**;
+the current world-space implementation and world-space descriptions below
+must be reconciled under the
+[XR button/readback follow-up](xr-linear-velocity-button-click-and-readback.md)
+before adding readback, gravity, or other drivers.
 
 ## Contract
 
@@ -71,7 +77,9 @@ to `rotate`. Rotated/scaled parents must not change commanded world speed.
 Provide explicit read/set/zero access to current velocity without requiring
 an inverse `translate` call. The exact MMS spelling of those accessors and
 authored initial nonzero state should be specified with their first consumer;
-do not introduce channel-specific constructors for them. Keep authored
+the [XR button/readback follow-up](xr-linear-velocity-button-click-and-readback.md)
+now proposes `Velocity.linear()` for the linear getter. Do not introduce
+channel-specific constructors for them. Keep authored
 initial configuration distinct from transient live state so serialization
 does not save accidental button presses.
 

@@ -663,6 +663,19 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     }
                 }
                 "InputXR" => no_arg_constructors(component, &["on", "off"]),
+                "Velocity" => {
+                    constructor_and_builder(component, "rotation_basis", any(1));
+                    component.builder_call("horizontal", no_args());
+                    component.builder_call("enabled", booleans(1));
+                    for method_name in ["translate", "translate_world"] {
+                        host_method(
+                            component,
+                            canonical,
+                            method_name,
+                            method(vec![mms::ValueType::Any], mms::ValueType::Null),
+                        );
+                    }
+                }
                 "XR" => no_arg_constructors(component, &["on", "off", "auto", "openxr"]),
                 "InputXRGamepad" => {
                     component.constructor("new", no_args());

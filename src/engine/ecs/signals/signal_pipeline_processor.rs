@@ -54,6 +54,7 @@ impl SignalPipelineProcessor {
             | IntentValue::SetText { component_id, .. }
             | IntentValue::SetEmissiveIntensity { component_id, .. }
             | IntentValue::SetPosition { component_id, .. }
+            | IntentValue::VelocityTranslate { component_id, .. }
             | IntentValue::LookAt { component_id, .. }
             | IntentValue::GLTFArmatureVisible { component_id, .. }
             | IntentValue::SetLayoutAvailableWidth { component_id, .. }
@@ -206,6 +207,7 @@ impl SignalPipelineProcessor {
             | IntentValue::SetText { component_id, .. }
             | IntentValue::SetEmissiveIntensity { component_id, .. }
             | IntentValue::SetPosition { component_id, .. }
+            | IntentValue::VelocityTranslate { component_id, .. }
             | IntentValue::LookAt { component_id, .. }
             | IntentValue::GLTFArmatureVisible { component_id, .. }
             | IntentValue::SetLayoutAvailableWidth { component_id, .. }

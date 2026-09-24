@@ -7883,6 +7883,168 @@ fn capsule_stick_figure_grounding_boundary_preserves_xr_locomotion_and_local_pos
 }
 
 #[test]
+fn mittens_corp_linear_velocity_scene_evaluates_with_xr_basis_and_panel() {
+    use crate::engine::ecs::component::{
+        ComponentRef, EditorPanel, EditorUIComponent, InputXRComponent, VelocityComponent,
+    };
+    use crate::engine::ecs::system::input_xr_gamepad_system::xr_locomotion_target_transform;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut queue = CommandQueue::new();
+    let mut assets = RenderAssets::new();
+    let path = "examples/mittens-corp-linear-velocity.mms";
+    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+        include_str!("../../examples/mittens-corp-linear-velocity.mms"),
+        Some(path),
+        &mut world,
+        &mut rx,
+        Some(&mut assets),
+        &mut queue,
+    );
+    assert!(output.errors.is_empty(), "{path}: {:?}", output.errors);
+    let named = |label: &str| {
+        world
+            .all_components()
+            .find(|id| world.component_label(*id) == Some(label))
+            .unwrap_or_else(|| panic!("{path}: missing {label}"))
+    };
+    let root = named("bisket_grounding_root");
+    let locomotion = named("bisket_locomotion_root");
+    let velocity_id = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<VelocityComponent>(*id)
+                .is_some()
+        })
+        .expect("scene should contain Velocity");
+    let input_xr = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<InputXRComponent>(*id)
+                .is_some()
+        })
+        .expect("scene should contain InputXR");
+    assert_eq!(world.parent_of(velocity_id), Some(root));
+    assert_eq!(world.parent_of(locomotion), Some(root));
+    assert_eq!(
+        xr_locomotion_target_transform(&world, input_xr),
+        Some(locomotion)
+    );
+    let velocity = world
+        .get_component_by_id_as::<VelocityComponent>(velocity_id)
+        .unwrap();
+    assert_eq!(velocity.linear_world_mps, [0.0; 3]);
+    assert!(velocity.horizontal);
+    assert!(matches!(
+        velocity.rotation_basis,
+        Some(ComponentRef::Guid(guid)) if world.component_id_by_guid(guid) == Some(input_xr)
+    ));
+    named("linear_velocity_panel_anchor");
+    let editor_ui = world
+        .all_components()
+        .find_map(|id| world.get_component_by_id_as::<EditorUIComponent>(id))
+        .expect("scene should explicitly select its editor panels");
+    assert_eq!(editor_ui.panels(), vec![EditorPanel::Settings]);
+}
+
+#[test]
+fn mittens_corp_linear_velocity_buttons_emit_one_change_each() {
+    use crate::engine::ecs::component::{TextComponent, VelocityComponent};
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut queue = CommandQueue::new();
+    let mut assets = RenderAssets::new();
+    let (mut session, output) = RuntimeSpecSession::start_at_path(
+        include_str!("../../examples/mittens-corp-linear-velocity.mms"),
+        "examples/mittens-corp-linear-velocity.mms",
+        &mut world,
+        &mut rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .expect("velocity scene should start");
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    let velocity = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<VelocityComponent>(*id)
+                .is_some()
+        })
+        .unwrap();
+    for (label, expected_z) in [("forward: +0.25 m/s", -0.25), ("back: -0.25 m/s", 0.25)] {
+        let text = world
+            .all_components()
+            .find(|id| {
+                world
+                    .get_component_by_id_as::<TextComponent>(*id)
+                    .is_some_and(|t| t.text == label)
+            })
+            .unwrap_or_else(|| panic!("missing button {label}"));
+        let button = world.parent_of(text).unwrap();
+        rx.dispatch_event_handlers(
+            &mut world,
+            &Signal::event(
+                button,
+                EventSignal::Click {
+                    raycaster: ComponentId::default(),
+                    renderable: button,
+                    hit_point: [0.0; 3],
+                    screen_pos_px: None,
+                },
+            ),
+        );
+        let output = session.service_callbacks(&mut world, &mut rx, None, &mut queue);
+        assert!(output.errors.is_empty(), "{:?}", output.errors);
+        let changes: Vec<_> = output
+            .intents
+            .iter()
+            .filter_map(|intent| match intent {
+                IntentValue::VelocityTranslate {
+                    component_id,
+                    delta_mps,
+                    world_space,
+                } if *component_id == velocity && !world_space => Some(*delta_mps),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(changes, vec![[0.0, 0.0, expected_z]]);
+    }
+}
+
+#[test]
+fn mittens_corp_linear_velocity_scene_advances_multiple_headless_frames() {
+    use crate::engine::ecs::system::SystemWorld;
+
+    let mut world = World::default();
+    let mut systems = SystemWorld::default();
+    let mut visuals = VisualWorld::default();
+    let mut assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+    let input = InputState::default();
+    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+        include_str!("../../examples/mittens-corp-linear-velocity.mms"),
+        Some("examples/mittens-corp-linear-velocity.mms"),
+        &mut world,
+        &mut systems.rx,
+        Some(&mut assets),
+        &mut queue,
+    );
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    for intent in output.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
+    systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+    for _ in 0..3 {
+        systems.tick(&mut world, &mut visuals, &mut assets, &input, &mut queue, 1.0 / 90.0);
+    }
+}
+
+#[test]
 fn all_bisket_secondary_motion_examples_evaluate_with_explicit_colliders() {
     use crate::engine::ecs::component::{
         ControllerXRComponent, PointerComponent, SpringBoneComponent, SpringColliderComponent,

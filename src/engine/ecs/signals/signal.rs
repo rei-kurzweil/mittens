@@ -469,6 +469,11 @@ pub enum IntentValue {
         component_id: ComponentId,
         position: [f32; 3],
     },
+    VelocityTranslate {
+        component_id: ComponentId,
+        delta_mps: [f32; 3],
+        world_space: bool,
+    },
     LookAt {
         component_id: ComponentId,
         target_world: [f32; 3],
@@ -996,6 +1001,7 @@ impl IntentValue {
             IntentValue::SetText { .. } => "set_text",
             IntentValue::SetEmissiveIntensity { .. } => "set_emissive_intensity",
             IntentValue::SetPosition { .. } => "set_position",
+            IntentValue::VelocityTranslate { .. } => "velocity_translate",
             IntentValue::LookAt { .. } => "look_at",
             IntentValue::SetLayoutAvailableWidth { .. } => "set_layout_available_width",
             IntentValue::SetLayoutAvailableHeight { .. } => "set_layout_available_height",

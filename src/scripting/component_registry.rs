@@ -53,8 +53,8 @@ use crate::engine::ecs::component::{
     TransformParentComponent, TransformSampleAncestorComponent, TransitionComponent,
     TransitionEasing, TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
     UnlitComponent, VRChatOSCEyeTrackingComponent, Vector3TemporalFilterComponent,
-    VolumeNormalizationComponent, WordWrapMode, XREyeTrackingComponent, XREyeTrackingHtcComponent,
-    XRHandComponent, XrComponent, XrHandPreference, ZoneComponent,
+    VelocityComponent, VolumeNormalizationComponent, WordWrapMode, XREyeTrackingComponent,
+    XREyeTrackingHtcComponent, XRHandComponent, XrComponent, XrHandPreference, ZoneComponent,
 };
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::CameraTarget;
@@ -142,6 +142,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "InputTransformMode",
     "InputXR",
     "InputXRGamepad",
+    "Velocity",
     "JointRetargetBasis",
     "InspectLayout",
     "Keyframe",
@@ -1978,6 +1979,13 @@ fn create_component(
             Some("off") => add!(InputXRComponent::off()),
             _ => add!(InputXRComponent::on()),
         },
+        "Velocity" => {
+            let id = world.add_component(VelocityComponent::new());
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
         "InputXRGamepad" | "InputXrGamepad" | "InputVRGamepad" | "InputVrGamepad" => {
             let id = world.add_component(InputXRGamepadComponent::new());
             if let Some(method) = ctor {
@@ -3875,6 +3883,30 @@ fn apply_call(
             "enabled" => inp.enabled = arg_bool(args, 0)?,
             "translation_enabled" => inp.translation_enabled = arg_bool(args, 0)?,
             "rotation_enabled" => inp.rotation_enabled = arg_bool(args, 0)?,
+            _ => {}
+        }
+        return Ok(());
+    }
+    if world
+        .get_component_by_id_as::<VelocityComponent>(id)
+        .is_some()
+    {
+        let basis = (method == "rotation_basis")
+            .then(|| arg_component_ref(world, args, 0))
+            .transpose()?;
+        let velocity = world
+            .get_component_by_id_as_mut::<VelocityComponent>(id)
+            .unwrap();
+        match method {
+            "rotation_basis" => velocity.rotation_basis = basis,
+            "horizontal" => {
+                velocity.horizontal = if args.is_empty() {
+                    true
+                } else {
+                    arg_bool(args, 0)?
+                }
+            }
+            "enabled" => velocity.enabled = arg_bool(args, 0)?,
             _ => {}
         }
         return Ok(());

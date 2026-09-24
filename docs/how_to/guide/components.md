@@ -483,6 +483,17 @@ Carries input xr gamepad state used when that engine feature is present in a com
 InputXRGamepad {}
 ```
 
+### `VelocityComponent`
+<!-- catalog:component source="VelocityComponent" mms="direct" names="Velocity" -->
+`Velocity` stores world-space linear velocity and integrates it into its
+immediate parent transform at a fixed step. A configured `rotation_basis`
+can make local `translate` commands use a referenced `InputXR` rig's active
+eye heading; `horizontal()` removes pitch from those commands. Gravity and
+contact are not part of this component. Sources: [Rust implementation](../../../src/engine/ecs/component/velocity.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
+```mms parse-only
+Velocity {}
+```
+
 ### `OptionComponent`
 <!-- catalog:component source="OptionComponent" mms="direct" names="Option" -->
 Carries option state used when that engine feature is present in a component tree. Use it when a tree needs this state or behavior. The Option engine subsystem; its component lifecycle is processed at signal drain points.

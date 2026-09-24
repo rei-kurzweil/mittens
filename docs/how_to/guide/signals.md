@@ -684,6 +684,17 @@ Transform {}
 target
 ```
 
+#### `VelocityTranslate`
+<!-- catalog:signal source="VelocityTranslate" kind="intent" mms="live-api" -->
+**Intent — Available through a live Velocity method.** `translate` and
+`translate_world` submit one velocity change for the named component. The
+velocity system resolves any local rotation basis when this intent is handled;
+it does not move the transform immediately. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [velocity system](../../../src/engine/ecs/system/velocity_system.rs), and [MMS method registry](../../../src/scripting/component_method_registry.rs).
+```mms parse-only
+let vel = Velocity {}
+vel.translate([0.0, 0.0, -0.25])
+```
+
 #### `LookAt`
 <!-- catalog:signal source="LookAt" kind="intent" mms="live-api" -->
 **Intent — Available through a live method/builtin.** Requests the `LookAt` operation. A live component method or evaluator builtin requests this intent; the RX/default executor or owning system consumes it. It is scoped to the requesting/affected component and executes at an explicit drain point; `AtBeat` delays eligibility when the producer supplies timed metadata. Related components and systems are the targets named by the variant; see executor matching for exact effects. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [intent interpretation](../../../src/engine/ecs/signals/intent_executor.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [MMS component registry](../../../src/scripting/component_registry.rs).

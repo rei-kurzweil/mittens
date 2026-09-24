@@ -2,7 +2,7 @@ use crate::engine::ecs::component::{
     AmplitudeComponent, AnimationComponent, AnimationState, AnimationStepDirection,
     AudioBandPassFilterComponent, AudioInputComponent, BoneRestPoseComponent, EmissiveComponent,
     InputComponent, InputXRGamepadComponent, RayCastComponent, ShadingComponent, ShadingModel,
-    SliderComponent, TextComponent, TransformComponent, TransitionComponent,
+    SliderComponent, TextComponent, TransformComponent, TransitionComponent, VelocityComponent,
     VolumeNormalizationComponent,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, PoseApplyMode, World};
@@ -61,6 +61,8 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                 "value" | "set_value" | "sync_value" | "track_mount" | "thumb_mount"
             ))
         || (matches!(component_type, "Amplitude" | "amplitude") && method == "value")
+        || (matches!(component_type, "Velocity" | "velocity")
+            && matches!(method, "translate" | "translate_world"))
         || (matches!(
             component_type,
             "VolumeNormalization" | "volume_normalization"
@@ -117,6 +119,24 @@ pub(crate) fn invoke_component_method(
     mut emit_intent: impl FnMut(IntentValue),
 ) -> Result<Value, String> {
     match (component_type, method) {
+        ("Velocity" | "velocity", "translate" | "translate_world") => {
+            let [delta] = args else {
+                return Err(format!("{method}(): expected one vec3 delta"));
+            };
+            let delta_mps = value_as_f32_array::<3>(delta)?;
+            if !delta_mps.iter().all(|v| v.is_finite()) {
+                return Err(format!("{method}(): delta must be finite"));
+            }
+            world
+                .get_component_by_id_as::<VelocityComponent>(id)
+                .ok_or_else(|| format!("{method}(): not a Velocity component"))?;
+            emit_intent(IntentValue::VelocityTranslate {
+                component_id: id,
+                delta_mps,
+                world_space: method == "translate_world",
+            });
+            Ok(Value::Null)
+        }
         ("Amplitude" | "amplitude", "value") => {
             if !args.is_empty() {
                 return Err(format!("value(): expected no arguments, got {args:?}"));

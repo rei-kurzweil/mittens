@@ -1,7 +1,14 @@
 # Task: XR linear Velocity shell and button-driven test
 
-Status: proposed, 2026-09-23. Design pass only; no `Velocity` runtime API or
-`mittens-corp-linear-velocity.mms` scene has been implemented yet.
+Status: implemented for the linear/button slice, 2026-09-23; headless checks
+pass and the scene runs in XR. Headset button clicks/readback still need the
+[focused interaction follow-up](xr-linear-velocity-button-click-and-readback.md).
+Gravity, contact, and angular motion are separate later slices.
+
+Design correction: the follow-up records the intended **parent-local stored
+velocity** invariant. The world-space storage described below documents the
+current implementation, not the target contract. Reconcile that gap before
+building more velocity APIs or physics drivers on top of it.
 
 ## Outcome and order
 
@@ -34,14 +41,20 @@ ED.active() {
     }
 }
 
-let forward = button("forward", { compact = true })
-let back = button("back", { compact = true })
-on(forward, "Click", fn(event) { vel.translate([0.0, 0.0, -0.25]) })
-on(back, "Click", fn(event) { vel.translate([0.0, 0.0, 0.25]) })
+let forward = button("forward", { /* colors and compact style */ })
+let back = button("back", { /* colors and compact style */ })
+on(forward, "Click", fn(event) {
+    query("#bisket_grounding_root").query("Velocity").translate([0.0, 0.0, -0.25])
+})
+on(back, "Click", fn(event) {
+    query("#bisket_grounding_root").query("Velocity").translate([0.0, 0.0, 0.25])
+})
 ```
 
-`vel` is a retained *live component reference*, not a query that copies its
-initial state. `translate(delta)` adds a linear-velocity change in m/s. It
+The authored `vel` variable configures and attaches the component. Click
+handlers resolve the emitted component through a live query; the builder
+value alone is not a runtime handle inside a callback. `translate(delta)`
+adds a linear-velocity change in m/s. It
 does **not** translate the transform and does **not** multiply by `dt`: one
 click changes velocity once. Repeated forward clicks accumulate speed; one
 matching back click cancels one forward click. Motion persists after release

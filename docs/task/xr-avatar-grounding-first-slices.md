@@ -151,6 +151,12 @@ a configured basis, they use the driven root's orientation. Velocity state
 remains world-space after the command's basis is sampled. The forward/back XR
 panel and a standalone headless test demonstrate motion without gravity.
 
+Implementation note (2026-09-23): `VelocityComponent`, `VelocitySystem`,
+`Velocity.rotation_basis(xr_input).horizontal()`, and the two-button
+`mittens-corp-linear-velocity.mms` example are in place. Headless scene,
+callback, basis, and fixed-step tests cover the linear path. XR headset smoke
+checks and the later gravity/contact slices remain pending.
+
 Use a bounded fixed timestep and a deterministic update order. Convert the
 world-space displacement into the root's parent-local translation if needed.
 Document the accumulator limit and report dropped time; reject non-finite

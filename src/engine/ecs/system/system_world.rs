@@ -44,6 +44,7 @@ use crate::engine::ecs::system::ToggleSystem;
 use crate::engine::ecs::system::TransformStreamSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::TransitionSystem;
+use crate::engine::ecs::system::VelocitySystem;
 use crate::engine::ecs::system::XREyeTrackingSystem;
 use crate::engine::ecs::system::XrSystem;
 use crate::engine::ecs::system::ZoneVisualizationSystem;
@@ -152,6 +153,7 @@ pub struct SystemWorld {
 
     pub xr: XrSystem,
     pub input_xr_gamepad: InputXRGamepadSystem,
+    pub velocity: VelocitySystem,
 
     pub pose_capture: PoseCaptureSystem,
 
@@ -1435,6 +1437,22 @@ impl SystemWorld {
         };
 
         match &intent.value {
+            IntentValue::VelocityTranslate {
+                component_id,
+                delta_mps,
+                world_space,
+            } => {
+                let result = if *world_space {
+                    self.velocity
+                        .add_linear_world(world, visuals, *component_id, *delta_mps)
+                } else {
+                    self.velocity
+                        .add_linear_local(world, visuals, *component_id, *delta_mps)
+                };
+                if let Err(error) = result {
+                    eprintln!("[velocity_system] {error}");
+                }
+            }
             IntentValue::RegisterRenderable { component } => {
                 self.register_renderable(world, visuals, *component);
             }
@@ -3089,6 +3107,12 @@ impl SystemWorld {
 
         // Physics may have moved renderables; refit BVH so raycasts see the resolved state.
         self.bvh.tick(world, visuals, input, dt_sec);
+
+        // Integrate outer motion before camera/OpenXR publish this frame's eye
+        // poses. Click commands capture the previous published eye at dispatch
+        // and become motion on the next fixed substep.
+        self.velocity.tick(world, queue, dt_sec);
+        queue.flush(world, self, visuals, render_assets);
 
         // Update window camera + select active XR camera rig before OpenXR consumes it.
         self.camera.tick(world, visuals, input, dt_sec);

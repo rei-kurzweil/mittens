@@ -88,6 +88,7 @@ pub mod stencil_clip;
 pub mod style;
 pub mod transmission;
 pub mod transparent_cutout;
+pub mod velocity;
 pub mod volume_normalization;
 pub mod xr;
 pub mod xr_eye_tracking;
@@ -378,6 +379,7 @@ pub use transmission::{
 pub use transparent_cutout::TransparentCutoutComponent;
 pub use unlit::UnlitComponent;
 pub use uv::UVComponent;
+pub use velocity::VelocityComponent;
 pub use xr::XrComponent;
 pub use xr_eye_tracking::{
     EyeRotationLimits, EyeTrackingSource, HTCEyeTrackingComponent, HeadRotationCompensation,
