@@ -1437,22 +1437,6 @@ impl SystemWorld {
         };
 
         match &intent.value {
-            IntentValue::VelocityTranslate {
-                component_id,
-                delta_mps,
-                world_space,
-            } => {
-                let result = if *world_space {
-                    self.velocity
-                        .add_linear_world(world, visuals, *component_id, *delta_mps)
-                } else {
-                    self.velocity
-                        .add_linear_local(world, visuals, *component_id, *delta_mps)
-                };
-                if let Err(error) = result {
-                    eprintln!("[velocity_system] {error}");
-                }
-            }
             IntentValue::RegisterRenderable { component } => {
                 self.register_renderable(world, visuals, *component);
             }

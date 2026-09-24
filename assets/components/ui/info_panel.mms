@@ -3,7 +3,8 @@
 // Required options:
 //   root_name, width_gu, unit_scale, title, content
 // Optional options:
-//   icon, background_color, toggle_background_color, body_background_color,
+//   icon, background_color (or title_background_color), toggle_background_color,
+//   toggle_icon_color, toggle_icon_glow_intensity, body_background_color,
 //   title_text_color, body_text_color
 //
 // The panel wraps `content` in its body internally. When the panel is restored
@@ -73,7 +74,7 @@ export fn info_panel_body(options) {
     })
 }
 
-fn panel_with_title_children(options, title_children, title_bar_background, toggle_background, body_background, body_text_color) {
+fn panel_with_title_children(options, title_children, title_bar_background, toggle_background, toggle_icon_color, toggle_icon_glow, body_background, body_text_color) {
     let body = info_panel_body({
         content = options.content
         body_background_color = body_background
@@ -85,6 +86,8 @@ fn panel_with_title_children(options, title_children, title_bar_background, togg
         unit_scale = options.unit_scale
         background_color = title_bar_background
         toggle_background_color = toggle_background
+        toggle_icon_color = toggle_icon_color
+        toggle_icon_glow_intensity = toggle_icon_glow
         children = title_children
         body = body
     })
@@ -97,10 +100,20 @@ export fn info_panel(options) {
     let title_bar_background = INFO_PANEL_TITLE_BACKGROUND
     let authored_background_color = options["background_color"]
     if authored_background_color { title_bar_background = authored_background_color }
+    let authored_title_background_color = options["title_background_color"]
+    if authored_title_background_color { title_bar_background = authored_title_background_color }
 
     let toggle_background = INFO_PANEL_TOGGLE_BACKGROUND
     let authored_toggle_background_color = options["toggle_background_color"]
     if authored_toggle_background_color { toggle_background = authored_toggle_background_color }
+
+    let toggle_icon_color = [0.72, 0.90, 1.0, 1.0]
+    let authored_toggle_icon_color = options["toggle_icon_color"]
+    if authored_toggle_icon_color { toggle_icon_color = authored_toggle_icon_color }
+
+    let toggle_icon_glow = 1.8
+    let authored_toggle_icon_glow = options["toggle_icon_glow_intensity"]
+    if authored_toggle_icon_glow != null { toggle_icon_glow = authored_toggle_icon_glow }
 
     let body_background = INFO_PANEL_BODY_BACKGROUND
     let authored_body_background_color = options["body_background_color"]
@@ -122,6 +135,8 @@ export fn info_panel(options) {
             [info_panel_icon(icon), title],
             title_bar_background,
             toggle_background,
+            toggle_icon_color,
+            toggle_icon_glow,
             body_background,
             body_text_color,
         )
@@ -131,6 +146,8 @@ export fn info_panel(options) {
         [title],
         title_bar_background,
         toggle_background,
+        toggle_icon_color,
+        toggle_icon_glow,
         body_background,
         body_text_color,
     )

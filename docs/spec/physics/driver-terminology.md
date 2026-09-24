@@ -58,9 +58,9 @@ not change the target or reparent the transform. A parent rotation then
 turns the inherited motion, while a physical metres-per-second
 interpretation needs explicit compensation for parent scale. If there is
 no transform ancestor, use the world frame as the parent frame. The current
-implementation reverses the edge (`T { Velocity {} }`) and stores
-world-space velocity; both are known design gaps tracked in the
-[velocity correction task](../../task/xr-linear-velocity-button-click-and-readback.md).
+implementation follows this topology and stores parent-local linear
+velocity; the [XR button/readback task](../../task/xr-linear-velocity-button-click-and-readback.md)
+tracks headset interaction verification.
 
 Separate velocity layers need separate transform targets:
 
@@ -79,9 +79,8 @@ components can share a transform ancestor if each owns a different child
 transform. Nesting `Velocity { Velocity { T { ... } } }` does **not** create
 two independent pose layers: both drivers would target the same nearest
 child transform unless a distinct transform is inserted between them.
-The implementation must define one motion authority per target/channel and
-reject an ambiguous or missing child transform. The current implementation
-instead requires `Velocity` to be a direct child of its target transform.
+The implementation requires one immediate child transform and rejects a
+missing or ambiguous target. Each driver owns one target/channel.
 
 ## Velocity driver kinds
 
@@ -107,7 +106,7 @@ removes vertical thrust from that command. The basis is sampled at command
 time, and the resulting delta should be converted into parent-local
 velocity state. `vel.translate_world(delta_mps)` bypasses the command basis
 but still converts the world-axis change into that state. The current
-linear slice instead stores world-space velocity.
+linear slice uses this parent-local stored state.
 The analogous proposed `vel.rotate(delta_radps)` would change angular
 velocity, not rotate the linear-velocity vector. These names are defined in
 the [XR linear-velocity task](../../task/mittens-corp-linear-velocity-first-slice.md);

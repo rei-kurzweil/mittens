@@ -1,10 +1,10 @@
 # Task: XR velocity buttons, editor selection, and readback
 
-Status: follow-up to the [XR linear-velocity first slice](mittens-corp-linear-velocity-first-slice.md), 2026-09-23. The scene now runs in the headset with only the Settings editor panel, but pointing at its forward/back buttons selects individual text glyphs with a gizmo instead of giving reliable button-click feedback. The user clarified the intended `Velocity { T { ... } }` pose-driver topology and parent-local state; reconcile both implementation gaps before adding readback. Do this before gravity/contact work.
+Status: implemented in code on 2026-09-24; headless click/readback and topology checks pass. Headset confirmation of ray-clicking, gizmo exclusion, grabbing, and panel restore remains pending before calling the interaction smoke test complete. Do this before gravity/contact work.
 
 ## Outcome
 
-In `examples/mittens-corp-linear-velocity.mms`, an XR pointer click on either bespoke button must change Bisket's outer-root velocity exactly once, without selecting button internals in the editor. Print the resulting linear velocity once per accepted click, not every frame. Keep the Settings editor panel, grabbable info panel, and normal XR interactions.
+In `examples/mittens-corp-linear-velocity.mms`, an XR pointer click on either bespoke button must change Bisket's outer-root velocity exactly once, without selecting button internals in the editor. Update an X/Y/Z readout once per accepted click, not every frame. Keep the Settings editor panel, grabbable info panel, and normal XR interactions.
 
 ## Selection and click routing
 
@@ -18,7 +18,7 @@ The intended pose-driver topology is `Velocity { T { ... } }`, matching `InputXR
 
 The intended state is a linear velocity vector expressed in that **ancestor transform's local axes**, in metres per second. This is not necessarily the driven child's own rotated axes: its translation channel is parent-relative. `translate(delta)` uses that ancestor's orientation by default, or an explicit `rotation_basis` such as the XR eye; convert the chosen command direction into parent-local velocity before accumulation. `translate_world(delta)` accepts a world-axis command but also converts it into the same parent-local stored state. Neither method changes the storage space.
 
-The current implementation does **not** satisfy either invariant: the component is authored under the transform it drives (`T { Velocity {} }`) and `VelocityComponent.linear_world_mps` stores a world-space vector. Refactor the scene, target resolution, component state, and system together rather than merely renaming a field. If the ancestor rotates after a click, existing parent-local velocity should turn with it; current world-space velocity does not. Parent scale must have an explicit policy: use a physical metres-per-second vector along ancestor axes and compensate for scale when writing child translation, so a scaled parent does not silently change speed. Define/reject singular or sheared ancestor bases. XR eye orientation is sampled at click time, converted to parent-local state, and does not continuously steer it. Gravity and other future world-directed drivers will likewise need an explicit world-to-parent-local conversion at their input boundary.
+The scene and system now use that topology and store `VelocityComponent.linear_local_mps`; the previous `T { Velocity {} }`/world-space implementation has been replaced. If the ancestor rotates after a click, existing parent-local velocity turns with it. Integration compensates for parent scale when writing child translation, so scale does not silently change physical speed; singular parent bases are rejected. XR eye orientation is sampled at click time, converted to parent-local state, and does not continuously steer it. Gravity and other future world-directed drivers likewise need an explicit world-to-parent-local conversion at their input boundary.
 
 The [physics driver terminology](../spec/physics/driver-terminology.md#transform-inheritance-versus-velocity) distinguishes transform inheritance, the driven target, the command direction basis, and separate velocity layers. Do not treat inherited HMD motion as an additional velocity driver.
 
@@ -33,7 +33,7 @@ vel.translate([0.0, 0.0, -0.25])
 print(vel.linear()) // currently reads the pre-click value
 ```
 
-Keep the command boundary and define an after-apply notification, provisionally `VelocityChanged`, emitted once after a successful `VelocityTranslate` application with the new parent-local `linear` value and the source `Velocity` component. The example can print the event's new value, or call `linear()` from that notification after the state mutation is visible. Do not emit this notification every fixed integration step: position changes while the velocity stays constant. Rejected commands (for example, XR pose not ready or non-finite result) should produce a diagnostic and no false success notification. If an existing generic component-change event already provides the same ordering and source identity, reuse it instead of adding a duplicate event type.
+The live mutation executor now applies `VelocityTranslate` and emits one `DataEvent` named `VelocityChanged` on successful application, scoped to the `Velocity` component. The example calls `linear()` from that notification and updates only the readout text. No notification is emitted per fixed integration step; rejected commands (for example, XR pose not ready or non-finite result) produce a diagnostic and no false success event.
 
 ## Checks
 
@@ -42,6 +42,6 @@ Keep the command boundary and define an after-apply notification, provisionally 
 - Space contract: test a parent rotation after a click, a rotated/scaled parent, and the inner XR heading reference. A rotated parent turns existing velocity; scale does not silently change its physical speed.
 - Topology: `Velocity { T { ... } }` drives that child; two layers separated by a transform compose; nested velocity components without an intervening transform do not acquire independent targets; missing/ambiguous target handling is explicit.
 - Interaction: exercise a ray hit on the actual button label/background hierarchy, not only a synthetic `Click` sent directly to the button root. Assert no editor `SelectionChanged`/gizmo attachment for glyphs, while the intended `Click` handler runs once.
-- Headset smoke test: forward and back clicks print one new velocity each, including after panel minimize/restore; no per-frame velocity spam; grabbing the panel, Settings, HMD, hands, gamepad locomotion, and mirror still work.
+- Headset smoke test: forward and back clicks display one new velocity each, including after panel minimize/restore; no per-frame readout updates; grabbing the panel, Settings, HMD, hands, gamepad locomotion, and mirror still work.
 
-The frequent `[velocity_system] dropped ...` messages observed during a slow XR run are a separate fixed-step/performance diagnostic. This task must not mask those warnings or claim that hiding editor panels solved their cause.
+The frequent `[velocity_system] dropped ...` messages observed during a slow XR run are a separate fixed-step/performance diagnostic. They are now accumulated and reported in batches to avoid per-frame terminal overhead; this does not address their underlying cause or imply that hiding editor panels solved it.

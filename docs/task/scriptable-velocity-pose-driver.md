@@ -1,16 +1,15 @@
 # Task: scriptable Velocity pose driver
 
-Status: linear XR slice implemented, revised 2026-09-23. The
+Status: linear XR slice implemented, revised 2026-09-24. The
 [XR linear-velocity slice](mittens-corp-linear-velocity-first-slice.md) defines
 the current implementation. This task also tracks later angular motion and
 [broom flight](broom-flight-followup.md).
 
-Design correction: the intended invariants are **pose-driver parent topology**
-(`Velocity { T { ... } }`) and **parent-local stored velocity**. The current
-child-of-target/world-space implementation and descriptions below must be
-reconciled under the
+The linear implementation now follows **pose-driver parent topology**
+(`Velocity { T { ... } }`) and **parent-local stored velocity**. The
 [XR button/readback follow-up](xr-linear-velocity-button-click-and-readback.md)
-before adding readback, gravity, or other drivers.
+tracks the event-driven readout and remaining headset verification; gravity
+and other drivers remain later work.
 
 ## Contract
 
@@ -81,7 +80,7 @@ Provide explicit read/set/zero access to current velocity without requiring
 an inverse `translate` call. The exact MMS spelling of those accessors and
 authored initial nonzero state should be specified with their first consumer;
 the [XR button/readback follow-up](xr-linear-velocity-button-click-and-readback.md)
-now proposes `Velocity.linear()` for the linear getter. Do not introduce
+implements `Velocity.linear()` for the linear getter. Do not introduce
 channel-specific constructors for them. Keep authored
 initial configuration distinct from transient live state so serialization
 does not save accidental button presses.

@@ -1,15 +1,16 @@
 # Task: XR linear Velocity shell and button-driven test
 
-Status: implemented for the linear/button slice, 2026-09-23; headless checks
-pass and the scene runs in XR. Headset button clicks/readback still need the
+Status: initial slice implemented on 2026-09-23; the topology/state correction
+and event-driven readout were implemented on 2026-09-24. Headless checks pass,
+but headset button/gizmo behavior still needs the
 [focused interaction follow-up](xr-linear-velocity-button-click-and-readback.md).
 Gravity, contact, and angular motion are separate later slices.
 
-Design correction: the follow-up records the intended **pose-driver parent
-topology** (`Velocity { T { ... } }`) and **parent-local stored velocity**.
-The child-of-target topology and world-space storage described below document
-the current implementation, not the target contract. Reconcile both gaps
-before building more velocity APIs or physics drivers on top of it.
+The initial child-of-target topology and world-space storage described below
+are retained as historical first-slice notes. The current implementation uses
+**pose-driver parent topology** (`Velocity { T { ... } }`) and **parent-local
+stored velocity** as specified in the follow-up. Build future physics drivers
+on the corrected implementation, not the historical code sketches below.
 
 ## Outcome and order
 
@@ -172,8 +173,7 @@ the avatar is grounded.
 ## Relationship to earlier design
 
 The broader [scriptable Velocity pose-driver task](scriptable-velocity-pose-driver.md)
-now uses the same single-component, direct-child attachment and
-`translate`/`rotate` naming. This focused XR slice implements only linear
-`translate` and integration; angular `rotate` follows later. Both documents
-use local *change commands*, optionally relative to an explicitly referenced
-rotation basis, over world-space stored velocity.
+keeps the single-component `translate`/`rotate` naming. The corrected XR slice
+wraps its driven transform and stores parent-local linear velocity; angular
+`rotate` follows later. The historical first-slice sketches above retain the
+original child-of-target/world-space design for context only.

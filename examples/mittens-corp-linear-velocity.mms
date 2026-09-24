@@ -111,15 +111,20 @@ let xr_input = InputXR.on() {
     }
 }
 
-let vel = Velocity.rotation_basis(xr_input).horizontal() {}
-ED.active() {
+let vel = Velocity.rotation_basis(xr_input).horizontal() {
+    name = "bisket_velocity"
     T {
         name = "bisket_grounding_root"
-        vel
         T.position(-5.0, 0.0, 0.0) {
             name = "bisket_locomotion_root"
             xr_input
         }
+    }
+}
+ED.active() {
+    T {
+        name = "bisket_grounding_frame"
+        vel
     }
 }
 
@@ -132,27 +137,36 @@ T.position(1.25, 2.8, -1.5) {
     }
 }
 
-fn make_velocity_buttons() {
+// Soft pearlescent palette: warm beige chrome, mint body, lilac toggle,
+// lemon forward and blush-magenta back.
+let velocity_body_color = [0.79, 0.92, 0.82, 0.98]
+let velocity_body_text_color = [0.20, 0.30, 0.26, 1.0]
+
+fn make_velocity_buttons(velocity_label) {
     let forward = button("forward: +0.25 m/s", {
-        background_color = [0.13, 0.35, 0.48, 1.0]
-        color = [0.94, 0.98, 1.0, 1.0]
+        background_color = [1.0, 0.96, 0.70, 1.0]
+        color = [0.29, 0.26, 0.19, 1.0]
         compact = true
     })
     let back = button("back: -0.25 m/s", {
-        background_color = [0.37, 0.22, 0.34, 1.0]
-        color = [0.94, 0.98, 1.0, 1.0]
+        background_color = [0.98, 0.81, 0.93, 1.0]
+        color = [0.34, 0.22, 0.32, 1.0]
         compact = true
     })
     on(forward, "Click", fn(event) {
-        query("#bisket_grounding_root").query("Velocity").translate([0.0, 0.0, -0.25])
+        query("#bisket_velocity").translate([0.0, 0.0, -0.25])
     })
     on(back, "Click", fn(event) {
-        query("#bisket_grounding_root").query("Velocity").translate([0.0, 0.0, 0.25])
+        query("#bisket_velocity").translate([0.0, 0.0, 0.25])
     })
     return T {
         Style { display("flex") flex_direction("column") row_gap(0.4) }
         forward
         back
+        T {
+            Style { font_size(0.65) color(velocity_body_text_color) }
+            Text { name = "velocity_xyz_readout" velocity_label }
+        }
     }
 }
 
@@ -161,19 +175,42 @@ let panel = info_panel({
     width_gu = 25.0
     unit_scale = 0.08
     title = "XR linear velocity"
-    background_color = [0.10, 0.20, 0.28, 0.98]
-    toggle_background_color = [0.16, 0.38, 0.54, 1.0]
-    content = make_velocity_buttons()
+    title_background_color = [0.94, 0.87, 0.79, 0.98]
+    title_text_color = [0.28, 0.23, 0.27, 1.0]
+    toggle_background_color = [0.85, 0.82, 0.95, 1.0]
+    toggle_icon_color = [0.40, 0.32, 0.48, 1.0]
+    toggle_icon_glow_intensity = 0.25
+    body_background_color = velocity_body_color
+    body_text_color = velocity_body_text_color
+    content = make_velocity_buttons("velocity x/y/z: 0, 0, 0 m/s")
 })
-T.position(-2.5, 2.2, 1.4) {
-    name = "linear_velocity_panel_anchor"
-    Grabbable {}
-    panel
+Selectable.off() {
+    T.position(-2.5, 2.2, 1.4) {
+        name = "linear_velocity_panel_anchor"
+        Grabbable {}
+        panel
+    }
 }
 let body_mount = panel.query("#accordion_body_mount")
 on(panel, "DataEvent", fn(event) {
     if event == "AccordionRestoreRequested" {
-        body_mount.attach(info_panel_body({ content = make_velocity_buttons() }))
+        let current = query("#bisket_velocity").linear()
+        let label = "velocity x/y/z: " + current[0] + ", " + current[1] + ", " + current[2] + " m/s"
+        body_mount.attach(info_panel_body({
+            content = make_velocity_buttons(label)
+            body_background_color = velocity_body_color
+            body_text_color = velocity_body_text_color
+        }))
+    }
+})
+
+on(vel, "DataEvent", fn(event) {
+    if event == "VelocityChanged" {
+        let current = query("#bisket_velocity").linear()
+        let readout = query("#velocity_xyz_readout")
+        if readout {
+            readout.set_text("velocity x/y/z: " + current[0] + ", " + current[1] + ", " + current[2] + " m/s")
+        }
     }
 })
 

@@ -667,6 +667,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     constructor_and_builder(component, "rotation_basis", any(1));
                     component.builder_call("horizontal", no_args());
                     component.builder_call("enabled", booleans(1));
+                    host_method(
+                        component,
+                        canonical,
+                        "linear",
+                        method(vec![], mms::ValueType::Array),
+                    );
                     for method_name in ["translate", "translate_world"] {
                         host_method(
                             component,

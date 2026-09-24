@@ -485,13 +485,17 @@ InputXRGamepad {}
 
 ### `VelocityComponent`
 <!-- catalog:component source="VelocityComponent" mms="direct" names="Velocity" -->
-`Velocity` stores world-space linear velocity and integrates it into its
-immediate parent transform at a fixed step. A configured `rotation_basis`
-can make local `translate` commands use a referenced `InputXR` rig's active
-eye heading; `horizontal()` removes pitch from those commands. Gravity and
-contact are not part of this component. Sources: [Rust implementation](../../../src/engine/ecs/component/velocity.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
+`Velocity { T { ... } }` drives its single immediate child transform. It
+stores linear velocity in the nearest transform ancestor's local axes (or
+world axes when there is no ancestor) and integrates it at a fixed step.
+`linear()` reads the current `[x, y, z]` velocity in that stored frame.
+`translate(delta)` uses the ancestor's orientation by default; a configured
+`rotation_basis` can instead use a referenced `InputXR` rig's active eye
+heading, and `horizontal()` removes pitch from that command. `translate_world`
+accepts a world-axis delta but still stores it in the parent-local frame.
+Gravity and contact are not part of this component. Sources: [Rust implementation](../../../src/engine/ecs/component/velocity.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
 ```mms parse-only
-Velocity {}
+Velocity { T { name = "motion_root" } }
 ```
 
 ### `OptionComponent`

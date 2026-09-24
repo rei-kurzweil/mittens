@@ -62,7 +62,7 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
             ))
         || (matches!(component_type, "Amplitude" | "amplitude") && method == "value")
         || (matches!(component_type, "Velocity" | "velocity")
-            && matches!(method, "translate" | "translate_world"))
+            && matches!(method, "translate" | "translate_world" | "linear"))
         || (matches!(
             component_type,
             "VolumeNormalization" | "volume_normalization"
@@ -119,6 +119,21 @@ pub(crate) fn invoke_component_method(
     mut emit_intent: impl FnMut(IntentValue),
 ) -> Result<Value, String> {
     match (component_type, method) {
+        ("Velocity" | "velocity", "linear") => {
+            if !args.is_empty() {
+                return Err("linear(): expected no arguments".into());
+            }
+            let velocity = world
+                .get_component_by_id_as::<VelocityComponent>(id)
+                .ok_or("linear(): not a Velocity component")?;
+            Ok(Value::Array(
+                velocity
+                    .linear_local_mps
+                    .into_iter()
+                    .map(|value| Value::Number(value as f64))
+                    .collect(),
+            ))
+        }
         ("Velocity" | "velocity", "translate" | "translate_world") => {
             let [delta] = args else {
                 return Err(format!("{method}(): expected one vec3 delta"));

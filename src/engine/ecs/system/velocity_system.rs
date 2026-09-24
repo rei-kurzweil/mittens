@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::engine::ecs::component::{
     InputXRComponent, QueryRootMode, TransformComponent, VelocityComponent, resolve_component_ref,
@@ -14,8 +14,8 @@ const MAX_STEPS: usize = 8;
 #[derive(Debug, Default)]
 pub struct VelocitySystem {
     accumulator_sec: f64,
+    dropped_since_report_sec: f64,
     reported_bad_target: HashSet<ComponentId>,
-    reported_conflict: HashSet<ComponentId>,
 }
 
 #[cfg(test)]
@@ -48,7 +48,9 @@ mod tests {
             std::f32::consts::FRAC_1_SQRT_2,
         ]));
         let velocity = world.add_component(VelocityComponent::new());
+        let target = world.add_component(TransformComponent::new());
         world.add_child(root, velocity).unwrap();
+        world.add_child(velocity, target).unwrap();
         propagate(&mut world, root);
         let mut system = VelocitySystem::default();
         let visuals = VisualWorld::default();
@@ -58,8 +60,8 @@ mod tests {
         let state = world
             .get_component_by_id_as::<VelocityComponent>(velocity)
             .unwrap();
-        assert!((state.linear_world_mps[0] + 0.25).abs() < 1e-5);
-        assert!(state.linear_world_mps[2].abs() < 1e-5);
+        assert!(state.linear_local_mps[0].abs() < 1e-5);
+        assert!((state.linear_local_mps[2] + 0.25).abs() < 1e-5);
         system
             .translate(&mut world, &visuals, velocity, [0.0, 0.0, 0.25], false)
             .unwrap();
@@ -67,13 +69,13 @@ mod tests {
             world
                 .get_component_by_id_as::<VelocityComponent>(velocity)
                 .unwrap()
-                .linear_world_mps,
+                .linear_local_mps,
             [0.0; 3]
         );
     }
 
     #[test]
-    fn integration_converts_world_displacement_through_scaled_parent() {
+    fn integration_preserves_metre_speed_through_scaled_parent() {
         let mut world = World::default();
         let parent = world.add_component(
             TransformComponent::new()
@@ -87,17 +89,19 @@ mod tests {
         );
         let root = world.add_component(TransformComponent::new());
         let mut component = VelocityComponent::new();
-        component.linear_world_mps = [1.0, 0.0, 0.0];
+        component.linear_local_mps = [0.0, 0.0, 1.0];
         let velocity = world.add_component(component);
         world.add_child(parent, root).unwrap();
         world.add_child(root, velocity).unwrap();
+        let target = world.add_component(TransformComponent::new());
+        world.add_child(velocity, target).unwrap();
         propagate(&mut world, parent);
-        let before = TransformSystem::world_position(&world, root).unwrap();
+        let before = TransformSystem::world_position(&world, target).unwrap();
         let mut system = VelocitySystem::default();
         let mut rx = RxWorld::default();
         system.tick(&mut world, &mut rx, 1.0 / 60.0);
         propagate(&mut world, parent);
-        let after = TransformSystem::world_position(&world, root).unwrap();
+        let after = TransformSystem::world_position(&world, target).unwrap();
         assert!((after[0] - before[0] - 1.0 / 60.0).abs() < 1e-5);
         assert!((after[1] - before[1]).abs() < 1e-5);
         assert!((after[2] - before[2]).abs() < 1e-5);
@@ -109,16 +113,18 @@ mod tests {
             let mut world = World::default();
             let root = world.add_component(TransformComponent::new());
             let mut state = VelocityComponent::new();
-            state.set_linear_world([0.0, 0.0, -1.0]).unwrap();
+            state.set_linear_local([0.0, 0.0, -1.0]).unwrap();
             let velocity = world.add_component(state);
             world.add_child(root, velocity).unwrap();
+            let target = world.add_component(TransformComponent::new());
+            world.add_child(velocity, target).unwrap();
             let mut system = VelocitySystem::default();
             let mut rx = RxWorld::default();
             for _ in 0..frames {
                 system.tick(&mut world, &mut rx, dt);
             }
             let before_disable = world
-                .get_component_by_id_as::<TransformComponent>(root)
+                .get_component_by_id_as::<TransformComponent>(target)
                 .unwrap()
                 .translation()[2];
             world
@@ -128,7 +134,7 @@ mod tests {
             system.tick(&mut world, &mut rx, dt);
             assert_eq!(
                 world
-                    .get_component_by_id_as::<TransformComponent>(root)
+                    .get_component_by_id_as::<TransformComponent>(target)
                     .unwrap()
                     .translation()[2],
                 before_disable
@@ -154,7 +160,9 @@ mod tests {
         ));
         let velocity = world.add_component(component);
         world.add_child(root, velocity).unwrap();
-        world.add_child(root, input).unwrap();
+        let target = world.add_component(TransformComponent::new());
+        world.add_child(velocity, target).unwrap();
+        world.add_child(target, input).unwrap();
         propagate(&mut world, root);
         let mut system = VelocitySystem::default();
         let visuals = VisualWorld::default();
@@ -172,7 +180,7 @@ mod tests {
             world
                 .get_component_by_id_as::<VelocityComponent>(velocity)
                 .unwrap()
-                .linear_world_mps,
+                .linear_local_mps,
             [0.0; 3]
         );
     }
@@ -192,7 +200,9 @@ mod tests {
         config.horizontal = true;
         let velocity = world.add_component(config);
         world.add_child(root, velocity).unwrap();
-        world.add_child(root, input).unwrap();
+        let target = world.add_component(TransformComponent::new());
+        world.add_child(velocity, target).unwrap();
+        world.add_child(target, input).unwrap();
         world.add_child(input, camera).unwrap();
         world
             .get_component_by_id_as_mut::<InputXRComponent>(input)
@@ -223,9 +233,9 @@ mod tests {
         let state = world
             .get_component_by_id_as::<VelocityComponent>(velocity)
             .unwrap();
-        assert!((state.linear_world_mps[0] + 0.25).abs() < 1e-5);
-        assert!(state.linear_world_mps[1].abs() < 1e-5);
-        assert!(state.linear_world_mps[2].abs() < 1e-5);
+        assert!((state.linear_local_mps[0] + 0.25).abs() < 1e-5);
+        assert!(state.linear_local_mps[1].abs() < 1e-5);
+        assert!(state.linear_local_mps[2].abs() < 1e-5);
 
         // Pitch changes eye orientation but must not add vertical thrust.
         world
@@ -247,13 +257,146 @@ mod tests {
         let state = world
             .get_component_by_id_as::<VelocityComponent>(velocity)
             .unwrap();
-        assert!(state.linear_world_mps[0].abs() < 1e-5);
-        assert!(state.linear_world_mps[1].abs() < 1e-5);
-        assert!((state.linear_world_mps[2] + 0.25).abs() < 1e-5);
+        assert!(state.linear_local_mps[0].abs() < 1e-5);
+        assert!(state.linear_local_mps[1].abs() < 1e-5);
+        assert!((state.linear_local_mps[2] + 0.25).abs() < 1e-5);
+    }
+
+    #[test]
+    fn parent_rotation_turns_existing_local_velocity() {
+        let mut world = World::default();
+        let parent = world.add_component(TransformComponent::new());
+        let velocity = world.add_component(VelocityComponent::new());
+        let target = world.add_component(TransformComponent::new());
+        world.add_child(parent, velocity).unwrap();
+        world.add_child(velocity, target).unwrap();
+        propagate(&mut world, parent);
+        let mut system = VelocitySystem::default();
+        system
+            .add_linear_local(
+                &mut world,
+                &VisualWorld::default(),
+                velocity,
+                [0.0, 0.0, -1.0],
+            )
+            .unwrap();
+        let parent_transform = world
+            .get_component_by_id_as_mut::<TransformComponent>(parent)
+            .unwrap();
+        parent_transform.transform.rotation = [
+            0.0,
+            std::f32::consts::FRAC_1_SQRT_2,
+            0.0,
+            std::f32::consts::FRAC_1_SQRT_2,
+        ];
+        parent_transform.transform.recompute_model();
+        propagate(&mut world, parent);
+        let before = TransformSystem::world_position(&world, target).unwrap();
+        let mut queue = RxWorld::default();
+        system.tick(&mut world, &mut queue, 1.0 / 60.0);
+        propagate(&mut world, parent);
+        let after = TransformSystem::world_position(&world, target).unwrap();
+        assert!((after[0] - before[0] + 1.0 / 60.0).abs() < 1e-5);
+        assert!((after[2] - before[2]).abs() < 1e-5);
+        assert_eq!(
+            world
+                .get_component_by_id_as::<VelocityComponent>(velocity)
+                .unwrap()
+                .linear_local_mps,
+            [0.0, 0.0, -1.0]
+        );
+    }
+
+    #[test]
+    fn velocity_needs_one_immediate_child_transform() {
+        let mut world = World::default();
+        let velocity = world.add_component(VelocityComponent::new());
+        let mut system = VelocitySystem::default();
+        let visuals = VisualWorld::default();
+        assert!(
+            system
+                .add_linear_local(&mut world, &visuals, velocity, [1.0, 0.0, 0.0])
+                .is_err()
+        );
+        let first = world.add_component(TransformComponent::new());
+        let second = world.add_component(TransformComponent::new());
+        world.add_child(velocity, first).unwrap();
+        world.add_child(velocity, second).unwrap();
+        assert!(
+            system
+                .add_linear_local(&mut world, &visuals, velocity, [1.0, 0.0, 0.0])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn two_velocity_layers_with_intervening_transform_compose_once() {
+        let mut world = World::default();
+        let frame = world.add_component(TransformComponent::new());
+        let mut outer_state = VelocityComponent::new();
+        outer_state.set_linear_local([1.0, 0.0, 0.0]).unwrap();
+        let outer_velocity = world.add_component(outer_state);
+        let outer_target = world.add_component(TransformComponent::new());
+        let mut inner_state = VelocityComponent::new();
+        inner_state.set_linear_local([0.0, 0.0, -1.0]).unwrap();
+        let inner_velocity = world.add_component(inner_state);
+        let inner_target = world.add_component(TransformComponent::new());
+        world.add_child(frame, outer_velocity).unwrap();
+        world.add_child(outer_velocity, outer_target).unwrap();
+        world.add_child(outer_target, inner_velocity).unwrap();
+        world.add_child(inner_velocity, inner_target).unwrap();
+        propagate(&mut world, frame);
+        let mut system = VelocitySystem::default();
+        let mut emit = RxWorld::default();
+        system.tick(&mut world, &mut emit, 1.0 / 60.0);
+        propagate(&mut world, frame);
+        let outer = TransformSystem::world_position(&world, outer_target).unwrap();
+        let inner = TransformSystem::world_position(&world, inner_target).unwrap();
+        assert!((outer[0] - 1.0 / 60.0).abs() < 1e-5);
+        assert!((inner[0] - 1.0 / 60.0).abs() < 1e-5);
+        assert!((inner[2] + 1.0 / 60.0).abs() < 1e-5);
     }
 }
 
 impl VelocitySystem {
+    fn driven_transform(world: &World, velocity_id: ComponentId) -> Result<ComponentId, String> {
+        let mut targets = world.children_of(velocity_id).iter().copied().filter(|id| {
+            world
+                .get_component_by_id_as::<TransformComponent>(*id)
+                .is_some()
+        });
+        let target = targets
+            .next()
+            .ok_or("Velocity: needs one immediate child Transform")?;
+        if targets.next().is_some() {
+            return Err("Velocity: multiple child Transforms are ambiguous".into());
+        }
+        Ok(target)
+    }
+
+    fn ancestor_transform(world: &World, velocity_id: ComponentId) -> Option<ComponentId> {
+        let mut current = world.parent_of(velocity_id);
+        while let Some(id) = current {
+            if world
+                .get_component_by_id_as::<TransformComponent>(id)
+                .is_some()
+            {
+                return Some(id);
+            }
+            current = world.parent_of(id);
+        }
+        None
+    }
+
+    fn parent_rotation(world: &World, velocity_id: ComponentId) -> Result<[f32; 4], String> {
+        Self::ancestor_transform(world, velocity_id)
+            .map(|id| {
+                TransformSystem::world_rotation_quat_xyzw(world, id)
+                    .map_err(|_| "Velocity: parent transform rotation is invalid".to_string())
+            })
+            .unwrap_or(Ok([0.0, 0.0, 0.0, 1.0]))
+    }
+
     pub fn add_linear_local(
         &mut self,
         world: &mut World,
@@ -295,16 +438,9 @@ impl VelocitySystem {
         }
         let basis = component.rotation_basis.clone();
         let horizontal = component.horizontal;
-        let previous = component.linear_world_mps;
-        let target = world
-            .parent_of(velocity_id)
-            .ok_or("Velocity: missing parent transform")?;
-        if world
-            .get_component_by_id_as::<TransformComponent>(target)
-            .is_none()
-        {
-            return Err("Velocity: immediate parent must be a Transform".into());
-        }
+        let previous = component.linear_local_mps;
+        Self::driven_transform(world, velocity_id)?;
+        let parent_rotation = Self::parent_rotation(world, velocity_id)?;
 
         let mut delta_world = if world_space || delta_mps == [0.0; 3] {
             delta_mps
@@ -360,8 +496,7 @@ impl VelocitySystem {
                 Some(_) => {
                     return Err("Velocity: rotation basis must be InputXR or Transform".into());
                 }
-                None => TransformSystem::world_rotation_quat_xyzw(world, target)
-                    .map_err(|_| "Velocity: driven transform rotation is invalid")?,
+                None => parent_rotation,
             };
             math::quat_rotate_vec3(rotation, delta_mps)
         };
@@ -376,10 +511,12 @@ impl VelocitySystem {
             let scale = original_len / flat_len;
             delta_world = [delta_world[0] * scale, 0.0, delta_world[2] * scale];
         }
+        let delta_local =
+            math::quat_rotate_vec3(math::quat_conjugate(parent_rotation), delta_world);
         let next = [
-            previous[0] + delta_world[0],
-            previous[1] + delta_world[1],
-            previous[2] + delta_world[2],
+            previous[0] + delta_local[0],
+            previous[1] + delta_local[1],
+            previous[2] + delta_local[2],
         ];
         if !next.iter().all(|v| v.is_finite()) {
             return Err("Velocity.translate: resulting velocity is non-finite".into());
@@ -387,7 +524,7 @@ impl VelocitySystem {
         world
             .get_component_by_id_as_mut::<VelocityComponent>(velocity_id)
             .unwrap()
-            .set_linear_world(next)
+            .set_linear_local(next)
             .map_err(str::to_string)?;
         Ok(())
     }
@@ -403,10 +540,14 @@ impl VelocitySystem {
         let steps = ((self.accumulator_sec / STEP_SEC).floor() as usize).min(MAX_STEPS);
         self.accumulator_sec -= steps as f64 * STEP_SEC;
         if self.accumulator_sec >= STEP_SEC {
-            eprintln!(
-                "[velocity_system] dropped {:.3} s of accumulated time",
-                self.accumulator_sec
-            );
+            self.dropped_since_report_sec += self.accumulator_sec;
+            if self.dropped_since_report_sec >= 1.0 {
+                eprintln!(
+                    "[velocity_system] dropped {:.3} s of accumulated time since last report",
+                    self.dropped_since_report_sec
+                );
+                self.dropped_since_report_sec = 0.0;
+            }
             self.accumulator_sec = 0.0;
         }
         if steps == 0 {
@@ -421,50 +562,37 @@ impl VelocitySystem {
                     .is_some()
             })
             .collect();
-        let mut owners: HashMap<ComponentId, usize> = HashMap::new();
-        for &id in &ids {
-            if !world
-                .get_component_by_id_as::<VelocityComponent>(id)
-                .is_some_and(|v| v.enabled)
-            {
-                continue;
-            }
-            if let Some(parent) = world.parent_of(id) {
-                *owners.entry(parent).or_default() += 1;
-            }
-        }
         for id in ids {
             let Some(velocity) = world.get_component_by_id_as::<VelocityComponent>(id) else {
                 continue;
             };
-            if !velocity.enabled || velocity.linear_world_mps == [0.0; 3] {
+            if !velocity.enabled || velocity.linear_local_mps == [0.0; 3] {
                 continue;
             }
-            let linear = velocity.linear_world_mps;
-            let Some(target) = world.parent_of(id) else {
-                continue;
+            let linear = velocity.linear_local_mps;
+            let target = match Self::driven_transform(world, id) {
+                Ok(target) => target,
+                Err(error) => {
+                    if self.reported_bad_target.insert(id) {
+                        eprintln!("[velocity_system] {error}: {id:?}");
+                    }
+                    continue;
+                }
             };
-            if world
-                .get_component_by_id_as::<TransformComponent>(target)
-                .is_none()
-            {
-                if self.reported_bad_target.insert(id) {
-                    eprintln!(
-                        "[velocity_system] Velocity {id:?} needs an immediate Transform parent"
-                    );
+            let parent_rotation = match Self::parent_rotation(world, id) {
+                Ok(rotation) => rotation,
+                Err(error) => {
+                    if self.reported_bad_target.insert(id) {
+                        eprintln!("[velocity_system] {error}: {id:?}");
+                    }
+                    continue;
                 }
-                continue;
-            }
-            if owners.get(&target).copied().unwrap_or(0) != 1 {
-                if self.reported_conflict.insert(target) {
-                    eprintln!("[velocity_system] multiple Velocity components target {target:?}");
-                }
-                continue;
-            }
+            };
+            let world_velocity = math::quat_rotate_vec3(parent_rotation, linear);
             let delta_world = [
-                linear[0] * elapsed,
-                linear[1] * elapsed,
-                linear[2] * elapsed,
+                world_velocity[0] * elapsed,
+                world_velocity[1] * elapsed,
+                world_velocity[2] * elapsed,
             ];
             let parent_world = world
                 .parent_of(target)

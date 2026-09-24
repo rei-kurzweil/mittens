@@ -7885,7 +7885,8 @@ fn capsule_stick_figure_grounding_boundary_preserves_xr_locomotion_and_local_pos
 #[test]
 fn mittens_corp_linear_velocity_scene_evaluates_with_xr_basis_and_panel() {
     use crate::engine::ecs::component::{
-        ComponentRef, EditorPanel, EditorUIComponent, InputXRComponent, VelocityComponent,
+        ColorComponent, ComponentRef, EditorPanel, EditorUIComponent, InputXRComponent,
+        SelectableComponent, StyleComponent, VelocityComponent,
     };
     use crate::engine::ecs::system::input_xr_gamepad_system::xr_locomotion_target_transform;
 
@@ -7910,6 +7911,7 @@ fn mittens_corp_linear_velocity_scene_evaluates_with_xr_basis_and_panel() {
             .unwrap_or_else(|| panic!("{path}: missing {label}"))
     };
     let root = named("bisket_grounding_root");
+    let frame = named("bisket_grounding_frame");
     let locomotion = named("bisket_locomotion_root");
     let velocity_id = world
         .all_components()
@@ -7927,7 +7929,8 @@ fn mittens_corp_linear_velocity_scene_evaluates_with_xr_basis_and_panel() {
                 .is_some()
         })
         .expect("scene should contain InputXR");
-    assert_eq!(world.parent_of(velocity_id), Some(root));
+    assert_eq!(world.parent_of(velocity_id), Some(frame));
+    assert_eq!(world.parent_of(root), Some(velocity_id));
     assert_eq!(world.parent_of(locomotion), Some(root));
     assert_eq!(
         xr_locomotion_target_transform(&world, input_xr),
@@ -7936,13 +7939,54 @@ fn mittens_corp_linear_velocity_scene_evaluates_with_xr_basis_and_panel() {
     let velocity = world
         .get_component_by_id_as::<VelocityComponent>(velocity_id)
         .unwrap();
-    assert_eq!(velocity.linear_world_mps, [0.0; 3]);
+    assert_eq!(velocity.linear_local_mps, [0.0; 3]);
     assert!(velocity.horizontal);
     assert!(matches!(
         velocity.rotation_basis,
         Some(ComponentRef::Guid(guid)) if world.component_id_by_guid(guid) == Some(input_xr)
     ));
     named("linear_velocity_panel_anchor");
+    let mut ancestor = Some(named("velocity_xyz_readout"));
+    let mut selection_blocked = false;
+    while let Some(id) = ancestor {
+        selection_blocked |= world
+            .get_component_by_id_as::<SelectableComponent>(id)
+            .is_some_and(|selectable| !selectable.enabled);
+        ancestor = world.parent_of(id);
+    }
+    assert!(
+        selection_blocked,
+        "panel internals should opt out of editor selection"
+    );
+    let panel = named("linear_velocity_panel");
+    let style_background = |label: &str| {
+        let node = world.find_component(panel, &format!("#{label}")).unwrap();
+        world
+            .children_of(node)
+            .iter()
+            .find_map(|id| world.get_component_by_id_as::<StyleComponent>(*id))
+            .and_then(|style| style.background_color)
+            .unwrap()
+    };
+    assert_eq!(style_background("title_bar"), [0.94, 0.87, 0.79, 0.98]);
+    assert_eq!(
+        style_background("accordion_toggle"),
+        [0.85, 0.82, 0.95, 1.0]
+    );
+    assert_eq!(
+        style_background("info_panel_content"),
+        [0.79, 0.92, 0.82, 0.98]
+    );
+    let arrow = world
+        .find_component(panel, "#accordion_down_arrow_icon")
+        .unwrap();
+    let arrow_color = world
+        .children_of(arrow)
+        .iter()
+        .flat_map(|id| world.children_of(*id))
+        .find_map(|id| world.get_component_by_id_as::<ColorComponent>(*id))
+        .unwrap();
+    assert_eq!(arrow_color.rgba, [0.40, 0.32, 0.48, 1.0]);
     let editor_ui = world
         .all_components()
         .find_map(|id| world.get_component_by_id_as::<EditorUIComponent>(id))
@@ -8014,6 +8058,148 @@ fn mittens_corp_linear_velocity_buttons_emit_one_change_each() {
             .collect();
         assert_eq!(changes, vec![[0.0, 0.0, expected_z]]);
     }
+
+    let panel_root = world
+        .all_components()
+        .find(|id| world.component_label(*id) == Some("linear_velocity_panel"))
+        .unwrap();
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            panel_root,
+            EventSignal::DataEvent {
+                name: "AccordionRestoreRequested".to_string(),
+                payload: None,
+            },
+        ),
+    );
+    let output = session.service_callbacks(&mut world, &mut rx, None, &mut queue);
+    assert!(
+        output.errors.is_empty(),
+        "restore callback: {:?}",
+        output.errors
+    );
+}
+
+#[test]
+fn mittens_corp_linear_velocity_readout_changes_once_after_applied_click() {
+    use crate::engine::ecs::component::{
+        CameraXRComponent, InputXRComponent, TextComponent, VelocityComponent,
+    };
+    use crate::engine::ecs::system::SystemWorld;
+    use crate::engine::graphics::{CameraTarget, primitives::Transform};
+
+    let mut world = World::default();
+    let mut systems = SystemWorld::default();
+    let mut visuals = VisualWorld::default();
+    let mut assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+    let (mut session, output) = RuntimeSpecSession::start_at_path(
+        include_str!("../../examples/mittens-corp-linear-velocity.mms"),
+        "examples/mittens-corp-linear-velocity.mms",
+        &mut world,
+        &mut systems.rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .expect("velocity scene should start");
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    for intent in output.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
+    systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+    let velocity = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<VelocityComponent>(*id)
+                .is_some()
+        })
+        .unwrap();
+    let input_xr = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<InputXRComponent>(*id)
+                .is_some()
+        })
+        .unwrap();
+    world
+        .get_component_by_id_as_mut::<InputXRComponent>(input_xr)
+        .unwrap()
+        .pose_valid = true;
+    let camera = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<CameraXRComponent>(*id)
+                .is_some()
+        })
+        .unwrap();
+    let eye = Transform::default();
+    visuals.set_active_xr_camera(Some(camera));
+    visuals.set_camera_mono_for_target_with_transform(CameraTarget::Xr, eye.model, eye.model, eye);
+    let button_text = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<TextComponent>(*id)
+                .is_some_and(|text| text.text == "forward: +0.25 m/s")
+        })
+        .unwrap();
+    let button = world.parent_of(button_text).unwrap();
+    systems.rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            button,
+            EventSignal::Click {
+                raycaster: ComponentId::default(),
+                renderable: button,
+                hit_point: [0.0; 3],
+                screen_pos_px: None,
+            },
+        ),
+    );
+    let output = session.service_callbacks(&mut world, &mut systems.rx, None, &mut queue);
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    assert!(
+        output
+            .intents
+            .iter()
+            .any(|intent| matches!(intent, IntentValue::VelocityTranslate { .. })),
+        "click callback should emit VelocityTranslate: {:?}",
+        output.intents
+    );
+    for intent in output.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
+    systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+    assert_eq!(
+        world
+            .get_component_by_id_as::<VelocityComponent>(velocity)
+            .unwrap()
+            .linear_local_mps,
+        [0.0, 0.0, -0.25]
+    );
+    systems.process_signals(&mut world, &mut visuals, &mut assets, &mut queue, 100_000);
+    let output = session.service_callbacks(&mut world, &mut systems.rx, None, &mut queue);
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    for intent in output.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
+    systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+    let readout = world
+        .all_components()
+        .find(|id| world.component_label(*id) == Some("velocity_xyz_readout"))
+        .unwrap();
+    let text = &world
+        .get_component_by_id_as::<TextComponent>(readout)
+        .unwrap()
+        .text;
+    assert!(
+        text.contains("-0.25"),
+        "readout should show applied velocity: {text}"
+    );
 }
 
 #[test]
@@ -8040,7 +8226,14 @@ fn mittens_corp_linear_velocity_scene_advances_multiple_headless_frames() {
     }
     systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
     for _ in 0..3 {
-        systems.tick(&mut world, &mut visuals, &mut assets, &input, &mut queue, 1.0 / 90.0);
+        systems.tick(
+            &mut world,
+            &mut visuals,
+            &mut assets,
+            &input,
+            &mut queue,
+            1.0 / 90.0,
+        );
     }
 }
 

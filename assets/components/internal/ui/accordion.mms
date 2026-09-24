@@ -8,6 +8,8 @@ import { accordion_down_arrow_icon } from "../../icons.mms"
 //   unit_scale       required scale for the private LayoutRoot
 //   background_color title-bar background RGBA
 //   toggle_background_color optional minimize-button background RGBA
+//   toggle_icon_color optional minimize-arrow RGBA
+//   toggle_icon_glow_intensity optional minimize-arrow emissive strength
 //   children         ordered retained title-bar component objects
 //   body             one component rooted at #accordion_body
 //
@@ -43,6 +45,12 @@ export fn accordion(options) {
     if authored_toggle_background {
         toggle_background_rgba = authored_toggle_background
     }
+    let toggle_icon_rgba = [0.72, 0.90, 1.0, 1.0]
+    let authored_toggle_icon_color = options["toggle_icon_color"]
+    if authored_toggle_icon_color { toggle_icon_rgba = authored_toggle_icon_color }
+    let toggle_icon_glow = 1.8
+    let authored_toggle_icon_glow = options["toggle_icon_glow_intensity"]
+    if authored_toggle_icon_glow != null { toggle_icon_glow = authored_toggle_icon_glow }
     let title_children = options.children
 
     let toggle_icon = T.position(
@@ -57,7 +65,7 @@ export fn accordion(options) {
             capture_from_current(true)
             replace_same_target()
         }
-        accordion_down_arrow_icon([0.72, 0.90, 1.0, 1.0], 1.8)
+        accordion_down_arrow_icon(toggle_icon_rgba, toggle_icon_glow)
     }
 
     let toggle = T {

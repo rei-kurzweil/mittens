@@ -689,9 +689,12 @@ target
 **Intent — Available through a live Velocity method.** `translate` and
 `translate_world` submit one velocity change for the named component. The
 velocity system resolves any local rotation basis when this intent is handled;
-it does not move the transform immediately. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [velocity system](../../../src/engine/ecs/system/velocity_system.rs), and [MMS method registry](../../../src/scripting/component_method_registry.rs).
+it updates stored parent-local velocity, then integration moves the child
+transform. Successful application emits a `VelocityChanged` data event scoped
+to the `Velocity` component; `linear()` can read the applied value in that
+handler. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [velocity system](../../../src/engine/ecs/system/velocity_system.rs), [mutation executor](../../../src/engine/ecs/signals/mutation_executor.rs), and [MMS method registry](../../../src/scripting/component_method_registry.rs).
 ```mms parse-only
-let vel = Velocity {}
+let vel = Velocity { T {} }
 vel.translate([0.0, 0.0, -0.25])
 ```
 

@@ -1,12 +1,12 @@
 use super::{Component, ComponentRef};
 use crate::engine::ecs::ComponentId;
 
-/// Active linear motion state. The system integrates this world-space velocity
-/// into the immediate parent transform; commands may use a different basis.
+/// Active linear motion state. The system integrates parent-local velocity
+/// into this pose driver's immediate child transform.
 #[derive(Debug, Clone, Default)]
 pub struct VelocityComponent {
     pub enabled: bool,
-    pub linear_world_mps: [f32; 3],
+    pub linear_local_mps: [f32; 3],
     pub rotation_basis: Option<ComponentRef>,
     pub horizontal: bool,
     pub component_id: Option<ComponentId>,
@@ -20,16 +20,16 @@ impl VelocityComponent {
         }
     }
 
-    pub fn set_linear_world(&mut self, value_mps: [f32; 3]) -> Result<(), &'static str> {
+    pub fn set_linear_local(&mut self, value_mps: [f32; 3]) -> Result<(), &'static str> {
         if !value_mps.iter().all(|v| v.is_finite()) {
             return Err("linear velocity must be finite");
         }
-        self.linear_world_mps = value_mps;
+        self.linear_local_mps = value_mps;
         Ok(())
     }
 
     pub fn zero_linear(&mut self) {
-        self.linear_world_mps = [0.0; 3];
+        self.linear_local_mps = [0.0; 3];
     }
 }
 

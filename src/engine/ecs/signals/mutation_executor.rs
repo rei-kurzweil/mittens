@@ -132,6 +132,31 @@ impl RxMutationExecutor {
         };
 
         match &intent.value {
+            IntentValue::VelocityTranslate {
+                component_id,
+                delta_mps,
+                world_space,
+            } => {
+                let result = if *world_space {
+                    systems
+                        .velocity
+                        .add_linear_world(world, visuals, *component_id, *delta_mps)
+                } else {
+                    systems
+                        .velocity
+                        .add_linear_local(world, visuals, *component_id, *delta_mps)
+                };
+                match result {
+                    Ok(()) => emit.push_event(
+                        *component_id,
+                        EventSignal::DataEvent {
+                            name: "VelocityChanged".to_string(),
+                            payload: Some(*component_id),
+                        },
+                    ),
+                    Err(error) => eprintln!("[velocity_system] {error}"),
+                }
+            }
             IntentValue::RefreshEditorWorldPanel { editor_root } => {
                 systems
                     .editor_inspector
