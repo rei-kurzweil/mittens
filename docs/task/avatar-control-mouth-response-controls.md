@@ -36,8 +36,10 @@ AVC {
   changes the retained AVC component only.
   It does not reopen audio input, rebuild AGC, or recreate the avatar.
 
-`examples/mittens-corp-agc-desktop.mms` deliberately presents only three
-compact controls for now:
+`assets/components/ui/mouth_response_panel.mms` now supplies the same three
+controls to the desktop and XR AGC examples and to `examples/rei(mu).mms`.
+The scene supplies its own AVC handle, response values, title, and description.
+The panel remains compact for now:
 
 1. **RMS centre** — midpoint of the level range mapped into mouth movement.
 2. **RMS range** — full sensitivity span around that midpoint.
@@ -60,6 +62,8 @@ visualization remain the source of truth for diagnosing AGC behaviour.
    after each has a clear live diagnostic and bounded layout.
 5. Consider making this mapping reusable for other viseme/morph targets while
    preserving AVC's precedence rules for a future full viseme driver.
+6. Add high-pass analysis controls only with the callback-side observer in
+   [the high-pass amplitude task](high-pass-amplitude-observer.md).
 
 ## Acceptance criteria
 
