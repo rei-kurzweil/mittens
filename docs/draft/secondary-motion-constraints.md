@@ -52,6 +52,23 @@ The constraint is a child of the simulation it controls. Its state and parameter
 
 Use a child constraint under each affected `SpringBone`. Two ribbon halves can each carry the policy; an eventual shared stillness source could avoid duplicate measurements.
 
+### Rei(mu) prefab placement
+
+Author this in a Rei(mu)-specific secondary motion component prefab, following the tree shape of
+[`bisket.mms`](../../assets/components/secondary_motion/bisket.mms). The repo currently has a
+bow-only [`rei-mu-bow.mms`](../../assets/components/secondary_motion/rei-mu-bow.mms) with the two
+`SpringBone.from_root(...)` chains, and [`examples/rei(mu).mms`](../../examples/rei(mu).mms)
+imports it. When the first constraint is implemented, create or expand the Rei(mu) prefab that
+describes all of her spring bones, and put each `ReturnToRestWhenStill` directly inside the ribbon
+`SpringBone` it controls. The avatar scene should import that prefab, rather than carry separate
+spring and constraint configuration. Bisket's preset is a model for organizing the component tree;
+Rei(mu)'s node selectors and tuning remain her own.
+
+The one-chain snippet above shows placement. The real ribbon has two chains, rooted at
+`head_bow.001` and `head_bow.009`; apply the constraint to both when both ribbon halves need the
+same settling behavior. These are authored children of `SpringBone`, not constraints on the
+`head_bow_ribbon` mesh node itself.
+
 ## Dedicated constraint system
 
 `SecondaryMotionConstraintSystem` owns registration, binding, state, and per-frame evaluation for these child components. The existing `SecondaryMotionSystem` continues to own spring binding, integration, and final joint writes. Their interface should be a small per-chain directive, rather than letting both systems write the same transforms. For the first slice, the directive can describe a rest-pose target, blend weight, and whether to park or reseed the spring state. The exact Rust type is an implementation detail.
