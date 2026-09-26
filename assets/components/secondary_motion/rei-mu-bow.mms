@@ -10,7 +10,7 @@ export fn rei_mu_bow_secondary_motion() {
             .colliders(["[name='bisket_collider_head']"])
             .hit_radius(0.01) {
                 ReturnToRestWhenStill {
-                    motion_threshold(0.02)
+                    motion_threshold(0.028)
                     still_for(0.4)
                 }
             }
@@ -22,7 +22,7 @@ export fn rei_mu_bow_secondary_motion() {
             .colliders(["[name='bisket_collider_head']"])
             .hit_radius(0.01) {
                 ReturnToRestWhenStill {
-                    motion_threshold(0.02)
+                    motion_threshold(0.028)
                     still_for(0.4)
                 }
             }

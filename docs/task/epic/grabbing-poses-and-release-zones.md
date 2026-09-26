@@ -73,7 +73,9 @@ Priority entry point: [Desktop interaction priorities](../../desktop/interaction
 ## Tickets
 
 - [ ] [Hand-relative, bounds-aware grab placement](../grab-hand-relative-bounds-placement.md)
+- [ ] [Size a Grabbable for comfortable holding](../grabbable-held-size.md)
 - [ ] [Grab poses and reusable pose transitions](../grab-animation-and-pose-transitions.md)
+- [ ] [Release a held item onto a body mount point](../held-item-body-attachment.md)
 - [ ] [Interaction zones, sockets, and vehicle mounting](../release-zones-sockets-and-vehicle-mounting.md)
   - [ ] [Zone collision-query foundation](../interaction-zone-collision-query-foundation.md)
   - [ ] [E2 broom attachment first slice](../e2-broom-mounting-first-slice.md)

@@ -8452,13 +8452,18 @@ fn pc_rei_xr_examples_evaluate_with_secondary_motion_and_hand_pointers() {
 }
 
 #[test]
-fn rei_mu_bow_prefab_authors_two_rest_constraints() {
-    use crate::engine::ecs::component::{ReturnToRestWhenStillComponent, SpringBoneComponent};
+fn rei_mu_scene_authors_lighting_background_and_bow_rest_constraints() {
+    use crate::engine::ecs::component::{
+        AmbientLightComponent, AmplitudeComponent, AvatarControlComponent, BackgroundComponent,
+        EditorComponent, GLTFComponent, RenderableComponent, ReturnToRestWhenStillComponent,
+        SliderComponent, SpringBoneComponent, SpotLightComponent,
+        VolumeNormalizationComponent,
+    };
     let mut world = World::default();
     let mut rx = RxWorld::default();
     let mut emit = CommandQueue::new();
     let mut render_assets = RenderAssets::new();
-    let (_session, output) = RuntimeSpecSession::start_at_path(
+    let (mut session, output) = RuntimeSpecSession::start_at_path(
         include_str!("../../examples/rei(mu).mms"),
         "examples/rei(mu).mms",
         &mut world,
@@ -8468,6 +8473,74 @@ fn rei_mu_bow_prefab_authors_two_rest_constraints() {
     )
     .expect("Rei(mu) must load through the production MMS runtime");
     assert!(output.errors.is_empty(), "{:?}", output.errors);
+    let count_components = |matches: fn(&World, crate::engine::ecs::ComponentId) -> bool| {
+        world.all_components().filter(|id| matches(&world, *id)).count()
+    };
+    let panel = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("rei_mu_mouth_response_panel"))
+        .expect("Rei(mu) should have a mouth-response panel");
+    for label in ["mouth_rms_center_slider", "mouth_rms_range_slider", "mouth_amount_slider"] {
+        let slider = world
+            .find_component(panel, &format!("#{label}"))
+            .expect("mouth-response slider in panel");
+        assert!(world.get_component_by_id_as::<SliderComponent>(slider).is_some());
+    }
+    let avc = world
+        .all_components()
+        .find_map(|id| world.get_component_by_id_as::<AvatarControlComponent>(id))
+        .expect("Rei(mu) AVC");
+    assert!((avc.mouth_open_rms_floor - 0.005).abs() < 1e-6);
+    assert!((avc.mouth_open_rms_ceiling - 0.09).abs() < 1e-6);
+    assert_eq!(avc.mouth_open_amount, 1.0);
+    assert_eq!(
+        count_components(|world, id| world.get_component_by_id_as::<AmplitudeComponent>(id).is_some()),
+        1,
+    );
+    assert_eq!(
+        count_components(|world, id| world.get_component_by_id_as::<VolumeNormalizationComponent>(id).is_some()),
+        0,
+    );
+    assert_eq!(
+        count_components(|world, id| world.get_component_by_id_as::<AmbientLightComponent>(id).is_some()),
+        1,
+        "the Rei(mu) scene needs its ambient light",
+    );
+    assert_eq!(
+        count_components(|world, id| world.get_component_by_id_as::<SpotLightComponent>(id).is_some()),
+        6,
+        "each of the three stages needs two tripod spotlights",
+    );
+    let backgrounds: Vec<_> = world
+        .all_components()
+        .filter(|id| world.get_component_by_id_as::<BackgroundComponent>(*id).is_some())
+        .collect();
+    assert_eq!(backgrounds.len(), 1, "the star background should be present");
+    let mut pending = backgrounds;
+    let mut background_renderables = 0;
+    while let Some(id) = pending.pop() {
+        if world.get_component_by_id_as::<RenderableComponent>(id).is_some() {
+            background_renderables += 1;
+        }
+        pending.extend(world.children_of(id).iter().copied());
+    }
+    assert!(background_renderables > 0, "the star background has no geometry");
+    let editors: Vec<_> = world
+        .all_components()
+        .filter(|id| world.get_component_by_id_as::<EditorComponent>(*id).is_some())
+        .collect();
+    assert_eq!(editors.len(), 1, "the box piles need one editor root");
+    let mut pending = editors;
+    let mut editor_renderables = 0;
+    while let Some(id) = pending.pop() {
+        editor_renderables += usize::from(
+            world.get_component_by_id_as::<RenderableComponent>(id).is_some(),
+        );
+        assert!(world.get_component_by_id_as::<SpotLightComponent>(id).is_none());
+        assert!(world.get_component_by_id_as::<GLTFComponent>(id).is_none());
+        pending.extend(world.children_of(id).iter().copied());
+    }
+    assert_eq!(editor_renderables, 8, "only the eight pile boxes belong in ED");
     let constraints: Vec<_> = world
         .all_components()
         .filter(|id| {
@@ -8487,9 +8560,37 @@ fn rei_mu_bow_prefab_authors_two_rest_constraints() {
         let config = world
             .get_component_by_id_as::<ReturnToRestWhenStillComponent>(id)
             .unwrap();
-        assert_eq!(config.motion_threshold, 0.02);
+        assert_eq!(config.motion_threshold, 0.028);
         assert_eq!(config.still_for, 0.4);
     }
+    let center_slider = world
+        .find_component(panel, "#mouth_rms_center_slider")
+        .unwrap();
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            center_slider,
+            EventSignal::SliderChanged {
+                slider: center_slider,
+                value: 0.05,
+            },
+        ),
+    );
+    let callback_output = session.service_callbacks(
+        &mut world,
+        &mut rx,
+        Some(&mut render_assets),
+        &mut emit,
+    );
+    assert!(callback_output.errors.is_empty(), "{:?}", callback_output.errors);
+    let avc_id = world
+        .all_components()
+        .find(|&id| world.get_component_by_id_as::<AvatarControlComponent>(id).is_some())
+        .unwrap();
+    let avc = world.get_component_by_id_as::<AvatarControlComponent>(avc_id).unwrap();
+    assert_eq!(world.component_label(avc_id), Some("rei_mu_avatar_control"));
+    assert!((avc.mouth_open_rms_floor - 0.0075).abs() < 1e-6, "floor: {}", avc.mouth_open_rms_floor);
+    assert!((avc.mouth_open_rms_ceiling - 0.0925).abs() < 1e-6, "ceiling: {}", avc.mouth_open_rms_ceiling);
 }
 
 #[test]

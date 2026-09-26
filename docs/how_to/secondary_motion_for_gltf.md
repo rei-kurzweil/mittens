@@ -58,7 +58,7 @@ Place `ReturnToRestWhenStill` inside the `SpringBone` it controls:
 SpringBone.from_root("[name='head_bow.001']")
     .virtual_end_length_ratio(1.0) {
         ReturnToRestWhenStill {
-            motion_threshold(0.02)
+            motion_threshold(0.028)
             still_for(0.4)
         }
     }
