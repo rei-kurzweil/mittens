@@ -4,7 +4,7 @@
 
 Create `examples/rei(mu).mms`: an XR-only Rei(mu) scene with a moving two-sided hair-bow ribbon, a mirror, a procedural tree in a raised square garden, and two instances of the reusable Mittens Corp stage.
 
-This document tracks the work as the scene grows. The first implementation pass should establish the complete scene and expose any model or runtime issue that prevents the ribbon from moving.
+This document tracks the work as the scene grows. The first implementation pass establishes the scene with the bow and ribbon as imported, so their visible placement can be checked before changing the model.
 
 ## Model inspection (2026-09-25)
 
@@ -15,18 +15,26 @@ The bow skeleton branches from one `head_bow` joint into two eight-joint chains:
 - `head_bow.001` → `head_bow.002` → … → `head_bow.008`
 - `head_bow.009` → `head_bow.010` → … → `head_bow.016`
 
-Those 17 bow nodes are in the skin. However, the visible `head_bow_ribbon` mesh is a separate node with **no `skin` property**; its primitive has no joint attributes. The visible `head_bow` mesh is also unskinned. The skeletal `head_bow` is a direct child of `Armature.003`, rather than a child of `J_Bip_C_Head`. Before tuning springs, verify how the visible bow follows the avatar head and make the ribbon geometry follow the two chains. That may require correcting and re-exporting the GLB, or another explicit mesh deformation/attachment approach. Spring configuration alone cannot deform the current unskinned ribbon mesh. Preserve the original asset for comparison while investigating.
+Those 17 bow nodes are in the skin. The original export had the skeletal `head_bow` directly under `Armature.003`, with the solid bow mesh under `Hair`. The ribbon mesh had no skinning data.
+
+**Updated export, 2026-09-25:** the skeletal `head_bow` is now a child of `J_Bip_C_Head`, and the solid `head_bow` mesh is parented to that skeletal joint. The solid bow should therefore follow head movement as a rigid mesh. The visible `head_bow_ribbon` mesh remains a separate child of `Armature.003`, with no `skin` property and no `JOINTS_0` or `WEIGHTS_0` attributes on its 144 vertices. It cannot deform with the two bow chains in this export, and its head-follow behavior still needs visual inspection. Verify the ribbon's armature modifier targets the exported armature and that the ribbon vertices have weights assigned to the bow chain vertex groups before re-exporting. Preserve the prior export for comparison while investigating.
+
+**Second updated export, 2026-09-25:** `head_bow_ribbon` now has `skin: 0`, and its 144 vertices export `JOINTS_0` and `WEIGHTS_0`. Nonzero weights reach the shared `head_bow` and all 16 joints in the two halves. The model is ready for a spring-motion test; visual quality and bind alignment still need XR inspection.
 
 ## Work plan
 
-- [ ] Establish a visible, correctly attached bow/ribbon on the XR avatar. Inspect weights, bind transforms, and the head relationship in the source model or import path; document the chosen fix here.
-- [ ] Add a Rei(mu) secondary-motion component under `assets/components/secondary_motion/`. Reuse the Bisket hair behavior where joint names match, and configure the two bow halves as separate spring chains. Tune stiffness, drag, gravity, virtual ends, and head collision after the mesh follows the chains. Check that each side lags and settles without stretching or clipping badly.
-- [ ] Extract the Mittens Corp stage deck/platform, upper and lower steps, back wall, and ceiling truss into a reusable component under `assets/components/`. Keep the three-section hanging `suspended_platform` walkway outside it. Update `examples/mittens-corp.mms` to use the component while retaining its current stage placement and separate floor, mirror, lighting, and walkway.
-- [ ] Add `examples/rei(mu).mms` with two instances of that stage. Put the player, mirror, and garden on the first. Offset the second farther down and to the side and rotate it 90° around the vertical axis. Keep each stage's children and names distinct if selectors require it.
-- [ ] Build a tree using a bounded recursive MMS function with a trunk and progressively smaller branches. Put it in brown/beige soil inside four low, long, thin cube borders forming a raised square garden on the first stage. Set branch depth and size limits so startup and rendering stay manageable.
-- [ ] Use a mirror with `Mirror.quality(1440)` for a 1440 × 1440 reflection, and place it for a useful full-body XR view.
-- [ ] Set a slightly medium-dark gray sky/background and include `star_kawaii_background` from `assets/components/backgrounds/star_kawaii_background.mms`. Add suitable lighting so the avatar, bow, tree, and stages remain readable.
-- [ ] Control Rei(mu) with the XR input/avatar topology (`InputXR`, `AVC`, `CXR`, and `XR.on()` as appropriate). Do not add a desktop or 3D scene camera. Use `assets/models/rei(mu).glb` and verify asset-path handling for the parentheses.
+- [x] Export bow-ribbon skinning with weights on both chains. Inspect bind alignment visually in XR.
+- [x] Add `assets/components/secondary_motion/rei-mu-bow.mms` with two separate ribbon spring chains and reuse Bisket hair motion. Initial values need visual tuning for lag, settling, stretch, and clipping.
+- [x] Extract the Mittens Corp stage deck/platform, upper and lower steps, back wall, and ceiling truss into `assets/components/studio_stage.mms`. Keep the hanging walkway outside it and update `examples/mittens-corp.mms`.
+- [x] Add `examples/rei(mu).mms` with two stage instances, the second offset and rotated 90°.
+- [x] Build a bounded recursive MMS tree in a square raised garden with soil and four borders.
+- [x] Add a mirror with `Mirror.quality(1440)` for a 1440 × 1440 reflection.
+- [x] Set a medium-dark gray background, add `star_kawaii_background`, and light the stage.
+- [x] Use `assets/models/rei(mu).glb` with XR input/avatar topology and no desktop or 3D scene camera.
+- [x] Keep the example XR-only without a desktop window-size setting. Drive AVC mouth opening from the microphone's rolling amplitude with floor, ceiling, and smoothing; do not use volume normalization.
+- [x] Use HTC XR eye tracking with direct pupil direction disabled, while retaining blink samples and driving eye-bone direction with `ambient_eye_saccades`.
+- [x] Author an explicit `EditorUI` panel list containing only `settings`, so the default editor panels do not appear.
+- [ ] Inspect the solid bow and now-skinned ribbon in XR; verify that both follow the head and each ribbon half moves and settles independently.
 - [ ] Load the example through the regular MMS launcher, resolve script/runtime errors, and inspect it in XR. Confirm the mirror, both stage placements, garden, and both ribbon halves visually. Recheck Mittens Corp after the stage extraction.
 
 ## References and decisions
@@ -37,3 +45,7 @@ Those 17 bow nodes are in the skin. However, the visible `head_bow_ribbon` mesh 
 - `assets/components/backgrounds/star_kawaii_background.mms`: requested star field.
 
 The exact tree silhouette, garden dimensions, stage offset, and spring values can be tuned in the implementation pass. Record the final values and any remaining visual issue here.
+
+## First load check (2026-09-25)
+
+Both `examples/rei(mu).mms` and the refactored `examples/mittens-corp.mms` reach `[CLI] Scene loaded` with the current release binary. The app then fails to create a window because this environment has no Wayland compositor. Visual placement, XR tracking, and ribbon behavior still need a run in a graphical XR environment.

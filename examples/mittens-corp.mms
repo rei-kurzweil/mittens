@@ -7,7 +7,7 @@
 // the rigid car has no humanoid specialization for AVC to perform.
 
 import { tripod_light } from "../assets/components/tripod_light.mms"
-import { truss } from "../assets/components/truss.mms"
+import { studio_stage } from "../assets/components/studio_stage.mms"
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
@@ -49,10 +49,7 @@ stage_box(
     [0.035, 0.037, 0.043],
 )
 
-stage_box("stage_deck",       [0.0,  0.00, -1.5], [32.0, 0.24, 14.0], [0.18, 0.18, 0.20])
-stage_box("stage_upper_step", [0.0, -0.24,  5.7], [32.0, 0.28,  0.8], [0.14, 0.14, 0.16])
-stage_box("stage_lower_step", [0.0, -0.56,  6.3], [32.0, 0.36,  0.8], [0.10, 0.10, 0.12])
-stage_box("stage_back_wall",  [0.0,  4.00, -8.35], [32.0, 8.00, 0.35], [0.105, 0.105, 0.12])
+studio_stage("mittens_corp_stage")
 
 T.position(0.0, 2.55, 8.10).scale(1.5, 1.5, 0.08).rotation(0.0, 3.1416, 0.0) {
     name = "stage_mirror"
@@ -61,11 +58,6 @@ T.position(0.0, 2.55, 8.10).scale(1.5, 1.5, 0.08).rotation(0.0, 3.1416, 0.0) {
         Mirror.quality(1440) {}
         Raycastable.enabled()
     }
-}
-
-T.position(0.0, 7.10, -7.75) {
-    name = "stage_ceiling_truss"
-    truss(26)
 }
 
 // Three elevated walkway sections run along Z, perpendicular to the stage's
