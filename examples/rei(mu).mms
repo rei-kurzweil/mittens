@@ -122,10 +122,10 @@ tree_garden()
 // draggable; physical grab-to-shrink is tracked separately.
 let rei_mu_mouth_panel = mouth_response_panel({
     root_name = "rei_mu_mouth_response_panel"
-    title = "Rei(mu) mouth response"
+    title = "Voice response"
     avatar_slot = mouth_panel_target
     tuning = mouth_tuning
-    description = "Map raw microphone amplitude to Rei(mu)'s mouth. These controls do not change audio input or volume."
+    description = "Map raw microphone amplitude to mouth movement. These controls do not change audio input or volume."
 })
 T.position(-1.30, 2.05, 1.35) {
     name = "rei_mu_mouth_panel_anchor"

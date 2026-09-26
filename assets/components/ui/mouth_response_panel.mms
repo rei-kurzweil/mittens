@@ -14,13 +14,16 @@ fn fixed_3(value) {
 }
 
 let ROW_HEIGHT = 3.0
-let LABEL_WIDTH = 11.0
-let SLIDER_SLOT_WIDTH = 18.0
-let READOUT_WIDTH = 4.0
+let LABEL_WIDTH = 10.0
+let SLIDER_SLOT_WIDTH = 13.0
+let READOUT_WIDTH = 6.0
 let CONTROL_FONT_SIZE = 0.8
+let SLIDER_WIDTH = 13.0
 
 fn response_slider(slider_name, initial, minimum, maximum, step) {
-    let track = T.scale(2.0, 0.025, 0.10) {
+    // Slider.width and the visible cube use the same local width. The panel's
+    // unit scale converts both to world space after layout placement.
+    let track = T.scale(SLIDER_WIDTH * 0.5, 0.025, 0.10) {
         R.cube() {
             C.rgba(0.24, 0.45, 0.65, 1.0)
             Raycastable.enabled() { interaction_priority(120.0) }
@@ -32,7 +35,7 @@ fn response_slider(slider_name, initial, minimum, maximum, step) {
             Raycastable.enabled() { interaction_priority(120.0) }
         }
     }
-    return Slider.range(minimum, maximum).step(step).value(initial).width(4.0)
+    return Slider.range(minimum, maximum).step(step).value(initial).width(SLIDER_WIDTH)
         .track(track).thumb(thumb) { name = slider_name }
 }
 
@@ -127,7 +130,7 @@ fn response_content(avatar_slot, tuning, description) {
 export fn mouth_response_panel(options) {
     let panel = info_panel({
         root_name = options.root_name
-        width_gu = 40.0
+        width_gu = 32.0
         unit_scale = 0.08
         title = options.title
         background_color = [0.10, 0.20, 0.28, 0.98]

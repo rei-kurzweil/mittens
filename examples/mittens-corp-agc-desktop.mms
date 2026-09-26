@@ -20,6 +20,7 @@ import { suspended_platform } from "../assets/components/platforms/suspended_pla
 import { star_kawaii_background } from "../assets/components/backgrounds/star_kawaii_background.mms"
 import { button } from "../assets/components/button.mms"
 import { info_panel, info_panel_body } from "../assets/components/ui/info_panel.mms"
+import { mouth_response_panel } from "../assets/components/ui/mouth_response_panel.mms"
 
 let microphone = AudioInput {}
 let raw_voice_level = Amplitude.rolling_window(0.080).from(microphone) {}
@@ -44,122 +45,6 @@ fn fixed_3(value) {
     let sign = ""
     if value > 0.0 { sign = "+" } else if value < 0.0 { sign = "-" }
     return sign + whole + "." + padding + fraction
-}
-
-let PANEL_WIDTH = 40.0
-let ROW_HEIGHT = 3.0
-let LABEL_WIDTH = 11.0
-let SLIDER_SLOT_WIDTH = 18.0
-let READOUT_WIDTH = 4.0
-let CONTROL_FONT_SIZE = 0.8
-
-fn mouth_response_slider(slider_name, initial, minimum, maximum, step) {
-    // Match the compact, explicit slider visuals used by shading-models: the
-    // Slider's world-space width remains four units even though its layout slot
-    // is wider, so no track can escape the info panel horizontally.
-    let track = T.scale(2.0, 0.025, 0.10) {
-        R.cube() {
-            C.rgba(0.24, 0.45, 0.65, 1.0)
-            Raycastable.enabled() { interaction_priority(120.0) }
-        }
-    }
-    let thumb = T.scale(0.1125, 0.225, 0.30) {
-        R.sphere() {
-            C.rgba(1.0, 0.46, 0.64, 1.0)
-            Raycastable.enabled() { interaction_priority(120.0) }
-        }
-    }
-    return Slider.range(minimum, maximum).step(step).value(initial).width(4.0)
-        .track(track)
-        .thumb(thumb) { name = slider_name }
-}
-
-fn mouth_response_row(text, slider, readout) {
-    return T {
-        Style {
-            display("flex") flex_direction("row") width(100%) height(ROW_HEIGHT)
-            align_items("center") gap(0.5)
-            background_color([0.055, 0.075, 0.10, 0.94]) background_z(-0.02)
-        }
-        T {
-            Style {
-                display("flex") width(LABEL_WIDTH) height(ROW_HEIGHT)
-                align_items("center") padding_xy(0.25, 0.0) font_size(CONTROL_FONT_SIZE)
-            }
-            T.position(0.0, 0.0, 0.03) { Text { text } }
-        }
-        T {
-            Style {
-                display("flex") width(SLIDER_SLOT_WIDTH) height(ROW_HEIGHT)
-                flex_grow(1.0) align_items("center") justify_content("center")
-            }
-            slider
-        }
-        T {
-            Style {
-                display("flex") width(READOUT_WIDTH) height(ROW_HEIGHT)
-                align_items("center") justify_content("center") font_size(CONTROL_FONT_SIZE)
-                color([0.76, 0.92, 1.0, 1.0])
-            }
-            T.position(0.0, 0.0, 0.03) { readout }
-        }
-    }
-}
-
-// This is a factory because info_panel removes its body while minimized. A
-// restored panel gets fresh sliders and handlers while retaining the same AVC
-// and its live mouth-response settings.
-fn make_mouth_response_content(avatar, mouth_tuning) {
-    let center_slider = mouth_response_slider(
-        "mouth_rms_center_slider", mouth_tuning.center_rms, 0.001, 0.120, 0.001,
-    )
-    let center_readout = Text { name = "mouth_rms_center_readout" "0.032 RMS" }
-    let range_slider = mouth_response_slider(
-        "mouth_rms_range_slider", mouth_tuning.range_rms, 0.001, 0.120, 0.001,
-    )
-    let range_readout = Text { name = "mouth_rms_range_readout" "0.057 RMS" }
-    let amount_slider = mouth_response_slider(
-        "mouth_amount_slider", mouth_tuning.amount, 0.0, 1.0, 0.01,
-    )
-    let amount_readout = Text { name = "mouth_amount_readout" "1.000" }
-
-    on(center_slider, "SliderChanged", fn(event) {
-        mouth_tuning.center_rms = event.value
-        let half_range = mouth_tuning.range_rms * 0.5
-        if half_range > mouth_tuning.center_rms {
-            mouth_tuning.range_rms = mouth_tuning.center_rms * 2.0
-            range_slider.sync_value(mouth_tuning.range_rms)
-            range_readout.set_text(fixed_3(mouth_tuning.range_rms) + " RMS")
-        }
-        avatar.set_mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
-        center_readout.set_text(fixed_3(mouth_tuning.center_rms) + " RMS")
-    })
-    on(range_slider, "SliderChanged", fn(event) {
-        mouth_tuning.range_rms = event.value
-        if mouth_tuning.range_rms * 0.5 > mouth_tuning.center_rms {
-            mouth_tuning.range_rms = mouth_tuning.center_rms * 2.0
-            range_slider.sync_value(mouth_tuning.range_rms)
-        }
-        avatar.set_mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
-        range_readout.set_text(fixed_3(mouth_tuning.range_rms) + " RMS")
-    })
-    on(amount_slider, "SliderChanged", fn(event) {
-        mouth_tuning.amount = event.value
-        avatar.set_mouth_open_amount(mouth_tuning.amount)
-        amount_readout.set_text(fixed_3(mouth_tuning.amount))
-    })
-
-    return T {
-        name = "mouth_response_settings_content"
-        Style { display("flex") flex_direction("column") width(100%) row_gap(0.20) }
-        T {
-            Style { display("block") width(100%) font_size(0.60) color([0.78, 0.84, 0.92, 1.0]) }
-            Text { "Map the AGC-adjusted microphone level to Bisket's mouth. These controls do not alter the AGC policy or audio device." }
-        }
-        mouth_response_row("RMS centre", center_slider, center_readout)
-        mouth_response_row("RMS range", range_slider, range_readout)
-        mouth_response_row("mouth amount", amount_slider, amount_readout)
-    }
 }
 
 // The response monitor is intentionally independent from the mouth-response
@@ -561,30 +446,17 @@ ED.active() {
     }
 }
 
-let settings_content = make_mouth_response_content(avatar, mouth_tuning)
-let settings_panel = info_panel({
+let settings_panel = mouth_response_panel({
     root_name = "agc_desktop_settings_panel"
-    width_gu = PANEL_WIDTH
-    unit_scale = 0.08
-    title = "Bisket mouth response"
-    background_color = [0.10, 0.20, 0.28, 0.98]
-    toggle_background_color = [0.16, 0.38, 0.54, 1.0]
-    content = settings_content
+    title = "Voice response"
+    avatar_slot = { avatar = avatar }
+    tuning = mouth_tuning
+    description = "Map the AGC-adjusted microphone level to mouth movement. These controls do not alter AGC policy or audio input."
 })
-
 T.position(-1.30, 1.72, 1.35) {
     name = "agc_desktop_settings_anchor"
     settings_panel
 }
-
-let settings_body_mount = settings_panel.query("#accordion_body_mount")
-on(settings_panel, "DataEvent", fn(event) {
-    if event == "AccordionRestoreRequested" {
-        settings_body_mount.attach(info_panel_body({
-            content = make_mouth_response_content(avatar, mouth_tuning)
-        }))
-    }
-})
 
 let agc_level_graph = make_level_history_graph(raw_voice_level, voice_level, {
     sample_period_sec = 0.100

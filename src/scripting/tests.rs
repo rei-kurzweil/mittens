@@ -128,14 +128,10 @@ fn agc_desktop_example_evaluates_and_live_policy_methods_preserve_the_running_un
             .all_components()
             .find(|&id| world.component_label(id) == Some(label))
             .expect("named compact mouth-response slider");
-        assert_eq!(
-            world
-                .get_component_by_id_as::<SliderComponent>(slider)
-                .expect("slider component")
-                .width(),
-            4.0,
-            "{label} should use the compact in-panel track width"
-        );
+        let config = world
+            .get_component_by_id_as::<SliderComponent>(slider)
+            .expect("slider component");
+        assert_eq!(config.width(), 13.0, "{label} should span the row slot");
     }
     let settings_panel = world
         .all_components()
