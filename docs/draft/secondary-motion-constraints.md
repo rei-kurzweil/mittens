@@ -1,8 +1,9 @@
 # Secondary motion constraints: authored still poses
 
-Status: chosen direction, pending implementation. Use child constraint components and a dedicated
+Status: first return-to-rest slice implemented. Use child constraint components and a dedicated
 `SecondaryMotionConstraintSystem` in `src/engine/ecs/system/secondary_motion_constraint_system.rs`.
-The MMS below is illustrative; these components and methods do not exist yet.
+Gravity-relative still poses remain a future slice. The builder-method example below is only a
+considered alternative.
 
 ## Visual goal
 
@@ -58,11 +59,9 @@ Author this in a Rei(mu)-specific secondary motion component prefab, following t
 [`bisket.mms`](../../assets/components/secondary_motion/bisket.mms). The repo currently has a
 bow-only [`rei-mu-bow.mms`](../../assets/components/secondary_motion/rei-mu-bow.mms) with the two
 `SpringBone.from_root(...)` chains, and [`examples/rei(mu).mms`](../../examples/rei(mu).mms)
-imports it. When the first constraint is implemented, create or expand the Rei(mu) prefab that
-describes all of her spring bones, and put each `ReturnToRestWhenStill` directly inside the ribbon
-`SpringBone` it controls. The avatar scene should import that prefab, rather than carry separate
-spring and constraint configuration. Bisket's preset is a model for organizing the component tree;
-Rei(mu)'s node selectors and tuning remain her own.
+imports it. For the VR test, each ribbon `SpringBone` in that prefab now owns a
+`ReturnToRestWhenStill` child. A future broader Rei(mu) prefab can collect her other spring bones
+in one place, following Bisket's organization while retaining Rei(mu)'s own selectors and tuning.
 
 The one-chain snippet above shows placement. The real ribbon has two chains, rooted at
 `head_bow.001` and `head_bow.009`; apply the constraint to both when both ribbon halves need the
@@ -91,7 +90,7 @@ For the first slice, allow one active pose constraint per chain. Reject a second
 
 ## Slices and open decisions
 
-1. **Return to rest.** Detect low driving motion for a dwell time, then blend the chain toward its imported rest rotations and park its active spring response while settled. Resume promptly when motion exceeds a wake threshold. The rest target and blend must respect whatever primary pose is driving the joints that frame.
+1. **Return to rest (implemented).** The first joint's parent is sampled relative to the nearest Transform above the owning GLTF. Motion is linear speed plus angular speed at a 0.1 m radius, smoothed over about 0.1 s. The authored `motion_threshold` is in m/s equivalent; `still_for` is seconds. After the dwell, the chain blends to imported rest rotations over 0.25 s and parks. Motion above 1.5 times the threshold wakes it, blends out over 0.12 s, and reseeds simulated tails. The Rei(mu) ribbon prefab uses `0.02` and `0.4` for its two chains; VR inspection should guide tuning.
 2. **Gravity relative still poses.** Author several targets for the same chain and select or blend them using the head's orientation relative to gravity. Give angular regions margins or hysteresis so small tracking noise does not rapidly swap silhouettes. Define how each authored pose is stored and retargeted to the imported skeleton.
 
-Before choosing exact MMS names or numeric defaults, decide: which transform is the motion source; whether the threshold measures displacement, speed, angular motion, or a combination; how long the sample window is; how pause, seek, and tracking loss affect the timer; and what happens when multiple constraints request different poses. These choices determine whether the first API remains useful when the second slice arrives.
+Before the second slice, decide how authored still poses are stored and combined, how to handle tracking loss and seek, and how multiple constraints on one chain should compose. The first slice accepts one pose constraint per chain and diagnoses duplicates.

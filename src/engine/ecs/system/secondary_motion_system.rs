@@ -7,8 +7,8 @@ use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, Signal, SignalEmitter, SignalKind, World,
 };
 use crate::utils::math::{
-    mat_to_quat, quat_conjugate, quat_mul, quat_rotate_vec3, shortest_arc_quat, vec3_add, vec3_len,
-    vec3_normalize, vec3_scale, vec3_sub,
+    mat_to_quat, quat_conjugate, quat_mul, quat_normalize, quat_rotate_vec3, shortest_arc_quat,
+    vec3_add, vec3_len, vec3_normalize, vec3_scale, vec3_sub,
 };
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -34,6 +34,7 @@ struct BoundChain {
     lengths: Vec<f32>,
     accumulator: f32,
     enabled: bool,
+    parked: bool,
     gltf: ComponentId,
     hit_radius: f32,
     colliders: Vec<BoundCollider>,
@@ -126,6 +127,13 @@ pub struct SecondaryMotionChainSnapshot {
 }
 
 impl SecondaryMotionSystem {
+    /// Resolved first-joint parent and owning GLTF for constraint sampling.
+    pub fn chain_anchor(&self, chain: ComponentId) -> Option<(ComponentId, ComponentId)> {
+        let ChainStatus::Bound(bound) = &self.chains.get(&chain)?.status else {
+            return None;
+        };
+        Some((bound.joints.first()?.parent_id, bound.gltf))
+    }
     /// Read-only projection of successfully bound solver state in current world space.
     pub fn bound_snapshot(&self, world: &World) -> Vec<SecondaryMotionChainSnapshot> {
         let mut snapshot = Vec::new();
@@ -779,6 +787,15 @@ impl SecondaryMotionSystem {
 
     /// Advances only retained bound chains and cached joints.
     pub fn tick(&mut self, world: &mut World, dt: f32) -> Vec<ComponentId> {
+        self.tick_with_constraints(world, dt, &HashMap::new())
+    }
+
+    pub fn tick_with_constraints(
+        &mut self,
+        world: &mut World,
+        dt: f32,
+        rest_weights: &HashMap<ComponentId, f32>,
+    ) -> Vec<ComponentId> {
         if self.chains.is_empty() {
             return Vec::new();
         }
@@ -817,17 +834,31 @@ impl SecondaryMotionSystem {
                 state.enabled = false;
                 continue;
             }
+            let rest_weight = rest_weights
+                .get(&chain_id)
+                .copied()
+                .unwrap_or(0.0)
+                .clamp(0.0, 1.0);
             if !state.enabled || !dt.is_finite() || dt > 0.25 {
                 reset_state(world, state);
                 state.enabled = true;
-                continue;
+                if rest_weight == 0.0 {
+                    continue;
+                }
             }
-            state.accumulator = (state.accumulator + dt.max(0.0)).min(STEP * 4.0);
-            while state.accumulator >= STEP {
-                simulate_step(world, state);
-                state.accumulator -= STEP;
+            if rest_weight < 1.0 {
+                if state.parked {
+                    reset_state(world, state);
+                }
+                state.accumulator = (state.accumulator + dt.max(0.0)).min(STEP * 4.0);
+                while state.accumulator >= STEP {
+                    simulate_step(world, state);
+                    state.accumulator -= STEP;
+                }
             }
-            max_correction_radians = max_correction_radians.max(apply_rotations(world, state));
+            state.parked = rest_weight >= 1.0;
+            max_correction_radians =
+                max_correction_radians.max(apply_rotations(world, state, rest_weight));
             if let Some(root) = state.joints.first().map(|joint| joint.id)
                 && dirty_set.insert(root)
             {
@@ -1392,6 +1423,7 @@ fn build_chain(
             lengths,
             accumulator: 0.0,
             enabled: chain.enabled,
+            parked: false,
             gltf: gltf_id,
             hit_radius: chain.hit_radius,
             colliders,
@@ -1568,7 +1600,7 @@ fn exclude_sphere_at_length(
     vec3_add(head, vec3_scale(direction, length))
 }
 
-fn apply_rotations(world: &mut World, state: &BoundChain) -> f32 {
+fn apply_rotations(world: &mut World, state: &BoundChain, rest_weight: f32) -> f32 {
     let mut max_correction = 0.0f32;
     let mut previous_joint_world_q = None;
     for index in 0..state.joints.len() {
@@ -1600,7 +1632,19 @@ fn apply_rotations(world: &mut World, state: &BoundChain) -> f32 {
         };
         let correction = shortest_arc_quat(rest_direction, desired_local);
         max_correction = max_correction.max(2.0 * correction[3].abs().clamp(0.0, 1.0).acos());
-        let rotation = quat_mul(correction, joint.rest_rotation);
+        let simulated = quat_mul(correction, joint.rest_rotation);
+        let rest = joint.rest_rotation;
+        let sign = if simulated.iter().zip(rest).map(|(a, b)| a * b).sum::<f32>() < 0.0 {
+            -1.0
+        } else {
+            1.0
+        };
+        let rotation = quat_normalize([
+            simulated[0] * (1.0 - rest_weight) + rest[0] * rest_weight * sign,
+            simulated[1] * (1.0 - rest_weight) + rest[1] * rest_weight * sign,
+            simulated[2] * (1.0 - rest_weight) + rest[2] * rest_weight * sign,
+            simulated[3] * (1.0 - rest_weight) + rest[3] * rest_weight * sign,
+        ]);
         previous_joint_world_q = Some(quat_mul(parent_q, rotation));
         if let Some(transform) = world.get_component_by_id_as_mut::<TransformComponent>(joint.id) {
             transform.transform.rotation = rotation;
@@ -1982,6 +2026,39 @@ mod tests {
         }
         assert_eq!(fixture.system.discovery_counts(), before);
         assert_eq!(fixture.system.runtime_counts(), (1, 1, 1, 0, 0));
+    }
+
+    #[test]
+    fn rest_constraint_parks_chain_and_restores_imported_rotations() {
+        let mut fixture = fixture();
+        fixture.system.register(&fixture.world, fixture.root);
+        let mut weights = HashMap::new();
+        weights.insert(fixture.chain, 1.0);
+        let dirty = fixture
+            .system
+            .tick_with_constraints(&mut fixture.world, STEP, &weights);
+        assert_eq!(dirty, vec![fixture.imported[0]]);
+        let ChainStatus::Bound(state) = &fixture.system.chains[&fixture.chain].status else {
+            panic!("chain should be bound");
+        };
+        assert!(state.parked);
+        for joint in &state.joints {
+            let rotation = fixture
+                .world
+                .get_component_by_id_as::<TransformComponent>(joint.id)
+                .unwrap()
+                .transform
+                .rotation;
+            assert_eq!(rotation, joint.rest_rotation);
+        }
+        weights.insert(fixture.chain, 0.0);
+        fixture
+            .system
+            .tick_with_constraints(&mut fixture.world, STEP, &weights);
+        let ChainStatus::Bound(state) = &fixture.system.chains[&fixture.chain].status else {
+            panic!("chain should remain bound");
+        };
+        assert!(!state.parked);
     }
 
     #[test]

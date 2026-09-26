@@ -901,6 +901,11 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     // (power, x, y, z); overloads remain a tracked seam.
                     component.builder_call("gravity", any(2));
                 }
+                "ReturnToRestWhenStill" => {
+                    component
+                        .builder_call("motion_threshold", floats(1))
+                        .builder_call("still_for", floats(1));
+                }
                 "SpringJoint" => {
                     component.constructor("new", any(1));
                     for method in ["stiffness", "drag_force"] {

@@ -36,16 +36,17 @@ use crate::engine::ecs::component::{
     PoseCaptureLibraryComponent, PoseCapturePoseComponent, Position, QuatTemporalFilterComponent,
     QuatYawFollowComponent, RayCastComponent, RaycastableComponent, RaycastableShapeComponent,
     RaycastableShapeType, RefractionComponent, RenderGraphComponent, RenderableComponent,
-    RendererSettingsComponent, RendererStatsComponent, RestAttachmentComponent, RiderComponent,
-    RoughTransmissionComponent, RouterComponent, ScrollingComponent, SecondaryMotionComponent,
-    SelectableComponent, SelectionComponent, SerializeComponent, SettingsPanelConfig,
-    SignalObserverRouterComponent, SignalRouteUpwardComponent, SizeDimension, SliderComponent,
-    SpotLightComponent, SpringBoneComponent, SpringColliderComponent, SpringCollidersComponent,
-    SpringJointComponent, StencilClipComponent, StyleComponent, TextAlign, TextComponent,
-    TextInputComponent, TextShadowComponent, TextureComponent, TextureFilteringComponent,
-    ToggleComponent, ToonOutlineComponent, ToonOutlineOverride,
-    TransformApplyInverseLocalComponent, TransformCameraSpecificComponent, TransformComponent,
-    TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
+    RendererSettingsComponent, RendererStatsComponent, RestAttachmentComponent,
+    ReturnToRestWhenStillComponent, RiderComponent, RoughTransmissionComponent, RouterComponent,
+    ScrollingComponent, SecondaryMotionComponent, SelectableComponent, SelectionComponent,
+    SerializeComponent, SettingsPanelConfig, SignalObserverRouterComponent,
+    SignalRouteUpwardComponent, SizeDimension, SliderComponent, SpotLightComponent,
+    SpringBoneComponent, SpringColliderComponent, SpringCollidersComponent, SpringJointComponent,
+    StencilClipComponent, StyleComponent, TextAlign, TextComponent, TextInputComponent,
+    TextShadowComponent, TextureComponent, TextureFilteringComponent, ToggleComponent,
+    ToonOutlineComponent, ToonOutlineOverride, TransformApplyInverseLocalComponent,
+    TransformCameraSpecificComponent, TransformComponent, TransformDropComponent,
+    TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
     TransformGizmoCoordSpace, TransformGizmoPlane, TransformGizmoRotateComponent,
     TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
     TransformGizmoTranslatePlaneComponent, TransformMapRotationComponent,
@@ -181,6 +182,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "Router",
     "Scrolling",
     "SecondaryMotion",
+    "ReturnToRestWhenStill",
     "Selectable",
     "Selection",
     "Serialize",
@@ -2136,6 +2138,7 @@ fn create_component(
             _ => Err("RestAttachment requires .new(anchor, target)".into()),
         },
         "SecondaryMotion" => add!(SecondaryMotionComponent::new()),
+        "ReturnToRestWhenStill" => add!(ReturnToRestWhenStillComponent::new()),
         "SpringColliders" => add!(SpringCollidersComponent::new()),
         "SpringCollider" => match ctor {
             Some("sphere") => add!(SpringColliderComponent::sphere(
@@ -3838,6 +3841,15 @@ fn apply_call(
     } else {
         None
     };
+    if let Some(constraint) = world.get_component_by_id_as_mut::<ReturnToRestWhenStillComponent>(id)
+    {
+        match method {
+            "motion_threshold" => constraint.motion_threshold = arg_f32(args, 0)?.max(0.0),
+            "still_for" => constraint.still_for = arg_f32(args, 0)?.max(0.0),
+            _ => return Err(format!("unknown ReturnToRestWhenStill method '.{method}'")),
+        }
+        return Ok(());
+    }
     if let Some(chain) = world.get_component_by_id_as_mut::<SpringBoneComponent>(id) {
         match method {
             "center" => chain.center = spring_center,

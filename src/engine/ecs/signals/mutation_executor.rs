@@ -507,6 +507,9 @@ impl RxMutationExecutor {
             IntentValue::RegisterSecondaryMotion { component_id } => {
                 let component = *component_id;
                 systems.secondary_motion.register(world, component);
+                systems
+                    .secondary_motion_constraint
+                    .register(world, component);
             }
             IntentValue::RegisterJointRetargetBasis { component_id }
             | IntentValue::RetargetBasisConfigurationChanged { component_id } => {
@@ -533,6 +536,9 @@ impl RxMutationExecutor {
             IntentValue::SecondaryMotionTopologyChanged { component_id } => {
                 let component = *component_id;
                 systems.secondary_motion.topology_changed(world, component);
+                systems
+                    .secondary_motion_constraint
+                    .topology_changed(world, component);
             }
             IntentValue::SecondaryMotionGltfInitialized { component_id } => {
                 let component = *component_id;
@@ -541,6 +547,9 @@ impl RxMutationExecutor {
             IntentValue::UnregisterSecondaryMotion { component_id } => {
                 let component = *component_id;
                 systems.secondary_motion.component_removed(world, component);
+                systems
+                    .secondary_motion_constraint
+                    .component_removed(component);
             }
             IntentValue::ResetSecondaryMotion { component_id } => {
                 let component = *component_id;

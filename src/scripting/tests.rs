@@ -8452,6 +8452,47 @@ fn pc_rei_xr_examples_evaluate_with_secondary_motion_and_hand_pointers() {
 }
 
 #[test]
+fn rei_mu_bow_prefab_authors_two_rest_constraints() {
+    use crate::engine::ecs::component::{ReturnToRestWhenStillComponent, SpringBoneComponent};
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+    let mut render_assets = RenderAssets::new();
+    let (_session, output) = RuntimeSpecSession::start_at_path(
+        include_str!("../../examples/rei(mu).mms"),
+        "examples/rei(mu).mms",
+        &mut world,
+        &mut rx,
+        Some(&mut render_assets),
+        &mut emit,
+    )
+    .expect("Rei(mu) must load through the production MMS runtime");
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    let constraints: Vec<_> = world
+        .all_components()
+        .filter(|id| {
+            world
+                .get_component_by_id_as::<ReturnToRestWhenStillComponent>(*id)
+                .is_some()
+        })
+        .collect();
+    assert_eq!(constraints.len(), 2);
+    for id in constraints {
+        let parent = world.parent_of(id).unwrap();
+        assert!(
+            world
+                .get_component_by_id_as::<SpringBoneComponent>(parent)
+                .is_some()
+        );
+        let config = world
+            .get_component_by_id_as::<ReturnToRestWhenStillComponent>(id)
+            .unwrap();
+        assert_eq!(config.motion_threshold, 0.02);
+        assert_eq!(config.still_for, 0.4);
+    }
+}
+
+#[test]
 fn roundtrip_input_xr_off() {
     use crate::engine::ecs::component::InputXRComponent;
     let (world, id) = roundtrip_component(InputXRComponent::off());

@@ -49,3 +49,19 @@ CAT_DEBUG_SECONDARY_MOTION=1 cargo run --release --example vtuber-secondary-moti
 ```
 
 Expect `bound_chains` to equal the authored chain count and `failed_chains=0`. Colliders, limits, and center-relative inertia are not yet implemented.
+
+## Return a chain to rest when still
+
+Place `ReturnToRestWhenStill` inside the `SpringBone` it controls:
+
+```mms
+SpringBone.from_root("[name='head_bow.001']")
+    .virtual_end_length_ratio(1.0) {
+        ReturnToRestWhenStill {
+            motion_threshold(0.02)
+            still_for(0.4)
+        }
+    }
+```
+
+`motion_threshold` measures the spring anchor's motion relative to the avatar transform above its GLTF, in metres per second equivalent. Rotation contributes as motion at a 10 cm radius. `still_for` is seconds below that threshold. The chain blends toward imported rest rotations and parks while settled, then wakes when motion rises. Rei(mu)'s two ribbon chains use this in [`rei-mu-bow.mms`](../../assets/components/secondary_motion/rei-mu-bow.mms). Test the XR scene with `cargo run --release -- load 'examples/rei(mu).mms'`. Set `CAT_DEBUG_SECONDARY_MOTION=1` to print each chain's measured speed, still time, and rest blend weight while tuning in VR.

@@ -77,6 +77,7 @@ pub mod renderer_stats_system;
 pub mod rest_attachment;
 pub mod router_system;
 pub mod scroll_system;
+pub mod secondary_motion_constraint_system;
 pub mod secondary_motion_system;
 pub mod selection_system;
 pub mod skinned_mesh_system;
@@ -166,6 +167,7 @@ pub use renderer_stats_system::RendererStatsSystem;
 pub use rest_attachment::ResolvedRestAttachment;
 pub use router_system::RouterSystem;
 pub use scroll_system::ScrollingSystem;
+pub use secondary_motion_constraint_system::SecondaryMotionConstraintSystem;
 pub use secondary_motion_system::SecondaryMotionSystem;
 pub use secondary_motion_system::{
     SecondaryMotionChainSnapshot, SecondaryMotionColliderSnapshot, SecondaryMotionSegmentSnapshot,

@@ -53,7 +53,7 @@ use crate::engine::ecs::system::{
     AmplitudeSystem, AssetSystem, AvatarBodyYawSystem, AvatarControlSystem, Cursor3dSystem,
     EditorContextSystem, EditorInspectorSystem, EditorPaintSystem, EditorSystem, FitBoundsSystem,
     GestureSystem, GridSystem, HeadPoseBodyXzFollowSystem, IKSystem, LayoutSystem,
-    SecondaryMotionSystem, SelectionSystem, TransformGizmoSystem,
+    SecondaryMotionConstraintSystem, SecondaryMotionSystem, SelectionSystem, TransformGizmoSystem,
 };
 use crate::engine::ecs::system::{AnimationSystem, AudioInputSystem, AudioSystem};
 use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter};
@@ -137,6 +137,7 @@ pub struct SystemWorld {
     pub head_pose_body_xz_follow: HeadPoseBodyXzFollowSystem,
     pub ik: IKSystem,
     pub secondary_motion: SecondaryMotionSystem,
+    pub secondary_motion_constraint: SecondaryMotionConstraintSystem,
     pub joint_basis_retargeting: crate::engine::ecs::system::JointBasisRetargetingSystem,
     pub humanoid_bone_map: crate::engine::ecs::system::HumanoidBoneMapSystem,
 
@@ -1097,6 +1098,7 @@ impl SystemWorld {
             // Retained secondary-motion indexes cover roots, chains, joint
             // configurations, owning GLTFs, and imported transforms.
             self.secondary_motion.component_removed(world, n);
+            self.secondary_motion_constraint.component_removed(n);
             self.joint_basis_retargeting.component_removed(world, n);
             self.humanoid_bone_map.component_removed(world, n);
             if world
@@ -3224,7 +3226,13 @@ impl SystemWorld {
         // secondary-motion writes must identify the roots that need propagation.
         self.transform.tick(world, visuals, input, dt_sec);
         let vr_stage_started = self.vr_perf_enabled.then(Instant::now);
-        let dirty_chain_transform_roots = self.secondary_motion.tick(world, dt_sec);
+        self.secondary_motion_constraint
+            .tick(world, &self.secondary_motion, dt_sec);
+        let dirty_chain_transform_roots = self.secondary_motion.tick_with_constraints(
+            world,
+            dt_sec,
+            self.secondary_motion_constraint.directives(),
+        );
         if let Some(started) = vr_stage_started {
             self.vr_perf_pre_xr.secondary_motion = started.elapsed();
         }
