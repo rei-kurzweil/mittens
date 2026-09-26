@@ -17,10 +17,9 @@ Today `SecondaryMotion` owns `SpringBone` children, whose chains resolve importe
 ## Considered approach: builder methods on `SecondaryMotion`
 
 ```mms
-SecondaryMotion.new()
-    .rest_when_still("[name='head_bow.001']", 0.02, 0.4) {
-        SpringBone.from_root("[name='head_bow.001']")
-            .virtual_end_length_ratio(1.0)
+SecondaryMotion.rest_when_still("[name='head_bow.001']", 0.02, 0.4) {
+    SpringBone.from_root("[name='head_bow.001']")
+        .virtual_end_length_ratio(1.0)
 }
 ```
 
@@ -34,9 +33,10 @@ The cost is that stillness detection, pose selection, transition rules, and futu
 SecondaryMotion {
     SpringBone.from_root("[name='head_bow.001']")
         .virtual_end_length_ratio(1.0) {
-            ReturnToRestWhenStill.new()
-                .motion_threshold(0.02)
-                .still_for(0.4)
+            ReturnToRestWhenStill {
+                motion_threshold(0.02)
+                still_for(0.4)
+            }
         }
 }
 ```
