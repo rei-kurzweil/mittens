@@ -4206,6 +4206,26 @@ fn apply_call(
                     .unwrap();
                 *amplitude = amplitude.clone().with_enabled(enabled);
             }
+            "highpass" => {
+                let updated = world
+                    .get_component_by_id_as::<AmplitudeComponent>(id)
+                    .unwrap()
+                    .clone()
+                    .with_highpass(arg_f32(args, 0)?)?;
+                *world
+                    .get_component_by_id_as_mut::<AmplitudeComponent>(id)
+                    .unwrap() = updated;
+            }
+            "highpass_resonance" => {
+                let updated = world
+                    .get_component_by_id_as::<AmplitudeComponent>(id)
+                    .unwrap()
+                    .clone()
+                    .with_highpass_resonance(arg_f32(args, 0)?)?;
+                *world
+                    .get_component_by_id_as_mut::<AmplitudeComponent>(id)
+                    .unwrap() = updated;
+            }
             _ => return Err(format!("unknown Amplitude builder '.{method}'")),
         }
         return Ok(());

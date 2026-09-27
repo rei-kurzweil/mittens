@@ -60,7 +60,8 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                 method,
                 "value" | "set_value" | "sync_value" | "track_mount" | "thumb_mount"
             ))
-        || (matches!(component_type, "Amplitude" | "amplitude") && method == "value")
+        || (matches!(component_type, "Amplitude" | "amplitude")
+            && matches!(method, "value" | "set_highpass" | "set_highpass_resonance"))
         || (matches!(component_type, "Velocity" | "velocity")
             && matches!(method, "translate" | "translate_world" | "linear"))
         || (matches!(
@@ -162,6 +163,22 @@ pub(crate) fn invoke_component_method(
             let diagnostics = crate::engine::ecs::component::read_level_diagnostics(world, id)
                 .expect("confirmed AmplitudeComponent has diagnostics");
             Ok(Value::Number(diagnostics.rms as f64))
+        }
+        ("Amplitude" | "amplitude", "set_highpass" | "set_highpass_resonance") => {
+            let current = world
+                .get_component_by_id_as::<AmplitudeComponent>(id)
+                .ok_or_else(|| format!("{method}(): not an AmplitudeComponent"))?
+                .clone();
+            let value = arg_f32(args, 0)?;
+            let updated = if method == "set_highpass" {
+                current.with_highpass(value)?
+            } else {
+                current.with_highpass_resonance(value)?
+            };
+            *world
+                .get_component_by_id_as_mut::<AmplitudeComponent>(id)
+                .unwrap() = updated;
+            Ok(Value::Null)
         }
         ("VolumeNormalization" | "volume_normalization", "value" | "gain_db") => {
             if !args.is_empty() {

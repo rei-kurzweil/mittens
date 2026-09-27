@@ -13,6 +13,7 @@ import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { info_panel, info_panel_body } from "../assets/components/ui/info_panel.mms"
+import { mouth_response_panel } from "../assets/components/ui/mouth_response_panel.mms"
 import { button } from "../assets/components/button.mms"
 
 BGC.rgba(0.0, 0.0, 0.0, 1.0)
@@ -60,7 +61,9 @@ tripod_light("rear_right_studio_light", [10.5, 0.14, -5.7], subject_light_target
     SL.color(1.0, 0.78, 0.68).intensity(8.0).distance(20.0).angle(0.62).penumbra(0.38))
 
 let microphone = AudioInput {}
-let voice_level = Amplitude.rolling_window(0.080).from(microphone) {}
+let voice_level = Amplitude.rolling_window(0.080).highpass(120.0).highpass_resonance(0.707).from(microphone) {}
+let voice_panel_target = { avatar = null }
+let voice_tuning = { center_rms = 0.0475 range_rms = 0.085 amount = 1.0 }
 let xr_input = InputXR.on() {
     InputXRGamepad { locomotion() speed(1.5) }
     T {
@@ -79,8 +82,8 @@ let xr_input = InputXR.on() {
         }
         let bisket_avatar_control = AVC {
             mouth_open_from_amplitude(voice_level)
-            mouth_open_rms_floor(0.005)
-            mouth_open_rms_ceiling(0.09)
+            mouth_open_rms_center_range(voice_tuning.center_rms, voice_tuning.range_rms)
+            mouth_open_amount(voice_tuning.amount)
             mouth_open_smoothing(16.0)
             voice_level
             initial_yaw(3.14159)
@@ -100,6 +103,7 @@ let xr_input = InputXR.on() {
                 T { RestAttachment.new("[name='J_Bip_R_Hand']", "[name='J_Bip_R_Middle3']") { Pointer {} } }
             }
         }
+        voice_panel_target.avatar = bisket_avatar_control
         bisket_avatar_control
         on(bisket_avatar, "GLTFInitialized", fn(event) {
             let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
@@ -141,6 +145,19 @@ T.position(1.25, 2.8, -1.5) {
 // lemon forward and blush-magenta back.
 let velocity_body_color = [0.79, 0.92, 0.82, 0.98]
 let velocity_body_text_color = [0.20, 0.30, 0.26, 1.0]
+
+let voice_panel = mouth_response_panel({
+    root_name = "linear_velocity_voice_response_panel"
+    title = "Voice response"
+    avatar_slot = voice_panel_target
+    tuning = voice_tuning
+    filter_slot = { amplitude = voice_level cutoff_hz = 120.0 resonance = 0.707 }
+    description = "High-pass microphone analysis and mouth response. Audio output is unchanged."
+})
+T.position(1.4, 2.2, 1.4) {
+    name = "linear_velocity_voice_panel_anchor"
+    voice_panel
+}
 
 fn make_velocity_buttons(velocity_label) {
     let forward = button("forward: +0.25 m/s", {

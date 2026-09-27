@@ -312,7 +312,7 @@ fn start_capture(
     let accumulators = signature
         .consumers
         .iter()
-        .map(|consumer| RollingRms::new(*consumer, sample_rate))
+        .map(|consumer| RollingRms::with_channels(consumer.clone(), sample_rate, channels))
         .collect::<Vec<_>>();
     let normalizers = signature
         .normalizers
@@ -457,7 +457,11 @@ impl CaptureCallback {
             }
             let mean_square = sum_squares / self.channels as f32;
             for accumulator in &mut self.accumulators {
-                accumulator.push(mean_square, peak);
+                if accumulator.highpass.is_some() {
+                    accumulator.push_filtered_frame(frame, &convert, self.channels);
+                } else {
+                    accumulator.push(mean_square, peak);
+                }
             }
             for normalizer in &mut self.normalizers {
                 normalizer.push(mean_square, peak);
@@ -495,6 +499,9 @@ impl CaptureCallback {
 
 struct RollingRms {
     consumer: InputAmplitudeConsumer,
+    highpass: Option<HighPassBiquad>,
+    sample_rate: u32,
+    applied_generation: u64,
     squares: Vec<f32>,
     peaks: Vec<f32>,
     cursor: usize,
@@ -505,11 +512,25 @@ struct RollingRms {
 
 impl RollingRms {
     fn new(consumer: InputAmplitudeConsumer, sample_rate: u32) -> Self {
+        Self::with_channels(consumer, sample_rate, 1)
+    }
+
+    fn with_channels(consumer: InputAmplitudeConsumer, sample_rate: u32, channels: usize) -> Self {
         let frames = (consumer.window_sec as f64 * sample_rate as f64)
             .round()
             .clamp(1.0, usize::MAX as f64) as usize;
         Self {
+            highpass: consumer.highpass_hz.map(|cutoff_hz| {
+                HighPassBiquad::new(
+                    cutoff_hz,
+                    consumer.highpass_resonance,
+                    sample_rate,
+                    channels,
+                )
+            }),
             consumer,
+            sample_rate,
+            applied_generation: 0,
             squares: vec![0.0; frames],
             peaks: vec![0.0; frames],
             cursor: 0,
@@ -517,6 +538,48 @@ impl RollingRms {
             sum_squares: 0.0,
             sequence: 0,
         }
+    }
+
+    fn push_filtered_frame<T: Copy>(
+        &mut self,
+        frame: &[T],
+        convert: &impl Fn(T) -> f32,
+        channels: usize,
+    ) {
+        self.refresh_filter();
+        let filter = self.highpass.as_mut().expect("filtered observer");
+        let mut sum_squares = 0.0;
+        let mut peak = 0.0_f32;
+        for (channel, &sample) in frame.iter().enumerate() {
+            let value = convert(sample);
+            let value = if value.is_finite() {
+                value.clamp(-1.0, 1.0)
+            } else {
+                0.0
+            };
+            let filtered = filter.process(channel, value);
+            sum_squares += filtered * filtered;
+            peak = peak.max(filtered.abs());
+        }
+        self.push(sum_squares / channels as f32, peak);
+    }
+
+    fn refresh_filter(&mut self) {
+        let Some((cutoff, q, generation)) = self.consumer.live_highpass.load() else {
+            return;
+        };
+        if generation == self.applied_generation {
+            return;
+        }
+        if let Some(filter) = &mut self.highpass {
+            filter.reconfigure(cutoff, q, self.sample_rate);
+        }
+        self.squares.fill(0.0);
+        self.peaks.fill(0.0);
+        self.cursor = 0;
+        self.filled = 0;
+        self.sum_squares = 0.0;
+        self.applied_generation = generation;
     }
 
     fn push(&mut self, square: f32, peak: f32) {
@@ -552,7 +615,11 @@ impl RollingRms {
             observer: self.consumer.observer,
             source,
             sample: AmplitudeSample {
-                generation: self.consumer.generation,
+                generation: if self.highpass.is_some() {
+                    self.applied_generation
+                } else {
+                    self.consumer.generation
+                },
                 sequence: self.sequence,
                 timestamp_sec,
                 valid_frames,
@@ -561,6 +628,64 @@ impl RollingRms {
                 status,
             },
         }
+    }
+}
+
+/// Second-order high-pass section; independent state for each input channel.
+struct HighPassBiquad {
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
+    state: Vec<[f32; 4]>, // x1, x2, y1, y2
+}
+
+impl HighPassBiquad {
+    fn coefficients(cutoff_hz: f32, q: f32, sample_rate: u32) -> [f32; 5] {
+        let rate = sample_rate.max(1) as f32;
+        let frequency = cutoff_hz.clamp(0.001, rate * 0.45);
+        let omega = std::f32::consts::TAU * frequency / rate;
+        let cosine = omega.cos();
+        let alpha = omega.sin() / (2.0 * q);
+        let a0 = 1.0 + alpha;
+        [
+            (1.0 + cosine) / (2.0 * a0),
+            -(1.0 + cosine) / a0,
+            (1.0 + cosine) / (2.0 * a0),
+            -2.0 * cosine / a0,
+            (1.0 - alpha) / a0,
+        ]
+    }
+
+    fn new(cutoff_hz: f32, q: f32, sample_rate: u32, channels: usize) -> Self {
+        let [b0, b1, b2, a1, a2] = Self::coefficients(cutoff_hz, q, sample_rate);
+        Self {
+            b0,
+            b1,
+            b2,
+            a1,
+            a2,
+            state: vec![[0.0; 4]; channels.max(1)],
+        }
+    }
+
+    fn process(&mut self, channel: usize, x: f32) -> f32 {
+        let state = &mut self.state[channel];
+        let y = self.b0 * x + self.b1 * state[0] + self.b2 * state[1]
+            - self.a1 * state[2]
+            - self.a2 * state[3];
+        state[1] = state[0];
+        state[0] = x;
+        state[3] = state[2];
+        state[2] = y;
+        y
+    }
+
+    fn reconfigure(&mut self, cutoff_hz: f32, q: f32, sample_rate: u32) {
+        [self.b0, self.b1, self.b2, self.a1, self.a2] =
+            Self::coefficients(cutoff_hz, q, sample_rate);
+        self.state.fill([0.0; 4]);
     }
 }
 
@@ -767,7 +892,73 @@ mod tests {
             source: ComponentId::default(),
             generation: 3,
             window_sec,
+            highpass_hz: None,
+            highpass_resonance: 0.707,
+            live_highpass: AmplitudeComponent::default().live_highpass,
         }
+    }
+
+    #[test]
+    fn highpass_rms_rejects_dc_and_low_tones_but_preserves_voice_band() {
+        fn level(frequency_hz: f32, cutoff_hz: Option<f32>, q: f32) -> f32 {
+            let rate = 48_000_u32;
+            let mut descriptor = consumer(0.1);
+            descriptor.highpass_hz = cutoff_hz;
+            descriptor.highpass_resonance = q;
+            let mut meter = RollingRms::new(descriptor, rate);
+            for frame in 0..rate {
+                let phase = std::f32::consts::TAU * frequency_hz * frame as f32 / rate as f32;
+                let sample = if frequency_hz == 0.0 {
+                    0.5
+                } else {
+                    0.5 * phase.sin()
+                };
+                if meter.highpass.is_some() {
+                    meter.push_filtered_frame(&[sample], &|value| value, 1);
+                } else {
+                    meter.push(sample * sample, sample.abs());
+                }
+            }
+            meter.snapshot(ComponentId::default(), 1.0, rate).sample.rms
+        }
+
+        assert!(level(0.0, Some(120.0), 0.707) < 0.01);
+        let low = level(40.0, Some(120.0), 0.707);
+        let high = level(1_000.0, Some(120.0), 0.707);
+        let raw_high = level(1_000.0, None, 0.707);
+        assert!(low < high * 0.15, "low={low}, high={high}");
+        assert!((high - raw_high).abs() < 0.01);
+        assert!(level(120.0, Some(120.0), 1.5) > level(120.0, Some(120.0), 0.707));
+    }
+
+    #[test]
+    fn highpass_parameter_change_reconfigures_in_place_and_updates_generation() {
+        let amplitude = AmplitudeComponent::default().with_highpass(120.0).unwrap();
+        let mut descriptor = consumer(0.1);
+        descriptor.highpass_hz = amplitude.highpass_hz;
+        descriptor.highpass_resonance = amplitude.highpass_resonance;
+        descriptor.generation = amplitude.generation;
+        descriptor.live_highpass = amplitude.live_highpass.clone();
+        let mut meter = RollingRms::new(descriptor.clone(), 48_000);
+        for _ in 0..100 {
+            meter.push_filtered_frame(&[0.5_f32], &|value| value, 1);
+        }
+        let previous_generation = meter
+            .snapshot(ComponentId::default(), 0.1, 100)
+            .sample
+            .generation;
+        let amplitude = amplitude.with_highpass(220.0).unwrap();
+        let mut changed = descriptor.clone();
+        changed.highpass_hz = amplitude.highpass_hz;
+        changed.generation = amplitude.generation;
+        assert_eq!(
+            descriptor, changed,
+            "a parameter change should retain the capture stream"
+        );
+        meter.push_filtered_frame(&[0.5_f32], &|value| value, 1);
+        let current = meter.snapshot(ComponentId::default(), 0.2, 1).sample;
+        assert!(current.generation > previous_generation);
+        assert_eq!(meter.filled, 1, "old rolling samples should be discarded");
     }
 
     fn normalizer_consumer(policy: VolumeNormalizationPolicy) -> InputNormalizationConsumer {

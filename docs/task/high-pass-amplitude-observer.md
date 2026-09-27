@@ -1,7 +1,7 @@
 # Task: high-pass RMS observation for voice response
 
-Status: planned. The panel layout and reuse cleanup is separate; no high-pass
-audio processing or filter sliders are implemented yet.
+Status: implemented for microphone capture and the shared voice-response panel.
+XR hardware and subjective voice tuning still need a performer pass.
 
 ## Goal
 
@@ -13,43 +13,46 @@ output and of the unfinished `VolumeNormalization` policy. An unconfigured
 
 ## Authoring and live controls
 
-Proposed MMS shape:
+Two independent builder methods are required. An author can set only the
+cutoff, or set the cutoff and then override the default resonance:
 
 ```mms
-let voice_level = Amplitude.rolling_window(0.080)
+let simple_voice_level = Amplitude.rolling_window(0.080)
+    .highpass(120.0).from(microphone) {}
+
+let tuned_voice_level = Amplitude.rolling_window(0.080)
     .highpass(120.0)
     .highpass_resonance(0.7)
     .from(microphone) {}
 ```
 
 `highpass(cutoff_hz: f32)` selects a high-pass RMS callback unit in place of
-the raw `RollingRms` unit for this observer. `highpass_resonance` is a proposed
-second builder; settle its name and whether the number means Q or another
-precisely defined damping parameter before implementing it. The first builder
-has the requested one-float API. Preserve the usual rolling-window and source
-builders, and serialize both filter settings. Reject nonfinite, nonpositive
-cutoffs and resonance values. Resolve the usable cutoff against the active
-device sample rate and its Nyquist limit at binding time.
+the raw `RollingRms` unit for this observer. It supplies a sensible default
+resonance. `highpass_resonance(q: f32)` is a separate, optional builder that
+sets the filter's Q: the sharpness and peaking around the cutoff. It requires
+`highpass` on the same `Amplitude` and cannot enable filtering by itself.
+The default Q is 0.707; authored Q is accepted in `0.1..=10.0`.
+Preserve the usual rolling-window and source builders, and serialize both
+filter settings. Reject nonfinite, nonpositive cutoffs and Q values. Resolve
+the usable cutoff against the active device sample rate and its Nyquist limit
+at binding time.
 
 The shared voice-response panel in `assets/components/ui/mouth_response_panel.mms`
-should gain two optional, clearly labelled live controls when the backend is
-ready: **high-pass cutoff (Hz)** and **resonance (defined unit)**. Show their
-current numeric values. The panel should only show these controls for an
-observer configured with high-pass analysis, while retaining RMS centre, RMS
-range, and mouth amount for any avatar. Slider changes must update the running
-observer safely and reset or transition filter state deliberately; no stale
-samples from the prior configuration may be applied. Make the cutoff control
-use a range or mapping that gives useful resolution in voice frequencies,
-rather than spending most travel near Nyquist.
+shows **high-pass cutoff (Hz)** and **resonance (Q)** when passed a filtered
+Amplitude observer. It keeps RMS centre, RMS range, and mouth amount for any
+avatar. Slider changes update callback-side coefficients and clear the rolling
+window without reopening capture. The cutoff slider covers 40–400 Hz in 5 Hz
+steps for voice tuning; the component API accepts any finite positive cutoff
+and clamps it below Nyquist at the active sample rate.
 
 ## Audio-thread design
 
-`AmplitudeSystem` currently supplies `InputAmplitudeConsumer` descriptors to
+`AmplitudeSystem` supplies `InputAmplitudeConsumer` descriptors to
 `AudioInputSystem`. A capture callback builds one `RollingRms` per consumer
-and pushes frame mean-square values into it. Extend that descriptor with an
-explicit raw/high-pass analysis mode and validated filter parameters. At stream
-setup, choose the matching accumulator unit for each observer. The high-pass
-unit must filter each channel's signed PCM samples **before squaring**, keep
+and pushes frame mean-square values into it. The descriptor carries an
+explicit raw/high-pass analysis mode and filter parameters. At stream setup,
+the capture path selects the matching mode. The high-pass unit filters each
+channel's signed PCM samples **before squaring**, keeps
 per-channel filter state across callback buffers, then compute rolling RMS (and
 define peak from the same filtered signal). Filtering an already computed
 mean-square value cannot reject low frequencies.
@@ -59,11 +62,11 @@ Its high-pass implementation is currently one-pole; resonance needs a defined
 filter response and likely a different implementation. Reuse validated filter
 math if suitable, but do not route this meter through the audible graph or
 imply that its current `resonance` field already affects the capture analysis.
-Keep callback work bounded and allocation-free. Preserve source/generation
-validation and the bounded snapshot handoff used by raw `Amplitude`. Decide
-whether live changes can update a callback-side parameter block without
-reopening capture; if they require rebinding, prevent an audible or visual
-glitch and reject old-generation snapshots.
+Callback work remains bounded and allocation-free. A shared atomic parameter
+block lets live changes update coefficients and generation without reopening
+capture; old-generation snapshots are rejected by the retained observation
+path. Source/generation validation and the bounded snapshot handoff are shared
+with raw `Amplitude`.
 
 ## Verification
 

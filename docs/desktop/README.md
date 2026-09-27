@@ -29,6 +29,12 @@ particular, workstream 1 can advance through design and loopback tests while a
 replacement laptop battery is unavailable, and workstreams 2–5 do not depend
 on that battery.
 
+## Cross-epic prototype work
+
+The [audio spectrum and VR rhythm game workbench](audio-spectrum-and-rhythm-game.md)
+tracks two separate epics being developed in this repository. It is a loose
+dashboard; the linked epic and task documents hold their specifications.
+
 ## Shared decisions
 
 - Keep device acquisition separate from semantic engine events. Keyboard,

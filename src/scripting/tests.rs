@@ -131,7 +131,10 @@ fn agc_desktop_example_evaluates_and_live_policy_methods_preserve_the_running_un
         let config = world
             .get_component_by_id_as::<SliderComponent>(slider)
             .expect("slider component");
-        assert_eq!(config.width(), 13.0, "{label} should span the row slot");
+        assert!(
+            (config.width() - 0.84).abs() < 0.0001,
+            "{label} thumb travel should fit inside the visible track"
+        );
     }
     let settings_panel = world
         .all_components()
@@ -7881,8 +7884,8 @@ fn capsule_stick_figure_grounding_boundary_preserves_xr_locomotion_and_local_pos
 #[test]
 fn mittens_corp_linear_velocity_scene_evaluates_with_xr_basis_and_panel() {
     use crate::engine::ecs::component::{
-        ColorComponent, ComponentRef, EditorPanel, EditorUIComponent, InputXRComponent,
-        SelectableComponent, StyleComponent, VelocityComponent,
+        AmplitudeComponent, ColorComponent, ComponentRef, EditorPanel, EditorUIComponent,
+        InputXRComponent, SelectableComponent, SliderComponent, StyleComponent, VelocityComponent,
     };
     use crate::engine::ecs::system::input_xr_gamepad_system::xr_locomotion_target_transform;
 
@@ -7973,6 +7976,38 @@ fn mittens_corp_linear_velocity_scene_evaluates_with_xr_basis_and_panel() {
         style_background("info_panel_content"),
         [0.79, 0.92, 0.82, 0.98]
     );
+    let voice_panel = named("linear_velocity_voice_response_panel");
+    for label in [
+        "highpass_cutoff_slider",
+        "highpass_resonance_slider",
+        "mouth_rms_center_slider",
+        "mouth_rms_range_slider",
+        "mouth_amount_slider",
+    ] {
+        let slider = world
+            .find_component(voice_panel, &format!("#{label}"))
+            .unwrap();
+        let config = world
+            .get_component_by_id_as::<SliderComponent>(slider)
+            .expect("shared voice-response slider component");
+        assert!(
+            (config.width() - 0.84).abs() < 0.0001,
+            "{label} thumb travel should fit inside the visible track"
+        );
+    }
+    let voice_title = world.find_component(voice_panel, "#title_bar").unwrap();
+    let title_color = world
+        .children_of(voice_title)
+        .iter()
+        .find_map(|id| world.get_component_by_id_as::<StyleComponent>(*id))
+        .and_then(|style| style.background_color)
+        .unwrap();
+    assert_eq!(title_color, [0.94, 0.87, 0.79, 0.98]);
+    let voice_amplitude = world
+        .all_components()
+        .find_map(|id| world.get_component_by_id_as::<AmplitudeComponent>(id))
+        .unwrap();
+    assert_eq!(voice_amplitude.highpass_hz, Some(120.0));
     let arrow = world
         .find_component(panel, "#accordion_down_arrow_icon")
         .unwrap();
@@ -8451,9 +8486,9 @@ fn pc_rei_xr_examples_evaluate_with_secondary_motion_and_hand_pointers() {
 fn rei_mu_scene_authors_lighting_background_and_bow_rest_constraints() {
     use crate::engine::ecs::component::{
         AmbientLightComponent, AmplitudeComponent, AvatarControlComponent, BackgroundComponent,
-        EditorComponent, GLTFComponent, RenderableComponent, ReturnToRestWhenStillComponent,
-        SliderComponent, SpringBoneComponent, SpotLightComponent,
-        VolumeNormalizationComponent,
+        EditorComponent, GLTFComponent, GrabbableComponent, RenderableComponent,
+        ReturnToRestWhenStillComponent,
+        SliderComponent, SpotLightComponent, SpringBoneComponent, VolumeNormalizationComponent,
     };
     let mut world = World::default();
     let mut rx = RxWorld::default();
@@ -8470,17 +8505,32 @@ fn rei_mu_scene_authors_lighting_background_and_bow_rest_constraints() {
     .expect("Rei(mu) must load through the production MMS runtime");
     assert!(output.errors.is_empty(), "{:?}", output.errors);
     let count_components = |matches: fn(&World, crate::engine::ecs::ComponentId) -> bool| {
-        world.all_components().filter(|id| matches(&world, *id)).count()
+        world
+            .all_components()
+            .filter(|id| matches(&world, *id))
+            .count()
     };
     let panel = world
         .all_components()
         .find(|&id| world.component_label(id) == Some("rei_mu_mouth_response_panel"))
         .expect("Rei(mu) should have a mouth-response panel");
-    for label in ["mouth_rms_center_slider", "mouth_rms_range_slider", "mouth_amount_slider"] {
+    for label in [
+        "mouth_rms_center_slider",
+        "mouth_rms_range_slider",
+        "mouth_amount_slider",
+        "highpass_cutoff_slider",
+        "highpass_resonance_slider",
+    ] {
         let slider = world
             .find_component(panel, &format!("#{label}"))
             .expect("mouth-response slider in panel");
-        assert!(world.get_component_by_id_as::<SliderComponent>(slider).is_some());
+        let config = world
+            .get_component_by_id_as::<SliderComponent>(slider)
+            .expect("Rei(mu) slider component");
+        assert!(
+            (config.width() - 0.84).abs() < 0.0001,
+            "{label} thumb travel should fit inside the visible track"
+        );
     }
     let avc = world
         .all_components()
@@ -8490,53 +8540,95 @@ fn rei_mu_scene_authors_lighting_background_and_bow_rest_constraints() {
     assert!((avc.mouth_open_rms_ceiling - 0.09).abs() < 1e-6);
     assert_eq!(avc.mouth_open_amount, 1.0);
     assert_eq!(
-        count_components(|world, id| world.get_component_by_id_as::<AmplitudeComponent>(id).is_some()),
+        count_components(|world, id| world
+            .get_component_by_id_as::<AmplitudeComponent>(id)
+            .is_some()),
         1,
     );
     assert_eq!(
-        count_components(|world, id| world.get_component_by_id_as::<VolumeNormalizationComponent>(id).is_some()),
+        count_components(|world, id| world
+            .get_component_by_id_as::<VolumeNormalizationComponent>(id)
+            .is_some()),
         0,
     );
     assert_eq!(
-        count_components(|world, id| world.get_component_by_id_as::<AmbientLightComponent>(id).is_some()),
+        count_components(|world, id| world
+            .get_component_by_id_as::<AmbientLightComponent>(id)
+            .is_some()),
         1,
         "the Rei(mu) scene needs its ambient light",
     );
     assert_eq!(
-        count_components(|world, id| world.get_component_by_id_as::<SpotLightComponent>(id).is_some()),
+        count_components(|world, id| world
+            .get_component_by_id_as::<SpotLightComponent>(id)
+            .is_some()),
         6,
         "each of the three stages needs two tripod spotlights",
     );
     let backgrounds: Vec<_> = world
         .all_components()
-        .filter(|id| world.get_component_by_id_as::<BackgroundComponent>(*id).is_some())
+        .filter(|id| {
+            world
+                .get_component_by_id_as::<BackgroundComponent>(*id)
+                .is_some()
+        })
         .collect();
-    assert_eq!(backgrounds.len(), 1, "the star background should be present");
+    assert_eq!(
+        backgrounds.len(),
+        1,
+        "the star background should be present"
+    );
     let mut pending = backgrounds;
     let mut background_renderables = 0;
     while let Some(id) = pending.pop() {
-        if world.get_component_by_id_as::<RenderableComponent>(id).is_some() {
+        if world
+            .get_component_by_id_as::<RenderableComponent>(id)
+            .is_some()
+        {
             background_renderables += 1;
         }
         pending.extend(world.children_of(id).iter().copied());
     }
-    assert!(background_renderables > 0, "the star background has no geometry");
+    assert!(
+        background_renderables > 0,
+        "the star background has no geometry"
+    );
     let editors: Vec<_> = world
         .all_components()
-        .filter(|id| world.get_component_by_id_as::<EditorComponent>(*id).is_some())
+        .filter(|id| {
+            world
+                .get_component_by_id_as::<EditorComponent>(*id)
+                .is_some()
+        })
         .collect();
     assert_eq!(editors.len(), 1, "the box piles need one editor root");
     let mut pending = editors;
     let mut editor_renderables = 0;
+    let mut editor_grabbables = 0;
     while let Some(id) = pending.pop() {
         editor_renderables += usize::from(
-            world.get_component_by_id_as::<RenderableComponent>(id).is_some(),
+            world
+                .get_component_by_id_as::<RenderableComponent>(id)
+                .is_some(),
         );
-        assert!(world.get_component_by_id_as::<SpotLightComponent>(id).is_none());
+        editor_grabbables += usize::from(
+            world
+                .get_component_by_id_as::<GrabbableComponent>(id)
+                .is_some(),
+        );
+        assert!(
+            world
+                .get_component_by_id_as::<SpotLightComponent>(id)
+                .is_none()
+        );
         assert!(world.get_component_by_id_as::<GLTFComponent>(id).is_none());
         pending.extend(world.children_of(id).iter().copied());
     }
-    assert_eq!(editor_renderables, 8, "only the eight pile boxes belong in ED");
+    assert_eq!(
+        editor_renderables, 8,
+        "only the eight pile boxes belong in ED"
+    );
+    assert_eq!(editor_grabbables, 8, "all eight pile boxes should be grabbable");
     let constraints: Vec<_> = world
         .all_components()
         .filter(|id| {
@@ -8572,21 +8664,58 @@ fn rei_mu_scene_authors_lighting_background_and_bow_rest_constraints() {
             },
         ),
     );
-    let callback_output = session.service_callbacks(
-        &mut world,
-        &mut rx,
-        Some(&mut render_assets),
-        &mut emit,
+    let callback_output =
+        session.service_callbacks(&mut world, &mut rx, Some(&mut render_assets), &mut emit);
+    assert!(
+        callback_output.errors.is_empty(),
+        "{:?}",
+        callback_output.errors
     );
-    assert!(callback_output.errors.is_empty(), "{:?}", callback_output.errors);
     let avc_id = world
         .all_components()
-        .find(|&id| world.get_component_by_id_as::<AvatarControlComponent>(id).is_some())
+        .find(|&id| {
+            world
+                .get_component_by_id_as::<AvatarControlComponent>(id)
+                .is_some()
+        })
         .unwrap();
-    let avc = world.get_component_by_id_as::<AvatarControlComponent>(avc_id).unwrap();
+    let avc = world
+        .get_component_by_id_as::<AvatarControlComponent>(avc_id)
+        .unwrap();
     assert_eq!(world.component_label(avc_id), Some("rei_mu_avatar_control"));
-    assert!((avc.mouth_open_rms_floor - 0.0075).abs() < 1e-6, "floor: {}", avc.mouth_open_rms_floor);
-    assert!((avc.mouth_open_rms_ceiling - 0.0925).abs() < 1e-6, "ceiling: {}", avc.mouth_open_rms_ceiling);
+    assert!(
+        (avc.mouth_open_rms_floor - 0.0075).abs() < 1e-6,
+        "floor: {}",
+        avc.mouth_open_rms_floor
+    );
+    assert!(
+        (avc.mouth_open_rms_ceiling - 0.0925).abs() < 1e-6,
+        "ceiling: {}",
+        avc.mouth_open_rms_ceiling
+    );
+    for (label, value) in [
+        ("highpass_cutoff_slider", 180.0),
+        ("highpass_resonance_slider", 1.2),
+    ] {
+        let slider = world.find_component(panel, &format!("#{label}")).unwrap();
+        rx.dispatch_event_handlers(
+            &mut world,
+            &Signal::event(slider, EventSignal::SliderChanged { slider, value }),
+        );
+    }
+    let callback_output =
+        session.service_callbacks(&mut world, &mut rx, Some(&mut render_assets), &mut emit);
+    assert!(
+        callback_output.errors.is_empty(),
+        "{:?}",
+        callback_output.errors
+    );
+    let amplitude = world
+        .all_components()
+        .find_map(|id| world.get_component_by_id_as::<AmplitudeComponent>(id))
+        .unwrap();
+    assert_eq!(amplitude.highpass_hz, Some(180.0));
+    assert!((amplitude.highpass_resonance - 1.2).abs() < 1e-6);
 }
 
 #[test]
@@ -10212,9 +10341,13 @@ fn roundtrip_avatar_control() {
 }
 
 #[test]
-fn roundtrip_amplitude_preserves_authored_source_and_window_only() {
+fn roundtrip_amplitude_preserves_source_window_and_highpass_settings() {
     use crate::engine::ecs::component::{AmplitudeComponent, ComponentRef};
     let original = AmplitudeComponent::rolling_window(0.25)
+        .unwrap()
+        .with_highpass(180.0)
+        .unwrap()
+        .with_highpass_resonance(1.2)
         .unwrap()
         .with_source(ComponentRef::Query("#microphone".into()))
         .with_enabled(false);
@@ -10223,6 +10356,8 @@ fn roundtrip_amplitude_preserves_authored_source_and_window_only() {
         .get_component_by_id_as::<AmplitudeComponent>(id)
         .expect("amplitude component");
     assert_eq!(got.window_sec, 0.25);
+    assert_eq!(got.highpass_hz, Some(180.0));
+    assert!((got.highpass_resonance - 1.2).abs() < 1e-6);
     assert!(!got.enabled);
     assert_eq!(got.source, Some(ComponentRef::Query("#microphone".into())));
     assert!(!got.retained.is_live(), "runtime sample must not serialize");

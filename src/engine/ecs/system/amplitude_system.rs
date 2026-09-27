@@ -1,5 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
+use crate::engine::ecs::component::amplitude::LiveHighPassParameters;
 use crate::engine::ecs::component::volume_normalization::LiveVolumeNormalizationPolicy;
 use crate::engine::ecs::component::{
     AmplitudeComponent, AmplitudeSample, AmplitudeStatus, AudioClipComponent, AudioInputComponent,
@@ -35,12 +36,25 @@ struct ConsumerState {
     generation: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone)]
 pub(crate) struct InputAmplitudeConsumer {
     pub observer: ComponentId,
     pub source: ComponentId,
     pub generation: u64,
     pub window_sec: f32,
+    pub highpass_hz: Option<f32>,
+    pub highpass_resonance: f32,
+    pub live_highpass: Arc<LiveHighPassParameters>,
+}
+
+impl PartialEq for InputAmplitudeConsumer {
+    fn eq(&self, other: &Self) -> bool {
+        self.observer == other.observer
+            && self.source == other.source
+            && self.window_sec == other.window_sec
+            && self.highpass_hz.is_some() == other.highpass_hz.is_some()
+            && Arc::ptr_eq(&self.live_highpass, &other.live_highpass)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -327,6 +341,9 @@ impl AmplitudeSystem {
                     source: state.source,
                     generation: state.generation,
                     window_sec: amplitude.window_sec,
+                    highpass_hz: amplitude.highpass_hz,
+                    highpass_resonance: amplitude.highpass_resonance,
+                    live_highpass: amplitude.live_highpass.clone(),
                 })
             })
             .collect();

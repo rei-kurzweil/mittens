@@ -13,12 +13,12 @@ import { mouth_response_panel } from "../assets/components/ui/mouth_response_pan
 
 // The default input stays neutral if no microphone is available.
 let microphone = AudioInput {}
-let voice_level = Amplitude.rolling_window(0.080).from(microphone) {}
+let voice_level = Amplitude.rolling_window(0.080).highpass(120.0).highpass_resonance(0.707).from(microphone) {}
 // Preserve this scene's existing raw-amplitude calibration as the panel default.
 let mouth_tuning = { center_rms = 0.0475 range_rms = 0.085 amount = 1.0 }
 let mouth_panel_target = { avatar = null }
 
-BGC.rgba(0.19, 0.19, 0.21, 1.0)
+BGC.rgba(0.15, 0.15, 0.15, 1.0)
 AL.rgb(0.24, 0.23, 0.25)
 // The eye animation is authored in seconds and runs at two beats per second.
 Clock.bpm(120.0)
@@ -94,7 +94,7 @@ fn lit_stage(stage_name, left_light_name, right_light_name, light_target) {
 }
 
 BG.occlusion_and_lighting() {
-    star_kawaii_background([0.72, 0.55, 0.25, 1.0])
+    star_kawaii_background([1.0, 0.75, 0.15, 1.0])
 }
 
 lit_stage(
@@ -124,6 +124,7 @@ let rei_mu_mouth_panel = mouth_response_panel({
     root_name = "rei_mu_mouth_response_panel"
     title = "Voice response"
     avatar_slot = mouth_panel_target
+    filter_slot = { amplitude = voice_level cutoff_hz = 120.0 resonance = 0.707 }
     tuning = mouth_tuning
     description = "Map raw microphone amplitude to mouth movement. These controls do not change audio input or volume."
 })
@@ -217,6 +218,7 @@ T.position(-5.0, 0.0, 0.0) {
 fn pile_box(box_name, x, y, z, color) {
     return T.position(x, y, z).scale(1.0, 1.0, 1.0) {
         name = box_name
+        Grabbable {}
         R.cube() { C.rgba(color[0], color[1], color[2], 1.0) }
     }
 }

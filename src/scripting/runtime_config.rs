@@ -1261,12 +1261,26 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     component
                         .constructor("rolling_window", floats(1))
                         .builder_call("from", any(1))
-                        .builder_call("enabled", booleans(1));
+                        .builder_call("enabled", booleans(1))
+                        .builder_call("highpass", floats(1))
+                        .builder_call("highpass_resonance", floats(1));
                     host_method(
                         component,
                         canonical,
                         "value",
                         method(vec![], mms::ValueType::F32),
+                    );
+                    host_method(
+                        component,
+                        canonical,
+                        "set_highpass",
+                        method(vec![mms::ValueType::F32], mms::ValueType::Null),
+                    );
+                    host_method(
+                        component,
+                        canonical,
+                        "set_highpass_resonance",
+                        method(vec![mms::ValueType::F32], mms::ValueType::Null),
                     );
                 }
                 "VolumeNormalization" => {

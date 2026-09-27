@@ -1,5 +1,45 @@
 use super::{Component, ComponentRef};
 use crate::engine::ecs::ComponentId;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+
+#[derive(Debug)]
+pub(crate) struct LiveHighPassParameters {
+    cutoff_bits: AtomicU32,
+    resonance_bits: AtomicU32,
+    sequence: AtomicU64,
+}
+
+impl LiveHighPassParameters {
+    fn new() -> Self {
+        Self {
+            cutoff_bits: AtomicU32::new(0),
+            resonance_bits: AtomicU32::new(0.707_f32.to_bits()),
+            sequence: AtomicU64::new(0),
+        }
+    }
+
+    fn store(&self, cutoff_hz: Option<f32>, q: f32, generation: u64) {
+        self.sequence
+            .store(generation.wrapping_mul(2).wrapping_add(1), Ordering::SeqCst);
+        self.cutoff_bits
+            .store(cutoff_hz.unwrap_or(0.0).to_bits(), Ordering::SeqCst);
+        self.resonance_bits.store(q.to_bits(), Ordering::SeqCst);
+        self.sequence
+            .store(generation.wrapping_mul(2), Ordering::SeqCst);
+    }
+
+    pub(crate) fn load(&self) -> Option<(f32, f32, u64)> {
+        let first = self.sequence.load(Ordering::SeqCst);
+        if first & 1 != 0 {
+            return None;
+        }
+        let cutoff = f32::from_bits(self.cutoff_bits.load(Ordering::SeqCst));
+        let q = f32::from_bits(self.resonance_bits.load(Ordering::SeqCst));
+        let second = self.sequence.load(Ordering::SeqCst);
+        (first == second).then_some((cutoff, q, second / 2))
+    }
+}
 
 /// The main-thread validity state of an amplitude observation.
 ///
@@ -72,6 +112,9 @@ impl AmplitudeSample {
 pub struct AmplitudeComponent {
     pub source: Option<ComponentRef>,
     pub window_sec: f32,
+    pub highpass_hz: Option<f32>,
+    pub highpass_resonance: f32,
+    pub(crate) live_highpass: Arc<LiveHighPassParameters>,
     pub enabled: bool,
     pub generation: u64,
     pub retained: AmplitudeSample,
@@ -100,6 +143,9 @@ impl AmplitudeComponent {
         Ok(Self {
             source: None,
             window_sec,
+            highpass_hz: None,
+            highpass_resonance: 0.707,
+            live_highpass: Arc::new(LiveHighPassParameters::new()),
             enabled: true,
             generation: 0,
             retained: AmplitudeSample::pending(0),
@@ -112,6 +158,31 @@ impl AmplitudeComponent {
         self.source = Some(source);
         self.resolved_source = None;
         self
+    }
+
+    pub fn with_highpass(mut self, cutoff_hz: f32) -> Result<Self, String> {
+        if !cutoff_hz.is_finite() || cutoff_hz <= 0.0 {
+            return Err("Amplitude.highpass requires a finite positive cutoff in Hz".into());
+        }
+        if self.highpass_hz != Some(cutoff_hz) {
+            self.highpass_hz = Some(cutoff_hz);
+            self.bump_generation(AmplitudeStatus::Pending);
+        }
+        Ok(self)
+    }
+
+    pub fn with_highpass_resonance(mut self, q: f32) -> Result<Self, String> {
+        if self.highpass_hz.is_none() {
+            return Err("Amplitude.highpass_resonance requires highpass first".into());
+        }
+        if !q.is_finite() || !(0.1..=10.0).contains(&q) {
+            return Err("Amplitude.highpass_resonance requires Q in 0.1..=10".into());
+        }
+        if self.highpass_resonance != q {
+            self.highpass_resonance = q;
+            self.bump_generation(AmplitudeStatus::Pending);
+        }
+        Ok(self)
     }
 
     pub fn with_enabled(mut self, enabled: bool) -> Self {
@@ -130,6 +201,8 @@ impl AmplitudeComponent {
     /// reconfiguration and lifecycle changes so queued old samples are rejected.
     pub fn bump_generation(&mut self, status: AmplitudeStatus) {
         self.generation = self.generation.wrapping_add(1);
+        self.live_highpass
+            .store(self.highpass_hz, self.highpass_resonance, self.generation);
         self.retained = if status == AmplitudeStatus::Pending {
             AmplitudeSample::pending(self.generation)
         } else {
@@ -164,6 +237,15 @@ impl Component for AmplitudeComponent {
             "rolling_window",
             vec![num(self.window_sec as f64)],
         );
+        if let Some(cutoff_hz) = self.highpass_hz {
+            out = out.with_call("highpass", vec![num(cutoff_hz as f64)]);
+            if self.highpass_resonance != 0.707 {
+                out = out.with_call(
+                    "highpass_resonance",
+                    vec![num(self.highpass_resonance as f64)],
+                );
+            }
+        }
         if let Some(source) = &self.source {
             let source = match source {
                 ComponentRef::Guid(guid) => s(&format!("@uuid:{guid}")),
@@ -186,6 +268,24 @@ mod tests {
     fn rejects_invalid_windows() {
         assert!(AmplitudeComponent::rolling_window(0.0).is_err());
         assert!(AmplitudeComponent::rolling_window(f32::NAN).is_err());
+        assert!(AmplitudeComponent::default().with_highpass(0.0).is_err());
+        assert!(
+            AmplitudeComponent::default()
+                .with_highpass(f32::NAN)
+                .is_err()
+        );
+        assert!(
+            AmplitudeComponent::default()
+                .with_highpass_resonance(0.7)
+                .is_err()
+        );
+        assert!(
+            AmplitudeComponent::default()
+                .with_highpass(120.0)
+                .unwrap()
+                .with_highpass_resonance(11.0)
+                .is_err()
+        );
     }
 
     #[test]
