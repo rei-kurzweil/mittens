@@ -6006,6 +6006,86 @@ fn primitives_module_spawns_wireframe_square_through_the_renderable_registry() {
 }
 
 #[test]
+fn annulus_and_circle_primitives_keep_distinct_meshes_and_authored_names() {
+    use crate::engine::ecs::component::RenderableComponent;
+    use crate::engine::ecs::component::renderable::AuthoredRenderableShape;
+    use crate::engine::graphics::primitives::CpuMeshHandle;
+
+    let module_path = repo_path("assets/components/primitives.mms");
+    let module = MeowMeowRunner::load_module_file(module_path.to_str().unwrap())
+        .expect("expected primitives module to load");
+    let mut world = World::default();
+    let mut render_assets = RenderAssets::new();
+    let mut emit = CommandQueue::new();
+    for (factory, shape, mesh) in [
+        ("annulus_2d", "annulus_2d", CpuMeshHandle::ANNULUS_2D),
+        ("circle_2d", "circle_2d", CpuMeshHandle::CIRCLE_2D),
+    ] {
+        let root = MeowMeowRunner::spawn_mms_module_component_uninitialized_with_assets(
+            &module,
+            factory,
+            vec![],
+            &mut world,
+            Some(&mut render_assets),
+            &mut emit,
+        )
+        .expect("2D primitive should spawn");
+        let renderable = world
+            .children_of(root)
+            .iter()
+            .find_map(|child| world.get_component_by_id_as::<RenderableComponent>(*child))
+            .expect("primitive should contain a renderable");
+        assert_eq!(
+            renderable.authored_shape,
+            Some(AuthoredRenderableShape::Builtin(shape))
+        );
+        assert_eq!(renderable.renderable.mesh, mesh);
+    }
+}
+
+#[test]
+fn multi_layer_bloom_gallery_materializes_all_renderable_primitive_families() {
+    use crate::engine::ecs::component::RenderableComponent;
+    use crate::engine::ecs::component::renderable::AuthoredRenderableShape;
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+    let mut render_assets = RenderAssets::new();
+    let (_session, output) = RuntimeSpecSession::start_at_path(
+        include_str!("../../examples/multi-layer-bloom.mms"),
+        "examples/multi-layer-bloom.mms",
+        &mut world,
+        &mut rx,
+        Some(&mut render_assets),
+        &mut emit,
+    )
+    .expect("renderable gallery should load");
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+
+    let mut shapes = std::collections::HashSet::new();
+    let mut renderable_count = 0;
+    for id in world.all_components() {
+        if let Some(renderable) = world.get_component_by_id_as::<RenderableComponent>(id) {
+            renderable_count += 1;
+            shapes.insert(format!("{:?}", renderable.authored_shape));
+        }
+    }
+    assert_eq!(renderable_count, 144);
+    // R.plane() intentionally aliases R.square(), so 18 authored constructor
+    // cases resolve to 17 distinct retained shape descriptions.
+    assert_eq!(shapes.len(), 17);
+    assert!(shapes.contains(&format!(
+        "{:?}",
+        Some(AuthoredRenderableShape::Builtin("annulus_2d"))
+    )));
+    assert!(shapes.contains(&format!(
+        "{:?}",
+        Some(AuthoredRenderableShape::Builtin("circle_2d"))
+    )));
+}
+
+#[test]
 fn voxel_terrain_cube_xz_boundaries_land_on_whole_local_units() {
     use std::collections::HashMap;
 
@@ -6287,6 +6367,9 @@ fn renderable_constructors_accept_omitted_default_args() {
 export fn procedural_defaults() {
     return T {
         R.cone() {}
+        R.annulus_2d() {}
+        R.circle_2d() {}
+        R.circle2d() {}
         R.icosahedron() {}
         R.heart() {}
         R.star() {}
@@ -6316,7 +6399,7 @@ export fn procedural_defaults() {
     .expect("spawn procedural defaults");
 
     assert!(world.get_component_record(root).is_some());
-    assert_eq!(world.children_of(root).len(), 9);
+    assert_eq!(world.children_of(root).len(), 12);
     use crate::engine::ecs::component::RenderableComponent;
     use crate::engine::ecs::component::renderable::AuthoredRenderableShape;
     let authored: Vec<_> = world
@@ -7002,6 +7085,23 @@ fn roundtrip_component<C: ComponentTrait + 'static>(original: C) -> (World, Comp
         crate::scripting::component_registry::spawn_tree_uninitialized(&mat, &mut world, &mut emit)
             .expect("spawn");
     (world, id)
+}
+
+#[test]
+fn roundtrip_annulus_and_filled_circle_keep_their_distinct_constructors() {
+    use crate::engine::ecs::component::RenderableComponent;
+    use crate::engine::graphics::primitives::CpuMeshHandle;
+
+    for (original, mesh) in [
+        (RenderableComponent::annulus_2d(), CpuMeshHandle::ANNULUS_2D),
+        (RenderableComponent::circle_2d(), CpuMeshHandle::CIRCLE_2D),
+    ] {
+        let (world, id) = roundtrip_component(original);
+        let renderable = world
+            .get_component_by_id_as::<RenderableComponent>(id)
+            .expect("round-tripped renderable");
+        assert_eq!(renderable.renderable.mesh, mesh);
+    }
 }
 
 #[test]
@@ -8487,8 +8587,8 @@ fn rei_mu_scene_authors_lighting_background_and_bow_rest_constraints() {
     use crate::engine::ecs::component::{
         AmbientLightComponent, AmplitudeComponent, AvatarControlComponent, BackgroundComponent,
         EditorComponent, GLTFComponent, GrabbableComponent, RenderableComponent,
-        ReturnToRestWhenStillComponent,
-        SliderComponent, SpotLightComponent, SpringBoneComponent, VolumeNormalizationComponent,
+        ReturnToRestWhenStillComponent, SliderComponent, SpotLightComponent, SpringBoneComponent,
+        VolumeNormalizationComponent,
     };
     let mut world = World::default();
     let mut rx = RxWorld::default();
@@ -8628,7 +8728,10 @@ fn rei_mu_scene_authors_lighting_background_and_bow_rest_constraints() {
         editor_renderables, 8,
         "only the eight pile boxes belong in ED"
     );
-    assert_eq!(editor_grabbables, 8, "all eight pile boxes should be grabbable");
+    assert_eq!(
+        editor_grabbables, 8,
+        "all eight pile boxes should be grabbable"
+    );
     let constraints: Vec<_> = world
         .all_components()
         .filter(|id| {

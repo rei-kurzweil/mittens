@@ -131,7 +131,7 @@ let right_grip_value = Text {
 
 let left_stick_dot = T.position(0.0, 0.0, 0.03) {
     T.scale(0.05, 0.05, 1.0) {
-        R.circle2d() {
+        R.annulus_2d() {
             C.rgba(0.18, 0.73, 1.0, 1.0)
             EM.on()
         }
@@ -140,7 +140,7 @@ let left_stick_dot = T.position(0.0, 0.0, 0.03) {
 
 let right_stick_dot = T.position(0.0, 0.0, 0.03) {
     T.scale(0.05, 0.05, 1.0) {
-        R.circle2d() {
+        R.annulus_2d() {
             C.rgba(1.0, 0.46, 0.26, 1.0)
             EM.on()
         }
@@ -269,12 +269,12 @@ T {
 
                 T.position(-0.44, -0.38, 0.05) {
                     T.scale(0.19, 0.19, 1.0) {
-                        R.circle2d() {
+                        R.annulus_2d() {
                             C.rgba(0.77, 0.82, 0.90, 1.0)
                         }
                     }
                     T.scale(0.15, 0.15, 1.0) {
-                        R.circle2d() {
+                        R.annulus_2d() {
                             C.rgba(0.16, 0.18, 0.24, 1.0)
                         }
                     }
@@ -286,12 +286,12 @@ T {
 
                 T.position(0.44, -0.38, 0.05) {
                     T.scale(0.19, 0.19, 1.0) {
-                        R.circle2d() {
+                        R.annulus_2d() {
                             C.rgba(0.77, 0.82, 0.90, 1.0)
                         }
                     }
                     T.scale(0.15, 0.15, 1.0) {
-                        R.circle2d() {
+                        R.annulus_2d() {
                             C.rgba(0.16, 0.18, 0.24, 1.0)
                         }
                     }

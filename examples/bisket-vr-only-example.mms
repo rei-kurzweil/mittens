@@ -193,12 +193,12 @@ BG.occlusion_and_lighting() {
     star_kawaii_background([1.0, 0.88, 0.42, 1.0])
 
     T.position(2.0, 1.5, -8.0).scale(3.5, 3.5, 3.5) {
-        R.circle2d() {
+        R.annulus_2d() {
             C.rgba(1.0, 0.85, 0.15, 1.0)
             EM.on()
         }
         T.position(-0.35, 0.35, -0.01).scale(0.45, 0.45, 0.45) {
-            R.circle2d() {
+            R.annulus_2d() {
                 C.rgba(1.0, 1.0, 1.0, 1.0)
                 EM.on()
             }

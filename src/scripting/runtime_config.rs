@@ -387,7 +387,9 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     no_arg_constructors(
                         component,
                         &[
+                            "annulus_2d",
                             "circle2d",
+                            "circle_2d",
                             "sphere",
                             "triangle",
                             "square",
@@ -1205,6 +1207,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                             "aabb",
                             "cone",
                             "ring_2d",
+                            "circle_2d",
                             "quad_2d",
                             "triangle_2d",
                             "tetrahedron",

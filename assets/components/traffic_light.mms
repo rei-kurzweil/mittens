@@ -10,7 +10,7 @@ fn signal_lens(x, color, signal_name) {
 
         // Emissive circular signal face.
         T.scale(0.38, 0.38, 1.0) {
-            R.circle2d(0.5, 64) {
+            R.circle_2d() {
                 C.rgba(color[0], color[1], color[2], 1.0)
                 EM.on() { intensity(2.0) }
             }

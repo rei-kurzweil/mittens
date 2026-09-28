@@ -161,7 +161,10 @@ pub fn mesh_local_aabb(mesh: CpuMeshHandle) -> Option<Aabb> {
             [0.0, 0.5, -0.5],
             [0.0, 0.0, 0.5],
         ]),
-        CpuMeshHandle::QUAD_2D | CpuMeshHandle::TRIANGLE_2D | CpuMeshHandle::CIRCLE_2D => {
+        CpuMeshHandle::QUAD_2D
+        | CpuMeshHandle::TRIANGLE_2D
+        | CpuMeshHandle::ANNULUS_2D
+        | CpuMeshHandle::CIRCLE_2D => {
             // 2D primitives are flat on z=0; thicken slightly so raycast / BVH
             // produce a non-degenerate AABB.
             Aabb::from_points(&[

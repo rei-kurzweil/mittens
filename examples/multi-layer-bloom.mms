@@ -1,4 +1,4 @@
-// Desktop fixture for the future multi-layer Bloom path.
+// Renderable primitive showcase and desktop fixture for multi-layer Bloom.
 //
 // It deliberately uses the existing one-layer Bloom configuration until
 // Bloom.layers(n) is implemented. The implementation task changes this to
@@ -34,7 +34,7 @@ fn palette_color(index) {
 
 fn glow_shape(shape_index, color, emissive_intensity) {
     // Emissive on this container is inherited by the contained renderable.
-    // The twelve cases mirror assets/components/primitives.mms exactly.
+    // The eighteen cases mirror assets/components/primitives.mms exactly.
     return T.scale(0.78, 0.78, 0.78) {
         Emissive.on() { intensity(emissive_intensity) }
 
@@ -51,14 +51,26 @@ fn glow_shape(shape_index, color, emissive_intensity) {
         } else if shape_index == 5 {
             R.wireframe_square(0.10) { C.rgba(color[0], color[1], color[2], color[3]) }
         } else if shape_index == 6 {
-            R.circle2d() { C.rgba(color[0], color[1], color[2], color[3]) }
+            R.annulus_2d() { C.rgba(color[0], color[1], color[2], color[3]) }
         } else if shape_index == 7 {
-            R.tetrahedron() { C.rgba(color[0], color[1], color[2], color[3]) }
+            R.circle_2d() { C.rgba(color[0], color[1], color[2], color[3]) }
         } else if shape_index == 8 {
-            R.icosahedron() { C.rgba(color[0], color[1], color[2], color[3]) }
+            R.cone() { C.rgba(color[0], color[1], color[2], color[3]) }
         } else if shape_index == 9 {
-            R.star() { C.rgba(color[0], color[1], color[2], color[3]) }
+            R.polygon("gallery/hexagon/v1", [[0.0, 0.5], [0.43, 0.25], [0.43, -0.25], [0.0, -0.5], [-0.43, -0.25], [-0.43, 0.25]]) { C.rgba(color[0], color[1], color[2], color[3]) }
         } else if shape_index == 10 {
+            R.wireframe_box() { C.rgba(color[0], color[1], color[2], color[3]) }
+        } else if shape_index == 11 {
+            R.wireframe_sphere() { C.rgba(color[0], color[1], color[2], color[3]) }
+        } else if shape_index == 12 {
+            R.wireframe_icosahedron() { C.rgba(color[0], color[1], color[2], color[3]) }
+        } else if shape_index == 13 {
+            R.tetrahedron() { C.rgba(color[0], color[1], color[2], color[3]) }
+        } else if shape_index == 14 {
+            R.icosahedron() { C.rgba(color[0], color[1], color[2], color[3]) }
+        } else if shape_index == 15 {
+            R.star() { C.rgba(color[0], color[1], color[2], color[3]) }
+        } else if shape_index == 16 {
             R.heart() { C.rgba(color[0], color[1], color[2], color[3]) }
         } else {
             R.partial_annulus_2d() { C.rgba(color[0], color[1], color[2], color[3]) }
@@ -77,7 +89,7 @@ fn glow_cell(row, column) {
             width(3.0)
             height(3.0)
         }
-        glow_shape(index % 12, color, emissive_intensity)
+        glow_shape(index % 18, color, emissive_intensity)
     }
 }
 

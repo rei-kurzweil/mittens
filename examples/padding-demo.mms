@@ -75,7 +75,7 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         padding(0.4)
                         margin(0.3)
                     }
-                    R.circle2d() { EM.on() icon_color }
+                    R.annulus_2d() { EM.on() icon_color }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -179,7 +179,7 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         text_align("center")
                         vertical_align("middle")
                     }
-                    R.circle2d() { EM.on() icon_color }
+                    R.annulus_2d() { EM.on() icon_color }
                 }
                 T.position(0, 0, 0.2) {
                     Style {
@@ -286,7 +286,7 @@ let panel = T.position(-3.0, 2.0, 0.0).scale(0.10, 0.10, 0.10) {
                         text_align("center")
                         vertical_align("middle")
                     }
-                    R.circle2d() { icon_color_2 }
+                    R.annulus_2d() { icon_color_2 }
                 }
                 T.position(0, 0, 0.2) {
                     Style {

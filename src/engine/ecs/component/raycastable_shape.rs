@@ -11,6 +11,9 @@ pub enum RaycastableShapeType {
     /// A 2D ring/annulus lying in the renderable's local XY plane.
     Ring2D,
 
+    /// A filled 2D circle lying in the renderable's local XY plane.
+    Circle2D,
+
     /// A 2D quad lying in the renderable's local XY plane.
     Quad2D,
 
@@ -63,6 +66,10 @@ impl RaycastableShapeComponent {
     pub fn ring_2d() -> Self {
         Self::new(RaycastableShapeType::Ring2D)
     }
+
+    pub fn circle_2d() -> Self {
+        Self::new(RaycastableShapeType::Circle2D)
+    }
 }
 
 impl Component for RaycastableShapeComponent {
@@ -87,6 +94,7 @@ impl Component for RaycastableShapeComponent {
             RaycastableShapeType::Aabb => "aabb",
             RaycastableShapeType::Cone => "cone",
             RaycastableShapeType::Ring2D => "ring_2d",
+            RaycastableShapeType::Circle2D => "circle_2d",
             RaycastableShapeType::Quad2D => "quad_2d",
             RaycastableShapeType::Triangle2D => "triangle_2d",
             RaycastableShapeType::Tetrahedron => "tetrahedron",

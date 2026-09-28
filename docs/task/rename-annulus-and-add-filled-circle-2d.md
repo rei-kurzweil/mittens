@@ -1,6 +1,8 @@
 # Task tracker: name the annulus, then add a filled circle
 
-Status: planned. Parent: [VR rhythm game prototype](epic/vr-rhythm-game-prototype.md).
+Status: renderable refactor implemented; visual inspection of the updated
+showcase and rhythm cue integration remain pending.
+Parent: [VR rhythm game prototype](epic/vr-rhythm-game-prototype.md).
 
 ## Why
 
@@ -11,10 +13,10 @@ outer annulus and a same-color filled disk that grows from the center until
 it visually joins the annulus. Keep `R.partial_annulus_2d(...)` for authored
 arcs; it is a separate constructor with a different purpose.
 
-The user's proposed public names use underscores: `R.annulus_2d()` for the
-existing ring and `R.circle_2d()` for the new filled disk. The current public
-spelling is `R.circle2d()` (no underscore). There is no existing
-`R.circle_2d()` MMS constructor to reinterpret.
+The public names are `R.annulus_2d()` for the existing ring and
+`R.circle_2d()` for the new filled disk. The former `R.circle2d()` spelling
+remains a legacy parsing alias for the annulus; in-repo scenes and serialized
+output use `R.annulus_2d()`.
 
 ## Phase 1 — rename the existing ring
 
@@ -65,9 +67,8 @@ small to its intended radius over the beat before judgment. Keep the two
 surfaces separated just enough in depth to avoid coplanar flicker, without a
 visible color or position gap at the due beat.
 
-The existing `R.partial_annulus_2d(0.0, 0.5, 0.0, 6.283185, 64)` can make a
-temporary disk while phase 2 is pending. It is not the desired final spelling
-for every filled circle in a course.
+The earlier `R.partial_annulus_2d(0.0, 0.5, 0.0, 6.283185, 64)` disk workaround
+is no longer needed for a full circle.
 
 ## Acceptance
 

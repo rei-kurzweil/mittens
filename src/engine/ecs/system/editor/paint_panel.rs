@@ -316,7 +316,7 @@ mod tests {
             .and_then(|(_, rest)| rest.split_once("export fn erase_icon()"))
             .map(|(body, _)| body)
             .expect("color icon factory before erase icon");
-        assert_eq!(color_icon.matches("R.circle2d()").count(), 3);
+        assert_eq!(color_icon.matches("R.circle_2d()").count(), 3);
         for primary in [
             "C.rgba(1.0, 0.12, 0.12, 0.90)",
             "C.rgba(0.12, 0.95, 0.20, 0.90)",

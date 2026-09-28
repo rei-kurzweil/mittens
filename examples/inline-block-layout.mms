@@ -9,7 +9,7 @@
 //   LayoutRoot (block)
 //     row1 T  + Style (default block — stacks under row0)
 //       icon1 T  + Style{display:inline-block, w, h, margin-right}
-//         R.circle2d
+//         R.annulus_2d
 //       text1 T  + Style{display:inline-block, w, h}
 //         Text { "..." }
 //     row2 T (triangle)
@@ -50,7 +50,7 @@ T.position(-1.6, 1.8, 0.0).scale(0.12, 0.12, 0.12) {
                     height(2.0)
                     margin_right(0.5)
                 }
-                R.circle2d() {
+                R.annulus_2d() {
                     C.rgba(0.95, 0.45, 0.25, 1.0)
                 }
             }

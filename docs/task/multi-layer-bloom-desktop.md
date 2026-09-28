@@ -84,7 +84,7 @@ RenderGraph {
 
 Use [`examples/multi-layer-bloom.mms`](../../examples/multi-layer-bloom.mms):
 
-- It is a black-background `LayoutRoot` 12 x 12 grid, repeating all twelve
+- It is a black-background `LayoutRoot` 12 x 12 grid, repeating all eighteen
   shapes from `assets/components/primitives.mms`.
 - Every shape is emissive at `1.5..=2.5`, with saturated but non-primary
   colours.

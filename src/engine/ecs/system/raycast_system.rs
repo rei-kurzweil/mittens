@@ -206,7 +206,8 @@ impl RayCastSystem {
             CpuMeshHandle::TRIANGLE_2D => RaycastableShapeType::Triangle2D,
             CpuMeshHandle::TETRAHEDRON => RaycastableShapeType::Tetrahedron,
             CpuMeshHandle::CONE => RaycastableShapeType::Cone,
-            CpuMeshHandle::CIRCLE_2D => RaycastableShapeType::Ring2D,
+            CpuMeshHandle::ANNULUS_2D => RaycastableShapeType::Ring2D,
+            CpuMeshHandle::CIRCLE_2D => RaycastableShapeType::Circle2D,
             _ => RaycastableShapeType::Aabb,
         }
     }
@@ -373,10 +374,14 @@ impl RayCastSystem {
                 best_triangle_hit_world_t(model, origin, dir, o_local, d_local, &tris[..])
             }
 
-            RaycastableShapeType::Ring2D => {
-                // Builtin ring mesh is generated as an annulus in the local XY plane.
-                // `RenderAssets` uses MeshFactory::circle_2d(0.45, 0.5, ...).
-                let mut r_in = 0.45_f32;
+            RaycastableShapeType::Ring2D | RaycastableShapeType::Circle2D => {
+                // Both built-ins lie in the local XY plane. The annulus has a
+                // center hole; the filled circle does not.
+                let mut r_in = if shape == RaycastableShapeType::Ring2D {
+                    0.45
+                } else {
+                    0.0
+                };
                 let mut r_out = 0.5_f32;
 
                 // Picking tolerance: slightly widen the clickable band.
@@ -734,7 +739,10 @@ impl RayCastSystem {
                 ],
                 0.0,
             ),
-            CpuMeshHandle::QUAD_2D | CpuMeshHandle::TRIANGLE_2D | CpuMeshHandle::CIRCLE_2D => {
+            CpuMeshHandle::QUAD_2D
+            | CpuMeshHandle::TRIANGLE_2D
+            | CpuMeshHandle::ANNULUS_2D
+            | CpuMeshHandle::CIRCLE_2D => {
                 // Flat meshes live in XY plane. Give them a tiny thickness so AABB tests work.
                 (
                     vec![
@@ -925,6 +933,7 @@ impl RayCastSystem {
 #[cfg(test)]
 mod tests {
     use super::RayCastSystem;
+    use crate::engine::ecs::component::RaycastableShapeType;
     use crate::engine::ecs::component::{
         CameraXRComponent, PointerComponent, RaycastableComponent, RenderableComponent,
         TransformComponent,
@@ -933,7 +942,20 @@ mod tests {
     use crate::engine::ecs::system::pointer_system::{PointerActivations, PointerSystem};
     use crate::engine::ecs::{RxWorld, World};
     use crate::engine::graphics::VisualWorld;
+    use crate::engine::graphics::primitives::CpuMeshHandle;
     use crate::engine::user_input::InputState;
+
+    #[test]
+    fn inferred_2d_pick_shapes_distinguish_annulus_from_filled_circle() {
+        assert_eq!(
+            RayCastSystem::infer_shape_from_base_mesh(CpuMeshHandle::ANNULUS_2D),
+            RaycastableShapeType::Ring2D
+        );
+        assert_eq!(
+            RayCastSystem::infer_shape_from_base_mesh(CpuMeshHandle::CIRCLE_2D),
+            RaycastableShapeType::Circle2D
+        );
+    }
 
     fn add_raycastable_cube(world: &mut World, z: f32) -> crate::engine::ecs::ComponentId {
         let mut transform = TransformComponent::new().with_position(0.0, 0.0, z);

@@ -18,7 +18,7 @@ let voice_level = Amplitude.rolling_window(0.080).highpass(120.0).highpass_reson
 let mouth_tuning = { center_rms = 0.0475 range_rms = 0.085 amount = 1.0 }
 let mouth_panel_target = { avatar = null }
 
-BGC.rgba(0.15, 0.15, 0.15, 1.0)
+BGC.rgba(0.12, 0.12, 0.12, 1.0)
 AL.rgb(0.24, 0.23, 0.25)
 // The eye animation is authored in seconds and runs at two beats per second.
 Clock.bpm(120.0)
@@ -94,7 +94,7 @@ fn lit_stage(stage_name, left_light_name, right_light_name, light_target) {
 }
 
 BG.occlusion_and_lighting() {
-    star_kawaii_background([1.0, 0.75, 0.15, 1.0])
+    star_kawaii_background([1.0, 0.68, 0.1, 1.0])
 }
 
 lit_stage(

@@ -249,7 +249,8 @@ impl CpuMeshHandle {
 
     // Appended built-ins (keep stable and in sync with RenderAssets registration order).
     pub const CONE: CpuMeshHandle = CpuMeshHandle(5);
-    pub const CIRCLE_2D: CpuMeshHandle = CpuMeshHandle(6);
+    pub const ANNULUS_2D: CpuMeshHandle = CpuMeshHandle(6);
+    pub const CIRCLE_2D: CpuMeshHandle = CpuMeshHandle(7);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -64,7 +64,7 @@ authored and animated now; mark them unscored until foot tracking is available.
 
 - [ ] [Stage choreography contract for every venue](../rhythm-game-stage-choreography.md)
 - [ ] [Course start, beat timing, and zone judging](../rhythm-game-course-timing-and-judging.md)
-- [ ] [Rename the annulus and add a filled circle renderable](../rename-annulus-and-add-filled-circle-2d.md)
+- [x] [Rename the annulus and add a filled circle renderable](../rename-annulus-and-add-filled-circle-2d.md)
 - [ ] [Minimal example and delivery slices](../rhythm-game-prototype-slices.md)
 
 ## Proof-of-concept exit

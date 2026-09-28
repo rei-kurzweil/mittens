@@ -36,16 +36,12 @@ the preview beat and reaches the outline at the due beat. A target's placement
 and its `Zone.sphere(...)` should derive from the same authored cue. A target
 may be simultaneous with others; hit results are per role and per cue.
 
-The current `R.circle2d()` built-in is an annulus (its mesh uses inner radius
-0.45 and outer radius 0.5), so it supplies the outline. The planned
-[renderable naming task](rename-annulus-and-add-filled-circle-2d.md) renames
-that constructor to `R.annulus_2d()` before adding a true filled
-`R.circle_2d()`. Until both phases land, the existing
-`R.partial_annulus_2d(0.0, 0.5, 0.0, 6.283185, 64)` mesh path supplies a
-filled disk: a zero inner radius and full-turn sweep collapse its inner ring
-to the center. A prototype circle factory can give both surfaces the same
-color and expand the disk from the center until its edge reaches the annulus.
-Keep the disk slightly in front if coplanar depth causes flicker.
+Use `R.annulus_2d()` for the outline (inner radius 0.45, outer radius 0.5)
+and the filled `R.circle_2d()` for the inner shape. The
+[renderable naming task](rename-annulus-and-add-filled-circle-2d.md) supplied
+both constructors. A prototype circle factory can give both surfaces the
+same color and expand the disk from the center until its edge reaches the
+annulus. Keep the disk slightly in front if coplanar depth causes flicker.
 
 Author `left_foot` and `right_foot` squares from the start, using box-shaped
 zones and the same one-beat fill rule, but set `scored = false` in the first

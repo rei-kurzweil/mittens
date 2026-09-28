@@ -282,10 +282,18 @@ impl RenderableComponent {
         Self::tetrahedron()
     }
 
-    /// Predefined renderable: 2D circle (shared built-in mesh handle).
-    pub fn circle2d() -> Self {
+    /// Predefined renderable: 2D annulus (shared built-in mesh handle).
+    pub fn annulus_2d() -> Self {
+        let mut s =
+            Self::from_cpu_mesh_handle(CpuMeshHandle::ANNULUS_2D, MaterialHandle::TOON_MESH);
+        s.authored_shape = Some(AuthoredRenderableShape::Builtin("annulus_2d"));
+        s
+    }
+
+    /// Predefined renderable: filled 2D circle (shared built-in mesh handle).
+    pub fn circle_2d() -> Self {
         let mut s = Self::from_cpu_mesh_handle(CpuMeshHandle::CIRCLE_2D, MaterialHandle::TOON_MESH);
-        s.authored_shape = Some(AuthoredRenderableShape::Builtin("circle2d"));
+        s.authored_shape = Some(AuthoredRenderableShape::Builtin("circle_2d"));
         s
     }
 

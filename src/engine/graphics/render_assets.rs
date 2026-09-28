@@ -13,6 +13,7 @@ pub enum BuiltinMeshType {
     Tetrahedron,
     Sphere,
     Cone,
+    Annulus2D,
     Circle2D,
 }
 
@@ -74,6 +75,7 @@ impl RenderAssets {
         // Appended to preserve existing numeric ids.
         let _ = self.ensure_builtin_mesh(BuiltinMeshType::Sphere);
         let _ = self.ensure_builtin_mesh(BuiltinMeshType::Cone);
+        let _ = self.ensure_builtin_mesh(BuiltinMeshType::Annulus2D);
         let _ = self.ensure_builtin_mesh(BuiltinMeshType::Circle2D);
     }
 
@@ -89,7 +91,8 @@ impl RenderAssets {
             BuiltinMeshType::Tetrahedron => MeshFactory::tetrahedron(),
             BuiltinMeshType::Sphere => MeshFactory::sphere(),
             BuiltinMeshType::Cone => MeshFactory::cone(32),
-            BuiltinMeshType::Circle2D => MeshFactory::circle_2d(0.45, 0.5, 64),
+            BuiltinMeshType::Annulus2D => MeshFactory::annulus_2d(0.45, 0.5, 64),
+            BuiltinMeshType::Circle2D => MeshFactory::circle_2d(0.5, 64),
         };
 
         let h = self.register_mesh(cpu_mesh);
@@ -265,7 +268,8 @@ impl RenderAssets {
 
 #[cfg(test)]
 mod tests {
-    use super::RenderAssets;
+    use super::{BuiltinMeshType, RenderAssets};
+    use crate::engine::graphics::primitives::CpuMeshHandle;
 
     const CHEVRON: &[[f32; 2]] = &[
         [-0.5, 0.25],
@@ -275,6 +279,35 @@ mod tests {
         [0.0, 0.05],
         [-0.35, 0.4],
     ];
+
+    #[test]
+    fn renamed_annulus_keeps_its_handle_and_circle_appends_a_new_mesh() {
+        let mut assets = RenderAssets::new();
+        assert_eq!(
+            assets.get_mesh(BuiltinMeshType::Annulus2D),
+            CpuMeshHandle::ANNULUS_2D
+        );
+        assert_eq!(
+            assets.get_mesh(BuiltinMeshType::Circle2D),
+            CpuMeshHandle::CIRCLE_2D
+        );
+        assert_eq!(
+            assets
+                .cpu_mesh(CpuMeshHandle::ANNULUS_2D)
+                .unwrap()
+                .vertices
+                .len(),
+            128
+        );
+        assert_eq!(
+            assets
+                .cpu_mesh(CpuMeshHandle::CIRCLE_2D)
+                .unwrap()
+                .vertices
+                .len(),
+            65
+        );
+    }
 
     #[test]
     fn named_polygons_use_first_registration_as_authoritative_identity() {

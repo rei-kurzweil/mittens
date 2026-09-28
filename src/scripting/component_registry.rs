@@ -1742,7 +1742,10 @@ fn create_component(
                     )),
                 )
             }),
-            Some("circle2d") => add!(RenderableComponent::circle2d()),
+            // Legacy saved scenes used circle2d for this annulus. Serialization
+            // always writes the canonical annulus_2d constructor.
+            Some("annulus_2d" | "circle2d") => add!(RenderableComponent::annulus_2d()),
+            Some("circle_2d") => add!(RenderableComponent::circle_2d()),
             Some("cone") => {
                 if args.is_empty() {
                     add!(RenderableComponent::cone())
@@ -2508,6 +2511,7 @@ fn create_component(
                 Some("aabb") => RaycastableShapeType::Aabb,
                 Some("cone") => RaycastableShapeType::Cone,
                 Some("ring_2d") => RaycastableShapeType::Ring2D,
+                Some("circle_2d") => RaycastableShapeType::Circle2D,
                 Some("quad_2d") => RaycastableShapeType::Quad2D,
                 Some("triangle_2d") => RaycastableShapeType::Triangle2D,
                 Some("tetrahedron") => RaycastableShapeType::Tetrahedron,

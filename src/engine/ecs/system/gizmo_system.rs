@@ -1823,7 +1823,7 @@ impl TransformGizmoSystem {
         let magenta = [1.0, 0.15, 1.0, 1.0];
 
         // Rotation rings (thin annulus) for X/Y/Z axes.
-        let ring_mesh = CpuMeshHandle::CIRCLE_2D;
+        let ring_mesh = CpuMeshHandle::ANNULUS_2D;
         let ring_scale = [1.4, 1.4, 1.0];
 
         // Rotation rings live under per-axis rotate handle components.

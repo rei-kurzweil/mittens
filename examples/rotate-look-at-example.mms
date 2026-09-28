@@ -66,7 +66,7 @@ fn cone_looking_back(x, y, z, previous_translation, cone_radius, cone_length) {
 }
 
 let moon = T.position(3.9, 7.8, -10.0).scale(2.0, 2.0, 1.0).rotation(0.0, 0.0, 0.25) {
-    R.circle2d(0.5, 64) {
+    R.circle_2d() {
         C.rgba(0.96, 0.77, 0.61, 1.0)
         EM.on() {
             intensity(1.6)

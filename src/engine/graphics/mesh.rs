@@ -1242,7 +1242,7 @@ impl MeshFactory {
     /// 2D ring/annulus in the XY plane (normal +Z).
     ///
     /// `inner_radius` and `outer_radius` are in object-space units.
-    pub fn circle_2d(inner_radius: f32, outer_radius: f32, number_of_segments: u32) -> CpuMesh {
+    pub fn annulus_2d(inner_radius: f32, outer_radius: f32, number_of_segments: u32) -> CpuMesh {
         let segs = number_of_segments.max(3);
         let inner = inner_radius.max(0.0);
         let outer = outer_radius.max(inner + 1.0e-6);
@@ -1294,6 +1294,34 @@ impl MeshFactory {
         CpuMesh::new(vertices, indices)
     }
 
+    /// Filled 2D circle in the XY plane (normal +Z), triangulated from one
+    /// center vertex so no zero-area inner-ring triangles are needed.
+    pub fn circle_2d(radius: f32, number_of_segments: u32) -> CpuMesh {
+        let segs = number_of_segments.max(3);
+        let radius = radius.max(1.0e-6);
+        let normal = [0.0_f32, 0.0, 1.0];
+        let mut vertices = Vec::with_capacity(segs as usize + 1);
+        let mut indices = Vec::with_capacity(segs as usize * 3);
+        vertices.push(CpuVertex {
+            pos: [0.0, 0.0, 0.0],
+            uv: [0.5, 0.5],
+            normal,
+        });
+        for i in 0..segs {
+            let angle = i as f32 / segs as f32 * std::f32::consts::TAU;
+            let (sin, cos) = angle.sin_cos();
+            vertices.push(CpuVertex {
+                pos: [cos * radius, sin * radius, 0.0],
+                uv: [0.5 + cos * 0.5, 0.5 - sin * 0.5],
+                normal,
+            });
+        }
+        for i in 0..segs {
+            indices.extend_from_slice(&[0, i + 1, (i + 1) % segs + 1]);
+        }
+        CpuMesh::new(vertices, indices)
+    }
+
     /// 2D partial ring/annulus in the XY plane (normal +Z).
     ///
     /// `start_angle_radians` is the arc start angle in standard polar coordinates.
@@ -1314,7 +1342,7 @@ impl MeshFactory {
         }
 
         if sweep >= std::f32::consts::TAU - 1.0e-6 {
-            return Self::circle_2d(inner_radius, outer_radius, number_of_segments);
+            return Self::annulus_2d(inner_radius, outer_radius, number_of_segments);
         }
 
         let segs = number_of_segments.max(1);
@@ -1455,6 +1483,31 @@ mod tests {
 
     fn radius3(point: [f32; 3]) -> f32 {
         (point[0] * point[0] + point[1] * point[1] + point[2] * point[2]).sqrt()
+    }
+
+    #[test]
+    fn filled_circle_has_a_non_degenerate_center_fan() {
+        let mesh = MeshFactory::circle_2d(0.5, 64);
+        assert_eq!(mesh.vertices.len(), 65);
+        assert_eq!(mesh.indices_u32.len(), 64 * 3);
+        assert_eq!(mesh.vertices[0].pos, [0.0, 0.0, 0.0]);
+        assert_eq!(mesh.vertices[0].uv, [0.5, 0.5]);
+        for triangle in mesh.indices_u32.chunks_exact(3) {
+            assert_eq!(triangle[0], 0);
+            let a = mesh.vertices[triangle[1] as usize].pos;
+            let b = mesh.vertices[triangle[2] as usize].pos;
+            assert!(a[0] * b[1] - a[1] * b[0] > 0.0);
+        }
+        for vertex in &mesh.vertices {
+            assert_eq!(vertex.normal, [0.0, 0.0, 1.0]);
+            assert!(radius2(vertex.pos) <= 0.500_001);
+            assert!(
+                vertex
+                    .uv
+                    .into_iter()
+                    .all(|coordinate| (0.0..=1.0).contains(&coordinate))
+            );
+        }
     }
 
     #[test]

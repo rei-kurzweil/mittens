@@ -31,7 +31,7 @@ let moon = T.position(4.2, 10.9, -8.8).scale(1.8, 1.8, 1.0).rotation(0.0, 0.0, 0
         ease_in_out_sine()
         replace_same_target()
     }
-    R.circle2d(0.5, 64) {
+    R.circle_2d() {
         C.rgba(0.7, 0.9, 1.0, 1.0)
         EM.on() {
             intensity(1.8)

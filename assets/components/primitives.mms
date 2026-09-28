@@ -47,9 +47,45 @@ export fn wireframe_square() {
     })
 }
 
-export fn circle2d() {
-    return primitive_shell("primitive_circle2d", R.circle2d() {
+export fn annulus_2d() {
+    return primitive_shell("primitive_annulus_2d", R.annulus_2d() {
         C.rgba(0.96, 0.56, 0.72, 1.0)
+    })
+}
+
+export fn circle_2d() {
+    return primitive_shell("primitive_circle_2d", R.circle_2d() {
+        C.rgba(0.96, 0.56, 0.72, 1.0)
+    })
+}
+
+export fn cone() {
+    return primitive_shell("primitive_cone", R.cone() {
+        C.rgba(0.98, 0.70, 0.34, 1.0)
+    })
+}
+
+export fn polygon() {
+    return primitive_shell("primitive_polygon", R.polygon("primitives/hexagon/v1", [[0.0, 0.5], [0.43, 0.25], [0.43, -0.25], [0.0, -0.5], [-0.43, -0.25], [-0.43, 0.25]]) {
+        C.rgba(0.58, 0.88, 0.52, 1.0)
+    })
+}
+
+export fn wireframe_box() {
+    return primitive_shell("primitive_wireframe_box", R.wireframe_box() {
+        C.rgba(0.38, 0.78, 0.92, 1.0)
+    })
+}
+
+export fn wireframe_sphere() {
+    return primitive_shell("primitive_wireframe_sphere", R.wireframe_sphere() {
+        C.rgba(0.62, 0.72, 0.98, 1.0)
+    })
+}
+
+export fn wireframe_icosahedron() {
+    return primitive_shell("primitive_wireframe_icosahedron", R.wireframe_icosahedron() {
+        C.rgba(0.76, 0.62, 0.96, 1.0)
     })
 }
 
