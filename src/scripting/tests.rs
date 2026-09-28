@@ -56,6 +56,106 @@ fn repo_path(rel: &str) -> PathBuf {
 }
 
 #[test]
+fn rhythm_game_asset_factories_build_configured_strip_and_paused_markers() {
+    use crate::engine::ecs::component::{
+        AnimationComponent, AnimationState, ColorComponent, CombineMeshComponent, EmissiveComponent,
+    };
+
+    let source = r#"
+        import { light_strip } from "../../assets/components/rhythm_game/light_strip.mms"
+        import { circle_pose_marker } from "../../assets/components/rhythm_game/circle_pose_marker.mms"
+        import { square_pose_marker } from "../../assets/components/rhythm_game/square_pose_marker.mms"
+        let strip = light_strip({ light_count = 3, spacing = 0.1, light_height = 0.04,
+            light_color = [0.3, 0.7, 1.0, 1.0], intensity = 3.0 })
+        strip
+        let circle = circle_pose_marker({ color = [0.9, 0.2, 0.4, 1.0], intensity = 2.5 })
+        circle
+        let square = square_pose_marker()
+        square
+    "#;
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut emit = CommandQueue::new();
+    let mut assets = RenderAssets::new();
+    let (_session, out) = RuntimeSpecSession::start_at_path(
+        source,
+        "examples/rhythm_game/asset_factory_smoke.mms",
+        &mut world,
+        &mut rx,
+        Some(&mut assets),
+        &mut emit,
+    )
+    .expect("asset smoke scene should start");
+    assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
+
+    let strip = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("light_strip"))
+        .expect("strip root");
+    let lights = world
+        .find_component(strip, "#light_strip_lights")
+        .expect("combined lights");
+    assert!(
+        world
+            .get_component_by_id_as::<CombineMeshComponent>(lights)
+            .is_some()
+    );
+    assert_eq!(world.find_all_components(lights, "Renderable").len(), 3);
+    let base = world
+        .find_component(strip, "#light_strip_base")
+        .expect("base plane");
+    let base_transform = world
+        .get_component_by_id_as::<TransformComponent>(base)
+        .expect("base transform");
+    assert!((base_transform.scale()[0] - 1.10).abs() < 1e-5);
+
+    for (root_name, animation_name) in [
+        ("circle_pose_marker", "circle_pose_marker_fill_animation"),
+        ("square_pose_marker", "square_pose_marker_fill_animation"),
+    ] {
+        let root = world
+            .all_components()
+            .find(|&id| world.component_label(id) == Some(root_name))
+            .expect("marker root");
+        let animation = world
+            .find_component(root, &format!("#{animation_name}"))
+            .expect("queryable marker animation");
+        let animation = world
+            .get_component_by_id_as::<AnimationComponent>(animation)
+            .expect("animation component");
+        assert_eq!(animation.state, AnimationState::Paused);
+        assert_eq!(animation.length_beats, Some(1.0));
+    }
+
+    let circle = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("circle_pose_marker"))
+        .expect("circle marker");
+    let colors = world.find_all_components(circle, "Color");
+    assert_eq!(colors.len(), 2);
+    for color in colors {
+        assert_eq!(
+            world
+                .get_component_by_id_as::<ColorComponent>(color)
+                .unwrap()
+                .rgba,
+            [0.9, 0.2, 0.4, 1.0]
+        );
+    }
+    let glows = world.find_all_components(circle, "Emissive");
+    assert_eq!(glows.len(), 2);
+    for glow in glows {
+        assert_eq!(
+            world
+                .get_component_by_id_as::<EmissiveComponent>(glow)
+                .unwrap()
+                .intensity,
+            2.5
+        );
+    }
+}
+
+#[test]
 fn constructive_solid_geometry_example_is_valid_mms_syntax() {
     let source = fs::read_to_string(repo_path("examples/constructive-solid-geometry.mms"))
         .expect("read CSG example");

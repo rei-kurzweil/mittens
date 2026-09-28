@@ -4,14 +4,17 @@ use std::hash::{Hash, Hasher};
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
-    CombineMeshComponent, RenderableComponent, TransformGizmoComponent,
+    ColorComponent, CombineMeshComponent, EmissiveComponent, RenderableComponent,
+    TransformGizmoComponent,
 };
 use crate::engine::ecs::system::{
     MeshBoundsSystem, MeshOutputKind, RenderableSystem, TransformSystem,
 };
 use crate::engine::graphics::bounds::Aabb;
 use crate::engine::graphics::mesh::CpuMesh;
-use crate::engine::graphics::primitives::{GpuRenderable, InstanceHandle, Transform};
+use crate::engine::graphics::primitives::{
+    GpuRenderable, InstanceHandle, MaterialHandle, Transform,
+};
 use crate::engine::graphics::{MeshUploader, RenderAssets, VisualWorld};
 use crate::utils::math::{mat4_inverse, mat4_mul, mat4_mul_vec4, vec3_normalize};
 
@@ -148,6 +151,12 @@ impl CombineMeshSystem {
                 root_model,
                 MeshOutputKind::CombineMesh,
             );
+            let (color, emissive) = first_source_appearance(world, sources[0]);
+            let material = match (material, emissive > 0.0) {
+                (MaterialHandle::TOON_MESH, true) => MaterialHandle::EMISSIVE_TOON_MESH,
+                (MaterialHandle::EMISSIVE_TOON_MESH, false) => MaterialHandle::TOON_MESH,
+                _ => material,
+            };
             let handle = visuals.register(
                 root,
                 GpuRenderable::new(gpu_mesh, material),
@@ -156,14 +165,14 @@ impl CombineMeshSystem {
                     matrix_world: root_model,
                     ..Default::default()
                 },
-                [1.0; 4],
+                color,
                 1.0,
                 false,
                 false,
                 false,
                 false,
                 false,
-                0.0,
+                emissive,
                 None,
                 3.0,
             );
@@ -209,6 +218,23 @@ impl CombineMeshSystem {
         }
         out
     }
+}
+
+// CombineMesh has one output instance, so its first source supplies the shared
+// per-instance appearance as well as the material. The strip factory authors
+// the same color and emissive strength on every light cube.
+fn first_source_appearance(world: &World, source: ComponentId) -> ([f32; 4], f32) {
+    let mut color = [1.0; 4];
+    let mut emissive = 0.0;
+    for &child in world.children_of(source) {
+        if let Some(value) = world.get_component_by_id_as::<ColorComponent>(child) {
+            color = value.rgba;
+        }
+        if let Some(value) = world.get_component_by_id_as::<EmissiveComponent>(child) {
+            emissive = value.intensity.max(0.0);
+        }
+    }
+    (color, emissive)
 }
 
 fn bake(
@@ -283,9 +309,22 @@ fn fingerprint(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::ecs::component::TransformComponent;
-    use crate::engine::graphics::MaterialHandle;
-    use crate::engine::graphics::primitives::CpuMeshHandle;
+    use crate::engine::ecs::component::{ColorComponent, EmissiveComponent, TransformComponent};
+    use crate::engine::graphics::primitives::{CpuMeshHandle, MeshHandle};
+
+    #[derive(Default)]
+    struct TestUploader(u32);
+
+    impl MeshUploader for TestUploader {
+        fn upload_mesh(
+            &mut self,
+            _mesh: &CpuMesh,
+        ) -> Result<MeshHandle, Box<dyn std::error::Error>> {
+            let handle = MeshHandle(self.0);
+            self.0 += 1;
+            Ok(handle)
+        }
+    }
 
     #[test]
     fn bakes_descendants_and_uses_first_material() {
@@ -322,6 +361,67 @@ mod tests {
         assert_eq!(
             mesh.vertices.len(),
             assets.cpu_mesh(CpuMeshHandle::CUBE).unwrap().vertices.len() * 2
+        );
+    }
+
+    #[test]
+    fn combined_output_reads_first_sources_shared_color_and_emission() {
+        let mut world = World::default();
+        let first = world.add_component(RenderableComponent::cube());
+        let second = world.add_component(RenderableComponent::cube());
+        let color = world.add_component(ColorComponent::rgba(0.3, 0.7, 1.0, 1.0));
+        let emissive = world.add_component(EmissiveComponent::new(3.0));
+        world.add_child(first, color).unwrap();
+        world.add_child(first, emissive).unwrap();
+        let other_color = world.add_component(ColorComponent::rgba(1.0, 0.0, 0.0, 1.0));
+        world.add_child(second, other_color).unwrap();
+
+        assert_eq!(
+            first_source_appearance(&world, first),
+            ([0.3, 0.7, 1.0, 1.0], 3.0)
+        );
+        assert_eq!(
+            first_source_appearance(&world, second),
+            ([1.0, 0.0, 0.0, 1.0], 0.0)
+        );
+    }
+
+    #[test]
+    fn combined_visual_keeps_first_sources_color_and_emission() {
+        let mut world = World::default();
+        let scene = world.add_component(TransformComponent::new());
+        let combine = world.add_component(CombineMeshComponent::default());
+        world.add_child(scene, combine).unwrap();
+        let first = world.add_component(RenderableComponent::cube());
+        let second = world.add_component(RenderableComponent::cube());
+        world.add_child(combine, first).unwrap();
+        world.add_child(combine, second).unwrap();
+        let color = world.add_component(ColorComponent::rgba(0.3, 0.7, 1.0, 1.0));
+        let glow = world.add_component(EmissiveComponent::new(3.0));
+        world.add_child(first, color).unwrap();
+        world.add_child(first, glow).unwrap();
+
+        let mut visuals = VisualWorld::default();
+        let mut assets = RenderAssets::new();
+        let mut uploader = TestUploader::default();
+        let mut renderables = RenderableSystem::default();
+        let mut bounds = MeshBoundsSystem::default();
+        CombineMeshSystem::default().reconcile_and_build(
+            &mut world,
+            &mut visuals,
+            &mut assets,
+            &mut uploader,
+            &mut renderables,
+            &mut bounds,
+        );
+
+        let instance = visuals.instances().first().expect("combined visual");
+        assert_eq!(visuals.instances().len(), 1);
+        assert_eq!(instance.color, [0.3, 0.7, 1.0, 1.0]);
+        assert_eq!(instance.emissive, 3.0);
+        assert_eq!(
+            instance.renderable.material,
+            MaterialHandle::EMISSIVE_TOON_MESH
         );
     }
 }
