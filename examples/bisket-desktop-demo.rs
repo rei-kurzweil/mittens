@@ -1,4 +1,4 @@
-use mittens_engine::{engine, engine::ecs::SignalEmitter, scripting, utils};
+use mittens_engine::{engine, utils};
 
 fn main() {
     mittens_engine::example_support::ensure_model_assets();
@@ -7,35 +7,12 @@ fn main() {
     let world = engine::ecs::World::default();
     let mut universe = engine::Universe::new(world);
 
-    let output = scripting::MeowMeowRunner::eval_with_world_and_assets_at_path(
-        include_str!("bisket-desktop-demo.mms"),
-        Some("examples/bisket-desktop-demo.mms"),
-        &mut universe.world,
-        &mut universe.systems.rx,
-        Some(&mut universe.render_assets),
-        &mut universe.command_queue,
-    );
-
-    for error in &output.errors {
-        eprintln!("[mms] {error}");
-    }
-    assert!(
-        output.errors.is_empty(),
-        "MMS evaluation produced errors: {:?}",
-        output.errors,
-    );
-
-    let scope = engine::ecs::ComponentId::default();
-    for intent in output.intents {
-        universe.command_queue.push_intent_now(scope, intent);
-    }
-
-    universe.systems.process_commands(
-        &mut universe.world,
-        &mut universe.visuals,
-        &mut universe.render_assets,
-        &mut universe.command_queue,
-    );
+    universe
+        .load_mms_source_at_path(
+            include_str!("bisket-desktop-demo.mms"),
+            "examples/bisket-desktop-demo.mms",
+        )
+        .unwrap_or_else(|error| panic!("MMS evaluation failed: {error}"));
 
     engine::Windowing::run_app(universe).expect("Windowing failed");
 }
