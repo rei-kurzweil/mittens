@@ -1,3 +1,7 @@
+import { vroid_arm_ik_defaults } from "../assets/components/arm_ik/vroid.mms"
+
+let arm_ik = vroid_arm_ik_defaults()
+
 // mittens-corp-agc-desktop — desktop microphone AGC tuning with Bisket.
 //
 // Run with:
@@ -407,6 +411,10 @@ let bisket = GLTF.new("assets/models/bisket.glb") {
 }
 
 let avatar = AVC {
+
+    left_two_bone_ik(arm_ik.left)
+
+    right_two_bone_ik(arm_ik.right)
     name = "agc_desktop_avatar_control"
     mouth_open_from_amplitude(voice_level)
     // The performer-facing centre/range form is equivalent to the legacy

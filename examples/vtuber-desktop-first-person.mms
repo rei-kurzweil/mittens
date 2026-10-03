@@ -1,3 +1,7 @@
+import { vroid_arm_ik_defaults } from "../assets/components/arm_ik/vroid.mms"
+
+let arm_ik = vroid_arm_ik_defaults()
+
 // vtuber-desktop-first-person scene
 //
 // Demonstrates a 1st-person desktop controller where the camera is driven
@@ -47,6 +51,8 @@ ED {
         }
         T {
             AVC {
+                left_two_bone_ik(arm_ik.left)
+                right_two_bone_ik(arm_ik.right)
                 forward_plus_z()
                 initial_yaw(0.0)
 

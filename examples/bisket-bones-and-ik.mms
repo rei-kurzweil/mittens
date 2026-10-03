@@ -1,3 +1,7 @@
+import { vroid_arm_ik_defaults } from "../assets/components/arm_ik/vroid.mms"
+
+let arm_ik = vroid_arm_ik_defaults()
+
 // bisket-bones-and-ik scene
 //
 // Loads assets/models/bisket.glb wrapped in I { AVC { ... } } so the body
@@ -80,6 +84,8 @@ ED {
         }
         T {
             AVC {
+                left_two_bone_ik(arm_ik.left)
+                right_two_bone_ik(arm_ik.right)
                 initial_yaw(0.0)
                 body_yaw_threshold(3.14 / 7.5)
 

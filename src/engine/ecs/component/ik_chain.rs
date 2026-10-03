@@ -109,6 +109,9 @@ pub struct IKChainComponent {
     /// Blend weight: 0.0 = no IK applied, 1.0 = full solve.
     pub weight: f32,
 
+    /// Body-local bend-normal exclusion ranges for this two-bone chain.
+    pub forbidden_bend_normal_z_degrees: Vec<[f32; 2]>,
+
     /// Authored form of `target_id` for round-trip dump. `None` for
     /// IKChains wired purely at runtime (e.g. by `AvatarControlSystem`),
     /// which have no MMS source to preserve.
@@ -144,6 +147,7 @@ impl IKChainComponent {
             target_id,
             end_effector_id,
             weight: 1.0,
+            forbidden_bend_normal_z_degrees: Vec::new(),
             target_source: None,
             end_effector_source: None,
             avc_id: None,

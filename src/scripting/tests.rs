@@ -10506,7 +10506,7 @@ fn roundtrip_raycast() {
 
 #[test]
 fn roundtrip_avatar_control() {
-    use crate::engine::ecs::component::{AvatarControlComponent, ComponentRef};
+    use crate::engine::ecs::component::{ArmTwoBoneIkConfig, AvatarControlComponent, ComponentRef};
     let original = AvatarControlComponent::new()
         .with_forward_plus_z()
         .with_hand_rotation_smoothing(220.0)
@@ -10522,9 +10522,17 @@ fn roundtrip_avatar_control() {
         .unwrap()
         .with_mouth_open_smoothing(12.0)
         .unwrap()
-        .with_left_arm_forbidden_bend_normal_z_degrees([-178.0, -115.0])
-        .with_left_arm_forbidden_bend_normal_z_degrees([20.0, 40.0])
-        .with_right_arm_forbidden_bend_normal_z_degrees([115.0, 178.0])
+        .with_left_two_bone_ik(ArmTwoBoneIkConfig {
+            pole_direction: [1.0, -1.5, 1.0],
+            copy_end_rotation: false,
+            weight: 0.25,
+            forbidden_bend_normal_z_degrees: vec![[-178.0, -115.0], [20.0, 40.0]],
+            ..ArmTwoBoneIkConfig::left_default()
+        })
+        .with_right_two_bone_ik(ArmTwoBoneIkConfig {
+            forbidden_bend_normal_z_degrees: vec![[115.0, 178.0]],
+            ..ArmTwoBoneIkConfig::right_default()
+        })
         .with_collision_disabled();
     let (world, id) = roundtrip_component(original);
     let got = world
@@ -10537,11 +10545,23 @@ fn roundtrip_avatar_control() {
     assert!(!got.neck_pin_enabled);
     assert!(!got.collision_enabled);
     assert_eq!(
-        got.left_arm_forbidden_bend_normal_z_degrees,
+        got.left_two_bone_ik.as_ref().unwrap().pole_direction,
+        [1.0, -1.5, 1.0]
+    );
+    assert!(!got.left_two_bone_ik.as_ref().unwrap().copy_end_rotation);
+    assert_eq!(got.left_two_bone_ik.as_ref().unwrap().weight, 0.25);
+    assert_eq!(
+        got.left_two_bone_ik
+            .as_ref()
+            .unwrap()
+            .forbidden_bend_normal_z_degrees,
         vec![[-178.0, -115.0], [20.0, 40.0]]
     );
     assert_eq!(
-        got.right_arm_forbidden_bend_normal_z_degrees,
+        got.right_two_bone_ik
+            .as_ref()
+            .unwrap()
+            .forbidden_bend_normal_z_degrees,
         vec![[115.0, 178.0]]
     );
     assert_eq!(
@@ -10555,13 +10575,13 @@ fn roundtrip_avatar_control() {
 }
 
 #[test]
-fn runtime_avatar_control_accepts_multiple_forbidden_bend_ranges() {
+fn runtime_avatar_control_accepts_two_bone_ik_table() {
     use crate::engine::ecs::component::AvatarControlComponent;
     let mut world = World::default();
     let mut rx = RxWorld::default();
     let mut commands = CommandQueue::new();
     let (_session, _intents) = RuntimeSpecSession::start(
-        "AVC { left_arm_forbidden_bend_normal_z_degrees(-178, -115) left_arm_forbidden_bend_normal_z_degrees(20, 40) }",
+        "AVC { left_two_bone_ik({ forbidden_bend_normal_z_degrees = [[-178, -115], [20, 40]] weight = 0.5 copy_end_rotation = false }) }",
         &mut world,
         &mut rx,
         None,
@@ -10573,10 +10593,86 @@ fn runtime_avatar_control_accepts_multiple_forbidden_bend_ranges() {
         .find_map(|id| world.get_component_by_id_as::<AvatarControlComponent>(id))
         .expect("AVC component");
     assert_eq!(
-        control.left_arm_forbidden_bend_normal_z_degrees,
+        control
+            .left_two_bone_ik
+            .as_ref()
+            .unwrap()
+            .forbidden_bend_normal_z_degrees,
         vec![[-178.0, -115.0], [20.0, 40.0]]
     );
-    assert!(control.right_arm_forbidden_bend_normal_z_degrees.is_empty());
+    assert!(control.right_two_bone_ik.is_none());
+    assert_eq!(control.left_two_bone_ik.as_ref().unwrap().weight, 0.5);
+    assert!(!control.left_two_bone_ik.as_ref().unwrap().copy_end_rotation);
+}
+
+#[test]
+fn vroid_arm_ik_factory_configures_avc_and_inspection_ranges() {
+    use crate::engine::ecs::component::AvatarControlComponent;
+    let source = r#"
+        import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
+        let arm_ik = vroid_arm_ik(-1.5, 1)
+        arm_ik.left.forbidden_bend_normal_z_degrees = [[-178, -115], [-100, -60]]
+        AVC {
+            left_two_bone_ik(arm_ik.left)
+            right_two_bone_ik(arm_ik.right)
+        }
+    "#;
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut commands = CommandQueue::new();
+    let (_session, out) = RuntimeSpecSession::start_at_path(
+        source,
+        "examples/arm_ik_factory_smoke.mms",
+        &mut world,
+        &mut rx,
+        None,
+        &mut commands,
+    )
+    .expect("VRoid arm IK factory should load");
+    assert!(out.errors.is_empty(), "{:?}", out.errors);
+    let control = world
+        .all_components()
+        .find_map(|id| world.get_component_by_id_as::<AvatarControlComponent>(id))
+        .expect("AVC component");
+    let left = control.left_two_bone_ik.as_ref().unwrap();
+    let right = control.right_two_bone_ik.as_ref().unwrap();
+    assert_eq!(left.pole_direction, [1.0, -1.5, 1.0]);
+    assert_eq!(right.pole_direction, [-1.0, -1.5, 1.0]);
+    assert_eq!(
+        left.forbidden_bend_normal_z_degrees,
+        vec![[-178.0, -115.0], [-100.0, -60.0]]
+    );
+    assert!(right.forbidden_bend_normal_z_degrees.is_empty());
+}
+
+#[test]
+fn migrated_humanoid_avc_examples_parse() {
+    let mut count = 0;
+    for entry in std::fs::read_dir(repo_path("examples")).expect("examples directory") {
+        let path = entry.expect("example entry").path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("mms") {
+            continue;
+        }
+        // The inspection harness preprocesses its scene template in Rust.
+        if path.file_name().and_then(|name| name.to_str()) == Some("ik-rest-pose-vr.mms") {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).expect("read MMS example");
+        if !source.contains("arm_ik/vroid.mms") {
+            continue;
+        }
+        let tokens = MeowMeowTokenizer::new(&source)
+            .tokenize()
+            .unwrap_or_else(|err| panic!("{}: {err:?}", path.display()));
+        MeowMeowParser::new(tokens)
+            .parse_program()
+            .unwrap_or_else(|err| panic!("{}: {err:?}", path.display()));
+        count += 1;
+    }
+    assert_eq!(
+        count, 29,
+        "expected the non-template humanoid GLTF/AVC MMS examples"
+    );
 }
 
 #[test]

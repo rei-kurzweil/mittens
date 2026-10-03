@@ -1,3 +1,7 @@
+import { vroid_arm_ik_defaults } from "../assets/components/arm_ik/vroid.mms"
+
+let arm_ik = vroid_arm_ik_defaults()
+
 import { star_kawaii_background } from "../assets/components/backgrounds/star_kawaii_background.mms"
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
 import { bisket_secondary_motion } from "../assets/components/secondary_motion/bisket.mms"
@@ -126,6 +130,8 @@ ED.active() {
         T.position(0.0, 1.6, 1.0) {
             name = "avatar_head_driver"
             AVC {
+                left_two_bone_ik(arm_ik.left)
+                right_two_bone_ik(arm_ik.right)
                 initial_yaw(3.14159)
                 T { avatar_gltf }
             }

@@ -1049,8 +1049,8 @@ fn try_init_splices(
     emit: &mut dyn SignalEmitter,
 ) {
     let (
-        left_arm_pole_direction,
-        right_arm_pole_direction,
+        left_two_bone_ik,
+        right_two_bone_ik,
         body_yaw_threshold,
         body_yaw_rate,
         authored_forward_plus_z,
@@ -1067,8 +1067,12 @@ fn try_init_splices(
             return;
         };
         (
-            c.left_arm_pole_direction,
-            c.right_arm_pole_direction,
+            c.left_two_bone_ik
+                .clone()
+                .unwrap_or_else(crate::engine::ecs::component::ArmTwoBoneIkConfig::left_default),
+            c.right_two_bone_ik
+                .clone()
+                .unwrap_or_else(crate::engine::ecs::component::ArmTwoBoneIkConfig::right_default),
             c.body_yaw_threshold,
             c.body_yaw_rate,
             c.forward_plus_z,
@@ -1433,9 +1437,9 @@ fn try_init_splices(
     // `ArmIkBinding`; there is no name lookup, topology inference, or synthetic
     // origin target in this construction path.
     // -----------------------------------------------------------------------
-    for (hand_opt, pole_dir, side_label) in [
-        (left, left_arm_pole_direction, "left"),
-        (right, right_arm_pole_direction, "right"),
+    for (hand_opt, ik_config, side_label) in [
+        (left, left_two_bone_ik, "left"),
+        (right, right_two_bone_ik, "right"),
     ] {
         let Some(((binding, raw_driver, hand_driver), _)) = hand_opt else {
             continue;
@@ -1479,12 +1483,14 @@ fn try_init_splices(
             IKSolver::TwoBoneIK {
                 root_joint_id: upper_arm,
                 mid_joint_id: lower_arm,
-                pole_direction: pole_dir,
-                copy_end_rotation: true,
+                pole_direction: ik_config.pole_direction,
+                copy_end_rotation: ik_config.copy_end_rotation,
             },
             hand_driver,
             hand_bone,
         );
+        chain.weight = ik_config.weight;
+        chain.forbidden_bend_normal_z_degrees = ik_config.forbidden_bend_normal_z_degrees;
         chain.xr_pose_driver = find_xr_pose_driver(world, hand_driver);
         let chain_id = world.add_component(chain);
         let chain_serialize_id = world.add_component(SerializeComponent::off());

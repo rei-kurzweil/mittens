@@ -1,3 +1,7 @@
+import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
+
+let arm_ik = vroid_arm_ik(-0.35, 1)
+
 import { star_kawaii_background } from "../assets/components/backgrounds/star_kawaii_background.mms"
 import { voxel_terrain } from "../assets/components/floors/voxel_terrain.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
@@ -234,9 +238,8 @@ ED {
                 // as anatomical body-space directions. Bias slightly downward
                 // as well as outward so elbows drop when the hands pull back
                 // toward the chest instead of lifting upward.
-                left_arm_pole_direction([  1, -0.35, 1])
-                right_arm_pole_direction([-1, -0.35, 1])
-
+                left_two_bone_ik(arm_ik.left)
+                right_two_bone_ik(arm_ik.right)
                 hand_rotation_smoothing(220.0)
                 // Trial: yaw inward 90 degrees, then apply the opposite
                 // mirrored pitch branch in the post-yaw local frame.

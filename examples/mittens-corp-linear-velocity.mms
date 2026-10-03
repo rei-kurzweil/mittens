@@ -1,3 +1,7 @@
+import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
+
+let arm_ik = vroid_arm_ik(-0.35, 1)
+
 // XR-only button-driven linear Velocity test. Forward/back change the outer
 // grounding root's world velocity using the active XR eye's horizontal heading.
 // No gravity or floor contact is present yet.
@@ -87,8 +91,8 @@ let xr_input = InputXR.on() {
             mouth_open_smoothing(16.0)
             voice_level
             initial_yaw(3.14159)
-            left_arm_pole_direction([1, -0.35, 1])
-            right_arm_pole_direction([-1, -0.35, 1])
+            left_two_bone_ik(arm_ik.left)
+            right_two_bone_ik(arm_ik.right)
             hand_rotation_smoothing(220.0)
             T { bisket_avatar }
             T.position(0.0, 0.08, 0.12) {

@@ -239,7 +239,7 @@ pub use audio_mix::AudioMixComponent;
 pub use audio_oscillator::{AudioOscillator, AudioOscillatorComponent, OscillatorType};
 pub use audio_output::AudioOutputComponent;
 pub use avatar_body_yaw::AvatarBodyYawComponent;
-pub use avatar_control::{AvatarControlComponent, HeadMotionGazePolicy};
+pub use avatar_control::{ArmTwoBoneIkConfig, AvatarControlComponent, HeadMotionGazePolicy};
 pub use background::BackgroundComponent;
 pub use background_color::BackgroundColorComponent;
 pub use bloom::BloomComponent;

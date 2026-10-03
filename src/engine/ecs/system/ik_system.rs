@@ -538,21 +538,17 @@ fn solve_two_bone(
         };
         vec3_normalize(vec3_cross(to_target, fallback))
     };
-    let plane_normal = match (avc_id, model_rotation) {
-        (Some(avc_id), Some(model_rotation)) => {
-            let avc = world
-                .get_component_by_id_as::<AvatarControlComponent>(avc_id)
-                .expect("resolved AVC");
-            let ranges: &[[f32; 2]] = if avc.left_hand_bone_id == Some(end_tc) {
-                &avc.left_arm_forbidden_bend_normal_z_degrees
-            } else if avc.right_hand_bone_id == Some(end_tc) {
-                &avc.right_arm_forbidden_bend_normal_z_degrees
-            } else {
-                &[]
-            };
-            let previous = world
+    let plane_normal = match model_rotation {
+        Some(model_rotation) => {
+            let (ranges, previous) = world
                 .get_component_by_id_as::<IKChainComponent>(ik_chain_id)
-                .and_then(|chain| chain.last_solved_plane_normal_world);
+                .map(|chain| {
+                    (
+                        chain.forbidden_bend_normal_z_degrees.as_slice(),
+                        chain.last_solved_plane_normal_world,
+                    )
+                })
+                .unwrap_or((&[], None));
             constrain_bend_normal(
                 raw_plane_normal,
                 reach_dir,
@@ -561,7 +557,7 @@ fn solve_two_bone(
                 previous,
             )
         }
-        _ => raw_plane_normal,
+        None => raw_plane_normal,
     };
     if let Some(chain) = world.get_component_by_id_as_mut::<IKChainComponent>(ik_chain_id) {
         chain.last_solved_plane_normal_world = Some(plane_normal);

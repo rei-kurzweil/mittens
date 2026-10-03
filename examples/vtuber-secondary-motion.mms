@@ -1,3 +1,7 @@
+import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
+
+let arm_ik = vroid_arm_ik(-0.35, 1)
+
 // XR-only secondary-motion prototype. Spring metadata is attached by the Rust loader.
 // Move and turn your head/body in front of the mirror: hair, bust, tail, and
 // shirt-hem chains should sag visibly under gravity, lag behind the primary
@@ -53,8 +57,8 @@ ED {
                     voice_level
 
                     initial_yaw(3.14159)
-                    left_arm_pole_direction([1, -0.35, 1])
-                    right_arm_pole_direction([-1, -0.35, 1])
+                    left_two_bone_ik(arm_ik.left)
+                    right_two_bone_ik(arm_ik.right)
                     hand_rotation_smoothing(220.0)
 
                     T {

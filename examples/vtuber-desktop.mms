@@ -1,3 +1,7 @@
+import { vroid_arm_ik_defaults } from "../assets/components/arm_ik/vroid.mms"
+
+let arm_ik = vroid_arm_ik_defaults()
+
 // vtuber-desktop scene
 // Corresponds to examples/vtuber-desktop.rs
 //
@@ -171,6 +175,8 @@ ED {
         T.rotation(0.0, 3.14159, 0.0) {
         //T.rotation(0.0, 3.14159, 0.0) {
             AVC {
+                left_two_bone_ik(arm_ik.left)
+                right_two_bone_ik(arm_ik.right)
                 body_yaw_threshold(3.14 / 7.5)
                 initial_yaw(0)
                 // ik_debug()

@@ -1081,6 +1081,22 @@ Carries avatar control state used when that engine feature is present in a compo
 AvatarControl {}
 ```
 
+Arm IK settings are passed as one table per arm:
+
+```mms
+AVC {
+    left_two_bone_ik({
+        pole_direction = [1.0, -0.35, 1.0]
+        copy_end_rotation = true
+        weight = 1.0
+        forbidden_bend_normal_z_degrees = [[-178.0, -115.0], [-100.0, -60.0]]
+    })
+    right_two_bone_ik({ pole_direction = [-1.0, -0.35, 1.0] })
+}
+```
+
+All fields are optional. Pole directions are body-local; bend-normal ranges are degrees around body-local +Z. An empty range list means no exclusions. The shared VRoid example factory is in [`assets/components/arm_ik/vroid.mms`](../../../assets/components/arm_ik/vroid.mms).
+
 ### `BoneRestPoseComponent`
 <!-- catalog:component source="BoneRestPoseComponent" mms="engine-only" names="" -->
 Stores an imported bone rest pose used by skinning and pose systems. Use it when a tree needs this state or behavior. glTF, animation, avatar, IK, or pose systems; lifecycle intents and `GltfInitialized` are relevant.

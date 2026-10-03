@@ -11,13 +11,13 @@ use crate::engine::ecs::component::style::VerticalAlign;
 /// recurses into children.
 use crate::engine::ecs::component::{
     AlignItems, AmbientLightComponent, AmplitudeComponent, AnimationComponent, AnimationState,
-    AnimeShadingComponent, AudioBandPassFilterComponent, AudioClipComponent, AudioGainComponent,
-    AudioInputComponent, AudioLimiterComponent, AudioOscillator, AudioOscillatorComponent,
-    AudioOutputComponent, AudioTriggerMode, AvatarBodyYawComponent, AvatarControlComponent,
-    BackgroundColorComponent, BackgroundComponent, BloomComponent, BlurPassComponent,
-    BoundsComponent, BoxSizing, Camera2DComponent, Camera3DComponent, CameraXRComponent,
-    ClockComponent, CollisionComponent, CollisionResponseComponent, CollisionShape,
-    CollisionShapeComponent, ColorComponent, CombineMeshComponent, ControllerHand,
+    AnimeShadingComponent, ArmTwoBoneIkConfig, AudioBandPassFilterComponent, AudioClipComponent,
+    AudioGainComponent, AudioInputComponent, AudioLimiterComponent, AudioOscillator,
+    AudioOscillatorComponent, AudioOutputComponent, AudioTriggerMode, AvatarBodyYawComponent,
+    AvatarControlComponent, BackgroundColorComponent, BackgroundComponent, BloomComponent,
+    BlurPassComponent, BoundsComponent, BoxSizing, Camera2DComponent, Camera3DComponent,
+    CameraXRComponent, ClockComponent, CollisionComponent, CollisionResponseComponent,
+    CollisionShape, CollisionShapeComponent, ColorComponent, CombineMeshComponent, ControllerHand,
     ControllerPoseKind, DataComponent, DataValue, DirectionalLightComponent, Display,
     DragContinuationPolicy, DragMappingPolicy, DraggableComponent, DraggablePlane, EdgeInsets,
     EditorComponent, EditorInteractionMode, EditorPanel, EditorUIComponent, EditorUIPanelConfig,
@@ -1363,6 +1363,68 @@ fn arg_str(args: &[Value], i: usize) -> Result<&str, String> {
 }
 fn arg_f32_arr<const N: usize>(args: &[Value], i: usize) -> Result<[f32; N], String> {
     val_as_f32_array(arg(args, i)?)
+}
+
+fn parse_arm_two_bone_ik(value: &Value, side: &str) -> Result<ArmTwoBoneIkConfig, String> {
+    let fields = match value {
+        Value::Map(fields) => fields.clone(),
+        Value::Object(object) => object
+            .with_map(Clone::clone)
+            .ok_or_else(|| format!("{side}_two_bone_ik expects a table"))?,
+        _ => return Err(format!("{side}_two_bone_ik expects a table")),
+    };
+    let mut config = if side == "left" {
+        ArmTwoBoneIkConfig::left_default()
+    } else {
+        ArmTwoBoneIkConfig::right_default()
+    };
+    for (key, value) in fields {
+        let invalid = |reason: &str| format!("{side}_two_bone_ik.{key}: {reason}");
+        match key.as_str() {
+            "pole_direction" => {
+                let pole = val_as_f32_array::<3>(&value).map_err(|e| invalid(&e))?;
+                if !pole.iter().all(|n| n.is_finite())
+                    || pole.iter().map(|n| n * n).sum::<f32>() <= 1e-12
+                {
+                    return Err(invalid("expected a finite, nonzero three-number direction"));
+                }
+                config.pole_direction = pole;
+            }
+            "copy_end_rotation" => {
+                config.copy_end_rotation = val_as_bool(&value).map_err(|e| invalid(&e))?;
+            }
+            "weight" => {
+                let weight = val_as_f32(&value).map_err(|e| invalid(&e))?;
+                if !weight.is_finite() || !(0.0..=1.0).contains(&weight) {
+                    return Err(invalid("expected a finite number in [0, 1]"));
+                }
+                config.weight = weight;
+            }
+            "forbidden_bend_normal_z_degrees" => {
+                let Value::Array(ranges) = value else {
+                    return Err(invalid("expected an array of [start, end] degree pairs"));
+                };
+                let mut parsed = Vec::with_capacity(ranges.len());
+                for range in &ranges {
+                    let mut pair = val_as_f32_array::<2>(range).map_err(|e| invalid(&e))?;
+                    if !pair
+                        .iter()
+                        .all(|n| n.is_finite() && (-180.0..=180.0).contains(n))
+                        || pair[0] == pair[1]
+                    {
+                        return Err(invalid("expected distinct finite endpoints in [-180, 180]"));
+                    }
+                    if pair[0] > pair[1] {
+                        pair.swap(0, 1);
+                    }
+                    parsed.push(pair);
+                }
+                config.forbidden_bend_normal_z_degrees = parsed;
+            }
+            _ => return Err(invalid("unknown field")),
+        }
+    }
+    Ok(config)
 }
 fn validate_rotation_limits(
     values: [f32; 4],
@@ -4070,42 +4132,22 @@ fn apply_call(
     }
     if let Some(avc) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
         match method {
-            "left_arm_pole_direction" => {
-                *avc = avc
-                    .clone()
-                    .with_left_arm_pole_direction(arg_f32_arr::<3>(args, 0)?)
-            }
-            "right_arm_pole_direction" => {
-                *avc = avc
-                    .clone()
-                    .with_right_arm_pole_direction(arg_f32_arr::<3>(args, 0)?)
-            }
-            "left_arm_forbidden_bend_normal_z_degrees"
-            | "right_arm_forbidden_bend_normal_z_degrees" => {
-                let mut start = arg_f32(args, 0)?;
-                let mut end = arg_f32(args, 1)?;
-                if !start.is_finite()
-                    || !end.is_finite()
-                    || !(-180.0..=180.0).contains(&start)
-                    || !(-180.0..=180.0).contains(&end)
-                    || start == end
-                {
-                    return Err(format!(
-                        "{method}: expected two distinct finite angles in [-180, 180] degrees"
-                    ));
-                }
-                if start > end {
-                    std::mem::swap(&mut start, &mut end);
-                }
-                if method.starts_with("left") {
-                    *avc = avc
-                        .clone()
-                        .with_left_arm_forbidden_bend_normal_z_degrees([start, end]);
+            "left_two_bone_ik" | "right_two_bone_ik" => {
+                let side = if method.starts_with("left") {
+                    "left"
                 } else {
-                    *avc = avc
-                        .clone()
-                        .with_right_arm_forbidden_bend_normal_z_degrees([start, end]);
+                    "right"
+                };
+                let config = parse_arm_two_bone_ik(arg(args, 0)?, side)?;
+                let slot = if side == "left" {
+                    &mut avc.left_two_bone_ik
+                } else {
+                    &mut avc.right_two_bone_ik
+                };
+                if slot.is_some() {
+                    return Err(format!("{side}_two_bone_ik may only be set once per AVC"));
                 }
+                *slot = Some(config);
             }
             "initial_yaw" => *avc = avc.clone().with_initial_yaw(arg_f32(args, 0)?),
             "forward_plus_z" => *avc = avc.clone().with_forward_plus_z(),

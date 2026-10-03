@@ -1,3 +1,7 @@
+import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
+
+let arm_ik = vroid_arm_ik(-0.35, 1)
+
 // vtuber-mirror-example scene
 //
 // XR-first temple scene for mirror/render-view validation.
@@ -183,9 +187,8 @@ ED {
 
                 // Match bisket-vr-demo: body-local elbow hints that bias the
                 // bend downward and slightly outward from the torso.
-                left_arm_pole_direction([  1, -0.35, 1])
-                right_arm_pole_direction([-1, -0.35, 1])
-
+                left_two_bone_ik(arm_ik.left)
+                right_two_bone_ik(arm_ik.right)
                 hand_rotation_smoothing(220.0)
                 T {
                     GLTF.new("assets/models/bisket.glb") {

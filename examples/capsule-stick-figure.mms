@@ -1,3 +1,7 @@
+import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
+
+let arm_ik = vroid_arm_ik(-0.35, 1)
+
 // Capsule stick figure pose-retargeting laboratory (XR only).
 //
 // Run with an XR runtime:
@@ -146,8 +150,8 @@ ED.active() {
                         mouth_open_smoothing(16.0)
                         voice_level
                         initial_yaw(3.14159)
-                        left_arm_pole_direction([1, -0.35, 1])
-                        right_arm_pole_direction([-1, -0.35, 1])
+                        left_two_bone_ik(arm_ik.left)
+                        right_two_bone_ik(arm_ik.right)
                         hand_rotation_smoothing(220.0)
 
                         T { bisket_avatar }

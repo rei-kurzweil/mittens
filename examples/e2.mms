@@ -1,3 +1,7 @@
+import { vroid_arm_ik_defaults } from "../assets/components/arm_ik/vroid.mms"
+
+let arm_ik = vroid_arm_ik_defaults()
+
 // e2 — desktop still life: first-person Bisket, a mirror, estradiol tablet,
 // an intentionally simple cube room, and a reusable implicit-cloud sky.
 //
@@ -185,6 +189,8 @@ ED.active() {
         T.position(0.0, 1.6, 2.6) {
             name = "e2_avatar_head_driver"
             AVC {
+                left_two_bone_ik(arm_ik.left)
+                right_two_bone_ik(arm_ik.right)
                 initial_yaw(3.14159)
                 T { avatar_gltf }
             }

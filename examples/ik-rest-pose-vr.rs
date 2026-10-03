@@ -805,10 +805,21 @@ fn main() {
             .get_component_by_id_as::<AvatarControlComponent>(avc)
             .expect("avatar control component");
         assert_eq!(
-            control.left_arm_forbidden_bend_normal_z_degrees,
+            control
+                .left_two_bone_ik
+                .as_ref()
+                .unwrap()
+                .forbidden_bend_normal_z_degrees,
             vec![[-178.0, -115.0], [-100.0, -60.0]]
         );
-        assert!(control.right_arm_forbidden_bend_normal_z_degrees.is_empty());
+        assert!(
+            control
+                .right_two_bone_ik
+                .as_ref()
+                .unwrap()
+                .forbidden_bend_normal_z_degrees
+                .is_empty()
+        );
         for hand in [ControllerHand::Left, ControllerHand::Right] {
             let controller = universe
                 .world

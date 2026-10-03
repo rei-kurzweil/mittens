@@ -1,3 +1,7 @@
+import { vroid_arm_ik_defaults } from "../assets/components/arm_ik/vroid.mms"
+
+let arm_ik = vroid_arm_ik_defaults()
+
 // bisket-vr-debug scene
 //
 // Headless verification scene for the head-driven AVC redesign.
@@ -51,6 +55,8 @@ ED {
     T.position(1.2, 0.0, 0.0) {
         T.position(0.0, 1.55, 0.0) {
             AVC {
+                left_two_bone_ik(arm_ik.left)
+                right_two_bone_ik(arm_ik.right)
                 initial_yaw(3.14159)
                 T {
                     GLTF.new("assets/models/bisket.glb") {

@@ -1,6 +1,6 @@
 # Refactor: consolidate AVC arm IK builders into per-arm preset tables
 
-Status: task draft; no runtime changes are implemented. The proposed table API is described in [AVC two-bone IK preset tables](avc-two-bone-ik-preset-tables.md).
+Status: implemented. The table API is described in [AVC two-bone IK preset tables](avc-two-bone-ik-preset-tables.md). Live VR behavior still needs a headset check.
 
 ## Goal
 
@@ -17,12 +17,13 @@ The four existing arm IK methods map as follows:
 
 The table also exposes `copy_end_rotation` and `weight`, which the generated AVC chain currently hard-codes to `true` and `1.0` respectively. Keep `hand_rotation_smoothing`, `head_ik_eye_height`, and `ik_debug` on AVC: they control tracked-target filtering, head IK, and diagnostics rather than a per-arm two-bone solve.
 
-## Intended MMS
+## MMS usage
 
 ```mms
-import { inspection_arm_ik } from "../assets/components/ik/inspection.mms"
+import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
 
-let arm_ik = inspection_arm_ik()
+let arm_ik = vroid_arm_ik(-1.5, 1.0)
+arm_ik.left.forbidden_bend_normal_z_degrees = [[-178.0, -115.0], [-100.0, -60.0]]
 AVC {
     left_two_bone_ik(arm_ik.left)
     right_two_bone_ik(arm_ik.right)
@@ -30,19 +31,13 @@ AVC {
 }
 ```
 
-The factory returns data, with no component creation or runtime ID references:
+The shared factory returns data, with no component creation or runtime ID references:
 
 ```mms
-export fn inspection_arm_ik() {
+export fn vroid_arm_ik(pole_y, pole_z) {
     return {
-        left = {
-            pole_direction = [1.0, -1.5, 1.0]
-            forbidden_bend_normal_z_degrees = [
-                [-178.0, -115.0],
-                [-100.0, -60.0]
-            ]
-        }
-        right = { pole_direction = [-1.0, -1.5, 1.0] }
+        left = { pole_direction = [1.0, pole_y, pole_z] }
+        right = { pole_direction = [-1.0, pole_y, pole_z] }
     }
 }
 ```

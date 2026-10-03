@@ -1,15 +1,15 @@
 # Task: pass two-bone IK preset tables to AVC
 
-Status: design proposal. The `left_two_bone_ik` and `right_two_bone_ik` methods below do not exist yet. This proposal supersedes the child-component design originally drafted in this file.
+Status: implemented. `left_two_bone_ik` and `right_two_bone_ik` accept the per-arm tables described here. This supersedes the child-component design originally drafted in this file. Live VR behavior still needs a headset check.
 
 ## Decision
 
 Add `left_two_bone_ik(config)` and `right_two_bone_ik(config)` builder methods to `AVC`. Each accepts an MMS table of settings for the arm chain AVC already creates. An imported MMS factory can return the table. No additional ECS component is needed for this use case.
 
 ```mms
-import { reimu_arm_ik } from "../assets/components/ik/reimu.mms"
+import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
 
-let arm_ik = reimu_arm_ik()
+let arm_ik = vroid_arm_ik(-0.35, 1.0)
 AVC {
     left_two_bone_ik(arm_ik.left)
     right_two_bone_ik(arm_ik.right)
@@ -17,7 +17,7 @@ AVC {
 }
 ```
 
-The preset module returns plain data:
+A future model-specific preset could return plain data:
 
 ```mms
 export fn reimu_arm_ik() {

@@ -1,3 +1,7 @@
+import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
+
+let arm_ik = vroid_arm_ik(-0.35, -1)
+
 // VTuber eye-tracking mirror
 //
 // A minimal XR avatar scene for validating AVC automatic eye-bone tracking.
@@ -113,8 +117,8 @@ ED {
 
                     // OpenXR's rest-forward is -Z.
                     initial_yaw(3.14159)
-                    left_arm_pole_direction([1, -0.35, -1])
-                    right_arm_pole_direction([-1, -0.35, -1])
+                    left_two_bone_ik(arm_ik.left)
+                    right_two_bone_ik(arm_ik.right)
                     hand_rotation_smoothing(220.0)
                     // head_motion_gaze_policy("freeze")
 

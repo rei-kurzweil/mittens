@@ -19,6 +19,34 @@ impl HeadMotionGazePolicy {
     }
 }
 
+/// Settings applied to one AVC-generated two-bone arm chain.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArmTwoBoneIkConfig {
+    pub pole_direction: [f32; 3],
+    pub copy_end_rotation: bool,
+    pub weight: f32,
+    pub forbidden_bend_normal_z_degrees: Vec<[f32; 2]>,
+}
+
+impl ArmTwoBoneIkConfig {
+    pub fn left_default() -> Self {
+        Self::with_pole([-1.0, 0.0, -1.0])
+    }
+
+    pub fn right_default() -> Self {
+        Self::with_pole([1.0, 0.0, -1.0])
+    }
+
+    pub fn with_pole(pole_direction: [f32; 3]) -> Self {
+        Self {
+            pole_direction,
+            copy_end_rotation: true,
+            weight: 1.0,
+            forbidden_bend_normal_z_degrees: Vec::new(),
+        }
+    }
+}
+
 /// Coordinates all pose drivers for a humanoid avatar.
 ///
 /// **Design rule**: every transform driver that moves this avatar's bones must be a
@@ -84,23 +112,9 @@ pub struct AvatarControlComponent {
     /// Authored character-controller radius, capped to half the measured height.
     pub capsule_radius: f32,
 
-    /// Body-local pole hint for the left elbow in the 2-bone arm IK solve.
-    /// Transformed to world-space each tick by the solver using the model root
-    /// rotation, so the elbow stays anatomically correct when the body turns.
-    /// Default `[-1, 0, -1]` (elbow out + slightly back).
-    pub left_arm_pole_direction: [f32; 3],
-
-    /// Body-local pole hint for the right elbow in the 2-bone arm IK solve.
-    /// Transformed to world-space each tick by the solver using the model root
-    /// rotation, so the elbow stays anatomically correct when the body turns.
-    /// Default `[1, 0, -1]`.
-    pub right_arm_pole_direction: [f32; 3],
-
-    /// Forbidden body-local XY azimuths (degrees) of each arm's bend-plane
-    /// normal. Intervals are sorted, non-wrapping, and within [-180, 180].
-    /// Empty lists leave the solver unchanged.
-    pub left_arm_forbidden_bend_normal_z_degrees: Vec<[f32; 2]>,
-    pub right_arm_forbidden_bend_normal_z_degrees: Vec<[f32; 2]>,
+    /// Authored arm policies. `None` uses the side's engine defaults.
+    pub left_two_bone_ik: Option<ArmTwoBoneIkConfig>,
+    pub right_two_bone_ik: Option<ArmTwoBoneIkConfig>,
 
     /// Yaw delta (radians) that triggers body rotation. Default: π/4 (45°).
     pub body_yaw_threshold: f32,
@@ -329,25 +343,13 @@ impl AvatarControlComponent {
         self
     }
 
-    /// Override the left elbow pole direction (body-local).
-    pub fn with_left_arm_pole_direction(mut self, dir: [f32; 3]) -> Self {
-        self.left_arm_pole_direction = dir;
+    pub fn with_left_two_bone_ik(mut self, config: ArmTwoBoneIkConfig) -> Self {
+        self.left_two_bone_ik = Some(config);
         self
     }
 
-    /// Override the right elbow pole direction (body-local).
-    pub fn with_right_arm_pole_direction(mut self, dir: [f32; 3]) -> Self {
-        self.right_arm_pole_direction = dir;
-        self
-    }
-
-    pub fn with_left_arm_forbidden_bend_normal_z_degrees(mut self, range: [f32; 2]) -> Self {
-        self.left_arm_forbidden_bend_normal_z_degrees.push(range);
-        self
-    }
-
-    pub fn with_right_arm_forbidden_bend_normal_z_degrees(mut self, range: [f32; 2]) -> Self {
-        self.right_arm_forbidden_bend_normal_z_degrees.push(range);
+    pub fn with_right_two_bone_ik(mut self, config: ArmTwoBoneIkConfig) -> Self {
+        self.right_two_bone_ik = Some(config);
         self
     }
 
@@ -449,10 +451,8 @@ impl Default for AvatarControlComponent {
             mouth_open_missing_slot_diagnosed: false,
             collision_enabled: true,
             capsule_radius: 0.28,
-            left_arm_pole_direction: [-1.0, 0.0, -1.0],
-            right_arm_pole_direction: [1.0, 0.0, -1.0],
-            left_arm_forbidden_bend_normal_z_degrees: Vec::new(),
-            right_arm_forbidden_bend_normal_z_degrees: Vec::new(),
+            left_two_bone_ik: None,
+            right_two_bone_ik: None,
             body_yaw_threshold: std::f32::consts::FRAC_PI_4,
             body_yaw_rate: 3.0,
             forward_plus_z: false,
@@ -529,6 +529,7 @@ impl Component for AvatarControlComponent {
         _world: &crate::engine::ecs::World,
     ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
+        use crate::scripting::ast::{Expression, Ident, TableFieldValue};
         let mut c = ce("AvatarControl")
             .with_call(
                 "body_yaw_threshold",
@@ -544,39 +545,35 @@ impl Component for AvatarControlComponent {
         if (self.capsule_radius - 0.28).abs() > f32::EPSILON {
             c = c.with_call("capsule_radius", vec![num(self.capsule_radius as f64)]);
         }
-        if self.left_arm_pole_direction != [-1.0, 0.0, -1.0] {
-            let d = self.left_arm_pole_direction;
-            c = c.with_call(
-                "left_arm_pole_direction",
-                vec![array(vec![
-                    num(d[0] as f64),
-                    num(d[1] as f64),
-                    num(d[2] as f64),
-                ])],
-            );
+        let ik_table = |config: &ArmTwoBoneIkConfig| {
+            let field = |name: &str, value| TableFieldValue {
+                name: Ident(name.into()),
+                value,
+            };
+            Expression::Table(vec![
+                field(
+                    "pole_direction",
+                    array(nums(config.pole_direction.iter().map(|&v| v as f64))),
+                ),
+                field("copy_end_rotation", b(config.copy_end_rotation)),
+                field("weight", num(config.weight as f64)),
+                field(
+                    "forbidden_bend_normal_z_degrees",
+                    array(
+                        config
+                            .forbidden_bend_normal_z_degrees
+                            .iter()
+                            .map(|range| array(nums(range.iter().map(|&v| v as f64))))
+                            .collect(),
+                    ),
+                ),
+            ])
+        };
+        if let Some(config) = &self.left_two_bone_ik {
+            c = c.with_call("left_two_bone_ik", vec![ik_table(config)]);
         }
-        if self.right_arm_pole_direction != [1.0, 0.0, -1.0] {
-            let d = self.right_arm_pole_direction;
-            c = c.with_call(
-                "right_arm_pole_direction",
-                vec![array(vec![
-                    num(d[0] as f64),
-                    num(d[1] as f64),
-                    num(d[2] as f64),
-                ])],
-            );
-        }
-        for [start, end] in &self.left_arm_forbidden_bend_normal_z_degrees {
-            c = c.with_call(
-                "left_arm_forbidden_bend_normal_z_degrees",
-                vec![num(*start as f64), num(*end as f64)],
-            );
-        }
-        for [start, end] in &self.right_arm_forbidden_bend_normal_z_degrees {
-            c = c.with_call(
-                "right_arm_forbidden_bend_normal_z_degrees",
-                vec![num(*start as f64), num(*end as f64)],
-            );
+        if let Some(config) = &self.right_two_bone_ik {
+            c = c.with_call("right_two_bone_ik", vec![ik_table(config)]);
         }
         if self.forward_plus_z_overridden && self.forward_plus_z {
             c = c.with_call("forward_plus_z", vec![]);

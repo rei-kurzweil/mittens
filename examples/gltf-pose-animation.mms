@@ -1,3 +1,7 @@
+import { vroid_arm_ik_defaults } from "../assets/components/arm_ik/vroid.mms"
+
+let arm_ik = vroid_arm_ik_defaults()
+
 // Movement-driven sparse GLTF pose animation.
 // Required assets (created by the pose-capture workflow):
 //   assets/components/poses/bisket/000-relaxed.pose.mms
@@ -33,6 +37,8 @@ let avatar_gltf = GLTF.new("assets/models/bisket.glb") {
     bisket_secondary_motion(false)
 }
 let avatar_control = AVC {
+    left_two_bone_ik(arm_ik.left)
+    right_two_bone_ik(arm_ik.right)
     initial_yaw(3.14159)
     T { avatar_gltf }
 }
