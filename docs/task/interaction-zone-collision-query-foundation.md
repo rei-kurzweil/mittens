@@ -6,6 +6,13 @@ First synchronous query slice implemented, 2026-09-08. This task makes the spati
 [interaction zones, sockets, and vehicle mounting](release-zones-sockets-and-vehicle-mounting.md)
 concrete without coupling zones to the deprecated collision-response runtime.
 
+2026-10-03 direction update: the first slice supports **point classification**,
+not general shape overlap or sweeps. The [response/detection retirement task](retire-collision-response-to-static-nonpenetration.md)
+now plans to migrate remaining physical contact and the single collision-event
+example, then retire the asynchronous `CollisionSystem` worker. Statements
+below about preserving the worker/events describe the original first-slice
+compatibility boundary, not the final target.
+
 The implemented slice includes the `ZoneComponent` shape constructors and MMS
 round-tripping, component-reference-aware `.at(...)`, deterministic subtree and
 role discovery, and transform-aware point classification. E2 authoring and the

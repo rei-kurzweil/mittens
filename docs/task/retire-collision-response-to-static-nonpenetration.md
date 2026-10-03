@@ -2,11 +2,13 @@
 
 ## Status and outcome
 
-Planned, 2026-09-08. Replace the general
-`CollisionResponseComponent`/`CollisionResponseSystem` with the one behavior we
-still need in the current engine: static collision geometry prevents an
-explicitly pose-driven movable object, especially an avatar locomotion root,
-from ending a frame inside it.
+Planned, revised 2026-10-03. Retire both the general
+`CollisionResponseComponent`/`CollisionResponseSystem` and, after its remaining
+event consumer is migrated, the always-running `CollisionSystem` overlap worker.
+Keep a narrow static-contact constraint for the avatar and other explicitly
+grounded movers. General geometric intersection belongs to synchronous zone
+queries, with a collidable role selecting the regions that participate in
+physical contact.
 
 Remove kinetic response behavior. The retained constraint has no mass, forces,
 gravity, friction, restitution, bounce, momentum, or private velocity. It does
@@ -14,8 +16,37 @@ not simulate movable bodies and does not resolve movable-versus-movable contact.
 It is an intentionally narrow transition architecture that may later be
 replaced by a pluggable physics backend.
 
-This task does not remove collision shapes, overlap detection, collision events,
-zone queries, IK, animation, transform streams, or secondary motion.
+This task preserves shape math and geometric query capability, not necessarily
+the old collision component, worker, or event names. It does not remove zone
+queries, IK, animation, transform streams, or secondary motion.
+
+## Consumer audit (2026-10-03)
+
+- `AvatarControlSystem` generates a kinematic capsule with
+  `CollisionResponse.slide()` and routes correction to the locomotion target.
+  This is the required runtime migration before response can be removed.
+- `examples/bisket-desktop-demo.mms` has one authored camera-rig
+  `CollisionResponse.slide()`. `examples/collision-perimeter.rs` and
+  `examples/gravity-fields.rs` exercise the legacy response modes/gravity;
+  the latter also handles `CollisionStarted`. Rewrite or retire these demos.
+- The other authored `Collision.static()` instances are largely scene floors,
+  walls, and terrain. They need physical contact only where a grounded mover
+  uses them; an otherwise decorative floor does not require collision work.
+- No other scene or runtime handler found in this audit consumes
+  `CollisionStarted`/`CollisionEnded`. The signal parsing/registration surface
+  and tests remain, but are not independent evidence that an asynchronous
+  overlap worker is needed in production.
+- `ZoneComponent` currently supplies transformed point classification and
+  enabled/role-filtered subtree enumeration in `zone_query.rs`. It has no
+  synchronous shape-vs-zone overlap, cast/sweep, or continuous enter/exit API
+  yet. These queries are Rust system APIs, with no general MMS query method.
+  Calling it a replacement for general intersection tests today would
+  overstate its implementation.
+
+The audit distinguishes **querying an intersection** from **responding to a
+contact**. A bare zone answers the former and never moves anything. A floor
+zone with a static collidable role may be consumed by a contact constraint;
+the role and constraint, not the zone itself, keep the avatar above the floor.
 
 ## Current dependency and problem
 
@@ -29,11 +60,8 @@ The current response component combines unrelated responsibilities:
 - a private runtime velocity accumulator;
 - transform movement-target resolution.
 
-AvatarControl currently generates a kinematic capsule with
-`CollisionResponse.slide()` and routes its correction to the actual locomotion
-root. Several examples also instantiate slide or push responses. Removing the
-system without migrating those consumers would allow avatars to pass through
-floors and walls and would break the examples.
+Removing the system without migrating AvatarControl and the response-dependent
+examples would allow those movers to pass through floors and walls.
 
 The response system should not become the foundation for zones, attachments,
 broom flight, or future dynamics. Those uses need spatial queries, explicit
@@ -41,7 +69,7 @@ motion ownership, and first-class velocity instead.
 
 ## Retained contract
 
-Introduce a narrowly named component and system; provisional name:
+Introduce a narrowly named component and system; provisional name and syntax:
 
 ```mms
 T {
@@ -54,8 +82,9 @@ T {
 }
 ```
 
-The exact nesting and builder syntax remain subject to the component pass. The
-semantic contract is fixed:
+The contact geometry should ultimately resolve through the shared zone shape
+and frame representation. The exact nesting and builder syntax remain subject
+to the component pass. The semantic contract is fixed:
 
 - The collider supplies the proposed pose after input, animation, attachment,
   or another pose driver has run.
@@ -70,11 +99,11 @@ semantic contract is fixed:
 - Multiple corrections in one frame have deterministic ordering and a bounded
   iteration count. Failure to converge is observable.
 
-The initial implementation may preserve the current discrete MTV correction
-and capsule/box/sphere geometry to keep AvatarControl working. This is
-containment cleanup after a pose, not a robust continuous character controller.
-Tunneling, stairs, slopes, moving platforms, step offsets, and swept collision
-remain explicit limitations.
+The initial migration may preserve discrete MTV correction and
+capsule/box/sphere geometry to keep AvatarControl working. The later
+gravity-driven floor path needs at least a crossing/sweep check, since an
+end-pose overlap can miss the floor entirely. Stairs, slopes, moving platforms,
+and step offsets remain explicit character-controller follow-ups.
 
 ## Motion and authority
 
@@ -98,28 +127,42 @@ consume the final world transform.
 
 ## Migration plan
 
-1. Inventory every authored and generated `CollisionResponse` consumer.
-   AvatarControl's generated capsule is the required compatibility case.
-2. Characterize existing floor and wall non-penetration with focused tests,
-   including the movement-target routing used by desktop and XR avatars.
-3. Add `StaticCollisionConstraintComponent` and migrate only required slide
-   users. Preserve generated-runtime cleanup and serialization behavior.
-4. Remove `CollisionResponse.push()`, non-static repulsion, gravity integration,
-   friction, restitution, speed limiting, and the private velocity accumulator.
-5. Remove or rewrite the collision-perimeter/gravity examples that exist only
-   to demonstrate the retired solver. Do not preserve obsolete behavior merely
-   to keep a demo unchanged.
-6. Remove `CollisionResponseComponent`, its registration/removal intents, system
-   scheduling, MMS constructors/methods, serialization tests, and old spec.
-7. Rename/revisit `CollisionMode::Kinematic` and `Rigged`. Detection roles and
-   movement authority should not be encoded in one ambiguous enum.
+1. Add synchronous transformed zone-to-zone shape overlap and a minimal
+   capsule-versus-static-floor crossing/sweep query. Specify inclusive
+   boundaries, filtering, deterministic hit order, and unresolved/singular
+   frame errors. Expose the general point/overlap queries to MMS when a script
+   consumer needs them. Reuse `collision_geometry` math rather than creating a
+   second shape implementation. Keep point queries intact.
+2. Introduce the static collidable role on a zone and a small contact
+   constraint for a declared movement target. Migrate AvatarControl's generated
+   capsule and required authored slide users, preserving proxy cleanup and
+   movement-target routing. For the later falling-avatar path, contact must
+   also remove inward velocity from the first-class `VelocityComponent`.
+3. Migrate static floors/walls that actually need contact to zones with a
+   static collidable role. Convert detection-only uses to bare zones; remove
+   unused authored colliders from decorative geometry. Rewrite or retire the
+   two legacy Rust examples and the single MMS response demo.
+4. Remove `CollisionResponse.push()`, non-static repulsion, old gravity
+   integration, friction, restitution, speed limiting, and private velocity.
+   Delete `CollisionResponseComponent`/system, registration intents, MMS API,
+   and obsolete response serialization tests/spec.
+5. Once the `gravity-fields.rs` event handler is gone and tests use synchronous
+   zone queries, remove the asynchronous `CollisionSystem` overlap worker and
+   old `CollisionStarted`/`CollisionEnded` API. Add zone enter/exit observation
+   only for a concrete consumer; current-contact reports should use contact
+   semantics. Preserve shared shape/query math and debug visualization through
+   the zone path.
+6. Remove or migrate `CollisionComponent`, `CollisionShapeComponent`, and
+   `CollisionMode::{Static,Kinematic,Rigged}` after their authored, generated,
+   and diagnostic consumers have moved. Do not encode movement authority in
+   the collidable role.
 
 ## Performance and scheduling
 
 The transitional constraint should query only registered pose-driven
-participants against static broadphase candidates. Do not rebuild or scan all
-collision pairs solely to constrain one avatar. Track dirty transforms and
-avoid work for unchanged participants where correctness allows it.
+participants against static candidates. Do not rebuild or scan all zone pairs
+solely to constrain one avatar. Track dirty transforms and avoid work for
+unchanged participants where correctness allows it.
 
 Keep shape resolution and narrow-phase math shared with ordinary collision and
 zone queries. Do not fork capsule/box/sphere intersection implementations.
@@ -135,8 +178,11 @@ a future backend.
 - No retained component contains velocity, gravity, friction, restitution,
   bounce, force, or mass state.
 - `CollisionResponse.push()` and its private velocity accumulator are removed.
-- Collision detection/events and `Zone` queries continue working without a
-  response component.
+- Point and shape zone queries work without a response component or collision
+  worker. A collidable role gates physical contact; a bare zone has no effect
+  on motion.
+- The legacy collision event consumer is migrated or intentionally removed
+  before its signal surface and worker are deleted.
 - System ordering exposes one final corrected pose to cameras and interaction
   consumers.
 - Tests document discrete-correction limitations rather than implying robust

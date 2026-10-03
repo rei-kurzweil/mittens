@@ -133,6 +133,10 @@ an explicit character-controller policy after the floor slice.
   described in [static non-penetration migration](../task/retire-collision-response-to-static-nonpenetration.md).
   The generated AVC capsule's current `slide()` must be disabled or retargeted
   when the new ground contact owns Bisket, to avoid double correction.
+- Use the zone shape/query foundation for authored spatial tests. It currently
+  classifies points only; shape overlap and floor crossing/sweep queries must
+  be added before it can replace the old collision worker for contact. Bare
+  zones remain query-only; a collidable role opts a floor into contact.
 - Update scheduling as a unit: current collision snapshots precede Velocity
   and gamepad motion, while XR eye publication precedes gamepad motion. The
   new contact must see the proposed final pose, and cameras must see the
