@@ -17,6 +17,9 @@ The capsule stick figure stays a separate static scale reference while the XR
 Bisket path is established.
 Use the [pose/velocity driver terminology](../spec/physics/driver-terminology.md)
 when defining the new components and systems.
+The [current-state gravity/contact flow](../analysis/velocity-gravity-xr-ground-contact.md)
+ties the implemented Velocity slice to the remaining floor, rest, and
+scheduling decisions.
 
 ## Actual starting point
 
