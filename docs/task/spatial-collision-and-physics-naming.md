@@ -52,7 +52,7 @@ shapes, filtering, lifetime, or diagnostic meaning differ.
 | `CollisionMode::Kinematic` | Externally pose-driven mover | Rename `PoseDriven`; “kinematic” is backend jargon and currently overloaded |
 | `CollisionMode::Rigged` | Non-static collider | Remove/replace; “rigged” incorrectly suggests skeleton/IK ownership |
 | `CollisionResponse*` | Push/slide/bounce/private integration | Remove |
-| `StaticCollisionConstraint` | Prevent a pose-driven target entering static geometry | Retain temporarily and name narrowly |
+| `Collidable.slide()` | Prevent its declared movement target entering static collidables while preserving tangential movement | Proposed replacement for authored `CollisionResponse.slide()`; query and response stay separate internally |
 | `SpringColliderComponent` | Target-referenced secondary-motion spheres | Migrate to zone instances carrying/referenced by a spring-exclusion role |
 | `VelocityComponent` | Linear motion state/command with explicit authority | Add through velocity work |
 | `AngularVelocityComponent` | Angular motion state/command | Add through velocity work |
@@ -80,11 +80,21 @@ T {
         Collidable.static() {}
     }
 }
+
+T { name = "avatar_movement_root"
+    Zone.capsule_y(0.28, 0.62) {
+        Collidable.slide() {}
+    }
+}
 ```
 
 `Zone.cube(...)` creates one zone component containing a normalized shape value.
 It does not create a renderable. `Collidable.static()` is behavior/filtering
-metadata consuming the enclosing zone; it does not own another shape. Invisible
+metadata consuming the enclosing zone; it does not own another shape.
+`Collidable.slide()` opts a moving zone into static-contact response. It uses
+the zone's nearest transform as its movement target when the zone sits on that
+root; generated offset proxies specify `.movement_target(...)` explicitly.
+Invisible
 is the default, and diagnostic visualization is an editor/system option rather
 than an authored visible mesh.
 

@@ -119,7 +119,7 @@ locomotion becomes force-driven, contact can use a material friction coefficient
 and a tangential impulse limit. Generic damping is drag; it is not static
 friction, and the legacy `friction_y` field should not define the new contact
 model. Wall sliding, slopes, stairs, step offsets, and moving platforms need
-an explicit character-controller policy after the floor slice.
+explicit movement rules after the floor slice.
 
 ## Ownership and migration decisions
 

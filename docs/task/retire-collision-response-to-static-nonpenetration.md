@@ -69,50 +69,70 @@ motion ownership, and first-class velocity instead.
 
 ## Retained contract
 
-Introduce a narrowly named component and system; provisional name and syntax:
+Expose the contact policy on the moving zone's `Collidable`; provisional MMS:
 
 ```mms
-T {
-    Collision.movable() {
-        CollisionShape.capsule_y(0.28, 0.62)
-        StaticCollisionConstraint {
-            movement_target("#avatar_movement_root")
-        }
+T { name = "avatar_movement_root"
+    Zone.capsule_y(0.28, 0.62) {
+        Collidable.slide() {}
     }
 }
 ```
 
-The contact geometry should ultimately resolve through the shared zone shape
-and frame representation. The exact nesting and builder syntax remain subject
-to the component pass. The semantic contract is fixed:
+When the collider is an offset/generated proxy whose transform is not the
+actual movement root, require an explicit target:
 
-- The collider supplies the proposed pose after input, animation, attachment,
+```mms
+Zone.capsule_y(0.28, 0.62) {
+    Collidable.slide().movement_target("[name='avatar_movement_root']") {}
+}
+```
+
+The exact builder syntax remains subject to the component pass. `slide` is a
+contact-response policy on an opted-in collidable, not a new velocity source.
+The implementation can keep query and response phases separate internally
+without making authors attach an additional constraint component. The
+semantic contract is fixed:
+
+- The moving zone supplies the proposed pose after input, animation, attachment,
   or another pose driver has run.
-- Only overlaps against collision geometry designated static are considered.
-- The constraint calculates the minimum world-space correction needed to leave
-  static geometry and applies that displacement to its resolved movement target.
+- Only zones explicitly marked as static collidables participate in this
+  contact rule. Ordinary zones remain query-only.
+- The spatial query reports both participants, their shapes/frames, whether
+  they overlap, and enough geometry to resolve them: a separation direction
+  and depth for an existing overlap, or a hit fraction/point and surface
+  normal for a sweep. A broadphase may narrow candidates but does not define
+  the result.
+- The slide policy calculates the minimum world-space correction needed to
+  leave static geometry and applies that displacement to its movement target.
+  The default target is the zone's own nearest transform only when that
+  transform is the intended moving root; offset/generated proxies name a target.
 - It stores no velocity and performs no free integration.
 - It never pushes the static object or another movable object.
 - It does not infer bounce, sliding velocity, gravity, friction, or momentum.
-- An unresolved movement target results in no correction and a diagnostic; it
-  must not move an arbitrary nearby transform.
+- An unresolved explicit movement target results in no correction and a
+  diagnostic; it must not move an arbitrary nearby transform.
 - Multiple corrections in one frame have deterministic ordering and a bounded
   iteration count. Failure to converge is observable.
 
-The initial migration may preserve discrete MTV correction and
-capsule/box/sphere geometry to keep AvatarControl working. The later
+For motion into a surface, the contact rule can remove the into-normal part
+of the proposed displacement or velocity while leaving its tangential part.
+That is the specific behavior previously called `slide`; it does not require
+friction or a separate controller component. The initial migration may
+preserve discrete MTV correction and capsule/box/sphere geometry to keep
+AvatarControl working. The later
 gravity-driven floor path needs at least a crossing/sweep check, since an
 end-pose overlap can miss the floor entirely. Stairs, slopes, moving platforms,
-and step offsets remain explicit character-controller follow-ups.
+and step offsets remain separate movement-policy follow-ups.
 
 ## Motion and authority
 
 Call the retained object **pose-driven** or **movable**, not kinetic. Its pose is
 owned by input, animation, attachment, a velocity driver, or some other named
-source. Static contact is a constraint on that proposed pose, not a second
+source. Static contact constrains that proposed pose; it is not a second
 integrator.
 
-If a first-class `VelocityComponent` is present, this transitional constraint
+If a first-class `VelocityComponent` is present, this transitional slide policy
 does not integrate it. A later policy may project or zero velocity along a
 contact normal, but that belongs to the velocity/physics contract and must be
 explicit. The first migration can leave commanded velocity unchanged and only
@@ -133,8 +153,8 @@ consume the final world transform.
    frame errors. Expose the general point/overlap queries to MMS when a script
    consumer needs them. Reuse `collision_geometry` math rather than creating a
    second shape implementation. Keep point queries intact.
-2. Introduce the static collidable role on a zone and a small contact
-   constraint for a declared movement target. Migrate AvatarControl's generated
+2. Introduce `Collidable.static()` and `Collidable.slide()` on zones, backed by
+   a narrow contact query/response phase. Migrate AvatarControl's generated
    capsule and required authored slide users, preserving proxy cleanup and
    movement-target routing. For the later falling-avatar path, contact must
    also remove inward velocity from the first-class `VelocityComponent`.
@@ -175,7 +195,7 @@ a future backend.
 
 - Desktop and XR AvatarControl capsules remain outside static floors and walls.
 - Pose-driven objects are not automatically pushed by other movable objects.
-- No retained component contains velocity, gravity, friction, restitution,
+- No retained collidable contains velocity, gravity, friction, restitution,
   bounce, force, or mass state.
 - `CollisionResponse.push()` and its private velocity accumulator are removed.
 - Point and shape zone queries work without a response component or collision
@@ -186,7 +206,7 @@ a future backend.
 - System ordering exposes one final corrected pose to cameras and interaction
   consumers.
 - Tests document discrete-correction limitations rather than implying robust
-  rigid-body or character-controller behavior.
+  rigid-body simulation or slope/step behavior.
 
 ## Related work
 
