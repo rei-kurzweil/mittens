@@ -129,6 +129,11 @@ pub struct IKChainComponent {
     /// Lazily created runtime-only debug visual ids for TwoBoneIK inspection.
     pub(crate) two_bone_debug_visuals: Option<TwoBoneIkDebugVisuals>,
 
+    /// Last normal used by the two-bone solve, for inspection readouts.
+    pub last_solved_plane_normal_world: Option<[f32; 3]>,
+    /// Whether the last two-bone solve changed the raw bend plane.
+    pub last_bend_plane_clipped: bool,
+
     component: Option<ComponentId>,
 }
 
@@ -144,6 +149,8 @@ impl IKChainComponent {
             avc_id: None,
             xr_pose_driver: None,
             two_bone_debug_visuals: None,
+            last_solved_plane_normal_world: None,
+            last_bend_plane_clipped: false,
             component: None,
         }
     }

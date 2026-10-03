@@ -142,6 +142,9 @@ fn tick_chain(id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter) 
             c.xr_pose_driver,
         )
     };
+    if let Some(chain) = world.get_component_by_id_as_mut::<IKChainComponent>(id) {
+        chain.last_bend_plane_clipped = false;
+    }
     if weight <= 0.0 {
         return;
     }
@@ -393,6 +396,71 @@ fn solve_aim(
 // TwoBoneIK solver
 // ---------------------------------------------------------------------------
 
+fn bend_normal_azimuth_degrees(normal_world: [f32; 3], model_rotation: [f32; 4]) -> Option<f32> {
+    let local = quat_rotate_vec3(quat_conjugate(model_rotation), normal_world);
+    (local[0].hypot(local[1]) > 1e-6).then(|| local[1].atan2(local[0]).to_degrees())
+}
+
+fn bend_normal_is_forbidden(
+    normal_world: [f32; 3],
+    model_rotation: [f32; 4],
+    ranges: &[[f32; 2]],
+) -> bool {
+    bend_normal_azimuth_degrees(normal_world, model_rotation).is_some_and(|degrees| {
+        ranges
+            .iter()
+            .any(|[start, end]| degrees > *start && degrees < *end)
+    })
+}
+
+/// Search the circle of normals perpendicular to reach for the closest
+/// permitted plane. Rotating around reach preserves the two-bone geometry.
+/// Some reach directions may have no feasible azimuth outside the intervals;
+/// in that case retain the raw plane instead of manufacturing a nonperpendicular one.
+fn constrain_bend_normal(
+    raw: [f32; 3],
+    reach_dir: [f32; 3],
+    model_rotation: [f32; 4],
+    ranges: &[[f32; 2]],
+    previous: Option<[f32; 3]>,
+) -> [f32; 3] {
+    if ranges.is_empty() || !bend_normal_is_forbidden(raw, model_rotation, ranges) {
+        return raw;
+    }
+    let tangent = vec3_normalize(vec3_cross(reach_dir, raw));
+    let first_allowed = |sign: f32| {
+        for step in 1..=360 {
+            let delta = (step as f32 * 0.5).to_radians();
+            let (sin, cos) = delta.sin_cos();
+            let candidate = vec3_normalize(vec3_add(
+                vec3_scale(raw, cos),
+                vec3_scale(tangent, sign * sin),
+            ));
+            if !bend_normal_is_forbidden(candidate, model_rotation, ranges) {
+                return Some((step, candidate));
+            }
+        }
+        None
+    };
+    match (first_allowed(-1.0), first_allowed(1.0)) {
+        (Some((left_steps, left)), Some((right_steps, right))) => {
+            if let Some(previous) = previous {
+                if vec3_dot(previous, left) >= vec3_dot(previous, right) {
+                    left
+                } else {
+                    right
+                }
+            } else if left_steps <= right_steps {
+                left
+            } else {
+                right
+            }
+        }
+        (Some((_, candidate)), None) | (None, Some((_, candidate))) => candidate,
+        (None, None) => raw,
+    }
+}
+
 /// Closed-form 2-bone IK.
 ///
 /// `chain` must have length ≥ 3: [root (upper arm), mid (lower arm), end (hand)].
@@ -450,19 +518,17 @@ fn solve_two_bone(
 
     // Build elbow plane from pole hint.
     // Transform body-local pole to world space when under an AVC.
-    let pole = match avc_id {
-        Some(avc) => world
+    let model_rotation = avc_id.and_then(|avc| {
+        world
             .get_component_by_id_as::<AvatarControlComponent>(avc)
             .and_then(|c| c.model_root_id)
-            .map(|root_id| {
-                let root_rot = tc_world_rot(world, root_id);
-                quat_rotate_vec3(root_rot, pole_direction)
-            })
-            .unwrap_or(pole_direction),
-        None => pole_direction,
-    };
+            .map(|root_id| tc_world_rot(world, root_id))
+    });
+    let pole = model_rotation
+        .map(|rotation| quat_rotate_vec3(rotation, pole_direction))
+        .unwrap_or(pole_direction);
     let cross_tp = vec3_cross(to_target, pole);
-    let plane_normal = if vec3_len(cross_tp) > 1e-6 {
+    let raw_plane_normal = if vec3_len(cross_tp) > 1e-6 {
         vec3_normalize(cross_tp)
     } else {
         let fallback = if reach_dir[0].abs() < 0.9 {
@@ -472,6 +538,35 @@ fn solve_two_bone(
         };
         vec3_normalize(vec3_cross(to_target, fallback))
     };
+    let plane_normal = match (avc_id, model_rotation) {
+        (Some(avc_id), Some(model_rotation)) => {
+            let avc = world
+                .get_component_by_id_as::<AvatarControlComponent>(avc_id)
+                .expect("resolved AVC");
+            let ranges: &[[f32; 2]] = if avc.left_hand_bone_id == Some(end_tc) {
+                &avc.left_arm_forbidden_bend_normal_z_degrees
+            } else if avc.right_hand_bone_id == Some(end_tc) {
+                &avc.right_arm_forbidden_bend_normal_z_degrees
+            } else {
+                &[]
+            };
+            let previous = world
+                .get_component_by_id_as::<IKChainComponent>(ik_chain_id)
+                .and_then(|chain| chain.last_solved_plane_normal_world);
+            constrain_bend_normal(
+                raw_plane_normal,
+                reach_dir,
+                model_rotation,
+                ranges,
+                previous,
+            )
+        }
+        _ => raw_plane_normal,
+    };
+    if let Some(chain) = world.get_component_by_id_as_mut::<IKChainComponent>(ik_chain_id) {
+        chain.last_solved_plane_normal_world = Some(plane_normal);
+        chain.last_bend_plane_clipped = vec3_dot(raw_plane_normal, plane_normal) < 1.0 - 1e-5;
+    }
     let perp = vec3_normalize(vec3_cross(plane_normal, reach_dir));
 
     let elbow_dir = vec3_normalize(vec3_add(
@@ -1095,6 +1190,38 @@ mod tests {
         fn push_intent(&mut self, scope: ComponentId, intent: crate::engine::ecs::IntentSignal) {
             self.intents.push((scope, intent.value));
         }
+    }
+
+    #[test]
+    fn forbidden_bend_normal_azimuth_keeps_plane_perpendicular_to_reach() {
+        let reach = [0.0, 0.0, 1.0];
+        let rotation = [0.0, 0.0, 0.0, 1.0];
+        let ranges = [[-178.0, -115.0], [20.0, 40.0]];
+        for degrees in [-145.0_f32, 30.0] {
+            let (sin, cos) = degrees.to_radians().sin_cos();
+            let raw = [cos, sin, 0.0];
+            let chosen = super::constrain_bend_normal(raw, reach, rotation, &ranges, None);
+            assert!(!super::bend_normal_is_forbidden(chosen, rotation, &ranges));
+            assert!(super::vec3_dot(chosen, reach).abs() < 1e-5);
+            assert!((super::vec3_len(chosen) - 1.0).abs() < 1e-5);
+        }
+        let raw_at = |degrees: f32| {
+            let (sin, cos) = degrees.to_radians().sin_cos();
+            [cos, sin, 0.0]
+        };
+        let first = super::constrain_bend_normal(raw_at(-145.0), reach, rotation, &ranges, None);
+        let second =
+            super::constrain_bend_normal(raw_at(-160.0), reach, rotation, &ranges, Some(first));
+        assert!(super::vec3_dot(first, second) > 0.99);
+        let raw = [0.0, 1.0, 0.0];
+        assert_eq!(
+            super::constrain_bend_normal(raw, reach, rotation, &ranges, None),
+            raw
+        );
+        assert_eq!(
+            super::constrain_bend_normal(raw, reach, rotation, &[], None),
+            raw
+        );
     }
 
     #[test]

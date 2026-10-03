@@ -262,6 +262,37 @@ impl BvhSystem {
         self.bvh = Some(BVH::build(&mut self.shapes));
     }
 
+    /// Refresh ancestor bounds without changing the BVH topology. `bvh 0.7`'s
+    /// rotation-based `optimize` can panic when several moving leaves cause a
+    /// queued ancestor's depth to change during the same optimization sweep.
+    fn refit_changed_shapes(bvh: &mut BVH, shapes: &[RenderableAabb], changed: &HashSet<usize>) {
+        let mut ancestors = HashSet::new();
+        for &shape_index in changed {
+            let mut node_index = shapes[shape_index].bh_node_index();
+            while node_index != 0 {
+                node_index = bvh.nodes[node_index].parent();
+                ancestors.insert(node_index);
+            }
+        }
+
+        let mut ancestors: Vec<_> = ancestors.into_iter().collect();
+        ancestors.sort_unstable_by_key(|&index| std::cmp::Reverse(bvh.nodes[index].depth()));
+        for index in ancestors {
+            let BVHNode::Node {
+                child_l_index,
+                child_r_index,
+                ..
+            } = bvh.nodes[index]
+            else {
+                continue;
+            };
+            let left = bvh.nodes[child_l_index].get_node_aabb(shapes);
+            let right = bvh.nodes[child_r_index].get_node_aabb(shapes);
+            *bvh.nodes[index].child_l_aabb_mut() = left;
+            *bvh.nodes[index].child_r_aabb_mut() = right;
+        }
+    }
+
     /// Apply any queued add/remove/refit requests.
     ///
     /// Intended to be called once after `CommandQueue::flush` completes.
@@ -360,14 +391,18 @@ impl BvhSystem {
             return;
         }
 
-        // Otherwise, update the existing BVH's AABBs and do cheap incremental optimization.
+        // Otherwise, update the existing BVH's AABBs without rotating nodes.
         if !self.pending_refit_shape_indices.is_empty() {
             match self.bvh.as_mut() {
                 None => {
                     self.rebuild_from_shapes();
                 }
                 Some(bvh) => {
-                    bvh.optimize(&self.pending_refit_shape_indices, &self.shapes);
+                    Self::refit_changed_shapes(
+                        bvh,
+                        &self.shapes,
+                        &self.pending_refit_shape_indices,
+                    );
                 }
             }
             self.pending_refit_shape_indices.clear();
@@ -657,13 +692,60 @@ fn ray_aabb(
 
 #[cfg(test)]
 mod tests {
-    use super::BvhSystem;
+    use super::{BvhSystem, RenderableAabb};
     use crate::engine::ecs::World;
     use crate::engine::ecs::component::{
         BoundsComponent, RaycastableComponent, RenderableComponent, TransformComponent,
     };
     use crate::engine::graphics::bounds::Aabb;
     use crate::engine::graphics::primitives::{CpuMeshHandle, MaterialHandle, Renderable};
+    use bvh::ray::Ray;
+    use bvh::{Point3, Vector3};
+    use std::collections::HashSet;
+
+    #[test]
+    fn refit_moving_raycastables_keeps_queries_current() {
+        let mut bvh_system = BvhSystem::default();
+        let mut world = World::default();
+        for index in 0..8 {
+            let component = world.add_component(TransformComponent::new());
+            let x = index as f32 * 10.0;
+            bvh_system.shapes.push(RenderableAabb::new(
+                component,
+                [x, 0.0, 0.0],
+                [x + 1.0, 1.0, 1.0],
+            ));
+        }
+        bvh_system.rebuild_from_shapes();
+
+        for step in 0..32 {
+            let shift = if step % 2 == 0 { 100.0 } else { 0.0 };
+            for &index in &[0, 7] {
+                let x = index as f32 * 10.0 + shift;
+                bvh_system.shapes[index].aabb = bvh::aabb::AABB::with_bounds(
+                    Point3::new(x, 0.0, 0.0),
+                    Point3::new(x + 1.0, 1.0, 1.0),
+                );
+            }
+            BvhSystem::refit_changed_shapes(
+                bvh_system.bvh.as_mut().unwrap(),
+                &bvh_system.shapes,
+                &HashSet::from([0, 7]),
+            );
+
+            for &index in &[0, 3, 7] {
+                let x = index as f32 * 10.0 + if index == 3 { 0.0 } else { shift };
+                let ray = Ray::new(Point3::new(x + 0.5, 0.5, -5.0), Vector3::new(0.0, 0.0, 1.0));
+                let hits = bvh_system
+                    .bvh
+                    .as_ref()
+                    .unwrap()
+                    .traverse(&ray, &bvh_system.shapes);
+                assert_eq!(hits.len(), 1, "step {step}, shape {index}");
+                assert_eq!(hits[0].component, bvh_system.shapes[index].component);
+            }
+        }
+    }
 
     #[test]
     fn imported_renderable_uses_cached_local_bounds() {

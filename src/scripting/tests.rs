@@ -10522,6 +10522,9 @@ fn roundtrip_avatar_control() {
         .unwrap()
         .with_mouth_open_smoothing(12.0)
         .unwrap()
+        .with_left_arm_forbidden_bend_normal_z_degrees([-178.0, -115.0])
+        .with_left_arm_forbidden_bend_normal_z_degrees([20.0, 40.0])
+        .with_right_arm_forbidden_bend_normal_z_degrees([115.0, 178.0])
         .with_collision_disabled();
     let (world, id) = roundtrip_component(original);
     let got = world
@@ -10534,6 +10537,14 @@ fn roundtrip_avatar_control() {
     assert!(!got.neck_pin_enabled);
     assert!(!got.collision_enabled);
     assert_eq!(
+        got.left_arm_forbidden_bend_normal_z_degrees,
+        vec![[-178.0, -115.0], [20.0, 40.0]]
+    );
+    assert_eq!(
+        got.right_arm_forbidden_bend_normal_z_degrees,
+        vec![[115.0, 178.0]]
+    );
+    assert_eq!(
         got.mouth_open_amplitude,
         Some(ComponentRef::Query("#voice_level".into()))
     );
@@ -10541,6 +10552,31 @@ fn roundtrip_avatar_control() {
     assert_eq!(got.mouth_open_rms_ceiling, 0.2);
     assert_eq!(got.mouth_open_amount, 0.65);
     assert_eq!(got.mouth_open_smoothing, 12.0);
+}
+
+#[test]
+fn runtime_avatar_control_accepts_multiple_forbidden_bend_ranges() {
+    use crate::engine::ecs::component::AvatarControlComponent;
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut commands = CommandQueue::new();
+    let (_session, _intents) = RuntimeSpecSession::start(
+        "AVC { left_arm_forbidden_bend_normal_z_degrees(-178, -115) left_arm_forbidden_bend_normal_z_degrees(20, 40) }",
+        &mut world,
+        &mut rx,
+        None,
+        &mut commands,
+    )
+    .expect("AVC ranges should parse");
+    let control = world
+        .all_components()
+        .find_map(|id| world.get_component_by_id_as::<AvatarControlComponent>(id))
+        .expect("AVC component");
+    assert_eq!(
+        control.left_arm_forbidden_bend_normal_z_degrees,
+        vec![[-178.0, -115.0], [20.0, 40.0]]
+    );
+    assert!(control.right_arm_forbidden_bend_normal_z_degrees.is_empty());
 }
 
 #[test]

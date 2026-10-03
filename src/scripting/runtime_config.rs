@@ -1421,6 +1421,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         constructor_and_builder(component, method, any(1));
                     }
                     for method in [
+                        "left_arm_forbidden_bend_normal_z_degrees",
+                        "right_arm_forbidden_bend_normal_z_degrees",
+                    ] {
+                        constructor_and_builder(component, method, floats(2));
+                    }
+                    for method in [
                         "initial_yaw",
                         "capsule_radius",
                         "body_yaw_threshold",

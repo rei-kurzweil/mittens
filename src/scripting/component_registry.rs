@@ -4080,6 +4080,33 @@ fn apply_call(
                     .clone()
                     .with_right_arm_pole_direction(arg_f32_arr::<3>(args, 0)?)
             }
+            "left_arm_forbidden_bend_normal_z_degrees"
+            | "right_arm_forbidden_bend_normal_z_degrees" => {
+                let mut start = arg_f32(args, 0)?;
+                let mut end = arg_f32(args, 1)?;
+                if !start.is_finite()
+                    || !end.is_finite()
+                    || !(-180.0..=180.0).contains(&start)
+                    || !(-180.0..=180.0).contains(&end)
+                    || start == end
+                {
+                    return Err(format!(
+                        "{method}: expected two distinct finite angles in [-180, 180] degrees"
+                    ));
+                }
+                if start > end {
+                    std::mem::swap(&mut start, &mut end);
+                }
+                if method.starts_with("left") {
+                    *avc = avc
+                        .clone()
+                        .with_left_arm_forbidden_bend_normal_z_degrees([start, end]);
+                } else {
+                    *avc = avc
+                        .clone()
+                        .with_right_arm_forbidden_bend_normal_z_degrees([start, end]);
+                }
+            }
             "initial_yaw" => *avc = avc.clone().with_initial_yaw(arg_f32(args, 0)?),
             "forward_plus_z" => *avc = avc.clone().with_forward_plus_z(),
             "ik_debug" => *avc = avc.clone().with_ik_debug(),

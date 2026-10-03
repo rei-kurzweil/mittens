@@ -96,6 +96,12 @@ pub struct AvatarControlComponent {
     /// Default `[1, 0, -1]`.
     pub right_arm_pole_direction: [f32; 3],
 
+    /// Forbidden body-local XY azimuths (degrees) of each arm's bend-plane
+    /// normal. Intervals are sorted, non-wrapping, and within [-180, 180].
+    /// Empty lists leave the solver unchanged.
+    pub left_arm_forbidden_bend_normal_z_degrees: Vec<[f32; 2]>,
+    pub right_arm_forbidden_bend_normal_z_degrees: Vec<[f32; 2]>,
+
     /// Yaw delta (radians) that triggers body rotation. Default: π/4 (45°).
     pub body_yaw_threshold: f32,
 
@@ -335,6 +341,16 @@ impl AvatarControlComponent {
         self
     }
 
+    pub fn with_left_arm_forbidden_bend_normal_z_degrees(mut self, range: [f32; 2]) -> Self {
+        self.left_arm_forbidden_bend_normal_z_degrees.push(range);
+        self
+    }
+
+    pub fn with_right_arm_forbidden_bend_normal_z_degrees(mut self, range: [f32; 2]) -> Self {
+        self.right_arm_forbidden_bend_normal_z_degrees.push(range);
+        self
+    }
+
     pub fn with_body_yaw_threshold(mut self, t: f32) -> Self {
         self.body_yaw_threshold = t;
         self
@@ -435,6 +451,8 @@ impl Default for AvatarControlComponent {
             capsule_radius: 0.28,
             left_arm_pole_direction: [-1.0, 0.0, -1.0],
             right_arm_pole_direction: [1.0, 0.0, -1.0],
+            left_arm_forbidden_bend_normal_z_degrees: Vec::new(),
+            right_arm_forbidden_bend_normal_z_degrees: Vec::new(),
             body_yaw_threshold: std::f32::consts::FRAC_PI_4,
             body_yaw_rate: 3.0,
             forward_plus_z: false,
@@ -546,6 +564,18 @@ impl Component for AvatarControlComponent {
                     num(d[1] as f64),
                     num(d[2] as f64),
                 ])],
+            );
+        }
+        for [start, end] in &self.left_arm_forbidden_bend_normal_z_degrees {
+            c = c.with_call(
+                "left_arm_forbidden_bend_normal_z_degrees",
+                vec![num(*start as f64), num(*end as f64)],
+            );
+        }
+        for [start, end] in &self.right_arm_forbidden_bend_normal_z_degrees {
+            c = c.with_call(
+                "right_arm_forbidden_bend_normal_z_degrees",
+                vec![num(*start as f64), num(*end as f64)],
             );
         }
         if self.forward_plus_z_overridden && self.forward_plus_z {
