@@ -253,8 +253,8 @@ pub struct AvatarControlComponent {
     /// Runtime-only generated upright capsule transform.
     pub(crate) capsule_transform_id: Option<ComponentId>,
 
-    /// Runtime-only generated response, used to refresh XR movement routing.
-    pub(crate) capsule_response_id: Option<ComponentId>,
+    /// Runtime-only generated collidable, used to refresh XR movement routing.
+    pub(crate) capsule_collidable_id: Option<ComponentId>,
 
     component: Option<ComponentId>,
 }
@@ -493,7 +493,7 @@ impl Default for AvatarControlComponent {
             neck_bone_id: None,
             neck_rest_translation: None,
             capsule_transform_id: None,
-            capsule_response_id: None,
+            capsule_collidable_id: None,
             component: None,
         }
     }

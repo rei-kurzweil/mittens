@@ -10,7 +10,20 @@ downward crossing of an axis-aligned floor top, even when the end pose misses
 the floor. Rotated contact resolution, general sweeps, a collidable role, and
 the contact broadphase remain. Queries report disabled, unresolved, singular,
 unsupported-frame, and narrow-phase non-convergence errors. The existing point
-query remains intact; focused zone query tests pass.
+query remains intact; focused zone query tests pass. `Collidable.static()` and
+`Collidable.slide()` now mark authored zones, and AVC generates a slide zone with
+its explicit movement target. The desktop floor and Mittens Corp deck have
+static zones. A first synchronous contact pass resolves one floor contact per
+slide zone and catches downward thin-floor crossings. It runs before desktop
+cameras and again after XR gamepad locomotion, with candidate and correction
+counters. Focused headless floor tests pass.
+
+This first pass scans collidables and handles one candidate per mover. It does
+not yet provide a static BVH, bounded corner iteration, rotated contact,
+horizontal sweep, or an XR camera republish after gamepad correction. The XR
+floor constraint can correct the locomotion root while the already-published
+eye view still reflects the earlier pose. Keep those as active work before
+claiming the desktop and XR examples meet the full acceptance criteria.
 
 Retire both the general
 `CollisionResponseComponent`/`CollisionResponseSystem` and, after its remaining

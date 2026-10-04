@@ -1200,6 +1200,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         .builder_call("role", strings(1))
                         .builder_call("enabled", booleans(1));
                 }
+                "Collidable" => {
+                    no_arg_constructors(component, &["static", "slide"]);
+                    component
+                        .builder_call("movement_target", any(1))
+                        .builder_call("enabled", booleans(1));
+                }
                 "RaycastableShape" => {
                     no_arg_constructors(
                         component,

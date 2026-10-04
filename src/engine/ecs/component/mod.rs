@@ -252,6 +252,8 @@ pub use camera_xr::CameraXRComponent;
 pub use clock::ClockComponent;
 pub use collision::CollisionComponent;
 pub use collision_response::{CollisionResponseComponent, CollisionResponseMode};
+mod collidable;
+pub use collidable::{CollidableComponent, CollidableMode};
 pub use collision_shape::CollisionShapeComponent;
 pub use color::ColorComponent;
 pub use combine_mesh::CombineMeshComponent;

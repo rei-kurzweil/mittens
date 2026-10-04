@@ -63,6 +63,11 @@ tripod_light("studio_rim_light", [1.8, 0.0, -4.2], [0.0, 1.25, 0.0], SL.color(1.
 
 // The floor's top face is the world-space y=0 ground plane.
 static_cube("studio_floor", [0.0, -0.05, 0.0], [18.0, 0.1, 18.0], [0.025, 0.035, 0.075])
+// The floor mesh is scaled by its transform; Zone dimensions are local.
+T.position(0.0, -0.05, 0.0).scale(18.0, 0.1, 18.0) {
+    name = "studio_floor_contact"
+    Zone.cube([0.5, 0.5, 0.5]) { Collidable.static() {} }
+}
 
 // Stable static colliders that can be picked up and repositioned with left mouse.
 grabbable_cube("pile_a_base_left",  [-2.8, 0.40, -1.7], [0.85, 0.80, 0.85], [0.95, 0.25, 0.38])
@@ -88,6 +93,7 @@ let avatar_gltf = GLTF.new("assets/models/bisket.glb") {
 
 let camera_view_state = { first_person = false }
 let camera_view_toggle = button("toggle camera view", {
+    compact = false
     background_color = [0.16, 0.48, 0.88, 0.92]
     color = [1.0, 1.0, 1.0, 1.0]
 })

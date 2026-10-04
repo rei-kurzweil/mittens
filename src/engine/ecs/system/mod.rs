@@ -83,6 +83,7 @@ pub mod selection_system;
 pub mod skinned_mesh_system;
 pub mod slider_system;
 pub mod spring_bone_visualization_system;
+pub mod static_contact_system;
 pub mod system_world;
 pub mod text_input_system;
 pub mod text_system;

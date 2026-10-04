@@ -4379,9 +4379,10 @@ fn gltf_pose_animation_example_imports_named_pose_factories() {
 #[test]
 fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
     use crate::engine::ecs::component::{
-        Camera3DComponent, CameraXRComponent, CollisionComponent, CollisionMode, InputComponent,
-        InputTransformModeComponent, InputXRComponent, RenderableComponent,
-        SecondaryMotionComponent, SpotLightComponent, SpringBoneComponent, SpringColliderComponent,
+        Camera3DComponent, CameraXRComponent, CollidableComponent, CollidableMode,
+        CollisionComponent, CollisionMode, InputComponent, InputTransformModeComponent,
+        InputXRComponent, RenderableComponent, SecondaryMotionComponent, SpotLightComponent,
+        SpringBoneComponent, SpringColliderComponent,
     };
     let source = include_str!("../../examples/secondary-motion-desktop.mms");
     let mut world = World::default();
@@ -4442,6 +4443,13 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
         found
     };
 
+    let floor_contact = named("studio_floor_contact");
+    assert!(descendants(floor_contact).iter().any(|id| {
+        world
+            .get_component_by_id_as::<CollidableComponent>(*id)
+            .is_some_and(|collidable| collidable.mode == CollidableMode::Static)
+    }));
+
     assert_eq!(
         count(&|id| world
             .get_component_by_id_as::<SecondaryMotionComponent>(id)
@@ -4452,7 +4460,7 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
         count(&|id| world
             .get_component_by_id_as::<SpringBoneComponent>(id)
             .is_some()),
-        17
+        15
     );
     assert_eq!(
         count(&|id| world
@@ -10166,6 +10174,23 @@ fn roundtrip_zone_preserves_shape_frame_roles_and_enabled_state() {
 }
 
 #[test]
+fn roundtrip_collidable_preserves_slide_target_and_enabled_state() {
+    use crate::engine::ecs::component::{CollidableComponent, CollidableMode, ComponentRef};
+    let target = ComponentRef::Query("[name='avatar_root']".to_string());
+    let (world, id) = roundtrip_component(
+        CollidableComponent::slide()
+            .movement_target(target.clone())
+            .enabled(false),
+    );
+    let got = world
+        .get_component_by_id_as::<CollidableComponent>(id)
+        .unwrap();
+    assert_eq!(got.mode, CollidableMode::Slide);
+    assert_eq!(got.movement_target_source, Some(target));
+    assert!(!got.enabled);
+}
+
+#[test]
 fn roundtrip_rider_preserves_attachment_references() {
     use crate::engine::ecs::component::{ComponentRef, RiderComponent};
     let original = RiderComponent::new()
@@ -11314,10 +11339,10 @@ fn mittens_corp_desktop_routes_mounted_wasd_to_the_car() {
 fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
     use crate::engine::ecs::component::{
         AmplitudeComponent, AudioInputComponent, AvatarControlComponent, CameraXRComponent,
-        CollisionShape, ComponentRef, ControllerXRComponent, EditorComponent, EditorPanel,
-        EditorUIComponent, GLTFComponent, HTCEyeTrackingComponent, HumanoidBoneMapComponent,
-        InputXRComponent, InputXRGamepadComponent, MountableComponent, PointerComponent,
-        PoseCaptureComponent, ReturnToRestWhenStillComponent, RiderComponent,
+        CollidableComponent, CollidableMode, CollisionShape, ComponentRef, ControllerXRComponent,
+        EditorComponent, EditorPanel, EditorUIComponent, GLTFComponent, HTCEyeTrackingComponent,
+        HumanoidBoneMapComponent, InputXRComponent, InputXRGamepadComponent, MountableComponent,
+        PointerComponent, PoseCaptureComponent, ReturnToRestWhenStillComponent, RiderComponent,
         SecondaryMotionComponent, ShadingComponent, ShadingModel, SpringBoneComponent,
         SpringColliderComponent, TransformComponent, XrAxisControl, XrButtonControl, ZoneComponent,
     };
@@ -11336,6 +11361,29 @@ fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
     )
     .expect("mittens-corp retained runtime should start");
     assert!(output.errors.is_empty(), "{:?}", output.errors);
+
+    let stage = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("mittens_corp_stage"))
+        .expect("Mittens Corp stage");
+    let mut pending = vec![stage];
+    let mut static_zone_count = 0;
+    while let Some(id) = pending.pop() {
+        if world.get_component_by_id_as::<ZoneComponent>(id).is_some()
+            && world.children_of(id).iter().any(|child| {
+                world
+                    .get_component_by_id_as::<CollidableComponent>(*child)
+                    .is_some_and(|collidable| collidable.mode == CollidableMode::Static)
+            })
+        {
+            static_zone_count += 1;
+        }
+        pending.extend(world.children_of(id).iter().copied());
+    }
+    assert_eq!(
+        static_zone_count, 1,
+        "the stage deck is the first contact surface"
+    );
 
     let driver = world
         .all_components()

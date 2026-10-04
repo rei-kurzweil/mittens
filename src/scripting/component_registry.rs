@@ -16,23 +16,24 @@ use crate::engine::ecs::component::{
     AudioOscillatorComponent, AudioOutputComponent, AudioTriggerMode, AvatarBodyYawComponent,
     AvatarControlComponent, BackgroundColorComponent, BackgroundComponent, BloomComponent,
     BlurPassComponent, BoundsComponent, BoxSizing, Camera2DComponent, Camera3DComponent,
-    CameraXRComponent, ClockComponent, CollisionComponent, CollisionResponseComponent,
-    CollisionShape, CollisionShapeComponent, ColorComponent, CombineMeshComponent, ControllerHand,
-    ControllerPoseKind, DataComponent, DataValue, DirectionalLightComponent, Display,
-    DragContinuationPolicy, DragMappingPolicy, DraggableComponent, DraggablePlane, EdgeInsets,
-    EditorComponent, EditorInteractionMode, EditorPanel, EditorUIComponent, EditorUIPanelConfig,
-    EditorUIPanelSpec, ElementType, EmissiveComponent, EmissivePassComponent, EyeTrackingSource,
-    FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent,
-    GestureCoordTypeComponent, GrabbableComponent, GravityComponent, GridBindingComponent,
-    GridComponent, GridVisualSpace, HTCEyeTrackingComponent, HtmlElementComponent,
-    HttpClientComponent, HttpServerComponent, HumanoidBoneMapComponent, IKChainComponent, IKSolver,
-    ImplicitSphereComponent, ImplicitSurfaceComponent, InputComponent, InputTransformModeComponent,
-    InputXRComponent, InputXRGamepadComponent, InspectLayoutComponent, JointRetargetBasisComponent,
-    JustifyContent, KeyframeComponent, LayoutBoundsComponent, LayoutComponent,
-    LightQuantizationComponent, MediaPipeEyeTrackingComponent, MeshComponent, MirrorComponent,
-    MorphTargetMapComponent, MountableComponent, MusicNote, MusicNoteComponent,
-    NormalVisualisationComponent, OpacityComponent, OptionComponent, OscillatorType, Overflow,
-    OverlayComponent, PointLightComponent, PointerComponent, PointerEvents, PoseCaptureComponent,
+    CameraXRComponent, ClockComponent, CollidableComponent, CollisionComponent,
+    CollisionResponseComponent, CollisionShape, CollisionShapeComponent, ColorComponent,
+    CombineMeshComponent, ControllerHand, ControllerPoseKind, DataComponent, DataValue,
+    DirectionalLightComponent, Display, DragContinuationPolicy, DragMappingPolicy,
+    DraggableComponent, DraggablePlane, EdgeInsets, EditorComponent, EditorInteractionMode,
+    EditorPanel, EditorUIComponent, EditorUIPanelConfig, EditorUIPanelSpec, ElementType,
+    EmissiveComponent, EmissivePassComponent, EyeTrackingSource, FitBoundsComponent, FitBoundsMode,
+    FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent, GestureCoordTypeComponent,
+    GrabbableComponent, GravityComponent, GridBindingComponent, GridComponent, GridVisualSpace,
+    HTCEyeTrackingComponent, HtmlElementComponent, HttpClientComponent, HttpServerComponent,
+    HumanoidBoneMapComponent, IKChainComponent, IKSolver, ImplicitSphereComponent,
+    ImplicitSurfaceComponent, InputComponent, InputTransformModeComponent, InputXRComponent,
+    InputXRGamepadComponent, InspectLayoutComponent, JointRetargetBasisComponent, JustifyContent,
+    KeyframeComponent, LayoutBoundsComponent, LayoutComponent, LightQuantizationComponent,
+    MediaPipeEyeTrackingComponent, MeshComponent, MirrorComponent, MorphTargetMapComponent,
+    MountableComponent, MusicNote, MusicNoteComponent, NormalVisualisationComponent,
+    OpacityComponent, OptionComponent, OscillatorType, Overflow, OverlayComponent,
+    PointLightComponent, PointerComponent, PointerEvents, PoseCaptureComponent,
     PoseCaptureLibraryComponent, PoseCapturePoseComponent, Position, QuatTemporalFilterComponent,
     QuatYawFollowComponent, RayCastComponent, RaycastableComponent, RaycastableShapeComponent,
     RaycastableShapeType, RefractionComponent, RenderGraphComponent, RenderableComponent,
@@ -109,6 +110,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "CameraXR",
     "Clock",
     "Collision",
+    "Collidable",
     "CollisionShape",
     "Color",
     "Data",
@@ -572,9 +574,9 @@ fn collect_referenced_guids_filtered(
     out: &mut std::collections::HashSet<uuid::Uuid>,
 ) {
     use crate::engine::ecs::component::{
-        ComponentRef, GridBindingComponent, IKChainComponent, MountableComponent, RiderComponent,
-        SliderComponent, TransformApplyInverseLocalComponent, TransformParentComponent,
-        ZoneComponent,
+        CollidableComponent, ComponentRef, GridBindingComponent, IKChainComponent,
+        MountableComponent, RiderComponent, SliderComponent, TransformApplyInverseLocalComponent,
+        TransformParentComponent, ZoneComponent,
     };
 
     let visible = filtered_save_visibility(world, node);
@@ -614,6 +616,11 @@ fn collect_referenced_guids_filtered(
         }
         if let Some(zone) = world.get_component_by_id_as::<ZoneComponent>(node)
             && let Some(ComponentRef::Guid(guid)) = &zone.frame_source
+        {
+            out.insert(*guid);
+        }
+        if let Some(collidable) = world.get_component_by_id_as::<CollidableComponent>(node)
+            && let Some(ComponentRef::Guid(guid)) = &collidable.movement_target_source
         {
             out.insert(*guid);
         }
@@ -747,9 +754,9 @@ fn collect_referenced_guids_limited(
     out: &mut std::collections::HashSet<uuid::Uuid>,
 ) {
     use crate::engine::ecs::component::{
-        ComponentRef, GridBindingComponent, IKChainComponent, MountableComponent, RiderComponent,
-        SliderComponent, TransformApplyInverseLocalComponent, TransformParentComponent,
-        ZoneComponent,
+        CollidableComponent, ComponentRef, GridBindingComponent, IKChainComponent,
+        MountableComponent, RiderComponent, SliderComponent, TransformApplyInverseLocalComponent,
+        TransformParentComponent, ZoneComponent,
     };
     if let Some(ik) = world.get_component_by_id_as::<IKChainComponent>(node) {
         for src in [&ik.target_source, &ik.end_effector_source]
@@ -786,6 +793,11 @@ fn collect_referenced_guids_limited(
     }
     if let Some(zone) = world.get_component_by_id_as::<ZoneComponent>(node)
         && let Some(ComponentRef::Guid(guid)) = &zone.frame_source
+    {
+        out.insert(*guid);
+    }
+    if let Some(collidable) = world.get_component_by_id_as::<CollidableComponent>(node)
+        && let Some(ComponentRef::Guid(guid)) = &collidable.movement_target_source
     {
         out.insert(*guid);
     }
@@ -2568,6 +2580,14 @@ fn create_component(
             let id = world.add_component(zone);
             Ok(id)
         }
+        "Collidable" => {
+            let collidable = match ctor {
+                Some("static") => CollidableComponent::static_(),
+                Some("slide") => CollidableComponent::slide(),
+                _ => return Err("Collidable requires .static() or .slide()".into()),
+            };
+            Ok(world.add_component(collidable))
+        }
         "RaycastableShape" => {
             let shape = match ctor {
                 Some("aabb") => RaycastableShapeType::Aabb,
@@ -3663,6 +3683,24 @@ fn apply_call(
         *world
             .get_component_by_id_as_mut::<ZoneComponent>(id)
             .expect("checked zone") = updated;
+        return Ok(());
+    }
+    if world
+        .get_component_by_id_as::<CollidableComponent>(id)
+        .is_some()
+    {
+        let current = world
+            .get_component_by_id_as::<CollidableComponent>(id)
+            .unwrap()
+            .clone();
+        let updated = match method {
+            "movement_target" => current.movement_target(arg_component_ref(world, args, 0)?),
+            "enabled" => current.enabled(arg_bool(args, 0)?),
+            _ => return Err(format!("Collidable: unknown builder '{method}'")),
+        };
+        *world
+            .get_component_by_id_as_mut::<CollidableComponent>(id)
+            .unwrap() = updated;
         return Ok(());
     }
     if world.get_component_by_id_as::<RiderComponent>(id).is_some() {

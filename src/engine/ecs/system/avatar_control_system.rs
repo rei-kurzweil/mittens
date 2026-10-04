@@ -1,13 +1,13 @@
 use crate::engine::ecs::component::HumanoidSlot;
 use crate::engine::ecs::component::{
     AvatarControlComponent, BoneRestPoseComponent, Camera3DComponent, CameraXRComponent,
-    CollisionComponent, CollisionResponseComponent, CollisionShape, CollisionShapeComponent,
-    ControllerHand, ControllerPoseSource, ControllerXRComponent, EyeRotationLimits, GLTFComponent,
-    HeadMotionGazePolicy, HeadRotationCompensation, IKChainComponent, IKSolver, InputXRComponent,
-    QuatYawFollowComponent, SerializeComponent, TransformComponent, TransformDropComponent,
-    TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
-    TransformMapTranslationComponent, VRChatOSCEyeTrackingComponent, XREyeTrackingComponent,
-    XREyeTrackingHtcComponent,
+    CollidableComponent, CollisionShape, ControllerHand, ControllerPoseSource,
+    ControllerXRComponent, EyeRotationLimits, GLTFComponent, HeadMotionGazePolicy,
+    HeadRotationCompensation, IKChainComponent, IKSolver, InputXRComponent, QuatYawFollowComponent,
+    SerializeComponent, TransformComponent, TransformDropComponent, TransformForkTRSComponent,
+    TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
+    VRChatOSCEyeTrackingComponent, XREyeTrackingComponent, XREyeTrackingHtcComponent,
+    ZoneComponent,
 };
 use crate::engine::ecs::component::{
     QueryRootMode, is_level_provider, resolve_component_ref, retained_level_sample,
@@ -718,7 +718,7 @@ fn try_init_or_route_capsule(
     avc_id: ComponentId,
     world: &mut World,
     render_assets: &RenderAssets,
-    emit: &mut dyn SignalEmitter,
+    _emit: &mut dyn SignalEmitter,
 ) {
     let Some(avc) = world
         .get_component_by_id_as::<AvatarControlComponent>(avc_id)
@@ -742,12 +742,12 @@ fn try_init_or_route_capsule(
     };
     let movement_target = automatic_avc_movement_target(world, avc_id);
 
-    if let Some(response_id) = avc.capsule_response_id {
-        if let Some(response) =
-            world.get_component_by_id_as_mut::<CollisionResponseComponent>(response_id)
+    if let Some(collidable_id) = avc.capsule_collidable_id {
+        if let Some(collidable) =
+            world.get_component_by_id_as_mut::<CollidableComponent>(collidable_id)
         {
-            response.movement_target_id = movement_target;
-            response.movement_target_required = true;
+            collidable.movement_target_id = movement_target;
+            collidable.movement_target_required = true;
         }
         return;
     }
@@ -805,11 +805,9 @@ fn try_init_or_route_capsule(
     let capsule_t =
         world.add_component(TransformComponent::new().with_position(0.0, inferred.center_y, 0.0));
     let serialize = world.add_component(SerializeComponent::off());
-    let collision = world.add_component(CollisionComponent::KINEMATIC());
-    let shape = world.add_component(CollisionShapeComponent::new(inferred.shape));
-    let response = world.add_component(
-        CollisionResponseComponent::slide().with_runtime_movement_target(movement_target),
-    );
+    let zone = world.add_component(ZoneComponent::new(inferred.shape));
+    let collidable = world
+        .add_component(CollidableComponent::slide().with_runtime_movement_target(movement_target));
 
     let _ = world.set_parent(fork, Some(model_root_id));
     let _ = world.set_parent(translation, Some(fork));
@@ -819,27 +817,14 @@ fn try_init_or_route_capsule(
     let _ = world.set_parent(scale_drop, Some(scale));
     let _ = world.set_parent(capsule_t, Some(fork));
     let _ = world.set_parent(serialize, Some(capsule_t));
-    let _ = world.set_parent(collision, Some(capsule_t));
-    let _ = world.set_parent(shape, Some(collision));
-    let _ = world.set_parent(response, Some(collision));
+    let _ = world.set_parent(zone, Some(capsule_t));
+    let _ = world.set_parent(collidable, Some(zone));
 
     if let Some(avc) = world.get_component_by_id_as_mut::<AvatarControlComponent>(avc_id) {
         avc.model_root_id = Some(model_root_id);
         avc.capsule_transform_id = Some(capsule_t);
-        avc.capsule_response_id = Some(response);
+        avc.capsule_collidable_id = Some(collidable);
     }
-    emit.push_intent_now(
-        collision,
-        IntentValue::RegisterCollision {
-            component_id: collision,
-        },
-    );
-    emit.push_intent_now(
-        response,
-        IntentValue::RegisterCollisionResponse {
-            component_id: response,
-        },
-    );
 }
 
 fn log_settled_capsule_diagnostics(avc_id: ComponentId, world: &World) {
@@ -849,23 +834,18 @@ fn log_settled_capsule_diagnostics(avc_id: ComponentId, world: &World) {
     let Some(capsule_transform) = avc.capsule_transform_id else {
         return;
     };
-    let Some(collision) = world
+    let Some(zone) = world
         .children_of(capsule_transform)
         .iter()
         .copied()
-        .find(|id| {
-            world
-                .get_component_by_id_as::<CollisionComponent>(*id)
-                .is_some()
-        })
+        .find(|id| world.get_component_by_id_as::<ZoneComponent>(*id).is_some())
     else {
         return;
     };
-    let Some(shape) = world.children_of(collision).iter().find_map(|id| {
-        world
-            .get_component_by_id_as::<CollisionShapeComponent>(*id)
-            .map(|shape| shape.shape)
-    }) else {
+    let Some(shape) = world
+        .get_component_by_id_as::<ZoneComponent>(zone)
+        .map(|zone| zone.shape)
+    else {
         return;
     };
     let CollisionShape::CapsuleY {
@@ -885,7 +865,7 @@ fn log_settled_capsule_diagnostics(avc_id: ComponentId, world: &World) {
         (center[1] - half_height, center[1] + half_height)
     });
     eprintln!(
-        "[AVC][capsule][settled] avc={avc_id:?} capsule_transform={capsule_transform:?} collision={collision:?} local_center_y={local_center_y:?} world_center={world_center:?} radius={radius:.6} half_segment={half_segment:.6} world_bottom_top={world_extents:?}"
+        "[AVC][capsule][settled] avc={avc_id:?} capsule_transform={capsule_transform:?} zone={zone:?} local_center_y={local_center_y:?} world_center={world_center:?} radius={radius:.6} half_segment={half_segment:.6} world_bottom_top={world_extents:?}"
     );
 }
 
@@ -2770,28 +2750,24 @@ mod capsule_tests {
             .get_component_by_id_as::<AvatarControlComponent>(avc)
             .unwrap();
         let capsule_t = state.capsule_transform_id.unwrap();
-        let response_id = state.capsule_response_id.unwrap();
-        let collision = world
+        let collidable_id = state.capsule_collidable_id.unwrap();
+        let zone = world
             .children_of(capsule_t)
             .iter()
             .copied()
-            .find(|id| {
-                world
-                    .get_component_by_id_as::<CollisionComponent>(*id)
-                    .is_some()
-            })
+            .find(|id| world.get_component_by_id_as::<ZoneComponent>(*id).is_some())
             .unwrap();
-        let shapes: Vec<_> = world
-            .children_of(collision)
-            .iter()
-            .filter_map(|id| world.get_component_by_id_as::<CollisionShapeComponent>(*id))
-            .collect();
-        assert_eq!(shapes.len(), 1);
-        assert_eq!(shapes[0].shape, CollisionShape::capsule_y(0.28, 1.22));
-        let response = world
-            .get_component_by_id_as::<CollisionResponseComponent>(response_id)
+        assert_eq!(
+            world
+                .get_component_by_id_as::<ZoneComponent>(zone)
+                .unwrap()
+                .shape,
+            CollisionShape::capsule_y(0.28, 1.22)
+        );
+        let collidable = world
+            .get_component_by_id_as::<CollidableComponent>(collidable_id)
             .unwrap();
-        assert_eq!(response.movement_target_id, Some(driven));
+        assert_eq!(collidable.movement_target_id, Some(driven));
 
         let fork = world.parent_of(capsule_t).unwrap();
         let arbitrary_pose = TransformComponent::new()
@@ -2885,22 +2861,19 @@ mod capsule_tests {
             .unwrap()
             .capsule_transform_id
             .expect("capsule after imported mesh registration");
-        let collision = world
+        let zone = world
             .children_of(capsule_t)
             .iter()
             .copied()
-            .find(|id| {
-                world
-                    .get_component_by_id_as::<CollisionComponent>(*id)
-                    .is_some()
-            })
-            .expect("generated collision");
-        let shape = world
-            .children_of(collision)
-            .iter()
-            .find_map(|id| world.get_component_by_id_as::<CollisionShapeComponent>(*id))
-            .expect("generated collision shape");
-        assert_eq!(shape.shape, CollisionShape::capsule_y(0.28, 0.72));
+            .find(|id| world.get_component_by_id_as::<ZoneComponent>(*id).is_some())
+            .expect("generated zone");
+        assert_eq!(
+            world
+                .get_component_by_id_as::<ZoneComponent>(zone)
+                .unwrap()
+                .shape,
+            CollisionShape::capsule_y(0.28, 0.72)
+        );
     }
 
     #[test]

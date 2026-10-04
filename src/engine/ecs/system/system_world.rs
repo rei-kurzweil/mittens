@@ -49,6 +49,7 @@ use crate::engine::ecs::system::XREyeTrackingSystem;
 use crate::engine::ecs::system::XrSystem;
 use crate::engine::ecs::system::ZoneVisualizationSystem;
 use crate::engine::ecs::system::bounds_system::BoundsSystem;
+use crate::engine::ecs::system::static_contact_system::StaticContactSystem;
 use crate::engine::ecs::system::{
     AmplitudeSystem, AssetSystem, AvatarBodyYawSystem, AvatarControlSystem, Cursor3dSystem,
     EditorContextSystem, EditorInspectorSystem, EditorPaintSystem, EditorSystem, FitBoundsSystem,
@@ -102,6 +103,7 @@ pub struct SystemWorld {
     pub spring_bone_visualization: crate::engine::ecs::system::SpringBoneVisualizationSystem,
     pub camera_visualization: crate::engine::ecs::system::CameraVisualizationSystem,
     pub collision_response: CollisionResponseSystem,
+    pub static_contact: StaticContactSystem,
     pub skinned_mesh: SkinnedMeshSystem,
     pub combine_mesh: CombineMeshSystem,
     pub implicit_surface: ImplicitSurfaceSystem,
@@ -3100,6 +3102,11 @@ impl SystemWorld {
         self.velocity.tick(world, queue, dt_sec);
         queue.flush(world, self, visuals, render_assets);
 
+        // Constrain input/velocity proposed poses before cameras read them.
+        for target in self.static_contact.tick(world) {
+            self.transform_changed(world, visuals, target);
+        }
+
         // Update window camera + select active XR camera rig before OpenXR consumes it.
         self.camera.tick(world, visuals, input, dt_sec);
         // OpenXR consumes the latest rig transform + publishes per-eye cameras.
@@ -3116,6 +3123,9 @@ impl SystemWorld {
             .tick_with_queue(world, visuals, &self.xr, queue, dt_sec);
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
+        for target in self.static_contact.tick(world) {
+            self.transform_changed(world, visuals, target);
+        }
 
         // Camera-dependent gizmo transforms must settle before pointer rays query the BVH.
         // XR wins whenever an active rig has published at least one eye.
