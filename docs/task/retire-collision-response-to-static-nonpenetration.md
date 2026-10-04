@@ -2,7 +2,17 @@
 
 ## Status and outcome
 
-Planned, revised 2026-10-03. Retire both the general
+In progress, updated 2026-10-04. Synchronous `overlap_zones(world, a, b)` now reports
+inclusive transformed box/sphere/capsule intersection and both current frames
+and shapes. `contact_zones` adds separation direction and depth for axis-aligned
+boxes and uniformly scaled spheres/capsules. `sweep_capsule_floor` reports a
+downward crossing of an axis-aligned floor top, even when the end pose misses
+the floor. Rotated contact resolution, general sweeps, a collidable role, and
+the contact broadphase remain. Queries report disabled, unresolved, singular,
+unsupported-frame, and narrow-phase non-convergence errors. The existing point
+query remains intact; focused zone query tests pass.
+
+Retire both the general
 `CollisionResponseComponent`/`CollisionResponseSystem` and, after its remaining
 event consumer is migrated, the always-running `CollisionSystem` overlap worker.
 Keep a narrow static-contact constraint for the avatar and other explicitly
@@ -147,19 +157,66 @@ consume the final world transform.
 
 ## Migration plan
 
-Use `examples/collision-perimeter.rs` as the first visible slide test rather
-than adding another scene. It already has an input-driven camera sphere, a
-static floor, and a perimeter of walls. In the first slice, migrate that
-sphere and those static surfaces to `Zone` plus `Collidable.slide()` /
-`Collidable.static()`. Keep the camera and perimeter so walking into and along
-a wall demonstrates the behavior. Remove its old `Gravity` field, pushable
-cubes, and response-on-static-wall demonstration; those belong to later
-gravity/dynamic-body work. Add a headless version of the same movement and
+Start visible verification with an AVC capsule against a simple flat floor in
+both desktop and XR. `examples/secondary-motion-desktop.mms` is the desktop
+candidate: its `studio_floor` has a top at world y=0, and its input-driven AVC
+routes capsule corrections to `avatar_head_driver`. Make that floor a static
+zone/collidable, and migrate AVC's generated capsule to a slide collidable with
+the explicit movement target. Leave its grabbable pile cubes on the legacy path
+until horizontal obstacles are in scope. The floor is authored under a scaled
+transform, so a zone on that transform uses local half extents `[0.5, 0.5,
+0.5]`, not half the already-scaled world size. Once migrated, run
+`cargo run --release -- load examples/secondary-motion-desktop.mms`: `F` drives
+the desktop avatar downward into the floor, while `WASD` checks that corrected
+movement along the floor remains free.
+
+`examples/mittens-corp.mms` is the first XR candidate. Its player is Rei(mu),
+with the two bow spring chains and their `ReturnToRestWhenStill` constraints.
+The AVC uses `rei_mu_locomotion_root`; the car's Rider and mounted controls
+retain that movement root. The shared `studio_stage` deck has top y=0.12 and
+lies under Rei(mu)'s initial x/z. Make the deck a static zone/collidable first.
+Its lower `studio_floor` is a fallback surface, not the initial standing
+surface. Verify that the generated capsule constrains the locomotion root
+rather than the visual model or HMD tracking transform, and that entering or
+leaving the car keeps the current movement authority. Since this slice adds no
+gravity, use an explicit downward pose change or controlled test drop to
+demonstrate floor crossing, then check that the capsule bottom remains at or
+above the deck top. Headless tests should cover initial penetration, a
+downward crossing that ends below a thin floor, and tangential XZ movement
+after correction. Visual XR verification requires an XR runtime and headset;
+run `cargo run --release -- load examples/mittens-corp.mms` after the XR
+scheduling path is in place.
+
+The current tick order needs attention before these are live contact examples:
+desktop input settles before the old collision-response phase, but XR gamepad
+locomotion runs after the camera and old response phase, and AVC may create its
+capsule later in the frame. Place the new constraint after each proposed mover
+pose and before the camera and interaction consumers that need the corrected
+pose; a late correction followed only by rendering would leave XR views or
+queries one pose behind. Keep first-frame capsule creation and subsequent
+movement-target updates covered by headless scheduling checks.
+
+Other scenes remain follow-ups: `examples/vtuber-mirror-example.mms` and
+`examples/vtuber-slidedeck.mms` have XR avatars and temple floors, but their
+visible risers sit above the authored ground plane; choose the actual standing
+surface before enabling contact. `examples/capsule-stick-figure.mms` is a
+second staged XR candidate. `examples/bisket-vr-demo.mms` uses the
+72-by-72-cell voxel terrain and should exercise the static contact index after
+the small-floor path works. `examples/e2.mms` has a rotated floor frame, which
+the current separation query explicitly rejects; migrate it after rotated
+contact geometry or reauthor that floor as an axis-aligned box.
+
+Then use `examples/collision-perimeter.rs` for the first visible horizontal
+slide test. It already has an input-driven camera sphere, a static floor, and a
+perimeter of walls. Migrate that sphere and those static surfaces to `Zone`
+plus `Collidable.slide()` / `Collidable.static()`; keep the camera and perimeter
+so walking into and along a wall demonstrates the behavior. Remove its old
+`Gravity` field, pushable cubes, and response-on-static-wall demonstration;
+those belong to later gravity/dynamic-body work. Add headless movement and
 contact checks so correctness does not depend on visual inspection.
 
 Next migrate the single camera-sphere slide in
-`examples/bisket-desktop-demo.mms` and AvatarControl's generated capsule,
-after verifying their movement targets and floor/wall behavior. The larger
+`examples/bisket-desktop-demo.mms`. The larger
 `examples/gravity-fields.rs` depends on old push, private gravity velocity,
 and `CollisionStarted` handlers; repurpose it for first-class gravity and
 dynamic bodies when those exist, or remove the obsolete interactions during
@@ -199,9 +256,25 @@ them, and remove collision participation from decorative floors.
 ## Performance and scheduling
 
 The current collision worker builds a separate BVH from all collision objects
-on every worker tick. `BvhSystem` is a different BVH over raycastable
-renderables; its leaves are not physical collidable zones. Neither is a
-same-step contact index for the proposed zone path.
+on every worker tick, then sends overlap pairs back for later event dispatch.
+That asynchronous design suits enter/exit observation but can give contact
+response a pair snapshot from an earlier pose. `BvhSystem` is a different BVH
+over raycastable renderables; it refits or rebuilds and answers raycasts on the
+simulation thread after transform updates. Its leaves are not physical
+collidable zones. Neither existing index is a same-step contact index for the
+proposed zone path.
+
+A contact BVH and a contact worker are separate decisions. Keep contact
+queries synchronous and use a static-collidable index when the candidate set
+justifies one. Do not add a dedicated worker merely because there are many
+zones: indexing reduces candidate work, while threading alone does not. If
+profiling shows that index maintenance or independent queries exceed the frame
+budget, consider worker jobs with versioned immutable snapshots or a same-step
+completion barrier.
+Corrections must still consume results for the current proposed pose before
+cameras and interaction systems read the final transform. Measure the cost of
+snapshot transfer, synchronization, and missed frame deadlines before adopting
+that design.
 
 Keep a contact broadphase over zones with a `Collidable` role. Cache static
 zones' world AABBs and index them until their shape or effective transform

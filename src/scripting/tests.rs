@@ -11311,15 +11311,15 @@ fn mittens_corp_desktop_routes_mounted_wasd_to_the_car() {
 }
 
 #[test]
-fn mittens_corp_evaluates_with_bisket_player_and_car_mount_fixture() {
+fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
     use crate::engine::ecs::component::{
         AmplitudeComponent, AudioInputComponent, AvatarControlComponent, CameraXRComponent,
         CollisionShape, ComponentRef, ControllerXRComponent, EditorComponent, EditorPanel,
         EditorUIComponent, GLTFComponent, HTCEyeTrackingComponent, HumanoidBoneMapComponent,
         InputXRComponent, InputXRGamepadComponent, MountableComponent, PointerComponent,
-        PoseCaptureComponent, RiderComponent, SecondaryMotionComponent, ShadingComponent,
-        ShadingModel, SpringColliderComponent, TransformComponent, XrAxisControl, XrButtonControl,
-        ZoneComponent,
+        PoseCaptureComponent, ReturnToRestWhenStillComponent, RiderComponent,
+        SecondaryMotionComponent, ShadingComponent, ShadingModel, SpringBoneComponent,
+        SpringColliderComponent, TransformComponent, XrAxisControl, XrButtonControl, ZoneComponent,
     };
 
     let mut world = World::default();
@@ -11339,8 +11339,8 @@ fn mittens_corp_evaluates_with_bisket_player_and_car_mount_fixture() {
 
     let driver = world
         .all_components()
-        .find(|&id| world.component_label(id) == Some("bisket_xr_driver"))
-        .expect("mittens-corp should name its Bisket XR driver");
+        .find(|&id| world.component_label(id) == Some("rei_mu_xr_driver"))
+        .expect("mittens-corp should name its Rei(mu) XR driver");
     let input_xr = world
         .all_components()
         .find(|&id| {
@@ -11356,20 +11356,20 @@ fn mittens_corp_evaluates_with_bisket_player_and_car_mount_fixture() {
         .expect("InputXRGamepad should resolve the outer locomotion transform");
     assert_eq!(
         world.component_label(locomotion_root),
-        Some("bisket_locomotion_root")
+        Some("rei_mu_locomotion_root")
     );
     let rider = world
         .all_components()
         .find_map(|id| world.get_component_by_id_as::<RiderComponent>(id))
-        .expect("mittens-corp should declare its Bisket Rider");
+        .expect("mittens-corp should declare its Rei(mu) Rider");
     assert!(rider.anchor.is_some());
     assert!(rider.movement_root.is_some());
     assert!(rider.input.is_some());
 
     let rider_anchor = world
         .all_components()
-        .find(|&id| world.component_label(id) == Some("bisket_rider_cxr_anchor"))
-        .expect("Bisket should expose a rider-side CXR anchor");
+        .find(|&id| world.component_label(id) == Some("rei_mu_rider_cxr_anchor"))
+        .expect("Rei(mu) should expose a rider-side CXR anchor");
     let mut rider_ancestor = world.parent_of(rider_anchor);
     while rider_ancestor.is_some() && rider_ancestor != Some(driver) {
         rider_ancestor = rider_ancestor.and_then(|id| world.parent_of(id));
@@ -11466,7 +11466,7 @@ fn mittens_corp_evaluates_with_bisket_player_and_car_mount_fixture() {
                 .get_component_by_id_as::<InputXRGamepadComponent>(id)
                 .is_some_and(|gamepad| gamepad.locomotion && gamepad.speed == 1.5)
         })
-        .expect("Bisket should expose canonical vehicle controls");
+        .expect("Rei(mu) should expose canonical vehicle controls");
 
     let hands: Vec<_> = world
         .all_components()
@@ -11479,7 +11479,7 @@ fn mittens_corp_evaluates_with_bisket_player_and_car_mount_fixture() {
     assert_eq!(
         hands.len(),
         2,
-        "the Bisket player should retain both tracked laser hands"
+        "the Rei(mu) player should retain both tracked laser hands"
     );
     for hand in hands {
         let mut pending = vec![hand];
@@ -11508,19 +11508,19 @@ fn mittens_corp_evaluates_with_bisket_player_and_car_mount_fixture() {
                 .is_some_and(|editor| editor.active)
         })
         .expect("mittens-corp should author an active editor");
-    let bisket = world
+    let rei_mu = world
         .all_components()
         .find(|id| {
             world
                 .get_component_by_id_as::<GLTFComponent>(*id)
-                .is_some_and(|gltf| gltf.uri == "assets/models/bisket.glb")
+                .is_some_and(|gltf| gltf.uri == "assets/models/rei(mu).glb")
         })
-        .expect("mittens-corp should load Bisket");
-    let mut bisket_ancestor = world.parent_of(bisket);
-    while bisket_ancestor.is_some() && bisket_ancestor != Some(editor) {
-        bisket_ancestor = bisket_ancestor.and_then(|id| world.parent_of(id));
+        .expect("mittens-corp should load Rei(mu)");
+    let mut rei_mu_ancestor = world.parent_of(rei_mu);
+    while rei_mu_ancestor.is_some() && rei_mu_ancestor != Some(editor) {
+        rei_mu_ancestor = rei_mu_ancestor.and_then(|id| world.parent_of(id));
     }
-    assert_eq!(bisket_ancestor, Some(editor));
+    assert_eq!(rei_mu_ancestor, Some(editor));
     assert!(world.all_components().any(|id| {
         world
             .get_component_by_id_as::<AvatarControlComponent>(id)
@@ -11536,9 +11536,9 @@ fn mittens_corp_evaluates_with_bisket_player_and_car_mount_fixture() {
         .expect("mittens-corp should retain HTC eye tracking for blink closure");
     assert!(
         !eye_tracker.1.enable_pupil_direction_tracking,
-        "the ambient animation, not live gaze, should own Bisket eye direction"
+        "the ambient animation, not live gaze, should own Rei(mu) eye direction"
     );
-    assert!(world.children_of(bisket).iter().any(|id| {
+    assert!(world.children_of(rei_mu).iter().any(|id| {
         world
             .get_component_by_id_as::<HumanoidBoneMapComponent>(*id)
             .is_some()
@@ -11558,6 +11558,31 @@ fn mittens_corp_evaluates_with_bisket_player_and_car_mount_fixture() {
             .get_component_by_id_as::<SecondaryMotionComponent>(id)
             .is_some()
     }));
+    let bow_rest_constraints: Vec<_> = world
+        .all_components()
+        .filter(|id| {
+            world
+                .get_component_by_id_as::<ReturnToRestWhenStillComponent>(*id)
+                .is_some()
+        })
+        .collect();
+    assert_eq!(bow_rest_constraints.len(), 2);
+    let mut bow_roots = Vec::new();
+    for id in bow_rest_constraints {
+        let spring = world
+            .parent_of(id)
+            .and_then(|parent| world.get_component_by_id_as::<SpringBoneComponent>(parent))
+            .expect("bow rest constraint should belong to a spring chain");
+        bow_roots.push(spring.root.clone());
+        let config = world
+            .get_component_by_id_as::<ReturnToRestWhenStillComponent>(id)
+            .unwrap();
+        assert_eq!(config.motion_threshold, 0.028);
+        assert_eq!(config.still_for, 0.4);
+    }
+    for root in ["head_bow.001", "head_bow.009"] {
+        assert!(bow_roots.contains(&Some(ComponentRef::Query(format!("[name='{root}']")))));
+    }
     assert!(world.all_components().any(|id| {
         world
             .get_component_by_id_as::<SpringColliderComponent>(id)
@@ -11568,10 +11593,10 @@ fn mittens_corp_evaluates_with_bisket_player_and_car_mount_fixture() {
             .get_component_by_id_as::<ShadingComponent>(id)
             .is_some_and(|shading| shading.model == ShadingModel::Anime)
     }));
-    assert!(world.children_of(bisket).iter().any(|id| {
+    assert!(world.children_of(rei_mu).iter().any(|id| {
         world
             .get_component_by_id_as::<PoseCaptureComponent>(*id)
-            .is_some_and(|capture| capture.asset_name.as_deref() == Some("bisket"))
+            .is_some_and(|capture| capture.asset_name.as_deref() == Some("rei_mu"))
     }));
 
     let editor_panels = world

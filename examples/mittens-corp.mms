@@ -2,7 +2,7 @@ import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
 
 let arm_ik = vroid_arm_ik(-0.35, 1)
 
-// mittens-corp — XR car/controller regression scene and Bisket pose-authoring tool.
+// mittens-corp — XR car/controller regression scene and Rei(mu) pose-authoring tool.
 //
 // Run with:
 //   cargo run --release -- load examples/mittens-corp.mms
@@ -16,13 +16,15 @@ import { bisket_anime_shading } from "../assets/components/materials/bisket_anim
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
+import { rei_mu_bow_secondary_motion } from "../assets/components/secondary_motion/rei-mu-bow.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { suspended_platform } from "../assets/components/platforms/suspended_platform.mms"
 import { display_car_xr } from "../assets/components/vehicles/display_car.mms"
 
 // Optional sources stay neutral when the runtime or hardware is unavailable.
 let microphone = AudioInput {}
-let voice_level = Amplitude.rolling_window(0.080).from(microphone) {}
+let voice_level = Amplitude.rolling_window(0.080).highpass(120.0).highpass_resonance(0.707).from(microphone) {}
+let mouth_tuning = { center_rms = 0.0475 range_rms = 0.085 amount = 1.0 }
 
 RendererSettings { window_size(1440, 810) }
 BGC.rgba(0.055, 0.055, 0.060, 1.0)
@@ -98,28 +100,28 @@ tripod_light(
     SL.color(1.0, 0.78, 0.68).intensity(8.0).distance(20.0).angle(0.62).penumbra(0.38),
 )
 
-// Bisket is the player rig. InputXR continues to own tracked head translation
+// Rei(mu) is the player rig. InputXR continues to own tracked head translation
 // and rotation; only the gamepad's built-in locomotion mapping is handed off
 // when a vehicle layer takes movement authority.
 ED.active() {
     let vehicle_controls = InputXRGamepad {
-        name = "bisket_pedestrian_locomotion"
+        name = "rei_mu_pedestrian_locomotion"
         locomotion()
         speed(1.5)
     }
 
     T.position(-5.0, 0.0, 0.0) {
-        name = "bisket_locomotion_root"
+        name = "rei_mu_locomotion_root"
         Rider
-            .anchor("[name='bisket_rider_cxr_anchor']")
-            .movement_root("[name='bisket_locomotion_root']")
-            .input("[name='bisket_pedestrian_locomotion']") {}
+            .anchor("[name='rei_mu_rider_cxr_anchor']")
+            .movement_root("[name='rei_mu_locomotion_root']")
+            .input("[name='rei_mu_pedestrian_locomotion']") {}
         InputXR.on() {
             vehicle_controls
 
             T {
-                name = "bisket_xr_driver"
-                let bisket_avatar = GLTF.new("assets/models/bisket.glb") {
+                name = "rei_mu_xr_driver"
+                let rei_mu_avatar = GLTF.new("assets/models/rei(mu).glb") {
                     bisket_anime_shading()
                     bisket_humanoid_bone_map()
                     MorphTargetMap.new()
@@ -127,14 +129,16 @@ ED.active() {
                         .slot("right_eye_blink", "Fcl_EYE_Close_R")
                         .slot("viseme_aa", "Fcl_MTH_A")
                     EM.on()
-                    PoseCapture { label("Bisket") asset_name("bisket") }
+                    PoseCapture { label("Rei(mu)") asset_name("rei_mu") }
                     bisket_colliders()
                     bisket_shirt_physics(false)
+                    // Includes ReturnToRestWhenStill on both bow ribbons.
+                    rei_mu_bow_secondary_motion()
                 }
-                let bisket_avatar_control = AVC {
+                let rei_mu_avatar_control = AVC {
                     mouth_open_from_amplitude(voice_level)
-                    mouth_open_rms_floor(0.005)
-                    mouth_open_rms_ceiling(0.09)
+                    mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
+                    mouth_open_amount(mouth_tuning.amount)
                     mouth_open_smoothing(16.0)
                     voice_level
                     
@@ -144,13 +148,13 @@ ED.active() {
                     hand_rotation_smoothing(220.0)
 
                     T {
-                        bisket_avatar
+                        rei_mu_avatar
                     }
 
                     // Rider-side anchor. AVC reparents this wrapper beneath the
                     // head; mounting aligns it with the car's cockpit target.
                     T.position(0.0, 0.08, 0.12) {
-                        name = "bisket_rider_cxr_anchor"
+                        name = "rei_mu_rider_cxr_anchor"
                         CXR { Pointer {} }
                     }
                     // HTC eye tracking retains closure samples for blink morphs,
@@ -172,18 +176,18 @@ ED.active() {
                         }
                     }
                 }
-                bisket_avatar_control
+                rei_mu_avatar_control
 
-                // The explicit Bisket humanoid map above declares these two
+                // The shared VRoid humanoid map above declares these two
                 // skin-joint targets. Query only this GLTF instance after it
                 // finishes importing, so another avatar cannot be animated.
-                on(bisket_avatar, "GLTFInitialized", fn(event) {
+                on(rei_mu_avatar, "GLTFInitialized", fn(event) {
                     let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
                     let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
                     if left_eye && right_eye {
-                        bisket_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
+                        rei_mu_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
                     } else {
-                        print("GLTFInitialized: Bisket mapped eye bones were not found; ambient eye animation was not attached")
+                        print("GLTFInitialized: Rei(mu) mapped eye bones were not found; ambient eye animation was not attached")
                     }
                 })
             }

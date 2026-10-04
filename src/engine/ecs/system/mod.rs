@@ -190,8 +190,9 @@ pub use velocity_system::VelocitySystem;
 pub use vr_types::{XrGamepadState, XrHandGamepadState, XrInputState};
 pub use xr_eye_tracking_system::XREyeTrackingSystem;
 pub use zone_query::{
-    ZoneQueryError, ZoneRelation, classify_point as classify_zone_point, resolve_zone_frame,
-    zones_in_subtree,
+    ZoneContact, ZoneOverlap, ZoneQueryError, ZoneRelation, ZoneSeparation, ZoneSweepHit,
+    classify_point as classify_zone_point, contact_zones, overlap_zones, resolve_zone_frame,
+    sweep_capsule_floor, zones_in_subtree,
 };
 pub use zone_visualization_system::{ZoneVisualizationRequest, ZoneVisualizationSystem};
 

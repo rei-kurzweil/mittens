@@ -1,8 +1,236 @@
-//! Shared, axis-aligned collision geometry used by detection and response.
+//! Shared collision geometry for synchronous zone queries and legacy collision systems.
 
 use crate::engine::ecs::component::CollisionShape;
 
 const GEOMETRY_EPSILON: f32 = 1.0e-6;
+
+/// Support point of an affine-transformed collision shape. The shape remains in
+/// its local coordinates; this also handles rotated boxes and scaled spheres.
+fn support_world(shape: CollisionShape, frame: [[f32; 4]; 4], direction: [f32; 3]) -> [f32; 3] {
+    let local_direction = [
+        dot([frame[0][0], frame[0][1], frame[0][2]], direction),
+        dot([frame[1][0], frame[1][1], frame[1][2]], direction),
+        dot([frame[2][0], frame[2][1], frame[2][2]], direction),
+    ];
+    let local = match shape.normalized() {
+        CollisionShape::Cube { half_extents } => [
+            half_extents[0].copysign(local_direction[0]),
+            half_extents[1].copysign(local_direction[1]),
+            half_extents[2].copysign(local_direction[2]),
+        ],
+        CollisionShape::Sphere { radius } => scale(unit(local_direction), radius),
+        CollisionShape::CapsuleY {
+            radius,
+            half_segment,
+        } => {
+            let radial = scale(unit(local_direction), radius);
+            let segment_y = if local_direction[1] > 0.0 {
+                half_segment
+            } else if local_direction[1] < 0.0 {
+                -half_segment
+            } else {
+                0.0
+            };
+            [radial[0], radial[1] + segment_y, radial[2]]
+        }
+    };
+    [
+        frame[3][0] + frame[0][0] * local[0] + frame[1][0] * local[1] + frame[2][0] * local[2],
+        frame[3][1] + frame[0][1] * local[0] + frame[1][1] * local[1] + frame[2][1] * local[2],
+        frame[3][2] + frame[0][2] * local[0] + frame[1][2] * local[1] + frame[2][2] * local[2],
+    ]
+}
+
+pub(crate) fn transformed_aabb(
+    shape: CollisionShape,
+    frame: [[f32; 4]; 4],
+) -> ([f32; 3], [f32; 3]) {
+    let mut min = [0.0; 3];
+    let mut max = [0.0; 3];
+    for axis in 0..3 {
+        let mut direction = [0.0; 3];
+        direction[axis] = 1.0;
+        max[axis] = support_world(shape, frame, direction)[axis];
+        direction[axis] = -1.0;
+        min[axis] = support_world(shape, frame, direction)[axis];
+    }
+    (min, max)
+}
+
+/// Convert an axis-aligned affine frame to the legacy world-space shape math.
+/// Curved shapes require uniform scale; a skewed or rotated box cannot be
+/// represented by the axis-aligned MTV routines.
+pub(crate) fn axis_aligned_world_shape(
+    shape: CollisionShape,
+    frame: [[f32; 4]; 4],
+) -> Option<([f32; 3], CollisionShape)> {
+    let scale = [frame[0][0].abs(), frame[1][1].abs(), frame[2][2].abs()];
+    if (0..3).any(|column| {
+        scale[column] <= GEOMETRY_EPSILON
+            || (0..3).any(|row| row != column && frame[column][row].abs() > GEOMETRY_EPSILON)
+    }) {
+        return None;
+    }
+    let world_shape = match shape.normalized() {
+        CollisionShape::Cube { half_extents } => CollisionShape::cube_half_extents([
+            half_extents[0] * scale[0],
+            half_extents[1] * scale[1],
+            half_extents[2] * scale[2],
+        ]),
+        CollisionShape::Sphere { radius } => {
+            if (scale[0] - scale[1]).abs() > GEOMETRY_EPSILON
+                || (scale[0] - scale[2]).abs() > GEOMETRY_EPSILON
+            {
+                return None;
+            }
+            CollisionShape::sphere_radius(radius * scale[0])
+        }
+        CollisionShape::CapsuleY {
+            radius,
+            half_segment,
+        } => {
+            if (scale[0] - scale[1]).abs() > GEOMETRY_EPSILON
+                || (scale[0] - scale[2]).abs() > GEOMETRY_EPSILON
+            {
+                return None;
+            }
+            CollisionShape::capsule_y(radius * scale[0], half_segment * scale[0])
+        }
+    };
+    Some(([frame[3][0], frame[3][1], frame[3][2]], world_shape))
+}
+
+/// Convex overlap for affine-transformed boxes, spheres, and Y capsules.
+/// Tangency is included within geometric tolerance. The closest-point simplex is reduced after each
+/// support query, so separated shapes also terminate without a penetration
+/// direction. Contact depth is a separate narrow-phase operation.
+pub(crate) fn intersects_transformed(
+    a_shape: CollisionShape,
+    a_frame: [[f32; 4]; 4],
+    b_shape: CollisionShape,
+    b_frame: [[f32; 4]; 4],
+) -> Option<bool> {
+    let support = |direction: [f32; 3]| {
+        let a = support_world(a_shape, a_frame, direction);
+        let b = support_world(b_shape, b_frame, scale(direction, -1.0));
+        sub(a, b)
+    };
+    let mut direction = sub(
+        [a_frame[3][0], a_frame[3][1], a_frame[3][2]],
+        [b_frame[3][0], b_frame[3][1], b_frame[3][2]],
+    );
+    if dot(direction, direction) <= GEOMETRY_EPSILON * GEOMETRY_EPSILON {
+        direction = [1.0, 0.0, 0.0];
+    }
+    let mut simplex = vec![support(direction)];
+    let (mut closest, mut retained) = closest_simplex(&simplex);
+    simplex = retained;
+    for _ in 0..256 {
+        let distance_squared = dot(closest, closest);
+        if distance_squared <= GEOMETRY_EPSILON * GEOMETRY_EPSILON {
+            return Some(true);
+        }
+        direction = scale(closest, -1.0);
+        let next = support(direction);
+        if dot(next, direction) < -GEOMETRY_EPSILON * distance_squared.sqrt() {
+            return Some(false);
+        }
+        let gain = dot(sub(next, closest), direction);
+        if gain <= GEOMETRY_EPSILON * distance_squared.sqrt() {
+            return Some(false);
+        }
+        simplex.push(next);
+        (closest, retained) = closest_simplex(&simplex);
+        simplex = retained;
+        if simplex.is_empty() {
+            return None;
+        }
+    }
+    None
+}
+
+fn closest_simplex(points: &[[f32; 3]]) -> ([f32; 3], Vec<[f32; 3]>) {
+    let mut best_distance = f32::INFINITY;
+    let mut best_point = [0.0; 3];
+    let mut best_vertices = Vec::new();
+    for mask in 1usize..(1usize << points.len()) {
+        let indices: Vec<_> = (0..points.len()).filter(|i| mask & (1 << i) != 0).collect();
+        if indices.len() > 4 {
+            continue;
+        }
+        let n = indices.len();
+        let mut matrix = [[0.0f32; 6]; 5];
+        for row in 0..n {
+            for col in 0..n {
+                matrix[row][col] = dot(points[indices[row]], points[indices[col]]);
+            }
+            matrix[row][n] = -1.0;
+            matrix[n][row] = 1.0;
+        }
+        matrix[n][n + 1] = 1.0;
+        if !solve_small(&mut matrix, n + 1) {
+            continue;
+        }
+        let weights: Vec<_> = (0..n).map(|row| matrix[row][n + 1]).collect();
+        if weights.iter().any(|weight| *weight < -1.0e-5) {
+            continue;
+        }
+        let mut point = [0.0; 3];
+        for (index, weight) in indices.iter().zip(weights.iter()) {
+            point = add(point, scale(points[*index], *weight));
+        }
+        let distance = dot(point, point);
+        if distance < best_distance {
+            best_distance = distance;
+            best_point = point;
+            best_vertices = indices.iter().map(|index| points[*index]).collect();
+        }
+    }
+    (best_point, best_vertices)
+}
+
+fn solve_small(matrix: &mut [[f32; 6]; 5], size: usize) -> bool {
+    for col in 0..size {
+        let pivot = (col..size)
+            .max_by(|&a, &b| matrix[a][col].abs().total_cmp(&matrix[b][col].abs()))
+            .unwrap();
+        if matrix[pivot][col].abs() < 1.0e-10 {
+            return false;
+        }
+        matrix.swap(col, pivot);
+        let divisor = matrix[col][col];
+        for entry in col..=size {
+            matrix[col][entry] /= divisor;
+        }
+        for row in 0..size {
+            if row == col {
+                continue;
+            }
+            let factor = matrix[row][col];
+            for entry in col..=size {
+                matrix[row][entry] -= factor * matrix[col][entry];
+            }
+        }
+    }
+    true
+}
+
+fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
+fn unit(a: [f32; 3]) -> [f32; 3] {
+    let length = dot(a, a).sqrt();
+    if length > GEOMETRY_EPSILON {
+        scale(a, 1.0 / length)
+    } else {
+        [1.0, 0.0, 0.0]
+    }
+}
 
 pub(crate) fn world_aabb(center: [f32; 3], shape: CollisionShape) -> ([f32; 3], [f32; 3]) {
     let (min, max) = shape.normalized().aabb_local();
@@ -346,6 +574,42 @@ fn length_squared(v: [f32; 3]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn frame(position: [f32; 3]) -> [[f32; 4]; 4] {
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [position[0], position[1], position[2], 1.0],
+        ]
+    }
+
+    #[test]
+    fn transformed_overlap_agrees_with_existing_axis_aligned_pairs() {
+        let shapes = [
+            CollisionShape::cube_half_extents([0.5, 0.75, 0.4]),
+            CollisionShape::sphere_radius(0.6),
+            CollisionShape::capsule_y(0.35, 0.65),
+        ];
+        let positions = [
+            [0.0, 0.0, 0.0],
+            [0.4, 0.5, 0.0],
+            [1.4, 0.0, 0.0],
+            [0.0, 2.0, 0.0],
+            [1.0, 0.5, 0.7],
+        ];
+        for a in shapes {
+            for b in shapes {
+                for position in positions {
+                    assert_eq!(
+                        intersects_transformed(a, frame([0.0; 3]), b, frame(position)),
+                        Some(intersects([0.0; 3], a, position, b)),
+                        "{a:?} vs {b:?} at {position:?}"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn capsule_aabb_is_upright() {
