@@ -147,6 +147,25 @@ consume the final world transform.
 
 ## Migration plan
 
+Use `examples/collision-perimeter.rs` as the first visible slide test rather
+than adding another scene. It already has an input-driven camera sphere, a
+static floor, and a perimeter of walls. In the first slice, migrate that
+sphere and those static surfaces to `Zone` plus `Collidable.slide()` /
+`Collidable.static()`. Keep the camera and perimeter so walking into and along
+a wall demonstrates the behavior. Remove its old `Gravity` field, pushable
+cubes, and response-on-static-wall demonstration; those belong to later
+gravity/dynamic-body work. Add a headless version of the same movement and
+contact checks so correctness does not depend on visual inspection.
+
+Next migrate the single camera-sphere slide in
+`examples/bisket-desktop-demo.mms` and AvatarControl's generated capsule,
+after verifying their movement targets and floor/wall behavior. The larger
+`examples/gravity-fields.rs` depends on old push, private gravity velocity,
+and `CollisionStarted` handlers; repurpose it for first-class gravity and
+dynamic bodies when those exist, or remove the obsolete interactions during
+retirement. Keep the static-only MMS floors where a migrated mover needs
+them, and remove collision participation from decorative floors.
+
 1. Add synchronous transformed zone-to-zone shape overlap and a minimal
    capsule-versus-static-floor crossing/sweep query. Specify inclusive
    boundaries, filtering, deterministic hit order, and unresolved/singular
@@ -160,8 +179,8 @@ consume the final world transform.
    also remove inward velocity from the first-class `VelocityComponent`.
 3. Migrate static floors/walls that actually need contact to zones with a
    static collidable role. Convert detection-only uses to bare zones; remove
-   unused authored colliders from decorative geometry. Rewrite or retire the
-   two legacy Rust examples and the single MMS response demo.
+   unused authored colliders from decorative geometry. Finish the two Rust
+   example migrations and the single MMS response demo as described above.
 4. Remove `CollisionResponse.push()`, non-static repulsion, old gravity
    integration, friction, restitution, speed limiting, and private velocity.
    Delete `CollisionResponseComponent`/system, registration intents, MMS API,
@@ -179,10 +198,29 @@ consume the final world transform.
 
 ## Performance and scheduling
 
-The transitional constraint should query only registered pose-driven
-participants against static candidates. Do not rebuild or scan all zone pairs
-solely to constrain one avatar. Track dirty transforms and avoid work for
-unchanged participants where correctness allows it.
+The current collision worker builds a separate BVH from all collision objects
+on every worker tick. `BvhSystem` is a different BVH over raycastable
+renderables; its leaves are not physical collidable zones. Neither is a
+same-step contact index for the proposed zone path.
+
+Keep a contact broadphase over zones with a `Collidable` role. Cache static
+zones' world AABBs and index them until their shape or effective transform
+changes. Refit/update moving zones as needed. A sliding mover queries with the
+union of its current and proposed world AABBs (a swept AABB), filtered to
+eligible static collidables and excluding itself/its own rig. The broadphase
+returns candidates; exact transformed shape overlap or sweep tests then
+provide hit normals, depths, and times. Process the relevant hits in a stable
+order and bound correction iterations. A simple scan may be cheaper for a
+scene with only a few floors; add an index when measured candidate work calls
+for it.
+
+Reuse BVH data structures or indexing utilities where useful, but do not use
+the renderable BVH's contents as the contact set: invisible floors, capsules,
+and semantic zones need their own identities and filters. Contact decisions
+must use the current proposed pose in the simulation step; the old worker's
+asynchronous pair snapshot can lag behind it. Do not rebuild or scan all zone
+pairs solely to constrain one avatar. Track dirty transforms and avoid work
+for unchanged participants where correctness allows it.
 
 Keep shape resolution and narrow-phase math shared with ordinary collision and
 zone queries. Do not fork capsule/box/sphere intersection implementations.
