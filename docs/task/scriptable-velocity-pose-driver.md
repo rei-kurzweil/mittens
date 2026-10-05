@@ -11,6 +11,11 @@ The linear implementation now follows **pose-driver parent topology**
 tracks the event-driven readout and remaining headset verification; gravity
 and other drivers remain later work.
 
+The [gravity and acceleration driver comparison](gravity-and-acceleration-velocity-drivers.md)
+selects ancestor topology for velocity drivers: Gravity and Acceleration wrap
+the Velocity they drive, directly or indirectly. Descendant eligibility and
+the acceleration API remain proposed; this path is not implemented yet.
+
 ## Contract
 
 `VelocityComponent` holds active linear and, later, angular velocity.

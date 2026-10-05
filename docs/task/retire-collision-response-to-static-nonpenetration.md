@@ -338,6 +338,7 @@ a future backend.
 
 ## Related work
 
+- [Gravity and acceleration velocity drivers](gravity-and-acceleration-velocity-drivers.md)
 - [Spatial, collision, and physics naming](spatial-collision-and-physics-naming.md)
 - [Velocity, forces, and pluggable physics](velocity-forces-and-pluggable-physics.md)
 - [Interaction zones on the collision-query foundation](interaction-zone-collision-query-foundation.md)

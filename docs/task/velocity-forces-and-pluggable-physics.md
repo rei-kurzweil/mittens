@@ -33,6 +33,11 @@ separate:
 
 ## Proposed core components
 
+Gravity and Acceleration use the selected velocity-driver ancestor topology:
+they wrap the Velocity they drive, directly or indirectly. The
+[focused driver task](gravity-and-acceleration-velocity-drivers.md) tracks
+descendant scope, nested Velocity boundaries, and the next implementation slice.
+
 Names are provisional; responsibilities are not.
 
 ### `VelocityComponent`
@@ -228,6 +233,7 @@ only one component may correct/integrate a given movement target in production.
 
 ## Related work
 
+- [Gravity and acceleration velocity drivers: ownership comparison and next slice](gravity-and-acceleration-velocity-drivers.md)
 - [Spatial, collision, and physics naming](spatial-collision-and-physics-naming.md)
 - [Scriptable Velocity pose driver](scriptable-velocity-pose-driver.md)
 - [Velocity / AngularVelocity components WIP](wip/velocity-components.md)

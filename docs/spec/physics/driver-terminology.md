@@ -151,6 +151,15 @@ mesh does not need a velocity component on each bone.
 
 ## Component ownership
 
+The selected topology for authored velocity drivers mirrors pose drivers:
+Gravity and Acceleration must be direct or indirect **ancestors** of the
+Velocity they drive. For example, `Gravity { Acceleration { Velocity { T {} } } }`.
+Provider children or siblings of Velocity do not drive it. The
+[focused gravity/acceleration task](../../task/gravity-and-acceleration-velocity-drivers.md)
+compares descendant eligibility and proposes stopping inherited providers at
+nested Velocity boundaries. That scope rule remains a proposal; the ancestor
+direction is selected. The new provider path is not implemented yet.
+
 - `VelocityComponent` owns the current velocity used by integration and the
   explicit transform/channel it drives. `VelocitySystem` integrates it.
 - Velocity-driving components or request sources own their acceleration,
