@@ -1,9 +1,10 @@
 # Task: gravity and acceleration as velocity drivers
 
-Status: ancestor topology selected, scope comparison and proposed next slice,
+Status: ancestor topology and Velocity boundary rule selected; next slice planned,
 2026-10-04. Gravity and Acceleration must be direct or indirect ancestors of
-the Velocity they drive. Scope rules and MMS names below remain proposals,
-not implemented API. Start by migrating gravity
+the Velocity they drive. Drivers do not apply across nested Velocity boundaries.
+Gravity override rules and MMS names below remain proposals, not implemented
+API. Start by migrating gravity
 to first-class velocity; add a general acceleration provider using the same
 ownership and stepping rules.
 
@@ -89,24 +90,24 @@ let gravity = Gravity.coefficient(1.0) {
 A transform or other ordinary component can occur between a provider and its
 Velocity. Multiple providers compose by nesting wrappers, rather than by
 placing provider children under Velocity. A provider may contain multiple
-branches; selecting eligible descendant velocities is the remaining scope
-choice below. Child or sibling providers do not drive that Velocity. A
+branches; providers reach the first Velocity on each branch and stop there.
+Child or sibling providers do not drive that Velocity. A
 provider never invents a missing Velocity component.
 
 `ACC {}` is a candidate shortform for `Acceleration`, subject to checking the
 shortform registry. Constructor and method spellings are proposals. Velocity's
 existing requirement of exactly one immediate child Transform stays in place.
 
-## Proposed scope rule: stop inheritance at a Velocity boundary
+## Selected scope rule: stop inheritance at a Velocity boundary
 
-The ancestor direction is selected. This narrower eligibility rule is a
-recommendation for the first implementation, not an additional agreed decision:
+Gravity and Acceleration do not apply across a nested Velocity boundary.
+Provider discovery must obey these rules:
 
 - For each Velocity, inspect its ancestor chain up to the next Velocity
   ancestor or the world root. Ordinary components and transforms do not stop
   the search. Provider discovery uses actual component-tree ancestry, not
   transform-frame references or arbitrary target lookups.
-- Within that segment, the nearest Gravity supplies gravity. Other Gravity
+- Proposed gravity override policy: within that segment, the nearest Gravity supplies gravity. Other Gravity
   ancestors in the segment are overridden; they do not sum. A disabled nearest
   Gravity blocks gravity from farther ancestors, so an explicit off wrapper
   can suppress inherited gravity.
@@ -141,16 +142,14 @@ It also differs from immediate-parent-only ownership: both providers above
 `T.parent_frame` reach `Velocity.outer`. An ancestor provider can drive the
 first Velocity on each branch of its subtree.
 
-The alternatives still worth deciding are unrestricted descendant inheritance
-and explicit descendant selection. Unrestricted inheritance is convenient for
-scene-wide gravity, but requires deliberate opt-outs for nested motion layers.
-Explicit descendant selection preserves ancestry while adding references and
-lifetime handling. Resolve this scope decision before implementation; all
-three choices preserve the selected ancestor topology.
+Unrestricted descendant inheritance is rejected: an outer driver must not
+accelerate both an outer Velocity and a nested Velocity. Any future explicit
+descendant selection must also respect Velocity boundaries; a reference must
+not bypass this rule.
 
 Disable a provider to stop its contribution; existing velocity persists.
 Disabling Velocity pauses its acceleration updates and integration, with no
-catch-up acceleration when reenabled. Under the proposed boundary rule, even
+catch-up acceleration when reenabled. Even
 a disabled Velocity remains a scope boundary; enabling it cannot silently
 change an inner layer's provider set.
 
@@ -228,8 +227,9 @@ is needed to stand on a floor.
 
 ## Delivery and acceptance
 
-1. Keep the selected ancestor topology and settle descendant eligibility,
-   nested Velocity boundaries, and gravity override rules.
+1. Implement provider discovery through direct or indirect ancestors, stopping
+   at the next Velocity ancestor even when it is disabled. Finalize gravity
+   override rules within that scope.
 2. Make Gravity drive eligible descendant Velocity state and implement per-substep
    acceleration/integration. Audit legacy Gravity scenes; migrate or retire
    them before changing the existing ancestor API's runtime meaning.
