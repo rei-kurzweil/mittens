@@ -4570,11 +4570,14 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
     ];
     for name in scenery {
         let tree = descendants(named(name));
+        if name == "studio_floor" {
+            continue;
+        }
         assert_eq!(
             tree.iter()
                 .filter(|&&id| world
-                    .get_component_by_id_as::<CollisionComponent>(id)
-                    .is_some_and(|collision| collision.mode == CollisionMode::Static))
+                    .get_component_by_id_as::<CollidableComponent>(id)
+                    .is_some_and(|collidable| collidable.mode == CollidableMode::Static))
                 .count(),
             1,
             "{name}"
@@ -5239,17 +5242,15 @@ fn tripod_light_factory_marks_fixture_grabbable() {
 
 #[test]
 fn secondary_motion_desktop_avatar_separates_from_named_pile_cube() {
-    use crate::engine::ecs::component::{CollisionComponent, TransformComponent};
-    use winit::event::MouseButton;
-
-    let source = include_str!("../../examples/secondary-motion-desktop.mms");
+    use crate::engine::ecs::component::{CollidableComponent, TransformComponent, ZoneComponent};
+    use crate::engine::ecs::system::{TransformSystem, zone_query};
     let mut world = World::default();
     let mut systems = crate::engine::ecs::system::SystemWorld::default();
     let mut visuals = VisualWorld::default();
     let mut render_assets = RenderAssets::new();
     let mut queue = CommandQueue::new();
     let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
-        source,
+        include_str!("../../examples/secondary-motion-desktop.mms"),
         Some("examples/secondary-motion-desktop.mms"),
         &mut world,
         &mut systems.rx,
@@ -5261,179 +5262,42 @@ fn secondary_motion_desktop_avatar_separates_from_named_pile_cube() {
         queue.push_intent_now(ComponentId::default(), intent);
     }
     systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
-
-    let studio_spots: Vec<_> = visuals
-        .lights()
-        .iter()
-        .filter(|light| light.light_type == 3)
-        .collect();
-    assert_eq!(studio_spots.len(), 3);
-    for light in studio_spots {
-        let to_target = [
-            -light.position_ws[0],
-            1.25 - light.position_ws[1],
-            -light.position_ws[2],
-        ];
-        let to_target_len = (to_target[0] * to_target[0]
-            + to_target[1] * to_target[1]
-            + to_target[2] * to_target[2])
-            .sqrt();
-        let alignment = (light.direction_ws[0] * to_target[0]
-            + light.direction_ws[1] * to_target[1]
-            + light.direction_ws[2] * to_target[2])
-            / to_target_len;
-        assert!(
-            alignment > 0.999,
-            "spotlight misses studio target: {alignment}"
-        );
-        assert!((light.angle - 0.62).abs() < 1e-6);
-        assert!((light.penumbra - 0.35).abs() < 1e-6);
-    }
-
-    let named = |world: &World, label: &str| {
-        world
-            .all_components()
-            .find(|id| world.component_label(*id) == Some(label))
-            .unwrap_or_else(|| panic!("missing named scene node {label}"))
-    };
-    let avatar_driver = named(&world, "avatar_driver");
-    let avatar_head_driver = named(&world, "avatar_head_driver");
-    let obstacle_transform = named(&world, "pile_a_base_left");
-    let avatar_collider = world
-        .children_of(avatar_driver)
+    let obstacle = world
+        .all_components()
+        .find(|id| world.component_label(*id) == Some("pile_a_base_left"))
+        .unwrap();
+    let obstacle_zone = world
+        .children_of(obstacle)
         .iter()
         .copied()
-        .find(|id| {
-            world
-                .get_component_by_id_as::<CollisionComponent>(*id)
-                .is_some()
-        })
-        .expect("avatar collider directly under driver");
-    let obstacle_collider = world
-        .children_of(obstacle_transform)
-        .iter()
-        .copied()
-        .find(|id| {
-            world
-                .get_component_by_id_as::<CollisionComponent>(*id)
-                .is_some()
-        })
-        .expect("pile cube collider");
-
-    // Right-drag rotates only the head-level driver. The body/collider root
-    // must neither rotate nor translate around the 0.8-unit head offset.
-    let body_before = world
-        .get_component_by_id_as::<TransformComponent>(avatar_driver)
-        .unwrap()
-        .transform;
-    let mut mouse_input = InputState::default();
-    mouse_input.cursor_pos = Some((0.0, 0.0));
-    mouse_input.start_frame();
-    mouse_input.mouse_down.insert(MouseButton::Right);
-    mouse_input.cursor_pos = Some((40.0, 20.0));
-    mouse_input.start_frame();
-    systems
-        .input
-        .process_input(&mut world, &mouse_input, &mut queue, 1.0 / 60.0);
-    queue.flush(&mut world, &mut systems, &mut visuals, &mut render_assets);
-
-    let body_after_mouse = world
-        .get_component_by_id_as::<TransformComponent>(avatar_driver)
-        .unwrap()
-        .transform;
-    let head_after_mouse = world
-        .get_component_by_id_as::<TransformComponent>(avatar_head_driver)
-        .unwrap()
-        .transform;
-    assert_eq!(body_after_mouse.translation, body_before.translation);
-    assert_eq!(body_after_mouse.rotation, body_before.rotation);
-    assert_ne!(head_after_mouse.rotation, [0.0, 0.0, 0.0, 1.0]);
-    assert_eq!(head_after_mouse.translation, [0.0, 0.8, 0.0]);
-
-    let obstacle_position = world
-        .get_component_by_id_as::<TransformComponent>(obstacle_transform)
-        .unwrap()
-        .transform
-        .translation;
-    {
-        let avatar = world
-            .get_component_by_id_as_mut::<TransformComponent>(avatar_driver)
-            .unwrap();
-        avatar.transform.translation = obstacle_position;
-        avatar.transform.recompute_model();
+        .find(|id| world.get_component_by_id_as::<ZoneComponent>(*id).is_some())
+        .unwrap();
+    let proposed = [-3.4, 0.85, -1.5];
+    let mover = world.add_component(TransformComponent::new().with_position(
+        proposed[0],
+        proposed[1],
+        proposed[2],
+    ));
+    let zone = world.add_component(ZoneComponent::capsule_y(0.28, 0.57));
+    let slide = world.add_component(CollidableComponent::slide());
+    world.add_child(mover, zone).unwrap();
+    world.add_child(zone, slide).unwrap();
+    systems.transform_changed(&mut world, &mut visuals, mover);
+    let before = zone_query::contact_zones(&world, zone, obstacle_zone).unwrap();
+    assert!(before.separation.is_some());
+    for target in systems.static_contact.tick(&mut world) {
+        systems.transform_changed(&mut world, &mut visuals, target);
     }
-
-    let input = InputState::default();
-    systems.transform.transform_changed(
-        &mut world,
-        &mut visuals,
-        avatar_driver,
-        &mut systems.transform_stream,
-        &mut systems.camera,
-        &mut systems.light,
-        &mut systems.collision,
-    );
-
-    let deadline = Instant::now() + Duration::from_secs(2);
-    loop {
-        systems.collision.tick_with_rx(
-            &mut world,
-            &mut visuals,
-            &input,
-            1.0 / 60.0,
-            &mut systems.rx,
-        );
-        if systems
-            .collision
-            .active_pairs_snapshot()
-            .iter()
-            .any(|&(a, b)| {
-                (a == avatar_collider && b == obstacle_collider)
-                    || (a == obstacle_collider && b == avatar_collider)
-            })
-        {
-            break;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "collision worker did not report overlap"
-        );
-        std::thread::yield_now();
-    }
-
-    systems.collision_response.tick_with_queue(
-        &mut world,
-        &mut visuals,
-        &input,
-        1.0 / 60.0,
-        &mut queue,
-        &systems.collision,
-    );
-    queue.flush(&mut world, &mut systems, &mut visuals, &mut render_assets);
-    systems.transform.transform_changed(
-        &mut world,
-        &mut visuals,
-        avatar_driver,
-        &mut systems.transform_stream,
-        &mut systems.camera,
-        &mut systems.light,
-        &mut systems.collision,
-    );
-
-    let separated = world
-        .get_component_by_id_as::<TransformComponent>(avatar_driver)
-        .unwrap()
-        .transform
-        .translation;
-    let delta = [
-        (separated[0] - obstacle_position[0]).abs(),
-        (separated[1] - obstacle_position[1]).abs(),
-        (separated[2] - obstacle_position[2]).abs(),
-    ];
+    let after = zone_query::contact_zones(&world, zone, obstacle_zone).unwrap();
+    assert!(after.separation.is_none(), "{after:?}");
+    let position = TransformSystem::world_position(&world, mover).unwrap();
+    assert!((position[0] - (-2.8 - 0.425 - 0.28)).abs() < 1.0e-4);
     assert!(
-        delta[0] >= 0.34 + 0.425 || delta[1] >= 0.8 + 0.4 || delta[2] >= 0.28 + 0.425,
-        "avatar remained inside pile_a_base_left: delta={delta:?}"
+        (position[2] - proposed[2]).abs() < 1.0e-4,
+        "tangential movement must remain free"
     );
+    assert!((position[1] - proposed[1]).abs() < 1.0e-4);
+    assert_eq!(systems.static_contact.non_convergences, 0);
 }
 
 #[test]

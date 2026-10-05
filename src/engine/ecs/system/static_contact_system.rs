@@ -18,7 +18,7 @@ pub struct StaticContactSystem {
 }
 
 impl StaticContactSystem {
-    /// Resolve the first floor contact for each slide zone. Returns changed
+    /// Resolve static contacts for each slide zone with at most six passes. Returns changed
     /// transform IDs so the caller can propagate them before dependent phases.
     pub fn tick(&mut self, world: &mut World) -> Vec<ComponentId> {
         self.candidate_pairs = 0;
@@ -63,76 +63,100 @@ impl StaticContactSystem {
             let Some(target) = movement_target(world, collidable_id, moving) else {
                 continue;
             };
-            for &surface in &statics {
-                if surface == moving {
-                    continue;
-                }
-                let Some((static_center, static_shape)) = zone_world_shape(world, surface) else {
-                    continue;
-                };
-                let (moving_min, moving_max) = shape_aabb(center, shape);
-                let (previous_min, previous_max) = shape_aabb(previous, shape);
-                let (static_min, static_max) = shape_aabb(static_center, static_shape);
-                self.candidate_pairs += 1;
-                if !(0..3).all(|axis| {
-                    moving_min[axis].min(previous_min[axis]) <= static_max[axis]
-                        && static_min[axis] <= moving_max[axis].max(previous_max[axis])
-                }) {
-                    continue;
-                }
-                self.narrow_phase_tests += 1;
-                let sweep = zone_query::sweep_capsule_floor(world, moving, surface, previous)
-                    .ok()
-                    .flatten();
-                let displacement = if let Some(hit) = sweep {
-                    let half_height = match shape {
-                        crate::engine::ecs::component::CollisionShape::CapsuleY {
-                            radius,
-                            half_segment,
-                        } => radius + half_segment,
-                        _ => 0.0,
-                    };
-                    [0.0, (hit.point[1] + half_height - center[1]).max(0.0), 0.0]
-                } else {
-                    match zone_query::contact_zones(world, moving, surface) {
-                        Ok(contact) => contact
-                            .separation
-                            .map(|s| s.displacement)
-                            .unwrap_or([0.0; 3]),
-                        Err(_) => {
-                            self.non_convergences += 1;
-                            continue;
-                        }
+            let mut desired_center = center;
+            for iteration in 0..6 {
+                let mut corrected = false;
+                for &surface in &statics {
+                    if surface == moving {
+                        continue;
                     }
-                };
-                if displacement.iter().all(|v| v.abs() < 1.0e-6) {
-                    continue;
-                }
-                let Some(target_world) = TransformSystem::world_position(world, target) else {
-                    continue;
-                };
-                let desired = [
-                    target_world[0] + displacement[0],
-                    target_world[1] + displacement[1],
-                    target_world[2] + displacement[2],
-                ];
-                let local = world_to_local(world, target, desired);
-                if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target) {
-                    t.transform.translation = local;
-                    t.transform.recompute_model();
-                    changed.push(target);
-                    self.correction_iterations += 1;
-                    self.previous_centers.insert(
-                        moving,
+                    let Some((static_center, static_shape)) = zone_world_shape(world, surface)
+                    else {
+                        continue;
+                    };
+                    let (moving_min, moving_max) = shape_aabb(desired_center, shape);
+                    let (previous_min, previous_max) = shape_aabb(previous, shape);
+                    let (static_min, static_max) = shape_aabb(static_center, static_shape);
+                    self.candidate_pairs += 1;
+                    if !(0..3).all(|axis| {
+                        moving_min[axis].min(previous_min[axis]) <= static_max[axis]
+                            && static_min[axis] <= moving_max[axis].max(previous_max[axis])
+                    }) {
+                        continue;
+                    }
+                    self.narrow_phase_tests += 1;
+                    let sweep = if iteration == 0 {
+                        zone_query::sweep_capsule_floor(world, moving, surface, previous)
+                            .ok()
+                            .flatten()
+                    } else {
+                        None
+                    };
+                    let displacement = if let Some(hit) = sweep {
+                        let half_height = match shape {
+                            crate::engine::ecs::component::CollisionShape::CapsuleY {
+                                radius,
+                                half_segment,
+                            } => radius + half_segment,
+                            _ => 0.0,
+                        };
                         [
-                            center[0] + displacement[0],
-                            center[1] + displacement[1],
-                            center[2] + displacement[2],
-                        ],
-                    );
+                            0.0,
+                            (hit.point[1] + half_height - desired_center[1]).max(0.0),
+                            0.0,
+                        ]
+                    } else {
+                        collision_geometry::minimum_translation(
+                            desired_center,
+                            shape,
+                            static_center,
+                            static_shape,
+                            0.0,
+                        )
+                        .unwrap_or([0.0; 3])
+                    };
+                    if displacement.iter().all(|v| v.abs() < 1.0e-6) {
+                        continue;
+                    }
+                    for axis in 0..3 {
+                        desired_center[axis] += displacement[axis];
+                    }
+                    corrected = true;
+                    self.correction_iterations += 1;
                 }
-                // A later pass can handle corners after world transforms settle.
-                break;
+                if !corrected {
+                    break;
+                }
+            }
+            if statics.iter().any(|&surface| {
+                surface != moving
+                    && zone_world_shape(world, surface).is_some_and(|(position, static_shape)| {
+                        collision_geometry::minimum_translation(
+                            desired_center,
+                            shape,
+                            position,
+                            static_shape,
+                            0.0,
+                        )
+                        .is_some_and(|displacement| displacement.iter().any(|v| v.abs() >= 1.0e-6))
+                    })
+            }) {
+                self.non_convergences += 1;
+            }
+            let displacement: [f32; 3] = std::array::from_fn(|i| desired_center[i] - center[i]);
+            if displacement.iter().all(|v| v.abs() < 1.0e-6) {
+                continue;
+            }
+            let Some(target_world) = TransformSystem::world_position(world, target) else {
+                continue;
+            };
+            let desired = std::array::from_fn(|i| target_world[i] + displacement[i]);
+            let local = world_to_local(world, target, desired);
+            if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target) {
+                t.transform.translation = local;
+                t.transform.recompute_model();
+                changed.push(target);
+                self.previous_centers.insert(moving, desired_center);
             }
         }
         changed
@@ -259,6 +283,40 @@ mod tests {
             .translation;
         assert!((local[1] - 0.85).abs() < 1.0e-4);
         assert_eq!(local[0], 1.0);
+    }
+
+    #[test]
+    fn capsule_resolves_floor_and_box_side_in_one_step() {
+        let mut world = World::default();
+        add_zone(
+            &mut world,
+            [0.0, -0.05, 0.0],
+            CollisionShape::cube_half_extents([5.0, 0.05, 5.0]),
+            CollidableMode::Static,
+        );
+        add_zone(
+            &mut world,
+            [0.0, 0.4, 0.0],
+            CollisionShape::cube_half_extents([0.425, 0.4, 0.425]),
+            CollidableMode::Static,
+        );
+        let (mover, _) = add_zone(
+            &mut world,
+            [0.6, 0.8, 0.2],
+            CollisionShape::capsule_y(0.28, 0.57),
+            CollidableMode::Slide,
+        );
+        let mut system = StaticContactSystem::default();
+        assert_eq!(system.tick(&mut world), vec![mover]);
+        let position = world
+            .get_component_by_id_as::<TransformComponent>(mover)
+            .unwrap()
+            .transform
+            .translation;
+        assert!((position[0] - 0.705).abs() < 1.0e-4);
+        assert!((position[1] - 0.85).abs() < 1.0e-4);
+        assert_eq!(position[2], 0.2);
+        assert_eq!(system.non_convergences, 0);
     }
 
     #[test]

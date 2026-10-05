@@ -46,9 +46,7 @@ fn grabbable_cube(cube_name, position, size, color) {
     return T.position(position[0], position[1], position[2]).scale(size[0], size[1], size[2]) {
         name = cube_name
         Grabbable {}
-        Collision.static() {
-            CollisionShape.cube([size[0] * 0.5, size[1] * 0.5, size[2] * 0.5])
-        }
+        Zone.cube([0.5, 0.5, 0.5]) { Collidable.static() {} }
         R.cube() { C.rgba(color[0], color[1], color[2], 1.0) }
     }
 }

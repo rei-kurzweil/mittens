@@ -7,20 +7,22 @@ inclusive transformed box/sphere/capsule intersection and both current frames
 and shapes. `contact_zones` adds separation direction and depth for axis-aligned
 boxes and uniformly scaled spheres/capsules. `sweep_capsule_floor` reports a
 downward crossing of an axis-aligned floor top, even when the end pose misses
-the floor. Rotated contact resolution, general sweeps, a collidable role, and
+the floor. Rotated contact resolution, general sweeps, and
 the contact broadphase remain. Queries report disabled, unresolved, singular,
 unsupported-frame, and narrow-phase non-convergence errors. The existing point
 query remains intact; focused zone query tests pass. `Collidable.static()` and
 `Collidable.slide()` now mark authored zones, and AVC generates a slide zone with
 its explicit movement target. The desktop floor and Mittens Corp deck have
-static zones. A first synchronous contact pass resolves one floor contact per
-slide zone and catches downward thin-floor crossings. It runs before desktop
-cameras and again after XR gamepad locomotion, with candidate and correction
+static zones. The synchronous contact pass resolves static contacts in up to
+six passes per slide zone and catches downward thin-floor crossings. Desktop
+pile crates now use static collidable zones and support discrete capsule side
+separation. It runs before desktop cameras and again after XR gamepad
+locomotion, with candidate and correction
 counters. Focused headless floor tests pass.
 
-This first pass scans collidables and handles one candidate per mover. It does
-not yet provide a static BVH, bounded corner iteration, rotated contact,
-horizontal sweep, or an XR camera republish after gamepad correction. The XR
+This pass scans collidables and records failure to converge after six passes. It
+does not yet provide a static BVH, rotated contact, horizontal sweep, or an XR
+camera republish after gamepad correction. The XR
 floor constraint can correct the locomotion root while the already-published
 eye view still reflects the earlier pose. Keep those as active work before
 claiming the desktop and XR examples meet the full acceptance criteria.
@@ -175,8 +177,10 @@ both desktop and XR. `examples/secondary-motion-desktop.mms` is the desktop
 candidate: its `studio_floor` has a top at world y=0, and its input-driven AVC
 routes capsule corrections to `avatar_head_driver`. Make that floor a static
 zone/collidable, and migrate AVC's generated capsule to a slide collidable with
-the explicit movement target. Leave its grabbable pile cubes on the legacy path
-until horizontal obstacles are in scope. The floor is authored under a scaled
+the explicit movement target. Its grabbable pile cubes now use static collidable
+zones with local half extents `[0.5, 0.5, 0.5]`. They constrain the avatar at
+their current pose, including after translation; rotating them remains blocked
+by the current axis-aligned contact limitation. The floor is authored under a scaled
 transform, so a zone on that transform uses local half extents `[0.5, 0.5,
 0.5]`, not half the already-scaled world size. Once migrated, run
 `cargo run --release -- load examples/secondary-motion-desktop.mms`: `F` drives
@@ -219,8 +223,8 @@ the small-floor path works. `examples/e2.mms` has a rotated floor frame, which
 the current separation query explicitly rejects; migrate it after rotated
 contact geometry or reauthor that floor as an axis-aligned box.
 
-Then use `examples/collision-perimeter.rs` for the first visible horizontal
-slide test. It already has an input-driven camera sphere, a static floor, and a
+The desktop pile crates provide the first discrete horizontal slide test.
+Then use `examples/collision-perimeter.rs` for a perimeter/corner slide test. It already has an input-driven camera sphere, a static floor, and a
 perimeter of walls. Migrate that sphere and those static surfaces to `Zone`
 plus `Collidable.slide()` / `Collidable.static()`; keep the camera and perimeter
 so walking into and along a wall demonstrates the behavior. Remove its old
