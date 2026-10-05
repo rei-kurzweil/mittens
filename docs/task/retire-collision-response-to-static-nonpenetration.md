@@ -344,3 +344,10 @@ a future backend.
 - [Interaction zones on the collision-query foundation](interaction-zone-collision-query-foundation.md)
 - [AVC auto-calibrated upright capsule](avc-upright-character-capsule.md)
 - [Velocity / AngularVelocity components WIP](wip/velocity-components.md)
+
+## Follow-up: surface contact and coupled motion
+
+See [surface contact and coupled motion](surface-contact-and-coupled-motion.md)
+for temporary pushing and explicit pulling relationships between movable
+surfaces. That work extends contact beyond static non-penetration without
+reviving legacy push response. Spring-bone gravity remains outside this scope.

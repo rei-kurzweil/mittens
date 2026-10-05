@@ -1,10 +1,11 @@
 # Task: gravity and acceleration as velocity drivers
 
-Status: ancestor topology and Velocity boundary rule selected; next slice planned,
+Status: provider discovery implemented and tested; runtime migration next,
 2026-10-04. Gravity and Acceleration must be direct or indirect ancestors of
 the Velocity they drive. Drivers do not apply across nested Velocity boundaries.
-Gravity override rules and MMS names below remain proposals, not implemented
-API. Start by migrating gravity
+Nearest Gravity wins within the Velocity scope, including a disabled Gravity
+that blocks inheritance. Discovery implements this rule; runtime gravity and
+MMS changes remain pending. Start by migrating gravity
 to first-class velocity; add a general acceleration provider using the same
 ownership and stepping rules.
 
@@ -107,7 +108,7 @@ Provider discovery must obey these rules:
   ancestor or the world root. Ordinary components and transforms do not stop
   the search. Provider discovery uses actual component-tree ancestry, not
   transform-frame references or arbitrary target lookups.
-- Proposed gravity override policy: within that segment, the nearest Gravity supplies gravity. Other Gravity
+- Selected gravity override policy: within that segment, the nearest Gravity supplies gravity. Other Gravity
   ancestors in the segment are overridden; they do not sum. A disabled nearest
   Gravity blocks gravity from farther ancestors, so an explicit off wrapper
   can suppress inherited gravity.
@@ -253,3 +254,24 @@ must retain their behavior.
 - [Velocity, forces, and pluggable physics](velocity-forces-and-pluggable-physics.md)
 - [Scriptable Velocity pose driver](scriptable-velocity-pose-driver.md)
 - [Velocity, gravity, and XR ground contact analysis](../analysis/velocity-gravity-xr-ground-contact.md)
+
+## Progress: provider discovery (2026-10-04)
+
+`VelocitySystem::gravity_provider` reads actual ancestry, crosses ordinary
+components and transforms, and stops at any Velocity ancestor. It selects the
+nearest Gravity regardless of enabled state. Tests cover branched ownership,
+independent nested bodies, disabled boundaries, off overrides, child providers,
+reparenting, and provider removal. Discovery is not yet called by integration;
+legacy collision gravity retains its runtime meaning.
+
+Next: coordinate per-substep integration, transform propagation, and contact
+before enabling gravity on Velocity. Migrate `examples/gravity-fields.rs` and
+`examples/collision-perimeter.rs`, which still depend on collision responders'
+cached gravity coefficient. Acceleration discovery and its API remain pending.
+
+## Follow-up: surface contact and coupled motion
+
+See [surface contact and coupled motion](surface-contact-and-coupled-motion.md)
+for temporary pushing and explicit pulling relationships between movable
+surfaces. That work extends contact beyond static non-penetration without
+reviving legacy push response. Spring-bone gravity remains outside this scope.

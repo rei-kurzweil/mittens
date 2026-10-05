@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
 use crate::engine::ecs::component::{
-    InputXRComponent, QueryRootMode, TransformComponent, VelocityComponent, resolve_component_ref,
+    GravityComponent, InputXRComponent, QueryRootMode, TransformComponent, VelocityComponent,
+    resolve_component_ref,
 };
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
@@ -25,6 +26,77 @@ mod tests {
     use crate::engine::ecs::system::{
         CameraSystem, CollisionSystem, LightSystem, TransformStreamSystem,
     };
+
+    #[test]
+    fn gravity_provider_respects_branches_overrides_and_velocity_boundaries() {
+        let mut world = World::default();
+        let gravity = world.add_component(GravityComponent::new());
+        let frame = world.add_component(TransformComponent::new());
+        let outer = world.add_component(VelocityComponent::new());
+        let target = world.add_component(TransformComponent::new());
+        let inner = world.add_component(VelocityComponent::new());
+        let off = world.add_component(GravityComponent::off());
+        let body = world.add_component(VelocityComponent::new());
+        let sibling = world.add_component(VelocityComponent::new());
+        for (parent, child) in [
+            (gravity, frame),
+            (frame, outer),
+            (outer, target),
+            (target, inner),
+            (target, off),
+            (off, body),
+            (frame, sibling),
+        ] {
+            world.add_child(parent, child).unwrap();
+        }
+        assert_eq!(
+            VelocitySystem::gravity_provider(&world, outer),
+            Some(gravity)
+        );
+        assert_eq!(
+            VelocitySystem::gravity_provider(&world, sibling),
+            Some(gravity)
+        );
+        assert_eq!(VelocitySystem::gravity_provider(&world, inner), None);
+        assert_eq!(VelocitySystem::gravity_provider(&world, body), Some(off));
+        world
+            .get_component_by_id_as_mut::<VelocityComponent>(outer)
+            .unwrap()
+            .enabled = false;
+        assert_eq!(VelocitySystem::gravity_provider(&world, inner), None);
+        world
+            .get_component_by_id_as_mut::<VelocityComponent>(outer)
+            .unwrap()
+            .enabled = true;
+        assert_eq!(VelocitySystem::gravity_provider(&world, inner), None);
+        // A nearer disabled provider blocks the enabled provider in the same scope.
+        world.add_child(frame, off).unwrap();
+        assert_eq!(VelocitySystem::gravity_provider(&world, body), Some(off));
+        world
+            .get_component_by_id_as_mut::<GravityComponent>(off)
+            .unwrap()
+            .enabled = true;
+        assert_eq!(VelocitySystem::gravity_provider(&world, body), Some(off));
+    }
+
+    #[test]
+    fn gravity_provider_tracks_reparenting_removal_and_rejects_child_providers() {
+        let mut world = World::default();
+        let gravity = world.add_component(GravityComponent::new());
+        let velocity = world.add_component(VelocityComponent::new());
+        let child = world.add_component(GravityComponent::new());
+        world.add_child(velocity, child).unwrap();
+        assert_eq!(VelocitySystem::gravity_provider(&world, velocity), None);
+        assert_eq!(VelocitySystem::gravity_provider(&world, child), None);
+        world.add_child(gravity, velocity).unwrap();
+        assert_eq!(
+            VelocitySystem::gravity_provider(&world, velocity),
+            Some(gravity)
+        );
+        world.detach_from_parent(velocity);
+        world.remove_component_leaf(gravity).unwrap();
+        assert_eq!(VelocitySystem::gravity_provider(&world, velocity), None);
+    }
 
     fn propagate(world: &mut World, root: ComponentId) {
         TransformSystem::new().transform_changed(
@@ -359,6 +431,32 @@ mod tests {
 }
 
 impl VelocitySystem {
+    /// Discover the nearest Gravity in this Velocity's provider scope.
+    /// Disabled Gravity still wins, allowing an off wrapper to block inheritance.
+    /// Every Velocity ancestor is a boundary, including disabled motion layers.
+    /// Read the live tree each time so reparenting and removal cannot leave stale owners.
+    /// This is discovery only; legacy collision gravity retains its existing behavior.
+    pub fn gravity_provider(world: &World, velocity_id: ComponentId) -> Option<ComponentId> {
+        world.get_component_by_id_as::<VelocityComponent>(velocity_id)?;
+        let mut current = world.parent_of(velocity_id);
+        while let Some(id) = current {
+            if world
+                .get_component_by_id_as::<VelocityComponent>(id)
+                .is_some()
+            {
+                break;
+            }
+            if world
+                .get_component_by_id_as::<GravityComponent>(id)
+                .is_some()
+            {
+                return Some(id);
+            }
+            current = world.parent_of(id);
+        }
+        None
+    }
+
     fn driven_transform(world: &World, velocity_id: ComponentId) -> Result<ComponentId, String> {
         let mut targets = world.children_of(velocity_id).iter().copied().filter(|id| {
             world
