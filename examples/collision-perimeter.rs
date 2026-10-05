@@ -21,15 +21,15 @@ fn main() {
     let _ = universe.world.add_child(bg_color, bg_color_c);
     universe.add(bg_color);
 
-    // Gravity field for the pushable cubes.
-    // Any CollisionResponseComponent nested under this subtree will have gravity applied.
+    // Gravity provider for the falling cubes.
+    // Each first descendant Velocity receives gravity; nested motion layers are separate scopes.
     let gravity_field = universe
         .world
         .add_component(engine::ecs::component::GravityComponent::new().with_coefficient(0.5));
     universe.add(gravity_field);
 
     // Input-driven camera rig.
-    // Topology: I { T { C3D }  CN{Rigged { Sphere }} }
+    // Topology: I { T { C3D Zone.sphere { Collidable.slide } } }
     let input = universe
         .world
         .add_component(engine::ecs::component::InputComponent::new().with_speed(2.0));
@@ -48,20 +48,11 @@ fn main() {
 
     let rig_collision = universe
         .world
-        .add_component(engine::ecs::component::CollisionComponent::RIGGED());
-
-    // Opt-in to default kinematic-vs-static collision response.
-    // Policy note: collisions still emit signals regardless; response only runs for entities
-    // that explicitly add a CollisionResponseComponent.
-    let rig_response = universe
+        .add_component(engine::ecs::component::ZoneComponent::sphere(0.25));
+    let rig_collision_contact = universe
         .world
-        .add_component(engine::ecs::component::CollisionResponseComponent::slide());
-    let rig_shape =
-        universe
-            .world
-            .add_component(engine::ecs::component::CollisionShapeComponent::new(
-                engine::ecs::component::CollisionShape::sphere_radius(0.25),
-            ));
+        .add_component(engine::ecs::component::CollidableComponent::slide());
+    let _ = universe.attach(rig_collision, rig_collision_contact);
 
     let _ = universe.attach(input, input_mode);
     let _ = universe.attach(input, rig_transform);
@@ -77,8 +68,6 @@ fn main() {
     example_util::spawn_desktop_camera_controls_hint(&mut universe, rig_transform);
 
     let _ = universe.attach(rig_transform, rig_collision);
-    let _ = universe.attach(rig_collision, rig_response);
-    let _ = universe.attach(rig_collision, rig_shape);
 
     universe.add(input);
 
@@ -146,7 +135,11 @@ fn main() {
             .add_component(engine::ecs::component::RenderableComponent::cube());
         let cn = universe
             .world
-            .add_component(engine::ecs::component::CollisionComponent::STATIC());
+            .add_component(engine::ecs::component::ZoneComponent::cube([0.5; 3]));
+        let cn_contact = universe
+            .world
+            .add_component(engine::ecs::component::CollidableComponent::static_());
+        let _ = universe.attach(cn, cn_contact);
         let c = universe
             .world
             .add_component(engine::ecs::component::ColorComponent::rgba(
@@ -190,7 +183,7 @@ fn main() {
         universe.add(t);
     }
 
-    fn spawn_pushable_cube(
+    fn spawn_falling_cube(
         universe: &mut engine::Universe,
         parent: engine::ecs::ComponentId,
         x: f32,
@@ -215,31 +208,22 @@ fn main() {
 
         let cn = universe
             .world
-            .add_component(engine::ecs::component::CollisionComponent::KINEMATIC());
-        let response = universe.world.add_component(
-            engine::ecs::component::CollisionResponseComponent::push()
-                .with_push_strength(4.0)
-                .with_friction_y(10.0),
-        );
-        let shape =
-            universe
-                .world
-                .add_component(engine::ecs::component::CollisionShapeComponent::new(
-                    engine::ecs::component::CollisionShape::cube_half_extents([
-                        0.5 * s,
-                        0.5 * s,
-                        0.5 * s,
-                    ]),
-                ));
+            .add_component(engine::ecs::component::ZoneComponent::cube([0.5; 3]));
+        let cn_contact = universe
+            .world
+            .add_component(engine::ecs::component::CollidableComponent::slide());
+        let _ = universe.attach(cn, cn_contact);
 
         let _ = universe.attach(t, renderable);
         let _ = universe.attach(renderable, color);
 
         let _ = universe.attach(t, cn);
-        let _ = universe.attach(cn, response);
-        let _ = universe.attach(cn, shape);
 
-        let _ = universe.attach(parent, t);
+        let velocity = universe
+            .world
+            .add_component(engine::ecs::component::VelocityComponent::new());
+        let _ = universe.attach(parent, velocity);
+        let _ = universe.attach(velocity, t);
     }
 
     fn spawn_invisible_static_wall(
@@ -255,23 +239,13 @@ fn main() {
 
         let cn = universe
             .world
-            .add_component(engine::ecs::component::CollisionComponent::STATIC());
-        let shape =
-            universe
-                .world
-                .add_component(engine::ecs::component::CollisionShapeComponent::new(
-                    engine::ecs::component::CollisionShape::cube_half_extents(half_extents),
-                ));
-
-        // Requested: attach kinematic_response as well (even though STATIC colliders
-        // are not responders).
-        let response = universe
+            .add_component(engine::ecs::component::ZoneComponent::cube(half_extents));
+        let cn_contact = universe
             .world
-            .add_component(engine::ecs::component::CollisionResponseComponent::slide());
+            .add_component(engine::ecs::component::CollidableComponent::static_());
+        let _ = universe.attach(cn, cn_contact);
 
         let _ = universe.attach(t, cn);
-        let _ = universe.attach(cn, shape);
-        let _ = universe.attach(cn, response);
         universe.add(t);
     }
 
@@ -302,23 +276,16 @@ fn main() {
             ));
         let ground_cn = universe
             .world
-            .add_component(engine::ecs::component::CollisionComponent::STATIC());
-        let ground_shape =
-            universe
-                .world
-                .add_component(engine::ecs::component::CollisionShapeComponent::new(
-                    engine::ecs::component::CollisionShape::cube_half_extents([
-                        ground_half,
-                        thickness,
-                        ground_half,
-                    ]),
-                ));
+            .add_component(engine::ecs::component::ZoneComponent::cube([0.5; 3]));
+        let ground_cn_contact = universe
+            .world
+            .add_component(engine::ecs::component::CollidableComponent::static_());
+        let _ = universe.attach(ground_cn, ground_cn_contact);
 
         let _ = universe.attach(ground_root_t, ground_geom_t);
         let _ = universe.attach(ground_geom_t, ground_r);
         let _ = universe.attach(ground_r, ground_c);
         let _ = universe.attach(ground_geom_t, ground_cn);
-        let _ = universe.attach(ground_cn, ground_shape);
         universe.add(ground_root_t);
     }
 
@@ -402,7 +369,7 @@ fn main() {
     );
 
     // Outer containment walls (invisible): keep runaway cubes near the scene.
-    // Collision shapes are in world units; transform scale is irrelevant for collision.
+    // Zone shapes use the local frame and inherit transform scale.
     {
         let wall_center_y = 6.0; // bottom at y=0, top at y=12
         let wall_half_height = 6.0;
@@ -474,14 +441,14 @@ fn main() {
             let bound = (half - (1.0 + s)).max(0.5);
             let x = (rng01() * 2.0 - 1.0) * bound;
             let z = (rng01() * 2.0 - 1.0) * bound;
-            let y = 0.5 * s;
+            let y = 0.5 * s + 2.0;
 
             // Slightly varied colors to show multiple light contributions.
             let cr = 0.25 + rng01() * 0.6;
             let cg = 0.25 + rng01() * 0.6;
             let cb = 0.25 + rng01() * 0.6;
 
-            spawn_pushable_cube(&mut universe, gravity_field, x, y, z, s, cr, cg, cb);
+            spawn_falling_cube(&mut universe, gravity_field, x, y, z, s, cr, cg, cb);
         }
     }
 

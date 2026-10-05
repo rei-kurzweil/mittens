@@ -1,3 +1,4 @@
+import { teleport_pit } from "../assets/components/teleport_pit.mms"
 import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
 
 let arm_ik = vroid_arm_ik(-0.35, 1)
@@ -146,78 +147,86 @@ T.position(-5.0, 2.55, 4.9).scale(1.5, 1.5, 0.08).rotation(0.0, 3.1416, 0.0) {
     }
 }
 
-T.position(-5.0, 0.0, 0.0) {
-    name = "rei_mu_locomotion_root"
-    InputXR.on() {
-        InputXRGamepad { locomotion() speed(1.5) }
-        T {
-            let rei_mu_avatar = GLTF.new("assets/models/rei(mu).glb") {
-                bisket_anime_shading()
-                bisket_humanoid_bone_map()
-                MorphTargetMap.new()
-                    .slot("left_eye_blink", "Fcl_EYE_Close_L")
-                    .slot("right_eye_blink", "Fcl_EYE_Close_R")
-                    .slot("viseme_aa", "Fcl_MTH_A")
-                EM.on()
-                bisket_colliders()
-                bisket_shirt_physics(false)
-                rei_mu_bow_secondary_motion()
-            }
-            let rei_mu_avatar_control = AVC {
-                name = "rei_mu_avatar_control"
-                mouth_open_from_amplitude(voice_level)
-                mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
-                mouth_open_amount(mouth_tuning.amount)
-                mouth_open_smoothing(16.0)
-                voice_level
-
-                initial_yaw(3.14159)
-                left_two_bone_ik(arm_ik.left)
-                right_two_bone_ik(arm_ik.right)
-                hand_rotation_smoothing(220.0)
-
-                T {
-                    rei_mu_avatar
+let player_motion = Velocity {
+    name = "rei_mu_velocity"
+    T.position(-5.0, 1.0, 0.0) {
+        name = "rei_mu_locomotion_root"
+        InputXR.on() {
+            InputXRGamepad { locomotion() speed(1.5) }
+            T {
+                let rei_mu_avatar = GLTF.new("assets/models/rei(mu).glb") {
+                    bisket_anime_shading()
+                    bisket_humanoid_bone_map()
+                    MorphTargetMap.new()
+                        .slot("left_eye_blink", "Fcl_EYE_Close_L")
+                        .slot("right_eye_blink", "Fcl_EYE_Close_R")
+                        .slot("viseme_aa", "Fcl_MTH_A")
+                    EM.on()
+                    bisket_colliders()
+                    bisket_shirt_physics(false)
+                    rei_mu_bow_secondary_motion()
                 }
+                let rei_mu_avatar_control = AVC.movement_target("[name='rei_mu_locomotion_root']") {
+                    name = "rei_mu_avatar_control"
+                    mouth_open_from_amplitude(voice_level)
+                    mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
+                    mouth_open_amount(mouth_tuning.amount)
+                    mouth_open_smoothing(16.0)
+                    voice_level
 
-                T.position(0.0, 0.08, 0.12) {
-                    name = "rei_mu_xr_camera"
-                    CXR { Pointer {} }
-                }
-                // HTC closure can still drive blink; the idle animation
-                // owns pupil direction instead of live gaze samples.
-                HTCEyeTracking.on().enable_pupil_direction_tracking(false)
+                    initial_yaw(3.14159)
+                    left_two_bone_ik(arm_ik.left)
+                    right_two_bone_ik(arm_ik.right)
+                    hand_rotation_smoothing(220.0)
 
-                XRHand.new(true, "Left", "GripAim").laser() {
                     T {
-                        RestAttachment.new("[name='J_Bip_L_Hand']", "[name='J_Bip_L_Middle3']") {
-                            Pointer {}
+                        rei_mu_avatar
+                    }
+
+                    T.position(0.0, 0.08, 0.12) {
+                        name = "rei_mu_xr_camera"
+                        CXR { Pointer {} }
+                    }
+                    // HTC closure can still drive blink; the idle animation
+                    // owns pupil direction instead of live gaze samples.
+                    HTCEyeTracking.on().enable_pupil_direction_tracking(false)
+
+                    XRHand.new(true, "Left", "GripAim").laser() {
+                        T {
+                            RestAttachment.new("[name='J_Bip_L_Hand']", "[name='J_Bip_L_Middle3']") {
+                                Pointer {}
+                            }
+                        }
+                    }
+                    XRHand.new(true, "Right", "GripAim").laser() {
+                        T {
+                            RestAttachment.new("[name='J_Bip_R_Hand']", "[name='J_Bip_R_Middle3']") {
+                                Pointer {}
+                            }
                         }
                     }
                 }
-                XRHand.new(true, "Right", "GripAim").laser() {
-                    T {
-                        RestAttachment.new("[name='J_Bip_R_Hand']", "[name='J_Bip_R_Middle3']") {
-                            Pointer {}
-                        }
-                    }
-                }
-            }
-            mouth_panel_target.avatar = rei_mu_avatar_control
-            rei_mu_avatar_control
+                mouth_panel_target.avatar = rei_mu_avatar_control
+                rei_mu_avatar_control
 
-            on(rei_mu_avatar, "GLTFInitialized", fn(event) {
-                let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
-                let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
-                if left_eye && right_eye {
-                    rei_mu_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
-                } else {
-                    print("GLTFInitialized: Rei(mu) eye bones were not found; idle pupil animation was not attached")
-                }
-            })
+                on(rei_mu_avatar, "GLTFInitialized", fn(event) {
+                    let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
+                    let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
+                    if left_eye && right_eye {
+                        rei_mu_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
+                    } else {
+                        print("GLTFInitialized: Rei(mu) eye bones were not found; idle pupil animation was not attached")
+                    }
+                })
+            }
         }
     }
 }
+Gravity { player_motion }
+on_global("XrButtonDown", fn(event) {
+    if event.control == "ButtonY" && player_motion.grounded() { player_motion.translate_world([0.0, 4.5, 0.0]) }
+})
+teleport_pit("rei_mu_teleport_pit", [0.0, -24.0, 0.0], [180.0, 12.0, 180.0], [-5.0, 1.2, 0.0], "none")
 
 fn pile_box(box_name, x, y, z, color) {
     return T.position(x, y, z).scale(1.0, 1.0, 1.0) {

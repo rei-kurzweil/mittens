@@ -9,6 +9,7 @@ import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { pose as relaxed_pose_factory } from "../assets/components/poses/bisket/000-relaxed.pose.mms"
 import { tripod_light } from "../assets/components/tripod_light.mms"
 import { button } from "../assets/components/button.mms"
+import { teleport_pit } from "../assets/components/teleport_pit.mms"
 import { camera_icon } from "../assets/components/icons.mms"
 
 // Desktop Bisket secondary-motion studio. The light fixtures and collision
@@ -67,6 +68,10 @@ T.position(0.0, -0.05, 0.0).scale(18.0, 0.1, 18.0) {
     Zone.cube([0.5, 0.5, 0.5]) { Collidable.static() {} }
 }
 
+// Catch players who leave the floor. Destination is the capsule's world center,
+// including any movement accumulated on the inner Input driver.
+teleport_pit("desktop_teleport_pit", [0.0, -12.0, 0.0], [120.0, 12.0, 120.0], [0.0, 1.2, 1.0], "spikes")
+
 // Stable static colliders that can be picked up and repositioned with left mouse.
 grabbable_cube("pile_a_base_left",  [-2.8, 0.40, -1.7], [0.85, 0.80, 0.85], [0.95, 0.25, 0.38])
 grabbable_cube("pile_a_base_right", [-1.9, 0.40, -1.7], [0.85, 0.80, 0.85], [1.00, 0.62, 0.15])
@@ -96,6 +101,12 @@ let camera_view_toggle = button("toggle camera view", {
     color = [1.0, 1.0, 1.0, 1.0]
 })
 
+let jump_button = button("jump (Space)", {
+    compact = false
+    background_color = [0.16, 0.68, 0.40, 0.92]
+    color = [1.0, 1.0, 1.0, 1.0]
+})
+
 // The camera and its control travel together when the rig is reparented.
 let desktop_camera_rig = T {
     name = "desktop_camera_rig"
@@ -103,8 +114,9 @@ let desktop_camera_rig = T {
     T.position(-0.52, -0.30, -1.0).scale(0.035, 0.035, 0.035) {
         LayoutRoot {
             available_width(24.0)
-            available_height(5.0)
+            available_height(10.0)
             camera_view_toggle
+            jump_button
         }
     }
 }
@@ -124,24 +136,42 @@ on(avatar_gltf, "GLTFInitialized", fn(event) {
     }
 })
 
-ED.active() {
-    I.speed(2.2) {
-        name = "desktop_avatar_input"
-        InputTransformMode.forward_z() {
-            roll_axis_y()
-            fps_rotation()
-        }
-        T.position(0.0, 1.6, 1.0) {
-            name = "avatar_head_driver"
-            AVC {
-                left_two_bone_ik(arm_ik.left)
-                right_two_bone_ik(arm_ik.right)
-                initial_yaw(3.14159)
-                T { avatar_gltf }
+// Gravity owns falling placement; Input retains desktop movement/look on the
+// inner head driver. Capsule correction targets the falling root explicitly.
+let avatar_motion = Velocity {
+    name = "desktop_avatar_velocity"
+    T.position(0.0, 1.0, 0.0) {
+        name = "desktop_avatar_grounding_root"
+        I.speed(2.2) {
+            name = "desktop_avatar_input"
+            InputTransformMode.forward_z() {
+                roll_axis_y()
+                fps_rotation()
+            }
+            T.position(0.0, 1.6, 1.0) {
+                name = "avatar_head_driver"
+                AVC {
+                    movement_target("[name='desktop_avatar_grounding_root']")
+                    left_two_bone_ik(arm_ik.left)
+                    right_two_bone_ik(arm_ik.right)
+                    initial_yaw(3.14159)
+                    T { avatar_gltf }
+                }
             }
         }
     }
 }
+ED.active() { Gravity.coefficient(1.0) { avatar_motion } }
+
+fn jump() {
+    if avatar_motion.grounded() {
+        avatar_motion.translate_world([0.0, 4.5, 0.0])
+    }
+}
+on_global("KeyDown", fn(event) {
+    if event.code == "Space" { jump() }
+})
+on(jump_button, "Click", fn(event) { jump() })
 
 // Keep the workspace outside the editable scene so bounds inspection discovers
 // Bisket without allowing the panel itself to become an editor target.

@@ -1,3 +1,5 @@
+import { studio_stage, studio_floor } from "../assets/components/studio_stage.mms"
+import { teleport_pit } from "../assets/components/teleport_pit.mms"
 import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
 
 let arm_ik = vroid_arm_ik(-0.35, 1)
@@ -11,7 +13,6 @@ let arm_ik = vroid_arm_ik(-0.35, 1)
 // the rigid car has no humanoid specialization for AVC to perform.
 
 import { tripod_light } from "../assets/components/tripod_light.mms"
-import { truss } from "../assets/components/truss.mms"
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
@@ -554,27 +555,12 @@ RenderGraph {
     Bloom { intensity(0.42) radius_ndc(0.025) emissive_scale(1.0) half_res(true) }
 }
 
-fn stage_box(box_name, position, size, color) {
-    return T.position(position[0], position[1], position[2])
-        .scale(size[0], size[1], size[2]) {
-        name = box_name
-        R.cube() { C.rgba(color[0], color[1], color[2], 1.0) }
-    }
-}
 
 // Keep the car example's studio stage so this tool also retains a stable
 // lighting and mirror reference while XR transforms and gizmos are exercised.
-stage_box(
-    "studio_floor",
-    [0.0, -0.92, 1.0],
-    [54.0, 0.14, 32.0],
-    [0.035, 0.037, 0.043],
-)
-
-stage_box("stage_deck",       [0.0,  0.00, -1.5], [32.0, 0.24, 14.0], [0.18, 0.18, 0.20])
-stage_box("stage_upper_step", [0.0, -0.24,  5.7], [32.0, 0.28,  0.8], [0.14, 0.14, 0.16])
-stage_box("stage_lower_step", [0.0, -0.56,  6.3], [32.0, 0.36,  0.8], [0.10, 0.10, 0.12])
-stage_box("stage_back_wall",  [0.0,  4.00, -8.35], [32.0, 8.00, 0.35], [0.105, 0.105, 0.12])
+studio_floor()
+studio_stage("mittens_corp_stage")
+teleport_pit("studio_teleport_pit", [0.0, -14.0, 0.0], [100.0, 12.0, 100.0], [-5.0, 1.2, 0.0], "spikes")
 
 T.position(0.0, 2.55, 8.10).scale(1.5, 1.5, 0.08).rotation(0.0, 3.1416, 0.0) {
     name = "stage_mirror"
@@ -585,10 +571,6 @@ T.position(0.0, 2.55, 8.10).scale(1.5, 1.5, 0.08).rotation(0.0, 3.1416, 0.0) {
     }
 }
 
-T.position(0.0, 7.10, -7.75) {
-    name = "stage_ceiling_truss"
-    truss(26)
-}
 
 // Three elevated walkway sections run along Z, perpendicular to the stage's
 // long X axis. Their ends meet to form one continuous suspended platform.
@@ -652,107 +634,114 @@ ED.active() {
         speed(1.5)
     }
 
-    T.position(-5.0, 0.0, 0.0) {
-        name = "bisket_locomotion_root"
-        Rider
-            .anchor("[name='bisket_rider_cxr_anchor']")
-            .movement_root("[name='bisket_locomotion_root']")
-            .input("[name='bisket_pedestrian_locomotion']") {}
-        InputXR.on() {
-            vehicle_controls
+    let player_motion = Velocity {
+        name = "bisket_locomotion_root_velocity"
+        T.position(-5.0, 1.0, 0.0) {
+            name = "bisket_locomotion_root"
+            Rider
+                .anchor("[name='bisket_rider_cxr_anchor']")
+                .movement_root("[name='bisket_locomotion_root']")
+                .input("[name='bisket_pedestrian_locomotion']") {}
+            InputXR.on() {
+                vehicle_controls
 
-            T {
-                name = "bisket_xr_driver"
-                let bisket_avatar = GLTF.new("assets/models/bisket.glb") {
-                    bisket_anime_shading()
-                    bisket_humanoid_bone_map()
-                    MorphTargetMap.new()
-                        .slot("left_eye_blink", "Fcl_EYE_Close_L")
-                        .slot("right_eye_blink", "Fcl_EYE_Close_R")
-                        .slot("viseme_aa", "Fcl_MTH_A")
-                    EM.on()
-                    PoseCapture { label("Bisket") asset_name("bisket") }
-                    bisket_colliders()
-                    bisket_shirt_physics(false)
-                }
-                let bisket_avatar_control = AVC {
-                    name = "bisket_avatar_control"
-                    mouth_open_from_amplitude(voice_level)
-                    mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
-                    mouth_open_amount(mouth_tuning.amount)
-                    mouth_open_smoothing(16.0)
-                    voice_level
-                    
-                    initial_yaw(3.14159)
-                    left_two_bone_ik(arm_ik.left)
-                    right_two_bone_ik(arm_ik.right)
-                    hand_rotation_smoothing(220.0)
-
-                    T {
-                        bisket_avatar
+                T {
+                    name = "bisket_xr_driver"
+                    let bisket_avatar = GLTF.new("assets/models/bisket.glb") {
+                        bisket_anime_shading()
+                        bisket_humanoid_bone_map()
+                        MorphTargetMap.new()
+                            .slot("left_eye_blink", "Fcl_EYE_Close_L")
+                            .slot("right_eye_blink", "Fcl_EYE_Close_R")
+                            .slot("viseme_aa", "Fcl_MTH_A")
+                        EM.on()
+                        PoseCapture { label("Bisket") asset_name("bisket") }
+                        bisket_colliders()
+                        bisket_shirt_physics(false)
                     }
+                    let bisket_avatar_control = AVC.movement_target("[name='bisket_locomotion_root']") {
+                        name = "bisket_avatar_control"
+                        mouth_open_from_amplitude(voice_level)
+                        mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
+                        mouth_open_amount(mouth_tuning.amount)
+                        mouth_open_smoothing(16.0)
+                        voice_level
 
-                    // Rider-side anchor. AVC reparents this wrapper beneath the
-                    // head; mounting aligns it with the car's cockpit target.
-                    T.position(0.0, 0.08, 0.12) {
-                        name = "bisket_rider_cxr_anchor"
-                        CXR { Pointer {} }
-                    }
-                    // HTC eye tracking retains closure samples for blink morphs,
-                    // while authored animation owns the eye-bone direction.
-                    HTCEyeTracking.on().enable_pupil_direction_tracking(false)
+                        initial_yaw(3.14159)
+                        left_two_bone_ik(arm_ik.left)
+                        right_two_bone_ik(arm_ik.right)
+                        hand_rotation_smoothing(220.0)
 
-                    XRHand.new(true, "Left", "GripAim").laser() {
                         T {
-                            RestAttachment.new("[name='J_Bip_L_Hand']", "[name='J_Bip_L_Middle3']") {
-                                Pointer {}
+                            bisket_avatar
+                        }
+
+                        // Rider-side anchor. AVC reparents this wrapper beneath the
+                        // head; mounting aligns it with the car's cockpit target.
+                        T.position(0.0, 0.08, 0.12) {
+                            name = "bisket_rider_cxr_anchor"
+                            CXR { Pointer {} }
+                        }
+                        // HTC eye tracking retains closure samples for blink morphs,
+                        // while authored animation owns the eye-bone direction.
+                        HTCEyeTracking.on().enable_pupil_direction_tracking(false)
+
+                        XRHand.new(true, "Left", "GripAim").laser() {
+                            T {
+                                RestAttachment.new("[name='J_Bip_L_Hand']", "[name='J_Bip_L_Middle3']") {
+                                    Pointer {}
+                                }
+                            }
+                        }
+                        XRHand.new(true, "Right", "GripAim").laser() {
+                            T {
+                                RestAttachment.new("[name='J_Bip_R_Hand']", "[name='J_Bip_R_Middle3']") {
+                                    Pointer {}
+                                }
                             }
                         }
                     }
-                    XRHand.new(true, "Right", "GripAim").laser() {
-                        T {
-                            RestAttachment.new("[name='J_Bip_R_Hand']", "[name='J_Bip_R_Middle3']") {
-                                Pointer {}
+                    mouth_panel_target.avatar = bisket_avatar_control
+                    bisket_avatar_control
+
+                    on(vehicle_controls, "XrButtonDown", fn(event) {
+                        if event.control == "ButtonB" {
+                            if agc_mode.enabled {
+                                // Keep normalization live for its diagnostics, but
+                                // route AVC to the raw observer for A/B tuning.
+                                agc_mode.enabled = false
+                                bisket_avatar_control.mouth_open_from_amplitude(raw_voice_level)
+                                agc_status_text.set_text("AGC = OFF\nB: normalized AGC")
+                                agc_status_glow.set_intensity(0.28)
+                            } else {
+                                agc_mode.enabled = true
+                                bisket_avatar_control.mouth_open_from_amplitude(voice_level)
+                                agc_status_text.set_text("AGC = ON\nB: raw amplitude")
+                                agc_status_glow.set_intensity(2.4)
                             }
                         }
-                    }
-                }
-                mouth_panel_target.avatar = bisket_avatar_control
-                bisket_avatar_control
+                    })
 
-                on(vehicle_controls, "XrButtonDown", fn(event) {
-                    if event.control == "ButtonB" {
-                        if agc_mode.enabled {
-                            // Keep normalization live for its diagnostics, but
-                            // route AVC to the raw observer for A/B tuning.
-                            agc_mode.enabled = false
-                            bisket_avatar_control.mouth_open_from_amplitude(raw_voice_level)
-                            agc_status_text.set_text("AGC = OFF\nB: normalized AGC")
-                            agc_status_glow.set_intensity(0.28)
+                    // The explicit Bisket humanoid map above declares these two
+                    // skin-joint targets. Query only this GLTF instance after it
+                    // finishes importing, so another avatar cannot be animated.
+                    on(bisket_avatar, "GLTFInitialized", fn(event) {
+                        let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
+                        let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
+                        if left_eye && right_eye {
+                            bisket_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
                         } else {
-                            agc_mode.enabled = true
-                            bisket_avatar_control.mouth_open_from_amplitude(voice_level)
-                            agc_status_text.set_text("AGC = ON\nB: raw amplitude")
-                            agc_status_glow.set_intensity(2.4)
+                            print("GLTFInitialized: Bisket mapped eye bones were not found; ambient eye animation was not attached")
                         }
-                    }
-                })
-
-                // The explicit Bisket humanoid map above declares these two
-                // skin-joint targets. Query only this GLTF instance after it
-                // finishes importing, so another avatar cannot be animated.
-                on(bisket_avatar, "GLTFInitialized", fn(event) {
-                    let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
-                    let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
-                    if left_eye && right_eye {
-                        bisket_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
-                    } else {
-                        print("GLTFInitialized: Bisket mapped eye bones were not found; ambient eye animation was not attached")
-                    }
-                })
+                    })
+                }
             }
         }
     }
+    Gravity { player_motion }
+    on_global("XrButtonDown", fn(event) {
+        if event.control == "ButtonY" && player_motion.grounded() { player_motion.translate_world([0.0, 4.5, 0.0]) }
+    })
 
     let car_root = display_car_xr(
         "left_display_car",

@@ -111,7 +111,7 @@ pub struct ZoneSweepHit {
     pub normal: [f32; 3],
 }
 
-/// Detect a downward crossing of the top face of an axis-aligned static box.
+/// Detect a downward crossing of the top face of an upright static box (including yaw).
 /// `previous_center` is the capsule's center before its pose driver moved it;
 /// the zone's current frame supplies the proposed end center. This narrow
 /// floor query intentionally does not cover side walls or sloped surfaces.
@@ -132,18 +132,14 @@ pub fn sweep_capsule_floor(
     let (end, moving_shape) =
         collision_geometry::axis_aligned_world_shape(moving_shape, moving_frame)
             .ok_or(ZoneQueryError::UnsupportedContactFrame(moving))?;
-    let (floor_center, floor_shape) =
-        collision_geometry::axis_aligned_world_shape(floor_shape, floor_frame)
-            .ok_or(ZoneQueryError::UnsupportedContactFrame(surface))?;
+    let (floor_center, half_extents, axes) = collision_geometry::yaw_box(floor_shape, floor_frame)
+        .ok_or(ZoneQueryError::UnsupportedContactFrame(surface))?;
     let CollisionShape::CapsuleY {
         radius,
         half_segment,
     } = moving_shape
     else {
         return Err(ZoneQueryError::UnsupportedFloorShape(moving));
-    };
-    let CollisionShape::Cube { half_extents } = floor_shape else {
-        return Err(ZoneQueryError::UnsupportedFloorShape(surface));
     };
     let top = floor_center[1] + half_extents[1];
     let bottom_offset = half_segment + radius;
@@ -160,10 +156,11 @@ pub fn sweep_capsule_floor(
     let z = previous_center[2] + (end[2] - previous_center[2]) * fraction;
     // At the instant its bottom crosses the top plane, a capsule's rounded
     // cap touches at its center X/Z. Side and edge sweeps are separate queries.
-    if x < floor_center[0] - half_extents[0] - ZONE_EPSILON
-        || x > floor_center[0] + half_extents[0] + ZONE_EPSILON
-        || z < floor_center[2] - half_extents[2] - ZONE_EPSILON
-        || z > floor_center[2] + half_extents[2] + ZONE_EPSILON
+    let relative = [x - floor_center[0], 0.0, z - floor_center[2]];
+    let local_x = (0..3).map(|i| relative[i] * axes[0][i]).sum::<f32>();
+    let local_z = (0..3).map(|i| relative[i] * axes[2][i]).sum::<f32>();
+    if local_x.abs() > half_extents[0] + ZONE_EPSILON
+        || local_z.abs() > half_extents[2] + ZONE_EPSILON
     {
         return Ok(None);
     }

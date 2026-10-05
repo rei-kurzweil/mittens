@@ -111,6 +111,111 @@ mod tests {
     }
 
     #[test]
+    fn gravity_is_world_down_under_rotated_scaled_parent_and_horizontal_velocity() {
+        let mut world = World::default();
+        let gravity = world.add_component(GravityComponent::new());
+        let frame = world.add_component(
+            TransformComponent::new()
+                .with_rotation_euler(0.0, 0.0, std::f32::consts::FRAC_PI_2)
+                .with_scale(2.0, 3.0, 4.0),
+        );
+        let mut state = VelocityComponent::new();
+        state.horizontal = true;
+        let owner = world.add_component(state);
+        let target = world.add_component(TransformComponent::new());
+        world.add_child(gravity, frame).unwrap();
+        world.add_child(frame, owner).unwrap();
+        world.add_child(owner, target).unwrap();
+        propagate(&mut world, frame);
+        let mut system = VelocitySystem::default();
+        system.step(&mut world, &mut RxWorld::default());
+        propagate(&mut world, frame);
+        let position = TransformSystem::world_position(&world, target).unwrap();
+        assert!(position[0].abs() < 1.0e-6);
+        assert!((position[1] + 9.81 / 120.0 / 120.0).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn gravity_edits_disables_and_nested_boundaries_affect_live_velocity() {
+        let mut world = World::default();
+        let gravity = world.add_component(GravityComponent::new());
+        let owner = world.add_component(VelocityComponent::new());
+        let target = world.add_component(TransformComponent::new());
+        let inner = world.add_component(VelocityComponent::new());
+        let inner_target = world.add_component(TransformComponent::new());
+        world.add_child(gravity, owner).unwrap();
+        world.add_child(owner, target).unwrap();
+        world.add_child(target, inner).unwrap();
+        world.add_child(inner, inner_target).unwrap();
+        propagate(&mut world, target);
+        let mut system = VelocitySystem::default();
+        let mut emit = RxWorld::default();
+        system.step(&mut world, &mut emit);
+        let speed = world
+            .get_component_by_id_as::<VelocityComponent>(owner)
+            .unwrap()
+            .linear_local_mps;
+        assert!((speed[1] + 9.81 / 120.0).abs() < 1.0e-6);
+        assert_eq!(
+            world
+                .get_component_by_id_as::<VelocityComponent>(inner)
+                .unwrap()
+                .linear_local_mps,
+            [0.0; 3]
+        );
+        world
+            .get_component_by_id_as_mut::<GravityComponent>(gravity)
+            .unwrap()
+            .enabled = false;
+        system.step(&mut world, &mut emit);
+        assert_eq!(
+            world
+                .get_component_by_id_as::<VelocityComponent>(owner)
+                .unwrap()
+                .linear_local_mps,
+            speed
+        );
+        let provider = world
+            .get_component_by_id_as_mut::<GravityComponent>(gravity)
+            .unwrap();
+        provider.enabled = true;
+        provider.set_coefficient(-1.0).unwrap();
+        assert!(provider.set_coefficient(f32::NAN).is_err());
+        assert_eq!(provider.coefficient, -1.0);
+        world
+            .get_component_by_id_as_mut::<VelocityComponent>(owner)
+            .unwrap()
+            .enabled = false;
+        let before = world
+            .get_component_by_id_as::<TransformComponent>(target)
+            .unwrap()
+            .transform
+            .translation;
+        system.tick(&mut world, &mut emit, 1.0 / 30.0);
+        assert_eq!(
+            world
+                .get_component_by_id_as::<TransformComponent>(target)
+                .unwrap()
+                .transform
+                .translation,
+            before
+        );
+        world
+            .get_component_by_id_as_mut::<VelocityComponent>(owner)
+            .unwrap()
+            .enabled = true;
+        system.step(&mut world, &mut emit);
+        assert!(
+            world
+                .get_component_by_id_as::<VelocityComponent>(owner)
+                .unwrap()
+                .linear_local_mps[1]
+                .abs()
+                < 1.0e-6
+        );
+    }
+
+    #[test]
     fn local_clicks_add_world_velocity_once_and_back_cancels() {
         let mut world = World::default();
         let root = world.add_component(TransformComponent::new().with_rotation_quat([
@@ -435,7 +540,6 @@ impl VelocitySystem {
     /// Disabled Gravity still wins, allowing an off wrapper to block inheritance.
     /// Every Velocity ancestor is a boundary, including disabled motion layers.
     /// Read the live tree each time so reparenting and removal cannot leave stale owners.
-    /// This is discovery only; legacy collision gravity retains its existing behavior.
     pub fn gravity_provider(world: &World, velocity_id: ComponentId) -> Option<ComponentId> {
         world.get_component_by_id_as::<VelocityComponent>(velocity_id)?;
         let mut current = world.parent_of(velocity_id);
@@ -457,7 +561,10 @@ impl VelocitySystem {
         None
     }
 
-    fn driven_transform(world: &World, velocity_id: ComponentId) -> Result<ComponentId, String> {
+    pub(crate) fn driven_transform(
+        world: &World,
+        velocity_id: ComponentId,
+    ) -> Result<ComponentId, String> {
         let mut targets = world.children_of(velocity_id).iter().copied().filter(|id| {
             world
                 .get_component_by_id_as::<TransformComponent>(*id)
@@ -486,7 +593,10 @@ impl VelocitySystem {
         None
     }
 
-    fn parent_rotation(world: &World, velocity_id: ComponentId) -> Result<[f32; 4], String> {
+    pub(crate) fn parent_rotation(
+        world: &World,
+        velocity_id: ComponentId,
+    ) -> Result<[f32; 4], String> {
         Self::ancestor_transform(world, velocity_id)
             .map(|id| {
                 TransformSystem::world_rotation_quat_xyzw(world, id)
@@ -624,15 +734,26 @@ impl VelocitySystem {
             .unwrap()
             .set_linear_local(next)
             .map_err(str::to_string)?;
+        if delta_world[1] > 0.0 {
+            world
+                .get_component_by_id_as_mut::<VelocityComponent>(velocity_id)
+                .unwrap()
+                .grounded = false;
+        }
         Ok(())
     }
 
-    /// Fixed-step integration is deliberately independent of gravity/contact.
-    /// TODO: acceleration/force providers should update this component's
-    /// velocity before integration; they must not write the transform here.
+    /// Standalone integration. Runtime scheduling uses `take_steps` and
+    /// `step` so propagation and contact can commit between fixed substeps.
     pub fn tick(&mut self, world: &mut World, emit: &mut dyn SignalEmitter, dt_sec: f32) {
+        for _ in 0..self.take_steps(dt_sec) {
+            self.step(world, emit);
+        }
+    }
+
+    pub(crate) fn take_steps(&mut self, dt_sec: f32) -> usize {
         if !dt_sec.is_finite() || dt_sec < 0.0 {
-            return;
+            return 0;
         }
         self.accumulator_sec += dt_sec as f64;
         let steps = ((self.accumulator_sec / STEP_SEC).floor() as usize).min(MAX_STEPS);
@@ -648,10 +769,11 @@ impl VelocitySystem {
             }
             self.accumulator_sec = 0.0;
         }
-        if steps == 0 {
-            return;
-        }
-        let elapsed = (steps as f64 * STEP_SEC) as f32;
+        steps
+    }
+
+    pub(crate) fn step(&mut self, world: &mut World, emit: &mut dyn SignalEmitter) {
+        let elapsed = STEP_SEC as f32;
         let ids: Vec<_> = world
             .all_components()
             .filter(|id| {
@@ -664,10 +786,14 @@ impl VelocitySystem {
             let Some(velocity) = world.get_component_by_id_as::<VelocityComponent>(id) else {
                 continue;
             };
-            if !velocity.enabled || velocity.linear_local_mps == [0.0; 3] {
+            if !velocity.enabled {
                 continue;
             }
-            let linear = velocity.linear_local_mps;
+            let mut linear = velocity.linear_local_mps;
+            world
+                .get_component_by_id_as_mut::<VelocityComponent>(id)
+                .unwrap()
+                .grounded = false;
             let target = match Self::driven_transform(world, id) {
                 Ok(target) => target,
                 Err(error) => {
@@ -686,6 +812,29 @@ impl VelocitySystem {
                     continue;
                 }
             };
+            if let Some(gravity) = Self::gravity_provider(world, id)
+                .and_then(|provider| world.get_component_by_id_as::<GravityComponent>(provider))
+                .filter(|gravity| gravity.enabled)
+            {
+                let acceleration_world = [0.0, -9.81 * gravity.coefficient, 0.0];
+                let acceleration_local = math::quat_rotate_vec3(
+                    math::quat_conjugate(parent_rotation),
+                    acceleration_world,
+                );
+                for axis in 0..3 {
+                    linear[axis] += acceleration_local[axis] * elapsed;
+                }
+                if !linear.iter().all(|value| value.is_finite()) {
+                    continue;
+                }
+            }
+            if linear == [0.0; 3] {
+                world
+                    .get_component_by_id_as_mut::<VelocityComponent>(id)
+                    .unwrap()
+                    .zero_linear();
+                continue;
+            }
             let world_velocity = math::quat_rotate_vec3(parent_rotation, linear);
             let delta_world = [
                 world_velocity[0] * elapsed,
@@ -713,6 +862,11 @@ impl VelocitySystem {
             if !delta_local.iter().all(|v| v.is_finite()) {
                 continue;
             }
+            world
+                .get_component_by_id_as_mut::<VelocityComponent>(id)
+                .unwrap()
+                .set_linear_local(linear)
+                .expect("validated velocity");
             let Some(transform) = world.get_component_by_id_as_mut::<TransformComponent>(target)
             else {
                 continue;

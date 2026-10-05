@@ -1,13 +1,9 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
 
-/// Gravity field component.
-///
-/// Any `CollisionResponseComponent` nested under a `GravityComponent` will have gravity applied
-/// by `CollisionResponseSystem`.
-///
-/// This component can live anywhere in the scene graph and can have arbitrary descendants.
-/// If multiple `GravityComponent`s exist in the ancestor chain, the nearest enabled one wins.
+/// Persistent world-space acceleration for descendant Velocity components.
+/// The nearest Gravity wins, including disabled overrides. Every intervening
+/// Velocity is a scope boundary; providers never store private falling speed.
 #[derive(Debug, Clone)]
 pub struct GravityComponent {
     pub enabled: bool,
@@ -40,8 +36,17 @@ impl GravityComponent {
     }
 
     pub fn with_coefficient(mut self, coefficient: f32) -> Self {
-        self.coefficient = coefficient;
+        self.set_coefficient(coefficient)
+            .expect("gravity coefficient must be finite");
         self
+    }
+
+    pub fn set_coefficient(&mut self, coefficient: f32) -> Result<(), &'static str> {
+        if !coefficient.is_finite() {
+            return Err("gravity coefficient must be finite");
+        }
+        self.coefficient = coefficient;
+        Ok(())
     }
 }
 

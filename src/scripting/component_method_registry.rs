@@ -29,7 +29,8 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
     ) || (matches!(component_type, "T" | "Transform" | "transform")
         && matches!(
             method,
-            "update_transform"
+            "teleport_world"
+                | "update_transform"
                 | "rest_relative_rotation"
                 | "look_at"
                 | "translation"
@@ -63,7 +64,10 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
         || (matches!(component_type, "Amplitude" | "amplitude")
             && matches!(method, "value" | "set_highpass" | "set_highpass_resonance"))
         || (matches!(component_type, "Velocity" | "velocity")
-            && matches!(method, "translate" | "translate_world" | "linear"))
+            && matches!(
+                method,
+                "translate" | "translate_world" | "linear" | "grounded"
+            ))
         || (matches!(
             component_type,
             "VolumeNormalization" | "volume_normalization"
@@ -120,6 +124,15 @@ pub(crate) fn invoke_component_method(
     mut emit_intent: impl FnMut(IntentValue),
 ) -> Result<Value, String> {
     match (component_type, method) {
+        ("Velocity" | "velocity", "grounded") => {
+            if !args.is_empty() {
+                return Err("grounded(): expected no arguments".into());
+            }
+            let velocity = world
+                .get_component_by_id_as::<VelocityComponent>(id)
+                .ok_or("grounded(): not a Velocity component")?;
+            Ok(Value::Bool(velocity.enabled && velocity.grounded))
+        }
         ("Velocity" | "velocity", "linear") => {
             if !args.is_empty() {
                 return Err("linear(): expected no arguments".into());
@@ -721,6 +734,23 @@ pub(crate) fn invoke_component_method(
                     "trs(): expected no arguments for a getter or one TransformTrs value for a setter, got {other:?}"
                 )),
             }
+        }
+        ("T" | "Transform" | "transform", "teleport_world") => {
+            let [position] = args else {
+                return Err("teleport_world expects one vec3".into());
+            };
+            let position = value_as_f32_array::<3>(position)?;
+            if !position.iter().all(|v| v.is_finite()) {
+                return Err("teleport_world expects finite coordinates".into());
+            }
+            world
+                .get_component_by_id_as::<TransformComponent>(id)
+                .ok_or("teleport_world requires a Transform")?;
+            emit_intent(IntentValue::TeleportTransformWorld {
+                component_id: id,
+                position,
+            });
+            Ok(Value::Null)
         }
         ("T" | "Transform" | "transform", "update_transform") => {
             let [translation, rotation_euler, scale] = match args {

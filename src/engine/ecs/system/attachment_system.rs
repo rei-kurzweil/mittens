@@ -34,6 +34,7 @@ struct ActiveMount {
     transform_parent: ComponentId,
     original_parent: Option<ComponentId>,
     suspended_input: SuspendedInput,
+    suspended_velocity: Option<(ComponentId, bool)>,
 }
 
 /// Owns live Rider -> Mountable relationships.
@@ -48,6 +49,10 @@ pub struct AttachmentSystem {
 }
 
 impl AttachmentSystem {
+    pub(crate) fn is_movement_root_mounted(&self, target: ComponentId) -> bool {
+        self.by_rider.values().any(|edge| edge.rider_root == target)
+    }
+
     pub fn register(
         &mut self,
         world: &mut World,
@@ -228,6 +233,17 @@ impl AttachmentSystem {
             return false;
         }
         suspend_input(world, suspended_input);
+        let suspended_velocity = original_parent.and_then(|owner| {
+            let velocity = world
+                .get_component_by_id_as_mut::<crate::engine::ecs::component::VelocityComponent>(
+                    owner,
+                )?;
+            let enabled = velocity.enabled;
+            velocity.enabled = false;
+            velocity.linear_local_mps = [0.0; 3];
+            velocity.grounded = false;
+            Some((owner, enabled))
+        });
 
         let edge = ActiveMount {
             rider: rider_id,
@@ -239,6 +255,7 @@ impl AttachmentSystem {
             transform_parent,
             original_parent,
             suspended_input,
+            suspended_velocity,
         };
         self.by_rider.insert(rider_id, edge);
         self.rider_by_mountable.insert(mountable_id, rider_id);
@@ -312,6 +329,16 @@ impl AttachmentSystem {
             }
         }
         restore_input(world, edge.suspended_input);
+        if let Some((owner, enabled)) = edge.suspended_velocity
+            && let Some(v) = world
+                .get_component_by_id_as_mut::<crate::engine::ecs::component::VelocityComponent>(
+                    owner,
+                )
+        {
+            v.enabled = enabled;
+            v.linear_local_mps = [0.0; 3];
+            v.grounded = false;
+        }
         if world.get_component_record(edge.transform_parent).is_some() {
             let _ = world.remove_component_subtree(edge.transform_parent);
         }
@@ -678,6 +705,44 @@ mod tests {
             pointer,
             car,
             mountable,
+        }
+    }
+
+    #[test]
+    fn mount_suspends_movement_velocity_and_restores_it_without_stale_speed() {
+        use crate::engine::ecs::component::VelocityComponent;
+        for enabled in [true, false] {
+            let mut fixture = fixture([0.0, 0.0, 0.0]);
+            let mut velocity = VelocityComponent::new();
+            velocity.enabled = enabled;
+            velocity.set_linear_local([0.0, -8.0, 0.0]).unwrap();
+            let owner = fixture.world.add_component(velocity);
+            fixture.world.set_parent(fixture.root, Some(owner)).unwrap();
+            let mut system = AttachmentSystem::default();
+            let mut emit = CommandQueue::new();
+            assert!(system.try_mount_from_hit(
+                &mut fixture.world,
+                fixture.pointer,
+                fixture.car,
+                &mut emit
+            ));
+            assert!(system.is_movement_root_mounted(fixture.root));
+            let v = fixture
+                .world
+                .get_component_by_id_as::<VelocityComponent>(owner)
+                .unwrap();
+            assert!(!v.enabled);
+            assert_eq!(v.linear_local_mps, [0.0; 3]);
+            assert!(system.dismount(&mut fixture.world, fixture.rider, &mut emit, true));
+            let v = fixture
+                .world
+                .get_component_by_id_as::<VelocityComponent>(owner)
+                .unwrap();
+            assert_eq!(v.enabled, enabled);
+            assert_eq!(v.linear_local_mps, [0.0; 3]);
+            assert!(!v.grounded);
+            assert_eq!(fixture.world.parent_of(fixture.root), Some(owner));
+            assert!(!system.is_movement_root_mounted(fixture.root));
         }
     }
 

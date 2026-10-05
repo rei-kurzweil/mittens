@@ -599,6 +599,48 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
                 ("value".into(), Value::Bool(*value)),
             ]))
         }
+        Some(crate::engine::ecs::EventSignal::ZoneEntered {
+            zone,
+            other_zone,
+            collidable,
+            movement_target,
+            movement_target_offset,
+        })
+        | Some(crate::engine::ecs::EventSignal::ZoneExited {
+            zone,
+            other_zone,
+            collidable,
+            movement_target,
+            movement_target_offset,
+        }) => {
+            let mut payload: HashMap<String, Value> = [
+                ("zone", *zone, "Zone"),
+                ("other_zone", *other_zone, "Zone"),
+                ("collidable", *collidable, "Collidable"),
+                ("movement_target", *movement_target, "T"),
+            ]
+            .into_iter()
+            .map(|(key, id, kind)| {
+                (
+                    key.into(),
+                    Value::ComponentObject {
+                        id,
+                        component_type: kind.into(),
+                    },
+                )
+            })
+            .collect();
+            payload.insert(
+                "movement_target_offset".into(),
+                Value::Array(
+                    movement_target_offset
+                        .iter()
+                        .map(|v| Value::Number(*v as f64))
+                        .collect(),
+                ),
+            );
+            Value::Map(payload)
+        }
         Some(crate::engine::ecs::EventSignal::MountStarted { rider, mountable })
         | Some(crate::engine::ecs::EventSignal::MountEnded { rider, mountable }) => {
             Value::Map(HashMap::from([

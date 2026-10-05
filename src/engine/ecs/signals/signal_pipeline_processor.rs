@@ -86,6 +86,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterHttpClient { component_id }
             | IntentValue::RegisterScrolling { component_id }
             | IntentValue::RegisterTransform { component_id }
+            | IntentValue::TeleportTransformWorld { component_id, .. }
             | IntentValue::UpdateTransform { component_id, .. }
             | IntentValue::SetTransformTrs { component_id, .. }
             | IntentValue::RemoveTransform { component_id }
@@ -113,8 +114,6 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterTextInput { component_id }
             | IntentValue::RegisterCollision { component_id }
             | IntentValue::RemoveCollision { component_id }
-            | IntentValue::RegisterCollisionResponse { component_id }
-            | IntentValue::RemoveCollisionResponse { component_id }
             | IntentValue::RegisterAvatarControl { component_id }
             | IntentValue::RegisterHumanoidBoneMap { component_id }
             | IntentValue::UnregisterHumanoidBoneMap { component_id }
@@ -239,6 +238,7 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterHttpClient { component_id }
             | IntentValue::RegisterScrolling { component_id }
             | IntentValue::RegisterTransform { component_id }
+            | IntentValue::TeleportTransformWorld { component_id, .. }
             | IntentValue::UpdateTransform { component_id, .. }
             | IntentValue::SetTransformTrs { component_id, .. }
             | IntentValue::RemoveTransform { component_id }
@@ -266,8 +266,6 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterTextInput { component_id }
             | IntentValue::RegisterCollision { component_id }
             | IntentValue::RemoveCollision { component_id }
-            | IntentValue::RegisterCollisionResponse { component_id }
-            | IntentValue::RemoveCollisionResponse { component_id }
             | IntentValue::RegisterAvatarControl { component_id }
             | IntentValue::RegisterHumanoidBoneMap { component_id }
             | IntentValue::UnregisterHumanoidBoneMap { component_id }

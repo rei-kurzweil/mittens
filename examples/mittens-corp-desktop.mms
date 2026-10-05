@@ -1,3 +1,5 @@
+import { studio_stage, studio_floor } from "../assets/components/studio_stage.mms"
+import { teleport_pit } from "../assets/components/teleport_pit.mms"
 import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
 
 let arm_ik = vroid_arm_ik(-0.35, 1)
@@ -8,7 +10,6 @@ let arm_ik = vroid_arm_ik(-0.35, 1)
 //   cargo run --release -- load examples/mittens-corp-desktop.mms
 
 import { tripod_light } from "../assets/components/tripod_light.mms"
-import { truss } from "../assets/components/truss.mms"
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
@@ -34,27 +35,12 @@ RenderGraph {
     Bloom { intensity(0.42) radius_ndc(0.025) emissive_scale(1.0) half_res(true) }
 }
 
-fn stage_box(box_name, position, size, color) {
-    return T.position(position[0], position[1], position[2])
-        .scale(size[0], size[1], size[2]) {
-        name = box_name
-        R.cube() { C.rgba(color[0], color[1], color[2], 1.0) }
-    }
-}
 
 // Keep the studio stage so this tool retains a stable lighting and mirror
 // reference while desktop transforms and gizmos are exercised.
-stage_box(
-    "studio_floor",
-    [0.0, -0.92, 1.0],
-    [54.0, 0.14, 32.0],
-    [0.035, 0.037, 0.043],
-)
-
-stage_box("stage_deck",       [0.0,  0.00, -1.5], [32.0, 0.24, 14.0], [0.18, 0.18, 0.20])
-stage_box("stage_upper_step", [0.0, -0.24,  5.7], [32.0, 0.28,  0.8], [0.14, 0.14, 0.16])
-stage_box("stage_lower_step", [0.0, -0.56,  6.3], [32.0, 0.36,  0.8], [0.10, 0.10, 0.12])
-stage_box("stage_back_wall",  [0.0,  4.00, -8.35], [32.0, 8.00, 0.35], [0.105, 0.105, 0.12])
+studio_floor()
+studio_stage("mittens_corp_stage")
+teleport_pit("studio_teleport_pit", [0.0, -14.0, 0.0], [100.0, 12.0, 100.0], [-5.0, 1.2, 0.0], "spikes")
 
 T.position(0.0, 2.55, 8.10).scale(1.5, 1.5, 0.08).rotation(0.0, 3.1416, 0.0) {
     name = "stage_mirror"
@@ -65,10 +51,6 @@ T.position(0.0, 2.55, 8.10).scale(1.5, 1.5, 0.08).rotation(0.0, 3.1416, 0.0) {
     }
 }
 
-T.position(0.0, 7.10, -7.75) {
-    name = "stage_ceiling_truss"
-    truss(26)
-}
 
 // Three elevated walkway sections run along Z, perpendicular to the stage's
 // long X axis. Their ends meet to form one continuous suspended platform.
@@ -126,68 +108,75 @@ ED.active() {
     // mounted, but deliberately leaves mouse/arrow look live. The car wrapper
     // below consumes mounted W/A/S/D and Space input.
 
-    T {
-        name = "bisket_desktop_locomotion_root"
-        Rider
-            .anchor("[name='bisket_first_person_camera_slot']")
-            .movement_root("[name='bisket_desktop_locomotion_root']")
-            .input("[name='bisket_desktop_input']") {}
-        I.speed(2.0) {
-            name = "bisket_desktop_input"
-            InputTransformMode.forward_z() {
-                fps_rotation()
-                roll_axis_y()
-            }
+    let player_motion = Velocity {
+        name = "bisket_desktop_locomotion_root_velocity"
+        T.position(0.0, 1.0, 0.0) {
+            name = "bisket_desktop_locomotion_root"
+            Rider
+                .anchor("[name='bisket_first_person_camera_slot']")
+                .movement_root("[name='bisket_desktop_locomotion_root']")
+                .input("[name='bisket_desktop_input']") {}
+            I.speed(2.0) {
+                name = "bisket_desktop_input"
+                InputTransformMode.forward_z() {
+                    fps_rotation()
+                    roll_axis_y()
+                }
 
-            T.position(-5.0, 1.65, 4.2) {
-                name = "bisket_desktop_driver"
-                let bisket_avatar = GLTF.new("assets/models/bisket.glb") {
-                bisket_anime_shading()
-                bisket_humanoid_bone_map()
-                relaxed_pose_factory()
-                MorphTargetMap.new()
-                    .slot("left_eye_blink", "Fcl_EYE_Close_L")
-                    .slot("right_eye_blink", "Fcl_EYE_Close_R")
-                    .slot("viseme_aa", "Fcl_MTH_A")
-                EM.on()
-                PoseCapture { label("Bisket") asset_name("bisket") }
-                bisket_colliders()
-                bisket_shirt_physics(false)
-                }
-                let bisket_avatar_control = AVC {
-                mouth_open_from_amplitude(voice_level)
-                mouth_open_rms_floor(0.005)
-                mouth_open_rms_ceiling(0.09)
-                mouth_open_smoothing(16.0)
-                voice_level
-                initial_yaw(3.14159)
-                left_two_bone_ik(arm_ik.left)
-                right_two_bone_ik(arm_ik.right)
-                T { bisket_avatar }
-                }
-                bisket_avatar_control
+                T.position(-5.0, 1.65, 4.2) {
+                    name = "bisket_desktop_driver"
+                    let bisket_avatar = GLTF.new("assets/models/bisket.glb") {
+                    bisket_anime_shading()
+                    bisket_humanoid_bone_map()
+                    relaxed_pose_factory()
+                    MorphTargetMap.new()
+                        .slot("left_eye_blink", "Fcl_EYE_Close_L")
+                        .slot("right_eye_blink", "Fcl_EYE_Close_R")
+                        .slot("viseme_aa", "Fcl_MTH_A")
+                    EM.on()
+                    PoseCapture { label("Bisket") asset_name("bisket") }
+                    bisket_colliders()
+                    bisket_shirt_physics(false)
+                    }
+                    let bisket_avatar_control = AVC.movement_target("[name='bisket_desktop_locomotion_root']") {
+                    mouth_open_from_amplitude(voice_level)
+                    mouth_open_rms_floor(0.005)
+                    mouth_open_rms_ceiling(0.09)
+                    mouth_open_smoothing(16.0)
+                    voice_level
+                    initial_yaw(3.14159)
+                    left_two_bone_ik(arm_ik.left)
+                    right_two_bone_ik(arm_ik.right)
+                    T { bisket_avatar }
+                    }
+                    bisket_avatar_control
 
-                // These are the two targets declared by Bisket's explicit
-                // humanoid map, queried only in this imported avatar instance.
-                on(bisket_avatar, "GLTFInitialized", fn(event) {
-                let head = event.gltf.query("[name='J_Bip_C_Head']")
-                if head {
-                    head.attach(bisket_first_person_camera_slot)
-                    bisket_first_person_camera_slot.attach(desktop_camera_rig)
-                } else {
-                    print("GLTFInitialized: Bisket mapped head bone was not found; desktop camera was not attached")
+                    // These are the two targets declared by Bisket's explicit
+                    // humanoid map, queried only in this imported avatar instance.
+                    on(bisket_avatar, "GLTFInitialized", fn(event) {
+                    let head = event.gltf.query("[name='J_Bip_C_Head']")
+                    if head {
+                        head.attach(bisket_first_person_camera_slot)
+                        bisket_first_person_camera_slot.attach(desktop_camera_rig)
+                    } else {
+                        print("GLTFInitialized: Bisket mapped head bone was not found; desktop camera was not attached")
+                    }
+                    let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
+                    let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
+                    if left_eye && right_eye {
+                        bisket_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
+                    } else {
+                        print("GLTFInitialized: Bisket mapped eye bones were not found; ambient eye animation was not attached")
+                    }
+                    })
                 }
-                let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
-                let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
-                if left_eye && right_eye {
-                    bisket_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
-                } else {
-                    print("GLTFInitialized: Bisket mapped eye bones were not found; ambient eye animation was not attached")
-                }
-                })
             }
         }
     }
+    Gravity { player_motion }
+    on_global("KeyDown", fn(event) {
+        if event.code == "Space" && player_motion.grounded() { player_motion.translate_world([0.0, 4.5, 0.0]) }
+    })
 
     // The prefab owns the car mesh, entry volume, mount/dismount points, and
     // mounted desktop driving plus its vehicle laser behavior.

@@ -3,170 +3,6 @@ use mittens_engine::{engine, utils};
 #[path = "example_util/mod.rs"]
 mod example_util;
 
-fn cube_renderable_sibling_of_collider(
-    world: &engine::ecs::World,
-    collider_cid: engine::ecs::ComponentId,
-) -> Option<engine::ecs::ComponentId> {
-    let t = world.parent_of(collider_cid)?;
-    for &sib in world.children_of(t).iter() {
-        if sib == collider_cid {
-            continue;
-        }
-        let Some(r) =
-            world.get_component_by_id_as::<engine::ecs::component::RenderableComponent>(sib)
-        else {
-            continue;
-        };
-        if r.renderable.base_mesh == engine::graphics::primitives::CpuMeshHandle::CUBE {
-            return Some(sib);
-        }
-    }
-    None
-}
-
-fn set_renderable_color_rgba(
-    world: &mut engine::ecs::World,
-    emit: &mut dyn engine::ecs::SignalEmitter,
-    renderable_cid: engine::ecs::ComponentId,
-    rgba: [f32; 4],
-) {
-    // Prefer existing ColorComponent.
-    let existing = world
-        .children_of(renderable_cid)
-        .iter()
-        .copied()
-        .find(|&ch| {
-            world
-                .get_component_by_id_as::<engine::ecs::component::ColorComponent>(ch)
-                .is_some()
-        });
-
-    if let Some(color_cid) = existing {
-        if let Some(c) =
-            world.get_component_by_id_as_mut::<engine::ecs::component::ColorComponent>(color_cid)
-        {
-            c.rgba = rgba;
-            emit.push_intent_now(
-                color_cid,
-                engine::ecs::IntentValue::RegisterColor {
-                    component_id: color_cid,
-                },
-            );
-        }
-        return;
-    }
-
-    // Fallback: add a ColorComponent child if missing.
-    let color_cid = world.register(engine::ecs::component::ColorComponent::rgba(
-        rgba[0], rgba[1], rgba[2], rgba[3],
-    ));
-    let _ = world.add_child(renderable_cid, color_cid);
-    emit.push_intent_now(
-        color_cid,
-        engine::ecs::IntentValue::RegisterColor {
-            component_id: color_cid,
-        },
-    );
-}
-
-fn collision_response_child_of_collider(
-    world: &engine::ecs::World,
-    collider_cid: engine::ecs::ComponentId,
-) -> Option<engine::ecs::ComponentId> {
-    for &ch in world.children_of(collider_cid).iter() {
-        if world
-            .get_component_by_id_as::<engine::ecs::component::CollisionResponseComponent>(ch)
-            .is_some()
-        {
-            return Some(ch);
-        }
-    }
-    None
-}
-
-fn on_collision_turn_white(
-    world: &mut engine::ecs::World,
-    emit: &mut dyn engine::ecs::SignalEmitter,
-    signal: &engine::ecs::Signal,
-) {
-    let Some(engine::ecs::EventSignal::CollisionStarted { a, b, .. }) = signal.event.as_ref()
-    else {
-        return;
-    };
-
-    let self_collider = signal.scope;
-    let other = if self_collider == *a {
-        *b
-    } else if self_collider == *b {
-        *a
-    } else {
-        return;
-    };
-
-    // Only react to cube-vs-cube touches (ignore static walls/floor and non-renderable colliders like camera).
-    let Some(other_cn) =
-        world.get_component_by_id_as::<engine::ecs::component::CollisionComponent>(other)
-    else {
-        return;
-    };
-    if other_cn.mode == engine::ecs::component::CollisionMode::Static {
-        return;
-    }
-    if cube_renderable_sibling_of_collider(world, other).is_none() {
-        return;
-    }
-
-    let Some(self_renderable) = cube_renderable_sibling_of_collider(world, self_collider) else {
-        return;
-    };
-    set_renderable_color_rgba(world, emit, self_renderable, [1.0, 1.0, 1.0, 1.0]);
-}
-
-fn on_collision_freeze_gravity(
-    world: &mut engine::ecs::World,
-    _emit: &mut dyn engine::ecs::SignalEmitter,
-    signal: &engine::ecs::Signal,
-) {
-    let Some(engine::ecs::EventSignal::CollisionStarted { a, b, .. }) = signal.event.as_ref()
-    else {
-        return;
-    };
-
-    let self_collider = signal.scope;
-    let other = if self_collider == *a {
-        *b
-    } else if self_collider == *b {
-        *a
-    } else {
-        return;
-    };
-
-    // Only react to cube-vs-cube touches.
-    let Some(other_cn) =
-        world.get_component_by_id_as::<engine::ecs::component::CollisionComponent>(other)
-    else {
-        return;
-    };
-    if other_cn.mode == engine::ecs::component::CollisionMode::Static {
-        return;
-    }
-    if cube_renderable_sibling_of_collider(world, other).is_none() {
-        return;
-    }
-
-    let Some(response_cid) = collision_response_child_of_collider(world, self_collider) else {
-        return;
-    };
-    if let Some(r) = world
-        .get_component_by_id_as_mut::<engine::ecs::component::CollisionResponseComponent>(
-            response_cid,
-        )
-    {
-        // Gravity is a cached per-responder coefficient; set it to 0 once touched.
-        r.gravity_coefficient = 0.0;
-    }
-}
-
 fn main() {
     mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
@@ -212,19 +48,14 @@ fn main() {
             .with_fov(70.0),
     );
 
-    // Make the camera affect the collision system (same pattern as collision-perimeter).
+    // Constrain the input-driven camera against static zones.
     let cam_collision = universe
         .world
-        .add_component(engine::ecs::component::CollisionComponent::RIGGED());
-    let cam_response = universe
+        .add_component(engine::ecs::component::ZoneComponent::sphere(0.25));
+    let cam_collision_contact = universe
         .world
-        .add_component(engine::ecs::component::CollisionResponseComponent::slide());
-    let cam_shape =
-        universe
-            .world
-            .add_component(engine::ecs::component::CollisionShapeComponent::new(
-                engine::ecs::component::CollisionShape::sphere_radius(0.25),
-            ));
+        .add_component(engine::ecs::component::CollidableComponent::slide());
+    let _ = universe.attach(cam_collision, cam_collision_contact);
 
     let input_mode = universe.world.add_component(
         engine::ecs::component::InputTransformModeComponent::forward_z()
@@ -236,8 +67,6 @@ fn main() {
     let _ = universe.attach(input, cam_t);
     let _ = universe.attach(cam_t, cam);
     let _ = universe.attach(cam_t, cam_collision);
-    let _ = universe.attach(cam_collision, cam_response);
-    let _ = universe.attach(cam_collision, cam_shape);
 
     // Topology: I { T { C3D } } — add a small camera-attached controls hint.
     example_util::spawn_desktop_camera_controls_hint(&mut universe, cam_t);
@@ -792,26 +621,21 @@ fn main() {
 
         let floor_cn = universe
             .world
-            .add_component(engine::ecs::component::CollisionComponent::STATIC());
-        let floor_shape =
-            universe
-                .world
-                .add_component(engine::ecs::component::CollisionShapeComponent::new(
-                    engine::ecs::component::CollisionShape::cube_half_extents([
-                        floor_half, thickness, floor_half,
-                    ]),
-                ));
+            .add_component(engine::ecs::component::ZoneComponent::cube([0.5; 3]));
+        let floor_cn_contact = universe
+            .world
+            .add_component(engine::ecs::component::CollidableComponent::static_());
+        let _ = universe.attach(floor_cn, floor_cn_contact);
 
         let _ = universe.attach(floor_root_t, floor_geom_t);
         let _ = universe.attach(floor_geom_t, floor_r);
         let _ = universe.attach(floor_r, floor_color);
         let _ = universe.attach(floor_geom_t, floor_cn);
-        let _ = universe.attach(floor_cn, floor_shape);
         universe.add(floor_root_t);
     }
 
     // Square boundary walls around the floor edges.
-    // Note: STATIC colliders don't need CollisionResponse; they still collide with kinematic/rigged.
+    // Static zones constrain slide zones without owning motion state.
     fn spawn_boundary_wall(
         universe: &mut engine::Universe,
         x: f32,
@@ -840,18 +664,15 @@ fn main() {
 
         let cn = universe
             .world
-            .add_component(engine::ecs::component::CollisionComponent::STATIC());
-        let shape =
-            universe
-                .world
-                .add_component(engine::ecs::component::CollisionShapeComponent::new(
-                    engine::ecs::component::CollisionShape::cube_half_extents(half_extents),
-                ));
+            .add_component(engine::ecs::component::ZoneComponent::cube([0.5; 3]));
+        let cn_contact = universe
+            .world
+            .add_component(engine::ecs::component::CollidableComponent::static_());
+        let _ = universe.attach(cn, cn_contact);
 
         let _ = universe.attach(t, r);
         let _ = universe.attach(r, c);
         let _ = universe.attach(t, cn);
-        let _ = universe.attach(cn, shape);
         universe.add(t);
     }
 
@@ -927,36 +748,22 @@ fn main() {
 
         let cn = universe
             .world
-            .add_component(engine::ecs::component::CollisionComponent::KINEMATIC());
-
-        let response = universe.world.add_component({
-            let mut r = engine::ecs::component::CollisionResponseComponent::push()
-                .with_push_strength(3.0)
-                .with_friction_y(18.0);
-            // Allow higher fall speeds so gravity coefficients are visible.
-            r.max_speed = 80.0;
-            r
-        });
-
-        let shape =
-            universe
-                .world
-                .add_component(engine::ecs::component::CollisionShapeComponent::new(
-                    engine::ecs::component::CollisionShape::cube_half_extents([
-                        0.5 * s,
-                        0.5 * s,
-                        0.5 * s,
-                    ]),
-                ));
+            .add_component(engine::ecs::component::ZoneComponent::cube([0.5; 3]));
+        let cn_contact = universe
+            .world
+            .add_component(engine::ecs::component::CollidableComponent::slide());
+        let _ = universe.attach(cn, cn_contact);
 
         let _ = universe.attach(t, renderable);
         let _ = universe.attach(renderable, color);
 
         let _ = universe.attach(t, cn);
-        let _ = universe.attach(cn, response);
-        let _ = universe.attach(cn, shape);
 
-        let _ = universe.attach(parent, t);
+        let velocity = universe
+            .world
+            .add_component(engine::ecs::component::VelocityComponent::new());
+        let _ = universe.attach(parent, velocity);
+        let _ = universe.attach(velocity, t);
     }
 
     // Three gravity fields, each with 20 cubes.
@@ -1032,24 +839,8 @@ fn main() {
     spawn_field(&mut universe, field_mid, 0.0, 0.0, [0.4, 1.0, 0.4]);
     spawn_field(&mut universe, field_high, 8.0, 0.0, [1.0, 0.5, 0.2]);
 
-    // Group-scoped collision behaviors.
-    // - Low + High fields: cubes turn white after colliding with another cube.
-    // - Mid field: cubes lose gravity after colliding with another cube.
-    universe.add_signal_handler(
-        engine::ecs::SignalKind::CollisionStarted,
-        field_low,
-        on_collision_turn_white,
-    );
-    universe.add_signal_handler(
-        engine::ecs::SignalKind::CollisionStarted,
-        field_high,
-        on_collision_turn_white,
-    );
-    universe.add_signal_handler(
-        engine::ecs::SignalKind::CollisionStarted,
-        field_mid,
-        on_collision_freeze_gravity,
-    );
+    // Legacy push response and cube-touch callbacks are retired. Each cube
+    // now owns Velocity and slides against static zones only.
 
     universe.systems.process_commands(
         &mut universe.world,

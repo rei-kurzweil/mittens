@@ -1,3 +1,5 @@
+import { studio_stage, studio_floor } from "../assets/components/studio_stage.mms"
+import { teleport_pit } from "../assets/components/teleport_pit.mms"
 import { vroid_arm_ik_defaults } from "../assets/components/arm_ik/vroid.mms"
 
 let arm_ik = vroid_arm_ik_defaults()
@@ -19,7 +21,6 @@ import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisk
 
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { tripod_light } from "../assets/components/tripod_light.mms"
-import { truss } from "../assets/components/truss.mms"
 import { suspended_platform } from "../assets/components/platforms/suspended_platform.mms"
 import { star_kawaii_background } from "../assets/components/backgrounds/star_kawaii_background.mms"
 import { button } from "../assets/components/button.mms"
@@ -327,22 +328,13 @@ RenderGraph {
     Bloom { intensity(0.42) radius_ndc(0.025) emissive_scale(1.0) half_res(true) }
 }
 
-fn stage_box(box_name, position, size, color) {
-    return T.position(position[0], position[1], position[2])
-        .scale(size[0], size[1], size[2]) {
-        name = box_name
-        R.cube() { C.rgba(color[0], color[1], color[2], 1.0) }
-    }
-}
 
 // Keep the complete studio dressing from the XR tuning scene. It gives the
 // desktop first-person view an immediate landmark, reflected avatar view, and
 // sensible lighting instead of a clear-colour-only window.
-stage_box("studio_floor", [0.0, -0.92, 1.0], [54.0, 0.14, 32.0], [0.035, 0.037, 0.043])
-stage_box("stage_deck", [0.0, 0.00, -1.5], [32.0, 0.24, 14.0], [0.18, 0.18, 0.20])
-stage_box("stage_upper_step", [0.0, -0.24, 5.7], [32.0, 0.28, 0.8], [0.14, 0.14, 0.16])
-stage_box("stage_lower_step", [0.0, -0.56, 6.3], [32.0, 0.36, 0.8], [0.10, 0.10, 0.12])
-stage_box("stage_back_wall", [0.0, 4.00, -8.35], [32.0, 8.00, 0.35], [0.105, 0.105, 0.12])
+studio_floor()
+studio_stage("mittens_corp_stage")
+teleport_pit("studio_teleport_pit", [0.0, -14.0, 0.0], [100.0, 12.0, 100.0], [-5.0, 1.2, 0.0], "spikes")
 
 T.position(0.0, 2.55, 8.10).scale(1.5, 1.5, 0.08).rotation(0.0, 3.1416, 0.0) {
     name = "stage_mirror"
@@ -353,10 +345,6 @@ T.position(0.0, 2.55, 8.10).scale(1.5, 1.5, 0.08).rotation(0.0, 3.1416, 0.0) {
     }
 }
 
-T.position(0.0, 7.10, -7.75) {
-    name = "stage_ceiling_truss"
-    truss(26)
-}
 for platform_index in range(3) {
     T.position(11.5, 4.0, (platform_index - 1) * 15.0) {
         suspended_platform()
@@ -403,14 +391,14 @@ let bisket = GLTF.new("assets/models/bisket.glb") {
     // Direct pose child applies Bisket's captured relaxed stance as the
     // one-shot startup overlay after the model imports.
     MorphTargetMap.new().slot("viseme_aa", "Fcl_MTH_A")
-    
+
     relaxed_pose_factory()
     bisket_shirt_physics(false)
 
     EM.on()
 }
 
-let avatar = AVC {
+let avatar = AVC.movement_target("[name='agc_desktop_grounding_root']") {
 
     left_two_bone_ik(arm_ik.left)
 
@@ -444,14 +432,24 @@ on(bisket, "GLTFInitialized", fn(event) {
 
 // Ordinary desktop pose driver: no XR input, HMD, or controller is required.
 ED.active() {
-    I.speed(2.2) {
-        name = "agc_desktop_input"
-        InputTransformMode.forward_z() { roll_axis_y() fps_rotation() }
-        T.position(0.0, 1.6, 1.0) {
-            name = "agc_desktop_avatar_driver"
-            avatar
+    let player_motion = Velocity {
+        name = "agc_desktop_velocity"
+        T.position(0.0, 1.0, 0.0) {
+            name = "agc_desktop_grounding_root"
+            I.speed(2.2) {
+                name = "agc_desktop_input"
+                InputTransformMode.forward_z() { roll_axis_y() fps_rotation() }
+                T.position(0.0, 1.6, 1.0) {
+                    name = "agc_desktop_avatar_driver"
+                    avatar
+                }
+            }
         }
     }
+    Gravity { player_motion }
+    on_global("KeyDown", fn(event) {
+        if event.code == "Space" && player_motion.grounded() { player_motion.translate_world([0.0, 4.5, 0.0]) }
+    })
 }
 
 let settings_panel = mouth_response_panel({

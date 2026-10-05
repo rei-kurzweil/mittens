@@ -91,7 +91,6 @@ These exist in `src/engine/ecs/component/` today and are likely useful in script
 | `COL` | `Collision` |
 | `COLS` | `CollisionShape` |
 | `GVT` | `Gravity` |
-| `CRSP` | `CollisionResponse` |
 | `LQ` | `LightQuantization` |
 | `TC` | `TransparentCutout` |
 | `SM` | `SkinnedMesh` |

@@ -870,6 +870,18 @@ fn log_settled_capsule_diagnostics(avc_id: ComponentId, world: &World) {
 }
 
 fn automatic_avc_movement_target(world: &World, avc_id: ComponentId) -> Option<ComponentId> {
+    if let Some(source) = world
+        .get_component_by_id_as::<AvatarControlComponent>(avc_id)
+        .and_then(|avc| avc.movement_target.as_ref())
+    {
+        return resolve_component_ref(world, source, Some(avc_id), QueryRootMode::WorldRoot)
+            .filter(|id| {
+                world
+                    .get_component_by_id_as::<TransformComponent>(*id)
+                    .is_some()
+            });
+    }
+
     let mut current = Some(avc_id);
     while let Some(id) = current {
         if world
@@ -2874,6 +2886,26 @@ mod capsule_tests {
                 .shape,
             CollisionShape::capsule_y(0.28, 0.72)
         );
+    }
+
+    #[test]
+    fn explicit_capsule_target_overrides_head_and_missing_target_does_not_fallback() {
+        use crate::engine::ecs::component::ComponentRef;
+        let mut world = World::default();
+        let root = world.add_component(TransformComponent::new());
+        world.get_component_record_mut(root).unwrap().name = "falling_root".into();
+        let head = world.add_component(TransformComponent::new());
+        let mut config = AvatarControlComponent::new();
+        config.movement_target = Some(ComponentRef::Query("[name='falling_root']".into()));
+        let avc = world.add_component(config);
+        attach(&mut world, root, head);
+        attach(&mut world, head, avc);
+        assert_eq!(automatic_avc_movement_target(&world, avc), Some(root));
+        world
+            .get_component_by_id_as_mut::<AvatarControlComponent>(avc)
+            .unwrap()
+            .movement_target = Some(ComponentRef::Query("[name='missing_root']".into()));
+        assert_eq!(automatic_avc_movement_target(&world, avc), None);
     }
 
     #[test]

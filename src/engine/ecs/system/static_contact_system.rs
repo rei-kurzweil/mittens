@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::engine::ecs::component::{
-    CollidableComponent, CollidableMode, QueryRootMode, TransformComponent, ZoneComponent,
-    resolve_component_ref,
+    CollidableComponent, CollidableMode, QueryRootMode, TransformComponent, VelocityComponent,
+    ZoneComponent, resolve_component_ref,
 };
-use crate::engine::ecs::system::{TransformSystem, collision_geometry, zone_query};
+use crate::engine::ecs::system::{TransformSystem, VelocitySystem, collision_geometry, zone_query};
 use crate::engine::ecs::{ComponentId, World};
 use crate::utils::math::{mat4_inverse, mat4_mul_vec4};
 
@@ -18,9 +18,26 @@ pub struct StaticContactSystem {
 }
 
 impl StaticContactSystem {
+    pub(crate) fn forget_target(&mut self, world: &World, target: ComponentId) {
+        self.previous_centers.retain(|zone, _| {
+            !world
+                .children_of(*zone)
+                .iter()
+                .any(|id| movement_target(world, *id, *zone) == Some(target))
+        });
+    }
+
     /// Resolve static contacts for each slide zone with at most six passes. Returns changed
     /// transform IDs so the caller can propagate them before dependent phases.
     pub fn tick(&mut self, world: &mut World) -> Vec<ComponentId> {
+        self.tick_excluding(world, &super::AttachmentSystem::default())
+    }
+
+    pub fn tick_excluding(
+        &mut self,
+        world: &mut World,
+        mounts: &super::AttachmentSystem,
+    ) -> Vec<ComponentId> {
         self.candidate_pairs = 0;
         self.narrow_phase_tests = 0;
         self.correction_iterations = 0;
@@ -63,6 +80,10 @@ impl StaticContactSystem {
             let Some(target) = movement_target(world, collidable_id, moving) else {
                 continue;
             };
+            if mounts.is_movement_root_mounted(target) {
+                self.previous_centers.remove(&moving);
+                continue;
+            }
             let mut desired_center = center;
             for iteration in 0..6 {
                 let mut corrected = false;
@@ -70,7 +91,7 @@ impl StaticContactSystem {
                     if surface == moving {
                         continue;
                     }
-                    let Some((static_center, static_shape)) = zone_world_shape(world, surface)
+                    let Some((static_center, static_shape)) = surface_world_shape(world, surface)
                     else {
                         continue;
                     };
@@ -106,18 +127,13 @@ impl StaticContactSystem {
                             0.0,
                         ]
                     } else {
-                        collision_geometry::minimum_translation(
-                            desired_center,
-                            shape,
-                            static_center,
-                            static_shape,
-                            0.0,
-                        )
-                        .unwrap_or([0.0; 3])
+                        surface_translation(world, surface, desired_center, shape)
+                            .unwrap_or([0.0; 3])
                     };
                     if displacement.iter().all(|v| v.abs() < 1.0e-6) {
                         continue;
                     }
+                    remove_inward_velocity(world, target, displacement);
                     for axis in 0..3 {
                         desired_center[axis] += displacement[axis];
                     }
@@ -130,15 +146,10 @@ impl StaticContactSystem {
             }
             if statics.iter().any(|&surface| {
                 surface != moving
-                    && zone_world_shape(world, surface).is_some_and(|(position, static_shape)| {
-                        collision_geometry::minimum_translation(
-                            desired_center,
-                            shape,
-                            position,
-                            static_shape,
-                            0.0,
+                    && surface_world_shape(world, surface).is_some_and(|_| {
+                        surface_translation(world, surface, desired_center, shape).is_some_and(
+                            |displacement| displacement.iter().any(|v| v.abs() >= 1.0e-6),
                         )
-                        .is_some_and(|displacement| displacement.iter().any(|v| v.abs() >= 1.0e-6))
                     })
             }) {
                 self.non_convergences += 1;
@@ -163,7 +174,59 @@ impl StaticContactSystem {
     }
 }
 
-fn movement_target(world: &World, id: ComponentId, zone: ComponentId) -> Option<ComponentId> {
+/// Only the Velocity directly driving the corrected transform owns this
+/// contact. An ancestor locomotion layer must not lose speed by proximity.
+fn remove_inward_velocity(world: &mut World, target: ComponentId, normal: [f32; 3]) {
+    let Some(owner) = world.parent_of(target) else {
+        return;
+    };
+    if VelocitySystem::driven_transform(world, owner).ok() != Some(target) {
+        return;
+    }
+    let Some(velocity) = world.get_component_by_id_as::<VelocityComponent>(owner) else {
+        return;
+    };
+    if !velocity.enabled {
+        return;
+    }
+    let linear = velocity.linear_local_mps;
+    let Ok(rotation) = VelocitySystem::parent_rotation(world, owner) else {
+        return;
+    };
+    let length = crate::utils::math::vec3_len(normal);
+    if !length.is_finite() || length < 1.0e-6 {
+        return;
+    }
+    let normal = normal.map(|value| value / length);
+    if normal[1] > 0.5 {
+        world
+            .get_component_by_id_as_mut::<VelocityComponent>(owner)
+            .unwrap()
+            .grounded = true;
+    }
+    let mut speed = crate::utils::math::quat_rotate_vec3(rotation, linear);
+    let inward = speed
+        .iter()
+        .zip(normal)
+        .map(|(v, n)| v * n)
+        .sum::<f32>()
+        .min(0.0);
+    for axis in 0..3 {
+        speed[axis] -= inward * normal[axis];
+    }
+    let local =
+        crate::utils::math::quat_rotate_vec3(crate::utils::math::quat_conjugate(rotation), speed);
+    let _ = world
+        .get_component_by_id_as_mut::<VelocityComponent>(owner)
+        .unwrap()
+        .set_linear_local(local);
+}
+
+pub(crate) fn movement_target(
+    world: &World,
+    id: ComponentId,
+    zone: ComponentId,
+) -> Option<ComponentId> {
     let c = world.get_component_by_id_as::<CollidableComponent>(id)?;
     let target = if let Some(source) = &c.movement_target_source {
         resolve_component_ref(world, source, Some(id), QueryRootMode::SelfSubtree)?
@@ -257,6 +320,203 @@ mod tests {
         world.add_child(frame, zone).unwrap();
         world.add_child(zone, collidable).unwrap();
         (frame, zone)
+    }
+
+    fn propagate(world: &mut World, target: ComponentId) {
+        use crate::engine::ecs::system::{
+            CameraSystem, CollisionSystem, LightSystem, TransformStreamSystem,
+        };
+        TransformSystem::new().transform_changed(
+            world,
+            &mut crate::engine::graphics::VisualWorld::default(),
+            target,
+            &mut TransformStreamSystem::new(),
+            &mut CameraSystem::new(),
+            &mut LightSystem::new(),
+            &mut CollisionSystem::new(),
+        );
+    }
+
+    #[test]
+    fn fixed_substeps_land_on_thin_floor_and_preserve_tangent_speed() {
+        fn run(render_dt: f32, frames: usize, gravity: bool) -> ([f32; 3], [f32; 3]) {
+            let mut world = World::default();
+            add_zone(
+                &mut world,
+                [0.0, -0.01, 0.0],
+                CollisionShape::cube_half_extents([5.0, 0.01, 5.0]),
+                CollidableMode::Static,
+            );
+            let mut state = VelocityComponent::new();
+            state
+                .set_linear_local([1.0, if gravity { 0.0 } else { -120.0 }, 0.0])
+                .unwrap();
+            let owner = world.add_component(state);
+            if gravity {
+                let provider =
+                    world.add_component(crate::engine::ecs::component::GravityComponent::new());
+                world.add_child(provider, owner).unwrap();
+            }
+            let (target, _) = add_zone(
+                &mut world,
+                [0.0, 1.0, 0.0],
+                CollisionShape::capsule_y(0.25, 0.6),
+                CollidableMode::Slide,
+            );
+            world.add_child(owner, target).unwrap();
+            propagate(&mut world, target);
+            let mut contact = StaticContactSystem::default();
+            contact.tick(&mut world);
+            let mut velocity = VelocitySystem::default();
+            let mut emit = crate::engine::ecs::RxWorld::default();
+            for _ in 0..frames {
+                for _ in 0..velocity.take_steps(render_dt) {
+                    velocity.step(&mut world, &mut emit);
+                    propagate(&mut world, target);
+                    for changed in contact.tick(&mut world) {
+                        propagate(&mut world, changed);
+                    }
+                }
+            }
+            (
+                TransformSystem::world_position(&world, target).unwrap(),
+                world
+                    .get_component_by_id_as::<VelocityComponent>(owner)
+                    .unwrap()
+                    .linear_local_mps,
+            )
+        }
+        let (position, speed) = run(1.0 / 60.0, 30, false);
+        assert!((position[1] - 0.85).abs() < 1.0e-4);
+        assert!((position[0] - 0.5).abs() < 1.0e-4);
+        assert_eq!(speed, [1.0, 0.0, 0.0]);
+        let (other_position, other_speed) = run(1.0 / 120.0, 60, false);
+        for axis in 0..3 {
+            assert!((position[axis] - other_position[axis]).abs() < 1.0e-5);
+        }
+        assert_eq!(speed, other_speed);
+        let (fallen, resting) = run(1.0 / 60.0, 60, true);
+        assert!((fallen[1] - 0.85).abs() < 1.0e-4);
+        assert_eq!(resting, [1.0, 0.0, 0.0]);
+        let (other, other_resting) = run(1.0 / 120.0, 120, true);
+        for axis in 0..3 {
+            assert!((fallen[axis] - other[axis]).abs() < 1.0e-5);
+        }
+        assert_eq!(resting, other_resting);
+    }
+
+    #[test]
+    fn scaled_demo_cube_lands_and_falls_again_after_support_removal() {
+        use crate::engine::ecs::component::GravityComponent;
+        let mut world = World::default();
+        let (floor_frame, floor_zone) = add_zone(
+            &mut world,
+            [0.0, -0.2, 0.0],
+            CollisionShape::cube_half_extents([0.5; 3]),
+            CollidableMode::Static,
+        );
+        world
+            .get_component_by_id_as_mut::<TransformComponent>(floor_frame)
+            .unwrap()
+            .transform
+            .scale = [10.0, 0.4, 10.0];
+        let floor = world
+            .get_component_by_id_as_mut::<TransformComponent>(floor_frame)
+            .unwrap();
+        floor.transform.recompute_model();
+        propagate(&mut world, floor_frame);
+        let gravity = world.add_component(GravityComponent::new().with_coefficient(0.5));
+        let owner = world.add_component(VelocityComponent::new());
+        let (target, _) = add_zone(
+            &mut world,
+            [0.0, 2.0, 0.0],
+            CollisionShape::cube_half_extents([0.5; 3]),
+            CollidableMode::Slide,
+        );
+        let cube = world
+            .get_component_by_id_as_mut::<TransformComponent>(target)
+            .unwrap();
+        cube.transform.scale = [0.5; 3];
+        cube.transform.recompute_model();
+        world.add_child(gravity, owner).unwrap();
+        world.add_child(owner, target).unwrap();
+        propagate(&mut world, target);
+        let mut contact = StaticContactSystem::default();
+        contact.tick(&mut world);
+        let mut velocity = VelocitySystem::default();
+        let mut emit = crate::engine::ecs::RxWorld::default();
+        for _ in 0..240 {
+            velocity.step(&mut world, &mut emit);
+            propagate(&mut world, target);
+            for changed in contact.tick(&mut world) {
+                propagate(&mut world, changed);
+            }
+        }
+        assert!(
+            (TransformSystem::world_position(&world, target).unwrap()[1] - 0.25).abs() < 1.0e-5
+        );
+        assert_eq!(
+            world
+                .get_component_by_id_as::<VelocityComponent>(owner)
+                .unwrap()
+                .linear_local_mps,
+            [0.0; 3]
+        );
+        assert!(
+            world
+                .get_component_by_id_as::<VelocityComponent>(owner)
+                .unwrap()
+                .grounded
+        );
+        world
+            .get_component_by_id_as_mut::<ZoneComponent>(floor_zone)
+            .unwrap()
+            .enabled = false;
+        velocity.step(&mut world, &mut emit);
+        propagate(&mut world, target);
+        assert!(contact.tick(&mut world).is_empty());
+        assert!(
+            !world
+                .get_component_by_id_as::<VelocityComponent>(owner)
+                .unwrap()
+                .grounded
+        );
+        assert!(TransformSystem::world_position(&world, target).unwrap()[1] < 0.25);
+        assert!(
+            world
+                .get_component_by_id_as::<VelocityComponent>(owner)
+                .unwrap()
+                .linear_local_mps[1]
+                < 0.0
+        );
+    }
+
+    #[test]
+    fn contact_never_clears_an_unrelated_ancestor_velocity() {
+        let mut world = World::default();
+        let mut state = VelocityComponent::new();
+        state.set_linear_local([0.0, -3.0, 0.0]).unwrap();
+        let owner = world.add_component(state);
+        let driven = world.add_component(TransformComponent::new());
+        let proxy = world.add_component(TransformComponent::new());
+        world.add_child(owner, driven).unwrap();
+        world.add_child(driven, proxy).unwrap();
+        remove_inward_velocity(&mut world, proxy, [0.0, 1.0, 0.0]);
+        assert_eq!(
+            world
+                .get_component_by_id_as::<VelocityComponent>(owner)
+                .unwrap()
+                .linear_local_mps,
+            [0.0, -3.0, 0.0]
+        );
+        remove_inward_velocity(&mut world, driven, [0.0, 1.0, 0.0]);
+        assert_eq!(
+            world
+                .get_component_by_id_as::<VelocityComponent>(owner)
+                .unwrap()
+                .linear_local_mps,
+            [0.0; 3]
+        );
     }
 
     #[test]
@@ -392,4 +652,132 @@ mod tests {
             0.7
         );
     }
+    #[test]
+    fn yawed_stage_has_real_box_contacts_and_catches_fast_capsule_falls() {
+        let mut world = World::default();
+        let (floor, _) = add_zone(
+            &mut world,
+            [0.0; 3],
+            CollisionShape::cube_half_extents([2.0, 0.1, 0.3]),
+            CollidableMode::Static,
+        );
+        let t = world
+            .get_component_by_id_as_mut::<TransformComponent>(floor)
+            .unwrap();
+        t.transform.rotation = TransformComponent::new()
+            .with_rotation_euler(0.0, std::f32::consts::FRAC_PI_4, 0.0)
+            .transform
+            .rotation;
+        t.transform.recompute_model();
+        t.transform.matrix_world = t.transform.model;
+        let (target, _) = add_zone(
+            &mut world,
+            [1.0, 0.9, 1.0],
+            CollisionShape::capsule_y(0.25, 0.75),
+            CollidableMode::Slide,
+        );
+        let mut system = StaticContactSystem::default();
+        assert!(
+            system.tick(&mut world).is_empty(),
+            "a corner of the world AABB is outside the yawed box"
+        );
+        let t = world
+            .get_component_by_id_as_mut::<TransformComponent>(target)
+            .unwrap();
+        t.transform.translation = [1.0, 0.9, -1.0];
+        t.transform.recompute_model();
+        t.transform.matrix_world = t.transform.model;
+        assert_eq!(system.tick(&mut world), vec![target]);
+        assert!(
+            (world
+                .get_component_by_id_as::<TransformComponent>(target)
+                .unwrap()
+                .transform
+                .translation[1]
+                - 1.1)
+                .abs()
+                < 1.0e-5
+        );
+        let t = world
+            .get_component_by_id_as_mut::<TransformComponent>(target)
+            .unwrap();
+        t.transform.translation[1] = -3.0;
+        t.transform.recompute_model();
+        t.transform.matrix_world = t.transform.model;
+        assert_eq!(system.tick(&mut world), vec![target]);
+        assert!(
+            (world
+                .get_component_by_id_as::<TransformComponent>(target)
+                .unwrap()
+                .transform
+                .translation[1]
+                - 1.1)
+                .abs()
+                < 1.0e-5
+        );
+    }
+}
+
+fn surface_world_shape(
+    world: &World,
+    id: ComponentId,
+) -> Option<([f32; 3], crate::engine::ecs::component::CollisionShape)> {
+    if let Some(shape) = zone_world_shape(world, id) {
+        return Some(shape);
+    }
+    let zone = world.get_component_by_id_as::<ZoneComponent>(id)?;
+    let frame =
+        TransformSystem::world_model(world, zone_query::resolve_zone_frame(world, id, zone).ok()?)?;
+    collision_geometry::yaw_box(zone.shape, frame)?;
+    let (min, max) = collision_geometry::transformed_aabb(zone.shape, frame);
+    Some((
+        std::array::from_fn(|i| (min[i] + max[i]) * 0.5),
+        crate::engine::ecs::component::CollisionShape::cube_half_extents(std::array::from_fn(
+            |i| (max[i] - min[i]) * 0.5,
+        )),
+    ))
+}
+
+fn surface_translation(
+    world: &World,
+    surface: ComponentId,
+    center: [f32; 3],
+    shape: crate::engine::ecs::component::CollisionShape,
+) -> Option<[f32; 3]> {
+    if let Some((position, surface_shape)) = zone_world_shape(world, surface) {
+        return collision_geometry::minimum_translation(
+            center,
+            shape,
+            position,
+            surface_shape,
+            0.0,
+        );
+    }
+    // Upright capsules and spheres are invariant under yaw. Other moving
+    // shapes need a general oriented contact solver, rather than AABB response.
+    if !matches!(
+        shape,
+        crate::engine::ecs::component::CollisionShape::CapsuleY { .. }
+            | crate::engine::ecs::component::CollisionShape::Sphere { .. }
+    ) {
+        return None;
+    }
+    let zone = world.get_component_by_id_as::<ZoneComponent>(surface)?;
+    let frame = TransformSystem::world_model(
+        world,
+        zone_query::resolve_zone_frame(world, surface, zone).ok()?,
+    )?;
+    let (position, extents, axes) = collision_geometry::yaw_box(zone.shape, frame)?;
+    let relative: [f32; 3] = std::array::from_fn(|i| center[i] - position[i]);
+    let local = std::array::from_fn(|i| (0..3).map(|j| relative[j] * axes[i][j]).sum());
+    let delta = collision_geometry::minimum_translation(
+        local,
+        shape,
+        [0.0; 3],
+        crate::engine::ecs::component::CollisionShape::cube_half_extents(extents),
+        0.0,
+    )?;
+    Some(std::array::from_fn(|i| {
+        (0..3).map(|j| delta[j] * axes[j][i]).sum()
+    }))
 }

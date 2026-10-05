@@ -100,6 +100,11 @@ pub enum TransportValue {
     Array(Vec<TransportValue>),
     Table(Vec<(String, TransportValue)>),
     Component(ComponentHandle),
+    /// A handle with its runtime catalog type, preserved in callback payloads.
+    TypedComponent {
+        handle: ComponentHandle,
+        component_type: String,
+    },
     Callback(CallbackHandle),
 }
 

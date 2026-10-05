@@ -167,7 +167,7 @@ Transforms are central in Mittens: most component subtrees are rooted at a `Tran
   - User code: calling `TransformComponent::{set_position,set_rotation_*,set_scale}` queues `UpdateTransform`
   - `InputSystem`: movement/controls update transforms via `UpdateTransform`
   - `OpenXRSystem`: device pose application uses `UpdateTransform`
-  - `CollisionResponseSystem`: kinematic collision response integrates motion via `UpdateTransform`
+  - `StaticContactSystem`: Zone/Collidable contact corrects poses and removes inward speed from the owning Velocity
   - `TransformGizmoSystem`: editor gestures call transform setters (which queue `UpdateTransform`)
 
 4.1 **Transform propagation pipelines / transform operators**

@@ -247,6 +247,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     host_method(
                         component,
                         canonical,
+                        "teleport_world",
+                        method(vec![mms::ValueType::Array], mms::ValueType::Null),
+                    );
+                    host_method(
+                        component,
+                        canonical,
                         "update_transform",
                         method(vec![mms::ValueType::Array; 3], mms::ValueType::Null),
                     );
@@ -666,6 +672,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 }
                 "InputXR" => no_arg_constructors(component, &["on", "off"]),
                 "Velocity" => {
+                    host_method(
+                        component,
+                        canonical,
+                        "grounded",
+                        method(vec![], mms::ValueType::Bool),
+                    );
                     constructor_and_builder(component, "rotation_basis", any(1));
                     component.builder_call("horizontal", no_args());
                     component.builder_call("enabled", booleans(1));
@@ -1198,6 +1210,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         .constructor("capsule_y", floats(2))
                         .builder_call("at", any(1))
                         .builder_call("role", strings(1))
+                        .builder_call("enable_events", any(0))
                         .builder_call("enabled", booleans(1));
                 }
                 "Collidable" => {
@@ -1389,22 +1402,6 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 "TransformGizmoTranslatePlane" => {
                     no_arg_constructors(component, &["xy", "yz", "xz"]);
                 }
-                "CollisionResponse" => {
-                    no_arg_constructors(component, &["push", "slide"]);
-                    component
-                        .builder_call("enabled", booleans(1))
-                        .builder_call("max_iterations", unsigned(1))
-                        .builder_call("movement_target", any(1));
-                    for method in [
-                        "push_out_epsilon",
-                        "push_strength",
-                        "friction",
-                        "friction_y",
-                        "max_speed",
-                    ] {
-                        component.builder_call(method, floats(1));
-                    }
-                }
                 "Editor" => {
                     no_arg_constructors_and_builders(component, &["active"]);
                     for method in [
@@ -1423,6 +1420,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     constructor_and_builder(component, "panels", any(1));
                 }
                 "AvatarControl" => {
+                    constructor_and_builder(component, "movement_target", any(1));
                     for method in ["left_two_bone_ik", "right_two_bone_ik"] {
                         constructor_and_builder(component, method, any(1));
                     }
@@ -1502,6 +1500,8 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "DragEnd",
         "GrabStart",
         "GrabEnd",
+        "ZoneEntered",
+        "ZoneExited",
         "MountStarted",
         "MountEnded",
         "ParentChanged",

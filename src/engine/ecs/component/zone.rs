@@ -12,6 +12,8 @@ pub struct ZoneComponent {
     pub frame_source: Option<ComponentRef>,
     pub roles: Vec<String>,
     pub enabled: bool,
+    /// Opt in to overlap enter/exit events for enabled slide collidables.
+    pub events_enabled: bool,
 }
 
 impl ZoneComponent {
@@ -33,6 +35,7 @@ impl ZoneComponent {
             frame_source: None,
             roles: Vec::new(),
             enabled: true,
+            events_enabled: false,
         }
     }
 
@@ -50,6 +53,11 @@ impl ZoneComponent {
         if !role.is_empty() && !self.roles.iter().any(|existing| existing == &role) {
             self.roles.push(role);
         }
+        self
+    }
+
+    pub fn enable_events(mut self) -> Self {
+        self.events_enabled = true;
         self
     }
 
@@ -108,6 +116,9 @@ impl Component for ZoneComponent {
         }
         for role in &self.roles {
             ce = ce.with_call("role", vec![s(role)]);
+        }
+        if self.events_enabled {
+            ce = ce.with_call("enable_events", vec![]);
         }
         if !self.enabled {
             ce = ce.with_call("enabled", vec![b(false)]);

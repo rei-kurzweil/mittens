@@ -1,3 +1,5 @@
+import { studio_stage, studio_floor } from "../assets/components/studio_stage.mms"
+import { teleport_pit } from "../assets/components/teleport_pit.mms"
 import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
 
 let arm_ik = vroid_arm_ik(-0.35, 1)
@@ -9,7 +11,6 @@ let arm_ik = vroid_arm_ik(-0.35, 1)
 
 import { star_kawaii_background } from "../assets/components/backgrounds/star_kawaii_background.mms"
 import { tripod_light } from "../assets/components/tripod_light.mms"
-import { truss } from "../assets/components/truss.mms"
 import { suspended_platform } from "../assets/components/platforms/suspended_platform.mms"
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
@@ -28,29 +29,20 @@ RenderGraph {
     Bloom { intensity(0.42) radius_ndc(0.025) emissive_scale(1.0) half_res(true) }
 }
 
-fn stage_box(box_name, position, size, color) {
-    return T.position(position[0], position[1], position[2])
-        .scale(size[0], size[1], size[2]) {
-        name = box_name
-        R.cube() { C.rgba(color[0], color[1], color[2], 1.0) }
-    }
-}
 
 BG.occlusion_and_lighting() {
     star_kawaii_background([1.0, 0.72, 0.15, 1.0])
 }
-stage_box("studio_floor", [0.0, -0.92, 1.0], [54.0, 0.14, 32.0], [0.035, 0.037, 0.043])
-stage_box("stage_deck", [0.0, 0.0, -1.5], [32.0, 0.24, 14.0], [0.18, 0.18, 0.20])
-stage_box("stage_upper_step", [0.0, -0.24, 5.7], [32.0, 0.28, 0.8], [0.14, 0.14, 0.16])
-stage_box("stage_lower_step", [0.0, -0.56, 6.3], [32.0, 0.36, 0.8], [0.10, 0.10, 0.12])
-stage_box("stage_back_wall", [0.0, 4.0, -8.35], [32.0, 8.0, 0.35], [0.105, 0.105, 0.12])
+studio_floor()
+studio_stage("mittens_corp_stage")
+teleport_pit("studio_teleport_pit", [0.0, -14.0, 0.0], [100.0, 12.0, 100.0], [-5.0, 1.2, 0.0], "spikes")
 
 T.position(0.0, 2.55, 8.10).scale(1.5, 1.5, 0.08).rotation(0.0, 3.1416, 0.0) {
     name = "stage_mirror"
     Grabbable {}
     R.cube() { Mirror.quality(1440) {} Raycastable.enabled() }
 }
-T.position(0.0, 7.10, -7.75) { name = "stage_ceiling_truss" truss(26) }
+
 for platform_index in range(3) {
     T.position(11.5, 4.0, (platform_index - 1) * 15.0) { suspended_platform() }
 }
@@ -84,7 +76,7 @@ let xr_input = InputXR.on() {
             bisket_colliders()
             bisket_shirt_physics(false)
         }
-        let bisket_avatar_control = AVC {
+        let bisket_avatar_control = AVC.movement_target("[name='bisket_grounding_root']") {
             mouth_open_from_amplitude(voice_level)
             mouth_open_rms_center_range(voice_tuning.center_rms, voice_tuning.range_rms)
             mouth_open_amount(voice_tuning.amount)
@@ -132,7 +124,7 @@ let vel = Velocity.rotation_basis(xr_input).horizontal() {
 ED.active() {
     T {
         name = "bisket_grounding_frame"
-        vel
+        Gravity { vel }
     }
 }
 
@@ -236,3 +228,7 @@ on(vel, "DataEvent", fn(event) {
 })
 
 XR.on()
+
+on_global("XrButtonDown", fn(event) {
+    if event.control == "ButtonY" && vel.grounded() { vel.translate_world([0.0, 4.5, 0.0]) }
+})

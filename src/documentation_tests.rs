@@ -299,6 +299,8 @@ fn event_exposure_classifications_match_mms_conversion() {
         "ToggleChanged",
         "SliderChanged",
         "SliderCommitted",
+        "ZoneEntered",
+        "ZoneExited",
         "MountStarted",
         "MountEnded",
         "XrEyeTrackingUpdated",

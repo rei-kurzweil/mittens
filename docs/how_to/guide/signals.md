@@ -89,7 +89,7 @@ Design goal: handlers should be observers/emitters, not “the place where mutat
 - If an intent can be fulfilled with a **small amount of code** and is **not system-specific** (e.g. topology helpers like attach/detach/remove), implement it directly in the **IntentExecutor**.
 - If fulfilling an intent is more than a few lines, or clearly belongs to a system, the **IntentExecutor should still “own” fulfilling the intent**, but it should delegate to the appropriate system.
   - Example: an intent that affects rendering should delegate to Renderable/Texture/Visual systems.
-  - Example: an intent that affects physics should delegate to Collision/CollisionResponse systems.
+  - Example: an intent that affects physics should delegate to the velocity or static-contact systems.
 
 ### Scoped dispatch
 
@@ -305,6 +305,21 @@ let scope = Transform {}
 on(scope, "CollisionEnded", fn(event) { print(event) })
 scope
 ```
+
+#### `ZoneEntered`
+<!-- catalog:signal source="ZoneEntered" kind="event" mms="observable-payload" -->
+
+Emitted once when a `Zone.enable_events()` sensor observes a new enabled slide
+mover. Scoped to the sensor. Payload: `zone`, `other_zone`, `collidable`,
+`movement_target`, and `movement_target_offset` (world vec3).
+
+#### `ZoneExited`
+<!-- catalog:signal source="ZoneExited" kind="event" mms="observable-payload" -->
+
+Emitted once when a previously observed live pair separates, with the same
+component identities and captured offset. Disabled or removed participants
+retire their pairs without delivering stale handles. These signals apply no
+contact response. See [Zone observation rules](../../task/zone-enter-events-and-teleport-pits.md).
 
 #### `MountStarted`
 <!-- catalog:signal source="MountStarted" kind="event" mms="observable-payload" -->
@@ -793,6 +808,15 @@ Transform {}
 target
 ```
 
+#### `TeleportTransformWorld`
+<!-- catalog:signal source="TeleportTransformWorld" kind="intent" mms="action" -->
+
+Emitted by `transform.teleport_world([x, y, z])`. Immediately changes world
+translation while preserving rotation and scale, cancels transform transitions,
+clears the directly owning Velocity and invalidates contact/observer sweep
+history. Mounted movement roots are excluded. Invalid world-to-local conversions
+leave the target unchanged.
+
 #### `SetTransformTrs`
 <!-- catalog:signal source="SetTransformTrs" kind="intent" mms="live-api" -->
 **Intent — Available through a live method/builtin.** Transfers one complete copied TRS value into a transform in explicitly selected local or world space. World-space values are converted through the target's effective parent basis when the intent executes; conversion failure leaves the target unchanged. MMS currently emits this through `transform.world.trs(value)`, while the local `transform.trs(value)` path retains the established `UpdateTransform` intent. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [MMS method registry](../../../src/scripting/component_method_registry.rs).
@@ -1049,20 +1073,6 @@ Transform {}
 #### `RemoveCollision`
 <!-- catalog:signal source="RemoveCollision" kind="intent" mms="component-lifecycle" -->
 **Intent — Indirectly emitted by component lifecycle.** Requests the `RemoveCollision` operation. Component creation, initialization, teardown, or topology work emits this intent indirectly; user MMS does not author the enum variant. It is scoped to the requesting/affected component and executes at an explicit drain point; `AtBeat` delays eligibility when the producer supplies timed metadata. Related components and systems are the targets named by the variant; see executor matching for exact effects. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [intent interpretation](../../../src/engine/ecs/signals/intent_executor.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [MMS component registry](../../../src/scripting/component_registry.rs).
-```mms parse-only
-Transform {}
-```
-
-#### `RegisterCollisionResponse`
-<!-- catalog:signal source="RegisterCollisionResponse" kind="intent" mms="component-lifecycle" -->
-**Intent — Indirectly emitted by component lifecycle.** Requests the `RegisterCollisionResponse` operation. Component creation, initialization, teardown, or topology work emits this intent indirectly; user MMS does not author the enum variant. It is scoped to the requesting/affected component and executes at an explicit drain point; `AtBeat` delays eligibility when the producer supplies timed metadata. Related components and systems are the targets named by the variant; see executor matching for exact effects. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [intent interpretation](../../../src/engine/ecs/signals/intent_executor.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [MMS component registry](../../../src/scripting/component_registry.rs).
-```mms parse-only
-Transform {}
-```
-
-#### `RemoveCollisionResponse`
-<!-- catalog:signal source="RemoveCollisionResponse" kind="intent" mms="component-lifecycle" -->
-**Intent — Indirectly emitted by component lifecycle.** Requests the `RemoveCollisionResponse` operation. Component creation, initialization, teardown, or topology work emits this intent indirectly; user MMS does not author the enum variant. It is scoped to the requesting/affected component and executes at an explicit drain point; `AtBeat` delays eligibility when the producer supplies timed metadata. Related components and systems are the targets named by the variant; see executor matching for exact effects. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [intent interpretation](../../../src/engine/ecs/signals/intent_executor.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [MMS component registry](../../../src/scripting/component_registry.rs).
 ```mms parse-only
 Transform {}
 ```

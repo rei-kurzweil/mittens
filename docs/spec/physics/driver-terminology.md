@@ -1,7 +1,7 @@
 # Pose and velocity driver terminology
 
 Status: proposed vocabulary. The linear `VelocityComponent`/`VelocitySystem`
-and one-shot `translate` commands are implemented; gravity, angular motion,
+and one-shot `translate` commands and Gravity are implemented; angular motion
 and general force inputs described here remain proposed.
 
 ## The boundary
@@ -37,6 +37,11 @@ it receives input from a person. `InputXRGamepad` currently drives a
 locomotion transform directly and is therefore a pose driver on that path.
 A future vehicle throttle can instead be a velocity driver if it changes the
 vehicle's velocity and leaves transform integration to `VelocitySystem`.
+
+An input source supplies device events or tracked poses. An action binding maps
+those inputs to behavior; that behavior may drive a pose or velocity. Default
+controls and per-binding MMS overrides are tracked in
+[input actions and per-binding overrides](../../task/input-actions-and-per-binding-overrides.md).
 
 ## Transform inheritance versus velocity
 
@@ -172,10 +177,11 @@ direction is selected. The new provider path is not implemented yet.
   may correct velocity and the final pose, but collision geometry alone is
   neither a pose driver nor a velocity driver.
 
-The existing `GravityComponent` currently feeds the deprecated
-`CollisionResponseSystem`, which has its own private velocity. The new gravity
-velocity driver must use the first-class velocity state; migrate or retire the
-old path explicitly before using the same `Gravity` surface syntax.
+`GravityComponent` updates first-class Velocity state in the coordinated fixed
+step. Its former coefficient cache and gravity integration in the deprecated
+`CollisionResponseSystem` have been removed. The gravity-fields and
+collision-perimeter examples use Gravity/Velocity and Zone/Collidable contact;
+their old push-response behavior is retired pending coupled surface motion.
 
 ## Related work
 

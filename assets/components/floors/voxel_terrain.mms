@@ -18,9 +18,8 @@ fn grass_surface_offset(cell_x, cell_z) {
 
 fn terrain_cube(x, y, z, color) {
     return T.position(x, y, z).scale(3.0, 3.0, 3.0) {
-        Collision.static() {
-            CollisionShape.cube([3, 3, 3])
-        }
+        // Zone dimensions are local: the transform scales this unit cube.
+        Zone.cube([0.5, 0.5, 0.5]) { Collidable.static() {} }
         R.cube() {
             C.rgba(color[0], color[1], color[2], color[3])
         }

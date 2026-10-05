@@ -177,6 +177,23 @@ pub enum EventSignal {
         target: ComponentId,
     },
 
+    /// An opt-in sensor overlaps an enabled slide collidable. Scoped to the sensor.
+    ZoneEntered {
+        zone: ComponentId,
+        other_zone: ComponentId,
+        collidable: ComponentId,
+        movement_target: ComponentId,
+        movement_target_offset: [f32; 3],
+    },
+    /// A previously observed overlap ended. Payload identifies the same mover.
+    ZoneExited {
+        zone: ComponentId,
+        other_zone: ComponentId,
+        collidable: ComponentId,
+        movement_target: ComponentId,
+        movement_target_offset: [f32; 3],
+    },
+
     /// A Rider-to-Mountable attachment transaction committed.
     MountStarted {
         rider: ComponentId,
@@ -376,6 +393,8 @@ impl EventSignal {
             EventSignal::DragEnd { .. } => SignalKind::DragEnd,
             EventSignal::GrabStart { .. } => SignalKind::GrabStart,
             EventSignal::GrabEnd { .. } => SignalKind::GrabEnd,
+            EventSignal::ZoneEntered { .. } => SignalKind::ZoneEntered,
+            EventSignal::ZoneExited { .. } => SignalKind::ZoneExited,
             EventSignal::MountStarted { .. } => SignalKind::MountStarted,
             EventSignal::MountEnded { .. } => SignalKind::MountEnded,
             EventSignal::Click { .. } => SignalKind::Click,
@@ -679,6 +698,11 @@ pub enum IntentValue {
     UpdateTransformWorld {
         component_id: ComponentId,
     },
+    /// Discontinuous world translation, preserving rotation/scale and clearing motion history.
+    TeleportTransformWorld {
+        component_id: ComponentId,
+        position: [f32; 3],
+    },
     UpdateTransform {
         component_id: ComponentId,
         translation: [f32; 3],
@@ -786,12 +810,6 @@ pub enum IntentValue {
         component_id: ComponentId,
     },
     RemoveCollision {
-        component_id: ComponentId,
-    },
-    RegisterCollisionResponse {
-        component_id: ComponentId,
-    },
-    RemoveCollisionResponse {
         component_id: ComponentId,
     },
     RegisterAvatarControl {
@@ -1047,6 +1065,7 @@ impl IntentValue {
             IntentValue::RegisterScrolling { .. } => "register_scrolling",
             IntentValue::RegisterTransform { .. } => "register_transform",
             IntentValue::UpdateTransformWorld { .. } => "update_transform_world",
+            IntentValue::TeleportTransformWorld { .. } => "teleport_transform_world",
             IntentValue::UpdateTransform { .. } => "update_transform",
             IntentValue::SetTransformTrs { .. } => "set_transform_trs",
             IntentValue::RemoveTransform { .. } => "remove_transform",
@@ -1087,8 +1106,6 @@ impl IntentValue {
 
             IntentValue::RegisterCollision { .. } => "register_collision",
             IntentValue::RemoveCollision { .. } => "remove_collision",
-            IntentValue::RegisterCollisionResponse { .. } => "register_collision_response",
-            IntentValue::RemoveCollisionResponse { .. } => "remove_collision_response",
             IntentValue::RegisterAvatarControl { .. } => "register_avatar_control",
             IntentValue::RegisterHumanoidBoneMap { .. } => "register_humanoid_bone_map",
             IntentValue::UnregisterHumanoidBoneMap { .. } => "unregister_humanoid_bone_map",
@@ -1196,6 +1213,8 @@ pub enum SignalKind {
     DragEnd,
     GrabStart,
     GrabEnd,
+    ZoneEntered,
+    ZoneExited,
     MountStarted,
     MountEnded,
     Click,

@@ -1489,6 +1489,13 @@ impl<'a, H: Host> Evaluator<'a, H> {
                     .collect::<Result<_, EvalError>>()?;
                 Value::Object(self.heap.alloc(Object::Map(values)))
             }
+            TransportValue::TypedComponent {
+                handle,
+                component_type,
+            } => Value::ComponentObject {
+                id: handle,
+                component_type,
+            },
             TransportValue::Component(id) => Value::ComponentObject {
                 id,
                 component_type: "Component".into(),
@@ -1545,7 +1552,10 @@ impl<'a, H: Host> Evaluator<'a, H> {
                 visiting.remove(&id);
                 converted
             }
-            Value::ComponentObject { id, .. } => Ok(TransportValue::Component(id)),
+            Value::ComponentObject { id, component_type } => Ok(TransportValue::TypedComponent {
+                handle: id,
+                component_type,
+            }),
             function @ Value::Function { .. } => {
                 let context = self
                     .context
@@ -1658,6 +1668,13 @@ pub(crate) fn transport_to_value(value: TransportValue) -> Result<Value, EvalErr
                 .map(|(k, v)| Ok((k, transport_to_value(v)?)))
                 .collect::<Result<_, EvalError>>()?,
         ),
+        TransportValue::TypedComponent {
+            handle,
+            component_type,
+        } => Value::ComponentObject {
+            id: handle,
+            component_type,
+        },
         TransportValue::Component(id) => Value::ComponentObject {
             id,
             component_type: "Component".into(),

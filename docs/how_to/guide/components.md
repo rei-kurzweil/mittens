@@ -730,14 +730,6 @@ Carries collision state used when that engine feature is present in a component 
 Collision {}
 ```
 
-### `CollisionResponseComponent`
-<!-- catalog:component source="CollisionResponseComponent" mms="direct" names="CollisionResponse" -->
-Carries collision response state used when that engine feature is present in a component tree. Use it when a tree needs this state or behavior. Collision systems; registration/removal intents plus `CollisionStarted` and `CollisionEnded` are relevant.
-**Directly constructible** as `CollisionResponse`. Sources: [Rust implementation](../../../src/engine/ecs/component/collision_response.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
-```mms parse-only
-CollisionResponse {}
-```
-
 ### `CollisionShapeComponent`
 <!-- catalog:component source="CollisionShapeComponent" mms="direct" names="CollisionShape" -->
 Carries collision shape state used when that engine feature is present in a component tree. Use it when a tree needs this state or behavior. Collision systems; registration/removal intents plus `CollisionStarted` and `CollisionEnded` are relevant.
@@ -1254,3 +1246,19 @@ Carries transition state used when that engine feature is present in a component
 ```mms parse-only
 Transition {}
 ```
+
+### Zone events and teleportation
+
+`Zone.enable_events()` opts into `ZoneEntered` and `ZoneExited` events for enabled
+slide collidables. The sensor remains non-solid; use `Collidable.static()` only
+for surfaces that should stop motion. Event payloads identify the sensor, mover
+zone, collidable and its movement target. See
+[Zone events and teleport pits](../../task/zone-enter-events-and-teleport-pits.md)
+for filtering, crossing and lifecycle rules.
+
+`T.teleport_world([x, y, z])` immediately changes world translation, preserves
+rotation and scale, cancels transform transitions and clears the directly owning
+Velocity and static contact sweep history. Use it for respawning instead of a
+normal local `update_transform` edit. The reusable
+[teleport pit prefab](../../../assets/components/teleport_pit.mms) places an
+optional decorated sensor and respawns a slide mover on entry.

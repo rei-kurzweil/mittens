@@ -7,6 +7,8 @@ use crate::engine::ecs::ComponentId;
 pub struct VelocityComponent {
     pub enabled: bool,
     pub linear_local_mps: [f32; 3],
+    /// Runtime support contact from the latest fixed substep; not serialized.
+    pub grounded: bool,
     pub rotation_basis: Option<ComponentRef>,
     pub horizontal: bool,
     pub component_id: Option<ComponentId>,

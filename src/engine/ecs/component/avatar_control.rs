@@ -109,6 +109,9 @@ pub struct AvatarControlComponent {
     /// Whether AVC should generate an upright collision capsule. Enabled by default.
     pub collision_enabled: bool,
 
+    /// Explicit transform corrected by the generated capsule (e.g. a falling root).
+    pub movement_target: Option<ComponentRef>,
+
     /// Authored character-controller radius, capped to half the measured height.
     pub capsule_radius: f32,
 
@@ -450,6 +453,7 @@ impl Default for AvatarControlComponent {
             mouth_open_weight: 0.0,
             mouth_open_missing_slot_diagnosed: false,
             collision_enabled: true,
+            movement_target: None,
             capsule_radius: 0.28,
             left_two_bone_ik: None,
             right_two_bone_ik: None,
@@ -598,6 +602,13 @@ impl Component for AvatarControlComponent {
         }
         if !self.neck_pin_enabled {
             c = c.with_call("neck_pin_disabled", vec![]);
+        }
+        if let Some(source) = &self.movement_target {
+            let source = match source {
+                ComponentRef::Guid(guid) => s(&format!("@uuid:{guid}")),
+                ComponentRef::Query(query) => s(query),
+            };
+            c = c.with_call("movement_target", vec![source]);
         }
         if let Some(source) = &self.mouth_open_amplitude {
             let source = match source {

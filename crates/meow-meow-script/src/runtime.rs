@@ -1575,7 +1575,8 @@ impl<H: Host> Session<H> {
 
 fn adopt_transport_components(context: &mut HostContext, value: &crate::TransportValue) {
     match value {
-        crate::TransportValue::Component(handle) => context.adopt_component(*handle),
+        crate::TransportValue::Component(handle)
+        | crate::TransportValue::TypedComponent { handle, .. } => context.adopt_component(*handle),
         crate::TransportValue::Array(values) => {
             for value in values {
                 adopt_transport_components(context, value);

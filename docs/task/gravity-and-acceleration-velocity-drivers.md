@@ -1,13 +1,11 @@
 # Task: gravity and acceleration as velocity drivers
 
-Status: provider discovery implemented and tested; runtime migration next,
-2026-10-04. Gravity and Acceleration must be direct or indirect ancestors of
-the Velocity they drive. Drivers do not apply across nested Velocity boundaries.
-Nearest Gravity wins within the Velocity scope, including a disabled Gravity
-that blocks inheritance. Discovery implements this rule; runtime gravity and
-MMS changes remain pending. Start by migrating gravity
-to first-class velocity; add a general acceleration provider using the same
-ownership and stepping rules.
+Status: provider discovery, fixed-substep contact, Gravity runtime migration,
+and legacy demo migration implemented and tested, 2026-10-04. Gravity must be
+a direct or indirect ancestor of the Velocity it drives, with inheritance
+stopping at Velocity boundaries and nearest Gravity winning even when disabled.
+The desktop avatar grounding-root/AVC demo is implemented; XR scheduling remains pending;
+general Acceleration follows those slices.
 
 ## What the existing docs and code say
 
@@ -22,19 +20,20 @@ not settle gravity's component topology.
 The implemented `Velocity { T { ... } }` owns linear speed in m/s and drives
 exactly one immediate child transform. It stores velocity in the nearest
 transform ancestor's orientation, compensates for parent scale when moving,
-and currently combines elapsed fixed steps into one displacement. Its
+and integrates each fixed substep before static contact. Its
 `translate` and `translate_world` methods add a one-shot change of speed.
 They do not describe persistent acceleration.
 
-Today's `Gravity` supplies a coefficient to legacy `CollisionResponseSystem`.
-At responder registration, the nearest enabled gravity ancestor wins. The
-response component holds the resulting private velocity; `Gravity` does not
-drive `VelocityComponent`. That lookup is not the proposed new contract.
+`Gravity` now accelerates first-class `VelocityComponent` state each fixed step.
+The old responder-registration coefficient cache and private gravity integration
+have been removed from `CollisionResponseSystem`. The two legacy gravity demos
+now use ancestor Gravity, Velocity-owned movement, and Zone/Collidable static
+contact. Their old push response and cube-touch callbacks are retired.
 
 The zone/contact migration now provides `Collidable.slide()` against static
 zones, including desktop crates, bounded separation passes, and downward
-capsule/floor crossing. It currently corrects poses only. Falling requires
-updating velocity on contact and resolving contact within each fixed substep.
+capsule/floor crossing. It corrects poses and removes inward speed from the Velocity directly owning
+the corrected transform, with contact resolved within each fixed substep.
 The older [gravity/XR analysis](../analysis/velocity-gravity-xr-ground-contact.md)
 describes that flow, although its collision and avatar inventory predates the
 zone migration.
@@ -299,13 +298,12 @@ must retain their behavior.
 components and transforms, and stops at any Velocity ancestor. It selects the
 nearest Gravity regardless of enabled state. Tests cover branched ownership,
 independent nested bodies, disabled boundaries, off overrides, child providers,
-reparenting, and provider removal. Discovery is not yet called by integration;
-legacy collision gravity retains its runtime meaning.
+reparenting, and provider removal. Runtime integration now uses this discovery
+as described in the migration progress below.
 
-Next: coordinate per-substep integration, transform propagation, and contact
-before enabling gravity on Velocity. Migrate `examples/gravity-fields.rs` and
-`examples/collision-perimeter.rs`, which still depend on collision responders'
-cached gravity coefficient. Acceleration discovery and its API remain pending.
+Next: validate the desktop demo interactively, and verify XR publication and
+movement authority.
+Acceleration discovery and its API remain pending.
 
 ## Follow-up: surface contact and coupled motion
 
@@ -313,3 +311,133 @@ See [surface contact and coupled motion](surface-contact-and-coupled-motion.md)
 for temporary pushing and explicit pulling relationships between movable
 surfaces. That work extends contact beyond static non-penetration without
 reviving legacy push response. Spring-bone gravity remains outside this scope.
+
+## Progress: fixed-substep contact foundation (2026-10-04)
+
+Runtime scheduling now advances Velocity one 120 Hz step at a time, flushes
+transform propagation, resolves static contact, and propagates corrected poses
+before advancing again. Contact runs before the first substep to seed capsule
+sweep history and resolve input movement even when no fixed step is due.
+The accumulator limit and dropped-time policy are unchanged.
+
+Static contact projects inward world-space speed out of the Velocity directly
+owning the corrected transform, then converts back to parent-local storage.
+It does not search for a nearby ancestor Velocity. Existing explicit movement
+target routing therefore selects both pose and velocity ownership.
+
+Headless tests cover a fast downward crossing of a thin floor, zero inward
+speed after landing, retained tangent speed, equal results at 60 and 120 Hz
+render rates, and rejection of unrelated ancestor ownership. The six static
+contact tests and existing Velocity tests pass.
+
+This is the stepping/contact foundation for practical slices 1 and 2; those
+slices remain incomplete. The subsequent migration below enables Gravity.
+Remaining work includes live demo validation, rotated/scaled
+parent contact checks, and XR publication/authority scheduling. General
+Acceleration and horizontal sweeps remain later slices.
+
+## Progress: Gravity runtime and demo migration (2026-10-04)
+
+Gravity discovery now runs in each fixed Velocity step, applying world-space
+`[0, -9.81, 0] * coefficient` in the owner's parent orientation without scale.
+This starts stationary Velocity components falling and bypasses `.horizontal()`
+command flattening. Disabled providers retain existing speed; disabled Velocity
+pauses acceleration and integration. Finite coefficient setters reject invalid
+values without changing the previous setting, and integration rejects non-finite
+acceleration results before changing state.
+
+`examples/gravity-fields.rs` and `examples/collision-perimeter.rs` now author
+Gravity -> Velocity -> Transform for falling cubes. Cameras, floors, and walls
+use Zone/Collidable contact. Zone shapes are in local space, so scaled geometry
+uses unit-cube extents rather than duplicating scale in the shape. The gravity
+coefficient cache and gravity path in CollisionResponse are removed. Legacy
+pushable behavior and cube-touch callbacks are retired; coupled pushing remains
+a separate task.
+
+Tests now also cover falling from rest and sustained resting speed, render-rate
+equivalence under gravity, world-down gravity under rotated/scaled parents,
+horizontal command mode, live coefficient replacement, reversed gravity,
+provider/Velocity disable and reenable, independent nested motion layers, and a
+scaled demo-style cube landing and falling again when support is removed.
+The demos compile with `cargo check --examples`. Desktop visual and live XR
+validation remain pending alongside the avatar grounding-root integration.
+
+Validation of this migration: 19 focused Velocity/static-contact tests pass;
+`cargo check --examples`, `cargo fmt --check`, and `git diff --check` pass.
+The full library suite reports 933 passed, 50 failed, and one ignored. An
+unchanged HEAD snapshot reports 928 passed, the identical 50 failing test names,
+and one ignored; no new full-suite failures were introduced in this run.
+
+## Progress: secondary-motion player demos and jump (2026-10-04)
+
+`secondary-motion-desktop.mms` now starts its avatar one metre above the floor
+under Gravity -> Velocity -> grounding Transform. Desktop Input retains the
+inner head transform for movement and look. `AvatarControl.movement_target`
+explicitly routes the generated capsule's correction to the falling root;
+unresolved explicit targets skip correction rather than falling back to the
+head driver. This authored setting serializes with the AVC configuration.
+
+`Velocity.grounded()` exposes upward blocking contact from the latest fixed
+substep. Support state resets on an enabled Velocity step and an upward speed
+command clears it immediately. It is runtime state, not serialized. The demo
+uses grounded support rather than zero vertical speed to gate a 4.5 m/s jump,
+on Space KeyDown or the camera-attached jump button. Keyboard repeat uses
+KeyPress, so holding Space does not add a jump every frame. Existing Input
+movement/look stays enabled. R/F remain existing direct vertical controls;
+per-key overrides are follow-up work, not part of this slice.
+
+The XR `vtuber-secondary-motion.mms` demo also wraps its locomotion root in
+Gravity/Velocity, adds a static floor zone, routes AVC contact to that root,
+and binds ButtonY through existing InputXRGamepad XrButtonDown events. The
+button handler changes falling speed once while supported. Controllers without
+Y need a separately authored alternative. This verifies authored ownership and
+injected button dispatch; live XR scheduling/camera publication is still pending.
+
+Headless desktop checks use the actual loaded Bisket avatar and generated
+capsule, verifying falling, landing, support, retained inner pose, Space jump,
+UI jump, rejection of airborne jump, and landing again. XR checks inject support
+and button events without requiring a headset. The input-source/action-binding
+terminology and default per-binding overrides are tracked separately in
+[input actions and per-binding overrides](input-actions-and-per-binding-overrides.md).
+
+Validation of the player-demo slice: the four desktop example tests, the XR
+button fixture, 26 AVC/serialization tests, and 19 Velocity/static-contact tests
+pass. Both Rust example launchers compile. A broader secondary-motion filter
+still hits the existing desktop spring-chain count mismatch (15 versus 17),
+also present in the unchanged baseline; it is outside player-gravity scope.
+Interactive desktop and live headset validation remain outstanding.
+
+## Demo follow-up: XR platform and editor footprint (2026-10-04)
+
+Live testing of `load examples/vtuber-secondary-motion.mms` showed falling from
+an off-platform spawn and slow rendering. The platform is now 40 x 40 metres,
+centered on the tracking origin rather than offset in Z. Its top remains at
+world y=-0.79. An authored EditorUI selects only Settings, with spring-bone and
+zone controls; the other default workspace panels are omitted. Performance
+improvement and actual tracked spawn coverage require another live check.
+
+After validating those changes, consider a lower reset Zone that detects a
+falling player and teleports the grounding root back onto the platform. Cone or
+spike patches below that zone can make the reset boundary visible. Define the
+safe destination, clear falling speed, and reset contact/sweep history together
+so teleportation cannot be interpreted as a swept floor crossing. This reset
+behavior and its visuals are deferred until the larger platform and reduced
+editor workspace have been tested.
+
+## Progress: legacy response removal (2026-10-04)
+
+The remaining Bisket desktop camera and shared voxel terrain now use
+Zone/Collidable contact. CollisionResponseComponent/System and their private
+velocity, push behavior, scheduling, lifecycle intents, MMS API, and `CRSP`
+shortform are removed. This completes response retirement; legacy Collision
+intersection/event infrastructure remains for a separate audit and cleanup.
+
+### Corp stages and fall recovery
+
+Corp variants and the standalone Reimu stage scene now share stage contact
+prefabs, Gravity/Velocity player motion, grounded Space/ButtonY jump bindings,
+and a reusable teleport pit. Opt-in Zone observation and discontinuous world
+teleport are described in
+[zone-enter-events-and-teleport-pits.md](zone-enter-events-and-teleport-pits.md).
+Mounted jump capability routing is deferred in
+[mounted-action-capabilities-and-jump-routing.md](mounted-action-capabilities-and-jump-routing.md).

@@ -10,7 +10,6 @@ use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::CameraSystem;
 use crate::engine::ecs::system::ClippingSystem;
 use crate::engine::ecs::system::ClockSystem;
-use crate::engine::ecs::system::CollisionResponseSystem;
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::CollisionVisualizationSystem;
 use crate::engine::ecs::system::CombineMeshSystem;
@@ -102,8 +101,9 @@ pub struct SystemWorld {
     pub zone_visualization: ZoneVisualizationSystem,
     pub spring_bone_visualization: crate::engine::ecs::system::SpringBoneVisualizationSystem,
     pub camera_visualization: crate::engine::ecs::system::CameraVisualizationSystem,
-    pub collision_response: CollisionResponseSystem,
     pub static_contact: StaticContactSystem,
+    pub zone_observation:
+        crate::engine::ecs::system::zone_observation_system::ZoneObservationSystem,
     pub skinned_mesh: SkinnedMeshSystem,
     pub combine_mesh: CombineMeshSystem,
     pub implicit_surface: ImplicitSurfaceSystem,
@@ -1028,10 +1028,10 @@ impl SystemWorld {
         root: ComponentId,
     ) {
         use crate::engine::ecs::component::{
-            CollisionComponent, CollisionResponseComponent, ControllerXRComponent,
-            HttpClientComponent, HttpServerComponent, InputComponent, InputXRComponent,
-            PointerComponent, RayCastComponent, RenderableComponent, SignalRouteUpwardComponent,
-            StencilClipComponent, TransformComponent,
+            CollisionComponent, ControllerXRComponent, HttpClientComponent, HttpServerComponent,
+            InputComponent, InputXRComponent, PointerComponent, RayCastComponent,
+            RenderableComponent, SignalRouteUpwardComponent, StencilClipComponent,
+            TransformComponent,
         };
 
         // Best-effort: remove system state for known component types before deleting.
@@ -1070,12 +1070,6 @@ impl SystemWorld {
                 .is_some()
             {
                 self.remove_collision(world, visuals, n);
-            }
-            if world
-                .get_component_by_id_as::<CollisionResponseComponent>(n)
-                .is_some()
-            {
-                self.remove_collision_response(world, visuals, n);
             }
             if world
                 .get_component_by_id_as::<AvatarControlComponent>(n)
@@ -1544,12 +1538,6 @@ impl SystemWorld {
             }
             IntentValue::RemoveCollision { component } => {
                 self.remove_collision(world, visuals, *component);
-            }
-            IntentValue::RegisterCollisionResponse { component } => {
-                self.register_collision_response(world, visuals, *component);
-            }
-            IntentValue::RemoveCollisionResponse { component } => {
-                self.remove_collision_response(world, visuals, *component);
             }
 
             IntentValue::RemoveSubtree { target } => {
@@ -2277,27 +2265,6 @@ impl SystemWorld {
         component: ComponentId,
     ) {
         self.collision.register_collision(world, visuals, component);
-    }
-
-    /// Register a CollisionResponseComponent instance with the CollisionResponseSystem.
-    pub fn register_collision_response(
-        &mut self,
-        world: &mut World,
-        _visuals: &mut VisualWorld,
-        component: ComponentId,
-    ) {
-        self.collision_response
-            .register_collision_response(world, component);
-    }
-
-    /// Remove a CollisionResponseComponent instance from the CollisionResponseSystem.
-    pub fn remove_collision_response(
-        &mut self,
-        _world: &mut World,
-        _visuals: &mut VisualWorld,
-        component: ComponentId,
-    ) {
-        self.collision_response.remove_collision_response(component);
     }
 
     /// Remove a CollisionComponent instance from the CollisionSystem.
@@ -3079,32 +3046,21 @@ impl SystemWorld {
         self.collision
             .tick_with_rx(world, visuals, input, dt_sec, &mut self.rx);
 
-        // Default kinematic-vs-static collision response (opt-in via CollisionResponseComponent).
-        // This may enqueue transform updates; flush them immediately so camera/OpenXR
-        // consume resolved transforms this frame.
-        self.collision_response.tick_with_queue(
-            world,
-            visuals,
-            input,
-            dt_sec,
-            queue,
-            &self.collision,
-        );
-        queue.flush(world, self, visuals, render_assets);
-        self.tick_transition_runtime(world, visuals);
-
-        // Physics may have moved renderables; refit BVH so raycasts see the resolved state.
-        self.bvh.tick(world, visuals, input, dt_sec);
-
         // Integrate outer motion before camera/OpenXR publish this frame's eye
         // poses. Click commands capture the previous published eye at dispatch
         // and become motion on the next fixed substep.
-        self.velocity.tick(world, queue, dt_sec);
-        queue.flush(world, self, visuals, render_assets);
-
-        // Constrain input/velocity proposed poses before cameras read them.
-        for target in self.static_contact.tick(world) {
+        // Seed sweep history from the current pose, including input movement,
+        // before the first proposed fixed-step pose.
+        for target in self.static_contact.tick_excluding(world, &self.attachment) {
             self.transform_changed(world, visuals, target);
+        }
+        let velocity_steps = self.velocity.take_steps(dt_sec);
+        for _ in 0..velocity_steps {
+            self.velocity.step(world, queue);
+            queue.flush(world, self, visuals, render_assets);
+            for target in self.static_contact.tick_excluding(world, &self.attachment) {
+                self.transform_changed(world, visuals, target);
+            }
         }
 
         // Update window camera + select active XR camera rig before OpenXR consumes it.
@@ -3123,7 +3079,7 @@ impl SystemWorld {
             .tick_with_queue(world, visuals, &self.xr, queue, dt_sec);
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
-        for target in self.static_contact.tick(world) {
+        for target in self.static_contact.tick_excluding(world, &self.attachment) {
             self.transform_changed(world, visuals, target);
         }
 
@@ -3303,6 +3259,11 @@ impl SystemWorld {
             .tick_with_queue(world, visuals, queue, dt_sec);
 
         self.text.tick(world, visuals, input, dt_sec);
+
+        self.zone_observation
+            .tick(world, &self.attachment, &mut self.rx);
+        // Deliver observer events before the runtime services this frame's callbacks.
+        let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);
 
         self.light.tick(world, visuals, input, dt_sec);
         self.mirror.tick(world, visuals, input, dt_sec);

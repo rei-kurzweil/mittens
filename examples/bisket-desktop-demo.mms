@@ -172,10 +172,7 @@ I.speed(2.0) {
     }
     T.position(3.0, 1.2, 3.5).rotation(0.0, 0.5, 0.0) {
         name = "desktop_camera_rig"
-        Collision.kinematic() {
-            CollisionShape.sphere(0.22)
-            CollisionResponse.slide() {}
-        }
+        Zone.sphere(0.22) { Collidable.slide() {} }
         C3D { Pointer {} }
         T.position(0.0, -1.7, 1.0).rotation(0.0, 3.14159, 0.0) {
             name = "desktop_camera_rig_bisket"

@@ -4828,6 +4828,310 @@ fn every_bisket_example_uses_the_canonical_model_uri() {
 }
 
 #[test]
+fn secondary_motion_desktop_gravity_lands_jumps_and_routes_capsule_to_falling_root() {
+    use crate::engine::ecs::KeyboardEvent;
+    use crate::engine::ecs::component::{
+        AvatarControlComponent, CollidableComponent, VelocityComponent,
+    };
+    let mut world = World::default();
+    let mut systems = crate::engine::ecs::system::SystemWorld::default();
+    let mut visuals = VisualWorld::default();
+    let mut render_assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+        include_str!("../../examples/secondary-motion-desktop.mms"),
+        Some("examples/secondary-motion-desktop.mms"),
+        &mut world,
+        &mut systems.rx,
+        Some(&mut render_assets),
+        &mut queue,
+    );
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    for intent in output.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
+    systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
+    let named = |world: &World, label: &str| {
+        world
+            .all_components()
+            .find(|id| world.component_label(*id) == Some(label))
+            .unwrap()
+    };
+    let motion = named(&world, "desktop_avatar_velocity");
+    let root = named(&world, "desktop_avatar_grounding_root");
+    let head = named(&world, "avatar_head_driver");
+    let head_local = world
+        .get_component_by_id_as::<TransformComponent>(head)
+        .unwrap()
+        .transform
+        .translation;
+    let start = world
+        .get_component_by_id_as::<TransformComponent>(root)
+        .unwrap()
+        .transform
+        .translation[1];
+    for _ in 0..120 {
+        systems.tick(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &InputState::default(),
+            &mut queue,
+            1.0 / 60.0,
+        );
+    }
+    let landed = world
+        .get_component_by_id_as::<TransformComponent>(root)
+        .unwrap()
+        .transform
+        .translation[1];
+    assert!(landed < start - 0.5, "start={start}, landed={landed}");
+    let state = world
+        .get_component_by_id_as::<VelocityComponent>(motion)
+        .unwrap();
+    assert!(state.grounded);
+    assert_eq!(state.linear_local_mps, [0.0; 3]);
+    assert_eq!(
+        world
+            .get_component_by_id_as::<TransformComponent>(head)
+            .unwrap()
+            .transform
+            .translation,
+        head_local
+    );
+    let avc = world
+        .all_components()
+        .find_map(|id| world.get_component_by_id_as::<AvatarControlComponent>(id))
+        .unwrap();
+    let capsule = avc.capsule_collidable_id.unwrap();
+    assert_eq!(
+        world
+            .get_component_by_id_as::<CollidableComponent>(capsule)
+            .unwrap()
+            .movement_target_id,
+        Some(root)
+    );
+    let press_space = |systems: &mut crate::engine::ecs::system::SystemWorld| {
+        systems.rx.push_event(
+            ComponentId::default(),
+            EventSignal::KeyDown(KeyboardEvent {
+                code: Some("Space".into()),
+                key: " ".into(),
+            }),
+        );
+    };
+    press_space(&mut systems);
+    systems.tick(
+        &mut world,
+        &mut visuals,
+        &mut render_assets,
+        &InputState::default(),
+        &mut queue,
+        1.0 / 60.0,
+    );
+    let speed = world
+        .get_component_by_id_as::<VelocityComponent>(motion)
+        .unwrap()
+        .linear_local_mps[1];
+    assert!(speed > 4.0 && speed < 4.5, "jump speed={speed}");
+    assert!(
+        !world
+            .get_component_by_id_as::<VelocityComponent>(motion)
+            .unwrap()
+            .grounded
+    );
+    assert!(
+        world
+            .get_component_by_id_as::<TransformComponent>(root)
+            .unwrap()
+            .transform
+            .translation[1]
+            > landed
+    );
+    press_space(&mut systems);
+    systems.tick(
+        &mut world,
+        &mut visuals,
+        &mut render_assets,
+        &InputState::default(),
+        &mut queue,
+        1.0 / 60.0,
+    );
+    assert!(
+        world
+            .get_component_by_id_as::<VelocityComponent>(motion)
+            .unwrap()
+            .linear_local_mps[1]
+            < speed,
+        "airborne presses must not add another jump impulse"
+    );
+    for _ in 0..120 {
+        systems.tick(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &InputState::default(),
+            &mut queue,
+            1.0 / 60.0,
+        );
+    }
+    assert!(
+        world
+            .get_component_by_id_as::<VelocityComponent>(motion)
+            .unwrap()
+            .grounded
+    );
+    assert!(
+        (world
+            .get_component_by_id_as::<TransformComponent>(root)
+            .unwrap()
+            .transform
+            .translation[1]
+            - landed)
+            .abs()
+            < 1.0e-4
+    );
+    let jump_text = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(*id)
+                .is_some_and(|text| text.text == "jump (Space)")
+        })
+        .unwrap();
+    let jump_button = world.parent_of(jump_text).unwrap();
+    systems.rx.push_event(
+        jump_button,
+        EventSignal::Click {
+            raycaster: ComponentId::default(),
+            renderable: jump_button,
+            hit_point: [0.0; 3],
+            screen_pos_px: None,
+        },
+    );
+    systems.tick(
+        &mut world,
+        &mut visuals,
+        &mut render_assets,
+        &InputState::default(),
+        &mut queue,
+        1.0 / 60.0,
+    );
+    assert!(
+        world
+            .get_component_by_id_as::<VelocityComponent>(motion)
+            .unwrap()
+            .linear_local_mps[1]
+            > 4.0
+    );
+}
+
+#[test]
+fn secondary_motion_xr_gravity_y_button_targets_falling_velocity() {
+    use crate::engine::ecs::component::{
+        ControllerHand, InputXRGamepadComponent, VelocityComponent, XrButtonControl,
+    };
+    let mut world = World::default();
+    let mut systems = crate::engine::ecs::system::SystemWorld::default();
+    let mut visuals = VisualWorld::default();
+    let mut assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+    // Exercise the authored controls without requesting a real headset session.
+    let source = include_str!("../../examples/vtuber-secondary-motion.mms")
+        .trim_end()
+        .strip_suffix("XR.on()")
+        .unwrap();
+    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+        source,
+        Some("examples/vtuber-secondary-motion.mms"),
+        &mut world,
+        &mut systems.rx,
+        Some(&mut assets),
+        &mut queue,
+    );
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    for intent in output.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
+    systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+    let motion = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<VelocityComponent>(*id)
+                .is_some()
+        })
+        .unwrap();
+    let gamepad = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<InputXRGamepadComponent>(*id)
+                .is_some()
+        })
+        .unwrap();
+    assert!(crate::engine::ecs::system::VelocitySystem::gravity_provider(&world, motion).is_some());
+    assert!(
+        world
+            .get_component_by_id_as::<InputXRGamepadComponent>(gamepad)
+            .unwrap()
+            .locomotion
+    );
+    // Inject support and device events without requiring a live OpenXR session.
+    world
+        .get_component_by_id_as_mut::<VelocityComponent>(motion)
+        .unwrap()
+        .grounded = true;
+    let press = |systems: &mut crate::engine::ecs::system::SystemWorld, control| {
+        systems.rx.push_event(
+            gamepad,
+            EventSignal::XrButtonDown {
+                source_component: gamepad,
+                hand: ControllerHand::Left,
+                control,
+                value: 1.0,
+            },
+        );
+    };
+    press(&mut systems, XrButtonControl::ButtonX);
+    systems.process_signals(&mut world, &mut visuals, &mut assets, &mut queue, 100_000);
+    queue.flush(&mut world, &mut systems, &mut visuals, &mut assets);
+    assert_eq!(
+        world
+            .get_component_by_id_as::<VelocityComponent>(motion)
+            .unwrap()
+            .linear_local_mps,
+        [0.0; 3]
+    );
+    press(&mut systems, XrButtonControl::ButtonY);
+    systems.process_signals(&mut world, &mut visuals, &mut assets, &mut queue, 100_000);
+    queue.flush(&mut world, &mut systems, &mut visuals, &mut assets);
+    assert_eq!(
+        world
+            .get_component_by_id_as::<VelocityComponent>(motion)
+            .unwrap()
+            .linear_local_mps,
+        [0.0, 4.5, 0.0]
+    );
+    assert!(
+        !world
+            .get_component_by_id_as::<VelocityComponent>(motion)
+            .unwrap()
+            .grounded
+    );
+    press(&mut systems, XrButtonControl::ButtonY);
+    systems.process_signals(&mut world, &mut visuals, &mut assets, &mut queue, 100_000);
+    queue.flush(&mut world, &mut systems, &mut visuals, &mut assets);
+    assert_eq!(
+        world
+            .get_component_by_id_as::<VelocityComponent>(motion)
+            .unwrap()
+            .linear_local_mps,
+        [0.0, 4.5, 0.0]
+    );
+}
+
+#[test]
 fn secondary_motion_desktop_head_camera_survives_gltf_and_avatar_initialization() {
     let source = include_str!("../../examples/secondary-motion-desktop.mms");
     let mut world = World::default();
@@ -6055,6 +6359,98 @@ fn multi_layer_bloom_gallery_materializes_all_renderable_primitive_families() {
         "{:?}",
         Some(AuthoredRenderableShape::Builtin("circle_2d"))
     )));
+}
+
+#[test]
+fn bisket_desktop_demo_camera_resolves_contact_against_migrated_terrain() {
+    use crate::engine::ecs::component::{CollidableComponent, CollidableMode, ZoneComponent};
+    use crate::engine::ecs::system::{TransformSystem, zone_query};
+    let mut world = World::default();
+    let mut systems = crate::engine::ecs::system::SystemWorld::default();
+    let mut visuals = VisualWorld::default();
+    let mut assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+    let (_session, output) = RuntimeSpecSession::start_at_path(
+        include_str!("../../examples/bisket-desktop-demo.mms"),
+        "examples/bisket-desktop-demo.mms",
+        &mut world,
+        &mut systems.rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .expect("migrated desktop demo should start");
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    for intent in output.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
+    // Contact does not need the editor workspace's panel/glyph initialization.
+    let editors: Vec<_> = world
+        .all_components()
+        .filter(|id| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::EditorComponent>(*id)
+                .is_some()
+        })
+        .collect();
+    for id in editors {
+        world
+            .get_component_by_id_as_mut::<crate::engine::ecs::component::EditorComponent>(id)
+            .unwrap()
+            .spawn_panels = false;
+    }
+    systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+    let camera = world
+        .all_components()
+        .find(|id| world.component_label(*id) == Some("desktop_camera_rig"))
+        .unwrap();
+    let camera_zone = world
+        .children_of(camera)
+        .iter()
+        .copied()
+        .find(|id| world.get_component_by_id_as::<ZoneComponent>(*id).is_some())
+        .unwrap();
+    let (surface, center) = world
+        .all_components()
+        .filter_map(|id| {
+            let collidable = world.get_component_by_id_as::<CollidableComponent>(id)?;
+            if collidable.mode != CollidableMode::Static {
+                return None;
+            }
+            let zone = world.parent_of(id)?;
+            let frame = world.parent_of(zone)?;
+            Some((zone, TransformSystem::world_position(&world, frame)?))
+        })
+        .max_by(|a, b| a.1[1].total_cmp(&b.1[1]))
+        .expect("terrain static zones");
+    // Terrain's local half extent is 0.5 and its transform scale is 3.
+    let proposed = [center[0], center[1] + 1.5 + 0.12, center[2]];
+    let transform = world
+        .get_component_by_id_as_mut::<TransformComponent>(camera)
+        .unwrap();
+    transform.transform.translation = proposed;
+    transform.transform.recompute_model();
+    systems.transform_changed(&mut world, &mut visuals, camera);
+    assert!(
+        zone_query::contact_zones(&world, camera_zone, surface)
+            .unwrap()
+            .separation
+            .is_some()
+    );
+    let changed = systems.static_contact.tick(&mut world);
+    assert_eq!(changed, vec![camera]);
+    for target in changed {
+        systems.transform_changed(&mut world, &mut visuals, target);
+    }
+    assert!(
+        zone_query::contact_zones(&world, camera_zone, surface)
+            .unwrap()
+            .separation
+            .is_none()
+    );
+    let corrected = TransformSystem::world_position(&world, camera).unwrap();
+    assert!((corrected[1] - (center[1] + 1.5 + 0.22)).abs() < 1.0e-4);
+    assert_eq!(corrected[0], proposed[0]);
+    assert_eq!(corrected[2], proposed[2]);
 }
 
 #[test]
@@ -8000,7 +8396,13 @@ fn mittens_corp_linear_velocity_scene_evaluates_with_xr_basis_and_panel() {
                 .is_some()
         })
         .expect("scene should contain InputXR");
-    assert_eq!(world.parent_of(velocity_id), Some(frame));
+    let gravity = world.parent_of(velocity_id).unwrap();
+    assert!(
+        world
+            .get_component_by_id_as::<crate::engine::ecs::component::GravityComponent>(gravity)
+            .is_some()
+    );
+    assert_eq!(world.parent_of(gravity), Some(frame));
     assert_eq!(world.parent_of(root), Some(velocity_id));
     assert_eq!(world.parent_of(locomotion), Some(root));
     assert_eq!(
@@ -10396,7 +10798,7 @@ fn roundtrip_raycast() {
 #[test]
 fn roundtrip_avatar_control() {
     use crate::engine::ecs::component::{ArmTwoBoneIkConfig, AvatarControlComponent, ComponentRef};
-    let original = AvatarControlComponent::new()
+    let mut original = AvatarControlComponent::new()
         .with_forward_plus_z()
         .with_hand_rotation_smoothing(220.0)
         .with_avatar_height(1.7)
@@ -10423,10 +10825,15 @@ fn roundtrip_avatar_control() {
             ..ArmTwoBoneIkConfig::right_default()
         })
         .with_collision_disabled();
+    original.movement_target = Some(ComponentRef::Query("[name='falling_root']".into()));
     let (world, id) = roundtrip_component(original);
     let got = world
         .get_component_by_id_as::<AvatarControlComponent>(id)
         .unwrap();
+    assert_eq!(
+        got.movement_target,
+        Some(ComponentRef::Query("[name='falling_root']".into()))
+    );
     assert!(got.forward_plus_z);
     assert_eq!(got.hand_rotation_smoothing, Some(220.0));
     assert_eq!(got.avatar_height, Some(1.7));
@@ -10781,30 +11188,6 @@ fn roundtrip_renderer_stats() {
     assert!((got.smoothing - 0.8).abs() < 1e-6);
     assert_eq!(got.color, [0.5, 0.6, 0.7, 1.0]);
     assert!(!got.emissive);
-}
-
-#[test]
-fn roundtrip_collision_response() {
-    use crate::engine::ecs::component::{
-        CollisionResponseComponent, CollisionResponseMode, ComponentRef,
-    };
-    let original = CollisionResponseComponent::push()
-        .with_push_strength(8.0)
-        .with_friction(0.5)
-        .with_friction_y(0.25)
-        .movement_target(ComponentRef::Query("/#locomotion".to_string()));
-    let (world, id) = roundtrip_component(original);
-    let got = world
-        .get_component_by_id_as::<CollisionResponseComponent>(id)
-        .unwrap();
-    assert_eq!(got.mode, CollisionResponseMode::Push);
-    assert!((got.push_strength - 8.0).abs() < 1e-6);
-    assert!((got.friction - 0.5).abs() < 1e-6);
-    assert!((got.friction_y - 0.25).abs() < 1e-6);
-    assert_eq!(
-        got.movement_target_source,
-        Some(ComponentRef::Query("/#locomotion".to_string()))
-    );
 }
 
 #[test]
@@ -11245,8 +11628,8 @@ fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
         pending.extend(world.children_of(id).iter().copied());
     }
     assert_eq!(
-        static_zone_count, 1,
-        "the stage deck is the first contact surface"
+        static_zone_count, 4,
+        "deck, both steps and back wall provide contact surfaces"
     );
 
     let driver = world
@@ -12524,5 +12907,327 @@ fn anime_shading_xr_fixture_materializes_shared_source_and_controls() {
     assert_eq!(
         consumers, 2,
         "one ordinary mesh and one GLTF share the Anime source"
+    );
+}
+
+#[test]
+fn teleport_pit_enter_callback_respawns_offset_mover_and_clears_fall_speed() {
+    use crate::engine::ecs::component::{TransformComponent, VelocityComponent};
+    let mut world = World::default();
+    let mut systems = crate::engine::ecs::system::SystemWorld::default();
+    let mut visuals = VisualWorld::default();
+    let mut assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+    let (mut session, output) = RuntimeSpecSession::start_at_path(
+        r#"
+        import { teleport_pit } from "../assets/components/teleport_pit.mms"
+        teleport_pit("pit", [0.0, -10.0, 0.0], [20.0, 2.0, 20.0], [0.0, 3.0, 0.0], "none")
+        Velocity {
+            name = "motion"
+            T.position(0.0, 2.0, 0.0) {
+                name = "movement_root"
+                T.position(4.0, 1.0, 0.0) {
+                    Zone.capsule_y(0.25, 0.75) {
+                        Collidable.slide().movement_target("/[name='movement_root']") {}
+                    }
+                }
+            }
+        }
+        "#,
+        "examples/teleport-test.mms",
+        &mut world,
+        &mut systems.rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .unwrap();
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    let named = |world: &World, label: &str| {
+        world
+            .all_components()
+            .find(|id| world.component_label(*id) == Some(label))
+            .unwrap()
+    };
+    let root = named(&world, "movement_root");
+    let motion = named(&world, "motion");
+    for intent in output.intents {
+        queue.push_intent_now(root, intent);
+    }
+    world.init_component_tree(root, &mut queue);
+    systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+    systems.transform_changed(&mut world, &mut visuals, root);
+    systems
+        .zone_observation
+        .tick(&world, &systems.attachment, &mut systems.rx);
+    // Cross the whole volume without ending inside it. The capsule-floor
+    // sweep must emit an enter so fast falls cannot miss a horizontal pit.
+    let t = world
+        .get_component_by_id_as_mut::<TransformComponent>(root)
+        .unwrap();
+    t.transform.translation[1] = -30.0;
+    t.transform.recompute_model();
+    systems.transform_changed(&mut world, &mut visuals, root);
+    world
+        .get_component_by_id_as_mut::<VelocityComponent>(motion)
+        .unwrap()
+        .set_linear_local([0.0, -100.0, 0.0])
+        .unwrap();
+    systems
+        .zone_observation
+        .tick(&world, &systems.attachment, &mut systems.rx);
+    systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+    let output =
+        session.service_callbacks(&mut world, &mut systems.rx, Some(&mut assets), &mut queue);
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    assert_eq!(
+        output
+            .intents
+            .iter()
+            .filter(|i| matches!(i, IntentValue::TeleportTransformWorld { .. }))
+            .count(),
+        1
+    );
+    for intent in output.intents {
+        queue.push_intent_now(root, intent);
+    }
+    systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+    assert_eq!(
+        world
+            .get_component_by_id_as::<TransformComponent>(root)
+            .unwrap()
+            .transform
+            .translation,
+        [-4.0, 2.0, 0.0]
+    );
+    let velocity = world
+        .get_component_by_id_as::<VelocityComponent>(motion)
+        .unwrap();
+    assert_eq!(velocity.linear_local_mps, [0.0; 3]);
+    assert!(!velocity.grounded);
+    systems
+        .zone_observation
+        .tick(&world, &systems.attachment, &mut systems.rx);
+    systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+    let output =
+        session.service_callbacks(&mut world, &mut systems.rx, Some(&mut assets), &mut queue);
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    assert!(
+        output.intents.is_empty(),
+        "respawn must not cause another enter"
+    );
+}
+
+#[test]
+fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
+    use crate::engine::ecs::component::{GravityComponent, ZoneComponent};
+    for path in [
+        "examples/mittens-corp-agc.mms",
+        "examples/mittens-corp-agc-desktop.mms",
+        "examples/rei(mu).mms",
+    ] {
+        let source = std::fs::read_to_string(path).unwrap();
+        let mut world = World::default();
+        let mut rx = RxWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut assets = RenderAssets::new();
+        let (_session, output) = RuntimeSpecSession::start_at_path(
+            &source,
+            path,
+            &mut world,
+            &mut rx,
+            Some(&mut assets),
+            &mut queue,
+        )
+        .unwrap();
+        assert!(output.errors.is_empty(), "{path}: {:?}", output.errors);
+        assert_eq!(
+            world
+                .all_components()
+                .filter(|id| world
+                    .get_component_by_id_as::<GravityComponent>(*id)
+                    .is_some())
+                .count(),
+            1,
+            "{path}"
+        );
+        assert_eq!(
+            world
+                .all_components()
+                .filter(|id| world
+                    .get_component_by_id_as::<ZoneComponent>(*id)
+                    .is_some_and(|z| z.events_enabled))
+                .count(),
+            1,
+            "{path}"
+        );
+    }
+}
+
+fn assert_desktop_player_lands_jumps_and_recovers(
+    scene: &str,
+    root_label: &str,
+    motion_label: &str,
+    driver_label: &str,
+    destination: [f32; 3],
+) {
+    use crate::engine::ecs::component::{CollidableComponent, VelocityComponent};
+    use crate::engine::ecs::system::TransformSystem;
+    let mut world = World::default();
+    let mut systems = crate::engine::ecs::system::SystemWorld::default();
+    let mut visuals = VisualWorld::default();
+    let mut assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+    let source = std::fs::read_to_string(scene).unwrap();
+    let (mut session, output) = RuntimeSpecSession::start_at_path(
+        &source,
+        scene,
+        &mut world,
+        &mut systems.rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .unwrap();
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    for intent in output.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
+    systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+    let named = |world: &World, label: &str| {
+        world
+            .all_components()
+            .find(|id| world.component_label(*id) == Some(label))
+            .unwrap()
+    };
+    let root = named(&world, root_label);
+    let motion = named(&world, motion_label);
+    let driver = named(&world, driver_label);
+    let mut frame =
+        |world: &mut World, systems: &mut crate::engine::ecs::system::SystemWorld, dt| {
+            systems.transform_changed(world, &mut visuals, root);
+            systems.tick_with_runtime_session(
+                world,
+                &mut visuals,
+                &mut assets,
+                &InputState::default(),
+                &mut queue,
+                Some(&mut session),
+                dt,
+            );
+            systems.process_commands(world, &mut visuals, &mut assets, &mut queue);
+            let output =
+                session.service_callbacks(world, &mut systems.rx, Some(&mut assets), &mut queue);
+            assert!(output.errors.is_empty(), "{:?}", output.errors);
+            for intent in output.intents {
+                queue.push_intent_now(root, intent);
+            }
+            systems.process_commands(world, &mut visuals, &mut assets, &mut queue);
+        };
+    for _ in 0..150 {
+        frame(&mut world, &mut systems, 1.0 / 60.0);
+    }
+    assert!(
+        world
+            .get_component_by_id_as::<VelocityComponent>(motion)
+            .unwrap()
+            .grounded,
+        "{scene}: avatar must land on its platform"
+    );
+    let landed = TransformSystem::world_position(&world, root).unwrap()[1];
+    systems.rx.push_event(
+        root,
+        EventSignal::KeyDown(crate::engine::ecs::KeyboardEvent {
+            code: Some("Space".into()),
+            key: " ".into(),
+        }),
+    );
+    frame(&mut world, &mut systems, 1.0 / 60.0);
+    frame(&mut world, &mut systems, 1.0 / 60.0);
+    assert!(
+        world
+            .get_component_by_id_as::<VelocityComponent>(motion)
+            .unwrap()
+            .linear_local_mps[1]
+            > 4.0
+    );
+    assert!(TransformSystem::world_position(&world, root).unwrap()[1] > landed);
+    // Input moves the inner head driver. Leave the platform with that same
+    // accumulated local offset and let Gravity carry the player into the pit.
+    let t = world
+        .get_component_by_id_as_mut::<TransformComponent>(driver)
+        .unwrap();
+    t.transform.translation[0] = 40.0;
+    t.transform.recompute_model();
+    let capsule_zone = world
+        .all_components()
+        .find_map(|id| {
+            let c = world.get_component_by_id_as::<CollidableComponent>(id)?;
+            (c.movement_target_id == Some(root)).then(|| world.parent_of(id).unwrap())
+        })
+        .expect("AVC must route its capsule to the outer gravity root");
+    let zone = world
+        .get_component_by_id_as::<crate::engine::ecs::component::ZoneComponent>(capsule_zone)
+        .unwrap();
+    let capsule_frame =
+        crate::engine::ecs::system::zone_query::resolve_zone_frame(&world, capsule_zone, zone)
+            .unwrap();
+    let mut recovered = false;
+    for _ in 0..300 {
+        frame(&mut world, &mut systems, 1.0 / 60.0);
+        let center = TransformSystem::world_position(&world, capsule_frame).unwrap();
+        if center
+            .into_iter()
+            .zip(destination)
+            .all(|(actual, expected)| (actual - expected).abs() < 1.0e-3)
+        {
+            recovered = true;
+            break;
+        }
+    }
+    assert!(
+        recovered,
+        "{scene}: falling off the platform must respawn the player"
+    );
+    let v = world
+        .get_component_by_id_as::<VelocityComponent>(motion)
+        .unwrap();
+    assert_eq!(v.linear_local_mps, [0.0; 3]);
+    assert!(!v.grounded);
+    let center = TransformSystem::world_position(&world, capsule_frame).unwrap();
+    for (actual, expected) in center.into_iter().zip(destination) {
+        assert!(
+            (actual - expected).abs() < 1.0e-3,
+            "respawn center {center:?}"
+        );
+    }
+    for _ in 0..90 {
+        frame(&mut world, &mut systems, 1.0 / 60.0);
+    }
+    assert!(
+        world
+            .get_component_by_id_as::<VelocityComponent>(motion)
+            .unwrap()
+            .grounded
+    );
+}
+
+#[test]
+fn corp_desktop_player_lands_jumps_and_recovers_from_teleport_pit() {
+    assert_desktop_player_lands_jumps_and_recovers(
+        "examples/mittens-corp-desktop.mms",
+        "bisket_desktop_locomotion_root",
+        "bisket_desktop_locomotion_root_velocity",
+        "bisket_desktop_driver",
+        [-5.0, 1.2, 0.0],
+    );
+}
+
+#[test]
+fn secondary_motion_desktop_player_lands_jumps_and_recovers_from_teleport_pit() {
+    assert_desktop_player_lands_jumps_and_recovers(
+        "examples/secondary-motion-desktop.mms",
+        "desktop_avatar_grounding_root",
+        "desktop_avatar_velocity",
+        "avatar_head_driver",
+        [0.0, 1.2, 1.0],
     );
 }

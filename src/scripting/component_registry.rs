@@ -16,24 +16,23 @@ use crate::engine::ecs::component::{
     AudioOscillatorComponent, AudioOutputComponent, AudioTriggerMode, AvatarBodyYawComponent,
     AvatarControlComponent, BackgroundColorComponent, BackgroundComponent, BloomComponent,
     BlurPassComponent, BoundsComponent, BoxSizing, Camera2DComponent, Camera3DComponent,
-    CameraXRComponent, ClockComponent, CollidableComponent, CollisionComponent,
-    CollisionResponseComponent, CollisionShape, CollisionShapeComponent, ColorComponent,
-    CombineMeshComponent, ControllerHand, ControllerPoseKind, DataComponent, DataValue,
-    DirectionalLightComponent, Display, DragContinuationPolicy, DragMappingPolicy,
-    DraggableComponent, DraggablePlane, EdgeInsets, EditorComponent, EditorInteractionMode,
-    EditorPanel, EditorUIComponent, EditorUIPanelConfig, EditorUIPanelSpec, ElementType,
-    EmissiveComponent, EmissivePassComponent, EyeTrackingSource, FitBoundsComponent, FitBoundsMode,
-    FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent, GestureCoordTypeComponent,
-    GrabbableComponent, GravityComponent, GridBindingComponent, GridComponent, GridVisualSpace,
-    HTCEyeTrackingComponent, HtmlElementComponent, HttpClientComponent, HttpServerComponent,
-    HumanoidBoneMapComponent, IKChainComponent, IKSolver, ImplicitSphereComponent,
-    ImplicitSurfaceComponent, InputComponent, InputTransformModeComponent, InputXRComponent,
-    InputXRGamepadComponent, InspectLayoutComponent, JointRetargetBasisComponent, JustifyContent,
-    KeyframeComponent, LayoutBoundsComponent, LayoutComponent, LightQuantizationComponent,
-    MediaPipeEyeTrackingComponent, MeshComponent, MirrorComponent, MorphTargetMapComponent,
-    MountableComponent, MusicNote, MusicNoteComponent, NormalVisualisationComponent,
-    OpacityComponent, OptionComponent, OscillatorType, Overflow, OverlayComponent,
-    PointLightComponent, PointerComponent, PointerEvents, PoseCaptureComponent,
+    CameraXRComponent, ClockComponent, CollidableComponent, CollisionComponent, CollisionShape,
+    CollisionShapeComponent, ColorComponent, CombineMeshComponent, ControllerHand,
+    ControllerPoseKind, DataComponent, DataValue, DirectionalLightComponent, Display,
+    DragContinuationPolicy, DragMappingPolicy, DraggableComponent, DraggablePlane, EdgeInsets,
+    EditorComponent, EditorInteractionMode, EditorPanel, EditorUIComponent, EditorUIPanelConfig,
+    EditorUIPanelSpec, ElementType, EmissiveComponent, EmissivePassComponent, EyeTrackingSource,
+    FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent,
+    GestureCoordTypeComponent, GrabbableComponent, GravityComponent, GridBindingComponent,
+    GridComponent, GridVisualSpace, HTCEyeTrackingComponent, HtmlElementComponent,
+    HttpClientComponent, HttpServerComponent, HumanoidBoneMapComponent, IKChainComponent, IKSolver,
+    ImplicitSphereComponent, ImplicitSurfaceComponent, InputComponent, InputTransformModeComponent,
+    InputXRComponent, InputXRGamepadComponent, InspectLayoutComponent, JointRetargetBasisComponent,
+    JustifyContent, KeyframeComponent, LayoutBoundsComponent, LayoutComponent,
+    LightQuantizationComponent, MediaPipeEyeTrackingComponent, MeshComponent, MirrorComponent,
+    MorphTargetMapComponent, MountableComponent, MusicNote, MusicNoteComponent,
+    NormalVisualisationComponent, OpacityComponent, OptionComponent, OscillatorType, Overflow,
+    OverlayComponent, PointLightComponent, PointerComponent, PointerEvents, PoseCaptureComponent,
     PoseCaptureLibraryComponent, PoseCapturePoseComponent, Position, QuatTemporalFilterComponent,
     QuatYawFollowComponent, RayCastComponent, RaycastableComponent, RaycastableShapeComponent,
     RaycastableShapeType, RefractionComponent, RenderGraphComponent, RenderableComponent,
@@ -149,7 +148,6 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "JointRetargetBasis",
     "InspectLayout",
     "Keyframe",
-    "CollisionResponse",
     "CombineMesh",
     "LayoutBounds",
     "LayoutRoot",
@@ -2810,15 +2808,6 @@ fn create_component(
         )),
         "TransformGizmoRotate" => add!(TransformGizmoRotateComponent::new(parse_gizmo_axis(ctor))),
         "TransformGizmoScale" => add!(TransformGizmoScaleComponent::new(parse_gizmo_axis(ctor))),
-        "CollisionResponse" => {
-            let c = match ctor {
-                Some("push") => CollisionResponseComponent::push(),
-                Some("slide") => CollisionResponseComponent::slide(),
-                _ => CollisionResponseComponent::slide(),
-            };
-            let id = world.add_component(c);
-            Ok(id)
-        }
         "Data" => {
             add!(DataComponent::new())
         }
@@ -3467,7 +3456,9 @@ fn apply_call(
     if let Some(g) = world.get_component_by_id_as_mut::<GravityComponent>(id) {
         match method {
             "enabled" => g.enabled = arg_bool(args, 0)?,
-            "coefficient" => g.coefficient = arg_f32(args, 0)?,
+            "coefficient" => g
+                .set_coefficient(arg_f32(args, 0)?)
+                .map_err(str::to_string)?,
             _ => {}
         }
         return Ok(());
@@ -3484,25 +3475,6 @@ fn apply_call(
     if let Some(gz) = world.get_component_by_id_as_mut::<TransformGizmoComponent>(id) {
         if method == "scale" {
             *gz = gz.clone().with_scale(arg_f32(args, 0)?);
-        }
-        return Ok(());
-    }
-    let response_movement_target = if method == "movement_target" {
-        Some(arg_component_ref(world, args, 0)?)
-    } else {
-        None
-    };
-    if let Some(kr) = world.get_component_by_id_as_mut::<CollisionResponseComponent>(id) {
-        match method {
-            "enabled" => kr.enabled = arg_bool(args, 0)?,
-            "max_iterations" => kr.max_iterations = arg_f32(args, 0)? as u32,
-            "push_out_epsilon" => kr.push_out_epsilon = arg_f32(args, 0)?,
-            "push_strength" => kr.push_strength = arg_f32(args, 0)?,
-            "friction" => kr.friction = arg_f32(args, 0)?,
-            "friction_y" => kr.friction_y = arg_f32(args, 0)?,
-            "max_speed" => kr.max_speed = arg_f32(args, 0)?,
-            "movement_target" => kr.movement_target_source = response_movement_target,
-            _ => {}
         }
         return Ok(());
     }
@@ -3676,6 +3648,7 @@ fn apply_call(
             .clone();
         let updated = match method {
             "at" => current.at(arg_component_ref(world, args, 0)?),
+            "enable_events" => current.enable_events(),
             "role" => current.role(arg_str(args, 0)?),
             "enabled" => current.enabled(arg_bool(args, 0)?),
             _ => return Err(format!("Zone: unknown builder '{method}'")),
@@ -4166,6 +4139,18 @@ fn apply_call(
             .get_component_by_id_as_mut::<AvatarControlComponent>(id)
             .unwrap();
         *avc = avc.clone().with_mouth_open_from_amplitude(source);
+        return Ok(());
+    }
+    if method == "movement_target"
+        && world
+            .get_component_by_id_as::<AvatarControlComponent>(id)
+            .is_some()
+    {
+        let source = arg_component_ref(world, args, 0)?;
+        world
+            .get_component_by_id_as_mut::<AvatarControlComponent>(id)
+            .unwrap()
+            .movement_target = Some(source);
         return Ok(());
     }
     if let Some(avc) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {

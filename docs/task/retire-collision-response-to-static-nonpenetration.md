@@ -2,14 +2,26 @@
 
 ## Status and outcome
 
+Response retirement completed 2026-10-04: the component/system, scheduling,
+registration/removal intents, MMS registry/builders, `CRSP` shortform, and old
+serialization test are removed. `bisket-desktop-demo.mms` was the last authored
+response consumer and now uses a sphere slide zone. Its shared voxel-terrain
+factory uses static local-space cube zones matching rendered geometry. The
+gravity-fields and collision-perimeter demos were migrated earlier, and AVC
+already generates slide zones. The Collision overlap worker and event surface
+remain; their retirement and general contact improvements are still pending.
+
+
 In progress, updated 2026-10-04. Synchronous `overlap_zones(world, a, b)` now reports
 inclusive transformed box/sphere/capsule intersection and both current frames
 and shapes. `contact_zones` adds separation direction and depth for axis-aligned
 boxes and uniformly scaled spheres/capsules. `sweep_capsule_floor` reports a
 downward crossing of an axis-aligned floor top, even when the end pose misses
-the floor. Rotated contact resolution, general sweeps, and
+the floor. General rotated box/capsule contact resolution, general sweeps, and
 the contact broadphase remain. Queries report disabled, unresolved, singular,
-unsupported-frame, and narrow-phase non-convergence errors. The existing point
+unsupported-frame, and narrow-phase non-convergence errors. Rotated spheres
+with uniform orthogonal scale now support contact; stretched/sheared spheres
+remain unsupported. The existing point
 query remains intact; focused zone query tests pass. `Collidable.static()` and
 `Collidable.slide()` now mark authored zones, and AVC generates a slide zone with
 its explicit movement target. The desktop floor and Mittens Corp deck have
@@ -36,7 +48,9 @@ queries, with a collidable role selecting the regions that participate in
 physical contact.
 
 Remove kinetic response behavior. The retained constraint has no mass, forces,
-gravity, friction, restitution, bounce, momentum, or private velocity. It does
+gravity integration, friction, restitution, bounce, momentum, or private velocity.
+It may remove inward speed from the first-class Velocity owning a corrected
+transform; that speed correction is a contact constraint, not motion integration. It does
 not simulate movable bodies and does not resolve movable-versus-movable contact.
 It is an intentionally narrow transition architecture that may later be
 replaced by a pluggable physics backend.
@@ -45,7 +59,7 @@ This task preserves shape math and geometric query capability, not necessarily
 the old collision component, worker, or event names. It does not remove zone
 queries, IK, animation, transform streams, or secondary motion.
 
-## Consumer audit (2026-10-03)
+## Historical consumer audit (2026-10-03)
 
 - `AvatarControlSystem` generates a kinematic capsule with
   `CollisionResponse.slide()` and routes correction to the locomotion target.
@@ -73,9 +87,9 @@ contact**. A bare zone answers the former and never moves anything. A floor
 zone with a static collidable role may be consumed by a contact constraint;
 the role and constraint, not the zone itself, keep the avatar above the floor.
 
-## Current dependency and problem
+## Original dependency and problem
 
-The current response component combines unrelated responsibilities:
+The removed response component combined unrelated responsibilities:
 
 - static penetration correction (`slide`);
 - acceleration away from non-static overlaps (`push`);
@@ -351,3 +365,18 @@ See [surface contact and coupled motion](surface-contact-and-coupled-motion.md)
 for temporary pushing and explicit pulling relationships between movable
 surfaces. That work extends contact beyond static non-penetration without
 reviving legacy push response. Spring-bone gravity remains outside this scope.
+
+## Validation: response removal (2026-10-04)
+
+All Rust examples compile. The migrated desktop demo test loads the real
+RuntimeSpec scene and verifies that its rotated camera sphere separates upward
+from the actual scaled voxel terrain while retaining tangent position. Seven
+geometry tests, both terrain factory checks, and all 63 meow-meow-script tests
+pass. Formatting and diff checks pass, and no CollisionResponse/CRSP references
+remain in runtime code, authored scenes/assets, or data.
+
+The full library suite reports 937 passed, 50 failed, and one ignored. The
+failing test-name set exactly matches the unchanged HEAD snapshot verified
+during gravity migration; this cleanup introduced no additional failures in
+that run. Interactive validation of the migrated Bisket desktop scene remains
+available through its existing example launcher.

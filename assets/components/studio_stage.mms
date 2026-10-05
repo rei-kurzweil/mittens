@@ -5,6 +5,7 @@ fn stage_box(box_name, position, size, color) {
         .scale(size[0], size[1], size[2]) {
         name = box_name
         R.cube() { C.rgba(color[0], color[1], color[2], 1.0) }
+        Zone.cube([0.5, 0.5, 0.5]) { Collidable.static() {} }
     }
 }
 
@@ -14,10 +15,6 @@ export fn studio_stage(stage_name) {
     return T {
         name = stage_name
         stage_box("stage_deck",       [0.0,  0.00, -1.5], [32.0, 0.24, 14.0], [0.18, 0.18, 0.20])
-        T.position(0.0, 0.0, -1.5).scale(32.0, 0.24, 14.0) {
-            name = "stage_deck_contact"
-            Zone.cube([0.5, 0.5, 0.5]) { Collidable.static() {} }
-        }
         stage_box("stage_upper_step", [0.0, -0.24,  5.7], [32.0, 0.28,  0.8], [0.14, 0.14, 0.16])
         stage_box("stage_lower_step", [0.0, -0.56,  6.3], [32.0, 0.36,  0.8], [0.10, 0.10, 0.12])
         stage_box("stage_back_wall",  [0.0,  4.00, -8.35], [32.0, 8.00, 0.35], [0.105, 0.105, 0.12])
@@ -27,4 +24,9 @@ export fn studio_stage(stage_name) {
             truss(26)
         }
     }
+}
+
+// Matching floor for the Corp studio; top surface is y=-0.85.
+export fn studio_floor() {
+    return stage_box("studio_floor", [0.0, -0.92, 1.0], [54.0, 0.14, 32.0], [0.035, 0.037, 0.043])
 }

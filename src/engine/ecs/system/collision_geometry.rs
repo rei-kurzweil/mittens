@@ -57,13 +57,49 @@ pub(crate) fn transformed_aabb(
     (min, max)
 }
 
-/// Convert an axis-aligned affine frame to the legacy world-space shape math.
-/// Curved shapes require uniform scale; a skewed or rotated box cannot be
-/// represented by the axis-aligned MTV routines.
+/// Convert a frame to world-space shapes accepted by the MTV routines.
+/// Spheres allow arbitrary rotation with uniform orthogonal scale. Boxes and
+/// upright capsules allow yaw with uniform scale; boxes require an axis-aligned
+/// frame. Skew is unsupported.
 pub(crate) fn axis_aligned_world_shape(
     shape: CollisionShape,
     frame: [[f32; 4]; 4],
 ) -> Option<([f32; 3], CollisionShape)> {
+    if matches!(
+        shape.normalized(),
+        CollisionShape::Sphere { .. } | CollisionShape::CapsuleY { .. }
+    ) {
+        let axes: [[f32; 3]; 3] = std::array::from_fn(|i| [frame[i][0], frame[i][1], frame[i][2]]);
+        let lengths = axes.map(|axis| dot(axis, axis).sqrt());
+        if lengths
+            .iter()
+            .any(|length| !length.is_finite() || *length <= GEOMETRY_EPSILON)
+            || (1..3).any(|axis| (lengths[axis] - lengths[0]).abs() > GEOMETRY_EPSILON * lengths[0])
+            || (0..3).any(|a| {
+                ((a + 1)..3).any(|b| {
+                    dot(axes[a], axes[b]).abs() > GEOMETRY_EPSILON * lengths[a] * lengths[b]
+                })
+            })
+        {
+            return None;
+        }
+        let world_shape = match shape.normalized() {
+            CollisionShape::Sphere { radius } => CollisionShape::sphere_radius(radius * lengths[0]),
+            CollisionShape::CapsuleY {
+                radius,
+                half_segment,
+            } => {
+                if axes[1][0].abs() > GEOMETRY_EPSILON * lengths[1]
+                    || axes[1][2].abs() > GEOMETRY_EPSILON * lengths[1]
+                {
+                    return None;
+                }
+                CollisionShape::capsule_y(radius * lengths[0], half_segment * lengths[0])
+            }
+            _ => unreachable!(),
+        };
+        return Some(([frame[3][0], frame[3][1], frame[3][2]], world_shape));
+    }
     let scale = [frame[0][0].abs(), frame[1][1].abs(), frame[2][2].abs()];
     if (0..3).any(|column| {
         scale[column] <= GEOMETRY_EPSILON
@@ -585,6 +621,25 @@ mod tests {
     }
 
     #[test]
+    fn sphere_contact_accepts_rotation_but_rejects_stretch_and_shear() {
+        let mut rotated = frame([1.0, 2.0, 3.0]);
+        rotated[0] = [0.0, 0.0, -2.0, 0.0];
+        rotated[1] = [0.0, 2.0, 0.0, 0.0];
+        rotated[2] = [2.0, 0.0, 0.0, 0.0];
+        let sphere = CollisionShape::sphere_radius(0.25);
+        assert_eq!(
+            axis_aligned_world_shape(sphere, rotated),
+            Some(([1.0, 2.0, 3.0], CollisionShape::sphere_radius(0.5)))
+        );
+        let mut stretched = rotated;
+        stretched[1][1] = 3.0;
+        assert!(axis_aligned_world_shape(sphere, stretched).is_none());
+        let mut sheared = frame([0.0; 3]);
+        sheared[0] = [0.8, 0.6, 0.0, 0.0];
+        assert!(axis_aligned_world_shape(sphere, sheared).is_none());
+    }
+
+    #[test]
     fn transformed_overlap_agrees_with_existing_axis_aligned_pairs() {
         let shapes = [
             CollisionShape::cube_half_extents([0.5, 0.75, 0.4]),
@@ -677,5 +732,71 @@ mod tests {
 
         let contained = minimum_translation([0.0; 3], capsule, [0.0; 3], floor, 0.0).unwrap();
         assert!(contained.iter().any(|v| v.abs() > 0.0));
+    }
+}
+
+/// Orthogonal upright box frame, permitting yaw and nonuniform scale.
+/// The returned X/Z unit axes project world offsets into box coordinates.
+pub(crate) fn yaw_box(
+    shape: CollisionShape,
+    frame: [[f32; 4]; 4],
+) -> Option<([f32; 3], [f32; 3], [[f32; 3]; 3])> {
+    let CollisionShape::Cube { half_extents } = shape else {
+        return None;
+    };
+    let lengths: [f32; 3] = std::array::from_fn(|i| {
+        (frame[i][0].powi(2) + frame[i][1].powi(2) + frame[i][2].powi(2)).sqrt()
+    });
+    if lengths
+        .iter()
+        .any(|v| !v.is_finite() || *v <= GEOMETRY_EPSILON)
+    {
+        return None;
+    }
+    let axes: [[f32; 3]; 3] =
+        std::array::from_fn(|i| std::array::from_fn(|j| frame[i][j] / lengths[i]));
+    if axes[0][1].abs() > GEOMETRY_EPSILON
+        || axes[2][1].abs() > GEOMETRY_EPSILON
+        || axes[1][0].abs() > GEOMETRY_EPSILON
+        || axes[1][2].abs() > GEOMETRY_EPSILON
+        || (0..3).any(|i| (0..i).any(|j| dot(axes[i], axes[j]).abs() > GEOMETRY_EPSILON))
+    {
+        return None;
+    }
+    Some((
+        [frame[3][0], frame[3][1], frame[3][2]],
+        std::array::from_fn(|i| half_extents[i] * lengths[i]),
+        axes,
+    ))
+}
+
+#[cfg(test)]
+mod upright_capsule_tests {
+    use super::*;
+    use crate::engine::ecs::component::TransformComponent;
+
+    #[test]
+    fn capsule_contact_shape_survives_player_yaw_but_rejects_tilt_and_stretch() {
+        let capsule = CollisionShape::capsule_y(0.25, 0.75);
+        let frame = TransformComponent::new()
+            .with_rotation_euler(0.0, 0.7, 0.0)
+            .with_scale(2.0, 2.0, 2.0)
+            .transform
+            .model;
+        assert_eq!(
+            axis_aligned_world_shape(capsule, frame),
+            Some(([0.0; 3], CollisionShape::capsule_y(0.5, 1.5)))
+        );
+        let tilted = TransformComponent::new()
+            .with_rotation_euler(0.3, 0.7, 0.0)
+            .transform
+            .model;
+        assert!(axis_aligned_world_shape(capsule, tilted).is_none());
+        let stretched = TransformComponent::new()
+            .with_rotation_euler(0.0, 0.7, 0.0)
+            .with_scale(1.0, 2.0, 1.0)
+            .transform
+            .model;
+        assert!(axis_aligned_world_shape(capsule, stretched).is_none());
     }
 }

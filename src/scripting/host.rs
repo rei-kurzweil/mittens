@@ -829,7 +829,7 @@ fn transport_to_json(value: &mms::TransportValue) -> Result<serde_json::Value, m
                 .map(|(key, value)| Ok((key.clone(), transport_to_json(value)?)))
                 .collect::<Result<_, mms::HostError>>()?,
         ),
-        mms::TransportValue::Component(_) => {
+        mms::TransportValue::Component(_) | mms::TransportValue::TypedComponent { .. } => {
             return Err(mms::HostError::failure(
                 "JSON.stringify",
                 "component handles are not JSON values",
@@ -861,6 +861,8 @@ fn signal_kind(name: &str) -> Option<SignalKind> {
         "DragStart" => SignalKind::DragStart,
         "GrabStart" => SignalKind::GrabStart,
         "GrabEnd" => SignalKind::GrabEnd,
+        "ZoneEntered" => SignalKind::ZoneEntered,
+        "ZoneExited" => SignalKind::ZoneExited,
         "MountStarted" => SignalKind::MountStarted,
         "MountEnded" => SignalKind::MountEnded,
         "DragMove" => SignalKind::DragMove,
@@ -915,8 +917,11 @@ fn legacy_event_value_to_transport(
                 .map(|(name, value)| Ok((name, legacy_event_value_to_transport(value)?)))
                 .collect::<Result<_, mms::HostError>>()?,
         ),
-        legacy::Value::ComponentObject { id, .. } => {
-            mms::TransportValue::Component(MittensHost::component_handle(id))
+        legacy::Value::ComponentObject { id, component_type } => {
+            mms::TransportValue::TypedComponent {
+                handle: MittensHost::component_handle(id),
+                component_type,
+            }
         }
         other => {
             return Err(mms::HostError {
