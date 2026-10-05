@@ -226,6 +226,44 @@ have its inward velocity removed before the next substep. Walking off an edge
 removes support and resumes falling; no permanent upward acceleration provider
 is needed to stand on a floor.
 
+## Practical slices: player gravity and collision
+
+The next implementation slice is coordinated stepping plus flat-floor landing
+(items 1 and 2 together). Start with a headless falling-capsule fixture and one
+desktop demonstration. Static crates can block the player before movable-crate
+pushing is implemented. General Acceleration and spring-bone changes are not
+prerequisites.
+
+1. **Coordinate each fixed substep.** Replace Velocity's batched displacement
+   with acceleration, integration, transform propagation, contact correction,
+   and final propagation for every fixed step. Contact must identify the exact
+   movement target and its owning Velocity, rather than a nearby motion layer.
+2. **Make one player fall and land.** Enable ancestor Gravity on an outer player
+   Velocity driving a grounding root. Route the avatar capsule's correction to
+   that root. Remove inward speed on floor contact while retaining tangent
+   speed. Verify falling from rest, thin-floor crossing, landing, stable resting
+   speed, provider/Velocity disable and reenable, and walking off an edge. Check
+   rotated/scaled parents and equal fixed-step results at different render rates.
+3. **Block walls and static crates reliably.** Feed blocking normals back to the
+   owning Velocity and add horizontal capsule sweeps; discrete separation can
+   miss fast crossings. Verify wall sliding, crate sides, corners, thin obstacles,
+   and ceiling contact. Blocking lateral motion must not cancel downward gravity
+   or unrelated tangent motion. Existing static crate zones are the first fixture.
+4. **Complete desktop/XR scheduling and ownership.** Keep locomotion and falling
+   ownership explicit. Publish cameras and interaction queries after the final
+   correction, including the XR gamepad path. Verify proxy routing and
+   mounted/unmounted movement-authority handoffs. The desktop demonstration in
+   item 2 does not substitute for XR scheduling or live headset verification.
+5. **Add movable crate pushing separately.** Follow the
+   [surface-contact task](surface-contact-and-coupled-motion.md) to solve player,
+   crate, and crate/wall motion together. This is not required for player gravity
+   against static crates. Explicit pulling follows the pushing constraint.
+
+Migrate or retire legacy gravity/push demos as part of removing their old
+runtime path; do not make removal depend on the later pulling feature. The
+broader delivery checklist below still governs provider topology, serialization,
+and the eventual general Acceleration API.
+
 ## Delivery and acceptance
 
 1. Implement provider discovery through direct or indirect ancestors, stopping
