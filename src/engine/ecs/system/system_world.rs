@@ -3058,7 +3058,7 @@ impl SystemWorld {
         for _ in 0..velocity_steps {
             self.velocity.step(world, queue);
             queue.flush(world, self, visuals, render_assets);
-            for target in self.static_contact.tick_excluding(world, &self.attachment) {
+            for target in self.static_contact.tick_substep(world, &self.attachment) {
                 self.transform_changed(world, visuals, target);
             }
         }

@@ -85,7 +85,7 @@ fall, then verify respawn, zero velocity, and landing again.
 
 ## Follow-ups
 
-- Explicit role/candidate filters for observers beyond slide movers.
+- Explicit role/candidate filters and spatial indexing: [optimization tracker](zone-observer-candidate-filtering-and-broad-phase.md).
 - General swept triggers and sensor motion, if a concrete interaction needs them.
 - Configurable respawn orientation and explicit retained momentum policy.
 - Diagnostics for unresolved movement targets and unsupported observation queries.

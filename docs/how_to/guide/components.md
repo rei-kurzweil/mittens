@@ -1270,3 +1270,8 @@ and scale. The existing three-array form still updates all three channels.
 The reusable [teleport pit prefab](../../../assets/components/teleport_pit.mms)
 uses a normal pose update and a separate Velocity reset. Capturing Velocity in a
 closure avoids querying it on every event.
+
+`Collidable.static().friction(0.8)` authors a surface friction coefficient.
+The default is zero; friction reduces physical tangential Velocity during fixed
+contact steps and does not damp airborne motion or change Input speed. See
+[surface friction](../../task/surface-friction-for-static-collidables.md).

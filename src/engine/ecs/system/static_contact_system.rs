@@ -38,6 +38,25 @@ impl StaticContactSystem {
         world: &mut World,
         mounts: &super::AttachmentSystem,
     ) -> Vec<ComponentId> {
+        self.tick_contacts(world, mounts, false)
+    }
+
+    /// Friction consumes the normal velocity impulse from one fixed physics step.
+    /// Pose-only contact passes do not consume additional friction budgets.
+    pub fn tick_substep(
+        &mut self,
+        world: &mut World,
+        mounts: &super::AttachmentSystem,
+    ) -> Vec<ComponentId> {
+        self.tick_contacts(world, mounts, true)
+    }
+
+    fn tick_contacts(
+        &mut self,
+        world: &mut World,
+        mounts: &super::AttachmentSystem,
+        apply_friction: bool,
+    ) -> Vec<ComponentId> {
         self.candidate_pairs = 0;
         self.narrow_phase_tests = 0;
         self.correction_iterations = 0;
@@ -50,23 +69,23 @@ impl StaticContactSystem {
                     && world
                         .get_component_by_id_as::<ZoneComponent>(zone)
                         .is_some_and(|z| z.enabled))
-                .then_some((id, zone, c.mode))
+                .then_some((id, zone, c.mode, c.friction))
             })
             .collect();
         let live_movers: HashSet<_> = collidables
             .iter()
-            .filter(|(_, _, mode)| *mode == CollidableMode::Slide)
-            .map(|(_, zone, _)| *zone)
+            .filter(|(_, _, mode, _)| *mode == CollidableMode::Slide)
+            .map(|(_, zone, _, _)| *zone)
             .collect();
         self.previous_centers
             .retain(|zone, _| live_movers.contains(zone));
         let statics: Vec<_> = collidables
             .iter()
-            .filter(|(_, _, mode)| *mode == CollidableMode::Static)
-            .map(|(_, zone, _)| *zone)
+            .filter(|(_, _, mode, _)| *mode == CollidableMode::Static)
+            .map(|(_, zone, _, friction)| (*zone, *friction))
             .collect();
         let mut changed = Vec::new();
-        for (collidable_id, moving, mode) in collidables {
+        for (collidable_id, moving, mode, _) in collidables {
             if mode != CollidableMode::Slide {
                 continue;
             }
@@ -87,7 +106,7 @@ impl StaticContactSystem {
             let mut desired_center = center;
             for iteration in 0..6 {
                 let mut corrected = false;
-                for &surface in &statics {
+                for &(surface, friction) in &statics {
                     if surface == moving {
                         continue;
                     }
@@ -133,7 +152,12 @@ impl StaticContactSystem {
                     if displacement.iter().all(|v| v.abs() < 1.0e-6) {
                         continue;
                     }
-                    remove_inward_velocity(world, target, displacement);
+                    resolve_contact_velocity(
+                        world,
+                        target,
+                        displacement,
+                        if apply_friction { friction } else { 0.0 },
+                    );
                     for axis in 0..3 {
                         desired_center[axis] += displacement[axis];
                     }
@@ -144,7 +168,7 @@ impl StaticContactSystem {
                     break;
                 }
             }
-            if statics.iter().any(|&surface| {
+            if statics.iter().any(|&(surface, _)| {
                 surface != moving
                     && surface_world_shape(world, surface).is_some_and(|_| {
                         surface_translation(world, surface, desired_center, shape).is_some_and(
@@ -176,7 +200,17 @@ impl StaticContactSystem {
 
 /// Only the Velocity directly driving the corrected transform owns this
 /// contact. An ancestor locomotion layer must not lose speed by proximity.
+#[cfg(test)]
 fn remove_inward_velocity(world: &mut World, target: ComponentId, normal: [f32; 3]) {
+    resolve_contact_velocity(world, target, normal, 0.0);
+}
+
+fn resolve_contact_velocity(
+    world: &mut World,
+    target: ComponentId,
+    normal: [f32; 3],
+    friction: f32,
+) {
     let Some(owner) = world.parent_of(target) else {
         return;
     };
@@ -213,6 +247,19 @@ fn remove_inward_velocity(world: &mut World, target: ComponentId, normal: [f32; 
         .min(0.0);
     for axis in 0..3 {
         speed[axis] -= inward * normal[axis];
+    }
+    // Tangential Coulomb impulse: |delta v_t| <= mu * |delta v_n|.
+    // This is surface contact friction, not global or airborne damping.
+    if friction.is_finite() && friction > 0.0 && inward < 0.0 {
+        let outward = speed.iter().zip(normal).map(|(v, n)| v * n).sum::<f32>();
+        let tangent: [f32; 3] = std::array::from_fn(|i| speed[i] - outward * normal[i]);
+        let tangent_speed = crate::utils::math::vec3_len(tangent);
+        if tangent_speed > 0.0 {
+            let reduction = (friction * -inward / tangent_speed).min(1.0);
+            for i in 0..3 {
+                speed[i] -= tangent[i] * reduction;
+            }
+        }
     }
     let local =
         crate::utils::math::quat_rotate_vec3(crate::utils::math::quat_conjugate(rotation), speed);
@@ -714,6 +761,145 @@ mod tests {
                 - 1.1)
                 .abs()
                 < 1.0e-5
+        );
+    }
+    #[test]
+    fn authored_surface_friction_stops_edge_drift_at_the_same_fixed_step_across_render_rates() {
+        fn run(mu: f32, render_dt: f32, frames: usize, with_floor: bool) -> ([f32; 3], [f32; 3]) {
+            let mut world = World::default();
+            if with_floor {
+                let (_, floor_zone) = add_zone(
+                    &mut world,
+                    [0.0, -0.01, 0.0],
+                    CollisionShape::cube_half_extents([20.0, 0.01, 20.0]),
+                    CollidableMode::Static,
+                );
+                let surface = world.children_of(floor_zone)[0];
+                let collidable = world
+                    .get_component_by_id_as_mut::<CollidableComponent>(surface)
+                    .unwrap();
+                *collidable = collidable.clone().with_friction(mu).unwrap();
+            }
+            let owner = world.add_component(VelocityComponent::new());
+            let gravity =
+                world.add_component(crate::engine::ecs::component::GravityComponent::new());
+            world.add_child(gravity, owner).unwrap();
+            let (target, _) = add_zone(
+                &mut world,
+                [0.0, 1.0, 0.0],
+                CollisionShape::capsule_y(0.25, 0.75),
+                CollidableMode::Slide,
+            );
+            world.add_child(owner, target).unwrap();
+            // Model the edge-contact projection implicated in the bug: an
+            // oblique normal converts vertical falling speed into lateral speed.
+            world
+                .get_component_by_id_as_mut::<VelocityComponent>(owner)
+                .unwrap()
+                .set_linear_local([0.0, -4.0, 0.0])
+                .unwrap();
+            resolve_contact_velocity(&mut world, target, [1.0, 1.0, 0.0], 0.0);
+            assert!(
+                (world
+                    .get_component_by_id_as::<VelocityComponent>(owner)
+                    .unwrap()
+                    .linear_local_mps[0]
+                    - 2.0)
+                    .abs()
+                    < 1.0e-5
+            );
+            let mounts = super::super::AttachmentSystem::default();
+            let mut contact = StaticContactSystem::default();
+            let mut velocity = VelocitySystem::default();
+            let mut emit = crate::engine::ecs::RxWorld::default();
+            propagate(&mut world, target);
+            for _ in 0..frames {
+                for changed in contact.tick_excluding(&mut world, &mounts) {
+                    propagate(&mut world, changed);
+                }
+                for _ in 0..velocity.take_steps(render_dt) {
+                    velocity.step(&mut world, &mut emit);
+                    propagate(&mut world, target);
+                    for changed in contact.tick_substep(&mut world, &mounts) {
+                        propagate(&mut world, changed);
+                    }
+                }
+                for changed in contact.tick_excluding(&mut world, &mounts) {
+                    propagate(&mut world, changed);
+                }
+            }
+            (
+                TransformSystem::world_position(&world, target).unwrap(),
+                world
+                    .get_component_by_id_as::<VelocityComponent>(owner)
+                    .unwrap()
+                    .linear_local_mps,
+            )
+        }
+        let (position, speed) = run(0.8, 1.0 / 60.0, 60, true);
+        assert!(
+            speed.iter().all(|v| v.abs() < 1.0e-5),
+            "friction must stop grounded drift: {speed:?}"
+        );
+        assert!(
+            position[0] < 0.5,
+            "drift should settle near the landing: {position:?}"
+        );
+        for (dt, frames) in [(1.0 / 120.0, 120), (1.0 / 240.0, 240)] {
+            let (other, other_speed) = run(0.8, dt, frames, true);
+            for axis in 0..3 {
+                assert!((position[axis] - other[axis]).abs() < 1.0e-5);
+            }
+            assert_eq!(speed, other_speed);
+        }
+        let (_, speed) = run(0.0, 1.0 / 60.0, 60, true);
+        assert!(
+            (speed[0] - 2.0).abs() < 1.0e-5,
+            "zero friction must retain intentional tangent speed"
+        );
+        let (_, speed) = run(0.8, 1.0 / 60.0, 60, false);
+        assert!(
+            (speed[0] - 2.0).abs() < 1.0e-5,
+            "there is no hidden airborne drag"
+        );
+    }
+
+    #[test]
+    fn friction_uses_surface_normal_impulse_without_reversing_tangent_speed() {
+        let mut world = World::default();
+        let owner = world.add_component(VelocityComponent::new());
+        let (target, _) = add_zone(
+            &mut world,
+            [0.0; 3],
+            CollisionShape::capsule_y(0.25, 0.75),
+            CollidableMode::Slide,
+        );
+        world.add_child(owner, target).unwrap();
+        world
+            .get_component_by_id_as_mut::<VelocityComponent>(owner)
+            .unwrap()
+            .set_linear_local([3.0, -2.0, 0.0])
+            .unwrap();
+        resolve_contact_velocity(&mut world, target, [0.0, 1.0, 0.0], 0.5);
+        assert_eq!(
+            world
+                .get_component_by_id_as::<VelocityComponent>(owner)
+                .unwrap()
+                .linear_local_mps,
+            [2.0, 0.0, 0.0]
+        );
+        world
+            .get_component_by_id_as_mut::<VelocityComponent>(owner)
+            .unwrap()
+            .set_linear_local([0.1, -2.0, 0.0])
+            .unwrap();
+        resolve_contact_velocity(&mut world, target, [0.0, 1.0, 0.0], 0.5);
+        assert_eq!(
+            world
+                .get_component_by_id_as::<VelocityComponent>(owner)
+                .unwrap()
+                .linear_local_mps,
+            [0.0; 3]
         );
     }
 }

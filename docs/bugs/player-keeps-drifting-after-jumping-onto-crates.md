@@ -2,8 +2,11 @@
 
 ## Status
 
-Open. Reported during manual gravity-demo testing on 2026-10-05; no deterministic
-automated reproduction yet. This document records the issue, not a physics fix.
+Reported during manual gravity-demo testing on 2026-10-05. Explicit surface
+friction is now implemented, with a regression for lateral motion after an
+oblique contact projection. The exact intermittent crate-climbing interaction
+still needs interactive reproduction/verification; do not mark the report fully
+resolved based only on the synthetic contact case.
 
 ## Symptom
 
@@ -44,8 +47,8 @@ drive horizontal Velocity.
 `StaticContactSystem::remove_inward_velocity` normalizes the contact correction
 direction, projects the directly owning Velocity into world space, and removes
 only its inward component. It retains tangential velocity and marks support
-contacts grounded when the normal's Y component exceeds 0.5. This contact path
-does not apply tangential friction or damping.
+contacts grounded when the normal's Y component exceeds 0.5. This was the original frictionless behavior. Static surfaces can now author a
+friction coefficient for a bounded tangential contact impulse.
 
 A possible source is an oblique capsule/box edge or corner normal: projecting
 initially vertical falling velocity onto that contact tangent can introduce
@@ -78,3 +81,10 @@ friction policy.
 - [Contact geometry](../../src/engine/ecs/system/collision_geometry.rs)
 - [Velocity integration](../../src/engine/ecs/system/velocity_system.rs)
 - [Desktop input](../../src/engine/ecs/system/input_system.rs)
+
+## Initial friction change
+
+See [surface-friction-for-static-collidables.md](../task/surface-friction-for-static-collidables.md).
+The desktop secondary-motion floor and crates now author `friction(0.8)`.
+No global player damping or automatic Velocity reset has been introduced. Zero
+friction continues to preserve tangent speed; friction acts only during contact.

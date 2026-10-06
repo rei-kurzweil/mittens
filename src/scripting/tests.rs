@@ -13330,3 +13330,22 @@ fn velocity_reset_supports_queried_and_captured_handles_without_changing_pose_or
         );
     }
 }
+
+#[test]
+fn surface_friction_is_explicit_validated_and_survives_mms_roundtrip() {
+    use crate::engine::ecs::component::CollidableComponent;
+    let (world, id) =
+        roundtrip_component(CollidableComponent::static_().with_friction(0.8).unwrap());
+    assert_eq!(
+        world
+            .get_component_by_id_as::<CollidableComponent>(id)
+            .unwrap()
+            .friction,
+        0.8
+    );
+    for mu in [-1.0, f32::NAN, f32::INFINITY] {
+        assert!(CollidableComponent::static_().with_friction(mu).is_err());
+    }
+    assert!(CollidableComponent::slide().with_friction(0.5).is_err());
+    assert_eq!(CollidableComponent::static_().friction, 0.0);
+}

@@ -13,6 +13,8 @@ pub enum CollidableMode {
 pub struct CollidableComponent {
     pub mode: CollidableMode,
     pub enabled: bool,
+    /// Coulomb friction coefficient supplied by a static surface; zero is frictionless.
+    pub friction: f32,
     pub movement_target_source: Option<ComponentRef>,
     pub movement_target_id: Option<ComponentId>,
     pub movement_target_required: bool,
@@ -31,10 +33,22 @@ impl CollidableComponent {
         Self {
             mode,
             enabled: true,
+            friction: 0.0,
             movement_target_source: None,
             movement_target_id: None,
             movement_target_required: false,
         }
+    }
+
+    pub fn with_friction(mut self, friction: f32) -> Result<Self, String> {
+        if self.mode != CollidableMode::Static {
+            return Err("friction belongs to Collidable.static() surfaces".into());
+        }
+        if !friction.is_finite() || friction < 0.0 {
+            return Err("friction must be finite and nonnegative".into());
+        }
+        self.friction = friction;
+        Ok(self)
     }
 
     pub fn movement_target(mut self, target: ComponentRef) -> Self {
@@ -77,6 +91,9 @@ impl Component for CollidableComponent {
             CollidableMode::Slide => "slide",
         };
         let mut ce = ce_call("Collidable", ctor, vec![]);
+        if self.friction != 0.0 {
+            ce = ce.with_call("friction", vec![num(self.friction as f64)]);
+        }
         if !self.enabled {
             ce = ce.with_call("enabled", vec![b(false)]);
         }

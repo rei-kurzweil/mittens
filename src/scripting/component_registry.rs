@@ -3669,6 +3669,7 @@ fn apply_call(
         let updated = match method {
             "movement_target" => current.movement_target(arg_component_ref(world, args, 0)?),
             "enabled" => current.enabled(arg_bool(args, 0)?),
+            "friction" => current.with_friction(arg_f32(args, 0)?)?,
             _ => return Err(format!("Collidable: unknown builder '{method}'")),
         };
         *world

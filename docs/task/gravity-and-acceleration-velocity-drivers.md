@@ -307,6 +307,11 @@ Acceleration discovery and its API remain pending.
 
 ## Follow-up: surface contact and coupled motion
 
+Explicit static-surface friction is implemented and tracked in
+[surface friction](surface-friction-for-static-collidables.md). Zone event
+candidate filtering and spatial indexing remain planned in
+[Zone observer optimization](zone-observer-candidate-filtering-and-broad-phase.md).
+
 See [surface contact and coupled motion](surface-contact-and-coupled-motion.md)
 for temporary pushing and explicit pulling relationships between movable
 surfaces. That work extends contact beyond static non-penetration without

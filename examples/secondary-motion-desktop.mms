@@ -47,7 +47,7 @@ fn grabbable_cube(cube_name, position, size, color) {
     return T.position(position[0], position[1], position[2]).scale(size[0], size[1], size[2]) {
         name = cube_name
         Grabbable {}
-        Zone.cube([0.5, 0.5, 0.5]) { Collidable.static() {} }
+        Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.8) {} }
         R.cube() { C.rgba(color[0], color[1], color[2], 1.0) }
     }
 }
@@ -65,7 +65,7 @@ static_cube("studio_floor", [0.0, -0.05, 0.0], [18.0, 0.1, 18.0], [0.025, 0.035,
 // The floor mesh is scaled by its transform; Zone dimensions are local.
 T.position(0.0, -0.05, 0.0).scale(18.0, 0.1, 18.0) {
     name = "studio_floor_contact"
-    Zone.cube([0.5, 0.5, 0.5]) { Collidable.static() {} }
+    Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.8) {} }
 }
 
 // Catch players who leave the floor. Destination is the capsule's world center,
