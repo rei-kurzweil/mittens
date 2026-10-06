@@ -13021,7 +13021,8 @@ fn teleport_pit_enter_callback_respawns_offset_mover_and_clears_fall_speed() {
 #[test]
 fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
     use crate::engine::ecs::component::{
-        GLTFComponent, GravityComponent, SpringBoneComponent, XREyeTrackingComponent, ZoneComponent,
+        CollidableComponent, CollidableMode, GLTFComponent, GravityComponent, SpringBoneComponent,
+        XREyeTrackingComponent, ZoneComponent,
     };
     for path in [
         "examples/mittens-corp.mms",
@@ -13046,6 +13047,46 @@ fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
         )
         .unwrap();
         assert!(output.errors.is_empty(), "{path}: {:?}", output.errors);
+        let mut ground_surfaces = 0;
+        for id in world.all_components() {
+            let Some(label) = world.component_label(id) else {
+                continue;
+            };
+            if !matches!(
+                label,
+                "stage_deck"
+                    | "stage_upper_step"
+                    | "stage_lower_step"
+                    | "stage_back_wall"
+                    | "studio_floor"
+                    | "walkway"
+            ) {
+                continue;
+            }
+            let surface = world
+                .children_of(id)
+                .iter()
+                .find_map(|zone| {
+                    world.get_component_by_id_as::<ZoneComponent>(*zone)?;
+                    world.children_of(*zone).iter().find_map(|collidable| {
+                        world.get_component_by_id_as::<CollidableComponent>(*collidable)
+                    })
+                })
+                .unwrap_or_else(|| panic!("{path}: {label} needs a collidable zone"));
+            assert_eq!(surface.mode, CollidableMode::Static, "{path}: {label}");
+            assert_eq!(surface.friction, 0.8, "{path}: {label}");
+            ground_surfaces += 1;
+        }
+        assert_eq!(
+            ground_surfaces,
+            if path == "examples/rei(mu).mms" {
+                12
+            } else {
+                8
+            },
+            "{path}"
+        );
+
         assert!(
             world.all_components().any(|id| world
                 .get_component_by_id_as::<GLTFComponent>(id)

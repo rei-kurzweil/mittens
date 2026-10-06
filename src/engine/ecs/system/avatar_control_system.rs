@@ -869,7 +869,10 @@ fn log_settled_capsule_diagnostics(avc_id: ComponentId, world: &World) {
     );
 }
 
-fn automatic_avc_movement_target(world: &World, avc_id: ComponentId) -> Option<ComponentId> {
+pub(crate) fn automatic_avc_movement_target(
+    world: &World,
+    avc_id: ComponentId,
+) -> Option<ComponentId> {
     if let Some(source) = world
         .get_component_by_id_as::<AvatarControlComponent>(avc_id)
         .and_then(|avc| avc.movement_target.as_ref())

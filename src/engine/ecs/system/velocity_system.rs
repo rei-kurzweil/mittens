@@ -111,6 +111,131 @@ mod tests {
     }
 
     #[test]
+    fn avatar_gravity_waits_for_contact_without_accumulating_startup_fall_speed() {
+        use crate::engine::ecs::component::{
+            AvatarControlComponent, CollidableComponent, ComponentRef,
+        };
+        let mut world = World::default();
+        let gravity = world.add_component(GravityComponent::new());
+        let velocity = world.add_component(VelocityComponent::new());
+        let target = world.add_component(TransformComponent::new().with_position(-5.0, 1.0, 0.0));
+        world.get_component_record_mut(target).unwrap().name = "avatar_root".into();
+        let input = world.add_component(InputXRComponent::on());
+        let driver = world.add_component(TransformComponent::new());
+        let mut avatar = AvatarControlComponent::new();
+        avatar.movement_target = Some(ComponentRef::Query("[name='avatar_root']".into()));
+        let avc = world.add_component(avatar);
+        for (parent, child) in [
+            (gravity, velocity),
+            (velocity, target),
+            (target, input),
+            (input, driver),
+            (driver, avc),
+        ] {
+            world.add_child(parent, child).unwrap();
+        }
+        let mut system = VelocitySystem::default();
+        let mut emit = RxWorld::default();
+        // Ten seconds without a headset pose or imported avatar used to fall
+        // below the entire studio and the finite reset sensor.
+        for _ in 0..1200 {
+            system.step(&mut world, &mut emit);
+        }
+        assert_eq!(
+            world
+                .get_component_by_id_as::<TransformComponent>(target)
+                .unwrap()
+                .transform
+                .translation,
+            [-5.0, 1.0, 0.0]
+        );
+        assert_eq!(
+            world
+                .get_component_by_id_as::<VelocityComponent>(velocity)
+                .unwrap()
+                .linear_local_mps,
+            [0.0; 3]
+        );
+        // Commanded velocity (including vertical motion) still integrates
+        // while contact is pending; only gravity is withheld.
+        world
+            .get_component_by_id_as_mut::<VelocityComponent>(velocity)
+            .unwrap()
+            .set_linear_local([3.0, 2.0, -1.0])
+            .unwrap();
+        system.step(&mut world, &mut emit);
+        let position = world
+            .get_component_by_id_as::<TransformComponent>(target)
+            .unwrap()
+            .transform
+            .translation;
+        for (actual, expected) in
+            position
+                .into_iter()
+                .zip([-5.0 + 3.0 / 120.0, 1.0 + 2.0 / 120.0, -1.0 / 120.0])
+        {
+            assert!((actual - expected).abs() < 1.0e-6);
+        }
+        assert_eq!(
+            world
+                .get_component_by_id_as::<VelocityComponent>(velocity)
+                .unwrap()
+                .linear_local_mps,
+            [3.0, 2.0, -1.0]
+        );
+        world
+            .get_component_by_id_as_mut::<VelocityComponent>(velocity)
+            .unwrap()
+            .zero_linear();
+        world
+            .get_component_by_id_as_mut::<TransformComponent>(target)
+            .unwrap()
+            .transform
+            .translation = [-5.0, 1.0, 0.0];
+        let collider = world.add_component(CollidableComponent::slide());
+        world
+            .get_component_by_id_as_mut::<AvatarControlComponent>(avc)
+            .unwrap()
+            .capsule_collidable_id = Some(collider);
+        system.step(&mut world, &mut emit);
+        assert!(
+            (world
+                .get_component_by_id_as::<VelocityComponent>(velocity)
+                .unwrap()
+                .linear_local_mps[1]
+                + 9.81 / 120.0)
+                .abs()
+                < 1.0e-6
+        );
+        assert!(
+            world
+                .get_component_by_id_as::<TransformComponent>(target)
+                .unwrap()
+                .transform
+                .translation[1]
+                < 1.0
+        );
+        world
+            .get_component_by_id_as_mut::<AvatarControlComponent>(avc)
+            .unwrap()
+            .capsule_collidable_id = None;
+        world
+            .get_component_by_id_as_mut::<AvatarControlComponent>(avc)
+            .unwrap()
+            .collision_enabled = false;
+        system.step(&mut world, &mut emit);
+        assert!(
+            (world
+                .get_component_by_id_as::<VelocityComponent>(velocity)
+                .unwrap()
+                .linear_local_mps[1]
+                + 2.0 * 9.81 / 120.0)
+                .abs()
+                < 1.0e-6
+        );
+    }
+
+    #[test]
     fn gravity_is_world_down_under_rotated_scaled_parent_and_horizontal_velocity() {
         let mut world = World::default();
         let gravity = world.add_component(GravityComponent::new());
@@ -772,6 +897,25 @@ impl VelocitySystem {
         steps
     }
 
+    fn avatar_contact_pending(world: &World, target: ComponentId) -> bool {
+        let mut pending = vec![target];
+        while let Some(id) = pending.pop() {
+            if let Some(avatar) = world
+                .get_component_by_id_as::<crate::engine::ecs::component::AvatarControlComponent>(id)
+            {
+                if avatar.collision_enabled
+                    && avatar.capsule_collidable_id.is_none()
+                    && super::avatar_control_system::automatic_avc_movement_target(world, id)
+                        == Some(target)
+                {
+                    return true;
+                }
+            }
+            pending.extend(world.children_of(id).iter().copied());
+        }
+        false
+    }
+
     pub(crate) fn step(&mut self, world: &mut World, emit: &mut dyn SignalEmitter) {
         let elapsed = STEP_SEC as f32;
         let ids: Vec<_> = world
@@ -814,7 +958,9 @@ impl VelocitySystem {
             };
             if let Some(gravity) = Self::gravity_provider(world, id)
                 .and_then(|provider| world.get_component_by_id_as::<GravityComponent>(provider))
-                .filter(|gravity| gravity.enabled)
+                // Wait for the avatar capsule before adding gravity. Explicit
+                // velocity still integrates while XR pose or import is pending.
+                .filter(|gravity| gravity.enabled && !Self::avatar_contact_pending(world, target))
             {
                 let acceleration_world = [0.0, -9.81 * gravity.coefficient, 0.0];
                 let acceleration_local = math::quat_rotate_vec3(

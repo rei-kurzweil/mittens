@@ -5,7 +5,7 @@ fn stage_box(box_name, position, size, color) {
         .scale(size[0], size[1], size[2]) {
         name = box_name
         R.cube() { C.rgba(color[0], color[1], color[2], 1.0) }
-        Zone.cube([0.5, 0.5, 0.5]) { Collidable.static() {} }
+        Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.8) {} }
     }
 }
 
