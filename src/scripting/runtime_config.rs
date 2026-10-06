@@ -247,14 +247,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     host_method(
                         component,
                         canonical,
-                        "teleport_world",
-                        method(vec![mms::ValueType::Array], mms::ValueType::Null),
-                    );
-                    host_method(
-                        component,
-                        canonical,
                         "update_transform",
-                        method(vec![mms::ValueType::Array; 3], mms::ValueType::Null),
+                        mms::ValueSignature::with_optional(
+                            vec![mms::ValueType::Array; 3],
+                            1,
+                            mms::ValueType::Null,
+                        ),
                     );
                     host_method(
                         component,
@@ -672,6 +670,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 }
                 "InputXR" => no_arg_constructors(component, &["on", "off"]),
                 "Velocity" => {
+                    host_method(
+                        component,
+                        canonical,
+                        "reset",
+                        method(vec![], mms::ValueType::Null),
+                    );
                     host_method(
                         component,
                         canonical,

@@ -436,8 +436,13 @@ intersection/event infrastructure remains for a separate audit and cleanup.
 
 Corp variants and the standalone Reimu stage scene now share stage contact
 prefabs, Gravity/Velocity player motion, grounded Space/ButtonY jump bindings,
-and a reusable teleport pit. Opt-in Zone observation and discontinuous world
-teleport are described in
+and a reusable teleport pit. Opt-in Zone observation, ordinary pose updates and `Velocity.reset()`
+for respawning are described in
 [zone-enter-events-and-teleport-pits.md](zone-enter-events-and-teleport-pits.md).
 Mounted jump capability routing is deferred in
 [mounted-action-capabilities-and-jump-routing.md](mounted-action-capabilities-and-jump-routing.md).
+
+The transform teleport API has been removed. `Velocity.reset()` clears speed,
+grounded state, and sweep history independently of pose updates. The pit queries
+its mover's owning Velocity and uses normal local `update_transform` for respawn.
+Queried and captured handles (including `let velocity`) are supported.

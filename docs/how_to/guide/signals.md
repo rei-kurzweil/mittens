@@ -311,7 +311,7 @@ scope
 
 Emitted once when a `Zone.enable_events()` sensor observes a new enabled slide
 mover. Scoped to the sensor. Payload: `zone`, `other_zone`, `collidable`,
-`movement_target`, and `movement_target_offset` (world vec3).
+`movement_target`, and `movement_target_offset` (movement target parent-space vec3).
 
 #### `ZoneExited`
 <!-- catalog:signal source="ZoneExited" kind="event" mms="observable-payload" -->
@@ -808,14 +808,13 @@ Transform {}
 target
 ```
 
-#### `TeleportTransformWorld`
-<!-- catalog:signal source="TeleportTransformWorld" kind="intent" mms="action" -->
+#### `VelocityReset`
+<!-- catalog:signal source="VelocityReset" kind="intent" mms="action" -->
 
-Emitted by `transform.teleport_world([x, y, z])`. Immediately changes world
-translation while preserving rotation and scale, cancels transform transitions,
-clears the directly owning Velocity and invalidates contact/observer sweep
-history. Mounted movement roots are excluded. Invalid world-to-local conversions
-leave the target unchanged.
+Emitted by `velocity.reset()`. Clears linear speed and grounded state, plus
+contact/observer sweep history for the Velocity's driven transform. Enabled
+state and configuration are retained. It performs no pose update; MMS can
+separately call `rig.update_transform(...)` when respawning.
 
 #### `SetTransformTrs`
 <!-- catalog:signal source="SetTransformTrs" kind="intent" mms="live-api" -->

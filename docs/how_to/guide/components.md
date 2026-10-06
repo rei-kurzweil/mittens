@@ -1256,9 +1256,17 @@ zone, collidable and its movement target. See
 [Zone events and teleport pits](../../task/zone-enter-events-and-teleport-pits.md)
 for filtering, crossing and lifecycle rules.
 
-`T.teleport_world([x, y, z])` immediately changes world translation, preserves
-rotation and scale, cancels transform transitions and clears the directly owning
-Velocity and static contact sweep history. Use it for respawning instead of a
-normal local `update_transform` edit. The reusable
-[teleport pit prefab](../../../assets/components/teleport_pit.mms) places an
-optional decorated sensor and respawns a slide mover on entry.
+`Velocity.reset()` clears linear speed, grounded state, and contact/observer
+sweep history for its driven transform. It preserves enabled state, rotation
+basis and gravity configuration, and does not move or animate the rig.
+
+```mms
+let velocity = query("/[name='desktop_avatar_velocity']")
+velocity.reset()
+```
+
+`rig.update_transform([x, y, z])` updates local position while retaining rotation
+and scale. The existing three-array form still updates all three channels.
+The reusable [teleport pit prefab](../../../assets/components/teleport_pit.mms)
+uses a normal pose update and a separate Velocity reset. Capturing Velocity in a
+closure avoids querying it on every event.

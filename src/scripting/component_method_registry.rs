@@ -29,8 +29,7 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
     ) || (matches!(component_type, "T" | "Transform" | "transform")
         && matches!(
             method,
-            "teleport_world"
-                | "update_transform"
+            "update_transform"
                 | "rest_relative_rotation"
                 | "look_at"
                 | "translation"
@@ -66,7 +65,7 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
         || (matches!(component_type, "Velocity" | "velocity")
             && matches!(
                 method,
-                "translate" | "translate_world" | "linear" | "grounded"
+                "reset" | "translate" | "translate_world" | "linear" | "grounded"
             ))
         || (matches!(
             component_type,
@@ -124,6 +123,16 @@ pub(crate) fn invoke_component_method(
     mut emit_intent: impl FnMut(IntentValue),
 ) -> Result<Value, String> {
     match (component_type, method) {
+        ("Velocity" | "velocity", "reset") => {
+            if !args.is_empty() {
+                return Err("reset(): expected no arguments".into());
+            }
+            world
+                .get_component_by_id_as::<VelocityComponent>(id)
+                .ok_or("reset(): not a Velocity component")?;
+            emit_intent(IntentValue::VelocityReset { component_id: id });
+            Ok(Value::Null)
+        }
         ("Velocity" | "velocity", "grounded") => {
             if !args.is_empty() {
                 return Err("grounded(): expected no arguments".into());
@@ -735,24 +744,35 @@ pub(crate) fn invoke_component_method(
                 )),
             }
         }
-        ("T" | "Transform" | "transform", "teleport_world") => {
-            let [position] = args else {
-                return Err("teleport_world expects one vec3".into());
-            };
-            let position = value_as_f32_array::<3>(position)?;
-            if !position.iter().all(|v| v.is_finite()) {
-                return Err("teleport_world expects finite coordinates".into());
-            }
-            world
-                .get_component_by_id_as::<TransformComponent>(id)
-                .ok_or("teleport_world requires a Transform")?;
-            emit_intent(IntentValue::TeleportTransformWorld {
-                component_id: id,
-                position,
-            });
-            Ok(Value::Null)
-        }
         ("T" | "Transform" | "transform", "update_transform") => {
+            if args.len() == 1 || args.len() == 2 {
+                let translation = value_as_f32_array::<3>(&args[0])?;
+                if !translation.iter().all(|v| v.is_finite()) {
+                    return Err("update_transform(): position must be finite".into());
+                }
+                let t = world
+                    .get_component_by_id_as::<TransformComponent>(id)
+                    .ok_or("update_transform(): not a Transform")?;
+                let rotation_quat_xyzw = if let Some(rotation) = args.get(1) {
+                    let euler = value_as_f32_array::<3>(rotation)?;
+                    if !euler.iter().all(|v| v.is_finite()) {
+                        return Err("update_transform(): rotation must be finite".into());
+                    }
+                    TransformComponent::new()
+                        .with_rotation_euler(euler[0], euler[1], euler[2])
+                        .transform
+                        .rotation
+                } else {
+                    t.transform.rotation
+                };
+                emit_intent(IntentValue::UpdateTransform {
+                    component_id: id,
+                    translation,
+                    rotation_quat_xyzw,
+                    scale: t.transform.scale,
+                });
+                return Ok(Value::Null);
+            }
             let [translation, rotation_euler, scale] = match args {
                 [translation, rotation, scale] => [
                     value_as_f32_array::<3>(translation)?,
@@ -761,7 +781,7 @@ pub(crate) fn invoke_component_method(
                 ],
                 other => {
                     return Err(format!(
-                        "update_transform: expected three vec3 array arguments, got {:?}",
+                        "update_transform: expected one to three vec3 array arguments, got {:?}",
                         other
                     ));
                 }

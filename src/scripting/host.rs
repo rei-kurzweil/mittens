@@ -470,20 +470,30 @@ impl mms::Host for MittensHost<'_, '_> {
                 scope,
                 multiple,
             } => {
-                let roots = if let Some(scope) = scope {
-                    self.world
-                        .scripting_query_roots(self.existing_id(scope, "query")?)
-                } else {
-                    self.world
-                        .all_components()
-                        .filter(|&id| self.world.parent_of(id).is_none())
-                        .collect()
+                use crate::engine::ecs::component::{QueryRootMode, parse_scoped_query};
+                let scoped = parse_scoped_query(&selector);
+                let scope_id = scope
+                    .map(|handle| self.existing_id(handle, "query"))
+                    .transpose()?;
+                let roots = match scoped.root_mode {
+                    QueryRootMode::WorldRoot => self.world.world_roots(),
+                    QueryRootMode::ParentScope { levels_up } => {
+                        let mut parent = scope_id;
+                        for _ in 0..levels_up {
+                            parent = parent.and_then(|id| self.world.parent_of(id));
+                        }
+                        parent.into_iter().collect()
+                    }
+                    QueryRootMode::SelfSubtree => scope_id
+                        .map(|id| self.world.scripting_query_roots(id))
+                        .unwrap_or_else(|| self.world.world_roots()),
                 };
+                let selector = scoped.selector;
                 let mut matches = Vec::new();
                 for root in roots {
                     if multiple {
-                        matches.extend(self.world.find_all_components(root, &selector));
-                    } else if let Some(id) = self.world.find_component(root, &selector) {
+                        matches.extend(self.world.find_all_components(root, selector));
+                    } else if let Some(id) = self.world.find_component(root, selector) {
                         matches.push(id);
                         break;
                     }

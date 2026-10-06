@@ -89,13 +89,14 @@ impl ZoneObservationSystem {
                     else {
                         continue;
                     };
-                    let Some(target_position) =
-                        super::TransformSystem::world_position(world, movement_target)
-                    else {
-                        continue;
-                    };
+                    let Some(target) = world.get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(movement_target) else { continue; };
+                    let local_center = super::static_contact_system::world_to_local(
+                        world,
+                        movement_target,
+                        center,
+                    );
                     let movement_target_offset =
-                        std::array::from_fn(|i| target_position[i] - center[i]);
+                        std::array::from_fn(|i| target.transform.translation[i] - local_center[i]);
                     current.insert(key, (collidable, movement_target, movement_target_offset));
                     if !self.overlaps.contains_key(&key) {
                         emit.push_event(

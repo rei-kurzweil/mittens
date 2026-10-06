@@ -488,6 +488,9 @@ pub enum IntentValue {
         component_id: ComponentId,
         position: [f32; 3],
     },
+    VelocityReset {
+        component_id: ComponentId,
+    },
     VelocityTranslate {
         component_id: ComponentId,
         delta_mps: [f32; 3],
@@ -697,11 +700,6 @@ pub enum IntentValue {
     /// Intended for topology changes (e.g. Attach/Detach) where world matrices need recomputation.
     UpdateTransformWorld {
         component_id: ComponentId,
-    },
-    /// Discontinuous world translation, preserving rotation/scale and clearing motion history.
-    TeleportTransformWorld {
-        component_id: ComponentId,
-        position: [f32; 3],
     },
     UpdateTransform {
         component_id: ComponentId,
@@ -1019,6 +1017,7 @@ impl IntentValue {
             IntentValue::SetText { .. } => "set_text",
             IntentValue::SetEmissiveIntensity { .. } => "set_emissive_intensity",
             IntentValue::SetPosition { .. } => "set_position",
+            IntentValue::VelocityReset { .. } => "velocity_reset",
             IntentValue::VelocityTranslate { .. } => "velocity_translate",
             IntentValue::LookAt { .. } => "look_at",
             IntentValue::SetLayoutAvailableWidth { .. } => "set_layout_available_width",
@@ -1065,7 +1064,6 @@ impl IntentValue {
             IntentValue::RegisterScrolling { .. } => "register_scrolling",
             IntentValue::RegisterTransform { .. } => "register_transform",
             IntentValue::UpdateTransformWorld { .. } => "update_transform_world",
-            IntentValue::TeleportTransformWorld { .. } => "teleport_transform_world",
             IntentValue::UpdateTransform { .. } => "update_transform",
             IntentValue::SetTransformTrs { .. } => "set_transform_trs",
             IntentValue::RemoveTransform { .. } => "remove_transform",

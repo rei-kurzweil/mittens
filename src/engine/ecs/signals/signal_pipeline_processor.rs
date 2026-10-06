@@ -54,6 +54,7 @@ impl SignalPipelineProcessor {
             | IntentValue::SetText { component_id, .. }
             | IntentValue::SetEmissiveIntensity { component_id, .. }
             | IntentValue::SetPosition { component_id, .. }
+            | IntentValue::VelocityReset { component_id }
             | IntentValue::VelocityTranslate { component_id, .. }
             | IntentValue::LookAt { component_id, .. }
             | IntentValue::GLTFArmatureVisible { component_id, .. }
@@ -86,7 +87,6 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterHttpClient { component_id }
             | IntentValue::RegisterScrolling { component_id }
             | IntentValue::RegisterTransform { component_id }
-            | IntentValue::TeleportTransformWorld { component_id, .. }
             | IntentValue::UpdateTransform { component_id, .. }
             | IntentValue::SetTransformTrs { component_id, .. }
             | IntentValue::RemoveTransform { component_id }
@@ -206,6 +206,7 @@ impl SignalPipelineProcessor {
             | IntentValue::SetText { component_id, .. }
             | IntentValue::SetEmissiveIntensity { component_id, .. }
             | IntentValue::SetPosition { component_id, .. }
+            | IntentValue::VelocityReset { component_id }
             | IntentValue::VelocityTranslate { component_id, .. }
             | IntentValue::LookAt { component_id, .. }
             | IntentValue::GLTFArmatureVisible { component_id, .. }
@@ -238,7 +239,6 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterHttpClient { component_id }
             | IntentValue::RegisterScrolling { component_id }
             | IntentValue::RegisterTransform { component_id }
-            | IntentValue::TeleportTransformWorld { component_id, .. }
             | IntentValue::UpdateTransform { component_id, .. }
             | IntentValue::SetTransformTrs { component_id, .. }
             | IntentValue::RemoveTransform { component_id }

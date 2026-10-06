@@ -132,6 +132,32 @@ impl RxMutationExecutor {
         };
 
         match &intent.value {
+            IntentValue::VelocityReset { component_id } => {
+                let target = crate::engine::ecs::system::VelocitySystem::driven_transform(
+                    world,
+                    *component_id,
+                )
+                .ok();
+                if let Some(v) = world
+                    .get_component_by_id_as_mut::<crate::engine::ecs::component::VelocityComponent>(
+                        *component_id,
+                    )
+                {
+                    v.linear_local_mps = [0.0; 3];
+                    v.grounded = false;
+                    if let Some(target) = target {
+                        systems.static_contact.forget_target(world, target);
+                        systems.zone_observation.forget_target(world, target);
+                    }
+                    emit.push_event(
+                        *component_id,
+                        EventSignal::DataEvent {
+                            name: "VelocityChanged".into(),
+                            payload: Some(*component_id),
+                        },
+                    );
+                }
+            }
             IntentValue::VelocityTranslate {
                 component_id,
                 delta_mps,
@@ -232,53 +258,6 @@ impl RxMutationExecutor {
             IntentValue::UpdateTransformWorld { component_id } => {
                 let component = *component_id;
                 systems.transform_changed(world, visuals, component);
-            }
-            IntentValue::TeleportTransformWorld {
-                component_id,
-                position,
-            } => {
-                if position.iter().all(|v| v.is_finite())
-                    && !systems.attachment.is_movement_root_mounted(*component_id)
-                {
-                    let local = crate::engine::ecs::system::TransformSystem::world_trs(
-                        world,
-                        *component_id,
-                    )
-                    .and_then(|mut value| {
-                        value.translation = *position;
-                        crate::engine::ecs::system::TransformSystem::world_to_local_trs(
-                            world,
-                            &systems.transform_stream,
-                            *component_id,
-                            value,
-                        )
-                    });
-                    let local = match local {
-                        Ok(value) => value.translation,
-                        Err(error) => {
-                            eprintln!(
-                                "TeleportTransformWorld ignored for {:?}: {}",
-                                component_id, error
-                            );
-                            return;
-                        }
-                    };
-                    systems
-                        .transition
-                        .cancel_transform_transitions(*component_id);
-                    if let Some(t) = world.get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(*component_id) {
-                        t.transform.translation = local;
-                        t.transform.recompute_model();
-                        if let Some(owner) = world.parent_of(*component_id)
-                            && let Some(v) = world.get_component_by_id_as_mut::<crate::engine::ecs::component::VelocityComponent>(owner) {
-                            v.linear_local_mps = [0.0; 3];
-                            v.grounded = false;
-                        }
-                        systems.static_contact.forget_target(world, *component_id);
-                        systems.zone_observation.forget_target(world, *component_id);
-                        systems.transform_changed(world, visuals, *component_id);
-                    }
-                }
             }
             IntentValue::UpdateTransform {
                 component_id,

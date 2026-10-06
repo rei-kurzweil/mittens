@@ -18,6 +18,7 @@ pub struct MeowMeowParser {
     pos: usize,
     component_names: Option<HashSet<String>>,
     non_component_names: HashSet<String>,
+    bound_names: HashSet<String>,
     static_component_apis: HashSet<String>,
     open_uppercase_components: bool,
 }
@@ -29,6 +30,7 @@ impl MeowMeowParser {
             pos: 0,
             component_names: None,
             non_component_names: HashSet::new(),
+            bound_names: HashSet::new(),
             static_component_apis: HashSet::new(),
             open_uppercase_components: true,
         }
@@ -50,6 +52,7 @@ impl MeowMeowParser {
                     .collect(),
             ),
             non_component_names: HashSet::new(),
+            bound_names: HashSet::new(),
             static_component_apis: HashSet::new(),
             // Strict runtimes still parse uppercase component-shaped syntax;
             // the runtime catalog then reports an unknown component instead
@@ -89,6 +92,7 @@ impl MeowMeowParser {
                     .collect(),
             ),
             non_component_names: HashSet::new(),
+            bound_names: HashSet::new(),
             static_component_apis: HashSet::new(),
             open_uppercase_components: true,
         }
@@ -144,7 +148,8 @@ impl MeowMeowParser {
     }
 
     fn is_component_name(&self, name: &str) -> bool {
-        !self.non_component_names.contains(&name.to_lowercase())
+        !self.bound_names.contains(name)
+            && !self.non_component_names.contains(&name.to_lowercase())
             && (self
                 .component_names
                 .as_ref()
@@ -189,6 +194,7 @@ impl MeowMeowParser {
                 let name = self.expect_ident()?;
                 self.consume(&TokenKind::Eq)?;
                 let value = self.parse_expression()?;
+                self.bound_names.insert(name.0.clone());
                 self.try_consume(&TokenKind::Semicolon);
                 Ok(Statement::Assignment(AssignmentStatement {
                     name,
@@ -224,6 +230,7 @@ impl MeowMeowParser {
                         let name = self.expect_ident()?;
                         self.consume(&TokenKind::Eq)?;
                         let value = self.parse_expression()?;
+                        self.bound_names.insert(name.0.clone());
                         self.try_consume(&TokenKind::Semicolon);
                         Ok(Statement::Assignment(AssignmentStatement {
                             name,
@@ -356,6 +363,7 @@ impl MeowMeowParser {
 
     fn parse_block_statement(&mut self) -> Result<BlockStatement, ParseError> {
         self.consume(&TokenKind::LBrace)?;
+        let outer_bindings = self.bound_names.clone();
         let mut statements = Vec::new();
         while !self.try_consume(&TokenKind::RBrace) {
             if self.is_eof() {
@@ -366,6 +374,7 @@ impl MeowMeowParser {
             }
             statements.push(self.parse_statement()?);
         }
+        self.bound_names = outer_bindings;
         Ok(BlockStatement { statements })
     }
 
@@ -560,7 +569,11 @@ impl MeowMeowParser {
             }
         }
         self.consume(&TokenKind::RParen)?;
+        let outer_bindings = self.bound_names.clone();
+        self.bound_names
+            .extend(params.iter().map(|param| param.0.clone()));
         let body = self.parse_block_statement()?;
+        self.bound_names = outer_bindings;
         Ok(Expression::Function { params, body })
     }
 

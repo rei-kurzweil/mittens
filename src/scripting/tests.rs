@@ -12983,7 +12983,7 @@ fn teleport_pit_enter_callback_respawns_offset_mover_and_clears_fall_speed() {
         output
             .intents
             .iter()
-            .filter(|i| matches!(i, IntentValue::TeleportTransformWorld { .. }))
+            .filter(|i| matches!(i, IntentValue::VelocityReset { .. }))
             .count(),
         1
     );
@@ -13230,4 +13230,103 @@ fn secondary_motion_desktop_player_lands_jumps_and_recovers_from_teleport_pit() 
         "avatar_head_driver",
         [0.0, 1.2, 1.0],
     );
+}
+
+#[test]
+fn velocity_reset_supports_queried_and_captured_handles_without_changing_pose_or_configuration() {
+    use crate::engine::ecs::component::VelocityComponent;
+    let mut world = World::default();
+    let mut systems = crate::engine::ecs::system::SystemWorld::default();
+    let mut visuals = VisualWorld::default();
+    let mut assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+    let (mut session, output) = RuntimeSpecSession::start_at_path(
+        r#"
+        let motion = Velocity {
+            horizontal()
+            name = "motion"
+            T.position(1.0, 2.0, 3.0).rotation(0.2, 0.4, 0.1).scale(2.0, 3.0, 4.0) { name = "rig" }
+        }
+        let velocity = query("/[name='motion']")
+        on_global("KeyDown", fn(event) {
+            if event.code == "KeyQ" {
+                let velocity = query("/[name='motion']")
+                velocity.reset()
+            } else {
+                velocity.reset()
+                query("/[name='rig']").update_transform([4.0, 5.0, 6.0])
+            }
+        })
+        // A lowercase binding must not hide the uppercase component spelling.
+        Velocity { T {} }
+        "#,
+        "examples/velocity-reset-test.mms",
+        &mut world,
+        &mut systems.rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .unwrap();
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    for intent in output.intents {
+        queue.push_intent_now(ComponentId::default(), intent);
+    }
+    systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+    let named = |world: &World, label: &str| {
+        world
+            .all_components()
+            .find(|id| world.component_label(*id) == Some(label))
+            .unwrap()
+    };
+    let motion = named(&world, "motion");
+    let rig = named(&world, "rig");
+    let initial_pose = world
+        .get_component_by_id_as::<TransformComponent>(rig)
+        .unwrap()
+        .transform
+        .clone();
+    for code in ["KeyQ", "KeyC"] {
+        let v = world
+            .get_component_by_id_as_mut::<VelocityComponent>(motion)
+            .unwrap();
+        v.set_linear_local([2.0, -7.0, 1.0]).unwrap();
+        v.enabled = false;
+        v.grounded = true;
+        systems.rx.push_event(
+            rig,
+            EventSignal::KeyDown(crate::engine::ecs::KeyboardEvent {
+                code: Some(code.into()),
+                key: code.into(),
+            }),
+        );
+        systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+        let output =
+            session.service_callbacks(&mut world, &mut systems.rx, Some(&mut assets), &mut queue);
+        assert!(output.errors.is_empty(), "{code}: {:?}", output.errors);
+        for intent in output.intents {
+            queue.push_intent_now(rig, intent);
+        }
+        systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+        let v = world
+            .get_component_by_id_as::<VelocityComponent>(motion)
+            .unwrap();
+        assert_eq!(v.linear_local_mps, [0.0; 3]);
+        assert!(!v.grounded);
+        assert!(!v.enabled);
+        assert!(v.horizontal);
+        let pose = &world
+            .get_component_by_id_as::<TransformComponent>(rig)
+            .unwrap()
+            .transform;
+        assert_eq!(pose.rotation, initial_pose.rotation);
+        assert_eq!(pose.scale, initial_pose.scale);
+        assert_eq!(
+            pose.translation,
+            if code == "KeyQ" {
+                initial_pose.translation
+            } else {
+                [4.0, 5.0, 6.0]
+            }
+        );
+    }
 }

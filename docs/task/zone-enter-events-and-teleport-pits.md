@@ -21,8 +21,8 @@ Disabled or removed participants retire pairs without callbacks on stale handles
 Tangency counts as overlap. Query failures are skipped.
 
 Payload fields are `zone`, `other_zone`, `collidable`, `movement_target`, and
-`movement_target_offset`. The offset is movement-root world position minus mover
-zone world center, captured when observed. Component handles preserve their
+`movement_target_offset`. The offset is movement-root local position minus the mover
+zone center converted into the target parent coordinates, captured when observed. Component handles preserve their
 catalog types in the callback transport, allowing normal MMS method calls.
 
 Observation samples current poses and additionally catches downward capsule
@@ -37,19 +37,27 @@ teleport_pit("pit", [0.0, -14.0, 0.0], [100.0, 12.0, 100.0],
 ```
 
 The factory returns a Transform containing a non-solid observer. Position and
-size describe its local volume; destination is the mover zone center in world
-space. Keep destination outside the trigger. Decoration can be `"none"`,
+size describe its local volume; destination is the mover zone center in the
+movement target parent coordinates. These equal world coordinates for the demo
+rigs, whose outer parents have identity transforms. Keep destination outside the trigger. Decoration can be `"none"`,
 `"spikes"`, or a zero-argument factory producing a fresh mesh component per patch.
 Patches use deterministic jitter, so scene reloads preserve the layout. They do
 not participate in physics. Cones sit below the trigger volume.
 
-The callback calls `event.movement_target.teleport_world(destination + offset)`.
-`T.teleport_world([x,y,z])` sets world translation immediately, preserving
-rotation/scale, cancels transform transitions, clears the directly owning
-Velocity's linear speed and grounded state, and drops that target's static
-contact and observer sweep history. It refuses to move mounted roots. Ordinary
-`update_transform` remains an authored local pose edit and should not substitute
-for a discontinuous physics teleport.
+The callback queries the directly owning Velocity with
+`event.movement_target.query("../Velocity")`, calls `velocity.reset()`, and uses
+`event.movement_target.update_transform(destination + offset)` for the local
+pose update. Position-only updates preserve rotation and scale. Normal pose
+transition behavior is retained; respawn rigs should have immediate pose updates.
+The removed transform teleport API combined motion reset and coordinate space;
+Velocity now owns the motion reset independently.
+
+`Velocity.reset()` clears linear speed, grounded state, and that driven target's
+static-contact and observer sweep history. It does not change its pose, enabled
+state, rotation basis or gravity configuration. Subsequent gravity steps resume
+normally. A queried or captured Velocity handle can be reset directly. Clearing
+observer history prevents a discontinuous reposition from sweeping through
+intervening sensors.
 
 ## Demo integration
 
@@ -88,8 +96,9 @@ Headless integration covers both Corp and secondary-motion desktop avatar landin
 fall speed, and landing again. Synthetic tests cover fast downward crossings,
 Input offsets, enter/exit deduplication, opt-in observation, disabled sensors,
 yawed stage contact, and mount/dismount velocity ownership. All Corp variants
-load, all targets compile, and the MMS crate tests pass.
+load, all targets compile, and the MMS crate tests pass. Queried and captured
+Velocity reset tests also verify retained pose and configuration.
 
-The last full library run passed 944 tests, with 50 failures and one ignored test.
+The last full library run passed 946 tests, with 50 failures and one ignored test.
 The failed test names exactly match the unchanged HEAD baseline; this slice adds
 no regressions. Interactive XR behavior still needs verification with a headset.

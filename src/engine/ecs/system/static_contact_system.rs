@@ -274,7 +274,7 @@ fn shape_aabb(
     )
 }
 
-fn world_to_local(world: &World, transform: ComponentId, desired: [f32; 3]) -> [f32; 3] {
+pub(crate) fn world_to_local(world: &World, transform: ComponentId, desired: [f32; 3]) -> [f32; 3] {
     let mut current = transform;
     while let Some(parent) = world.parent_of(current) {
         if world
