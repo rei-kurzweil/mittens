@@ -14,6 +14,7 @@ import { tripod_light } from "../assets/components/tripod_light.mms"
 import { suspended_platform } from "../assets/components/platforms/suspended_platform.mms"
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
+import { rei_mu_bow_secondary_motion } from "../assets/components/secondary_motion/rei-mu-bow.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
@@ -64,7 +65,7 @@ let xr_input = InputXR.on() {
     InputXRGamepad { locomotion() speed(1.5) }
     T {
         name = "bisket_xr_driver"
-        let bisket_avatar = GLTF.new("assets/models/bisket.glb") {
+        let bisket_avatar = GLTF.new("assets/models/rei(mu).glb") {
             bisket_anime_shading()
             bisket_humanoid_bone_map()
             MorphTargetMap.new()
@@ -72,9 +73,10 @@ let xr_input = InputXR.on() {
                 .slot("right_eye_blink", "Fcl_EYE_Close_R")
                 .slot("viseme_aa", "Fcl_MTH_A")
             EM.on()
-            PoseCapture { label("Bisket XR source") asset_name("bisket") }
+            PoseCapture { label("Rei(mu) XR source") asset_name("rei_mu") }
             bisket_colliders()
             bisket_shirt_physics(false)
+            rei_mu_bow_secondary_motion()
         }
         let bisket_avatar_control = AVC.movement_target("[name='bisket_grounding_root']") {
             mouth_open_from_amplitude(voice_level)
@@ -91,7 +93,7 @@ let xr_input = InputXR.on() {
                 name = "bisket_xr_camera_anchor"
                 CXR { Pointer {} }
             }
-            HTCEyeTracking.on().enable_pupil_direction_tracking(false)
+            XREyeTracking.on().priority(["htc", "vrchat_osc"]).enable_pupil_direction_tracking(false)
             XRHand.new(true, "Left", "GripAim").laser() {
                 T { RestAttachment.new("[name='J_Bip_L_Hand']", "[name='J_Bip_L_Middle3']") { Pointer {} } }
             }

@@ -149,9 +149,9 @@ ED.active() {
                             name = "rei_mu_rider_cxr_anchor"
                             CXR { Pointer {} }
                         }
-                        // HTC eye tracking retains closure samples for blink morphs,
+                        // HTC or VRChat OSC supplies closure samples for blink morphs,
                         // while authored animation owns the eye-bone direction.
-                        HTCEyeTracking.on().enable_pupil_direction_tracking(false)
+                        XREyeTracking.on().priority(["htc", "vrchat_osc"]).enable_pupil_direction_tracking(false)
 
                         XRHand.new(true, "Left", "GripAim").laser() {
                             T {

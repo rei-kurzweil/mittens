@@ -187,9 +187,9 @@ let player_motion = Velocity {
                         name = "rei_mu_xr_camera"
                         CXR { Pointer {} }
                     }
-                    // HTC closure can still drive blink; the idle animation
+                    // HTC or VRChat OSC closure drives blink; the idle animation
                     // owns pupil direction instead of live gaze samples.
-                    HTCEyeTracking.on().enable_pupil_direction_tracking(false)
+                    XREyeTracking.on().priority(["htc", "vrchat_osc"]).enable_pupil_direction_tracking(false)
 
                     XRHand.new(true, "Left", "GripAim").laser() {
                         T {

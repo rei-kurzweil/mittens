@@ -4,20 +4,22 @@ import { vroid_arm_ik_defaults } from "../assets/components/arm_ik/vroid.mms"
 
 let arm_ik = vroid_arm_ik_defaults()
 
-// mittens-corp-agc-desktop — desktop microphone AGC tuning with Bisket.
+// mittens-corp-agc-desktop — desktop microphone AGC tuning with Rei(mu).
 //
 // Run with:
 //   cargo run --release -- load examples/mittens-corp-agc-desktop.mms
 //
-// WASD + mouse drive Bisket through the ordinary desktop Input pose driver.
+// WASD + mouse drive Rei(mu) through the ordinary desktop Input pose driver.
 // The sliders publish policy changes to the existing audio callback unit;
 // they do not reopen the microphone or recreate its rolling buffers.
 
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
+import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { rei_2026_9 } from "../assets/components/mouth_response/rei_2026.9.mms"
 import { pose as relaxed_pose_factory } from "../assets/components/poses/bisket/000-relaxed.pose.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
+import { rei_mu_bow_secondary_motion } from "../assets/components/secondary_motion/rei-mu-bow.mms"
 
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { tripod_light } from "../assets/components/tripod_light.mms"
@@ -385,15 +387,17 @@ T.position(3.8, 0.15, 3.2).rotation(0.0, 3.63, 0.0).scale(0.45, 0.45, 0.45) {
     GLTF.new("assets/models/color-cat.2.glb") {}
 }
 
-let bisket = GLTF.new("assets/models/bisket.glb") {
+let bisket = GLTF.new("assets/models/rei(mu).glb") {
     bisket_anime_shading()
     bisket_humanoid_bone_map()
-    // Direct pose child applies Bisket's captured relaxed stance as the
+    // Direct pose child applies the shared relaxed stance as the
     // one-shot startup overlay after the model imports.
     MorphTargetMap.new().slot("viseme_aa", "Fcl_MTH_A")
 
     relaxed_pose_factory()
+    bisket_colliders()
     bisket_shirt_physics(false)
+    rei_mu_bow_secondary_motion()
 
     EM.on()
 }
@@ -414,7 +418,7 @@ let avatar = AVC.movement_target("[name='agc_desktop_grounding_root']") {
     initial_yaw(3.14159)
     T { bisket }
     // AVC treats this one-transform Camera3D wrapper the same as a CameraXR
-    // wrapper: it mounts the path beneath Bisket's camera anchor after the
+    // wrapper: it mounts the path beneath Rei(mu)'s camera anchor after the
     // humanoid map is ready.
     T.position(0.0, 0.08, 0.06).rotation(0.0, 3.14159, 0.0) {
         name = "agc_desktop_camera_rig"

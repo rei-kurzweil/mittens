@@ -11381,9 +11381,9 @@ fn mittens_corp_desktop_evaluates_with_a_desktop_camera_and_no_xr_player_compone
         .find(|&id| {
             world
                 .get_component_by_id_as::<GLTFComponent>(id)
-                .is_some_and(|gltf| gltf.uri == "assets/models/bisket.glb")
+                .is_some_and(|gltf| gltf.uri == "assets/models/rei(mu).glb")
         })
-        .expect("desktop scene should load Bisket");
+        .expect("desktop scene should load Rei(mu)");
     assert!(world.children_of(bisket).iter().any(|id| {
         world
             .get_component_by_id_as::<HumanoidBoneMapComponent>(*id)
@@ -11587,11 +11587,12 @@ fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
     use crate::engine::ecs::component::{
         AmplitudeComponent, AudioInputComponent, AvatarControlComponent, CameraXRComponent,
         CollidableComponent, CollidableMode, CollisionShape, ComponentRef, ControllerXRComponent,
-        EditorComponent, EditorPanel, EditorUIComponent, GLTFComponent, HTCEyeTrackingComponent,
-        HumanoidBoneMapComponent, InputXRComponent, InputXRGamepadComponent, MountableComponent,
-        PointerComponent, PoseCaptureComponent, ReturnToRestWhenStillComponent, RiderComponent,
+        EditorComponent, EditorPanel, EditorUIComponent, GLTFComponent, HumanoidBoneMapComponent,
+        InputXRComponent, InputXRGamepadComponent, MountableComponent, PointerComponent,
+        PoseCaptureComponent, ReturnToRestWhenStillComponent, RiderComponent,
         SecondaryMotionComponent, ShadingComponent, ShadingModel, SpringBoneComponent,
-        SpringColliderComponent, TransformComponent, XrAxisControl, XrButtonControl, ZoneComponent,
+        SpringColliderComponent, TransformComponent, XREyeTrackingComponent, XrAxisControl,
+        XrButtonControl, ZoneComponent,
     };
 
     let mut world = World::default();
@@ -11825,10 +11826,10 @@ fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
         .all_components()
         .find_map(|id| {
             world
-                .get_component_by_id_as::<HTCEyeTrackingComponent>(id)
+                .get_component_by_id_as::<XREyeTrackingComponent>(id)
                 .map(|tracker| (id, tracker))
         })
-        .expect("mittens-corp should retain HTC eye tracking for blink closure");
+        .expect("mittens-corp should accept HTC or VRChat OSC eye tracking for blink closure");
     assert!(
         !eye_tracker.1.enable_pupil_direction_tracking,
         "the ambient animation, not live gaze, should own Rei(mu) eye direction"
@@ -13019,8 +13020,13 @@ fn teleport_pit_enter_callback_respawns_offset_mover_and_clears_fall_speed() {
 
 #[test]
 fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
-    use crate::engine::ecs::component::{GravityComponent, ZoneComponent};
+    use crate::engine::ecs::component::{
+        GLTFComponent, GravityComponent, SpringBoneComponent, XREyeTrackingComponent, ZoneComponent,
+    };
     for path in [
+        "examples/mittens-corp.mms",
+        "examples/mittens-corp-desktop.mms",
+        "examples/mittens-corp-linear-velocity.mms",
         "examples/mittens-corp-agc.mms",
         "examples/mittens-corp-agc-desktop.mms",
         "examples/rei(mu).mms",
@@ -13040,6 +13046,45 @@ fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
         )
         .unwrap();
         assert!(output.errors.is_empty(), "{path}: {:?}", output.errors);
+        assert!(
+            world.all_components().any(|id| world
+                .get_component_by_id_as::<GLTFComponent>(id)
+                .is_some_and(|gltf| gltf.uri == "assets/models/rei(mu).glb")),
+            "{path}"
+        );
+        assert!(
+            world
+                .all_components()
+                .filter(|id| world
+                    .get_component_by_id_as::<SpringBoneComponent>(*id)
+                    .is_some())
+                .count()
+                >= 2,
+            "{path}"
+        );
+        if path.contains("desktop") {
+            assert!(
+                !world.all_components().any(|id| world
+                    .get_component_by_id_as::<XREyeTrackingComponent>(id)
+                    .is_some()),
+                "{path}"
+            );
+        } else {
+            let tracker = world
+                .all_components()
+                .find_map(|id| world.get_component_by_id_as::<XREyeTrackingComponent>(id))
+                .unwrap_or_else(|| panic!("{path}: expected generic eye tracking"));
+            assert_eq!(
+                tracker.priority,
+                vec![
+                    crate::engine::ecs::component::EyeTrackingSource::Htc,
+                    crate::engine::ecs::component::EyeTrackingSource::VrChatOsc,
+                ],
+                "{path}"
+            );
+            assert!(!tracker.enable_pupil_direction_tracking, "{path}");
+        }
+
         assert_eq!(
             world
                 .all_components()
