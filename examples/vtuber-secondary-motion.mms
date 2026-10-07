@@ -56,6 +56,7 @@ ED {
                 T {
                     name = "secondary_motion_xr_pose"
                     AVC {
+                        name = "secondary_motion_xr_avatar_control"
                         movement_target("[name='secondary_motion_xr_grounding_root']")
                         mouth_open_from_amplitude(voice_level)
                         mouth_open_rms_floor(0.005)
@@ -69,7 +70,7 @@ ED {
                         hand_rotation_smoothing(220.0)
 
                         T {
-                            GLTF.new("assets/models/bisket.glb") {
+                            let player_model = GLTF.new("assets/models/bisket.glb") {
                                 bisket_anime_shading()
                                 MorphTargetMap.new()
                                     .slot("left_eye_blink", "Fcl_EYE_Close_L")
@@ -79,6 +80,7 @@ ED {
                                 bisket_colliders()
                                 bisket_shirt_physics(false)
                             }
+                            player_model
                         }
 
                         T.position(0.0, 0.08, 0.12) {
@@ -106,7 +108,7 @@ ED {
             }
         }
     }
-    Gravity.coefficient(1.0) { xr_motion }
+    Gravity.enabled(false) { name = "player_gravity" xr_motion }
     // Existing button events remain live while gamepad locomotion is enabled.
     // Profiles without a Y button need another binding; see the input-actions task.
     on(xr_gamepad, "XrButtonDown", fn(event) {
@@ -137,4 +139,16 @@ T.position(-2.25, 2.0, -2.0) {
 
 // InputXR/CXR author the tracked pose and camera topology; XR.on() owns the
 // OpenXR session lifecycle and requests headset presentation.
+// Falling starts only after AVC's generated slide capsule is usable.
+let gravity_avatar = query("[name='secondary_motion_xr_avatar_control']")
+on(gravity_avatar, "DataEvent", fn(event) {
+    if event == "CapsuleReady" {
+        query("[name='player_gravity']").set_enabled(true)
+    }
+})
+// Also support registering this policy after the readiness transition.
+if gravity_avatar.capsule_ready() {
+    query("[name='player_gravity']").set_enabled(true)
+}
+
 XR.on()

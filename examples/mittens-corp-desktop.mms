@@ -141,6 +141,7 @@ ED.active() {
                     rei_mu_bow_secondary_motion()
                     }
                     let bisket_avatar_control = AVC.movement_target("[name='bisket_desktop_locomotion_root']") {
+                    name = "bisket_avatar_control"
                     mouth_open_from_amplitude(voice_level)
                     mouth_open_rms_floor(0.005)
                     mouth_open_rms_ceiling(0.09)
@@ -156,6 +157,7 @@ ED.active() {
                     // These are the two targets declared by Rei(mu)'s explicit
                     // humanoid map, queried only in this imported avatar instance.
                     on(bisket_avatar, "GLTFInitialized", fn(event) {
+
                     let head = event.gltf.query("[name='J_Bip_C_Head']")
                     if head {
                         head.attach(bisket_first_person_camera_slot)
@@ -175,7 +177,7 @@ ED.active() {
             }
         }
     }
-    Gravity { player_motion }
+    Gravity.enabled(false) { name = "player_gravity" player_motion }
     on_global("KeyDown", fn(event) {
         if event.code == "Space" && player_motion.grounded() { player_motion.translate_world([0.0, 4.5, 0.0]) }
     })
@@ -201,4 +203,16 @@ T.position(1.25, 2.8, -1.5) {
             { panel = "pose" },
         ])
     }
+}
+
+// Falling starts only after AVC's generated slide capsule is usable.
+let gravity_avatar = query("[name='bisket_avatar_control']")
+on(gravity_avatar, "DataEvent", fn(event) {
+    if event == "CapsuleReady" {
+        query("[name='player_gravity']").set_enabled(true)
+    }
+})
+// Also support registering this policy after the readiness transition.
+if gravity_avatar.capsule_ready() {
+    query("[name='player_gravity']").set_enabled(true)
 }

@@ -79,6 +79,11 @@ impl AvatarControlSystem {
             if capsule_before.is_none() && capsule_after.is_some() {
                 self.pending_capsule_diagnostics.insert(id);
             }
+            // A new capsule must pass through transform propagation before it
+            // can release scene-authored gravity. Publish on a subsequent tick.
+            if capsule_before.is_some() {
+                publish_capsule_readiness(id, world, emit);
+            }
         }
     }
 
@@ -827,6 +832,56 @@ fn try_init_or_route_capsule(
     }
 }
 
+fn publish_capsule_readiness(avc_id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter) {
+    let Some(avatar) = world.get_component_by_id_as::<AvatarControlComponent>(avc_id) else {
+        return;
+    };
+    let previously_ready = avatar.capsule_ready;
+    let usable_zone = (|| {
+        if !avatar.collision_enabled {
+            return None;
+        }
+        let collidable_id = avatar.capsule_collidable_id?;
+        let collidable = world.get_component_by_id_as::<CollidableComponent>(collidable_id)?;
+        if !collidable.enabled {
+            return None;
+        }
+        let target = automatic_avc_movement_target(world, avc_id)?;
+        if super::static_contact_system::movement_target(
+            world,
+            collidable_id,
+            world.parent_of(collidable_id)?,
+        ) != Some(target)
+        {
+            return None;
+        }
+        let zone_id = world.parent_of(collidable_id)?;
+        let zone = world.get_component_by_id_as::<ZoneComponent>(zone_id)?;
+        if !zone.enabled {
+            return None;
+        }
+        let frame = super::zone_query::resolve_zone_frame(world, zone_id, zone).ok()?;
+        let model = super::TransformSystem::world_model(world, frame)?;
+        super::collision_geometry::axis_aligned_world_shape(zone.shape, model)?;
+        Some(zone_id)
+    })();
+    world
+        .get_component_by_id_as_mut::<AvatarControlComponent>(avc_id)
+        .unwrap()
+        .capsule_ready = usable_zone.is_some();
+    if !previously_ready {
+        if let Some(zone) = usable_zone {
+            emit.push_event(
+                avc_id,
+                crate::engine::ecs::EventSignal::DataEvent {
+                    name: "CapsuleReady".into(),
+                    payload: Some(zone),
+                },
+            );
+        }
+    }
+}
+
 fn log_settled_capsule_diagnostics(avc_id: ComponentId, world: &World) {
     let Some(avc) = world.get_component_by_id_as::<AvatarControlComponent>(avc_id) else {
         return;
@@ -869,10 +924,7 @@ fn log_settled_capsule_diagnostics(avc_id: ComponentId, world: &World) {
     );
 }
 
-pub(crate) fn automatic_avc_movement_target(
-    world: &World,
-    avc_id: ComponentId,
-) -> Option<ComponentId> {
+fn automatic_avc_movement_target(world: &World, avc_id: ComponentId) -> Option<ComponentId> {
     if let Some(source) = world
         .get_component_by_id_as::<AvatarControlComponent>(avc_id)
         .and_then(|avc| avc.movement_target.as_ref())
@@ -2697,6 +2749,175 @@ mod capsule_tests {
 
     fn attach(world: &mut World, parent: ComponentId, child: ComponentId) {
         world.set_parent(child, Some(parent)).unwrap();
+    }
+
+    #[derive(Default)]
+    struct CapsuleEvents(Vec<(ComponentId, crate::engine::ecs::EventSignal)>);
+    impl SignalEmitter for CapsuleEvents {
+        fn push_event(&mut self, scope: ComponentId, event: crate::engine::ecs::EventSignal) {
+            self.0.push((scope, event));
+        }
+        fn push_intent(&mut self, _: ComponentId, _: crate::engine::ecs::IntentSignal) {}
+    }
+
+    #[test]
+    fn capsule_ready_event_waits_for_xr_and_a_settled_routed_capsule() {
+        let mut world = World::default();
+        let assets = RenderAssets::new();
+        let root = world.add_component(TransformComponent::new());
+        world.get_component_record_mut(root).unwrap().name = "player_root".into();
+        let input = world.add_component(InputXRComponent::on());
+        let driver = world.add_component(TransformComponent::new());
+        let mut avatar = AvatarControlComponent::new();
+        avatar.movement_target = Some(crate::engine::ecs::component::ComponentRef::Query(
+            "[name='player_root']".into(),
+        ));
+        let avc = world.add_component(avatar);
+        let model = world.add_component(TransformComponent::new());
+        let mesh = world.add_component(RenderableComponent::cube());
+        for (parent, child) in [
+            (root, input),
+            (input, driver),
+            (driver, avc),
+            (avc, model),
+            (model, mesh),
+        ] {
+            attach(&mut world, parent, child);
+        }
+        let mut system = AvatarControlSystem::default();
+        system.register(avc);
+        let mut retargeting = JointBasisRetargetingSystem::default();
+        let mut maps = HumanoidBoneMapSystem::default();
+        let mut events = CapsuleEvents::default();
+        for _ in 0..3 {
+            system.tick(
+                &mut world,
+                &InputState::default(),
+                &assets,
+                &mut retargeting,
+                &mut maps,
+                &mut events,
+                1.0 / 60.0,
+            );
+        }
+        assert!(events.0.is_empty());
+        assert!(
+            world
+                .get_component_by_id_as::<AvatarControlComponent>(avc)
+                .unwrap()
+                .capsule_transform_id
+                .is_none()
+        );
+        // Stand in for completed avatar splicing once tracking is usable.
+        world
+            .get_component_by_id_as_mut::<InputXRComponent>(input)
+            .unwrap()
+            .pose_valid = true;
+        world
+            .get_component_by_id_as_mut::<AvatarControlComponent>(avc)
+            .unwrap()
+            .head_mount = Some(driver);
+        system.tick(
+            &mut world,
+            &InputState::default(),
+            &assets,
+            &mut retargeting,
+            &mut maps,
+            &mut events,
+            1.0 / 60.0,
+        );
+        assert!(
+            world
+                .get_component_by_id_as::<AvatarControlComponent>(avc)
+                .unwrap()
+                .capsule_transform_id
+                .is_some()
+        );
+        assert!(
+            !world
+                .get_component_by_id_as::<AvatarControlComponent>(avc)
+                .unwrap()
+                .capsule_ready
+        );
+        assert!(
+            events.0.is_empty(),
+            "creation tick must not publish readiness"
+        );
+        let collider = world
+            .get_component_by_id_as::<AvatarControlComponent>(avc)
+            .unwrap()
+            .capsule_collidable_id
+            .unwrap();
+        let zone = world.parent_of(collider).unwrap();
+        // Missing targets keep readiness pending even with geometry present.
+        world
+            .get_component_by_id_as_mut::<AvatarControlComponent>(avc)
+            .unwrap()
+            .movement_target = Some(crate::engine::ecs::component::ComponentRef::Query(
+            "[name='missing']".into(),
+        ));
+        system.tick(
+            &mut world,
+            &InputState::default(),
+            &assets,
+            &mut retargeting,
+            &mut maps,
+            &mut events,
+            1.0 / 60.0,
+        );
+        assert!(events.0.is_empty());
+        world
+            .get_component_by_id_as_mut::<AvatarControlComponent>(avc)
+            .unwrap()
+            .movement_target = Some(crate::engine::ecs::component::ComponentRef::Query(
+            "[name='player_root']".into(),
+        ));
+        for _ in 0..3 {
+            system.tick(
+                &mut world,
+                &InputState::default(),
+                &assets,
+                &mut retargeting,
+                &mut maps,
+                &mut events,
+                1.0 / 60.0,
+            );
+        }
+        assert!(
+            world
+                .get_component_by_id_as::<AvatarControlComponent>(avc)
+                .unwrap()
+                .capsule_ready
+        );
+        assert_eq!(
+            events.0.len(),
+            1,
+            "stable readiness must not repeat every frame"
+        );
+        assert!(
+            matches!(&events.0[0], (scope, crate::engine::ecs::EventSignal::DataEvent {name, payload})
+            if *scope == avc && name == "CapsuleReady" && *payload == Some(zone))
+        );
+        world
+            .get_component_by_id_as_mut::<AvatarControlComponent>(avc)
+            .unwrap()
+            .collision_enabled = false;
+        system.tick(
+            &mut world,
+            &InputState::default(),
+            &assets,
+            &mut retargeting,
+            &mut maps,
+            &mut events,
+            1.0 / 60.0,
+        );
+        assert!(
+            !world
+                .get_component_by_id_as::<AvatarControlComponent>(avc)
+                .unwrap()
+                .capsule_ready
+        );
+        assert_eq!(events.0.len(), 1);
     }
 
     #[test]

@@ -7,6 +7,14 @@ stopping at Velocity boundaries and nearest Gravity winning even when disabled.
 The desktop avatar grounding-root/AVC demo is implemented; XR scheduling remains pending;
 general Acceleration follows those slices.
 
+Runtime activation now supports `gravity.set_enabled(bool)`. Eight avatar MMS
+examples start their player Gravity provider disabled and enable it from the
+owning AVC's `CapsuleReady` data event; this toggles future acceleration without resetting velocity
+or changing the provider coefficient. Import completion does not itself prove
+XR capsule readiness. See [velocity-driver readiness and dependencies](velocity-driver-readiness-and-dependencies.md)
+for the capsule-readiness contract and future dependency options. The per-substep
+avatar subtree traversal has been removed.
+
 ## What the existing docs and code say
 
 The [driver terminology](../spec/physics/driver-terminology.md) and

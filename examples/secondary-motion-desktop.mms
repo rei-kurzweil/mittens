@@ -128,6 +128,7 @@ let first_person_camera_slot = T.position(0.0, 0.08, 0.06).rotation(0.0, 3.14159
 }
 
 on(avatar_gltf, "GLTFInitialized", fn(event) {
+
     let head = event.gltf.query("#J_Bip_C_Head")
     if head {
         head.attach(first_person_camera_slot)
@@ -151,6 +152,7 @@ let avatar_motion = Velocity {
             T.position(0.0, 1.6, 1.0) {
                 name = "avatar_head_driver"
                 AVC {
+                    name = "desktop_avatar_control"
                     movement_target("[name='desktop_avatar_grounding_root']")
                     left_two_bone_ik(arm_ik.left)
                     right_two_bone_ik(arm_ik.right)
@@ -161,7 +163,9 @@ let avatar_motion = Velocity {
         }
     }
 }
-ED.active() { Gravity.coefficient(1.0) { avatar_motion } }
+ED.active() {
+    Gravity.enabled(false).coefficient(1.0) { name = "player_gravity" avatar_motion }
+}
 
 fn jump() {
     if avatar_motion.grounded() {
@@ -223,3 +227,15 @@ on(camera_view_toggle, "Click", fn(event) {
         print("camera attached to first_person_camera_slot")
     }
 })
+
+// Falling starts only after AVC's generated slide capsule is usable.
+let gravity_avatar = query("[name='desktop_avatar_control']")
+on(gravity_avatar, "DataEvent", fn(event) {
+    if event == "CapsuleReady" {
+        query("[name='player_gravity']").set_enabled(true)
+    }
+})
+// Also support registering this policy after the readiness transition.
+if gravity_avatar.capsule_ready() {
+    query("[name='player_gravity']").set_enabled(true)
+}

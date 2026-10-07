@@ -79,6 +79,7 @@ let xr_input = InputXR.on() {
             rei_mu_bow_secondary_motion()
         }
         let bisket_avatar_control = AVC.movement_target("[name='bisket_grounding_root']") {
+            name = "bisket_avatar_control"
             mouth_open_from_amplitude(voice_level)
             mouth_open_rms_center_range(voice_tuning.center_rms, voice_tuning.range_rms)
             mouth_open_amount(voice_tuning.amount)
@@ -104,6 +105,7 @@ let xr_input = InputXR.on() {
         voice_panel_target.avatar = bisket_avatar_control
         bisket_avatar_control
         on(bisket_avatar, "GLTFInitialized", fn(event) {
+
             let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
             let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
             if left_eye && right_eye {
@@ -126,7 +128,7 @@ let vel = Velocity.rotation_basis(xr_input).horizontal() {
 ED.active() {
     T {
         name = "bisket_grounding_frame"
-        Gravity { vel }
+        Gravity.enabled(false) { name = "player_gravity" vel }
     }
 }
 
@@ -234,3 +236,15 @@ XR.on()
 on_global("XrButtonDown", fn(event) {
     if event.control == "ButtonY" && vel.grounded() { vel.translate_world([0.0, 4.5, 0.0]) }
 })
+
+// Falling starts only after AVC's generated slide capsule is usable.
+let gravity_avatar = query("[name='bisket_avatar_control']")
+on(gravity_avatar, "DataEvent", fn(event) {
+    if event == "CapsuleReady" {
+        query("[name='player_gravity']").set_enabled(true)
+    }
+})
+// Also support registering this policy after the readiness transition.
+if gravity_avatar.capsule_ready() {
+    query("[name='player_gravity']").set_enabled(true)
+}

@@ -1243,6 +1243,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     no_arg_constructors(component, &["static", "kinematic", "rigged"]);
                 }
                 "Gravity" => {
+                    host_method(
+                        component,
+                        canonical,
+                        "set_enabled",
+                        method(vec![mms::ValueType::Bool], mms::ValueType::Null),
+                    );
                     constructor_and_builder(component, "enabled", booleans(1));
                     constructor_and_builder(component, "coefficient", floats(1));
                 }
@@ -1425,6 +1431,13 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     constructor_and_builder(component, "panels", any(1));
                 }
                 "AvatarControl" => {
+                    component.alias("avatar_control");
+                    host_method(
+                        component,
+                        canonical,
+                        "capsule_ready",
+                        method(vec![], mms::ValueType::Bool),
+                    );
                     constructor_and_builder(component, "movement_target", any(1));
                     for method in ["left_two_bone_ik", "right_two_bone_ik"] {
                         constructor_and_builder(component, method, any(1));

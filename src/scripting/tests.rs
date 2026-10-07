@@ -13037,7 +13037,7 @@ fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
         let mut rx = RxWorld::default();
         let mut queue = CommandQueue::new();
         let mut assets = RenderAssets::new();
-        let (_session, output) = RuntimeSpecSession::start_at_path(
+        let (mut session, output) = RuntimeSpecSession::start_at_path(
             &source,
             path,
             &mut world,
@@ -13047,6 +13047,22 @@ fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
         )
         .unwrap();
         assert!(output.errors.is_empty(), "{path}: {:?}", output.errors);
+        let gravity = world
+            .all_components()
+            .find(|id| {
+                world
+                    .get_component_by_id_as::<GravityComponent>(*id)
+                    .is_some()
+            })
+            .unwrap();
+        assert!(
+            !world
+                .get_component_by_id_as::<GravityComponent>(gravity)
+                .unwrap()
+                .enabled,
+            "{path}: gravity waits for model import"
+        );
+
         let mut ground_surfaces = 0;
         for id in world.all_components() {
             let Some(label) = world.component_label(id) else {
@@ -13145,6 +13161,100 @@ fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
                 .count(),
             1,
             "{path}"
+        );
+        let player = world
+            .all_components()
+            .find(|id| {
+                world
+                    .get_component_by_id_as::<GLTFComponent>(*id)
+                    .is_some_and(|gltf| gltf.uri == "assets/models/rei(mu).glb")
+            })
+            .unwrap();
+        // Supply the mapped targets for this synthetic import event; no real
+        // GLTF importer runs in this authoring/callback regression.
+        for name in ["J_Adj_L_FaceEye", "J_Adj_R_FaceEye", "J_Bip_C_Head"] {
+            let bone = world.add_component(TransformComponent::new());
+            world.get_component_record_mut(bone).unwrap().name = name.into();
+            world.add_child(player, bone).unwrap();
+        }
+        rx.dispatch_event_handlers(
+            &mut world,
+            &Signal::event(
+                player,
+                EventSignal::GltfInitialized {
+                    gltf: player,
+                    uri: "assets/models/rei(mu).glb".into(),
+                },
+            ),
+        );
+        let callbacks =
+            session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+        assert!(
+            callbacks.errors.is_empty(),
+            "{path}: {:?}",
+            callbacks.errors
+        );
+        assert!(
+            !world
+                .get_component_by_id_as::<GravityComponent>(gravity)
+                .unwrap()
+                .enabled,
+            "{path}: import alone must not enable gravity"
+        );
+        let avatar = world
+            .all_components()
+            .find(|id| {
+                world
+            .get_component_by_id_as::<crate::engine::ecs::component::AvatarControlComponent>(*id)
+            .is_some()
+            })
+            .unwrap();
+        rx.dispatch_event_handlers(
+            &mut world,
+            &Signal::event(
+                avatar,
+                EventSignal::DataEvent {
+                    name: "UnrelatedEvent".into(),
+                    payload: None,
+                },
+            ),
+        );
+        let callbacks =
+            session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+        assert!(
+            callbacks.errors.is_empty(),
+            "{path}: {:?}",
+            callbacks.errors
+        );
+        assert!(
+            !world
+                .get_component_by_id_as::<GravityComponent>(gravity)
+                .unwrap()
+                .enabled
+        );
+        rx.dispatch_event_handlers(
+            &mut world,
+            &Signal::event(
+                avatar,
+                EventSignal::DataEvent {
+                    name: "CapsuleReady".into(),
+                    payload: None,
+                },
+            ),
+        );
+        let callbacks =
+            session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+        assert!(
+            callbacks.errors.is_empty(),
+            "{path}: {:?}",
+            callbacks.errors
+        );
+        assert!(
+            world
+                .get_component_by_id_as::<GravityComponent>(gravity)
+                .unwrap()
+                .enabled,
+            "{path}: capsule readiness enables gravity"
         );
     }
 }
@@ -13434,4 +13544,283 @@ fn surface_friction_is_explicit_validated_and_survives_mms_roundtrip() {
     }
     assert!(CollidableComponent::slide().with_friction(0.5).is_err());
     assert_eq!(CollidableComponent::static_().friction, 0.0);
+}
+
+#[test]
+fn gravity_set_enabled_runtime_toggles_acceleration_without_resetting_velocity() {
+    use crate::engine::ecs::component::{GravityComponent, VelocityComponent};
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut queue = CommandQueue::new();
+    let (mut session, output) = RuntimeSpecSession::start_at_path(
+        r#"
+        let motion = Velocity { T { name = "gravity_toggle_root" } }
+        let gravity = Gravity.enabled(false).coefficient(0.5) { motion }
+        gravity
+        on_global("KeyDown", fn(event) {
+            if event.code == "Enable" { gravity.set_enabled(true) }
+            if event.code == "Disable" { query("[name='toggle_gravity']").set_enabled(false) }
+        })
+        "#,
+        "examples/_gravity_toggle_test.mms",
+        &mut world,
+        &mut rx,
+        None,
+        &mut queue,
+    )
+    .unwrap();
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    let gravity = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<GravityComponent>(*id)
+                .is_some()
+        })
+        .unwrap();
+    world.get_component_record_mut(gravity).unwrap().name = "toggle_gravity".into();
+    let velocity = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<VelocityComponent>(*id)
+                .is_some()
+        })
+        .unwrap();
+    world
+        .get_component_by_id_as_mut::<VelocityComponent>(velocity)
+        .unwrap()
+        .set_linear_local([2.0, 0.0, 0.0])
+        .unwrap();
+    let mut system = crate::engine::ecs::system::VelocitySystem::default();
+    system.step(&mut world, &mut rx);
+    assert_eq!(
+        world
+            .get_component_by_id_as::<VelocityComponent>(velocity)
+            .unwrap()
+            .linear_local_mps,
+        [2.0, 0.0, 0.0]
+    );
+    for (code, enabled) in [("Enable", true), ("Disable", false)] {
+        rx.dispatch_event_handlers(
+            &mut world,
+            &Signal::event(
+                gravity,
+                EventSignal::KeyDown(crate::engine::ecs::KeyboardEvent {
+                    code: Some(code.into()),
+                    key: code.into(),
+                }),
+            ),
+        );
+        let callbacks = session.service_callbacks(&mut world, &mut rx, None, &mut queue);
+        assert!(callbacks.errors.is_empty(), "{:?}", callbacks.errors);
+        let provider = world
+            .get_component_by_id_as::<GravityComponent>(gravity)
+            .unwrap();
+        assert_eq!(provider.enabled, enabled);
+        assert_eq!(provider.coefficient, 0.5);
+        let before = world
+            .get_component_by_id_as::<VelocityComponent>(velocity)
+            .unwrap()
+            .linear_local_mps;
+        system.step(&mut world, &mut rx);
+        let after = world
+            .get_component_by_id_as::<VelocityComponent>(velocity)
+            .unwrap()
+            .linear_local_mps;
+        assert_eq!(after[0], before[0]);
+        let expected_y = before[1] - if enabled { 9.81 * 0.5 / 120.0 } else { 0.0 };
+        assert!((after[1] - expected_y).abs() < 1.0e-6);
+    }
+    for source in [
+        "let gravity = Gravity {} gravity.set_enabled(1)",
+        "let gravity = Gravity {} gravity.set_enabled()",
+        "let gravity = Gravity {} gravity.set_enabled(true, false)",
+    ] {
+        let mut test_world = World::default();
+        let mut test_rx = RxWorld::default();
+        let mut test_queue = CommandQueue::new();
+        let result = RuntimeSpecSession::start_at_path(
+            source,
+            "examples/_invalid_gravity_toggle.mms",
+            &mut test_world,
+            &mut test_rx,
+            None,
+            &mut test_queue,
+        );
+        match result {
+            Ok((_, output)) => assert!(!output.errors.is_empty(), "{source}"),
+            Err(_) => {}
+        }
+    }
+}
+
+#[test]
+fn secondary_motion_examples_enable_gravity_on_capsule_readiness() {
+    use crate::engine::ecs::component::{GLTFComponent, GravityComponent};
+    for path in [
+        "examples/secondary-motion-desktop.mms",
+        "examples/vtuber-secondary-motion.mms",
+    ] {
+        let source = std::fs::read_to_string(path).unwrap();
+        let mut world = World::default();
+        let mut rx = RxWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut assets = RenderAssets::new();
+        let (mut session, output) = RuntimeSpecSession::start_at_path(
+            &source,
+            path,
+            &mut world,
+            &mut rx,
+            Some(&mut assets),
+            &mut queue,
+        )
+        .unwrap();
+        assert!(output.errors.is_empty(), "{path}: {:?}", output.errors);
+        let gravity = world
+            .all_components()
+            .find(|id| {
+                world
+                    .get_component_by_id_as::<GravityComponent>(*id)
+                    .is_some()
+            })
+            .unwrap();
+        assert!(
+            !world
+                .get_component_by_id_as::<GravityComponent>(gravity)
+                .unwrap()
+                .enabled
+        );
+        let model = world
+            .all_components()
+            .find(|id| {
+                world
+                    .get_component_by_id_as::<GLTFComponent>(*id)
+                    .is_some_and(|gltf| gltf.uri == "assets/models/bisket.glb")
+            })
+            .unwrap();
+        let head = world.add_component(TransformComponent::new());
+        world.get_component_record_mut(head).unwrap().name = "J_Bip_C_Head".into();
+        world.add_child(model, head).unwrap();
+        rx.dispatch_event_handlers(
+            &mut world,
+            &Signal::event(
+                model,
+                EventSignal::GltfInitialized {
+                    gltf: model,
+                    uri: "assets/models/bisket.glb".into(),
+                },
+            ),
+        );
+        let callbacks =
+            session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+        assert!(
+            callbacks.errors.is_empty(),
+            "{path}: {:?}",
+            callbacks.errors
+        );
+        assert!(
+            !world
+                .get_component_by_id_as::<GravityComponent>(gravity)
+                .unwrap()
+                .enabled,
+            "{path}: import alone must not enable gravity"
+        );
+        let avatar = world
+            .all_components()
+            .find(|id| {
+                world
+            .get_component_by_id_as::<crate::engine::ecs::component::AvatarControlComponent>(*id)
+            .is_some()
+            })
+            .unwrap();
+        rx.dispatch_event_handlers(
+            &mut world,
+            &Signal::event(
+                avatar,
+                EventSignal::DataEvent {
+                    name: "UnrelatedEvent".into(),
+                    payload: None,
+                },
+            ),
+        );
+        let callbacks =
+            session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+        assert!(
+            callbacks.errors.is_empty(),
+            "{path}: {:?}",
+            callbacks.errors
+        );
+        assert!(
+            !world
+                .get_component_by_id_as::<GravityComponent>(gravity)
+                .unwrap()
+                .enabled
+        );
+        rx.dispatch_event_handlers(
+            &mut world,
+            &Signal::event(
+                avatar,
+                EventSignal::DataEvent {
+                    name: "CapsuleReady".into(),
+                    payload: None,
+                },
+            ),
+        );
+        let callbacks =
+            session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+        assert!(
+            callbacks.errors.is_empty(),
+            "{path}: {:?}",
+            callbacks.errors
+        );
+        assert!(
+            world
+                .get_component_by_id_as::<GravityComponent>(gravity)
+                .unwrap()
+                .enabled,
+            "{path}: capsule readiness enables gravity"
+        );
+    }
+}
+
+#[test]
+fn avatar_capsule_ready_runtime_getter_supports_late_subscribers() {
+    use crate::engine::ecs::component::AvatarControlComponent;
+    use crate::scripting::component_method_registry::invoke_component_method;
+    let mut world = World::default();
+    let avatar = world.add_component(AvatarControlComponent::new());
+    let read = |world: &mut World| {
+        invoke_component_method(
+            world,
+            avatar,
+            "avatar_control",
+            "capsule_ready",
+            &[],
+            |_| {},
+        )
+        .unwrap()
+    };
+    assert!(matches!(read(&mut world), Value::Bool(false)));
+    world
+        .get_component_by_id_as_mut::<AvatarControlComponent>(avatar)
+        .unwrap()
+        .capsule_ready = true;
+    assert!(matches!(read(&mut world), Value::Bool(true)));
+    world
+        .get_component_by_id_as_mut::<AvatarControlComponent>(avatar)
+        .unwrap()
+        .collision_enabled = false;
+    assert!(matches!(read(&mut world), Value::Bool(false)));
+    assert!(
+        invoke_component_method(
+            &mut world,
+            avatar,
+            "avatar_control",
+            "capsule_ready",
+            &[Value::Bool(true)],
+            |_| {}
+        )
+        .is_err()
+    );
 }

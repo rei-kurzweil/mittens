@@ -14,16 +14,15 @@ the teleport pit's zone observation sees a mover. The root can therefore fall
 below both the studio and the finite reset sensor before initialization ends.
 Creating a capsule below those volumes does not recover the missed crossing.
 
-Velocity now withholds gravity acceleration for a movement target with a descendant,
-collision-enabled AVC targeting that transform while its capsule is pending.
-Explicit velocity continues integrating during this wait. Once the capsule
-exists, gravity acceleration resumes and contact can constrain the resulting pose.
-Collision-disabled avatars and ordinary velocity-driven objects keep their
-existing behavior. The guard applies to all similarly authored Corp derivatives.
+The final fix makes the scene's Gravity provider start disabled. AVC publishes
+a scoped `CapsuleReady` data event after its generated zone, target routing and
+contact frame become usable, on a later tick than capsule creation. The scene
+then calls `Gravity.set_enabled(true)`. Model-import callbacks no longer enable
+gravity, and Velocity no longer discovers avatars or traverses their subtrees.
+AVC also exposes `capsule_ready()` for subscriptions registered after readiness.
 
-The regression test holds a nested XR avatar at its spawn for ten simulated
-seconds without a capsule, checks zero accumulated fall speed and continued
-commanded velocity integration, then checks
-normal gravity on capsule readiness and the collision-disabled bypass.
-Live headset validation remains necessary to confirm the reported session's
-failure was this startup gap rather than another contact or transform issue.
+Regression checks cover late XR readiness, missing targets, delayed capsule
+readiness publication, stable once-per-transition emission, scene callbacks,
+and desktop landing/jumping/reset behavior. The user confirmed the initial
+startup fix made the scene usable; the event-based replacement still needs
+live headset verification.

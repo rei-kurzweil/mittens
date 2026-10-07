@@ -259,6 +259,9 @@ pub struct AvatarControlComponent {
     /// Runtime-only generated collidable, used to refresh XR movement routing.
     pub(crate) capsule_collidable_id: Option<ComponentId>,
 
+    /// Runtime contact readiness, published after capsule transforms settle.
+    pub(crate) capsule_ready: bool,
+
     component: Option<ComponentId>,
 }
 
@@ -498,6 +501,7 @@ impl Default for AvatarControlComponent {
             neck_rest_translation: None,
             capsule_transform_id: None,
             capsule_collidable_id: None,
+            capsule_ready: false,
             component: None,
         }
     }

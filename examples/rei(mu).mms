@@ -210,6 +210,7 @@ let player_motion = Velocity {
                 rei_mu_avatar_control
 
                 on(rei_mu_avatar, "GLTFInitialized", fn(event) {
+
                     let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
                     let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
                     if left_eye && right_eye {
@@ -222,7 +223,7 @@ let player_motion = Velocity {
         }
     }
 }
-Gravity { player_motion }
+Gravity.enabled(false) { name = "player_gravity" player_motion }
 on_global("XrButtonDown", fn(event) {
     if event.control == "ButtonY" && player_motion.grounded() { player_motion.translate_world([0.0, 4.5, 0.0]) }
 })
@@ -256,6 +257,18 @@ ED {
 T.position(-7.75, 2.8, -1.5) {
     name = "rei_mu_editor_ui"
     EditorUI { panels([{ panel = "settings" }]) }
+}
+
+// Falling starts only after AVC's generated slide capsule is usable.
+let gravity_avatar = query("[name='rei_mu_avatar_control']")
+on(gravity_avatar, "DataEvent", fn(event) {
+    if event == "CapsuleReady" {
+        query("[name='player_gravity']").set_enabled(true)
+    }
+})
+// Also support registering this policy after the readiness transition.
+if gravity_avatar.capsule_ready() {
+    query("[name='player_gravity']").set_enabled(true)
 }
 
 XR.on()

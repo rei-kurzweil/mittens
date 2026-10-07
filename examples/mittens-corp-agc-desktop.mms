@@ -427,6 +427,7 @@ let avatar = AVC.movement_target("[name='agc_desktop_grounding_root']") {
 }
 
 on(bisket, "GLTFInitialized", fn(event) {
+
     let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
     let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
     if left_eye && right_eye {
@@ -450,7 +451,7 @@ ED.active() {
             }
         }
     }
-    Gravity { player_motion }
+    Gravity.enabled(false) { name = "player_gravity" player_motion }
     on_global("KeyDown", fn(event) {
         if event.code == "Space" && player_motion.grounded() { player_motion.translate_world([0.0, 4.5, 0.0]) }
     })
@@ -494,4 +495,16 @@ agc_level_graph
 T.position(1.25, 2.8, -1.5) {
     name = "agc_desktop_editor_ui"
     EditorUI { panels([{ panel = "settings" }]) }
+}
+
+// Falling starts only after AVC's generated slide capsule is usable.
+let gravity_avatar = query("[name='agc_desktop_avatar_control']")
+on(gravity_avatar, "DataEvent", fn(event) {
+    if event == "CapsuleReady" {
+        query("[name='player_gravity']").set_enabled(true)
+    }
+})
+// Also support registering this policy after the readiness transition.
+if gravity_avatar.capsule_ready() {
+    query("[name='player_gravity']").set_enabled(true)
 }

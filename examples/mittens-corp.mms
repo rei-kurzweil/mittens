@@ -128,6 +128,7 @@ ED.active() {
                         rei_mu_bow_secondary_motion()
                     }
                     let rei_mu_avatar_control = AVC.movement_target("[name='rei_mu_locomotion_root']") {
+                        name = "rei_mu_avatar_control"
                         mouth_open_from_amplitude(voice_level)
                         mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
                         mouth_open_amount(mouth_tuning.amount)
@@ -174,6 +175,7 @@ ED.active() {
                     // skin-joint targets. Query only this GLTF instance after it
                     // finishes importing, so another avatar cannot be animated.
                     on(rei_mu_avatar, "GLTFInitialized", fn(event) {
+
                         let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
                         let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
                         if left_eye && right_eye {
@@ -186,7 +188,7 @@ ED.active() {
             }
         }
     }
-    Gravity { player_motion }
+    Gravity.enabled(false) { name = "player_gravity" player_motion }
     on_global("XrButtonDown", fn(event) {
         if event.control == "ButtonY" && player_motion.grounded() { player_motion.translate_world([0.0, 4.5, 0.0]) }
     })
@@ -211,6 +213,18 @@ T.position(1.25, 2.8, -1.5) {
             { panel = "pose" },
         ])
     }
+}
+
+// Falling starts only after AVC's generated slide capsule is usable.
+let gravity_avatar = query("[name='rei_mu_avatar_control']")
+on(gravity_avatar, "DataEvent", fn(event) {
+    if event == "CapsuleReady" {
+        query("[name='player_gravity']").set_enabled(true)
+    }
+})
+// Also support registering this policy after the readiness transition.
+if gravity_avatar.capsule_ready() {
+    query("[name='player_gravity']").set_enabled(true)
 }
 
 XR.on()

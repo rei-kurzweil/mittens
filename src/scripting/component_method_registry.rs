@@ -1,8 +1,9 @@
 use crate::engine::ecs::component::{
     AmplitudeComponent, AnimationComponent, AnimationState, AnimationStepDirection,
-    AudioBandPassFilterComponent, AudioInputComponent, BoneRestPoseComponent, EmissiveComponent,
-    InputComponent, InputXRGamepadComponent, RayCastComponent, ShadingComponent, ShadingModel,
-    SliderComponent, TextComponent, TransformComponent, TransitionComponent, VelocityComponent,
+    AudioBandPassFilterComponent, AudioInputComponent, AvatarControlComponent,
+    BoneRestPoseComponent, EmissiveComponent, GravityComponent, InputComponent,
+    InputXRGamepadComponent, RayCastComponent, ShadingComponent, ShadingModel, SliderComponent,
+    TextComponent, TransformComponent, TransitionComponent, VelocityComponent,
     VolumeNormalizationComponent,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, PoseApplyMode, World};
@@ -62,6 +63,7 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
             ))
         || (matches!(component_type, "Amplitude" | "amplitude")
             && matches!(method, "value" | "set_highpass" | "set_highpass_resonance"))
+        || (matches!(component_type, "Gravity" | "gravity") && method == "set_enabled")
         || (matches!(component_type, "Velocity" | "velocity")
             && matches!(
                 method,
@@ -107,6 +109,7 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                 "mouth_open_from_amplitude"
                     | "set_mouth_open_rms_center_range"
                     | "set_mouth_open_amount"
+                    | "capsule_ready"
             ))
         || (matches!(component_type, "HttpClient" | "http_client")
             && matches!(method, "get" | "post" | "put" | "delete"))
@@ -123,6 +126,27 @@ pub(crate) fn invoke_component_method(
     mut emit_intent: impl FnMut(IntentValue),
 ) -> Result<Value, String> {
     match (component_type, method) {
+        ("AvatarControl" | "AVC" | "avatar_control", "capsule_ready") => {
+            if !args.is_empty() {
+                return Err("capsule_ready(): expected no arguments".into());
+            }
+            let avatar = world
+                .get_component_by_id_as::<AvatarControlComponent>(id)
+                .ok_or("capsule_ready(): not an AvatarControl component")?;
+            Ok(Value::Bool(
+                avatar.collision_enabled && avatar.capsule_ready,
+            ))
+        }
+        ("Gravity" | "gravity", "set_enabled") => {
+            let [Value::Bool(enabled)] = args else {
+                return Err("set_enabled(): expected one boolean argument".into());
+            };
+            world
+                .get_component_by_id_as_mut::<GravityComponent>(id)
+                .ok_or("set_enabled(): not a Gravity component")?
+                .enabled = *enabled;
+            Ok(Value::Null)
+        }
         ("Velocity" | "velocity", "reset") => {
             if !args.is_empty() {
                 return Err("reset(): expected no arguments".into());
