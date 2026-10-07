@@ -1,6 +1,7 @@
 # Task: build the minimal rhythm game prototype in slices
 
-Status: proposed delivery plan. Parent: [VR rhythm game epic](epic/vr-rhythm-game-prototype.md).
+Status: revised delivery plan, 2026-10-07; reusable visuals exist, minimal
+example remains to be built. Parent: [VR rhythm game epic](epic/vr-rhythm-game-prototype.md).
 
 ## Repository structure
 
@@ -10,7 +11,73 @@ starting with circle and square factories once their contract is agreed.
 Keep venue-specific composition in the example. More examples may share the
 factories without requiring a new Mittens release during co-development.
 
-## Slices
+## First visual runway slices
+
+The first example should establish the venue and incoming cues before adding
+music or judgment. A reachable Start button begins a short, finite course
+animation. Start presses during playback are ignored; after every cue expires,
+the button can start a fresh run. No notes move or spawn before Start.
+
+1. **Venue and Start.** Create `examples/rhythm_game/minimal.mms` with Bloom,
+   a declared player arrival plane, and a runway bordered by gold/yellow LED
+   strips. Reuse `light_strip` with explicit warm color and strong emissive
+   intensity, initially around 4.0 and then tuned in-headset. Reuse several
+   `studio_stage` assets end to end along their long local X axis; rotate the
+   whole venue as needed to align that axis with the approach lane. Repeat
+   tripod lights along the wall, aimed into the runway. The stage includes a
+   32 m wide wall and a 26 m truss, so repeating it every 32 m leaves truss
+   gaps: add connecting truss sections or author a continuous truss separately.
+   Keep the button and arrival area close to the player rather than scaling
+   interaction distances with the scenery.
+2. **One moving circle with owned expiry.** Add a reusable cue factory around
+   `circle_pose_marker`. Its placement root owns a finite local animation:
+   approach the arrival plane, begin the existing one-beat fill during the
+   final beat before arrival, hold briefly for feedback, then remove the
+   entire cue subtree, including its animation. Travel lasts a configurable
+   number of beats; arrival is its due beat. Verify runtime spawning, linear
+   beat-timed travel, and self-removal before relying on this factory for a
+   full course.
+3. **Repeated three-circle sets.** Course keyframes spawn simultaneous
+   `head`, `left_hand`, and `right_hand` cues through the same factory, with
+   distinct colors and explicit role/position configuration. Author left and
+   right from the player's perspective. Start with a few readable sets,
+   including two sets in flight at once. Let the course finish only after the
+   final set's expiry, then allow replay. Verify no cue trees accumulate
+   across repeated runs. Squares/feet follow later.
+
+This is a visual prototype: it establishes travel, arrival, fill, and lifetime
+without scoring. The longer approach previews the target; the final one-beat
+fill keeps the existing timing vocabulary. Update the stage contract alongside
+implementation to distinguish this longer moving preview from its original
+one-beat target appearance rule.
+
+## Cue ownership and implementation proof
+
+Course keyframes should contain only new cue information: role, placement,
+travel duration, size/color, and due beat (or spawn beat plus lead duration).
+The cue factory owns its movement and retirement. Do not put removal of an
+earlier note in a later course keyframe.
+
+MMS already exposes `Animation`, `Keyframe`, `Transition`, runtime `attach`,
+and `remove_subtree()`. First attempt a cue-owned animation using those APIs;
+a new engine lifetime component is not assumed necessary. The proof must check
+that a dynamically attached cue starts its timeline at spawn, transition
+travel is linear, and removing a cue from its own final callback safely
+cleans up keyframes and visual instances. A detached component is not an
+expired component: use actual subtree removal.
+
+Keep a cue-set root under a session-owned live-cues root. A future restart or
+cancel may remove that root in one operation; normal expiry remains the cue's
+responsibility. A fresh cue instance on each spawn also avoids replaying the
+existing marker's fill from its already expanded scale.
+
+Acceptance for this first proof: before Start there are no live cues; during
+playback incoming sets overlap, reach the same arrival plane at their authored
+beats, fill during the last beat, and disappear after their configured hold;
+after completion the live-cues root is empty and another Start reproduces the
+sequence without stale animation callbacks or accumulating scene components.
+
+## Later playable slices
 
 1. **Start and transport proof.** Add a minimal stage, Start button, four-beat
    edge-of-view countdown, a short music clip, and a shared course epoch.

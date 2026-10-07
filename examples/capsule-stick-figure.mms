@@ -106,7 +106,7 @@ tripod_light(
 // do not attach AVC, PoseCapture, or a humanoid map until the retargeting
 // contract described in docs/task/capsule-stick-figure-pose-retargeting.md
 // exists.
-T.position(0.0, 0.14, -1.5).scale(1.55, 1.55, 1.55) {
+T {
     name = "capsule_stick_figure_subject"
     GLTF.new("assets/models/capsule_stick_figure.glb") {}
 }
