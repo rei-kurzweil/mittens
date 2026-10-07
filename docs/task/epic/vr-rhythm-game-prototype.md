@@ -1,7 +1,7 @@
 # Epic: simple VR rhythm game prototype
 
-Status: definition for review. No game example or gameplay system is built by
-this document.
+Status: planning updated 2026-10-07. Reusable target/light-strip visuals exist;
+the example and gameplay library remain to be built. Current work is documentation.
 
 ## Goal
 
@@ -40,8 +40,9 @@ defines their independent offsets and what every venue must provide.
 
 Use MMS beat keyframes as the authored course vocabulary. One start action
 must establish the countdown, playback, visual cues, and judging origin. A
-target with due beat `b` becomes visible at `b - 1`, fills from outline to
-solid over that beat, and is checked at `b`. The four-beat countdown occurs
+target with due beat `b` approaches along the runway from `b - travel_beats`,
+fills during `[b - 1, b]`, and is checked at `b`. Travel lead is configurable
+and at least one beat in the initial proof. The four-beat countdown occurs
 before course beat zero. The exact synchronization mechanism, pause/restart
 policy, and latency calibration are specified in
 [course timing and judging](../rhythm-game-course-timing-and-judging.md).
@@ -55,10 +56,23 @@ authored and animated now; mark them unscored until foot tracking is available.
 ## Repository layout
 
 - First example: `examples/rhythm_game/minimal.mms`.
+- Gameplay library: `examples/rhythm_game/lib/rhythm_game.mms`, owning course
+  animation construction, session lifecycle, cue travel/expiry, and later judging.
 - Further examples or venue variants: `examples/rhythm_game/`.
 - Reusable prototype-specific MMS factories, including circles and squares:
   `assets/components/rhythm_game/`.
 - Design records: this epic and the linked task documents.
+
+The minimal venue uses four studio stages, two end to end on each side,
+rotated about Y so their long local X axes run along world Z and their fronts
+face the central runway. Player circles approach along world Z. See the
+[stage layout](../rhythm-game-stage-choreography.md#minimal-venue-layout).
+
+Start with hand-authored course data in MMS. Later, DAW-exported MIDI files
+can supply course events through an explicit game mapping and the same library
+animation builder. General MIDI file loading and `MidiInput`/`MidiOutput`
+components are tracked in the [MIDI epic](midi/README.md); they do not block
+the first visual prototype.
 
 ## Tickets
 

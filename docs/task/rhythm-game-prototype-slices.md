@@ -5,11 +5,25 @@ example remains to be built. Parent: [VR rhythm game epic](epic/vr-rhythm-game-p
 
 ## Repository structure
 
-Put the first example at `examples/rhythm_game/minimal.mms`. Put reusable MMS
-target visuals and course helpers in `assets/components/rhythm_game/`,
-starting with circle and square factories once their contract is agreed.
-Keep venue-specific composition in the example. More examples may share the
-factories without requiring a new Mittens release during co-development.
+Put the first example at `examples/rhythm_game/minimal.mms`. Define gameplay
+in `examples/rhythm_game/lib/rhythm_game.mms`: course animation construction,
+session start/completion/replay, moving cue creation and expiry, and later
+transport and judging. Keep venue composition, player setup, and the Start
+button in `minimal.mms`; the button delegates to the library's session API.
+Keep reusable visual factories in `assets/components/rhythm_game/`.
+
+The library should build a finite course animation from cue data, initially
+hand-authored in MMS. Course records describe role, due beat, placement,
+travel duration, size/color, and feedback hold. Exact exported function names
+and record syntax will be settled during the first implementation proof.
+Fresh runs get fresh session/cue trees; the library owns their lifecycle.
+
+Later, a DAW-exported MIDI file can supply part of that cue data through an
+explicit mapping. Importing MIDI should produce the same course records and
+use the same animation builder as hand-authored data. MIDI parsing and device
+I/O belong to the engine's [MIDI epic](epic/midi/README.md); mapping musical
+events to body roles, poses, and venue events belongs to the game library.
+The basic prototype and library come first, without a MIDI dependency.
 
 ## First visual runway slices
 
@@ -21,24 +35,31 @@ the button can start a fresh run. No notes move or spawn before Start.
 1. **Venue and Start.** Create `examples/rhythm_game/minimal.mms` with Bloom,
    a declared player arrival plane, and a runway bordered by gold/yellow LED
    strips. Reuse `light_strip` with explicit warm color and strong emissive
-   intensity, initially around 4.0 and then tuned in-headset. Reuse several
-   `studio_stage` assets end to end along their long local X axis; rotate the
-   whole venue as needed to align that axis with the approach lane. Repeat
-   tripod lights along the wall, aimed into the runway. The stage includes a
-   32 m wide wall and a 26 m truss, so repeating it every 32 m leaves truss
+   intensity, initially around 4.0 and then tuned in-headset. Use exactly four
+   `studio_stage` instances: two end to end on each side of a central runway.
+   Rotate each stage about Y by a quarter-turn so its long local X axis runs
+   along world Z. Use opposite rotations on the two sides so the open fronts
+   face inward and the back walls sit outside the runway. Circles approach
+   along world Z toward the player arrival plane. See the
+   [layout contract](rhythm-game-stage-choreography.md#minimal-venue-layout).
+   Repeat tripod lights along both outer walls, aimed into the runway.
+   Each stage includes a 32 m wide wall and a 26 m truss, so repeating it
+   every 32 m leaves truss
    gaps: add connecting truss sections or author a continuous truss separately.
    Keep the button and arrival area close to the player rather than scaling
    interaction distances with the scenery.
-2. **One moving circle with owned expiry.** Add a reusable cue factory around
-   `circle_pose_marker`. Its placement root owns a finite local animation:
+2. **One moving circle with owned expiry.** Add a cue factory in
+   `examples/rhythm_game/lib/rhythm_game.mms` around `circle_pose_marker`.
+   Its placement root owns a finite local animation:
    approach the arrival plane, begin the existing one-beat fill during the
    final beat before arrival, hold briefly for feedback, then remove the
    entire cue subtree, including its animation. Travel lasts a configurable
    number of beats; arrival is its due beat. Verify runtime spawning, linear
    beat-timed travel, and self-removal before relying on this factory for a
    full course.
-3. **Repeated three-circle sets.** Course keyframes spawn simultaneous
-   `head`, `left_hand`, and `right_hand` cues through the same factory, with
+3. **Repeated three-circle sets.** The library builds a course animation whose
+   keyframes spawn simultaneous `head`, `left_hand`, and `right_hand` cues
+   through the same factory, with
    distinct colors and explicit role/position configuration. Author left and
    right from the player's perspective. Start with a few readable sets,
    including two sets in flight at once. Let the course finish only after the
@@ -47,9 +68,8 @@ the button can start a fresh run. No notes move or spawn before Start.
 
 This is a visual prototype: it establishes travel, arrival, fill, and lifetime
 without scoring. The longer approach previews the target; the final one-beat
-fill keeps the existing timing vocabulary. Update the stage contract alongside
-implementation to distinguish this longer moving preview from its original
-one-beat target appearance rule.
+fill keeps the existing timing vocabulary. The stage and timing contracts
+distinguish travel lead from this final fill interval.
 
 ## Cue ownership and implementation proof
 
@@ -93,8 +113,8 @@ sequence without stale animation callbacks or accumulating scene components.
 5. **Coach and atmosphere.** Add one skinned humanoid coach with several
    readable pose transitions and a small set of beat-timed venue events.
 6. **Second environment and path experiment.** Reuse timing, targets, and
-   scoring in another environment. Try a curved guide approach from the
-   right; keep it only if it reads clearly in VR.
+   scoring through the same library in another environment. Try a curved guide
+   approach from the right; keep it only if it reads clearly in VR.
 
 Each slice should leave a runnable example and a concrete observation. The
 first three slices are the playable core. The guide, coach, and second venue

@@ -8,6 +8,7 @@ the audio diagnostic work helps inspect microphone analysis independently.
 |---|---|---|
 | [Audio spectrum debugging](../task/epic/audio-input-spectrum-debugging.md) | Optional pre/post-filter FFT taps for microphone RMS and a reusable spectrum view | Review the small analysis-plan boundary and bucket handoff before implementation |
 | [VR rhythm game prototype](../task/epic/vr-rhythm-game-prototype.md) | Beat-authored targets, guides, coach, and scenery in a playable MMS example | Review the stage contract and first slices before building `minimal.mms` |
+| [MIDI](../task/epic/midi/README.md) | Live input/output, `MidiEvent`, and DAW-exported file data | Build the rhythm MMS library first; settle MIDI payload and file-loader boundaries next |
 
 ## How these relate
 
@@ -16,6 +17,12 @@ prerequisite for the other. The rhythm prototype co-develops Mittens through
 concrete game needs. The spectrum view is a diagnostic tool for microphone
 processing and may later help inspect audio used by a game; it does not define
 rhythm-game timing or scoring.
+
+MIDI is a related general engine capability. DAW-exported MIDI can later feed
+the rhythm gameplay library's course animation builder. The immediate venue
+plan is four studio stages, two on each side of a world-Z runway, with gameplay
+in `examples/rhythm_game/lib/rhythm_game.mms`. Hand-authored cues establish that
+library before file import or live device work.
 
 The rhythm prototype stays public and deliberately generic through its proof
 of concept. Expect at least one and likely two environments here. When the

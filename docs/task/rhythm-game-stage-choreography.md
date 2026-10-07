@@ -8,11 +8,11 @@ A venue owns one beat-indexed course. Its authoring should describe *what is
 due when* separately from how early each stream previews it. The same due
 beat can cue a player target, a guide pose, a coach pose, and scenery. Each
 stream may have its own lead offset, transition duration, and cleanup beat.
-The initial authoring vehicle is MMS `Animation`/`Keyframe.at` and small
-factories in `assets/components/rhythm_game/`. If direct keyframe callbacks
-become awkward for a long course, a later compiler can lower a declarative
-course table into those same events; that is a design option, not phase-one
-infrastructure.
+The gameplay library at `examples/rhythm_game/lib/rhythm_game.mms` builds MMS
+`Animation`/`Keyframe.at` schedules from course records and uses visual factories
+in `assets/components/rhythm_game/`. Begin with a small hand-authored course;
+later a DAW-exported MIDI file can supply records through an explicit mapping.
+General file loading is tracked in the [MIDI epic](epic/midi/README.md).
 
 Use a single world/stage coordinate frame for authored target positions.
 Describe left and right from the player's perspective. Distinguish the
@@ -23,7 +23,7 @@ placement remain explicit follow-up decisions.
 
 | Stream | Authored event at due beat `b` | Preview and completion | First slice |
 |---|---|---|---|
-| Player targets | Body role, world/stage pose, zone size, whether scored | Spawn/enable at `b - 1`; inner circle or square grows for one beat until it fills the outline at `b`; judge then retire | Head, left hand, right hand circles scored; foot squares visible and unscored |
+| Player targets | Body role, world/stage pose, zone size, whether scored | Spawn at `b - travel_beats`, approach along world Z; fill during `[b - 1, b]`; arrive/judge at `b`, then retire | Visual runway first; later score head/hand circles and show unscored foot squares |
 | Pose guides | Pose and arrival/departure beats | Spawn to the right, advance toward a point slightly left of center, disappear after due beat | Simple posed stick figures on a straight track |
 | Coach | Demonstration pose and transition interval | Begin transition early enough to be readable; hold through due beat, then continue | One skinned humanoid at front center with a few distinct poses |
 | Venue/atmosphere | Cue and active interval | Art-directed; independent lead and duration | One modest environment with beat-timed background events |
@@ -31,8 +31,10 @@ placement remain explicit follow-up decisions.
 ## 1. Player targets
 
 The first target kinds are `head`, `left_hand`, and `right_hand`, each shown as
-a circle with an outer outline and inner fill. The inner shape starts small at
-the preview beat and reaches the outline at the due beat. A target's placement
+a circle with an outer outline and inner fill. The moving outline appears at
+`b - travel_beats`, with travel lasting at least one beat. The inner shape stays
+small until `b - 1`, then fills over the final beat and reaches the outline at
+the due beat as the cue reaches the arrival plane. A target's placement
 and its `Zone.sphere(...)` should derive from the same authored cue. A target
 may be simultaneous with others; hit results are per role and per cue.
 
@@ -43,10 +45,11 @@ both constructors. A prototype circle factory can give both surfaces the
 same color and expand the disk from the center until its edge reaches the
 annulus. Keep the disk slightly in front if coplanar depth causes flicker.
 
-Author `left_foot` and `right_foot` squares from the start, using box-shaped
-zones and the same one-beat fill rule, but set `scored = false` in the first
-slice. Later tracked feet can activate scoring without changing the visual
-course data. Torso and pelvis are possible later roles; neither requires a
+Add `left_foot` and `right_foot` squares in the later hands/feet slice, using
+box-shaped zones and the same one-beat fill rule, with `scored = false`.
+The initial visual runway proves circles first. Later tracked feet can
+activate scoring without changing the visual course data. Torso and pelvis
+are possible later roles; neither requires a
 first-slice visual or judge. Define each role's measurement point and zone
 size in the course timing task rather than relying on a model bone name.
 
@@ -83,6 +86,28 @@ beat. A venue is free to omit most events in this stream. They must not block
 judgment or alter target-zone placement accidentally.
 
 ## Venue template and open choices
+
+### Minimal venue layout
+
+Use exactly four instances of `studio_stage`: two end to end on the left and
+two on the right of a central runway. The existing asset is 32 m long along
+local X, with its open/stepped front toward local +Z and back wall toward
+local -Z. Rotate the left row by +pi/2 about Y and the right row by -pi/2;
+this aligns both long axes with world Z and turns the open fronts inward.
+Keep the stage assets at their authored scale. Space each row's centers 32 m
+apart along Z. Their 26 m trusses leave 6 m gaps that need connecting sections.
+
+Player targets move along world Z; guide travel remains a separate stream.
+As an initial placement convention, put the arrival plane at world `z = 0`,
+have the player face toward -Z, and spawn circles at negative Z moving toward
+zero. This sign convention is a proposed scene default, not a requirement of
+the gameplay library. Markers face local +Z, which faces the player with this
+layout. Place the stage rows beside the approach lane with their walls outside;
+choose row X offsets, runway width, floor height, and arrival height together
+so the decks/steps do not obstruct the lane. Keep Start within easy reach.
+Final positions and lighting require desktop and headset inspection.
+
+### Venue data
 
 Each venue should specify:
 

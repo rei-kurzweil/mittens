@@ -2,6 +2,10 @@
 
 Status: proposed for review. Parent: [VR rhythm game epic](epic/vr-rhythm-game-prototype.md).
 
+This describes the later playable slice. The initial visual runway adds travel,
+fill, expiry, and replay first, without music, countdown, or scoring. Shared
+course/session behavior belongs in `examples/rhythm_game/lib/rhythm_game.mms`.
+
 ## Start and countdown
 
 The first example has a reachable `Start` button. Clicking it enters a
@@ -22,8 +26,10 @@ proven in the first slice. A callback that starts audible playback only after
 a visual keyframe has fired may be late; test scheduling/lookahead rather
 than assuming the two align.
 
-The pre-roll needs enough time to show the first target: if a target is due
-at course beat zero, it must appear during the final countdown beat (`-1`).
+The pre-roll needs enough time for the first target's full travel: if a target
+is due at course beat zero, it spawns at `-travel_beats` and starts filling at
+`-1`. Keep the four-beat countdown; if travel exceeds four beats, add an
+explicit earlier pre-roll or constrain the initial course lead to fit it.
 Treat countdown beats as negative course beats or equivalent pre-roll state,
 so cue authors do not have to move the whole song four beats forward.
 
@@ -31,8 +37,10 @@ so cue authors do not have to move the whole song four beats forward.
 
 For a cue due at beat `b`:
 
-1. At `b - 1`, show its outline and a small inner shape; enable or place its
-   detection-only `Zone` with the cue's stage transform.
+1. At `b - travel_beats`, spawn its outline and small inner shape. Move along
+   world Z toward the arrival plane over the configured travel duration
+   (initially at least one beat). A detection-only `Zone` shares the cue's
+   placement; the early preview cannot score before its due beat.
 2. Over `[b - 1, b]`, expand the inner shape to fill the outline. This visual
    may interpolate continuously; it does not decide the hit.
 3. At `b`, sample the configured body-point world position and classify it
@@ -67,7 +75,8 @@ beat, hit/miss/unavailable, and aggregate score to a simple debug UI.
 ## Acceptance
 
 1. Clicking Start gives four visible beats, then music and course beat zero
-   start together; a beat-zero target gets its full one-beat preview.
+   start together; a beat-zero target gets its full travel preview and final
+   one-beat fill.
 2. Three simultaneous head/hand targets score independently from the correct
    tracked points and authored zones. A missing point is not counted as a
    miss; foot squares appear without contributing to score.
