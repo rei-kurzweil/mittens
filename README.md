@@ -43,7 +43,7 @@ and [generic REPL migration](docs/task/mms-repl-navigation-and-cat-unification.m
 
 - Run examples in release mode by default: `cargo run --release --example <name>`.
 - Avoid debug example runs unless you specifically need debug-only diagnostics or faster compile iteration.
-- Large `.glb` model assets are omitted from the crates.io package. Every example
+- Large `.glb` model assets and Blender source assets are omitted from the crates.io package. Every example
   calls `mittens_engine::example_support::ensure_model_assets()` before scene
   setup; if `assets/models` contains no `.glb` files, it runs
   `examples/scripts/download-model-assets.sh` to fetch the example model bundle from

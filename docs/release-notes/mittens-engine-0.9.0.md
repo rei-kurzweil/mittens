@@ -7,6 +7,10 @@ requires the 0.9 series of Meow Meow Script.
 The window title uses the engine's Cargo package version, so it displays
 `mittens 0.9.0` and follows future version bumps automatically.
 
+The engine package excludes Blender source assets, including photogrammetry
+reference photos, to stay below crates.io's upload limit. Runtime textures and
+the existing example model downloader remain included.
+
 ## Upgrading
 
 Use `mittens-engine = "0.9.0"` for the engine, or

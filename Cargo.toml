@@ -19,6 +19,7 @@ readme = "README.md"
 description = "A Vulkan and OpenXR scene engine with ECS, reactive signals, and Meow Meow scripting"
 exclude = [
     "assets/models/*.glb",
+    "assets/models/blender/**",
     "examples/video/**",
     "docs/.debug/**",
     "docs/analysis/**",
