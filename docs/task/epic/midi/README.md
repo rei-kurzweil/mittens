@@ -14,8 +14,11 @@ and beat-authored scene animation.
 
 Keep device I/O, file parsing, and game interpretation separate. Loading a
 file produces timed musical data; it does not open a device or play audio.
-The rhythm library maps that data to course records and constructs the course
-animation. MIDI events alone do not define body positions, target sizes,
+The rhythm library maps that data to its course actions and constructs the
+course animation, optionally through intermediate records. Initially it imports
+a hand-authored animation factory from `lib/example_course.mms`; MIDI can later
+supply an equivalent factory or keyframes with the same game bindings.
+MIDI events alone do not define body positions, target sizes,
 scoring rules, or rendered music; those require an explicit game mapping and
 a separate music asset or sound source.
 
@@ -109,9 +112,11 @@ The proposed authoring flow is:
 1. Author cue timing in DAW MIDI tracks aligned to the music's beat grid.
 2. Export `.mid` and the corresponding music asset with a known common origin.
 3. Load the MIDI file and apply an explicit game mapping.
-4. Produce the same course records used by the hand-authored MMS course.
-5. Let `examples/rhythm_game/lib/rhythm_game.mms` build the finite animation,
-   own the session epoch, and spawn/retire cues through its existing factories.
+4. Produce keyframes using the same game actions as `lib/example_course.mms`,
+   directly or through intermediate course records.
+5. Let `examples/rhythm_game/lib/rhythm_game.mms` assemble and bind the finite
+   animation, own the session epoch and debug controls, and coordinate targets,
+   coach poses, and winding/fading pictograms.
 
 A candidate mapping uses named tracks for head/left/right roles and note
 numbers for entries in an MMS pose/placement library. This is an option to
@@ -128,13 +133,14 @@ instructions covering tempo, track naming, song origin, and pickup/lead-in.
 
 ## Delivery order and acceptance
 
-1. [ ] Build the basic visual rhythm example and MMS gameplay library from
-   hand-authored course records; prove overlapping cues and replay cleanup.
+1. [ ] Build the basic visual rhythm example and MMS gameplay library with an
+   imported `example_course.mms` animation; prove overlapping cues, coach and
+   pictogram poses, winding/fading previews, pause/resume, and Reset cleanup.
 2. [ ] Settle the shared MIDI message/event vocabulary and disk-loader API.
 3. [ ] Implement disk loading and inspection with small format 0/1 fixtures;
    verify beats, tempo metadata, chords, ordering, and unsupported-file errors.
-4. [ ] Prove a small DAW export maps to the same records and visible schedule
-   as a hand-authored course through the same animation builder.
+4. [ ] Prove a small DAW export maps to the same game actions and visible
+   schedule as the hand-authored animation through the same library bindings.
 5. [ ] Implement `MidiInput`, scoped `MidiEvent` conversion, and diagnostics;
    verify ordering, timestamp semantics, disconnects, and component removal.
 6. [ ] Implement `MidiOutput` and a loopback example; verify delivery and note

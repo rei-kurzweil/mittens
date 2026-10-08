@@ -24,11 +24,11 @@ Every venue defines the same four streams against a common beat timeline:
 1. **Player targets:** head and hand circles; later foot squares and possibly
    torso/pelvis targets. A target appears early, fills over one beat, and is
    judged at its due beat.
-2. **Pose guides:** successive posed stick figures/mannequins moving along a
-   readable track. Start with a straight right-to-left path; investigate a
-   curved approach from the right after the linear proof.
-3. **Coach:** a more detailed skinned humanoid, generally front and center,
-   demonstrating the player's intended poses on the same timeline.
+2. **Pictograms:** miniature skinned stick-figure humanoids winding along a
+   readable track, fading in/out and demonstrating upcoming poses.
+3. **Coach:** a fully detailed cartoon skinned humanoid character, generally
+   front and center, demonstrating the player's intended poses on the same
+   timeline. The coach should have a recognizable character appearance.
 4. **Venue and atmosphere:** scenery, lighting, background motion, and other
    staged events that reinforce the music without affecting target judgment.
 
@@ -57,7 +57,10 @@ authored and animated now; mark them unscored until foot tracking is available.
 
 - First example: `examples/rhythm_game/minimal.mms`.
 - Gameplay library: `examples/rhythm_game/lib/rhythm_game.mms`, owning course
-  animation construction, session lifecycle, cue travel/expiry, and later judging.
+  assembly/bindings, coach and pictogram setup, Start/Play-Pause/Reset controls,
+  session lifecycle, cue travel/expiry, and later judging.
+- Initial course: `examples/rhythm_game/lib/example_course.mms`, exporting a
+  factory for a fresh paused animation with authored keyframes and pose cues.
 - Further examples or venue variants: `examples/rhythm_game/`.
 - Reusable prototype-specific MMS factories, including circles and squares:
   `assets/components/rhythm_game/`.
@@ -68,9 +71,14 @@ rotated about Y so their long local X axes run along world Z and their fronts
 face the central runway. Player circles approach along world Z. See the
 [stage layout](../rhythm-game-stage-choreography.md#minimal-venue-layout).
 
-Start with hand-authored course data in MMS. Later, DAW-exported MIDI files
-can supply course events through an explicit game mapping and the same library
-animation builder. General MIDI file loading and `MidiInput`/`MidiOutput`
+Start with the hand-authored animation in `example_course.mms`, imported by
+`rhythm_game.mms`. Its keyframes use game actions/handles provided by the
+library; venue construction and session control stay out of the course file.
+Include coach and winding/fading pictograms in the first visual prototype,
+with Play/Pause and Reset for debugging before adding music or scoring.
+
+Later, DAW-exported MIDI files can supply keyframes through an explicit mapping
+to the same course actions. General MIDI file loading and `MidiInput`/`MidiOutput`
 components are tracked in the [MIDI epic](midi/README.md); they do not block
 the first visual prototype.
 
@@ -85,7 +93,9 @@ the first visual prototype.
 
 The minimal scene can start, count four beats, play a track, show and judge
 head/left/right targets, animate their one-beat fill, and report hits and
-misses. A guide and coach visibly follow the same course cues, even if their
-first art and poses are simple. Foot-square cues are visible but excluded from
+misses. A detailed cartoon coach and miniature skinned pictograms visibly
+follow the same course poses; pictograms wind along a track and fade in/out.
+Play/Pause preserves all game streams' phase and Reset clears the run and
+restores its initial state. Foot-square cues are visible but excluded from
 scoring. A second environment can reuse the course contract without copying
 the timing/judging implementation.

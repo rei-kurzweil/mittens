@@ -6,12 +6,15 @@ Status: proposed for review. Parent: [VR rhythm game epic](epic/vr-rhythm-game-p
 
 A venue owns one beat-indexed course. Its authoring should describe *what is
 due when* separately from how early each stream previews it. The same due
-beat can cue a player target, a guide pose, a coach pose, and scenery. Each
+beat can cue a player target, a pictogram pose, a coach pose, and scenery. Each
 stream may have its own lead offset, transition duration, and cleanup beat.
-The gameplay library at `examples/rhythm_game/lib/rhythm_game.mms` builds MMS
-`Animation`/`Keyframe.at` schedules from course records and uses visual factories
-in `assets/components/rhythm_game/`. Begin with a small hand-authored course;
-later a DAW-exported MIDI file can supply records through an explicit mapping.
+The gameplay library at `examples/rhythm_game/lib/rhythm_game.mms` imports a
+fresh paused `Animation` from `lib/example_course.mms` and binds its keyframes
+to target, coach, and pictogram actions. The course file owns authored timing
+and pose cues; the game library owns setup, session transport, debug controls,
+and cue lifetimes. Visual factories live in `assets/components/rhythm_game/`.
+Later a DAW-exported MIDI file can supply keyframes through an explicit mapping
+to the same course actions, optionally using intermediate course records.
 General file loading is tracked in the [MIDI epic](epic/midi/README.md).
 
 Use a single world/stage coordinate frame for authored target positions.
@@ -24,8 +27,8 @@ placement remain explicit follow-up decisions.
 | Stream | Authored event at due beat `b` | Preview and completion | First slice |
 |---|---|---|---|
 | Player targets | Body role, world/stage pose, zone size, whether scored | Spawn at `b - travel_beats`, approach along world Z; fill during `[b - 1, b]`; arrive/judge at `b`, then retire | Visual runway first; later score head/hand circles and show unscored foot squares |
-| Pose guides | Pose and arrival/departure beats | Spawn to the right, advance toward a point slightly left of center, disappear after due beat | Simple posed stick figures on a straight track |
-| Coach | Demonstration pose and transition interval | Begin transition early enough to be readable; hold through due beat, then continue | One skinned humanoid at front center with a few distinct poses |
+| Pictograms | Pose and arrival/departure beats | Miniature skinned stick figures wind along a track, fade in on entry and out before removal | A few posed models on a winding track with controlled lifetimes |
+| Coach | Demonstration pose and transition interval | Begin transition early enough to be readable; hold through due beat, then continue | One detailed cartoon skinned humanoid at front center with a few distinct poses |
 | Venue/atmosphere | Cue and active interval | Art-directed; independent lead and duration | One modest environment with beat-timed background events |
 
 ## 1. Player targets
@@ -53,28 +56,42 @@ are possible later roles; neither requires a
 first-slice visual or judge. Define each role's measurement point and zone
 size in the course timing task rather than relying on a model bone name.
 
-## 2. Pose guides
+## 2. Pictograms
 
-Guides are a sequence of posed stick figures or simple mannequins showing
-the upcoming body arrangement. Initially they traverse a straight lane from
-the player's right toward a point slightly left of center and disappear after
-their due beat. Their pose should correspond to the same authored body-target
-event, though a guide may preview multiple simultaneous targets. Keep guide
-travel time configurable per venue; do not tie it to the target's exact
-one-beat fill duration.
+Pictograms are miniature skinned stick-figure humanoid models showing upcoming
+body arrangements. They travel along a winding track with authored fade-in
+and fade-out intervals. Their poses correspond to the coach and target sets
+at the same due beats; one pictogram can preview several simultaneous targets.
+Track travel, pose timing, fades, and retirement all use the session timeline.
+The first course needs only a few readable poses and overlapping previews.
 
-A curved path entering from the right is a later presentation slice. Author
-the path independently from guide poses, so a different venue can choose a
-curve without rewriting choreography. In VR, test the lane from the expected
-forward-facing play position and allow head turning; never define timing by
-literal screen pixels.
+Author the path independently from poses so another venue can change its bends
+without rewriting the course. Keep lead/travel duration configurable and
+separate from the targets' final one-beat fill. Define track coordinates,
+orientation along the track, arrival/hold interval, and fade boundaries in
+the game setup. Fade completion is followed by actual subtree removal.
+Verify fading covers the complete skinned model and remains readable in VR.
+
+`assets/models/capsule_stick_figure.glb` is a candidate existing asset. The
+[retargeting laboratory](capsule-stick-figure-pose-retargeting.md) currently
+documents a static A-pose baseline and unresolved cross-rig pose mapping.
+Prove suitable skinning and pose application before depending on this model;
+do not assume the coach's joint names can be reused. Small model-specific pose
+factories or a verified humanoid mapping can supply equivalent poses initially.
+
+In VR, test the track from the expected forward-facing play position and allow
+head turning; never define timing by literal screen pixels. Pictogram travel
+is separate from circles approaching along world Z.
 
 ## 3. Coach
 
-The coach is a more detailed skinned humanoid near front center. Its poses
+The coach is a fully detailed cartoon skinned humanoid near front center,
+with a recognizable character appearance rather than a blank mannequin.
+An existing detailed model such as Bisket is a candidate; final asset choice
+and any additional model remain open. Its poses
 demonstrate what the player should do at target beats. The model, pose
 transitions, and cue mapping should be reusable across courses. The first
-slice may use a small pose library; it must show that coach transitions are
+visual slice uses a small pose library; it must show that coach transitions are
 beat-aligned, rather than simply reacting after scoring. How tracked player
 motion and coach animation coexist is outside this prototype's first slice.
 
@@ -97,7 +114,7 @@ this aligns both long axes with world Z and turns the open fronts inward.
 Keep the stage assets at their authored scale. Space each row's centers 32 m
 apart along Z. Their 26 m trusses leave 6 m gaps that need connecting sections.
 
-Player targets move along world Z; guide travel remains a separate stream.
+Player targets move along world Z; pictogram travel remains a separate stream.
 As an initial placement convention, put the arrival plane at world `z = 0`,
 have the player face toward -Z, and spawn circles at negative Z moving toward
 zero. This sign convention is a proposed scene default, not a requirement of
@@ -114,10 +131,10 @@ Each venue should specify:
 - a stage/course frame and expected forward direction;
 - music asset, BPM/beat grid, course length, and any lead-in;
 - target cue list with role, due beat, placement, size, scored flag;
-- guide path/pose mapping and coach model/pose mapping;
+- winding pictogram path, fade intervals, rig/pose mapping, and coach model/poses;
 - scenery cues and cleanup at course end;
 - accessibility and calibration assumptions, including reach and height.
 
 Venue one is the minimal test environment. Venue two should reuse the same
-course/judging parts with different art or guide path to prove the boundary.
+course/judging parts with different art or pictogram path to prove the boundary.
 Names, art direction, and tracks are intentionally open for the review.

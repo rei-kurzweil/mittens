@@ -2,19 +2,25 @@
 
 Status: proposed for review. Parent: [VR rhythm game epic](epic/vr-rhythm-game-prototype.md).
 
-This describes the later playable slice. The initial visual runway adds travel,
-fill, expiry, and replay first, without music, countdown, or scoring. Shared
-course/session behavior belongs in `examples/rhythm_game/lib/rhythm_game.mms`.
+This describes the later playable slice. The initial visual prototype adds
+target travel/fill, coach poses, winding/fading pictograms, and debug transport
+first, without music, countdown, or scoring. Shared setup and session behavior
+belong in `examples/rhythm_game/lib/rhythm_game.mms`; it imports a fresh paused
+course animation from `lib/example_course.mms`.
 
 ## Start and countdown
 
-The first example has a reachable `Start` button. Clicking it enters a
+The game library creates reachable Start, Play/Pause, and Reset controls.
+In the playable slice, clicking Start enters a
 four-beat countdown and shows `4, 3, 2, 1` at the edge of the player's view.
 The countdown is a test aid, not a final-game UI decision. On desktop it can
 be screen-edge UI; in XR it should be a comfortable view-anchored indicator,
 not a distant world object that disappears when the player looks away.
-Button presses while a countdown or course is active need a defined response:
-the first slice should ignore them and offer an explicit restart after finish.
+Repeated Start presses while a countdown/course is running or paused are
+ignored. Play/Pause preserves the session phase; Reset clears the session and
+returns to idle with a neutral coach and a fresh paused course. The initial
+[debug transport contract](rhythm-game-prototype-slices.md#debug-transport-contract)
+also applies when countdown and music are introduced.
 
 At the end of the countdown, course beat zero begins and music playback is
 scheduled from the same origin. Avoid separate wall-clock timers for music,
@@ -66,10 +72,13 @@ query centered on the due beat; do not silently use whatever pose happens to
 be available. Record the chosen window and calibration offset in a venue or
 session policy, not in every target factory.
 
-On pause, restart, device loss, or recenter, prevent duplicate judgments and
-stale zones. The first playable slice may support only start, finish, and
-restart, but it should identify the epoch and cue ID in every result so later
-transport controls can be added safely. Report at least per-cue role, due
+On pause, reset, device loss, or recenter, prevent duplicate judgments and
+stale zones. Pause freezes the shared course phase, cue travel/fill/expiry,
+coach transitions, pictogram travel/fades, and music when present. Resume
+continues that phase without restarting keyframes. Reset cancels scheduled
+work from the old epoch and removes its live trees before another Start.
+Keep the player's tracking/input active while the game is paused. Identify
+the epoch and cue ID in every result. Report at least per-cue role, due
 beat, hit/miss/unavailable, and aggregate score to a simple debug UI.
 
 ## Acceptance
@@ -80,8 +89,10 @@ beat, hit/miss/unavailable, and aggregate score to a simple debug UI.
 2. Three simultaneous head/hand targets score independently from the correct
    tracked points and authored zones. A missing point is not counted as a
    miss; foot squares appear without contributing to score.
-3. Repeated Start clicks, completion, and restart do not duplicate music,
-   cues, or judgments. A cue is judged once at its epoch and due beat.
+3. Repeated Start clicks, completion, pause/resume, and Reset do not duplicate
+   music, cues, pictograms, or judgments. A cue is judged once at its epoch and
+   due beat. Resume keeps the phase; Reset restores the initial scene state
+   and invalidates the previous epoch's scheduled work.
 4. Capture the timing difference among audio onset, visual fill completion,
    and zone sampling on desktop and XR. Set an explicit tolerance after that
    measurement.

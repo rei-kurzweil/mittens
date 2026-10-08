@@ -21,8 +21,10 @@ rhythm-game timing or scoring.
 MIDI is a related general engine capability. DAW-exported MIDI can later feed
 the rhythm gameplay library's course animation builder. The immediate venue
 plan is four studio stages, two on each side of a world-Z runway, with gameplay
-in `examples/rhythm_game/lib/rhythm_game.mms`. Hand-authored cues establish that
-library before file import or live device work.
+in `examples/rhythm_game/lib/rhythm_game.mms`. It imports a hand-authored course
+animation from `lib/example_course.mms` and coordinates targets, a detailed
+cartoon coach, winding/fading skinned pictograms, and Start/Play-Pause/Reset
+controls. This establishes the library before file import or live device work.
 
 The rhythm prototype stays public and deliberately generic through its proof
 of concept. Expect at least one and likely two environments here. When the

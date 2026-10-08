@@ -5,34 +5,48 @@ example remains to be built. Parent: [VR rhythm game epic](epic/vr-rhythm-game-p
 
 ## Repository structure
 
-Put the first example at `examples/rhythm_game/minimal.mms`. Define gameplay
-in `examples/rhythm_game/lib/rhythm_game.mms`: course animation construction,
-session start/completion/replay, moving cue creation and expiry, and later
-transport and judging. Keep venue composition, player setup, and the Start
-button in `minimal.mms`; the button delegates to the library's session API.
-Keep reusable visual factories in `assets/components/rhythm_game/`.
+Use three files with distinct responsibilities:
 
-The library should build a finite course animation from cue data, initially
-hand-authored in MMS. Course records describe role, due beat, placement,
-travel duration, size/color, and feedback hold. Exact exported function names
-and record syntax will be settled during the first implementation proof.
-Fresh runs get fresh session/cue trees; the library owns their lifecycle.
+- `examples/rhythm_game/minimal.mms` composes the four-stage venue, lighting,
+  player/camera setup, arrival plane, and placement of the game and controls.
+- `examples/rhythm_game/lib/rhythm_game.mms` imports the course factory and
+  sets up its bindings to targets, coach, and pictograms. It owns the session,
+  live cue trees, coach setup, pictogram track, and reachable Start, Play/Pause,
+  and Reset controls. Its initial focus is assembling and controlling a finite
+  `Animation` with keyframes, using existing engine APIs.
+- `examples/rhythm_game/lib/example_course.mms` exports a factory that returns
+  a fresh paused course `Animation` with hand-authored `Keyframe.at(...)` blocks.
+  It receives a context of game actions/handles rather than constructing a
+  venue or debug buttons. Keyframes describe target sets and shared pose cues;
+  timings and poses can be edited here without changing session behavior.
+
+Keep reusable visual factories in `assets/components/rhythm_game/`. Course
+events describe role, due beat, placement/pose, travel duration, size/color,
+and feedback hold. Begin with a small explicit animation rather than requiring
+a generic course-data compiler. Exact factory/action names will be settled
+during implementation. Fresh runs get fresh session/cue trees and a fresh
+course animation; the game library owns their lifecycle.
 
 Later, a DAW-exported MIDI file can supply part of that cue data through an
-explicit mapping. Importing MIDI should produce the same course records and
-use the same animation builder as hand-authored data. MIDI parsing and device
+explicit mapping. Importing MIDI should eventually produce an animation with
+the same course actions/bindings used by `example_course.mms`, whether through
+intermediate records or generated keyframes. MIDI parsing and device
 I/O belong to the engine's [MIDI epic](epic/midi/README.md); mapping musical
 events to body roles, poses, and venue events belongs to the game library.
 The basic prototype and library come first, without a MIDI dependency.
 
 ## First visual runway slices
 
-The first example should establish the venue and incoming cues before adding
-music or judgment. A reachable Start button begins a short, finite course
-animation. Start presses during playback are ignored; after every cue expires,
-the button can start a fresh run. No notes move or spawn before Start.
+The first example establishes the venue, course animation, target travel,
+coach, and winding pictogram track before adding music or judgment. A reachable
+Start button begins a short, finite course animation. Play/Pause and Reset
+are included for debugging, with the behavior described below. No target or
+pictogram moves or spawns before Start; the coach can stand in its neutral pose.
 
-1. **Venue and Start.** Create `examples/rhythm_game/minimal.mms` with Bloom,
+1. **Venue, course wiring, and controls.** Create `minimal.mms` and the two
+   library files. Import a fresh paused animation from `example_course.mms`
+   into `rhythm_game.mms` and bind its actions to session-owned scene objects.
+   Compose the scene with Bloom,
    a declared player arrival plane, and a runway bordered by gold/yellow LED
    strips. Reuse `light_strip` with explicit warm color and strong emissive
    intensity, initially around 4.0 and then tuned in-headset. Use exactly four
@@ -44,10 +58,12 @@ the button can start a fresh run. No notes move or spawn before Start.
    [layout contract](rhythm-game-stage-choreography.md#minimal-venue-layout).
    Repeat tripod lights along both outer walls, aimed into the runway.
    Each stage includes a 32 m wide wall and a 26 m truss, so repeating it
-   every 32 m leaves truss
-   gaps: add connecting truss sections or author a continuous truss separately.
+   every 32 m leaves truss gaps: add connecting truss sections or author a
+   continuous truss separately.
    Keep the button and arrival area close to the player rather than scaling
    interaction distances with the scenery.
+   Prove Start, Play/Pause, and Reset with one visible course action before
+   expanding the choreography.
 2. **One moving circle with owned expiry.** Add a cue factory in
    `examples/rhythm_game/lib/rhythm_game.mms` around `circle_pose_marker`.
    Its placement root owns a finite local animation:
@@ -57,21 +73,34 @@ the button can start a fresh run. No notes move or spawn before Start.
    number of beats; arrival is its due beat. Verify runtime spawning, linear
    beat-timed travel, and self-removal before relying on this factory for a
    full course.
-3. **Repeated three-circle sets.** The library builds a course animation whose
-   keyframes spawn simultaneous `head`, `left_hand`, and `right_hand` cues
-   through the same factory, with
-   distinct colors and explicit role/position configuration. Author left and
+3. **Repeated three-circle sets.** The imported example course has keyframes
+   that spawn simultaneous `head`, `left_hand`, and `right_hand` cues through
+   the same factory, with distinct colors and explicit role/position
+   configuration. Author left and
    right from the player's perspective. Start with a few readable sets,
    including two sets in flight at once. Let the course finish only after the
    final set's expiry, then allow replay. Verify no cue trees accumulate
    across repeated runs. Squares/feet follow later.
+4. **Coach and pictograms.** Bind a few shared pose cues to a detailed cartoon
+   skinned humanoid coach and miniature skinned stick-figure pictograms.
+   Pictograms wind along a configurable track, fade in on entry, demonstrate
+   their associated pose, and fade out before subtree retirement. The coach
+   stays near front center, clear of targets. Verify both models can display
+   the intended poses; matching bone names across rigs is not assumed.
+   Pause and Reset must cover these streams as well as targets.
 
-This is a visual prototype: it establishes travel, arrival, fill, and lifetime
-without scoring. The longer approach previews the target; the final one-beat
-fill keeps the existing timing vocabulary. The stage and timing contracts
+This is a visual prototype: it establishes target travel, arrival, fill, and
+lifetime alongside the coach and pictogram streams, without scoring or music.
+The longer approach previews the target; the final one-beat fill keeps the
+existing timing vocabulary. The stage and timing contracts
 distinguish travel lead from this final fill interval.
 
 ## Cue ownership and implementation proof
+
+The course factory returns a fresh animation for the current session context.
+`rhythm_game.mms` attaches it and supplies the actions used by its keyframes.
+Course content stays in `example_course.mms`; cue movement, coach/pictogram
+setup, control handling, and cleanup stay in `rhythm_game.mms`.
 
 Course keyframes should contain only new cue information: role, placement,
 travel duration, size/color, and due beat (or spawn beat plus lead duration).
@@ -86,8 +115,8 @@ travel is linear, and removing a cue from its own final callback safely
 cleans up keyframes and visual instances. A detached component is not an
 expired component: use actual subtree removal.
 
-Keep a cue-set root under a session-owned live-cues root. A future restart or
-cancel may remove that root in one operation; normal expiry remains the cue's
+Keep cue-set and pictogram roots under session-owned live roots. Reset removes
+those roots and the old course animation; normal expiry remains each cue's
 responsibility. A fresh cue instance on each spawn also avoids replaying the
 existing marker's fill from its already expanded scale.
 
@@ -96,6 +125,36 @@ playback incoming sets overlap, reach the same arrival plane at their authored
 beats, fill during the last beat, and disappear after their configured hold;
 after completion the live-cues root is empty and another Start reproduces the
 sequence without stale animation callbacks or accumulating scene components.
+
+## Debug transport contract
+
+- **Start:** starts a fresh run from idle. Ignore repeated Start while running
+  or paused. After completion it can start a fresh run.
+- **Play/Pause:** pauses a running session and resumes a paused session at the
+  same course phase. Before Start and after completion it is inactive; it
+  does not silently create another run.
+- **Reset:** works during playback, while paused, and after completion. Stop
+  the old session, remove its course and live target/pictogram subtrees, cancel
+  stale callbacks, restore the coach's neutral pose, and create a fresh paused
+  course ready for Start. Reset does not auto-start.
+
+Show the current state and course beat for debugging. Pausing must freeze
+course events, cue travel/fill/expiry, coach pose transitions, and pictogram
+travel/fades together. Pausing just the parent animation is insufficient if
+child animations or transitions continue against the world clock.
+
+Existing `Animation.play()` restarts at local beat zero; it is not a resume
+operation. Prove how the session retains its phase before labeling a control
+Resume. Prefer a shared session timeline or explicit phase-driven updates;
+if existing APIs cannot support this, record and implement the smallest
+required engine change as a focused task. Do not pause unrelated world input
+or the player's tracked viewpoint. Later audio playback must join this same
+transport policy.
+
+Acceptance includes pausing mid-travel/mid-fill and during a pictogram fade,
+waiting, then resuming without a jump, duplicate spawn, or early expiry. Reset
+from each state must return to empty live roots and neutral coach; repeated
+Start/Reset cycles must not accumulate callbacks or components.
 
 ## Later playable slices
 
@@ -108,16 +167,15 @@ sequence without stale animation callbacks or accumulating scene components.
 3. **Hands and feet presentation.** Add simultaneous left/right hand circles,
    per-role scoring, and foot-square visuals with scoring disabled. Extract
    reusable factories under `assets/components/rhythm_game/`.
-4. **Guide track.** Add simple posed stick figures on a linear right-to-left
-   lane, synchronized with the same course cues and retired after due beats.
-5. **Coach and atmosphere.** Add one skinned humanoid coach with several
-   readable pose transitions and a small set of beat-timed venue events.
+4. **Coach/pictogram refinement.** Expand the initial pose vocabulary and tune
+   winding-track readability, scale, fades, and preview intervals in-headset.
+5. **Atmosphere.** Add a small set of beat-timed venue events.
 6. **Second environment and path experiment.** Reuse timing, targets, and
-   scoring through the same library in another environment. Try a curved guide
-   approach from the right; keep it only if it reads clearly in VR.
+   scoring through the same library in another environment. Vary the winding
+   pictogram track without changing the imported course animation contract.
 
 Each slice should leave a runnable example and a concrete observation. The
-first three slices are the playable core. The guide, coach, and second venue
+first three slices are the playable core. The pictograms, coach, and second venue
 are needed for the broader epic proof, with art quality deliberately modest.
 
 ## Dependencies and boundaries
