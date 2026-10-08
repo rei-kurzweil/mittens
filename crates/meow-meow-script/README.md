@@ -1,4 +1,4 @@
-# meow-meow-script
+# meow-meow-script 0.9.0
 
 The host-neutral Meow Meow Script language crate. It owns syntax, parsing,
 runtime values, evaluation, and the synchronous host protocol. Engine-specific

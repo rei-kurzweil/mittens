@@ -1400,7 +1400,7 @@ dependencies = [
 
 [[package]]
 name = "meow-meow-script"
-version = "0.8.0"
+version = "0.9.0"
 
 [[package]]
 name = "microfft"
@@ -1442,7 +1442,7 @@ dependencies = [
 
 [[package]]
 name = "mittens-engine"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "ash",
  "bvh",
