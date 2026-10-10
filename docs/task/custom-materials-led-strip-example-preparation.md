@@ -48,7 +48,10 @@ implementation slice:
 ```text
 strip transform
   backing renderable                 -> regular Toon
-  combined LED rectangle geometry     -> animated_led_strip material instance
+  animated_led_strip Material wrapper -> shared live material instance
+    CombineMesh
+      individual LED rectangles       -> inherit that instance
+    generated combined primitive      -> retains that instance after baking
 ```
 
 Combine only the LED meshes, never the backing and LEDs together. One combined
@@ -58,16 +61,22 @@ draw per rectangle if the custom shader can animate their combined surface.
 
 The current [CombineMeshSystem](../../src/engine/ecs/system/combine_mesh_system.rs)
 copies the first source material/color/emission into its output and normally
-collapses source geometry after baking. A custom material must resolve onto the
-**generated combined output**, retaining the authored material-instance identity.
+collapses source geometry after baking. Wrap the complete LED CombineMesh subtree
+with the custom Material, leaving the backing outside that wrapper. All LED
+rectangles inherit the same material; the first source's **resolved** material
+therefore supplies the combined primitive's material, even for a strip with
+hundreds of LEDs. Transfer the live definition/instance identity to the
+**generated combined output** rather than copying only its default source handle.
 Do not animate a material on a source cube that disappears after baking or
 let the first-source Toon fallback permanently overwrite the custom binding.
 Define/test generated-output attachment and late pipeline-ready replacement
 as a narrow dependency of this scene, not a general multi-material bake rewrite.
 
-Allow the factory to accept an LED material handle/configuration or expose an
-unambiguous LED-only attachment scope. Keep backing selection outside that
-scope. Maintain stable unique strip roots so four instances are independently
+Allow the factory to configure the LED Material wrapper explicitly. Material
+also supports direct-child placement on a renderable, like Shading, but wrapper
+inheritance is the preferred form for this asset. Keep the wrapper itself alive
+outside the geometry that CombineMesh collapses. Keep backing selection outside
+that scope. Maintain stable unique strip roots so four instances are independently
 addressable; repeated internal names must be queried relative to each root.
 Preserve the existing defaults/test path until a replacement is deliberately
 migrated. Do not require an asset-path move out of `rhythm_game/` for this proof.
@@ -138,6 +147,9 @@ prerequisites for this phase.
 - [ ] The combined outputs retain live custom material identity after baking and
   late shader readiness. Shared/independent f32 changes animate only LED surfaces;
   the plane, backings, and clouds retain their own materials.
+- [ ] Wrapper inheritance resolves on the first LED before its material is
+  transferred to the combined primitive. Verify all LEDs in the batch resolve
+  the same instance, without creating a separate material instance per rectangle.
 - [ ] Phase 1's compile/pipeline/upload/allocation and cleanup gates are recorded
   using this scene; material updates do not rebake the combined mesh.
 - [ ] Emission/Bloom is tested only in its explicit later milestone. Record

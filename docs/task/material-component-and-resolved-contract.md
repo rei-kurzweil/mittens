@@ -21,6 +21,18 @@ as distinct identities.
 
 ## Work and gates
 
+Required attachment forms mirror `Shading`: Material can wrap descendants or
+be a direct child of a renderable; local declarations override inherited scopes.
+Container-child scopes also follow the shading convention. A wrapper retains
+one shared instance, not one copy per inherited renderable.
+
+For LED-only CombineMesh, all rectangles inherit the wrapper's material. Resolve
+the first source's effective material before selecting the combined output's
+appearance, and retain that material instance after source geometry collapses.
+The backing stays outside the scope. Verify live updates and pending-to-ready
+program transitions on the combined output; a static handle/parameter copy is
+insufficient.
+
 - [ ] Inventory current components, resolution rules, generated GLTF projections,
   `MaterialHandle` branches, descriptors, vertex interfaces, pipeline/state keys,
   and per-view resources. Link to the existing material/resource-graph ticket.
@@ -34,6 +46,9 @@ as distinct identities.
   independent instances, complete replacement, granular overrides/reset,
   same-scope conflict diagnostics, removal/reparent invalidation, and GLTF
   source identity. Publish a compatibility table for all existing controls.
+- [ ] Test wrapper and direct-child forms, inherited material resolution for
+  combined source geometry, and first-source instance transfer to the generated
+  primitive without rebaking on parameter updates.
 - [ ] Define `Shading` as a built-in surface configuration within this resolver;
   reject incompatible custom-fragment plus built-in surface declarations.
   Decide model-specific property ownership explicitly.

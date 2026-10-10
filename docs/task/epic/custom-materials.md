@@ -98,6 +98,42 @@ the surface model in that same resolved contract. Existing color, texture,
 emissive, alpha/cutout and other components remain useful granular overrides
 when supported by the selected definition.
 
+`Material` supports both attachment forms already used by `Shading`:
+
+- A Material wrapper is a scope for its descendant renderables, including
+  descendants behind ordinary transforms and generated combined mesh outputs.
+- A Material directly beneath a renderable declares that renderable's local
+  material, overriding an inherited wrapper. A declaration directly beneath
+  a container scopes its descendants, following the shading-style convention.
+
+Illustrative Phase 1 forms, with constructor spelling still proposed:
+
+```mms
+Material.custom("assets/shaders/animated-led-strip.frag")
+    .input_f32("time_seconds", 0.0) {
+    CombineMesh {
+        // All LED rectangles resolve this same material instance.
+        R.cube() {}
+        R.cube() {}
+    }
+}
+
+R.cube() {
+    Material.custom("assets/shaders/animated-led-strip.frag")
+        .input_f32("time_seconds", 0.0)
+}
+```
+
+The wrapper owns one live material instance; inheriting it does not instantiate
+one material per LED. Resolve the first CombineMesh source's **effective**
+material, including wrapper inheritance, and transfer its definition/instance
+identity to the generated primitive. For this asset all source LEDs resolve
+the same instance. Keep the wrapper alive outside the collapsed geometry so
+time updates and late shader readiness continue reaching the combined output.
+Copying the source's default Toon handle or a frozen parameter snapshot would
+not satisfy this rule. Different source materials are not combined into one
+multi-material primitive by this slice.
+
 The resolver must define full-material replacement vs individual property
 inheritance. Proposed starting policy:
 
