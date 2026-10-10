@@ -5,6 +5,7 @@ Status: proposed internal prerequisite; documentation only.
 Parent: [custom materials epic](epic/custom-materials.md).
 Consumer: [Material component/resolution](material-component-and-resolved-contract.md).
 First custom-program proof: [f32 time animation](material-f32-time-animation-first-slice.md).
+Sharing topology: [multi-parent component task](multi-parent-components-and-material-sharing.md).
 
 ## Goal and current prototype
 
@@ -60,12 +61,12 @@ the separately mutable material components.
 Current ECS topology is single-parent: attaching an existing component under
 another parent reparents it. Therefore repeated `R.cube() { shared_material }`
 does not currently attach one source at multiple places. Wrapper inheritance
-shares one source within a subtree. Sharing across unrelated subtrees needs
-an explicit non-parenting material-source reference on a renderable/scope,
-with exact MMS spelling settled by the component contract. Such a binding
-does not instantiate another Material or another renderer material instance.
-Keep ordinary component attachment semantics intact; do not solve this by
-giving all ECS components multiple parents.
+shares one source within a subtree. The newly selected direction is to support
+multiple attachment parents for shared declarations through the linked focused
+graph task. It must preserve structural movement/lifetime/performance contracts
+rather than simply change every parent walk to pick the first parent. Multiple
+attachments do not instantiate another Material or renderer material instance.
+The earlier non-parenting binding proposal remains an optional alternative.
 
 Dirty tracking uploads values to bounded frame-safe slots; it must not overwrite
 data referenced by an in-flight command buffer. Descriptor sets may be reused

@@ -144,9 +144,9 @@ multi-material primitive by this slice.
 
 One instantiated Material component means one logical renderer material
 instance; another instantiation means another instance even with identical
-values. Current ECS attachment reparents a single-parent component, so sharing
-one source across unrelated subtrees needs a non-parenting material reference,
-as specified in the [component contract](../material-component-and-resolved-contract.md).
+values. Current ECS attachment reparents a single-parent component. The selected
+sharing direction is the [multi-parent component refactor](../multi-parent-components-and-material-sharing.md),
+with shared material/shading declarations as its first verified use case.
 Do not infer that repeating a bare material handle as a child already creates
 multiple simultaneous attachments. Reference bindings and generated projections
 share the source instance; they do not create additional Material instances.
@@ -253,6 +253,11 @@ automatically solve halo ownership. Record supported LED phases and keep
 unused emission work/resources conditional.
 
 ## Delivery and 0.10.0 completion gates
+
+- [ ] [Multi-parent component sharing](../multi-parent-components-and-material-sharing.md):
+  carefully migrate graph mutation, lifecycle, inheritance/queries and affected
+  system callers; verify shared Shading/Material sources in unrelated locations
+  and benchmark ordinary trees, shared fan-out, and diamond graphs.
 
 - [ ] [Internal material instances and family contracts](../material-instances-and-family-contracts.md):
   use Anime to prove stable identities, bounded uploads, indexed draw bindings,

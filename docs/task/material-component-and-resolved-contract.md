@@ -34,9 +34,13 @@ owns a different instance even when all values match. Sharing the same source
 shares its instance; bindings/projections do not count as new material sources.
 
 Current ECS components have one parent; attaching the same live component at a
-second location reparents it. Add a non-parenting material-source reference for
-sharing across unrelated renderables/scopes, rather than imply repeated child
-attachment already shares a material. Candidate syntax, not implemented API:
+second location reparents it. The current requested direction is
+[multi-parent component attachments](multi-parent-components-and-material-sharing.md),
+starting with material/shading declarations so repeated `R.cube() { shared }`
+can preserve both edges. Implement that graph prerequisite carefully; it is
+not working behavior today. A non-parenting material-source reference remains
+an alternative binding API if useful, not the required sharing solution.
+Historical candidate syntax, not implemented API:
 
 ```mms
 let shared = Material.custom("assets/shaders/animated-led-strip.frag")
@@ -50,6 +54,8 @@ reparent Material. Wrapper/direct-child declaration remains the ordinary
 topology form; define reference precedence/conflicts through the same resolver.
 Decide source-removal fallback and serialize a durable reference. No new
 MaterialInstance constructor or parameter-equality algorithm is needed.
+For the selected multi-parent path, test repeated live child attachment itself
+and edge-specific removal in addition to renderer identity.
 
 For LED-only CombineMesh, all rectangles inherit the wrapper's material. Resolve
 the first source's effective material before selecting the combined output's

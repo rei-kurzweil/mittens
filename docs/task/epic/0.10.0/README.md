@@ -81,6 +81,11 @@ requires runtime rig/hardware evidence in addition to deterministic replay tests
 
 ### Custom materials and renderer capabilities
 
+- [ ] [Multi-parent components for shared material declarations](../../multi-parent-components-and-material-sharing.md):
+  repeated live MMS attachments share one source/instance, with explicit edge
+  removal/lifetime rules, tree compatibility, and measured performance. General
+  spatial subtree sharing requires its own transform/occurrence contract.
+
 - [ ] Internal prerequisite: [stable material instances and family contracts](../../material-instances-and-family-contracts.md).
   Prove the representation/update refactor with Anime before custom programs;
   declare standard per-renderable inputs separately from emission pass participation.
