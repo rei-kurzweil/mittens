@@ -4,6 +4,14 @@ Date: 2026-08-31
 
 Status: proposed planning epic
 
+Authoring update (2026-10-09): [Custom materials and renderer capabilities](custom-materials.md)
+is the current integration epic for [0.10.0](0.10.0/README.md). `Material` is
+now the intended public anchor for the full material contract; `Shading` is
+built-in surface configuration within that contract. This supersedes the
+September exclusion of a public Material component below. The definition,
+instance, schema, vertex-family, and pipeline architecture here remains input
+to that work; historical syntax is not implemented API.
+
 Authoring update (2026-09-08): [Unified Shading and cascade](../shading-model-components-and-cascade.md)
 defines the target public API: `Shading.anime()` (the default), `.toon()`,
 `.unlit()`, `.refraction()`, and `.rough_transmission()` for built-ins, with

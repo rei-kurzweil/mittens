@@ -2,6 +2,12 @@
 
 Status: draft for the first custom material slice. This records the intended authoring contract; it is **not implemented** today.
 
+2026-10-09 direction update: [Custom materials](../task/epic/custom-materials.md)
+places custom programs and typed inputs under a full `Material` component.
+The `Shader`-as-component forms below are an earlier proposal, superseded for
+the 0.10.0 authoring plan. Preserve the program/interface, source ownership,
+validation, and upload contracts when adapting them to `Material`.
+
 Related work: [first testable custom-fragment slice](../task/mms-custom-fragment-shader-first-slice.md), [Unified `Shading` and cascade](../task/shading-model-components-and-cascade.md), [Materials v2](../task/epic/materials-v2.md), and [animated shader inputs](../task/animated-shader-material-inputs-mms-animation-system.md).
 
 ## Purpose

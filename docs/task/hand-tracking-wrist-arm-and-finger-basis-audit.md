@@ -4,6 +4,9 @@ Date: 2026-10-09
 
 Status: investigation planned; source inspection complete, runtime diagnosis pending.
 
+Release target: [mittens-engine 0.10.0](epic/0.10.0/README.md), as the
+prerequisite for shared hand/finger tracking.
+
 ## Current report
 
 Controller tracking works. With hand tracking, the tested VRoid wrists appear pitched roughly

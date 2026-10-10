@@ -3,6 +3,14 @@
 Status: agreed authoring direction; implementation pending.
 Updated: 2026-09-08.
 
+2026-10-09 direction update: [Custom materials](epic/custom-materials.md),
+targeted for [0.10.0](epic/0.10.0/README.md), makes `Material` the anchor for
+the complete material contract. `Shading` remains built-in surface selection;
+the reserved `Shader` component direction below is superseded. Reconcile full
+material replacement and granular property inheritance in the
+[material contract ticket](material-component-and-resolved-contract.md) while
+preserving implemented source/cascade behavior.
+
 Partial implementation for the [first live-controls slice](anime-shading-panel-and-live-shader-inputs.md):
 `Shading.anime()` and `.toon()`, one shared `ShadingComponent`, Anime parameter
 builders, shade-strength live read/write, wrapper inheritance, and GLTF source

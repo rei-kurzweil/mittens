@@ -2,6 +2,13 @@
 
 Status: planned.
 
+2026-10-09: included in [custom materials for 0.10.0](epic/custom-materials.md).
+Adapt this proof to the [Material component contract](material-component-and-resolved-contract.md)
+before implementation. `Shader.fragment`/`ShaderComponent` below are historical
+proposed names; the async loading, scalar validation, fallback, and bounded
+GPU-storage gates remain applicable. Emission is a separate subsequent
+[LED-strip capability slice](material-emission-capabilities-and-led-strip.md).
+
 Parent design: [`Shader` component for MMS](../draft/shader-component.md).
 
 ## Goal

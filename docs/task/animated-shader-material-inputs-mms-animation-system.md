@@ -2,6 +2,12 @@
 
 Status: proposed / investigation
 
+2026-10-09: included in [custom materials for 0.10.0](epic/custom-materials.md).
+Use `Material` as the authored owner of typed retained inputs. Literal values,
+explicit setters/animation, renderer globals, and any later provider/closure
+binding need distinct update contracts; render callbacks never execute MMS.
+The `ShaderMaterial` example below remains exploratory historical syntax.
+
 Parent architecture: [Materials v2: shader programs, vertex-family resolution, and typed parameters](epic/materials-v2.md)
 
 ## Motivation

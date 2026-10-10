@@ -5,6 +5,10 @@ Date: 2026-10-09
 Status: proposed; repository investigation complete, implementation not started.
 This task and its companion tasks authorize no source changes in this documentation pass.
 
+Release target: [mittens-engine 0.10.0](epic/0.10.0/README.md).
+The release epic includes this task, its prerequisite basis audit, and the
+optional MediaPipe bridge in dependency order.
+
 ## Where we got to
 
 Controller tracking and hand-root tracking are implemented. Individual tracked fingers are not.

@@ -2,6 +2,11 @@
 
 Status: planned. Parent: [audio spectrum debugging epic](epic/audio-input-spectrum-debugging.md).
 
+2026-10-09 planning update: [shared FFT node and phoneme slices](shared-fft-audio-node-and-phonemes.md)
+records checked implementation status and expands this direction to one FFT
+core/component for capture and output nodes. Start with raw microphone FFT,
+then exact pre-RMS taps; use that note for delivery order and API decisions.
+
 ## Goal and first slice
 
 Retain a bounded, main-thread-readable frequency spectrum for live microphone
@@ -75,10 +80,14 @@ Choose a fixed, preallocated window size and hop before implementation; a
 85 ms window, adequate to inspect a cutoff near 120 Hz. This is a starting
 point to benchmark, not a fixed public contract. Publish around four times
 per second. State the actual sample rate, FFT size, window function, bin
-frequency, and level convention with every result; frequency is `k * fs / N`
-for bin `k`. A consistent magnitude or dBFS convention must be selected and
-tested with known tones. Preserve enough bins to compare the low-frequency
-cutoff; display-side aggregation may reduce the number of bars.
+frequency, and level convention; frequency is `k * fs / N` for bin `k`.
+Follow the [bucket-count and MMS snapshot task](audio-fft-buckets-and-mms-snapshots.md):
+`FFT.from(source).buckets(32)` selects aggregated result count, not transform
+size. Preserve raw bins internally for low-cutoff tests, and publish bounded
+band values with frequency edges. The initial 32 linear full-range buckets
+cannot resolve a 120 Hz cutoff; a finer/narrow-range or log policy follows.
+The worker aggregates according to the component configuration, so a bar
+example need not copy every raw bin or implement aggregation in MMS.
 
 Do not run an FFT, allocate, lock, log, access ECS, or wait in the capture
 callback. It may write preallocated sample windows into a bounded, nonblocking
@@ -114,6 +123,10 @@ post-effect tap must identify a compiled node boundary, consistent with
 [audio-node metering](audio-node-metering.md).
 
 ## Acceptance
+
+The first visual proof is a [Snapshot button and ordinary bucket frequency columns](audio-spectrum-visualization.md),
+followed by a bounded info-panel history with Start/Stop. Neither requires
+custom material support. UI pause is distinct from disabling FFT analysis.
 
 1. Deterministic silence, DC, and single-/multi-tone PCM fixtures verify bin
    placement, magnitude convention, sample-rate metadata, and Nyquist limit.

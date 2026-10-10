@@ -3,6 +3,11 @@
 Status: planning. This epic records the proposed architecture and delivery
 sequence; it does not add FFT processing or a renderer.
 
+2026-10-09: [shared FFT audio node and phoneme boundary](../shared-fft-audio-node-and-phonemes.md)
+is the current planning entry point. It adds a source-code status audit,
+microphone-first slices, generic output-node/final-mix observation, and the
+separation of audio phonemes from avatar-side visemes.
+
 ## Performer and developer use case
 
 While tuning microphone-driven mouth motion, show which frequencies reach the
@@ -49,8 +54,15 @@ plan can be swapped safely. The backend task resolves the exact plan handoff.
   microphone first; source and filter boundaries, optional pre/post probes,
   bounded worker handoff, retained buckets, and deterministic signal tests.
 - [ ] [Visualize retained spectrum buckets](../audio-spectrum-visualization.md):
-  a reusable diagnostic panel/material, live updates, pre/post comparison, and
-  measured render/update cost.
+  manual Snapshot with ordinary frequency columns, then a reusable info panel with Start/Stop,
+  bounded flat history, pre/post comparison, and measured render/update cost.
+  No custom material or dedicated FFT pipeline is required for the first view.
+- [ ] [Configure bucket count and read copied MMS snapshots](../audio-fft-buckets-and-mms-snapshots.md):
+  `.buckets(count)` independent of FFT size, explicit aggregation/edges, coherent
+  arrays/metadata, and bounded data shape shared by all source adapters.
+- [ ] [Time slices and transport-relative resolution](../audio-fft-time-slices-and-transport-grid.md):
+  independent history span/subdivision, PCM/transport timing, and bounded frame
+  batches so slower UI refresh does not erase fine requested time resolution.
 
 The backend can first expose and test retained buckets without a scene. The
 visualizer then consumes that stable result. A later source-runtime ticket can
@@ -65,8 +77,11 @@ add playback and graph-node taps after the microphone contract is proven.
 3. A live cutoff or Q change produces a fresh post-filter spectrum and RMS
    from the same filter state. Old buckets cannot survive a source, format, or
    filter generation change as if they were current.
-4. A reusable scene view shows the cutoff's effect at roughly four updates
-   per second without pushing FFT or GPU work into the capture callback.
+4. A reusable scene view supports manual snapshots and Start/Stop history with
+   independently chosen span, time-slice spacing, and UI refresh (initially
+   around four refreshes per second), without pushing FFT or GPU work into the capture
+   callback. A suitably resolved policy is needed to show a low cutoff; the
+   initial coarse whole-range frequency columns only prove spectrum transport and display.
 5. CPU time, queue drops, memory, and render updates are measured with the
    visualizer disabled, enabled once, and showing both taps.
 

@@ -4,6 +4,13 @@ Date: 2026-09-19
 
 Status: design sketch
 
+2026-10-09 related work: the current AGC example's ordinary cube/info-panel
+pattern is the starting point for [FFT snapshots and bounded spectrogram history](audio-spectrum-visualization.md).
+FFT extends one scalar per sample to a copied bucket array, with manual Snapshot
+and Start/Stop controls; it needs neither custom materials nor a renderer-special
+graph. The [bucket API task](audio-fft-buckets-and-mms-snapshots.md) owns coherent
+array/metadata reads and aggregation semantics.
+
 ## Goal
 
 Expose retained audio-analysis values as MMS numbers, then use that seam in

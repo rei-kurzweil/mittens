@@ -4,6 +4,9 @@ Date: 2026-10-09
 
 Status: proposed architecture and protocol outline; no bridge or receiver implemented.
 
+Release target: [mittens-engine 0.10.0](epic/0.10.0/README.md), following the
+normalized hand sample/selection foundation. The bridge remains optional.
+
 Depends on the normalized sample/selection contract in
 [shared hand tracking](hand-tracking-system-and-finger-retargeting.md).
 
