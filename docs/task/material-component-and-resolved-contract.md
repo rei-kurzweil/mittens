@@ -28,6 +28,29 @@ be a direct child of a renderable; local declarations override inherited scopes.
 Container-child scopes also follow the shading convention. A wrapper retains
 one shared instance, not one copy per inherited renderable.
 
+Each instantiated Material component owns exactly one logical renderer material
+instance, regardless of its parameter values. A separate constructor invocation
+owns a different instance even when all values match. Sharing the same source
+shares its instance; bindings/projections do not count as new material sources.
+
+Current ECS components have one parent; attaching the same live component at a
+second location reparents it. Add a non-parenting material-source reference for
+sharing across unrelated renderables/scopes, rather than imply repeated child
+attachment already shares a material. Candidate syntax, not implemented API:
+
+```mms
+let shared = Material.custom("assets/shaders/animated-led-strip.frag")
+    .input_f32("time_seconds", 0.0)
+R.cube().material(shared) {}
+R.sphere().material(shared) {}
+```
+
+The proposed `.material(shared)` stores a reference and does not construct or
+reparent Material. Wrapper/direct-child declaration remains the ordinary
+topology form; define reference precedence/conflicts through the same resolver.
+Decide source-removal fallback and serialize a durable reference. No new
+MaterialInstance constructor or parameter-equality algorithm is needed.
+
 For LED-only CombineMesh, all rectangles inherit the wrapper's material. Resolve
 the first source's effective material before selecting the combined output's
 appearance, and retain that material instance after source geometry collapses.
@@ -51,6 +74,9 @@ insufficient.
 - [ ] Test wrapper and direct-child forms, inherited material resolution for
   combined source geometry, and first-source instance transfer to the generated
   primitive without rebaking on parameter updates.
+- [ ] Specify/test non-parenting source references for cross-subtree sharing:
+  one Material used by two renderables preserves both bindings and one logical
+  renderer instance. Equal-valued separately instantiated Materials stay distinct.
 - [ ] Define `Shading` as a built-in surface configuration within this resolver;
   reject incompatible custom-fragment plus built-in surface declarations.
   Decide model-specific property ownership explicitly.

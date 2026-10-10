@@ -142,6 +142,15 @@ Copying the source's default Toon handle or a frozen parameter snapshot would
 not satisfy this rule. Different source materials are not combined into one
 multi-material primitive by this slice.
 
+One instantiated Material component means one logical renderer material
+instance; another instantiation means another instance even with identical
+values. Current ECS attachment reparents a single-parent component, so sharing
+one source across unrelated subtrees needs a non-parenting material reference,
+as specified in the [component contract](../material-component-and-resolved-contract.md).
+Do not infer that repeating a bare material handle as a child already creates
+multiple simultaneous attachments. Reference bindings and generated projections
+share the source instance; they do not create additional Material instances.
+
 The resolver must define full-material replacement vs individual property
 inheritance. Proposed starting policy:
 

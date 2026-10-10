@@ -44,11 +44,28 @@ into a resizable Vec and no material-value hashing on every animated draw.
 Names/schema field lookups can resolve to field IDs at binding time. Program/
 pipeline registration and structural cache lookup may still use hashing.
 
+The counting rule is simple: **one instantiated Material component owns one
+logical renderer material instance**. Reusing that source shares its instance;
+constructing another Material creates another instance even with identical
+parameters/programs. For the Anime bridge, one authored Shading source owns
+one logical material instance; generated source projections are consumers,
+not additional authored instances. Do not derive identity/count from parameter
+hashes or add mutable-instance value deduplication. GPU allocation can be lazy
+and frame-buffered without changing this logical ownership rule.
+
 Material instance identity does not change when a threshold or time value
-changes. Two authored instances remain independently mutable even if their
-current values happen to match. Sharing one source explicitly shares updates.
-Optional immutable-value deduplication must never alias independently mutable
-instances. This differs from the current value cache's opportunistic reuse.
+changes. Program/definition/pipeline resources can be shared independently of
+the separately mutable material components.
+
+Current ECS topology is single-parent: attaching an existing component under
+another parent reparents it. Therefore repeated `R.cube() { shared_material }`
+does not currently attach one source at multiple places. Wrapper inheritance
+shares one source within a subtree. Sharing across unrelated subtrees needs
+an explicit non-parenting material-source reference on a renderable/scope,
+with exact MMS spelling settled by the component contract. Such a binding
+does not instantiate another Material or another renderer material instance.
+Keep ordinary component attachment semantics intact; do not solve this by
+giving all ECS components multiple parents.
 
 Dirty tracking uploads values to bounded frame-safe slots; it must not overwrite
 data referenced by an in-flight command buffer. Descriptor sets may be reused
@@ -143,6 +160,12 @@ thresholds. Sustained edits keep handle identity and bounded GPU resources;
 removal/reuse rejects stale handles and preserves in-flight resources. Built-in
 fallback handles remain compatible, and no custom shader loader is needed to
 prove these internal changes.
+
+Verify renderer records after actual MMS initialization/mutations: two distinct
+sources with equal values have distinct IDs; consumers of one source have the
+same ID; mutation leaves those IDs/counts stable. When cross-subtree material
+references are implemented, binding one source in two places must preserve
+both bindings without reparenting it or allocating another logical instance.
 
 Gate for family semantics: an illustrative custom program may consume emissive
 intensity without participating in extraction. The emission-capable LED variant
