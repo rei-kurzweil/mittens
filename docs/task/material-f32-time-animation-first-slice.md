@@ -85,10 +85,15 @@ upload an f32 from an existing callback.
 
 ## Proof and exit gate
 
-Add a planned `examples/custom-material-time.mms` with the test fragment above.
-Use a clearly time-varying opaque pattern/color, without needing emission or
-textures. Include two primitives sharing one material, an independently timed
-material instance using the same shader, and an unchanged built-in comparison.
+Use the planned `examples/custom-materials.mms` from the
+[LED-strip preparation ticket](custom-materials-led-strip-example-preparation.md).
+Four strips surround a plane. Their combined LED rectangles use the custom
+`animated_led_strip` material with a clearly time-varying opaque pattern/color,
+without needing emission or textures for this first proof. Three strips share
+one instance; the fourth uses an independently timed instance of the same
+shader. Separate Toon backings and the plane provide the built-in comparison.
+The simple primitive snippet above remains an API illustration, not a separate
+required example scene. Verify CombineMesh's generated-output binding explicitly.
 
 - [ ] Construction and retained f32 get/set work in top-level and runtime MMS.
 - [ ] Invalid/nonfinite/out-of-range conversion, unknown fields, incompatible

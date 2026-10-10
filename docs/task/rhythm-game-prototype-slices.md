@@ -46,10 +46,10 @@ pictogram moves or spawns before Start; the coach can stand in its neutral pose.
 1. **Venue, course wiring, and controls.** Create `minimal.mms` and the two
    library files. Import a fresh paused animation from `example_course.mms`
    into `rhythm_game.mms` and bind its actions to session-owned scene objects.
-   Compose the scene with Bloom,
-   a declared player arrival plane, and a runway bordered by gold/yellow LED
-   strips. Reuse `light_strip` with explicit warm color and strong emissive
-   intensity, initially around 4.0 and then tuned in-headset. Use exactly four
+   Compose the scene with Bloom and a declared player arrival plane.
+   LED strips are reserved for the standalone
+   [custom-materials preparation example](custom-materials-led-strip-example-preparation.md)
+   for now; they are not part of this first rhythm-game venue. Use exactly four
    `studio_stage` instances: two end to end on each side of a central runway.
    Rotate each stage about Y by a quarter-turn so its long local X axis runs
    along world Z. Use opposite rotations on the two sides so the open fronts

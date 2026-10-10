@@ -3,6 +3,11 @@
 Status: planning updated 2026-10-07. Reusable target/light-strip visuals exist;
 the example and gameplay library remain to be built. Current work is documentation.
 
+2026-10-10 staging update: the reusable light strip's only live example is now
+planned under [custom-materials preparation](../custom-materials-led-strip-example-preparation.md).
+Remove LED strips from the initial rhythm-game venue scope; pose-marker assets
+and the rest of this gameplay plan remain independent.
+
 ## Goal
 
 Make a small, playable MMS course in this repository. A button starts a

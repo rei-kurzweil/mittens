@@ -81,6 +81,10 @@ requires runtime rig/hardware evidence in addition to deterministic replay tests
 
 ### Custom materials and renderer capabilities
 
+- [ ] [Prepare the four-strip custom-materials example](../../custom-materials-led-strip-example-preparation.md):
+  LED-only combined geometry with `animated_led_strip`, separate Toon backings,
+  a plane with one strip on each edge, FPS camera, low ambient light, and implicit clouds.
+
 - [ ] First phase: [f32-only custom material time animation](../../material-f32-time-animation-first-slice.md).
   Prove an opaque static custom fragment with named scalar defaults, explicit
   FrameTick updates, shared/independent instances, and bounded GPU uploads.

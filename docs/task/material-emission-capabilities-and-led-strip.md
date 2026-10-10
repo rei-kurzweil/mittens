@@ -7,6 +7,10 @@ Release: [0.10.0](epic/0.10.0/README.md).
 Depends on: [Material contract](material-component-and-resolved-contract.md)
 and the adapted [custom-fragment proof](mms-custom-fragment-shader-first-slice.md).
 
+Scene/asset preparation: [four-edge custom-materials example](custom-materials-led-strip-example-preparation.md).
+Use `examples/custom-materials.mms` for the proof: custom `animated_led_strip`
+on combined LED rectangles only; separate regular Toon plastic/backing.
+
 ## Goal
 
 A custom fragment material can emit an animated LED pattern and contribute

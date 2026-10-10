@@ -201,6 +201,12 @@ unused emission work/resources conditional.
 
 ## Delivery and 0.10.0 completion gates
 
+- [ ] [Prepare the LED asset and custom-materials scene](../custom-materials-led-strip-example-preparation.md):
+  exactly four strips around a plane in `examples/custom-materials.mms`, Toon
+  plastic/backing separated from combined LED surfaces using `animated_led_strip`,
+  an FPS camera, low ambient light, and the implicit-cloud background. Stage
+  built-in preparation, f32 animation, then emission/Bloom in the same scene.
+
 **First testable phase:** complete the [f32 time-animation slice](../material-f32-time-animation-first-slice.md)
 with minimal Material ownership/resolution, one opaque custom fragment, and
 explicit time updates. Do not require the full migration or emission paths
