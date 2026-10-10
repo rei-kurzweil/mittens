@@ -5,7 +5,8 @@ Status: proposed architecture; documentation only.
 Release: [mittens-engine 0.10.0](0.10.0/README.md).
 
 2026-10-10 first-phase decision: [f32 time-animation proof](../material-f32-time-animation-first-slice.md)
-is the first testable implementation slice. Authored shader inputs support
+is the first testable custom-program slice, after the internal instance/family
+foundation below. Authored shader inputs support
 only finite `f32` values initially. Broader MMS type integration, additional
 input types/providers, and renderer emission follow after that proof.
 
@@ -70,6 +71,13 @@ These are specific coupling points to audit; this epic does not claim that all
 renderer variants or post-processing behavior were validated in this docs pass.
 
 ## Definition, instance, and resolved draw contract
+
+First internal prerequisite: [stable material instances and family contracts](../material-instances-and-family-contracts.md).
+Anime provides the built-in prototype. Introduce stable generation-safe handles,
+indexed draw bindings, and bounded mutable storage before loading custom programs.
+Families/bases declare standard instance-input consumption and renderer contracts;
+definitions select programs and additional inputs. Consuming emissive intensity
+and opting into extraction/Bloom are separate declarations.
 
 Keep three identities separate:
 
@@ -237,13 +245,17 @@ unused emission work/resources conditional.
 
 ## Delivery and 0.10.0 completion gates
 
+- [ ] [Internal material instances and family contracts](../material-instances-and-family-contracts.md):
+  use Anime to prove stable identities, bounded uploads, indexed draw bindings,
+  and standard-instance-input/pass metadata before the custom-program slice.
+
 - [ ] [Prepare the LED asset and custom-materials scene](../custom-materials-led-strip-example-preparation.md):
   exactly four strips around a plane in `examples/custom-materials.mms`, Toon
   plastic/backing separated from combined LED surfaces using `animated_led_strip`,
   an FPS camera, low ambient light, and the implicit-cloud background. Stage
   built-in preparation, f32 animation, then emission/Bloom in the same scene.
 
-**First testable phase:** complete the [f32 time-animation slice](../material-f32-time-animation-first-slice.md)
+**First custom-program phase:** after the internal prerequisite, complete the [f32 time-animation slice](../material-f32-time-animation-first-slice.md)
 with minimal Material ownership/resolution, one opaque custom fragment, and
 explicit time updates. Do not require the full migration or emission paths
 before this example can run. Subsequent release work is listed below.

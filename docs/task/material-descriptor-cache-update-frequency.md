@@ -2,6 +2,12 @@
 
 Status: planned; profile before selecting the replacement policy.
 
+2026-10-10: feeds [stable material instances and family contracts](material-instances-and-family-contracts.md).
+The target resolves stable handles to retained draw bindings, keeping animated
+values out of descriptor cache identity. Hashing can remain for structural
+program/pipeline lookup; measure value-key lookup, miss allocations, and eviction
+separately rather than treating average O(1) HashMap lookup as a linear search.
+
 ## Problem
 
 `VulkanoRenderer::get_or_create_material_set` currently caches immutable material

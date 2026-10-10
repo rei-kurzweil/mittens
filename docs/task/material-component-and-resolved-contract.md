@@ -5,7 +5,9 @@ Status: proposed; no implementation in this documentation pass.
 Parent: [custom materials epic](epic/custom-materials.md).
 Release: [0.10.0](epic/0.10.0/README.md).
 
-First implementation target: [f32-only time-animation slice](material-f32-time-animation-first-slice.md).
+Internal prerequisite: [stable instances and family contracts](material-instances-and-family-contracts.md),
+proved using Anime before custom programs. First custom-material target:
+[f32-only time-animation slice](material-f32-time-animation-first-slice.md).
 Implement the minimum anchor/resolution needed for its opaque static example
 before expanding to this task's full compatibility/cascade contract. The wider
 inventory can proceed independently; it must not turn Phase 1 into a wholesale

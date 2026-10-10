@@ -81,11 +81,15 @@ requires runtime rig/hardware evidence in addition to deterministic replay tests
 
 ### Custom materials and renderer capabilities
 
+- [ ] Internal prerequisite: [stable material instances and family contracts](../../material-instances-and-family-contracts.md).
+  Prove the representation/update refactor with Anime before custom programs;
+  declare standard per-renderable inputs separately from emission pass participation.
+
 - [ ] [Prepare the four-strip custom-materials example](../../custom-materials-led-strip-example-preparation.md):
   LED-only combined geometry with `animated_led_strip`, separate Toon backings,
   a plane with one strip on each edge, FPS camera, low ambient light, and implicit clouds.
 
-- [ ] First phase: [f32-only custom material time animation](../../material-f32-time-animation-first-slice.md).
+- [ ] First custom-program phase: [f32-only material time animation](../../material-f32-time-animation-first-slice.md).
   Prove an opaque static custom fragment with named scalar defaults, explicit
   FrameTick updates, shared/independent instances, and bounded GPU uploads.
   Richer MMS/material types and emission are subsequent slices.

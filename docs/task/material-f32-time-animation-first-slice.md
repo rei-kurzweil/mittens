@@ -5,6 +5,12 @@ Status: agreed first testable slice; documentation only, implementation pending.
 Parent: [custom materials epic](epic/custom-materials.md).
 Release: [0.10.0](epic/0.10.0/README.md).
 
+Internal prerequisite: [material instances and family contracts](material-instances-and-family-contracts.md).
+First prove stable instance handles, standard input metadata, and bounded mutable
+GPU bindings with Anime. This is the first **custom-program** proof, not a bypass
+of that foundation. Newly authored inputs are f32-only; existing standard
+instance color/opacity/emission data retains its own declared interface types.
+
 ## Goal
 
 Prove a custom opaque fragment material on ordinary static meshes with named
@@ -12,7 +18,7 @@ Prove a custom opaque fragment material on ordinary static meshes with named
 and show that the shader changes continuously without mesh rebuilds, shader
 recompilation, pipeline creation, or growing persistent descriptor allocations.
 
-This is the first material implementation target. Build only the Material
+This is the first custom-material implementation target. Build only the Material
 component/definition/instance and resolver infrastructure needed for this proof;
 the full cascade migration, extra geometry families, emission/Bloom, and richer
 types are subsequent slices. Preserve existing built-in rendering while adding
