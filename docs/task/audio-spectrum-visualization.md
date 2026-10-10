@@ -74,7 +74,10 @@ geometry depth; this is a flat spectrogram, not a displaced 3D height field.
 It represents the same B-by-T values that a height field would use.
 
 Configure history span separately from time-slice spacing. Use seconds or
-transport beats for the span, and seconds or a fraction of one beat for spacing.
+beat-duration units for the span, and seconds or a fraction of one beat's
+duration for spacing. Derive durations from the selected BPM and run them on
+the capture timeline; no output beat-phase alignment is required. Transport
+pause/seek alone does not freeze or reset capture history.
 The proposed transport example is two beats with one slice every 1/16 beat:
 T = 32 slots, B = 32 buckets, at most 1024 history cells plus 32 frequency columns.
 At 120 BPM this spans one second and requests 32 slices/second; at 60 BPM it
@@ -170,7 +173,8 @@ at the retained snapshot rate with frame-safe lifetime handling.
    intentionally frozen data cannot be mistaken for live measurements.
 2. The reusable FFT info panel has working Start/Stop, independently configured
    history span/time-slice spacing, and bounded flat history. Seconds and beat
-   subdivision modes follow the time-slice task, including their phase limits.
+   subdivision modes follow the time-slice task using source-local timing and
+   BPM-derived spacing; transport phase alignment is optional later work.
    Duplicate sequences, long frames, pause/resume, source resets, and panel
    collapse/restore never produce fabricated history, growing object counts,
    accumulated handlers, or a stopped view that resumes itself.

@@ -237,8 +237,10 @@ a small flat bucket-by-time grid afterward. The diagnostic view does not depend
 on custom shaders/materials or an FFT-specific renderer pipeline.
 
 - [ ] Add the time-slice/history sub-slice for configurable seconds/beat spans
-  and beat-fraction spacing: timing/clock mapping, bounded spectral history and
-  copied batch reads, effective hop metadata, gaps, and tempo/pause/seek handling.
+  and beat-fraction spacing: BPM-derived intervals on the source frame timeline,
+  bounded spectral history and copied batch reads, effective hop metadata,
+  gaps, and tempo updates. Output pause/seek does not reset capture history;
+  cross-clock mapping and transport phase alignment are optional later work.
 
 ### 3. Input processing boundaries
 

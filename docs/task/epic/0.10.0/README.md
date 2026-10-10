@@ -46,9 +46,11 @@ window/hop, and screen refresh.
   against the [bucket-count and copied MMS snapshot contract](../../audio-fft-buckets-and-mms-snapshots.md):
   a Snapshot button and a few dozen ordinary frequency columns first, then an info panel
   with Start/Stop and a bounded flat spectrogram of microphone/input buckets.
-- [ ] Add [time-slice and transport-grid support](../../audio-fft-time-slices-and-transport-grid.md):
+- [ ] Add [tempo-relative time-slice support](../../audio-fft-time-slices-and-transport-grid.md):
   one-second or beat-count spans, fractional-beat spacing, bounded batch/history
-  reads independent of UI refresh, and explicit clock/tempo/discontinuity semantics.
+  reads independent of UI refresh, and explicit source-local timing/tempo/
+  discontinuity semantics. Matching BPM-derived durations is sufficient;
+  capture/output phase synchronization and clock mapping are optional follow-ups.
 
 The task contains the current API refresher and code audit. Microphone
 capture-to-render transport is still a prerequisite for audible `InputSource`

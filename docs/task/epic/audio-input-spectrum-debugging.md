@@ -61,8 +61,9 @@ plan can be swapped safely. The backend task resolves the exact plan handoff.
   `.buckets(count)` independent of FFT size, explicit aggregation/edges, coherent
   arrays/metadata, and bounded data shape shared by all source adapters.
 - [ ] [Time slices and transport-relative resolution](../audio-fft-time-slices-and-transport-grid.md):
-  independent history span/subdivision, PCM/transport timing, and bounded frame
-  batches so slower UI refresh does not erase fine requested time resolution.
+  independent history span/subdivision, BPM-derived intervals on the source's
+  PCM timeline, and bounded frame batches so slower UI refresh does not erase
+  fine requested time resolution. Output beat-phase alignment is not required.
 
 The backend can first expose and test retained buckets without a scene. The
 visualizer then consumes that stable result. A later source-runtime ticket can

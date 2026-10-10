@@ -1,6 +1,7 @@
 # Task: FFT time slices and transport-relative resolution
 
 Date: 2026-10-09
+Updated: 2026-10-10: tempo-relative duration is required; transport phase alignment is optional follow-up work.
 Status: proposed contract; docs only.
 Parent: [shared FFT](shared-fft-audio-node-and-phonemes.md).
 Release: [0.10.0](epic/0.10.0/README.md).
@@ -16,8 +17,8 @@ transport/time-signature term, not the name of a frequency column.
 | Setting | Meaning |
 | --- | --- |
 | Frequency bucket count | Number of frequency bands in each spectral frame |
-| History span | Amount of history displayed, in seconds or transport beats |
-| Time-slice spacing | Interval between displayed spectral observations, in seconds or fractions of one transport beat |
+| History span | Amount of capture-timeline history displayed, in seconds or BPM-derived beat-duration units |
+| Time-slice spacing | Interval between spectral observations on the source timeline, in seconds or fractions of one beat's duration at the selected BPM |
 | FFT window length | PCM duration used for each transform; controls frequency resolution and temporal averaging |
 | FFT hop | Advance in PCM frames between successive transform windows |
 | UI refresh interval | How often copied results update scene geometry; may update several slices together |
@@ -46,6 +47,10 @@ seconds/beat declarations for the same setting. `slice_beats` means fractions
 of **one transport beat**, not a musical note denominator: 1/16 beat differs
 from a sixteenth note when a beat is a quarter note. Show explicit units in UI.
 The scene chooses the transport; do not guess one from microphone audio.
+Only its BPM is required for this mode. Capture can start at any output beat
+position: slice endpoints do not need to coincide with the transport's beat
+boundaries. `history_beats` describes a duration, not a range of output beat
+positions or a promise of phase synchronization.
 
 At constant tempo:
 
@@ -63,38 +68,52 @@ from a fixed-duration span, especially across tempo changes.
 
 A 4096-frame window at 48 kHz spans about 85 ms; a 31.25 ms hop therefore uses
 overlapping windows. Their observations are not independent 31.25 ms chunks.
-Label the window duration and actual hop as well as the requested grid.
+Label the window duration and actual hop as well as the requested spacing.
 
 ## Scheduling and actual sample times
 
 Tempo subdivisions should specify actual slice timing, not merely labels on
-four-per-second readings. For an aligned mode, place window endpoints on the
-selected transport grid and preserve each window's PCM start/end interval.
-Round scheduled absolute boundaries to device frames while retaining fractional
-timing remainder; repeatedly rounding one fixed hop must not accumulate drift.
+four-per-second readings. Resolve the requested fraction and BPM into PCM
+intervals using the source's sample rate, and schedule successive window
+endpoints on that source's own frame timeline. Preserve each window's PCM
+start/end interval. Retain a fractional-frame remainder when rounding scheduled
+boundaries; repeatedly rounding one fixed hop must not accumulate drift.
 Report requested and effective spacing. Reject rates below one PCM frame or
 beyond measured transform/storage limits rather than promise unsupported data.
 
-Capture sample time and output transport time currently have different origins.
-Define their mapping/epoch and measure its quality before claiming microphone
-beat-phase alignment. Until then, a BPM-derived interval may provide matching
-spacing with explicitly **unaligned** phase. Reading the current engine beat in
-the UI cannot retrospectively timestamp a microphone FFT window accurately.
+No mapping between capture and output clocks is needed for this initial
+contract. Both use the same BPM-derived duration, while phase and physical
+clock drift are unconstrained. BPM/configuration updates cross the ordinary
+control path; neither the capture callback nor FFT core queries the transport.
+Source timestamps remain source-relative, not output beat positions.
 
-Specify tempo edits, pause, and seek as part of the adapter contract:
+Initial tempo/pause/seek behavior:
 
-- New beat boundaries follow tempo changes; retain original frame intervals,
-  tempo/transport revision, and beat metadata for existing slices.
-- Seeking/restarting creates a marked history boundary and rejects stale epoch
-  data. Tempo changes must not reinterpret old capture timestamps silently.
-- Audio capture can continue while transport is paused. Seconds mode can still
-  advance; transport-aligned mode suspends new beat-grid slices and labels that
-  condition. UI Stop independently freezes the displayed history.
+- Apply a changed BPM to future slice intervals at a defined source-frame
+  boundary. Retain original intervals and tempo revision for existing slices;
+  never retimestamp them using the latest BPM.
+- Output transport pause/seek/restart alone does not stop or reset microphone
+  FFT history. Continue with the last valid selected BPM. A BPM/configuration
+  change updates spacing; source loss/restart changes the source epoch.
+- UI Stop independently freezes the displayed history. Disabling the FFT
+  component independently stops its analysis work.
 
 If a seconds span uses beat spacing across tempo changes, evict by actual time
-and enforce a hard cell/slice cap. Do not derive the whole retained interval from
-only the latest BPM. Fix maximum bucket-by-slice storage and batch sizes before
-allocating; change configuration through the normal generation/control path.
+and enforce a hard cell/slice cap. For a beat-duration span, accumulate local
+tempo-relative elapsed units from source-frame intervals and the BPM effective
+during each interval; evict by that local duration coordinate, not by output
+transport position or the latest BPM alone. Preserve timing metadata across
+changes. Fix maximum bucket-by-slice storage and batch sizes before allocating;
+change configuration through the normal generation/control path.
+
+## Optional later phase alignment
+
+Only a future explicitly aligned mode would place window endpoints on output
+transport beat boundaries. That mode needs capture-to-output clock mapping,
+phase/drift handling, mapping quality/epochs, and its own pause/seek policy.
+Do not make those mechanisms prerequisites for proportional slice durations
+or 0.10.0's initial tempo-relative view. Reading an output beat in the UI is
+insufficient to establish a microphone window's phase alignment.
 
 ## History delivery prerequisite
 
@@ -122,7 +141,8 @@ requested time grid. A later resampling/reduction mode requires explicit rules.
 - [ ] Seconds and beat-span/subdivision requests yield the expected bounded
   slice counts, with actual PCM intervals and window/hop metadata.
 - [ ] Tempo changes, fractional-frame scheduling, transport pause/seek, source
-  restarts, and unmapped capture clocks have explicit tested behavior.
+  restarts, and source-local timestamps have explicit tested behavior. Output
+  pause/seek leaves capture history running; no cross-clock mapping is required.
 - [ ] Four UI updates/second can receive all 32 produced slices/second in bounded
   batches within supported capacity; saturation makes gaps visible.
 - [ ] 32-by-32 flat geometry is bounded, controls freeze/resume predictably,
