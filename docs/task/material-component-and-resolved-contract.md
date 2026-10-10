@@ -5,6 +5,12 @@ Status: proposed; no implementation in this documentation pass.
 Parent: [custom materials epic](epic/custom-materials.md).
 Release: [0.10.0](epic/0.10.0/README.md).
 
+First implementation target: [f32-only time-animation slice](material-f32-time-animation-first-slice.md).
+Implement the minimum anchor/resolution needed for its opaque static example
+before expanding to this task's full compatibility/cascade contract. The wider
+inventory can proceed independently; it must not turn Phase 1 into a wholesale
+material migration.
+
 ## Goal
 
 Make a stable authored `Material` component the common anchor for built-in and
@@ -22,6 +28,8 @@ as distinct identities.
   authored vs renderer-owned fields, retained generation, and serialization.
 - [ ] Freeze the first `Material.custom` schema/constructor and finite `f32`
   input setter/readback syntax without requiring new typed MMS syntax.
+  Phase 1 supports f32 only; vectors/colors, matrices, integer/boolean fields,
+  arrays/structs, resource inputs, and stored callback bindings are later work.
 - [ ] Specify material wrapper/local selection, reuse of one live handle,
   independent instances, complete replacement, granular overrides/reset,
   same-scope conflict diagnostics, removal/reparent invalidation, and GLTF

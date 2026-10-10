@@ -2,6 +2,14 @@
 
 Status: proposed / investigation
 
+2026-10-10 scope decision: first support **f32 inputs only**, proved by
+[Material time-animation Phase 1](material-f32-time-animation-first-slice.md).
+Named defaults and explicit retained setters driven by FrameTick are sufficient.
+Fuller MMS type integration, vectors/colors/matrices/resources, automatic time
+bindings, stored callback inputs, and Animation/Keyframe integration follow
+after the working scalar upload/animation path. The questions and ocean example
+below are the broader follow-up investigation, not Phase 1 requirements.
+
 2026-10-09: included in [custom materials for 0.10.0](epic/custom-materials.md).
 Use `Material` as the authored owner of typed retained inputs. Literal values,
 explicit setters/animation, renderer globals, and any later provider/closure
@@ -22,8 +30,8 @@ in the Mittens engine's component, signal, animation, batching, and GPU-upload m
 ## Questions to answer
 
 - What is the supported ownership model for shader programs and material instances?
-- Which parameter types are initially supported: scalar, vectors, colors, matrices, textures, and
-  arrays?
+- Initial authored input type is f32. Which richer types should follow, and how
+  should they reuse MMS type identities/checking and the material schema?
 - Does each renderable own parameter overrides, or can many instances share one material state?
 - How does MMS declare a shader material, its parameter schema, defaults, and shader asset paths?
 - How does MMS obtain a handle that can be targeted by setters and `Animation`/`Keyframe` blocks?

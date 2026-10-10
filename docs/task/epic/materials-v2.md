@@ -4,6 +4,12 @@ Date: 2026-08-31
 
 Status: proposed planning epic
 
+2026-10-10 staging update: [f32-only Material time-animation](../material-f32-time-animation-first-slice.md)
+is the first testable phase. The type list and broader migration phases below
+describe the longer-term architecture. Implement minimal opaque static custom
+fragment/f32 support before full vertex-family migration, richer parameters,
+emission, and animation-system integration.
+
 Authoring update (2026-10-09): [Custom materials and renderer capabilities](custom-materials.md)
 is the current integration epic for [0.10.0](0.10.0/README.md). `Material` is
 now the intended public anchor for the full material contract; `Shading` is

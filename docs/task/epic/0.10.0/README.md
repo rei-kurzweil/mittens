@@ -81,6 +81,11 @@ requires runtime rig/hardware evidence in addition to deterministic replay tests
 
 ### Custom materials and renderer capabilities
 
+- [ ] First phase: [f32-only custom material time animation](../../material-f32-time-animation-first-slice.md).
+  Prove an opaque static custom fragment with named scalar defaults, explicit
+  FrameTick updates, shared/independent instances, and bounded GPU uploads.
+  Richer MMS/material types and emission are subsequent slices.
+
 - [ ] Complete the release scope of
   [custom materials and renderer capabilities](../custom-materials.md):
   `Material` as the authored anchor, consistent resolution with existing

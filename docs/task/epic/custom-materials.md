@@ -4,6 +4,11 @@ Date: 2026-10-09
 Status: proposed architecture; documentation only.
 Release: [mittens-engine 0.10.0](0.10.0/README.md).
 
+2026-10-10 first-phase decision: [f32 time-animation proof](../material-f32-time-animation-first-slice.md)
+is the first testable implementation slice. Authored shader inputs support
+only finite `f32` values initially. Broader MMS type integration, additional
+input types/providers, and renderer emission follow after that proof.
+
 ## Outcome
 
 Make `Material` the authored component that anchors a complete material
@@ -119,6 +124,12 @@ reuse is separate from material/state inheritance.
 
 ## LED strip and input update contract
 
+First establish [Phase 1: f32-only time animation](../material-f32-time-animation-first-slice.md)
+on opaque static geometry. Explicit default/setter updates are sufficient;
+callbacks stored as material inputs, generic type declarations, and automatic
+renderer/global bindings are not first-phase prerequisites. The LED example
+below adds renderer emission in a subsequent slice.
+
 Desired shape, **not valid committed MMS syntax**:
 
 ```mms
@@ -190,11 +201,17 @@ unused emission work/resources conditional.
 
 ## Delivery and 0.10.0 completion gates
 
+**First testable phase:** complete the [f32 time-animation slice](../material-f32-time-animation-first-slice.md)
+with minimal Material ownership/resolution, one opaque custom fragment, and
+explicit time updates. Do not require the full migration or emission paths
+before this example can run. Subsequent release work is listed below.
+
 1. [ ] [Material component and resolved contract](../material-component-and-resolved-contract.md):
    inventory existing controls, freeze data/ownership/cascade/update semantics,
    and add a compatibility resolver with built-in behavior preserved.
 2. [ ] Adapt the [opaque custom-fragment proof](../mms-custom-fragment-shader-first-slice.md)
-   to `Material`; validate one `f32`, asynchronous program loading, fallback,
+   through the current [f32 time-animation slice](../material-f32-time-animation-first-slice.md)
+   to `Material`; validate f32-only inputs, asynchronous program loading, fallback,
    program/pipeline sharing, independent instances, and bounded frame-safe
    uploads. Carry forward its sustained-update and removal tests.
 3. [ ] [Emission capabilities and LED proof](../material-emission-capabilities-and-led-strip.md):

@@ -2,6 +2,13 @@
 
 Status: planned.
 
+2026-10-10: [Material f32 time-animation Phase 1](material-f32-time-animation-first-slice.md)
+is the current first testable target. It replaces the historical Shader/burn
+example below with Material-owned f32 inputs and an explicit `time_seconds`
+update. Reuse this task's async interface validation, fallback, caching,
+bounded-storage, and sustained-update tests; richer value types and fuller
+MMS typing are not prerequisites.
+
 2026-10-09: included in [custom materials for 0.10.0](epic/custom-materials.md).
 Adapt this proof to the [Material component contract](material-component-and-resolved-contract.md)
 before implementation. `Shader.fragment`/`ShaderComponent` below are historical
