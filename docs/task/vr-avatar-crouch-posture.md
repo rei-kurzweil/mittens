@@ -2,8 +2,11 @@
 
 ## Status
 
-Planned; implement after transitionable avatar pose layers and before walking
-locomotion animation.
+Planned authored-posture follow-up. The first crouch implementation is now
+[AVC crouch IK from predicted foot penetration](avc-foot-penetration-crouch-ik.md):
+automatic mapped-leg solving while physical HMD Y remains unconstrained.
+The authored-pose plan below is retained for later posture polish after
+transitionable avatar pose layers; it no longer gates the initial crouch solver.
 
 ## Outcome
 

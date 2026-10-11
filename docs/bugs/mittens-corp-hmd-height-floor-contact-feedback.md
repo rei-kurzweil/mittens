@@ -142,6 +142,9 @@ Focused verification before a headset smoke check:
 
 Related plans:
 
+- [AVC crouch IK from predicted foot penetration](../task/avc-foot-penetration-crouch-ik.md)
+  adjusts leg posture after freeing physical HMD movement; it does not replace
+  the tracking-independent collision proxy.
 - [XR avatar grounding first slices](../task/xr-avatar-grounding-first-slices.md)
 - [AVC upright character capsule](../task/avc-upright-character-capsule.md)
 - [Attachment topology cleanup](../task/attachment-system-world-owned-topology-cleanup.md)

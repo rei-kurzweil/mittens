@@ -78,15 +78,19 @@ based on poses from known or calibrated times.
 
 The generic transition runtime already supports transform and emissive
 interpolation, but it does not yet provide a persistent transitionable avatar
-pose layer.  Delivery therefore proceeds in this order:
+pose layer. The initial procedural crouch does not depend on that layer.
+Delivery proceeds in this order:
 
-1. [Transitionable avatar pose layers](../avatar-pose-transition-layers.md)
+1. [AVC crouch IK from predicted foot penetration](../avc-foot-penetration-crouch-ik.md)
+   — separate tracking from grounding, then automatically solve mapped legs
+   for Rei(mu), Bisket, and supported humanoids without constraining HMD Y.
+2. [Transitionable avatar pose layers](../avatar-pose-transition-layers.md)
    — bind a pose to one GLTF instance and transition its blend weight while
    respecting tracked-bone ownership.
-2. [VR avatar crouch posture and standing-height calibration](../vr-avatar-crouch-posture.md)
-   — use vertical height change as the first hardware-validated animated
-   posture; this precedes walking.
-3. [Bisket walking locomotion animation](../bisket-walking-locomotion-animation.md)
+3. [VR avatar crouch posture and standing-height calibration](../vr-avatar-crouch-posture.md)
+   — add authored posture polish with explicit ownership alongside the initial
+   leg constraint; this precedes walking.
+4. [Bisket walking locomotion animation](../bisket-walking-locomotion-animation.md)
    — turn validated Bisket pose assets into idle/walk/run behavior based on
    locomotion, not head-only HMD motion.
 

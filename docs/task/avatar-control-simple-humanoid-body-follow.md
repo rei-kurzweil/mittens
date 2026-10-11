@@ -361,6 +361,12 @@ Acceptance criteria:
 
 ## Phase 4 — avatar animation for crouch / kneel
 
+Direction update: the initial crouch slice is now
+[mapped-leg IK driven by predicted foot penetration](avc-foot-penetration-crouch-ik.md).
+It keeps physical HMD translation free and does not use spine IK. The
+authored-animation plan below is retained for subsequent crouch/kneel polish,
+not as a prerequisite for that first solver.
+
 Replace procedural body-drop behavior with authored animation blending.
 
 Plan:
