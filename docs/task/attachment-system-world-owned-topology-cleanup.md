@@ -209,6 +209,13 @@ For this fixture, use a 10% tree-mutation budget and a 0.1 microsecond additiona
 cost per active-mount tick as review gates; both local comparisons are within
 those budgets. Recheck full-scene behavior during hardware validation.
 
+Hardware investigation update (2026-10-11): the reported pedestrian HMD Y
+constraint also occurs before mounting on pre-cleanup main `4796e0e9`. Mounting
+frees physical head height; dismounting restores the constraint. Track it
+separately in [HMD floor-contact feedback](../bugs/mittens-corp-hmd-height-floor-contact-feedback.md).
+This rules out the cleanup as its origin; the complete hardware validation gate
+remains pending.
+
 Reproduce the current benchmark with:
 
 ```sh
