@@ -14,8 +14,9 @@ of [simple humanoid body follow](avatar-control-simple-humanoid-body-follow.md).
 Authored crouch polish, kneeling, sitting, and walking remain later work. This
 task does not require a general avatar pose-layer implementation.
 
-Prerequisite: [place the AVC capsule before HMD tracking](avc-capsule-before-hmd-tracking.md).
-That task owns collision topology and calibration; this task owns leg posture.
+Prerequisite: [AVC capsule height independent of HMD tracking](avc-capsule-before-hmd-tracking.md).
+That task owns translation sampling and calibration: tracked body X/Z, sampled
+locomotion Y. This task owns leg posture.
 
 ## Existing seams and findings
 
@@ -151,8 +152,9 @@ vehicle-floor state into pedestrian mode. Seated posture is separate work.
 Required order, with intents flushed and world transforms current at each
 dependency boundary:
 
-1. Resolve simulated locomotion/physics contact on the tracking-independent
-   proxy, then publish tracking composed with the final movement frame.
+1. Resolve simulated locomotion/physics contact on the proxy whose Y is
+   independent of tracking, then publish tracking composed with the final
+   movement frame. Keep proxy X/Z current at relevant contact passes.
 2. Initialize/update AVC and apply head-sensitive body follow.
 3. Evaluate uncrouched FK, resolve support, and generate leg targets.
 4. Solve leg rotations and the existing independent head/arm constraints.

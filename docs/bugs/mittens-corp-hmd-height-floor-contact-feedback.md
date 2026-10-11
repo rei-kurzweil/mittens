@@ -110,12 +110,14 @@ and floor-contact correction. Crouching may change the rendered body's pose
 or, under a separate explicit policy, capsule height without lifting the
 tracking origin to cancel the crouch.
 
-The selected hierarchy change is now scoped in
-[place the AVC capsule before HMD tracking](../task/avc-capsule-before-hmd-tracking.md).
-The capsule follows the simulated locomotion frame, alongside InputXR, and
-excludes physical HMD translation on all three axes. Contact still corrects
-the outer response target. Physical room-scale collision/recentering is a
-separate policy; the visible body can move away from this simulated proxy.
+The selected change is now scoped in
+[AVC capsule height independent of HMD tracking](../task/avc-capsule-before-hmd-tracking.md).
+Keep the existing head-driven body X/Z and use an
+[axis-selective translation sample](../task/transform-sample-translation-axes.md)
+to replace Y from the pre-tracking locomotion frame, then apply a calibrated
+vertical offset. The capsule can remain structurally beneath the model root.
+Contact still corrects the outer response target. Physical X/Z remains part
+of capsule placement/contact; physical Y alone must not create a correction.
 
 Do not make the generic static-contact solver ignore vertical corrections:
 it must still resolve falls and land button jumps. Likewise, disabling contact
@@ -144,11 +146,11 @@ Focused verification before a headset smoke check:
 
 Related plans:
 
-- [Place the AVC capsule before HMD tracking](../task/avc-capsule-before-hmd-tracking.md)
-  owns the focused hierarchy/calibration change.
+- [AVC capsule height independent of HMD tracking](../task/avc-capsule-before-hmd-tracking.md)
+  owns the focused operator/calibration change.
 - [AVC crouch IK from predicted foot penetration](../task/avc-foot-penetration-crouch-ik.md)
   adjusts leg posture after freeing physical HMD movement; it does not replace
-  the tracking-independent collision proxy.
+  the collision proxy whose height is independent of tracking.
 - [XR avatar grounding first slices](../task/xr-avatar-grounding-first-slices.md)
 - [AVC upright character capsule](../task/avc-upright-character-capsule.md)
 - [Attachment topology cleanup](../task/attachment-system-world-owned-topology-cleanup.md)

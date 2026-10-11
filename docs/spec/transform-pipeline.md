@@ -1,8 +1,18 @@
-# Transform pipeline
+# Transform operators
 
-This doc describes the current transform-pipeline direction in the engine.
+This doc records the existing transform operator mechanics. The filename and
+runtime names retain historical pipeline/stream terminology. See
+[operator API cleanup](../task/transform-operator-api-cleanup.md) for the proposed
+grouped component API and removal of mixed configuration/output children;
+those authoring changes are not implemented yet.
 
 Current authored usage: `TransformForkTRS` is the pipeline root. `TransformPipeline` and `TransformPipelineOutput` were removed from the authored API; any driven transform or content now attaches directly as a non-map child of the fork root.
+
+That downstream content may also be another transform operator. A T is not
+required immediately after an operator. The current fork filters recognized
+map/merge configuration children out of its output list; all remaining children
+receive its recomposed basis. The proposed cleanup moves simple configuration
+into builder values so ordinary child topology consistently expresses output.
 
 Conceptually, a transform pipeline should mean one or more transform operators inserted into a transform hierarchy between an upstream transform basis and a downstream subtree.
 

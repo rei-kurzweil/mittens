@@ -4,10 +4,11 @@ Date: 2026-07-19
 
 Status: implemented.
 
-Planned XR follow-up: [place the capsule before HMD tracking](avc-capsule-before-hmd-tracking.md).
-The model-root translation source described below is the current implementation;
-the follow-up moves the proxy alongside InputXR while retaining contact response
-on the locomotion/physics frame.
+Planned XR follow-up: [capsule height independent of HMD tracking](avc-capsule-before-hmd-tracking.md).
+The full model-root translation source described below is the current
+implementation; the follow-up retains body X/Z but replaces Y from the
+pre-tracking locomotion frame using an axis-selective stream sample. Contact
+response remains on the locomotion/physics frame.
 
 ## Contract
 

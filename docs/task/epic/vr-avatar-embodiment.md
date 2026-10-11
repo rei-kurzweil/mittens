@@ -82,10 +82,11 @@ pose layer. The initial procedural crouch does not depend on that layer.
 Delivery proceeds in this order:
 
 First complete the focused
-[capsule hierarchy/calibration change](../avc-capsule-before-hmd-tracking.md):
-the proxy follows simulated locomotion beside InputXR, while physical HMD
-translation remains free inside that frame. This is the grounding prerequisite
-for the posture work below.
+[capsule operator/calibration change](../avc-capsule-before-hmd-tracking.md), using
+[axis-selective translation sampling](../transform-sample-translation-axes.md):
+retain tracked body X/Z and sample pre-tracking locomotion Y. Physical head Y
+does not drive grounding correction. This is the grounding prerequisite for
+the posture work below.
 
 1. [AVC crouch IK from predicted foot penetration](../avc-foot-penetration-crouch-ik.md)
    — separate tracking from grounding, then automatically solve mapped legs
@@ -102,6 +103,9 @@ for the posture work below.
 
 ## Linked work
 
+- [Transform operator API and output-contract cleanup](../transform-operator-api-cleanup.md)
+  — grouped constructors/builders and uniform downstream-child composition;
+  a separate cleanup, not a prerequisite for the initial capsule height fix.
 - [Avatar control simple humanoid body follow](../avatar-control-simple-humanoid-body-follow.md)
   — canonical kinematic body-anchor design and current implementation path.
 - [Eye tracking appears to counteract head rotation](../../bugs/eye-tracking-head-rotation-counteracts-gaze.md)

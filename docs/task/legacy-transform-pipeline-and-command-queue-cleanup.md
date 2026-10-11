@@ -2,6 +2,12 @@
 
 Status: deferred; inventory started, no production rename or removal authorized by this task yet.
 
+Direction update: [transform operator API cleanup](transform-operator-api-cleanup.md)
+now owns the authored API and transform-naming direction. Use **transform
+operators**, rather than renaming every public concept from pipeline to stream.
+The command-queue/signal-staging work here remains separate. Existing source
+names in the inventory below remain accurate until an implementation migration.
+
 Related:
 
 - [Transform component accessors: Mittens engine API](../draft/transform-component-accessors-engine-api.md)
@@ -70,15 +76,15 @@ already carry notes explaining that their examples predate the authored API clea
 The breadth of usage means this should be a deliberate API migration with compatibility strategy,
 not a drive-by symbol rename.
 
-## Workstream A: transform pipeline → transform stream
+## Workstream A: legacy transform names → transform operator terminology
 
 - [ ] Classify every `TransformPipeline*` Rust identifier as active runtime vocabulary,
   serialized/authored compatibility surface, or historical text.
-- [ ] Rename active internal types to `TransformStream*` where the word describes the current
-  system rather than a genuinely distinct pipeline concept.
+- [ ] Choose active internal names under the operator cleanup's settled schema;
+  do not mechanically replace every `TransformPipeline*` with `TransformStream*`.
 - [ ] Decide whether `TransformPipelineChannels` should instead become the shared `TransformTrs`
   value proposed by the transform-accessor work.
-- [ ] Rename active diagnostic prefixes from `[TransformPipeline]` to `[TransformStream]`.
+- [ ] Rename active diagnostic prefixes to the settled transform-operator vocabulary.
 - [ ] Audit `transform_pipeline` and `transform_pipeline_map` module/component names for MMS asset,
   serialization, query-selector, or persisted-world compatibility before changing them.
 - [ ] Preserve historical documents as historical where rewriting them would erase useful design
@@ -129,7 +135,7 @@ not a drive-by symbol rename.
 
 ## Exit criteria
 
-- Active transform-stream implementation and diagnostics no longer use accidental pipeline
+- Active transform-operator implementation and diagnostics no longer use accidental pipeline/stream
   terminology; any retained usage is explicitly justified for compatibility or history.
 - No active API describes a `Vec<Signal>` staging facade as a command queue.
 - Signal ordering, deferral, timing, and borrow-safety invariants have regression coverage.
