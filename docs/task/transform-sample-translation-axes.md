@@ -35,16 +35,17 @@ adding the sampled translation would double-count the shared parent motion.
 
 ## Proposed component API
 
-Working name and syntax; not implemented yet:
+Proposed grouped syntax; not implemented yet:
 
-The broader [transform operator API cleanup](transform-operator-api-cleanup.md)
-proposes grouping this under `TOP.sample_translation().source(...).axes(...)`.
-The standalone name below is transitional; choose one canonical authoring
-surface when implementing rather than assuming both spellings already work.
+Prerequisite: the focused first phase of
+[transform operator API cleanup](transform-operator-api-cleanup.md). Add this
+operator under `TOP.sample_translation().source(...).axes(...)` before the
+capsule-height behavior change. `TransformSampleTranslation` remains a working
+descriptive label in diagrams, not a second MMS API to introduce and retire.
 
 ```mms
-TransformSampleTranslation.source(locomotion_frame).axes("y") {}
-TransformSampleTranslation.source("[name='rei_mu_locomotion_root']").axes("y") {}
+TOP.sample_translation().source(locomotion_frame).axes("y") {}
+TOP.sample_translation().source("[name='rei_mu_locomotion_root']").axes("y") {}
 ```
 
 - `source(...)` is required and uses existing ComponentRef semantics: a live
@@ -92,12 +93,8 @@ simulated locomotion frame                   <- sampled Y source
 └─ InputXR
    └─ HMD tracking transform
       └─ AVC / head-driven model root
-         └─ TransformForkTRS
-            ├─ TransformMapTranslation
-            │  └─ pass existing translation
-            ├─ TransformMapRotation -> TransformDrop
-            ├─ TransformMapScale -> TransformDrop
-            └─ TransformSampleTranslation(source=frame, axes=y)
+         └─ TOP.fork_trs().drop("rotation").drop("scale")
+            └─ TOP.sample_translation().source(frame).axes("y")
                └─ T(calibrated capsule offset) -> Zone -> Collidable
 ```
 
@@ -108,15 +105,17 @@ center unchanged is not sufficient to prove correct standing placement.
 
 ### Exact placement and the capsule offset
 
-Add the new component as a **downstream child of TransformForkTRS**, then nest
+Add the new component as a **downstream child of the fork operator**, then nest
 the capsule T beneath it. The fork still strips rotation and scale; the new
 stage edits the resulting matrix's Y; the capsule T then applies its calibrated
 local offset. This updates the earlier channel-map-only proposal.
 
-AVC already generates this fork, all three maps, and the downstream capsule T.
-Keep those nodes, but insert the new stage between fork and capsule T and
-recalibrate the capsule T's vertical offset. HMD driver and avatar parentage
-stay unchanged; the capsule T gains the stage as its immediate parent.
+AVC currently generates a fork, three map components, and the capsule T.
+The preceding focused refactor replaces simple pass/drop map configuration
+with builder values while preserving that fork's output. The height fix then
+inserts this stage between fork and capsule T and recalibrates the offset.
+HMD driver and avatar parentage stay unchanged; capsule T gains the stage as
+its immediate parent.
 
 Putting the operator below capsule T would sample after the capsule offset was
 already composed, so replacing Y would discard that offset unless reapplied.

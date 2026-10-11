@@ -15,6 +15,12 @@ still affect that frame. This is the prerequisite for
 [foot-penetration crouch IK](avc-foot-penetration-crouch-ik.md), not part of the
 crouch solver itself.
 
+Delivery order: first complete the focused
+[transform operator API refactor](transform-operator-api-cleanup.md), including
+compact fork configuration and the grouped translation sample; then implement
+this behavior/calibration change; then implement crouch IK. Full camera-specific
+and stateful-operator migration remains separate follow-up work.
+
 ## Problem and current code
 
 `avatar_control_system.rs::try_init_or_route_capsule` currently creates a
@@ -54,17 +60,15 @@ Concretely, insert the new sampling component **between TransformForkTRS and
 the capsule T**, as a downstream stage rather than inside its translation map:
 
 ```text
-TransformForkTRS
-├─ translation map -> pass
-├─ rotation map -> drop
-├─ scale map -> drop
-└─ TransformSampleTranslation.source(locomotion_frame).axes("y")
+TOP.fork_trs().drop("rotation").drop("scale")
+└─ TOP.sample_translation().source(locomotion_frame).axes("y")
    └─ capsule T(calibrated offset) -> Zone -> Collidable
 ```
 
-The HMD transform, model root, fork, and maps retain their existing parents.
-The capsule T gains the sampling stage as its parent, and its calibrated offset
-also changes. This edits fork output before the capsule local offset is applied.
+The HMD transform and model root retain their existing parents. The preceding
+refactor replaces simple fork map/drop children with builder configuration.
+This height-fix slice then gives the capsule T the sampling operator as its
+parent and changes its calibrated offset. It edits fork output before the capsule local offset is applied.
 Putting the stage beneath capsule T would instead edit the basis of its
 descendants after that offset, not the capsule T itself; direct-T modifier
 semantics are not part of this first API.
@@ -196,7 +200,8 @@ constraint graph, stair-stepping policy, or crouch joint solving is required.
 ## Related work
 
 - [Transform operator API cleanup](transform-operator-api-cleanup.md): compact
-  builders and uniform child-output semantics; not a prerequisite for this fix.
+  builders and uniform child-output semantics; its focused first phase comes
+  before this fix, while its broader migration can follow later.
 - [Axis-selective translation sampling](transform-sample-translation-axes.md)
 - [AVC upright character capsule](avc-upright-character-capsule.md)
 - [XR avatar grounding first slices](xr-avatar-grounding-first-slices.md)

@@ -81,7 +81,10 @@ interpolation, but it does not yet provide a persistent transitionable avatar
 pose layer. The initial procedural crouch does not depend on that layer.
 Delivery proceeds in this order:
 
-First complete the focused
+First complete the focused phase of
+[transform operator API cleanup](../transform-operator-api-cleanup.md): grouped
+constructors, builder configuration, and explicit child-output composition,
+including the translation sample. Then complete the
 [capsule operator/calibration change](../avc-capsule-before-hmd-tracking.md), using
 [axis-selective translation sampling](../transform-sample-translation-axes.md):
 retain tracked body X/Z and sample pre-tracking locomotion Y. Physical head Y
@@ -105,7 +108,8 @@ the posture work below.
 
 - [Transform operator API and output-contract cleanup](../transform-operator-api-cleanup.md)
   — grouped constructors/builders and uniform downstream-child composition;
-  a separate cleanup, not a prerequisite for the initial capsule height fix.
+  the focused phase precedes the capsule height fix; remaining specialized
+  migrations can follow separately.
 - [Avatar control simple humanoid body follow](../avatar-control-simple-humanoid-body-follow.md)
   — canonical kinematic body-anchor design and current implementation path.
 - [Eye tracking appears to counteract head rotation](../../bugs/eye-tracking-head-rotation-counteracts-gaze.md)

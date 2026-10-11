@@ -174,6 +174,14 @@ The separate command-queue/signal-staging work remains separate.
 
 ## Testable slices
 
+Delivery decision: do the focused operator refactor **before** changing AVC's
+capsule-height behavior. Complete the contract, compact fork configuration, and
+source-operator composition in slices 1–3 first. Prove existing capsule fork
+math remains unchanged during that refactor. Then apply the new Y sample and
+calibrated offset in the dedicated height-fix task; crouch IK follows afterward.
+The broader stateful/camera-specific migration and final naming sweep in
+slices 4–5 do not need to delay that behavioral fix.
+
 1. **Contract and inventory:** document current configuration exceptions and
    normal downstream children; prove nested operators and multiple output
    branches with the existing evaluator. Settle TOP/long-form naming and the
@@ -197,10 +205,12 @@ The separate command-queue/signal-staging work remains separate.
    desktop/XR smoke cases. Measure component count, plan/propagation cost, and
    allocations; no per-frame MMS evaluation or whole-world dependency scan.
 
-The height fix does not need this entire cleanup to land first. Its small
-[translation-sample task](transform-sample-translation-axes.md) can establish the
-operator behavior under a transitional name, then migrate to TOP. Record that
-relationship rather than making crouch/grounding depend on a broad API refactor.
+Implement the [translation-sample task](transform-sample-translation-axes.md)
+under the grouped API as part of the focused first phase. Avoid introducing a
+temporary standalone MMS spelling only to replace it immediately. The capsule
+fixture in slice 3 proves operator composition and offset order; the subsequent
+[height-fix task](avc-capsule-before-hmd-tracking.md) owns AVC calibration,
+contact routing, and headset acceptance. Keep those reviewable changes separate.
 
 ## Related work
 
