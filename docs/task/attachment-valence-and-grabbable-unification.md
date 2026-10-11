@@ -2,6 +2,10 @@
 
 Status: planned, 2026-09-12. Follows the `Rider` + `Mountable` first slice.
 
+Focused prerequisite: [AttachmentSystem topology/lifecycle cleanup](attachment-system-world-owned-topology-cleanup.md).
+Verify existing managed car attachments before multi-parent support; full generic
+role/valence and grab consolidation remain in this task.
+
 ## Attachment valence model
 
 Use signed attachment valence relative to a user-controlled frame, rather than

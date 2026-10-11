@@ -81,6 +81,10 @@ requires runtime rig/hardware evidence in addition to deterministic replay tests
 
 ### Custom materials and renderer capabilities
 
+- [ ] Prerequisite: [AttachmentSystem topology/lifecycle cleanup](../../attachment-system-world-owned-topology-cleanup.md).
+  Verify managed Rider/Mountable car attachments in mittens-corp with current
+  single-parent storage; then add multiple-parent support through that boundary.
+
 - [ ] [Multi-parent components for shared material declarations](../../multi-parent-components-and-material-sharing.md):
   repeated live MMS attachments share one source/instance, with explicit edge
   removal/lifetime rules, tree compatibility, and measured performance. General

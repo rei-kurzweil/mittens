@@ -4,6 +4,8 @@ Date: 2026-10-10
 Status: focused investigation/refactor plan; documentation only.
 Parent use case: [custom materials](epic/custom-materials.md).
 Related foundation: [material instances and families](material-instances-and-family-contracts.md).
+Prerequisite: [AttachmentSystem topology/lifecycle cleanup](attachment-system-world-owned-topology-cleanup.md),
+verified with the mittens-corp car before adding multiple parents.
 Release tracking: [0.10.0](epic/0.10.0/README.md), with material-sharing slice first.
 
 ## Goal
@@ -207,9 +209,10 @@ The current implementation already stores adjacency in World; this refactor
 formalizes the reference and coordinated lifecycle rather than removing a
 second adjacency list that does not exist.
 
-Build this immediately after the low-level topology API, before enabling MMS
-multi-parent behavior broadly. Prove World mutation and managed-relationship
-cleanup stay coherent, then apply the same boundary to GrabbableSystem. Do not
+First complete the [focused AttachmentSystem cleanup](attachment-system-world-owned-topology-cleanup.md)
+using single-parent storage. Then extend that boundary with multiple parents.
+Prove World mutation and managed-relationship cleanup stay coherent; full
+Grabbable consolidation remains in the valence/unification follow-up. Do not
 move occupancy/alignment/restoration fields onto every ordinary graph edge or
 make generic World topology depend on Rider/Mountable types.
 
@@ -258,13 +261,13 @@ component is free. State measured regression budgets before merging.
 
 Concrete implementation sequence:
 
-1. [ ] Inventory singular-parent callers and freeze graph/operation/lifecycle
+1. [ ] Complete the AttachmentSystem cleanup/car verification prerequisite,
+   then inventory singular-parent callers and freeze graph/operation/lifecycle
    contracts, initial shareable kinds, query/event policies, and tree baseline.
 2. [ ] Add edge/parent storage and low-level tests for duplicate edges, cycles,
    detach-one vs detach-all, shared deletion, stale handles, and tree compatibility.
-   Establish World-owned attachment references and mutation notifications;
-   migrate AttachmentSystem's structural-attachment tracking and verify external
-   detach/reparent/removal cleanup before broad multi-parent enablement.
+   Extend the prerequisite's World-owned attachment references and notifications;
+   verify managed detach/reparent/removal behavior under the new representation.
 3. [ ] Wire runtime intents, initialization/invalidation and MMS repeated-handle
    attachment. Use shared Shading on separate primitives as the first real proof.
 4. [ ] Inspect renderer records after MMS initializes and edits sources: shared
