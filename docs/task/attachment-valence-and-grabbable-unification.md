@@ -103,6 +103,16 @@ pedestrian movement authority merely because a transform was parented.
 
 ## Current implementation and problem
 
+Source review, 2026-10-10: the runtime still has occupancy-specific `ActiveMount`
+records and separate `ActiveGrab` bookkeeping. Endpoint valence and the generic
+retained-edge slices below are not implemented. AttachmentSystem still suspends
+and restores input/velocity; the movement-authority extraction remains planned.
+Coordinate topology ownership and external detach/reparent/removal behavior with
+[multi-parent components](multi-parent-components-and-material-sharing.md#coordinate-with-the-existing-attachmentsystem-refactor).
+World owns actual parent/child adjacency; retained relationship records add
+policy and transaction state and must use that authoritative topology rather
+than duplicate it. Valence does not apply automatically to every ECS edge.
+
 `GrabbableSystem` already creates a temporary parent relationship while held:
 it reparents the grabbed target beneath the pointer's nearest transform,
 preserves world pose, smooths the held local destination, then restores the
@@ -169,6 +179,14 @@ change input-routing behavior.
 
 ### Slice 2: generic retained attachment edges
 
+- Make World the single owner of structural attachments. Retained mount/grab
+  relationships refer to the exact World-owned attachment(s), using validated
+  IDs or parent/child pairs under the chosen topology contract. Keep semantic
+  endpoints, alignment, occupancy, and restoration state in the relationship
+  layer; do not duplicate mutable edge existence there. Coordinate external
+  detach/reparent/removal with cleanup so explicit detachment is not reversed
+  by original-parent restoration. This boundary is an early dependency of the
+  multi-parent task and can be implemented before the complete valence model.
 - Inventory the exact invariants shared by `GrabbableSystem` and
   `AttachmentSystem`: atomicity, cycle checks, original-parent restoration,
   world-pose preservation, single-owner policy, removal cleanup, and lifecycle

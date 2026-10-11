@@ -152,6 +152,67 @@ are solved by supporting materials.
 
 ## Lifetime, traversal, and context
 
+### Coordinate with the existing AttachmentSystem refactor
+
+Reviewed 2026-10-10: [AttachmentSystem](../../src/engine/ecs/system/attachment_system.rs)
+currently retains occupancy-specific `ActiveMount` records indexed by Rider and
+Mountable. Mounting generates a `TransformParent`, reparents the rider movement
+root beneath it, records the original parent, and suspends input/velocity.
+Dismount restores parentage and input/velocity and removes the generated subtree.
+Its tick validates cached endpoints and checks the rider root's singular parent;
+invalid records are unwound. [GrabbableSystem](../../src/engine/ecs/system/grabbable_system.rs)
+retains its own active-grab/original-parent state. Neither generic endpoint
+valence nor the shared retained-edge foundation is implemented yet; see
+[attachment valence/unification](attachment-valence-and-grabbable-unification.md)
+and [movement authority](attachment-movement-authority-and-input-routing.md).
+
+World must remain authoritative for actual component attachment adjacency.
+AttachmentSystem and the proposed generic retained relationships should use
+that same topology API, with exact parent/child identities (or attachment IDs),
+not maintain a competing copy of the graph. They additionally retain semantic
+policy, alignment/follow targets, occupancy, original-parent restoration, and
+transaction state. A mount-point/follow relationship is not necessarily a direct
+ECS edge: the current mount follows a referenced target through TransformParent.
+Material-sharing edges do not imply mount valence, occupancy, or movement authority.
+
+Before migrating mutation callers, define the common mutation/notification
+boundary and lifecycle owner for system-managed attachments:
+
+- Record precisely which structural attachment a mount/grab transaction owns;
+  keep its spatial root single-parent until spatial sharing has a contract.
+- Detach-one, detach-all, explicit reparenting, and endpoint destruction must
+  notify/invalidate affected managed relationships through the same boundary.
+  Do not require other systems to inspect AttachmentSystem's private maps.
+- Decide whether an external detach cancels a mount/grab and whether cancellation
+  restores its original parent. Current invalid-edge cleanup can reparent the
+  rider during unwind; do not accidentally undo an explicit caller detach.
+- Release semantic state, generated helpers, and input/velocity leases exactly
+  once. Removing a shared material edge must not cancel an unrelated mount.
+- Test a mounted/grabbed root detached externally, detached from all parents,
+  reparented, or destroyed, plus endpoint removal and shared materials inside
+  those subtrees. Verify final topology as well as semantic relationship state.
+
+Coordinate the two tasks at this boundary; the material-sharing slice need not
+wait for every valence, wearable, or movement-authority feature.
+
+First refactor at this boundary: make AttachmentSystem refer to World-owned
+attachments instead of treating its cached relationship as independent evidence
+that parentage is still valid. World owns edge existence and endpoints; a managed
+mount record associates its policy/state with the exact structural attachment(s)
+created by its transaction. Use a stable attachment ID if that is the chosen
+graph representation, or an exact parent/child pair with suitable lifetime
+validation. Relationship endpoints (Rider/Mountable and alignment frames) remain
+necessary metadata: they are not identical to the structural edge's endpoints.
+The current implementation already stores adjacency in World; this refactor
+formalizes the reference and coordinated lifecycle rather than removing a
+second adjacency list that does not exist.
+
+Build this immediately after the low-level topology API, before enabling MMS
+multi-parent behavior broadly. Prove World mutation and managed-relationship
+cleanup stay coherent, then apply the same boundary to GrabbableSystem. Do not
+move occupancy/alignment/restoration fields onto every ordinary graph edge or
+make generic World topology depend on Rider/Mountable types.
+
 - Initialize/register one component once; adding another edge registers a new
   consumer relationship, not another copy of its state/system resource.
 - Removing a parent/subtree removes its edges but preserves a shared descendant
@@ -201,6 +262,9 @@ Concrete implementation sequence:
    contracts, initial shareable kinds, query/event policies, and tree baseline.
 2. [ ] Add edge/parent storage and low-level tests for duplicate edges, cycles,
    detach-one vs detach-all, shared deletion, stale handles, and tree compatibility.
+   Establish World-owned attachment references and mutation notifications;
+   migrate AttachmentSystem's structural-attachment tracking and verify external
+   detach/reparent/removal cleanup before broad multi-parent enablement.
 3. [ ] Wire runtime intents, initialization/invalidation and MMS repeated-handle
    attachment. Use shared Shading on separate primitives as the first real proof.
 4. [ ] Inspect renderer records after MMS initializes and edits sources: shared
