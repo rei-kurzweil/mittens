@@ -33,27 +33,25 @@ use crate::engine::ecs::component::{
     MorphTargetMapComponent, MountableComponent, MusicNote, MusicNoteComponent,
     NormalVisualisationComponent, OpacityComponent, OptionComponent, OscillatorType, Overflow,
     OverlayComponent, PointLightComponent, PointerComponent, PointerEvents, PoseCaptureComponent,
-    PoseCaptureLibraryComponent, PoseCapturePoseComponent, Position, QuatTemporalFilterComponent,
-    QuatYawFollowComponent, RayCastComponent, RaycastableComponent, RaycastableShapeComponent,
-    RaycastableShapeType, RefractionComponent, RenderGraphComponent, RenderableComponent,
-    RendererSettingsComponent, RendererStatsComponent, RestAttachmentComponent,
-    ReturnToRestWhenStillComponent, RiderComponent, RoughTransmissionComponent, RouterComponent,
-    ScrollingComponent, SecondaryMotionComponent, SelectableComponent, SelectionComponent,
-    SerializeComponent, SettingsPanelConfig, SignalObserverRouterComponent,
-    SignalRouteUpwardComponent, SizeDimension, SliderComponent, SpotLightComponent,
-    SpringBoneComponent, SpringColliderComponent, SpringCollidersComponent, SpringJointComponent,
-    StencilClipComponent, StyleComponent, TextAlign, TextComponent, TextInputComponent,
-    TextShadowComponent, TextureComponent, TextureFilteringComponent, ToggleComponent,
-    ToonOutlineComponent, ToonOutlineOverride, TransformApplyInverseLocalComponent,
-    TransformCameraSpecificComponent, TransformComponent, TransformDropComponent,
+    PoseCaptureLibraryComponent, PoseCapturePoseComponent, Position, RayCastComponent,
+    RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType, RefractionComponent,
+    RenderGraphComponent, RenderableComponent, RendererSettingsComponent, RendererStatsComponent,
+    RestAttachmentComponent, ReturnToRestWhenStillComponent, RiderComponent,
+    RoughTransmissionComponent, RouterComponent, ScrollingComponent, SecondaryMotionComponent,
+    SelectableComponent, SelectionComponent, SerializeComponent, SettingsPanelConfig,
+    SignalObserverRouterComponent, SignalRouteUpwardComponent, SizeDimension, SliderComponent,
+    SpotLightComponent, SpringBoneComponent, SpringColliderComponent, SpringCollidersComponent,
+    SpringJointComponent, StencilClipComponent, StyleComponent, TextAlign, TextComponent,
+    TextInputComponent, TextShadowComponent, TextureComponent, TextureFilteringComponent,
+    ToggleComponent, ToonOutlineComponent, ToonOutlineOverride,
+    TransformApplyInverseLocalComponent, TransformCameraSpecificComponent, TransformComponent,
     TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
     TransformGizmoCoordSpace, TransformGizmoPlane, TransformGizmoRotateComponent,
     TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
     TransformGizmoTranslatePlaneComponent, TransformMapRotationComponent,
     TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
-    TransformParentComponent, TransformSampleAncestorComponent, TransitionComponent,
-    TransitionEasing, TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
-    UnlitComponent, VRChatOSCEyeTrackingComponent, Vector3TemporalFilterComponent,
+    TransformParentComponent, TransitionComponent, TransitionEasing, TransitionReplacePolicy,
+    TransparentCutoutComponent, UVComponent, UnlitComponent, VRChatOSCEyeTrackingComponent,
     VelocityComponent, VolumeNormalizationComponent, WordWrapMode, XREyeTrackingComponent,
     XREyeTrackingHtcComponent, XRHandComponent, XrComponent, XrHandPreference, ZoneComponent,
 };
@@ -168,8 +166,6 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "PoseCapture",
     "PoseCaptureLibrary",
     "PoseCapturePose",
-    "QuatTemporalFilter",
-    "QuatYawFollow",
     "Raycast",
     "Raycastable",
     "RaycastableShape",
@@ -204,25 +200,15 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "TextureFiltering",
     "Unlit",
     "Transform",
-    "TransformApplyInverseLocal",
-    "TransformCameraSpecific",
-    "TransformDrop",
-    "TransformForkTRS",
+    "TransformOperator",
     "TransformGizmo",
     "TransformGizmoRotate",
     "TransformGizmoScale",
     "TransformGizmoTranslate",
     "TransformGizmoTranslatePlane",
-    "TransformMapRotation",
-    "TransformMapScale",
-    "TransformMapTranslation",
-    "TransformMergeTRS",
-    "TransformParent",
-    "TransformSampleAncestor",
     "Transition",
     "TransparentCutout",
     "UV",
-    "Vector3TemporalFilter",
     "XR",
     "XRHand",
 ];
@@ -680,6 +666,9 @@ fn filtered_ce_ast_inner(
 
     let mut child_components = Vec::new();
     for &child_id in world.children_of(root) {
+        if is_operator_configuration_child(world, root, child_id) {
+            continue;
+        }
         child_components.extend(filtered_ce_ast_inner(world, child_id, referenced_guids)?);
     }
 
@@ -724,6 +713,24 @@ pub fn subtree_to_ce_ast_limited(
     collect_referenced_guids_limited(world, root, 0, max_depth, &mut referenced_guids);
 
     subtree_to_ce_ast_inner_limited(world, root, &referenced_guids, 0, max_depth)
+}
+
+fn is_operator_configuration_child(world: &World, parent: ComponentId, child: ComponentId) -> bool {
+    world
+        .get_component_by_id_as::<TransformForkTRSComponent>(parent)
+        .is_some()
+        && (world
+            .get_component_by_id_as::<TransformMapTranslationComponent>(child)
+            .is_some()
+            || world
+                .get_component_by_id_as::<TransformMapRotationComponent>(child)
+                .is_some()
+            || world
+                .get_component_by_id_as::<TransformMapScaleComponent>(child)
+                .is_some()
+            || world
+                .get_component_by_id_as::<TransformMergeTRSComponent>(child)
+                .is_some())
 }
 
 fn ensure_subtree_has_no_opaque_keyframe_callback(
@@ -886,6 +893,9 @@ fn subtree_to_ce_ast_inner_limited(
         return Ok(ce);
     }
     for &child_id in children {
+        if is_operator_configuration_child(world, root, child_id) {
+            continue;
+        }
         let child_ce = subtree_to_ce_ast_inner_limited(
             world,
             child_id,
@@ -2135,43 +2145,26 @@ fn create_component(
             }
             _ => Err("XRHand requires .new(enabled, hand, pose)".into()),
         },
-        "TransformParent" => match ctor {
-            Some("target") => add!(
-                TransformParentComponent::new()
-                    .with_target_source(arg_component_ref(world, args, 0)?)
-            ),
-            _ => add!(TransformParentComponent::new()),
-        },
-        "TransformApplyInverseLocal" => match ctor {
-            Some("source") => add!(TransformApplyInverseLocalComponent::new(arg_component_ref(
-                world, args, 0
-            )?)),
-            _ => Err("TransformApplyInverseLocal requires .source(transform)".into()),
-        },
-        "TransformForkTRS" => add!(TransformForkTRSComponent::new()),
-        "TransformCameraSpecific" => add!(match ctor {
-            Some("active_stereoscopic") => TransformCameraSpecificComponent::active_stereoscopic(),
-            _ => TransformCameraSpecificComponent::active_monoscopic(),
-        }),
-        "TransformMapTranslation" => add!(TransformMapTranslationComponent::new()),
-        "TransformMapRotation" => add!(TransformMapRotationComponent::new()),
-        "TransformMapScale" => add!(TransformMapScaleComponent::new()),
-        "TransformMergeTRS" => add!(TransformMergeTRSComponent::new()),
-        "TransformDrop" => add!(TransformDropComponent::new()),
-        "TransformSampleAncestor" => {
-            let mut c = TransformSampleAncestorComponent::new();
-            if let Some("skip") = ctor {
-                c = c.with_skip(arg_f32(args, 0)? as usize);
+        "TransformOperator" => match ctor {
+            Some("parent") => {
+                let mut operator = TransformParentComponent::new();
+                if !args.is_empty() { operator.target_source = Some(arg_component_ref(world, args, 0)?); }
+                add!(operator)
+            },
+            Some("inverse_local") => add!(TransformApplyInverseLocalComponent::new(arg_component_ref(world, args, 0)?)),
+            Some("camera_specific") => add!(match arg_str(args, 0)? {
+                "monoscopic" => TransformCameraSpecificComponent::active_monoscopic(),
+                "stereoscopic" => TransformCameraSpecificComponent::active_stereoscopic(),
+                mode => return Err(format!("TOP.camera_specific: unknown mode {mode:?}")),
+            }),
+            Some("fork_trs") => add!(TransformForkTRSComponent::new()),
+            Some(method @ ("drop" | "smooth" | "sample_ancestor" | "extract_yaw" | "yaw_follow")) => {
+                let id = world.add_component(TransformForkTRSComponent::new());
+                apply_call(world, id, method, args)?;
+                Ok(id)
             }
-            add!(c)
-        }
-        "QuatTemporalFilter" => {
-            let mut c = QuatTemporalFilterComponent::new();
-            if let Some("smoothing_factor") = ctor {
-                c = c.with_smoothing_factor(arg_f32(args, 0)?);
-            }
-            add!(c)
-        }
+            _ => Err("TOP requires an operator constructor (fork_trs, parent, inverse_local, camera_specific, drop, smooth, sample_ancestor, extract_yaw, or yaw_follow)".into()),
+        },
         "GLTF" => match ctor {
             Some("new") => add!(GLTFComponent::new(arg_str(args, 0)?)),
             _ => Err("GLTF requires .new(\"uri\")".into()),
@@ -2610,20 +2603,6 @@ fn create_component(
             }
             Ok(id)
         }
-        "Vector3TemporalFilter" => {
-            let mut c = Vector3TemporalFilterComponent::new();
-            if let Some("smoothing_factor") = ctor {
-                c = c.with_smoothing_factor(arg_f32(args, 0)?);
-            }
-            add!(c)
-        }
-        "QuatYawFollow" => match ctor {
-            Some("new") => add!(QuatYawFollowComponent::new(
-                arg_f32(args, 0)?,
-                arg_f32(args, 1)?
-            )),
-            _ => add!(QuatYawFollowComponent::default()),
-        },
         "SignalRouteUpward" => match ctor {
             Some("new") => add!(SignalRouteUpwardComponent::new(
                 arg_str(args, 0)?,
@@ -2912,6 +2891,123 @@ fn apply_call(
     method: &str,
     args: &[Value],
 ) -> Result<(), String> {
+    if world
+        .get_component_by_id_as::<TransformForkTRSComponent>(id)
+        .is_some()
+    {
+        use crate::engine::ecs::component::transform_pipeline::{
+            TransformChannel, TransformQuatOp, TransformVec3Op,
+        };
+        match method {
+            "drop" | "pass" => {
+                let channel = TransformChannel::parse(arg_str(args, 0)?)?;
+                world
+                    .get_component_by_id_as_mut::<TransformForkTRSComponent>(id)
+                    .unwrap()
+                    .set_channel(channel, method == "drop");
+            }
+            "smooth" => {
+                let channel = TransformChannel::parse(arg_str(args, 0)?)?;
+                let factor = arg_f32(args, 1)?;
+                if !factor.is_finite() || factor < 0.0 {
+                    return Err("TOP.smooth requires a finite non-negative smoothing factor".into());
+                }
+                let fork = world
+                    .get_component_by_id_as_mut::<TransformForkTRSComponent>(id)
+                    .unwrap();
+                if channel == TransformChannel::Rotation {
+                    fork.push_rotation(TransformQuatOp::TemporalFilter {
+                        smoothing_factor: factor,
+                    });
+                } else {
+                    fork.push_vec3(
+                        channel,
+                        TransformVec3Op::TemporalSmooth {
+                            smoothing_factor: factor,
+                        },
+                    )?;
+                }
+            }
+            "sample_ancestor" => {
+                let channel = TransformChannel::parse(arg_str(args, 0)?)?;
+                let skip = arg_u32(args, 1)? as usize;
+                let fork = world
+                    .get_component_by_id_as_mut::<TransformForkTRSComponent>(id)
+                    .unwrap();
+                if channel == TransformChannel::Rotation {
+                    fork.push_rotation(TransformQuatOp::SampleAncestorRotation { skip });
+                } else if channel == TransformChannel::Translation {
+                    fork.push_vec3(channel, TransformVec3Op::SampleAncestorTranslation { skip })?;
+                } else {
+                    return Err(
+                        "TOP.sample_ancestor supports translation or rotation, not scale".into(),
+                    );
+                }
+            }
+            "extract_yaw" => world
+                .get_component_by_id_as_mut::<TransformForkTRSComponent>(id)
+                .unwrap()
+                .push_rotation(TransformQuatOp::ExtractYaw),
+            "yaw_follow" => {
+                let threshold = arg_f32(args, 0)?;
+                let rate = arg_f32(args, 1)?;
+                if !threshold.is_finite() || !rate.is_finite() || threshold < 0.0 || rate < 0.0 {
+                    return Err(
+                        "TOP.yaw_follow requires finite non-negative threshold and rate".into(),
+                    );
+                }
+                world
+                    .get_component_by_id_as_mut::<TransformForkTRSComponent>(id)
+                    .unwrap()
+                    .push_rotation(TransformQuatOp::YawFollow {
+                        threshold,
+                        rate,
+                        initial_yaw: 0.0,
+                        forward_plus_z: false,
+                    });
+            }
+            "initial_yaw" | "forward_plus_z" => {
+                let yaw = if method == "initial_yaw" {
+                    Some(arg_f32(args, 0)?)
+                } else {
+                    None
+                };
+                let forward = if method == "forward_plus_z" {
+                    Some(arg_bool(args, 0)?)
+                } else {
+                    None
+                };
+                if yaw.is_some_and(|v| !v.is_finite()) {
+                    return Err("TOP.initial_yaw requires a finite angle".into());
+                }
+                let fork = world
+                    .get_component_by_id_as_mut::<TransformForkTRSComponent>(id)
+                    .unwrap();
+                let Some(TransformQuatOp::YawFollow {
+                    initial_yaw,
+                    forward_plus_z,
+                    ..
+                }) = fork.rotation_ops.last_mut()
+                else {
+                    return Err(format!(
+                        "TOP.{method} requires a preceding yaw_follow operation"
+                    ));
+                };
+                if let Some(yaw) = yaw {
+                    *initial_yaw = yaw;
+                }
+                if let Some(forward) = forward {
+                    *forward_plus_z = forward;
+                }
+            }
+            _ => {
+                return Err(format!(
+                    "TOP fork operator does not support builder {method:?}"
+                ));
+            }
+        }
+        return Ok(());
+    }
     if world
         .get_component_by_id_as::<SliderComponent>(id)
         .is_some()
@@ -3622,7 +3718,7 @@ fn apply_call(
         .is_some()
     {
         match method {
-            "target" => {
+            "source" => {
                 let src = arg_component_ref(world, args, 0)?;
                 if let Some(tp) = world.get_component_by_id_as_mut::<TransformParentComponent>(id) {
                     tp.target_source = Some(src);
@@ -3634,7 +3730,7 @@ fn apply_call(
                     tp.root_source = Some(src);
                 }
             }
-            _ => {}
+            _ => return Err(format!("TOP.parent does not support builder {method:?}")),
         }
         return Ok(());
     }
@@ -3716,15 +3812,26 @@ fn apply_call(
         .get_component_by_id_as::<TransformApplyInverseLocalComponent>(id)
         .is_some()
     {
-        if method == "source" {
-            let source = arg_component_ref(world, args, 0)?;
-            if let Some(operator) =
-                world.get_component_by_id_as_mut::<TransformApplyInverseLocalComponent>(id)
-            {
-                operator.source = source;
-            }
+        if method != "source" {
+            return Err(format!(
+                "TOP.inverse_local does not support builder {method:?}"
+            ));
+        }
+        let source = arg_component_ref(world, args, 0)?;
+        if let Some(operator) =
+            world.get_component_by_id_as_mut::<TransformApplyInverseLocalComponent>(id)
+        {
+            operator.source = source;
         }
         return Ok(());
+    }
+    if world
+        .get_component_by_id_as::<TransformCameraSpecificComponent>(id)
+        .is_some()
+    {
+        return Err(format!(
+            "TOP.camera_specific does not support builder {method:?}"
+        ));
     }
     if let Some(rc) = world.get_component_by_id_as_mut::<RayCastComponent>(id) {
         match method {
@@ -3749,20 +3856,6 @@ fn apply_call(
                 rc.max_distance = value;
             }
             _ => {}
-        }
-        return Ok(());
-    }
-    if let Some(yf) = world.get_component_by_id_as_mut::<QuatYawFollowComponent>(id) {
-        match method {
-            "forward_plus_z" => *yf = yf.with_forward_plus_z(),
-            "initial_yaw" => *yf = yf.with_initial_yaw(arg_f32(args, 0)?),
-            _ => {}
-        }
-        return Ok(());
-    }
-    if let Some(v3f) = world.get_component_by_id_as_mut::<Vector3TemporalFilterComponent>(id) {
-        if method == "smoothing_factor" {
-            *v3f = v3f.with_smoothing_factor(arg_f32(args, 0)?);
         }
         return Ok(());
     }
@@ -4113,12 +4206,7 @@ fn apply_call(
         }
         return Ok(());
     }
-    if let Some(qtf) = world.get_component_by_id_as_mut::<QuatTemporalFilterComponent>(id) {
-        if method == "smoothing_factor" {
-            *qtf = qtf.clone().with_smoothing_factor(arg_f32(args, 0)?);
-        }
-        return Ok(());
-    }
+
     if world
         .get_component_by_id_as::<AvatarControlComponent>(id)
         .is_some()

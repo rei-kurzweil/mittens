@@ -1,15 +1,15 @@
-# TransformCameraSpecific
+# Camera-specific transform operators
 
 `TransformCameraSpecificComponent` selects one ordinary TRS settings transform according to the
-camera family currently driving the frame. It is a transform-stream primitive: it changes the
+camera family currently driving the frame. It is a transform operator: it changes the
 world basis inherited by downstream content without introducing a special renderer material or
 shader path.
 
 The component currently supports two constructors:
 
 ```text
-TransformCameraSpecific.active_monoscopic
-TransformCameraSpecific.active_stereoscopic
+TOP.camera_specific("monoscopic")
+TOP.camera_specific("stereoscopic")
 ```
 
 The important limitation is that selection produces one effective ECS world matrix. It does not
@@ -32,9 +32,9 @@ transforms are configuration children; all other direct children are downstream 
 
 ```text
 anchor Transform
-  TransformCameraSpecific.active_monoscopic
+  TOP.camera_specific("monoscopic")
     mono_settings Transform
-  TransformCameraSpecific.active_stereoscopic
+  TOP.camera_specific("stereoscopic")
     stereo_settings Transform
   downstream_content
     renderables / transforms / other components
@@ -101,11 +101,11 @@ drop inherited scale. Its visual anchor then has mono and stereo settings transf
 ```text
 target Transform
   gizmo TransformGizmo
-    gizmo_pipeline TransformForkTRS (drops inherited scale)
+    gizmo_operator TOP.fork_trs().drop("scale")
       gizmo_root Transform
-        TransformCameraSpecific.active_monoscopic
+        TOP.camera_specific("monoscopic")
           mono_settings Transform
-        TransformCameraSpecific.active_stereoscopic
+        TOP.camera_specific("stereoscopic")
           stereo_settings Transform
         Overlay
           gizmo handles

@@ -27,6 +27,16 @@ impl Component for QuatExtractYawComponent {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
+    fn to_mms_ast(
+        &self,
+        _world: &crate::engine::ecs::World,
+    ) -> crate::scripting::ast::ComponentExpression {
+        crate::engine::ecs::component::ce_helpers::ce_call(
+            "TransformOperator",
+            "extract_yaw",
+            vec![],
+        )
+    }
 }
 
 /// Stateful body-yaw follow: extracts world-Y yaw from the input rotation, then
@@ -101,12 +111,12 @@ impl Component for QuatYawFollowComponent {
     ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         let mut c = ce_call(
-            "QuatYawFollow",
-            "new",
+            "TransformOperator",
+            "yaw_follow",
             vec![num(self.threshold as f64), num(self.rate as f64)],
         );
         if self.forward_plus_z {
-            c = c.with_call("forward_plus_z", vec![]);
+            c = c.with_call("forward_plus_z", vec![b(true)]);
         }
         if self.initial_yaw != 0.0 {
             c = c.with_call("initial_yaw", vec![num(self.initial_yaw as f64)]);
@@ -158,9 +168,9 @@ impl Component for Vector3TemporalFilterComponent {
     ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         ce_call(
-            "Vector3TemporalFilter",
-            "smoothing_factor",
-            vec![num(self.smoothing_factor as f64)],
+            "TransformOperator",
+            "smooth",
+            vec![s("translation"), num(self.smoothing_factor as f64)],
         )
     }
 }
@@ -208,9 +218,9 @@ impl Component for QuatTemporalFilterComponent {
     ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
         ce_call(
-            "QuatTemporalFilter",
-            "smoothing_factor",
-            vec![num(self.smoothing_factor as f64)],
+            "TransformOperator",
+            "smooth",
+            vec![s("rotation"), num(self.smoothing_factor as f64)],
         )
     }
 }

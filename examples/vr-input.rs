@@ -3,12 +3,11 @@ use mittens_engine::engine::ecs::component::{
     BlurPassComponent, Camera3DComponent, CameraXRComponent, ColorComponent, ComponentRef,
     ControllerHand, ControllerPoseKind, ControllerXRComponent, DirectionalLightComponent,
     EditorComponent, EmissiveComponent, EmissivePassComponent, GLTFComponent, InputComponent,
-    InputTransformModeComponent, InputXRComponent, PointerComponent, QuatTemporalFilterComponent,
-    RaycastableComponent, RenderGraphComponent, RenderableComponent, RendererSettingsComponent,
-    RendererStatsComponent, RestAttachmentComponent, SecondaryMotionComponent, SpringBoneComponent,
+    InputTransformModeComponent, InputXRComponent, PointerComponent, RaycastableComponent,
+    RenderGraphComponent, RenderableComponent, RendererSettingsComponent, RendererStatsComponent,
+    RestAttachmentComponent, SecondaryMotionComponent, SpringBoneComponent,
     SpringColliderComponent, SpringCollidersComponent, TransformComponent,
-    TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
-    TransformMapTranslationComponent, XrComponent,
+    TransformForkTRSComponent, XrComponent,
 };
 use mittens_engine::engine::graphics::BuiltinMeshType;
 use mittens_engine::engine::graphics::CameraTarget;
@@ -146,29 +145,13 @@ fn spawn_controller_cube(
         return controller_marker;
     }
 
-    let fork = universe
-        .world
-        .add_component(TransformForkTRSComponent::new());
+    use mittens_engine::engine::ecs::component::transform_pipeline::TransformQuatOp;
+    let mut operator = TransformForkTRSComponent::new();
+    operator.push_rotation(TransformQuatOp::TemporalFilter {
+        smoothing_factor: rotation_smoothing,
+    });
+    let fork = universe.world.add_component(operator);
     let _ = universe.attach(controller_t, fork);
-
-    let map_translation = universe
-        .world
-        .add_component(TransformMapTranslationComponent::new());
-    let _ = universe.attach(fork, map_translation);
-
-    let map_rotation = universe
-        .world
-        .add_component(TransformMapRotationComponent::new());
-    let _ = universe.attach(fork, map_rotation);
-    let rotation_filter = universe.world.add_component(
-        QuatTemporalFilterComponent::new().with_smoothing_factor(rotation_smoothing),
-    );
-    let _ = universe.attach(map_rotation, rotation_filter);
-
-    let map_scale = universe
-        .world
-        .add_component(TransformMapScaleComponent::new());
-    let _ = universe.attach(fork, map_scale);
 
     let filtered_t = universe.world.add_component(TransformComponent::new());
     let _ = universe.attach(fork, filtered_t);

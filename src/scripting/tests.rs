@@ -1680,12 +1680,7 @@ fn parse_controller_cube_tree() {
     let src = r#"
 CTLXR.new(true, Left, Aim) {
     T.with_scale(0.06, 0.06, 0.12) {
-        TransformForkTRS {
-            TransformMapTranslation {}
-            TransformMapRotation {
-                QuatTemporalFilter.with_smoothing_factor(220.0)
-            }
-            TransformMapScale {}
+        TOP.fork_trs().smooth("rotation", 220.0) {
             T {
                 R.cube() {
                     C.rgba(0.10, 0.90, 1.00, 1.0)
@@ -1711,31 +1706,16 @@ CTLXR.new(true, Left, Aim) {
     assert_eq!(t_scale.component_type.0, "T");
     assert_eq!(t_scale.constructors.first().unwrap().method.0, "with_scale");
 
-    // T → TransformForkTRS
+    // TOP stores channel settings in builders; every body child is output.
     assert_eq!(t_scale.body.statements.len(), 1);
-    let pipeline = as_component!(&t_scale.body.statements[0]);
-    assert_eq!(pipeline.component_type.0, "TransformForkTRS");
-
-    // fork root → translation, rotation, scale, downstream T
-    assert_eq!(pipeline.body.statements.len(), 4);
-    let fork = pipeline;
-
-    // fork → translation, rotation, scale
-    assert_eq!(fork.body.statements.len(), 4);
-    let map_rot = as_component!(&fork.body.statements[1]);
-    assert_eq!(map_rot.component_type.0, "TransformMapRotation");
-
-    // rotation filter child
-    assert_eq!(map_rot.body.statements.len(), 1);
-    let filter = as_component!(&map_rot.body.statements[0]);
-    assert_eq!(filter.component_type.0, "QuatTemporalFilter");
-    assert_eq!(
-        filter.constructors.first().unwrap().method.0,
-        "with_smoothing_factor"
-    );
+    let fork = as_component!(&t_scale.body.statements[0]);
+    assert_eq!(fork.component_type.0, "TOP");
+    assert_eq!(fork.constructors[0].method.0, "fork_trs");
+    assert_eq!(fork.constructors[1].method.0, "smooth");
+    assert_eq!(fork.body.statements.len(), 1);
 
     // downstream T → R.cube → C.rgba
-    let out_t = as_component!(&fork.body.statements[3]);
+    let out_t = as_component!(&fork.body.statements[0]);
     let cube = as_component!(&out_t.body.statements[0]);
     assert_eq!(cube.component_type.0, "R");
     assert_eq!(cube.constructors.first().unwrap().method.0, "cube");
@@ -10669,9 +10649,9 @@ fn roundtrip_transform_sample_ancestor() {
     use crate::engine::ecs::component::TransformSampleAncestorComponent;
     let (world, id) = roundtrip_component(TransformSampleAncestorComponent::new().with_skip(3));
     let got = world
-        .get_component_by_id_as::<TransformSampleAncestorComponent>(id)
+        .get_component_by_id_as::<crate::engine::ecs::component::TransformForkTRSComponent>(id)
         .unwrap();
-    assert_eq!(got.skip, 3);
+    assert_eq!(got.translation_ops, vec![crate::engine::ecs::component::transform_pipeline::TransformVec3Op::SampleAncestorTranslation { skip: 3 }]);
 }
 
 #[test]
@@ -10691,6 +10671,195 @@ fn roundtrip_transform_parent() {
     match got.root_source.as_ref() {
         Some(ComponentRef::Query(s)) => assert_eq!(s, "#scene"),
         other => panic!("unexpected root_source: {other:?}"),
+    }
+}
+
+#[test]
+fn top_nested_outputs_preserve_offsets_source_updates_and_roundtrip() {
+    use crate::engine::ecs::system::{SystemWorld, TransformSystem};
+    let source = r#"
+        let local = T.position(1.0, 2.0, 3.0) { name = "source" }
+        T {
+            name = "scene"
+            local
+            T.position(10.0, 20.0, 30.0).rotation(0.4, 0.8, 0.2).scale(2.0, 3.0, 4.0) {
+                name = "input"
+                TOP.fork_trs().drop("rotation").drop("scale") {
+                    TOP.inverse_local(local) {
+                        T.position(0.0, 1.0, 0.0) { name = "nested" }
+                    }
+                    T.position(2.0, 0.0, 0.0) { name = "sibling" }
+                }
+            }
+        }
+    "#;
+    let named = |world: &World, label: &str| {
+        world
+            .all_components()
+            .find(|id| world.component_label(*id) == Some(label))
+            .unwrap()
+    };
+    let mut world = World::default();
+    let mut systems = SystemWorld::default();
+    let mut queue = CommandQueue::new();
+    let mut visuals = VisualWorld::default();
+    let out = MeowMeowRunner::eval_with_runtime_spec(
+        source,
+        &mut world,
+        &mut systems.rx,
+        None,
+        &mut queue,
+    );
+    assert!(out.errors.is_empty(), "{:?}", out.errors);
+    let root = named(&world, "scene");
+    systems.transform_changed(&mut world, &mut visuals, root);
+    assert_eq!(
+        TransformSystem::world_position(&world, named(&world, "nested")),
+        Some([9.0, 19.0, 27.0])
+    );
+    assert_eq!(
+        TransformSystem::world_position(&world, named(&world, "sibling")),
+        Some([12.0, 20.0, 30.0])
+    );
+
+    // Scene dump/reload must preserve both branches and the source GUID.
+    let ast = crate::scripting::component_registry::subtree_to_ce_ast(&world, root).unwrap();
+    let text = crate::scripting::unparser::unparse_component(&ast);
+    assert!(text.contains("TransformOperator.fork_trs()"), "{text}");
+    assert!(text.contains("TransformOperator.inverse_local("), "{text}");
+    assert!(!text.contains("TransformMap"), "{text}");
+    let mut loaded = World::default();
+    let mut loaded_systems = SystemWorld::default();
+    let out = MeowMeowRunner::eval_with_runtime_spec(
+        &text,
+        &mut loaded,
+        &mut loaded_systems.rx,
+        None,
+        &mut queue,
+    );
+    assert!(out.errors.is_empty(), "{:?}\n{text}", out.errors);
+    let loaded_root = named(&loaded, "scene");
+    loaded_systems.transform_changed(&mut loaded, &mut visuals, loaded_root);
+    assert_eq!(
+        TransformSystem::world_position(&loaded, named(&loaded, "nested")),
+        Some([9.0, 19.0, 27.0])
+    );
+
+    // A referenced source change refreshes the consumer without reparenting it.
+    let local = named(&world, "source");
+    world
+        .get_component_by_id_as_mut::<TransformComponent>(local)
+        .unwrap()
+        .set_position(&mut systems.rx, 2.0, 2.0, 3.0);
+    systems.transform_changed(&mut world, &mut visuals, local);
+    assert_eq!(
+        TransformSystem::world_position(&world, named(&world, "nested")),
+        Some([8.0, 19.0, 27.0])
+    );
+    assert_eq!(
+        TransformSystem::world_position(&world, named(&world, "sibling")),
+        Some([12.0, 20.0, 30.0])
+    );
+}
+
+#[test]
+fn top_rejects_wrong_kind_builders_channels_and_legacy_authoring() {
+    for source in [
+        "TOP.parent(\"#source\").drop(\"scale\") {}",
+        "TOP.inverse_local(\"#source\").root(\"#scope\") {}",
+        "TOP.camera_specific(\"monoscopic\").smooth(\"rotation\", 2.0) {}",
+        "TOP.fork_trs().source(\"#source\") {}",
+        "TOP.fork_trs().drop(\"y\") {}",
+        "TOP.sample_ancestor(\"scale\", 1) {}",
+        "TOP.smooth(\"translation\", -1.0) {}",
+        "TOP.yaw_follow(0.5, -1.0) {}",
+        "TOP.fork_trs().initial_yaw(0.0) {}",
+        "TOP.sample_ancestor(\"rotation\", 1.5) {}",
+        "TransformForkTRS {}",
+        "TransformMapRotation {}",
+        "QuatYawFollow.new(0.5, 2.0) {}",
+    ] {
+        let out = MeowMeowRunner::eval_with_runtime_spec(
+            source,
+            &mut World::default(),
+            &mut RxWorld::default(),
+            None,
+            &mut CommandQueue::new(),
+        );
+        assert!(
+            !out.errors.is_empty(),
+            "accepted invalid operator: {source}"
+        );
+    }
+}
+
+#[test]
+fn top_constructors_and_last_channel_setting_are_valid_in_runtime_spec() {
+    use crate::engine::ecs::component::transform_pipeline::{
+        TransformForkTRSComponent, TransformVec3Op,
+    };
+    let source = r##"
+        TransformOperator.fork_trs().drop("translation").smooth("translation", 5.0).pass("translation") {}
+        TOP.drop("scale") {}
+        TOP.smooth("scale", 5.0) {}
+        TOP.sample_ancestor("translation", 1) {}
+        TOP.extract_yaw() {}
+        TOP.yaw_follow(0.5, 2.0).forward_plus_z(true).initial_yaw(3.14) {}
+        TOP.parent() {}
+        TOP.parent("#source").root("#scope").source("#other") {}
+        TOP.inverse_local("#source").source("#other") {}
+        T {
+            TOP.camera_specific("monoscopic") { T.scale(2.0, 2.0, 2.0) {} }
+            TOP.camera_specific("stereoscopic") { T.scale(3.0, 3.0, 3.0) {} }
+        }
+    "##;
+    let mut world = World::default();
+    let out = MeowMeowRunner::eval_with_runtime_spec(
+        source,
+        &mut world,
+        &mut RxWorld::default(),
+        None,
+        &mut CommandQueue::new(),
+    );
+    assert!(out.errors.is_empty(), "{:?}", out.errors);
+    let first = world
+        .all_components()
+        .find_map(|id| world.get_component_by_id_as::<TransformForkTRSComponent>(id))
+        .unwrap();
+    assert_eq!(first.translation_ops, vec![TransformVec3Op::Pass]);
+    let (world, id) =
+        roundtrip_component(crate::engine::ecs::component::TransformParentComponent::new());
+    assert!(
+        world
+            .get_component_by_id_as::<crate::engine::ecs::component::TransformParentComponent>(id)
+            .unwrap()
+            .target_source
+            .is_none()
+    );
+}
+
+#[test]
+fn top_migrated_fork_examples_load_in_runtime_spec() {
+    use crate::engine::ecs::component::TransformForkTRSComponent;
+    for fixture in ["examples/camera-constraint.mms", "examples/ui-layout.mms"] {
+        let path = repo_path(fixture);
+        let source = fs::read_to_string(&path).unwrap();
+        let mut world = World::default();
+        let out = MeowMeowRunner::eval_with_runtime_spec_at_path(
+            &source,
+            path.to_str(),
+            &mut world,
+            &mut RxWorld::default(),
+            Some(&mut RenderAssets::new()),
+            &mut CommandQueue::new(),
+        );
+        assert!(out.errors.is_empty(), "{fixture}: {:?}", out.errors);
+        assert!(
+            world.all_components().any(|id| world
+                .get_component_by_id_as::<TransformForkTRSComponent>(id)
+                .is_some()),
+            "{fixture}: no configured fork"
+        );
     }
 }
 
@@ -10716,9 +10885,16 @@ fn roundtrip_quat_temporal_filter() {
     let (world, id) =
         roundtrip_component(QuatTemporalFilterComponent::new().with_smoothing_factor(220.0));
     let got = world
-        .get_component_by_id_as::<QuatTemporalFilterComponent>(id)
+        .get_component_by_id_as::<crate::engine::ecs::component::TransformForkTRSComponent>(id)
         .unwrap();
-    assert!((got.smoothing_factor - 220.0).abs() < 1e-6);
+    assert_eq!(
+        got.rotation_ops,
+        vec![
+            crate::engine::ecs::component::transform_pipeline::TransformQuatOp::TemporalFilter {
+                smoothing_factor: 220.0
+            }
+        ]
+    );
 }
 
 #[test]
@@ -10727,9 +10903,16 @@ fn roundtrip_vector3_temporal_filter() {
     let (world, id) =
         roundtrip_component(Vector3TemporalFilterComponent::new().with_smoothing_factor(15.0));
     let got = world
-        .get_component_by_id_as::<Vector3TemporalFilterComponent>(id)
+        .get_component_by_id_as::<crate::engine::ecs::component::TransformForkTRSComponent>(id)
         .unwrap();
-    assert!((got.smoothing_factor - 15.0).abs() < 1e-6);
+    assert_eq!(
+        got.translation_ops,
+        vec![
+            crate::engine::ecs::component::transform_pipeline::TransformVec3Op::TemporalSmooth {
+                smoothing_factor: 15.0
+            }
+        ]
+    );
 }
 
 #[test]
@@ -10740,12 +10923,19 @@ fn roundtrip_quat_yaw_follow() {
         .with_initial_yaw(std::f32::consts::PI);
     let (world, id) = roundtrip_component(original);
     let got = world
-        .get_component_by_id_as::<QuatYawFollowComponent>(id)
+        .get_component_by_id_as::<crate::engine::ecs::component::TransformForkTRSComponent>(id)
         .unwrap();
-    assert!((got.threshold - 0.5).abs() < 1e-6);
-    assert!((got.rate - 2.0).abs() < 1e-6);
-    assert!(got.forward_plus_z);
-    assert!((got.initial_yaw - std::f32::consts::PI).abs() < 1e-6);
+    assert_eq!(
+        got.rotation_ops,
+        vec![
+            crate::engine::ecs::component::transform_pipeline::TransformQuatOp::YawFollow {
+                threshold: 0.5,
+                rate: 2.0,
+                forward_plus_z: true,
+                initial_yaw: std::f32::consts::PI,
+            }
+        ]
+    );
 }
 
 #[test]

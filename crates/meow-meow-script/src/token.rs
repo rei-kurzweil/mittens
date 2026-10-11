@@ -114,6 +114,10 @@ pub struct ComponentShortformEntry {
 ///   stable and ergonomic.
 /// - Shortforms are case-sensitive.
 pub const COMPONENT_SHORTFORMS: &[ComponentShortformEntry] = &[
+    ComponentShortformEntry {
+        short: "TOP",
+        full: "TransformOperator",
+    },
     // User-provided core set
     ComponentShortformEntry {
         short: "I",

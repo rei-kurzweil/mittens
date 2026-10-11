@@ -2,7 +2,10 @@
 
 Date: 2026-05-17
 
-Status note: the cleanup described here has now landed for authored topology. `TransformPipeline` and `TransformPipelineOutput` were removed; current authored transform shaping uses `TransformForkTRS` as the pipeline root with downstream content attached directly under the fork.
+Current API note: transform operators now use `TOP` / `TransformOperator`
+constructors and builders. Fork children are ordinary output content. The older
+map/filter component examples below are historical; use
+[the current operator API](../spec/transform-pipeline.md) for executable MMS.
 
 Follow-up: [transform operator API and output-contract cleanup](transform-operator-api-cleanup.md)
 addresses the remaining mixture of configuration/output children, grouped MMS

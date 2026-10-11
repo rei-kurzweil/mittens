@@ -203,6 +203,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
             }
             host_property(component, canonical, "name", mms::ValueType::String);
             host_property(component, canonical, "id", mms::ValueType::String);
+            host_property(component, canonical, "guid", mms::ValueType::String);
             host_property(component, canonical, "class", mms::ValueType::Any);
 
             let floats = |count| component_signature(vec![mms::ValueType::F32; count]);
@@ -747,24 +748,32 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         constructor_and_builder(component, method, floats(1));
                     }
                 }
-                "TransformParent" => {
-                    component.constructor("target", any(1));
-                    component
-                        .builder_call("target", any(1))
-                        .builder_call("root", any(1));
-                }
-                "TransformApplyInverseLocal" => {
-                    component.constructor("source", any(1));
+                "TransformOperator" => {
+                    component.constructor("fork_trs", no_args());
+                    component.constructor(
+                        "parent",
+                        optional_component_signature([mms::ValueType::Any], 0),
+                    );
+                    component.constructor("inverse_local", any(1));
+                    component.constructor("camera_specific", strings(1));
+                    constructor_and_builder(component, "drop", strings(1));
+                    component.builder_call("pass", strings(1));
+                    constructor_and_builder(
+                        component,
+                        "smooth",
+                        component_signature([mms::ValueType::String, mms::ValueType::F32]),
+                    );
+                    constructor_and_builder(
+                        component,
+                        "sample_ancestor",
+                        component_signature([mms::ValueType::String, mms::ValueType::U32]),
+                    );
+                    constructor_and_builder(component, "extract_yaw", no_args());
+                    constructor_and_builder(component, "yaw_follow", floats(2));
+                    component.builder_call("initial_yaw", floats(1));
+                    component.builder_call("forward_plus_z", booleans(1));
                     component.builder_call("source", any(1));
-                }
-                "TransformCameraSpecific" => {
-                    component.constructor("active_stereoscopic", no_args());
-                }
-                "TransformSampleAncestor" => {
-                    component.constructor("skip", unsigned(1));
-                }
-                "QuatTemporalFilter" | "Vector3TemporalFilter" => {
-                    constructor_and_builder(component, "smoothing_factor", floats(1));
+                    component.builder_call("root", any(1));
                 }
                 "GLTF" => {
                     component.constructor("new", strings(1));
@@ -1254,12 +1263,6 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 }
                 "SkinnedMesh" => {
                     component.constructor("new", unsigned(1));
-                }
-                "QuatYawFollow" => {
-                    component
-                        .constructor("new", floats(2))
-                        .builder_call("initial_yaw", floats(1))
-                        .builder_call("forward_plus_z", no_args());
                 }
                 "SignalRouteUpward" => {
                     component.constructor("new", strings(2));
@@ -1755,12 +1758,6 @@ mod tests {
             "PoseCaptureLibrary",
             "SecondaryMotion",
             "SpringColliders",
-            "TransformDrop",
-            "TransformForkTRS",
-            "TransformMapRotation",
-            "TransformMapScale",
-            "TransformMapTranslation",
-            "TransformMergeTRS",
             "Unlit",
         ];
         let configured = build_mittens_runtime().unwrap();
@@ -1774,7 +1771,7 @@ mod tests {
             }
             let component_properties = declaration
                 .properties()
-                .filter(|property| !matches!(property.name(), "name" | "id" | "class"))
+                .filter(|property| !matches!(property.name(), "name" | "id" | "guid" | "class"))
                 .count();
             let component_methods = declaration
                 .methods()

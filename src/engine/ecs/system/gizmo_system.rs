@@ -2,11 +2,10 @@ use crate::engine::ecs::component::EditorInteractionMode;
 use crate::engine::ecs::component::{
     GestureCoordType, GestureCoordTypeComponent, SignalRouteUpwardComponent,
     TransformCameraSpecificComponent, TransformCameraSpecificMode, TransformComponent,
-    TransformDropComponent, TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
+    TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
     TransformGizmoControllerRotationState, TransformGizmoPlane, TransformGizmoRotateComponent,
     TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
-    TransformGizmoTranslatePlaneComponent, TransformMapRotationComponent,
-    TransformMapScaleComponent, TransformMapTranslationComponent,
+    TransformGizmoTranslatePlaneComponent,
 };
 use crate::engine::ecs::system::GridSystem;
 use crate::engine::ecs::system::editor::context::EditorContextState;
@@ -1495,56 +1494,27 @@ impl TransformGizmoSystem {
             drop_rotation: bool,
             drop_scale: bool,
         ) -> ComponentId {
-            let fork = world.add_component_boxed_named(
-                pipeline_name,
-                Box::new(TransformForkTRSComponent::new()),
-            );
+            use crate::engine::ecs::component::transform_pipeline::TransformChannel;
+            let mut operator = TransformForkTRSComponent::new();
+            for (include, drop, channel) in [
+                (
+                    include_translation_map,
+                    drop_translation,
+                    TransformChannel::Translation,
+                ),
+                (
+                    include_rotation_map,
+                    drop_rotation,
+                    TransformChannel::Rotation,
+                ),
+                (include_scale_map, drop_scale, TransformChannel::Scale),
+            ] {
+                if include && drop {
+                    operator.set_channel(channel, true);
+                }
+            }
+            let fork = world.add_component_boxed_named(pipeline_name, Box::new(operator));
             let _ = world.add_child(parent, fork);
-
-            if include_translation_map {
-                let map = world.add_component_boxed_named(
-                    format!("{pipeline_name}:map_translation"),
-                    Box::new(TransformMapTranslationComponent::new()),
-                );
-                let _ = world.add_child(fork, map);
-                if drop_translation {
-                    let drop = world.add_component_boxed_named(
-                        format!("{pipeline_name}:drop_translation"),
-                        Box::new(TransformDropComponent::new()),
-                    );
-                    let _ = world.add_child(map, drop);
-                }
-            }
-
-            if include_rotation_map {
-                let map = world.add_component_boxed_named(
-                    format!("{pipeline_name}:map_rotation"),
-                    Box::new(TransformMapRotationComponent::new()),
-                );
-                let _ = world.add_child(fork, map);
-                if drop_rotation {
-                    let drop = world.add_component_boxed_named(
-                        format!("{pipeline_name}:drop_rotation"),
-                        Box::new(TransformDropComponent::new()),
-                    );
-                    let _ = world.add_child(map, drop);
-                }
-            }
-
-            if include_scale_map {
-                let map = world.add_component_boxed_named(
-                    format!("{pipeline_name}:map_scale"),
-                    Box::new(TransformMapScaleComponent::new()),
-                );
-                let _ = world.add_child(fork, map);
-                if drop_scale {
-                    let drop = world.add_component_boxed_named(
-                        format!("{pipeline_name}:drop_scale"),
-                        Box::new(TransformDropComponent::new()),
-                    );
-                    let _ = world.add_child(map, drop);
-                }
-            }
 
             fork
         }

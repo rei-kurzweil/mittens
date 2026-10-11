@@ -1,3 +1,4 @@
+use crate::engine::ecs::component::transform_pipeline::TransformChannel;
 use crate::engine::ecs::component::{
     QuatExtractYawComponent, QuatTemporalFilterComponent, QuatYawFollowComponent,
     TransformApplyInverseLocalComponent, TransformCameraSpecificComponent,
@@ -21,48 +22,9 @@ pub enum TransformPipelineInput {
     ParentWorld,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum TransformPipelineVec3Op {
-    Pass,
-    Drop,
-    TemporalSmooth {
-        smoothing_factor: f32,
-    },
-    /// Replace this channel's value with the world translation of an ancestor
-    /// TransformComponent. `skip` counts TransformComponent ancestors upward from the
-    /// pipeline owner: 0 = the driven T directly above the pipeline, 1 = the next T above
-    /// that (e.g. the armature bone above an InputXR splice), etc.
-    SampleAncestorTranslation {
-        skip: usize,
-    },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum TransformPipelineQuatOp {
-    Pass,
-    Drop,
-    TemporalFilter {
-        smoothing_factor: f32,
-    },
-    /// Replace this channel's value with the world rotation of an ancestor
-    /// TransformComponent. Same `skip` semantics as `SampleAncestorTranslation`.
-    SampleAncestorRotation {
-        skip: usize,
-    },
-    /// Project the rotation onto the Y-rotation subspace: `normalize([0, q.y, 0, q.w])`.
-    /// Strips pitch and roll, keeping only the Y-axis component. Convention-independent.
-    ExtractYaw,
-    /// Stateful body-yaw follow. Extracts world-Y yaw from the input quaternion using
-    /// the specified forward convention, then advances a running `body_yaw` toward the
-    /// extracted head yaw when the delta exceeds `threshold`, at `rate` rad/s.
-    /// Outputs a pure-Y quaternion for `body_yaw`.
-    YawFollow {
-        threshold: f32,
-        rate: f32,
-        initial_yaw: f32,
-        forward_plus_z: bool,
-    },
-}
+pub use crate::engine::ecs::component::transform_pipeline::{
+    TransformQuatOp as TransformPipelineQuatOp, TransformVec3Op as TransformPipelineVec3Op,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TransformForkTrsStage {
@@ -88,6 +50,7 @@ pub type TransformPipelineChannels = TransformTrs;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct TransformPipelineStageKey {
+    channel: TransformChannel,
     owner_component: Option<ComponentId>,
     stage_path: Vec<usize>,
 }
@@ -409,9 +372,16 @@ impl TransformStreamSystem {
     }
 
     fn parse_fork_trs(&self, world: &World, node: ComponentId) -> TransformForkTrsStage {
-        let mut translation_ops = vec![TransformPipelineVec3Op::Pass];
-        let mut rotation_ops = vec![TransformPipelineQuatOp::Pass];
-        let mut scale_ops = vec![TransformPipelineVec3Op::Pass];
+        let configured = world.get_component_by_id_as::<TransformForkTRSComponent>(node);
+        let mut translation_ops = configured
+            .map(|c| c.translation_ops.clone())
+            .unwrap_or_else(|| vec![TransformPipelineVec3Op::Pass]);
+        let mut rotation_ops = configured
+            .map(|c| c.rotation_ops.clone())
+            .unwrap_or_else(|| vec![TransformPipelineQuatOp::Pass]);
+        let mut scale_ops = configured
+            .map(|c| c.scale_ops.clone())
+            .unwrap_or_else(|| vec![TransformPipelineVec3Op::Pass]);
 
         for &child in world.children_of(node) {
             if world
@@ -580,6 +550,7 @@ impl TransformStreamSystem {
         let translation = self.apply_vec3_ops(
             owner_component,
             &fork.translation_ops,
+            TransformChannel::Translation,
             input.translation,
             [0.0, 0.0, 0.0],
             stage_path,
@@ -598,6 +569,7 @@ impl TransformStreamSystem {
         let scale = self.apply_vec3_ops(
             owner_component,
             &fork.scale_ops,
+            TransformChannel::Scale,
             input.scale,
             [1.0, 1.0, 1.0],
             stage_path,
@@ -637,6 +609,7 @@ impl TransformStreamSystem {
         &mut self,
         owner_component: Option<ComponentId>,
         ops: &[TransformPipelineVec3Op],
+        channel: TransformChannel,
         input: [f32; 3],
         dropped_value: [f32; 3],
         stage_path: &[usize],
@@ -656,6 +629,7 @@ impl TransformStreamSystem {
                     let mut full_path = stage_path.to_vec();
                     full_path.push(op_index);
                     let key = TransformPipelineStageKey {
+                        channel,
                         owner_component,
                         stage_path: full_path,
                     };
@@ -713,6 +687,7 @@ impl TransformStreamSystem {
                     let mut full_path = stage_path.to_vec();
                     full_path.push(op_index);
                     let key = TransformPipelineStageKey {
+                        channel: TransformChannel::Rotation,
                         owner_component,
                         stage_path: full_path,
                     };
@@ -745,6 +720,7 @@ impl TransformStreamSystem {
                     let mut full_path = stage_path.to_vec();
                     full_path.push(op_index);
                     let key = TransformPipelineStageKey {
+                        channel: TransformChannel::Rotation,
                         owner_component,
                         stage_path: full_path.clone(),
                     };
@@ -1052,6 +1028,120 @@ mod tests {
 
     fn guid_ref(world: &World, component: ComponentId) -> ComponentRef {
         ComponentRef::Guid(world.get_component_record(component).unwrap().guid)
+    }
+
+    #[test]
+    fn smoothing_translation_and_scale_keeps_independent_channel_state() {
+        let mut world = World::default();
+        let mut operator = TransformForkTRSComponent::new();
+        for channel in [TransformChannel::Translation, TransformChannel::Scale] {
+            operator
+                .push_vec3(
+                    channel,
+                    TransformPipelineVec3Op::TemporalSmooth {
+                        smoothing_factor: 12.0,
+                    },
+                )
+                .unwrap();
+        }
+        let owner = world.add_component(operator);
+        let mut system = TransformStreamSystem::new();
+        let plan = system.parse_component_tree(&world, owner).unwrap();
+        let first_input = TransformComponent::new()
+            .with_position(10.0, 20.0, 30.0)
+            .with_scale(2.0, 3.0, 4.0)
+            .transform
+            .model;
+        let first = system.evaluate_block(&plan, first_input, &world, Some(1.0 / 60.0));
+        assert_eq!(first, first_input);
+        let next_input = TransformComponent::new()
+            .with_position(20.0, 30.0, 40.0)
+            .with_scale(4.0, 6.0, 8.0)
+            .transform
+            .model;
+        let next = system.evaluate_block(&plan, next_input, &world, Some(1.0 / 60.0));
+        let alpha = TransformStreamSystem::alpha_from_smoothing_factor(12.0, Some(1.0 / 60.0));
+        for axis in 0..3 {
+            let expected_translation =
+                first_input[3][axis] + (next_input[3][axis] - first_input[3][axis]) * alpha;
+            let expected_scale = first_input[axis][axis]
+                + (next_input[axis][axis] - first_input[axis][axis]) * alpha;
+            assert!((next[3][axis] - expected_translation).abs() < 1e-5);
+            assert!((next[axis][axis] - expected_scale).abs() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn compact_operator_matches_legacy_maps_across_temporal_updates() {
+        use crate::engine::ecs::component::{QuatYawFollowComponent, TransformDropComponent};
+        let mut world = World::default();
+        let legacy = world.add_component(TransformForkTRSComponent::new());
+        let translation = world.add_component(TransformMapTranslationComponent::new());
+        let smooth =
+            world.add_component(Vector3TemporalFilterComponent::new().with_smoothing_factor(12.0));
+        let rotation = world.add_component(TransformMapRotationComponent::new());
+        let yaw = world.add_component(
+            QuatYawFollowComponent::new(0.5, 2.0)
+                .with_forward_plus_z()
+                .with_initial_yaw(0.3),
+        );
+        let scale = world.add_component(TransformMapScaleComponent::new());
+        let drop = world.add_component(TransformDropComponent::new());
+        for (parent, child) in [
+            (legacy, translation),
+            (translation, smooth),
+            (legacy, rotation),
+            (rotation, yaw),
+            (legacy, scale),
+            (scale, drop),
+        ] {
+            world.add_child(parent, child).unwrap();
+        }
+        let mut compact = TransformForkTRSComponent::new().with_drop(TransformChannel::Scale);
+        compact
+            .push_vec3(
+                TransformChannel::Translation,
+                TransformPipelineVec3Op::TemporalSmooth {
+                    smoothing_factor: 12.0,
+                },
+            )
+            .unwrap();
+        compact.push_rotation(TransformPipelineQuatOp::YawFollow {
+            threshold: 0.5,
+            rate: 2.0,
+            initial_yaw: 0.3,
+            forward_plus_z: true,
+        });
+        let compact = world.add_component(compact);
+        let mut system = TransformStreamSystem::new();
+        let legacy_plan = system.parse_component_tree(&world, legacy).unwrap();
+        let compact_plan = system.parse_component_tree(&world, compact).unwrap();
+        for frame in 0..90 {
+            let f = frame as f32;
+            let input = TransformComponent::new()
+                .with_position(f * 0.01, f * -0.02, 3.0)
+                .with_rotation_euler(0.2, f * 0.04, -0.3)
+                .with_scale(2.0, 3.0, 4.0)
+                .transform
+                .model;
+            let expected = system.evaluate_block(&legacy_plan, input, &world, Some(1.0 / 90.0));
+            let actual = system.evaluate_block(&compact_plan, input, &world, Some(1.0 / 90.0));
+            assert_eq!(actual, expected, "operator changed on frame {frame}");
+        }
+        // State is owned by the live operator, not shared by equal settings.
+        let independent = world.add_component(
+            world
+                .get_component_by_id_as::<TransformForkTRSComponent>(compact)
+                .unwrap()
+                .clone(),
+        );
+        let plan = system.parse_component_tree(&world, independent).unwrap();
+        let first_input = TransformComponent::new()
+            .with_position(-20.0, 8.0, 4.0)
+            .transform
+            .model;
+        let first = system.evaluate_block(&plan, first_input, &world, Some(1.0 / 90.0));
+        assert_eq!([first[3][0], first[3][1], first[3][2]], [-20.0, 8.0, 4.0]);
     }
 
     #[test]

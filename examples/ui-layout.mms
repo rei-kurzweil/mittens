@@ -70,10 +70,7 @@ T.position(5, 0, 1.0).scale(1.8, 4.8, 1.0) {
         Raycastable {}
     
         StencilClip {
-            TransformForkTRS {
-                TransformMapScale {
-                    TransformDrop {}
-                }
+            TOP.fork_trs().drop("scale") {
                 T {
                     Scrolling.new(1.0, 100.0) {
                         for y in range(100) {

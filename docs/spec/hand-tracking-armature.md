@@ -2,7 +2,10 @@
 
 This document describes how to drive glTF armature/skeleton hierarchies from OpenXR hand-tracking joint data, enabling realistic hand poses for VTubers, VRM avatars, and other skinned models.
 
-Current authored usage note: `TransformPipeline` and `TransformPipelineOutput` were removed. Any smoothing pipeline in this doc should be read as `TransformForkTRS` rooted directly under the driven transform, with the smoothed hand or finger transform attached directly under that fork.
+Current API note: transform operators now use `TOP` / `TransformOperator`
+constructors and builders. Fork children are ordinary output content. The older
+map/filter component examples below are historical; use
+[the current operator API](../spec/transform-pipeline.md) for executable MMS.
 
 **Scope:**
 - Hand-joint tracking from `XR_EXT_hand_tracking`

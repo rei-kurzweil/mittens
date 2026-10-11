@@ -250,12 +250,7 @@ InputXR.on() {
 
         // XRHand.new(true, "Left", "Aim") {
         //     T.scale(0.06, 0.06, 0.12) {
-        //         TransformForkTRS {
-        //             TransformMapTranslation {}
-        //             TransformMapRotation {
-        //                 QuatTemporalFilter.smoothing_factor(220.0)
-        //             }
-        //             TransformMapScale {}
+        //         TOP.fork_trs().smooth("rotation", 220.0) {
         //             T {
         //                 R.cube() { C.rgba(0.10, 0.90, 1.00, 1.0) }
         //             }
@@ -265,12 +260,7 @@ InputXR.on() {
 
         // XRHand.new(true, "Right", "Aim") {
         //     T.scale(0.06, 0.06, 0.12) {
-        //         TransformForkTRS {
-        //             TransformMapTranslation {}
-        //             TransformMapRotation {
-        //                 QuatTemporalFilter.smoothing_factor(220.0)
-        //             }
-        //             TransformMapScale {}
+        //         TOP.fork_trs().smooth("rotation", 220.0) {
         //             T {
         //                 R.cube() { C.rgba(1.00, 0.35, 0.35, 1.0) }
         //             }

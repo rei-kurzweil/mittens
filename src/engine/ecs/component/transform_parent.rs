@@ -89,7 +89,7 @@ impl Component for TransformParentComponent {
         &self,
         _world: &crate::engine::ecs::World,
     ) -> crate::scripting::ast::ComponentExpression {
-        use crate::engine::ecs::component::ce_helpers::{CeBuilder, ce, ce_call};
+        use crate::engine::ecs::component::ce_helpers::{CeBuilder, ce_call};
         use crate::scripting::ast::Expression;
 
         fn target_expr(t: &ComponentRef) -> Expression {
@@ -100,8 +100,8 @@ impl Component for TransformParentComponent {
         }
 
         let mut ce = match &self.target_source {
-            Some(src) => ce_call("TransformParent", "target", vec![target_expr(src)]),
-            None => ce("TransformParent"),
+            Some(src) => ce_call("TransformOperator", "parent", vec![target_expr(src)]),
+            None => ce_call("TransformOperator", "parent", vec![]),
         };
         if let Some(src) = &self.root_source {
             ce = ce.with_call("root", vec![target_expr(src)]);

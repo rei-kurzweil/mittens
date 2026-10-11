@@ -100,11 +100,7 @@ BG {
 //     └── InputXR
 //           └── T (driven_t)
 //                 └── AVC
-//                       ├── TransformForkTRS (body pipeline root)
-//                       │     TransformMapRotation
-//                       │       TransformMapRotation
-//                       │         QuatYawFollow { threshold, rate, initial_yaw: π }
-//                       │       TransformMergeTRS
+//                       ├── TOP.fork_trs().yaw_follow(threshold, rate).initial_yaw(π)
 //                       │       └── T  ← model_root (y auto-calibrated from J_Bip_C_Head)
 //                       │             └── GLTF { EM }
 //                       │                   └── ... → J_Bip_C_Head

@@ -37,8 +37,8 @@ let bisket_terrain_palette = [
 //     └── InputXR
 //           └── T (driven_t)
 //                 └── AVC
-//                       ├── TransformForkTRS (body pipeline root)
-//                       │     QuatYawFollow { threshold, rate, initial_yaw: π }
+//                       ├── TOP.fork_trs() (body operator)
+//                       │     yaw_follow(threshold, rate).initial_yaw(π)
 //                       │       T  ← model_root (y auto-calibrated from J_Bip_C_Head)
 //                       │             └── GLTF { EM } → ... → J_Bip_C_Head
 //                       │                                          └── CXR  ← re-parented here
@@ -313,12 +313,7 @@ ED {
 
     //         XRHand.new(true, "Left", "Aim") {
     //             T.scale(0.06, 0.06, 0.12) {
-    //                 TransformForkTRS {
-    //                     TransformMapTranslation {}
-    //                     TransformMapRotation {
-    //                         QuatTemporalFilter.smoothing_factor(220.0)
-    //                     }
-    //                     TransformMapScale {}
+    //                 TOP.fork_trs().smooth("rotation", 220.0) {
     //                     T {
     //                         R.cube() { C.rgba(0.10, 0.90, 1.00, 1.0) }
     //                     }
@@ -328,12 +323,7 @@ ED {
 
     //         XRHand.new(true, "Right", "Aim") {
     //             T.scale(0.06, 0.06, 0.12) {
-    //                 TransformForkTRS {
-    //                     TransformMapTranslation {}
-    //                     TransformMapRotation {
-    //                         QuatTemporalFilter.smoothing_factor(220.0)
-    //                     }
-    //                     TransformMapScale {}
+    //                 TOP.fork_trs().smooth("rotation", 220.0) {
     //                     T {
     //                         R.cube() { C.rgba(1.00, 0.35, 0.35, 1.0) }
     //                     }

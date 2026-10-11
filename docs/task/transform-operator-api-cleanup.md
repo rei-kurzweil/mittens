@@ -2,22 +2,40 @@
 
 ## Status and outcome
 
-Planned; documentation only. Make transform operators a coherent component/API
-family with obvious input/output composition and compact MMS authoring. Use
-**transform operator** as the public term; pipeline and stream remain historical
+Existing MMS operator migration implemented; awaiting the user’s smoke test. Make transform
+operators a coherent component/API family with obvious input/output composition
+and compact MMS authoring. Use **transform operator** as the public term; pipeline and stream remain historical
 or implementation names until deliberately migrated.
 
-Working MMS namespace: `TOP` (transform operator). The long form may be
-`TransformOperator`. The exact name is provisional. Constructors select the
-operator kind; builder methods configure it. Do not ship a rename or assume
-the proposed examples execute yet.
+MMS namespace: `TOP` (transform operator), long form `TransformOperator`.
+The parser uses dotted calls, such as `TOP.fork_trs()`; `TOP::` describes the
+namespace informally. Constructors select the operator kind; builders configure it.
+Existing operator spellings, examples, and dumps migrate together. The grouped API
+lowers to existing Rust kinds/plans during this behavior-preserving checkpoint.
+The proposed `sample_translation` operation is not implemented yet.
+
+**User checkpoint:** finish migrating every existing MMS operator, then stop for
+manual testing before adding axis sampling, changing AVC capsule height, or
+implementing crouch IK. Generated capsule/body and gizmo forks use value settings;
+camera markers retain their documented live-settings T exception. See the
+[implemented API](../spec/transform-pipeline.md) for the constructor inventory.
+
+**Next after smoke testing:** remove the old TransformMapTranslation,
+TransformMapRotation, TransformMapScale, TransformDrop, and TransformMergeTRS
+components and migrate their remaining Rust fixtures to builder/value settings.
+Retire obsolete standalone filter/yaw/ancestor configuration helpers where their
+only role is configuring a fork. Delete the legacy map parser branches, dump
+folding, and `is_operator_configuration_child` filtering once there are no such
+helper trees left. Every ordinary fork child should then be output by construction.
+This is the next cleanup slice before proceeding to axis sampling / locomotion;
+it should not be deferred behind those behavioral changes.
 
 This is a new cleanup beyond the earlier
 [authored pipeline cleanup](transform-pipeline-cleanup-checklist.md), which
 removed TransformPipeline and TransformPipelineOutput. It does not restore an
 output wrapper or introduce a second graph language.
 
-## Current findings
+## Findings before this migration
 
 `transform_stream_system.rs::downstream_children` already sends the fork's
 recomposed matrix to every direct child except TransformMapTranslation,
@@ -87,7 +105,7 @@ do not infer it by finding the first T or an undocumented type exclusion.
 
 ## Proposed grouped component API
 
-Illustrative future MMS, not implemented:
+Mixed implemented/proposed illustration; `sample_translation` is still future MMS:
 
 ```mms
 TOP.fork_trs().drop("rotation").drop("scale") {
@@ -174,13 +192,15 @@ The separate command-queue/signal-staging work remains separate.
 
 ## Testable slices
 
-Delivery decision: do the focused operator refactor **before** changing AVC's
-capsule-height behavior. Complete the contract, compact fork configuration, and
-source-operator composition in slices 1–3 first. Prove existing capsule fork
-math remains unchanged during that refactor. Then apply the new Y sample and
-calibrated offset in the dedicated height-fix task; crouch IK follows afterward.
-The broader stateful/camera-specific migration and final naming sweep in
-slices 4–5 do not need to delay that behavioral fix.
+Delivery decision: migrate **all existing MMS operators** first, including
+stateful and camera-specific spellings, then stop for the user's manual test.
+This checkpoint deliberately retains the existing capsule-height behavior.
+After the API passes that checkpoint, remove the obsolete configuration helper
+components and the compatibility exclusions described above. Then introduce the
+Y sample and its composition fixture, then apply AVC calibration/contact routing in the dedicated height-fix
+task. Crouch IK follows afterward. Backend type consolidation and camera-settings
+representation changes can be reviewed separately; they are not implied by an
+MMS namespace migration.
 
 1. **Contract and inventory:** document current configuration exceptions and
    normal downstream children; prove nested operators and multiple output
@@ -206,11 +226,50 @@ slices 4–5 do not need to delay that behavioral fix.
    allocations; no per-frame MMS evaluation or whole-world dependency scan.
 
 Implement the [translation-sample task](transform-sample-translation-axes.md)
-under the grouped API as part of the focused first phase. Avoid introducing a
+under the grouped API after the existing-API manual-test checkpoint. Avoid introducing a
 temporary standalone MMS spelling only to replace it immediately. The capsule
 fixture in slice 3 proves operator composition and offset order; the subsequent
 [height-fix task](avc-capsule-before-hmd-tracking.md) owns AVC calibration,
 contact routing, and headset acceptance. Keep those reviewable changes separate.
+
+## API migration checkpoint validation
+
+Automated checks on this slice:
+
+- 84 transform checks passed with the three baseline failures below excluded.
+- Four focused TOP tests passed: constructor/kind validation, independent output
+  branches and offset order, source refresh and GUID-preserving dump/reload, and
+  loading the migrated camera-constraint/UI examples.
+- Runtime schema checks, 20 gizmo tests, 27 AVC tests, nine mittens-corp tests
+  (including managed car mounting/dismounting), and humanoid AVC example parsing
+  passed. All Rust examples compile with `cargo check --examples`.
+- Legacy-map and value-configured smoothing/yaw/drop results match over 90
+  frames; separate live operators retain separate state. Translation and scale
+  smoothing now use separate channel cache keys.
+- Dumps’ GUID property is registered in RuntimeSpec and supported by the direct
+  registry, so referenced transforms survive the normal saved-scene load path.
+
+Broader test selections have known failures also reproduced from HEAD in a
+separate source checkout: legacy animation/update-transform evaluation (two),
+legacy quaternion builder evaluation (one), animation/keyframe/music-note
+round-trips (three), and the secondary-motion example’s spring-chain count
+expectation (one: 17 expected, 15 present). These remain outside this API slice.
+They are recorded rather than counted as passing checks.
+
+Manual acceptance is pending. Use the rebuilt release engine to check:
+
+1. `examples/mittens-corp.mms`: avatar body/head/controller motion, normal
+   locomotion, car entry/exit, and prop selection/gizmos. Capsule calibration and
+   contact routing are unchanged; the existing HMD Y issue is still expected.
+2. `examples/camera-constraint.mms`: translation follows input while mouse-look
+   rotation is dropped.
+3. `examples/ui-layout.mms`: clipped scrolling content keeps its intended scale.
+   On desktop and XR, gizmos should retain their current camera-dependent size
+   and have matching rendered and picked positions.
+
+Stop at this checkpoint. After feedback, remove obsolete helper components and
+compatibility filtering before implementing the new translation-axis sample or
+changing locomotion behavior.
 
 ## Related work
 

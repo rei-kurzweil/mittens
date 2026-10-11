@@ -184,7 +184,7 @@ This means the `VRHandComponent` acts like a pose source/driver node, and the ch
 
 **Transform filtering / smoothing:**
 - Future smoothing and follow behavior should build on the general **transform pipeline** described in `docs/spec/transform-pipeline.md`
-- Rather than hardcoding smoothing into `OpenXRSystem`, use `TransformStreamSystem` operators like `QuatTemporalFilter` or `Vector3TemporalFilter`
+- Rather than hardcoding smoothing into `OpenXRSystem`, use `TransformStreamSystem` operators like `TOP.smooth("rotation", factor)` or `TOP.smooth("translation", factor)`
 - This keeps XR input focused on source acquisition and pose resolution
 
 **Hand armature driving:**

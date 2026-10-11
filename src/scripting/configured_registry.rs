@@ -508,6 +508,12 @@ fn apply_node_properties(
                     .ok_or("component disappeared during construction")?
                     .name = value_as_string(&property.value)?.into();
             }
+            "guid" => {
+                let value = value_as_string(&property.value)?;
+                let guid = uuid::Uuid::parse_str(&value)
+                    .map_err(|error| format!("guid prop: invalid uuid '{value}': {error}"))?;
+                world.set_component_guid(id, guid)?;
+            }
             "class" => {
                 let record = world
                     .get_component_record_mut(id)

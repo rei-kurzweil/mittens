@@ -60,6 +60,6 @@ impl Component for TransformApplyInverseLocalComponent {
             ComponentRef::Guid(guid) => format!("@uuid:{guid}"),
             ComponentRef::Query(query) => query.clone(),
         };
-        ce_call("TransformApplyInverseLocal", "source", vec![s(&source)])
+        ce_call("TransformOperator", "inverse_local", vec![s(&source)])
     }
 }

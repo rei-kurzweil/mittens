@@ -260,7 +260,7 @@ That means the useful authored topology is:
 ```text
 InputVR {
     Transform {
-        TransformForkTRS {
+        TOP.fork_trs() {
             ... optional smoothing / remapping / offsets ...
             CameraXR {}
             GLTF { "vtuber-model.gltf" }

@@ -41,11 +41,11 @@ impl Component for TransformCameraSpecificComponent {
         &self,
         _world: &crate::engine::ecs::World,
     ) -> crate::scripting::ast::ComponentExpression {
-        use crate::engine::ecs::component::ce_helpers::ce_call;
+        use crate::engine::ecs::component::ce_helpers::{ce_call, s};
         let ctor = match self.mode {
-            TransformCameraSpecificMode::Monoscopic => "active_monoscopic",
-            TransformCameraSpecificMode::Stereoscopic => "active_stereoscopic",
+            TransformCameraSpecificMode::Monoscopic => "monoscopic",
+            TransformCameraSpecificMode::Stereoscopic => "stereoscopic",
         };
-        ce_call("TransformCameraSpecific", ctor, vec![])
+        ce_call("TransformOperator", "camera_specific", vec![s(ctor)])
     }
 }

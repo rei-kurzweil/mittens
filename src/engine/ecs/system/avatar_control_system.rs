@@ -3,11 +3,9 @@ use crate::engine::ecs::component::{
     AvatarControlComponent, BoneRestPoseComponent, Camera3DComponent, CameraXRComponent,
     CollidableComponent, CollisionShape, ControllerHand, ControllerPoseSource,
     ControllerXRComponent, EyeRotationLimits, GLTFComponent, HeadMotionGazePolicy,
-    HeadRotationCompensation, IKChainComponent, IKSolver, InputXRComponent, QuatYawFollowComponent,
-    SerializeComponent, TransformComponent, TransformDropComponent, TransformForkTRSComponent,
-    TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
-    VRChatOSCEyeTrackingComponent, XREyeTrackingComponent, XREyeTrackingHtcComponent,
-    ZoneComponent,
+    HeadRotationCompensation, IKChainComponent, IKSolver, InputXRComponent, SerializeComponent,
+    TransformComponent, TransformForkTRSComponent, VRChatOSCEyeTrackingComponent,
+    XREyeTrackingComponent, XREyeTrackingHtcComponent, ZoneComponent,
 };
 use crate::engine::ecs::component::{
     QueryRootMode, is_level_provider, resolve_component_ref, retained_level_sample,
@@ -801,12 +799,12 @@ fn try_init_or_route_capsule(
         inferred.center_y + half_height,
     );
 
-    let fork = world.add_component(TransformForkTRSComponent::new());
-    let translation = world.add_component(TransformMapTranslationComponent::new());
-    let rotation = world.add_component(TransformMapRotationComponent::new());
-    let rotation_drop = world.add_component(TransformDropComponent::new());
-    let scale = world.add_component(TransformMapScaleComponent::new());
-    let scale_drop = world.add_component(TransformDropComponent::new());
+    use crate::engine::ecs::component::transform_pipeline::TransformChannel;
+    let fork = world.add_component(
+        TransformForkTRSComponent::new()
+            .with_drop(TransformChannel::Rotation)
+            .with_drop(TransformChannel::Scale),
+    );
     let capsule_t =
         world.add_component(TransformComponent::new().with_position(0.0, inferred.center_y, 0.0));
     let serialize = world.add_component(SerializeComponent::off());
@@ -815,11 +813,6 @@ fn try_init_or_route_capsule(
         .add_component(CollidableComponent::slide().with_runtime_movement_target(movement_target));
 
     let _ = world.set_parent(fork, Some(model_root_id));
-    let _ = world.set_parent(translation, Some(fork));
-    let _ = world.set_parent(rotation, Some(fork));
-    let _ = world.set_parent(rotation_drop, Some(rotation));
-    let _ = world.set_parent(scale, Some(fork));
-    let _ = world.set_parent(scale_drop, Some(scale));
     let _ = world.set_parent(capsule_t, Some(fork));
     let _ = world.set_parent(serialize, Some(capsule_t));
     let _ = world.set_parent(zone, Some(capsule_t));
@@ -1397,23 +1390,21 @@ fn try_init_splices(
     // Topology:
     //   AVC
     //     └── body_pipeline  (TransformForkTRSComponent)
-    //           TransformMapRotationComponent
-    //             QuatYawFollowComponent { threshold, rate, initial_yaw, forward_plus_z }
+    //           rotation_ops: YawFollow { threshold, rate, initial_yaw, forward_plus_z }
     //           model_root  ← re-parented here
     // -----------------------------------------------------------------------
     if !skip_body_pipeline {
-        let body_pipeline_id = world.add_component(TransformForkTRSComponent::new());
+        use crate::engine::ecs::component::transform_pipeline::TransformQuatOp;
+        let mut body_operator = TransformForkTRSComponent::new();
+        body_operator.push_rotation(TransformQuatOp::YawFollow {
+            threshold: body_yaw_threshold,
+            rate: body_yaw_rate,
+            initial_yaw: resolved_initial_body_yaw,
+            forward_plus_z: resolved_body_forward_plus_z,
+        });
+        let body_pipeline_id = world.add_component(body_operator);
         let body_pipeline_serialize_id = world.add_component(SerializeComponent::off());
-        let map_rot_id = world.add_component(TransformMapRotationComponent::new());
-        let yaw_follow_id = world.add_component(
-            QuatYawFollowComponent::new(body_yaw_threshold, body_yaw_rate)
-                .with_initial_yaw(resolved_initial_body_yaw)
-                .with_forward_plus_z_if(resolved_body_forward_plus_z),
-        );
-
         let _ = world.set_parent(body_pipeline_serialize_id, Some(body_pipeline_id));
-        let _ = world.set_parent(map_rot_id, Some(body_pipeline_id));
-        let _ = world.set_parent(yaw_follow_id, Some(map_rot_id));
 
         if let Some(c) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
             c.body_pipeline_id = Some(body_pipeline_id);

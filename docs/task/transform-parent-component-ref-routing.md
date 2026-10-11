@@ -2,7 +2,10 @@
 
 Date: 2026-05-17
 
-Status note: the authored `TransformPipeline` / `TransformPipelineOutput` wrapper/output topology has now been removed. Any references below to those names are historical; current authored transform shaping uses `TransformForkTRS` with downstream content attached directly under the fork root.
+Current API note: transform operators now use `TOP` / `TransformOperator`
+constructors and builders. Fork children are ordinary output content. The older
+map/filter component examples below are historical; use
+[the current operator API](../spec/transform-pipeline.md) for executable MMS.
 
 Action note: `ActionComponent` is no longer a current `ComponentRef` consumer; it was removed in
 0.7.

@@ -161,7 +161,7 @@ ED {
 //     └── I (body_input)
 //           └── T (driven_t)
 //                 └── AVC
-//                       ├── TransformForkTRS (body yaw pipeline root)
+//                       ├── TOP.fork_trs().yaw_follow(...) (body operator)
 //                       │     └── … → T (model_root, y = -avatar_height)
 //                       │                └── GLTF { EM }
 //                       └── [sys] head_mount  (TC injected above J_Bip_C_Head)

@@ -262,7 +262,7 @@ All per-frame pose work is handled by:
    space each tick, so the mirroring stays correct even as the body turns.
 
 ## Open questions / future work
-   only applies to simple splice. Add `QuatTemporalFilter` on end-effector rotation.
+   only applies to simple splice. Add `TOP.smooth("rotation", factor)` on end-effector rotation.
 
 4. **Spine IK** — FABRIK chain from hips to neck driven by head offset from body.
    Requires `TranslationFollow` pipeline op first (body XZ lags head XZ).

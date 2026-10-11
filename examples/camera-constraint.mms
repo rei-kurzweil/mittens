@@ -1,6 +1,5 @@
 // camera-constraint scene
-// Demonstrates constraining a camera by placing a TransformForkTRS with
-// TransformDrop (rotation) between the Input and Camera.
+// Demonstrates TOP.fork_trs().drop("rotation") between Input and Camera.
 // The camera follows the input's position but always faces forward
 // (no mouse-look rotation).
 
@@ -31,7 +30,7 @@ ED {
 // Camera with constrained rotation
 //
 // Input drives position+rotation on the outer T.
-// TransformForkTRS drops rotation while passing translation and scale through.
+// TOP.fork_trs().drop("rotation") drops rotation while passing translation and scale through.
 // The inner T captures the processed transform, and C3D reads from it.
 //
 // Result: WASD moves the camera, but mouse-look rotation is stripped — the
@@ -42,12 +41,7 @@ I.speed(2.0) {
         roll_axis_y()
     }
     T.position(0.0, 1.8, 5.0) {
-        TransformForkTRS {
-            TransformMapTranslation {}
-            TransformMapRotation {
-                TransformDrop {}
-            }
-            TransformMapScale {}
+        TOP.fork_trs().drop("rotation") {
             T {
                 C3D { Pointer {} }
             }
