@@ -110,10 +110,12 @@ and floor-contact correction. Crouching may change the rendered body's pose
 or, under a separate explicit policy, capsule height without lifting the
 tracking origin to cancel the crouch.
 
-Start by fixing the vertical dependency. Room-scale X/Z contribution to proxy
-placement and contact needs an explicit policy too; retaining current X/Z
-correction does not by itself satisfy unrestricted physical HMD locomotion.
-Do not silently settle that broader policy while making the height fix.
+The selected hierarchy change is now scoped in
+[place the AVC capsule before HMD tracking](../task/avc-capsule-before-hmd-tracking.md).
+The capsule follows the simulated locomotion frame, alongside InputXR, and
+excludes physical HMD translation on all three axes. Contact still corrects
+the outer response target. Physical room-scale collision/recentering is a
+separate policy; the visible body can move away from this simulated proxy.
 
 Do not make the generic static-contact solver ignore vertical corrections:
 it must still resolve falls and land button jumps. Likewise, disabling contact
@@ -142,6 +144,8 @@ Focused verification before a headset smoke check:
 
 Related plans:
 
+- [Place the AVC capsule before HMD tracking](../task/avc-capsule-before-hmd-tracking.md)
+  owns the focused hierarchy/calibration change.
 - [AVC crouch IK from predicted foot penetration](../task/avc-foot-penetration-crouch-ik.md)
   adjusts leg posture after freeing physical HMD movement; it does not replace
   the tracking-independent collision proxy.

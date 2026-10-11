@@ -81,6 +81,12 @@ interpolation, but it does not yet provide a persistent transitionable avatar
 pose layer. The initial procedural crouch does not depend on that layer.
 Delivery proceeds in this order:
 
+First complete the focused
+[capsule hierarchy/calibration change](../avc-capsule-before-hmd-tracking.md):
+the proxy follows simulated locomotion beside InputXR, while physical HMD
+translation remains free inside that frame. This is the grounding prerequisite
+for the posture work below.
+
 1. [AVC crouch IK from predicted foot penetration](../avc-foot-penetration-crouch-ik.md)
    — separate tracking from grounding, then automatically solve mapped legs
    for Rei(mu), Bisket, and supported humanoids without constraining HMD Y.

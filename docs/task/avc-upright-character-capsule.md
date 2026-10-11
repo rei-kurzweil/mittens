@@ -4,6 +4,11 @@ Date: 2026-07-19
 
 Status: implemented.
 
+Planned XR follow-up: [place the capsule before HMD tracking](avc-capsule-before-hmd-tracking.md).
+The model-root translation source described below is the current implementation;
+the follow-up moves the proxy alongside InputXR while retaining contact response
+on the locomotion/physics frame.
+
 ## Contract
 
 Every `AvatarControl` creates one runtime-only upright capsule by default.

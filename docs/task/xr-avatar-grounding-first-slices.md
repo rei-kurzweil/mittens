@@ -48,6 +48,14 @@ bisket_grounding_root                  ← VelocitySystem + ground contact own Y
                     └── AVC + GLTF     ← body/hand IK, animation, pose overlays
 ```
 
+Proxy-placement follow-up:
+[place the AVC capsule before HMD tracking](avc-capsule-before-hmd-tracking.md).
+The runtime capsule branch belongs under `bisket_locomotion_root`, alongside
+InputXR, so it inherits both simulated frames and excludes tracked HMD motion.
+Its response can still target `bisket_grounding_root`. Merely routing a
+head-following capsule's response to the outer root does not provide this
+separation.
+
 ## Proposed opt-in components
 
 The opt-in is attached to the **outer grounding transform**, regardless of

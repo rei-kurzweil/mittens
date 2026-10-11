@@ -14,6 +14,9 @@ of [simple humanoid body follow](avatar-control-simple-humanoid-body-follow.md).
 Authored crouch polish, kneeling, sitting, and walking remain later work. This
 task does not require a general avatar pose-layer implementation.
 
+Prerequisite: [place the AVC capsule before HMD tracking](avc-capsule-before-hmd-tracking.md).
+That task owns collision topology and calibration; this task owns leg posture.
+
 ## Existing seams and findings
 
 - `src/engine/ecs/system/ik/head_pose_body_xz_follow.rs` currently places body
