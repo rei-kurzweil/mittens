@@ -111,6 +111,9 @@ Source review, 2026-10-10: the runtime still has occupancy-specific `ActiveMount
 records and separate `ActiveGrab` bookkeeping. Endpoint valence and the generic
 retained-edge slices below are not implemented. AttachmentSystem still suspends
 and restores input/velocity; the movement-authority extraction remains planned.
+The focused topology cleanup now uses World-owned attachment references and
+preserves external detach/reparent requests. Automated car-scene and lifecycle
+checks pass; hardware validation remains pending in the prerequisite task.
 Coordinate topology ownership and external detach/reparent/removal behavior with
 [multi-parent components](multi-parent-components-and-material-sharing.md#coordinate-with-the-existing-attachmentsystem-refactor).
 World owns actual parent/child adjacency; retained relationship records add

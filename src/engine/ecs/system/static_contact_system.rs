@@ -99,7 +99,7 @@ impl StaticContactSystem {
             let Some(target) = movement_target(world, collidable_id, moving) else {
                 continue;
             };
-            if mounts.is_movement_root_mounted(target) {
+            if mounts.is_movement_root_mounted(world, target) {
                 self.previous_centers.remove(&moving);
                 continue;
             }

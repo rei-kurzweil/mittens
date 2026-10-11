@@ -1,7 +1,8 @@
 # Task: AttachmentSystem cleanup over World-owned attachments
 
 Date: 2026-10-10
-Status: scoped refactor plan; documentation only.
+Status: core cleanup implemented and automated checks passed, 2026-10-10;
+in-headset vehicle validation pending. Multiple parents are not implemented.
 Release: [0.10.0](epic/0.10.0/README.md).
 Next: [multiple parents for shared components](multi-parent-components-and-material-sharing.md).
 
@@ -18,7 +19,7 @@ attachments it creates. Do not give it a second independently mutable topology.
 The current system does not contain a second adjacency list: the cleanup fixes
 the boundary between its cached mount records and World mutations.
 
-## Current implementation
+## Implementation before cleanup
 
 [AttachmentSystem](../../src/engine/ecs/system/attachment_system.rs) retains
 `ActiveMount` records by Rider, plus a reverse Mountable occupancy index.
@@ -117,18 +118,99 @@ migration; do not broaden it to all component edges every frame.
 
 ## Implementation slices
 
-1. [ ] Specify attachment identity, mutation notifications, transaction ownership,
+1. [x] Specify attachment identity, mutation notifications, transaction ownership,
    end reasons, and final topology rules; inventory direct World mutation callers.
-2. [ ] Establish the World mutation/reference boundary with single-parent storage
+2. [x] Establish the World mutation/reference boundary with single-parent storage
    and focused edge replacement/removal tests.
-3. [ ] Migrate AttachmentSystem commits, validation, unwind, and sibling queries;
+3. [x] Migrate AttachmentSystem commits, validation, unwind, and sibling queries;
    preserve role/slot resolution and occupancy rules.
-4. [ ] Verify external mutations, removal, rollback, event counts, and resource
+4. [x] Verify external mutations, removal, rollback, event counts, and resource
    cleanup against World records; check ordinary grabs and tree behavior.
 5. [ ] Validate the mittens-corp car and record performance/lifecycle evidence.
+   Headless authored XR-scene and release benchmark checks passed; manual XR
+   mount/drive/stop/fire/dismount/remount validation remains pending.
 6. [ ] After this gate, proceed to multi-parent components: add detach-one and
    detach-all APIs and shared material declarations using this lifecycle boundary.
 
 Exit: managed car attachments and World topology agree after every tested
 transition, explicit detach/reparent requests survive cleanup, and existing
 vehicle behavior works without stale state or measured regression.
+
+## Implemented contract and evidence
+
+World now supplies `AttachmentRef` and `attachment_of`/`attachment_is_live`.
+A reference contains parent/child identities and an incoming-attachment revision.
+Every successful add/replace or detach updates that revision at the storage
+boundary; deletion invalidates the component identity. Reattachment between the
+same endpoints does not revive an old reference. Rejected mutations preserve
+the existing reference. Structural fields are ECS-internal; scripting/save paths
+read children through World. References are runtime-only, not serialized identities.
+
+There is no new World notification queue or per-mutation scan. Invalidation is
+immediate when a consumer queries the reference. Managed cleanup remains at
+AttachmentSystem tick, and targeted reconciliation also runs before interaction
+attempts for the affected rider/slot/root. MountStarted/MountEnded still describe
+managed relationship transitions; ParentChanged behavior of existing intent and
+direct mutation paths is otherwise unchanged.
+
+ActiveMount uses the World reference instead of separately retaining structural
+root/parent endpoints. It retains semantic endpoints, original-parent restoration,
+and resource/input/velocity state. `mounted_relationship(world, rider)` returns a
+validated snapshot; movement-root queries use a reverse index and validate World
+state, so stale records never authorize mounted behavior. One movement root
+cannot simultaneously belong to two managed occupancy mounts.
+
+Normal dismount restores original parentage. Endpoint loss restores a surviving
+root to its surviving original parent (or a root if that parent disappeared),
+using the dismount pose when resolvable and otherwise the current world pose.
+External detach/reparent/replacement relinquishes ownership: cleanup restores
+captured input/velocity and ends occupancy without changing the caller's topology.
+If an external caller attaches a surviving subtree beneath a generated helper,
+cleanup preserves that helper and subtree rather than deleting caller-owned
+attachments. This deliberate ownership transfer is covered by the same-endpoints
+replacement test. Invalid dismount/input endpoints also trigger forced cleanup.
+
+Automated evidence:
+
+- Attachment tests cover external detach/reparent, same-endpoint replacement,
+  endpoint/helper/root deletion, failed-commit rollback without edge replacement,
+  input/velocity restoration, and exactly one end event per committed mount.
+- 100 mount/dismount cycles keep component count at baseline plus two helpers
+  while mounted and exactly baseline after dismount; occupancy indexes are cleared.
+- `mittens_corp_managed_car_attachments_survive_topology_cleanup` loads the authored
+  `examples/mittens-corp.mms`, processes real initialization/transform intents,
+  resolves its Rider and car mount frames, and performs actual mount transactions.
+  It verifies car movement carries the root, normal dismount/remount, external
+  detach, input restoration, and helper counts. It injects a pointer beneath the
+  authored rider frame and positions that frame in the entry zone; it does not
+  simulate hardware grip/raycast acquisition or fabricate mount events.
+- Graph, grab, gesture, transform, serialization/round-trip, static-contact,
+  zone-observation, and mittens-corp test groups pass. Desktop input suspension
+  and example control routing remain covered by existing tests. The desktop
+  scene's GLTF-dependent camera-slot import is not a full live desktop mount proof.
+
+Release comparison against pre-change commit `4796e0e9`, using the same ignored
+`attachment_cleanup_benchmark` harness in a temporary baseline checkout:
+
+| Workload / representation | Before | After |
+| --- | --- | --- |
+| 200,000 tree detach/attach pairs, 10,000 children in 100 groups | 24.670 ms | 25.585 ms |
+| 200,000 ticks with one valid active mount | 3.631 ms | 4.414 ms |
+| ComponentNode size on this target | 144 bytes | 152 bytes |
+| ActiveMount size on this target | 88 bytes | 104 bytes |
+
+Times are medians of seven local release runs, not portable timing guarantees.
+Tree mutation increased about 3.7%; active validation added about 3.9 ns per tick
+(about 22% relative to this very small baseline). The root reverse index adds
+one entry per managed mount; it allocates on registration, not unchanged frames.
+Reference reads and validation allocate nothing; existing invalid-edge tick
+collection remains. No allocation counter or full-scene frame benchmark was run.
+For this fixture, use a 10% tree-mutation budget and a 0.1 microsecond additional
+cost per active-mount tick as review gates; both local comparisons are within
+those budgets. Recheck full-scene behavior during hardware validation.
+
+Reproduce the current benchmark with:
+
+```sh
+cargo test --release --lib attachment_cleanup_benchmark -- --ignored --nocapture --test-threads=1
+```

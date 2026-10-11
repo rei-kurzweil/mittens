@@ -156,13 +156,17 @@ are solved by supporting materials.
 
 ### Coordinate with the existing AttachmentSystem refactor
 
-Reviewed 2026-10-10: [AttachmentSystem](../../src/engine/ecs/system/attachment_system.rs)
-currently retains occupancy-specific `ActiveMount` records indexed by Rider and
-Mountable. Mounting generates a `TransformParent`, reparents the rider movement
-root beneath it, records the original parent, and suspends input/velocity.
-Dismount restores parentage and input/velocity and removes the generated subtree.
-Its tick validates cached endpoints and checks the rider root's singular parent;
-invalid records are unwound. [GrabbableSystem](../../src/engine/ecs/system/grabbable_system.rs)
+Updated after cleanup, 2026-10-10: [AttachmentSystem](../../src/engine/ecs/system/attachment_system.rs)
+retains occupancy-specific `ActiveMount` records indexed by Rider, Mountable,
+and movement root. Its structural endpoints come from a World-owned
+`AttachmentRef`, which detects deletion and replacement. Mounting generates a
+`TransformParent`, reparents the rider movement root beneath it, records the
+original parent, and suspends input/velocity. Normal dismount restores parentage
+and settings; external detach/reparent cleanup preserves the caller's topology.
+Tick and targeted interaction reconciliation validate endpoints and references.
+The [cleanup task](attachment-system-world-owned-topology-cleanup.md) records
+passing automated/car-scene tests and performance costs; hardware validation is
+still pending. [GrabbableSystem](../../src/engine/ecs/system/grabbable_system.rs)
 retains its own active-grab/original-parent state. Neither generic endpoint
 valence nor the shared retained-edge foundation is implemented yet; see
 [attachment valence/unification](attachment-valence-and-grabbable-unification.md)
@@ -185,9 +189,9 @@ boundary and lifecycle owner for system-managed attachments:
 - Detach-one, detach-all, explicit reparenting, and endpoint destruction must
   notify/invalidate affected managed relationships through the same boundary.
   Do not require other systems to inspect AttachmentSystem's private maps.
-- Decide whether an external detach cancels a mount/grab and whether cancellation
-  restores its original parent. Current invalid-edge cleanup can reparent the
-  rider during unwind; do not accidentally undo an explicit caller detach.
+- Preserve the cleanup contract: an external detach/reparent cancels a mount
+  without restoring its original parent or undoing the caller's request.
+  Extend it to detach-all and settle equivalent Grabbable cancellation behavior.
 - Release semantic state, generated helpers, and input/velocity leases exactly
   once. Removing a shared material edge must not cancel an unrelated mount.
 - Test a mounted/grabbed root detached externally, detached from all parents,

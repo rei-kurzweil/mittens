@@ -679,7 +679,7 @@ fn filtered_ce_ast_inner(
     let visible = filtered_save_visibility(world, root);
 
     let mut child_components = Vec::new();
-    for &child_id in &node.children {
+    for &child_id in world.children_of(root) {
         child_components.extend(filtered_ce_ast_inner(world, child_id, referenced_guids)?);
     }
 
@@ -837,14 +837,11 @@ fn collect_referenced_guids_limited(
             }
         }
     }
-    let children: Vec<ComponentId> = world
-        .get_component_record(node)
-        .map(|n| n.children.clone())
-        .unwrap_or_default();
+    let children = world.children_of(node);
     if depth >= max_depth {
         return;
     }
-    for child in children {
+    for &child in children {
         collect_referenced_guids_limited(world, child, depth + 1, max_depth, out);
     }
 }
@@ -884,11 +881,11 @@ fn subtree_to_ce_ast_inner_limited(
         });
     }
 
-    let children: Vec<ComponentId> = node.children.clone();
+    let children = world.children_of(root);
     if depth >= max_depth {
         return Ok(ce);
     }
-    for child_id in children {
+    for &child_id in children {
         let child_ce = subtree_to_ce_ast_inner_limited(
             world,
             child_id,

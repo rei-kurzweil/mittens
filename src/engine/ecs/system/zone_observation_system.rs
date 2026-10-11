@@ -52,7 +52,7 @@ impl ZoneObservationSystem {
                     return None;
                 }
                 let target = movement_target(world, id, zone)?;
-                (!mounts.is_movement_root_mounted(target)).then_some((id, zone, target))
+                (!mounts.is_movement_root_mounted(world, target)).then_some((id, zone, target))
             })
             .collect();
         let mut centers = HashMap::new();

@@ -411,8 +411,11 @@ pub struct ComponentNode {
     /// Used for `.class` query selectors.
     pub classes: Vec<String>,
     pub component: Box<dyn Component>,
-    pub parent: Option<crate::engine::ecs::ComponentId>,
-    pub children: Vec<crate::engine::ecs::ComponentId>,
+    /// Structural links are mutated only through World's topology API.
+    pub(super) parent: Option<crate::engine::ecs::ComponentId>,
+    /// Changed by World whenever the incoming structural attachment changes.
+    pub(super) attachment_revision: u64,
+    pub(super) children: Vec<crate::engine::ecs::ComponentId>,
     pub initialized: bool,
 }
 
@@ -426,6 +429,7 @@ impl ComponentNode {
             classes: Vec::new(),
             component,
             parent: None,
+            attachment_revision: 0,
             children: Vec::new(),
             initialized: false,
         }
@@ -442,6 +446,7 @@ impl ComponentNode {
             classes: Vec::new(),
             component,
             parent: None,
+            attachment_revision: 0,
             children: Vec::new(),
             initialized: false,
         }
@@ -460,6 +465,7 @@ impl ComponentNode {
             classes: Vec::new(),
             component,
             parent: None,
+            attachment_revision: 0,
             children: Vec::new(),
             initialized: false,
         }

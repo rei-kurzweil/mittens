@@ -6,6 +6,38 @@ mod tests {
     };
 
     #[test]
+    fn attachment_references_distinguish_replacement_and_component_reuse() {
+        use crate::engine::ecs::component::TransformComponent;
+        let mut world = World::default();
+        let parent = world.add_component(TransformComponent::new());
+        let child = world.add_component(TransformComponent::new());
+        world.add_child(parent, child).unwrap();
+        let first = world.attachment_of(child).unwrap();
+        assert_eq!(first.parent(), parent);
+        assert_eq!(first.child(), child);
+        assert!(world.attachment_is_live(first));
+        assert!(world.add_child(child, parent).is_err());
+        assert!(
+            world.attachment_is_live(first),
+            "failed mutation preserves edge"
+        );
+
+        world.detach_from_parent(child);
+        assert!(!world.attachment_is_live(first));
+        world.add_child(parent, child).unwrap();
+        let replacement = world.attachment_of(child).unwrap();
+        assert_ne!(first, replacement);
+        assert!(!world.attachment_is_live(first));
+        world.remove_component_leaf(child).unwrap();
+        let reused = world.add_component(TransformComponent::new());
+        world.add_child(parent, reused).unwrap();
+        assert!(!world.attachment_is_live(replacement));
+        let current = world.attachment_of(reused).unwrap();
+        world.remove_component_subtree(parent).unwrap();
+        assert!(!world.attachment_is_live(current));
+    }
+
+    #[test]
     fn add_child_sets_parent_and_child_list() {
         let mut w = World::default();
 

@@ -9336,11 +9336,7 @@ fn find_first<C: ComponentTrait + 'static>(
     if world.get_component_by_id_as::<C>(root).is_some() {
         return Some(root);
     }
-    let children: Vec<ComponentId> = world
-        .get_component_record(root)
-        .map(|n| n.children.clone())
-        .unwrap_or_default();
-    for child in children {
+    for &child in world.children_of(root) {
         if let Some(hit) = find_first::<C>(world, child) {
             return Some(hit);
         }
@@ -11476,6 +11472,196 @@ fn mittens_corp_desktop_wasd_moves_its_input_driver() {
         .transform
         .translation;
     assert_ne!(after, before, "WASD should move the desktop driver");
+}
+
+#[test]
+fn mittens_corp_managed_car_attachments_survive_topology_cleanup() {
+    use crate::engine::ecs::component::{
+        InputComponent, InputXRGamepadComponent, MountableComponent, PointerComponent,
+        QueryRootMode, RiderComponent, resolve_component_ref,
+    };
+    use crate::engine::ecs::system::{SystemWorld, TransformSystem};
+
+    for (path, source) in [(
+        "examples/mittens-corp.mms",
+        include_str!("../../examples/mittens-corp.mms"),
+    )] {
+        let mut world = World::default();
+        let mut systems = SystemWorld::default();
+        let mut visuals = VisualWorld::default();
+        let mut assets = RenderAssets::new();
+        let mut queue = CommandQueue::new();
+        let (_session, output) = RuntimeSpecSession::start_at_path(
+            source,
+            path,
+            &mut world,
+            &mut systems.rx,
+            Some(&mut assets),
+            &mut queue,
+        )
+        .unwrap();
+        assert!(output.errors.is_empty(), "{path}: {:?}", output.errors);
+        for intent in output.intents {
+            queue.push_intent_now(ComponentId::default(), intent);
+        }
+        systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+
+        let rider_id = world
+            .all_components()
+            .find(|&id| world.get_component_by_id_as::<RiderComponent>(id).is_some())
+            .unwrap();
+        let rider = world
+            .get_component_by_id_as::<RiderComponent>(rider_id)
+            .unwrap()
+            .clone();
+        let resolve =
+            |world: &World, owner, source: &Option<crate::engine::ecs::component::ComponentRef>| {
+                resolve_component_ref(
+                    world,
+                    source.as_ref().unwrap(),
+                    Some(owner),
+                    QueryRootMode::ParentScope { levels_up: 1 },
+                )
+                .unwrap_or_else(|| panic!("{path}: unresolved {source:?} for {owner:?}"))
+            };
+        let root = resolve(&world, rider_id, &rider.movement_root);
+        let anchor = resolve(&world, rider_id, &rider.anchor);
+        let input = resolve(&world, rider_id, &rider.input);
+        let mountable_id = world
+            .all_components()
+            .find(|&id| {
+                world
+                    .get_component_by_id_as::<MountableComponent>(id)
+                    .is_some()
+            })
+            .unwrap();
+        let mountable = world
+            .get_component_by_id_as::<MountableComponent>(mountable_id)
+            .unwrap()
+            .clone();
+        let mount_anchor = resolve(&world, mountable_id, &mountable.mount_anchor);
+        let car = world.parent_of(mountable_id).unwrap();
+        assert_eq!(world.component_label(car), Some("left_display_car"));
+        let entry_frame = world
+            .all_components()
+            .find(|&id| world.component_label(id) == Some("car_entry_zone_frame"))
+            .unwrap();
+        let pointer = world.add_component(PointerComponent::new());
+        world.add_child(anchor, pointer).unwrap();
+        let original_parent = world.parent_of(root);
+        let baseline = world.component_count();
+
+        for external_detach in [false, true] {
+            // Move the authored rider's probe into the authored car entry frame.
+            // Use real transform intents/propagation rather than fabricated mount events.
+            let entry = TransformSystem::world_position(&world, entry_frame).unwrap();
+            let probe = TransformSystem::world_position(&world, anchor).unwrap();
+            let t = world
+                .get_component_by_id_as::<TransformComponent>(root)
+                .unwrap();
+            let translation =
+                std::array::from_fn(|axis| t.translation()[axis] + entry[axis] - probe[axis]);
+            queue.push_intent_now(
+                root,
+                IntentValue::UpdateTransform {
+                    component_id: root,
+                    translation,
+                    rotation_quat_xyzw: t.rotation_quat_xyzw(),
+                    scale: t.scale(),
+                },
+            );
+            systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+            assert!(
+                systems
+                    .attachment
+                    .try_mount_from_hit(&mut world, pointer, car, &mut systems.rx),
+                "{path}"
+            );
+            systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+            let relationship = systems
+                .attachment
+                .mounted_relationship(&world, rider_id)
+                .unwrap();
+            assert_eq!(relationship.movement_root, root);
+            assert_eq!(relationship.rider_anchor, anchor);
+            assert_eq!(relationship.mount_anchor, mount_anchor);
+            assert_eq!(relationship.mountable, mountable_id);
+            assert!(world.attachment_is_live(relationship.attachment));
+            assert_eq!(world.component_count(), baseline + 2);
+            if let Some(input) = world.get_component_by_id_as::<InputComponent>(input) {
+                assert!(!input.translation_enabled);
+                assert!(input.rotation_enabled);
+            } else {
+                assert!(
+                    !world
+                        .get_component_by_id_as::<InputXRGamepadComponent>(input)
+                        .unwrap()
+                        .locomotion
+                );
+            }
+
+            // Moving the car must carry the rider through the managed follow target.
+            let before = TransformSystem::world_position(&world, root).unwrap();
+            let t = world
+                .get_component_by_id_as::<TransformComponent>(car)
+                .unwrap();
+            let mut moved = t.translation();
+            moved[0] += 1.0;
+            queue.push_intent_now(
+                car,
+                IntentValue::UpdateTransform {
+                    component_id: car,
+                    translation: moved,
+                    rotation_quat_xyzw: t.rotation_quat_xyzw(),
+                    scale: t.scale(),
+                },
+            );
+            systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+            let after = TransformSystem::world_position(&world, root).unwrap();
+            assert!(
+                (after[0] - before[0] - 1.0).abs() < 1e-4,
+                "{path}: {before:?} -> {after:?}"
+            );
+
+            if external_detach {
+                world.detach_from_parent(root);
+                systems.attachment.tick(&mut world, &mut systems.rx);
+            } else {
+                systems.attachment.begin_frame();
+                assert!(systems.attachment.try_dismount_for_pointer(
+                    &mut world,
+                    pointer,
+                    &mut systems.rx
+                ));
+            }
+            systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+            assert_eq!(
+                world.parent_of(root),
+                if external_detach {
+                    None
+                } else {
+                    original_parent
+                }
+            );
+            assert!(
+                systems
+                    .attachment
+                    .mounted_relationship(&world, rider_id)
+                    .is_none()
+            );
+            assert_eq!(world.component_count(), baseline);
+            if let Some(input) = world.get_component_by_id_as::<InputComponent>(input) {
+                assert!(input.translation_enabled);
+            } else {
+                assert!(
+                    world
+                        .get_component_by_id_as::<InputXRGamepadComponent>(input)
+                        .unwrap()
+                        .locomotion
+                );
+            }
+        }
+    }
 }
 
 #[test]

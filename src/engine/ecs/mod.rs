@@ -17,6 +17,26 @@ new_key_type! {
     pub struct ComponentId;
 }
 
+/// Reference to one World-owned structural attachment, not a mount relationship.
+/// Reattaching the same endpoints creates a new revision; stale references never
+/// acquire ownership of that replacement. ComponentId also guards slot reuse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AttachmentRef {
+    parent: ComponentId,
+    child: ComponentId,
+    revision: u64,
+}
+
+impl AttachmentRef {
+    pub fn parent(self) -> ComponentId {
+        self.parent
+    }
+
+    pub fn child(self) -> ComponentId {
+        self.child
+    }
+}
+
 // Re-export these so other modules can use `crate::engine::ecs::Transform`
 // and `crate::engine::ecs::Renderable` consistently.
 #[allow(unused_imports)]
@@ -241,6 +261,22 @@ impl World {
         self.get_component_record(c)?.parent
     }
 
+    /// Allocation-free reference to the current incoming attachment.
+    pub fn attachment_of(&self, child: ComponentId) -> Option<AttachmentRef> {
+        let node = self.get_component_record(child)?;
+        Some(AttachmentRef {
+            parent: node.parent?,
+            child,
+            revision: node.attachment_revision,
+        })
+    }
+
+    /// All World mutation paths invalidate references at the storage boundary,
+    /// including direct mutations that do not emit runtime ParentChanged events.
+    pub fn attachment_is_live(&self, attachment: AttachmentRef) -> bool {
+        self.attachment_of(attachment.child) == Some(attachment)
+    }
+
     /// Iterator over all component IDs in the world.
     pub fn all_components(&self) -> impl Iterator<Item = ComponentId> + '_ {
         self.components.keys()
@@ -403,6 +439,10 @@ impl World {
                 .get_component_record_mut(child)
                 .ok_or("child missing")?;
             child_node.parent = Some(parent);
+            child_node.attachment_revision = child_node
+                .attachment_revision
+                .checked_add(1)
+                .expect("attachment revision exhausted");
         }
         // Push into parent's children list.
         {
@@ -445,6 +485,10 @@ impl World {
         // Clear child's parent.
         if let Some(node) = self.get_component_record_mut(child) {
             node.parent = None;
+            node.attachment_revision = node
+                .attachment_revision
+                .checked_add(1)
+                .expect("attachment revision exhausted");
         }
 
         // Remove from old parent's children list.

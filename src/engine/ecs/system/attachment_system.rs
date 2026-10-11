@@ -6,7 +6,9 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::system::grabbable_system::ensure_generated_raycastable;
 use crate::engine::ecs::system::pointer_system::nearest_ancestor_transform;
 use crate::engine::ecs::system::{TransformSystem, ZoneRelation, classify_zone_point};
-use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, World};
+use crate::engine::ecs::{
+    AttachmentRef, ComponentId, EventSignal, IntentValue, SignalEmitter, World,
+};
 use crate::engine::transform::TransformTrs;
 use crate::utils::math::{mat_to_quat, mat4_inverse, mat4_mul, quat_normalize, quat_rotate_vec3};
 use std::collections::{HashMap, HashSet};
@@ -27,14 +29,26 @@ enum SuspendedInput {
 struct ActiveMount {
     rider: ComponentId,
     mountable: ComponentId,
-    rider_root: ComponentId,
     rider_anchor: ComponentId,
     mount_anchor: ComponentId,
     dismount_anchor: ComponentId,
-    transform_parent: ComponentId,
+    helper_serialize: ComponentId,
+    attachment: AttachmentRef,
     original_parent: Option<ComponentId>,
     suspended_input: SuspendedInput,
     suspended_velocity: Option<(ComponentId, bool)>,
+}
+
+/// Validated view of a managed occupancy relationship. World owns `attachment`;
+/// Rider/Mountable and mount frames are semantic endpoints, not its edge endpoints.
+#[derive(Debug, Clone, Copy)]
+pub struct MountedRelationship {
+    pub rider: ComponentId,
+    pub mountable: ComponentId,
+    pub movement_root: ComponentId,
+    pub rider_anchor: ComponentId,
+    pub mount_anchor: ComponentId,
+    pub attachment: AttachmentRef,
 }
 
 /// Owns live Rider -> Mountable relationships.
@@ -45,12 +59,48 @@ struct ActiveMount {
 pub struct AttachmentSystem {
     by_rider: HashMap<ComponentId, ActiveMount>,
     rider_by_mountable: HashMap<ComponentId, ComponentId>,
+    rider_by_root: HashMap<ComponentId, ComponentId>,
     mounted_this_frame: HashSet<ComponentId>,
 }
 
 impl AttachmentSystem {
-    pub(crate) fn is_movement_root_mounted(&self, target: ComponentId) -> bool {
-        self.by_rider.values().any(|edge| edge.rider_root == target)
+    pub fn mounted_relationship(
+        &self,
+        world: &World,
+        rider: ComponentId,
+    ) -> Option<MountedRelationship> {
+        let edge = *self.by_rider.get(&rider)?;
+        edge_is_valid(world, edge).then_some(MountedRelationship {
+            rider: edge.rider,
+            mountable: edge.mountable,
+            movement_root: edge.attachment.child(),
+            rider_anchor: edge.rider_anchor,
+            mount_anchor: edge.mount_anchor,
+            attachment: edge.attachment,
+        })
+    }
+
+    pub(crate) fn is_movement_root_mounted(&self, world: &World, target: ComponentId) -> bool {
+        self.rider_by_root
+            .get(&target)
+            .is_some_and(|&rider| self.mounted_relationship(world, rider).is_some())
+    }
+
+    /// Reconcile only the affected relationship at an interaction boundary.
+    /// Periodic tick still handles endpoint changes without an interaction.
+    fn reconcile_rider(
+        &mut self,
+        world: &mut World,
+        rider: ComponentId,
+        emit: &mut dyn SignalEmitter,
+    ) {
+        if self
+            .by_rider
+            .get(&rider)
+            .is_some_and(|edge| !edge_is_valid(world, *edge))
+        {
+            let _ = self.dismount(world, rider, emit, false);
+        }
     }
 
     pub fn register(
@@ -94,6 +144,7 @@ impl AttachmentSystem {
         let Some(rider) = rider_for_pointer(world, pointer) else {
             return false;
         };
+        self.reconcile_rider(world, rider, emit);
         if !self.by_rider.contains_key(&rider) {
             return false;
         }
@@ -115,12 +166,16 @@ impl AttachmentSystem {
         let Some(rider_id) = rider_for_pointer(world, pointer) else {
             return false;
         };
+        self.reconcile_rider(world, rider_id, emit);
         if self.by_rider.contains_key(&rider_id) {
             return false;
         }
         let Some((mountable_id, _owner)) = mountable_for_hit(world, renderable) else {
             return false;
         };
+        if let Some(&occupant) = self.rider_by_mountable.get(&mountable_id) {
+            self.reconcile_rider(world, occupant, emit);
+        }
         if self.rider_by_mountable.contains_key(&mountable_id) {
             return false;
         }
@@ -145,6 +200,12 @@ impl AttachmentSystem {
         else {
             return false;
         };
+        if let Some(&occupant) = self.rider_by_root.get(&rider_root) {
+            self.reconcile_rider(world, occupant, emit);
+        }
+        if self.rider_by_root.contains_key(&rider_root) {
+            return false;
+        }
         let Some(rider_anchor) = resolve_required(world, rider_id, rider.anchor.as_ref())
             .and_then(|id| nearest_ancestor_transform(world, id))
         else {
@@ -228,7 +289,11 @@ impl AttachmentSystem {
         )
         .is_err()
         {
-            let _ = world.set_parent(rider_root, original_parent);
+            // Pose validation fails before reparenting. Do not replace the
+            // original edge merely to roll back a transaction that never moved it.
+            if world.parent_of(rider_root) == Some(transform_parent) {
+                let _ = world.set_parent(rider_root, original_parent);
+            }
             let _ = world.remove_component_subtree(transform_parent);
             return false;
         }
@@ -248,17 +313,20 @@ impl AttachmentSystem {
         let edge = ActiveMount {
             rider: rider_id,
             mountable: mountable_id,
-            rider_root,
             rider_anchor,
             mount_anchor,
             dismount_anchor,
-            transform_parent,
+            helper_serialize: serialize,
+            attachment: world
+                .attachment_of(rider_root)
+                .expect("committed mount has a structural attachment"),
             original_parent,
             suspended_input,
             suspended_velocity,
         };
         self.by_rider.insert(rider_id, edge);
         self.rider_by_mountable.insert(mountable_id, rider_id);
+        self.rider_by_root.insert(rider_root, rider_id);
         self.mounted_this_frame.insert(rider_id);
         emit.push_event(
             mountable_id,
@@ -291,32 +359,39 @@ impl AttachmentSystem {
         let Some(edge) = self.by_rider.get(&rider).copied() else {
             return false;
         };
+        // A caller's detach/reparent/replacement wins over restoration. Only a
+        // relationship that still owns the exact World edge may move its root.
+        let owns_attachment = world.attachment_is_live(edge.attachment);
         let desired_world =
             TransformSystem::world_model(world, edge.dismount_anchor).and_then(|target| {
-                let current_root = TransformSystem::world_model(world, edge.rider_root)?;
+                let current_root = TransformSystem::world_model(world, edge.attachment.child())?;
                 horizontal_anchor_alignment(
                     world,
-                    edge.rider_root,
+                    edge.attachment.child(),
                     edge.rider_anchor,
                     target,
                     current_root,
                 )
             });
-        if require_dismount_anchor && desired_world.is_none() {
+        if require_dismount_anchor && owns_attachment && desired_world.is_none() {
             return false;
         }
         let desired_world =
-            desired_world.or_else(|| TransformSystem::world_model(world, edge.rider_root));
+            desired_world.or_else(|| TransformSystem::world_model(world, edge.attachment.child()));
 
         let original_parent = edge
             .original_parent
             .filter(|id| world.get_component_record(*id).is_some());
-        if world.get_component_record(edge.rider_root).is_some() {
+        if owns_attachment
+            && world
+                .get_component_record(edge.attachment.child())
+                .is_some()
+        {
             let parent_world = effective_parent_world(world, original_parent);
             let restored = desired_world.is_some_and(|desired| {
                 set_parent_and_world(
                     world,
-                    edge.rider_root,
+                    edge.attachment.child(),
                     original_parent,
                     parent_world,
                     desired,
@@ -325,7 +400,7 @@ impl AttachmentSystem {
                 .is_ok()
             });
             if !restored {
-                let _ = world.set_parent(edge.rider_root, original_parent);
+                let _ = world.set_parent(edge.attachment.child(), original_parent);
             }
         }
         restore_input(world, edge.suspended_input);
@@ -339,11 +414,21 @@ impl AttachmentSystem {
             v.linear_local_mps = [0.0; 3];
             v.grounded = false;
         }
-        if world.get_component_record(edge.transform_parent).is_some() {
-            let _ = world.remove_component_subtree(edge.transform_parent);
+        // An external caller may have replaced an edge beneath our helper. Do
+        // not delete its surviving subtree merely to retire a managed resource.
+        if world
+            .get_component_record(edge.attachment.parent())
+            .is_some()
+            && world
+                .children_of(edge.attachment.parent())
+                .iter()
+                .all(|&child| child == edge.helper_serialize)
+        {
+            let _ = world.remove_component_subtree(edge.attachment.parent());
         }
         self.by_rider.remove(&rider);
         self.rider_by_mountable.remove(&edge.mountable);
+        self.rider_by_root.remove(&edge.attachment.child());
         emit.push_event(
             edge.mountable,
             EventSignal::MountEnded {
@@ -620,11 +705,24 @@ fn edge_is_valid(world: &World, edge: ActiveMount) -> bool {
         && world
             .get_component_by_id_as::<MountableComponent>(edge.mountable)
             .is_some_and(|mountable| mountable.enabled)
-        && world.get_component_record(edge.rider_root).is_some()
+        && world
+            .get_component_record(edge.attachment.child())
+            .is_some()
         && world.get_component_record(edge.rider_anchor).is_some()
         && world.get_component_record(edge.mount_anchor).is_some()
-        && world.get_component_record(edge.transform_parent).is_some()
-        && world.parent_of(edge.rider_root) == Some(edge.transform_parent)
+        && world.get_component_record(edge.dismount_anchor).is_some()
+        && world
+            .get_component_record(edge.attachment.parent())
+            .is_some()
+        && match edge.suspended_input {
+            SuspendedInput::Desktop { component, .. } => world
+                .get_component_by_id_as::<InputComponent>(component)
+                .is_some(),
+            SuspendedInput::XrGamepad { component, .. } => world
+                .get_component_by_id_as::<InputXRGamepadComponent>(component)
+                .is_some(),
+        }
+        && world.attachment_is_live(edge.attachment)
 }
 
 #[cfg(test)]
@@ -708,6 +806,310 @@ mod tests {
         }
     }
 
+    fn lifecycle_counts(emit: &mut CommandQueue) -> (usize, usize) {
+        let mut rx = RxWorld::default();
+        emit.drain_into_rx(&mut rx);
+        let events = rx.drain_ready_events();
+        (
+            events
+                .iter()
+                .filter(|s| matches!(s.event, Some(EventSignal::MountStarted { .. })))
+                .count(),
+            events
+                .iter()
+                .filter(|s| matches!(s.event, Some(EventSignal::MountEnded { .. })))
+                .count(),
+        )
+    }
+
+    #[test]
+    #[ignore = "manual release-build comparison; timing is not a CI assertion"]
+    fn attachment_cleanup_benchmark() {
+        use std::hint::black_box;
+        use std::time::Instant;
+
+        let mut fixture = fixture([0.0; 3]);
+        let mut system = AttachmentSystem::default();
+        let mut emit = CommandQueue::new();
+        assert!(system.try_mount_from_hit(
+            &mut fixture.world,
+            fixture.pointer,
+            fixture.car,
+            &mut emit
+        ));
+        let mut rx = RxWorld::default();
+        emit.drain_into_rx(&mut rx);
+        // No invalid relationships or emitted signals in this steady workload.
+        let start = Instant::now();
+        for _ in 0..200_000 {
+            system.tick(black_box(&mut fixture.world), black_box(&mut emit));
+        }
+        println!(
+            "active_mount_ticks_200000_us={}",
+            start.elapsed().as_micros()
+        );
+
+        let mut world = World::default();
+        let parents: Vec<_> = (0..100)
+            .map(|_| world.add_component(TransformComponent::new()))
+            .collect();
+        let children: Vec<_> = (0..10_000)
+            .map(|_| world.add_component(TransformComponent::new()))
+            .collect();
+        for (index, &child) in children.iter().enumerate() {
+            world.add_child(parents[index / 100], child).unwrap();
+        }
+        let start = Instant::now();
+        for index in 0..200_000 {
+            let child = children[index % children.len()];
+            world.detach_from_parent(child);
+            world
+                .add_child(parents[(index % children.len()) / 100], child)
+                .unwrap();
+            black_box(world.parent_of(child));
+        }
+        println!(
+            "tree_detach_attach_200000_us={}",
+            start.elapsed().as_micros()
+        );
+        println!(
+            "component_node_bytes={}",
+            std::mem::size_of::<crate::engine::ecs::component::ComponentNode>()
+        );
+        println!("active_mount_bytes={}", std::mem::size_of::<ActiveMount>());
+    }
+
+    #[test]
+    fn failed_mount_preserves_original_attachment_and_leaves_no_helpers() {
+        let mut fixture = fixture([0.0; 3]);
+        let original = transform(&mut fixture.world, [0.0; 3]);
+        fixture.world.add_child(original, fixture.root).unwrap();
+        let original_attachment = fixture.world.attachment_of(fixture.root);
+        let target = resolve_required(
+            &fixture.world,
+            fixture.mountable,
+            fixture
+                .world
+                .get_component_by_id_as::<MountableComponent>(fixture.mountable)
+                .unwrap()
+                .mount_anchor
+                .as_ref(),
+        )
+        .unwrap();
+        fixture
+            .world
+            .get_component_by_id_as_mut::<TransformComponent>(target)
+            .unwrap()
+            .transform
+            .matrix_world = [[0.0; 4]; 4];
+        let baseline = fixture.world.component_count();
+        let mut system = AttachmentSystem::default();
+        let mut emit = CommandQueue::new();
+        assert!(!system.try_mount_from_hit(
+            &mut fixture.world,
+            fixture.pointer,
+            fixture.car,
+            &mut emit
+        ));
+        assert_eq!(
+            fixture.world.attachment_of(fixture.root),
+            original_attachment
+        );
+        assert_eq!(fixture.world.component_count(), baseline);
+        assert!(system.by_rider.is_empty());
+        assert!(
+            fixture
+                .world
+                .get_component_by_id_as::<InputXRGamepadComponent>(fixture.input)
+                .unwrap()
+                .locomotion
+        );
+        assert_eq!(lifecycle_counts(&mut emit), (0, 0));
+    }
+
+    #[test]
+    fn external_detach_or_reparent_wins_over_managed_restoration() {
+        for reparent in [false, true] {
+            let mut fixture = fixture([0.0; 3]);
+            let original = transform(&mut fixture.world, [0.0; 3]);
+            let replacement = transform(&mut fixture.world, [0.0; 3]);
+            fixture.world.add_child(original, fixture.root).unwrap();
+            let baseline = fixture.world.component_count();
+            let mut system = AttachmentSystem::default();
+            let mut emit = CommandQueue::new();
+            assert!(system.try_mount_from_hit(
+                &mut fixture.world,
+                fixture.pointer,
+                fixture.car,
+                &mut emit
+            ));
+            let relationship = system
+                .mounted_relationship(&fixture.world, fixture.rider)
+                .unwrap();
+            assert_eq!(relationship.rider, fixture.rider);
+            assert_eq!(relationship.mountable, fixture.mountable);
+            assert_eq!(relationship.movement_root, fixture.root);
+            assert_eq!(relationship.rider_anchor, fixture.anchor);
+            assert_eq!(relationship.attachment.child(), fixture.root);
+            let helper = relationship.attachment.parent();
+            let chosen_parent = reparent.then_some(replacement);
+            fixture
+                .world
+                .set_parent(fixture.root, chosen_parent)
+                .unwrap();
+            let chosen_attachment = fixture.world.attachment_of(fixture.root);
+            assert!(
+                system
+                    .mounted_relationship(&fixture.world, fixture.rider)
+                    .is_none()
+            );
+            assert!(!system.is_movement_root_mounted(&fixture.world, fixture.root));
+            system.tick(&mut fixture.world, &mut emit);
+            system.tick(&mut fixture.world, &mut emit);
+            assert_eq!(fixture.world.parent_of(fixture.root), chosen_parent);
+            assert_eq!(fixture.world.attachment_of(fixture.root), chosen_attachment);
+            assert!(fixture.world.get_component_record(helper).is_none());
+            assert_eq!(fixture.world.component_count(), baseline);
+            assert!(
+                fixture
+                    .world
+                    .get_component_by_id_as::<InputXRGamepadComponent>(fixture.input)
+                    .unwrap()
+                    .locomotion
+            );
+            assert!(system.by_rider.is_empty());
+            assert!(system.rider_by_mountable.is_empty());
+            assert!(system.rider_by_root.is_empty());
+            assert_eq!(lifecycle_counts(&mut emit), (1, 1));
+        }
+    }
+
+    #[test]
+    fn replacement_edge_under_the_same_helper_is_not_owned_or_deleted() {
+        let mut fixture = fixture([0.0; 3]);
+        let mut system = AttachmentSystem::default();
+        let mut emit = CommandQueue::new();
+        assert!(system.try_mount_from_hit(
+            &mut fixture.world,
+            fixture.pointer,
+            fixture.car,
+            &mut emit
+        ));
+        let old = system
+            .mounted_relationship(&fixture.world, fixture.rider)
+            .unwrap()
+            .attachment;
+        fixture.world.detach_from_parent(fixture.root);
+        fixture.world.add_child(old.parent(), fixture.root).unwrap();
+        let replacement = fixture.world.attachment_of(fixture.root).unwrap();
+        assert_ne!(old, replacement);
+        system.tick(&mut fixture.world, &mut emit);
+        assert_eq!(fixture.world.attachment_of(fixture.root), Some(replacement));
+        assert!(fixture.world.get_component_record(fixture.anchor).is_some());
+        assert!(
+            system
+                .mounted_relationship(&fixture.world, fixture.rider)
+                .is_none()
+        );
+        assert_eq!(lifecycle_counts(&mut emit), (1, 1));
+    }
+
+    #[test]
+    fn endpoint_removal_unwinds_once_and_preserves_surviving_roots() {
+        for endpoint in [
+            "rider",
+            "mountable",
+            "anchor",
+            "target",
+            "dismount",
+            "input",
+            "root",
+            "helper",
+        ] {
+            let mut fixture = fixture([0.0; 3]);
+            let original = transform(&mut fixture.world, [0.0; 3]);
+            fixture.world.add_child(original, fixture.root).unwrap();
+            let mut system = AttachmentSystem::default();
+            let mut emit = CommandQueue::new();
+            assert!(system.try_mount_from_hit(
+                &mut fixture.world,
+                fixture.pointer,
+                fixture.car,
+                &mut emit
+            ));
+            let relation = system
+                .mounted_relationship(&fixture.world, fixture.rider)
+                .unwrap();
+            let helper = relation.attachment.parent();
+            let removed = match endpoint {
+                "rider" => fixture.rider,
+                "mountable" => fixture.mountable,
+                "anchor" => fixture.anchor,
+                "target" => relation.mount_anchor,
+                "dismount" => system.by_rider[&fixture.rider].dismount_anchor,
+                "input" => fixture.input,
+                "root" => fixture.root,
+                "helper" => helper,
+                _ => unreachable!(),
+            };
+            fixture.world.remove_component_subtree(removed).unwrap();
+            system.tick(&mut fixture.world, &mut emit);
+            system.tick(&mut fixture.world, &mut emit);
+            if fixture.world.get_component_record(fixture.root).is_some() {
+                assert_eq!(
+                    fixture.world.parent_of(fixture.root),
+                    Some(original),
+                    "{endpoint}"
+                );
+            }
+            assert!(
+                fixture.world.get_component_record(helper).is_none(),
+                "{endpoint}"
+            );
+            assert!(system.by_rider.is_empty());
+            assert!(system.rider_by_mountable.is_empty());
+            assert!(system.rider_by_root.is_empty());
+            if let Some(input) = fixture
+                .world
+                .get_component_by_id_as::<InputXRGamepadComponent>(fixture.input)
+            {
+                assert!(input.locomotion);
+            }
+            assert_eq!(lifecycle_counts(&mut emit), (1, 1), "{endpoint}");
+        }
+    }
+
+    #[test]
+    fn repeated_mount_cycles_leave_no_helpers_or_occupancy() {
+        let mut fixture = fixture([0.0; 3]);
+        let mut system = AttachmentSystem::default();
+        let mut emit = CommandQueue::new();
+        let baseline = fixture.world.component_count();
+        for _ in 0..100 {
+            // Simulate returning to the eligible zone between cycles.
+            fixture
+                .world
+                .get_component_by_id_as_mut::<TransformComponent>(fixture.anchor)
+                .unwrap()
+                .transform
+                .matrix_world = TransformTrs::IDENTITY.to_matrix().unwrap();
+            assert!(system.try_mount_from_hit(
+                &mut fixture.world,
+                fixture.pointer,
+                fixture.car,
+                &mut emit
+            ));
+            assert_eq!(fixture.world.component_count(), baseline + 2);
+            assert!(system.dismount(&mut fixture.world, fixture.rider, &mut emit, true));
+            assert_eq!(fixture.world.component_count(), baseline);
+            assert_eq!(fixture.world.parent_of(fixture.root), None);
+            assert!(system.by_rider.is_empty());
+            assert!(system.rider_by_mountable.is_empty());
+            assert!(system.rider_by_root.is_empty());
+        }
+        assert_eq!(lifecycle_counts(&mut emit), (100, 100));
+    }
+
     #[test]
     fn mount_suspends_movement_velocity_and_restores_it_without_stale_speed() {
         use crate::engine::ecs::component::VelocityComponent;
@@ -726,7 +1128,7 @@ mod tests {
                 fixture.car,
                 &mut emit
             ));
-            assert!(system.is_movement_root_mounted(fixture.root));
+            assert!(system.is_movement_root_mounted(&fixture.world, fixture.root));
             let v = fixture
                 .world
                 .get_component_by_id_as::<VelocityComponent>(owner)
@@ -742,7 +1144,7 @@ mod tests {
             assert_eq!(v.linear_local_mps, [0.0; 3]);
             assert!(!v.grounded);
             assert_eq!(fixture.world.parent_of(fixture.root), Some(owner));
-            assert!(!system.is_movement_root_mounted(fixture.root));
+            assert!(!system.is_movement_root_mounted(&fixture.world, fixture.root));
         }
     }
 
