@@ -11298,6 +11298,216 @@ fn vroid_arm_ik_factory_configures_avc_and_inspection_ranges() {
 }
 
 #[test]
+fn runtime_avatar_control_arm_ik_applies_imported_bend_plane_preset() {
+    use crate::engine::ecs::component::AvatarControlComponent;
+    let source = r#"
+        import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
+        AVC { arm_ik(vroid_arm_ik_bend_plane_prototype()) }
+    "#;
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut commands = CommandQueue::new();
+    let (_session, out) = RuntimeSpecSession::start_at_path(
+        source,
+        "examples/arm_ik_factory_smoke.mms",
+        &mut world,
+        &mut rx,
+        None,
+        &mut commands,
+    )
+    .expect("combined arm preset should load");
+    assert!(out.errors.is_empty(), "{:?}", out.errors);
+    let control = world
+        .all_components()
+        .find_map(|id| world.get_component_by_id_as::<AvatarControlComponent>(id))
+        .expect("AVC component");
+    let left = control.left_two_bone_ik.as_ref().unwrap();
+    let right = control.right_two_bone_ik.as_ref().unwrap();
+    assert_eq!(left.pole_direction, [1.0, -1.5, 1.0]);
+    assert_eq!(right.pole_direction, [-1.0, -1.5, 1.0]);
+    assert_eq!(
+        left.forbidden_bend_normal_z_degrees,
+        vec![[-178.0, -115.0], [-100.0, -60.0]]
+    );
+    assert!(right.forbidden_bend_normal_z_degrees.is_empty());
+    assert!(left.copy_end_rotation && right.copy_end_rotation);
+    assert_eq!(left.weight, 1.0);
+    assert_eq!(right.weight, 1.0);
+    let (saved_world, saved_id) = roundtrip_component(control.clone());
+    let saved = saved_world
+        .get_component_by_id_as::<AvatarControlComponent>(saved_id)
+        .unwrap();
+    assert_eq!(saved.left_two_bone_ik, control.left_two_bone_ik);
+    assert_eq!(saved.right_two_bone_ik, control.right_two_bone_ik);
+}
+
+#[test]
+fn runtime_avatar_control_arm_ik_supports_partial_sides_and_defaults() {
+    use crate::engine::ecs::component::{ArmTwoBoneIkConfig, AvatarControlComponent};
+    for (source, expected_left, expected_right) in [
+        (
+            "AVC { arm_ik({ left = {} }) }",
+            Some(ArmTwoBoneIkConfig::left_default()),
+            None,
+        ),
+        (
+            "AVC { arm_ik({ right = {} }) }",
+            None,
+            Some(ArmTwoBoneIkConfig::right_default()),
+        ),
+        ("AVC { arm_ik({}) }", None, None),
+        (
+            "AVC { arm_ik({ left = {} }) right_two_bone_ik({}) }",
+            Some(ArmTwoBoneIkConfig::left_default()),
+            Some(ArmTwoBoneIkConfig::right_default()),
+        ),
+    ] {
+        let mut world = World::default();
+        let mut rx = RxWorld::default();
+        let mut commands = CommandQueue::new();
+        let (_session, _intents) =
+            RuntimeSpecSession::start(source, &mut world, &mut rx, None, &mut commands)
+                .expect("partial combined arm table should load");
+        let control = world
+            .all_components()
+            .find_map(|id| world.get_component_by_id_as::<AvatarControlComponent>(id))
+            .expect("AVC component");
+        assert_eq!(control.left_two_bone_ik, expected_left);
+        assert_eq!(control.right_two_bone_ik, expected_right);
+        let (saved_world, saved_id) = roundtrip_component(control.clone());
+        let saved = saved_world
+            .get_component_by_id_as::<AvatarControlComponent>(saved_id)
+            .unwrap();
+        assert_eq!(saved.left_two_bone_ik, expected_left);
+        assert_eq!(saved.right_two_bone_ik, expected_right);
+    }
+}
+
+#[test]
+fn runtime_avatar_control_arm_ik_rejects_bad_tables_and_duplicate_sides() {
+    for (source, expected) in [
+        ("AVC { arm_ik(1) }", "arm_ik expects a table"),
+        (
+            "AVC { arm_ik({ pole_direction = [1, -1.5, 1] }) }",
+            "arm_ik.pole_direction: unknown field",
+        ),
+        (
+            "AVC { arm_ik({ left = 1 }) }",
+            "left_two_bone_ik expects a table",
+        ),
+        (
+            "AVC { arm_ik({ right = { weight = 2 } }) }",
+            "right_two_bone_ik.weight",
+        ),
+        (
+            "AVC { arm_ik({ left = { forbidden_bend_normal_z_degrees = [[-181, -115]] } }) }",
+            "left_two_bone_ik.forbidden_bend_normal_z_degrees",
+        ),
+        (
+            "AVC { arm_ik({ left = {} }) left_two_bone_ik({}) }",
+            "left_two_bone_ik may only be set once",
+        ),
+        (
+            "AVC { right_two_bone_ik({}) arm_ik({ left = {} right = {} }) }",
+            "right_two_bone_ik may only be set once",
+        ),
+        (
+            "AVC { arm_ik({ left = {} right = {} }) arm_ik({ left = {} }) }",
+            "left_two_bone_ik may only be set once",
+        ),
+    ] {
+        let mut world = World::default();
+        let mut rx = RxWorld::default();
+        let mut commands = CommandQueue::new();
+        let out = MeowMeowRunner::eval_with_world(source, &mut world, &mut rx, &mut commands);
+        assert!(!out.errors.is_empty(), "expected error for {source}");
+        assert!(
+            out.errors.iter().any(|error| error.contains(expected)),
+            "{source}: {:?}",
+            out.errors
+        );
+    }
+}
+
+#[test]
+fn runtime_avatar_control_arm_ik_validates_both_sides_before_mutating() {
+    use crate::engine::ecs::component::{ArmTwoBoneIkConfig, AvatarControlComponent};
+    for (initial, update, expected_right) in [
+        ("", "{ left = {} right = { weight = 2 } }", None),
+        (
+            "right_two_bone_ik({ weight = 0.25 })",
+            "{ left = {} right = {} }",
+            Some(ArmTwoBoneIkConfig {
+                weight: 0.25,
+                ..ArmTwoBoneIkConfig::right_default()
+            }),
+        ),
+    ] {
+        let mut world = World::default();
+        let mut rx = RxWorld::default();
+        let mut commands = CommandQueue::new();
+        let source = format!("let avatar = AVC {{ {initial} }} avatar.arm_ik({update})");
+        let out = MeowMeowRunner::eval_with_world(&source, &mut world, &mut rx, &mut commands);
+        assert!(!out.errors.is_empty(), "expected invalid combined update");
+        let control = world
+            .all_components()
+            .find_map(|id| world.get_component_by_id_as::<AvatarControlComponent>(id))
+            .expect("previously constructed AVC must remain");
+        assert!(
+            control.left_two_bone_ik.is_none(),
+            "invalid update must not set the valid left side"
+        );
+        assert_eq!(control.right_two_bone_ik, expected_right);
+    }
+}
+
+#[test]
+fn studio_stage_examples_apply_combined_arm_ik_preset() {
+    use crate::engine::ecs::component::AvatarControlComponent;
+    for name in [
+        "mittens-corp.mms",
+        "mittens-corp-linear-velocity.mms",
+        "mittens-corp-desktop.mms",
+        "mittens-corp-agc.mms",
+        "mittens-corp-agc-desktop.mms",
+        "rei(mu).mms",
+        "toon-outline-bisket.mms",
+        "capsule-stick-figure.mms",
+    ] {
+        let path = format!("examples/{name}");
+        let source = fs::read_to_string(repo_path(&path)).expect("read studio scene");
+        let mut world = World::default();
+        let mut rx = RxWorld::default();
+        let mut assets = RenderAssets::new();
+        let mut commands = CommandQueue::new();
+        let (_session, out) = RuntimeSpecSession::start_at_path(
+            &source,
+            &path,
+            &mut world,
+            &mut rx,
+            Some(&mut assets),
+            &mut commands,
+        )
+        .unwrap_or_else(|error| panic!("{name}: {error:?}"));
+        assert!(out.errors.is_empty(), "{name}: {:?}", out.errors);
+        let control = world
+            .all_components()
+            .find_map(|id| world.get_component_by_id_as::<AvatarControlComponent>(id))
+            .unwrap_or_else(|| panic!("{name}: missing AVC"));
+        let left = control.left_two_bone_ik.as_ref().expect("left preset");
+        let right = control.right_two_bone_ik.as_ref().expect("right preset");
+        assert_eq!(left.pole_direction, [1.0, -1.5, 1.0], "{name}");
+        assert_eq!(right.pole_direction, [-1.0, -1.5, 1.0], "{name}");
+        assert_eq!(
+            left.forbidden_bend_normal_z_degrees,
+            vec![[-178.0, -115.0], [-100.0, -60.0]],
+            "{name}"
+        );
+        assert!(right.forbidden_bend_normal_z_degrees.is_empty(), "{name}");
+    }
+}
+
+#[test]
 fn migrated_humanoid_avc_examples_parse() {
     let mut count = 0;
     for entry in std::fs::read_dir(repo_path("examples")).expect("examples directory") {

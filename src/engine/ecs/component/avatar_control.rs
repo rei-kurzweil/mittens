@@ -590,11 +590,20 @@ impl Component for AvatarControlComponent {
                 ),
             ])
         };
-        if let Some(config) = &self.left_two_bone_ik {
-            c = c.with_call("left_two_bone_ik", vec![ik_table(config)]);
+        let mut arms = Vec::new();
+        for (side, config) in [
+            ("left", &self.left_two_bone_ik),
+            ("right", &self.right_two_bone_ik),
+        ] {
+            if let Some(config) = config {
+                arms.push(TableFieldValue {
+                    name: Ident(side.into()),
+                    value: ik_table(config),
+                });
+            }
         }
-        if let Some(config) = &self.right_two_bone_ik {
-            c = c.with_call("right_two_bone_ik", vec![ik_table(config)]);
+        if !arms.is_empty() {
+            c = c.with_call("arm_ik", vec![Expression::Table(arms)]);
         }
         if self.forward_plus_z_overridden && self.forward_plus_z {
             c = c.with_call("forward_plus_z", vec![]);

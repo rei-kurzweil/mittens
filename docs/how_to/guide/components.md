@@ -1073,21 +1073,34 @@ Carries avatar control state used when that engine feature is present in a compo
 AvatarControl {}
 ```
 
-Arm IK settings are passed as one table per arm:
+Pass both arm IK policies in one ordinary MMS table:
 
 ```mms
 AVC {
-    left_two_bone_ik({
-        pole_direction = [1.0, -0.35, 1.0]
-        copy_end_rotation = true
-        weight = 1.0
-        forbidden_bend_normal_z_degrees = [[-178.0, -115.0], [-100.0, -60.0]]
+    arm_ik({
+        left = {
+            pole_direction = [1.0, -1.5, 1.0]
+            copy_end_rotation = true
+            weight = 1.0
+            forbidden_bend_normal_z_degrees = [[-178.0, -115.0], [-100.0, -60.0]]
+        }
+        right = { pole_direction = [-1.0, -1.5, 1.0] }
     })
-    right_two_bone_ik({ pole_direction = [-1.0, -0.35, 1.0] })
 }
 ```
 
-All fields are optional. Pole directions are body-local; bend-normal ranges are degrees around body-local +Z. An empty range list means no exclusions. The shared VRoid example factory is in [`assets/components/arm_ik/vroid.mms`](../../../assets/components/arm_ik/vroid.mms).
+`left` and `right` are optional; an omitted side retains its current authored policy or engine default. All fields inside each arm table are optional. Pole directions are body-local; bend-normal ranges are degrees around body-local +Z. An empty range list means no exclusions. Unknown fields and invalid arm settings are rejected before either arm is changed.
+
+The individual `left_two_bone_ik(config)` and `right_two_bone_ik(config)` methods remain available. Each side may be configured only once, including through `arm_ik`; customize preset tables before passing them to AVC. Scene saving emits a single `arm_ik` call with the resolved settings, rather than preserving the factory reference.
+
+The studio-stage examples and IK inspection scene use the shared prototype in [`assets/components/arm_ik/vroid.mms`](../../../assets/components/arm_ik/vroid.mms):
+
+```mms
+import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
+AVC { arm_ik(vroid_arm_ik_bend_plane_prototype()) }
+```
+
+This preset carries both downward pole hints and the two inspection-scene left-arm exclusions. Right-arm exclusions are empty; live XR evaluation is still needed.
 
 ### `BoneRestPoseComponent`
 <!-- catalog:component source="BoneRestPoseComponent" mms="engine-only" names="" -->

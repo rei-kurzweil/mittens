@@ -1,6 +1,6 @@
 # Task proposal: body-local bend-plane limits for AVC arm IK
 
-Status: opt-in forbidden-angle prototype implemented; live XR behavior remains to be evaluated.
+Status: opt-in forbidden-angle prototype implemented; the inspection scene and studio-stage avatar examples now apply the shared `vroid_arm_ik_bend_plane_prototype()` through `AVC.arm_ik`. Live XR behavior remains to be evaluated.
 
 Related investigation: [AVC arm IK bend plane spins and elbows rise](../bugs/avc-arm-ik-bend-plane-spins-and-elbows-rise.md).
 
@@ -20,14 +20,14 @@ The limits are optional. Leaving them unset preserves the previous solver. The c
 
 ```mms
 AVC {
-    // Repeat either method to exclude more than one interval. Degrees.
-    left_arm_forbidden_bend_normal_z_degrees(-178.0, -115.0)
-    left_arm_forbidden_bend_normal_z_degrees(-100.0, -60.0)
-    right_arm_forbidden_bend_normal_z_degrees(115.0, 178.0)
+    arm_ik({
+        left = { forbidden_bend_normal_z_degrees = [[-178.0, -115.0], [-100.0, -60.0]] }
+        right = { forbidden_bend_normal_z_degrees = [[115.0, 178.0]] }
+    })
 }
 ```
 
-The two left intervals are the current inspection-scene prototype; the right interval is illustrative and is not enabled there. Each call accepts two endpoints within [-180°, 180°], sorts them, and excludes the interior. To cover the ±180° wrap, use two intervals. No calls preserve the current solver behavior.
+The two left intervals are the current inspection-scene prototype; the right interval is illustrative and is not enabled there or in the shared preset. Each pair has two endpoints within [-180°, 180°], sorted by the parser, and excludes the interior. To cover the ±180° wrap, use two intervals. Omitted or empty exclusions preserve the unrestricted solver behavior.
 
 ## Geometry contract
 

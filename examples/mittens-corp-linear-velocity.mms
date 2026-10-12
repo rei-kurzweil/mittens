@@ -1,8 +1,6 @@
 import { studio_stage, studio_floor } from "../assets/components/studio_stage.mms"
 import { teleport_pit } from "../assets/components/teleport_pit.mms"
-import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
-
-let arm_ik = vroid_arm_ik(-0.35, 1)
+import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 
 // XR-only button-driven linear Velocity test. Forward/back change the outer
 // grounding root's world velocity using the active XR eye's horizontal heading.
@@ -86,8 +84,7 @@ let xr_input = InputXR.on() {
             mouth_open_smoothing(16.0)
             voice_level
             initial_yaw(3.14159)
-            left_two_bone_ik(arm_ik.left)
-            right_two_bone_ik(arm_ik.right)
+            arm_ik(vroid_arm_ik_bend_plane_prototype())
             hand_rotation_smoothing(220.0)
             T { bisket_avatar }
             T.position(0.0, 0.08, 0.12) {

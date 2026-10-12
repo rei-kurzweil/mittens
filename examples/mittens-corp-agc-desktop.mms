@@ -1,8 +1,6 @@
 import { studio_stage, studio_floor } from "../assets/components/studio_stage.mms"
 import { teleport_pit } from "../assets/components/teleport_pit.mms"
-import { vroid_arm_ik_defaults } from "../assets/components/arm_ik/vroid.mms"
-
-let arm_ik = vroid_arm_ik_defaults()
+import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 
 // mittens-corp-agc-desktop — desktop microphone AGC tuning with Rei(mu).
 //
@@ -404,9 +402,7 @@ let bisket = GLTF.new("assets/models/rei(mu).glb") {
 
 let avatar = AVC.movement_target("[name='agc_desktop_grounding_root']") {
 
-    left_two_bone_ik(arm_ik.left)
-
-    right_two_bone_ik(arm_ik.right)
+    arm_ik(vroid_arm_ik_bend_plane_prototype())
     name = "agc_desktop_avatar_control"
     mouth_open_from_amplitude(voice_level)
     // The performer-facing centre/range form is equivalent to the legacy

@@ -4315,6 +4315,47 @@ fn apply_call(
     }
     if let Some(avc) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
         match method {
+            "arm_ik" => {
+                let fields = match arg(args, 0)? {
+                    Value::Map(fields) => fields.clone(),
+                    Value::Object(object) => object.with_map(Clone::clone).ok_or_else(|| {
+                        "arm_ik expects a table with left and/or right".to_string()
+                    })?,
+                    _ => return Err("arm_ik expects a table with left and/or right".to_string()),
+                };
+                let mut left = None;
+                let mut right = None;
+                for (side, value) in fields {
+                    let slot = match side.as_str() {
+                        "left" => &mut left,
+                        "right" => &mut right,
+                        _ => {
+                            return Err(format!(
+                                "arm_ik.{side}: unknown field; expected left or right"
+                            ));
+                        }
+                    };
+                    *slot = Some(parse_arm_two_bone_ik(&value, &side)?);
+                }
+                if left.is_some() && avc.left_two_bone_ik.is_some() {
+                    return Err(
+                        "left_two_bone_ik may only be set once per AVC (including arm_ik.left)"
+                            .to_string(),
+                    );
+                }
+                if right.is_some() && avc.right_two_bone_ik.is_some() {
+                    return Err(
+                        "right_two_bone_ik may only be set once per AVC (including arm_ik.right)"
+                            .to_string(),
+                    );
+                }
+                if let Some(config) = left {
+                    avc.left_two_bone_ik = Some(config);
+                }
+                if let Some(config) = right {
+                    avc.right_two_bone_ik = Some(config);
+                }
+            }
             "left_two_bone_ik" | "right_two_bone_ik" => {
                 let side = if method.starts_with("left") {
                     "left"

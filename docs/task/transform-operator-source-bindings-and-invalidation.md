@@ -5,6 +5,12 @@ Status: planned; this task adds documentation only. The existing uncommitted
 translation-sampler/AVC changes are the starting implementation, not work
 completed by this task.
 
+Before extending shared scheduling to `sample_translation`, resolve
+[Simplify default TOP translation sampling](simplify-transform-translation-sampling.md).
+That task reconsiders automatic external-source refresh and graph validation for
+the default sampler. Retained source bindings remain useful independently of
+that scheduling; the sampler scope below is subject to this review.
+
 ## Outcome
 
 Give transform operators a consistent runtime mechanism for retaining source

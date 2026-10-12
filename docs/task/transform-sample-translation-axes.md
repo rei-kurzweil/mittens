@@ -2,6 +2,12 @@
 
 ## Status and outcome
 
+Default dependency behavior is now under review in
+[Simplify default TOP translation sampling](simplify-transform-translation-sampling.md).
+The external-source chains, cycle validation, and bounded refresh waves below
+describe the current implementation; they are not requirements to preserve in
+the simpler default. This review adds documentation only.
+
 Implemented in the working tree; headset smoke testing is pending. The earlier
 TOP API and Rust consolidation passed user smoke testing through `c38c0502`.
 The new `SampleTranslation` kind in TransformOperatorComponent

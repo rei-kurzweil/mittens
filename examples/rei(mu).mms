@@ -1,7 +1,5 @@
 import { teleport_pit } from "../assets/components/teleport_pit.mms"
-import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
-
-let arm_ik = vroid_arm_ik(-0.35, 1)
+import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 
 // Rei(mu) XR scene with skinned bow-ribbon secondary motion.
 // Run: cargo run --release -- load 'examples/rei(mu).mms'
@@ -175,8 +173,7 @@ let player_motion = Velocity {
                     voice_level
 
                     initial_yaw(3.14159)
-                    left_two_bone_ik(arm_ik.left)
-                    right_two_bone_ik(arm_ik.right)
+                    arm_ik(vroid_arm_ik_bend_plane_prototype())
                     hand_rotation_smoothing(220.0)
 
                     T {

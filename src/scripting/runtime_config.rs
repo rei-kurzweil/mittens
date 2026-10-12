@@ -1444,7 +1444,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         method(vec![], mms::ValueType::Bool),
                     );
                     constructor_and_builder(component, "movement_target", any(1));
-                    for method in ["left_two_bone_ik", "right_two_bone_ik"] {
+                    for method in ["arm_ik", "left_two_bone_ik", "right_two_bone_ik"] {
                         constructor_and_builder(component, method, any(1));
                     }
                     for method in [

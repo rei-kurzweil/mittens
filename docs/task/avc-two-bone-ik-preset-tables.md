@@ -1,6 +1,8 @@
 # Task: pass two-bone IK preset tables to AVC
 
-Status: implemented. `left_two_bone_ik` and `right_two_bone_ik` accept the per-arm tables described here. This supersedes the child-component design originally drafted in this file. Live VR behavior still needs a headset check.
+Status: implemented. `arm_ik({ left = ..., right = ... })` applies both per-arm tables in one call; `left_two_bone_ik` and `right_two_bone_ik` remain available individually. This supersedes the child-component design originally drafted in this file. Live VR behavior still needs a headset check.
+
+The IK inspection scene and all eight avatar scenes with the studio-stage geometry now apply `arm_ik(vroid_arm_ik_bend_plane_prototype())`. The shared MMS factory contains poles `[1, -1.5, 1]` / `[-1, -1.5, 1]`, the two left exclusions, and an empty right exclusion list. This rolls out the prototype for testing; it is not a measured model-specific preset. Either side can be omitted from the outer table. The entire combined call is validated before mutation, and duplicate side configuration is rejected across combined and individual calls. Scene saving emits the resolved policies in one `arm_ik` call.
 
 ## Decision
 
@@ -55,7 +57,7 @@ AVC {
 
 MMS already has table values, arrays, imported functions that return data, and builder methods that accept values. Existing examples use tables for presets; `assets/components/mouth_response/rei_2026.9.mms` returns a plain table. The Rust side already handles table arguments for some builder methods, such as `EditorUI.panels`.
 
-A single `two_bone_ik({ left = ..., right = ... })` method could also work. Separate side methods fit the existing `left_arm_pole_direction` and `right_arm_pole_direction` AVC API and let a scene configure only one arm. A factory can still return both sides in one object, as shown above. We should choose one canonical builder surface; adding both forms now would create two spellings with unclear precedence.
+The combined `arm_ik({ left = ..., right = ... })` method consumes a factory's paired object directly. Individual side methods can configure just one arm. Both forms use the same per-arm parser and storage, with duplicate-side errors rather than precedence or merging.
 
 An ECS `TwoBoneIK` child component would be useful if the policy needed its own identity, live editor manipulation, independent lifetime, or references from other components. A static, saved preset passed to AVC does not need that machinery. The actual runtime `IKChainComponent` remains in place and remains the single solver for each eligible arm.
 

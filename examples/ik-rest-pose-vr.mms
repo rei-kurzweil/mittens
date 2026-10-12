@@ -1,9 +1,4 @@
-import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
-
-let arm_ik = vroid_arm_ik(-1.5, 1)
-// Prototype exclusions observed while the left elbow turns inward.
-// The right arm remains unrestricted until we measure its bad angles.
-arm_ik.left.forbidden_bend_normal_z_degrees = [[-178.0, -115.0], [-100.0, -60.0]]
+import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 
 // VR arm IK rest-pose comparison. The Rust launcher substitutes the model path
 // and panel labels. Right controller B records each of the four hand positions.
@@ -86,8 +81,7 @@ T {
                 voice_level
                 initial_yaw(3.14159)
                 // Bias elbows down when hands are held close to the chest.
-                left_two_bone_ik(arm_ik.left)
-                right_two_bone_ik(arm_ik.right)
+                arm_ik(vroid_arm_ik_bend_plane_prototype())
                 hand_rotation_smoothing(220.0)
                 T {
                     inspection_avatar
