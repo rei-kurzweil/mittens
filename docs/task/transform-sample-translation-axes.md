@@ -2,7 +2,9 @@
 
 ## Status and outcome
 
-Planned; documentation only. Add a transform operator component that
+Planned; not implemented. The TOP API and Rust consolidation are implemented
+and have passed user smoke testing (through `c38c0502`). Add a
+`SampleTranslation` kind to the existing TransformOperatorComponent that
 replaces selected translation coordinates in its incoming world matrix with
 coordinates sampled from a referenced TransformComponent, preserving the
 remaining coordinates and the incoming rotation/scale basis.
@@ -37,10 +39,10 @@ adding the sampled translation would double-count the shared parent motion.
 
 Proposed grouped syntax; not implemented yet:
 
-Prerequisite: the focused first phase of
-[transform operator API cleanup](transform-operator-api-cleanup.md). Add this
-operator under `TOP.sample_translation().source(...).axes(...)` before the
-capsule-height behavior change. `TransformSampleTranslation` remains a working
+Completed prerequisite: [transform operator API cleanup](transform-operator-api-cleanup.md),
+including the unified component and evaluator. Add this operator under
+`TOP.sample_translation().source(...).axes(...)` before the capsule-height
+behavior change. `TransformSampleTranslation` remains a working
 descriptive label in diagrams, not a second MMS API to introduce and retire.
 
 ```mms
@@ -59,11 +61,11 @@ TOP.sample_translation().source("[name='rei_mu_locomotion_root']").axes("y") {}
   translation replacement. Treat the letters as a set, not a swizzle: xz and zx
   have the same effect. Reject invalid or duplicate letters and serialize a
   canonical order.
-- The first API is a standalone transform operator, like TransformParent
-  or TransformApplyInverseLocal, with driven content nested beneath it. It
+- The first API is a separately nested operator instance, like `TOP.parent(...)`
+  or `TOP.inverse_local(...)`, with driven content nested beneath it. It
   edits translation only and preserves the incoming matrix's linear basis.
-  Placement as an operation inside a TRS channel map is not part of this first
-  API; the map must not silently ignore an unsupported nested operator.
+  Embedding it in a fork’s channel-operation list is outside this first API.
+  Nest it below the fork to apply it to the recomposed matrix.
 - Sample **world translation** in the first version, matching the incoming
   world transform basis. Local axes, arbitrary coordinate
   frames, scalar expressions, blend weights, and component reordering are
@@ -110,10 +112,10 @@ the capsule T beneath it. The fork still strips rotation and scale; the new
 stage edits the resulting matrix's Y; the capsule T then applies its calibrated
 local offset. This updates the earlier channel-map-only proposal.
 
-AVC currently generates a fork, three map components, and the capsule T.
-The preceding focused refactor replaces simple pass/drop map configuration
-with builder values while preserving that fork's output. The height fix then
-inserts this stage between fork and capsule T and recalibrates the offset.
+AVC now generates a TOP fork with rotation/scale drops stored as values,
+followed directly by the capsule T. The old map/drop helper components are gone.
+The height fix inserts this new kind between fork and capsule T and recalibrates
+the offset.
 HMD driver and avatar parentage stay unchanged; capsule T gains the stage as
 its immediate parent.
 
@@ -127,14 +129,13 @@ fork, or TRS decomposition is required merely to replace matrix translation.
 
 ## Runtime, resolution, and ordering
 
-Recognize the component as a stream boundary and evaluate it in
-`transform_operator.rs::evaluate_operator`, returning the edited matrix
+Recognize the new kind as an operator boundary and evaluate it in
+`ecs/system/transform_operator.rs::evaluate_operator`, returning the edited matrix
 and its downstream children. This parallels the existing standalone parent
 routing/inverse-local stages. Selected matrix translation entries are replaced
 without decomposing or rewriting rotation/scale, backed by the component and
-MMS registration/round-trip support. Keep this focused; grouping
-all transform operators under one component with constructors/builders is
-tracked separately in [operator API cleanup](transform-operator-api-cleanup.md).
+MMS registration/round-trip support. Use the existing unified component and
+kind-specific validation; do not introduce another standalone ECS operator type.
 
 Resolve references outside the hot path and retain authored metadata plus a
 validated live handle. Component-value/GUID sources use the existing indexed
@@ -150,8 +151,8 @@ both on startup and after source loss.
 
 Sources must be propagated before consumers evaluate. Input changes already
 participate in normal stream propagation; changes to a referenced source also
-need targeted dependent refresh. Do not assume the stream system's tick
-re-evaluates every stream: its current tick only updates elapsed-time state.
+need targeted dependent refresh. Do not assume the operator system's tick
+re-evaluates every operator: its current tick only updates elapsed-time state.
 Avoid source/output dependency cycles and refresh loops. Validate selected
 coordinates are finite and exercise rotated/scaled parent composition.
 

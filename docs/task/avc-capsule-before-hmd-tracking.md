@@ -2,29 +2,37 @@
 
 ## Status and outcome
 
-Planned; documentation only. Keep the XR capsule following the head-driven
+Planned; not implemented. The TOP refactor is complete and has passed user smoke
+testing (through `c38c0502`). Keep the XR capsule following the head-driven
 avatar's X/Z, but replace its Y with the simulated locomotion frame's Y plus
 a stable calibrated offset. Keep grounding/static-contact correction on the
 existing physics/locomotion response target.
 
 Physical HMD Y must remain free inside the constrained frame on unchanged
-support. Physical X/Z still moves the capsule and participates in wall/floor
+support. This applies before mounting a vehicle and after dismounting,
+as well as while mounted. The reported pedestrian symptom is that the world
+moves with the head along Y, preventing physical crouch/stand movement relative
+to it; the fix must remove that cancellation in both directions. The isolated
+probe has confirmed downward cancellation; verify the full reported symptom
+through the real frame phases and a headset smoke test.
+
+Physical X/Z still moves the capsule and participates in wall/floor
 contact; this task does not promise unrestricted room-scale motion through walls.
 Gamepad motion, scripted movement, Velocity, gravity, and floor/wall contact
 still affect that frame. This is the prerequisite for
 [foot-penetration crouch IK](avc-foot-penetration-crouch-ik.md), not part of the
 crouch solver itself.
 
-Delivery order: first complete the focused
-[transform operator API refactor](transform-operator-api-cleanup.md), including
-compact fork configuration and the grouped translation sample; then implement
-this behavior/calibration change; then implement crouch IK. Full camera-specific
-and stateful-operator migration remains separate follow-up work.
+Next delivery order: implement and verify the generic
+[axis-selective TOP translation sample](transform-sample-translation-axes.md),
+then wire AVC’s capsule source/calibration and verify contact behavior; crouch IK
+follows afterward. The prerequisite [TOP refactor](transform-operator-api-cleanup.md),
+including existing stateful/camera-specific kind migration, is complete.
 
 ## Problem and current code
 
 `avatar_control_system.rs::try_init_or_route_capsule` currently creates a
-translation-only TransformForkTRS beneath `model_root_id`. The model root
+TOP fork with rotation/scale dropped beneath `model_root_id`. The model root
 follows the displaced tracked head in XYZ. Consequently, contact correction
 responds to physical head movement by displacing the outer locomotion root,
 which also carries the camera. A crouch can therefore raise the tracking
@@ -49,14 +57,14 @@ alternative: input = locomotion frame; sample body X/Z
 ```
 
 Prefer the first arrangement for the existing implementation. Keep the capsule
-branch beneath the model root's TransformForkTRS, retain its rotation/scale
+branch beneath the model root's TOP fork, retain its rotation/scale
 drops, then add a standalone translation-sampling stage to its recomposed
 output. Sample only Y from the pre-tracking frame and apply the calibrated
 capsule offset afterward. This replaces the earlier
 proposal to move the capsule alongside InputXR and exclude tracked XYZ.
 The file path is retained so existing task links remain valid.
 
-Concretely, insert the new sampling component **between TransformForkTRS and
+Concretely, insert the new sampling component **between the TOP fork and
 the capsule T**, as a downstream stage rather than inside its translation map:
 
 ```text
@@ -65,9 +73,8 @@ TOP.fork_trs().drop("rotation").drop("scale")
    └─ capsule T(calibrated offset) -> Zone -> Collidable
 ```
 
-The HMD transform and model root retain their existing parents. The preceding
-refactor replaces simple fork map/drop children with builder configuration.
-This height-fix slice then gives the capsule T the sampling operator as its
+The HMD transform and model root retain their existing parents. The completed
+refactor stores fork pass/drop settings as values. This height-fix slice then gives the capsule T the sampling operator as its
 parent and changes its calibrated offset. It edits fork output before the capsule local offset is applied.
 Putting the stage beneath capsule T would instead edit the basis of its
 descendants after that offset, not the capsule T itself; direct-T modifier
@@ -199,9 +206,8 @@ constraint graph, stair-stepping policy, or crouch joint solving is required.
 
 ## Related work
 
-- [Transform operator API cleanup](transform-operator-api-cleanup.md): compact
-  builders and uniform child-output semantics; its focused first phase comes
-  before this fix, while its broader migration can follow later.
+- [Completed transform operator API cleanup](transform-operator-api-cleanup.md):
+  unified Rust kind representation, builders, and ordinary child-output semantics.
 - [Axis-selective translation sampling](transform-sample-translation-axes.md)
 - [AVC upright character capsule](avc-upright-character-capsule.md)
 - [XR avatar grounding first slices](xr-avatar-grounding-first-slices.md)
