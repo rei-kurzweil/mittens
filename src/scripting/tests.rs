@@ -8222,7 +8222,7 @@ fn capsule_stick_figure_grounding_boundary_preserves_xr_locomotion_and_local_pos
     use crate::engine::ecs::component::InputXRComponent;
     use crate::engine::ecs::system::input_xr_gamepad_system::xr_locomotion_target_transform;
     use crate::engine::ecs::system::{
-        CameraSystem, CollisionSystem, LightSystem, TransformStreamSystem, TransformSystem,
+        CameraSystem, CollisionSystem, LightSystem, TransformOperatorSystem, TransformSystem,
     };
 
     let mut world = World::default();
@@ -8274,7 +8274,7 @@ fn capsule_stick_figure_grounding_boundary_preserves_xr_locomotion_and_local_pos
     );
 
     let mut transforms = TransformSystem::new();
-    let mut streams = TransformStreamSystem::new();
+    let mut streams = TransformOperatorSystem::new();
     let mut cameras = CameraSystem::new();
     let mut lights = LightSystem::new();
     let mut collisions = CollisionSystem::new();
@@ -10646,23 +10646,34 @@ fn roundtrip_pointer_debug_enable() {
 
 #[test]
 fn roundtrip_transform_sample_ancestor() {
-    use crate::engine::ecs::component::TransformSampleAncestorComponent;
-    let (world, id) = roundtrip_component(TransformSampleAncestorComponent::new().with_skip(3));
-    let got = world
-        .get_component_by_id_as::<crate::engine::ecs::component::TransformForkTRSComponent>(id)
+    use crate::engine::ecs::component::{
+        TransformChannel, TransformOperatorComponent, TransformVec3Op,
+    };
+    let mut original = TransformOperatorComponent::fork_trs();
+    original
+        .push_vec3(
+            TransformChannel::Translation,
+            TransformVec3Op::SampleAncestorTranslation { skip: 3 },
+        )
         .unwrap();
-    assert_eq!(got.translation_ops, vec![crate::engine::ecs::component::transform_pipeline::TransformVec3Op::SampleAncestorTranslation { skip: 3 }]);
+    let (world, id) = roundtrip_component(original);
+    let got = world
+        .get_component_by_id_as::<crate::engine::ecs::component::TransformOperatorComponent>(id)
+        .and_then(|operator| operator.fork_trs_settings())
+        .unwrap();
+    assert_eq!(got.translation_ops, vec![crate::engine::ecs::component::transform_operator::TransformVec3Op::SampleAncestorTranslation { skip: 3 }]);
 }
 
 #[test]
 fn roundtrip_transform_parent() {
-    use crate::engine::ecs::component::{ComponentRef, TransformParentComponent};
-    let original = TransformParentComponent::new()
-        .with_target_source(ComponentRef::Query("#hero".to_string()))
+    use crate::engine::ecs::component::{ComponentRef, TransformOperatorComponent};
+    let original = TransformOperatorComponent::parent()
+        .with_source(ComponentRef::Query("#hero".to_string()))
         .with_root_source(ComponentRef::Query("#scene".to_string()));
     let (world, id) = roundtrip_component(original);
     let got = world
-        .get_component_by_id_as::<TransformParentComponent>(id)
+        .get_component_by_id_as::<TransformOperatorComponent>(id)
+        .and_then(|operator| operator.parent_settings())
         .unwrap();
     match got.target_source.as_ref() {
         Some(ComponentRef::Query(s)) => assert_eq!(s, "#hero"),
@@ -10795,8 +10806,8 @@ fn top_rejects_wrong_kind_builders_channels_and_legacy_authoring() {
 
 #[test]
 fn top_constructors_and_last_channel_setting_are_valid_in_runtime_spec() {
-    use crate::engine::ecs::component::transform_pipeline::{
-        TransformForkTRSComponent, TransformVec3Op,
+    use crate::engine::ecs::component::transform_operator::{
+        TransformOperatorComponent, TransformVec3Op,
     };
     let source = r##"
         TransformOperator.fork_trs().drop("translation").smooth("translation", 5.0).pass("translation") {}
@@ -10822,16 +10833,48 @@ fn top_constructors_and_last_channel_setting_are_valid_in_runtime_spec() {
         &mut CommandQueue::new(),
     );
     assert!(out.errors.is_empty(), "{:?}", out.errors);
+    let operators: Vec<_> = world
+        .all_components()
+        .filter_map(|id| world.get_component_by_id_as::<TransformOperatorComponent>(id))
+        .collect();
+    assert_eq!(operators.len(), 11);
+    assert!(
+        operators
+            .iter()
+            .all(|operator| ComponentTrait::name(*operator) == "transform_operator")
+    );
+    for has_kind in [
+        operators
+            .iter()
+            .any(|operator| operator.fork_trs_settings().is_some()),
+        operators
+            .iter()
+            .any(|operator| operator.parent_settings().is_some()),
+        operators
+            .iter()
+            .any(|operator| operator.inverse_local_settings().is_some()),
+        operators
+            .iter()
+            .any(|operator| operator.camera_settings().is_some()),
+    ] {
+        assert!(has_kind, "constructor did not create its typed kind");
+    }
+
     let first = world
         .all_components()
-        .find_map(|id| world.get_component_by_id_as::<TransformForkTRSComponent>(id))
+        .find_map(|id| {
+            world
+                .get_component_by_id_as::<TransformOperatorComponent>(id)
+                .and_then(|operator| operator.fork_trs_settings())
+        })
         .unwrap();
     assert_eq!(first.translation_ops, vec![TransformVec3Op::Pass]);
     let (world, id) =
-        roundtrip_component(crate::engine::ecs::component::TransformParentComponent::new());
+        roundtrip_component(crate::engine::ecs::component::TransformOperatorComponent::parent());
     assert!(
         world
-            .get_component_by_id_as::<crate::engine::ecs::component::TransformParentComponent>(id)
+            .get_component_by_id_as::<crate::engine::ecs::component::TransformOperatorComponent>(id)
+            .and_then(|operator| operator.parent_settings())
             .unwrap()
             .target_source
             .is_none()
@@ -10840,7 +10883,7 @@ fn top_constructors_and_last_channel_setting_are_valid_in_runtime_spec() {
 
 #[test]
 fn top_migrated_fork_examples_load_in_runtime_spec() {
-    use crate::engine::ecs::component::TransformForkTRSComponent;
+    use crate::engine::ecs::component::TransformOperatorComponent;
     for fixture in ["examples/camera-constraint.mms", "examples/ui-layout.mms"] {
         let path = repo_path(fixture);
         let source = fs::read_to_string(&path).unwrap();
@@ -10856,7 +10899,8 @@ fn top_migrated_fork_examples_load_in_runtime_spec() {
         assert!(out.errors.is_empty(), "{fixture}: {:?}", out.errors);
         assert!(
             world.all_components().any(|id| world
-                .get_component_by_id_as::<TransformForkTRSComponent>(id)
+                .get_component_by_id_as::<TransformOperatorComponent>(id)
+                .and_then(|operator| operator.fork_trs_settings())
                 .is_some()),
             "{fixture}: no configured fork"
         );
@@ -10865,13 +10909,14 @@ fn top_migrated_fork_examples_load_in_runtime_spec() {
 
 #[test]
 fn roundtrip_transform_apply_inverse_local() {
-    use crate::engine::ecs::component::{ComponentRef, TransformApplyInverseLocalComponent};
-    let original = TransformApplyInverseLocalComponent::new(ComponentRef::Query(
+    use crate::engine::ecs::component::{ComponentRef, TransformOperatorComponent};
+    let original = TransformOperatorComponent::inverse_local(ComponentRef::Query(
         "#cockpit_camera_offset".to_string(),
     ));
     let (world, id) = roundtrip_component(original);
     let got = world
-        .get_component_by_id_as::<TransformApplyInverseLocalComponent>(id)
+        .get_component_by_id_as::<TransformOperatorComponent>(id)
+        .and_then(|operator| operator.inverse_local_settings())
         .unwrap();
     assert_eq!(
         got.source,
@@ -10881,16 +10926,20 @@ fn roundtrip_transform_apply_inverse_local() {
 
 #[test]
 fn roundtrip_quat_temporal_filter() {
-    use crate::engine::ecs::component::QuatTemporalFilterComponent;
-    let (world, id) =
-        roundtrip_component(QuatTemporalFilterComponent::new().with_smoothing_factor(220.0));
+    use crate::engine::ecs::component::{TransformOperatorComponent, TransformQuatOp};
+    let mut original = TransformOperatorComponent::fork_trs();
+    original.push_rotation(TransformQuatOp::TemporalFilter {
+        smoothing_factor: 220.0,
+    });
+    let (world, id) = roundtrip_component(original);
     let got = world
-        .get_component_by_id_as::<crate::engine::ecs::component::TransformForkTRSComponent>(id)
+        .get_component_by_id_as::<crate::engine::ecs::component::TransformOperatorComponent>(id)
+        .and_then(|operator| operator.fork_trs_settings())
         .unwrap();
     assert_eq!(
         got.rotation_ops,
         vec![
-            crate::engine::ecs::component::transform_pipeline::TransformQuatOp::TemporalFilter {
+            crate::engine::ecs::component::transform_operator::TransformQuatOp::TemporalFilter {
                 smoothing_factor: 220.0
             }
         ]
@@ -10899,16 +10948,27 @@ fn roundtrip_quat_temporal_filter() {
 
 #[test]
 fn roundtrip_vector3_temporal_filter() {
-    use crate::engine::ecs::component::Vector3TemporalFilterComponent;
-    let (world, id) =
-        roundtrip_component(Vector3TemporalFilterComponent::new().with_smoothing_factor(15.0));
+    use crate::engine::ecs::component::{
+        TransformChannel, TransformOperatorComponent, TransformVec3Op,
+    };
+    let mut original = TransformOperatorComponent::fork_trs();
+    original
+        .push_vec3(
+            TransformChannel::Translation,
+            TransformVec3Op::TemporalSmooth {
+                smoothing_factor: 15.0,
+            },
+        )
+        .unwrap();
+    let (world, id) = roundtrip_component(original);
     let got = world
-        .get_component_by_id_as::<crate::engine::ecs::component::TransformForkTRSComponent>(id)
+        .get_component_by_id_as::<crate::engine::ecs::component::TransformOperatorComponent>(id)
+        .and_then(|operator| operator.fork_trs_settings())
         .unwrap();
     assert_eq!(
         got.translation_ops,
         vec![
-            crate::engine::ecs::component::transform_pipeline::TransformVec3Op::TemporalSmooth {
+            crate::engine::ecs::component::transform_operator::TransformVec3Op::TemporalSmooth {
                 smoothing_factor: 15.0
             }
         ]
@@ -10917,18 +10977,23 @@ fn roundtrip_vector3_temporal_filter() {
 
 #[test]
 fn roundtrip_quat_yaw_follow() {
-    use crate::engine::ecs::component::QuatYawFollowComponent;
-    let original = QuatYawFollowComponent::new(0.5, 2.0)
-        .with_forward_plus_z()
-        .with_initial_yaw(std::f32::consts::PI);
+    use crate::engine::ecs::component::{TransformOperatorComponent, TransformQuatOp};
+    let mut original = TransformOperatorComponent::fork_trs();
+    original.push_rotation(TransformQuatOp::YawFollow {
+        threshold: 0.5,
+        rate: 2.0,
+        initial_yaw: std::f32::consts::PI,
+        forward_plus_z: true,
+    });
     let (world, id) = roundtrip_component(original);
     let got = world
-        .get_component_by_id_as::<crate::engine::ecs::component::TransformForkTRSComponent>(id)
+        .get_component_by_id_as::<crate::engine::ecs::component::TransformOperatorComponent>(id)
+        .and_then(|operator| operator.fork_trs_settings())
         .unwrap();
     assert_eq!(
         got.rotation_ops,
         vec![
-            crate::engine::ecs::component::transform_pipeline::TransformQuatOp::YawFollow {
+            crate::engine::ecs::component::transform_operator::TransformQuatOp::YawFollow {
                 threshold: 0.5,
                 rate: 2.0,
                 forward_plus_z: true,
@@ -10941,13 +11006,13 @@ fn roundtrip_quat_yaw_follow() {
 #[test]
 fn roundtrip_signal_route_upward() {
     use crate::engine::ecs::component::SignalRouteUpwardComponent;
-    let original = SignalRouteUpwardComponent::new("UpdateTransform", "transform_pipeline");
+    let original = SignalRouteUpwardComponent::new("UpdateTransform", "transform_operator");
     let (world, id) = roundtrip_component(original);
     let got = world
         .get_component_by_id_as::<SignalRouteUpwardComponent>(id)
         .unwrap();
     assert_eq!(got.intent_kind, "UpdateTransform");
-    assert_eq!(got.parent_type, "transform_pipeline");
+    assert_eq!(got.parent_type, "transform_operator");
 }
 
 #[test]
@@ -11329,23 +11394,22 @@ fn roundtrip_transform_gizmo() {
 
 #[test]
 fn roundtrip_transform_camera_specific_modes() {
-    use crate::engine::ecs::component::{
-        TransformCameraSpecificComponent, TransformCameraSpecificMode,
-    };
+    use crate::engine::ecs::component::{TransformCameraSpecificMode, TransformOperatorComponent};
     for (component, expected) in [
         (
-            TransformCameraSpecificComponent::active_monoscopic(),
+            TransformOperatorComponent::camera_specific(TransformCameraSpecificMode::Monoscopic),
             TransformCameraSpecificMode::Monoscopic,
         ),
         (
-            TransformCameraSpecificComponent::active_stereoscopic(),
+            TransformOperatorComponent::camera_specific(TransformCameraSpecificMode::Stereoscopic),
             TransformCameraSpecificMode::Stereoscopic,
         ),
     ] {
         let (world, id) = roundtrip_component(component);
         assert_eq!(
             world
-                .get_component_by_id_as::<TransformCameraSpecificComponent>(id)
+                .get_component_by_id_as::<TransformOperatorComponent>(id)
+                .and_then(|operator| operator.camera_settings())
                 .unwrap()
                 .mode,
             expected

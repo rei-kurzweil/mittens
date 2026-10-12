@@ -1,8 +1,8 @@
 # Transform operators
 
 The MMS API is `TOP`, short for `TransformOperator`. Constructors choose the
-operation; builder calls configure it. The filename and Rust evaluator names
-retain historical pipeline/stream terminology. The
+operation; builder calls configure it. All kinds are represented by one
+`TransformOperatorComponent`, evaluated by `TransformOperatorSystem`. The
 [cleanup task](../task/transform-operator-api-cleanup.md) records migration status
 and the manual-test checkpoint before changing AVC capsule-height behavior.
 
@@ -89,45 +89,49 @@ their exceptional role remains explicit at this API checkpoint.
 
 ## Runtime representation and state
 
-The grouped MMS surface currently lowers to existing Rust components:
-`TransformForkTRSComponent`, `TransformParentComponent`,
-`TransformApplyInverseLocalComponent`, and `TransformCameraSpecificComponent`.
-A single Rust TransformOperatorComponent and backend terminology renames remain
-separate cleanup work. Backend component names/selectors are unchanged.
+Every TOP constructor creates a `TransformOperatorComponent` with a typed
+`TransformOperatorKind`: `ForkTrs`, `Parent`, `InverseLocal`, or `CameraSpecific`.
+Fork, parent-source, inverse-source, and camera settings are plain values inside
+the enum. They are not separate ECS components. A live operator keeps its own
+identity and temporal state, regardless of whether its settings equal another's.
 
-Fork components own typed `TransformVec3Op` / `TransformQuatOp` lists.
-`TransformStreamSystem` parses them into `TransformPipelinePlan` /
-`TransformForkTrsStage`, evaluates them, and returns the result plus downstream
-children. `TransformSystem` handles hierarchy propagation, cached world matrices,
-rendering, camera/light/collision updates, and continuing through nested operators.
-This is an ordered plan over one inherited basis, not a second general graph.
+The source modules are `ecs/component/transform_operator.rs` and
+`ecs/system/transform_operator.rs`. The backend component name is
+`transform_operator`; consumers inspect the typed kind to distinguish routing,
+forking, and camera settings. Retired backend component names are not aliases.
+Source queries should use durable GUIDs or labels when identifying a particular
+operator. Kind-specific handling in topology refresh, attachments, source
+collection, and transform mutation now matches that enum.
 
-Temporal values live in TransformStreamSystem, keyed by live owner and channel /
-operation path, and are not serialized. The existing dt handling, smoothing math,
-yaw conventions, and source dependency behavior are retained. Translation and
-scale smoothing now have distinct channel keys. Cleanup of stale temporal entries
-and resetting state after live operation-list edits remain follow-up work; they
-are not completed by this namespace migration.
+Fork settings own typed `TransformVec3Op` / `TransformQuatOp` lists.
+`TransformOperatorSystem::evaluate_operator` evaluates borrowed live settings
+and returns a processed matrix plus ordinary children. It does not traverse
+configuration subtrees, clone channel lists, or allocate a plan on propagation.
+`TransformOperatorPlan` remains available for standalone evaluation of snapshots.
+`TransformSystem` handles hierarchy propagation, cached matrices, and renderer,
+camera, light, and collision updates.
+
+The former separate fork/parent/inverse/camera ECS types, map/drop/merge components,
+and standalone filter/yaw/ancestor configuration components are removed. Rust
+fixtures use operator constructors and values. Serialization reads those values
+directly; there is no legacy configuration folding or fork-child exclusion helper.
+Camera-specific markers retain the explicitly documented live-settings exception.
+
+Temporal values live in TransformOperatorSystem, keyed by live owner, channel,
+and operation path, and are not serialized. Existing dt handling, smoothing math,
+yaw conventions, and source dependencies are preserved. Cleanup of stale temporal
+entries and state reset after live operation-list edits remain follow-up work.
 There is no per-frame MMS callback or new whole-world dependency scan.
-
-Legacy Rust map/drop/filter/merge types remain for compatibility with Rust
-fixtures and plans. Generated AVC capsule/body operators and gizmo operators now
-use value configuration. Fork serialization folds legacy configuration children
-into TOP builders and omits those helpers from the dumped output tree.
-The separate legacy MMS component spellings are no longer registered.
-After the user's smoke test, the next slice removes those Rust helper components
-and their parser/dump exclusions, migrating remaining Rust fixtures to value
-settings. The compatibility filtering is transitional, not the desired final
-output contract.
 
 ## Validation and next work
 
 Checks cover constructor/schema validation, nested outputs and downstream offset
 order, source-driven refresh, GUID-preserving dump/reload, separate temporal state,
-and old-map versus value-configured output across multiple frames. Existing camera
-refresh and render/picking tests remain applicable.
+and independent channel/instance state. Ordinary forks expose every direct child
+as output; camera refresh and render/picking tests remain applicable.
 
-The user will test this API migration before further transform/locomotion work.
+The initial MMS migration passed the user’s smoke test. The Rust consolidation
+requires another smoke test before further transform/locomotion work.
 `TOP.sample_translation().source(...).axes(...)` is still a proposal in the
 [axis-sampling task](../task/transform-sample-translation-axes.md). AVC capsule
 height is still driven by the current topology; the HMD Y contact issue and

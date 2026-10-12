@@ -40,7 +40,7 @@ use crate::engine::ecs::system::TextInputSystem;
 use crate::engine::ecs::system::TextSystem;
 use crate::engine::ecs::system::TextureSystem;
 use crate::engine::ecs::system::ToggleSystem;
-use crate::engine::ecs::system::TransformStreamSystem;
+use crate::engine::ecs::system::TransformOperatorSystem;
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::system::TransitionSystem;
 use crate::engine::ecs::system::VelocitySystem;
@@ -93,7 +93,7 @@ pub struct SystemWorld {
     pub animation: AnimationSystem,
     pub transition: TransitionSystem,
 
-    pub transform_stream: TransformStreamSystem,
+    pub transform_operator: TransformOperatorSystem,
     pub transform: TransformSystem,
     pub bvh: BvhSystem,
     pub collision: CollisionSystem,
@@ -2578,7 +2578,7 @@ impl SystemWorld {
             world,
             visuals,
             component,
-            &mut self.transform_stream,
+            &mut self.transform_operator,
             &mut self.camera,
             &mut self.light,
             &mut self.collision,
@@ -3023,7 +3023,7 @@ impl SystemWorld {
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
 
-        self.transform_stream.tick(world, visuals, input, dt_sec);
+        self.transform_operator.tick(world, visuals, input, dt_sec);
 
         // Ensure transforms are propagated before any camera systems consume world matrices.
         let phase_started = profile_systems.then(Instant::now);
@@ -3089,7 +3089,8 @@ impl SystemWorld {
             && visuals
                 .visual_camera(crate::engine::graphics::CameraTarget::Xr)
                 .is_some_and(|c| !c.eyes.is_empty());
-        self.transform_stream.set_stereoscopic_active(stereo_active);
+        self.transform_operator
+            .set_stereoscopic_active(stereo_active);
         let gizmo_anchors = self.transform_gizmo.update_camera_scales(
             world,
             visuals,
@@ -3176,7 +3177,7 @@ impl SystemWorld {
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
         // head_pose_body_xz_follow owns model_root XZ translation + neck
-        // rest-pin. Runs after AVC init so model_root_id / body_pipeline_id
+        // rest-pin. Runs after AVC init so model_root_id / body_operator_id
         // are populated and all of AVC's writes above have landed.
         self.head_pose_body_xz_follow.tick(world, queue, dt_sec);
         self.ik.tick(world, queue, dt_sec);

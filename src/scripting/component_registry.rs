@@ -1,5 +1,6 @@
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::component::AssetPayloadComponent;
+use crate::engine::ecs::component::TransformCameraSpecificMode;
 use crate::engine::ecs::component::style::VerticalAlign;
 /// Component registry: maps MMS type names to engine component constructors.
 ///
@@ -43,17 +44,14 @@ use crate::engine::ecs::component::{
     SpotLightComponent, SpringBoneComponent, SpringColliderComponent, SpringCollidersComponent,
     SpringJointComponent, StencilClipComponent, StyleComponent, TextAlign, TextComponent,
     TextInputComponent, TextShadowComponent, TextureComponent, TextureFilteringComponent,
-    ToggleComponent, ToonOutlineComponent, ToonOutlineOverride,
-    TransformApplyInverseLocalComponent, TransformCameraSpecificComponent, TransformComponent,
-    TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
-    TransformGizmoCoordSpace, TransformGizmoPlane, TransformGizmoRotateComponent,
-    TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
-    TransformGizmoTranslatePlaneComponent, TransformMapRotationComponent,
-    TransformMapScaleComponent, TransformMapTranslationComponent, TransformMergeTRSComponent,
-    TransformParentComponent, TransitionComponent, TransitionEasing, TransitionReplacePolicy,
-    TransparentCutoutComponent, UVComponent, UnlitComponent, VRChatOSCEyeTrackingComponent,
-    VelocityComponent, VolumeNormalizationComponent, WordWrapMode, XREyeTrackingComponent,
-    XREyeTrackingHtcComponent, XRHandComponent, XrComponent, XrHandPreference, ZoneComponent,
+    ToggleComponent, ToonOutlineComponent, ToonOutlineOverride, TransformComponent,
+    TransformGizmoAxis, TransformGizmoComponent, TransformGizmoCoordSpace, TransformGizmoPlane,
+    TransformGizmoRotateComponent, TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
+    TransformGizmoTranslatePlaneComponent, TransformOperatorComponent, TransitionComponent,
+    TransitionEasing, TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
+    UnlitComponent, VRChatOSCEyeTrackingComponent, VelocityComponent, VolumeNormalizationComponent,
+    WordWrapMode, XREyeTrackingComponent, XREyeTrackingHtcComponent, XRHandComponent, XrComponent,
+    XrHandPreference, ZoneComponent,
 };
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::CameraTarget;
@@ -559,8 +557,8 @@ fn collect_referenced_guids_filtered(
 ) {
     use crate::engine::ecs::component::{
         CollidableComponent, ComponentRef, GridBindingComponent, IKChainComponent,
-        MountableComponent, RiderComponent, SliderComponent, TransformApplyInverseLocalComponent,
-        TransformParentComponent, ZoneComponent,
+        MountableComponent, RiderComponent, SliderComponent, TransformOperatorComponent,
+        ZoneComponent,
     };
 
     let visible = filtered_save_visibility(world, node);
@@ -576,7 +574,10 @@ fn collect_referenced_guids_filtered(
                 }
             }
         }
-        if let Some(tp) = world.get_component_by_id_as::<TransformParentComponent>(node) {
+        if let Some(tp) = world
+            .get_component_by_id_as::<TransformOperatorComponent>(node)
+            .and_then(|operator| operator.parent_settings())
+        {
             for src in [&tp.target_source, &tp.root_source]
                 .iter()
                 .copied()
@@ -587,8 +588,9 @@ fn collect_referenced_guids_filtered(
                 }
             }
         }
-        if let Some(operator) =
-            world.get_component_by_id_as::<TransformApplyInverseLocalComponent>(node)
+        if let Some(operator) = world
+            .get_component_by_id_as::<TransformOperatorComponent>(node)
+            .and_then(|operator| operator.inverse_local_settings())
             && let ComponentRef::Guid(guid) = &operator.source
         {
             out.insert(*guid);
@@ -666,9 +668,6 @@ fn filtered_ce_ast_inner(
 
     let mut child_components = Vec::new();
     for &child_id in world.children_of(root) {
-        if is_operator_configuration_child(world, root, child_id) {
-            continue;
-        }
         child_components.extend(filtered_ce_ast_inner(world, child_id, referenced_guids)?);
     }
 
@@ -715,24 +714,6 @@ pub fn subtree_to_ce_ast_limited(
     subtree_to_ce_ast_inner_limited(world, root, &referenced_guids, 0, max_depth)
 }
 
-fn is_operator_configuration_child(world: &World, parent: ComponentId, child: ComponentId) -> bool {
-    world
-        .get_component_by_id_as::<TransformForkTRSComponent>(parent)
-        .is_some()
-        && (world
-            .get_component_by_id_as::<TransformMapTranslationComponent>(child)
-            .is_some()
-            || world
-                .get_component_by_id_as::<TransformMapRotationComponent>(child)
-                .is_some()
-            || world
-                .get_component_by_id_as::<TransformMapScaleComponent>(child)
-                .is_some()
-            || world
-                .get_component_by_id_as::<TransformMergeTRSComponent>(child)
-                .is_some())
-}
-
 fn ensure_subtree_has_no_opaque_keyframe_callback(
     world: &World,
     root: ComponentId,
@@ -760,8 +741,8 @@ fn collect_referenced_guids_limited(
 ) {
     use crate::engine::ecs::component::{
         CollidableComponent, ComponentRef, GridBindingComponent, IKChainComponent,
-        MountableComponent, RiderComponent, SliderComponent, TransformApplyInverseLocalComponent,
-        TransformParentComponent, ZoneComponent,
+        MountableComponent, RiderComponent, SliderComponent, TransformOperatorComponent,
+        ZoneComponent,
     };
     if let Some(ik) = world.get_component_by_id_as::<IKChainComponent>(node) {
         for src in [&ik.target_source, &ik.end_effector_source]
@@ -774,7 +755,10 @@ fn collect_referenced_guids_limited(
             }
         }
     }
-    if let Some(tp) = world.get_component_by_id_as::<TransformParentComponent>(node) {
+    if let Some(tp) = world
+        .get_component_by_id_as::<TransformOperatorComponent>(node)
+        .and_then(|operator| operator.parent_settings())
+    {
         for src in [&tp.target_source, &tp.root_source]
             .iter()
             .copied()
@@ -785,8 +769,9 @@ fn collect_referenced_guids_limited(
             }
         }
     }
-    if let Some(operator) =
-        world.get_component_by_id_as::<TransformApplyInverseLocalComponent>(node)
+    if let Some(operator) = world
+        .get_component_by_id_as::<TransformOperatorComponent>(node)
+        .and_then(|operator| operator.inverse_local_settings())
         && let ComponentRef::Guid(guid) = &operator.source
     {
         out.insert(*guid);
@@ -893,9 +878,6 @@ fn subtree_to_ce_ast_inner_limited(
         return Ok(ce);
     }
     for &child_id in children {
-        if is_operator_configuration_child(world, root, child_id) {
-            continue;
-        }
         let child_ce = subtree_to_ce_ast_inner_limited(
             world,
             child_id,
@@ -2147,19 +2129,19 @@ fn create_component(
         },
         "TransformOperator" => match ctor {
             Some("parent") => {
-                let mut operator = TransformParentComponent::new();
-                if !args.is_empty() { operator.target_source = Some(arg_component_ref(world, args, 0)?); }
+                let mut operator = TransformOperatorComponent::parent();
+                if !args.is_empty() { operator = operator.with_source(arg_component_ref(world, args, 0)?); }
                 add!(operator)
             },
-            Some("inverse_local") => add!(TransformApplyInverseLocalComponent::new(arg_component_ref(world, args, 0)?)),
+            Some("inverse_local") => add!(TransformOperatorComponent::inverse_local(arg_component_ref(world, args, 0)?)),
             Some("camera_specific") => add!(match arg_str(args, 0)? {
-                "monoscopic" => TransformCameraSpecificComponent::active_monoscopic(),
-                "stereoscopic" => TransformCameraSpecificComponent::active_stereoscopic(),
+                "monoscopic" => TransformOperatorComponent::camera_specific(TransformCameraSpecificMode::Monoscopic),
+                "stereoscopic" => TransformOperatorComponent::camera_specific(TransformCameraSpecificMode::Stereoscopic),
                 mode => return Err(format!("TOP.camera_specific: unknown mode {mode:?}")),
             }),
-            Some("fork_trs") => add!(TransformForkTRSComponent::new()),
+            Some("fork_trs") => add!(TransformOperatorComponent::fork_trs()),
             Some(method @ ("drop" | "smooth" | "sample_ancestor" | "extract_yaw" | "yaw_follow")) => {
-                let id = world.add_component(TransformForkTRSComponent::new());
+                let id = world.add_component(TransformOperatorComponent::fork_trs());
                 apply_call(world, id, method, args)?;
                 Ok(id)
             }
@@ -2892,17 +2874,19 @@ fn apply_call(
     args: &[Value],
 ) -> Result<(), String> {
     if world
-        .get_component_by_id_as::<TransformForkTRSComponent>(id)
+        .get_component_by_id_as::<TransformOperatorComponent>(id)
+        .and_then(|operator| operator.fork_trs_settings())
         .is_some()
     {
-        use crate::engine::ecs::component::transform_pipeline::{
+        use crate::engine::ecs::component::transform_operator::{
             TransformChannel, TransformQuatOp, TransformVec3Op,
         };
         match method {
             "drop" | "pass" => {
                 let channel = TransformChannel::parse(arg_str(args, 0)?)?;
                 world
-                    .get_component_by_id_as_mut::<TransformForkTRSComponent>(id)
+                    .get_component_by_id_as_mut::<TransformOperatorComponent>(id)
+                    .and_then(|operator| operator.fork_trs_settings_mut())
                     .unwrap()
                     .set_channel(channel, method == "drop");
             }
@@ -2913,7 +2897,8 @@ fn apply_call(
                     return Err("TOP.smooth requires a finite non-negative smoothing factor".into());
                 }
                 let fork = world
-                    .get_component_by_id_as_mut::<TransformForkTRSComponent>(id)
+                    .get_component_by_id_as_mut::<TransformOperatorComponent>(id)
+                    .and_then(|operator| operator.fork_trs_settings_mut())
                     .unwrap();
                 if channel == TransformChannel::Rotation {
                     fork.push_rotation(TransformQuatOp::TemporalFilter {
@@ -2932,7 +2917,8 @@ fn apply_call(
                 let channel = TransformChannel::parse(arg_str(args, 0)?)?;
                 let skip = arg_u32(args, 1)? as usize;
                 let fork = world
-                    .get_component_by_id_as_mut::<TransformForkTRSComponent>(id)
+                    .get_component_by_id_as_mut::<TransformOperatorComponent>(id)
+                    .and_then(|operator| operator.fork_trs_settings_mut())
                     .unwrap();
                 if channel == TransformChannel::Rotation {
                     fork.push_rotation(TransformQuatOp::SampleAncestorRotation { skip });
@@ -2945,7 +2931,8 @@ fn apply_call(
                 }
             }
             "extract_yaw" => world
-                .get_component_by_id_as_mut::<TransformForkTRSComponent>(id)
+                .get_component_by_id_as_mut::<TransformOperatorComponent>(id)
+                .and_then(|operator| operator.fork_trs_settings_mut())
                 .unwrap()
                 .push_rotation(TransformQuatOp::ExtractYaw),
             "yaw_follow" => {
@@ -2957,7 +2944,8 @@ fn apply_call(
                     );
                 }
                 world
-                    .get_component_by_id_as_mut::<TransformForkTRSComponent>(id)
+                    .get_component_by_id_as_mut::<TransformOperatorComponent>(id)
+                    .and_then(|operator| operator.fork_trs_settings_mut())
                     .unwrap()
                     .push_rotation(TransformQuatOp::YawFollow {
                         threshold,
@@ -2981,7 +2969,8 @@ fn apply_call(
                     return Err("TOP.initial_yaw requires a finite angle".into());
                 }
                 let fork = world
-                    .get_component_by_id_as_mut::<TransformForkTRSComponent>(id)
+                    .get_component_by_id_as_mut::<TransformOperatorComponent>(id)
+                    .and_then(|operator| operator.fork_trs_settings_mut())
                     .unwrap();
                 let Some(TransformQuatOp::YawFollow {
                     initial_yaw,
@@ -3714,19 +3703,26 @@ fn apply_call(
         return Ok(());
     }
     if world
-        .get_component_by_id_as::<TransformParentComponent>(id)
+        .get_component_by_id_as::<TransformOperatorComponent>(id)
+        .and_then(|operator| operator.parent_settings())
         .is_some()
     {
         match method {
             "source" => {
                 let src = arg_component_ref(world, args, 0)?;
-                if let Some(tp) = world.get_component_by_id_as_mut::<TransformParentComponent>(id) {
+                if let Some(tp) = world
+                    .get_component_by_id_as_mut::<TransformOperatorComponent>(id)
+                    .and_then(|operator| operator.parent_settings_mut())
+                {
                     tp.target_source = Some(src);
                 }
             }
             "root" => {
                 let src = arg_component_ref(world, args, 0)?;
-                if let Some(tp) = world.get_component_by_id_as_mut::<TransformParentComponent>(id) {
+                if let Some(tp) = world
+                    .get_component_by_id_as_mut::<TransformOperatorComponent>(id)
+                    .and_then(|operator| operator.parent_settings_mut())
+                {
                     tp.root_source = Some(src);
                 }
             }
@@ -3809,7 +3805,8 @@ fn apply_call(
         return Ok(());
     }
     if world
-        .get_component_by_id_as::<TransformApplyInverseLocalComponent>(id)
+        .get_component_by_id_as::<TransformOperatorComponent>(id)
+        .and_then(|operator| operator.inverse_local_settings())
         .is_some()
     {
         if method != "source" {
@@ -3818,15 +3815,17 @@ fn apply_call(
             ));
         }
         let source = arg_component_ref(world, args, 0)?;
-        if let Some(operator) =
-            world.get_component_by_id_as_mut::<TransformApplyInverseLocalComponent>(id)
+        if let Some(operator) = world
+            .get_component_by_id_as_mut::<TransformOperatorComponent>(id)
+            .and_then(|operator| operator.inverse_local_settings_mut())
         {
             operator.source = source;
         }
         return Ok(());
     }
     if world
-        .get_component_by_id_as::<TransformCameraSpecificComponent>(id)
+        .get_component_by_id_as::<TransformOperatorComponent>(id)
+        .and_then(|operator| operator.camera_settings())
         .is_some()
     {
         return Err(format!(

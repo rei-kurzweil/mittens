@@ -128,7 +128,7 @@ fork, or TRS decomposition is required merely to replace matrix translation.
 ## Runtime, resolution, and ordering
 
 Recognize the component as a stream boundary and evaluate it in
-`transform_stream_system.rs::evaluate_stream_node`, returning the edited matrix
+`transform_operator.rs::evaluate_operator`, returning the edited matrix
 and its downstream children. This parallels the existing standalone parent
 routing/inverse-local stages. Selected matrix translation entries are replaced
 without decomposing or rewriting rotation/scale, backed by the component and

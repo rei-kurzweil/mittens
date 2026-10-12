@@ -52,7 +52,7 @@ the system that writes those values, not to `TransformCameraSpecificComponent` i
 Evaluation happens in this order:
 
 1. `TransformSystem` evaluates the generic anchor and its upstream transform-stream basis.
-2. `TransformStreamSystem` selects the settings transform for the active camera family.
+2. `TransformOperatorSystem` selects the settings transform for the active camera family.
 3. It computes:
 
    ```text
@@ -80,7 +80,7 @@ refresh of that anchor may therefore arrive with the previous effective matrix a
 the settings scale were multiplied onto that matrix again, the content would grow or shrink every
 frame.
 
-`TransformStreamSystem` retains both the pre-camera basis and the previous effective matrix for
+`TransformOperatorSystem` retains both the pre-camera basis and the previous effective matrix for
 each camera-specific anchor. When a refresh feeds back the previous effective matrix, evaluation
 reuses the retained pre-camera basis. A genuinely new upstream matrix replaces that basis.
 
@@ -168,7 +168,7 @@ family-specific bounds, or transform rays into a canonical picking space.
 
 ### 2. Multi-valued transform streams
 
-`TransformStreamSystem` could produce a bundle rather than one matrix:
+`TransformOperatorSystem` could produce a bundle rather than one matrix:
 
 ```text
 TransformVariants {

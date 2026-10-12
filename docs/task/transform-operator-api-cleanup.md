@@ -2,33 +2,36 @@
 
 ## Status and outcome
 
-Existing MMS operator migration implemented; awaiting the user’s smoke test. Make transform
-operators a coherent component/API family with obvious input/output composition
-and compact MMS authoring. Use **transform operator** as the public term; pipeline and stream remain historical
-or implementation names until deliberately migrated.
+The MMS API migration passed the user's smoke test and was committed as
+`55facf82`. The following Rust consolidation now implements that same API with
+one ECS component; another manual smoke test is pending before locomotion work.
 
-MMS namespace: `TOP` (transform operator), long form `TransformOperator`.
-The parser uses dotted calls, such as `TOP.fork_trs()`; `TOP::` describes the
-namespace informally. Constructors select the operator kind; builders configure it.
-Existing operator spellings, examples, and dumps migrate together. The grouped API
-lowers to existing Rust kinds/plans during this behavior-preserving checkpoint.
-The proposed `sample_translation` operation is not implemented yet.
+MMS namespace: `TOP`, long form `TransformOperator`. Calls remain dotted,
+such as `TOP.fork_trs().drop("rotation")`. Constructors select typed kind values
+inside `TransformOperatorComponent`: fork TRS, parent routing, inverse-local,
+or camera-specific settings. `TransformOperatorSystem` evaluates them.
+Source files are `ecs/component/transform_operator.rs` and
+`ecs/system/transform_operator.rs`; the active spec is
+[transform operators](../spec/transform-operators.md).
 
-**User checkpoint:** finish migrating every existing MMS operator, then stop for
-manual testing before adding axis sampling, changing AVC capsule height, or
-implementing crouch IK. Generated capsule/body and gizmo forks use value settings;
-camera markers retain their documented live-settings T exception. See the
-[implemented API](../spec/transform-pipeline.md) for the constructor inventory.
+**Implemented after the first smoke test:**
 
-**Next after smoke testing:** remove the old TransformMapTranslation,
-TransformMapRotation, TransformMapScale, TransformDrop, and TransformMergeTRS
-components and migrate their remaining Rust fixtures to builder/value settings.
-Retire obsolete standalone filter/yaw/ancestor configuration helpers where their
-only role is configuring a fork. Delete the legacy map parser branches, dump
-folding, and `is_operator_configuration_child` filtering once there are no such
-helper trees left. Every ordinary fork child should then be output by construction.
-This is the next cleanup slice before proceeding to axis sampling / locomotion;
-it should not be deferred behind those behavioral changes.
+- Consolidated the four standalone operator components into one typed component.
+  Fork/parent/inverse/camera settings are values, not additional components.
+- Removed map/drop/merge and standalone smoothing/yaw/ancestor helper components,
+  legacy map parsing, serializer folding, and `is_operator_configuration_child`.
+  All ordinary fork children are output content by construction.
+- Migrated generated operators, Rust fixtures, durable-source collection,
+  attachment parent routing, topology refresh, and transform mutation handling
+  to discriminate the operator kind.
+- Renamed the evaluator, modules, plan terminology, SystemWorld field,
+  operator-owned mutation error, and body/gizmo operator names. Fork propagation
+  evaluates borrowed settings directly without cloning a plan/channel vectors.
+
+Camera markers retain their documented live-settings T exception. The new axis
+sampler, capsule-height/contact routing change, and crouch IK remain subsequent
+slices. Temporal cache cleanup/reset after live configuration edits is separate
+follow-up work; this consolidation does not claim it is complete.
 
 This is a new cleanup beyond the earlier
 [authored pipeline cleanup](transform-pipeline-cleanup-checklist.md), which
@@ -37,8 +40,8 @@ output wrapper or introduce a second graph language.
 
 ## Findings before this migration
 
-`transform_stream_system.rs::downstream_children` already sends the fork's
-recomposed matrix to every direct child except TransformMapTranslation,
+Before this refactor, `transform_stream_system.rs::downstream_children` sent the
+fork's recomposed matrix to every direct child except TransformMapTranslation,
 TransformMapRotation, TransformMapScale, and TransformMergeTRS. Output roots
 are not restricted to TransformComponent. Another operator is already a valid
 continuation. `TransformSystem::propagate_subtree` evaluates operators during
@@ -129,19 +132,19 @@ a ComponentRef and `.axes(...)` selects coordinates to replace. Both component
 variables and query/GUID strings follow the existing engine reference API.
 The source is not evaluated by an MMS callback each frame.
 
-A likely Rust representation is one `TransformOperatorComponent` with a typed
-kind enum and validated per-kind configuration. `TOP` would be its MMS alias,
+The implemented Rust representation is one `TransformOperatorComponent` with a typed
+kind enum and validated per-kind configuration. `TOP` is its MMS alias,
 not an untyped bag of arbitrary fields. Constructor/method validation must
 remain specific to the selected kind. Switching kind on a live instance is
 outside the first migration slice; do not accidentally retain incompatible
 temporal state or references through such a change.
 
-Separate compact authoring from runtime implementation: grouped constructors
-can initially lower to existing components/plans while behavior is proven.
-If the existing representation remains temporarily, document that distinction
-and account for generated configuration helpers. The final authored child rule
-must still be clear; simply aliasing old types as TOP would not remove mixed
-configuration/output children.
+The first committed MMS slice lowered grouped constructors to existing
+components/plans while behavior was proven. The subsequent Rust consolidation
+replaces those separate component types with typed kind values.
+The remaining helper representations and fork-child exclusions are now removed.
+The authored child rule is implemented directly rather than relying on aliases
+for the old component types.
 
 ## Inventory and migration decisions
 
@@ -192,15 +195,11 @@ The separate command-queue/signal-staging work remains separate.
 
 ## Testable slices
 
-Delivery decision: migrate **all existing MMS operators** first, including
-stateful and camera-specific spellings, then stop for the user's manual test.
-This checkpoint deliberately retains the existing capsule-height behavior.
-After the API passes that checkpoint, remove the obsolete configuration helper
-components and the compatibility exclusions described above. Then introduce the
-Y sample and its composition fixture, then apply AVC calibration/contact routing in the dedicated height-fix
-task. Crouch IK follows afterward. Backend type consolidation and camera-settings
-representation changes can be reviewed separately; they are not implied by an
-MMS namespace migration.
+Delivery decision: the existing MMS API migration passed its manual checkpoint.
+Finish the Rust component/evaluator consolidation and removal of obsolete helpers,
+then validate and smoke-test this slice. Introduce the Y sample and its composition
+fixture afterward; AVC calibration/contact routing follows in the height-fix task,
+then crouch IK. Camera-settings representation changes remain a separate decision.
 
 1. **Contract and inventory:** document current configuration exceptions and
    normal downstream children; prove nested operators and multiple output
@@ -232,7 +231,26 @@ fixture in slice 3 proves operator composition and offset order; the subsequent
 [height-fix task](avc-capsule-before-hmd-tracking.md) owns AVC calibration,
 contact routing, and headset acceptance. Keep those reviewable changes separate.
 
-## API migration checkpoint validation
+## Rust consolidation validation
+
+- 81 transform tests passed; the same three baseline scripting failures listed
+  below were excluded. Helper-tree parsing fixtures were retired; direct output
+  and live-instance state-isolation fixtures cover the consolidated representation.
+- All four TOP tests passed, including a check that every existing constructor
+  creates the same component type with the correct typed kind.
+- 105 round-trip checks passed, excluding the three known legacy failures below.
+- 20 gizmo, 27 AVC, 20 attachment, nine mittens-corp, and three RuntimeSpec schema
+  checks passed. One existing attachment benchmark remains ignored.
+- `cargo check --examples` passed. Ordinary fork propagation borrows settings;
+  no configuration topology parse or channel-vector clone remains on that path.
+- The active spec and related links now use `transform-operators.md`, and source
+  modules use `transform_operator.rs`. Remaining historical names in the findings
+  and inventory describe the pre-migration architecture.
+
+A second user smoke test is pending on the rebuilt release binary. The existing
+MMS calls remain the same across this Rust consolidation.
+
+## Initial MMS migration validation (committed 55facf82)
 
 Automated checks on this slice:
 
@@ -249,14 +267,15 @@ Automated checks on this slice:
 - Dumps’ GUID property is registered in RuntimeSpec and supported by the direct
   registry, so referenced transforms survive the normal saved-scene load path.
 
-Broader test selections have known failures also reproduced from HEAD in a
+Broader test selections had known failures reproduced before consolidation in a
 separate source checkout: legacy animation/update-transform evaluation (two),
 legacy quaternion builder evaluation (one), animation/keyframe/music-note
 round-trips (three), and the secondary-motion example’s spring-chain count
 expectation (one: 17 expected, 15 present). These remain outside this API slice.
 They are recorded rather than counted as passing checks.
 
-Manual acceptance is pending. Use the rebuilt release engine to check:
+The user’s initial smoke test passed. Repeat these checks on the Rust consolidation’s
+rebuilt release engine before proceeding:
 
 1. `examples/mittens-corp.mms`: avatar body/head/controller motion, normal
    locomotion, car entry/exit, and prop selection/gizmos. Capsule calibration and
@@ -267,13 +286,13 @@ Manual acceptance is pending. Use the rebuilt release engine to check:
    On desktop and XR, gizmos should retain their current camera-dependent size
    and have matching rendered and picked positions.
 
-Stop at this checkpoint. After feedback, remove obsolete helper components and
-compatibility filtering before implementing the new translation-axis sample or
-changing locomotion behavior.
+The obsolete helper components and compatibility filtering are now removed.
+Stop after validating this consolidation, before implementing the new translation-axis
+sample or changing locomotion behavior.
 
 ## Related work
 
 - [AVC capsule height independent of tracking](avc-capsule-before-hmd-tracking.md)
 - [TransformParent routing](transform-parent-component-ref-routing.md)
 - [Camera-specific transform configuration](../spec/transform-camera-specific.md)
-- [Transform operator mechanics under the existing implementation](../spec/transform-pipeline.md)
+- [Transform operator mechanics under the existing implementation](../spec/transform-operators.md)

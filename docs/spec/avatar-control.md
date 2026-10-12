@@ -53,7 +53,7 @@ InputXR
   └── driven_t
         └── AvatarControlComponent
               │
-              ├── [sys] body_pipeline  (TransformPipeline)
+              ├── [sys] body_operator  (TransformOperatorComponent)
               │         └── ForkTRS
               │               ├── MapRotation
               │               │     └── QuatYawFollow { threshold, rate, initial_yaw }
@@ -96,17 +96,14 @@ InputXR
                     └── right_ctrl driven_t
 ```
 
-### Body pipeline detail
+### Body operator detail
 
 ```
-TransformPipeline  (input = driven_t world matrix, via nearest TC ancestor)
-  ForkTRS
-    MapRotation
-      QuatYawFollow { threshold: body_yaw_threshold, rate: body_yaw_rate }
-        (state owned by TransformStreamSystem, keyed by stage path)
-    MergeTRS  (translation + scale pass through unchanged)
-  PipelineOutput
-    model_root  (re-parented here; inherits shaped body yaw, no pitch/roll)
+TOP.fork_trs().yaw_follow(body_yaw_threshold, body_yaw_rate)
+  (input = driven_t world matrix, via nearest T ancestor)
+  (state owned by TransformOperatorSystem, keyed by operator ID / operation path)
+  model_root  (inherits shaped body yaw, no pitch/roll; translation and scale pass)
+
 ```
 
 Stripping pitch and roll before `model_root` means the model Y offset (the negative camera-anchor height)
@@ -196,7 +193,7 @@ driver and final camera consumer are still different.
 | Aspect | Shared between desktop and XR? | Desktop | XR |
 |---|---|---|---|
 | AVC init flow | Yes | Same `try_init_splices` path | Same `try_init_splices` path |
-| Body pipeline topology | Yes | `body_pipeline -> model_root` | `body_pipeline -> model_root` |
+| Body operator topology | Yes | `body_operator -> model_root` | `body_operator -> model_root` |
 | Visible head topology | Yes | `driven_t -> head_target -> head_bone` | `driven_t -> head_target -> head_bone` |
 | Head-target convention | Yes | Shared XR-style default | Shared XR-style default |
 | Default `head_target` yaw / head IK offset yaw | Yes | `π` | `π` |
@@ -245,7 +242,7 @@ What is not the same:
 
 `AvatarControlSystem::tick` only re-attempts init until `head_mount` is live.
 All per-frame pose work is handled by:
-- `TransformStreamSystem` — body pipeline (yaw follow) + hand smoothing pipeline
+- `TransformOperatorSystem` — body pipeline (yaw follow) + hand smoothing pipeline
 - `IKSystem` — arm TwoBoneIK and spine/body solving
 
 ---

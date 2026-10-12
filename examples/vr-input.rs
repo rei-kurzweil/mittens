@@ -7,7 +7,7 @@ use mittens_engine::engine::ecs::component::{
     RenderGraphComponent, RenderableComponent, RendererSettingsComponent, RendererStatsComponent,
     RestAttachmentComponent, SecondaryMotionComponent, SpringBoneComponent,
     SpringColliderComponent, SpringCollidersComponent, TransformComponent,
-    TransformForkTRSComponent, XrComponent,
+    TransformOperatorComponent, XrComponent,
 };
 use mittens_engine::engine::graphics::BuiltinMeshType;
 use mittens_engine::engine::graphics::CameraTarget;
@@ -118,7 +118,7 @@ fn spawn_controller_cube(
     hand: ControllerHand,
     color: (f32, f32, f32, f32),
     rotation_smoothing: f32,
-    use_rotation_filter_pipeline: bool,
+    use_rotation_filter_operator: bool,
 ) -> engine::ecs::ComponentId {
     let controller_marker = universe.world.add_component(ControllerXRComponent::new(
         true,
@@ -133,7 +133,7 @@ fn spawn_controller_cube(
         .add_component(TransformComponent::new().with_scale(0.06, 0.06, 0.12));
     let _ = universe.attach(controller_marker, controller_t);
 
-    if !use_rotation_filter_pipeline {
+    if !use_rotation_filter_operator {
         let cube = universe.world.add_component(RenderableComponent::cube());
         let cube_color = universe
             .world
@@ -145,8 +145,8 @@ fn spawn_controller_cube(
         return controller_marker;
     }
 
-    use mittens_engine::engine::ecs::component::transform_pipeline::TransformQuatOp;
-    let mut operator = TransformForkTRSComponent::new();
+    use mittens_engine::engine::ecs::component::transform_operator::TransformQuatOp;
+    let mut operator = TransformOperatorComponent::fork_trs();
     operator.push_rotation(TransformQuatOp::TemporalFilter {
         smoothing_factor: rotation_smoothing,
     });
@@ -298,7 +298,7 @@ fn main() {
     };
 
     println!(
-        "[vr-input] xr controller rotation filter pipeline: {}",
+        "[vr-input] xr controller rotation filter operator: {}",
         if options.xr_controller_rotation_filter {
             "enabled"
         } else {
@@ -422,7 +422,7 @@ fn main() {
     //     └── avatar_input_xr (InputXRComponent)
     //           └── avatar_driven_t (TransformComponent)
     //                 └── AvatarControlComponent
-    //                       ├── body_pipeline → pipeline_output
+    //                       ├── body_operator → operator_output
     //                       │     └── model_root (y auto-calibrated from J_Bip_C_Head)
     //                       │           └── GLTFComponent → ... → J_Bip_C_Head
     //                       │                                           └── CameraXRComponent

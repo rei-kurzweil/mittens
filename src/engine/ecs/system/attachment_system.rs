@@ -1,7 +1,7 @@
 use crate::engine::ecs::component::{
     ComponentRef, ControllerHand, InputComponent, InputXRGamepadComponent, MountableComponent,
     QueryRootMode, RiderComponent, SerializeComponent, TransformComponent,
-    TransformParentComponent, XRHandComponent, resolve_component_ref,
+    TransformOperatorComponent, XRHandComponent, resolve_component_ref,
 };
 use crate::engine::ecs::system::grabbable_system::ensure_generated_raycastable;
 use crate::engine::ecs::system::pointer_system::nearest_ancestor_transform;
@@ -266,7 +266,7 @@ impl AttachmentSystem {
         let transform_parent = world.add_component_boxed_named(
             "mounted_transform_parent",
             Box::new(
-                TransformParentComponent::new().with_target_source(ComponentRef::Guid(target_guid)),
+                TransformOperatorComponent::parent().with_source(ComponentRef::Guid(target_guid)),
             ),
         );
         let serialize = world.add_component(SerializeComponent::off());
@@ -588,8 +588,9 @@ fn effective_parent_world(world: &World, parent: Option<ComponentId>) -> [[f32; 
         if let Some(transform) = world.get_component_by_id_as::<TransformComponent>(current) {
             return transform.transform.matrix_world;
         }
-        if let Some(transform_parent) =
-            world.get_component_by_id_as::<TransformParentComponent>(current)
+        if let Some(transform_parent) = world
+            .get_component_by_id_as::<TransformOperatorComponent>(current)
+            .and_then(|operator| operator.parent_settings())
             && let Some(target) = transform_parent.resolve_target_component(world)
             && let Some(matrix) = TransformSystem::world_model(world, target)
         {
@@ -1178,7 +1179,8 @@ mod tests {
         assert!(
             fixture
                 .world
-                .get_component_by_id_as::<TransformParentComponent>(runtime_parent)
+                .get_component_by_id_as::<TransformOperatorComponent>(runtime_parent)
+                .and_then(|operator| operator.parent_settings())
                 .is_some()
         );
         assert!(!is_descendant_or_self(

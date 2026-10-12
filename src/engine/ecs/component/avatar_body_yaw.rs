@@ -1,13 +1,13 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
 
-/// Sits between the avatar body pipeline root and `model_root`.
+/// Sits between the avatar body operator root and `model_root`.
 /// Tracks head yaw and smoothly rotates the body to follow when the
 /// relative yaw exceeds `threshold`.
 ///
 /// Topology:
 /// ```text
-/// TransformForkTRS (body_pipeline)
+/// TOP.fork_trs() (body_operator)
 ///   AvatarBodyYawComponent   ← this node
 ///     TransformComponent (model_root, Y-offset + base rotation)
 ///       GLTFComponent

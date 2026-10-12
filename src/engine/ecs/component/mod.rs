@@ -114,12 +114,7 @@ pub mod texture_filtering;
 pub mod toggle;
 pub mod toon_outline;
 pub mod transform;
-pub mod transform_apply_inverse_local;
-pub mod transform_camera_specific;
-pub mod transform_parent;
-pub mod transform_pipeline;
-pub mod transform_pipeline_map;
-pub mod transform_temporal_filter;
+pub mod transform_operator;
 pub mod transition;
 pub mod unlit;
 pub mod uv;
@@ -357,21 +352,9 @@ pub use texture_filtering::TextureFilteringComponent;
 pub use toggle::ToggleComponent;
 pub use toon_outline::{ToonOutlineComponent, ToonOutlineMatchRule, ToonOutlineOverride};
 pub use transform::TransformComponent;
-pub use transform_apply_inverse_local::TransformApplyInverseLocalComponent;
-pub use transform_camera_specific::{
-    TransformCameraSpecificComponent, TransformCameraSpecificMode,
-};
-pub use transform_parent::TransformParentComponent;
-pub use transform_pipeline::{
-    TransformDropComponent, TransformForkTRSComponent, TransformMergeTRSComponent,
-    TransformSampleAncestorComponent,
-};
-pub use transform_pipeline_map::{
-    TransformMapRotationComponent, TransformMapScaleComponent, TransformMapTranslationComponent,
-};
-pub use transform_temporal_filter::{
-    QuatExtractYawComponent, QuatTemporalFilterComponent, QuatYawFollowComponent,
-    Vector3TemporalFilterComponent,
+pub use transform_operator::{
+    TransformCameraSpecificMode, TransformChannel, TransformForkTrsSettings,
+    TransformOperatorComponent, TransformOperatorKind, TransformQuatOp, TransformVec3Op,
 };
 pub use transition::{TransitionComponent, TransitionEasing, TransitionReplacePolicy};
 pub use transmission::{

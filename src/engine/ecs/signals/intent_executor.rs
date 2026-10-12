@@ -897,7 +897,7 @@ fn collect_transform_targets(world: &World, target: ComponentId, out: &mut Vec<C
 
 fn emit_topology_transform_refresh(world: &World, emit: &mut dyn SignalEmitter, cid: ComponentId) {
     use crate::engine::ecs::IntentValue;
-    use crate::engine::ecs::component::{TransformComponent, TransformParentComponent};
+    use crate::engine::ecs::component::{TransformComponent, TransformOperatorComponent};
 
     // If this node is a TransformComponent, refreshing it updates cached world matrices
     // for its whole subtree.
@@ -908,7 +908,8 @@ fn emit_topology_transform_refresh(world: &World, emit: &mut dyn SignalEmitter, 
     }
 
     if world
-        .get_component_by_id_as::<TransformParentComponent>(cid)
+        .get_component_by_id_as::<TransformOperatorComponent>(cid)
+        .and_then(|operator| operator.parent_settings())
         .is_some()
     {
         emit.push_intent_now(cid, IntentValue::UpdateTransformWorld { component_id: cid });
@@ -919,7 +920,8 @@ fn emit_topology_transform_refresh(world: &World, emit: &mut dyn SignalEmitter, 
     let mut cur = cid;
     while let Some(p) = world.parent_of(cur) {
         if world
-            .get_component_by_id_as::<TransformParentComponent>(p)
+            .get_component_by_id_as::<TransformOperatorComponent>(p)
+            .and_then(|operator| operator.parent_settings())
             .is_some()
         {
             emit.push_intent_now(p, IntentValue::UpdateTransformWorld { component_id: p });

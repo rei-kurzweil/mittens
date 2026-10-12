@@ -2,12 +2,12 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     Camera2DComponent, Camera3DComponent, CollisionComponent, LayoutBoundsComponent,
-    LayoutVisualPlacementComponent, RenderableComponent, TransformApplyInverseLocalComponent,
-    TransformComponent, TransformParentComponent,
+    LayoutVisualPlacementComponent, RenderableComponent, TransformComponent,
+    TransformOperatorComponent,
 };
 use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::System;
-use crate::engine::ecs::system::TransformStreamSystem;
+use crate::engine::ecs::system::TransformOperatorSystem;
 use crate::engine::ecs::system::bounds_system::BoundsSystem;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::primitives::InstanceHandle;
@@ -31,7 +31,7 @@ pub enum TransformAccessError {
     InvalidWorldMatrix(TransformTrsError),
     InvalidDesiredTrs(TransformTrsError),
     UnresolvedTransformParent(ComponentId),
-    TransformStreamOwned(ComponentId),
+    TransformOperatorOwned(ComponentId),
     SingularEffectiveParent(ComponentId),
     InvalidLocalMatrix(TransformTrsError),
 }
@@ -50,9 +50,9 @@ impl std::fmt::Display for TransformAccessError {
                 formatter,
                 "transform-parent boundary {component:?} has no resolved target"
             ),
-            Self::TransformStreamOwned(component) => write!(
+            Self::TransformOperatorOwned(component) => write!(
                 formatter,
-                "world transform for {component:?} is owned by a transform-stream boundary"
+                "world transform for {component:?} is owned by a transform operator boundary"
             ),
             Self::SingularEffectiveParent(component) => write!(
                 formatter,
@@ -76,7 +76,7 @@ impl std::error::Error for TransformAccessError {
             | Self::InvalidLocalMatrix(error) => Some(error),
             Self::NotTransform(_)
             | Self::UnresolvedTransformParent(_)
-            | Self::TransformStreamOwned(_)
+            | Self::TransformOperatorOwned(_)
             | Self::SingularEffectiveParent(_) => None,
         }
     }
@@ -173,33 +173,34 @@ impl TransformSystem {
         visuals: &mut VisualWorld,
         root_node: ComponentId,
         inherited_world: TransformMatrix,
-        transform_stream_system: &mut TransformStreamSystem,
+        transform_operator: &mut TransformOperatorSystem,
         camera_system: &mut crate::engine::ecs::system::CameraSystem,
         collision_system: &mut CollisionSystem,
     ) {
         let mut stack: Vec<(ComponentId, TransformMatrix)> = vec![(root_node, inherited_world)];
         while let Some((node, current_world)) = stack.pop() {
-            let stream_evaluated =
-                transform_stream_system.evaluate_stream_node(world, node, current_world);
-            let (current_world, stream_output_roots) = match stream_evaluated {
+            let operator_evaluated =
+                transform_operator.evaluate_operator(world, node, current_world);
+            let (current_world, operator_outputs) = match operator_evaluated {
                 Some((processed_world, outputs)) => (processed_world, Some(outputs)),
                 None => (current_world, None),
             };
             // Camera-specific anchors own the effective cached matrix as well as the
             // inherited basis supplied to their direct children.
-            if stream_output_roots.is_some() {
+            if operator_outputs.is_some() {
                 if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(node) {
                     t.transform.matrix_world = current_world;
                 }
             }
 
-            let children: Vec<ComponentId> = match stream_output_roots {
+            let children: Vec<ComponentId> = match operator_outputs {
                 Some(outputs) => outputs,
                 None => world.children_of(node).to_vec(),
             };
             for child in children {
-                let inherited = if let Some(tp) =
-                    world.get_component_by_id_as::<TransformParentComponent>(child)
+                let inherited = if let Some(tp) = world
+                    .get_component_by_id_as::<TransformOperatorComponent>(child)
+                    .and_then(|operator| operator.parent_settings())
                 {
                     let Some(target) = tp.resolve_target_component(world) else {
                         continue;
@@ -410,7 +411,7 @@ impl TransformSystem {
         world: &mut World,
         visuals: &mut VisualWorld,
         changed_component: ComponentId,
-        transform_stream_system: &mut TransformStreamSystem,
+        transform_operator: &mut TransformOperatorSystem,
         camera_system: &mut crate::engine::ecs::system::CameraSystem,
         light_system: &mut crate::engine::ecs::system::LightSystem,
         collision_system: &mut CollisionSystem,
@@ -419,13 +420,15 @@ impl TransformSystem {
             .all_components()
             .filter(|&cid| {
                 world
-                    .get_component_by_id_as::<TransformParentComponent>(cid)
+                    .get_component_by_id_as::<TransformOperatorComponent>(cid)
+                    .and_then(|operator| operator.parent_settings())
                     .is_some()
             })
             .filter(|&cid| !Self::is_descendant_of(world, cid, changed_component))
             .filter(|&cid| {
                 let target_transform = world
-                    .get_component_by_id_as::<TransformParentComponent>(cid)
+                    .get_component_by_id_as::<TransformOperatorComponent>(cid)
+                    .and_then(|operator| operator.parent_settings())
                     .and_then(|tp| tp.resolve_target_component(world))
                     .and_then(|target| Self::nearest_transform_self_or_ancestor(world, target));
                 target_transform.is_some_and(|target_transform| {
@@ -437,7 +440,8 @@ impl TransformSystem {
 
         for dependent in dependents {
             let Some(inherited_world) = world
-                .get_component_by_id_as::<TransformParentComponent>(dependent)
+                .get_component_by_id_as::<TransformOperatorComponent>(dependent)
+                .and_then(|operator| operator.parent_settings())
                 .and_then(|tp| tp.resolve_target_component(world))
                 .and_then(|target| Self::world_model(world, target))
             else {
@@ -449,7 +453,7 @@ impl TransformSystem {
                 visuals,
                 dependent,
                 inherited_world,
-                transform_stream_system,
+                transform_operator,
                 camera_system,
                 collision_system,
             );
@@ -475,16 +479,15 @@ impl TransformSystem {
         world: &mut World,
         visuals: &mut VisualWorld,
         changed_component: ComponentId,
-        transform_stream_system: &mut TransformStreamSystem,
+        transform_operator: &mut TransformOperatorSystem,
         camera_system: &mut crate::engine::ecs::system::CameraSystem,
         light_system: &mut crate::engine::ecs::system::LightSystem,
         collision_system: &mut CollisionSystem,
     ) {
-        let dependents = transform_stream_system.inverse_local_dependents(changed_component);
+        let dependents = transform_operator.inverse_local_dependents(changed_component);
 
         for dependent in dependents {
-            let Some(inherited_world) =
-                transform_stream_system.inverse_local_cached_input(dependent)
+            let Some(inherited_world) = transform_operator.inverse_local_cached_input(dependent)
             else {
                 continue;
             };
@@ -493,7 +496,7 @@ impl TransformSystem {
                 visuals,
                 dependent,
                 inherited_world,
-                transform_stream_system,
+                transform_operator,
                 camera_system,
                 collision_system,
             );
@@ -585,12 +588,12 @@ impl TransformSystem {
     /// Convert a desired world-space TRS into the local TRS which produces it.
     ///
     /// The effective parent follows the same structural, TransformParent, and
-    /// transform-stream boundaries used by transform propagation. A transform
-    /// directly owned by a stream operator is rejected because changing its
+    /// transform operator boundaries used by transform propagation. A transform
+    /// directly owned by a transform operator is rejected because changing its
     /// local value cannot promise a stable world result.
     pub fn world_to_local_trs(
         world: &World,
-        transform_stream_system: &TransformStreamSystem,
+        transform_operator: &TransformOperatorSystem,
         component: ComponentId,
         desired_world: TransformTrs,
     ) -> Result<TransformTrs, TransformAccessError> {
@@ -612,8 +615,9 @@ impl TransformSystem {
             if let Some(transform) = world.get_component_by_id_as::<TransformComponent>(parent) {
                 break transform.transform.matrix_world;
             }
-            if let Some(transform_parent) =
-                world.get_component_by_id_as::<TransformParentComponent>(parent)
+            if let Some(transform_parent) = world
+                .get_component_by_id_as::<TransformOperatorComponent>(parent)
+                .and_then(|operator| operator.parent_settings())
             {
                 let Some(target) = transform_parent.resolve_target_component(world) else {
                     return Err(TransformAccessError::UnresolvedTransformParent(parent));
@@ -623,8 +627,8 @@ impl TransformSystem {
                 };
                 break target_world;
             }
-            if transform_stream_system.is_transform_stream_boundary(world, parent) {
-                return Err(TransformAccessError::TransformStreamOwned(component));
+            if transform_operator.is_operator_boundary(world, parent) {
+                return Err(TransformAccessError::TransformOperatorOwned(component));
             }
             probe = parent;
         };
@@ -644,16 +648,17 @@ impl TransformSystem {
         world: &mut World,
         visuals: &mut VisualWorld,
         component: ComponentId,
-        transform_stream_system: &mut TransformStreamSystem,
+        transform_operator: &mut TransformOperatorSystem,
         camera_system: &mut crate::engine::ecs::system::CameraSystem,
         light_system: &mut crate::engine::ecs::system::LightSystem,
         collision_system: &mut CollisionSystem,
     ) {
         if world
-            .get_component_by_id_as::<TransformApplyInverseLocalComponent>(component)
+            .get_component_by_id_as::<TransformOperatorComponent>(component)
+            .and_then(|operator| operator.inverse_local_settings())
             .is_some()
         {
-            let inherited_world = transform_stream_system
+            let inherited_world = transform_operator
                 .inverse_local_cached_input(component)
                 .or_else(|| {
                     let mut current = component;
@@ -673,7 +678,7 @@ impl TransformSystem {
                 visuals,
                 component,
                 inherited_world,
-                transform_stream_system,
+                transform_operator,
                 camera_system,
                 collision_system,
             );
@@ -684,7 +689,8 @@ impl TransformSystem {
             return;
         }
         if let Some(inherited_world) = world
-            .get_component_by_id_as::<TransformParentComponent>(component)
+            .get_component_by_id_as::<TransformOperatorComponent>(component)
+            .and_then(|operator| operator.parent_settings())
             .and_then(|tp| tp.resolve_target_component(world))
             .and_then(|target| Self::world_model(world, target))
         {
@@ -693,14 +699,15 @@ impl TransformSystem {
                 visuals,
                 component,
                 inherited_world,
-                transform_stream_system,
+                transform_operator,
                 camera_system,
                 collision_system,
             );
             light_system.transform_changed(world, visuals, component);
         }
         if world
-            .get_component_by_id_as::<TransformParentComponent>(component)
+            .get_component_by_id_as::<TransformOperatorComponent>(component)
+            .and_then(|operator| operator.parent_settings())
             .is_some()
         {
             return;
@@ -709,13 +716,13 @@ impl TransformSystem {
         // Then update any dependent renderables/cameras under the subtree.
 
         // Build the chain of ancestor transforms (including `component`) from root -> leaf,
-        // stopping at any TC whose immediate non-TC ancestors include a transform-stream
+        // stopping at any TC whose immediate non-TC ancestors include a transform operator
         // boundary node. Such a TC's `matrix_world` is owned by that boundary's computed
         // basis: walking further up and recomputing from local matrices would bypass the
         // operator and overwrite its output with incorrect values. Instead we treat that TC
         // as the chain root and start the chain-world from its cached `matrix_world`.
         let mut transform_chain: Vec<ComponentId> = Vec::new();
-        let mut stream_boundary = false; // true → transform_chain[0] is stream-operator-managed
+        let mut operator_boundary = false; // true → transform_chain[0] is operator-managed
         let mut transform_parent_basis = None;
         let mut transform_parent_boundary = false;
         let mut cur = component;
@@ -725,27 +732,30 @@ impl TransformSystem {
                 .is_some()
             {
                 transform_chain.push(cur);
-                // Check whether this TC sits directly under a transform-stream boundary node
+                // Check whether this TC sits directly under a transform operator boundary node
                 // (i.e., any non-TC node on the path to the next TC ancestor changes the
                 // inherited world basis). If so, its world is operator-managed — stop here.
                 let mut probe = cur;
                 while let Some(p) = world.parent_of(probe) {
-                    if let Some(tp) = world.get_component_by_id_as::<TransformParentComponent>(p) {
+                    if let Some(tp) = world
+                        .get_component_by_id_as::<TransformOperatorComponent>(p)
+                        .and_then(|operator| operator.parent_settings())
+                    {
                         transform_parent_boundary = true;
                         transform_parent_basis = tp
                             .resolve_target_component(world)
                             .and_then(|target| Self::world_model(world, target));
                         break 'chain;
                     }
-                    if transform_stream_system.is_transform_stream_boundary(world, p) {
-                        stream_boundary = true;
+                    if transform_operator.is_operator_boundary(world, p) {
+                        operator_boundary = true;
                         break 'chain;
                     }
                     if world
                         .get_component_by_id_as::<TransformComponent>(p)
                         .is_some()
                     {
-                        break; // reached next TC ancestor without finding a stream boundary
+                        break; // reached next TC ancestor without finding a operator boundary
                     }
                     probe = p;
                 }
@@ -765,12 +775,12 @@ impl TransformSystem {
 
         // Compute world matrices down the chain and write them back.
         //
-        // If `stream_boundary` is set, transform_chain[0] is under a stream operator.
+        // If `operator_boundary` is set, transform_chain[0] is under a transform operator.
         // Its cached `matrix_world` is stream-managed — use it as the starting world and
         // skip recomputing it from local matrices (which would bypass the operator).
         let (start_idx, mut chain_world) = if let Some(basis) = transform_parent_basis {
             (0, basis)
-        } else if stream_boundary && !transform_chain.is_empty() {
+        } else if operator_boundary && !transform_chain.is_empty() {
             let cached = world
                 .get_component_by_id_as::<TransformComponent>(transform_chain[0])
                 .map(|t| t.transform.matrix_world)
@@ -808,7 +818,7 @@ impl TransformSystem {
             visuals,
             component,
             root_world,
-            transform_stream_system,
+            transform_operator,
             camera_system,
             collision_system,
         );
@@ -820,7 +830,7 @@ impl TransformSystem {
             world,
             visuals,
             component,
-            transform_stream_system,
+            transform_operator,
             camera_system,
             light_system,
             collision_system,
@@ -829,7 +839,7 @@ impl TransformSystem {
             world,
             visuals,
             component,
-            transform_stream_system,
+            transform_operator,
             camera_system,
             light_system,
             collision_system,
@@ -842,11 +852,11 @@ mod tests {
     use super::{TransformAccessError, TransformSystem};
     use crate::engine::ecs::World;
     use crate::engine::ecs::component::{
-        ComponentRef, LayoutVisualPlacementComponent, TransformApplyInverseLocalComponent,
-        TransformComponent, TransformParentComponent,
+        ComponentRef, LayoutVisualPlacementComponent, TransformComponent,
+        TransformOperatorComponent,
     };
     use crate::engine::ecs::system::{
-        CameraSystem, CollisionSystem, LightSystem, TransformStreamSystem,
+        CameraSystem, CollisionSystem, LightSystem, TransformOperatorSystem,
     };
     use crate::engine::graphics::VisualWorld;
     use crate::engine::graphics::bounds::Aabb;
@@ -857,7 +867,7 @@ mod tests {
         let mut world = World::default();
         let mut visuals = VisualWorld::default();
         let mut transform_system = TransformSystem::new();
-        let mut transform_stream_system = TransformStreamSystem::new();
+        let mut transform_operator = TransformOperatorSystem::new();
         let mut camera_system = CameraSystem::new();
         let mut light_system = LightSystem::new();
         let mut collision_system = CollisionSystem::new();
@@ -865,7 +875,7 @@ mod tests {
         let driver = world.add_component(TransformComponent::new().with_position(10.0, 0.0, 0.0));
         let source = world.add_component(TransformComponent::new().with_position(0.0, 3.0, 0.0));
         let source_guid = world.get_component_record(source).unwrap().guid;
-        let operator = world.add_component(TransformApplyInverseLocalComponent::new(
+        let operator = world.add_component(TransformOperatorComponent::inverse_local(
             ComponentRef::Guid(source_guid),
         ));
         let car = world.add_component(TransformComponent::new().with_position(0.0, 0.1, 0.0));
@@ -877,7 +887,7 @@ mod tests {
             &mut world,
             &mut visuals,
             driver,
-            &mut transform_stream_system,
+            &mut transform_operator,
             &mut camera_system,
             &mut light_system,
             &mut collision_system,
@@ -897,7 +907,7 @@ mod tests {
             &mut world,
             &mut visuals,
             source,
-            &mut transform_stream_system,
+            &mut transform_operator,
             &mut camera_system,
             &mut light_system,
             &mut collision_system,
@@ -913,7 +923,7 @@ mod tests {
         let mut world = World::default();
         let mut visuals = VisualWorld::default();
         let mut transform_system = TransformSystem::new();
-        let mut transform_stream_system = TransformStreamSystem::new();
+        let mut transform_operator = TransformOperatorSystem::new();
         let mut camera_system = CameraSystem::new();
         let mut light_system = LightSystem::new();
         let mut collision_system = CollisionSystem::new();
@@ -921,7 +931,7 @@ mod tests {
         let source = world.add_component(TransformComponent::new().with_position(1.0, 0.0, 0.0));
         let dependent_root = world.add_component(TransformComponent::new());
         let transform_parent =
-            world.add_component(TransformParentComponent::new().with_target_source(
+            world.add_component(TransformOperatorComponent::parent().with_source(
                 crate::engine::ecs::component::ComponentRef::Query("#source".to_string()),
             ));
         let child = world.add_component(TransformComponent::new().with_position(0.0, 2.0, 0.0));
@@ -934,7 +944,7 @@ mod tests {
             &mut world,
             &mut visuals,
             source,
-            &mut transform_stream_system,
+            &mut transform_operator,
             &mut camera_system,
             &mut light_system,
             &mut collision_system,
@@ -964,7 +974,7 @@ mod tests {
             .get_component_by_id_as_mut::<TransformComponent>(root)
             .unwrap();
         root_transform.transform.matrix_world = root_transform.transform.model;
-        let non_transform = world.add_component(TransformParentComponent::new());
+        let non_transform = world.add_component(TransformOperatorComponent::parent());
 
         assert_eq!(
             TransformSystem::world_translation(&world, root),
@@ -994,7 +1004,7 @@ mod tests {
         let mut world = World::default();
         let mut visuals = VisualWorld::default();
         let mut transform_system = TransformSystem::new();
-        let mut transform_stream_system = TransformStreamSystem::new();
+        let mut transform_operator = TransformOperatorSystem::new();
         let mut camera_system = CameraSystem::new();
         let mut light_system = LightSystem::new();
         let mut collision_system = CollisionSystem::new();
@@ -1019,7 +1029,7 @@ mod tests {
             &mut world,
             &mut visuals,
             visual,
-            &mut transform_stream_system,
+            &mut transform_operator,
             &mut camera_system,
             &mut light_system,
             &mut collision_system,
@@ -1083,7 +1093,7 @@ mod tests {
         let desired = TransformTrs::new([4.0, 5.0, 6.0], [0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0]);
         let local = TransformSystem::world_to_local_trs(
             &world,
-            &TransformStreamSystem::new(),
+            &TransformOperatorSystem::new(),
             child,
             desired,
         )

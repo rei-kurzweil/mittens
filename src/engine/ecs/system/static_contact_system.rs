@@ -371,13 +371,13 @@ mod tests {
 
     fn propagate(world: &mut World, target: ComponentId) {
         use crate::engine::ecs::system::{
-            CameraSystem, CollisionSystem, LightSystem, TransformStreamSystem,
+            CameraSystem, CollisionSystem, LightSystem, TransformOperatorSystem,
         };
         TransformSystem::new().transform_changed(
             world,
             &mut crate::engine::graphics::VisualWorld::default(),
             target,
-            &mut TransformStreamSystem::new(),
+            &mut TransformOperatorSystem::new(),
             &mut CameraSystem::new(),
             &mut LightSystem::new(),
             &mut CollisionSystem::new(),

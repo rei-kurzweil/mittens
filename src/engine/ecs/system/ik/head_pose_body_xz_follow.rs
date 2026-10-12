@@ -9,7 +9,7 @@
 //! XZ** — i.e. the skull-base / head-pivot point the head solver itself
 //! treats as the anchor. Y stays at the init-time `model_root_local_y`
 //! (avatar height calibration), and body yaw still comes from the
-//! yaw-follow pipeline.
+//! yaw-follow operator.
 //!
 //! `displaced_head` is re-parented under `driven_t -> head_target` at AVC
 //! init (see `avatar_control_system.rs`), so its world transform is a pure
@@ -28,7 +28,7 @@
 //! it to the `TransformComponent`, which resets `matrix_world` to identity
 //! before `transform_changed` runs.  For a normal TC the propagation walk
 //! would then rebuild `matrix_world` from the parent chain.  For
-//! `model_root`, the parent is `body_pipeline` (a transform-stream
+//! `model_root`, the parent is `body_operator` (a transform operator
 //! boundary) and `transform_changed` deliberately *skips* recomputing
 //! `model_root.matrix_world` from local TRS — it assumes the cached value
 //! is stream-managed (`src/engine/ecs/system/transform_system.rs:253-296`).
@@ -121,7 +121,7 @@ fn tick_one(avc_id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter
     next_world[3][2] = head_world[3][2];
 
     // Recover the implied local translation for the cached `translation` field
-    // (model_root's parent is body_pipeline / AVC; rotation only, so invert
+    // (model_root's parent is body_operator / AVC; rotation only, so invert
     // current world rot to map world-delta back to local).
     let current_rot = mat_to_quat(current_world);
     let inv_rot = quat_conjugate(current_rot);

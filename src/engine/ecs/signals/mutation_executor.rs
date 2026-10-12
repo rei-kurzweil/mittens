@@ -288,7 +288,7 @@ impl RxMutationExecutor {
                     crate::engine::transform::TransformSpace::World => {
                         crate::engine::ecs::system::TransformSystem::world_to_local_trs(
                             world,
-                            &systems.transform_stream,
+                            &systems.transform_operator,
                             *component_id,
                             *value,
                         )

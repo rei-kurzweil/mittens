@@ -1,11 +1,7 @@
-use crate::engine::ecs::component::transform_pipeline::TransformChannel;
+use crate::engine::ecs::component::transform_operator::TransformChannel;
 use crate::engine::ecs::component::{
-    QuatExtractYawComponent, QuatTemporalFilterComponent, QuatYawFollowComponent,
-    TransformApplyInverseLocalComponent, TransformCameraSpecificComponent,
-    TransformCameraSpecificMode, TransformComponent, TransformDropComponent,
-    TransformForkTRSComponent, TransformMapRotationComponent, TransformMapScaleComponent,
-    TransformMapTranslationComponent, TransformMergeTRSComponent, TransformParentComponent,
-    TransformSampleAncestorComponent, Vector3TemporalFilterComponent,
+    TransformCameraSpecificMode, TransformComponent, TransformForkTrsSettings,
+    TransformOperatorComponent, TransformOperatorKind, TransformQuatOp, TransformVec3Op,
 };
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::{ComponentId, World};
@@ -18,38 +14,24 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransformPipelineInput {
+pub enum TransformOperatorInput {
     ParentWorld,
 }
 
-pub use crate::engine::ecs::component::transform_pipeline::{
-    TransformQuatOp as TransformPipelineQuatOp, TransformVec3Op as TransformPipelineVec3Op,
-};
-
 #[derive(Debug, Clone, PartialEq)]
-pub struct TransformForkTrsStage {
-    pub translation_ops: Vec<TransformPipelineVec3Op>,
-    pub rotation_ops: Vec<TransformPipelineQuatOp>,
-    pub scale_ops: Vec<TransformPipelineVec3Op>,
+pub enum TransformOperatorStage {
+    ForkTrs(TransformForkTrsSettings),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum TransformPipelineStage {
-    ForkTrs(TransformForkTrsStage),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct TransformPipelinePlan {
+pub struct TransformOperatorPlan {
     pub owner_component: Option<ComponentId>,
-    pub input: TransformPipelineInput,
-    pub stages: Vec<TransformPipelineStage>,
+    pub input: TransformOperatorInput,
+    pub stages: Vec<TransformOperatorStage>,
 }
-
-/// Legacy transform-pipeline name retained while terminology cleanup is deferred.
-pub type TransformPipelineChannels = TransformTrs;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct TransformPipelineStageKey {
+struct TransformOperatorStageKey {
     channel: TransformChannel,
     owner_component: Option<ComponentId>,
     stage_path: Vec<usize>,
@@ -76,11 +58,11 @@ struct Vec3TemporalState {
 }
 
 #[derive(Debug, Default)]
-pub struct TransformStreamSystem {
+pub struct TransformOperatorSystem {
     last_dt_sec: Option<f32>,
-    vec3_temporal_state: HashMap<TransformPipelineStageKey, Vec3TemporalState>,
-    quat_temporal_state: HashMap<TransformPipelineStageKey, QuatTemporalState>,
-    yaw_follow_state: HashMap<TransformPipelineStageKey, f32>,
+    vec3_temporal_state: HashMap<TransformOperatorStageKey, Vec3TemporalState>,
+    quat_temporal_state: HashMap<TransformOperatorStageKey, QuatTemporalState>,
+    yaw_follow_state: HashMap<TransformOperatorStageKey, f32>,
     stereoscopic_active: bool,
     /// Pre-camera and effective matrices for camera-specific anchors. A direct refresh of an
     /// anchor starts from its cached `matrix_world`, which is the previous effective matrix;
@@ -98,21 +80,17 @@ pub struct TransformStreamSystem {
     inverse_local_dependents_by_source: HashMap<ComponentId, HashSet<ComponentId>>,
 }
 
-impl TransformStreamSystem {
+impl TransformOperatorSystem {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn is_transform_stream_boundary(&self, world: &World, cid: ComponentId) -> bool {
+    pub fn is_operator_boundary(&self, world: &World, cid: ComponentId) -> bool {
         world
-            .get_component_by_id_as::<TransformForkTRSComponent>(cid)
-            .is_some()
-            || world
-                .get_component_by_id_as::<TransformParentComponent>(cid)
-                .is_some()
-            || world
-                .get_component_by_id_as::<TransformApplyInverseLocalComponent>(cid)
-                .is_some()
+            .get_component_by_id_as::<TransformOperatorComponent>(cid)
+            .is_some_and(|operator| {
+                !matches!(operator.kind, TransformOperatorKind::CameraSpecific(_))
+            })
             || Self::camera_specific_settings(world, cid).is_some()
     }
 
@@ -127,7 +105,9 @@ impl TransformStreamSystem {
         let mut mono = None;
         let mut stereo = None;
         for &child in world.children_of(anchor) {
-            let Some(c) = world.get_component_by_id_as::<TransformCameraSpecificComponent>(child)
+            let Some(c) = world
+                .get_component_by_id_as::<TransformOperatorComponent>(child)
+                .and_then(|operator| operator.camera_settings())
             else {
                 continue;
             };
@@ -144,27 +124,24 @@ impl TransformStreamSystem {
         (mono.is_some() || stereo.is_some()).then_some((mono, stereo))
     }
 
-    pub fn parse_component_tree(
+    /// Snapshot a fork's configuration for standalone evaluation. Hierarchy
+    /// propagation evaluates the borrowed live settings directly.
+    pub fn plan_for_operator(
         &self,
         world: &World,
         root: ComponentId,
-    ) -> Option<TransformPipelinePlan> {
-        if world
-            .get_component_by_id_as::<TransformForkTRSComponent>(root)
-            .is_some()
-        {
-            return Some(TransformPipelinePlan {
-                owner_component: Some(root),
-                input: TransformPipelineInput::ParentWorld,
-                stages: vec![TransformPipelineStage::ForkTrs(
-                    self.parse_fork_trs(world, root),
-                )],
-            });
-        }
-        None
+    ) -> Option<TransformOperatorPlan> {
+        let settings = world
+            .get_component_by_id_as::<TransformOperatorComponent>(root)?
+            .fork_trs_settings()?;
+        Some(TransformOperatorPlan {
+            owner_component: Some(root),
+            input: TransformOperatorInput::ParentWorld,
+            stages: vec![TransformOperatorStage::ForkTrs(settings.clone())],
+        })
     }
 
-    pub fn evaluate_stream_node(
+    pub fn evaluate_operator(
         &mut self,
         world: &World,
         root: ComponentId,
@@ -172,8 +149,9 @@ impl TransformStreamSystem {
     ) -> Option<(TransformMatrix, Vec<ComponentId>)> {
         let rebased_world = Self::apply_transform_parent_basis(world, root, input_world);
 
-        if let Some(operator) =
-            world.get_component_by_id_as::<TransformApplyInverseLocalComponent>(root)
+        if let Some(operator) = world
+            .get_component_by_id_as::<TransformOperatorComponent>(root)
+            .and_then(|operator| operator.inverse_local_settings())
         {
             let source = operator.resolve_source_component(world, root);
             if let Some(source) = source {
@@ -232,21 +210,36 @@ impl TransformStreamSystem {
                 .copied()
                 .filter(|&id| {
                     world
-                        .get_component_by_id_as::<TransformCameraSpecificComponent>(id)
+                        .get_component_by_id_as::<TransformOperatorComponent>(id)
+                        .and_then(|operator| operator.camera_settings())
                         .is_none()
                 })
                 .collect();
             return Some((effective, outputs));
         }
 
-        if let Some(block) = self.parse_component_tree(world, root) {
-            let outputs = self.downstream_children(world, root, &block);
-            let world_matrix = self.evaluate_block(&block, rebased_world, world, self.last_dt_sec);
-            return Some((world_matrix, outputs));
+        if let Some(settings) = world
+            .get_component_by_id_as::<TransformOperatorComponent>(root)
+            .and_then(|operator| operator.fork_trs_settings())
+        {
+            let channels = Self::decompose_matrix(rebased_world);
+            let output = self.evaluate_fork_trs(
+                Some(root),
+                settings,
+                channels,
+                &[0],
+                world,
+                self.last_dt_sec,
+            );
+            return Some((
+                Self::recompose_matrix(output),
+                world.children_of(root).to_vec(),
+            ));
         }
 
         if world
-            .get_component_by_id_as::<TransformParentComponent>(root)
+            .get_component_by_id_as::<TransformOperatorComponent>(root)
+            .and_then(|operator| operator.parent_settings())
             .is_some()
         {
             return Some((rebased_world, world.children_of(root).to_vec()));
@@ -308,7 +301,8 @@ impl TransformStreamSystem {
         current_world: TransformMatrix,
     ) -> TransformMatrix {
         world
-            .get_component_by_id_as::<TransformParentComponent>(node)
+            .get_component_by_id_as::<TransformOperatorComponent>(node)
+            .and_then(|operator| operator.parent_settings())
             .and_then(|tp| tp.resolve_target_component(world))
             .and_then(|target| Self::world_model(world, target))
             .unwrap_or(current_world)
@@ -329,189 +323,33 @@ impl TransformStreamSystem {
         None
     }
 
-    fn downstream_children(
-        &self,
-        world: &World,
-        root: ComponentId,
-        _block: &TransformPipelinePlan,
-    ) -> Vec<ComponentId> {
-        world
-            .children_of(root)
-            .iter()
-            .copied()
-            .filter(|&child| {
-                world
-                    .get_component_by_id_as::<TransformMapTranslationComponent>(child)
-                    .is_none()
-                    && world
-                        .get_component_by_id_as::<TransformMapRotationComponent>(child)
-                        .is_none()
-                    && world
-                        .get_component_by_id_as::<TransformMapScaleComponent>(child)
-                        .is_none()
-                    && world
-                        .get_component_by_id_as::<TransformMergeTRSComponent>(child)
-                        .is_none()
-            })
-            .collect()
-    }
-
-    pub fn pipeline_for_controller_rotation_smoothing(
+    pub fn controller_rotation_smoothing_plan(
         owner_component: Option<ComponentId>,
         smoothing_factor: f32,
-    ) -> TransformPipelinePlan {
-        TransformPipelinePlan {
+    ) -> TransformOperatorPlan {
+        TransformOperatorPlan {
             owner_component,
-            input: TransformPipelineInput::ParentWorld,
-            stages: vec![TransformPipelineStage::ForkTrs(TransformForkTrsStage {
-                translation_ops: vec![TransformPipelineVec3Op::Pass],
-                rotation_ops: vec![TransformPipelineQuatOp::TemporalFilter { smoothing_factor }],
-                scale_ops: vec![TransformPipelineVec3Op::Pass],
+            input: TransformOperatorInput::ParentWorld,
+            stages: vec![TransformOperatorStage::ForkTrs(TransformForkTrsSettings {
+                translation_ops: vec![TransformVec3Op::Pass],
+                rotation_ops: vec![TransformQuatOp::TemporalFilter { smoothing_factor }],
+                scale_ops: vec![TransformVec3Op::Pass],
             })],
         }
     }
 
-    fn parse_fork_trs(&self, world: &World, node: ComponentId) -> TransformForkTrsStage {
-        let configured = world.get_component_by_id_as::<TransformForkTRSComponent>(node);
-        let mut translation_ops = configured
-            .map(|c| c.translation_ops.clone())
-            .unwrap_or_else(|| vec![TransformPipelineVec3Op::Pass]);
-        let mut rotation_ops = configured
-            .map(|c| c.rotation_ops.clone())
-            .unwrap_or_else(|| vec![TransformPipelineQuatOp::Pass]);
-        let mut scale_ops = configured
-            .map(|c| c.scale_ops.clone())
-            .unwrap_or_else(|| vec![TransformPipelineVec3Op::Pass]);
-
-        for &child in world.children_of(node) {
-            if world
-                .get_component_by_id_as::<TransformMapTranslationComponent>(child)
-                .is_some()
-            {
-                translation_ops = self.parse_vec3_ops(world, child);
-                continue;
-            }
-
-            if world
-                .get_component_by_id_as::<TransformMapRotationComponent>(child)
-                .is_some()
-            {
-                rotation_ops = self.parse_quat_ops(world, child);
-                continue;
-            }
-
-            if world
-                .get_component_by_id_as::<TransformMapScaleComponent>(child)
-                .is_some()
-            {
-                scale_ops = self.parse_vec3_ops(world, child);
-                continue;
-            }
-
-            if world
-                .get_component_by_id_as::<TransformMergeTRSComponent>(child)
-                .is_some()
-            {
-                debug_assert!(
-                    world.children_of(child).is_empty(),
-                    "TransformMergeTRS should not contain child stages; attach driven children directly under the TransformForkTRS root"
-                );
-                continue;
-            }
-        }
-
-        TransformForkTrsStage {
-            translation_ops,
-            rotation_ops,
-            scale_ops,
-        }
-    }
-
-    fn parse_vec3_ops(&self, world: &World, node: ComponentId) -> Vec<TransformPipelineVec3Op> {
-        let mut ops = Vec::new();
-        for &child in world.children_of(node) {
-            if world
-                .get_component_by_id_as::<TransformDropComponent>(child)
-                .is_some()
-            {
-                ops.push(TransformPipelineVec3Op::Drop);
-                continue;
-            }
-            if let Some(s) = world.get_component_by_id_as::<TransformSampleAncestorComponent>(child)
-            {
-                ops.push(TransformPipelineVec3Op::SampleAncestorTranslation { skip: s.skip });
-                continue;
-            }
-            if let Some(filter) =
-                world.get_component_by_id_as::<Vector3TemporalFilterComponent>(child)
-            {
-                ops.push(TransformPipelineVec3Op::TemporalSmooth {
-                    smoothing_factor: filter.smoothing_factor,
-                });
-            }
-        }
-        if ops.is_empty() {
-            ops.push(TransformPipelineVec3Op::Pass);
-        }
-        ops
-    }
-
-    fn parse_quat_ops(&self, world: &World, node: ComponentId) -> Vec<TransformPipelineQuatOp> {
-        let mut ops = Vec::new();
-        for &child in world.children_of(node) {
-            if world
-                .get_component_by_id_as::<TransformDropComponent>(child)
-                .is_some()
-            {
-                ops.push(TransformPipelineQuatOp::Drop);
-                continue;
-            }
-            if let Some(s) = world.get_component_by_id_as::<TransformSampleAncestorComponent>(child)
-            {
-                ops.push(TransformPipelineQuatOp::SampleAncestorRotation { skip: s.skip });
-                continue;
-            }
-            if let Some(filter) = world.get_component_by_id_as::<QuatTemporalFilterComponent>(child)
-            {
-                ops.push(TransformPipelineQuatOp::TemporalFilter {
-                    smoothing_factor: filter.smoothing_factor,
-                });
-                continue;
-            }
-            if world
-                .get_component_by_id_as::<QuatExtractYawComponent>(child)
-                .is_some()
-            {
-                ops.push(TransformPipelineQuatOp::ExtractYaw);
-                continue;
-            }
-            if let Some(c) = world.get_component_by_id_as::<QuatYawFollowComponent>(child) {
-                ops.push(TransformPipelineQuatOp::YawFollow {
-                    threshold: c.threshold,
-                    rate: c.rate,
-                    initial_yaw: c.initial_yaw,
-                    forward_plus_z: c.forward_plus_z,
-                });
-            }
-        }
-        if ops.is_empty() {
-            ops.push(TransformPipelineQuatOp::Pass);
-        }
-        ops
-    }
-
-    pub fn evaluate_block(
+    pub fn evaluate_plan(
         &mut self,
-        pipeline: &TransformPipelinePlan,
+        operator: &TransformOperatorPlan,
         input_world: TransformMatrix,
         world: &World,
         dt_sec: Option<f32>,
     ) -> TransformMatrix {
         let mut channels = Self::decompose_matrix(input_world);
-        for (stage_index, stage) in pipeline.stages.iter().enumerate() {
+        for (stage_index, stage) in operator.stages.iter().enumerate() {
             let mut stage_path = vec![stage_index];
             channels = self.evaluate_stage(
-                pipeline.owner_component,
+                operator.owner_component,
                 stage,
                 channels,
                 &mut stage_path,
@@ -525,14 +363,14 @@ impl TransformStreamSystem {
     fn evaluate_stage(
         &mut self,
         owner_component: Option<ComponentId>,
-        stage: &TransformPipelineStage,
-        input: TransformPipelineChannels,
+        stage: &TransformOperatorStage,
+        input: TransformTrs,
         stage_path: &mut Vec<usize>,
         world: &World,
         dt_sec: Option<f32>,
-    ) -> TransformPipelineChannels {
+    ) -> TransformTrs {
         match stage {
-            TransformPipelineStage::ForkTrs(fork) => {
+            TransformOperatorStage::ForkTrs(fork) => {
                 self.evaluate_fork_trs(owner_component, fork, input, stage_path, world, dt_sec)
             }
         }
@@ -541,12 +379,12 @@ impl TransformStreamSystem {
     fn evaluate_fork_trs(
         &mut self,
         owner_component: Option<ComponentId>,
-        fork: &TransformForkTrsStage,
-        input: TransformPipelineChannels,
+        fork: &TransformForkTrsSettings,
+        input: TransformTrs,
         stage_path: &[usize],
         world: &World,
         dt_sec: Option<f32>,
-    ) -> TransformPipelineChannels {
+    ) -> TransformTrs {
         let translation = self.apply_vec3_ops(
             owner_component,
             &fork.translation_ops,
@@ -577,7 +415,7 @@ impl TransformStreamSystem {
             dt_sec,
         );
 
-        TransformPipelineChannels {
+        TransformTrs {
             translation,
             rotation_quat_xyzw,
             scale,
@@ -608,7 +446,7 @@ impl TransformStreamSystem {
     fn apply_vec3_ops(
         &mut self,
         owner_component: Option<ComponentId>,
-        ops: &[TransformPipelineVec3Op],
+        ops: &[TransformVec3Op],
         channel: TransformChannel,
         input: [f32; 3],
         dropped_value: [f32; 3],
@@ -619,16 +457,16 @@ impl TransformStreamSystem {
         let mut current = input;
         for (op_index, op) in ops.iter().enumerate() {
             current = match *op {
-                TransformPipelineVec3Op::Pass => current,
-                TransformPipelineVec3Op::Drop => dropped_value,
-                TransformPipelineVec3Op::SampleAncestorTranslation { skip } => owner_component
+                TransformVec3Op::Pass => current,
+                TransformVec3Op::Drop => dropped_value,
+                TransformVec3Op::SampleAncestorTranslation { skip } => owner_component
                     .and_then(|owner| Self::sample_ancestor_world(world, owner, skip))
                     .map(|m| [m[3][0], m[3][1], m[3][2]])
                     .unwrap_or(current),
-                TransformPipelineVec3Op::TemporalSmooth { smoothing_factor } => {
+                TransformVec3Op::TemporalSmooth { smoothing_factor } => {
                     let mut full_path = stage_path.to_vec();
                     full_path.push(op_index);
-                    let key = TransformPipelineStageKey {
+                    let key = TransformOperatorStageKey {
                         channel,
                         owner_component,
                         stage_path: full_path,
@@ -656,7 +494,7 @@ impl TransformStreamSystem {
     fn apply_quat_ops(
         &mut self,
         owner_component: Option<ComponentId>,
-        ops: &[TransformPipelineQuatOp],
+        ops: &[TransformQuatOp],
         input: [f32; 4],
         dropped_value: [f32; 4],
         stage_path: &[usize],
@@ -666,19 +504,19 @@ impl TransformStreamSystem {
         let mut current = Self::quat_normalize(input);
         for (op_index, op) in ops.iter().enumerate() {
             current = match *op {
-                TransformPipelineQuatOp::Pass => current,
-                TransformPipelineQuatOp::Drop => dropped_value,
-                TransformPipelineQuatOp::SampleAncestorRotation { skip } => owner_component
+                TransformQuatOp::Pass => current,
+                TransformQuatOp::Drop => dropped_value,
+                TransformQuatOp::SampleAncestorRotation { skip } => owner_component
                     .and_then(|owner| Self::sample_ancestor_world(world, owner, skip))
                     .map(|m| Self::decompose_matrix(m).rotation_quat_xyzw)
                     .unwrap_or(current),
-                TransformPipelineQuatOp::ExtractYaw => {
+                TransformQuatOp::ExtractYaw => {
                     // Project onto Y-rotation subspace: normalize([0, q.y, 0, q.w])
                     let (qy, qw) = (current[1], current[3]);
                     let len = (qy * qy + qw * qw).sqrt().max(1e-8);
                     [0.0, qy / len, 0.0, qw / len]
                 }
-                TransformPipelineQuatOp::YawFollow {
+                TransformQuatOp::YawFollow {
                     threshold,
                     rate,
                     initial_yaw,
@@ -686,7 +524,7 @@ impl TransformStreamSystem {
                 } => {
                     let mut full_path = stage_path.to_vec();
                     full_path.push(op_index);
-                    let key = TransformPipelineStageKey {
+                    let key = TransformOperatorStageKey {
                         channel: TransformChannel::Rotation,
                         owner_component,
                         stage_path: full_path,
@@ -716,10 +554,10 @@ impl TransformStreamSystem {
                     self.yaw_follow_state.insert(key, new_body_yaw);
                     Self::quat_rotation_y(new_body_yaw)
                 }
-                TransformPipelineQuatOp::TemporalFilter { smoothing_factor } => {
+                TransformQuatOp::TemporalFilter { smoothing_factor } => {
                     let mut full_path = stage_path.to_vec();
                     full_path.push(op_index);
-                    let key = TransformPipelineStageKey {
+                    let key = TransformOperatorStageKey {
                         channel: TransformChannel::Rotation,
                         owner_component,
                         stage_path: full_path.clone(),
@@ -785,7 +623,7 @@ impl TransformStreamSystem {
                             };
 
                             eprintln!(
-                                "[TransformPipeline][QuatFilter] owner={owner_component:?} stage_path={full_path:?} smoothing_factor={smoothing_factor:.3} dt={:.5} alpha={alpha:.5} raw_avg_deg={avg_raw:.3} filtered_avg_deg={avg_filtered:.3} lag_avg_deg={avg_lag:.3} raw_max_deg={max_raw:.3} filtered_max_deg={max_filtered:.3} attenuation_pct={attenuation_pct:.1} window={} samples={}",
+                                "[TransformOperator][QuatFilter] owner={owner_component:?} stage_path={full_path:?} smoothing_factor={smoothing_factor:.3} dt={:.5} alpha={alpha:.5} raw_avg_deg={avg_raw:.3} filtered_avg_deg={avg_filtered:.3} lag_avg_deg={avg_lag:.3} raw_max_deg={max_raw:.3} filtered_max_deg={max_filtered:.3} attenuation_pct={attenuation_pct:.1} window={} samples={}",
                                 dt_sec.unwrap_or(0.0),
                                 next_state.debug_window.raw_step_deg.len(),
                                 next_state.debug_window.sample_count,
@@ -831,7 +669,7 @@ impl TransformStreamSystem {
         from + Self::signed_yaw_diff(to, from) * t.clamp(0.0, 1.0)
     }
 
-    fn decompose_matrix(m: TransformMatrix) -> TransformPipelineChannels {
+    fn decompose_matrix(m: TransformMatrix) -> TransformTrs {
         fn col3(m: TransformMatrix, c: usize) -> [f32; 3] {
             [m[c][0], m[c][1], m[c][2]]
         }
@@ -850,14 +688,14 @@ impl TransformStreamSystem {
         let [x, y, z] = Self::orthonormalize_basis(b0, b1, b2);
         let rotation_quat_xyzw = Self::quat_from_basis_columns(x, y, z);
 
-        TransformPipelineChannels {
+        TransformTrs {
             translation,
             rotation_quat_xyzw,
             scale,
         }
     }
 
-    fn recompose_matrix(channels: TransformPipelineChannels) -> TransformMatrix {
+    fn recompose_matrix(channels: TransformTrs) -> TransformMatrix {
         let x = math::quat_rotate_vec3(channels.rotation_quat_xyzw, [1.0, 0.0, 0.0]);
         let y = math::quat_rotate_vec3(channels.rotation_quat_xyzw, [0.0, 1.0, 0.0]);
         let z = math::quat_rotate_vec3(channels.rotation_quat_xyzw, [0.0, 0.0, 1.0]);
@@ -1003,7 +841,7 @@ impl TransformStreamSystem {
     }
 }
 
-impl System for TransformStreamSystem {
+impl System for TransformOperatorSystem {
     fn tick(
         &mut self,
         _world: &mut World,
@@ -1019,12 +857,7 @@ impl System for TransformStreamSystem {
 mod tests {
     use super::*;
     use crate::engine::ecs::World;
-    use crate::engine::ecs::component::{
-        ComponentRef, QuatTemporalFilterComponent, TransformApplyInverseLocalComponent,
-        TransformCameraSpecificComponent, TransformComponent, TransformForkTRSComponent,
-        TransformMapRotationComponent, TransformMapScaleComponent,
-        TransformMapTranslationComponent, Vector3TemporalFilterComponent,
-    };
+    use crate::engine::ecs::component::ComponentRef;
 
     fn guid_ref(world: &World, component: ComponentId) -> ComponentRef {
         ComponentRef::Guid(world.get_component_record(component).unwrap().guid)
@@ -1033,34 +866,34 @@ mod tests {
     #[test]
     fn smoothing_translation_and_scale_keeps_independent_channel_state() {
         let mut world = World::default();
-        let mut operator = TransformForkTRSComponent::new();
+        let mut operator = TransformOperatorComponent::fork_trs();
         for channel in [TransformChannel::Translation, TransformChannel::Scale] {
             operator
                 .push_vec3(
                     channel,
-                    TransformPipelineVec3Op::TemporalSmooth {
+                    TransformVec3Op::TemporalSmooth {
                         smoothing_factor: 12.0,
                     },
                 )
                 .unwrap();
         }
         let owner = world.add_component(operator);
-        let mut system = TransformStreamSystem::new();
-        let plan = system.parse_component_tree(&world, owner).unwrap();
+        let mut system = TransformOperatorSystem::new();
+        let plan = system.plan_for_operator(&world, owner).unwrap();
         let first_input = TransformComponent::new()
             .with_position(10.0, 20.0, 30.0)
             .with_scale(2.0, 3.0, 4.0)
             .transform
             .model;
-        let first = system.evaluate_block(&plan, first_input, &world, Some(1.0 / 60.0));
+        let first = system.evaluate_plan(&plan, first_input, &world, Some(1.0 / 60.0));
         assert_eq!(first, first_input);
         let next_input = TransformComponent::new()
             .with_position(20.0, 30.0, 40.0)
             .with_scale(4.0, 6.0, 8.0)
             .transform
             .model;
-        let next = system.evaluate_block(&plan, next_input, &world, Some(1.0 / 60.0));
-        let alpha = TransformStreamSystem::alpha_from_smoothing_factor(12.0, Some(1.0 / 60.0));
+        let next = system.evaluate_plan(&plan, next_input, &world, Some(1.0 / 60.0));
+        let alpha = TransformOperatorSystem::alpha_from_smoothing_factor(12.0, Some(1.0 / 60.0));
         for axis in 0..3 {
             let expected_translation =
                 first_input[3][axis] + (next_input[3][axis] - first_input[3][axis]) * alpha;
@@ -1072,76 +905,44 @@ mod tests {
     }
 
     #[test]
-    fn compact_operator_matches_legacy_maps_across_temporal_updates() {
-        use crate::engine::ecs::component::{QuatYawFollowComponent, TransformDropComponent};
+    fn equal_settings_keep_separate_state_for_live_operators() {
         let mut world = World::default();
-        let legacy = world.add_component(TransformForkTRSComponent::new());
-        let translation = world.add_component(TransformMapTranslationComponent::new());
-        let smooth =
-            world.add_component(Vector3TemporalFilterComponent::new().with_smoothing_factor(12.0));
-        let rotation = world.add_component(TransformMapRotationComponent::new());
-        let yaw = world.add_component(
-            QuatYawFollowComponent::new(0.5, 2.0)
-                .with_forward_plus_z()
-                .with_initial_yaw(0.3),
-        );
-        let scale = world.add_component(TransformMapScaleComponent::new());
-        let drop = world.add_component(TransformDropComponent::new());
-        for (parent, child) in [
-            (legacy, translation),
-            (translation, smooth),
-            (legacy, rotation),
-            (rotation, yaw),
-            (legacy, scale),
-            (scale, drop),
-        ] {
-            world.add_child(parent, child).unwrap();
-        }
-        let mut compact = TransformForkTRSComponent::new().with_drop(TransformChannel::Scale);
-        compact
+        let mut settings = TransformOperatorComponent::fork_trs();
+        settings
             .push_vec3(
                 TransformChannel::Translation,
-                TransformPipelineVec3Op::TemporalSmooth {
+                TransformVec3Op::TemporalSmooth {
                     smoothing_factor: 12.0,
                 },
             )
             .unwrap();
-        compact.push_rotation(TransformPipelineQuatOp::YawFollow {
-            threshold: 0.5,
-            rate: 2.0,
-            initial_yaw: 0.3,
-            forward_plus_z: true,
-        });
-        let compact = world.add_component(compact);
-        let mut system = TransformStreamSystem::new();
-        let legacy_plan = system.parse_component_tree(&world, legacy).unwrap();
-        let compact_plan = system.parse_component_tree(&world, compact).unwrap();
-        for frame in 0..90 {
-            let f = frame as f32;
-            let input = TransformComponent::new()
-                .with_position(f * 0.01, f * -0.02, 3.0)
-                .with_rotation_euler(0.2, f * 0.04, -0.3)
-                .with_scale(2.0, 3.0, 4.0)
-                .transform
-                .model;
-            let expected = system.evaluate_block(&legacy_plan, input, &world, Some(1.0 / 90.0));
-            let actual = system.evaluate_block(&compact_plan, input, &world, Some(1.0 / 90.0));
-            assert_eq!(actual, expected, "operator changed on frame {frame}");
-        }
-        // State is owned by the live operator, not shared by equal settings.
-        let independent = world.add_component(
-            world
-                .get_component_by_id_as::<TransformForkTRSComponent>(compact)
-                .unwrap()
-                .clone(),
-        );
-        let plan = system.parse_component_tree(&world, independent).unwrap();
-        let first_input = TransformComponent::new()
-            .with_position(-20.0, 8.0, 4.0)
+        let first = world.add_component(settings.clone());
+        let second = world.add_component(settings);
+        let mut system = TransformOperatorSystem::new();
+        system.last_dt_sec = Some(1.0 / 60.0);
+        let input_a = TransformComponent::new()
+            .with_position(10.0, 0.0, 0.0)
             .transform
             .model;
-        let first = system.evaluate_block(&plan, first_input, &world, Some(1.0 / 90.0));
-        assert_eq!([first[3][0], first[3][1], first[3][2]], [-20.0, 8.0, 4.0]);
+        let input_b = TransformComponent::new()
+            .with_position(-10.0, 0.0, 0.0)
+            .transform
+            .model;
+        assert_eq!(
+            system.evaluate_operator(&world, first, input_a).unwrap().0,
+            input_a
+        );
+        assert_eq!(
+            system.evaluate_operator(&world, second, input_b).unwrap().0,
+            input_b
+        );
+        let next = TransformComponent::new()
+            .with_position(20.0, 0.0, 0.0)
+            .transform
+            .model;
+        let actual = system.evaluate_operator(&world, first, next).unwrap().0;
+        let alpha = TransformOperatorSystem::alpha_from_smoothing_factor(12.0, Some(1.0 / 60.0));
+        assert!((actual[3][0] - (10.0 + 10.0 * alpha)).abs() < 1e-5);
     }
 
     #[test]
@@ -1152,7 +953,7 @@ mod tests {
                 .with_position(1.0, 2.0, 3.0)
                 .with_rotation_euler(0.0, std::f32::consts::FRAC_PI_2, 0.0),
         );
-        let operator = world.add_component(TransformApplyInverseLocalComponent::new(guid_ref(
+        let operator = world.add_component(TransformOperatorComponent::inverse_local(guid_ref(
             &world, source,
         )));
         let downstream = world.add_component(TransformComponent::new());
@@ -1170,8 +971,8 @@ mod tests {
             .model;
         let expected = math::mat4_mul(input, math::mat4_inverse(source_local).unwrap());
 
-        let (actual, outputs) = TransformStreamSystem::new()
-            .evaluate_stream_node(&world, operator, input)
+        let (actual, outputs) = TransformOperatorSystem::new()
+            .evaluate_operator(&world, operator, input)
             .unwrap();
         assert_eq!(actual, expected);
         assert_eq!(outputs, vec![downstream]);
@@ -1183,19 +984,15 @@ mod tests {
         let mut world = World::default();
         let source = world.add_component(TransformComponent::new().with_position(0.0, 3.0, -1.55));
         let source_ref = guid_ref(&world, source);
-        let operator = world.add_component(TransformApplyInverseLocalComponent::new(source_ref));
+        let operator = world.add_component(TransformOperatorComponent::inverse_local(source_ref));
         let downstream = world.add_component(TransformComponent::new());
         world.add_child(operator, downstream).unwrap();
         let input = TransformComponent::new().transform.model;
-        let mut system = TransformStreamSystem::new();
+        let mut system = TransformOperatorSystem::new();
 
-        let first = system
-            .evaluate_stream_node(&world, operator, input)
-            .unwrap();
+        let first = system.evaluate_operator(&world, operator, input).unwrap();
         world.remove_component_leaf(source).unwrap();
-        let unresolved = system
-            .evaluate_stream_node(&world, operator, input)
-            .unwrap();
+        let unresolved = system.evaluate_operator(&world, operator, input).unwrap();
 
         assert_eq!(unresolved, first);
     }
@@ -1204,14 +1001,14 @@ mod tests {
     fn inverse_local_rejects_a_source_below_its_output() {
         let mut world = World::default();
         let source = world.add_component(TransformComponent::new().with_position(0.0, 3.0, 0.0));
-        let operator = world.add_component(TransformApplyInverseLocalComponent::new(guid_ref(
+        let operator = world.add_component(TransformOperatorComponent::inverse_local(guid_ref(
             &world, source,
         )));
         world.add_child(operator, source).unwrap();
         let input = TransformComponent::new().transform.model;
 
-        let (actual, outputs) = TransformStreamSystem::new()
-            .evaluate_stream_node(&world, operator, input)
+        let (actual, outputs) = TransformOperatorSystem::new()
+            .evaluate_operator(&world, operator, input)
             .unwrap();
         assert_eq!(actual, input);
         assert!(outputs.is_empty());
@@ -1222,16 +1019,14 @@ mod tests {
         let mut world = World::default();
         let first_source = world.add_component(TransformComponent::new());
         let second_source = world.add_component(TransformComponent::new());
-        let operator = world.add_component(TransformApplyInverseLocalComponent::new(guid_ref(
+        let operator = world.add_component(TransformOperatorComponent::inverse_local(guid_ref(
             &world,
             first_source,
         )));
         let input = TransformComponent::new().transform.model;
-        let mut system = TransformStreamSystem::new();
+        let mut system = TransformOperatorSystem::new();
 
-        system
-            .evaluate_stream_node(&world, operator, input)
-            .unwrap();
+        system.evaluate_operator(&world, operator, input).unwrap();
         assert_eq!(
             system.inverse_local_dependents(first_source),
             vec![operator]
@@ -1239,12 +1034,11 @@ mod tests {
 
         let second_ref = guid_ref(&world, second_source);
         world
-            .get_component_by_id_as_mut::<TransformApplyInverseLocalComponent>(operator)
+            .get_component_by_id_as_mut::<TransformOperatorComponent>(operator)
+            .and_then(|operator| operator.inverse_local_settings_mut())
             .unwrap()
             .source = second_ref;
-        system
-            .evaluate_stream_node(&world, operator, input)
-            .unwrap();
+        system.evaluate_operator(&world, operator, input).unwrap();
 
         assert!(system.inverse_local_dependents(first_source).is_empty());
         assert_eq!(
@@ -1257,10 +1051,14 @@ mod tests {
     fn camera_specific_selects_modes_and_excludes_configuration_children() {
         let mut world = World::default();
         let anchor = world.add_component(TransformComponent::new());
-        let mono = world.add_component(TransformCameraSpecificComponent::active_monoscopic());
+        let mono = world.add_component(TransformOperatorComponent::camera_specific(
+            TransformCameraSpecificMode::Monoscopic,
+        ));
         let mono_settings =
             world.add_component(TransformComponent::new().with_position(0.0, 2.0, 0.0));
-        let stereo = world.add_component(TransformCameraSpecificComponent::active_stereoscopic());
+        let stereo = world.add_component(TransformOperatorComponent::camera_specific(
+            TransformCameraSpecificMode::Stereoscopic,
+        ));
         let stereo_settings =
             world.add_component(TransformComponent::new().with_position(0.0, 0.0, 3.0));
         let output = world.add_component(TransformComponent::new());
@@ -1273,12 +1071,12 @@ mod tests {
             .with_position(1.0, 0.0, 0.0)
             .transform
             .model;
-        let mut system = TransformStreamSystem::new();
-        let (m, outputs) = system.evaluate_stream_node(&world, anchor, input).unwrap();
+        let mut system = TransformOperatorSystem::new();
+        let (m, outputs) = system.evaluate_operator(&world, anchor, input).unwrap();
         assert_eq!([m[3][0], m[3][1], m[3][2]], [1.0, 2.0, 0.0]);
         assert_eq!(outputs, vec![output]);
         system.set_stereoscopic_active(true);
-        let (m, outputs) = system.evaluate_stream_node(&world, anchor, input).unwrap();
+        let (m, outputs) = system.evaluate_operator(&world, anchor, input).unwrap();
         assert_eq!([m[3][0], m[3][1], m[3][2]], [1.0, 0.0, 3.0]);
         assert_eq!(outputs, vec![output]);
     }
@@ -1287,7 +1085,9 @@ mod tests {
     fn camera_specific_uses_generic_anchor_when_mode_has_no_settings() {
         let mut world = World::default();
         let anchor = world.add_component(TransformComponent::new());
-        let mono = world.add_component(TransformCameraSpecificComponent::active_monoscopic());
+        let mono = world.add_component(TransformOperatorComponent::camera_specific(
+            TransformCameraSpecificMode::Monoscopic,
+        ));
         let settings = world.add_component(TransformComponent::new().with_scale(2.0, 2.0, 2.0));
         world.add_child(anchor, mono).unwrap();
         world.add_child(mono, settings).unwrap();
@@ -1295,13 +1095,10 @@ mod tests {
             .with_position(4.0, 5.0, 6.0)
             .transform
             .model;
-        let mut system = TransformStreamSystem::new();
+        let mut system = TransformOperatorSystem::new();
         system.set_stereoscopic_active(true);
         assert_eq!(
-            system
-                .evaluate_stream_node(&world, anchor, input)
-                .unwrap()
-                .0,
+            system.evaluate_operator(&world, anchor, input).unwrap().0,
             input
         );
     }
@@ -1310,25 +1107,21 @@ mod tests {
     fn repeated_camera_specific_refresh_does_not_compound_scale() {
         let mut world = World::default();
         let anchor = world.add_component(TransformComponent::new());
-        let mono = world.add_component(TransformCameraSpecificComponent::active_monoscopic());
+        let mono = world.add_component(TransformOperatorComponent::camera_specific(
+            TransformCameraSpecificMode::Monoscopic,
+        ));
         let settings = world.add_component(TransformComponent::new().with_scale(2.0, 2.0, 2.0));
         world.add_child(anchor, mono).unwrap();
         world.add_child(mono, settings).unwrap();
 
-        let mut system = TransformStreamSystem::new();
+        let mut system = TransformOperatorSystem::new();
         let identity = TransformComponent::new().transform.model;
         let first = system
-            .evaluate_stream_node(&world, anchor, identity)
+            .evaluate_operator(&world, anchor, identity)
             .unwrap()
             .0;
-        let second = system
-            .evaluate_stream_node(&world, anchor, first)
-            .unwrap()
-            .0;
-        let third = system
-            .evaluate_stream_node(&world, anchor, second)
-            .unwrap()
-            .0;
+        let second = system.evaluate_operator(&world, anchor, first).unwrap().0;
+        let third = system.evaluate_operator(&world, anchor, second).unwrap().0;
 
         assert_eq!(first, second);
         assert_eq!(second, third);
@@ -1338,131 +1131,35 @@ mod tests {
     }
 
     #[test]
-    fn controller_rotation_pipeline_contains_temporal_quat_op() {
-        let block = TransformStreamSystem::pipeline_for_controller_rotation_smoothing(None, 1.0);
+    fn controller_rotation_operator_contains_temporal_quat_op() {
+        let block = TransformOperatorSystem::controller_rotation_smoothing_plan(None, 1.0);
         let stage = match &block.stages[0] {
-            TransformPipelineStage::ForkTrs(stage) => stage,
+            TransformOperatorStage::ForkTrs(stage) => stage,
         };
         assert_eq!(
             stage.rotation_ops,
-            vec![TransformPipelineQuatOp::TemporalFilter {
+            vec![TransformQuatOp::TemporalFilter {
                 smoothing_factor: 1.0
             }]
         );
     }
 
     #[test]
-    fn parses_fork_root_component_tree() {
+    fn ordinary_fork_children_are_all_outputs() {
         let mut world = World::default();
-        let fork = world.add_component(TransformForkTRSComponent::new());
-        let map_translation = world.add_component(TransformMapTranslationComponent::new());
-        let vec_filter =
-            world.add_component(Vector3TemporalFilterComponent::new().with_smoothing_factor(12.0));
-        let map_rotation = world.add_component(TransformMapRotationComponent::new());
-        let quat_filter =
-            world.add_component(QuatTemporalFilterComponent::new().with_smoothing_factor(18.0));
-
-        world.set_parent(map_translation, Some(fork)).unwrap();
-        world.set_parent(vec_filter, Some(map_translation)).unwrap();
-        world.set_parent(map_rotation, Some(fork)).unwrap();
-        world.set_parent(quat_filter, Some(map_rotation)).unwrap();
-
-        let parser = TransformStreamSystem::new();
-        let block = parser
-            .parse_component_tree(&world, fork)
-            .expect("pipeline block");
-        assert_eq!(block.owner_component, Some(fork));
-        assert_eq!(block.stages.len(), 1);
-        let stage = match &block.stages[0] {
-            TransformPipelineStage::ForkTrs(stage) => stage,
-        };
-        assert_eq!(
-            stage.translation_ops,
-            vec![TransformPipelineVec3Op::TemporalSmooth {
-                smoothing_factor: 12.0
-            }]
-        );
-        assert_eq!(
-            stage.rotation_ops,
-            vec![TransformPipelineQuatOp::TemporalFilter {
-                smoothing_factor: 18.0
-            }]
-        );
-        assert_eq!(stage.scale_ops, vec![TransformPipelineVec3Op::Pass]);
-    }
-
-    #[test]
-    fn fork_trs_defaults_missing_streams_to_pass() {
-        let mut world = World::default();
-        let fork = world.add_component(TransformForkTRSComponent::new());
-        let map_scale = world.add_component(TransformMapScaleComponent::new());
-
-        world.set_parent(map_scale, Some(fork)).unwrap();
-
-        let parser = TransformStreamSystem::new();
-        let block = parser
-            .parse_component_tree(&world, fork)
-            .expect("pipeline block");
-        let stage = match &block.stages[0] {
-            TransformPipelineStage::ForkTrs(stage) => stage,
-        };
-
-        assert_eq!(stage.translation_ops, vec![TransformPipelineVec3Op::Pass]);
-        assert_eq!(stage.rotation_ops, vec![TransformPipelineQuatOp::Pass]);
-        assert_eq!(stage.scale_ops, vec![TransformPipelineVec3Op::Pass]);
-    }
-
-    #[test]
-    fn parses_fork_trs_as_root_pipeline() {
-        let mut world = World::default();
-        let fork = world.add_component(TransformForkTRSComponent::new());
-        let map_rotation = world.add_component(TransformMapRotationComponent::new());
-        let quat_filter =
-            world.add_component(QuatTemporalFilterComponent::new().with_smoothing_factor(9.0));
-
-        world.set_parent(map_rotation, Some(fork)).unwrap();
-        world.set_parent(quat_filter, Some(map_rotation)).unwrap();
-
-        let parser = TransformStreamSystem::new();
-        let block = parser
-            .parse_component_tree(&world, fork)
-            .expect("fork root block");
-        assert_eq!(block.owner_component, Some(fork));
-        assert_eq!(block.stages.len(), 1);
-        let stage = match &block.stages[0] {
-            TransformPipelineStage::ForkTrs(stage) => stage,
-        };
-        assert_eq!(
-            stage.rotation_ops,
-            vec![TransformPipelineQuatOp::TemporalFilter {
-                smoothing_factor: 9.0
-            }]
-        );
-    }
-
-    #[test]
-    fn fork_root_returns_non_map_children_as_downstream_children() {
-        let mut world = World::default();
-        let fork = world.add_component(TransformForkTRSComponent::new());
-        let map_rotation = world.add_component(TransformMapRotationComponent::new());
-        let quat_filter =
-            world.add_component(QuatTemporalFilterComponent::new().with_smoothing_factor(9.0));
+        let fork = world.add_component(TransformOperatorComponent::fork_trs());
+        let nested = world.add_component(TransformOperatorComponent::fork_trs());
         let downstream = world.add_component(TransformComponent::new());
-
-        world.set_parent(map_rotation, Some(fork)).unwrap();
-        world.set_parent(quat_filter, Some(map_rotation)).unwrap();
-        world.set_parent(downstream, Some(fork)).unwrap();
-
-        let mut system = TransformStreamSystem::new();
-        let ident = [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ];
-        let (_, children) = system
-            .evaluate_stream_node(&world, fork, ident)
-            .expect("fork root eval");
-        assert_eq!(children, vec![downstream]);
+        world.add_child(fork, nested).unwrap();
+        world.add_child(fork, downstream).unwrap();
+        let input = TransformComponent::new()
+            .with_position(2.0, 3.0, 4.0)
+            .transform
+            .model;
+        let (output, children) = TransformOperatorSystem::new()
+            .evaluate_operator(&world, fork, input)
+            .unwrap();
+        assert_eq!(output, input);
+        assert_eq!(children, vec![nested, downstream]);
     }
 }

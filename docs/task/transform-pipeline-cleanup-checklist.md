@@ -5,7 +5,7 @@ Date: 2026-05-17
 Current API note: transform operators now use `TOP` / `TransformOperator`
 constructors and builders. Fork children are ordinary output content. The older
 map/filter component examples below are historical; use
-[the current operator API](../spec/transform-pipeline.md) for executable MMS.
+[the current operator API](../spec/transform-operators.md) for executable MMS.
 
 Follow-up: [transform operator API and output-contract cleanup](transform-operator-api-cleanup.md)
 addresses the remaining mixture of configuration/output children, grouped MMS

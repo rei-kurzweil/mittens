@@ -24,7 +24,7 @@ mod tests {
     use super::*;
     use crate::engine::ecs::RxWorld;
     use crate::engine::ecs::system::{
-        CameraSystem, CollisionSystem, LightSystem, TransformStreamSystem,
+        CameraSystem, CollisionSystem, LightSystem, TransformOperatorSystem,
     };
 
     #[test]
@@ -103,7 +103,7 @@ mod tests {
             world,
             &mut VisualWorld::default(),
             root,
-            &mut TransformStreamSystem::new(),
+            &mut TransformOperatorSystem::new(),
             &mut CameraSystem::new(),
             &mut LightSystem::new(),
             &mut CollisionSystem::new(),

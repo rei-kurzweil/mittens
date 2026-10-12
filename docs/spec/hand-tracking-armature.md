@@ -5,7 +5,7 @@ This document describes how to drive glTF armature/skeleton hierarchies from Ope
 Current API note: transform operators now use `TOP` / `TransformOperator`
 constructors and builders. Fork children are ordinary output content. The older
 map/filter component examples below are historical; use
-[the current operator API](../spec/transform-pipeline.md) for executable MMS.
+[the current operator API](../spec/transform-operators.md) for executable MMS.
 
 **Scope:**
 - Hand-joint tracking from `XR_EXT_hand_tracking`
@@ -16,7 +16,7 @@ map/filter component examples below are historical; use
 **Related docs:**
 - `docs/spec/vr-input.md` — single-pose hand-root driving and controller actions
 - `docs/spec/skinned-mesh-system.md` — how skinned meshes work in cat-engine
-- `docs/spec/transform-pipeline.md` — temporal operators and transform composition
+- `docs/spec/transform-operators.md` — temporal operators and transform composition
 
 ---
 
@@ -204,7 +204,7 @@ TransformForkTRS
 
 The `QuatTemporalFilter` applies a low-pass filter to rotation, smoothing jitter while preserving large motions. Translation and scale typically pass through unchanged.
 
-See `docs/spec/transform-pipeline.md` for details on pipeline operators.
+See `docs/spec/transform-operators.md` for details on pipeline operators.
 
 ### Configuration trade-offs
 
@@ -273,11 +273,12 @@ Wrap finger bones in transform pipelines to smooth noisy input:
 
 ```rust
 let thumb_base = find_bone_by_name(left_hand_root, "hand.L.thumb.01")?;
-let pipeline = universe.world.add_component(TransformForkTRSComponent::new());
+let mut settings = TransformOperatorComponent::fork_trs();
+settings.push_rotation(TransformQuatOp::TemporalFilter { smoothing_factor: 220.0 });
+let operator = universe.world.add_component(settings);
+universe.attach(thumb_base, operator);
+// Attach the output transform directly under operator.
 
-// ... build map/filter nodes and attach the smoothed output transform directly under `pipeline` ...
-
-universe.attach(thumb_base, pipeline);
 ```
 
 ### 4. Let it run
@@ -332,7 +333,7 @@ universe.attach(thumb_base, pipeline);
 - `src/engine/ecs/system/transform_system.rs` — world matrix propagation
 
 **Transform stream system (for filtering):**
-- `src/engine/ecs/system/transform_stream_system.rs`
+- `src/engine/ecs/system/transform_operator.rs`
 
 **Example:**
 - `examples/vtuber-joints-example.rs` — loads VTuber model, inspects joints

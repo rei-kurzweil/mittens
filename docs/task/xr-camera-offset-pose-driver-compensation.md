@@ -15,7 +15,7 @@ generic referenced transform-stream operator rather than an
 Related context:
 
 - [`docs/analysis/cameraxr-avatar-alignment.md`](../analysis/cameraxr-avatar-alignment.md)
-- [`docs/spec/transform-pipeline.md`](../spec/transform-pipeline.md)
+- [`docs/spec/transform-operators.md`](../spec/transform-operators.md)
 - [`docs/spec/component-id-references.md`](../spec/component-id-references.md)
 - [`docs/task/avatar-control-head-driven-redesign.md`](./avatar-control-head-driven-redesign.md)
 - [`docs/task/avatar-control-simple-humanoid-body-follow.md`](./avatar-control-simple-humanoid-body-follow.md)

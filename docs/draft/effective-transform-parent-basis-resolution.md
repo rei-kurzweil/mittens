@@ -5,7 +5,7 @@ Status: proposed implementation plan
 Related:
 
 - [Transform component accessors: Mittens engine API](transform-component-accessors-engine-api.md)
-- [Transform-stream runtime](../spec/transform-pipeline.md)
+- [Transform-stream runtime](../spec/transform-operators.md)
 - [VTuber slide-deck detached world-TRS tracker](../task/vtuber-slidedeck-detached-world-trs.md)
 - [World-TRS snapshot implementation review](../review/world-trs-snapshot-and-vtuber-slidedeck.md)
 - [Transform-camera-specific behavior](../spec/transform-camera-specific.md)

@@ -1,7 +1,7 @@
 use crate::engine::ecs::component::{
     BoundsComponent, ColorComponent, ComponentRef, EmissiveComponent, GLTFComponent, MeshComponent,
     OpacityComponent, OverlayComponent, RaycastableComponent, RenderableComponent,
-    SelectableComponent, SerializeComponent, TransformComponent, TransformParentComponent,
+    SelectableComponent, SerializeComponent, TransformComponent, TransformOperatorComponent,
 };
 use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
@@ -155,9 +155,7 @@ pub(crate) fn spawn_bounds_marker(
         .guid;
     let root = world.add_component_boxed_named(
         "mesh_bounds_marker",
-        Box::new(
-            TransformParentComponent::new().with_target_source(ComponentRef::Guid(target_guid)),
-        ),
+        Box::new(TransformOperatorComponent::parent().with_source(ComponentRef::Guid(target_guid))),
     );
     let local = world.add_component(local);
     let selectable = world.add_component(SelectableComponent::off());

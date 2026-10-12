@@ -4,7 +4,7 @@ use crate::engine::ecs::component::{
     CollidableComponent, CollisionShape, ControllerHand, ControllerPoseSource,
     ControllerXRComponent, EyeRotationLimits, GLTFComponent, HeadMotionGazePolicy,
     HeadRotationCompensation, IKChainComponent, IKSolver, InputXRComponent, SerializeComponent,
-    TransformComponent, TransformForkTRSComponent, VRChatOSCEyeTrackingComponent,
+    TransformComponent, TransformOperatorComponent, VRChatOSCEyeTrackingComponent,
     XREyeTrackingComponent, XREyeTrackingHtcComponent, ZoneComponent,
 };
 use crate::engine::ecs::component::{
@@ -799,9 +799,9 @@ fn try_init_or_route_capsule(
         inferred.center_y + half_height,
     );
 
-    use crate::engine::ecs::component::transform_pipeline::TransformChannel;
+    use crate::engine::ecs::component::transform_operator::TransformChannel;
     let fork = world.add_component(
-        TransformForkTRSComponent::new()
+        TransformOperatorComponent::fork_trs()
             .with_drop(TransformChannel::Rotation)
             .with_drop(TransformChannel::Scale),
     );
@@ -1073,14 +1073,14 @@ fn classify_arm_ik_eligibility(
     })
 }
 
-/// First-time setup: splice bones, create body pipeline, and (optionally) hand smoothing pipelines.
+/// First-time setup: splice bones, create body operator, and (optionally) hand smoothing operators.
 ///
 /// Controllers are discovered by topology: any `ControllerXRComponent` that is a
 /// **direct child** of this `AvatarControlComponent` is treated as a hand driver.
 /// Its `hand` field (`Left` / `Right`) determines which hand bone it drives.
 ///
-/// Body pipeline created here reads `driven_t`'s world matrix, strips pitch/roll via `YawFollow`,
-/// and writes the result to `model_root` (which is re-parented under the pipeline output).
+/// Body operator created here reads `driven_t`'s world matrix, strips pitch/roll via `YawFollow`,
+/// and writes the result to `model_root` (which is re-parented under the operator output).
 fn try_init_splices(
     id: ComponentId,
     world: &mut World,
@@ -1097,7 +1097,7 @@ fn try_init_splices(
         forward_plus_z_overridden,
         authored_initial_body_yaw,
         initial_body_yaw_overridden,
-        skip_body_pipeline,
+        skip_body_operator,
         avatar_height_override,
         eye_height_from_head_bone,
         head_ik_eye_height,
@@ -1119,7 +1119,7 @@ fn try_init_splices(
             c.forward_plus_z_overridden,
             c.initial_body_yaw,
             c.initial_body_yaw_overridden,
-            c.skip_body_pipeline,
+            c.skip_body_operator,
             c.avatar_height,
             c.eye_height_from_head_bone,
             c.head_ik_eye_height,
@@ -1341,7 +1341,7 @@ fn try_init_splices(
     // UpdateTransform plus the parent-chain transform inheritance.
     let model_root_local_y = model_root_translation.map(|t| t[1]).unwrap_or(0.0);
 
-    // Store runtime IDs (body_pipeline_id stored after pipeline creation below).
+    // Store runtime IDs (body_operator_id stored after operator creation below).
     if let Some(c) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
         c.displaced_head = Some(head_bone_id);
         c.splice_camera_bone = camera_bone_id;
@@ -1385,33 +1385,33 @@ fn try_init_splices(
     }
 
     // -----------------------------------------------------------------------
-    // Body pipeline: created as a child of AVC; model_root re-parented under it.
+    // Body operator: created as a child of AVC; model_root re-parented under it.
     //
     // Topology:
     //   AVC
-    //     └── body_pipeline  (TransformForkTRSComponent)
+    //     └── body_operator  (TransformOperatorComponent)
     //           rotation_ops: YawFollow { threshold, rate, initial_yaw, forward_plus_z }
     //           model_root  ← re-parented here
     // -----------------------------------------------------------------------
-    if !skip_body_pipeline {
-        use crate::engine::ecs::component::transform_pipeline::TransformQuatOp;
-        let mut body_operator = TransformForkTRSComponent::new();
+    if !skip_body_operator {
+        use crate::engine::ecs::component::transform_operator::TransformQuatOp;
+        let mut body_operator = TransformOperatorComponent::fork_trs();
         body_operator.push_rotation(TransformQuatOp::YawFollow {
             threshold: body_yaw_threshold,
             rate: body_yaw_rate,
             initial_yaw: resolved_initial_body_yaw,
             forward_plus_z: resolved_body_forward_plus_z,
         });
-        let body_pipeline_id = world.add_component(body_operator);
-        let body_pipeline_serialize_id = world.add_component(SerializeComponent::off());
-        let _ = world.set_parent(body_pipeline_serialize_id, Some(body_pipeline_id));
+        let body_operator_id = world.add_component(body_operator);
+        let body_operator_serialize_id = world.add_component(SerializeComponent::off());
+        let _ = world.set_parent(body_operator_serialize_id, Some(body_operator_id));
 
         if let Some(c) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
-            c.body_pipeline_id = Some(body_pipeline_id);
+            c.body_operator_id = Some(body_operator_id);
         }
 
-        emit_attach(emit, id, body_pipeline_id);
-        emit_attach(emit, body_pipeline_id, model_root_id);
+        emit_attach(emit, id, body_operator_id);
+        emit_attach(emit, body_operator_id, model_root_id);
     }
 
     // Head IK target offset: default to authored eye offset (CXR wrapper), with
@@ -2735,7 +2735,7 @@ mod capsule_tests {
     use super::*;
     use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::component::{CollisionShape, MeshComponent, RenderableComponent};
-    use crate::engine::ecs::system::TransformStreamSystem;
+    use crate::engine::ecs::system::TransformOperatorSystem;
     use crate::engine::graphics::mesh::MeshFactory;
 
     fn attach(world: &mut World, parent: ComponentId, child: ComponentId) {
@@ -3003,8 +3003,8 @@ mod capsule_tests {
             .with_scale(2.0, 3.0, 4.0)
             .transform
             .model;
-        let (upright, outputs) = TransformStreamSystem::new()
-            .evaluate_stream_node(&world, fork, arbitrary_pose)
+        let (upright, outputs) = TransformOperatorSystem::new()
+            .evaluate_operator(&world, fork, arbitrary_pose)
             .unwrap();
         assert_eq!(outputs, vec![capsule_t]);
         assert_eq!(

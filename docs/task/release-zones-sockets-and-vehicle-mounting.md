@@ -240,5 +240,5 @@ instead of blindly enabling every inner controller.
 - [Interaction zones on the collision-query foundation](interaction-zone-collision-query-foundation.md)
 - [Spatial, collision, and physics naming](spatial-collision-and-physics-naming.md)
 - [Effective transform-parent basis resolution](../draft/effective-transform-parent-basis-resolution.md)
-- [Transform pipeline](../spec/transform-pipeline.md)
+- [Transform pipeline](../spec/transform-operators.md)
 - [Grab pose transitions](grab-animation-and-pose-transitions.md)

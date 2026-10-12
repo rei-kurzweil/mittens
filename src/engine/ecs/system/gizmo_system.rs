@@ -1,11 +1,10 @@
 use crate::engine::ecs::component::EditorInteractionMode;
 use crate::engine::ecs::component::{
     GestureCoordType, GestureCoordTypeComponent, SignalRouteUpwardComponent,
-    TransformCameraSpecificComponent, TransformCameraSpecificMode, TransformComponent,
-    TransformForkTRSComponent, TransformGizmoAxis, TransformGizmoComponent,
-    TransformGizmoControllerRotationState, TransformGizmoPlane, TransformGizmoRotateComponent,
-    TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
-    TransformGizmoTranslatePlaneComponent,
+    TransformCameraSpecificMode, TransformChannel, TransformComponent, TransformGizmoAxis,
+    TransformGizmoComponent, TransformGizmoControllerRotationState, TransformGizmoPlane,
+    TransformGizmoRotateComponent, TransformGizmoScaleComponent, TransformGizmoTranslateComponent,
+    TransformGizmoTranslatePlaneComponent, TransformOperatorComponent,
 };
 use crate::engine::ecs::system::GridSystem;
 use crate::engine::ecs::system::editor::context::EditorContextState;
@@ -113,8 +112,9 @@ impl TransformGizmoSystem {
                 .iter()
                 .copied()
                 .find_map(|marker| {
-                    let c =
-                        world.get_component_by_id_as::<TransformCameraSpecificComponent>(marker)?;
+                    let c = world
+                        .get_component_by_id_as::<TransformOperatorComponent>(marker)
+                        .and_then(|operator| operator.camera_settings())?;
                     (c.mode == desired_mode)
                         .then(|| {
                             world.children_of(marker).iter().copied().find(|id| {
@@ -1421,7 +1421,7 @@ impl TransformGizmoSystem {
         // Gizmos are parented under the target transform, so by default they'd inherit whatever
         // scale the target (and its ancestors) have.
         //
-        // We now spawn gizmo visuals under an explicit transform pipeline that keeps translation
+        // We now spawn gizmo visuals under an explicit transform operator that keeps translation
         // + rotation but drops inherited scale. This prevents non-uniform target scales from
         // squashing the gizmo and means `TransformGizmoComponent.scale` can be interpreted
         // directly as a world-ish size knob (modulo camera projection).
@@ -1483,37 +1483,17 @@ impl TransformGizmoSystem {
         let parent_world_scale = max_basis_scale(parent_world).max(1e-4);
         let gizmo_local_scale = gizmo_scale;
 
-        fn add_pipeline_group(
+        fn add_operator_group(
             world: &mut World,
             parent: ComponentId,
-            pipeline_name: &str,
-            include_translation_map: bool,
-            include_rotation_map: bool,
-            include_scale_map: bool,
-            drop_translation: bool,
-            drop_rotation: bool,
-            drop_scale: bool,
+            operator_name: &str,
+            dropped_channels: &[TransformChannel],
         ) -> ComponentId {
-            use crate::engine::ecs::component::transform_pipeline::TransformChannel;
-            let mut operator = TransformForkTRSComponent::new();
-            for (include, drop, channel) in [
-                (
-                    include_translation_map,
-                    drop_translation,
-                    TransformChannel::Translation,
-                ),
-                (
-                    include_rotation_map,
-                    drop_rotation,
-                    TransformChannel::Rotation,
-                ),
-                (include_scale_map, drop_scale, TransformChannel::Scale),
-            ] {
-                if include && drop {
-                    operator.set_channel(channel, true);
-                }
-            }
-            let fork = world.add_component_boxed_named(pipeline_name, Box::new(operator));
+            let operator = dropped_channels.iter().fold(
+                TransformOperatorComponent::fork_trs(),
+                |operator, &channel| operator.with_drop(channel),
+            );
+            let fork = world.add_component_boxed_named(operator_name, Box::new(operator));
             let _ = world.add_child(parent, fork);
 
             fork
@@ -1526,18 +1506,13 @@ impl TransformGizmoSystem {
             );
         }
 
-        // Process inherited transforms from the target explicitly via a transform pipeline:
+        // Process inherited transforms from the target explicitly via a transform operator:
         // keep translation + rotation, drop scale.
-        let gizmo_output = add_pipeline_group(
+        let gizmo_output = add_operator_group(
             world,
             component,
-            "gizmo_pipeline",
-            true,
-            true,
-            true,
-            false,
-            false,
-            true,
+            "gizmo_operator",
+            &[TransformChannel::Scale],
         );
 
         // Create a root transform for the gizmo visuals under the GizmoComponent node.
@@ -1545,16 +1520,20 @@ impl TransformGizmoSystem {
             world.add_component_boxed_named("gizmo_root", Box::new(TransformComponent::new()));
         let _ = world.add_child(gizmo_output, gizmo_root);
 
-        // Camera-specific configuration children are ordinary TRS values. The stream
+        // Camera-specific configuration children are ordinary TRS values. The operator
         // evaluates the anchor first and then composes exactly one settings transform.
         for (name, marker) in [
             (
                 "gizmo_camera_mono",
-                TransformCameraSpecificComponent::active_monoscopic(),
+                TransformOperatorComponent::camera_specific(
+                    TransformCameraSpecificMode::Monoscopic,
+                ),
             ),
             (
                 "gizmo_camera_stereo",
-                TransformCameraSpecificComponent::active_stereoscopic(),
+                TransformOperatorComponent::camera_specific(
+                    TransformCameraSpecificMode::Stereoscopic,
+                ),
             ),
         ] {
             let mode = world.add_component_boxed_named(name, Box::new(marker));
@@ -1595,29 +1574,19 @@ impl TransformGizmoSystem {
         // Create two coord-space groups so translation and rotation handles can be oriented
         // independently (e.g. translate in World while rotating in Local).
         //
-        // These pipeline groups sit under the gizmo's uniform scale transform (`gizmo_root`), so
+        // These operator groups sit under the gizmo's uniform scale transform (`gizmo_root`), so
         // they keep gizmo size but can optionally drop inherited rotation.
-        let gizmo_space_world = add_pipeline_group(
+        let gizmo_space_world = add_operator_group(
             world,
             gizmo_visual_parent,
-            "gizmo_space_world_pipeline",
-            true,
-            true,
-            true,
-            false,
-            true,
-            false,
+            "gizmo_space_world_operator",
+            &[TransformChannel::Rotation],
         );
-        let gizmo_space_local = add_pipeline_group(
+        let gizmo_space_local = add_operator_group(
             world,
             gizmo_visual_parent,
-            "gizmo_space_local_pipeline",
-            true,
-            true,
-            true,
-            false,
-            false,
-            false,
+            "gizmo_space_local_operator",
+            &[],
         );
 
         let translate_parent = match translation_space {

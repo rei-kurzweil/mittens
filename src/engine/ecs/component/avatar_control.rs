@@ -135,7 +135,7 @@ pub struct AvatarControlComponent {
     /// Whether `forward_plus_z` was explicitly authored as an override.
     pub forward_plus_z_overridden: bool,
 
-    /// Initial body yaw (radians) seeded into the `YawFollow` pipeline op.
+    /// Initial body yaw (radians) seeded into the `YawFollow` operator op.
     ///
     /// When not explicitly overridden, AVC uses the shared default `π`.
     pub initial_body_yaw: f32,
@@ -144,8 +144,8 @@ pub struct AvatarControlComponent {
     pub initial_body_yaw_overridden: bool,
 
     /// Optional rotation smoothing for hand pose drivers (ControllerXR etc.).
-    /// Applied to the rotation channel of each discovered hand driver's pipeline.
-    /// Equivalent to `QuatTemporalFilter` smoothing_factor. `None` = no smoothing pipeline.
+    /// Applied to the rotation channel of each discovered hand driver's operator.
+    /// Equivalent to `QuatTemporalFilter` smoothing_factor. `None` = no smoothing operator.
     pub hand_rotation_smoothing: Option<f32>,
 
     /// Explicit avatar height (metres) used to set model_root.y = -avatar_height.
@@ -204,9 +204,9 @@ pub struct AvatarControlComponent {
     pub(crate) left_hand_aim_correction: Option<[f32; 4]>,
     pub(crate) right_hand_aim_correction: Option<[f32; 4]>,
 
-    /// ComponentId of the body pipeline root (`TransformForkTRSComponent`).
+    /// ComponentId of the body operator root (`TransformOperatorComponent`).
     /// Set by `try_init_splices`.
-    pub(crate) body_pipeline_id: Option<ComponentId>,
+    pub(crate) body_operator_id: Option<ComponentId>,
 
     /// The mapped/generated transform that owns the camera path after initialization.
     pub(crate) splice_camera_bone: Option<ComponentId>,
@@ -221,10 +221,10 @@ pub struct AvatarControlComponent {
     pub(crate) frozen_left_eye_gaze: Option<[f32; 3]>,
     pub(crate) frozen_right_eye_gaze: Option<[f32; 3]>,
 
-    /// Debug/diagnostic flag: skip creation of the body-rotation pipeline entirely.
+    /// Debug/diagnostic flag: skip creation of the body-rotation operator entirely.
     /// When `true`, model_root stays directly under AVC and only head rotation is applied.
-    /// Use this to isolate whether torso-twist bugs originate in the body pipeline.
-    pub skip_body_pipeline: bool,
+    /// Use this to isolate whether torso-twist bugs originate in the body operator.
+    pub skip_body_operator: bool,
 
     /// Debug/diagnostic flag: when enabled, arm TwoBoneIK chains spawn overlay
     /// visualizations for the actual target vector, transformed pole vector,
@@ -369,7 +369,7 @@ impl AvatarControlComponent {
         self
     }
 
-    /// Override the initial body yaw (radians) seeded into the `YawFollow` pipeline op.
+    /// Override the initial body yaw (radians) seeded into the `YawFollow` operator op.
     /// Use `std::f32::consts::PI` for rigs that face -Z at rest.
     pub fn with_initial_yaw(mut self, yaw: f32) -> Self {
         self.initial_body_yaw = yaw;
@@ -391,10 +391,10 @@ impl AvatarControlComponent {
         self
     }
 
-    /// Skip creation of the body-rotation pipeline. Only head rotation will be applied.
-    /// Use to isolate whether torso-twist bugs originate in the body pipeline.
-    pub fn with_body_pipeline_disabled(mut self) -> Self {
-        self.skip_body_pipeline = true;
+    /// Skip creation of the body-rotation operator. Only head rotation will be applied.
+    /// Use to isolate whether torso-twist bugs originate in the body operator.
+    pub fn with_body_operator_disabled(mut self) -> Self {
+        self.skip_body_operator = true;
         self
     }
 
@@ -480,7 +480,7 @@ impl Default for AvatarControlComponent {
             right_hand_visual_target_id: None,
             left_hand_aim_correction: None,
             right_hand_aim_correction: None,
-            body_pipeline_id: None,
+            body_operator_id: None,
             splice_camera_bone: None,
             humanoid_map_gltf: None,
             humanoid_map_generation: 0,
@@ -491,7 +491,7 @@ impl Default for AvatarControlComponent {
             eye_gaze_still_time_sec: 0.0,
             frozen_left_eye_gaze: None,
             frozen_right_eye_gaze: None,
-            skip_body_pipeline: false,
+            skip_body_operator: false,
             ik_debug: false,
             head_ik_eye_height: None,
             neck_pin_enabled: true,

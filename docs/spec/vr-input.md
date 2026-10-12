@@ -183,8 +183,8 @@ This means the `VRHandComponent` acts like a pose source/driver node, and the ch
 ### Future directions
 
 **Transform filtering / smoothing:**
-- Future smoothing and follow behavior should build on the general **transform pipeline** described in `docs/spec/transform-pipeline.md`
-- Rather than hardcoding smoothing into `OpenXRSystem`, use `TransformStreamSystem` operators like `TOP.smooth("rotation", factor)` or `TOP.smooth("translation", factor)`
+- Future smoothing and follow behavior should build on the general **transform pipeline** described in `docs/spec/transform-operators.md`
+- Rather than hardcoding smoothing into `OpenXRSystem`, use `TransformOperatorSystem` operators like `TOP.smooth("rotation", factor)` or `TOP.smooth("translation", factor)`
 - This keeps XR input focused on source acquisition and pose resolution
 
 **Hand armature driving:**
@@ -229,5 +229,5 @@ For per-finger/per-joint hand tracking, see `docs/spec/hand-tracking-armature.md
 - `src/engine/ecs/system/transform_system.rs` — world matrix propagation; used to find XR camera rig transform
 
 **Transform stream system (for future filtering):**
-- `src/engine/ecs/system/transform_stream_system.rs` — temporal operators and transform composition
-- `docs/spec/transform-pipeline.md` — full design documentation
+- `src/engine/ecs/system/transform_operator.rs` — temporal operators and transform composition
+- `docs/spec/transform-operators.md` — full design documentation
