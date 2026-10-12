@@ -2,9 +2,16 @@
 
 ## Status
 
-Investigating. Reported on pre-cleanup main `4796e0e9`; attachment topology
+Fix implemented in the working tree; headset verification pending. Reported on pre-cleanup main `4796e0e9`; attachment topology
 cleanup `4f6b2915` has since been fast-forwarded into main. This is not a
 regression introduced by that cleanup.
+
+The [capsule-height task](../task/avc-capsule-before-hmd-tracking.md) now wires a
+Y-only TOP sample from the pre-InputXR locomotion frame. Headless SystemWorld
+tests preserve full physical head Y through repeated crouch/stand before and
+after mounting, while retaining wall contact and jump/gravity/floor response.
+Test normal `examples/mittens-corp.mms` in the headset next; the collision-disabled
+probe below is historical isolation evidence, not the new smoke-test scene.
 
 ## Observed behavior
 

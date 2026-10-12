@@ -280,6 +280,7 @@ pub fn spawn_tree(
         }
     }
 
+    validate_operator_configuration(world, id)?;
     // Positional content (strings etc).
     for val in &ce.positionals {
         apply_positional(world, id, val)?;
@@ -376,6 +377,7 @@ pub fn spawn_tree_uninitialized(
         }
     }
 
+    validate_operator_configuration(world, id)?;
     for val in &ce.positionals {
         apply_positional(world, id, val)?;
     }
@@ -563,6 +565,7 @@ fn collect_referenced_guids_filtered(
 
     let visible = filtered_save_visibility(world, node);
     if visible {
+        collect_translation_sample_guids(world, node, out);
         if let Some(ik) = world.get_component_by_id_as::<IKChainComponent>(node) {
             for src in [&ik.target_source, &ik.end_effector_source]
                 .iter()
@@ -739,6 +742,7 @@ fn collect_referenced_guids_limited(
     max_depth: usize,
     out: &mut std::collections::HashSet<uuid::Uuid>,
 ) {
+    collect_translation_sample_guids(world, node, out);
     use crate::engine::ecs::component::{
         CollidableComponent, ComponentRef, GridBindingComponent, IKChainComponent,
         MountableComponent, RiderComponent, SliderComponent, TransformOperatorComponent,
@@ -1693,6 +1697,37 @@ fn arg_layout_length(args: &[Value], i: usize) -> Result<SizeDimension, String> 
 // Component creation
 // ---------------------------------------------------------------------------
 
+fn collect_translation_sample_guids(
+    world: &World,
+    node: ComponentId,
+    out: &mut std::collections::HashSet<uuid::Uuid>,
+) {
+    if let Some(settings) = world
+        .get_component_by_id_as::<TransformOperatorComponent>(node)
+        .and_then(|operator| operator.sample_translation_settings())
+    {
+        for source in [&settings.source, &settings.root_source]
+            .into_iter()
+            .flatten()
+        {
+            if let crate::engine::ecs::component::ComponentRef::Guid(guid) = source {
+                out.insert(*guid);
+            }
+        }
+    }
+}
+
+fn validate_operator_configuration(world: &World, id: ComponentId) -> Result<(), String> {
+    if world
+        .get_component_by_id_as::<TransformOperatorComponent>(id)
+        .and_then(|operator| operator.sample_translation_settings())
+        .is_some_and(|settings| settings.source.is_none())
+    {
+        return Err("TOP.sample_translation requires .source(transform)".into());
+    }
+    Ok(())
+}
+
 fn create_component(
     world: &mut World,
     type_name: &str,
@@ -2140,6 +2175,7 @@ fn create_component(
                 mode => return Err(format!("TOP.camera_specific: unknown mode {mode:?}")),
             }),
             Some("fork_trs") => add!(TransformOperatorComponent::fork_trs()),
+            Some("sample_translation") => add!(TransformOperatorComponent { kind: crate::engine::ecs::component::transform_operator::TransformOperatorKind::SampleTranslation(Default::default()) }),
             Some(method @ ("drop" | "smooth" | "sample_ancestor" | "extract_yaw" | "yaw_follow")) => {
                 let id = world.add_component(TransformOperatorComponent::fork_trs());
                 apply_call(world, id, method, args)?;
@@ -2873,6 +2909,45 @@ fn apply_call(
     method: &str,
     args: &[Value],
 ) -> Result<(), String> {
+    if world
+        .get_component_by_id_as::<TransformOperatorComponent>(id)
+        .and_then(|operator| operator.sample_translation_settings())
+        .is_some()
+    {
+        match method {
+            "source" | "root" => {
+                let source = arg_component_ref(world, args, 0)?;
+                let settings = world
+                    .get_component_by_id_as_mut::<TransformOperatorComponent>(id)
+                    .unwrap()
+                    .sample_translation_settings_mut()
+                    .unwrap();
+                if method == "source" {
+                    settings.source = Some(source);
+                } else {
+                    settings.root_source = Some(source);
+                }
+            }
+            "axes" => {
+                let axes =
+                    crate::engine::ecs::component::transform_operator::TranslationAxes::parse(
+                        arg_str(args, 0)?,
+                    )?;
+                world
+                    .get_component_by_id_as_mut::<TransformOperatorComponent>(id)
+                    .unwrap()
+                    .sample_translation_settings_mut()
+                    .unwrap()
+                    .axes = axes;
+            }
+            _ => {
+                return Err(format!(
+                    "TOP.sample_translation does not support builder {method:?}"
+                ));
+            }
+        }
+        return Ok(());
+    }
     if world
         .get_component_by_id_as::<TransformOperatorComponent>(id)
         .and_then(|operator| operator.fork_trs_settings())

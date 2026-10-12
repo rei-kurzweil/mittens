@@ -18,6 +18,10 @@ pub struct StaticContactSystem {
 }
 
 impl StaticContactSystem {
+    pub(crate) fn forget_zone(&mut self, zone: ComponentId) {
+        self.previous_centers.remove(&zone);
+    }
+
     pub(crate) fn forget_target(&mut self, world: &World, target: ComponentId) {
         self.previous_centers.retain(|zone, _| {
             !world

@@ -6,6 +6,9 @@ Current API note: transform operators now use `TOP` / `TransformOperator`
 constructors and builders. Fork children are ordinary output content. The older
 map/filter component examples below are historical; use
 [the current operator API](../spec/transform-operators.md) for executable MMS.
+The current parent implementation resolves references during transform updates
+and scans World for dependent parent operators. The focused follow-up is
+[retained source bindings and invalidation](transform-operator-source-bindings-and-invalidation.md).
 
 Action note: `ActionComponent` is no longer a current `ComponentRef` consumer; it was removed in
 0.7.

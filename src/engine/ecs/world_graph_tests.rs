@@ -6,6 +6,32 @@ mod tests {
     };
 
     #[test]
+    fn selector_revision_tracks_metadata_and_topology_but_not_typed_pose_writes() {
+        use crate::engine::ecs::component::TransformComponent;
+        let mut world = World::default();
+        let parent = world.add_component(TransformComponent::new());
+        let child = world.add_component(TransformComponent::new());
+        let mut revision = world.query_revision();
+        world
+            .get_component_by_id_as_mut::<TransformComponent>(child)
+            .unwrap()
+            .transform
+            .matrix_world[3][1] = 2.0;
+        assert_eq!(world.query_revision(), revision);
+        world.get_component_record_mut(child).unwrap().name = "renamed".into();
+        assert!(world.query_revision() > revision);
+        revision = world.query_revision();
+        world.add_child(parent, child).unwrap();
+        assert!(world.query_revision() > revision);
+        revision = world.query_revision();
+        world.detach_from_parent(child);
+        assert!(world.query_revision() > revision);
+        revision = world.query_revision();
+        world.remove_component_leaf(child).unwrap();
+        assert!(world.query_revision() > revision);
+    }
+
+    #[test]
     fn attachment_references_distinguish_replacement_and_component_reuse() {
         use crate::engine::ecs::component::TransformComponent;
         let mut world = World::default();

@@ -272,12 +272,70 @@ pub struct TransformCameraSettings {
     pub mode: TransformCameraSpecificMode,
 }
 
+/// A set of world translation axes. It never reorders coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TranslationAxes(u8);
+impl TranslationAxes {
+    pub const XYZ: Self = Self(7);
+    pub const Y: Self = Self(2);
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let mut bits = 0;
+        for ch in text.chars() {
+            let bit = match ch {
+                'x' => 1,
+                'y' => 2,
+                'z' => 4,
+                _ => {
+                    return Err(format!(
+                        "invalid translation axis {ch:?}; expected a nonempty subset of xyz"
+                    ));
+                }
+            };
+            if bits & bit != 0 {
+                return Err(format!("duplicate translation axis {ch:?}"));
+            }
+            bits |= bit;
+        }
+        if bits == 0 {
+            return Err("translation axes must not be empty".into());
+        }
+        Ok(Self(bits))
+    }
+    pub fn contains(self, axis: usize) -> bool {
+        self.0 & (1 << axis) != 0
+    }
+    pub fn as_str(self) -> &'static str {
+        match self.0 {
+            1 => "x",
+            2 => "y",
+            3 => "xy",
+            4 => "z",
+            5 => "xz",
+            6 => "yz",
+            _ => "xyz",
+        }
+    }
+}
+impl Default for TranslationAxes {
+    fn default() -> Self {
+        Self::XYZ
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TransformSampleTranslationSettings {
+    pub source: Option<ComponentRef>,
+    pub root_source: Option<ComponentRef>,
+    pub axes: TranslationAxes,
+}
+
 /// Typed configuration for one live transform operator. Referenced sources are
 /// data dependencies; ordinary children inherit the evaluated output basis.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TransformOperatorKind {
     ForkTrs(TransformForkTrsSettings),
     Parent(TransformParentSettings),
+    SampleTranslation(TransformSampleTranslationSettings),
     InverseLocal(TransformInverseLocalSettings),
     /// A camera settings marker configures its parent anchor T, and contains a
     /// settings T. This specialized role is separate from ordinary output nesting.
@@ -304,6 +362,36 @@ impl TransformOperatorComponent {
         Self {
             kind: TransformOperatorKind::InverseLocal(TransformInverseLocalSettings::new(source)),
         }
+    }
+    pub fn sample_translation(source: ComponentRef) -> Self {
+        Self {
+            kind: TransformOperatorKind::SampleTranslation(TransformSampleTranslationSettings {
+                source: Some(source),
+                ..Default::default()
+            }),
+        }
+    }
+    pub fn sample_translation_settings(&self) -> Option<&TransformSampleTranslationSettings> {
+        if let TransformOperatorKind::SampleTranslation(settings) = &self.kind {
+            Some(settings)
+        } else {
+            None
+        }
+    }
+    pub fn sample_translation_settings_mut(
+        &mut self,
+    ) -> Option<&mut TransformSampleTranslationSettings> {
+        if let TransformOperatorKind::SampleTranslation(settings) = &mut self.kind {
+            Some(settings)
+        } else {
+            None
+        }
+    }
+    pub fn with_axes(mut self, axes: TranslationAxes) -> Self {
+        self.sample_translation_settings_mut()
+            .expect("axes requires sample_translation")
+            .axes = axes;
+        self
     }
     pub fn camera_specific(mode: TransformCameraSpecificMode) -> Self {
         Self {
@@ -390,14 +478,21 @@ impl TransformOperatorComponent {
         match &mut self.kind {
             TransformOperatorKind::Parent(settings) => settings.target_source = Some(source),
             TransformOperatorKind::InverseLocal(settings) => settings.source = source,
-            _ => panic!("source configuration requires parent or inverse_local"),
+            TransformOperatorKind::SampleTranslation(settings) => settings.source = Some(source),
+            _ => {
+                panic!("source configuration requires parent, inverse_local, or sample_translation")
+            }
         }
         self
     }
     pub fn with_root_source(mut self, source: ComponentRef) -> Self {
-        self.parent_settings_mut()
-            .expect("root configuration requires parent")
-            .root_source = Some(source);
+        match &mut self.kind {
+            TransformOperatorKind::Parent(settings) => settings.root_source = Some(source),
+            TransformOperatorKind::SampleTranslation(settings) => {
+                settings.root_source = Some(source)
+            }
+            _ => panic!("root configuration requires parent or sample_translation"),
+        }
         self
     }
 }
@@ -415,7 +510,9 @@ impl Component for TransformOperatorComponent {
     fn init(&mut self, emit: &mut dyn crate::engine::ecs::SignalEmitter, component: ComponentId) {
         if matches!(
             self.kind,
-            TransformOperatorKind::Parent(_) | TransformOperatorKind::InverseLocal(_)
+            TransformOperatorKind::Parent(_)
+                | TransformOperatorKind::InverseLocal(_)
+                | TransformOperatorKind::SampleTranslation(_)
         ) {
             emit.push_intent_now(
                 component,
@@ -435,6 +532,16 @@ impl Component for TransformOperatorComponent {
         }
         match &self.kind {
             TransformOperatorKind::ForkTrs(settings) => settings.to_mms_ast(),
+            TransformOperatorKind::SampleTranslation(settings) => {
+                let mut out = ce_call("TransformOperator", "sample_translation", vec![]);
+                if let Some(source) = &settings.source {
+                    out = out.with_call("source", vec![source_expr(source)]);
+                }
+                if let Some(root) = &settings.root_source {
+                    out = out.with_call("root", vec![source_expr(root)]);
+                }
+                out.with_call("axes", vec![s(settings.axes.as_str())])
+            }
             TransformOperatorKind::Parent(settings) => {
                 let mut out = ce_call(
                     "TransformOperator",

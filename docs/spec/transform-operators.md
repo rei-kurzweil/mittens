@@ -39,6 +39,7 @@ Referenced transforms are data sources, not additional topology parents.
 | `TOP.yaw_follow(threshold, rate)` or `.yaw_follow(threshold, rate)` | Append stateful body-yaw following. Threshold is radians, rate radians/second; both are finite and non-negative. `.initial_yaw(angle)` and `.forward_plus_z(bool)` configure the immediately preceding yaw-follow operation. |
 | `TOP.parent(source)` | Route a referenced transform's world basis to downstream content. `.source(ref)` changes the source; `.root(ref)` scopes query resolution. `TOP.parent()` retains the existing unconfigured behavior. |
 | `TOP.inverse_local(source)` | Postmultiply the inherited matrix by the inverse of a referenced T's authored local matrix: `input_world * inverse(source_local)`. `.source(ref)` changes the source. |
+| `TOP.sample_translation().source(ref)` | Replace selected world translation coordinates from exactly one referenced T. `.axes("y")` or any nonempty set of x/y/z chooses coordinates; default xyz. `.root(ref)` scopes queries. Preserve the full incoming linear basis and apply downstream T offsets afterward. |
 | `TOP.camera_specific("monoscopic" / "stereoscopic")` | Select a settings T under a marker attached directly to an anchor T. See the exception below. |
 
 `TOP.drop(channel)` is also a constructor. It creates a fork with the selected
@@ -64,7 +65,24 @@ Inverse-local operators retain their last valid inverse when a source becomes
 unresolved or singular. They reject sources within their own output subtree.
 The existing reverse dependency index refreshes affected consumers when the
 source changes. Parent routing retains its existing resolution, cycle protection,
-and refresh behavior. This migration changes authoring, not those policies.
+and refresh behavior.
+
+Translation sampling retains resolved handles and refreshes indexed consumers
+when sources change. Query results invalidate on World selector/topology revision,
+not ordinary typed pose updates. Missing, ambiguous, invalid, cyclic, or
+non-finite selected sources preserve the input and expose a validation status.
+Consumers such as AVC must disable contact while a sample is invalid/pending.
+See the [axis-sampling task](../task/transform-sample-translation-axes.md) for
+dependency limits and verification.
+
+Source caching is not yet uniform across operator kinds. Parent routing still
+resolves references and scans World for dependent parent operators during normal
+T-change handling; multiple changes can trigger multiple scans in one frame.
+Inverse-local already indexes consumers but re-resolves its reference when
+evaluated. The [retained source bindings and invalidation task](../task/transform-operator-source-bindings-and-invalidation.md)
+plans shared caching/indexed refresh and records the sampler's current broad
+invalidation policy. This is transform-change-driven work, not an unconditional
+per-frame operator-system scan.
 
 ## Camera-specific settings exception
 
@@ -90,7 +108,7 @@ their exceptional role remains explicit at this API checkpoint.
 ## Runtime representation and state
 
 Every TOP constructor creates a `TransformOperatorComponent` with a typed
-`TransformOperatorKind`: `ForkTrs`, `Parent`, `InverseLocal`, or `CameraSpecific`.
+`TransformOperatorKind`: `ForkTrs`, `Parent`, `SampleTranslation`, `InverseLocal`, or `CameraSpecific`.
 Fork, parent-source, inverse-source, and camera settings are plain values inside
 the enum. They are not separate ECS components. A live operator keeps its own
 identity and temporal state, regardless of whether its settings equal another's.
@@ -130,9 +148,7 @@ order, source-driven refresh, GUID-preserving dump/reload, separate temporal sta
 and independent channel/instance state. Ordinary forks expose every direct child
 as output; camera refresh and render/picking tests remain applicable.
 
-The initial MMS migration passed the user’s smoke test. The Rust consolidation
-requires another smoke test before further transform/locomotion work.
-`TOP.sample_translation().source(...).axes(...)` is still a proposal in the
-[axis-sampling task](../task/transform-sample-translation-axes.md). AVC capsule
-height is still driven by the current topology; the HMD Y contact issue and
-crouch IK are intentionally separate later slices.
+The TOP migration/consolidation passed the user’s smoke test. Axis-selective
+sampling and XR capsule Y decoupling are implemented and have automated coverage.
+The [AVC task](../task/avc-capsule-before-hmd-tracking.md) retains headset acceptance
+and calibration limits. Crouch IK follows that manual checkpoint.

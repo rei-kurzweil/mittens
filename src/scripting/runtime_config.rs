@@ -750,6 +750,8 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 }
                 "TransformOperator" => {
                     component.constructor("fork_trs", no_args());
+                    component.constructor("sample_translation", no_args());
+                    component.builder_call("axes", strings(1));
                     component.constructor(
                         "parent",
                         optional_component_signature([mms::ValueType::Any], 0),

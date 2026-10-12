@@ -2,9 +2,9 @@
 
 ## Status and outcome
 
-Planned; not implemented. The TOP API and Rust consolidation are implemented
-and have passed user smoke testing (through `c38c0502`). Add a
-`SampleTranslation` kind to the existing TransformOperatorComponent that
+Implemented in the working tree; headset smoke testing is pending. The earlier
+TOP API and Rust consolidation passed user smoke testing through `c38c0502`.
+The new `SampleTranslation` kind in TransformOperatorComponent
 replaces selected translation coordinates in its incoming world matrix with
 coordinates sampled from a referenced TransformComponent, preserving the
 remaining coordinates and the incoming rotation/scale basis.
@@ -35,14 +35,13 @@ Implementation can simply assign the selected coordinates. Output is always
 a vec3. Masking a world translation to zero would discard the locomotion Y;
 adding the sampled translation would double-count the shared parent motion.
 
-## Proposed component API
+## Component API
 
-Proposed grouped syntax; not implemented yet:
+Implemented grouped syntax:
 
 Completed prerequisite: [transform operator API cleanup](transform-operator-api-cleanup.md),
-including the unified component and evaluator. Add this operator under
-`TOP.sample_translation().source(...).axes(...)` before the capsule-height
-behavior change. `TransformSampleTranslation` remains a working
+including the unified component and evaluator. The operator is
+`TOP.sample_translation().source(...).axes(...)`. `TransformSampleTranslation` remains a working
 descriptive label in diagrams, not a second MMS API to introduce and retire.
 
 ```mms
@@ -112,10 +111,9 @@ the capsule T beneath it. The fork still strips rotation and scale; the new
 stage edits the resulting matrix's Y; the capsule T then applies its calibrated
 local offset. This updates the earlier channel-map-only proposal.
 
-AVC now generates a TOP fork with rotation/scale drops stored as values,
-followed directly by the capsule T. The old map/drop helper components are gone.
-The height fix inserts this new kind between fork and capsule T and recalibrates
-the offset.
+AVC generates a TOP fork with rotation/scale drops stored as values. XR inserts
+the sample between fork and capsule T; desktop retains the direct capsule child.
+The height fix calibrates the XR offset in world units from model-relative bounds.
 HMD driver and avatar parentage stay unchanged; capsule T gains the stage as
 its immediate parent.
 
@@ -169,14 +167,42 @@ coordinates are finite and exercise rotated/scaled parent composition.
    parent translation is included once, and cycles are rejected or diagnosed.
    A downstream capsule T retains its calibrated offset; a stage below T must
    not unexpectedly change that parent T or unrelated sibling content.
-   Repeated evaluation is deterministic and allocation-free after setup.
+   Repeated evaluation is deterministic. Retained reference resolution and
+   masked matrix editing do not allocate or run selectors after setup; the
+   existing propagation API still creates child/output vectors.
 3. **AVC consumer:** wire runtime source references automatically, calibrate the
    offset, preserve upright/drop-rotation/drop-scale behavior, and verify sample
    validity gates contact. The linked capsule task owns full floor/wall,
    physics, frame-order, and headset acceptance before crouch IK begins.
 
+## Implementation and verification
+
+- `World::query_revision()` invalidates retained references after structural,
+  name, GUID, or raw-record edits. Ordinary typed transform writes leave it
+  unchanged. GUID lookup uses the existing index; query resolution requires
+  exactly one concrete T. `root(...)`, `../`, and `/` scopes are supported.
+- The evaluator retains each owner's input, resolved source, authored settings,
+  and validation status. Missing, ambiguous, invalid, cyclic, or non-finite
+  selected sources preserve input; non-finite values can recover on a pose write.
+- A source-to-consumers index and changed-source set refresh affected subtrees,
+  including chains across separate branches. Structural changes refresh retained
+  consumers and rebuild their inherited basis through intervening operators.
+  This also makes initial evaluation below a scale-dropping fork correct.
+- Runtime states/index entries are removed through SystemWorld's subtree removal.
+  Dependency validation and propagation are bounded to 64 dependency levels/waves;
+  this is not an arbitrary-depth constraint graph.
+- Automated checks cover y/xz/xyz, shear-preserving linear basis, invalid masks,
+  variables and scoped/forward query references, canonical dump/reload, typed-pose
+  cache retention, ambiguity/removal/recreation, non-finite recovery, own-output
+  and cross-branch cycles, dependent chains, and reparented inputs.
+
+Headset acceptance and runtime cost profiling remain in the linked AVC task.
+
 ## Related work
 
+- [Retained operator source bindings and invalidation](transform-operator-source-bindings-and-invalidation.md):
+  generalize cached sources/indexed refresh to parent and inverse-local, then
+  audit contextual ancestor/camera sources and refine broad invalidation.
 - [Transform operator API and output-contract cleanup](transform-operator-api-cleanup.md)
 - [TransformParent component-reference routing](transform-parent-component-ref-routing.md)
 - [Transform pipeline cleanup checklist](transform-pipeline-cleanup-checklist.md)

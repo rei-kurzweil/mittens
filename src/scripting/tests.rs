@@ -10774,8 +10774,113 @@ fn top_nested_outputs_preserve_offsets_source_updates_and_roundtrip() {
 }
 
 #[test]
+fn top_translation_sample_variables_scopes_dependencies_and_roundtrip() {
+    use crate::engine::ecs::system::{SystemWorld, TransformSystem};
+    let source = r#"
+        let frame = T.position(100.0, 200.0, 300.0) { name = "sample_frame" }
+        let scope = T { name = "sample_scope" frame }
+        T {
+            name = "sample_scene"
+            T.position(10.0, 20.0, 30.0) {
+                TOP.fork_trs().drop("rotation").drop("scale") {
+                    TOP.sample_translation().source(frame).axes("y") {
+                        T.position(0.0, 1.0, 0.0) { name = "sample_y" }
+                        TOP.sample_translation().source("[name='sample_frame']").root(scope).axes("zx") {
+                            T { name = "sample_chain" }
+                        }
+                    }
+                    T { name = "sample_sibling" }
+                }
+            }
+            // A query resolves when its target is attached after the consumer.
+            scope
+        }
+    "#;
+    let named = |world: &World, label: &str| {
+        world
+            .all_components()
+            .find(|id| world.component_label(*id) == Some(label))
+            .unwrap()
+    };
+    let mut world = World::default();
+    let mut systems = SystemWorld::default();
+    let mut queue = CommandQueue::new();
+    let mut visuals = VisualWorld::default();
+    let out = MeowMeowRunner::eval_with_runtime_spec(
+        source,
+        &mut world,
+        &mut systems.rx,
+        None,
+        &mut queue,
+    );
+    assert!(out.errors.is_empty(), "{:?}", out.errors);
+    let root = named(&world, "sample_scene");
+    systems.transform_changed(&mut world, &mut visuals, root);
+    assert_eq!(
+        TransformSystem::world_position(&world, named(&world, "sample_y")),
+        Some([10.0, 201.0, 30.0])
+    );
+    assert_eq!(
+        TransformSystem::world_position(&world, named(&world, "sample_chain")),
+        Some([100.0, 200.0, 300.0])
+    );
+    assert_eq!(
+        TransformSystem::world_position(&world, named(&world, "sample_sibling")),
+        Some([10.0, 20.0, 30.0])
+    );
+    let ast = crate::scripting::component_registry::subtree_to_ce_ast(&world, root).unwrap();
+    let text = crate::scripting::unparser::unparse_component(&ast);
+    assert!(text.contains("sample_translation()"), "{text}");
+    assert!(text.contains(".axes(\"xz\")"), "{text}");
+    let mut loaded = World::default();
+    let mut loaded_systems = SystemWorld::default();
+    let out = MeowMeowRunner::eval_with_runtime_spec(
+        &text,
+        &mut loaded,
+        &mut loaded_systems.rx,
+        None,
+        &mut queue,
+    );
+    assert!(out.errors.is_empty(), "{:?}\n{text}", out.errors);
+    let loaded_root = named(&loaded, "sample_scene");
+    loaded_systems.transform_changed(&mut loaded, &mut visuals, loaded_root);
+    assert_eq!(
+        TransformSystem::world_position(&loaded, named(&loaded, "sample_y")),
+        Some([10.0, 201.0, 30.0])
+    );
+    assert_eq!(
+        TransformSystem::world_position(&loaded, named(&loaded, "sample_chain")),
+        Some([100.0, 200.0, 300.0])
+    );
+    let frame = named(&world, "sample_frame");
+    world
+        .get_component_by_id_as_mut::<TransformComponent>(frame)
+        .unwrap()
+        .set_position(&mut systems.rx, 400.0, 500.0, 600.0);
+    systems.transform_changed(&mut world, &mut visuals, frame);
+    assert_eq!(
+        TransformSystem::world_position(&world, named(&world, "sample_y")),
+        Some([10.0, 501.0, 30.0])
+    );
+    assert_eq!(
+        TransformSystem::world_position(&world, named(&world, "sample_chain")),
+        Some([400.0, 500.0, 600.0])
+    );
+    assert_eq!(
+        TransformSystem::world_position(&world, named(&world, "sample_sibling")),
+        Some([10.0, 20.0, 30.0])
+    );
+}
+
+#[test]
 fn top_rejects_wrong_kind_builders_channels_and_legacy_authoring() {
     for source in [
+        "TOP.sample_translation() {}",
+        "TOP.sample_translation().source(\"#source\").axes(\"\") {}",
+        "TOP.sample_translation().source(\"#source\").axes(\"yy\") {}",
+        "TOP.sample_translation().source(\"#source\").axes(\"w\") {}",
+        "TOP.sample_translation().source(\"#source\").drop(\"scale\") {}",
+        "TOP.fork_trs().axes(\"y\") {}",
         "TOP.parent(\"#source\").drop(\"scale\") {}",
         "TOP.inverse_local(\"#source\").root(\"#scope\") {}",
         "TOP.camera_specific(\"monoscopic\").smooth(\"rotation\", 2.0) {}",

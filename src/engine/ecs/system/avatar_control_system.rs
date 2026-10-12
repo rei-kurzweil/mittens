@@ -48,6 +48,7 @@ impl AvatarControlSystem {
         humanoid_maps: &mut HumanoidBoneMapSystem,
         emit: &mut dyn SignalEmitter,
         dt_sec: f32,
+        operators: &super::TransformOperatorSystem,
     ) {
         let ids: Vec<_> = self.avatars.iter().copied().collect();
 
@@ -80,7 +81,60 @@ impl AvatarControlSystem {
             // A new capsule must pass through transform propagation before it
             // can release scene-authored gravity. Publish on a subsequent tick.
             if capsule_before.is_some() {
-                publish_capsule_readiness(id, world, emit);
+                publish_capsule_readiness(id, world, emit, operators);
+            }
+        }
+    }
+
+    /// Retained avatar IDs bound this work; no world-wide avatar search.
+    pub fn pending_capsule_samples(
+        &self,
+        world: &mut World,
+        operators: &super::TransformOperatorSystem,
+    ) -> Vec<ComponentId> {
+        let mut pending = Vec::new();
+        for &id in &self.avatars {
+            refresh_capsule_routing(id, world);
+            if let Some(sample) = world
+                .get_component_by_id_as::<AvatarControlComponent>(id)
+                .and_then(|avc| avc.capsule_sample_id)
+            {
+                if operators.translation_sample_status(world, sample)
+                    == super::transform_operator::TranslationSampleStatus::Pending
+                {
+                    pending.push(sample);
+                }
+            }
+        }
+        pending
+    }
+
+    pub fn gate_capsule_contact(
+        &self,
+        world: &mut World,
+        operators: &super::TransformOperatorSystem,
+        contact: &mut super::static_contact_system::StaticContactSystem,
+    ) {
+        for &id in &self.avatars {
+            let Some(avatar) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
+                continue;
+            };
+            let enabled = capsule_contact_valid(world, avatar, operators);
+            let collidable = avatar.capsule_collidable_id;
+            let reset = avatar.capsule_reset_contact_history;
+            if reset {
+                if let Some(zone) = collidable.and_then(|id| world.parent_of(id)) {
+                    contact.forget_zone(zone);
+                }
+                world
+                    .get_component_by_id_as_mut::<AvatarControlComponent>(id)
+                    .unwrap()
+                    .capsule_reset_contact_history = false;
+            }
+            if let Some(collidable) = collidable
+                .and_then(|id| world.get_component_by_id_as_mut::<CollidableComponent>(id))
+            {
+                collidable.enabled = enabled;
             }
         }
     }
@@ -717,22 +771,164 @@ fn subtree_has_camera(world: &World, root: ComponentId) -> bool {
     false
 }
 
+fn owning_input_xr(world: &World, mut id: ComponentId) -> Option<ComponentId> {
+    loop {
+        if world
+            .get_component_by_id_as::<InputXRComponent>(id)
+            .is_some()
+        {
+            return Some(id);
+        }
+        id = world.parent_of(id)?;
+    }
+}
+
+fn uniform_world_scale(world: &World, transform: ComponentId) -> Option<f32> {
+    let matrix = world
+        .get_component_by_id_as::<TransformComponent>(transform)?
+        .transform
+        .matrix_world;
+    let trs = crate::engine::transform::TransformTrs::from_matrix(matrix).ok()?;
+    let scale = trs.scale;
+    (scale.iter().all(|value| value.is_finite() && *value > 1e-6)
+        && (scale[0] - scale[1]).abs() < 1e-4 * scale[0]
+        && (scale[0] - scale[2]).abs() < 1e-4 * scale[0])
+        .then_some(scale[0])
+}
+
+fn ancestor_or_self(world: &World, ancestor: ComponentId, mut descendant: ComponentId) -> bool {
+    loop {
+        if ancestor == descendant {
+            return true;
+        }
+        let Some(parent) = world.parent_of(descendant) else {
+            return false;
+        };
+        descendant = parent;
+    }
+}
+
+fn refresh_capsule_routing(avc_id: ComponentId, world: &mut World) {
+    let Some(avatar) = world.get_component_by_id_as::<AvatarControlComponent>(avc_id) else {
+        return;
+    };
+    let Some(collidable) = avatar.capsule_collidable_id else {
+        return;
+    };
+    if avatar.capsule_routing_revision == world.query_revision()
+        && avatar.capsule_route_ref == avatar.movement_target
+    {
+        return;
+    }
+    let sample = avatar.capsule_sample_id;
+    let previous_source = avatar.capsule_vertical_source;
+    let previous_target = world
+        .get_component_by_id_as::<CollidableComponent>(collidable)
+        .and_then(|component| component.movement_target_id);
+    let target = automatic_avc_movement_target(world, avc_id);
+    let source = owning_input_xr(world, avc_id)
+        .and_then(|input| xr_locomotion_target_transform(world, input));
+    let source = source
+        .filter(|source| target.is_some_and(|target| ancestor_or_self(world, target, *source)));
+    let authored_target = avatar.movement_target.clone();
+    if let Some(sample) = sample {
+        let reference = source
+            .and_then(|source| world.get_component_record(source))
+            .map(|node| super::super::component::ComponentRef::Guid(node.guid));
+        if let Some(settings) = world
+            .get_component_by_id_as_mut::<TransformOperatorComponent>(sample)
+            .and_then(|operator| operator.sample_translation_settings_mut())
+        {
+            settings.source = reference;
+        }
+    }
+    if let Some(component) = world.get_component_by_id_as_mut::<CollidableComponent>(collidable) {
+        component.movement_target_id = target;
+        component.movement_target_required = true;
+    }
+    let revision = world.query_revision();
+    if let Some(avatar) = world.get_component_by_id_as_mut::<AvatarControlComponent>(avc_id) {
+        avatar.capsule_vertical_source = source;
+        avatar.capsule_routing_revision = revision;
+        avatar.capsule_route_ref = authored_target;
+        avatar.capsule_reset_contact_history |=
+            previous_source != source || previous_target != target;
+    }
+}
+
+fn capsule_contact_valid(
+    world: &World,
+    avatar: &AvatarControlComponent,
+    operators: &super::TransformOperatorSystem,
+) -> bool {
+    if !avatar.collision_enabled
+        || avatar.model_root_id.is_none_or(|id| {
+            world
+                .get_component_by_id_as::<TransformComponent>(id)
+                .is_none()
+        })
+    {
+        return false;
+    }
+    if avatar.humanoid_map_gltf.is_some_and(|id| {
+        world
+            .get_component_by_id_as::<GLTFComponent>(id)
+            .is_none_or(|gltf| !gltf.spawned)
+    }) {
+        return false;
+    }
+    let Some(sample) = avatar.capsule_sample_id else {
+        return true;
+    }; // Preserve desktop routing.
+    let Some(source) = avatar.capsule_vertical_source else {
+        return false;
+    };
+    let Some(settings) = world
+        .get_component_by_id_as::<TransformOperatorComponent>(sample)
+        .and_then(|operator| operator.sample_translation_settings())
+    else {
+        return false;
+    };
+    let expected = world
+        .get_component_record(source)
+        .map(|node| super::super::component::ComponentRef::Guid(node.guid));
+    if settings.source != expected
+        || settings.axes != super::super::component::transform_operator::TranslationAxes::Y
+    {
+        return false;
+    }
+    world
+        .get_component_by_id_as::<TransformComponent>(source)
+        .is_some()
+        && avatar
+            .model_root_id
+            .and_then(|id| uniform_world_scale(world, id))
+            .is_some_and(|scale| (scale - avatar.capsule_world_scale).abs() <= scale * 1e-4)
+        && operators.translation_sample_status(world, sample)
+            == super::transform_operator::TranslationSampleStatus::Ready
+}
+
 fn try_init_or_route_capsule(
     avc_id: ComponentId,
     world: &mut World,
     render_assets: &RenderAssets,
     _emit: &mut dyn SignalEmitter,
 ) {
-    let Some(avc) = world
-        .get_component_by_id_as::<AvatarControlComponent>(avc_id)
-        .cloned()
-    else {
+    let Some(avatar) = world.get_component_by_id_as::<AvatarControlComponent>(avc_id) else {
         return;
     };
-    if !avc.collision_enabled {
+    if !avatar.collision_enabled {
         return;
     }
-
+    if avatar.capsule_collidable_id.is_some_and(|id| {
+        world
+            .get_component_by_id_as::<CollidableComponent>(id)
+            .is_some()
+    }) {
+        refresh_capsule_routing(avc_id, world);
+        return;
+    }
+    let avc = avatar.clone();
     let model_root_id = avc.model_root_id.or_else(|| {
         world.children_of(avc_id).iter().copied().find(|child| {
             world
@@ -744,16 +940,23 @@ fn try_init_or_route_capsule(
         return;
     };
     let movement_target = automatic_avc_movement_target(world, avc_id);
-
-    if let Some(collidable_id) = avc.capsule_collidable_id {
-        if let Some(collidable) =
-            world.get_component_by_id_as_mut::<CollidableComponent>(collidable_id)
-        {
-            collidable.movement_target_id = movement_target;
-            collidable.movement_target_required = true;
-        }
+    let xr = owning_input_xr(world, avc_id);
+    let vertical_source = xr.and_then(|input| xr_locomotion_target_transform(world, input));
+    if xr.is_some()
+        && vertical_source.is_none_or(|source| {
+            movement_target.is_none_or(|target| !ancestor_or_self(world, target, source))
+        })
+    {
         return;
     }
+    let world_scale = if xr.is_some() {
+        let Some(scale) = uniform_world_scale(world, model_root_id) else {
+            return;
+        };
+        scale
+    } else {
+        1.0
+    };
 
     let measured_bounds =
         BoundsSystem::measure_renderable_subtree_bounds(world, render_assets, model_root_id);
@@ -768,7 +971,15 @@ fn try_init_or_route_capsule(
             ("aggregate_render_bounds", bounds, inferred)
         } else {
             let Some(height) = spawned_gltf_exists(world, model_root_id)
-                .then(|| fallback_avatar_height(world, avc_id, model_root_id, &avc))
+                .then(|| {
+                    if xr.is_some() {
+                        avc.avatar_height.or_else(|| {
+                            (avc.model_root_local_y < 0.0).then_some(-avc.model_root_local_y)
+                        })
+                    } else {
+                        fallback_avatar_height(world, avc_id, model_root_id, &avc)
+                    }
+                })
                 .flatten()
             else {
                 return;
@@ -782,6 +993,20 @@ fn try_init_or_route_capsule(
             };
             ("fallback_avatar_height", bounds, inferred)
         };
+    let inferred = if xr.is_some() {
+        // STAGE's floor-relative origin is the pre-tracking frame's Y. Geometry
+        // supplies a stable rest-pose offset; never calibrate from live head Y.
+        let scaled = crate::engine::graphics::bounds::Aabb {
+            min: inference_bounds.min.map(|value| value * world_scale),
+            max: inference_bounds.max.map(|value| value * world_scale),
+        };
+        let Some(inferred) = infer_upright_capsule(&scaled, avc.capsule_radius) else {
+            return;
+        };
+        inferred
+    } else {
+        inferred
+    };
     let (radius, half_segment) = match inferred.shape {
         CollisionShape::CapsuleY {
             radius,
@@ -809,12 +1034,34 @@ fn try_init_or_route_capsule(
         world.add_component(TransformComponent::new().with_position(0.0, inferred.center_y, 0.0));
     let serialize = world.add_component(SerializeComponent::off());
     let zone = world.add_component(ZoneComponent::new(inferred.shape));
-    let collidable = world
-        .add_component(CollidableComponent::slide().with_runtime_movement_target(movement_target));
+    let mut collider = CollidableComponent::slide().with_runtime_movement_target(movement_target);
+    // The generic unresolved-source fallback preserves tracked Y. Never let
+    // an XR proxy use it for contact while its sample is still pending.
+    collider.enabled = xr.is_none();
+    let collidable = world.add_component(collider);
 
     let _ = world.set_parent(fork, Some(model_root_id));
-    let _ = world.set_parent(capsule_t, Some(fork));
-    let _ = world.set_parent(serialize, Some(capsule_t));
+    let sample = vertical_source.map(|source| {
+        let guid = world.get_component_record(source).unwrap().guid;
+        let sample = world.add_component(
+            TransformOperatorComponent::sample_translation(
+                super::super::component::ComponentRef::Guid(guid),
+            )
+            .with_axes(super::super::component::transform_operator::TranslationAxes::Y),
+        );
+        let _ = world.set_parent(sample, Some(fork));
+        _emit.push_intent_now(
+            sample,
+            IntentValue::UpdateTransformWorld {
+                component_id: sample,
+            },
+        );
+        sample
+    });
+    let _ = world.set_parent(capsule_t, Some(sample.unwrap_or(fork)));
+    // Omit the entire generated XR branch from scene saves, including its
+    // source reference. Desktop keeps the previous serialization boundary.
+    let _ = world.set_parent(serialize, Some(if xr.is_some() { fork } else { capsule_t }));
     let _ = world.set_parent(zone, Some(capsule_t));
     let _ = world.set_parent(collidable, Some(zone));
 
@@ -822,16 +1069,25 @@ fn try_init_or_route_capsule(
         avc.model_root_id = Some(model_root_id);
         avc.capsule_transform_id = Some(capsule_t);
         avc.capsule_collidable_id = Some(collidable);
+        avc.capsule_sample_id = sample;
+        avc.capsule_vertical_source = vertical_source;
+        avc.capsule_world_scale = world_scale;
     }
+    refresh_capsule_routing(avc_id, world);
 }
 
-fn publish_capsule_readiness(avc_id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter) {
+fn publish_capsule_readiness(
+    avc_id: ComponentId,
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    operators: &super::TransformOperatorSystem,
+) {
     let Some(avatar) = world.get_component_by_id_as::<AvatarControlComponent>(avc_id) else {
         return;
     };
     let previously_ready = avatar.capsule_ready;
     let usable_zone = (|| {
-        if !avatar.collision_enabled {
+        if !capsule_contact_valid(world, avatar, operators) {
             return None;
         }
         let collidable_id = avatar.capsule_collidable_id?;
@@ -839,7 +1095,12 @@ fn publish_capsule_readiness(avc_id: ComponentId, world: &mut World, emit: &mut 
         if !collidable.enabled {
             return None;
         }
-        let target = automatic_avc_movement_target(world, avc_id)?;
+        if avatar.capsule_routing_revision != world.query_revision()
+            || avatar.capsule_route_ref != avatar.movement_target
+        {
+            return None;
+        }
+        let target = collidable.movement_target_id?;
         if super::static_contact_system::movement_target(
             world,
             collidable_id,
@@ -2734,7 +2995,9 @@ mod hand_pose_correction_tests {
 mod capsule_tests {
     use super::*;
     use crate::engine::ecs::CommandQueue;
-    use crate::engine::ecs::component::{CollisionShape, MeshComponent, RenderableComponent};
+    use crate::engine::ecs::component::{
+        CollisionShape, ComponentRef, MeshComponent, RenderableComponent,
+    };
     use crate::engine::ecs::system::TransformOperatorSystem;
     use crate::engine::graphics::mesh::MeshFactory;
 
@@ -2749,6 +3012,485 @@ mod capsule_tests {
             self.0.push((scope, event));
         }
         fn push_intent(&mut self, _: ComponentId, _: crate::engine::ecs::IntentSignal) {}
+    }
+
+    struct XrCapsuleFixture {
+        world: World,
+        systems: super::super::SystemWorld,
+        visuals: crate::engine::graphics::VisualWorld,
+        assets: RenderAssets,
+        queue: CommandQueue,
+        root: ComponentId,
+        frame: ComponentId,
+        input: ComponentId,
+        head: ComponentId,
+        avatar: ComponentId,
+        model: ComponentId,
+    }
+
+    impl XrCapsuleFixture {
+        fn new(starting_head_y: f32, scale: f32) -> Self {
+            let mut world = World::default();
+            let root = world.add_component(
+                TransformComponent::new()
+                    .with_position(0.0, 3.0, 0.0)
+                    .with_scale(scale, scale, scale),
+            );
+            let frame = world.add_component(TransformComponent::new().with_position(0.0, 0.2, 0.0));
+            let input = world.add_component(InputXRComponent::on());
+            world
+                .get_component_by_id_as_mut::<InputXRComponent>(input)
+                .unwrap()
+                .pose_valid = true;
+            let head = world.add_component(TransformComponent::new().with_position(
+                0.0,
+                starting_head_y,
+                0.0,
+            ));
+            let mut avc = AvatarControlComponent::new();
+            avc.movement_target = Some(ComponentRef::Guid(
+                world.get_component_record(root).unwrap().guid,
+            ));
+            avc.head_mount = Some(head); // Stand in for the completed humanoid splice.
+            avc.model_root_local_y = -1.6;
+            let avatar = world.add_component(avc);
+            let model =
+                world.add_component(TransformComponent::new().with_position(0.0, -1.6, 0.0));
+            world
+                .get_component_by_id_as_mut::<AvatarControlComponent>(avatar)
+                .unwrap()
+                .model_root_id = Some(model);
+            let body = world.add_component(
+                TransformComponent::new()
+                    .with_position(0.0, 1.0, 0.0)
+                    .with_scale(0.4, 2.0, 0.4),
+            );
+            let mesh = world.add_component(RenderableComponent::cube());
+            for (parent, child) in [
+                (root, frame),
+                (frame, input),
+                (input, head),
+                (head, avatar),
+                (avatar, model),
+                (model, body),
+                (body, mesh),
+            ] {
+                attach(&mut world, parent, child);
+            }
+            let floor = world.add_component(TransformComponent::new().with_position(
+                0.0,
+                3.0 + 0.2 * scale - 0.5,
+                0.0,
+            ));
+            let zone = world.add_component(ZoneComponent::cube([10.0, 0.5, 10.0]));
+            let contact = world.add_component(CollidableComponent::static_());
+            attach(&mut world, floor, zone);
+            attach(&mut world, zone, contact);
+            let mut systems = super::super::SystemWorld::default();
+            systems.avatar_control.register(avatar);
+            let mut fixture = Self {
+                world,
+                systems,
+                visuals: Default::default(),
+                assets: RenderAssets::new(),
+                queue: CommandQueue::new(),
+                root,
+                frame,
+                input,
+                head,
+                avatar,
+                model,
+            };
+            fixture
+                .systems
+                .transform_changed(&mut fixture.world, &mut fixture.visuals, root);
+            fixture
+                .systems
+                .transform_changed(&mut fixture.world, &mut fixture.visuals, floor);
+            for _ in 0..3 {
+                fixture.tick();
+            }
+            assert!(
+                fixture.avatar().capsule_ready,
+                "fixture should settle before exercising contact"
+            );
+            fixture
+        }
+
+        fn tick(&mut self) {
+            // Exercise the real pose-only/fixed-step/AVC frame phases headlessly.
+            self.systems.tick(
+                &mut self.world,
+                &mut self.visuals,
+                &mut self.assets,
+                &InputState::default(),
+                &mut self.queue,
+                1.0 / 60.0,
+            );
+        }
+
+        fn set_position(&mut self, id: ComponentId, position: [f32; 3]) {
+            self.world
+                .get_component_by_id_as_mut::<TransformComponent>(id)
+                .unwrap()
+                .set_position(&mut self.queue, position[0], position[1], position[2]);
+            self.systems.process_commands(
+                &mut self.world,
+                &mut self.visuals,
+                &mut self.assets,
+                &mut self.queue,
+            );
+        }
+
+        fn avatar(&self) -> &AvatarControlComponent {
+            self.world
+                .get_component_by_id_as::<AvatarControlComponent>(self.avatar)
+                .unwrap()
+        }
+
+        fn position(&self, id: ComponentId) -> [f32; 3] {
+            super::super::TransformSystem::world_position(&self.world, id).unwrap()
+        }
+    }
+
+    fn assert_position(actual: [f32; 3], expected: [f32; 3]) {
+        for axis in 0..3 {
+            assert!(
+                (actual[axis] - expected[axis]).abs() < 1e-4,
+                "actual={actual:?} expected={expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn xr_capsule_keeps_physical_head_y_free_through_real_contact_frame_phases() {
+        let mut f = XrCapsuleFixture::new(0.8, 1.0); // Crouched startup must not calibrate a crouched capsule.
+        let capsule = f.avatar().capsule_transform_id.unwrap();
+        assert_eq!(f.avatar().capsule_vertical_source, Some(f.frame));
+        assert_eq!(
+            f.world
+                .get_component_by_id_as::<CollidableComponent>(
+                    f.avatar().capsule_collidable_id.unwrap()
+                )
+                .unwrap()
+                .movement_target_id,
+            Some(f.root)
+        );
+        for _ in 0..5 {
+            for height in [0.5, 0.8, 1.6, 2.1, 1.6] {
+                f.set_position(f.head, [0.1, height, -0.2]);
+                f.tick();
+                assert_position(f.position(capsule), [0.1, 4.2, -0.2]);
+                assert_position(f.position(f.root), [0.0, 3.0, 0.0]);
+                assert_position(f.position(f.head), [0.1, 3.2 + height, -0.2]);
+                assert!(f.avatar().capsule_ready);
+            }
+        }
+        // The inner gamepad frame contributes to Y even though contact corrects the outer physics root.
+        f.set_position(f.frame, [0.3, 0.6, 0.4]);
+        f.tick();
+        assert_position(f.position(capsule), [0.4, 4.6, 0.2]);
+        // Genuine simulated penetration still raises the physics root; tracking remains relative to it.
+        f.set_position(f.root, [0.0, 2.2, 0.0]);
+        f.tick();
+        assert_position(f.position(f.root), [0.0, 2.6, 0.0]);
+        assert_position(f.position(capsule), [0.4, 4.2, 0.2]);
+        assert_position(f.position(f.head), [0.4, 4.8, 0.2]);
+    }
+
+    #[test]
+    fn xr_capsule_uses_uniform_world_scale_once_and_disables_unsupported_scale() {
+        let mut f = XrCapsuleFixture::new(0.8, 2.0);
+        let capsule = f.avatar().capsule_transform_id.unwrap();
+        assert_position(f.position(capsule), [0.0, 5.4, 0.0]);
+        let collider = f.avatar().capsule_collidable_id.unwrap();
+        let zone = f.world.parent_of(collider).unwrap();
+        assert_eq!(
+            f.world
+                .get_component_by_id_as::<ZoneComponent>(zone)
+                .unwrap()
+                .shape,
+            CollisionShape::capsule_y(0.28, 1.72)
+        );
+        let root = f
+            .world
+            .get_component_by_id_as_mut::<TransformComponent>(f.root)
+            .unwrap();
+        *root = (*root).with_scale(2.0, 3.0, 2.0);
+        f.systems
+            .transform_changed(&mut f.world, &mut f.visuals, f.root);
+        f.tick();
+        assert!(!f.avatar().capsule_ready);
+        assert!(
+            !f.world
+                .get_component_by_id_as::<CollidableComponent>(collider)
+                .unwrap()
+                .enabled
+        );
+    }
+
+    #[test]
+    fn xr_capsule_still_resolves_walls_and_jump_gravity_support() {
+        use crate::engine::ecs::component::{GravityComponent, VelocityComponent};
+        let mut f = XrCapsuleFixture::new(1.6, 1.0);
+        let gravity = f.world.add_component(GravityComponent::new());
+        let velocity = f.world.add_component(VelocityComponent::new());
+        attach(&mut f.world, gravity, velocity);
+        attach(&mut f.world, velocity, f.root);
+        f.world
+            .get_component_by_id_as_mut::<VelocityComponent>(velocity)
+            .unwrap()
+            .set_linear_local([0.0, 4.0, 0.0])
+            .unwrap();
+        let mut peak = 3.0f32;
+        for frame in 0..120 {
+            f.set_position(f.head, [0.0, if frame % 2 == 0 { 0.4 } else { 2.1 }, 0.0]);
+            f.tick();
+            peak = peak.max(f.position(f.root)[1]);
+        }
+        assert!(peak > 3.4, "jump must still move the simulated frame");
+        assert_position(f.position(f.root), [0.0, 3.0, 0.0]);
+        let speed = f
+            .world
+            .get_component_by_id_as::<VelocityComponent>(velocity)
+            .unwrap();
+        assert!(speed.grounded);
+        assert!(speed.linear_local_mps[1].abs() < 1e-5);
+        let wall = f
+            .world
+            .add_component(TransformComponent::new().with_position(1.2, 4.2, 0.0));
+        let zone = f.world.add_component(ZoneComponent::cube([0.1, 2.0, 2.0]));
+        let collider = f.world.add_component(CollidableComponent::static_());
+        attach(&mut f.world, wall, zone);
+        attach(&mut f.world, zone, collider);
+        f.systems
+            .transform_changed(&mut f.world, &mut f.visuals, wall);
+        f.set_position(f.head, [1.2, 0.4, 0.0]);
+        f.tick();
+        assert!(
+            f.position(f.root)[0].abs() > 0.05,
+            "physical X still participates in wall contact"
+        );
+        assert!((f.position(f.root)[1] - 3.0).abs() < 1e-4);
+        assert!((f.position(f.head)[1] - 3.6).abs() < 1e-4);
+    }
+
+    #[test]
+    fn xr_capsule_mount_and_dismount_preserve_free_head_y_and_contact_exclusion() {
+        use crate::engine::ecs::component::{
+            InputXRGamepadComponent, MountableComponent, PointerComponent, RiderComponent,
+        };
+        let mut f = XrCapsuleFixture::new(1.6, 1.0);
+        let reference =
+            |world: &World, id| ComponentRef::Guid(world.get_component_record(id).unwrap().guid);
+        let gamepad = f.world.add_component(InputXRGamepadComponent::new());
+        attach(&mut f.world, f.root, gamepad);
+        let rider = f.world.add_component(
+            RiderComponent::new()
+                .anchor(reference(&f.world, f.frame))
+                .movement_root(reference(&f.world, f.root))
+                .input(reference(&f.world, gamepad)),
+        );
+        attach(&mut f.world, f.root, rider);
+        let pointer = f.world.add_component(PointerComponent::new());
+        attach(&mut f.world, f.frame, pointer);
+        let car = f
+            .world
+            .add_component(TransformComponent::new().with_position(0.0, 3.0, 0.0));
+        let entry = f.world.add_component(ZoneComponent::sphere(3.0));
+        let seat = f
+            .world
+            .add_component(TransformComponent::new().with_position(0.0, -1.0, 0.0));
+        let exit = f
+            .world
+            .add_component(TransformComponent::new().with_position(3.0, 0.2, 0.0));
+        let mountable = f.world.add_component(
+            MountableComponent::new()
+                .entry_zone(reference(&f.world, entry))
+                .mount_anchor(reference(&f.world, seat))
+                .dismount_anchor(reference(&f.world, exit)),
+        );
+        for child in [entry, seat, exit, mountable] {
+            attach(&mut f.world, car, child);
+        }
+        f.systems
+            .transform_changed(&mut f.world, &mut f.visuals, car);
+        for _ in 0..2 {
+            assert!(f.systems.attachment.try_mount_from_hit(
+                &mut f.world,
+                pointer,
+                car,
+                &mut f.queue
+            ));
+            f.systems
+                .process_commands(&mut f.world, &mut f.visuals, &mut f.assets, &mut f.queue);
+            f.tick();
+            let mounted_y = f.position(f.root)[1];
+            assert!(
+                mounted_y < 2.0,
+                "deliberately mount below pedestrian support"
+            );
+            for height in [0.4, 2.1] {
+                f.set_position(f.head, [0.0, height, 0.0]);
+                f.tick();
+                assert!(
+                    (f.position(f.root)[1] - mounted_y).abs() < 1e-4,
+                    "mounted contact remains excluded"
+                );
+                assert!((f.position(f.head)[1] - (mounted_y + 0.2 + height)).abs() < 1e-4);
+            }
+            assert!(f.systems.attachment.try_dismount_for_pointer(
+                &mut f.world,
+                pointer,
+                &mut f.queue
+            ));
+            f.systems
+                .process_commands(&mut f.world, &mut f.visuals, &mut f.assets, &mut f.queue);
+            f.tick();
+            let after_exit = f.position(f.root);
+            assert!((after_exit[1] - 3.0).abs() < 1e-4);
+            for height in [0.4, 2.1] {
+                f.set_position(f.head, [0.0, height, 0.0]);
+                f.tick();
+                assert_position(f.position(f.root), after_exit);
+                assert!((f.position(f.head)[1] - (3.2 + height)).abs() < 1e-4);
+            }
+            // Return to the entry zone for another cycle.
+            f.set_position(f.root, [0.0, 3.0, 0.0]);
+            f.tick();
+        }
+    }
+
+    #[test]
+    fn xr_capsule_two_avatars_keep_independent_sources_and_clean_up_owned_helpers() {
+        let mut f = XrCapsuleFixture::new(1.6, 1.0);
+        let baseline = f.world.component_count();
+        let root = f
+            .world
+            .add_component(TransformComponent::new().with_position(5.0, 3.0, 0.0));
+        let frame = f
+            .world
+            .add_component(TransformComponent::new().with_position(0.0, 0.2, 0.0));
+        let input = f.world.add_component(InputXRComponent::on());
+        let head = f
+            .world
+            .add_component(TransformComponent::new().with_position(0.0, 0.8, 0.0));
+        let mut avatar = AvatarControlComponent::new();
+        avatar.head_mount = Some(head);
+        avatar.model_root_local_y = -1.6;
+        avatar.movement_target = Some(ComponentRef::Guid(
+            f.world.get_component_record(root).unwrap().guid,
+        ));
+        let second = f.world.add_component(avatar);
+        let model = f
+            .world
+            .add_component(TransformComponent::new().with_position(0.0, -1.6, 0.0));
+        f.world
+            .get_component_by_id_as_mut::<AvatarControlComponent>(second)
+            .unwrap()
+            .model_root_id = Some(model);
+        let body = f.world.add_component(
+            TransformComponent::new()
+                .with_position(0.0, 1.0, 0.0)
+                .with_scale(0.4, 2.0, 0.4),
+        );
+        let mesh = f.world.add_component(RenderableComponent::cube());
+        for (parent, child) in [
+            (root, frame),
+            (frame, input),
+            (input, head),
+            (head, second),
+            (second, model),
+            (model, body),
+            (body, mesh),
+        ] {
+            attach(&mut f.world, parent, child);
+        }
+        f.systems.avatar_control.register(second);
+        f.systems
+            .transform_changed(&mut f.world, &mut f.visuals, root);
+        for _ in 0..3 {
+            f.tick();
+        }
+        let second_state = f
+            .world
+            .get_component_by_id_as::<AvatarControlComponent>(second)
+            .unwrap();
+        assert!(second_state.capsule_ready);
+        assert_eq!(second_state.capsule_vertical_source, Some(frame));
+        let second_capsule = second_state.capsule_transform_id.unwrap();
+        let first_capsule = f.avatar().capsule_transform_id.unwrap();
+        f.set_position(head, [0.3, 2.1, -0.2]);
+        f.set_position(root, [5.0, 4.0, 0.0]);
+        f.tick();
+        assert_position(f.position(second_capsule), [5.3, 5.2, -0.2]);
+        assert_position(f.position(first_capsule), [0.0, 4.2, 0.0]);
+        f.systems
+            .remove_subtree_immediate(&mut f.world, &mut f.visuals, root);
+        f.tick();
+        assert_eq!(f.world.component_count(), baseline);
+        assert!(f.avatar().capsule_ready);
+        assert_position(f.position(first_capsule), [0.0, 4.2, 0.0]);
+    }
+
+    #[test]
+    fn xr_capsule_gates_source_loss_and_recovers_without_duplicate_helpers() {
+        let mut f = XrCapsuleFixture::new(1.6, 1.0);
+        let capsule = f.avatar().capsule_transform_id.unwrap();
+        let collider = f.avatar().capsule_collidable_id.unwrap();
+        let count = f.world.all_components().count();
+        let saved =
+            crate::scripting::component_registry::filtered_roots_to_ce_ast(&f.world, &[f.root])
+                .unwrap()
+                .iter()
+                .map(crate::scripting::unparser::unparse_component)
+                .collect::<Vec<_>>()
+                .join("\n");
+        assert!(
+            !saved.contains("sample_translation"),
+            "generated sample must not survive scene save: {saved}"
+        );
+        assert!(
+            !saved.contains("fork_trs"),
+            "generated capsule fork must not survive scene save: {saved}"
+        );
+        f.world.detach_from_parent(f.input);
+        f.set_position(f.head, [0.0, 0.3, 0.0]);
+        f.tick();
+        assert!(!f.avatar().capsule_ready);
+        assert!(
+            !f.world
+                .get_component_by_id_as::<CollidableComponent>(collider)
+                .unwrap()
+                .enabled
+        );
+        assert_position(f.position(f.root), [0.0, 3.0, 0.0]);
+        attach(&mut f.world, f.frame, f.input);
+        f.systems
+            .transform_changed(&mut f.world, &mut f.visuals, f.root);
+        for _ in 0..2 {
+            f.tick();
+        }
+        assert!(f.avatar().capsule_ready);
+        assert_position(f.position(capsule), [0.0, 4.2, 0.0]);
+        assert_eq!(f.world.all_components().count(), count);
+        f.world
+            .get_component_by_id_as_mut::<AvatarControlComponent>(f.avatar)
+            .unwrap()
+            .collision_enabled = false;
+        f.tick();
+        assert!(!f.avatar().capsule_ready);
+        assert!(
+            !f.world
+                .get_component_by_id_as::<CollidableComponent>(collider)
+                .unwrap()
+                .enabled
+        );
+        assert!(
+            f.world
+                .get_component_by_id_as::<TransformComponent>(f.model)
+                .is_some()
+        );
     }
 
     #[test]
@@ -2776,6 +3518,8 @@ mod capsule_tests {
             attach(&mut world, parent, child);
         }
         let mut system = AvatarControlSystem::default();
+        let mut operators = TransformOperatorSystem::new();
+        let mut contact = super::super::static_contact_system::StaticContactSystem::default();
         system.register(avc);
         let mut retargeting = JointBasisRetargetingSystem::default();
         let mut maps = HumanoidBoneMapSystem::default();
@@ -2789,6 +3533,7 @@ mod capsule_tests {
                 &mut maps,
                 &mut events,
                 1.0 / 60.0,
+                &operators,
             );
         }
         assert!(events.0.is_empty());
@@ -2816,6 +3561,7 @@ mod capsule_tests {
             &mut maps,
             &mut events,
             1.0 / 60.0,
+            &operators,
         );
         assert!(
             world
@@ -2855,6 +3601,7 @@ mod capsule_tests {
             &mut maps,
             &mut events,
             1.0 / 60.0,
+            &operators,
         );
         assert!(events.0.is_empty());
         world
@@ -2864,6 +3611,14 @@ mod capsule_tests {
             "[name='player_root']".into(),
         ));
         for _ in 0..3 {
+            refresh_capsule_routing(avc, &mut world);
+            let sample = world
+                .get_component_by_id_as::<AvatarControlComponent>(avc)
+                .unwrap()
+                .capsule_sample_id
+                .unwrap();
+            operators.evaluate_operator(&world, sample, crate::utils::math::mat4_identity());
+            system.gate_capsule_contact(&mut world, &operators, &mut contact);
             system.tick(
                 &mut world,
                 &InputState::default(),
@@ -2872,6 +3627,7 @@ mod capsule_tests {
                 &mut maps,
                 &mut events,
                 1.0 / 60.0,
+                &operators,
             );
         }
         assert!(
@@ -2901,6 +3657,7 @@ mod capsule_tests {
             &mut maps,
             &mut events,
             1.0 / 60.0,
+            &operators,
         );
         assert!(
             !world

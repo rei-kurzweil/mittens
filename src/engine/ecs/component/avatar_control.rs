@@ -258,6 +258,13 @@ pub struct AvatarControlComponent {
 
     /// Runtime-only generated collidable, used to refresh XR movement routing.
     pub(crate) capsule_collidable_id: Option<ComponentId>,
+    /// XR-only Y sampler and retained routing/calibration metadata.
+    pub(crate) capsule_sample_id: Option<ComponentId>,
+    pub(crate) capsule_vertical_source: Option<ComponentId>,
+    pub(crate) capsule_routing_revision: u64,
+    pub(crate) capsule_route_ref: Option<ComponentRef>,
+    pub(crate) capsule_world_scale: f32,
+    pub(crate) capsule_reset_contact_history: bool,
 
     /// Runtime contact readiness, published after capsule transforms settle.
     pub(crate) capsule_ready: bool,
@@ -501,6 +508,12 @@ impl Default for AvatarControlComponent {
             neck_rest_translation: None,
             capsule_transform_id: None,
             capsule_collidable_id: None,
+            capsule_sample_id: None,
+            capsule_vertical_source: None,
+            capsule_routing_revision: 0,
+            capsule_route_ref: None,
+            capsule_world_scale: 1.0,
+            capsule_reset_contact_history: false,
             capsule_ready: false,
             component: None,
         }

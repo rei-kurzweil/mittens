@@ -80,6 +80,8 @@ impl<'a> WorldContext<'a> {
 /// World: owns all global components.
 #[derive(Default)]
 pub struct World {
+    /// Invalidates retained selector results on topology/label/GUID changes.
+    query_revision: u64,
     components: SlotMap<ComponentId, crate::engine::ecs::component::ComponentNode>,
     guid_index: HashMap<uuid::Uuid, ComponentId>,
     /// MMQ parser instance with per-instance AST cache. Behind a RefCell so
@@ -238,10 +240,17 @@ impl World {
         self.get_component_record(id)
     }
 
+    pub fn query_revision(&self) -> u64 {
+        self.query_revision
+    }
+
     pub fn get_component_record_mut(
         &mut self,
         id: ComponentId,
     ) -> Option<&mut crate::engine::ecs::component::ComponentNode> {
+        // Raw record access can change selector metadata or topology. Ordinary
+        // typed component writes bypass this conservative invalidation.
+        self.query_revision = self.query_revision.wrapping_add(1);
         self.components.get_mut(id)
     }
 
@@ -300,7 +309,7 @@ impl World {
     }
 
     pub fn get_component_by_id_as_mut<T: 'static>(&mut self, c: ComponentId) -> Option<&mut T> {
-        let node = self.get_component_record_mut(c)?;
+        let node = self.components.get_mut(c)?;
         node.component.as_any_mut().downcast_mut::<T>()
     }
 
@@ -377,7 +386,7 @@ impl World {
     ) -> Option<(ComponentId, &mut T)> {
         let parent = self.parent_of(c)?;
         // Avoid borrowing self twice by doing the downcast via the node.
-        let node = self.get_component_record_mut(parent)?;
+        let node = self.components.get_mut(parent)?;
         let typed = node.component.as_any_mut().downcast_mut::<T>()?;
         Some((parent, typed))
     }
@@ -518,6 +527,7 @@ impl World {
 
         self.detach_from_parent(c);
         self.components.remove(c);
+        self.query_revision = self.query_revision.wrapping_add(1);
         Ok(())
     }
 

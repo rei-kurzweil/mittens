@@ -1145,6 +1145,9 @@ impl SystemWorld {
             }
         }
 
+        for &node in &nodes {
+            self.transform_operator.component_removed(node);
+        }
         let _ = world.remove_component_subtree(root);
 
         // Component lifecycle: remove any scoped handlers rooted in the deleted subtree.
@@ -3051,6 +3054,7 @@ impl SystemWorld {
         // and become motion on the next fixed substep.
         // Seed sweep history from the current pose, including input movement,
         // before the first proposed fixed-step pose.
+        self.prepare_avatar_capsule_contact(world, visuals);
         for target in self.static_contact.tick_excluding(world, &self.attachment) {
             self.transform_changed(world, visuals, target);
         }
@@ -3058,6 +3062,7 @@ impl SystemWorld {
         for _ in 0..velocity_steps {
             self.velocity.step(world, queue);
             queue.flush(world, self, visuals, render_assets);
+            self.prepare_avatar_capsule_contact(world, visuals);
             for target in self.static_contact.tick_substep(world, &self.attachment) {
                 self.transform_changed(world, visuals, target);
             }
@@ -3079,6 +3084,7 @@ impl SystemWorld {
             .tick_with_queue(world, visuals, &self.xr, queue, dt_sec);
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
+        self.prepare_avatar_capsule_contact(world, visuals);
         for target in self.static_contact.tick_excluding(world, &self.attachment) {
             self.transform_changed(world, visuals, target);
         }
@@ -3170,6 +3176,7 @@ impl SystemWorld {
             &mut self.humanoid_bone_map,
             queue,
             dt_sec,
+            &self.transform_operator,
         );
         // AVC can queue head-restoration and first-tick splice transforms. Commit
         // them before body-follow samples the displaced head: body-follow must
@@ -3274,6 +3281,27 @@ impl SystemWorld {
     }
 
     /// Process commands from the command queue.
+    fn prepare_avatar_capsule_contact(&mut self, world: &mut World, visuals: &mut VisualWorld) {
+        // Resolving one relationship can invalidate another's cycle validation.
+        // Settle the retained set before enabling contact for any avatar.
+        for _ in 0..3 {
+            let pending = self
+                .avatar_control
+                .pending_capsule_samples(world, &self.transform_operator);
+            if pending.is_empty() {
+                break;
+            }
+            for sample in pending {
+                self.transform_changed(world, visuals, sample);
+            }
+        }
+        self.avatar_control.gate_capsule_contact(
+            world,
+            &self.transform_operator,
+            &mut self.static_contact,
+        );
+    }
+
     pub fn process_commands(
         &mut self,
         world: &mut World,

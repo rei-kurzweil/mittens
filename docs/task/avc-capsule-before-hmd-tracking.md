@@ -2,8 +2,9 @@
 
 ## Status and outcome
 
-Planned; not implemented. The TOP refactor is complete and has passed user smoke
-testing (through `c38c0502`). Keep the XR capsule following the head-driven
+Implemented in the working tree; real-scene headset acceptance is pending.
+The earlier TOP refactor passed user smoke testing through `c38c0502`.
+The XR capsule follows the head-driven
 avatar's X/Z, but replace its Y with the simulated locomotion frame's Y plus
 a stable calibrated offset. Keep grounding/static-contact correction on the
 existing physics/locomotion response target.
@@ -23,15 +24,14 @@ still affect that frame. This is the prerequisite for
 [foot-penetration crouch IK](avc-foot-penetration-crouch-ik.md), not part of the
 crouch solver itself.
 
-Next delivery order: implement and verify the generic
-[axis-selective TOP translation sample](transform-sample-translation-axes.md),
-then wire AVC’s capsule source/calibration and verify contact behavior; crouch IK
-follows afterward. The prerequisite [TOP refactor](transform-operator-api-cleanup.md),
+The generic [axis-selective TOP translation sample](transform-sample-translation-axes.md)
+and AVC source/calibration wiring are implemented. Automated contact checks pass;
+test this in the headset before starting crouch IK. The prerequisite [TOP refactor](transform-operator-api-cleanup.md),
 including existing stateful/camera-specific kind migration, is complete.
 
 ## Problem and current code
 
-`avatar_control_system.rs::try_init_or_route_capsule` currently creates a
+Before this fix, `avatar_control_system.rs::try_init_or_route_capsule` created a
 TOP fork with rotation/scale dropped beneath `model_root_id`. The model root
 follows the displaced tracked head in XYZ. Consequently, contact correction
 responds to physical head movement by displacing the outer locomotion root,
@@ -198,6 +198,71 @@ vertical contact, changing raw XR poses, or adding another floor responder.
    capsule center/bottom, calibration offset, sampled frame/root Y, raw head Y, and
    contact displacement. Until crouch IK lands, visible feet may penetrate the
    floor during physical crouching; this must not cancel tracking movement.
+
+## Implemented slice and remaining acceptance
+
+The generated XR branch is now `model root -> fork(drop rotation/scale) ->
+sample_translation(Y from pre-InputXR frame) -> capsule T -> Zone/Collidable`.
+The contact response target remains separate and can be an outer physics root
+above an inner gamepad frame. Reference/routing discovery is cached by World
+selector revision and authored target; normal pose updates use live handles.
+
+The current calibration assumes the engine's OpenXR **STAGE** reference space:
+its floor origin maps to the pre-tracking frame's Y. Capsule bounds remain
+model-relative CPU/rest geometry, scaled once into world units. Their center
+provides the stable offset; tracked head height is never used for XR calibration.
+The fallback is authored avatar height or the established rest head/body offset
+after a GLTF has spawned. Positive uniform world scale is supported; unsupported
+scale/shear or a later scale change keeps contact/readiness disabled. A general
+floor-origin/bottom-offset or explicit recalibration API is still follow-up work.
+
+XR colliders start disabled. Before every existing contact pass, retained avatar
+samples settle and contact is enabled only with valid source/routing/scale.
+Source loss never enables the generic tracked-Y fallback. Changing source or
+response target clears proxy sweep history; existing teleport and mounted-contact
+history handling remains active. Generated helpers stay beneath their avatar,
+the entire generated XR fork/sample/capsule branch is excluded from filtered scene
+saves, and ordinary subtree removal clears sampling state. Desktop retains its original
+pose composition. OpenXR's render path reads the current rig origin when composing
+eyes, so correction reaches final eye composition; hardware verification remains
+required.
+
+Headless tests exercise SystemWorld's real contact/physics/AVC frame phases with
+a completed-splice fixture: crouched startup, repeated up/down tracking with no
+origin drift, physical X/Z, separate physics/gamepad layers, real penetration,
+wall response, jump/gravity/landing and grounded velocity, mount/dismount/remount,
+uniform scale, invalid scale, source loss/recovery, collision opt-out, two-avatar
+isolation, and removal returning component counts to baseline. These fixtures
+do not simulate a headset, imported avatar initialization, or GPU eye publication.
+
+Pending acceptance: Rei(mu) in `mittens-corp` and Bisket in `capsule-stick-figure`,
+rendered eye motion, real stage/stair/edge behavior, teleport/recenter, rig/GLTF
+replacement and explicit recalibration policies, and runtime cost profiling.
+Do not mark the hardware bug resolved or begin crouch IK before the smoke test.
+
+### Validation commands and headset checkpoint
+
+Automated validation includes the transform, AVC, static-contact, Velocity,
+attachment, mittens-corp, TOP authoring, World graph, and round-trip test groups,
+plus `cargo check --examples`. Transform checks exclude the previously recorded
+`live_eval_nested_let_attached_transform_animates_via_keyframe_block`,
+`live_eval_imported_factory_component_supports_top_level_update_transform`, and
+`live_eval_transform_quaternion_builder_supports_array_aliases` failures.
+Round-trip checks exclude the recorded `roundtrip_animation_paused`,
+`roundtrip_keyframe`, and `roundtrip_music_note_c5` failures. These are baseline
+exclusions, not failures resolved by this slice.
+
+Build and run the normal scene:
+
+```sh
+cargo build --release --bin mittens-engine
+target/release/mittens-engine load examples/mittens-corp.mms
+```
+
+First check physical crouch/stand before mounting and after dismounting, then
+physical lateral movement, jump/landing, and another mount/dismount cycle.
+Expected: the head moves through its full Y range while capsule height follows
+simulated locomotion; actual floor/wall contact still corrects that locomotion.
 
 Keep hot-path work bounded per avatar: cache sampling/routing discovery, avoid
 per-frame hierarchy scans and allocations, and measure contact/proxy-update
