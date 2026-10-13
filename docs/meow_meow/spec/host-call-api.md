@@ -169,6 +169,22 @@ continues to support pure table, array, and component-artifact navigation.
 
 ## Host API namespaces
 
+### Named data events in Mittens
+
+Mittens registers `emit_data(scope, name, payload?)` as a global RuntimeSpec
+host API. `scope` is a live component handle, `name` is a string, and `payload`
+is an optional live component handle (omitted or `null` means no payload).
+The call returns unit/null and queues a named `DataEvent` at that scope.
+Wrong argument counts/types and stale component references are rejected.
+
+Delivery uses the normal Rx and retained MMS callback boundary; host dispatch
+does not invoke handlers synchronously. MMS `DataEvent` callbacks receive the
+event name string under the existing callback convention. The optional component
+payload remains on the engine event. Generic accordion assets use this API to
+announce minimize and restore requests to their owning panels.
+
+### Service namespaces
+
 Hosts advertise third-party formats and local services through `RuntimeSpec`
 API namespaces. Mittens provides `File.read_text(path: string) -> string` and
 `JSON.parse` / `JSON.stringify`. Declaring `File` as a namespace also reserves

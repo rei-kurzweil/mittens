@@ -212,6 +212,48 @@ impl<'a, 'bindings> MittensHost<'a, 'bindings> {
             })
     }
 
+    fn emit_data(
+        &mut self,
+        args: Vec<mms::TransportValue>,
+    ) -> Result<mms::HostResponse, mms::HostError> {
+        use mms::TransportValue as V;
+
+        let (scope, name, payload) = match args.as_slice() {
+            [scope, V::String(name)] => (scope, name, None),
+            [scope, V::String(name), payload] => (scope, name, Some(payload)),
+            _ => {
+                return Err(mms::HostError::failure(
+                    "emit_data",
+                    "expects a component scope, a name, and an optional component payload",
+                ));
+            }
+        };
+        let component = |value: &V| match value {
+            V::Component(handle) | V::TypedComponent { handle, .. } => {
+                self.existing_id(*handle, "emit_data")
+            }
+            _ => Err(mms::HostError::failure(
+                "emit_data",
+                "scope and non-null payload must be component handles",
+            )),
+        };
+        let scope = component(scope)?;
+        let payload = match payload {
+            None | Some(V::Null) => None,
+            Some(value) => Some(component(value)?),
+        };
+        // Queue the event for the normal Rx/callback boundary. Host dispatch
+        // must not re-enter the MMS session to deliver handlers synchronously.
+        self.emit.push_event(
+            scope,
+            crate::engine::ecs::EventSignal::DataEvent {
+                name: name.clone(),
+                payload,
+            },
+        );
+        Ok(mms::HostResponse::Unit)
+    }
+
     fn record_signal_route(
         &mut self,
         signal: &str,
@@ -356,6 +398,9 @@ impl mms::Host for MittensHost<'_, '_> {
                         operation: format!("{operation_id:?}"),
                         message: "mittens.smoke expects no arguments".into(),
                     }),
+                    super::runtime_config::MittensBinding::Api(
+                        super::runtime_config::MittensApi::EmitData,
+                    ) => self.emit_data(args),
                     super::runtime_config::MittensBinding::Api(
                         super::runtime_config::MittensApi::FileReadText,
                     ) => file_read_text(args),
@@ -1123,6 +1168,78 @@ fn legacy_value_to_external(value: legacy::Value) -> Result<mms::Value, mms::Hos
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn emit_data_queues_named_events_and_validates_optional_component_payloads() {
+        let configured = crate::scripting::runtime_config::build_mittens_runtime().unwrap();
+        let mut world = World::default();
+        let mut queue = crate::engine::ecs::CommandQueue::new();
+        let mut intents = Vec::new();
+        let host = MittensHost::new(&mut world, &mut queue, &mut intents)
+            .with_bindings(configured.bindings());
+        let mut session = configured.runtime().session(host);
+        session
+            .eval(
+                r#"
+            let scope = Transform { name = "event_scope" }
+            let payload = Transform { name = "event_payload" }
+            emit_data(scope, "without_payload")
+            emit_data(scope, "null_payload", null)
+            emit_data(scope, "component_payload", payload)
+        "#,
+            )
+            .unwrap();
+        let label = |world: &World, name: &str| {
+            world
+                .all_components()
+                .find(|&id| world.component_label(id) == Some(name))
+                .unwrap()
+        };
+        let scope = label(session.host().world, "event_scope");
+        let payload = label(session.host().world, "event_payload");
+        for invalid in [
+            "emit_data(scope)",
+            "emit_data(null, \"invalid\")",
+            "emit_data(scope, 1)",
+            "emit_data(scope, \"invalid\", 42)",
+            "emit_data(scope, \"invalid\", null, null)",
+        ] {
+            assert!(session.eval(invalid).is_err(), "accepted {invalid}");
+        }
+        session
+            .host_mut()
+            .world
+            .remove_component_subtree(payload)
+            .unwrap();
+        assert!(
+            session
+                .eval("emit_data(scope, \"stale\", payload)")
+                .is_err()
+        );
+        drop(session);
+
+        let mut rx = RxWorld::default();
+        queue.drain_into_rx(&mut rx);
+        let events: Vec<_> = rx
+            .drain_ready_events()
+            .into_iter()
+            .filter_map(|signal| match signal.event {
+                Some(crate::engine::ecs::EventSignal::DataEvent { name, payload }) => {
+                    assert_eq!(signal.scope, scope);
+                    Some((name, payload))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            events,
+            [
+                ("without_payload".into(), None),
+                ("null_payload".into(), None),
+                ("component_payload".into(), Some(payload)),
+            ]
+        );
+    }
 
     #[test]
     fn component_handles_round_trip_losslessly() {

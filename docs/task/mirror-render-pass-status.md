@@ -1,8 +1,8 @@
 # Mirror rendering: status and improvement task list
 
 Updated: 2026-10-12
-Status: existing capture path implemented; correctness and optimization work
-below is planned. This update changes documentation only.
+Status: existing capture path and graphics panel UI preview implemented;
+settings backend, correctness, and optimization work below remain planned.
 
 ## Current implementation
 
@@ -30,6 +30,10 @@ below is planned. This update changes documentation only.
 - The renderer already tracks mirror capture/submission counts internally.
   Per-mirror visibility reasons, candidate/draw counts, allocation counts, and
   CPU/GPU timing need an observability audit rather than assuming no stats exist.
+- An importable graphics settings panel UI preview exists at
+  `assets/components/panels/graphics_settings_panel.mms`, exercised by the
+  XR-only `examples/graphics-settings.mms`. Toggle/slider changes affect only
+  local UI state; the `GraphicsSettings.mirrors` backend remains planned.
 
 Relevant runtime code:
 

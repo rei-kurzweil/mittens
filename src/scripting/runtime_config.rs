@@ -43,6 +43,7 @@ pub enum ComponentInitializerKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MittensApi {
     Smoke,
+    EmitData,
     FileReadText,
     JsonParse,
     JsonStringify,
@@ -1556,6 +1557,20 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
             MittensBinding::Api(MittensApi::Smoke),
         );
     });
+
+    builder.host_api(
+        "emit_data",
+        mms::ValueSignature::with_optional(
+            vec![
+                mms::ValueType::Component,
+                mms::ValueType::String,
+                mms::ValueType::Any,
+            ],
+            2,
+            mms::ValueType::Null,
+        ),
+        MittensBinding::Api(MittensApi::EmitData),
+    );
 
     builder.namespace("File", |namespace| {
         namespace.api(

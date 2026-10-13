@@ -1681,6 +1681,217 @@ mod runtime_spec_session_tests {
     }
 
     #[test]
+    fn graphics_settings_preview_and_shared_stage_evaluate_with_strict_runtime() {
+        use crate::engine::ecs::component::{
+            Camera3DComponent, CameraXRComponent, GLTFComponent, MirrorComponent,
+        };
+
+        for (source, path) in [
+            (
+                include_str!("../../examples/graphics-settings.mms"),
+                "examples/graphics-settings.mms",
+            ),
+            (
+                include_str!("../../examples/secondary-motion-desktop.mms"),
+                "examples/secondary-motion-desktop.mms",
+            ),
+        ] {
+            let mut world = World::default();
+            let mut rx = RxWorld::default();
+            let mut assets = RenderAssets::new();
+            let mut commands = CommandQueue::new();
+            let (_session, output) = RuntimeSpecSession::start_at_path(
+                source,
+                path,
+                &mut world,
+                &mut rx,
+                Some(&mut assets),
+                &mut commands,
+            )
+            .unwrap_or_else(|error| panic!("{path}: {error}"));
+            assert!(output.errors.is_empty(), "{:?}", output.errors);
+            for label in [
+                "studio_floor",
+                "studio_floor_contact",
+                "studio_key_light",
+                "studio_fill_light",
+                "studio_rim_light",
+                "pile_a_base_left",
+                "pile_a_base_right",
+                "pile_a_top",
+                "pile_b_base_left",
+                "pile_b_base_right",
+                "pile_b_top",
+                "pile_c_base",
+                "pile_c_top",
+            ] {
+                assert!(
+                    world
+                        .all_components()
+                        .any(|id| world.component_label(id) == Some(label)),
+                    "{path}: missing {label}"
+                );
+            }
+            if path == "examples/graphics-settings.mms" {
+                assert_eq!(
+                    world
+                        .all_components()
+                        .filter_map(|id| world.get_component_by_id_as::<MirrorComponent>(id))
+                        .map(|mirror| mirror.quality)
+                        .collect::<Vec<_>>(),
+                    [512]
+                );
+                assert!(!world.all_components().any(|id| {
+                    world
+                        .get_component_by_id_as::<Camera3DComponent>(id)
+                        .is_some()
+                }));
+                assert!(world.all_components().any(|id| {
+                    world
+                        .get_component_by_id_as::<CameraXRComponent>(id)
+                        .is_some()
+                }));
+                assert!(
+                    world
+                        .all_components()
+                        .filter_map(|id| world.get_component_by_id_as::<GLTFComponent>(id))
+                        .any(|gltf| gltf.uri == "assets/models/rei(mu).glb")
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn graphics_settings_preview_restores_local_control_state_without_graphics_changes() {
+        use crate::engine::ecs::component::{SliderComponent, TextComponent, ToggleComponent};
+
+        let mut world = World::default();
+        let mut rx = RxWorld::default();
+        let mut assets = RenderAssets::new();
+        let mut commands = CommandQueue::new();
+        let (mut session, initial_output) = RuntimeSpecSession::start_at_path(
+            r#"
+                import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
+                graphics_settings_panel({ root_name = "preview_settings" })
+            "#,
+            "examples/graphics-settings.mms",
+            &mut world,
+            &mut rx,
+            Some(&mut assets),
+            &mut commands,
+        )
+        .unwrap();
+        let labelled = |world: &World, label: &str| {
+            world
+                .all_components()
+                .find(|&id| world.component_label(id) == Some(label))
+                .unwrap()
+        };
+        let toggle = labelled(&world, "graphics_mirrors_toggle");
+        let slider = labelled(&world, "graphics_mirrors_quality_slider");
+        for (control, event, expected) in [
+            (
+                toggle,
+                EventSignal::ToggleChanged {
+                    toggle,
+                    value: false,
+                },
+                "Off",
+            ),
+            (
+                slider,
+                EventSignal::SliderChanged { slider, value: 5.0 },
+                "1440",
+            ),
+        ] {
+            rx.dispatch_event_handlers(&mut world, &Signal::event(control, event));
+            let output =
+                session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut commands);
+            assert!(output.errors.is_empty(), "{:?}", output.errors);
+            assert!(
+                matches!(output.intents.as_slice(), [IntentValue::SetText { text, .. }] if text == expected),
+                "{:?}",
+                output.intents
+            );
+        }
+
+        // Drive the actual chevron callback, queued events, and engine subtree
+        // lifecycle. Injecting a restore event directly bypasses this path.
+        use crate::engine::ecs::system::SystemWorld;
+        use crate::engine::graphics::VisualWorld;
+        let mut systems = SystemWorld::default();
+        systems.rx = rx;
+        let mut visuals = VisualWorld::default();
+        for intent in initial_output.intents {
+            commands.push_intent_now(ComponentId::default(), intent);
+        }
+        let panel = labelled(&world, "preview_settings");
+        let chevron = labelled(&world, "accordion_toggle");
+        for open in [false, true, false, true] {
+            commands.push_event(
+                chevron,
+                EventSignal::Click {
+                    raycaster: ComponentId::default(),
+                    renderable: chevron,
+                    hit_point: [0.0; 3],
+                    screen_pos_px: None,
+                },
+            );
+            for _ in 0..4 {
+                systems.rx.begin_frame();
+                systems.process_commands(&mut world, &mut visuals, &mut assets, &mut commands);
+                let output = session.service_callbacks(
+                    &mut world,
+                    &mut systems.rx,
+                    Some(&mut assets),
+                    &mut commands,
+                );
+                assert!(
+                    output.errors.is_empty(),
+                    "chevron callback: {:?}",
+                    output.errors
+                );
+                for intent in output.intents {
+                    commands.push_intent_now(ComponentId::default(), intent);
+                }
+            }
+            let body = world.find_component(panel, "#accordion_body");
+            assert_eq!(
+                body.is_some(),
+                open,
+                "body must be restored beneath its own panel"
+            );
+        }
+        let toggle = labelled(&world, "graphics_mirrors_toggle");
+        let slider = labelled(&world, "graphics_mirrors_quality_slider");
+        assert!(
+            !world
+                .get_component_by_id_as::<ToggleComponent>(toggle)
+                .unwrap()
+                .value()
+        );
+        assert_eq!(
+            world
+                .get_component_by_id_as::<SliderComponent>(slider)
+                .unwrap()
+                .value(),
+            5.0
+        );
+        for (label, expected) in [
+            ("graphics_mirrors_enabled_readout", "Off"),
+            ("graphics_mirrors_quality_readout", "1440"),
+        ] {
+            assert_eq!(
+                world
+                    .get_component_by_id_as::<TextComponent>(labelled(&world, label))
+                    .unwrap()
+                    .text,
+                expected
+            );
+        }
+    }
+
+    #[test]
     fn runtime_spec_session_supports_math_constants_as_properties() {
         let mut world = World::default();
         let mut rx = RxWorld::default();

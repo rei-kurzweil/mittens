@@ -1,10 +1,41 @@
 # Task: Importable MMS graphics settings panel and mirror settings table
 
 Date: 2026-10-12
-Status: investigation and implementation planned; documentation only.
+Status: UI preview implemented; headset visual review and backend integration pending.
 Architecture clarified 2026-10-12: MMS owns the importable panel factory;
-the host-backed `GraphicsSettings.mirrors` built-in table exposes runtime
-mirror controls. The asset and API described here are not implemented yet.
+the planned host-backed `GraphicsSettings.mirrors` built-in table exposes
+runtime mirror controls. The asset exists; the settings API is not implemented yet.
+
+## Current UI-first slice
+
+- `assets/components/panels/graphics_settings_panel.mms` exports
+  `graphics_settings_panel(options)` around `info_panel`. Its native Toggle and
+  stepped Slider update only per-instance preview state and readouts; changing
+  them has no effect on renderer settings. Minimize/restore retains those values.
+- `examples/graphics-settings.mms` imports the panel in an XR-only Rei(mu) scene,
+  with microphone mouth animation, independent eye closure tracking, ambient
+  eye direction animation, and the corp rig's shirt/bow secondary motion.
+  A grabbable full-body mirror starts beside the standalone panel at quality 512.
+  There is no desktop camera. The user will verify the UI in the headset before
+  backend settings are connected.
+- `assets/components/stage_with_boxes.mms` supplies the original
+  secondary-motion-desktop floor and collision/contact zones, eight colored
+  boxes, and three tripod lights. Both scenes now import it. The new example
+  uses a black background, the gold kawaii stars, and the same bloom settings.
+- The shared accordion's `emit_data` call is registered in the strict MMS runtime
+  and dispatched through the Mittens host to queued `DataEvent` delivery.
+  Runtime checks cover strict scene/import evaluation, preview control callbacks,
+  and repeated real chevron close/open clicks through engine subtree removal
+  and reattachment. Restored controls retain their values. These checks do not
+  replace headset visual review.
+
+Run the preview with:
+
+```sh
+cargo run --release -- load examples/graphics-settings.mms
+```
+
+The remaining sections describe the intended backend integration after UI review.
 
 ## Outcome
 
@@ -19,7 +50,7 @@ versus image quality when those controls have working runtime APIs.
 
 - Keep the exported `graphics_settings_panel(options)` factory, layout, labels,
   toggle/slider callbacks, and accordion restore logic in
-  `assets/components/ui/graphics_settings_panel.mms`. Follow the import/export
+  `assets/components/panels/graphics_settings_panel.mms`. Follow the import/export
   and factory pattern used by `info_panel.mms` and `mouth_response_panel.mms`.
 - Expose `GraphicsSettings` as a host-backed built-in MMS table. Initially its
   only entry is `mirrors`, which points to a table of mirror settings methods.
@@ -84,11 +115,11 @@ top-level entries or a `GraphicsSettings.toggle_mirrors` alias in the first slic
 The panel labels quality as **Mirror resolution preference**, since the value
 does not by itself specify the complete capture dimensions.
 
-Planned asset use follows ordinary MMS imports, for example from a scene in
+Asset use follows ordinary MMS imports, for example from a scene in
 `examples/`:
 
 ```mms
-import { graphics_settings_panel } from "../assets/components/ui/graphics_settings_panel.mms"
+import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
 
 let settings_panel = graphics_settings_panel({ root_name = "graphics_settings" })
 T.position(2.0, 1.0, -2.0) { settings_panel }
@@ -155,9 +186,9 @@ options should follow the existing panel conventions.
 
 ## Panel implementation
 
-- Build `graphics_settings_panel.mms` around `info_panel`, with a mirror
-  on/off control, resolution slider, and live readouts. Initialize from actual
-  backend state, not factory-local graphics settings.
+- The panel asset already provides the on/off control, resolution slider, and
+  readouts. After UI review, replace its preview state initialization with
+  authoritative backend readback and connect its callbacks to the settings API.
 - Import its exported factory in both corp examples where it can be reached
   with XR pointers and desktop input without blocking the mirror or walking route.
 - Wire the on/off control to `GraphicsSettings.mirrors.toggle(on_off)` and

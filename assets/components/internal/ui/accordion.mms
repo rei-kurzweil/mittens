@@ -1,4 +1,4 @@
-// accordion.mms — retained-title, removable-body editor shell (=^･ω･^=)
+// accordion.mms — retained-title, removable-body panel shell (=^･ω･^=)
 
 import { accordion_down_arrow_icon } from "../../icons.mms"
 
