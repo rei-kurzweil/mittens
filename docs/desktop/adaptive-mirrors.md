@@ -34,6 +34,11 @@ equivalent projection mapping whose UV transform is explicit and stable.
 - [Mirror rendering improvement list](../task/mirror-render-pass-status.md)
   records current capture support and planned plane clipping, off-screen
   skipping, optional MMS candidate tracking, and performance verification.
+- [Importable MMS graphics settings panel and mirror controls](../task/runtime-mirror-resolution-info-panel.md)
+  tracks manual `GraphicsSettings.mirrors.toggle(...)` and `.quality(...)`
+  controls separately. That asset/API slice does not require adaptive LOD;
+  define how its runtime quality override interacts with the authored ceiling
+  before combining the two policies.
 
 ## Locked architecture decisions
 

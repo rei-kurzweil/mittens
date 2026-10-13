@@ -40,10 +40,12 @@ Relevant runtime code:
 
 ## Improvement order
 
-1. [ ] Restore validated mirror-plane clipping for correctness.
-2. [ ] Skip captures for mirrors outside the active viewer's view.
-3. [ ] Add the MMS graphics-settings panel's manual resolution control, tracked
-   separately in [runtime mirror resolution](runtime-mirror-resolution-info-panel.md).
+1. [ ] Add an importable MMS graphics settings panel and the
+   `GraphicsSettings.mirrors` built-in settings table, initially with `toggle`
+   and `quality` methods. Track the asset, backend, and readback contract in
+   [graphics settings and runtime mirror controls](runtime-mirror-resolution-info-panel.md).
+2. [ ] Restore validated mirror-plane clipping for correctness.
+3. [ ] Skip captures for mirrors outside the active viewer's view.
 4. [ ] Measure remaining geometry, pixel, allocation, and submission costs.
 5. [ ] Investigate optional MMS candidate tracking for mostly static scenes;
    retain the design questions below rather than implement it implicitly.
@@ -51,8 +53,11 @@ Relevant runtime code:
    [adaptive mirror detail](../desktop/adaptive-mirrors.md) when justified by
    measurements. They are separate from manual settings and basic visibility.
 
-The clipping and visibility slices can be developed independently. Neither
-requires solving movable-object tracking, building a new editor panel type, or
+Start with the panel/API slice. The user recalls that the previous clipping
+attempt did not work; its cause remains unverified, so merely re-enabling the
+existing flag is not treated as a fix. The clipping and visibility slices can
+be developed independently. Neither requires solving movable-object tracking,
+building a new editor panel type, or
 introducing a generalized dependency scheduler.
 
 ## Mirror-plane clipping
@@ -171,7 +176,7 @@ texture-lifetime redesign.
 - [Projection debug follow-up](mirror-camera-projection-debug-followup.md)
 - [Behind-surface reflection occlusion](../bugs/mirror-behind-surface-occludes-reflection.md)
 - [Mirror viewer-family captures](mirror-viewer-family-captures.md)
-- [MMS graphics settings and runtime mirror resolution](runtime-mirror-resolution-info-panel.md)
+- [Importable MMS graphics settings panel and mirror controls](runtime-mirror-resolution-info-panel.md)
 - [Adaptive mirror detail](../desktop/adaptive-mirrors.md)
 - [Zone observer candidate filtering](zone-observer-candidate-filtering-and-broad-phase.md)
 - [Render-view inventory (historical)](render-view-mirror-inventory.md)

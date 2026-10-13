@@ -129,4 +129,4 @@ attachment/contact exclusion remains correct.
 - [AVC capsule height independent of HMD tracking](avc-capsule-before-hmd-tracking.md)
 - [HMD height / floor-contact feedback](../bugs/mittens-corp-hmd-height-floor-contact-feedback.md)
 - [Jump controls and box stacks](mittens-corp-jump-controls-and-box-stacks.md)
-- [Runtime mirror resolution panel](runtime-mirror-resolution-info-panel.md)
+- [Importable MMS graphics settings panel and mirror controls](runtime-mirror-resolution-info-panel.md)
