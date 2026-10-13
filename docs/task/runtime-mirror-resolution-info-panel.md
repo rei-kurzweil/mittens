@@ -1,14 +1,50 @@
-# Task: Runtime mirror resolution and info panel slider
+# Task: MMS graphics settings panel with runtime mirror resolution
 
 Date: 2026-10-12
 Status: investigation and implementation planned; documentation only.
+Architecture clarified 2026-10-12: MMS owns the panel; a host-backed graphics
+namespace exposes runtime settings.
 
 ## Outcome
 
 Investigate the smallest supported way to change mirror capture resolution at
-runtime. Add a reusable `info_panel` containing a slider and a live label
-showing the current resolution. Use it in mittens-corp and
-mittens-corp-desktop to adjust their mirrors without restarting the scene.
+runtime. Build a reusable MMS `graphics_settings_panel` around the existing
+`info_panel` factory, initially containing only a mirror resolution slider and
+live readout. Use it in mittens-corp and mittens-corp-desktop. The panel can
+later grow controls for frame rate versus image quality when those controls
+have working runtime APIs.
+
+## Ownership and scope
+
+- Keep the panel, layout, labels, slider callbacks, and accordion restore logic
+  in `assets/components/ui/graphics_settings_panel.mms`.
+- Expose a host-backed MMS object/namespace such as `graphics` for reading and
+  changing actual graphics settings. Reuse RuntimeSpec namespace APIs and the
+  existing host dispatch; MMS already uses this mechanism for `File`, `JSON`,
+  and audio device APIs. No new language feature is required.
+- Rust owns validation, authoritative runtime values, and renderer/resource
+  changes. The UI must read actual applied values rather than maintain another
+  independent graphics-settings state.
+- Do not add a Rust `EditorPanel::Graphics`, hard-coded graphics panel rows,
+  or new editor-context click handling. Explicit scenes attach the MMS panel
+  factory as an ordinary authored component subtree.
+- Implement mirror control first. Do not build generic option registries,
+  presets, persistence, automatic quality adjustment, or controls for settings
+  that cannot yet change at runtime.
+
+Illustrative API shape, **not implemented or a final naming commitment**:
+
+```mms
+let current = graphics.get_mirror_quality()
+graphics.set_mirror_quality(1024)
+```
+
+Prefer a scene-wide runtime override so mirrors created later follow the same
+setting, while their authored `Mirror.quality(...)` values remain intact.
+Decide how no override, mixed authored values, resetting to authored values,
+and scene unload are represented before committing the getter's contract.
+The panel's first control can label this value **Mirror resolution** while the
+host API reuses the existing quality terminology.
 
 ## Existing foundation
 
@@ -21,6 +57,15 @@ mittens-corp-desktop to adjust their mirrors without restarting the scene.
   `ensure_mirror_offscreen_targets` already compares extent, format, and view
   count before recreating targets. Verify the complete update/publication path
   before assuming a live component edit is sufficient.
+- Runtime texture publication also derives its sampled image extent from the
+  capture image in `ensure_runtime_texture_target`. That function currently
+  allocates a fresh publication image each capture; this is existing behavior,
+  distinct from offscreen capture-target reuse. Record the baseline and verify
+  resize/lifetime correctness without expanding this task into an unrelated
+  texture-allocation redesign.
+- `VulkanoRenderer::set_msaa_mode` currently rejects changes after renderer
+  initialization. An MSAA slider/toggle would require separate runtime work;
+  a graphics panel does not make every authored setting live automatically.
 - `assets/components/ui/info_panel.mms` provides the existing panel factory
   and accordion restore behavior. `mouth_response_panel.mms` demonstrates
   sliders, `SliderChanged` callbacks, and readouts in this panel system.
@@ -29,8 +74,10 @@ mittens-corp-desktop to adjust their mirrors without restarting the scene.
 
 1. Trace quality from a runtime edit through MirrorSystem, VisualWorld, target
    allocation, and texture/material publication. Inspect the current MMS
-   runtime method surface; add a narrow getter/setter if needed, using the
-   existing `quality` terminology and clamp. Do not require scene rebuilding.
+   runtime API surface; expose a narrow graphics namespace getter/setter using
+   the existing `quality` terminology and clamp. Apply changes through the
+   existing engine update boundary, not direct renderer calls from MMS UI code.
+   Do not require scene rebuilding.
 2. Define what the displayed resolution means. Quality is a base resolution
    preference, not necessarily a square extent. The label should distinguish
    the selected value from actual capture dimensions, for example
@@ -38,9 +85,10 @@ mittens-corp-desktop to adjust their mirrors without restarting the scene.
    If actual dimensions are not currently observable, add the smallest
    readout needed or label the selected value explicitly as the preference;
    do not display it as an exact square capture size.
-3. Prefer one scene-wide slider that applies the selected preference to the
-   scene's mirrors. Define handling for mirrors created later and for multiple
-   aspect ratios; show actual dimensions per mirror when they differ.
+3. Use one scene-wide mirror control through the host-backed graphics object.
+   Define override/default/mixed-value behavior and handling for mirrors created
+   later. Multiple aspect ratios still produce different capture extents; show
+   actual dimensions per mirror when they differ.
 4. Choose discrete resolution steps within the existing range, initially
    considering 64, 128, 256, 512, 1024, 1440, and 2048 so the current corp
    setting remains representable. Apply only changed values; coalesce rapid
@@ -53,11 +101,12 @@ mittens-corp-desktop to adjust their mirrors without restarting the scene.
 
 ## Panel implementation
 
-- Build a small reusable panel factory around `info_panel`, with a resolution
-  slider and live resolution readout. Initialize from current mirror state.
+- Build `graphics_settings_panel.mms` around `info_panel`, with a mirror
+  resolution slider and live readout. Initialize from current mirror state.
 - Include it in both corp examples where it can be reached with XR pointers
   and desktop input without blocking the mirror or walking route.
-- Keep the label synchronized with the clamped/applied value, including
+- Wire `SliderChanged` to the graphics host setter. Keep the label
+  synchronized with the clamped/applied value, including
   changes through another supported runtime path. State how differing initial
   mirror preferences are shown before the slider applies one common value.
 - Restore the body with its current value after accordion minimize/restore;
@@ -76,7 +125,8 @@ mittens-corp-desktop to adjust their mirrors without restarting the scene.
 - Non-square mirrors preserve aspect ratio and show truthful dimensions or
   clearly named preferences. Mirror geometry and reflection orientation stay
   stable during target changes.
-- Automated checks cover the runtime value path and unchanged-target reuse;
+- Automated checks cover strict MMS host calls, getter/setter behavior,
+  override handling, the authored panel, and unchanged capture-target reuse;
   a renderer smoke test verifies target/texture replacement and resource
   lifetime during repeated live changes.
 
