@@ -39,6 +39,44 @@ cargo run --release -- load examples/graphics-settings.mms
 
 The remaining sections describe the intended backend integration.
 
+## First focused backend slice: mirror capture toggle
+
+Connect the existing panel's Toggle end to end so it pauses and resumes mirror
+captures in `examples/graphics-settings.mms`. Keep the Slider as its current
+UI-only preview; runtime quality changes are the next slice.
+
+Implementation checklist:
+
+- [ ] Add `GraphicsSettingsSystem` to `SystemWorld`, initially owning one
+  authoritative mirror capture-enabled flag, defaulting to true. Define its
+  scene unload/reset behavior without adding persistence.
+- [ ] Expose `GraphicsSettings.mirrors.toggle(on_off)` through the typed MMS
+  host boundary, plus minimal enabled-state readback under that same table.
+  Add only the runtime support needed for this nested table. Define how a
+  setter reaches the system and when subsequent readback sees its applied value.
+- [ ] Publish the applied enabled flag to mirror/render code. Gate capture
+  work before target allocation, drawing, and image publication while retaining
+  mirror records, targets, textures, and per-eye/family texture selection.
+- [ ] Connect the panel's Toggle to the host setter. Initialize and restore it
+  from authoritative readback, and keep its displayed value synchronized with
+  backend changes. The panel must not become the settings owner.
+- [ ] Verify repeated off/on changes through MMS and the panel, including
+  minimize/restore, startup while off, and a mirror created while off.
+
+This slice is complete when:
+
+- Off produces zero new mirror captures/publications, and existing surfaces
+  show their last published images with the correct eye/family bindings.
+  Surfaces without a completed capture show the existing black placeholder.
+- On captures fresh images before the mirror surface consumes them, reusing
+  valid resources. The settings work with or without a panel and without reload.
+- Focused runtime tests cover host argument validation, applied state/readback,
+  capture gating, and Toggle restore. A renderer smoke check and headset check
+  confirm freeze/resume and per-eye image retention in the existing example.
+
+Quality overrides, Slider backend integration, clipping, visibility culling,
+adaptive detail, and texture-allocation redesign are outside this slice.
+
 ## Outcome
 
 Build a reusable MMS `graphics_settings_panel` around the existing `info_panel`
@@ -82,7 +120,8 @@ versus image quality when those controls have working runtime APIs.
 ## Backend state and update flow
 
 `GraphicsSettingsSystem` is the single authoritative owner of mirror capture
-enabled state and the optional scene-wide quality override. Defaults are
+enabled state and, once the quality slice lands, the optional scene-wide quality
+override. Defaults are
 captures enabled and no quality override, so authored `Mirror.quality(...)`
 values continue to apply. New mirrors use the current system state.
 

@@ -48,7 +48,10 @@ Relevant runtime code:
    `GraphicsSettings.mirrors` built-in settings table and authoritative
    `GraphicsSettingsSystem`. Implement `toggle` first: off skips captures and
    publication while preserving the last reflection and per-eye/family texture
-   bindings; on resumes fresh captures. Then connect `quality`. Track the
+   bindings; on resumes fresh captures. The
+   [first focused backend slice](runtime-mirror-resolution-info-panel.md#first-focused-backend-slice-mirror-capture-toggle)
+   defines the Toggle's end-to-end scope and completion checks. Then connect
+   `quality`. Track the
    asset, backend, and readback contract in
    [graphics settings and runtime mirror controls](runtime-mirror-resolution-info-panel.md).
 2. [ ] Restore validated mirror-plane clipping for correctness.
