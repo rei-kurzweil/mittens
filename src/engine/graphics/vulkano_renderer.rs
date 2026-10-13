@@ -2872,6 +2872,11 @@ mod vulkano_backend {
             color_format: Format,
             family: crate::engine::graphics::visual_world::MirrorViewerFamily,
         ) -> Result<(), Box<dyn std::error::Error>> {
+            // Preserve published images and per-eye surface bindings while
+            // paused. Gate before allocating targets or submitting any work.
+            if !visual_world.mirror_captures_enabled() {
+                return Ok(());
+            }
             let device = self.context.device().clone();
             let queue = self.context.graphics_queue().clone();
             let mirrors = visual_world.mirrors().to_vec();
@@ -6554,6 +6559,9 @@ impl VulkanoRenderer {
         visual_world: &mut VisualWorld,
         extent: [u32; 2],
     ) -> Result<(), Box<dyn std::error::Error>> {
+        if !visual_world.mirror_captures_enabled() {
+            return Ok(());
+        }
         let Some(vulkano) = self.vulkano.as_mut() else {
             return Err("VulkanoRenderer not initialized (call init_for_window first)".into());
         };

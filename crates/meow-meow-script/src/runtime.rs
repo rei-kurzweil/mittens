@@ -307,6 +307,7 @@ impl BuiltinDeclaration {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApiDeclaration {
     namespace: Option<String>,
+    namespace_segments: Vec<String>,
     name: String,
     signature: ValueSignature,
     operation_id: OperationId,
@@ -593,6 +594,7 @@ impl<I> RuntimeSpecBuilder<I> {
         let id = self.bind(implementation);
         self.apis.push(ApiDeclaration {
             namespace: None,
+            namespace_segments: vec![],
             name: name.into(),
             signature,
             operation_id: id,
@@ -620,8 +622,10 @@ impl<I> RuntimeSpecBuilder<I> {
         name: impl Into<String>,
         configure: impl FnOnce(&mut NamespaceBuilder<'_, I>),
     ) -> &mut Self {
+        let name = name.into();
         let mut builder = NamespaceBuilder {
-            name: name.into(),
+            name: name.clone(),
+            segments: vec![name],
             apis: &mut self.apis,
             bindings: &mut self.bindings,
             next_operation_id: &mut self.next_operation_id,
@@ -785,12 +789,33 @@ impl<I> ComponentBuilder<'_, I> {
 
 pub struct NamespaceBuilder<'a, I> {
     name: String,
+    segments: Vec<String>,
     apis: &'a mut Vec<ApiDeclaration>,
     bindings: &'a mut Vec<(OperationId, I)>,
     next_operation_id: &'a mut u32,
 }
 
 impl<I> NamespaceBuilder<'_, I> {
+    /// Declare a nested built-in namespace table using individual names.
+    pub fn namespace(
+        &mut self,
+        name: impl Into<String>,
+        configure: impl FnOnce(&mut NamespaceBuilder<'_, I>),
+    ) -> &mut Self {
+        let name = name.into();
+        let mut segments = self.segments.clone();
+        segments.push(name.clone());
+        let mut child = NamespaceBuilder {
+            name: format!("{}.{}", self.name, name),
+            segments,
+            apis: self.apis,
+            bindings: self.bindings,
+            next_operation_id: self.next_operation_id,
+        };
+        configure(&mut child);
+        self
+    }
+
     pub fn api(
         &mut self,
         name: impl Into<String>,
@@ -805,6 +830,7 @@ impl<I> NamespaceBuilder<'_, I> {
         self.bindings.push((id, implementation));
         self.apis.push(ApiDeclaration {
             namespace: Some(self.name.clone()),
+            namespace_segments: self.segments.clone(),
             name: name.into(),
             signature,
             operation_id: id,
@@ -907,12 +933,15 @@ fn validate_runtime_spec(
         validate_declaration_name(&api.name, &path)?;
         validate_signature(&path, &api.signature)?;
         if let Some(namespace) = &api.namespace {
-            validate_declaration_name(namespace, namespace)?;
-            if !namespaces.contains_key(&namespace.to_lowercase()) {
-                if !component_names.contains(&namespace.to_lowercase()) {
-                    claim_name(&mut global_names, namespace, namespace)?;
+            for segment in &api.namespace_segments {
+                validate_declaration_name(segment, namespace)?;
+            }
+            let root = &api.namespace_segments[0];
+            if !namespaces.contains_key(&root.to_lowercase()) {
+                if !component_names.contains(&root.to_lowercase()) {
+                    claim_name(&mut global_names, root, root)?;
                 }
-                namespaces.insert(namespace.to_lowercase(), namespace.clone());
+                namespaces.insert(root.to_lowercase(), root.clone());
             }
         } else {
             claim_name(&mut global_names, &api.name, &api.name)?;
@@ -927,6 +956,19 @@ fn validate_runtime_spec(
                 api_path(api.namespace.as_deref(), &api.name),
                 "duplicate API declaration".into(),
             ));
+        }
+    }
+    // A namespace table entry cannot be both an API and a child table.
+    for api in apis {
+        for end in 2..=api.namespace_segments.len() {
+            let prefix = api.namespace_segments[..end].join(".").to_lowercase();
+            if api_names.contains(&prefix) {
+                return Err(spec_error(
+                    RuntimeSpecErrorKind::NameConflict,
+                    prefix,
+                    "namespace table entry conflicts with an API declaration".into(),
+                ));
+            }
         }
     }
     Ok(())
@@ -1196,6 +1238,7 @@ impl Catalog {
     pub(crate) fn parser_namespaces(&self) -> impl Iterator<Item = String> + '_ {
         self.namespaces
             .iter()
+            .filter(|namespace| !namespace.contains('.'))
             .filter(|namespace| !self.components.contains_key(&namespace.to_lowercase()))
             .cloned()
     }
@@ -1375,7 +1418,11 @@ fn compile_catalog(spec: &RuntimeSpec) -> Catalog {
     }
     for declaration in &spec.apis {
         if let Some(namespace) = &declaration.namespace {
-            catalog.namespaces.insert(namespace.clone());
+            for end in 1..=declaration.namespace_segments.len() {
+                catalog
+                    .namespaces
+                    .insert(declaration.namespace_segments[..end].join("."));
+            }
         }
         let id = api_key(declaration.namespace.as_deref(), &declaration.name);
         catalog
@@ -1598,6 +1645,64 @@ mod tests {
         CeChild, EventStreamHost, HostError, HostErrorKind, HostEvent, HostRequest, HostResponse,
         TransportValue,
     };
+
+    #[test]
+    fn nested_namespace_calls_and_aliases_use_typed_host_bindings() {
+        let mut builder = RuntimeSpec::builder::<()>();
+        builder.namespace("GraphicsSettings", |settings| {
+            settings.namespace("mirrors", |mirrors| {
+                mirrors.api(
+                    "toggle",
+                    ValueSignature::new(vec![ValueType::Bool], ValueType::Null),
+                    (),
+                );
+            });
+        });
+        let configured = builder.build().unwrap();
+        let operation_id = configured
+            .spec()
+            .api(Some("GraphicsSettings.mirrors"), "toggle")
+            .unwrap()
+            .operation_id();
+        let mut session = configured.runtime().session(EventStreamHost::new());
+        session.eval("GraphicsSettings.mirrors.toggle(false); let mirrors = GraphicsSettings.mirrors; mirrors.toggle(true)").unwrap();
+        assert!(
+            matches!(session.host().events.as_slice(), [HostEvent::ApiById { operation_id: first, args: a }, HostEvent::ApiById { operation_id: second, args: b }] if *first == operation_id && *second == operation_id && a == &[TransportValue::Bool(false)] && b == &[TransportValue::Bool(true)])
+        );
+        for invalid in [
+            "GraphicsSettings.mirrors.toggle(1)",
+            "GraphicsSettings.mirrors.toggle()",
+            "GraphicsSettings.missing.toggle(true)",
+        ] {
+            assert!(session.eval(invalid).is_err(), "accepted {invalid}");
+        }
+        assert_eq!(session.host().events.len(), 2);
+    }
+
+    #[test]
+    fn nested_namespace_segments_and_api_collisions_are_validated() {
+        let mut invalid = RuntimeSpec::builder::<()>();
+        invalid.namespace("GraphicsSettings", |settings| {
+            settings.namespace("bad.path", |child| {
+                child.api("toggle", ValueSignature::any(), ());
+            });
+        });
+        assert_eq!(
+            invalid.build().unwrap_err().kind,
+            RuntimeSpecErrorKind::InvalidNesting
+        );
+        let mut collision = RuntimeSpec::builder::<()>();
+        collision.namespace("GraphicsSettings", |settings| {
+            settings.api("mirrors", ValueSignature::any(), ());
+            settings.namespace("mirrors", |child| {
+                child.api("toggle", ValueSignature::any(), ());
+            });
+        });
+        assert_eq!(
+            collision.build().unwrap_err().kind,
+            RuntimeSpecErrorKind::NameConflict
+        );
+    }
 
     struct FixedHandleHost {
         handle: crate::ComponentHandle,

@@ -99,6 +99,7 @@ impl Universe {
             &mut self.command_queue,
             intents,
         )
+        .with_graphics_settings(&mut self.systems.graphics_settings)
     }
 
     /// Load and retain one MMS source file through the engine-owned scripting
@@ -108,15 +109,25 @@ impl Universe {
         source: &str,
         path: &str,
     ) -> Result<crate::scripting::runner::EvalOutput, String> {
+        let previous_settings = self.systems.graphics_settings.clone();
+        self.systems.graphics_settings.reset();
         let mut intents = Vec::new();
         let session = {
             let host = self.mittens_host(&mut intents);
-            crate::scripting::runner::RuntimeSpecSession::start_at_path_with_host(
+            match crate::scripting::runner::RuntimeSpecSession::start_at_path_with_host(
                 source, path, host,
-            )?
+            ) {
+                Ok(session) => session,
+                Err(error) => {
+                    self.systems.graphics_settings = previous_settings;
+                    return Err(error);
+                }
+            }
         };
 
-        self.close_mms_session();
+        if let Some(mut previous) = self.runtime_spec_session.take() {
+            previous.close();
+        }
         self.runtime_spec_session = Some(session);
 
         let output = crate::scripting::runner::EvalOutput {
@@ -136,6 +147,8 @@ impl Universe {
         if let Some(mut session) = self.runtime_spec_session.take() {
             session.close();
         }
+        self.systems.graphics_settings.reset();
+        self.drain_pending_signals();
     }
 
     /// Explicitly retry OpenXR initialization after launching without a runtime.
@@ -570,6 +583,224 @@ mod tests {
     use super::*;
     use crate::engine::ecs::component::EmissiveComponent;
     use crate::engine::ecs::{ComponentId, EventSignal, Signal};
+
+    fn labelled(universe: &Universe, name: &str) -> ComponentId {
+        universe
+            .world
+            .all_components()
+            .find(|&id| universe.world.component_label(id) == Some(name))
+            .unwrap()
+    }
+
+    fn pump_settings_callbacks(universe: &mut Universe) {
+        for _ in 0..4 {
+            universe.systems.rx.begin_frame();
+            universe.drain_pending_signals();
+            let mut session = universe.runtime_spec_session.take().unwrap();
+            let mut intents = Vec::new();
+            let errors = session.service_callbacks_with_host(universe.mittens_host(&mut intents));
+            universe.runtime_spec_session = Some(session);
+            assert!(errors.is_empty(), "{errors:?}");
+            for intent in intents {
+                universe
+                    .command_queue
+                    .push_intent_now(ComponentId::default(), intent);
+            }
+        }
+        universe.drain_pending_signals();
+    }
+
+    fn click(universe: &mut Universe, target: ComponentId) {
+        universe.command_queue.push_event(
+            target,
+            EventSignal::Click {
+                raycaster: ComponentId::default(),
+                renderable: target,
+                hit_point: [0.0; 3],
+                screen_pos_px: None,
+            },
+        );
+        pump_settings_callbacks(universe);
+    }
+
+    #[test]
+    fn graphics_settings_toggle_updates_backend_and_restores_authoritative_values() {
+        use crate::engine::ecs::component::{SliderComponent, TextComponent, ToggleComponent};
+        let mut universe = Universe::new(ecs::World::default());
+        universe
+            .systems
+            .toggle
+            .install_handlers(&mut universe.systems.rx);
+        universe.load_mms_source_at_path(r#"
+            import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
+            graphics_settings_panel({ root_name = "test_graphics_settings" })
+        "#, "examples/graphics-settings.mms").unwrap();
+        assert!(universe.systems.graphics_settings.mirrors_enabled());
+        let control = labelled(&universe, "graphics_mirrors_toggle_control");
+        click(&mut universe, control);
+        assert!(!universe.systems.graphics_settings.mirrors_enabled());
+        assert!(!universe.visuals.mirror_captures_enabled());
+        let slider = labelled(&universe, "graphics_mirrors_quality_slider");
+        universe.command_queue.push_intent_now(
+            slider,
+            ecs::IntentValue::SliderSet {
+                component_id: slider,
+                value: 5.0,
+                emit_changed: true,
+            },
+        );
+        pump_settings_callbacks(&mut universe);
+        let panel = labelled(&universe, "test_graphics_settings");
+        let chevron = labelled(&universe, "accordion_toggle");
+        for _ in 0..2 {
+            click(&mut universe, chevron);
+            assert!(
+                universe
+                    .world
+                    .find_component(panel, "#accordion_body")
+                    .is_none()
+            );
+            click(&mut universe, chevron);
+            assert!(
+                universe
+                    .world
+                    .find_component(panel, "#accordion_body")
+                    .is_some()
+            );
+            assert!(
+                !universe
+                    .world
+                    .get_component_by_id_as::<ToggleComponent>(labelled(
+                        &universe,
+                        "graphics_mirrors_toggle"
+                    ))
+                    .unwrap()
+                    .value()
+            );
+            assert_eq!(
+                universe
+                    .world
+                    .get_component_by_id_as::<SliderComponent>(labelled(
+                        &universe,
+                        "graphics_mirrors_quality_slider"
+                    ))
+                    .unwrap()
+                    .value(),
+                5.0
+            );
+            assert_eq!(
+                universe
+                    .world
+                    .get_component_by_id_as::<TextComponent>(labelled(
+                        &universe,
+                        "graphics_mirrors_quality_readout"
+                    ))
+                    .unwrap()
+                    .text,
+                "1440"
+            );
+        }
+        // External changes synchronize the native control without emitting a
+        // ToggleChanged callback or becoming a second settings authority.
+        universe
+            .systems
+            .graphics_settings
+            .set_mirrors_enabled(true, &mut universe.command_queue);
+        pump_settings_callbacks(&mut universe);
+        assert!(universe.visuals.mirror_captures_enabled());
+        assert!(
+            universe
+                .world
+                .get_component_by_id_as::<ToggleComponent>(labelled(
+                    &universe,
+                    "graphics_mirrors_toggle"
+                ))
+                .unwrap()
+                .value()
+        );
+        assert_eq!(
+            universe
+                .world
+                .get_component_by_id_as::<TextComponent>(labelled(
+                    &universe,
+                    "graphics_mirrors_enabled_readout"
+                ))
+                .unwrap()
+                .text,
+            "On"
+        );
+    }
+
+    #[test]
+    fn graphics_settings_host_reads_applied_state_and_resets_on_scene_replacement() {
+        let mut universe = Universe::new(ecs::World::default());
+        universe
+            .load_mms_source_at_path(
+                r#"
+            let mirrors = GraphicsSettings.mirrors
+            mirrors.toggle(false)
+            Text { name = "settings_readback" "" + mirrors.enabled() }
+        "#,
+                "examples/graphics-settings.mms",
+            )
+            .unwrap();
+        assert!(!universe.systems.graphics_settings.mirrors_enabled());
+        assert!(!universe.visuals.mirror_captures_enabled());
+        assert_eq!(
+            universe
+                .world
+                .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(labelled(
+                    &universe,
+                    "settings_readback"
+                ))
+                .unwrap()
+                .text,
+            "false"
+        );
+        universe
+            .load_mms_source_at_path("Transform {}", "examples/graphics-settings.mms")
+            .unwrap();
+        assert!(universe.systems.graphics_settings.mirrors_enabled());
+        universe
+            .systems
+            .graphics_settings
+            .set_mirrors_enabled(false, &mut universe.command_queue);
+        universe.close_mms_session();
+        assert!(universe.systems.graphics_settings.mirrors_enabled());
+        assert!(universe.visuals.mirror_captures_enabled());
+    }
+
+    #[test]
+    fn graphics_settings_calls_reject_invalid_arguments_without_edit_mode() {
+        let mut universe = Universe::new(ecs::World::default());
+        for source in [
+            "GraphicsSettings.mirrors.toggle(1)",
+            "GraphicsSettings.mirrors.toggle()",
+            "GraphicsSettings.mirrors.toggle(false, true)",
+            "GraphicsSettings.mirrors.enabled(false)",
+        ] {
+            assert!(
+                universe
+                    .load_mms_source_at_path(source, "examples/graphics-settings.mms")
+                    .is_err(),
+                "accepted {source}"
+            );
+            assert!(universe.systems.graphics_settings.mirrors_enabled());
+        }
+        universe
+            .load_mms_source_at_path(
+                "GraphicsSettings.mirrors.toggle(false)",
+                "examples/graphics-settings.mms",
+            )
+            .unwrap();
+        assert!(!universe.visuals.mirror_captures_enabled());
+        assert!(!universe.world.all_components().any(|id| {
+            universe
+                .world
+                .get_component_by_id_as::<ecs::component::EditorComponent>(id)
+                .is_some()
+        }));
+    }
 
     #[test]
     fn mms_facade_installs_replaces_and_closes_the_retained_session() {

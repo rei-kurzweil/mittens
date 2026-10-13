@@ -72,6 +72,16 @@ pub fn apply_toggle_set(
     toggle: ComponentId,
     value: bool,
 ) {
+    apply_toggle_set_with_changed(world, emit, toggle, value, true);
+}
+
+pub fn apply_toggle_set_with_changed(
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    toggle: ComponentId,
+    value: bool,
+    emit_changed: bool,
+) {
     let Some(old) = world
         .get_component_by_id_as::<ToggleComponent>(toggle)
         .map(ToggleComponent::value)
@@ -89,7 +99,7 @@ pub fn apply_toggle_set(
     } else {
         remove_selection_highlight(world, emit, owner);
     }
-    if old != value {
+    if old != value && emit_changed {
         emit.push_event(toggle, EventSignal::ToggleChanged { toggle, value });
     }
 }
@@ -184,5 +194,17 @@ mod tests {
                 value: true,
             } if changed == toggle
         ));
+        recorded.events.clear();
+        apply_toggle_set_with_changed(&mut world, &mut recorded, toggle, false, false);
+        assert!(
+            !world
+                .get_component_by_id_as::<ToggleComponent>(toggle)
+                .unwrap()
+                .value()
+        );
+        assert!(
+            recorded.events.is_empty(),
+            "silent synchronization must not emit ToggleChanged"
+        );
     }
 }

@@ -374,6 +374,24 @@ impl System for MirrorSystem {
                 }
 
                 for (view_index, eye_data) in source_cam.eyes.iter().enumerate() {
+                    let target_key = format!(
+                        "capture.mirror.{}.{}.{}.color",
+                        guid,
+                        family.key_segment(),
+                        view_index
+                    );
+                    if !visuals.mirror_captures_enabled() {
+                        // Keep texture identities available to the surface even
+                        // when the current pose cannot form a valid reflection.
+                        // The renderer skips these requests while captures pause.
+                        captures.push(MirrorCaptureRequest {
+                            family,
+                            view_index,
+                            camera: *eye_data,
+                            target_key,
+                        });
+                        continue;
+                    }
                     let camera_world = eye_data.transform.matrix_world;
                     let cam_pos = [camera_world[3][0], camera_world[3][1], camera_world[3][2]];
                     let cam_up = [camera_world[1][0], camera_world[1][1], camera_world[1][2]];
@@ -530,12 +548,7 @@ impl System for MirrorSystem {
                             proj: ref_proj,
                             transform: reflected_transform,
                         },
-                        target_key: format!(
-                            "capture.mirror.{}.{}.{}.color",
-                            guid,
-                            family.key_segment(),
-                            view_index
-                        ),
+                        target_key,
                     });
                 }
             }

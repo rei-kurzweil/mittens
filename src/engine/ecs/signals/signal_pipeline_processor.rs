@@ -63,6 +63,7 @@ impl SignalPipelineProcessor {
             | IntentValue::SetLayoutInspect { component_id, .. }
             | IntentValue::SelectionSet { component_id, .. }
             | IntentValue::ToggleSet { component_id, .. }
+            | IntentValue::ToggleSyncValue { component_id, .. }
             | IntentValue::SliderSet { component_id, .. }
             | IntentValue::CollisionVisualizationSet { component_id, .. }
             | IntentValue::SpringBoneVisualizationSet { component_id, .. }
@@ -215,6 +216,7 @@ impl SignalPipelineProcessor {
             | IntentValue::SetLayoutInspect { component_id, .. }
             | IntentValue::SelectionSet { component_id, .. }
             | IntentValue::ToggleSet { component_id, .. }
+            | IntentValue::ToggleSyncValue { component_id, .. }
             | IntentValue::SliderSet { component_id, .. }
             | IntentValue::CollisionVisualizationSet { component_id, .. }
             | IntentValue::SpringBoneVisualizationSet { component_id, .. }

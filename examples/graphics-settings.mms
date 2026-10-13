@@ -1,5 +1,5 @@
-// XR graphics settings UI preview. Toggle/slider changes affect the panel's
-// display only; rendering settings are deliberately not connected yet.
+// XR graphics settings example. The Toggle freezes/resumes mirror captures;
+// the resolution Slider remains a UI-only preview.
 // Run: cargo run --release -- load examples/graphics-settings.mms
 import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
 import { stage_with_boxes } from "../assets/components/stage_with_boxes.mms"
@@ -42,6 +42,7 @@ T.position(2.5, 1.3, -1.0).scale(1.8, 2.6, 0.08) {
 // The factory owns its layout, drag handle, and accordion restore. This scene
 // places the panel in front of the player's starting position.
 T.position(-1.28, 2.3, -1.0) {
+    Grabbable{}
     graphics_settings_panel({ root_name = "graphics_settings" })
 }
 

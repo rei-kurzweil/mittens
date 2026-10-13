@@ -192,6 +192,13 @@ its uppercase spelling from component-expression parsing, so
 `File.read_text("data.json")` is a host API call rather than a `File`
 component expression.
 
+Mittens exposes `GraphicsSettings.mirrors` as a nested host namespace table.
+`toggle(bool)` sets the scene-wide capture-enabled state and returns unit/null;
+`enabled()` returns the authoritative bool. Both use a live engine host lease
+to `GraphicsSettingsSystem` and work without an editor or a panel. Setter
+application is synchronous with dispatch; change notifications are queued
+`GraphicsSettingsChanged` data events. Runtime quality calls remain planned.
+
 ### Universal component inspection
 
 Language-level `node.type()`, `node.children()`, and `node.field` require no

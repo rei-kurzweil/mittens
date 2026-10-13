@@ -2,24 +2,27 @@
 
 Date: 2026-10-12
 Updated: 2026-10-13
-Status: UI preview implemented and user-verified; backend integration pending.
+Status: capture Toggle backend implemented; headset freeze/resume check pending.
+Runtime quality integration remains planned.
 Architecture confirmed 2026-10-13: MMS owns the importable panel factory;
-`GraphicsSettingsSystem` will own authoritative runtime settings and receive
+`GraphicsSettingsSystem` owns authoritative capture-enabled state and receives
 updates from the host-backed `GraphicsSettings.mirrors` built-in table.
-The asset exists; the system and settings API are not implemented yet.
+The system, `toggle(bool)`, and `enabled()` readback are implemented. The
+`quality(i32)` API is the next slice.
 
 ## Current UI-first slice
 
 - `assets/components/panels/graphics_settings_panel.mms` exports
-  `graphics_settings_panel(options)` around `info_panel`. Its native Toggle and
-  stepped Slider update only per-instance preview state and readouts; changing
-  them has no effect on renderer settings. Minimize/restore retains those values.
+  `graphics_settings_panel(options)` around `info_panel`. Its native Toggle
+  freezes/resumes mirror capture work through the authoritative backend. The
+  stepped Slider remains a UI-only preview. Minimize/restore reads actual
+  enabled state and retains the preview Slider value.
 - `examples/graphics-settings.mms` imports the panel in an XR-only Rei(mu) scene,
   with microphone mouth animation, independent eye closure tracking, ambient
   eye direction animation, and the corp rig's shirt/bow secondary motion.
   A grabbable full-body mirror starts beside the standalone panel at quality 512.
   There is no desktop camera. The user confirmed the scene and UI are working;
-  backend settings are the next slice.
+  the user will now verify the capture Toggle's freeze/resume behavior.
 - `assets/components/stage_with_boxes.mms` supplies the original
   secondary-motion-desktop floor and collision/contact zones, eight colored
   boxes, and three tripod lights. Both scenes now import it. The new example
@@ -28,8 +31,10 @@ The asset exists; the system and settings API are not implemented yet.
   and dispatched through the Mittens host to queued `DataEvent` delivery.
   Runtime checks cover strict scene/import evaluation, preview control callbacks,
   and repeated real chevron close/open clicks through engine subtree removal
-  and reattachment. Restored controls retain their values. These checks do not
-  replace headset visual review.
+  and reattachment. Tests also cover typed settings calls outside edit mode,
+  read-after-write, scene reset, frozen eye/family texture identities, startup
+  while off, mirrors created while off, and reflected-view refresh on resume.
+  Live GPU/headset image verification remains with the user.
 
 Run the preview with:
 
@@ -37,7 +42,7 @@ Run the preview with:
 cargo run --release -- load examples/graphics-settings.mms
 ```
 
-The remaining sections describe the intended backend integration.
+The first slice below records implemented behavior; runtime quality remains planned.
 
 ## First focused backend slice: mirror capture toggle
 
@@ -47,21 +52,31 @@ UI-only preview; runtime quality changes are the next slice.
 
 Implementation checklist:
 
-- [ ] Add `GraphicsSettingsSystem` to `SystemWorld`, initially owning one
+- [x] Add `GraphicsSettingsSystem` to `SystemWorld`, initially owning one
   authoritative mirror capture-enabled flag, defaulting to true. Define its
   scene unload/reset behavior without adding persistence.
-- [ ] Expose `GraphicsSettings.mirrors.toggle(on_off)` through the typed MMS
-  host boundary, plus minimal enabled-state readback under that same table.
+- [x] Expose `GraphicsSettings.mirrors.toggle(on_off)` through the typed MMS
+  host boundary, plus `GraphicsSettings.mirrors.enabled()` readback.
   Add only the runtime support needed for this nested table. Define how a
   setter reaches the system and when subsequent readback sees its applied value.
-- [ ] Publish the applied enabled flag to mirror/render code. Gate capture
+- [x] Publish the applied enabled flag to mirror/render code. Gate capture
   work before target allocation, drawing, and image publication while retaining
   mirror records, targets, textures, and per-eye/family texture selection.
-- [ ] Connect the panel's Toggle to the host setter. Initialize and restore it
+- [x] Connect the panel's Toggle to the host setter. Initialize and restore it
   from authoritative readback, and keep its displayed value synchronized with
   backend changes. The panel must not become the settings owner.
-- [ ] Verify repeated off/on changes through MMS and the panel, including
+- [x] Verify repeated off/on changes through MMS and the panel in runtime tests, including
   minimize/restore, startup while off, and a mirror created while off.
+- [ ] User headset check: last images remain visible per eye while off, fresh
+  reflections resume on, and repeated Toggle/accordion changes stay correct.
+
+The host leases `GraphicsSettingsSystem` during main-thread dispatch. Setters
+apply synchronously, so `enabled()` immediately following `toggle(...)` reads
+the new applied value. Changed values queue a `GraphicsSettingsChanged`
+`DataEvent`; the panel then synchronizes its native Toggle with the silent
+`Toggle.sync_value(bool)` method. Repeating an unchanged value emits no update.
+Scene/session replacement and closing the live MMS session reset enabled to true.
+This path works without `Editor` or `EditorUI` and uses no editor panel APIs.
 
 This slice is complete when:
 
@@ -97,11 +112,10 @@ versus image quality when those controls have working runtime APIs.
   It is available to scenes, imported factories, and callbacks without a
   settings component or a separate import of the API.
 - Keep declarations and typed host dispatch in the existing RuntimeSpec/Mittens
-  host boundary. Nested built-in table exposure needs investigation: current
-  RuntimeSpec namespace APIs such as `File` and `JSON` are flat, and declaration
-  names reject dots. Do not assume registering a namespace named
-  `GraphicsSettings.mirrors` works. Add the smallest crate-owned runtime support
-  needed for the requested table shape; no MMS type-annotation syntax is needed.
+  host boundary. RuntimeSpec now supports nested namespace tables through
+  `NamespaceBuilder::namespace(...)`, with each name segment validated
+  separately. `GraphicsSettings` contains the `mirrors` table. No MMS
+  type-annotation syntax or evaluator-specific graphics state is required.
 - `GraphicsSettingsSystem` owns authoritative runtime values and validation.
   The MMS host receives settings calls and forwards their updates to this
   system through the existing engine update boundary. The UI reads actual
@@ -109,8 +123,8 @@ versus image quality when those controls have working runtime APIs.
 - Do not add a Rust `EditorPanel::Graphics`, hard-coded graphics panel rows,
   or new editor-context click handling. Explicit scenes attach the MMS panel
   factory as an ordinary authored component subtree.
-- Add `src/engine/ecs/system/graphics_settings_system.rs` and integrate its
-  `GraphicsSettingsSystem` with `SystemWorld`. It manages settings state and
+- `src/engine/ecs/system/graphics_settings_system.rs` provides
+  `GraphicsSettingsSystem`, integrated with `SystemWorld`. It manages settings state and
   applies updates independently of any panel. Panel construction, layout,
   callbacks, and input composition remain in the MMS asset.
 - Implement mirror control first. Do not build generic option registries,
@@ -130,16 +144,16 @@ The planned path is:
 ```text
 MMS GraphicsSettings.mirrors call
   -> typed RuntimeSpec/Mittens host dispatch
-  -> settings update at the engine update boundary
+  -> synchronous settings update during main-thread host dispatch
   -> GraphicsSettingsSystem validates and applies the value
   -> mirror/render code consumes applied settings
 ```
 
 Host calls must update this system rather than change renderer resources or
 rewrite every mirror component directly. State readback also comes from this
-system. Any pending update is distinct from its applied state; define their
-ordering with readback before wiring callbacks. Apply settings before the
-affected captures in a frame, and coalesce repeated/rapid changes where needed.
+system. The capture Toggle applies synchronously as described above. Apply
+settings before the affected captures in a frame, and coalesce repeated/rapid
+changes where needed.
 Keep the existing frame/submission ordering; disabling captures does not cancel
 GPU work already submitted.
 
@@ -158,8 +172,9 @@ GraphicsSettings.mirrors.toggle(true)
 
 | Method | Argument contract | Result |
 | --- | --- | --- |
-| `GraphicsSettings.mirrors.toggle(on_off)` | `bool`; explicitly set enabled/disabled rather than invert the current value | void/unit |
-| `GraphicsSettings.mirrors.quality(q)` | `i32`; use the existing 64..=2048 clamp | void/unit |
+| `GraphicsSettings.mirrors.toggle(on_off)` | Implemented: `bool`; explicitly set capture enabled/disabled | void/unit |
+| `GraphicsSettings.mirrors.enabled()` | Implemented: no arguments; read authoritative applied capture state | bool |
+| `GraphicsSettings.mirrors.quality(q)` | Planned: `i32`; use the existing 64..=2048 clamp | void/unit |
 
 These types describe host validation, not annotations to write in MMS source.
 Both controls affect all mirrors in the active scene, including mirrors created
@@ -186,7 +201,8 @@ in the meantime. Repeated off/on requests must preserve resource reuse.
 
 The panel needs to read authoritative enabled/quality state on creation,
 after changes, and on accordion restore. Add a minimal readback contract under
-`GraphicsSettings.mirrors`; its names and representation remain to be decided.
+`GraphicsSettings.mirrors`; enabled state uses `enabled()`, while quality
+readback's names and representation remain to be decided.
 Resolve no override, mixed authored values, reset-to-authored behavior, and
 scene-unload/reset lifetime before implementing that contract. Do not add
 top-level entries or a `GraphicsSettings.toggle_mirrors` alias in the first slice.

@@ -1,5 +1,5 @@
-// Importable graphics settings UI preview. Native controls update only this
-// instance's local display state; backend settings will be connected later.
+// Importable graphics settings panel. The mirror Toggle controls capture work;
+// resolution remains a UI-only preview until the quality backend slice lands.
 import { info_panel, info_panel_body } from "../ui/info_panel.mms"
 
 let QUALITY_STEPS = [64, 128, 256, 512, 1024, 1440, 2048]
@@ -18,7 +18,7 @@ fn enabled_text(enabled) {
     return "Off"
 }
 
-fn preview_toggle(enabled) {
+fn capture_toggle(enabled) {
     if enabled { return Toggle.on() { name = "graphics_mirrors_toggle" } }
     return Toggle.off() { name = "graphics_mirrors_toggle" }
 }
@@ -59,7 +59,8 @@ fn setting_row(label, control, readout) {
 }
 
 fn settings_content(state) {
-    let mirror_toggle = preview_toggle(state.enabled)
+    state.enabled = GraphicsSettings.mirrors.enabled()
+    let mirror_toggle = capture_toggle(state.enabled)
     let toggle_control = T {
         name = "graphics_mirrors_toggle_control"
         Raycastable.click_only() { interaction_priority(120.0) }
@@ -96,7 +97,8 @@ fn settings_content(state) {
     }
 
     on(mirror_toggle, "ToggleChanged", fn(event) {
-        state.enabled = event.value
+        GraphicsSettings.mirrors.toggle(event.value)
+        state.enabled = GraphicsSettings.mirrors.enabled()
         toggle_readout.set_text(enabled_text(state.enabled))
     })
     on(quality_slider, "SliderChanged", fn(event) {
@@ -116,7 +118,7 @@ fn settings_content(state) {
 export fn graphics_settings_panel(options) {
     let title = "Graphics settings"
     if options["title"] { title = options.title }
-    let state = { enabled = true quality_index = 3 }
+    let state = { enabled = GraphicsSettings.mirrors.enabled() quality_index = 3 }
     let panel = info_panel({
         root_name = options.root_name
         width_gu = 32.0
@@ -139,6 +141,20 @@ export fn graphics_settings_panel(options) {
                 body_background_color = BODY_COLOR
                 body_text_color = TEXT_COLOR
             }))
+        }
+    })
+    // The subscription captures the stable panel name, then resolves current
+    // controls so minimized/deleted bodies never leave stale control handles.
+    on_global("DataEvent", fn(event) {
+        if event == "GraphicsSettingsChanged" {
+            state.enabled = GraphicsSettings.mirrors.enabled()
+            let current_panel = query("#" + options.root_name)
+            if current_panel {
+                let toggle = current_panel.query("#graphics_mirrors_toggle")
+                let readout = current_panel.query("#graphics_mirrors_enabled_readout")
+                if toggle { toggle.sync_value(state.enabled) }
+                if readout { readout.set_text(enabled_text(state.enabled)) }
+            }
         }
     })
     return panel

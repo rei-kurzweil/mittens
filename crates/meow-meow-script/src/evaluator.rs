@@ -683,6 +683,25 @@ impl<'a, H: Host> Evaluator<'a, H> {
                     "e" => Ok(Value::Number(std::f64::consts::E)),
                     _ => Err(EvalError::Runtime(format!("unknown Math constant '{key}'"))),
                 },
+                Value::Identifier(namespace)
+                    if self
+                        .catalog
+                        .as_ref()
+                        .is_some_and(|catalog| catalog.has_namespace(&namespace)) =>
+                {
+                    let child = format!("{namespace}.{key}");
+                    if self
+                        .catalog
+                        .as_ref()
+                        .is_some_and(|catalog| catalog.has_namespace(&child))
+                    {
+                        Ok(Value::Identifier(child))
+                    } else {
+                        Err(EvalError::Runtime(format!(
+                            "unknown namespace table entry '{child}'"
+                        )))
+                    }
+                }
                 Value::Map(values) => Ok(values.get(key).cloned().unwrap_or(Value::Null)),
                 Value::Object(id) => id
                     .with_map(|values| values.get(key).cloned().unwrap_or(Value::Null))

@@ -1,8 +1,8 @@
 # Mirror rendering: status and improvement task list
 
 Updated: 2026-10-13
-Status: existing capture path and graphics panel UI preview implemented;
-settings backend, correctness, and optimization work below remain planned.
+Status: existing capture path, graphics panel, and capture Toggle backend implemented;
+runtime quality, correctness, and optimization work below remain planned.
 
 ## Current implementation
 
@@ -32,8 +32,11 @@ settings backend, correctness, and optimization work below remain planned.
   CPU/GPU timing need an observability audit rather than assuming no stats exist.
 - An importable graphics settings panel UI preview exists at
   `assets/components/panels/graphics_settings_panel.mms`, exercised by the
-  XR-only `examples/graphics-settings.mms`. Toggle/slider changes affect only
-  local UI state; the `GraphicsSettings.mirrors` backend remains planned.
+  XR-only `examples/graphics-settings.mms`. `GraphicsSettingsSystem` now owns
+  the capture-enabled flag, exposed by `GraphicsSettings.mirrors.toggle(bool)`
+  and `.enabled()`. Off retains the last per-eye/family textures and skips the
+  capture pass; on rebuilds reflected views before capture. The Slider remains
+  UI-only, and headset freeze/resume verification is pending.
 
 Relevant runtime code:
 
@@ -46,7 +49,7 @@ Relevant runtime code:
 
 1. [ ] Connect the existing importable MMS graphics settings panel to the
    `GraphicsSettings.mirrors` built-in settings table and authoritative
-   `GraphicsSettingsSystem`. Implement `toggle` first: off skips captures and
+   `GraphicsSettingsSystem`. The capture Toggle is implemented: off skips captures and
    publication while preserving the last reflection and per-eye/family texture
    bindings; on resumes fresh captures. The
    [first focused backend slice](runtime-mirror-resolution-info-panel.md#first-focused-backend-slice-mirror-capture-toggle)

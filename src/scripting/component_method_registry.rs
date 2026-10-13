@@ -3,7 +3,7 @@ use crate::engine::ecs::component::{
     AudioBandPassFilterComponent, AudioInputComponent, AvatarControlComponent,
     BoneRestPoseComponent, EmissiveComponent, GravityComponent, InputComponent,
     InputXRGamepadComponent, RayCastComponent, ShadingComponent, ShadingModel, SliderComponent,
-    TextComponent, TransformComponent, TransitionComponent, VelocityComponent,
+    TextComponent, ToggleComponent, TransformComponent, TransitionComponent, VelocityComponent,
     VolumeNormalizationComponent,
 };
 use crate::engine::ecs::{ComponentId, IntentValue, PoseApplyMode, World};
@@ -56,6 +56,7 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                     | "get_rim_power"
                     | "set_rim_power"
             ))
+        || (matches!(component_type, "Toggle" | "toggle") && method == "sync_value")
         || (matches!(component_type, "Slider" | "slider")
             && matches!(
                 method,
@@ -533,6 +534,19 @@ pub(crate) fn invoke_component_method(
                 .ok_or_else(|| "value(): not a SliderComponent".to_string())?
                 .value();
             Ok(Value::Number(value as f64))
+        }
+        ("Toggle" | "toggle", "sync_value") => {
+            let [Value::Bool(value)] = args else {
+                return Err("sync_value(): expected one boolean".into());
+            };
+            world
+                .get_component_by_id_as::<ToggleComponent>(id)
+                .ok_or_else(|| "sync_value(): not a ToggleComponent".to_string())?;
+            emit_intent(IntentValue::ToggleSyncValue {
+                component_id: id,
+                value: *value,
+            });
+            Ok(Value::Null)
         }
         ("Slider" | "slider", method @ ("set_value" | "sync_value")) => {
             let [Value::Number(value)] = args else {

@@ -34,6 +34,7 @@ pub(crate) struct MittensHost<'a, 'bindings> {
     pub world: &'a mut World,
     pub rx: Option<&'a mut RxWorld>,
     pub render_assets: Option<&'a mut RenderAssets>,
+    graphics_settings: Option<&'a mut crate::engine::ecs::system::GraphicsSettingsSystem>,
     pub emit: &'a mut dyn SignalEmitter,
     pub intents: &'a mut Vec<IntentValue>,
     bindings: Option<&'bindings mms::ImplementationBindings<super::runtime_config::MittensBinding>>,
@@ -70,6 +71,7 @@ impl<'a, 'bindings> MittensHost<'a, 'bindings> {
             world,
             rx: None,
             render_assets: None,
+            graphics_settings: None,
             emit,
             intents,
             bindings: None,
@@ -91,6 +93,14 @@ impl<'a, 'bindings> MittensHost<'a, 'bindings> {
         self
     }
 
+    pub fn with_graphics_settings(
+        mut self,
+        settings: &'a mut crate::engine::ecs::system::GraphicsSettingsSystem,
+    ) -> Self {
+        self.graphics_settings = Some(settings);
+        self
+    }
+
     pub fn with_bindings<'next>(
         self,
         bindings: &'next mms::ImplementationBindings<super::runtime_config::MittensBinding>,
@@ -99,6 +109,7 @@ impl<'a, 'bindings> MittensHost<'a, 'bindings> {
             world: self.world,
             rx: self.rx,
             render_assets: self.render_assets,
+            graphics_settings: self.graphics_settings,
             emit: self.emit,
             intents: self.intents,
             bindings: Some(bindings),
@@ -398,6 +409,45 @@ impl mms::Host for MittensHost<'_, '_> {
                         operation: format!("{operation_id:?}"),
                         message: "mittens.smoke expects no arguments".into(),
                     }),
+                    super::runtime_config::MittensBinding::Api(
+                        super::runtime_config::MittensApi::MirrorsToggle,
+                    ) => {
+                        let [mms::TransportValue::Bool(enabled)] = args.as_slice() else {
+                            return Err(mms::HostError::failure(
+                                "GraphicsSettings.mirrors.toggle",
+                                "expects one boolean",
+                            ));
+                        };
+                        let settings = self.graphics_settings.as_deref_mut().ok_or_else(|| {
+                            mms::HostError::unavailable(
+                                "GraphicsSettings.mirrors.toggle",
+                                "graphics settings service is unavailable",
+                            )
+                        })?;
+                        if self.deferred_callback_phase != Some(DeferredCallbackHostPhase::Audio) {
+                            settings.set_mirrors_enabled(*enabled, self.emit);
+                        }
+                        Ok(S::Unit)
+                    }
+                    super::runtime_config::MittensBinding::Api(
+                        super::runtime_config::MittensApi::MirrorsEnabled,
+                    ) => {
+                        if !args.is_empty() {
+                            return Err(mms::HostError::failure(
+                                "GraphicsSettings.mirrors.enabled",
+                                "expects no arguments",
+                            ));
+                        }
+                        let settings = self.graphics_settings.as_deref().ok_or_else(|| {
+                            mms::HostError::unavailable(
+                                "GraphicsSettings.mirrors.enabled",
+                                "graphics settings service is unavailable",
+                            )
+                        })?;
+                        Ok(S::Transport(mms::TransportValue::Bool(
+                            settings.mirrors_enabled(),
+                        )))
+                    }
                     super::runtime_config::MittensBinding::Api(
                         super::runtime_config::MittensApi::EmitData,
                     ) => self.emit_data(args),

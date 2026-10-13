@@ -44,6 +44,8 @@ pub enum ComponentInitializerKind {
 pub enum MittensApi {
     Smoke,
     EmitData,
+    MirrorsToggle,
+    MirrorsEnabled,
     FileReadText,
     JsonParse,
     JsonStringify,
@@ -976,6 +978,17 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 }
                 "Selectable" | "Toggle" | "Serialize" => {
                     no_arg_constructors(component, &["on", "off"]);
+                    if canonical == "Toggle" {
+                        host_method(
+                            component,
+                            canonical,
+                            "sync_value",
+                            mms::ValueSignature::new(
+                                vec![mms::ValueType::Bool],
+                                mms::ValueType::Null,
+                            ),
+                        );
+                    }
                 }
                 "Selection" => {
                     no_arg_constructors(component, &["multiple", "optional"]);
@@ -1571,6 +1584,21 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         ),
         MittensBinding::Api(MittensApi::EmitData),
     );
+
+    builder.namespace("GraphicsSettings", |namespace| {
+        namespace.namespace("mirrors", |mirrors| {
+            mirrors.api(
+                "toggle",
+                mms::ValueSignature::new(vec![mms::ValueType::Bool], mms::ValueType::Null),
+                MittensBinding::Api(MittensApi::MirrorsToggle),
+            );
+            mirrors.api(
+                "enabled",
+                mms::ValueSignature::new(vec![], mms::ValueType::Bool),
+                MittensBinding::Api(MittensApi::MirrorsEnabled),
+            );
+        });
+    });
 
     builder.namespace("File", |namespace| {
         namespace.api(

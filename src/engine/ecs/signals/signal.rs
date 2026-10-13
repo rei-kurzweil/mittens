@@ -525,6 +525,10 @@ pub enum IntentValue {
         component_id: ComponentId,
         value: bool,
     },
+    ToggleSyncValue {
+        component_id: ComponentId,
+        value: bool,
+    },
     SliderSet {
         component_id: ComponentId,
         value: f32,
@@ -1026,6 +1030,7 @@ impl IntentValue {
             IntentValue::GLTFArmatureVisible { .. } => "gltf_armature_visible",
             IntentValue::SelectionSet { .. } => "selection_set",
             IntentValue::ToggleSet { .. } => "toggle_set",
+            IntentValue::ToggleSyncValue { .. } => "toggle_sync_value",
             IntentValue::SliderSet { .. } => "slider_set",
             IntentValue::CollisionVisualizationSet { .. } => "collision_visualization_set",
             IntentValue::SpringBoneVisualizationSet { .. } => "spring_bone_visualization_set",

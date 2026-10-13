@@ -167,6 +167,7 @@ pub struct SystemWorld {
     pub keyboard_input: KeyboardInputSystem,
     pub light: LightSystem,
     pub mirror: MirrorSystem,
+    pub graphics_settings: crate::engine::ecs::system::GraphicsSettingsSystem,
 
     pub text: TextSystem,
     pub text_input: TextInputSystem,
@@ -595,6 +596,7 @@ mod tests {
         let mut world = World::default();
         let mut visuals = VisualWorld::default();
         let mut systems = SystemWorld::default();
+        configure_test_window_camera(&mut visuals);
 
         let root = world.add_component(TransformComponent::new());
         let renderable = world.add_component(RenderableComponent::square());
@@ -845,6 +847,128 @@ mod tests {
                     && capture.view_index == 1
             }),
             "expected right stereo capture"
+        );
+
+        // Paused mirrors retain all texture identities, even when the viewer
+        // moves behind the surface and cannot form a valid reflected view.
+        let original = mirror.captures.clone();
+        for (index, capture) in original.iter().enumerate() {
+            visuals.set_runtime_texture_handle(
+                &capture.target_key,
+                crate::engine::graphics::TextureHandle(100 + index as u32),
+            );
+        }
+        let mut queue = CommandQueue::new();
+        let mut assets = RenderAssets::new();
+        systems
+            .graphics_settings
+            .set_mirrors_enabled(false, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+        let mut behind = xr_transform;
+        behind.matrix_world[3][2] = -1.0;
+        visuals.set_xr_camera(vec![
+            crate::engine::graphics::CameraData {
+                view: xr_view,
+                proj,
+                transform: behind,
+            },
+            crate::engine::graphics::CameraData {
+                view: xr_view,
+                proj,
+                transform: behind,
+            },
+        ]);
+        systems
+            .mirror
+            .tick(&mut world, &mut visuals, &Default::default(), 0.0);
+        for (index, capture) in original.iter().enumerate() {
+            assert_eq!(
+                visuals.mirror_texture_key_for_view(
+                    visuals.mirrors()[0].mirror_component,
+                    capture.family,
+                    capture.view_index
+                ),
+                Some(capture.target_key.as_str())
+            );
+            assert_eq!(
+                visuals.runtime_texture_handle(&capture.target_key),
+                Some(crate::engine::graphics::TextureHandle(100 + index as u32))
+            );
+        }
+        let mut renderer = crate::engine::graphics::VulkanoRenderer::new();
+        // Pausing succeeds before any Vulkan resources/targets can be created.
+        renderer
+            .submit_xr_mirror_captures(&mut visuals, [100, 100])
+            .unwrap();
+        assert_eq!(renderer.perf_counters().mirror_captures, 0);
+        let new_root = world.add_component(TransformComponent::new());
+        let new_surface = world.add_component(RenderableComponent::square());
+        let new_mirror = world.add_component(MirrorComponent::default());
+        world.add_child(new_root, new_surface).unwrap();
+        world.add_child(new_surface, new_mirror).unwrap();
+        systems
+            .mirror
+            .tick(&mut world, &mut visuals, &Default::default(), 0.0);
+        let new_keys: Vec<_> = visuals
+            .mirrors()
+            .iter()
+            .find(|mirror| mirror.mirror_component == new_mirror)
+            .unwrap()
+            .captures
+            .iter()
+            .map(|capture| capture.target_key.clone())
+            .collect();
+        assert_eq!(
+            new_keys.len(),
+            3,
+            "new paused mirrors keep mono and both stereo identities"
+        );
+        let mut uploader = TestUploader::default();
+        systems
+            .render_to_texture
+            .flush_pending(&mut visuals, &mut uploader);
+        assert!(
+            new_keys
+                .iter()
+                .all(|key| visuals.runtime_texture_handle(key).is_some()),
+            "new paused mirrors receive placeholder textures"
+        );
+        let allocations = uploader.next_texture;
+        systems
+            .render_to_texture
+            .flush_pending(&mut visuals, &mut uploader);
+        assert_eq!(
+            uploader.next_texture, allocations,
+            "paused mirrors reuse existing texture handles"
+        );
+        visuals.set_xr_camera(vec![
+            crate::engine::graphics::CameraData {
+                view: xr_view,
+                proj,
+                transform: xr_transform,
+            },
+            crate::engine::graphics::CameraData {
+                view: xr_view,
+                proj,
+                transform: xr_transform,
+            },
+        ]);
+        systems
+            .graphics_settings
+            .set_mirrors_enabled(true, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+        for (resumed, previous) in visuals.mirrors()[0].captures.iter().zip(&original) {
+            assert_eq!(resumed.camera.view, previous.camera.view);
+            assert_eq!(
+                resumed.camera.proj, previous.camera.proj,
+                "resume must replace paused placeholder views before drawing"
+            );
+        }
+        assert!(
+            renderer
+                .submit_xr_mirror_captures(&mut visuals, [100, 100])
+                .is_err(),
+            "enabled captures require an initialized renderer again"
         );
     }
 
@@ -3274,6 +3398,7 @@ impl SystemWorld {
         let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);
 
         self.light.tick(world, visuals, input, dt_sec);
+        self.graphics_settings.publish(visuals);
         self.mirror.tick(world, visuals, input, dt_sec);
         for texture_component in self.mirror.take_pending_texture_registrations() {
             self.register_texture(world, visuals, texture_component);
@@ -3321,6 +3446,18 @@ impl SystemWorld {
         // ship to the RT thread and `AudioClipComponent.load_state`
         // updates land in the world.
         self.audio.drain_decode_completions_public(world);
+        let resumed_mirrors =
+            self.graphics_settings.mirrors_enabled() && !visuals.mirror_captures_enabled();
+        self.graphics_settings.publish(visuals);
+        if resumed_mirrors {
+            // A Toggle callback can resume after this frame's normal mirror
+            // tick. Rebuild reflected views before rendering the retained keys.
+            self.mirror
+                .tick(world, visuals, &InputState::default(), 0.0);
+            for texture_component in self.mirror.take_pending_texture_registrations() {
+                self.register_texture(world, visuals, texture_component);
+            }
+        }
     }
 }
 
