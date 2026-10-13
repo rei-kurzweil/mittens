@@ -1,5 +1,12 @@
 # RenderView / Mirror Inventory
 
+Status: historical implementation inventory. Its statements about missing
+mirror execution, source exclusion, and shaders are superseded by the
+[current mirror rendering status and improvement list](mirror-render-pass-status.md).
+Use that tracker for clipping, viewer visibility, optional MMS candidate
+tracking, and performance work; the original inventory below is retained as
+historical context.
+
 ## Scope
 
 This note inventories the current state of:

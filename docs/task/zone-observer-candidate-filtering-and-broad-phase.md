@@ -38,6 +38,18 @@ before optimizing it. Potential shapes include explicit candidate roots,
 role-based inclusion, or category/mask pairs. These are alternatives to evaluate,
 not committed MMS spellings. Avoid a selector query on every pair or frame.
 
+## Optional rendering consumer under consideration
+
+The [mirror improvement tracker](mirror-render-pass-status.md#optional-mms-candidate-tracking-design-still-open)
+considers MMS-authored static/movable candidate sets and a conservative zone or
+front-region filter. This is opt-in design work, not a requirement for all zones
+or the current observer migration. Arbitrary renderables/grabbables and mounted
+objects would need an explicit non-physical observation contract; do not add
+slide/contact behavior just to make them eligible. Region membership is only a
+candidate filter, and changing viewer position still changes reflected
+visibility. Public syntax and whether zone tracking beats simple cached-bounds
+tests remain undecided.
+
 ## Work items
 
 1. Measure sensor/mover counts, candidate pairs, AABB rejections, exact tests,

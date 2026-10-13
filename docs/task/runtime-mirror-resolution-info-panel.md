@@ -132,6 +132,9 @@ host API reuses the existing quality terminology.
 
 ## Related work
 
+- [Mirror rendering improvement list](mirror-render-pass-status.md) — clipping,
+  off-screen captures, and optional candidate tracking are separate from this
+  MMS panel/API task.
 - [Mirror component](../spec/mirror-component.md)
 - [Mirror system](../spec/mirror_system.md)
 - [Adaptive mirror detail](../desktop/adaptive-mirrors.md)

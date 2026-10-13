@@ -31,8 +31,9 @@ equivalent projection mapping whose UV transform is explicit and stable.
   records the need for independent mono and stereo capture families.
 - [Mirror camera orientation and tracking](../bugs/mirror-camera-orientation-and-tracking.md)
   remains a correctness issue. Adaptive quality must not conceal it.
-- [Mirror render-pass status](../task/mirror-render-pass-status.md) records
-  remaining self-exclusion, material, recursion, and observability work.
+- [Mirror rendering improvement list](../task/mirror-render-pass-status.md)
+  records current capture support and planned plane clipping, off-screen
+  skipping, optional MMS candidate tracking, and performance verification.
 
 ## Locked architecture decisions
 

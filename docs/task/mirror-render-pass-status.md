@@ -1,133 +1,177 @@
-# Mirror Render-Pass: Status & Next Steps
+# Mirror rendering: status and improvement task list
 
-## Summary
+Updated: 2026-10-12
+Status: existing capture path implemented; correctness and optimization work
+below is planned. This update changes documentation only.
 
-The ECS side of mirrors is wired: `MirrorComponent` exists, `MirrorSystem` runs each frame, derives reflected camera views, registers `VisualMirror` records on `VisualWorld`, overrides the mirror surface material to `MaterialHandle::MIRROR`, and wires a `TextureComponent.render_image` with the key `capture.mirror.{guid}.color`. The renderer now consumes `VisualMirror` records, allocates per-mirror offscreen targets, renders mirror views before the main window pass, and publishes mirror color outputs into runtime texture handles. The main remaining gaps are mirror self-exclusion, mirror material/shader support, and mirror-specific render-view observability.
+## Current implementation
 
-## What's done
+- `MirrorComponent` authors `quality` in 64..=2048, default 512.
+- `MirrorSystem` derives separate mono/stereo capture views from the viewer
+  position reflected across the visible mirror face. The capture basis aligns
+  with the mirror plane; an off-axis projection spans its rectangle.
+- `VisualMirror` contains capture requests keyed by mirror, viewer family, and
+  view index. The renderer creates mirror RenderViews, reuses offscreen capture
+  targets while extent/format/view count agree, and publishes runtime textures
+  before the consuming window/XR draw.
+- Dedicated mirror shaders/pipelines and source-surface exclusion are
+  implemented. The old checklist treating these as missing is superseded.
+- Capture draws use the normal scene streams with source-surface exclusion;
+  there is no mirror-specific CPU bounds/frustum culling.
+- Mirror-plane clipping helpers exist, but
+  `MIRROR_ENABLE_OBLIQUE_CLIP_PLANE` is false. The disabled flag was introduced
+  in debugging commit `4d926c8d` on 2026-06-21. Later projection-debug notes
+  explicitly defer clipping until projection alignment is understood. The
+  history suggests debugging isolation, not a measured performance choice;
+  the precise symptom prompting the switch is not recorded.
+- Captures are not skipped merely because their surface is outside the
+  player's view. Invalid reflected projections can suppress captures, which
+  is not a viewer-visibility optimization.
+- The renderer already tracks mirror capture/submission counts internally.
+  Per-mirror visibility reasons, candidate/draw counts, allocation counts, and
+  CPU/GPU timing need an observability audit rather than assuming no stats exist.
 
-| Piece | File | Notes |
-|---|---|---|
-| `MirrorComponent` | `src/engine/ecs/component/mirror.rs` | `quality: i32` (64..=2048, default 512). MMS: `Mirror.quality(N)`. |
-| `MirrorSystem` | `src/engine/ecs/system/mirror_system.rs` | Discovers mirrors, derives reflected view/proj per source-camera eye, registers `VisualMirror`, overrides material + texture. |
-| `VisualMirror` | `src/engine/graphics/visual_world.rs:43-48` | `mirror_component`, `camera`, `target_key`, `source_instance`, `resolution_scale`. Stored in `Vec<VisualMirror>` on `VisualWorld`. |
-| `VisualWorld` mirror API | `src/engine/graphics/visual_world.rs:1700-1709` | `register_mirror`, `clear_mirrors`, `mirrors()`. Cleared and rebuilt every frame by `MirrorSystem`. |
-| `RenderViewKind::Mirror` | `src/engine/graphics/vulkano_renderer.rs:240-244` | Enum variant exists and is now constructed from `VisualMirror` records. |
-| `RenderView` struct | `src/engine/graphics/vulkano_renderer.rs:246-252` | `view`, `proj`, `viewport`, `kind`. Used by XR offscreen path already. |
-| `MaterialHandle::MIRROR` | `src/engine/graphics/primitives.rs:284` | Handle 6. Set on parent renderable by `MirrorSystem`. No mirror-specific shader yet. |
-| `RenderTextureProducerKind::Mirror` | `src/engine/ecs/system/render_to_texture_system.rs:25` | Classification label for the render-to-texture bridge. No mirror-specific logic attached. |
-| Runtime texture key | `src/engine/ecs/system/mirror_system.rs:208` | `capture.mirror.{guid}.color`. Wired into `TextureComponent.render_image`. |
-| `MirrorSystem` tick in SystemWorld | `src/engine/ecs/system/system_world.rs:1846` | Runs after light system, near end of tick. |
-| Example scene | `examples/vtuber-mirror-example.{rs,mms}` | Temple + hero mirror (`Mirror.quality(1024)`). Checklist mostly done, but mirror rendering not yet observable. |
-| Reflected camera derivation | `src/engine/ecs/system/mirror_system.rs:147-203` | Reflects position + basis across mirror plane, reconstructs view matrix, adjusts proj aspect. Prefers XR source camera if available, else Window. |
+Relevant runtime code:
 
-## What's missing
+- `src/engine/ecs/system/mirror_system.rs`
+- `src/engine/graphics/visual_world.rs`
+- `src/engine/graphics/vulkano_renderer.rs`
+- `assets/shaders/mirror-mesh.vert` and `mirror-mesh.frag`
 
-| Gap | File / area | Notes |
-|---|---|---|
-| Mirror render-pass scheduling | `src/engine/graphics/vulkano_renderer.rs` | `visual_world.mirrors()` is now iterated, and mirror `RenderView`s are built and rendered before the main window pass. |
-| Per-mirror offscreen targets | `src/engine/graphics/vulkano_renderer.rs` | Added per-mirror target allocation/reuse via `MirrorOffscreenTargets`, based on mirror resolution scale. |
-| Construction of `RenderViewKind::Mirror` | `src/engine/graphics/vulkano_renderer.rs` | Now constructed from `VisualMirror` records and used for mirror passes. |
-| Mirror scene pass submission | `src/engine/graphics/vulkano_renderer.rs` | Mirror command buffers are now created and submitted before the main window render. |
-| Runtime texture publication | `src/engine/graphics/vulkano_renderer.rs` + `src/engine/ecs/system/render_to_texture_system.rs` | Mirror color output is copied into the runtime texture handle for `capture.mirror.{guid}.color` if the handle exists. |
-| Self-exclusion during mirror pass | `src/engine/graphics/vulkano_renderer.rs` / `src/engine/graphics/visual_world.rs` | `VisualMirror.source_instance` is still recorded but not yet used to exclude the mirror surface from its own reflection pass. |
-| Mirror-specific shader | `src/engine/graphics/` | `MaterialHandle::MIRROR` has no dedicated shader/pipeline. The mirror surface still needs a shader that samples the runtime texture. |
-| Render-view observability | renderer stats | No counters yet for mirror render-view count per frame. Can't answer "how many mirror scene draws this frame?" from runtime. |
-| Oblique clip plane | `src/engine/ecs/system/mirror_system.rs` | Reflected projection still does not apply an oblique near clip plane. v2 work. |
-| Recursion guard | renderer | No mirror-in-mirror recursion policy yet. Source instance exclusion is next. |
+## Improvement order
 
-## Ordered next steps
+1. [ ] Restore validated mirror-plane clipping for correctness.
+2. [ ] Skip captures for mirrors outside the active viewer's view.
+3. [ ] Add the MMS graphics-settings panel's manual resolution control, tracked
+   separately in [runtime mirror resolution](runtime-mirror-resolution-info-panel.md).
+4. [ ] Measure remaining geometry, pixel, allocation, and submission costs.
+5. [ ] Investigate optional MMS candidate tracking for mostly static scenes;
+   retain the design questions below rather than implement it implicitly.
+6. [ ] Revisit adaptive resolution bands and capture-region optimization in
+   [adaptive mirror detail](../desktop/adaptive-mirrors.md) when justified by
+   measurements. They are separate from manual settings and basic visibility.
 
-The existing XR offscreen path (`render_xr_eye_offscreen` → `ensure_xr_offscreen_targets` → `build_draw_batches_command_buffer`) is the template. Each step below maps directly to something XR already does.
+The clipping and visibility slices can be developed independently. Neither
+requires solving movable-object tracking, building a new editor panel type, or
+introducing a generalized dependency scheduler.
 
-### Step 1: Per-mirror offscreen target allocation
+## Mirror-plane clipping
 
-Add a `mirror_offscreen: HashMap<String, MirrorOffscreenTargets>` (or similar) to the renderer, keyed by mirror GUID. Each entry holds:
-- color image + view (USAGE: COLOR_ATTACHMENT | SAMPLED | TRANSFER_SRC)
-- depth image + view
-- cached extent
+Reject geometry on the far side of the reflective surface, including geometry
+between the virtual reflected camera and that surface. This is a correctness
+requirement: it can otherwise occlude valid reflected content, not merely waste
+fill rate. See [behind-surface occlusion](../bugs/mirror-behind-surface-occludes-reflection.md).
 
-Write `ensure_mirror_offscreen_targets(guid, extent)` modeled on `ensure_xr_offscreen_targets` at `vulkano_renderer.rs:1575`. Allocate on first use, recreate if extent or format changes.
+The CPU builds the capture projection; the GPU clips triangles against its
+near plane. This does not remove object submission or vertex processing.
+Before enabling the existing helper, validate the Vulkan depth convention,
+plane orientation/bias, close-up poses, moving/rotated mirrors, off-axis edges,
+and both stereo eyes. Keep intersecting objects eligible and let GPU clipping
+trim them. Do not reject a straddling object by testing only its origin.
 
-**Why first**: you can't render into nothing.
+## Skip mirrors outside the player's view
 
-### Step 2: Construct `RenderViewKind::Mirror` from `visual_world.mirrors()`
+Use a cheap conservative test of the reflective surface rectangle/bounds
+against the actual viewer frustum, plus the supported front/back-face policy.
+This gate must run before capture submission and associated image publication.
+It does not require per-object rays or scene occlusion queries.
 
-Before the main window/XR pass, iterate `visual_world.mirrors()`. For each `VisualMirror`:
-- For each eye in `mirror.camera.eyes`, build a `RenderView` with `kind: RenderViewKind::Mirror { mirror_component: ... }`, using the eye's reflected `view`/`proj` and a viewport derived from `mirror.resolution_scale` and the mirror bounds aspect.
-- Call `build_draw_batches_command_buffer` for each mirror `RenderView` with the per-mirror color/depth views.
-- Submit the command buffer and wait for completion (or use semaphores if the GPU timeline allows).
-- After submission, copy the color result into the runtime texture identified by `mirror.target_key` (the `capture.mirror.{guid}.color` key).
+- Make the decision per active viewer family. An XR mirror remains eligible
+  when either eye can see it; a mono view does not force hidden XR captures.
+- Account for viewer motion/projection and mirror transform/geometry changes.
+  Near-plane crossings or uncertain bounds must favor retaining the capture.
+- Keep valid targets/textures while temporarily skipping capture work; when
+  visible again, refresh before the visible surface consumes the image.
+- Define mirror-in-mirror behavior before assuming that invisible to the
+  direct viewer means unnecessary everywhere. Source-surface exclusion alone
+  does not settle other-mirror policy. Do not introduce recursive capture
+  scheduling as an implicit part of this slice.
+- Validate mirrors leaving/reentering view, visible to one XR eye only, close
+  to screen edges, grabbed/moved mirrors, and simultaneous mono/stereo viewers.
 
-**Why second**: this is the main render loop change. Once this works, mirrors produce images.
+## Optional MMS candidate tracking: design still open
 
-### Step 3: Publish mirror color output into the runtime texture bridge
+The user's preferred direction is an authored opt-in for scenes with mostly
+static scenery and a small number of movable objects. Do not make the engine
+watch every renderable or every zone by default.
 
-After a mirror pass finishes, the color attachment image needs to become the texture that `TextureComponent.render_image("capture.mirror.{guid}.color")` samples. Options:
-- **Copy**: `vk::cmd_copy_image` from the mirror offscreen color to a persistent `SAMPLED`-usage image, then register that image with the `TextureUploader` under the mirror key.
-- **Swap**: if the offscreen color image already has `SAMPLED` usage, publish it directly as the runtime texture for this frame (same pattern as XR offscreen → swapchain copy).
+A possible arrangement is a declared static candidate set, explicitly
+nominated movable candidates, and a conservative mirror-associated zone/front
+region. Region entry/exit updates eligibility; it does not prove visibility.
+Cheap current-view bounds tests still decide which candidates can contribute.
+No public MMS spelling, component, filter scheme, or zone shape is committed.
 
-The `RenderToTextureSystem` + `TextureUploader` already define the publication bridge. Wire mirror output into it with `RenderTextureProducerKind::Mirror`.
+Decisions to investigate:
 
-**Why third**: without this, the mirror surface samples a blank/missing texture even though the offscreen pass ran.
+1. How MMS nominates static branches and movable renderables, including
+   objects without physics components. Do not require `Collidable` merely for
+   reflection tracking. Static classification is an authored promise that
+   needs defined invalidation/fallback if the branch later moves.
+2. Whether the front region is an authored finite zone, a mirror half-space,
+   or another conservative filter. It must not exclude content visible from
+   supported player positions. Use bounds overlap so large or partially
+   intersecting objects remain eligible.
+3. How movement/shape/topology changes update eligibility without repeating
+   selector queries or whole-scene searches for every mirror/view. Include
+   animated conservative bounds, mounting, spawn/removal, reparenting,
+   teleportation, mirror motion, and edits to the authored candidate set.
+4. Whether the existing zone observer can support non-physical renderable
+   candidates. Today `Zone.enable_events()` polls enabled slide collidables
+   each frame and excludes mounted roots; it does not observe arbitrary
+   renderables/grabbables, and enter/exit events are not a movement-driven
+   detection implementation. See the [observer filtering tracker](zone-observer-candidate-filtering-and-broad-phase.md).
+5. Whether cached bounds and simple tests already cost less than zone-event
+   bookkeeping for the small moving set. Profile before adding a spatial
+   index. The existing picking BVH excludes renderables without enabled
+   raycastable markers, so it is not a complete rendering-candidate index.
 
-### Step 4: Self-exclusion in mirror passes
+Candidate filtering must be absent unless explicitly authored. Decide its
+fallback behavior before enabling it: incorrect or incomplete membership must
+not silently remove valid reflected geometry.
 
-Pass the mirror's `source_instance` into `build_draw_batches_command_buffer` (or its batch-building step) as an exclusion set. When `RenderViewKind::Mirror { .. }`, skip any draw batch whose instance handle matches `source_instance`. This prevents the mirror surface from appearing inside its own reflection.
+## Cache invalidation boundaries
 
-**Why fourth**: without this, the mirror renders itself inside itself — visually wrong, but not a crash. Can ship v1 with a known cosmetic issue if needed, but it's a small change.
+A stationary mirror does not have a permanently fixed visible-object list.
+Player motion changes the reflected viewing volume; object motion changes its
+intersection with that volume.
 
-### Step 5: Mirror shader / material pipeline
+| Cached input/result | Changes that invalidate it |
+| --- | --- |
+| Mirror plane and surface corners | Mirror world matrix or geometry/bounds |
+| Reflected viewing volume | Viewer position/projection or mirror surface inputs |
+| Object world bounds/front-region membership | Object/frame pose, geometry, deformation, region, or membership edits |
+| Mirror visible to player | Viewer pose/projection or mirror surface inputs |
+| Actual eligible draw set | Viewing volume, candidate bounds/membership, or renderability changes |
 
-Add a minimal shader for `MaterialHandle::MIRROR` that samples the mirror's runtime texture using standard UV mapping on the surface geometry. This can be a very simple unlit or lit textured shader. The texture binding comes from the `TextureComponent.render_image` already set up by `MirrorSystem`.
+Cache stable inputs and reconcile changed candidates. Do not recompute every
+scene subtree for every capture, and do not freeze the draw set solely until
+the mirror's own world matrix changes.
 
-If the engine's material system already supports textured unlit/lit materials, `MIRROR` may just need to route to the same pipeline with the runtime texture bound. Check existing material → pipeline mapping before writing a new shader.
+## Performance acceptance
 
-**Why fifth**: `MirrorSystem` already forces `MaterialHandle::MIRROR` on the mirror surface. Without a shader for that handle, the surface renders as a default/untextured material. But the offscreen pass (steps 2-3) is independent of this — the mirror captures the scene regardless of what the surface looks like.
+Compare the unchanged renderer against each slice in release mode, including
+mostly static corp scenes with few movable objects and a denser moving fixture.
+Measure capture count, submitted instances/draws, CPU visibility time, GPU
+capture time, target/publication allocations, and desktop/XR frame time.
 
-### Step 6: Render-view observability
+Off-screen mirrors should submit no unneeded captures. Candidate filtering
+must preserve the supported reflection and show that its CPU/bookkeeping cost
+is outweighed by saved rendering work. For small sets, retain simple tests
+rather than require a more elaborate acceleration structure.
 
-Add counters to renderer stats:
-- `mirror_logical_count` — number of `VisualMirror` records discovered this frame
-- `mirror_render_view_count` — number of mirror `RenderView`s actually rendered
-- `total_scene_draw_count` — window + XR + mirror views combined
+The current publication path allocates a sampled image per capture, distinct
+from offscreen capture-target reuse. Record that existing cost separately;
+manual resizing and visibility improvements should not quietly expand into a
+texture-lifetime redesign.
 
-Expose these through the existing `RendererStats` component or equivalent. This gives a runtime answer to "are mirrors actually rendering?" without code inspection.
+## Related work
 
-**Why sixth**: observability is important for validating the pipeline, but steps 2-5 can be verified visually first. This is the lowest-priority functional step but should not be deferred indefinitely.
-
-### Step 7: Oblique clip plane (v2)
-
-Modify the reflected camera's projection matrix to set an oblique near plane coinciding with the mirror plane. This clips geometry behind the mirror in the reflected view, preventing objects from "leaking through" the mirror surface.
-
-This is a well-understood projection matrix modification (Lengyel method). It can be done entirely in `MirrorSystem` when building `CameraData.proj` — no renderer changes needed.
-
-**Why deferred**: spec says v2. Visually tolerable without it; just wastes fill rate on occluded geometry.
-
-### Step 8: Recursion / visibility policy (v2)
-
-Decide and enforce:
-- Only render mirrors visible in the main camera frustum (frustum culling for mirror passes)
-- Cap simultaneous mirror render passes
-- Skip all `RenderViewKind::Mirror` instances when rendering inside a mirror pass (depth-0 recursion)
-
-These are performance and correctness concerns for multi-mirror scenes. Single-mirror v1 can skip all of them.
-
-## Open questions and accepted direction
-
-1. **XR + desktop concurrent policy (accepted and substantially implemented)** — Mirrors derive independent captures for active monoscopic and stereoscopic viewer families. Adaptive LOD selection is also per family, with one coordinated tier across both stereo eyes.
-2. **Adaptive mirror target extent** — the current fixed path uses `quality` as one base axis and derives the other from mirror aspect. The accepted adaptive direction keeps `quality` as the authored ceiling, uses generalized per-viewer-family LOD selection from projected coverage, and maps stable tiers to effective extents. Thresholds and exact coverage measurement still require profiling; see the adaptive mirror tracker.
-3. **Texture publication timing** — Mirror passes must complete and publish before the main pass samples the texture. If the GPU timeline uses semaphores/fences, this is natural. If the renderer synchronizes via `wait_idle` or submission order, confirm the mirror texture is available in time for the main pass's fragment shader.
-4. **Material contract** — Should `MirrorSystem` force `MaterialHandle::MIRROR`, or should mirrors work with any material that happens to sample the mirror texture? Forcing simplifies the authoring contract; not forcing allows custom mirror shaders.
-
-## Related docs
-
-- [Adaptive mirror detail desktop tracker](../desktop/adaptive-mirrors.md) — projected-coverage resolution bands and close-up capture-region work after baseline mirror correctness.
-- [Generalized LOD policy and selection](generalized-lod-policy-and-selection.md) — shared policy, per-viewer-family selection, and consumer boundary.
-
-- [Mirror component spec](../spec/mirror-component.md) — authored component / usage spec.
-- [Mirror system spec](../spec/mirror_system.md) — internal runtime implementation spec.
-- [Mirror implementation plan](../draft/mirror-implementation-plan.md) — early implementation sketch. Partially stale. Superseded by this doc for next-steps ordering.
-- [Render-view mirror inventory](render-view-mirror-inventory.md) — original inventory of code state and gaps. This doc subsumes and updates it.
-- [VTuber mirror example checklist](vtuber-mirror-example-checklist.md) — example checklist. Unchecked items (observability, regression surface) depend on steps 2-6 above.
-- [Render-to-texture spec](../spec/render-to-texture.md) — runtime-texture bridge spec. Key reference for step 3.
+- [Mirror component spec](../spec/mirror-component.md)
+- [Mirror system spec](../spec/mirror_system.md)
+- [Projection debug follow-up](mirror-camera-projection-debug-followup.md)
+- [Behind-surface reflection occlusion](../bugs/mirror-behind-surface-occludes-reflection.md)
+- [Mirror viewer-family captures](mirror-viewer-family-captures.md)
+- [MMS graphics settings and runtime mirror resolution](runtime-mirror-resolution-info-panel.md)
+- [Adaptive mirror detail](../desktop/adaptive-mirrors.md)
+- [Zone observer candidate filtering](zone-observer-candidate-filtering-and-broad-phase.md)
+- [Render-view inventory (historical)](render-view-mirror-inventory.md)
