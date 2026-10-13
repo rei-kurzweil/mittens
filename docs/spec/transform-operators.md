@@ -39,7 +39,7 @@ Referenced transforms are data sources, not additional topology parents.
 | `TOP.yaw_follow(threshold, rate)` or `.yaw_follow(threshold, rate)` | Append stateful body-yaw following. Threshold is radians, rate radians/second; both are finite and non-negative. `.initial_yaw(angle)` and `.forward_plus_z(bool)` configure the immediately preceding yaw-follow operation. |
 | `TOP.parent(source)` | Route a referenced transform's world basis to downstream content. `.source(ref)` changes the source; `.root(ref)` scopes query resolution. `TOP.parent()` retains the existing unconfigured behavior. |
 | `TOP.inverse_local(source)` | Postmultiply the inherited matrix by the inverse of a referenced T's authored local matrix: `input_world * inverse(source_local)`. `.source(ref)` changes the source. |
-| `TOP.sample_translation().source(ref)` | Replace selected world translation coordinates from exactly one referenced T. `.axes("y")` or any nonempty set of x/y/z chooses coordinates; default xyz. `.root(ref)` scopes queries. Preserve the full incoming linear basis and apply downstream T offsets afterward. |
+| `TOP.sample_translation().source(ref)` | Replace selected world translation coordinates from exactly one referenced structural ancestor T during normal propagation. `.axes("y")` or any nonempty set of x/y/z chooses coordinates; default xyz. `.root(ref)` scopes queries. Preserve the full incoming linear basis and apply downstream T offsets afterward. |
 | `TOP.camera_specific("monoscopic" / "stereoscopic")` | Select a settings T under a marker attached directly to an anchor T. See the exception below. |
 
 `TOP.drop(channel)` is also a constructor. It creates a fork with the selected
@@ -67,21 +67,25 @@ The existing reverse dependency index refreshes affected consumers when the
 source changes. Parent routing retains its existing resolution, cycle protection,
 and refresh behavior.
 
-Translation sampling retains resolved handles and refreshes indexed consumers
-when sources change. Query results invalidate on World selector/topology revision,
-not ordinary typed pose updates. Missing, ambiguous, invalid, cyclic, or
-non-finite selected sources preserve the input and expose a validation status.
-Consumers such as AVC must disable contact while a sample is invalid/pending.
-See the [axis-sampling task](../task/transform-sample-translation-axes.md) for
-dependency limits and verification.
+Translation sampling retains a resolved concrete structural ancestor T and
+reads its cached world translation when normal propagation visits the operator.
+It does not update the source, follow external consumers, validate dependency
+graphs, or run refresh waves. Query results invalidate on World selector/topology
+revision or source/root edits, not ordinary typed pose updates or axes-only edits.
+Missing, ambiguous, invalid, unsupported non-ancestor, or non-finite selected
+sources preserve input and expose a validation status. Consumers such as AVC
+must disable contact while a sample is invalid/pending. Direct local writes
+below a sampler recompose through its operator path before applying the offset.
+See [sampler simplification](../task/simplify-transform-translation-sampling.md)
+for the current ordering and compatibility contract.
 
 Source caching is not yet uniform across operator kinds. Parent routing still
 resolves references and scans World for dependent parent operators during normal
 T-change handling; multiple changes can trigger multiple scans in one frame.
 Inverse-local already indexes consumers but re-resolves its reference when
 evaluated. The [retained source bindings and invalidation task](../task/transform-operator-source-bindings-and-invalidation.md)
-plans shared caching/indexed refresh and records the sampler's current broad
-invalidation policy. This is transform-change-driven work, not an unconditional
+plans shared caching/indexed refresh for parent/inverse while keeping default
+sampling outside generalized scheduling. This is transform-change-driven work, not an unconditional
 per-frame operator-system scan.
 
 ## Camera-specific settings exception

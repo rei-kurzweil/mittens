@@ -322,6 +322,9 @@ impl Default for TranslationAxes {
     }
 }
 
+/// Copies selected world translation coordinates from a concrete structural
+/// ancestor T when normal propagation visits this operator. The source binding
+/// is retained; the sampler does not update sources or schedule dependents.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TransformSampleTranslationSettings {
     pub source: Option<ComponentRef>,

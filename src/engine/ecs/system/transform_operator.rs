@@ -67,7 +67,7 @@ pub enum TranslationSampleStatus {
     MissingSource,
     AmbiguousSource,
     InvalidTarget,
-    DependencyCycle,
+    UnsupportedSource,
     NonFinite,
 }
 
@@ -75,22 +75,18 @@ pub enum TranslationSampleStatus {
 struct TranslationSampleState {
     authored: TransformSampleTranslationSettings,
     revision: u64,
-    relation_revision: u64,
     source: Option<ComponentId>,
     status: TranslationSampleStatus,
-    input: TransformMatrix,
 }
 
 #[derive(Debug, Default)]
 pub struct TransformOperatorSystem {
     last_dt_sec: Option<f32>,
     translation_samples: HashMap<ComponentId, TranslationSampleState>,
-    translation_dependents: HashMap<ComponentId, HashSet<ComponentId>>,
-    sample_relation_revision: u64,
-    sample_refresh_revision: u64,
-    sample_refresh_relation_revision: u64,
-    reference_routes: HashMap<ComponentId, TransformOperatorKind>,
-    changed_translation_sources: HashSet<ComponentId>,
+    #[cfg(test)]
+    pub(crate) sample_evaluation_count: usize,
+    #[cfg(test)]
+    pub(crate) sample_resolution_count: usize,
     vec3_temporal_state: HashMap<TransformOperatorStageKey, Vec3TemporalState>,
     quat_temporal_state: HashMap<TransformOperatorStageKey, QuatTemporalState>,
     yaw_follow_state: HashMap<TransformOperatorStageKey, f32>,
@@ -178,26 +174,6 @@ impl TransformOperatorSystem {
         root: ComponentId,
         input_world: TransformMatrix,
     ) -> Option<(TransformMatrix, Vec<ComponentId>)> {
-        // Source configuration edits on other routing kinds can create/remove
-        // sample feedback without changing structural topology. Observe their
-        // authored values once per change, outside the steady sample hot path.
-        let route = world
-            .get_component_by_id_as::<TransformOperatorComponent>(root)
-            .map(|operator| &operator.kind)
-            .filter(|kind| {
-                matches!(
-                    kind,
-                    TransformOperatorKind::Parent(_) | TransformOperatorKind::InverseLocal(_)
-                )
-            });
-        if let Some(kind) = route {
-            if self.reference_routes.get(&root) != Some(kind) {
-                self.reference_routes.insert(root, kind.clone());
-                self.sample_relation_revision = self.sample_relation_revision.wrapping_add(1);
-            }
-        } else if self.reference_routes.remove(&root).is_some() {
-            self.sample_relation_revision = self.sample_relation_revision.wrapping_add(1);
-        }
         let rebased_world = Self::apply_transform_parent_basis(world, root, input_world);
         if let Some(settings) = world
             .get_component_by_id_as::<TransformOperatorComponent>(root)
@@ -394,50 +370,6 @@ impl TransformOperatorSystem {
         Ok(id)
     }
 
-    fn sample_depends_on(
-        &self,
-        world: &World,
-        owner: ComponentId,
-        source: ComponentId,
-        depth: usize,
-    ) -> bool {
-        if depth > 64 {
-            return true;
-        }
-        let mut node = Some(source);
-        while let Some(id) = node {
-            if id == owner {
-                return true;
-            }
-            if let Some(dependency) = self
-                .translation_samples
-                .get(&id)
-                .and_then(|state| state.source)
-            {
-                if self.sample_depends_on(world, owner, dependency, depth + 1) {
-                    return true;
-                }
-            }
-            if let Some(operator) = world.get_component_by_id_as::<TransformOperatorComponent>(id) {
-                let dependency = operator
-                    .parent_settings()
-                    .and_then(|settings| settings.resolve_target_component(world))
-                    .or_else(|| {
-                        operator
-                            .inverse_local_settings()
-                            .and_then(|settings| settings.resolve_source_component(world, id))
-                    });
-                if let Some(dependency) = dependency {
-                    if self.sample_depends_on(world, owner, dependency, depth + 1) {
-                        return true;
-                    }
-                }
-            }
-            node = world.parent_of(id);
-        }
-        false
-    }
-
     fn evaluate_translation_sample(
         &mut self,
         world: &World,
@@ -445,34 +377,28 @@ impl TransformOperatorSystem {
         settings: &TransformSampleTranslationSettings,
         input: TransformMatrix,
     ) -> TransformMatrix {
+        #[cfg(test)]
+        {
+            self.sample_evaluation_count += 1;
+        }
         let revision = world.query_revision();
         let needs_resolution = self.translation_samples.get(&owner).is_none_or(|state| {
-            state.authored != *settings
+            state.authored.source != settings.source
+                || state.authored.root_source != settings.root_source
                 || state.revision != revision
-                || state.relation_revision != self.sample_relation_revision
         });
         if needs_resolution {
-            let resolved = Self::resolve_translation_source(world, owner, settings);
-            let previous = self
-                .translation_samples
-                .get(&owner)
-                .and_then(|state| state.source);
-            let source = resolved.as_ref().ok().copied();
-            if previous != source {
-                if let Some(previous) = previous {
-                    self.remove_translation_dependent(previous, owner);
-                }
-                if let Some(source) = source {
-                    self.translation_dependents
-                        .entry(source)
-                        .or_default()
-                        .insert(owner);
-                }
-                self.sample_relation_revision = self.sample_relation_revision.wrapping_add(1);
+            #[cfg(test)]
+            {
+                self.sample_resolution_count += 1;
             }
+            let resolved = Self::resolve_translation_source(world, owner, settings);
+            let source = resolved.as_ref().ok().copied();
             let status = match resolved {
-                Ok(source) if self.sample_depends_on(world, owner, source, 0) => {
-                    TranslationSampleStatus::DependencyCycle
+                // Normal propagation computes structural ancestors before visiting
+                // their children. External references have no freshness guarantee.
+                Ok(source) if !Self::is_descendant_of(world, owner, source) => {
+                    TranslationSampleStatus::UnsupportedSource
                 }
                 Ok(_) => TranslationSampleStatus::Ready,
                 Err(status) => status,
@@ -482,15 +408,13 @@ impl TransformOperatorSystem {
                 TranslationSampleState {
                     authored: settings.clone(),
                     revision,
-                    relation_revision: self.sample_relation_revision,
                     source,
                     status,
-                    input,
                 },
             );
         }
         let state = self.translation_samples.get_mut(&owner).unwrap();
-        state.input = input;
+        state.authored.axes = settings.axes;
         // Non-finite sources can recover after an ordinary typed transform write.
         if !matches!(
             state.status,
@@ -534,10 +458,7 @@ impl TransformOperatorSystem {
         let Some(state) = self.translation_samples.get(&owner) else {
             return TranslationSampleStatus::Pending;
         };
-        if state.authored != *settings
-            || state.revision != world.query_revision()
-            || state.relation_revision != self.sample_relation_revision
-        {
+        if state.authored != *settings || state.revision != world.query_revision() {
             return TranslationSampleStatus::Pending;
         }
         if state.source.is_some_and(|source| {
@@ -550,87 +471,10 @@ impl TransformOperatorSystem {
         state.status
     }
 
-    pub fn translation_sample_input(&self, owner: ComponentId) -> Option<TransformMatrix> {
-        self.translation_samples
-            .get(&owner)
-            .map(|state| state.input)
-    }
-
-    pub fn mark_translation_source_changed(&mut self, source: ComponentId) {
-        if self.translation_dependents.contains_key(&source) {
-            self.changed_translation_sources.insert(source);
-        }
-    }
-
-    pub fn translation_sample_input_is_current(&self, world: &World, owner: ComponentId) -> bool {
-        self.translation_samples
-            .get(&owner)
-            .is_some_and(|state| state.revision == world.query_revision())
-    }
-    pub fn has_changed_translation_sources(&self) -> bool {
-        !self.changed_translation_sources.is_empty()
-            || self.sample_refresh_relation_revision != self.sample_relation_revision
-    }
-
-    /// Refresh only retained consumers. Topology/selector edits invalidate the
-    /// registered sample set; ordinary pose changes visit the indexed sources.
-    pub fn translation_sample_dependents(
-        &mut self,
-        world: &World,
-        changed: Option<ComponentId>,
-    ) -> Vec<ComponentId> {
-        if self.sample_refresh_revision != world.query_revision()
-            || self.sample_refresh_relation_revision != self.sample_relation_revision
-        {
-            self.sample_refresh_revision = world.query_revision();
-            self.sample_refresh_relation_revision = self.sample_relation_revision;
-            self.changed_translation_sources.clear();
-            return self
-                .translation_samples
-                .keys()
-                .copied()
-                .filter(|id| world.get_component_record(*id).is_some())
-                .collect();
-        }
-        let mut out = Vec::new();
-        if let Some(owners) = changed.and_then(|source| self.translation_dependents.get(&source)) {
-            out.extend(owners.iter().copied());
-        }
-        for source in self.changed_translation_sources.drain() {
-            if let Some(owners) = self.translation_dependents.get(&source) {
-                out.extend(owners.iter().copied());
-            }
-        }
-        out.sort_unstable();
-        out.dedup();
-        out
-    }
-
-    fn remove_translation_dependent(&mut self, source: ComponentId, owner: ComponentId) {
-        if let Some(owners) = self.translation_dependents.get_mut(&source) {
-            owners.remove(&owner);
-            if owners.is_empty() {
-                self.translation_dependents.remove(&source);
-                self.changed_translation_sources.remove(&source);
-            }
-        }
-    }
-
     pub fn component_removed(&mut self, id: ComponentId) {
-        self.reference_routes.remove(&id);
-        if let Some(state) = self.translation_samples.remove(&id) {
-            if let Some(source) = state.source {
-                self.remove_translation_dependent(source, id);
-            }
-        }
-        if let Some(owners) = self.translation_dependents.remove(&id) {
-            for owner in owners {
-                if let Some(state) = self.translation_samples.get_mut(&owner) {
-                    state.status = TranslationSampleStatus::MissingSource;
-                }
-            }
-        }
-        self.sample_relation_revision = self.sample_relation_revision.wrapping_add(1);
+        // Source loss is observed through the world revision/live handle checks;
+        // ancestor sampling does not need a reverse dependency index.
+        self.translation_samples.remove(&id);
     }
 
     pub fn inverse_local_cached_input(&self, component: ComponentId) -> Option<TransformMatrix> {
@@ -1261,6 +1105,7 @@ mod tests {
         let owner = world.add_component(TransformOperatorComponent::sample_translation(guid_ref(
             &world, source,
         )));
+        world.add_child(source, owner).unwrap();
         // Include shear: sampling must not decompose/recompose the linear basis.
         let input = [
             [2.0, 0.3, 0.4, 0.0],
@@ -1303,11 +1148,12 @@ mod tests {
         let owner = world.add_component(TransformOperatorComponent::sample_translation(
             ComponentRef::Query("[name='sample_source']".into()),
         ));
+        world.add_child(source, owner).unwrap();
         let input = crate::utils::math::mat4_identity();
         let mut system = TransformOperatorSystem::new();
         system.evaluate_operator(&world, owner, input).unwrap();
         let revision = world.query_revision();
-        let relation_revision = system.sample_relation_revision;
+        let resolutions = system.sample_resolution_count;
         for value in 0..100 {
             world
                 .get_component_by_id_as_mut::<TransformComponent>(source)
@@ -1322,7 +1168,7 @@ mod tests {
             let output = system.evaluate_operator(&world, owner, input).unwrap().0;
             assert_eq!(output[3][1], value as f32);
             assert_eq!(system.translation_samples[&owner].revision, revision);
-            assert_eq!(system.sample_relation_revision, relation_revision);
+            assert_eq!(system.sample_resolution_count, resolutions);
         }
         let duplicate = world.add_component(TransformComponent::new());
         world.get_component_record_mut(duplicate).unwrap().name = "sample_source".into();
@@ -1344,6 +1190,7 @@ mod tests {
             system.translation_sample_status(&world, owner),
             TranslationSampleStatus::Ready
         );
+        world.detach_from_parent(owner);
         system.component_removed(source);
         world.remove_component_leaf(source).unwrap();
         assert_eq!(
@@ -1356,6 +1203,7 @@ mod tests {
         );
         let replacement = world.add_component(TransformComponent::new());
         world.get_component_record_mut(replacement).unwrap().name = "sample_source".into();
+        world.add_child(replacement, owner).unwrap();
         world
             .get_component_by_id_as_mut::<TransformComponent>(replacement)
             .unwrap()
@@ -1368,11 +1216,10 @@ mod tests {
         assert_eq!(system.translation_samples[&owner].source, Some(replacement));
         system.component_removed(owner);
         assert!(system.translation_samples.is_empty());
-        assert!(system.translation_dependents.is_empty());
     }
 
     #[test]
-    fn translation_sample_invalid_targets_nonfinite_values_and_cycles_preserve_input() {
+    fn translation_sample_invalid_targets_nonfinite_values_and_placement_preserve_input() {
         use crate::engine::ecs::component::transform_operator::TranslationAxes;
         let mut world = World::default();
         let source = world.add_component(TransformComponent::new());
@@ -1380,6 +1227,7 @@ mod tests {
             TransformOperatorComponent::sample_translation(guid_ref(&world, source))
                 .with_axes(TranslationAxes::Y),
         );
+        world.add_child(source, owner).unwrap();
         let input = TransformComponent::new()
             .with_position(10.0, 20.0, 30.0)
             .transform
@@ -1407,7 +1255,8 @@ mod tests {
             system.evaluate_operator(&world, owner, input).unwrap().0[3][1],
             7.0
         );
-        // Sampling one's own output creates feedback even without a second sampler.
+        // A source beneath the sampler is unsupported, without graph traversal.
+        world.detach_from_parent(owner);
         world.add_child(owner, source).unwrap();
         assert_eq!(
             system.evaluate_operator(&world, owner, input).unwrap().0,
@@ -1415,7 +1264,7 @@ mod tests {
         );
         assert_eq!(
             system.translation_sample_status(&world, owner),
-            TranslationSampleStatus::DependencyCycle
+            TranslationSampleStatus::UnsupportedSource
         );
         let wrong = guid_ref(&world, owner);
         world
@@ -1435,7 +1284,7 @@ mod tests {
     }
 
     #[test]
-    fn translation_sample_scoped_queries_and_cross_branch_cycles_are_validated() {
+    fn translation_sample_scopes_require_an_ancestor_and_ignore_unrelated_routes() {
         let mut world = World::default();
         let root = world.add_component(TransformComponent::new());
         let source = world.add_component(TransformComponent::new());
@@ -1449,89 +1298,85 @@ mod tests {
             ))
             .with_root_source(guid_ref(&world, root)),
         );
-        let input = crate::utils::math::mat4_identity();
-        let mut system = TransformOperatorSystem::new();
-        system.evaluate_operator(&world, owner, input).unwrap();
-        assert_eq!(system.translation_samples[&owner].source, Some(source));
-        let settings = world
-            .get_component_by_id_as_mut::<TransformOperatorComponent>(owner)
-            .unwrap()
-            .sample_translation_settings_mut()
-            .unwrap();
-        settings.source = Some(ComponentRef::Query("/> [name='sample_source']".into()));
-        system.evaluate_operator(&world, owner, input).unwrap();
-        assert_eq!(system.translation_samples[&owner].source, Some(outside));
-        // A <- B <- A across sibling subtrees. Both must reject after settling.
-        let a = world.add_component(TransformComponent::new());
-        let b = world.add_component(TransformComponent::new());
-        let op_a = world.add_component(TransformOperatorComponent::sample_translation(guid_ref(
-            &world, b,
-        )));
-        let op_b = world.add_component(TransformOperatorComponent::sample_translation(guid_ref(
-            &world, a,
-        )));
-        world.add_child(op_a, a).unwrap();
-        world.add_child(op_b, b).unwrap();
-        for _ in 0..2 {
-            system.evaluate_operator(&world, op_a, input).unwrap();
-            system.evaluate_operator(&world, op_b, input).unwrap();
-        }
-        assert_eq!(
-            system.translation_sample_status(&world, op_a),
-            TranslationSampleStatus::DependencyCycle
-        );
-        assert_eq!(
-            system.translation_sample_status(&world, op_b),
-            TranslationSampleStatus::DependencyCycle
-        );
-    }
-
-    #[test]
-    fn translation_sample_revalidates_cycles_after_live_parent_source_edits() {
-        let mut world = World::default();
-        let external = world.add_component(TransformComponent::new());
+        world.add_child(source, owner).unwrap();
         let route = world.add_component(
-            TransformOperatorComponent::parent().with_source(guid_ref(&world, external)),
+            TransformOperatorComponent::parent().with_source(guid_ref(&world, outside)),
         );
-        let source = world.add_component(TransformComponent::new());
-        world.add_child(route, source).unwrap();
-        let owner = world.add_component(TransformOperatorComponent::sample_translation(guid_ref(
-            &world, source,
-        )));
-        let output = world.add_component(TransformComponent::new());
-        world.add_child(owner, output).unwrap();
         let input = crate::utils::math::mat4_identity();
         let mut system = TransformOperatorSystem::new();
-        system.evaluate_operator(&world, route, input).unwrap();
         system.evaluate_operator(&world, owner, input).unwrap();
         assert_eq!(
             system.translation_sample_status(&world, owner),
             TranslationSampleStatus::Ready
         );
         let revision = world.query_revision();
-        let changed = guid_ref(&world, output);
+        let reference = guid_ref(&world, source);
         world
             .get_component_by_id_as_mut::<TransformOperatorComponent>(route)
             .unwrap()
             .parent_settings_mut()
             .unwrap()
-            .target_source = Some(changed);
-        assert_eq!(world.query_revision(), revision);
+            .target_source = Some(reference);
         system.evaluate_operator(&world, route, input).unwrap();
+        assert_eq!(world.query_revision(), revision);
+        assert_eq!(
+            system.translation_sample_status(&world, owner),
+            TranslationSampleStatus::Ready
+        );
+        let settings = world
+            .get_component_by_id_as_mut::<TransformOperatorComponent>(owner)
+            .unwrap()
+            .sample_translation_settings_mut()
+            .unwrap();
+        settings.source = Some(ComponentRef::Query("/> [name='sample_source']".into()));
+        assert_eq!(
+            system.evaluate_operator(&world, owner, input).unwrap().0,
+            input
+        );
+        assert_eq!(system.translation_samples[&owner].source, Some(outside));
+        assert_eq!(
+            system.translation_sample_status(&world, owner),
+            TranslationSampleStatus::UnsupportedSource
+        );
+    }
+
+    #[test]
+    fn translation_sample_forward_binding_and_axes_edits_do_not_schedule_work() {
+        use crate::engine::ecs::component::transform_operator::TranslationAxes;
+        let mut world = World::default();
+        let owner = world.add_component(TransformOperatorComponent::sample_translation(
+            ComponentRef::Query("[name='future_frame']".into()),
+        ));
+        let input = crate::utils::math::mat4_identity();
+        let mut system = TransformOperatorSystem::new();
         system.evaluate_operator(&world, owner, input).unwrap();
         assert_eq!(
             system.translation_sample_status(&world, owner),
-            TranslationSampleStatus::DependencyCycle
+            TranslationSampleStatus::MissingSource
         );
-        let restored = guid_ref(&world, external);
-        world
-            .get_component_by_id_as_mut::<TransformOperatorComponent>(route)
-            .unwrap()
-            .parent_settings_mut()
-            .unwrap()
-            .target_source = Some(restored);
-        system.evaluate_operator(&world, route, input).unwrap();
+        let source = world.add_component(TransformComponent::new());
+        world.get_component_record_mut(source).unwrap().name = "future_frame".into();
+        world.add_child(source, owner).unwrap();
         system.evaluate_operator(&world, owner, input).unwrap();
+        assert_eq!(
+            system.translation_sample_status(&world, owner),
+            TranslationSampleStatus::Ready
+        );
+        // Mask edits change evaluation policy without rerunning the query.
+        let resolutions = system.sample_resolution_count;
+        world
+            .get_component_by_id_as_mut::<TransformOperatorComponent>(owner)
+            .unwrap()
+            .sample_translation_settings_mut()
+            .unwrap()
+            .axes = TranslationAxes::Y;
+        assert_eq!(
+            system.translation_sample_status(&world, owner),
+            TranslationSampleStatus::Pending
+        );
+        system.evaluate_operator(&world, owner, input).unwrap();
+        assert_eq!(system.translation_samples[&owner].source, Some(source));
+        assert_eq!(system.sample_resolution_count, resolutions);
         assert_eq!(
             system.translation_sample_status(&world, owner),
             TranslationSampleStatus::Ready

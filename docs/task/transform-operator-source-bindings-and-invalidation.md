@@ -5,11 +5,13 @@ Status: planned; this task adds documentation only. The existing uncommitted
 translation-sampler/AVC changes are the starting implementation, not work
 completed by this task.
 
-Before extending shared scheduling to `sample_translation`, resolve
-[Simplify default TOP translation sampling](simplify-transform-translation-sampling.md).
-That task reconsiders automatic external-source refresh and graph validation for
-the default sampler. Retained source bindings remain useful independently of
-that scheduling; the sampler scope below is subject to this review.
+[Simplify default TOP translation sampling](simplify-transform-translation-sampling.md)
+has narrowed the default sampler to a structural ancestor read during normal
+propagation. It retains a binding but has no dependency index, cycle traversal,
+changed-source tracking, or refresh waves. Keep it outside shared scheduling.
+The broader parent/inverse work here remains planned and is not part of the
+sampler simplification; the original sampler migration details below are
+superseded where they require generalized scheduling.
 
 ## Outcome
 
@@ -19,8 +21,9 @@ whole-World parent-dependent discovery scan from normal transform updates.
 Preserve the TOP authoring API, operator composition, existing fallback policies,
 and XR capsule/contact behavior.
 
-First migrate `parent`, `inverse_local`, and `sample_translation`. Then apply the
-same lifetime/invalidation rules to contextual ancestor sampling and inspect
+First migrate `parent` and `inverse_local`. Reuse binding/lifetime mechanisms
+for `sample_translation` only where they preserve its ancestor-only contract.
+Then apply the same lifetime/invalidation rules to contextual ancestor sampling and inspect
 camera-settings discovery. Operators without sources do not need artificial
 source bindings. This is internal runtime work, not another TOP API migration.
 
@@ -31,7 +34,7 @@ Relevant code:
 - `src/engine/ecs/component/transform_operator.rs`: authored references and
   kind-specific reference resolution.
 - `src/engine/ecs/system/transform_operator.rs`: evaluation, retained sampling
-  state, inverse-local state/indexes, and routing-change observation.
+  state and inverse-local state/indexes.
 - `src/engine/ecs/system/transform_system.rs`: propagation and dependent refresh.
 - `src/engine/ecs/mod.rs`: component storage, GUID index, and query revision.
 - `src/engine/ecs/system/system_world.rs`: mutation/removal and contact scheduling.
@@ -40,7 +43,7 @@ Relevant code:
 | --- | --- | --- |
 | `parent` | Re-resolves ComponentRef during evaluation and other routing paths. GUID lookup is indexed; queries traverse their scope. A non-T target can supply its nearest ancestor T's world basis. | `update_transform_parent_dependents` enumerates all World components, identifies parent operators, re-resolves targets, and checks ancestry. |
 | `inverse_local` | Re-resolves ComponentRef each evaluation. Already retains last valid inverse/input and source handles for its reverse index. | Existing source-to-consumers index refreshes consumers of a directly changed source. |
-| `sample_translation` | Retains source handle, authored settings, input, revisions, and validity. Reads the source's live cached world matrix after binding. | Retained source-to-consumers index plus changed-source tracking and bounded refresh waves. Broad revisions revisit registered samplers. |
+| `sample_translation` | Retains source handle, authored settings, query revision, and validity. Reads the source's live cached world matrix after binding. | Normal ancestor/child propagation only; configuration/topology edits invalidate retained bindings. No dependent scheduling. |
 | Fork ancestor sampling | Walks ancestry to select the requested T on evaluation. | Inherits structural propagation; external/contextual changes need an explicit dependency audit. |
 | Camera-specific settings | Discovers settings children and retains effective/input matrix state. | Existing specialized anchor/settings handling. |
 
@@ -62,7 +65,9 @@ Invalidating a binding means its retained identity/validation may be stale.
 Re-resolve/revalidate before treating it as ready. It does not mean delete the
 source, reset its pose, or cache an old coordinate instead of reading live data.
 
-The sampler currently uses these triggers:
+The sampler originally used these triggers. Its relationship revisions, route
+observation, and reverse links have since been removed; see the simplification
+task for current behavior:
 
 | Trigger | Current effect |
 | --- | --- |
@@ -81,10 +86,10 @@ World topology edits invalidate through revision changes but do not themselves
 emit runtime transform-refresh intents; callers still need the normal mutation
 and propagation boundary.
 
-Currently a relationship revision change also causes the sampler to resolve its
-selector again. Separate that from dependency validation in the new design.
-The inherited-input cache also uses query revision as a conservative signal to
-rebuild its structural basis; distinguish this from a name-only matching change.
+The original relationship revision also caused selector re-resolution and the
+original inherited-input cache reused query revision for basis invalidation.
+Both mechanisms are now removed from default sampling. Keep identity resolution
+separate from dependency validation in any future parent/inverse design.
 
 ## Binding and invalidation contract
 
@@ -122,7 +127,8 @@ component access, imports, live MMS edits, or direct World APIs.
 ## Shared dependency refresh
 
 Index consumers by their effective input T and the data they consume:
-world pose for parent/sampling; authored local pose for inverse-local. Preserve
+world pose for parent; authored local pose for inverse-local. Default sampling
+does not register indexed consumers. Preserve
 parent's non-T-to-nearest-T normalization and scope behavior. Reparenting a
 non-T target may change its effective T even when the target ID stays the same.
 
@@ -132,7 +138,7 @@ are not independently passed to `transform_changed`. Local-pose consumers must
 refresh on authored local edits even if the resulting world matrix is unchanged.
 Input changes still propagate through ordinary child/output topology.
 
-Order/settle mixed parent/inverse/sample chains before contact, camera-dependent
+Order/settle mixed parent/inverse chains before contact, camera-dependent
 queries, or rendering consumes their results. Detect cycles without repeatedly
 resolving query strings through the graph. Deduplicate affected work and avoid
 refresh loops or repeated advancement of temporal stages within one update.
@@ -159,8 +165,9 @@ tests. Cache unification must not silently change query selection or fallbacks.
    release-build baseline with many unrelated components and repeated T updates.
    Register/retire parent bindings and index their effective T; replace the
    whole-World discovery scan while proving current parent behavior.
-2. **Shared retained binding state:** migrate parent, inverse-local, and sampler
-   to common binding/invalidation machinery. Preserve kind-specific value and
+2. **Shared retained binding state:** migrate parent and inverse-local
+   to common binding/invalidation machinery. Sampler binding reuse must not
+   introduce scheduling. Preserve kind-specific value and
    fallback policies; remove duplicated indexes/revision trackers only after
    their responsibilities are covered. Prove pose updates do not rerun queries.
 3. **Lifecycle and mixed scheduling:** cover metadata/scope edits, reparenting,

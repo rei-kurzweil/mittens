@@ -10774,14 +10774,13 @@ fn top_nested_outputs_preserve_offsets_source_updates_and_roundtrip() {
 }
 
 #[test]
-fn top_translation_sample_variables_scopes_dependencies_and_roundtrip() {
+fn top_translation_sample_ancestor_variables_scopes_and_roundtrip() {
     use crate::engine::ecs::system::{SystemWorld, TransformSystem};
     let source = r#"
         let frame = T.position(100.0, 200.0, 300.0) { name = "sample_frame" }
         let scope = T { name = "sample_scope" frame }
-        T {
-            name = "sample_scene"
-            T.position(10.0, 20.0, 30.0) {
+        let input = T.position(10.0, 20.0, 30.0) {
+            name = "sample_input"
                 TOP.fork_trs().drop("rotation").drop("scale") {
                     TOP.sample_translation().source(frame).axes("y") {
                         T.position(0.0, 1.0, 0.0) { name = "sample_y" }
@@ -10791,10 +10790,8 @@ fn top_translation_sample_variables_scopes_dependencies_and_roundtrip() {
                     }
                     T { name = "sample_sibling" }
                 }
-            }
-            // A query resolves when its target is attached after the consumer.
-            scope
         }
+        T { name = "sample_scene" scope input }
     "#;
     let named = |world: &World, label: &str| {
         world
@@ -10814,11 +10811,16 @@ fn top_translation_sample_variables_scopes_dependencies_and_roundtrip() {
         &mut queue,
     );
     assert!(out.errors.is_empty(), "{:?}", out.errors);
+    // Establish ancestor placement before evaluating the bound sources. The
+    // dump/reload below must retain this hierarchy and both reference forms.
+    world
+        .add_child(named(&world, "sample_frame"), named(&world, "sample_input"))
+        .unwrap();
     let root = named(&world, "sample_scene");
     systems.transform_changed(&mut world, &mut visuals, root);
     assert_eq!(
         TransformSystem::world_position(&world, named(&world, "sample_y")),
-        Some([10.0, 201.0, 30.0])
+        Some([110.0, 201.0, 330.0])
     );
     assert_eq!(
         TransformSystem::world_position(&world, named(&world, "sample_chain")),
@@ -10826,7 +10828,7 @@ fn top_translation_sample_variables_scopes_dependencies_and_roundtrip() {
     );
     assert_eq!(
         TransformSystem::world_position(&world, named(&world, "sample_sibling")),
-        Some([10.0, 20.0, 30.0])
+        Some([110.0, 220.0, 330.0])
     );
     let ast = crate::scripting::component_registry::subtree_to_ce_ast(&world, root).unwrap();
     let text = crate::scripting::unparser::unparse_component(&ast);
@@ -10846,7 +10848,7 @@ fn top_translation_sample_variables_scopes_dependencies_and_roundtrip() {
     loaded_systems.transform_changed(&mut loaded, &mut visuals, loaded_root);
     assert_eq!(
         TransformSystem::world_position(&loaded, named(&loaded, "sample_y")),
-        Some([10.0, 201.0, 30.0])
+        Some([110.0, 201.0, 330.0])
     );
     assert_eq!(
         TransformSystem::world_position(&loaded, named(&loaded, "sample_chain")),
@@ -10860,7 +10862,7 @@ fn top_translation_sample_variables_scopes_dependencies_and_roundtrip() {
     systems.transform_changed(&mut world, &mut visuals, frame);
     assert_eq!(
         TransformSystem::world_position(&world, named(&world, "sample_y")),
-        Some([10.0, 501.0, 30.0])
+        Some([410.0, 501.0, 630.0])
     );
     assert_eq!(
         TransformSystem::world_position(&world, named(&world, "sample_chain")),
@@ -10868,7 +10870,7 @@ fn top_translation_sample_variables_scopes_dependencies_and_roundtrip() {
     );
     assert_eq!(
         TransformSystem::world_position(&world, named(&world, "sample_sibling")),
-        Some([10.0, 20.0, 30.0])
+        Some([410.0, 520.0, 630.0])
     );
 }
 

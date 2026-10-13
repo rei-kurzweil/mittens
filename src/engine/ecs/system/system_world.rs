@@ -3282,18 +3282,13 @@ impl SystemWorld {
 
     /// Process commands from the command queue.
     fn prepare_avatar_capsule_contact(&mut self, world: &mut World, visuals: &mut VisualWorld) {
-        // Resolving one relationship can invalidate another's cycle validation.
-        // Settle the retained set before enabling contact for any avatar.
-        for _ in 0..3 {
-            let pending = self
-                .avatar_control
-                .pending_capsule_samples(world, &self.transform_operator);
-            if pending.is_empty() {
-                break;
-            }
-            for sample in pending {
-                self.transform_changed(world, visuals, sample);
-            }
+        // Binding/configuration edits need one evaluation before contact. Source
+        // pose changes already reach ancestor samplers through normal propagation.
+        let pending = self
+            .avatar_control
+            .pending_capsule_samples(world, &self.transform_operator);
+        for sample in pending {
+            self.transform_changed(world, visuals, sample);
         }
         self.avatar_control.gate_capsule_contact(
             world,

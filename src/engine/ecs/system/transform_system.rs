@@ -177,9 +177,6 @@ impl TransformSystem {
         camera_system: &mut crate::engine::ecs::system::CameraSystem,
         collision_system: &mut CollisionSystem,
     ) {
-        // The root may already have been written by its caller. Descendant
-        // sources are marked below only when their propagated matrix changes.
-        transform_operator.mark_translation_source_changed(root_node);
         let mut stack: Vec<(ComponentId, TransformMatrix)> = vec![(root_node, inherited_world)];
         while let Some((node, current_world)) = stack.pop() {
             let operator_evaluated =
@@ -221,13 +218,8 @@ impl TransformSystem {
                 {
                     let effective_local = Self::effective_local_model(world, child, authored_local);
                     let w = Self::mat4_mul(inherited, effective_local);
-                    let mut changed = false;
                     if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(child) {
-                        changed = t.transform.matrix_world != w;
                         t.transform.matrix_world = w;
-                    }
-                    if changed {
-                        transform_operator.mark_translation_source_changed(child);
                     }
                     Self::trace_resolved_visual_placement(world, child, inherited, w);
                     Self::trace_resolved_layout_background(world, child, inherited, w);
@@ -515,51 +507,11 @@ impl TransformSystem {
         }
     }
 
-    fn update_translation_sample_dependents(
-        &mut self,
-        world: &mut World,
-        visuals: &mut VisualWorld,
-        changed: ComponentId,
-        operators: &mut TransformOperatorSystem,
-        cameras: &mut crate::engine::ecs::system::CameraSystem,
-        lights: &mut crate::engine::ecs::system::LightSystem,
-        collisions: &mut CollisionSystem,
-    ) {
-        // Sources changed through routing/other operators participate too.
-        // Cycle validation rejects sample feedback; the bound also prevents
-        // malformed mixed legacy routing from causing an endless refresh.
-        for wave in 0..64 {
-            let pending =
-                operators.translation_sample_dependents(world, (wave == 0).then_some(changed));
-            if pending.is_empty() {
-                break;
-            }
-            for owner in pending {
-                if operators.translation_sample_input(owner).is_some() {
-                    let (root, input) = Self::operator_refresh_basis(world, owner, operators);
-                    self.propagate_subtree(
-                        world, visuals, root, input, operators, cameras, collisions,
-                    );
-                    lights.transform_changed(world, visuals, owner);
-                }
-            }
-            // A direct source should seed the first wave only.
-            if !operators.has_changed_translation_sources() {
-                break;
-            }
-        }
-    }
-
     fn operator_refresh_basis(
         world: &World,
         owner: ComponentId,
         operators: &TransformOperatorSystem,
     ) -> (ComponentId, TransformMatrix) {
-        if operators.translation_sample_input_is_current(world, owner) {
-            if let Some(input) = operators.translation_sample_input(owner) {
-                return (owner, input);
-            }
-        }
         if world
             .get_component_by_id_as::<TransformOperatorComponent>(owner)
             .is_some_and(|operator| operator.inverse_local_settings().is_some())
@@ -726,11 +678,65 @@ impl TransformSystem {
         light_system: &mut crate::engine::ecs::system::LightSystem,
         collision_system: &mut CollisionSystem,
     ) {
+        // A local write to the first T below a sampler must recompose its
+        // offset from the operator output, rather than reuse that T's old world
+        // matrix. Start above intervening fork stages as for a direct sample edit.
+        if world
+            .get_component_by_id_as::<TransformComponent>(component)
+            .is_some()
+        {
+            let mut ancestor = world.parent_of(component);
+            while let Some(id) = ancestor {
+                if world
+                    .get_component_by_id_as::<TransformComponent>(id)
+                    .is_some()
+                {
+                    break;
+                }
+                if world
+                    .get_component_by_id_as::<TransformOperatorComponent>(id)
+                    .is_some_and(|operator| operator.sample_translation_settings().is_some())
+                {
+                    self.transform_changed(
+                        world,
+                        visuals,
+                        id,
+                        transform_operator,
+                        camera_system,
+                        light_system,
+                        collision_system,
+                    );
+                    // This is still a write to `component`: preserve the
+                    // existing refresh of parent/inverse consumers of that T.
+                    self.update_transform_parent_dependents(
+                        world,
+                        visuals,
+                        component,
+                        transform_operator,
+                        camera_system,
+                        light_system,
+                        collision_system,
+                    );
+                    self.update_inverse_local_dependents(
+                        world,
+                        visuals,
+                        component,
+                        transform_operator,
+                        camera_system,
+                        light_system,
+                        collision_system,
+                    );
+                    return;
+                }
+                ancestor = world.parent_of(id);
+            }
+        }
         if world
             .get_component_by_id_as::<TransformOperatorComponent>(component)
             .is_some_and(|operator| {
                 operator.inverse_local_settings().is_some()
                     || operator.sample_translation_settings().is_some()
+                    || operator.fork_trs_settings().is_some()
             })
         {
             let (root, inherited_world) =
@@ -748,15 +754,6 @@ impl TransformSystem {
             for child in children {
                 light_system.transform_changed(world, visuals, child);
             }
-            self.update_translation_sample_dependents(
-                world,
-                visuals,
-                component,
-                transform_operator,
-                camera_system,
-                light_system,
-                collision_system,
-            );
             return;
         }
         if let Some(inherited_world) = world
@@ -781,15 +778,6 @@ impl TransformSystem {
             .and_then(|operator| operator.parent_settings())
             .is_some()
         {
-            self.update_translation_sample_dependents(
-                world,
-                visuals,
-                component,
-                transform_operator,
-                camera_system,
-                light_system,
-                collision_system,
-            );
             return;
         }
         // Recompute cached world matrices for this transform and all descendant transforms.
@@ -924,15 +912,6 @@ impl TransformSystem {
             light_system,
             collision_system,
         );
-        self.update_translation_sample_dependents(
-            world,
-            visuals,
-            component,
-            transform_operator,
-            camera_system,
-            light_system,
-            collision_system,
-        );
     }
 }
 
@@ -952,62 +931,222 @@ mod tests {
     use crate::engine::transform::{TransformTrs, TransformTrsError};
 
     #[test]
-    fn translation_sample_refreshes_cross_tree_chains_and_reparented_inputs() {
-        use crate::engine::ecs::component::transform_operator::TranslationAxes;
-        use crate::engine::ecs::system::SystemWorld;
+    fn translation_sample_propagates_once_and_recomposes_direct_edits() {
+        use crate::engine::ecs::component::transform_operator::{
+            TransformChannel, TranslationAxes,
+        };
+        use crate::engine::ecs::system::{
+            SystemWorld, transform_operator::TranslationSampleStatus,
+        };
         let mut world = World::default();
         let mut systems = SystemWorld::default();
         let mut visuals = VisualWorld::default();
         let source =
             world.add_component(TransformComponent::new().with_position(100.0, 200.0, 300.0));
-        let input_a =
-            world.add_component(TransformComponent::new().with_position(10.0, 20.0, 30.0));
-        let sample_a = world.add_component(
+        let input = world.add_component(
+            TransformComponent::new()
+                .with_position(10.0, 20.0, 30.0)
+                .with_scale(2.0, 2.0, 2.0),
+        );
+        let fork = world.add_component(
+            TransformOperatorComponent::fork_trs()
+                .with_drop(TransformChannel::Rotation)
+                .with_drop(TransformChannel::Scale),
+        );
+        let sample = world.add_component(
             TransformOperatorComponent::sample_translation(ComponentRef::Guid(
                 world.get_component_record(source).unwrap().guid,
             ))
             .with_axes(TranslationAxes::Y),
         );
-        let a = world.add_component(TransformComponent::new().with_position(0.0, 1.0, 0.0));
-        world.add_child(input_a, sample_a).unwrap();
-        world.add_child(sample_a, a).unwrap();
-        let input_b =
-            world.add_component(TransformComponent::new().with_position(40.0, 50.0, 60.0));
-        let sample_b = world.add_component(
-            TransformOperatorComponent::sample_translation(ComponentRef::Guid(
-                world.get_component_record(a).unwrap().guid,
-            ))
-            .with_axes(TranslationAxes::Y),
-        );
-        let b = world.add_component(TransformComponent::new());
-        world.add_child(input_b, sample_b).unwrap();
-        world.add_child(sample_b, b).unwrap();
-        for root in [source, input_a, input_b] {
-            systems.transform_changed(&mut world, &mut visuals, root);
+        let capsule = world.add_component(TransformComponent::new().with_position(0.0, 1.0, 0.0));
+        let descendant = world.add_component(TransformComponent::new());
+        for (parent, child) in [
+            (source, input),
+            (input, fork),
+            (fork, sample),
+            (sample, capsule),
+            (capsule, descendant),
+        ] {
+            world.add_child(parent, child).unwrap();
         }
+        let follower_route = world.add_component(TransformOperatorComponent::parent().with_source(
+            ComponentRef::Guid(world.get_component_record(capsule).unwrap().guid),
+        ));
+        let follower = world.add_component(TransformComponent::new().with_position(0.0, 0.0, 2.0));
+        world.add_child(follower_route, follower).unwrap();
+        systems.transform_changed(&mut world, &mut visuals, source);
         assert_eq!(
-            TransformSystem::world_position(&world, b),
-            Some([40.0, 201.0, 60.0])
+            TransformSystem::world_position(&world, capsule),
+            Some([110.0, 201.0, 330.0])
         );
+        assert_eq!(systems.transform_operator.sample_evaluation_count, 1);
         world
             .get_component_by_id_as_mut::<TransformComponent>(source)
             .unwrap()
             .set_position(&mut systems.rx, 100.0, 500.0, 300.0);
         systems.transform_changed(&mut world, &mut visuals, source);
         assert_eq!(
-            TransformSystem::world_position(&world, a),
-            Some([10.0, 501.0, 30.0])
+            TransformSystem::world_position(&world, capsule),
+            Some([110.0, 501.0, 330.0])
+        );
+        assert_eq!(systems.transform_operator.sample_evaluation_count, 2);
+        assert_eq!(systems.transform_operator.sample_resolution_count, 1);
+        // A direct capsule-local edit must retain the fork's unit scale and
+        // sampled Y, then compose its new offset instead of reusing cached world.
+        world
+            .get_component_by_id_as_mut::<TransformComponent>(capsule)
+            .unwrap()
+            .set_position(&mut systems.rx, 1.0, 2.0, 3.0);
+        systems.transform_changed(&mut world, &mut visuals, capsule);
+        assert_eq!(
+            TransformSystem::world_position(&world, capsule),
+            Some([111.0, 502.0, 333.0])
         );
         assert_eq!(
-            TransformSystem::world_position(&world, b),
+            TransformSystem::world_position(&world, follower),
+            Some([111.0, 502.0, 335.0])
+        );
+        world
+            .get_component_by_id_as_mut::<TransformComponent>(descendant)
+            .unwrap()
+            .set_position(&mut systems.rx, 4.0, 5.0, 6.0);
+        systems.transform_changed(&mut world, &mut visuals, descendant);
+        assert_eq!(
+            TransformSystem::world_position(&world, descendant),
+            Some([115.0, 507.0, 339.0])
+        );
+        let settings = world
+            .get_component_by_id_as_mut::<TransformOperatorComponent>(sample)
+            .unwrap()
+            .sample_translation_settings_mut()
+            .unwrap();
+        settings.axes = TranslationAxes::XYZ;
+        systems.transform_changed(&mut world, &mut visuals, sample);
+        assert_eq!(
+            TransformSystem::world_position(&world, capsule),
+            Some([101.0, 502.0, 303.0])
+        );
+        world
+            .get_component_by_id_as_mut::<TransformOperatorComponent>(fork)
+            .unwrap()
+            .fork_trs_settings_mut()
+            .unwrap()
+            .set_channel(TransformChannel::Scale, false);
+        systems.transform_changed(&mut world, &mut visuals, fork);
+        assert_eq!(
+            TransformSystem::world_position(&world, capsule),
+            Some([102.0, 504.0, 306.0])
+        );
+        // Reparent to a different valid ancestor; reevaluate through the fork.
+        let replacement =
+            world.add_component(TransformComponent::new().with_position(40.0, 50.0, 60.0));
+        systems.transform_changed(&mut world, &mut visuals, replacement);
+        world.add_child(replacement, input).unwrap();
+        let reference = ComponentRef::Guid(world.get_component_record(replacement).unwrap().guid);
+        world
+            .get_component_by_id_as_mut::<TransformOperatorComponent>(sample)
+            .unwrap()
+            .sample_translation_settings_mut()
+            .unwrap()
+            .source = Some(reference);
+        systems.transform_changed(&mut world, &mut visuals, sample);
+        assert_eq!(
+            TransformSystem::world_position(&world, capsule),
+            Some([42.0, 54.0, 66.0])
+        );
+        // An external source is diagnosed and never schedules this consumer.
+        let reference = ComponentRef::Guid(world.get_component_record(source).unwrap().guid);
+        world
+            .get_component_by_id_as_mut::<TransformOperatorComponent>(sample)
+            .unwrap()
+            .sample_translation_settings_mut()
+            .unwrap()
+            .source = Some(reference);
+        systems.transform_changed(&mut world, &mut visuals, sample);
+        assert_eq!(
+            systems
+                .transform_operator
+                .translation_sample_status(&world, sample),
+            TranslationSampleStatus::UnsupportedSource
+        );
+        let evaluations = systems.transform_operator.sample_evaluation_count;
+        systems.transform_changed(&mut world, &mut visuals, source);
+        assert_eq!(
+            systems.transform_operator.sample_evaluation_count,
+            evaluations
+        );
+    }
+
+    #[test]
+    fn translation_sample_reads_ancestor_y_through_parent_and_inverse_routes() {
+        use crate::engine::ecs::component::transform_operator::{
+            TransformChannel, TranslationAxes,
+        };
+        use crate::engine::ecs::system::SystemWorld;
+        let mut world = World::default();
+        let mut systems = SystemWorld::default();
+        let mut visuals = VisualWorld::default();
+        let frame =
+            world.add_component(TransformComponent::new().with_position(100.0, 200.0, 300.0));
+        let carrier =
+            world.add_component(TransformComponent::new().with_position(40.0, 50.0, 60.0));
+        let tracking =
+            world.add_component(TransformComponent::new().with_position(10.0, 20.0, 30.0));
+        world.add_child(carrier, tracking).unwrap();
+        let tracking_ref = ComponentRef::Guid(world.get_component_record(tracking).unwrap().guid);
+        let parent = world
+            .add_component(TransformOperatorComponent::parent().with_source(tracking_ref.clone()));
+        let inverse = world.add_component(TransformOperatorComponent::inverse_local(tracking_ref));
+        let fork = world.add_component(
+            TransformOperatorComponent::fork_trs()
+                .with_drop(TransformChannel::Rotation)
+                .with_drop(TransformChannel::Scale),
+        );
+        let sample = world.add_component(
+            TransformOperatorComponent::sample_translation(ComponentRef::Guid(
+                world.get_component_record(frame).unwrap().guid,
+            ))
+            .with_axes(TranslationAxes::Y),
+        );
+        let capsule = world.add_component(TransformComponent::new().with_position(0.0, 1.0, 0.0));
+        for (p, child) in [
+            (frame, parent),
+            (parent, inverse),
+            (inverse, fork),
+            (fork, sample),
+            (sample, capsule),
+        ] {
+            world.add_child(p, child).unwrap();
+        }
+        systems.transform_changed(&mut world, &mut visuals, carrier);
+        systems.transform_changed(&mut world, &mut visuals, frame);
+        assert_eq!(
+            TransformSystem::world_position(&world, capsule),
+            Some([40.0, 201.0, 60.0])
+        );
+        world
+            .get_component_by_id_as_mut::<TransformComponent>(frame)
+            .unwrap()
+            .set_position(&mut systems.rx, 100.0, 500.0, 300.0);
+        let evaluations = systems.transform_operator.sample_evaluation_count;
+        systems.transform_changed(&mut world, &mut visuals, frame);
+        assert_eq!(
+            systems.transform_operator.sample_evaluation_count,
+            evaluations + 1
+        );
+        assert_eq!(
+            TransformSystem::world_position(&world, capsule),
             Some([40.0, 501.0, 60.0])
         );
-        // A topology edit must not reuse the sampler's old inherited X/Z.
-        world.add_child(input_b, sample_a).unwrap();
-        systems.transform_changed(&mut world, &mut visuals, sample_a);
+        world
+            .get_component_by_id_as_mut::<TransformComponent>(carrier)
+            .unwrap()
+            .set_position(&mut systems.rx, 45.0, 55.0, 65.0);
+        systems.transform_changed(&mut world, &mut visuals, carrier);
         assert_eq!(
-            TransformSystem::world_position(&world, a),
-            Some([40.0, 501.0, 60.0])
+            TransformSystem::world_position(&world, capsule),
+            Some([45.0, 501.0, 65.0])
         );
     }
 

@@ -1,31 +1,22 @@
 # Task: Simplify default TOP translation sampling
 
 Date: 2026-10-12
-Status: investigation planned; documentation only. Do not edit `src/` as part of
-this task's creation. The runtime described below is still the current
-implementation; the simplified contract has not been implemented.
+Status: implemented in the working tree; focused automated checks pass.
+Headset acceptance in mittens-corp remains pending.
 
-## Intent
+## Implemented contract
 
-Make ordinary `TOP.sample_translation().source(...).axes(...)` a small,
-predictable operation during transform propagation. Sampling should not
-implicitly opt an operator into arbitrary dependency-chain refresh, graph cycle
-validation, or repeated settling passes.
+`TOP.sample_translation().source(...).axes(...)` copies selected world
+translation coordinates from a concrete **structural ancestor T** when normal
+transform propagation visits the operator. The source's cached world matrix is
+read directly. The sampler neither updates that source nor schedules consumers.
 
-The first consumer is the AVC collision capsule: retain the incoming tracked
-body X/Z, replace Y from the pre-tracking locomotion frame, then apply the
-calibrated capsule offset. That requirement does not itself call for a general
-constraint/dependency scheduler.
+The full incoming linear basis and unselected translation coordinates are
+preserved. A downstream T composes its local offset afterward. Sampling changes
+the basis supplied to children, not the cached world matrix of its parent T.
+The source/axes/root authoring surface and default XYZ mask remain unchanged.
 
-Investigate a simpler default contract before changing code. Richer scheduling
-may eventually be a separate opt-in mode or operator. Names such as
-`TOP.sample_translation_cyclic` or `TOP.sample_translation().cyclic(...)` are
-uncommitted possibilities, not API requirements for this work. Supporting
-cross-branch dependencies and actually solving cyclic feedback are different
-features; neither is in scope now. Do not preserve the current machinery merely
-to reserve a future mode.
-
-## Actual capsule requirement
+The AVC capsule uses this arrangement:
 
 ```text
 locomotion frame T                         <- sampled world Y
@@ -42,134 +33,100 @@ source translation = [frame.x, frame.y, frame.z]
 output translation = [body.x, frame.y, body.z]
 ```
 
-Preserve the incoming matrix's linear basis and unselected translation
-coordinates. The downstream T composes its offset afterward. Sampling edits
-the basis passed to children, not the parent T's cached world matrix.
+## Ordering and updates
 
-In this arrangement the sampled frame is a structural ancestor. When that
-frame changes, ordinary propagation should compute it before visiting the
-sampler. When tracking/body pose changes, propagation visits the sampler with
-new incoming X/Z and reads the frame's current Y. This needs one evaluation per
-visit, rather than repeated waves caused by the sampler itself.
+- Ordinary ancestor propagation computes the source before visiting its
+  descendants. Locomotion and physics/contact corrections update the capsule
+  through that path, including fixed substeps.
+- Tracking/body updates visit the sampler with new incoming X/Z and read the
+  frame's already-computed Y. HMD Y is replaced on every visit.
+- Parent/inverse routing retains its existing behavior. A sampler reads the
+  ancestor's current cached world value when those paths visit it; it does not
+  traverse their external dependencies or promise to solve routing feedback.
+- Direct sample or fork configuration updates rebuild inherited input through
+  intervening operators from the nearest ancestor T's cached world matrix.
+  Samplers no longer retain a separate input-matrix cache.
+- A local write to the first T below a sampler reevaluates that operator path,
+  then composes the new local offset. Deeper descendant writes compose from
+  their nearest T ancestry as usual.
+- Raw local/topology writes without the usual runtime propagation boundary do
+  not promise updated world matrices. Callers must trigger the normal update.
+  Separate legitimate updates may each visit the sampler; the sampler itself
+  produces no settling waves.
 
-Verify this ordering through actual update paths, including operator boundaries,
-physics corrections, mount/dismount, and direct updates to capsule descendants.
-Structural ancestry alone must not be assumed to settle every interaction with
-existing parent/inverse routing.
+## Binding, validity, and compatibility
 
-## Why the implementation is larger
+Keep authored ComponentRef values and a retained resolved handle. GUID sources
+use indexed lookup; query sources, including root scopes, must resolve to
+exactly one concrete T. World query/topology revision or source/root edits
+invalidate the binding. Ordinary typed pose writes retain it; axes-only edits
+change evaluation without resolving the source again.
 
-The [original sampling task](transform-sample-translation-axes.md) allows
-arbitrary external source transforms and requires targeted dependent refresh
-and cycle handling. The implementation supports chains across separate branches.
-These broadened requirements should be reconsidered for the default operator.
+Forward references become observable on a normal evaluation after their source
+exists and is attached as an ancestor. Source loss, replacement, or reparenting
+invalidates through the world revision/live handle checks. Removal retires the
+owner's runtime state. A replacement GUID/query target must satisfy the same
+ancestor requirement.
 
-Current responsibilities to audit:
+External, sibling, and descendant sources report `UnsupportedSource` and
+preserve input. Non-T, missing, or ambiguous sources retain their corresponding
+statuses. Selected non-finite coordinates preserve input and can recover on a
+later ordinary evaluation. Invalid/pending sampling keeps AVC readiness and
+contact disabled so tracked HMD Y cannot become collision Y.
 
-- `TransformOperatorSystem::evaluate_translation_sample`: retained source,
-  authored settings, validity, and cached incoming basis.
-- `sample_depends_on`: recursive validation through ancestry, other samplers,
-  and parent/inverse routing, with a 64-level cutoff.
-- `translation_dependents` and `changed_translation_sources`: reverse links
-  and pose-change tracking for external consumers.
-- Sampling relationship revisions and `reference_routes`: invalidation driven
-  by other operators' routing settings.
-- `TransformSystem::update_translation_sample_dependents`: up to 64 refresh
-  waves, including further changes produced by each refreshed subtree.
-- `operator_refresh_basis`: cached-input reuse and rebuilding through
-  intervening operator boundaries after changes.
+This intentionally removes the original arbitrary external-source contract.
+No passive external mode, new builder, generalized scheduler, or cycle solver
+is introduced. Ancestor validation is a simple structural walk at binding time;
+there is no recursive traversal of sampler/parent/inverse dependencies.
 
-Retaining a resolved source handle is useful independently of scheduling a
-dependency graph. Ordinary binding invalidation, source lifetime, and reading
-live values should not require the wave machinery.
+## Removed machinery
 
-## Default contracts to compare
+- Reverse sample dependency links and changed-translation-source collection.
+- Sampling relationship/refresh revisions.
+- Observation of unrelated parent/inverse routing settings for sample cycles.
+- Recursive sample dependency validation with its 64-level cutoff.
+- The 64-wave dependent-refresh loop and its call sites in transform updates.
+- Cached sampler input and revision-driven input reuse.
+- The three-pass capsule sample settling loop; pending AVC bindings are
+  evaluated once before contact gating.
 
-| Candidate | Source and ordering contract | What to examine |
-| --- | --- | --- |
-| Ancestor-only sampling | Resolve a concrete ancestor T; read its world translation during normal propagation. Reject unsupported placement with a clear status. | Strong fit for the capsule. Can a simple ancestry check and existing propagation provide the complete required behavior, including routing boundaries? |
-| Passive referenced sampling | Read the referenced T's already-computed cached world translation when visited. The sampler neither updates the source nor schedules consumers when it changes. | More flexible sources, but callers must establish ordering and trigger evaluation. Define freshness clearly; avoid silently promising same-update external-source refresh. |
+Retained parent/inverse behavior is separate from this simplification. The
+[retained source bindings plan](transform-operator-source-bindings-and-invalidation.md)
+must keep default sampling outside generalized dependency scheduling.
 
-Ancestor-only sampling is the initial candidate to prove against the capsule.
-The final decision should state which sources are supported and when changes
-become observable. Keep the current source/axes authoring surface where it fits;
-do not invent a new builder or rename solely to perform a masked copy.
+## Verification
 
-If passive external references remain supported, specify whether stale cached
-values are an accepted part of that explicit contract or whether unsupported
-ordering is diagnosed. Do not add general graph traversal to enforce the
-passive contract. If freshness cannot be explained or verified cheaply, prefer
-the narrower default.
+Focused automated tests cover masks and shear-preserving linear basis, retained
+queries across pose changes, ambiguity/loss/replacement, scoped and forward
+references, unsupported placement, non-finite recovery, configuration edits,
+reparented inherited input, downstream offsets, and MMS dump/reload.
 
-Neither candidate automatically follows external consumers, discovers arbitrary
-dependency chains, or iterates to convergence. Minimal source/placement
-validation is still appropriate; removing graph cycle checks does not mean
-accepting invalid handles or unsupported source relationships.
+Evaluation/resolution counters exist only in test builds. They verify one
+sampler evaluation per ordinary ancestor visit, no selector resolution for
+unchanged pose updates or mask edits, and no automatic visits for unsupported
+external-source motion. A routing fixture exercises parent and inverse-local
+boundaries between the ancestor and sampler.
 
-## Investigation and proposed implementation boundary
+The existing real SystemWorld/contact fixtures cover capsule readiness, floor
+and wall correction, gravity/jump support, physical head-height changes,
+uniform scale, source recovery, multiple avatars, desktop routing, and repeated
+vehicle mount/dismount.
 
-1. Trace the generated AVC source selection and all relevant transform-update
-   paths. Establish when the locomotion source's world matrix becomes current
-   and when the capsule sampler executes, including fixed physics substeps.
-2. Inventory authored and generated sampler consumers. Identify which genuinely
-   require external-source refresh; separate those from tests introduced solely
-   to support the expanded behavior.
-3. Select and document the default contract. Record the behavior of forward
-   references, queries, source loss/replacement, reparenting, live configuration
-   edits, and direct descendant writes. Specify any compatibility changes.
-4. Map which state and call sites can be removed under that contract. In
-   particular, examine removing reverse sample links, changed-source collection,
-   relationship revisions, route observation solely for samples, recursive
-   dependency validation, and bounded refresh waves. Preserve responsibilities
-   needed by other operator kinds.
-5. Retain only the source binding, validity, and incoming-basis state that the
-   chosen contract actually needs. Prove that re-evaluation honors intervening
-   fork/routing stages rather than reconstructing an incorrect parent basis.
-6. Present the proposed code changes and focused verification before beginning
-   the implementation phase. No richer opt-in mode is required to complete the
-   simplification.
+The full library run completed with 982 passed, 51 failed, and 2 ignored.
+An isolated checkout of the starting revision had 980 passed, 52 failed, and
+2 ignored; every failure in the updated run also occurred in that baseline.
+Formatting and executable compilation are checked separately.
 
-Keep masked world-coordinate copying, finite-value handling, retained reference
-resolution outside normal pose evaluation, source lifetime cleanup, and AVC
-readiness/contact gating on invalid sources. Invalid sampling must not enable
-contact with HMD-driven Y. Review broad revision handling for configuration and
-topology edits separately from ordinary pose propagation.
+Headset acceptance remains with the user: mittens-corp while walking and while
+mounted, falling, descending stairs, stepping off the stage edge, and returning
+to pedestrian movement. Verify capsule Y stays independent of physical HMD Y
+on unchanged support, contact corrects genuine locomotion motion, and vehicle
+attachment/contact exclusion remains correct.
 
-## Acceptance evidence for a later implementation
+## Related work
 
-- Y/XZ/XYZ masks preserve unselected coordinates and the full incoming linear
-  basis; calibrated offsets and rotation/scale drops still compose correctly.
-- Locomotion translation, gravity/contact correction, and tracked body X/Z
-  update the capsule through ordinary propagation. Physical HMD Y does not
-  change capsule Y on unchanged support.
-- Startup, source loss/recovery, reparenting, mount/dismount, multiple avatars,
-  and desktop routing keep the existing required capsule behavior.
-- Direct operator/configuration changes and descendant transform updates honor
-  the chosen source-freshness and inherited-basis contract.
-- Normal sample evaluation does not run recursive dependency validation,
-  observe unrelated routing settings, or enqueue sample refresh waves. Pose
-  changes do not re-run unchanged source queries.
-- Unsupported source relationships have documented, testable behavior; tests
-  for arbitrary external chains/cycles are revised according to the new scope.
-
-Use focused runtime tests and the existing real SystemWorld/contact fixtures to
-verify the chosen design. Headset acceptance remains part of the capsule work.
-Repeated visits caused by separate legitimate transform updates are distinct
-from sampler-driven settling waves.
-
-## Relationship to existing plans
-
-This task narrows the intended default behavior described by
-[axis-selective translation sampling](transform-sample-translation-axes.md).
-Its implementation notes remain an account of current code, not a requirement
-to preserve generalized scheduling.
-
-The [retained source bindings task](transform-operator-source-bindings-and-invalidation.md)
-also proposes shared scheduling for parent/inverse/sample chains. Revisit its
-sampler scope after this investigation: reuse binding/lifetime mechanisms where
-useful, but do not make the simple sampler participate in a general scheduler
-by default. Existing parent/inverse behavior is a separate concern.
-
+- [Original axis-selective translation sampling task](transform-sample-translation-axes.md)
 - [AVC capsule height independent of HMD tracking](avc-capsule-before-hmd-tracking.md)
 - [HMD height / floor-contact feedback](../bugs/mittens-corp-hmd-height-floor-contact-feedback.md)
-- [Transform operator API cleanup](transform-operator-api-cleanup.md)
+- [Jump controls and box stacks](mittens-corp-jump-controls-and-box-stacks.md)
+- [Runtime mirror resolution panel](runtime-mirror-resolution-info-panel.md)

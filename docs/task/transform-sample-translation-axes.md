@@ -2,11 +2,13 @@
 
 ## Status and outcome
 
-Default dependency behavior is now under review in
+Default sampling has been narrowed to a concrete structural ancestor T in
 [Simplify default TOP translation sampling](simplify-transform-translation-sampling.md).
-The external-source chains, cycle validation, and bounded refresh waves below
-describe the current implementation; they are not requirements to preserve in
-the simpler default. This review adds documentation only.
+It reads cached world coordinates during normal propagation without external
+consumer refresh or graph cycle validation. The external-source scheduling and
+bounded refresh machinery described below are historical implementation notes
+superseded by that task, not current requirements. Headset acceptance of the
+simplification remains pending.
 
 Implemented in the working tree; headset smoke testing is pending. The earlier
 TOP API and Rust consolidation passed user smoke testing through `c38c0502`.
@@ -131,7 +133,7 @@ that edits the parent T itself would need a separate attachment/evaluation
 contract. Do not imply that behavior in this first API. No callback, second
 fork, or TRS decomposition is required merely to replace matrix translation.
 
-## Runtime, resolution, and ordering
+## Original runtime, resolution, and ordering (superseded scheduling)
 
 Recognize the new kind as an operator boundary and evaluate it in
 `ecs/system/transform_operator.rs::evaluate_operator`, returning the edited matrix
@@ -181,7 +183,7 @@ coordinates are finite and exercise rotated/scaled parent composition.
    validity gates contact. The linked capsule task owns full floor/wall,
    physics, frame-order, and headset acceptance before crouch IK begins.
 
-## Implementation and verification
+## Original implementation and verification (superseded scheduling)
 
 - `World::query_revision()` invalidates retained references after structural,
   name, GUID, or raw-record edits. Ordinary typed transform writes leave it
