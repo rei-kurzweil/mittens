@@ -1317,12 +1317,10 @@ fn parse_editor_ui_panel_specs(args: &[Value]) -> Result<Vec<EditorUIPanelSpec>,
                 };
                 match panel {
                     EditorPanel::Settings => {
-                        const KEYS: [&str; 7] = [
+                        const KEYS: [&str; 5] = [
                             "show_armature",
                             "show_bounds",
                             "show_cameras",
-                            "show_colliders",
-                            "show_gltf_colliders",
                             "show_spring_bones",
                             "show_zones",
                         ];
@@ -1333,14 +1331,8 @@ fn parse_editor_ui_panel_specs(args: &[Value]) -> Result<Vec<EditorUIPanelSpec>,
                             show_armature: editor_ui_bool(&config, "show_armature", true)?,
                             show_bounds: editor_ui_bool(&config, "show_bounds", true)?,
                             show_cameras: editor_ui_bool(&config, "show_cameras", true)?,
-                            show_colliders: editor_ui_bool(&config, "show_colliders", true)?,
-                            show_gltf_colliders: editor_ui_bool(
-                                &config,
-                                "show_gltf_colliders",
-                                true,
-                            )?,
                             show_spring_bones: editor_ui_bool(&config, "show_spring_bones", true)?,
-                            show_zones: editor_ui_bool(&config, "show_zones", false)?,
+                            show_zones: editor_ui_bool(&config, "show_zones", true)?,
                         })
                     }
                     _ if config.is_empty() => EditorUIPanelConfig::Empty,

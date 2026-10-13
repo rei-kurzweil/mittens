@@ -128,8 +128,6 @@ T.position(-2.25, 2.0, -2.0) {
                 show_armature = false
                 show_bounds = false
                 show_cameras = false
-                show_colliders = false
-                show_gltf_colliders = false
                 show_spring_bones = true
                 show_zones = true
             }

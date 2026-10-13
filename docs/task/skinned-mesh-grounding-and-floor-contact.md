@@ -197,7 +197,7 @@ posed subjects whose roots should not fall.
 1. Inspect and record Bisket and capsule aggregate bounds, root origins, mesh
    scale, capsule proxies, and deck/floor top Y in the capsule laboratory.
 2. Add one static collision surface at the declared comparison ground plane and
-   collision visualization for the floor and runtime proxies.
+   Show Zones for the floor contact regions and runtime proxies.
 3. Extract/reuse only the bounds-to-upright-capsule inference needed by an
    opt-in grounding proxy. Keep the helper runtime-only and non-selectable.
 4. Implement the explicit velocity/gravity provider and fixed-step integration

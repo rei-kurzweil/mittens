@@ -9451,9 +9451,7 @@ fn roundtrip_editor_ui_default_and_settings_only() {
         .with_show_armature(false)
         .with_show_bounds(true)
         .with_show_cameras(false)
-        .with_show_colliders(false)
-        .with_show_gltf_colliders(true)
-        .with_show_zones(true);
+        .with_show_zones(false);
     let (world, id) =
         roundtrip_component(EditorUIComponent::new().with_panel_specs([expected.clone()]));
     let got = world
@@ -9465,6 +9463,14 @@ fn roundtrip_editor_ui_default_and_settings_only() {
 #[test]
 fn editor_ui_panel_specs_validate_tables_configs_and_types_strictly() {
     let invalid = [
+        (
+            "EditorUI { panels([{ panel = \"settings\" config = { show_colliders = true } }]) }",
+            "unknown EditorUI settings config key 'show_colliders'",
+        ),
+        (
+            "EditorUI { panels([{ panel = \"settings\" config = { show_gltf_colliders = true } }]) }",
+            "unknown EditorUI settings config key 'show_gltf_colliders'",
+        ),
         ("EditorUI { panels([\"settings\"]) }", "must be a table"),
         ("EditorUI { panels([{}]) }", "missing required 'panel'"),
         (
@@ -9613,8 +9619,8 @@ fn editor_ui_settings_only_materializes_under_authored_transform() {
     for default_row in [
         "#editor_settings_armature_visibility",
         "#editor_settings_bounds_visibility",
-        "#editor_settings_colliders_visibility",
-        "#editor_settings_gltf_colliders_visibility",
+        "#editor_settings_cameras_visibility",
+        "#editor_settings_zones_visibility",
         "#editor_settings_spring_bones_visibility",
     ] {
         assert!(
@@ -9622,7 +9628,13 @@ fn editor_ui_settings_only_materializes_under_authored_transform() {
             "missing default Settings row {default_row}"
         );
     }
+    assert!(
+        systems.zone_visualization.requests().is_empty(),
+        "default row inclusion must not enable visualization"
+    );
     for omitted in [
+        "#editor_settings_colliders_visibility",
+        "#editor_settings_gltf_colliders_visibility",
         "#paint_panel_root",
         "#color_panel_root",
         "#grid_panel_root",
@@ -9675,8 +9687,6 @@ fn editor_ui_settings_config_conditionally_authors_diagnostic_rows() {
                         show_armature = false
                         show_bounds = true
                         show_cameras = false
-                        show_colliders = false
-                        show_gltf_colliders = false
                         show_spring_bones = false
                         show_zones = true
                     }

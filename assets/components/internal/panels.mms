@@ -163,7 +163,7 @@ fn editor_settings_bounds_row() {
     }
 }
 
-fn editor_settings_collider_row(row_name, label, row_kind, slot_name) {
+fn editor_settings_visibility_row(row_name, label, row_kind, slot_name) {
     return T {
         name = row_name
         Data {
@@ -250,17 +250,11 @@ export fn editor_settings_panel_body(config) {
             if config.show_armature { editor_settings_armature_row() }
             if config.show_bounds { editor_settings_bounds_row() }
             if config.show_cameras { editor_settings_camera_row() }
-            if config.show_colliders {
-                editor_settings_collider_row("editor_settings_colliders_visibility", "show all colliders", "AllCollidersVisibility", "colliders_toggle_slot")
-            }
-            if config.show_gltf_colliders {
-                editor_settings_collider_row("editor_settings_gltf_colliders_visibility", "show GLTF colliders", "GltfCollidersVisibility", "gltf_colliders_toggle_slot")
-            }
             if config.show_spring_bones {
-                editor_settings_collider_row("editor_settings_spring_bones_visibility", "show spring bones", "SpringBonesVisibility", "spring_bones_toggle_slot")
+                editor_settings_visibility_row("editor_settings_spring_bones_visibility", "show spring bones", "SpringBonesVisibility", "spring_bones_toggle_slot")
             }
             if config.show_zones {
-                editor_settings_collider_row("editor_settings_zones_visibility", "show zones", "ZonesVisibility", "zones_toggle_slot")
+                editor_settings_visibility_row("editor_settings_zones_visibility", "show zones", "ZonesVisibility", "zones_toggle_slot")
             }
 
             Selection.root("#editor_settings_mode_rows") { name = "editor_settings_selection" }

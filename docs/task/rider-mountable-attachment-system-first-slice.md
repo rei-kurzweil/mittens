@@ -386,7 +386,7 @@ uses the synchronous zone query against current authoritative transforms.
 
 ## Related work
 
-- [Editor Settings generic-zone visualization first slice](editor-settings-generic-zone-visualization-first-slice.md)
+- [EditorUI settings and Show Zones](../spec/editor-ui.md#settings-panel-controls)
 - [`mittens-corp` mounted vehicle controls and laser first slice](mittens-corp-mounted-vehicle-controls-and-laser-first-slice.md)
 - [Interaction zones on the collision-query foundation](interaction-zone-collision-query-foundation.md)
 - [Interaction zones, sockets, and vehicle mounting](release-zones-sockets-and-vehicle-mounting.md)

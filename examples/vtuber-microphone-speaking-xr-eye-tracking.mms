@@ -184,8 +184,7 @@ T.position(-2.75, 2.8, -1.5) {
                 show_armature = false
                 show_bounds = false
                 show_cameras = false
-                show_colliders = false
-                show_gltf_colliders = false
+                show_zones = false
                 show_spring_bones = false
             }
         }])

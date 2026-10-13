@@ -21,6 +21,49 @@ Supported names are `settings`, `paint`, `color`, `grid`, `pose`, `assets`,
 are normalized, and shells always use that canonical order. `EditorUI {}` means
 all panels.
 
+## Settings-panel controls
+
+The settings panel exposes interaction modes and these diagnostic controls:
+
+| Config key | Control | Included by default |
+| --- | --- | --- |
+| `show_armature` | Show Armature | Yes |
+| `show_bounds` | Show Bounds | Yes |
+| `show_cameras` | Show Cameras | Yes |
+| `show_spring_bones` | Show Spring Bones | Yes |
+| `show_zones` | Show Zones | Yes |
+
+These flags include or omit controls; they do not enable the visualization.
+Diagnostics start off and are changed by the live toggle. For example:
+
+```mms
+EditorUI {
+    panels([{
+        panel = "settings"
+        config = {
+            show_armature = false
+            show_bounds = false
+            show_cameras = false
+            show_spring_bones = false
+            show_zones = true
+        }
+    }])
+}
+```
+
+Show Zones visualizes enabled, resolved `ZoneComponent` geometry under the
+effective editor roots, including the zones used by `Collidable` contact and
+vehicle entry. Markers use the same resolved frame and shape as zone queries,
+follow translation/rotation/scale, and are runtime-only, non-raycastable, and
+non-physical. The owning EditorUI's request is removed when visibility is
+turned off or the owner disappears. The real-panel off/on/materialize/off
+lifecycle has a regression test.
+
+The former Show Colliders and Show GLTF Colliders settings are removed. Their
+`show_colliders` and `show_gltf_colliders` config keys are rejected; update old
+authored EditorUI tables to use `show_zones` instead. Spring-bone diagnostics
+remain a separate control.
+
 ## Problem
 
 Today the editor panel shells are authored in MMS, but the shared editor UI mount is assembled in Rust.

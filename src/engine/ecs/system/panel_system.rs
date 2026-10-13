@@ -770,10 +770,8 @@ pub fn editor_panel_body_spec(kind: PanelKind) -> PanelBodySpec {
             ("show_armature".to_string(), Value::Bool(true)),
             ("show_bounds".to_string(), Value::Bool(true)),
             ("show_cameras".to_string(), Value::Bool(true)),
-            ("show_colliders".to_string(), Value::Bool(true)),
-            ("show_gltf_colliders".to_string(), Value::Bool(true)),
             ("show_spring_bones".to_string(), Value::Bool(true)),
-            ("show_zones".to_string(), Value::Bool(false)),
+            ("show_zones".to_string(), Value::Bool(true)),
         ]))],
         PanelKind::World => vec![Value::String(String::new())],
         PanelKind::Paint => vec![rgba(), rgba()],
@@ -966,11 +964,6 @@ pub fn spawn_editor_panel_layout_tree(
                     ("show_armature".into(), Value::Bool(config.show_armature)),
                     ("show_bounds".into(), Value::Bool(config.show_bounds)),
                     ("show_cameras".into(), Value::Bool(config.show_cameras)),
-                    ("show_colliders".into(), Value::Bool(config.show_colliders)),
-                    (
-                        "show_gltf_colliders".into(),
-                        Value::Bool(config.show_gltf_colliders),
-                    ),
                     (
                         "show_spring_bones".into(),
                         Value::Bool(config.show_spring_bones),

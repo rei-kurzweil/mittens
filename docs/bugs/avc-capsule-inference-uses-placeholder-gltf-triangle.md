@@ -112,7 +112,7 @@ imported CPU meshes available before AVC runs, and bounds calculation is synchro
 - CPU bounds measurement works before GPU upload and in headless execution.
 - Existing capsule radius, upright Y-capsule inference, collision response,
   grounding, and movement-target behavior remain unchanged.
-- Once created from complete bounds, the collider visualization matches the capsule
+- Once created from complete bounds, Show Zones matches the capsule
   used by collision simulation.
 
 ## Tests
@@ -125,7 +125,7 @@ imported CPU meshes available before AVC runs, and bounds calculation is synchro
   capsule from the real resolved bounds.
 - Mix resolved imported meshes and ordinary built-in renderables and verify the full
   transformed union.
-- Re-run `secondary-motion-desktop` with collider and bounds visualization enabled
+- Re-run `secondary-motion-desktop` with Show Zones and bounds visualization enabled
   and compare the logged aggregate bounds, capsule extents, and visible model bounds.
 
 ## Non-goals
