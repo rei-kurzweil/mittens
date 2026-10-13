@@ -1,6 +1,6 @@
 # Mirror rendering: status and improvement task list
 
-Updated: 2026-10-12
+Updated: 2026-10-13
 Status: existing capture path and graphics panel UI preview implemented;
 settings backend, correctness, and optimization work below remain planned.
 
@@ -44,9 +44,12 @@ Relevant runtime code:
 
 ## Improvement order
 
-1. [ ] Add an importable MMS graphics settings panel and the
-   `GraphicsSettings.mirrors` built-in settings table, initially with `toggle`
-   and `quality` methods. Track the asset, backend, and readback contract in
+1. [ ] Connect the existing importable MMS graphics settings panel to the
+   `GraphicsSettings.mirrors` built-in settings table and authoritative
+   `GraphicsSettingsSystem`. Implement `toggle` first: off skips captures and
+   publication while preserving the last reflection and per-eye/family texture
+   bindings; on resumes fresh captures. Then connect `quality`. Track the
+   asset, backend, and readback contract in
    [graphics settings and runtime mirror controls](runtime-mirror-resolution-info-panel.md).
 2. [ ] Restore validated mirror-plane clipping for correctness.
 3. [ ] Skip captures for mirrors outside the active viewer's view.

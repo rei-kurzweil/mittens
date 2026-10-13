@@ -1,10 +1,12 @@
 # Task: Importable MMS graphics settings panel and mirror settings table
 
 Date: 2026-10-12
-Status: UI preview implemented; headset visual review and backend integration pending.
-Architecture clarified 2026-10-12: MMS owns the importable panel factory;
-the planned host-backed `GraphicsSettings.mirrors` built-in table exposes
-runtime mirror controls. The asset exists; the settings API is not implemented yet.
+Updated: 2026-10-13
+Status: UI preview implemented and user-verified; backend integration pending.
+Architecture confirmed 2026-10-13: MMS owns the importable panel factory;
+`GraphicsSettingsSystem` will own authoritative runtime settings and receive
+updates from the host-backed `GraphicsSettings.mirrors` built-in table.
+The asset exists; the system and settings API are not implemented yet.
 
 ## Current UI-first slice
 
@@ -16,8 +18,8 @@ runtime mirror controls. The asset exists; the settings API is not implemented y
   with microphone mouth animation, independent eye closure tracking, ambient
   eye direction animation, and the corp rig's shirt/bow secondary motion.
   A grabbable full-body mirror starts beside the standalone panel at quality 512.
-  There is no desktop camera. The user will verify the UI in the headset before
-  backend settings are connected.
+  There is no desktop camera. The user confirmed the scene and UI are working;
+  backend settings are the next slice.
 - `assets/components/stage_with_boxes.mms` supplies the original
   secondary-motion-desktop floor and collision/contact zones, eight colored
   boxes, and three tripod lights. Both scenes now import it. The new example
@@ -35,7 +37,7 @@ Run the preview with:
 cargo run --release -- load examples/graphics-settings.mms
 ```
 
-The remaining sections describe the intended backend integration after UI review.
+The remaining sections describe the intended backend integration.
 
 ## Outcome
 
@@ -62,20 +64,48 @@ versus image quality when those controls have working runtime APIs.
   names reject dots. Do not assume registering a namespace named
   `GraphicsSettings.mirrors` works. Add the smallest crate-owned runtime support
   needed for the requested table shape; no MMS type-annotation syntax is needed.
-- Rust owns validation, authoritative runtime values, and renderer/resource
-  changes. The UI must read actual applied values rather than maintain another
-  independent graphics-settings state.
+- `GraphicsSettingsSystem` owns authoritative runtime values and validation.
+  The MMS host receives settings calls and forwards their updates to this
+  system through the existing engine update boundary. The UI reads actual
+  applied values rather than maintaining another independent settings state.
 - Do not add a Rust `EditorPanel::Graphics`, hard-coded graphics panel rows,
   or new editor-context click handling. Explicit scenes attach the MMS panel
   factory as an ordinary authored component subtree.
-- Prefer existing update paths for applying settings. If backend coordination
-  warrants a `GraphicsSettingsSystem` (`graphics_settings_system.rs`), keep it
-  responsible only for authoritative settings and applying changes. It must
-  work without a panel and own no panel construction, layout, or input handling.
-  A dedicated panel system is not required.
+- Add `src/engine/ecs/system/graphics_settings_system.rs` and integrate its
+  `GraphicsSettingsSystem` with `SystemWorld`. It manages settings state and
+  applies updates independently of any panel. Panel construction, layout,
+  callbacks, and input composition remain in the MMS asset.
 - Implement mirror control first. Do not build generic option registries,
   presets, persistence, automatic quality adjustment, or controls for settings
   that cannot yet change at runtime.
+
+## Backend state and update flow
+
+`GraphicsSettingsSystem` is the single authoritative owner of mirror capture
+enabled state and the optional scene-wide quality override. Defaults are
+captures enabled and no quality override, so authored `Mirror.quality(...)`
+values continue to apply. New mirrors use the current system state.
+
+The planned path is:
+
+```text
+MMS GraphicsSettings.mirrors call
+  -> typed RuntimeSpec/Mittens host dispatch
+  -> settings update at the engine update boundary
+  -> GraphicsSettingsSystem validates and applies the value
+  -> mirror/render code consumes applied settings
+```
+
+Host calls must update this system rather than change renderer resources or
+rewrite every mirror component directly. State readback also comes from this
+system. Any pending update is distinct from its applied state; define their
+ordering with readback before wiring callbacks. Apply settings before the
+affected captures in a frame, and coalesce repeated/rapid changes where needed.
+Keep the existing frame/submission ordering; disabling captures does not cancel
+GPU work already submitted.
+
+Implement capture toggle and authoritative readback first, then connect the
+quality override and Slider. The panel is an ordinary scene asset throughout.
 
 ## Planned MMS API
 
@@ -99,12 +129,21 @@ and use their authored qualities until a runtime override is applied. Preserve
 authored `Mirror.quality(...)` values rather than rewriting each component.
 Repeated requests for the same value should cause no resource work.
 
-Disable capture submission and associated publication when mirrors are off.
-Define the surface's disabled appearance before implementation; do not leave
-an apparently live reflection displaying a stale image. Prefer retaining valid
-capture targets while temporarily disabled and refresh captures before a
-re-enabled visible surface consumes them. A quality change while disabled must
-be retained and applied when capture resumes without rendering in the meantime.
+**Off pauses captures and keeps the last reflection visible.** Skip the entire
+mirror capture pass and associated image publication before target allocation
+or submission. Continue drawing the mirror surface with its already-published
+texture; retain valid capture targets and texture bindings. No extra snapshot
+copy, surface hiding, or material replacement is needed for this behavior.
+
+Preserve separate textures and bindings for each viewer family and each XR
+eye while off. The image is intentionally frozen: its reflection/parallax does
+not track viewer motion until captures resume. A mirror or viewer family with
+no completed capture uses the existing black placeholder until enabled.
+
+When toggled on, refresh captures before the consuming surface draw. A quality
+change while off is retained in `GraphicsSettingsSystem` and applied when
+capture resumes, without allocating replacement capture targets or rendering
+in the meantime. Repeated off/on requests must preserve resource reuse.
 
 The panel needs to read authoritative enabled/quality state on creation,
 after changes, and on accordion restore. Add a minimal readback contract under
@@ -158,8 +197,9 @@ options should follow the existing panel conventions.
 1. Trace quality from a runtime edit through MirrorSystem, VisualWorld, target
    allocation, and texture/material publication. Inspect the current MMS
    runtime API surface; expose the nested built-in table and its strict
-   `toggle`/`quality` calls plus minimal state readback. Apply changes through the
-   existing engine update boundary, not direct renderer calls from MMS UI code.
+   `toggle`/`quality` calls plus minimal state readback. Route updates and reads
+   through `GraphicsSettingsSystem`, applying changes at the existing engine
+   update boundary. Renderer/resource changes follow the applied settings.
    Do not require scene rebuilding.
 2. Define what the displayed resolution means. Quality is a base resolution
    preference, not necessarily a square extent. The label should distinguish
@@ -168,10 +208,12 @@ options should follow the existing panel conventions.
    If actual dimensions are not currently observable, add the smallest
    readout needed or label the selected value explicitly as the preference;
    do not display it as an exact square capture size.
-3. Use scene-wide mirror settings through `GraphicsSettings.mirrors`. Define
-   disabled surface behavior, override/default/mixed-value readback, handling
-   for mirrors created later, and scene-unload/reset lifetime. Keep settings
-   usable without the panel. Multiple aspect ratios still produce different
+3. Use scene-wide mirror settings through `GraphicsSettings.mirrors` and their
+   authoritative `GraphicsSettingsSystem` owner. Preserve the frozen-texture
+   off behavior above. Resolve override/default/mixed-value readback and
+   scene-unload/reset lifetime. Keep settings usable without the panel, and
+   keep mirror records/texture selection available even when captures are
+   disabled. Multiple aspect ratios still produce different
    capture extents; if displaying actual dimensions, report them per mirror
    when they differ.
 4. Choose discrete resolution steps within the existing range, initially
@@ -187,8 +229,9 @@ options should follow the existing panel conventions.
 ## Panel implementation
 
 - The panel asset already provides the on/off control, resolution slider, and
-  readouts. After UI review, replace its preview state initialization with
-  authoritative backend readback and connect its callbacks to the settings API.
+  readouts. Replace its preview state initialization with authoritative
+  `GraphicsSettingsSystem` readback through the host API and connect its
+  callbacks to that same backend.
 - Import its exported factory in both corp examples where it can be reached
   with XR pointers and desktop input without blocking the mirror or walking route.
 - Wire the on/off control to `GraphicsSettings.mirrors.toggle(on_off)` and
@@ -209,9 +252,16 @@ options should follow the existing panel conventions.
   example without adding a Rust panel type or dedicated panel system.
 - Strict MMS evaluation accepts the nested table calls from scenes, factories,
   and callbacks, and rejects wrong argument counts/types consistently.
+- Settings updates and readback use `GraphicsSettingsSystem` with or without
+  a panel. Both newly created mirrors and existing mirrors follow its applied
+  capture-enabled state and quality override without changing authored quality.
 - Toggling mirrors off submits no mono/stereo mirror captures or publications.
-  Toggling them back on refreshes reflections before use. Exercise repeated
-  off/on requests, a quality change while off, and a mirror created while off.
+  It retains the last published image and correct per-eye/family bindings while
+  the mirror surface continues to draw. No capture-target replacements are
+  allocated while off. Toggling back on refreshes reflections before use.
+  Exercise repeated off/on requests, head movement while frozen, a quality
+  change while off, and a mirror/viewer family created while off (black until
+  its first capture).
 - Changing the slider updates mirror sharpness and the label without a scene
   reload, on desktop and in XR. Both XR eyes remain correctly associated with
   their capture views.
