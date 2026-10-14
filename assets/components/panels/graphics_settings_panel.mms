@@ -1,5 +1,4 @@
-// Importable graphics settings panel. The mirror Toggle controls capture work;
-// resolution remains a UI-only preview until the quality backend slice lands.
+// Importable graphics settings panel; GraphicsSettingsSystem owns applied values.
 import { info_panel, info_panel_body } from "../ui/info_panel.mms"
 
 let QUALITY_STEPS = [64, 128, 256, 512, 1024, 1440, 2048]
@@ -18,9 +17,43 @@ fn enabled_text(enabled) {
     return "Off"
 }
 
-fn capture_toggle(enabled) {
-    if enabled { return Toggle.on() { name = "graphics_mirrors_toggle" } }
-    return Toggle.off() { name = "graphics_mirrors_toggle" }
+fn setting_toggle(enabled, control_name) {
+    if enabled { return Toggle.on() { name = control_name } }
+    return Toggle.off() { name = control_name }
+}
+
+fn read_settings(state) {
+    state.enabled = GraphicsSettings.mirrors.enabled()
+    state.motion_enabled = GraphicsSettings.secondary_motion.enabled()
+    state.quality = GraphicsSettings.mirrors.quality_override()
+    state.quality_index = 3
+    if state.quality != null {
+        for index in range(7) {
+            if Math.abs(QUALITY_STEPS[index] - state.quality) < Math.abs(QUALITY_STEPS[state.quality_index] - state.quality) {
+                state.quality_index = index
+            }
+        }
+    }
+}
+
+fn quality_text(state) {
+    if state.quality == null { return "Authored" }
+    return "" + state.quality
+}
+
+fn toggle_control(toggle, label, control_name) {
+    return T {
+        name = control_name
+        Raycastable.click_only() { interaction_priority(120.0) }
+        toggle
+        Style {
+            display("flex") width(5.0) height(2.1)
+            align_items("center") justify_content("center") font_size(0.65)
+            color(TEXT_COLOR) background_color([0.20, 0.23, 0.29, 1.0])
+            background_z(0.01)
+        }
+        Text { label }
+    }
 }
 
 fn setting_label(text) {
@@ -59,20 +92,9 @@ fn setting_row(label, control, readout) {
 }
 
 fn settings_content(state) {
-    state.enabled = GraphicsSettings.mirrors.enabled()
-    let mirror_toggle = capture_toggle(state.enabled)
-    let toggle_control = T {
-        name = "graphics_mirrors_toggle_control"
-        Raycastable.click_only() { interaction_priority(120.0) }
-        mirror_toggle
-        Style {
-            display("flex") width(5.0) height(2.1)
-            align_items("center") justify_content("center") font_size(0.65)
-            color(TEXT_COLOR) background_color([0.20, 0.23, 0.29, 1.0])
-            background_z(0.01)
-        }
-        Text { "Mirrors" }
-    }
+    read_settings(state)
+    let mirror_toggle = setting_toggle(state.enabled, "graphics_mirrors_toggle")
+    let mirror_control = toggle_control(mirror_toggle, "Mirrors", "graphics_mirrors_toggle_control")
     let toggle_readout = Text {
         name = "graphics_mirrors_enabled_readout"
         enabled_text(state.enabled)
@@ -93,7 +115,13 @@ fn settings_content(state) {
         .track(track).thumb(thumb) { name = "graphics_mirrors_quality_slider" }
     let quality_readout = Text {
         name = "graphics_mirrors_quality_readout"
-        "" + QUALITY_STEPS[state.quality_index]
+        quality_text(state)
+    }
+    let motion_toggle = setting_toggle(state.motion_enabled, "graphics_secondary_motion_toggle")
+    let motion_control = toggle_control(motion_toggle, "Motion", "graphics_secondary_motion_toggle_control")
+    let motion_readout = Text {
+        name = "graphics_secondary_motion_readout"
+        enabled_text(state.motion_enabled)
     }
 
     on(mirror_toggle, "ToggleChanged", fn(event) {
@@ -102,15 +130,22 @@ fn settings_content(state) {
         toggle_readout.set_text(enabled_text(state.enabled))
     })
     on(quality_slider, "SliderChanged", fn(event) {
-        state.quality_index = event.value
-        quality_readout.set_text("" + QUALITY_STEPS[state.quality_index])
+        GraphicsSettings.mirrors.quality(QUALITY_STEPS[event.value])
+        read_settings(state)
+        quality_readout.set_text(quality_text(state))
+    })
+    on(motion_toggle, "ToggleChanged", fn(event) {
+        GraphicsSettings.secondary_motion.toggle(event.value)
+        state.motion_enabled = GraphicsSettings.secondary_motion.enabled()
+        motion_readout.set_text(enabled_text(state.motion_enabled))
     })
 
     return T {
         name = "graphics_settings_content"
         Style { display("flex") flex_direction("column") width(100%) row_gap(0.35) }
-        setting_row("Mirrors", toggle_control, toggle_readout)
+        setting_row("Mirrors", mirror_control, toggle_readout)
         setting_row("Resolution preference", quality_slider, quality_readout)
+        setting_row("Secondary motion", motion_control, motion_readout)
     }
 }
 
@@ -118,7 +153,7 @@ fn settings_content(state) {
 export fn graphics_settings_panel(options) {
     let title = "Graphics settings"
     if options["title"] { title = options.title }
-    let state = { enabled = GraphicsSettings.mirrors.enabled() quality_index = 3 }
+    let state = { enabled = true motion_enabled = true quality = null quality_index = 3 }
     let panel = info_panel({
         root_name = options.root_name
         width_gu = 32.0
@@ -147,13 +182,21 @@ export fn graphics_settings_panel(options) {
     // controls so minimized/deleted bodies never leave stale control handles.
     on_global("DataEvent", fn(event) {
         if event == "GraphicsSettingsChanged" {
-            state.enabled = GraphicsSettings.mirrors.enabled()
+            read_settings(state)
             let current_panel = query("#" + options.root_name)
             if current_panel {
                 let toggle = current_panel.query("#graphics_mirrors_toggle")
                 let readout = current_panel.query("#graphics_mirrors_enabled_readout")
                 if toggle { toggle.sync_value(state.enabled) }
                 if readout { readout.set_text(enabled_text(state.enabled)) }
+                let slider = current_panel.query("#graphics_mirrors_quality_slider")
+                let quality_readout = current_panel.query("#graphics_mirrors_quality_readout")
+                if slider { slider.sync_value(state.quality_index) }
+                if quality_readout { quality_readout.set_text(quality_text(state)) }
+                let motion_toggle = current_panel.query("#graphics_secondary_motion_toggle")
+                let motion_readout = current_panel.query("#graphics_secondary_motion_readout")
+                if motion_toggle { motion_toggle.sync_value(state.motion_enabled) }
+                if motion_readout { motion_readout.set_text(enabled_text(state.motion_enabled)) }
             }
         }
     })

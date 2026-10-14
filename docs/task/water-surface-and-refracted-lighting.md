@@ -1,6 +1,7 @@
 # Task: water surface optics and refracted lighting
 
 Date: 2026-10-13
+Updated: 2026-10-14 — reuse Zone for the water domain and initialization-time candidate discovery.
 Status: proposed; documentation only. No renderer implementation in this task.
 Architecture: [Materials v3 / custom materials](epic/custom-materials.md),
 [stable instances and family contracts](material-instances-and-family-contracts.md),
@@ -50,6 +51,7 @@ Source inspection on this date confirms the large refactor is still pending:
 | Mirrors | [MirrorSystem](../../src/engine/ecs/system/mirror_system.rs) and the renderer produce mono/stereo planar captures. [Mirror status](mirror-render-pass-status.md) records disabled oblique clipping and missing viewer-visibility gating. | Reuse capture infrastructure after proving water-plane clipping; a Mirror component currently replaces surface shading. |
 | Lighting | [Toon](../../assets/shaders/toon-mesh.frag) and [Anime](../../assets/shaders/anime-mesh.frag) evaluate point, directional, and spot lights directly. | No occlusion/caustic map sampling in those light loops. Water transport needs new lighting infrastructure. |
 | Spatial queries | [BvhSystem](../../src/engine/ecs/system/bvh_system.rs) indexes renderable AABBs gated by `Raycastable`. | This is not an all-scene GPU triangle acceleration structure for photon tracing. |
+| Zones | [ZoneComponent](../../src/engine/ecs/component/zone.rs) defines transformed non-physical regions; [zone_query](../../src/engine/ecs/system/zone_query.rs) implements point classification, zone-pair overlap and enabled-zone subtree discovery. | Reuse a box Zone for the water volume. Enumerating arbitrary renderables overlapping it needs a bounds-query adapter; the current API does not provide that operation. |
 
 This is a source/design audit, not runtime visual or GPU validation.
 
@@ -62,7 +64,7 @@ describe responsibilities; they are not committed Rust or MMS APIs.
 | --- | --- |
 | Material family/definition | Surface interface, supported geometry/state, optical input schema, supported capture/transport programs, and declared renderer capabilities. |
 | Material instance | Stable shared optical values: IOR, absorption, roughness, wave controls/time binding. Updates use v3's retained revisions and bounded frame-safe storage. |
-| Water body / boundary record | Spatial occurrence: mean plane, finite footprint, bounded submerged region, material-instance reference, and a coherent wave-field reference. |
+| Water body / boundary record | Spatial occurrence: mean surface plane, reference to an existing Zone defining the submerged volume, material-instance reference, coherent wave-field reference, and cached geometry candidates. |
 | Renderable instance | Mesh/transform, coverage and supported per-renderable inputs; resolved material binding. |
 | Renderer | Per-view scene snapshots/reflection captures; per-body/per-light transport maps, visibility, synchronization, quality budgets, and retirement. |
 | Receiving material family | Declared support for transported lighting, with built-in Toon/Anime adapters. Unlit/custom programs require explicit semantics. |
@@ -96,8 +98,53 @@ authored values follow v3's schema plan; do not disguise resource handles as f32
 Start with one finite, horizontal water surface and bounded depth, viewed from
 air. A plane alone says where an interface is, but cannot identify a finite lake,
 which side contains water, how far water extends, or when a ray exits it.
-Describe the footprint and submerged region explicitly. Discover receivers
-from scene geometry within that region, rather than naming the floor material.
+Use an existing rectangular `Zone` to describe the submerged region and derive
+the first surface's footprint from its top face. Optical meaning belongs to the
+water consumer; the Zone remains a reusable, non-physical region. Discover
+geometry overlapping that region, rather than naming the floor material.
+
+### Zone discovery at initialization
+
+Seed a per-water-body candidate list with a synchronous zone/bounds query once
+scene construction, generated geometry registration, transforms and bounds are
+ready. For a fully static scene with a fixed water zone, that initial result can
+remain cached. This avoids rediscovering the world for each transport pass.
+
+Use conservative **overlap**, including boundary contact, rather than checking
+only object origins or requiring full containment. A floor may touch the box's
+bottom face; a large terrain mesh or partly submerged prop can intersect the
+water even when its origin is outside. Keep those renderables as candidates;
+clip/test their actual surface samples against the water domain later.
+
+The existing `overlap_zones` accepts two authored Zones, while `classify_point`
+classifies one point. Neither directly returns all rendered geometry in a box.
+Add a small renderable-bounds query adapter using the existing resolved Zone
+frame and shared intersection geometry. Ordinary renderables should not need
+an authored Zone, `Collidable`, or `Raycastable` merely to receive water lighting.
+Begin with one scoped initialization scan and cache its results; an all-renderable
+spatial index is a measured optimization, not a prerequisite for this proof.
+
+For a changing scene, update membership on spawn/removal, transform or bounds
+changes, generated mesh changes, and water-zone shape/frame/enabled changes.
+Retest changed objects even if they were previously outside the candidate list;
+a zone change can require refreshing the whole scoped list. A moving object
+still inside the zone retains membership but invalidates captured geometry.
+Wave/light changes invalidate transport without requiring another membership
+query when conservative domain bounds are unchanged.
+
+Do not depend on current `ZoneEntered`/`ZoneExited` observation for arbitrary
+renderables: [the observer](zone-observer-candidate-filtering-and-broad-phase.md)
+currently considers eligible slide collidables, excluding static/passive and
+mounted participants. Water needs a non-physical rendering consumer with its
+own candidate/update contract. Static initialization caching can be the first
+stage; dynamic support must satisfy the movable-prop gate below.
+
+The Zone query answers which geometry might be affected. Receiver depth capture
+and refracted intersection then determine where light actually lands on that
+geometry. Both steps are needed; membership alone does not provide a ray hit,
+surface normal, visibility or focusing. Above-water shadow blockers are queried
+in a separate conservative region along the incoming light path, since they
+can occlude water without overlapping its submerged Zone.
 
 Use one deterministic height/slope field in surface coordinates, e.g. analytic
 waves with retained time and coefficients. Surface shading and light transport
@@ -201,6 +248,8 @@ different hidden surface. A plane fixture is a debug stage, not the final gate.
 Start with one selected directional light, one bounded body, and small slopes.
 Reuse renderer draw geometry/coverage in new auxiliary captures; ordinary objects
 participate without `Raycastable` or a special receiver material assignment.
+The cached Zone-overlap candidates supply the submerged capture draw list;
+the incoming-light region supplies above-water occluder candidates.
 
 1. Capture receiver depth, geometric normal, and surface identity in the body's
    top-down projection, clipping to submerged geometry in the supported domain.
@@ -275,6 +324,11 @@ post-process add can recover its BRDF, albedo, or intended lighting semantics.
 
 ### Work and gate
 
+- [ ] Reference a rectangular Zone as the water domain; seed overlapping
+  renderable candidates after scene initialization and geometry/bounds readiness.
+  Verify static caching, boundary-touching floors and partially submerged meshes.
+- [ ] Specify the bounds-query adapter and membership/capture invalidation for
+  object or zone changes, including objects entering from outside the cached set.
 - [ ] Freeze domain, selected-light semantics, capture formats, receiver lookup,
   visibility, replacement mask, and normalized flux/footprint contract.
 - [ ] Prove refraction against an analytic floor, then replace that fixture's
@@ -372,3 +426,5 @@ boundaries; first proving water does not imply a flat plane solves those cases.
   [refraction specification](../spec/material/refraction.md).
 - [Mirror rendering status and clipping work](mirror-render-pass-status.md).
 - [Emission capability precedent](material-emission-capabilities-and-led-strip.md).
+- [Zone query foundation](interaction-zone-collision-query-foundation.md) and
+  [candidate filtering / rendering consumers](zone-observer-candidate-filtering-and-broad-phase.md).

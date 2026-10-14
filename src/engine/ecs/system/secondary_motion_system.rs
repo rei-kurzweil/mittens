@@ -796,6 +796,19 @@ impl SecondaryMotionSystem {
         dt: f32,
         rest_weights: &HashMap<ComponentId, f32>,
     ) -> Vec<ComponentId> {
+        self.tick_with_settings(world, dt, rest_weights, true)
+    }
+
+    /// The global setting gates simulation without changing authored chain flags.
+    /// Restore imported rotations once on pause; subsequent animation is free to
+    /// update them. Retained disabled solver state resets from the live pose on resume.
+    pub fn tick_with_settings(
+        &mut self,
+        world: &mut World,
+        dt: f32,
+        rest_weights: &HashMap<ComponentId, f32>,
+        globally_enabled: bool,
+    ) -> Vec<ComponentId> {
         if self.chains.is_empty() {
             return Vec::new();
         }
@@ -832,6 +845,27 @@ impl SecondaryMotionSystem {
                 .unwrap_or(false);
             if !enabled {
                 state.enabled = false;
+                continue;
+            }
+            if !globally_enabled {
+                if state.enabled {
+                    for joint in &state.joints {
+                        if let Some(transform) =
+                            world.get_component_by_id_as_mut::<TransformComponent>(joint.id)
+                        {
+                            transform.transform.rotation = joint.rest_rotation;
+                            transform.transform.recompute_model();
+                        }
+                    }
+                    if let Some(root) = state.joints.first().map(|joint| joint.id)
+                        && dirty_set.insert(root)
+                    {
+                        dirty_roots.push(root);
+                    }
+                }
+                state.enabled = false;
+                state.parked = false;
+                state.accumulator = 0.0;
                 continue;
             }
             let rest_weight = rest_weights
@@ -2026,6 +2060,139 @@ mod tests {
         }
         assert_eq!(fixture.system.discovery_counts(), before);
         assert_eq!(fixture.system.runtime_counts(), (1, 1, 1, 0, 0));
+    }
+
+    #[test]
+    fn global_pause_restores_once_preserves_authored_flags_and_resumes_from_live_pose() {
+        let mut fixture = fixture();
+        fixture.system.register(&fixture.world, fixture.root);
+        let first = fixture.imported[0];
+        fixture
+            .world
+            .get_component_by_id_as_mut::<TransformComponent>(first)
+            .unwrap()
+            .transform
+            .rotation = [0.0, 0.0, 0.70710677, 0.70710677];
+        let ChainStatus::Bound(state) = &mut fixture
+            .system
+            .chains
+            .get_mut(&fixture.chain)
+            .unwrap()
+            .status
+        else {
+            panic!("bound chain");
+        };
+        state.current.fill([100.0, 200.0, 300.0]);
+        state.previous.fill([-100.0, -200.0, -300.0]);
+        state.accumulator = STEP * 0.5;
+        let before = fixture.system.discovery_counts();
+        let dirty =
+            fixture
+                .system
+                .tick_with_settings(&mut fixture.world, STEP, &HashMap::new(), false);
+        assert_eq!(dirty, vec![first]);
+        assert_eq!(
+            fixture
+                .world
+                .get_component_by_id_as::<TransformComponent>(first)
+                .unwrap()
+                .transform
+                .rotation,
+            [0.0, 0.0, 0.0, 1.0]
+        );
+        assert!(
+            fixture
+                .world
+                .get_component_by_id_as::<SpringBoneComponent>(fixture.chain)
+                .unwrap()
+                .enabled
+        );
+        // Animation can write joints while off; the solver must not overwrite them.
+        let animated = [0.0, 0.0, 0.70710677, 0.70710677];
+        fixture
+            .world
+            .get_component_by_id_as_mut::<TransformComponent>(first)
+            .unwrap()
+            .transform
+            .rotation = animated;
+        assert!(
+            fixture
+                .system
+                .tick_with_settings(&mut fixture.world, STEP, &HashMap::new(), false)
+                .is_empty()
+        );
+        assert_eq!(
+            fixture
+                .world
+                .get_component_by_id_as::<TransformComponent>(first)
+                .unwrap()
+                .transform
+                .rotation,
+            animated
+        );
+        for (index, joint) in fixture.imported.iter().enumerate() {
+            let transform = &mut fixture
+                .world
+                .get_component_by_id_as_mut::<TransformComponent>(*joint)
+                .unwrap()
+                .transform;
+            transform.matrix_world[3] = [10.0, 20.0 + index as f32, 30.0, 1.0];
+        }
+        assert!(
+            fixture
+                .system
+                .tick_with_settings(&mut fixture.world, STEP, &HashMap::new(), true)
+                .is_empty()
+        );
+        let ChainStatus::Bound(state) = &fixture.system.chains[&fixture.chain].status else {
+            panic!("bound chain");
+        };
+        assert!(state.enabled);
+        assert_eq!(state.accumulator, 0.0);
+        assert_eq!(
+            state.current, state.previous,
+            "no paused velocity may survive resume"
+        );
+        assert_eq!(state.current[0], [10.0, 21.0, 30.0]);
+        assert_eq!(
+            fixture.system.discovery_counts(),
+            before,
+            "toggle must not rebind geometry"
+        );
+    }
+
+    #[test]
+    fn global_pause_handles_new_chains_and_keeps_authored_disabled_chains_off() {
+        let mut fixture = fixture();
+        fixture.system.register(&fixture.world, fixture.root);
+        fixture
+            .system
+            .tick_with_settings(&mut fixture.world, STEP, &HashMap::new(), false);
+        let ChainStatus::Bound(state) = &fixture.system.chains[&fixture.chain].status else {
+            panic!("bound chain");
+        };
+        assert!(!state.enabled, "a newly bound chain follows global off");
+        fixture
+            .world
+            .get_component_by_id_as_mut::<SpringBoneComponent>(fixture.chain)
+            .unwrap()
+            .enabled = false;
+        fixture
+            .system
+            .configuration_changed(&fixture.world, fixture.chain);
+        assert!(
+            fixture
+                .system
+                .tick_with_settings(&mut fixture.world, STEP, &HashMap::new(), true)
+                .is_empty()
+        );
+        let ChainStatus::Bound(state) = &fixture.system.chains[&fixture.chain].status else {
+            panic!("bound chain");
+        };
+        assert!(
+            !state.enabled,
+            "global on cannot enable an authored disabled chain"
+        );
     }
 
     #[test]

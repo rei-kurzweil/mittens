@@ -46,6 +46,11 @@ pub enum MittensApi {
     EmitData,
     MirrorsToggle,
     MirrorsEnabled,
+    MirrorsQuality,
+    MirrorsQualityOverride,
+    MirrorsResetQuality,
+    SecondaryMotionToggle,
+    SecondaryMotionEnabled,
     FileReadText,
     JsonParse,
     JsonStringify,
@@ -1596,6 +1601,33 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 "enabled",
                 mms::ValueSignature::new(vec![], mms::ValueType::Bool),
                 MittensBinding::Api(MittensApi::MirrorsEnabled),
+            );
+            mirrors.api(
+                "quality",
+                mms::ValueSignature::new(vec![mms::ValueType::I32], mms::ValueType::Null),
+                MittensBinding::Api(MittensApi::MirrorsQuality),
+            );
+            mirrors.api(
+                "quality_override",
+                mms::ValueSignature::new(vec![], mms::ValueType::Any),
+                MittensBinding::Api(MittensApi::MirrorsQualityOverride),
+            );
+            mirrors.api(
+                "reset_quality",
+                mms::ValueSignature::new(vec![], mms::ValueType::Null),
+                MittensBinding::Api(MittensApi::MirrorsResetQuality),
+            );
+        });
+        namespace.namespace("secondary_motion", |motion| {
+            motion.api(
+                "toggle",
+                mms::ValueSignature::new(vec![mms::ValueType::Bool], mms::ValueType::Null),
+                MittensBinding::Api(MittensApi::SecondaryMotionToggle),
+            );
+            motion.api(
+                "enabled",
+                mms::ValueSignature::new(vec![], mms::ValueType::Bool),
+                MittensBinding::Api(MittensApi::SecondaryMotionEnabled),
             );
         });
     });

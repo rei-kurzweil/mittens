@@ -203,6 +203,18 @@ impl SecondaryMotionConstraintSystem {
     pub fn directives(&self) -> &HashMap<ComponentId, f32> {
         &self.directives
     }
+
+    /// Pausing must not turn the avatar's movement during the pause into a
+    /// large velocity sample or retain an old return-to-rest weight on resume.
+    pub fn reset_motion_history(&mut self) {
+        self.directives.clear();
+        for state in self.constraints.values_mut() {
+            state.previous = None;
+            state.smoothed_speed = 0.0;
+            state.still_seconds = 0.0;
+            state.weight = 0.0;
+        }
+    }
 }
 
 fn parent_transform_above(world: &World, gltf: ComponentId) -> Option<ComponentId> {
@@ -245,6 +257,33 @@ fn sampled_pose(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pause_clears_constraint_velocity_and_rest_weight() {
+        let mut system = SecondaryMotionConstraintSystem::default();
+        let mut world = World::default();
+        let chain = world.add_component(TransformComponent::new());
+        let id = world.add_component(TransformComponent::new());
+        let mut state = ConstraintState::new(chain);
+        state.previous = Some(([0.0; 3], [0.0, 0.0, 0.0, 1.0]));
+        state.smoothed_speed = 2.0;
+        state.still_seconds = 3.0;
+        state.weight = 1.0;
+        system.constraints.insert(id, state);
+        system.directives.insert(chain, 1.0);
+        system.reset_motion_history();
+        assert!(system.directives.is_empty());
+        let state = system.constraints.get_mut(&id).unwrap();
+        state.advance(
+            &ReturnToRestWhenStillComponent::new(),
+            [100.0; 3],
+            [0.0, 0.0, 0.0, 1.0],
+            1.0 / 60.0,
+        );
+        assert_eq!(state.smoothed_speed, 0.0);
+        assert_eq!(state.weight, 0.0);
+        assert_eq!(state.still_seconds, 0.0);
+    }
 
     #[test]
     fn stillness_settles_and_motion_wakes() {

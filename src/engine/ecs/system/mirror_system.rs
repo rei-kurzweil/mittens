@@ -255,10 +255,12 @@ impl System for MirrorSystem {
             .collect();
 
         for cid in mirror_cids {
-            let quality = world
-                .get_component_by_id_as::<MirrorComponent>(cid)
-                .map(|m| m.quality)
-                .unwrap_or(512);
+            let quality = visuals.mirror_quality_override().unwrap_or_else(|| {
+                world
+                    .get_component_by_id_as::<MirrorComponent>(cid)
+                    .map(|m| m.quality)
+                    .unwrap_or(512)
+            });
 
             // 1. Find transform (nearest ancestor).
             let mut transform_cid = None;

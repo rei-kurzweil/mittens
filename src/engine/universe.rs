@@ -640,6 +640,14 @@ mod tests {
         click(&mut universe, control);
         assert!(!universe.systems.graphics_settings.mirrors_enabled());
         assert!(!universe.visuals.mirror_captures_enabled());
+        let motion_control = labelled(&universe, "graphics_secondary_motion_toggle_control");
+        click(&mut universe, motion_control);
+        assert!(
+            !universe
+                .systems
+                .graphics_settings
+                .secondary_motion_enabled()
+        );
         let slider = labelled(&universe, "graphics_mirrors_quality_slider");
         universe.command_queue.push_intent_now(
             slider,
@@ -650,6 +658,11 @@ mod tests {
             },
         );
         pump_settings_callbacks(&mut universe);
+        assert_eq!(
+            universe.systems.graphics_settings.mirror_quality_override(),
+            Some(1440)
+        );
+        assert_eq!(universe.visuals.mirror_quality_override(), Some(1440));
         let panel = labelled(&universe, "test_graphics_settings");
         let chevron = labelled(&universe, "accordion_toggle");
         for _ in 0..2 {
@@ -699,6 +712,16 @@ mod tests {
                     .text,
                 "1440"
             );
+            assert!(
+                !universe
+                    .world
+                    .get_component_by_id_as::<ToggleComponent>(labelled(
+                        &universe,
+                        "graphics_secondary_motion_toggle"
+                    ))
+                    .unwrap()
+                    .value()
+            );
         }
         // External changes synchronize the native control without emitting a
         // ToggleChanged callback or becoming a second settings authority.
@@ -728,6 +751,74 @@ mod tests {
                 .unwrap()
                 .text,
             "On"
+        );
+        universe
+            .systems
+            .graphics_settings
+            .set_mirror_quality(700, &mut universe.command_queue);
+        universe
+            .systems
+            .graphics_settings
+            .set_secondary_motion_enabled(true, &mut universe.command_queue);
+        pump_settings_callbacks(&mut universe);
+        assert_eq!(
+            universe
+                .world
+                .get_component_by_id_as::<TextComponent>(labelled(
+                    &universe,
+                    "graphics_mirrors_quality_readout"
+                ))
+                .unwrap()
+                .text,
+            "700"
+        );
+        assert_eq!(
+            universe.systems.graphics_settings.mirror_quality_override(),
+            Some(700),
+            "silent slider sync must not snap an external setting to a preset"
+        );
+        assert!(
+            universe
+                .world
+                .get_component_by_id_as::<ToggleComponent>(labelled(
+                    &universe,
+                    "graphics_secondary_motion_toggle"
+                ))
+                .unwrap()
+                .value()
+        );
+        // Settings changed while the body is absent must be read on restore.
+        click(&mut universe, chevron);
+        universe
+            .systems
+            .graphics_settings
+            .reset_mirror_quality(&mut universe.command_queue);
+        universe
+            .systems
+            .graphics_settings
+            .set_secondary_motion_enabled(false, &mut universe.command_queue);
+        pump_settings_callbacks(&mut universe);
+        click(&mut universe, chevron);
+        assert_eq!(
+            universe
+                .world
+                .get_component_by_id_as::<TextComponent>(labelled(
+                    &universe,
+                    "graphics_mirrors_quality_readout"
+                ))
+                .unwrap()
+                .text,
+            "Authored"
+        );
+        assert!(
+            !universe
+                .world
+                .get_component_by_id_as::<ToggleComponent>(labelled(
+                    &universe,
+                    "graphics_secondary_motion_toggle"
+                ))
+                .unwrap()
+                .value()
         );
     }
 
@@ -778,6 +869,15 @@ mod tests {
             "GraphicsSettings.mirrors.toggle()",
             "GraphicsSettings.mirrors.toggle(false, true)",
             "GraphicsSettings.mirrors.enabled(false)",
+            "GraphicsSettings.mirrors.quality(512.5)",
+            "GraphicsSettings.mirrors.quality(true)",
+            "GraphicsSettings.mirrors.quality(2147483648)",
+            "GraphicsSettings.mirrors.quality()",
+            "GraphicsSettings.mirrors.quality_override(512)",
+            "GraphicsSettings.mirrors.reset_quality(512)",
+            "GraphicsSettings.secondary_motion.toggle(0)",
+            "GraphicsSettings.secondary_motion.toggle()",
+            "GraphicsSettings.secondary_motion.enabled(false)",
         ] {
             assert!(
                 universe
@@ -800,6 +900,107 @@ mod tests {
                 .get_component_by_id_as::<ecs::component::EditorComponent>(id)
                 .is_some()
         }));
+    }
+
+    #[test]
+    fn graphics_settings_quality_and_motion_host_readback_clamp_reset_and_scene_defaults() {
+        use crate::engine::ecs::component::TextComponent;
+        let mut universe = Universe::new(ecs::World::default());
+        universe
+            .load_mms_source_at_path(
+                r#"
+            let mirrors = GraphicsSettings.mirrors
+            mirrors.quality(-10)
+            Text { name = "minimum" "" + mirrors.quality_override() }
+            mirrors.quality(10000)
+            Text { name = "maximum" "" + mirrors.quality_override() }
+            mirrors.reset_quality()
+            if mirrors.quality_override() == null { Text { name = "reset" "Authored" } }
+            mirrors.quality(1024)
+            GraphicsSettings.secondary_motion.toggle(false)
+            Text { name = "motion" "" + GraphicsSettings.secondary_motion.enabled() }
+        "#,
+                "examples/graphics-settings.mms",
+            )
+            .unwrap();
+        for (name, expected) in [
+            ("minimum", "64"),
+            ("maximum", "2048"),
+            ("reset", "Authored"),
+            ("motion", "false"),
+        ] {
+            assert_eq!(
+                universe
+                    .world
+                    .get_component_by_id_as::<TextComponent>(labelled(&universe, name))
+                    .unwrap()
+                    .text,
+                expected
+            );
+        }
+        assert_eq!(
+            universe.systems.graphics_settings.mirror_quality_override(),
+            Some(1024)
+        );
+        assert_eq!(universe.visuals.mirror_quality_override(), Some(1024));
+        assert!(
+            !universe
+                .systems
+                .graphics_settings
+                .secondary_motion_enabled()
+        );
+        // A failed replacement restores the previous settings rather than defaults.
+        assert!(
+            universe
+                .load_mms_source_at_path(
+                    "GraphicsSettings.mirrors.quality(false)",
+                    "examples/graphics-settings.mms"
+                )
+                .is_err()
+        );
+        assert_eq!(
+            universe.systems.graphics_settings.mirror_quality_override(),
+            Some(1024)
+        );
+        assert!(
+            !universe
+                .systems
+                .graphics_settings
+                .secondary_motion_enabled()
+        );
+        universe
+            .load_mms_source_at_path("Transform {}", "examples/graphics-settings.mms")
+            .unwrap();
+        assert_eq!(
+            universe.systems.graphics_settings.mirror_quality_override(),
+            None
+        );
+        assert_eq!(universe.visuals.mirror_quality_override(), None);
+        assert!(
+            universe
+                .systems
+                .graphics_settings
+                .secondary_motion_enabled()
+        );
+        universe
+            .systems
+            .graphics_settings
+            .set_mirror_quality(2048, &mut universe.command_queue);
+        universe
+            .systems
+            .graphics_settings
+            .set_secondary_motion_enabled(false, &mut universe.command_queue);
+        universe.close_mms_session();
+        assert_eq!(
+            universe.systems.graphics_settings.mirror_quality_override(),
+            None
+        );
+        assert!(
+            universe
+                .systems
+                .graphics_settings
+                .secondary_motion_enabled()
+        );
     }
 
     #[test]

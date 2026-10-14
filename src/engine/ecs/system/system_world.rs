@@ -509,6 +509,74 @@ mod tests {
             (second_tip_world_x - first_tip_world_x).abs() > 1e-5,
             "secondary motion must continue advancing while the owning transform is stationary"
         );
+        systems
+            .graphics_settings
+            .set_secondary_motion_enabled(false, &mut queue);
+        for _ in 0..2 {
+            systems.tick(
+                &mut world,
+                &mut visuals,
+                &mut render_assets,
+                &Default::default(),
+                &mut queue,
+                1.0 / 60.0,
+            );
+            assert!(
+                world
+                    .get_component_by_id_as::<TransformComponent>(tip)
+                    .unwrap()
+                    .transform
+                    .matrix_world[3][0]
+                    .abs()
+                    < 1e-6,
+                "global off must restore and propagate the normal pose, then skip integration"
+            );
+        }
+        assert!(
+            world
+                .get_component_by_id_as::<SpringBoneComponent>(spring)
+                .unwrap()
+                .enabled
+        );
+        systems
+            .graphics_settings
+            .set_secondary_motion_enabled(true, &mut queue);
+        systems.tick(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &Default::default(),
+            &mut queue,
+            1.0 / 60.0,
+        );
+        assert!(
+            world
+                .get_component_by_id_as::<TransformComponent>(tip)
+                .unwrap()
+                .transform
+                .matrix_world[3][0]
+                .abs()
+                < 1e-6,
+            "the first resumed frame resets from the normal live pose"
+        );
+        systems.tick(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &Default::default(),
+            &mut queue,
+            1.0 / 60.0,
+        );
+        assert!(
+            world
+                .get_component_by_id_as::<TransformComponent>(tip)
+                .unwrap()
+                .transform
+                .matrix_world[3][0]
+                .abs()
+                > 1e-5,
+            "subsequent frames must resume simulation"
+        );
     }
 
     #[test]
@@ -768,6 +836,119 @@ mod tests {
                 .as_deref(),
             Some(mirror_key.as_str())
         );
+    }
+
+    #[test]
+    fn mirror_quality_override_refreshes_requests_preserves_authored_values_and_frozen_keys() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        let mut assets = RenderAssets::new();
+        let mut queue = CommandQueue::new();
+        configure_test_window_camera(&mut visuals);
+        let camera = visuals
+            .visual_camera(crate::engine::graphics::CameraTarget::Window)
+            .unwrap()
+            .eyes[0]
+            .clone();
+        visuals.set_xr_camera(vec![camera.clone(), camera]);
+        let mut authored = Vec::new();
+        for quality in [256, 1440] {
+            let root = world.add_component(TransformComponent::new());
+            let surface = world.add_component(RenderableComponent::square());
+            let mirror = world.add_component(MirrorComponent::new(quality));
+            world.add_child(root, surface).unwrap();
+            world.add_child(surface, mirror).unwrap();
+            authored.push((mirror, quality));
+        }
+        systems
+            .mirror
+            .tick(&mut world, &mut visuals, &Default::default(), 0.0);
+        assert_eq!(visuals.mirrors().len(), 2);
+        let keys = |visuals: &VisualWorld| {
+            let mut keys: Vec<_> = visuals
+                .mirrors()
+                .iter()
+                .flat_map(|mirror| {
+                    mirror
+                        .captures
+                        .iter()
+                        .map(|capture| capture.target_key.clone())
+                })
+                .collect();
+            keys.sort();
+            keys
+        };
+        let original_keys = keys(&visuals);
+        assert_eq!(original_keys.len(), 6, "mono and both eyes for each mirror");
+        systems
+            .graphics_settings
+            .set_mirrors_enabled(false, &mut queue);
+        systems
+            .graphics_settings
+            .set_mirror_quality(2048, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+        assert!(!visuals.mirror_captures_enabled());
+        assert!(
+            visuals
+                .mirrors()
+                .iter()
+                .all(|mirror| mirror.resolution_scale == 2.0)
+        );
+        assert_eq!(keys(&visuals), original_keys);
+        let mut renderer = crate::engine::graphics::VulkanoRenderer::new();
+        renderer
+            .submit_xr_mirror_captures(&mut visuals, [100, 100])
+            .unwrap();
+        assert_eq!(renderer.perf_counters().mirror_captures, 0);
+        // Newly created mirrors inherit the same override without rewriting their component.
+        let root = world.add_component(TransformComponent::new());
+        let surface = world.add_component(RenderableComponent::square());
+        let added = world.add_component(MirrorComponent::new(128));
+        world.add_child(root, surface).unwrap();
+        world.add_child(surface, added).unwrap();
+        authored.push((added, 128));
+        systems
+            .mirror
+            .tick(&mut world, &mut visuals, &Default::default(), 0.0);
+        assert_eq!(visuals.mirrors().len(), 3);
+        assert!(
+            visuals
+                .mirrors()
+                .iter()
+                .all(|mirror| mirror.resolution_scale == 2.0)
+        );
+        systems
+            .graphics_settings
+            .set_mirrors_enabled(true, &mut queue);
+        systems.graphics_settings.set_mirror_quality(64, &mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+        assert!(
+            visuals
+                .mirrors()
+                .iter()
+                .all(|mirror| mirror.resolution_scale == 64.0 / 1024.0)
+        );
+        systems.graphics_settings.reset_mirror_quality(&mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+        for (id, quality) in authored {
+            assert_eq!(
+                world
+                    .get_component_by_id_as::<MirrorComponent>(id)
+                    .unwrap()
+                    .quality,
+                quality
+            );
+            assert_eq!(
+                visuals
+                    .mirrors()
+                    .iter()
+                    .find(|mirror| mirror.mirror_component == id)
+                    .unwrap()
+                    .resolution_scale,
+                quality as f32 / 1024.0
+            );
+        }
     }
 
     #[test]
@@ -3324,12 +3505,18 @@ impl SystemWorld {
         // secondary-motion writes must identify the roots that need propagation.
         self.transform.tick(world, visuals, input, dt_sec);
         let vr_stage_started = self.vr_perf_enabled.then(Instant::now);
-        self.secondary_motion_constraint
-            .tick(world, &self.secondary_motion, dt_sec);
-        let dirty_chain_transform_roots = self.secondary_motion.tick_with_constraints(
+        let secondary_motion_enabled = self.graphics_settings.secondary_motion_enabled();
+        if secondary_motion_enabled {
+            self.secondary_motion_constraint
+                .tick(world, &self.secondary_motion, dt_sec);
+        } else {
+            self.secondary_motion_constraint.reset_motion_history();
+        }
+        let dirty_chain_transform_roots = self.secondary_motion.tick_with_settings(
             world,
             dt_sec,
             self.secondary_motion_constraint.directives(),
+            secondary_motion_enabled,
         );
         if let Some(started) = vr_stage_started {
             self.vr_perf_pre_xr.secondary_motion = started.elapsed();
@@ -3342,12 +3529,16 @@ impl SystemWorld {
             self.vr_perf_pre_xr.spring_transform_propagation = started.elapsed();
         }
         let vr_stage_started = self.vr_perf_enabled.then(Instant::now);
-        self.spring_bone_visualization.tick_with_queue(
-            world,
-            &self.secondary_motion,
-            render_assets,
-            queue,
-        );
+        if secondary_motion_enabled {
+            self.spring_bone_visualization.tick_with_queue(
+                world,
+                &self.secondary_motion,
+                render_assets,
+                queue,
+            );
+        } else {
+            self.spring_bone_visualization.suspend(queue);
+        }
         if let Some(started) = vr_stage_started {
             self.vr_perf_pre_xr.spring_visualization = started.elapsed();
         }
@@ -3448,10 +3639,12 @@ impl SystemWorld {
         self.audio.drain_decode_completions_public(world);
         let resumed_mirrors =
             self.graphics_settings.mirrors_enabled() && !visuals.mirror_captures_enabled();
+        let mirror_quality_changed =
+            self.graphics_settings.mirror_quality_override() != visuals.mirror_quality_override();
         self.graphics_settings.publish(visuals);
-        if resumed_mirrors {
+        if resumed_mirrors || mirror_quality_changed {
             // A Toggle callback can resume after this frame's normal mirror
-            // tick. Rebuild reflected views before rendering the retained keys.
+            // tick. Refresh views/quality before rendering the retained keys.
             self.mirror
                 .tick(world, visuals, &InputState::default(), 0.0);
             for texture_component in self.mirror.take_pending_texture_registrations() {

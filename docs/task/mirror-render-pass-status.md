@@ -1,8 +1,8 @@
 # Mirror rendering: status and improvement task list
 
-Updated: 2026-10-13
-Status: existing capture path, graphics panel, and capture Toggle backend implemented;
-runtime quality, correctness, and optimization work below remain planned.
+Updated: 2026-10-14
+Status: existing capture path, graphics panel, capture Toggle, and runtime quality
+backend implemented; live resize verification, correctness, and optimization remain.
 
 ## Current implementation
 
@@ -35,8 +35,12 @@ runtime quality, correctness, and optimization work below remain planned.
   XR-only `examples/graphics-settings.mms`. `GraphicsSettingsSystem` now owns
   the capture-enabled flag, exposed by `GraphicsSettings.mirrors.toggle(bool)`
   and `.enabled()`. Off retains the last per-eye/family textures and skips the
-  capture pass; on rebuilds reflected views before capture. The Slider remains
-  UI-only, and headset freeze/resume verification is pending.
+  capture pass; on rebuilds reflected views before capture. The Slider now
+  applies a scene-wide quality override with readback/reset, preserving authored
+  component qualities and per-eye/family keys. The user confirmed the Toggle
+  and secondary motion work. The resolution Slider stays on `Authored` in XR:
+  [trigger acquisition is blocked by the grabbable panel wrapper](../bugs/graphics-settings-mirror-resolution-slider-unresponsive.md).
+  Correct that input path before live resizing and frozen-resize/resume checks.
 
 Relevant runtime code:
 
@@ -47,14 +51,15 @@ Relevant runtime code:
 
 ## Improvement order
 
-1. [ ] Connect the existing importable MMS graphics settings panel to the
+1. [ ] Verify the existing importable MMS graphics settings panel's runtime quality
+   controls in the headset. The panel is connected to the
    `GraphicsSettings.mirrors` built-in settings table and authoritative
    `GraphicsSettingsSystem`. The capture Toggle is implemented: off skips captures and
    publication while preserving the last reflection and per-eye/family texture
    bindings; on resumes fresh captures. The
    [first focused backend slice](runtime-mirror-resolution-info-panel.md#first-focused-backend-slice-mirror-capture-toggle)
-   defines the Toggle's end-to-end scope and completion checks. Then connect
-   `quality`. Track the
+   defines the Toggle's end-to-end scope and completion checks. `quality`,
+   `quality_override()`, and `reset_quality()` are implemented. Track the
    asset, backend, and readback contract in
    [graphics settings and runtime mirror controls](runtime-mirror-resolution-info-panel.md).
 2. [ ] Restore validated mirror-plane clipping for correctness.
@@ -66,7 +71,8 @@ Relevant runtime code:
    [adaptive mirror detail](../desktop/adaptive-mirrors.md) when justified by
    measurements. They are separate from manual settings and basic visibility.
 
-Start with the panel/API slice. The user recalls that the previous clipping
+Finish live quality verification before further mirror improvements. The user
+recalls that the previous clipping
 attempt did not work; its cause remains unverified, so merely re-enabling the
 existing flag is not treated as a fix. The clipping and visibility slices can
 be developed independently. Neither requires solving movable-object tracking,

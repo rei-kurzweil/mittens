@@ -1,28 +1,41 @@
 # Task: Importable MMS graphics settings panel and mirror settings table
 
 Date: 2026-10-12
-Updated: 2026-10-13
-Status: capture Toggle backend implemented; headset freeze/resume check pending.
-Runtime quality integration remains planned.
+Updated: 2026-10-14
+Status: mirror capture/resolution and secondary-motion controls implemented;
+secondary-motion Toggle confirmed in headset; XR resolution Slider blocked.
 Architecture confirmed 2026-10-13: MMS owns the importable panel factory;
-`GraphicsSettingsSystem` owns authoritative capture-enabled state and receives
-updates from the host-backed `GraphicsSettings.mirrors` built-in table.
-The system, `toggle(bool)`, and `enabled()` readback are implemented. The
-`quality(i32)` API is the next slice.
+`GraphicsSettingsSystem` owns authoritative capture-enabled state, optional
+mirror quality override, and secondary-motion enabled state. MMS updates these
+through the host-backed `GraphicsSettings.mirrors` and `.secondary_motion` tables.
 
-## Current UI-first slice
+## Current controls
+
+2026-10-14 headset findings: secondary motion works, but the resolution Slider
+stays on `Authored` and cannot be changed. The direct-SliderSet test did not
+cover XR acquisition under the example's Grabbable wrapper. Track the
+[input failure and default-label ambiguity](../bugs/graphics-settings-mirror-resolution-slider-unresponsive.md)
+before treating the end-to-end quality slice as complete. The standalone panel
+also needs a [Selectable-off boundary](../bugs/graphics-settings-panel-controls-selectable.md).
+The separate [avatar/laser color-tool bug](../bugs/xr-color-tool-targets-own-laser-and-avatar.md)
+tracks query-relative owner preference and paint exclusion semantics.
 
 - `assets/components/panels/graphics_settings_panel.mms` exports
   `graphics_settings_panel(options)` around `info_panel`. Its native Toggle
   freezes/resumes mirror capture work through the authoritative backend. The
-  stepped Slider remains a UI-only preview. Minimize/restore reads actual
-  enabled state and retains the preview Slider value.
+  stepped Slider applies the scene-wide quality override. A second Toggle
+  controls secondary motion. Creation, external settings changes, and
+  minimize/restore all read applied backend values; silent native control sync
+  does not emit another setter callback. With no quality override, the readout
+  says `Authored`; its initial thumb at 512 is a preference placeholder, not
+  a claim that every authored mirror uses that quality. For a non-preset host
+  value, the thumb uses the nearest preset while the readout shows the exact value.
 - `examples/graphics-settings.mms` imports the panel in an XR-only Rei(mu) scene,
   with microphone mouth animation, independent eye closure tracking, ambient
   eye direction animation, and the corp rig's shirt/bow secondary motion.
   A grabbable full-body mirror starts beside the standalone panel at quality 512.
-  There is no desktop camera. The user confirmed the scene and UI are working;
-  the user will now verify the capture Toggle's freeze/resume behavior.
+  There is no desktop camera. The user confirmed the scene, UI, and capture
+  Toggle and secondary motion work; resolution input and image checks remain.
 - `assets/components/stage_with_boxes.mms` supplies the original
   secondary-motion-desktop floor and collision/contact zones, eight colored
   boxes, and three tripod lights. Both scenes now import it. The new example
@@ -42,7 +55,7 @@ Run the preview with:
 cargo run --release -- load examples/graphics-settings.mms
 ```
 
-The first slice below records implemented behavior; runtime quality remains planned.
+The slices below record the implemented backend and remaining live checks.
 
 ## Next settings slices
 
@@ -50,18 +63,23 @@ The first slice below records implemented behavior; runtime quality remains plan
 emissive extraction controls. GraphicsSettingsSystem owns all applied global
 settings; the importable panel remains independent of the editor.
 
-1. Connect `GraphicsSettings.mirrors.quality(q)` and authoritative override
-   readback to the existing Slider. Preserve authored mirror qualities and
-   validate target/texture replacement, both eyes, and changes while frozen
-   using the quality investigation and acceptance checks below.
-2. Add a global secondary-motion toggle/readback through the same settings
-   owner and MMS host boundary. Gate simulation and its dependent work while
-   preserving authored chain-enabled flags, binding/removal bookkeeping, and
-   ordinary avatar animation/tracking/skinning. Define the off pose (freeze
-   versus restore the authored/animated pose) before implementation; reset
-   solver tails, accumulated time, and constraint motion history on resume
-   so moving while disabled cannot cause a stale-state jump. Verify the
-   Rei(mu) shirt/bow rig and chains added while disabled.
+1. Implemented: `GraphicsSettings.mirrors.quality(q)`, `quality_override()`,
+   and `reset_quality()` plus the Slider. Authored qualities are preserved;
+   existing and new mirrors consume the published override. Late callbacks
+   refresh capture requests before rendering, with target replacement handled
+   by the existing extent check. Test actual image resizing in both eyes,
+   repeated dragging, and changing quality while frozen.
+2. Implemented: `GraphicsSettings.secondary_motion.toggle(bool)` and
+   `enabled()` plus the panel Toggle. Off restores imported joint rotations
+   once, then leaves subsequent animation free to update them. Integration,
+   constraint evaluation, and visualization updates stop; generated debug
+   markers are removed while their requests remain. Authored chain flags,
+   binding/removal bookkeeping, and ordinary animation/tracking/skinning
+   continue. Resume resets tails/velocity from the live pose and accumulated
+   time; constraint motion history/rest weights are cleared during pause.
+   Changes affect the next post-pose stage. Automated checks cover newly bound
+   chains while off and authored disabled chains; verify the Rei(mu) shirt/bow
+   while moving and during repeated off/on changes in the headset.
 3. Review [material lighting, emission, and extraction](material-lighting-emission-and-extraction-policy.md)
    before implementing a global extraction toggle. In particular, intensity
    0 should leave emissive/unlit surfaces visible and unlit while omitting
@@ -71,8 +89,8 @@ settings; the importable panel remains independent of the editor.
 ## First focused backend slice: mirror capture toggle
 
 Connect the existing panel's Toggle end to end so it pauses and resumes mirror
-captures in `examples/graphics-settings.mms`. Keep the Slider as its current
-UI-only preview; runtime quality changes are the next slice.
+captures in `examples/graphics-settings.mms`. This original slice left the
+Slider as a UI-only preview; the quality slice above now connects it.
 
 Implementation checklist:
 
@@ -131,14 +149,14 @@ versus image quality when those controls have working runtime APIs.
   toggle/slider callbacks, and accordion restore logic in
   `assets/components/panels/graphics_settings_panel.mms`. Follow the import/export
   and factory pattern used by `info_panel.mms` and `mouth_response_panel.mms`.
-- Expose `GraphicsSettings` as a host-backed built-in MMS table. Initially its
-  only entry is `mirrors`, which points to a table of mirror settings methods.
+- Expose `GraphicsSettings` as a host-backed built-in MMS table with `mirrors`
+  and `secondary_motion` entries pointing to their settings methods.
   It is available to scenes, imported factories, and callbacks without a
   settings component or a separate import of the API.
 - Keep declarations and typed host dispatch in the existing RuntimeSpec/Mittens
   host boundary. RuntimeSpec now supports nested namespace tables through
   `NamespaceBuilder::namespace(...)`, with each name segment validated
-  separately. `GraphicsSettings` contains the `mirrors` table. No MMS
+  separately. No MMS
   type-annotation syntax or evaluator-specific graphics state is required.
 - `GraphicsSettingsSystem` owns authoritative runtime values and validation.
   The MMS host receives settings calls and forwards their updates to this
@@ -158,19 +176,20 @@ versus image quality when those controls have working runtime APIs.
 ## Backend state and update flow
 
 `GraphicsSettingsSystem` is the single authoritative owner of mirror capture
-enabled state and, once the quality slice lands, the optional scene-wide quality
-override. Defaults are
-captures enabled and no quality override, so authored `Mirror.quality(...)`
-values continue to apply. New mirrors use the current system state.
+enabled state, the optional scene-wide quality override, and secondary-motion
+enabled state. Defaults are captures and secondary motion enabled, with no
+quality override, so authored `Mirror.quality(...)` values continue to apply.
+New mirrors/chains use current settings. Scene replacement and session close
+reset these defaults; failed scene evaluation restores previous settings.
 
-The planned path is:
+The implemented path is:
 
 ```text
-MMS GraphicsSettings.mirrors call
+MMS GraphicsSettings.mirrors / secondary_motion call
   -> typed RuntimeSpec/Mittens host dispatch
   -> synchronous settings update during main-thread host dispatch
   -> GraphicsSettingsSystem validates and applies the value
-  -> mirror/render code consumes applied settings
+  -> mirror/render and post-pose simulation consume applied settings
 ```
 
 Host calls must update this system rather than change renderer resources or
@@ -181,10 +200,10 @@ changes where needed.
 Keep the existing frame/submission ordering; disabling captures does not cancel
 GPU work already submitted.
 
-Implement capture toggle and authoritative readback first, then connect the
-quality override and Slider. The panel is an ordinary scene asset throughout.
+Capture toggle, quality override/Slider, and secondary motion now follow this
+path. The panel is an ordinary scene asset throughout.
 
-## Planned MMS API
+## MMS API
 
 The initial table shape and mutation method names are:
 
@@ -192,16 +211,21 @@ The initial table shape and mutation method names are:
 GraphicsSettings.mirrors.toggle(false)
 GraphicsSettings.mirrors.quality(1024)
 GraphicsSettings.mirrors.toggle(true)
+GraphicsSettings.secondary_motion.toggle(false)
 ```
 
 | Method | Argument contract | Result |
 | --- | --- | --- |
 | `GraphicsSettings.mirrors.toggle(on_off)` | Implemented: `bool`; explicitly set capture enabled/disabled | void/unit |
 | `GraphicsSettings.mirrors.enabled()` | Implemented: no arguments; read authoritative applied capture state | bool |
-| `GraphicsSettings.mirrors.quality(q)` | Planned: `i32`; use the existing 64..=2048 clamp | void/unit |
+| `GraphicsSettings.mirrors.quality(q)` | Implemented: `i32`; use the existing 64..=2048 clamp | void/unit |
+| `GraphicsSettings.mirrors.quality_override()` | Implemented: no arguments; applied override or null for authored qualities | i32 or null |
+| `GraphicsSettings.mirrors.reset_quality()` | Implemented: no arguments; restore each mirror's authored quality | void/unit |
+| `GraphicsSettings.secondary_motion.toggle(on_off)` | Implemented: bool; set global simulation enabled state | void/unit |
+| `GraphicsSettings.secondary_motion.enabled()` | Implemented: no arguments; authoritative applied state | bool |
 
 These types describe host validation, not annotations to write in MMS source.
-Both controls affect all mirrors in the active scene, including mirrors created
+Mirror controls affect all mirrors in the active scene, including mirrors created
 later and both mono/stereo viewer families. Initially mirrors remain enabled
 and use their authored qualities until a runtime override is applied. Preserve
 authored `Mirror.quality(...)` values rather than rewriting each component.
@@ -223,13 +247,11 @@ change while off is retained in `GraphicsSettingsSystem` and applied when
 capture resumes, without allocating replacement capture targets or rendering
 in the meantime. Repeated off/on requests must preserve resource reuse.
 
-The panel needs to read authoritative enabled/quality state on creation,
-after changes, and on accordion restore. Add a minimal readback contract under
-`GraphicsSettings.mirrors`; enabled state uses `enabled()`, while quality
-readback's names and representation remain to be decided.
-Resolve no override, mixed authored values, reset-to-authored behavior, and
-scene-unload/reset lifetime before implementing that contract. Do not add
-top-level entries or a `GraphicsSettings.toggle_mirrors` alias in the first slice.
+The panel reads authoritative enabled/quality state on creation, after changes,
+and on accordion restore. `quality_override()` returns null until an override
+is applied; the `Authored` readout covers mixed qualities and scenes without
+mirrors. `reset_quality()` clears the override; it does not rewrite components.
+No top-level `GraphicsSettings.toggle_mirrors` alias is provided.
 The panel labels quality as **Mirror resolution preference**, since the value
 does not by itself specify the complete capture dimensions.
 
@@ -251,7 +273,7 @@ options should follow the existing panel conventions.
 
 - `src/engine/ecs/component/mirror.rs`: `Mirror.quality(N)` initializes the
   resolution preference, clamped to 64..=2048, default 512.
-- `src/engine/ecs/system/mirror_system.rs` reads live component quality and
+- `src/engine/ecs/system/mirror_system.rs` reads the published override or live component quality and
   publishes `resolution_scale = quality / 1024` to VisualWorld.
 - `src/engine/graphics/vulkano_renderer.rs` derives the actual capture width
   and height from that scale and mirror aspect ratio.
@@ -307,10 +329,8 @@ options should follow the existing panel conventions.
 
 ## Panel implementation
 
-- The panel asset already provides the on/off control, resolution slider, and
-  readouts. Replace its preview state initialization with authoritative
-  `GraphicsSettingsSystem` readback through the host API and connect its
-  callbacks to that same backend.
+- The panel asset provides on/off controls, resolution slider, and readouts
+  backed by authoritative `GraphicsSettingsSystem` host calls.
 - Import its exported factory in both corp examples where it can be reached
   with XR pointers and desktop input without blocking the mirror or walking route.
 - Wire the on/off control to `GraphicsSettings.mirrors.toggle(on_off)` and
@@ -357,6 +377,15 @@ options should follow the existing panel conventions.
   lifetime during repeated live changes.
 
 ## Related work
+
+Validation on 2026-10-13: 49 focused settings, mirror, secondary-motion,
+visualization, and avatar-stage tests pass; the release binary builds.
+Broader checks exposed two failures reproduced against isolated committed
+source: the Bisket example expects 17 chains while its prefab creates 15 after
+the bust chains were commented out, and `late_raycastable_init_refreshes_descendant_renderables`
+expects an uninitialized ancestor to suppress raycastability. These are
+separate from this settings slice. Live GPU resizing and headset pause/resume
+verification remain pending.
 
 - [Mirror rendering improvement list](mirror-render-pass-status.md) — clipping,
   off-screen captures, and optional candidate tracking are separate from this

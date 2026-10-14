@@ -6,6 +6,12 @@ and fallback queries. Choosing a non-zero value remains an authored policy: it
 is not inferred from avatar or controller topology. Per-raycaster local-avatar
 exclusion remains future work.
 
+2026-10-14 follow-up: [XR color-tool self hits](xr-color-tool-targets-own-laser-and-avatar.md)
+records the same ownership problem for finger pointers, plus a paint
+Selectable-off sidecar inconsistency. The current direction is per-pointer
+avatar deprioritization with optional exclusion, keeping deliberate self hits
+as fallback and preserving interaction from other avatars.
+
 ## Observed behavior
 
 With a desktop pointer driven through the active camera, switch the editor to

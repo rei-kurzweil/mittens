@@ -4,6 +4,11 @@ Date: 2026-07-28
 
 Status: code fixed / automated coverage passing / VR verification pending
 
+2026-10-14 follow-up: the [XR color tool can still color the beam and avatar](xr-color-tool-targets-own-laser-and-avatar.md).
+The selection marker implemented here does not disable ray intersection, and
+paint currently fails to honor Selectable-off sidecars consistently with the
+scene-selection resolver. Track that separately from this selection/origin fix.
+
 Primary reproduction: `examples/bisket-vr-demo.mms`
 
 Related:

@@ -449,6 +449,110 @@ impl mms::Host for MittensHost<'_, '_> {
                         )))
                     }
                     super::runtime_config::MittensBinding::Api(
+                        super::runtime_config::MittensApi::MirrorsQuality,
+                    ) => {
+                        let [mms::TransportValue::Number(quality)] = args.as_slice() else {
+                            return Err(mms::HostError::failure(
+                                "GraphicsSettings.mirrors.quality",
+                                "expects one i32",
+                            ));
+                        };
+                        if !quality.is_finite()
+                            || quality.fract() != 0.0
+                            || *quality < i32::MIN as f64
+                            || *quality > i32::MAX as f64
+                        {
+                            return Err(mms::HostError::failure(
+                                "GraphicsSettings.mirrors.quality",
+                                "expects one i32",
+                            ));
+                        }
+                        let settings = self.graphics_settings.as_deref_mut().ok_or_else(|| {
+                            mms::HostError::unavailable(
+                                "GraphicsSettings.mirrors.quality",
+                                "graphics settings service is unavailable",
+                            )
+                        })?;
+                        if self.deferred_callback_phase != Some(DeferredCallbackHostPhase::Audio) {
+                            settings.set_mirror_quality(*quality as i32, self.emit);
+                        }
+                        Ok(S::Unit)
+                    }
+                    super::runtime_config::MittensBinding::Api(
+                        api @ (super::runtime_config::MittensApi::MirrorsQualityOverride
+                        | super::runtime_config::MittensApi::MirrorsResetQuality),
+                    ) => {
+                        let reset = *api == super::runtime_config::MittensApi::MirrorsResetQuality;
+                        let operation = if reset {
+                            "GraphicsSettings.mirrors.reset_quality"
+                        } else {
+                            "GraphicsSettings.mirrors.quality_override"
+                        };
+                        if !args.is_empty() {
+                            return Err(mms::HostError::failure(operation, "expects no arguments"));
+                        }
+                        let settings = self.graphics_settings.as_deref_mut().ok_or_else(|| {
+                            mms::HostError::unavailable(
+                                operation,
+                                "graphics settings service is unavailable",
+                            )
+                        })?;
+                        if reset {
+                            if self.deferred_callback_phase
+                                != Some(DeferredCallbackHostPhase::Audio)
+                            {
+                                settings.reset_mirror_quality(self.emit);
+                            }
+                            Ok(S::Unit)
+                        } else {
+                            Ok(S::Transport(
+                                settings
+                                    .mirror_quality_override()
+                                    .map(|q| mms::TransportValue::Number(q as f64))
+                                    .unwrap_or(mms::TransportValue::Null),
+                            ))
+                        }
+                    }
+                    super::runtime_config::MittensBinding::Api(
+                        super::runtime_config::MittensApi::SecondaryMotionToggle,
+                    ) => {
+                        let [mms::TransportValue::Bool(enabled)] = args.as_slice() else {
+                            return Err(mms::HostError::failure(
+                                "GraphicsSettings.secondary_motion.toggle",
+                                "expects one boolean",
+                            ));
+                        };
+                        let settings = self.graphics_settings.as_deref_mut().ok_or_else(|| {
+                            mms::HostError::unavailable(
+                                "GraphicsSettings.secondary_motion.toggle",
+                                "graphics settings service is unavailable",
+                            )
+                        })?;
+                        if self.deferred_callback_phase != Some(DeferredCallbackHostPhase::Audio) {
+                            settings.set_secondary_motion_enabled(*enabled, self.emit);
+                        }
+                        Ok(S::Unit)
+                    }
+                    super::runtime_config::MittensBinding::Api(
+                        super::runtime_config::MittensApi::SecondaryMotionEnabled,
+                    ) => {
+                        if !args.is_empty() {
+                            return Err(mms::HostError::failure(
+                                "GraphicsSettings.secondary_motion.enabled",
+                                "expects no arguments",
+                            ));
+                        }
+                        let settings = self.graphics_settings.as_deref().ok_or_else(|| {
+                            mms::HostError::unavailable(
+                                "GraphicsSettings.secondary_motion.enabled",
+                                "graphics settings service is unavailable",
+                            )
+                        })?;
+                        Ok(S::Transport(mms::TransportValue::Bool(
+                            settings.secondary_motion_enabled(),
+                        )))
+                    }
+                    super::runtime_config::MittensBinding::Api(
                         super::runtime_config::MittensApi::EmitData,
                     ) => self.emit_data(args),
                     super::runtime_config::MittensBinding::Api(

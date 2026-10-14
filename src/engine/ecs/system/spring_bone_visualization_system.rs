@@ -50,6 +50,19 @@ impl SpringBoneVisualizationSystem {
         &self.requests
     }
 
+    /// Remove generated markers while retaining authored visualization requests.
+    pub fn suspend(&mut self, emit: &mut dyn SignalEmitter) {
+        for root in self
+            .colliders
+            .drain()
+            .map(|(_, root)| root)
+            .chain(self.segments.drain().map(|(_, root)| root))
+            .chain(self.endpoints.drain().map(|(_, root)| root))
+        {
+            emit.push_intent_now(root, IntentValue::RemoveSubtree { component_id: root });
+        }
+    }
+
     pub fn tick_with_queue(
         &mut self,
         world: &mut World,
@@ -306,6 +319,23 @@ mod tests {
                 .transform
                 .scale,
             [0.8; 3]
+        );
+        system.set_request(gltf, vec![gltf]);
+        system.suspend(&mut queue);
+        systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+        assert!(world.get_component_record(endpoint).is_none());
+        assert!(world.get_component_record(collider_marker).is_none());
+        assert!(
+            system.colliders.is_empty()
+                && system.segments.is_empty()
+                && system.endpoints.is_empty()
+        );
+        assert!(system.requests().contains_key(&gltf));
+        system.update_chain(&mut world, &mut assets, &mut queue, &snapshot(chain_a));
+        assert_eq!(
+            system.endpoints.len(),
+            1,
+            "resume recreates requested markers"
         );
     }
 }

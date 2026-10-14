@@ -197,7 +197,22 @@ Mittens exposes `GraphicsSettings.mirrors` as a nested host namespace table.
 `enabled()` returns the authoritative bool. Both use a live engine host lease
 to `GraphicsSettingsSystem` and work without an editor or a panel. Setter
 application is synchronous with dispatch; change notifications are queued
-`GraphicsSettingsChanged` data events. Runtime quality calls remain planned.
+`GraphicsSettingsChanged` data events.
+
+`GraphicsSettings.mirrors.quality(i32)` sets an optional scene-wide resolution
+preference, clamped to 64..=2048, without rewriting authored mirror qualities.
+`quality_override()` returns the applied integer or null when authored qualities
+apply; `reset_quality()` clears the override. Changes while captures are paused
+take effect on resume, with no capture allocation while off. Actual image
+dimensions also depend on mirror aspect ratio.
+
+`GraphicsSettings.secondary_motion.toggle(bool)` and `enabled()` use the same
+authoritative owner and notification path. Off restores imported joint rotations
+once and stops simulation/constraints/debug visualization; ordinary avatar
+animation, tracking, and skinning continue. Resume resets simulation from the
+live pose, preserving authored per-chain enabled flags. This takes effect at
+the next post-pose stage. Scene replacement/session close reset captures and
+secondary motion to enabled and clear the quality override.
 
 ### Universal component inspection
 

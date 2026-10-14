@@ -163,6 +163,7 @@ pub struct VisualWorld {
 
     mirrors: Vec<VisualMirror>,
     mirror_captures_enabled: bool,
+    mirror_quality_override: Option<i32>,
 
     // Frame timing stats captured from the main loop (window) and the XR render path.
     // These are best-effort diagnostics and are not used for simulation.
@@ -352,6 +353,7 @@ impl Default for VisualWorld {
             post_processing: PostProcessingConfig::default(),
             mirrors: Vec::new(),
             mirror_captures_enabled: true,
+            mirror_quality_override: None,
             window_frame_dt_sec: 0.0,
             xr_frame_dt_sec: None,
 
@@ -2628,6 +2630,14 @@ impl VisualWorld {
 
     pub fn mirror_captures_enabled(&self) -> bool {
         self.mirror_captures_enabled
+    }
+
+    pub fn set_mirror_quality_override(&mut self, quality: Option<i32>) {
+        self.mirror_quality_override = quality;
+    }
+
+    pub fn mirror_quality_override(&self) -> Option<i32> {
+        self.mirror_quality_override
     }
 
     pub fn mirror_texture_key_for_view(
