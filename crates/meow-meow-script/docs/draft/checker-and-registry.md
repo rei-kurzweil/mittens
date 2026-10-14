@@ -13,6 +13,18 @@ intersections, unions, fixed arrays, and function signatures are interned or
 otherwise compared canonically. Diagnostics retain definition, import, and
 use spans and show a value path for compound failures.
 
+The [runtime type-tag direction](type-system-epic.md#runtime-type-tag-direction-2026-10-14)
+uses this same identity model for first-class tag values. The proposed
+`typeof(value)` result compares against capitalized exports imported from the
+language-owned `"types"` module, e.g. `String`. Imported aliases preserve tag
+identity; equality must not compare names or expose numeric registry slots as
+the source API. V1 requires imports, with no ambient `String`/`Types` binding.
+Qualified module access is later work, without introducing packages. Define
+coarse-kind versus precise nominal tags, compatibility with canonical type
+names such as `str`, and registry/session lifetime before implementing them.
+This runtime inspection slice does not depend on static inference or annotation
+syntax. Keep `is_string(value)` supported in the meantime.
+
 Gradual mode infers what it can and permits dynamic/unknown values at
 unannotated sites. Annotated boundaries always validate. Strict mode rejects
 unresolved dynamic types at its configured gate. Static inference is a later

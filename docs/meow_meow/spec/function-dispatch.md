@@ -13,6 +13,15 @@ a string; components, numbers, tables, and other values return false. It makes
 dynamic string/component factory options possible without a host request or
 type-annotation parser changes.
 
+Future direction (2026-10-14): [first-class runtime type tags](../../../crates/meow-meow-script/docs/draft/type-system-epic.md#runtime-type-tag-direction-2026-10-14).
+The proposed `typeof(value)` returns a tag compared by identity. V1 requires
+explicit imports of capitalized constants, e.g.
+`import { String } from "types"` followed by `typeof(title) == String`;
+import aliases preserve that identity. No ambient `String` or `Types` binding
+is introduced. Qualified `Types.String` access belongs to a later module-
+namespace slice, without requiring packages. These are planned APIs;
+`is_string` stays supported now. Diagnostic names are separate from tag equality.
+
 ---
 
 ## Dispatch kinds

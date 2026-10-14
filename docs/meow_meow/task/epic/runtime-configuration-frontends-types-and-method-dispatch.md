@@ -323,6 +323,15 @@ twice.
       dynamic/heterogeneous values explicitly rather than guessing.
 - [ ] Give named components stable catalog type identities instead of using
       display strings as final dispatch identity.
+- [ ] Add first-class immutable runtime type-tag values and equality by tag/
+      registry identity. Follow the [canonical type-tag direction](../../../../crates/meow-meow-script/docs/draft/type-system-epic.md#runtime-type-tag-direction-2026-10-14):
+      proposed `typeof(value)` returns a tag; V1 references capitalized
+      constants through explicit imports such as
+      `import { String } from "types"`, with existing named aliases supported.
+      No ambient `String` or `Types` binding, package system, annotations,
+      pattern matching, or new namespace-import grammar is required for V1.
+      Qualified access such as `Types.String` is a later module-namespace
+      feature. Reuse the same registry and keep names for display/diagnostics.
 - [ ] Keep tables and any dynamic host values representable through `any`
       until more precise information is available.
 - [ ] Normalize table/object transport and other plain-data seams enough that
@@ -330,6 +339,13 @@ twice.
 
 This phase does not require structs, arbitrary unions, an LSP, or
 user-authored generic functions.
+
+The type-tag inspection slice may land independently of the full numeric/type
+foundation: expose only distinctions retained by current values. Keep the
+implemented `is_string(value)` predicate until general tags are available.
+Define primitive/coarse-kind versus precise nominal identity and component
+lifecycle inspection deliberately; do not mirror every Rust storage variant
+as a public type or infer element/numeric types from sample contents.
 
 Exit gate: the evaluator can answer “what runtime type is this value?” with
 enough precision to distinguish `[i64]`, `str`, `f32`, `f64`, and registered

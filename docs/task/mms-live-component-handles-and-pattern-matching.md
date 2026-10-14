@@ -63,9 +63,18 @@ component handles across scene attachment and callback capture.
    - authored scene attachment;
    - `ComponentObject` / live handles;
    - values captured by `on(...)` callbacks.
-3. Add a lightweight introspection facility, e.g. `type_of(value)`, returning
-   stable language-level names such as `"component_expr"` and
-   `"component"`. Do not expose Rust debug representations as the API.
+3. Follow the [runtime type-tag direction](../../crates/meow-meow-script/docs/draft/type-system-epic.md#runtime-type-tag-direction-2026-10-14)
+   confirmed 2026-10-14: proposed `typeof(value)` returns a first-class,
+   immutable type-tag value. Tags are referred to through explicit imports
+   from `"types"` in V1, with capitalized exports such as `String` and normal
+   import aliases. Compare tag identities, not strings or Rust debug output.
+   No automatic `String`/`Types` globals or package system are required;
+   qualified `Types.String` module access is a follow-up. Freeze the component
+   lifecycle/kind distinction and its tag or predicate spellings before
+   implementing it; both deferred and live values must remain diagnosable.
+   Concrete component type identity and deferred/live state are different
+   questions. Keep the planned `node.type()` name-for-reflection contract
+   separate from general tag inspection unless explicitly migrated.
 4. Evaluate pattern matching as a more ergonomic alternative or complement:
 
    ```mms
@@ -90,6 +99,9 @@ component handles across scene attachment and callback capture.
 
 - A fixture can distinguish a deferred transform expression from its live,
   attached counterpart with the chosen introspection or match feature.
+- Imported tag constants and aliases retain identity; `typeof(value)` returns
+  comparable tags without allocating type-name strings. Unimported tag names
+  produce actionable diagnostics rather than silently comparing identifiers.
 - A callback can mutate the intended live transform after an explicit,
   documented materialization step.
 - Calling a live method on a `ComponentExpr` produces a concise actionable
@@ -102,3 +114,7 @@ component handles across scene attachment and callback capture.
 This was discovered while implementing `examples/eye-tracking-example.mms`.
 The OpenXR/ALVR transport itself continued working; the issue is MMS value
 materialization and diagnostics, not eye tracking.
+
+`is_string(value)` is implemented and remains appropriate for the current
+string/component title factory. Type tags and pattern matching are planned;
+their API does not imply annotation or match syntax is supported today.
