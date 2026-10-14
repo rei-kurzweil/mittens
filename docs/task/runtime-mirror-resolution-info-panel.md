@@ -44,6 +44,30 @@ cargo run --release -- load examples/graphics-settings.mms
 
 The first slice below records implemented behavior; runtime quality remains planned.
 
+## Next settings slices
+
+2026-10-13 priority: mirror resolution, then secondary motion, before runtime
+emissive extraction controls. GraphicsSettingsSystem owns all applied global
+settings; the importable panel remains independent of the editor.
+
+1. Connect `GraphicsSettings.mirrors.quality(q)` and authoritative override
+   readback to the existing Slider. Preserve authored mirror qualities and
+   validate target/texture replacement, both eyes, and changes while frozen
+   using the quality investigation and acceptance checks below.
+2. Add a global secondary-motion toggle/readback through the same settings
+   owner and MMS host boundary. Gate simulation and its dependent work while
+   preserving authored chain-enabled flags, binding/removal bookkeeping, and
+   ordinary avatar animation/tracking/skinning. Define the off pose (freeze
+   versus restore the authored/animated pose) before implementation; reset
+   solver tails, accumulated time, and constraint motion history on resume
+   so moving while disabled cannot cause a stale-state jump. Verify the
+   Rei(mu) shirt/bow rig and chains added while disabled.
+3. Review [material lighting, emission, and extraction](material-lighting-emission-and-extraction-policy.md)
+   before implementing a global extraction toggle. In particular, intensity
+   0 should leave emissive/unlit surfaces visible and unlit while omitting
+   extraction. Effective runtime settings must suppress dependent work
+   without rewriting authored material or RenderGraph state.
+
 ## First focused backend slice: mirror capture toggle
 
 Connect the existing panel's Toggle end to end so it pauses and resumes mirror

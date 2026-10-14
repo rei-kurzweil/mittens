@@ -127,6 +127,12 @@ shading. Keep three independent declarations/decisions:
 
 A family/base can bundle sensible defaults, but all three meanings remain
 explicit. Positive intensity alone must not create a pass or select Toon shaders.
+The [lighting/emission/extraction policy review](material-lighting-emission-and-extraction-policy.md)
+adds the proposed built-in rule that intensity 0 suppresses extraction while
+emissive/unlit shading remains unlit and visible. Keep lighting selection
+independent, and distinguish supported extraction from effective source
+selection in the resolved contract. Whole-draw omission at zero requires a
+contract guaranteeing zero extracted output, not arbitrary input consumption.
 An emission-capable definition can have zero intensity on some instances;
 animated patterns must evaluate consistently in main color and extraction.
 Opacity likewise supplies data without alone defining alpha mode/depth policy.

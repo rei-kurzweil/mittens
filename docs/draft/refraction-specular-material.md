@@ -2,6 +2,12 @@
 
 Status: draft / design exploration
 
+2026-10-13: [Water surface optics and refracted lighting](../task/water-surface-and-refracted-lighting.md)
+is the current two-slice plan, aligned with Materials v3. It includes planar
+reflection and receiver caustics, which this earlier surface-only draft excludes.
+The snapshot, material-handle and authoring proposals below are historical;
+check that task's source audit before treating them as current implementation.
+
 ## Purpose
 
 Define `RefractionSpecularMaterial`: a reusable transparent material that refracts an opaque-scene

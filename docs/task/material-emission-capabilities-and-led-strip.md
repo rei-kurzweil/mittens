@@ -19,6 +19,11 @@ uses declared renderer capabilities instead of emissive Toon handle identity.
 
 ## Work and gates
 
+- [ ] Resolve [lighting/emission/extraction policy](material-lighting-emission-and-extraction-policy.md)
+  first: intensity 0 should omit a supported source from extraction while an
+  emissive/unlit surface retains base color and stays unlit. Define legacy
+  zero/off behavior, any positive-emission extraction opt-out, and global
+  GraphicsSettingsSystem ownership before adding runtime extraction controls.
 - [ ] Inventory emission handle conversion in RenderableSystem, classification
   in VisualWorld, pipeline selection in draw recording, extraction shaders,
   depth/coverage, background eligibility, and post-process activation/order.

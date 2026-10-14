@@ -225,6 +225,13 @@ strip animation requires explicitly separate instances/overrides.
 
 ## Emission as a renderer capability
 
+Policy review: [lighting, visible emission, and extraction](../material-lighting-emission-and-extraction-policy.md)
+specifies the proposed zero-intensity behavior: an emissive/unlit surface
+keeps its base color and skips lighting and extraction at 0. Lighting selection
+must remain independent of intensity and global extraction state. Decide
+whether positive visible emission also needs an authored extraction opt-out.
+This review feeds the emission slice; it does not block the opaque f32 proof.
+
 Separate visible emission, emission radiance/intensity, eligibility for emission
 extraction, and bloom enable/configuration. `emissive = true` is shorthand for
 a declared supported capability; it is not sufficient shader output by itself
@@ -305,3 +312,9 @@ all parameter/resource types, automatic closure bindings, broad hot reload, and
 wholesale conversion of every special material are follow-ups. Full transmission
 and mirror migrations retain their own tickets; this release foundation must
 keep those existing behaviors valid without requiring their redesign.
+
+Later capability consumer: [water surface optics and refracted lighting](../water-surface-and-refracted-lighting.md)
+uses these definition/instance/family contracts for combined reflection,
+refraction and specular shading, plus a separate light-transport/receiver path.
+Water is not an additional requirement of the initial opaque f32 milestone or
+the 0.10.0 completion gates.
