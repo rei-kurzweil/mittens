@@ -86,7 +86,8 @@ Required options:
 
 - `root_name`: caller-owned stable name, used for event handling and dragging;
 - `width_gu` and `unit_scale`: normal layout sizing controls;
-- `title`: title-bar text; and
+- `title`: a string for the standard styled title bar, or a component used as
+  the actual title-bar root (implemented 2026-10-14); and
 - `content`: one caller-authored body component.
 
 Optional options:
@@ -96,6 +97,21 @@ Optional options:
 
 The wrapper owns the default accordion appearance and title layout. It should
 not expose editor-specific labels, panel registration, docking, or persistence.
+
+Component titles replace the standard header; they are not nested under a Text
+or the standard title-label Transform. They own their layout, theme, authored
+name, icons, and movement markers. Use a Transform root when attaching
+`Grabbable.parent()` so it resolves the panel root; the accordion appends its
+retained minimize control after the custom header's authored children. String
+titles keep the existing layout and optional `icon` behavior. Runtime
+`is_string` chooses the path; `string | Component` here documents the contract
+and is not MMS annotation syntax.
+
+For a grip-grabbable custom header, subscribe to the named inner panel root
+for restore events: grabbing reparents that root away from its outer layout
+slot. The graphics panel already keeps its restore listener on that moving
+root. A header instance is attached, not cloned; construct a fresh component
+for another panel.
 
 ### Restore contract
 

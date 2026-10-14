@@ -11,6 +11,8 @@ import { accordion_down_arrow_icon } from "../../icons.mms"
 //   toggle_icon_color optional minimize-arrow RGBA
 //   toggle_icon_glow_intensity optional minimize-arrow emissive strength
 //   children         ordered retained title-bar component objects
+//   title_bar        optional component replacing the standard title bar;
+//                    owns its layout/markers, receives the minimize control last
 //   body             one component rooted at #accordion_body
 //
 // The returned object is the layout-owned outer slot. The default minimize
@@ -95,6 +97,27 @@ export fn accordion(options) {
     }
 
     let drag_target = "../../#" + root_name
+    let title_bar = options["title_bar"]
+    if title_bar != null {
+        title_bar.attach(toggle)
+    } else {
+        title_bar = T {
+            name = "title_bar"
+            Draggable.target(drag_target)
+            Raycastable.enabled()
+            Style {
+                display("flex")
+                flex_direction("row")
+                align_items("center")
+                width(100%)
+                height(ACCORDION_TITLE_HEIGHT_GU)
+                background_color(background_rgba)
+                background_z(-0.01)
+            }
+            toggle
+            for child in title_children { child }
+        }
+    }
     let panel_root = T {
         name = root_name
         Option {}
@@ -104,23 +127,7 @@ export fn accordion(options) {
             available_width(width_gu)
             unit_scale(accordion_unit_scale)
 
-            T {
-                name = "title_bar"
-                Draggable.target(drag_target)
-                Raycastable.enabled()
-                Style {
-                    display("flex")
-                    flex_direction("row")
-                    align_items("center")
-                    width(100%)
-                    height(ACCORDION_TITLE_HEIGHT_GU)
-                    background_color(background_rgba)
-                    background_z(-0.01)
-                }
-                toggle
-                for child in title_children { child }
-            }
-
+            title_bar
             body_mount
         }
     }

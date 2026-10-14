@@ -2,6 +2,17 @@
 
 How a function call `foo(args)` is resolved and executed — and what a transpiler must do at each dispatch kind.
 
+Current parser note (2026-10-14): MMS function parameters are unannotated names.
+Parameter/return annotations and unions such as `string | Component` are not
+accepted syntax, even as ignored metadata. RuntimeSpec host signatures still
+validate their declared arguments independently of source annotations.
+
+`is_string(value)` is a pure evaluator builtin, registered by
+`with_standard_builtins()`. It requires one argument and returns true only for
+a string; components, numbers, tables, and other values return false. It makes
+dynamic string/component factory options possible without a host request or
+type-annotation parser changes.
+
 ---
 
 ## Dispatch kinds

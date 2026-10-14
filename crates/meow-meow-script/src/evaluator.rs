@@ -724,6 +724,14 @@ impl<'a, H: Host> Evaluator<'a, H> {
         if let Expression::Identifier(name) = callee {
             match name.0.as_str() {
                 "range" => return range(&args),
+                "is_string" => {
+                    let [value] = args.as_slice() else {
+                        return Err(EvalError::Runtime(
+                            "is_string expects exactly one argument".into(),
+                        ));
+                    };
+                    return Ok(Value::Bool(matches!(value, Value::String(_))));
+                }
                 "len" => {
                     return Ok(Value::Number(match args.first() {
                         Some(Value::Array(v)) => v.len(),

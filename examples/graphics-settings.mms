@@ -1,5 +1,4 @@
-// XR graphics settings example. The Toggle freezes/resumes mirror captures;
-// the resolution Slider remains a UI-only preview.
+// XR graphics settings example: mirror capture/resolution and secondary motion.
 // Run: cargo run --release -- load examples/graphics-settings.mms
 import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
 import { stage_with_boxes } from "../assets/components/stage_with_boxes.mms"
@@ -42,8 +41,28 @@ T.position(2.5, 1.3, -1.0).scale(1.8, 2.6, 0.08) {
 // The factory owns its layout, drag handle, and accordion restore. This scene
 // places the panel in front of the player's starting position.
 T.position(-1.28, 2.3, -1.0) {
-    Grabbable{}
-    graphics_settings_panel({ root_name = "graphics_settings" })
+    graphics_settings_panel({
+        root_name = "graphics_settings"
+        title = T {
+            name = "graphics_settings_title_bar"
+            Grabbable.parent()
+            Draggable.target("../../#graphics_settings")
+            Raycastable.enabled()
+            Style {
+                display("flex") flex_direction("row") align_items("center")
+                width(100%) height(3.5)
+                background_color([0.16, 0.14, 0.09, 0.98]) background_z(-0.01)
+                color([0.96, 0.93, 0.82, 1.0])
+            }
+            T {
+                Style {
+                    display("flex") width(0.0) flex_grow(1.0) height(3.5)
+                    align_items("center") padding_xy(0.9, 0.3)
+                }
+                T.position(0.0, 0.0, 0.02) { Text { "Graphics settings" } }
+            }
+        }
+    })
 }
 
 // Keep the editor workspace limited to these three panels. The graphics

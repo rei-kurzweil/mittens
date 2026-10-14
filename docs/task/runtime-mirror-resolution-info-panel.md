@@ -4,6 +4,9 @@ Date: 2026-10-12
 Updated: 2026-10-14
 Status: mirror capture/resolution and secondary-motion controls implemented;
 secondary-motion Toggle confirmed in headset; XR resolution Slider blocked.
+2026-10-14 follow-up: custom component title bars, section headings, and a
+selection barrier are implemented. The example now grabs only its title;
+live XR Slider/resize and title-grip verification remain pending.
 Architecture confirmed 2026-10-13: MMS owns the importable panel factory;
 `GraphicsSettingsSystem` owns authoritative capture-enabled state, optional
 mirror quality override, and secondary-motion enabled state. MMS updates these
@@ -19,6 +22,17 @@ before treating the end-to-end quality slice as complete. The standalone panel
 also needs a [Selectable-off boundary](../bugs/graphics-settings-panel-controls-selectable.md).
 The separate [avatar/laser color-tool bug](../bugs/xr-color-tool-targets-own-laser-and-avatar.md)
 tracks query-relative owner preference and paint exclusion semantics.
+
+The panel now accepts `title` as a string or a complete header component.
+String titles keep the default styled header. The graphics example supplies a
+Transform header with `Grabbable.parent()` and `Draggable.target(...)`; the
+accordion appends its minimize control without wrapping that header in a
+title-label Transform. The factory keeps its Selectable-off marker and restore
+listener on the moving inner panel root, including during grip reparenting.
+
+Body order is `Mirrors`, `Toggle mirrors` (On/Off), `Mirror resolution`,
+`Secondary motion`, `Toggle secondary motion` (On/Off). The section headings
+are separate from the control rows.
 
 - `assets/components/panels/graphics_settings_panel.mms` exports
   `graphics_settings_panel(options)` around `info_panel`. Its native Toggle

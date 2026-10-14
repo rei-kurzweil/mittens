@@ -504,6 +504,10 @@ impl<I> RuntimeSpecBuilder<I> {
         ] {
             self.pure_builtin(name, ValueSignature::any());
         }
+        self.pure_builtin(
+            "is_string",
+            ValueSignature::new(vec![ValueType::Any], ValueType::Bool),
+        );
         self
     }
     pub fn pure_builtin(
@@ -1645,6 +1649,42 @@ mod tests {
         CeChild, EventStreamHost, HostError, HostErrorKind, HostEvent, HostRequest, HostResponse,
         TransportValue,
     };
+
+    #[test]
+    fn is_string_distinguishes_dynamic_values_without_host_dispatch() {
+        let runtime = Runtime::standard();
+        let mut session = runtime.session(crate::StandardHost::new());
+        for (source, expected) in [
+            (r#"is_string("title")"#, true),
+            (r#"is_string("")"#, true),
+            ("is_string(null)", false),
+            ("is_string(false)", false),
+            ("is_string(512)", false),
+            ("is_string([])", false),
+            ("is_string({ title = \"text\" })", false),
+            ("is_string(T {})", false),
+        ] {
+            assert_eq!(
+                session.eval(source).unwrap().value,
+                Some(Value::Bool(expected)),
+                "{source}"
+            );
+        }
+        session.eval("let title = T {}").unwrap();
+        assert_eq!(
+            session.eval("is_string(title)").unwrap().value,
+            Some(Value::Bool(false))
+        );
+        for invalid in ["is_string()", "is_string(\"a\", \"b\")"] {
+            assert!(
+                session
+                    .eval(invalid)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("exactly one argument")
+            );
+        }
+    }
 
     #[test]
     fn nested_namespace_calls_and_aliases_use_typed_host_bindings() {

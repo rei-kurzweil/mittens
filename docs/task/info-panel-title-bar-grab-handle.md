@@ -3,6 +3,15 @@
 Status: planned; whole-panel `Grabbable` experiment reverted after reproducing
 the interaction conflict on 2026-09-11.
 
+2026-10-14 implementation update: `info_panel.title` now accepts a string or a
+component used as the actual title-bar root. `examples/graphics-settings.mms`
+uses the component path with title-only `Grabbable.parent()` and an explicit
+Draggable target. Tests verify the grab target is the panel root, Slider
+geometry has no Grabbable ancestor, and custom header identity survives
+minimize/restore. Its restore listener/selection guard travel with the moving
+root during grip reparenting. String-title consumers keep their existing
+non-Grabbable default header; the live gesture matrix below remains pending.
+
 ## Problem
 
 An `info_panel` must be movable in desktop and XR without preventing interaction

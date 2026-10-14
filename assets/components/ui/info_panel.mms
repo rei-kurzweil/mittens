@@ -2,6 +2,9 @@
 //
 // Required options:
 //   root_name, width_gu, unit_scale, title, content
+//   title: string for the standard header, or a component used as the actual
+//   title-bar root. Custom bars own their Style/layout; the minimize control
+//   is appended after their authored children. Put movement markers on that root.
 // Optional options:
 //   icon, background_color (or title_background_color), toggle_background_color,
 //   toggle_icon_color, toggle_icon_glow_intensity, body_background_color,
@@ -74,7 +77,7 @@ export fn info_panel_body(options) {
     })
 }
 
-fn panel_with_title_children(options, title_children, title_bar_background, toggle_background, toggle_icon_color, toggle_icon_glow, body_background, body_text_color) {
+fn panel_with_title_children(options, title_children, custom_title_bar, title_bar_background, toggle_background, toggle_icon_color, toggle_icon_glow, body_background, body_text_color) {
     let body = info_panel_body({
         content = options.content
         body_background_color = body_background
@@ -89,6 +92,7 @@ fn panel_with_title_children(options, title_children, title_bar_background, togg
         toggle_icon_color = toggle_icon_color
         toggle_icon_glow_intensity = toggle_icon_glow
         children = title_children
+        title_bar = custom_title_bar
         body = body
     })
 }
@@ -127,12 +131,27 @@ export fn info_panel(options) {
     let authored_body_text_color = options["body_text_color"]
     if authored_body_text_color { body_text_color = authored_body_text_color }
 
+    if !is_string(options.title) {
+        return panel_with_title_children(
+            options,
+            [],
+            options.title,
+            title_bar_background,
+            toggle_background,
+            toggle_icon_color,
+            toggle_icon_glow,
+            body_background,
+            body_text_color,
+        )
+    }
+
     let title = info_panel_title(options.title, title_text_color)
     let icon = options["icon"]
     if icon {
         return panel_with_title_children(
             options,
             [info_panel_icon(icon), title],
+            null,
             title_bar_background,
             toggle_background,
             toggle_icon_color,
@@ -144,6 +163,7 @@ export fn info_panel(options) {
     return panel_with_title_children(
         options,
         [title],
+        null,
         title_bar_background,
         toggle_background,
         toggle_icon_color,

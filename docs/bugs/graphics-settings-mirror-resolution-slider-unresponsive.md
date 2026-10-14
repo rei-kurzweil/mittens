@@ -3,6 +3,10 @@
 Date: 2026-10-14
 Status: open; headset failure reported, source-based cause identified;
 real ray/gesture reproduction still required. No implementation in this review.
+2026-10-14 follow-up: the whole-panel grab marker was removed. The example now
+supplies a custom component title with title-only `Grabbable.parent()`;
+automated ownership checks confirm the Slider is outside that grab scope.
+Headset input/image checks and the initial Authored-label ambiguity remain open.
 Example: `examples/graphics-settings.mms`.
 Task: [runtime graphics controls](../task/runtime-mirror-resolution-info-panel.md).
 
@@ -25,7 +29,7 @@ it does not explain failure to drag to another step.
 
 ## Source-based gesture conflict
 
-- The example wraps the entire importable panel in `T { Grabbable {} ... }`.
+- The reported version wrapped the entire panel in `T { Grabbable {} ... }`.
 - [GestureSystem](../../src/engine/ecs/system/gesture_system.rs) rejects an
   XR trigger drag candidate when it resolves a Grabbable owner and no
   Draggable owner. Grip grabbing is a separate path.

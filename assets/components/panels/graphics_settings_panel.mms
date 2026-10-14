@@ -66,6 +66,18 @@ fn setting_label(text) {
     }
 }
 
+fn section_heading(text, heading_name) {
+    return T {
+        name = heading_name
+        Style {
+            display("flex") width(100%) height(2.4)
+            align_items("center") padding_xy(0.35, 0.0)
+            font_size(0.75) color(GOLD)
+        }
+        T.position(0.0, 0.0, 0.03) { Text { text } }
+    }
+}
+
 fn setting_row(label, control, readout) {
     return T {
         Style {
@@ -94,7 +106,7 @@ fn setting_row(label, control, readout) {
 fn settings_content(state) {
     read_settings(state)
     let mirror_toggle = setting_toggle(state.enabled, "graphics_mirrors_toggle")
-    let mirror_control = toggle_control(mirror_toggle, "Mirrors", "graphics_mirrors_toggle_control")
+    let mirror_control = toggle_control(mirror_toggle, "Toggle", "graphics_mirrors_toggle_control")
     let toggle_readout = Text {
         name = "graphics_mirrors_enabled_readout"
         enabled_text(state.enabled)
@@ -118,7 +130,7 @@ fn settings_content(state) {
         quality_text(state)
     }
     let motion_toggle = setting_toggle(state.motion_enabled, "graphics_secondary_motion_toggle")
-    let motion_control = toggle_control(motion_toggle, "Motion", "graphics_secondary_motion_toggle_control")
+    let motion_control = toggle_control(motion_toggle, "Toggle", "graphics_secondary_motion_toggle_control")
     let motion_readout = Text {
         name = "graphics_secondary_motion_readout"
         enabled_text(state.motion_enabled)
@@ -143,16 +155,19 @@ fn settings_content(state) {
     return T {
         name = "graphics_settings_content"
         Style { display("flex") flex_direction("column") width(100%) row_gap(0.35) }
-        setting_row("Mirrors", mirror_control, toggle_readout)
-        setting_row("Resolution preference", quality_slider, quality_readout)
-        setting_row("Secondary motion", motion_control, motion_readout)
+        section_heading("Mirrors", "graphics_mirrors_heading")
+        setting_row("Toggle mirrors", mirror_control, toggle_readout)
+        setting_row("Mirror resolution", quality_slider, quality_readout)
+        section_heading("Secondary motion", "graphics_secondary_motion_heading")
+        setting_row("Toggle secondary motion", motion_control, motion_readout)
     }
 }
 
-// Required: root_name. Optional: title. The caller owns world placement.
+// Required: root_name. Optional: title (string or complete title-bar component).
+// The caller owns world placement; custom title bars own layout/movement markers.
 export fn graphics_settings_panel(options) {
     let title = "Graphics settings"
-    if options["title"] { title = options.title }
+    if options["title"] != null { title = options.title }
     let state = { enabled = true motion_enabled = true quality = null quality_index = 3 }
     let panel = info_panel({
         root_name = options.root_name
@@ -168,8 +183,13 @@ export fn graphics_settings_panel(options) {
         body_text_color = TEXT_COLOR
         content = settings_content(state)
     })
+    // Grip grabbing reparents the inner panel root away from its layout slot.
+    // Keep selection exclusion and restore delivery on that moving root.
+    let panel_root = panel.query("#" + options.root_name)
+    let selection_guard = Selectable.off()
+    panel_root.attach(selection_guard)
     let body_mount = panel.query("#accordion_body_mount")
-    on(panel, "DataEvent", fn(event) {
+    on(panel_root, "DataEvent", fn(event) {
         if event == "AccordionRestoreRequested" {
             body_mount.attach(info_panel_body({
                 content = settings_content(state)

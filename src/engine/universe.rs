@@ -624,6 +624,194 @@ mod tests {
     }
 
     #[test]
+    fn info_panel_string_and_component_titles_preserve_header_ownership_and_restore() {
+        use crate::engine::ecs::component::{RenderableComponent, TextComponent};
+        fn below(world: &ecs::World, root: ComponentId, child: ComponentId) -> bool {
+            let mut current = world.parent_of(child);
+            while let Some(id) = current {
+                if id == root {
+                    return true;
+                }
+                current = world.parent_of(id);
+            }
+            false
+        }
+        let mut universe = Universe::new(ecs::World::default());
+        universe.load_mms_source_at_path(r#"
+            import { info_panel } from "../assets/components/ui/info_panel.mms"
+            import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
+            info_panel({
+                root_name = "string_panel" width_gu = 32.0 unit_scale = 0.08
+                title = "Plain title" content = T { Text { "Body" } }
+            })
+            let header = T {
+                name = "custom_header"
+                Grabbable.parent()
+                Raycastable.enabled()
+                Style { display("flex") flex_direction("row") width(100%) height(3.5) }
+                T { Text { name = "custom_caption" "Custom title" } }
+                R.square() { name = "custom_header_surface" }
+            }
+            graphics_settings_panel({ root_name = "custom_panel" title = header })
+        "#, "examples/graphics-settings.mms").unwrap();
+        let string_panel = labelled(&universe, "string_panel");
+        let text_wrapper = universe
+            .world
+            .find_component(string_panel, "#info_panel_title")
+            .unwrap();
+        assert!(universe.world.all_components().any(|id| {
+            below(&universe.world, text_wrapper, id)
+                && universe
+                    .world
+                    .get_component_by_id_as::<TextComponent>(id)
+                    .is_some_and(|text| text.text == "Plain title")
+        }));
+        let panel = labelled(&universe, "custom_panel");
+        let header = labelled(&universe, "custom_header");
+        let caption = labelled(&universe, "custom_caption");
+        assert!(
+            universe
+                .world
+                .find_component(panel, "#info_panel_title")
+                .is_none(),
+            "a custom bar must not be nested in the default title label"
+        );
+        assert!(below(&universe.world, panel, header));
+        assert!(below(&universe.world, header, caption));
+        let header_hit = labelled(&universe, "custom_header_surface");
+        assert!(
+            crate::engine::ecs::system::editor_scene_hit::resolve_world_scene_hit(
+                &universe.world,
+                header_hit
+            )
+            .is_none(),
+            "panel controls must not become editor selection targets"
+        );
+        assert_eq!(
+            crate::engine::ecs::system::grabbable_system::grabbable_owner_for_hit(
+                &universe.world,
+                header_hit
+            ),
+            Some(panel),
+            "the custom header's parent grab targets the whole panel"
+        );
+        let slider = labelled(&universe, "graphics_mirrors_quality_slider");
+        let slider_hit = universe
+            .world
+            .all_components()
+            .find(|id| {
+                below(&universe.world, slider, *id)
+                    && universe
+                        .world
+                        .get_component_by_id_as::<RenderableComponent>(*id)
+                        .is_some()
+            })
+            .unwrap();
+        assert_eq!(
+            crate::engine::ecs::system::grabbable_system::grabbable_owner_for_hit(
+                &universe.world,
+                slider_hit
+            ),
+            None,
+            "header-only grab must not cover slider geometry"
+        );
+        let toggle = universe
+            .world
+            .find_component(header, "#accordion_toggle")
+            .unwrap();
+        // A grip grab reparents this root away from the factory's layout slot.
+        // Restore listeners and selection exclusion must travel with it.
+        let original_parent = universe.world.parent_of(panel);
+        let held_parent = universe
+            .world
+            .add_component(crate::engine::ecs::component::TransformComponent::new());
+        universe.world.set_parent(panel, Some(held_parent)).unwrap();
+        assert!(
+            crate::engine::ecs::system::editor_scene_hit::resolve_world_scene_hit(
+                &universe.world,
+                header_hit
+            )
+            .is_none()
+        );
+        for _ in 0..2 {
+            click(&mut universe, toggle);
+            assert!(
+                universe
+                    .world
+                    .find_component(panel, "#accordion_body")
+                    .is_none()
+            );
+            click(&mut universe, toggle);
+            assert!(
+                universe
+                    .world
+                    .find_component(panel, "#accordion_body")
+                    .is_some()
+            );
+            assert_eq!(labelled(&universe, "custom_header"), header);
+            assert_eq!(labelled(&universe, "custom_caption"), caption);
+        }
+        universe.world.set_parent(panel, original_parent).unwrap();
+        let content = labelled(&universe, "graphics_settings_content");
+        let rows: Vec<_> = universe
+            .world
+            .children_of(content)
+            .iter()
+            .copied()
+            .filter(|id| {
+                universe
+                    .world
+                    .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(
+                        *id,
+                    )
+                    .is_some()
+            })
+            .collect();
+        assert_eq!(rows.len(), 5);
+        assert_eq!(
+            universe.world.component_label(rows[0]),
+            Some("graphics_mirrors_heading")
+        );
+        assert_eq!(
+            universe.world.component_label(rows[3]),
+            Some("graphics_secondary_motion_heading")
+        );
+        for (row, label) in [
+            (rows[1], "Toggle mirrors"),
+            (rows[2], "Mirror resolution"),
+            (rows[4], "Toggle secondary motion"),
+        ] {
+            assert!(
+                universe
+                    .world
+                    .all_components()
+                    .any(|id| below(&universe.world, row, id)
+                        && universe
+                            .world
+                            .get_component_by_id_as::<TextComponent>(id)
+                            .is_some_and(|text| text.text == label)),
+                "missing row label {label}"
+            );
+        }
+        for id in universe.world.all_components().filter(|id| {
+            below(&universe.world, panel, *id)
+                && universe
+                    .world
+                    .get_component_by_id_as::<RenderableComponent>(*id)
+                    .is_some()
+        }) {
+            assert!(
+                crate::engine::ecs::system::editor_scene_hit::resolve_world_scene_hit(
+                    &universe.world,
+                    id
+                )
+                .is_none(),
+                "restored graphics panel renderables must not be selectable"
+            );
+        }
+    }
+
+    #[test]
     fn graphics_settings_toggle_updates_backend_and_restores_authoritative_values() {
         use crate::engine::ecs::component::{SliderComponent, TextComponent, ToggleComponent};
         let mut universe = Universe::new(ecs::World::default());
