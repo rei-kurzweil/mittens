@@ -51,6 +51,8 @@ pub enum MittensApi {
     MirrorsResetQuality,
     SecondaryMotionToggle,
     SecondaryMotionEnabled,
+    XrFloorCorrectionSet,
+    XrFloorCorrectionGet,
     FileReadText,
     JsonParse,
     JsonStringify,
@@ -1589,6 +1591,21 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         ),
         MittensBinding::Api(MittensApi::EmitData),
     );
+
+    builder.namespace("XrSettings", |namespace| {
+        namespace.namespace("floor", |floor| {
+            floor.api(
+                "set_correction_meters",
+                mms::ValueSignature::new(vec![mms::ValueType::F64], mms::ValueType::Null),
+                MittensBinding::Api(MittensApi::XrFloorCorrectionSet),
+            );
+            floor.api(
+                "correction_meters",
+                mms::ValueSignature::new(vec![], mms::ValueType::F64),
+                MittensBinding::Api(MittensApi::XrFloorCorrectionGet),
+            );
+        });
+    });
 
     builder.namespace("GraphicsSettings", |namespace| {
         namespace.namespace("mirrors", |mirrors| {

@@ -100,6 +100,7 @@ impl Universe {
             intents,
         )
         .with_graphics_settings(&mut self.systems.graphics_settings)
+        .with_xr_settings(&mut self.systems.xr_settings)
     }
 
     /// Load and retain one MMS source file through the engine-owned scripting
@@ -110,7 +111,9 @@ impl Universe {
         path: &str,
     ) -> Result<crate::scripting::runner::EvalOutput, String> {
         let previous_settings = self.systems.graphics_settings.clone();
+        let previous_xr_settings = self.systems.xr_settings.clone();
         self.systems.graphics_settings.reset();
+        self.systems.xr_settings.reset();
         let mut intents = Vec::new();
         let session = {
             let host = self.mittens_host(&mut intents);
@@ -120,6 +123,7 @@ impl Universe {
                 Ok(session) => session,
                 Err(error) => {
                     self.systems.graphics_settings = previous_settings;
+                    self.systems.xr_settings = previous_xr_settings;
                     return Err(error);
                 }
             }
@@ -148,6 +152,7 @@ impl Universe {
             session.close();
         }
         self.systems.graphics_settings.reset();
+        self.systems.xr_settings.reset();
         self.drain_pending_signals();
     }
 
@@ -1008,6 +1013,252 @@ mod tests {
                 .unwrap()
                 .value()
         );
+    }
+
+    #[test]
+    fn xr_settings_host_validates_readback_and_resets_with_session() {
+        let mut universe = Universe::new(ecs::World::default());
+        universe
+            .load_mms_source_at_path(
+                r#"
+            XrSettings.floor.set_correction_meters(0.15)
+            Text { name = "xr_readback" "" + XrSettings.floor.correction_meters() }
+        "#,
+                "examples/xr-settings.mms",
+            )
+            .unwrap();
+        assert!((universe.systems.xr_settings.floor_correction_meters() - 0.15).abs() < 1e-6);
+        for source in [
+            "XrSettings.floor.set_correction_meters(true)",
+            "XrSettings.floor.set_correction_meters()",
+            "XrSettings.floor.set_correction_meters(0.1, 0.2)",
+            "XrSettings.floor.set_correction_meters(0.51)",
+            "XrSettings.floor.set_correction_meters(-0.51)",
+            "XrSettings.floor.correction_meters(0.1)",
+        ] {
+            assert!(
+                universe
+                    .load_mms_source_at_path(source, "examples/xr-settings.mms")
+                    .is_err(),
+                "{source}"
+            );
+            assert!((universe.systems.xr_settings.floor_correction_meters() - 0.15).abs() < 1e-6);
+        }
+        let text = universe
+            .world
+            .get_component_by_id_as::<ecs::component::TextComponent>(labelled(
+                &universe,
+                "xr_readback",
+            ))
+            .unwrap();
+        assert!((text.text.parse::<f32>().unwrap() - 0.15).abs() < 1e-6);
+        universe
+            .load_mms_source_at_path("Transform {}", "examples/xr-settings.mms")
+            .unwrap();
+        assert_eq!(universe.systems.xr_settings.floor_correction_meters(), 0.0);
+        universe
+            .systems
+            .xr_settings
+            .set_floor_correction_meters(-0.5, &mut universe.command_queue)
+            .unwrap();
+        universe.close_mms_session();
+        assert_eq!(universe.systems.xr_settings.floor_correction_meters(), 0.0);
+    }
+
+    #[test]
+    fn xr_settings_panel_slider_reset_external_updates_and_restore() {
+        use ecs::component::{SliderComponent, TextComponent};
+        let mut universe = Universe::new(ecs::World::default());
+        universe
+            .load_mms_source_at_path(
+                r##"
+            import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
+            T { name = "settings_mount" }
+            let mount = query("#settings_mount")
+            mount.attach(xr_settings_panel({ root_name = "test_xr_settings" }))
+        "##,
+                "examples/xr-settings.mms",
+            )
+            .unwrap();
+        let slider = labelled(&universe, "xr_floor_correction_slider");
+        universe.command_queue.push_intent_now(
+            slider,
+            ecs::IntentValue::SliderSet {
+                component_id: slider,
+                value: 0.15,
+                emit_changed: true,
+            },
+        );
+        pump_settings_callbacks(&mut universe);
+        assert!((universe.systems.xr_settings.floor_correction_meters() - 0.15).abs() < 1e-6);
+        let readout = |universe: &Universe| {
+            universe
+                .world
+                .get_component_by_id_as::<TextComponent>(labelled(
+                    universe,
+                    "xr_floor_correction_readout",
+                ))
+                .unwrap()
+                .text
+                .clone()
+        };
+        assert_eq!(readout(&universe), "+15.0 cm");
+        let panel = labelled(&universe, "test_xr_settings");
+        let chevron = labelled(&universe, "accordion_toggle");
+        for correction in [-0.2, 0.5, -0.5] {
+            click(&mut universe, chevron);
+            assert!(
+                universe
+                    .world
+                    .find_component(panel, "#accordion_body")
+                    .is_none()
+            );
+            universe
+                .systems
+                .xr_settings
+                .set_floor_correction_meters(correction, &mut universe.command_queue)
+                .unwrap();
+            pump_settings_callbacks(&mut universe);
+            click(&mut universe, chevron);
+            let slider = labelled(&universe, "xr_floor_correction_slider");
+            assert!(
+                (universe
+                    .world
+                    .get_component_by_id_as::<SliderComponent>(slider)
+                    .unwrap()
+                    .value()
+                    - correction as f32)
+                    .abs()
+                    < 1e-6
+            );
+        }
+        universe
+            .systems
+            .xr_settings
+            .set_floor_correction_meters(-0.125, &mut universe.command_queue)
+            .unwrap();
+        pump_settings_callbacks(&mut universe);
+        assert_eq!(readout(&universe), "-12.5 cm");
+        let reset = labelled(&universe, "xr_floor_correction_reset");
+        click(&mut universe, reset);
+        assert_eq!(universe.systems.xr_settings.floor_correction_meters(), 0.0);
+        assert_eq!(readout(&universe), "0.0 cm");
+    }
+
+    #[test]
+    fn xr_settings_multiple_panels_share_backend_after_one_is_removed() {
+        use ecs::component::SliderComponent;
+        let mut universe = Universe::new(ecs::World::default());
+        universe
+            .load_mms_source_at_path(
+                r#"
+            import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
+            xr_settings_panel({ root_name = "xr_panel_a" })
+            xr_settings_panel({ root_name = "xr_panel_b" })
+        "#,
+                "examples/xr-settings.mms",
+            )
+            .unwrap();
+        let panel_a = labelled(&universe, "xr_panel_a");
+        let panel_b = labelled(&universe, "xr_panel_b");
+        let slider_a = universe
+            .world
+            .find_component(panel_a, "#xr_floor_correction_slider")
+            .unwrap();
+        universe.command_queue.push_intent_now(
+            slider_a,
+            ecs::IntentValue::SliderSet {
+                component_id: slider_a,
+                value: -0.15,
+                emit_changed: true,
+            },
+        );
+        pump_settings_callbacks(&mut universe);
+        let slider_b = universe
+            .world
+            .find_component(panel_b, "#xr_floor_correction_slider")
+            .unwrap();
+        assert!(
+            (universe
+                .world
+                .get_component_by_id_as::<SliderComponent>(slider_b)
+                .unwrap()
+                .value()
+                + 0.15)
+                .abs()
+                < 1e-6
+        );
+        universe.command_queue.push_intent_now(
+            panel_a,
+            ecs::IntentValue::RemoveSubtree {
+                component_id: panel_a,
+            },
+        );
+        pump_settings_callbacks(&mut universe);
+        assert!(universe.world.get_component_record(panel_a).is_none());
+        assert!((universe.systems.xr_settings.floor_correction_meters() + 0.15).abs() < 1e-6);
+        universe
+            .systems
+            .xr_settings
+            .set_floor_correction_meters(0.25, &mut universe.command_queue)
+            .unwrap();
+        pump_settings_callbacks(&mut universe);
+        assert!(
+            (universe
+                .world
+                .get_component_by_id_as::<SliderComponent>(slider_b)
+                .unwrap()
+                .value()
+                - 0.25)
+                .abs()
+                < 1e-6
+        );
+    }
+
+    #[test]
+    fn xr_settings_example_loads_matching_graphics_scene_fixture() {
+        use ecs::component::{CameraXRComponent, GLTFComponent, MirrorComponent};
+        let mut universe = Universe::new(ecs::World::default());
+        universe
+            .load_mms_source_at_path(
+                include_str!("../../examples/xr-settings.mms"),
+                "examples/xr-settings.mms",
+            )
+            .unwrap();
+        for name in [
+            "xr_settings",
+            "xr_settings_title_bar",
+            "xr_settings_mirror",
+            "studio_floor",
+            "rei_mu_xr_driver",
+            "xr_floor_correction_slider",
+        ] {
+            labelled(&universe, name);
+        }
+        assert!(
+            !universe
+                .world
+                .all_components()
+                .any(|id| universe.world.component_label(id) == Some("graphics_settings"))
+        );
+        assert!(universe.world.all_components().any(|id| {
+            universe
+                .world
+                .get_component_by_id_as::<CameraXRComponent>(id)
+                .is_some()
+        }));
+        assert!(universe.world.all_components().any(|id| {
+            universe
+                .world
+                .get_component_by_id_as::<MirrorComponent>(id)
+                .is_some()
+        }));
+        assert!(universe.world.all_components().any(|id| {
+            universe
+                .world
+                .get_component_by_id_as::<GLTFComponent>(id)
+                .is_some_and(|gltf| gltf.uri == "assets/models/rei(mu).glb")
+        }));
     }
 
     #[test]

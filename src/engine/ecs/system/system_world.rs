@@ -168,6 +168,7 @@ pub struct SystemWorld {
     pub light: LightSystem,
     pub mirror: MirrorSystem,
     pub graphics_settings: crate::engine::ecs::system::GraphicsSettingsSystem,
+    pub xr_settings: crate::engine::ecs::system::XrSettingsSystem,
 
     pub text: TextSystem,
     pub text_input: TextInputSystem,
@@ -3375,7 +3376,10 @@ impl SystemWorld {
 
         // Update window camera + select active XR camera rig before OpenXR consumes it.
         self.camera.tick(world, visuals, input, dt_sec);
-        // OpenXR consumes the latest rig transform + publishes per-eye cameras.
+        // Locate one presentation sample before head/hand poses and avatar solving.
+        // Rendering consumes the prepared frame rather than locating a second sample.
+        self.xr
+            .prepare_frame(world, visuals, self.xr_settings.floor_correction_meters());
         let phase_started = profile_systems.then(Instant::now);
         self.xr
             .tick_with_queue(world, visuals, input, queue, dt_sec);
@@ -3395,6 +3399,7 @@ impl SystemWorld {
         }
 
         // Camera-dependent gizmo transforms must settle before pointer rays query the BVH.
+        self.xr.publish_eye_cameras(world, visuals);
         // XR wins whenever an active rig has published at least one eye.
         let stereo_active = visuals.active_xr_camera().is_some()
             && visuals
@@ -3590,6 +3595,8 @@ impl SystemWorld {
 
         self.light.tick(world, visuals, input, dt_sec);
         self.graphics_settings.publish(visuals);
+        // Mount/AVC/ancestor changes above are reflected before mirror captures.
+        self.xr.publish_eye_cameras(world, visuals);
         self.mirror.tick(world, visuals, input, dt_sec);
         for texture_component in self.mirror.take_pending_texture_registrations() {
             self.register_texture(world, visuals, texture_component);

@@ -1,5 +1,12 @@
 # Task: Avatar control simple humanoid body follow
 
+Follow-up (2026-10-15): [XR head/neck bend and derived body offset](xr-head-neck-bend-and-body-offset.md)
+records the current code baseline and proposes bounded neck flexion with body
+placement derived from its geometry. It extends the rotation-only neck policy
+without reviving spine FABRIK. Older offset-vector sketches below use inconsistent
+direction/sign wording; use an explicitly named displacement and its endpoints
+when implementing the follow-up.
+
 Replace the current spine-FABRIK body-follow experiment in AVC with a simpler,
 more stable heuristic body module. The head/camera lock that was just landed is
 the foundation; the body should now follow the pose driver in a limited,

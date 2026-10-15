@@ -4,6 +4,14 @@ Date: 2026-03-23
 
 Supersedes: `docs/spec/ik-transform-pipelines.md`
 
+Current-status note (2026-10-15): portions of the component sketches, AVC wiring,
+and tick order below are historical. AVC currently mounts the displaced head
+directly under the tracked driver; body follow targets that head pivot and pins
+neck translation. It does not install a head AimConstraint or solve a shared
+head/neck bend. See [XR head/neck bend and derived body offset](../task/xr-head-neck-bend-and-body-offset.md)
+for the code-checked baseline and proposed constraint. This proposal is not yet
+implemented.
+
 IK is a post-FK pass. It reads the world matrices established by `TransformSystem` and
 writes corrected local rotations back via `UpdateTransform`. It shares no primitives with
 `TransformOperatorSystem` — the two systems are orthogonal.

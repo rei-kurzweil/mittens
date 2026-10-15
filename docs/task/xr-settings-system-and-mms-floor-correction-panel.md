@@ -2,10 +2,16 @@
 
 Date: 2026-10-13.
 
-Status: feasibility investigated; implementation proposed. Documentation only.
-Architecture clarified on 2026-10-14: InputXR's driven head transform is the
-authoritative engine-world pose for its CXR's rendered eyes. A current-frame
-tracking/update/render handoff is the prerequisite; implementation is pending.
+Status: implemented on 2026-10-14; real headset acceptance pending.
+InputXR's driven head transform is authoritative for its CXR's rendered eyes.
+Frame preparation now locates tracking before the engine pose/avatar phases,
+then rendering consumes the same prepared sample and final head world matrix.
+
+The backend, typed API, importable panel, and `examples/xr-settings.mms` are in
+place. The example matches the graphics-settings scene with the XR panel in its
+place, including the custom draggable/grabbable title bar. See the current
+[XR settings spec](../spec/xr-settings.md) for API, sign, lifetime, and run instructions.
+The detailed design and acceptance contract below is retained for review.
 
 ## Outcome
 
@@ -103,7 +109,7 @@ validated correction, default zero, change revision/notification, and reset
 policy. `OpenXRSystem` consumes an applied settings snapshot; panel closures
 must not become the settings owner.
 
-Proposed MMS API; these calls do not exist yet:
+Implemented MMS API:
 
 ```mms parse-only
 XrSettings.floor.set_correction_meters(0.15)
@@ -117,7 +123,7 @@ Register finite numeric setter input and numeric readback in the existing typed
 RuntimeSpec namespace. Use the host lease to reach the system from scene
 evaluation, imported factories, and event callbacks, with no edit-mode dependency.
 
-Recommended initial interval is -0.50 to +0.50 m, with a UI step of 0.005 m.
+The supported interval is -0.50 to +0.50 m, with a UI step of 0.005 m.
 Validate in the backend too; reject non-finite or out-of-range API input without
 changing state. Use the same range for the Slider. Coalesce rapid updates and
 emit `XrSettingsChanged` only when the canonical value changes. Multiple panels
@@ -140,8 +146,8 @@ cross-scene persistence are follow-up decisions.
 
 ## Selected architecture: InputXR drives the camera's head frame
 
-[openxr_system.rs](../../src/engine/ecs/system/openxr_system.rs) currently creates
-identity `STAGE`, caches raw poses, and composes them through separate paths:
+Before this change, [openxr_system.rs](../../src/engine/ecs/system/openxr_system.rs)
+created identity `STAGE`, cached raw poses, and composed them through separate paths:
 
 1. `tick_with_queue`: headset through the tracked transform's parent world frame.
 2. `tick_with_queue`: controllers/hand-root poses through the active XR rig origin.
@@ -220,12 +226,12 @@ matrix from another rig.
 
 ### Required prerequisite: current-frame tracking handoff
 
-The 2026-10-14 source check confirms that `Universe.update` drives InputXR from
-the existing pose cache, then `Universe.render` calls `render_xr` with an
-immutable World. `render_xr` waits/begins the XR frame and locates fresh views,
-controllers, and hands before drawing. Those fresh samples populate the cache
-used by the next update. Reading the current InputXR matrix in rendering without
-changing that handoff would therefore use an older head pose.
+The pre-implementation 2026-10-14 source check found that `Universe.update`
+drove InputXR from the previous pose cache, while `render_xr` located fresh
+views/controllers/hands during rendering. Merely reading that old InputXR
+matrix would have rendered an older head pose. The implemented `prepare_frame`
+now waits/begins/locates before `tick_with_queue`, and rendering takes the
+retained frame exactly once. Eye publication reads the final driven matrix.
 
 Split frame preparation/tracking from eye drawing/submission. The preferred
 path is to obtain a prepared XR frame early enough for the engine's XR pose,
@@ -261,11 +267,11 @@ apply it once, and preserve existing vehicle anchor/input authority.
 
 ## Importable panel asset and explicit attachment
 
-Proposed asset: `assets/components/panels/xr_settings_panel.mms`.
+Implemented asset: `assets/components/panels/xr_settings_panel.mms`.
 Export `xr_settings_panel(options)`; require a unique `root_name`, with optional
 title/theme following existing panel conventions. The caller owns world placement.
 
-Draft inclusion from an example; the asset does not exist yet:
+Explicit inclusion from an example:
 
 ```mms parse-only
 import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
@@ -345,8 +351,30 @@ The first XR panel remains explicitly importable without this launcher.
 Investigation verification: `cargo test --lib graphics_settings_` passed all four
 existing tests on 2026-10-13. They cover strict imported-panel evaluation,
 backend/control/restore behavior, setter readback/reset, and argument validation.
-They verify the reusable precedent, not the proposed XR correction. No new code,
-assets, UI, runtime API, or headset verification was created in this task.
+That initial run verified the reusable precedent. Implementation verification
+now also covers the new backend, strict host API, panel slider/reset/external
+updates/restore, shared panels and removal, example evaluation, and head-relative
+eye/hand mapping. Real headset/GPU visual validation remains pending.
+
+The broad `cargo test --lib xr_` run exposed three existing failures, reproduced
+unchanged in an isolated archive of the original HEAD: the legacy paused-animation
+handler test, `mittens_corp_linear_velocity_scene_evaluates_with_xr_basis_and_panel`
+(`is_string` undefined), and the xr-grab-demo component-count assertion. These
+are baseline failures, not resolved by this feature.
+
+Final automated verification on 2026-10-14:
+
+- `cargo test --lib xr_` with the three confirmed baseline failures skipped:
+  54 passed, including seven new calibration/backend/panel/example checks.
+- `cargo test --lib graphics_settings_`: five passed.
+- `cargo check --lib` and `cargo check --examples`: passed.
+- Formatting, whitespace, and changed-document local links checked.
+
+Run `cargo run --release -- load examples/xr-settings.mms` for headset acceptance.
+The first smoke check is repeated positive/negative slider changes and reset,
+with hands and mirror-visible head/body moving consistently while simulated
+floor/capsule support remains stable. Then check physical crouch/stand, walking,
+button jump/fall, title-bar drag/grab, and repeated panel minimize/restore.
 
 ## Related work
 

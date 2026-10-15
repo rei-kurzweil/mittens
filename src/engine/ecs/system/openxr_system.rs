@@ -634,6 +634,7 @@ pub struct OpenXRSystem {
     vr_perf_exit_requested: bool,
     vr_perf_pre_xr: VrPerfPreXrCpu,
     next_xr_batch_generation: u64,
+    floor_correction_meters: f32,
 
     input_xr_components: HashSet<ComponentId>,
     controller_components: HashSet<ComponentId>,
@@ -701,6 +702,15 @@ struct OpenXRSessionState {
     controller_input: Option<ControllerInput>,
     controller_pose_cache: ControllerPoseCache,
     controller_pose_generation: u64,
+    prepared_frame: Option<PreparedXrFrame>,
+}
+
+/// Located once before the engine pose phases, consumed once by rendering.
+struct PreparedXrFrame {
+    state: openxr::FrameState,
+    views: Vec<openxr::View>,
+    wait_time: Duration,
+    started: Instant,
 }
 
 impl Drop for OpenXRSessionState {
@@ -1209,6 +1219,7 @@ impl Default for OpenXRSystem {
             vr_perf_exit_requested: false,
             vr_perf_pre_xr: VrPerfPreXrCpu::default(),
             next_xr_batch_generation: 1,
+            floor_correction_meters: 0.0,
 
             input_xr_components: HashSet::new(),
             controller_components: HashSet::new(),
@@ -1218,6 +1229,12 @@ impl Default for OpenXRSystem {
             xr_gamepad_state: XrGamepadState::default(),
             xr_gamepad_state_last_logged: XrGamepadState::default(),
         }
+    }
+}
+
+impl Drop for OpenXRSystem {
+    fn drop(&mut self) {
+        self.discard_prepared_frame();
     }
 }
 
@@ -1606,6 +1623,143 @@ impl OpenXRSystem {
         ])
     }
 
+    fn corrected_head_pose(pose: openxr::Posef, correction: f32) -> [[f32; 4]; 4] {
+        let mut matrix = Self::mat4_from_pose(pose);
+        matrix[3][1] -= correction;
+        matrix
+    }
+
+    fn world_from_stage(head_world: [[f32; 4]; 4], raw_head: openxr::Posef) -> [[f32; 4]; 4] {
+        Self::mul_mat4(
+            &head_world,
+            &Self::invert_affine_transform(&Self::mat4_from_pose(raw_head)),
+        )
+    }
+
+    /// CXR selects its InputXR's driven head, never an avatar camera wrapper.
+    fn tracking_world_frame(
+        world: &World,
+        visuals: &VisualWorld,
+        raw_head: openxr::Posef,
+    ) -> Option<[[f32; 4]; 4]> {
+        let camera = visuals
+            .active_xr_camera()
+            .or_else(|| Self::first_enabled_camera_xr(world))?;
+        if !world
+            .get_component_by_id_as::<CameraXRComponent>(camera)?
+            .enabled
+        {
+            return None;
+        }
+        let Some(input) = Self::input_xr_ancestor(world, camera) else {
+            // Preserve the authored-origin behavior for legacy CXR without InputXR.
+            return Some(Self::xr_rig_origin_world(world, visuals));
+        };
+        let config = world.get_component_by_id_as::<InputXRComponent>(input)?;
+        if !config.enabled || !config.pose_valid {
+            return None;
+        }
+        let head = Self::transform_child_of(world, input)?;
+        let head_world = TransformSystem::world_model(world, head)?;
+        Some(Self::world_from_stage(head_world, raw_head))
+    }
+
+    /// Refresh eyes after ancestor/contact changes using this frame's raw eye offsets.
+    pub fn publish_eye_cameras(&self, world: &World, visuals: &mut VisualWorld) -> bool {
+        let Some(sess) = self.state.as_ref().and_then(|state| state.session.as_ref()) else {
+            return false;
+        };
+        let eyes = sess.prepared_frame.as_ref().and_then(|frame| {
+            Self::eye_cameras(world, visuals, sess.head_pose_cache?, &frame.views)
+        });
+        let Some(eyes) = eyes else {
+            // Tracking loss or a disabled/removed driver must not publish stale eyes.
+            visuals.set_xr_camera(Vec::new());
+            return false;
+        };
+        visuals.set_xr_camera(eyes);
+        true
+    }
+
+    fn eye_cameras(
+        world: &World,
+        visuals: &VisualWorld,
+        raw_head: openxr::Posef,
+        views: &[openxr::View],
+    ) -> Option<Vec<CameraData>> {
+        let world_from_stage = Self::tracking_world_frame(world, visuals, raw_head)?;
+        Some(
+            views
+                .iter()
+                .map(|v| {
+                    let world_from_eye =
+                        Self::mul_mat4(&world_from_stage, &Self::mat4_from_pose(v.pose));
+                    CameraData {
+                        view: Self::invert_affine_transform(&world_from_eye),
+                        proj: Self::proj_from_fov_rh_zo(v.fov, 0.1, 100.0),
+                        transform: Self::transform_from_matrix_world(world_from_eye),
+                    }
+                })
+                .collect(),
+        )
+    }
+
+    fn drive_head_pose(
+        world: &mut World,
+        input_xr_cid: ComponentId,
+        head_pose: openxr::Posef,
+        correction: f32,
+        emit: &mut dyn SignalEmitter,
+    ) {
+        let Some(tcid) = Self::transform_child_of(world, input_xr_cid) else {
+            return;
+        };
+
+        let parent_world = Self::transform_parent_world(world, tcid);
+        let world_from_head = Self::mul_mat4(
+            &parent_world,
+            &Self::corrected_head_pose(head_pose, correction),
+        );
+        let desired_world_pos = [
+            world_from_head[3][0],
+            world_from_head[3][1],
+            world_from_head[3][2],
+        ];
+        let desired_world_rot = math::mat_to_quat(world_from_head);
+
+        let local_translation = Self::world_to_local_translation(world, tcid, desired_world_pos);
+        let parent_world_rot =
+            Self::parent_world_rotation_quat(world, tcid).unwrap_or([0.0, 0.0, 0.0, 1.0]);
+        let local_rotation =
+            math::quat_mul(math::quat_conjugate(parent_world_rot), desired_world_rot);
+
+        let Some(t) = world
+            .get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(tcid)
+        else {
+            return;
+        };
+
+        t.transform.translation = local_translation;
+        t.transform.rotation = local_rotation;
+        t.transform.recompute_model();
+        // Hands consume this head frame before the queued propagation flush.
+        t.transform.matrix_world = Self::mul_mat4(&parent_world, &t.transform.model);
+
+        let transform = t.transform;
+        emit.push_intent_now(
+            tcid,
+            IntentValue::UpdateTransform {
+                component_id: tcid,
+                translation: transform.translation,
+                rotation_quat_xyzw: transform.rotation,
+                scale: transform.scale,
+            },
+        );
+        if let Some(input) = world.get_component_by_id_as_mut::<InputXRComponent>(input_xr_cid) {
+            input.pose_valid = true;
+        }
+    }
+
     /// Hint: prefer this Vulkan `VkFormat` (as raw `u32`) when creating the OpenXR swapchain.
     ///
     /// This is used to match the window renderer's color attachment format, so we can copy
@@ -1832,7 +1986,7 @@ impl OpenXRSystem {
 
     /// Like `tick`, but also queues transform updates for registered ControllerXRComponents.
     ///
-    /// Controller poses are sourced from the last cache update performed during `render_xr`.
+    /// Head and controller poses share the sample located by `prepare_frame`.
     pub fn tick_with_queue(
         &mut self,
         world: &mut World,
@@ -1841,8 +1995,6 @@ impl OpenXRSystem {
         emit: &mut dyn SignalEmitter,
         _dt_sec: f32,
     ) {
-        self.pump_events();
-
         // Validity is frame-local. Consumers must not solve against stale/default XR transforms.
         for component in self.input_xr_components.iter().copied().collect::<Vec<_>>() {
             if let Some(input) = world.get_component_by_id_as_mut::<InputXRComponent>(component) {
@@ -1880,9 +2032,6 @@ impl OpenXRSystem {
             return;
         }
 
-        // Compose headset/controller poses with the authored XR rig origin.
-        let rig_world = Self::xr_rig_origin_world(world, visuals);
-
         let input_xr_ids: Vec<ComponentId> = self.input_xr_components.iter().copied().collect();
         for input_xr_cid in input_xr_ids {
             let Some(cfg) = world.get_component_by_id_as::<InputXRComponent>(input_xr_cid) else {
@@ -1898,55 +2047,21 @@ impl OpenXRSystem {
                 continue;
             };
 
-            let Some(tcid) = Self::transform_child_of(world, input_xr_cid) else {
-                continue;
-            };
-
-            let world_from_head = Self::mul_mat4(
-                &Self::transform_parent_world(world, tcid),
-                &Self::mat4_from_pose(head_pose),
+            Self::drive_head_pose(
+                world,
+                input_xr_cid,
+                head_pose,
+                self.floor_correction_meters,
+                emit,
             );
-            let desired_world_pos = [
-                world_from_head[3][0],
-                world_from_head[3][1],
-                world_from_head[3][2],
-            ];
-            let desired_world_rot = math::mat_to_quat(world_from_head);
-
-            let local_translation =
-                Self::world_to_local_translation(world, tcid, desired_world_pos);
-            let parent_world_rot =
-                Self::parent_world_rotation_quat(world, tcid).unwrap_or([0.0, 0.0, 0.0, 1.0]);
-            let local_rotation =
-                math::quat_mul(math::quat_conjugate(parent_world_rot), desired_world_rot);
-
-            let Some(t) = world
-                .get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(
-                    tcid,
-                )
-            else {
-                continue;
-            };
-
-            t.transform.translation = local_translation;
-            t.transform.rotation = local_rotation;
-            t.transform.recompute_model();
-
-            let transform = t.transform;
-            emit.push_intent_now(
-                tcid,
-                IntentValue::UpdateTransform {
-                    component_id: tcid,
-                    translation: transform.translation,
-                    rotation_quat_xyzw: transform.rotation,
-                    scale: transform.scale,
-                },
-            );
-            if let Some(input) = world.get_component_by_id_as_mut::<InputXRComponent>(input_xr_cid)
-            {
-                input.pose_valid = true;
-            }
         }
+
+        let Some(raw_head) = sess.head_pose_cache else {
+            return;
+        };
+        let Some(rig_world) = Self::tracking_world_frame(world, visuals, raw_head) else {
+            return;
+        };
 
         let controller_ids: Vec<ComponentId> = self.controller_components.iter().copied().collect();
         for controller_cid in controller_ids {
@@ -2567,6 +2682,7 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
             controller_input,
             controller_pose_cache: ControllerPoseCache::default(),
             controller_pose_generation: 0,
+            prepared_frame: None,
         });
 
         println!("[OpenXR] Session created (Vulkan)");
@@ -3021,24 +3137,20 @@ impl OpenXRSystem {
         self.last_render_dt_sec
     }
 
-    pub fn render_xr(
+    /// Locate this presentation frame before InputXR, controllers, AVC, and IK run.
+    pub fn prepare_frame(
         &mut self,
         world: &World,
         visuals: &mut VisualWorld,
-        renderer: &mut VulkanoRenderer,
+        floor_correction_meters: f32,
     ) {
         let profile = Self::profile_systems_enabled();
         let perf_enabled = self.vr_perf.is_some();
-        let frame_profile_started = profile.then(Instant::now);
-        let perf_frame_started = Instant::now();
-        let perf_renderer_before = renderer.perf_counters();
-        let perf_pre_xr = self.vr_perf_pre_xr;
+        let started = Instant::now();
         let mut perf_wait_frame = Duration::ZERO;
-        let mut perf_eye_render = Duration::ZERO;
-        let mut perf_copy = Duration::ZERO;
-        let mut perf_raw_queue_submissions = 0;
-        let mut perf_raw_fence_waits = 0;
-        let mut image_ready_for_projection = false;
+        self.discard_prepared_frame();
+        self.pump_events();
+        self.floor_correction_meters = floor_correction_meters;
         let Some(state) = self.state.as_mut() else {
             self.xr_input_state = XrInputState::default();
             self.xr_gamepad_state = XrGamepadState::default();
@@ -3052,6 +3164,9 @@ impl OpenXRSystem {
             visuals.set_xr_frame_dt_sec(None);
             return;
         };
+        sess.head_pose_cache = None;
+        sess.hand_root_pose_cache = HandRootPoseCache::default();
+        sess.controller_pose_cache = ControllerPoseCache::default();
         if !sess.running {
             self.xr_input_state = XrInputState::default();
             self.xr_gamepad_state = XrGamepadState::default();
@@ -3108,6 +3223,8 @@ impl OpenXRSystem {
         }
 
         if !frame_state.should_render {
+            self.xr_input_state = XrInputState::default();
+            self.xr_gamepad_state = XrGamepadState::default();
             let _ =
                 sess.frame_stream
                     .end(frame_state.predicted_display_time, state.blend_mode, &[]);
@@ -3121,7 +3238,24 @@ impl OpenXRSystem {
             frame_state.predicted_display_time,
             &sess.reference_space,
         ) {
-            Ok((_flags, views)) => views,
+            Ok((flags, views))
+                if flags.contains(
+                    openxr::ViewStateFlags::POSITION_VALID
+                        | openxr::ViewStateFlags::ORIENTATION_VALID,
+                ) && !views.is_empty() =>
+            {
+                views
+            }
+            Ok(_) => {
+                let _ = sess.frame_stream.end(
+                    frame_state.predicted_display_time,
+                    state.blend_mode,
+                    &[],
+                );
+                self.xr_input_state = XrInputState::default();
+                self.xr_gamepad_state = XrGamepadState::default();
+                return;
+            }
             Err(e) => {
                 eprintln!("[OpenXR] locate_views failed: {e:?}");
                 let _ = sess.frame_stream.end(
@@ -3566,25 +3700,65 @@ impl OpenXRSystem {
             self.xr_gamepad_state_last_logged = self.xr_gamepad_state;
         }
 
-        // Publish XR per-eye camera matrices into VisualWorld (CameraTarget::Xr).
-        let rig_world = Self::xr_rig_origin_world(world, visuals);
-
-        let mut eyes = Vec::with_capacity(views.len());
-        for v in &views {
-            let eye_from_space = Self::mat4_from_pose(v.pose);
-            let world_from_eye = Self::mul_mat4(&rig_world, &eye_from_space);
-            let view = Self::invert_affine_transform(&world_from_eye);
-            let proj = Self::proj_from_fov_rh_zo(v.fov, 0.1, 100.0);
-            eyes.push(CameraData {
-                view,
-                proj,
-                transform: Self::transform_from_matrix_world(world_from_eye),
-            });
-        }
-        visuals.set_xr_camera(eyes);
         if let Some(started) = tracking_started {
             self.render_profile.tracking_input += started.elapsed();
         }
+        sess.prepared_frame = Some(PreparedXrFrame {
+            state: frame_state,
+            views,
+            wait_time: perf_wait_frame,
+            started,
+        });
+    }
+
+    /// A second update, scene change, or shutdown may abandon a prepared frame.
+    fn discard_prepared_frame(&mut self) {
+        if let Some(state) = self.state.as_mut() {
+            if let Some(sess) = state.session.as_mut() {
+                if let Some(frame) = sess.prepared_frame.take() {
+                    let _ = sess.frame_stream.end(
+                        frame.state.predicted_display_time,
+                        state.blend_mode,
+                        &[],
+                    );
+                }
+            }
+        }
+    }
+
+    pub fn render_xr(
+        &mut self,
+        world: &World,
+        visuals: &mut VisualWorld,
+        renderer: &mut VulkanoRenderer,
+    ) {
+        let profile = Self::profile_systems_enabled();
+        let perf_enabled = self.vr_perf.is_some();
+        if !self.publish_eye_cameras(world, visuals) {
+            self.discard_prepared_frame();
+            return;
+        }
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+        let Some(sess) = state.session.as_mut() else {
+            return;
+        };
+        let Some(frame) = sess.prepared_frame.take() else {
+            return;
+        };
+        let frame_state = frame.state;
+        let views = frame.views;
+        let frame_profile_started = profile.then_some(frame.started);
+        let perf_frame_started = frame.started;
+        let perf_wait_frame = frame.wait_time;
+        let perf_renderer_before = renderer.perf_counters();
+        let perf_pre_xr = self.vr_perf_pre_xr;
+        let mut perf_eye_render = Duration::ZERO;
+        let mut perf_copy = Duration::ZERO;
+        let mut perf_raw_queue_submissions = 0;
+        let mut perf_raw_fence_waits = 0;
+        let mut image_ready_for_projection = false;
 
         // Acquire XR swapchain image.
         let acquire_started = profile.then(Instant::now);
@@ -3924,5 +4098,163 @@ impl OpenXRSystem {
                 },
             },
         );
+    }
+}
+
+#[cfg(test)]
+mod floor_calibration_tests {
+    use super::*;
+    use crate::engine::ecs::CommandQueue;
+    use crate::engine::ecs::component::TransformComponent;
+    use crate::engine::ecs::system::SystemWorld;
+    use crate::engine::graphics::RenderAssets;
+
+    fn near(actual: f32, expected: f32) {
+        assert!((actual - expected).abs() < 1e-4, "{actual} != {expected}");
+    }
+
+    #[test]
+    fn xr_settings_eyes_and_hands_follow_inputxr_world_transform_without_double_tracking() {
+        let mut world = World::default();
+        let mut systems = SystemWorld::default();
+        let mut visuals = VisualWorld::default();
+        let mut assets = RenderAssets::new();
+        let mut queue = CommandQueue::new();
+        let rig = world.add_component(
+            TransformComponent::new()
+                .with_position(2.0, 3.0, 4.0)
+                .with_rotation_euler(0.0, 0.7, 0.0),
+        );
+        let input = world.add_component(InputXRComponent::on());
+        let head = world.add_component(TransformComponent::new());
+        // AVC's camera anchor is authoring data, not a second camera translation.
+        let wrapper = world.add_component(TransformComponent::new().with_position(0.0, 17.0, 0.12));
+        let camera = world.add_component(CameraXRComponent::on());
+        for (parent, child) in [
+            (rig, input),
+            (input, head),
+            (head, wrapper),
+            (wrapper, camera),
+        ] {
+            world.add_child(parent, child).unwrap();
+        }
+        visuals.set_active_xr_camera(Some(camera));
+        systems.transform_changed(&mut world, &mut visuals, rig);
+        let fov = openxr::Fovf {
+            angle_left: -0.7,
+            angle_right: 0.7,
+            angle_up: 0.7,
+            angle_down: -0.7,
+        };
+        // Successive samples change position and orientation, exercising the head-relative
+        // conversion with current data rather than a cached previous-frame head.
+        for (height, angle) in [(1.6, 0.0), (0.7, 1.1), (1.8, -0.8)] {
+            let raw_head = OpenXRSystem::pose_from_quat_translation(
+                math::quat_rotation_y(angle),
+                [0.2, height, -0.3],
+            );
+            let raw_head_matrix = OpenXRSystem::mat4_from_pose(raw_head);
+            let views: Vec<_> = [-0.032, 0.032]
+                .into_iter()
+                .map(|x| {
+                    let offset =
+                        math::quat_rotate_vec3(math::quat_rotation_y(angle), [x, 0.0, 0.0]);
+                    openxr::View {
+                        pose: OpenXRSystem::pose_from_quat_translation(
+                            math::quat_rotation_y(angle),
+                            [0.2 + offset[0], height, -0.3 + offset[2]],
+                        ),
+                        fov,
+                    }
+                })
+                .collect();
+            let sampled_head = OpenXRSystem::derive_head_pose(&views).unwrap();
+            for correction in [0.0, 0.15, -0.2, 0.0] {
+                OpenXRSystem::drive_head_pose(
+                    &mut world,
+                    input,
+                    sampled_head,
+                    correction,
+                    &mut queue,
+                );
+                systems.process_commands(&mut world, &mut visuals, &mut assets, &mut queue);
+                let eyes =
+                    OpenXRSystem::eye_cameras(&world, &visuals, sampled_head, &views).unwrap();
+                let head_world = TransformSystem::world_model(&world, head).unwrap();
+                near(head_world[3][1], 3.0 + height - correction);
+                for eye in &eyes {
+                    near(eye.transform.matrix_world[3][1], head_world[3][1]);
+                }
+                let eye_delta: [f32; 3] = std::array::from_fn(|i| {
+                    eyes[1].transform.matrix_world[3][i] - eyes[0].transform.matrix_world[3][i]
+                });
+                near(math::vec3_len(eye_delta), 0.064);
+                // The head center is exactly between the rendered eyes; wrapper Y=17 has no effect.
+                for axis in 0..3 {
+                    near(
+                        (eyes[0].transform.matrix_world[3][axis]
+                            + eyes[1].transform.matrix_world[3][axis])
+                            * 0.5,
+                        head_world[3][axis],
+                    );
+                }
+                let mapping =
+                    OpenXRSystem::tracking_world_frame(&world, &visuals, sampled_head).unwrap();
+                let raw_hand = OpenXRSystem::pose_from_quat_translation(
+                    [0.0, 0.0, 0.0, 1.0],
+                    [-0.4, height - 0.4, -0.5],
+                );
+                let hand_world =
+                    OpenXRSystem::mul_mat4(&mapping, &OpenXRSystem::mat4_from_pose(raw_hand));
+                near(hand_world[3][1], head_world[3][1] - 0.4);
+                near(
+                    TransformSystem::world_position(&world, rig).unwrap()[1],
+                    3.0,
+                );
+                assert_eq!(OpenXRSystem::mat4_from_pose(raw_head), raw_head_matrix);
+                // Prove the renderer reads the driven matrix, not a second settings calculation.
+                world
+                    .get_component_by_id_as_mut::<TransformComponent>(head)
+                    .unwrap()
+                    .transform
+                    .matrix_world[3][1] += 0.23;
+                let moved =
+                    OpenXRSystem::eye_cameras(&world, &visuals, sampled_head, &views).unwrap();
+                near(
+                    moved[0].transform.matrix_world[3][1] - eyes[0].transform.matrix_world[3][1],
+                    0.23,
+                );
+            }
+        }
+        world
+            .get_component_by_id_as_mut::<InputXRComponent>(input)
+            .unwrap()
+            .pose_valid = false;
+        assert!(
+            OpenXRSystem::eye_cameras(&world, &visuals, openxr::Posef::IDENTITY, &[]).is_none()
+        );
+    }
+
+    #[test]
+    fn xr_settings_corrected_mapping_preserves_full_eye_orientation_under_scaled_rig() {
+        let raw_head =
+            OpenXRSystem::pose_from_quat_translation(math::quat_rotation_y(0.9), [1.0, 1.7, -0.5]);
+        let rig = TransformComponent::new()
+            .with_position(2.0, 4.0, -3.0)
+            .with_scale(2.0, 2.0, 2.0)
+            .transform
+            .model;
+        let head_world =
+            OpenXRSystem::mul_mat4(&rig, &OpenXRSystem::corrected_head_pose(raw_head, 0.15));
+        let mapping = OpenXRSystem::world_from_stage(head_world, raw_head);
+        let eye = OpenXRSystem::pose_from_quat_translation(
+            math::quat_rotation_y(1.0),
+            [1.02, 1.7, -0.49],
+        );
+        let world_eye = OpenXRSystem::mul_mat4(&mapping, &OpenXRSystem::mat4_from_pose(eye));
+        near(world_eye[3][1], 4.0 + 2.0 * (1.7 - 0.15));
+        // Eye orientation need not equal the derived head orientation.
+        near(world_eye[0][0], 2.0 * 1.0f32.cos());
+        near(world_eye[0][2], -2.0 * 1.0f32.sin());
     }
 }

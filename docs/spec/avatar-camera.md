@@ -21,5 +21,8 @@ wrapped by one transform carrying an authored eye offset, are reparented beneath
 anchor during initialization. Model-root height calibration uses immutable GLTF rest poses, never
 an animation-mutated live pose.
 
-XR view matrices continue to come from OpenXR eye poses. The mapped anchor aligns avatar anatomy
-and camera topology; it does not replace the runtime's stereoscopic view calculation.
+XR view matrices use the owning InputXR's driven head world matrix and head-relative
+OpenXR eye poses from the same prepared frame. This lets InputXR floor correction
+reach the view and tracked hands together. The mapped avatar anchor aligns anatomy
+and camera topology; its wrapper is not an additional rendered headset offset.
+See [XR settings and floor correction](xr-settings.md).

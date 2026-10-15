@@ -1,0 +1,274 @@
+# Declarative transform math: rotation-derived translation
+
+Status: design exploration, 2026-10-15. Documentation only; operation names
+below are semantic notation, not an implemented MMS API.
+
+## Motivation and scope
+
+The [XR head/neck task](../task/xr-head-neck-bend-and-body-offset.md) can be
+decomposed into reusable math and avatar-specific choices. Calling the whole
+behavior an IK constraint describes its goal, but does not require the math
+to live in a dedicated IK solver. A declarative operator can calculate the
+body transform once the neck rotation and rig measurements are known.
+
+The useful chain is:
+
+```text
+head rotation -> selected neck rotation -> rotated neck vector
+              -> body position -> translation in an output transform
+```
+
+A quaternion supplies orientation, not a displacement magnitude. The vector
+must also supply a length and rest direction. A general quaternion describes
+three-dimensional orientation; extracting a scalar pitch is a separate choice.
+
+Start with a small typed vocabulary for scalar, Vec3, quaternion, and transform
+values. Keep avatar calibration and anatomical policy explicit inputs. The first
+extension need not include an arbitrary script callback, a general constraint
+solver, or an automatic whole-scene reactive dependency graph.
+
+## 1. Rotation and a vector produce a displacement
+
+The core operation is:
+
+```text
+rotate(q: Quat, v: Vec3) -> Vec3
+```
+
+For a unit quaternion this rotates `v` without changing its length. Quaternion
+components are not translation coordinates. The result depends on the chosen
+vector; rotating a vertical neck segment is different from rotating the
+eye-to-head offset.
+
+This operation is already implicit in ordinary transform composition:
+
+```text
+parent world pose = (p, q), unit scale
+child local translation = v
+child world position = p + rotate(q, v)
+```
+
+Consequently, some rotation-to-translation effects need no new operator at all.
+For an aligned single-segment fixture, a local negative neck-length translation
+below the head pose locates the neck base. Stripping pitch/roll *after* that
+translation keeps the derived position while making downstream content upright.
+Stripping rotation *before* the offset loses the arc.
+
+Conceptual hierarchy using existing composition, not a complete avatar rig:
+
+```text
+head-pivot pose (p_head, q_head)
+  T(local translation = -v)
+    TOP.extract_yaw()
+      T(local translation = -c)
+        body content
+```
+
+Here the entire head rotation is used for the segment; `c` is the aligned
+body-root-to-neck displacement. This demonstrates position derivation only.
+It neither gives the neck a partial bend nor drives the existing mapped neck
+bone. Real rig rest frames and existing stateful body yaw need explicit handling.
+
+## 2. Derive either an absolute position or an offset
+
+Use world positions/displacements below, except for the explicitly rest-local
+segment vector `v`:
+
+```text
+p_head = tracked/calibrated head-pivot world position
+c      = body-root-to-neck-base displacement under current upright body pose
+v      = neck-to-head segment in its rest-local frame, with uniform scale applied
+q_neck = desired neck world orientation, including rest-frame conversion
+
+neck_to_head_world = rotate(q_neck, v)
+p_body = p_head - c - neck_to_head_world
+```
+
+That is an **absolute replacement** of output translation. If instead an
+upstream stage already calculated a correct neutral body placement, derive a
+delta from the same reference:
+
+```text
+q_reference = neutral neck world orientation under the same current body yaw
+p_base      = p_head - c - rotate(q_reference, v)
+delta       = rotate(q_reference, v) - rotate(q_neck, v)
+p_body      = p_base + delta
+```
+
+Both forms give the same answer. The reference uses the current body frame,
+not the previous frame. Never repeatedly add `delta` to last frame's corrected
+body position. Existing AVC placement must first be checked against this neutral
+geometry; its head-X/Z-plus-height baseline is not guaranteed to include every
+rig's horizontal rest offset.
+
+For a vertical 0.12 m segment bent 25 degrees toward world forward `-Z`, with
+neutral neck world rotation identity:
+
+```text
+v                       = [0, 0.12, 0]
+rotate(q_neck, v)        ≈ [0, 0.10876, -0.05071]
+delta                   ≈ [0, 0.01124,  0.05071]
+```
+
+The body moves backward and slightly upward relative to the neutral placement
+at the same head pivot. Rotation to Vec3 explains both components. Selecting
+only X/Z is possible, but discards the vertical part and generally leaves a
+neck endpoint error. The XR task retains full closure and tracks leg/grounding
+implications separately.
+
+## 3. Choose the rotation independently of the position formula
+
+There are several distinct inputs a generic math stage might accept:
+
+| Choice | Meaning / limit |
+| --- | --- |
+| Use head quaternion directly | Simple landmark offset; gives the neck the full head orientation |
+| `slerp(identity, relative_rotation, weight)` | Fraction of the shortest relative rotation; shares yaw/roll as well as pitch |
+| Extract signed pitch, multiply a weight, clamp, construct axis-angle quaternion | Explicit pitch-only neck flexion/extension policy |
+
+These choices are not interchangeable. For the initial XR fixture, select the
+third: compute head pitch in the calibrated body/anatomical frame, apply a
+weight, clamp to separate flexion/extension bounds, and construct the bend about
+the calibrated axis. Compose it with neck rest orientation and current body yaw
+to obtain `q_neck` in world space. Radians and quaternion `xyzw` order must be
+explicit. Do not multiply quaternion components by a weight to scale an angle.
+
+Relative orientation and composition are general primitives:
+
+```text
+relative = inverse(q_body) * q_head_canonical
+q_neck   = q_body * q_neck_rest * q_bend_in_neck_rest_frame
+```
+
+`q_head_canonical` includes source-to-anatomical conversion. Define multiplication
+as function composition: `rotate(a * b, v) = rotate(a, rotate(b, v))`.
+Pitch extraction must have a documented axis/sign convention and supported
+range. Near vertical gaze, use the already-established body frame rather than
+inventing body yaw from a vanishing horizontal head-forward vector.
+
+The avatar layer selects the bend share, limits, rest/basis conversions, and
+rig eligibility. The math layer rotates vectors, combines values, and patches
+transforms without knowing what an avatar is.
+
+## 4. Patch an output transform explicitly
+
+Distinguish three operations instead of one ambiguous translation setter:
+
+| Operation | Semantics |
+| --- | --- |
+| Replace world translation | `out.position = calculated_position` |
+| Add world displacement | `out.position = input.position + calculated_delta` |
+| Compose a local offset | `out_matrix = input_matrix * local_offset_matrix` |
+
+The third includes the input linear basis and scale; the second does not rotate
+or scale a displacement that is already in world space. Masked replacement such
+as X/Z must name world axes, preserve unselected coordinates, and expose residual
+constraint error at the avatar level if exact closure is no longer possible.
+
+A translation-only patch preserves the complete incoming linear basis, including
+shear; it need not decompose and rebuild TRS. Changing orientation is a separate
+output operation with explicit scale/shear support. Snapshot all input channels
+before computing expressions so translation can read original head rotation even
+when output rotation is replaced by body yaw.
+
+Like current TOPs, patches produce the basis supplied to downstream children.
+They do not reach backward to edit a parent T or silently mutate a referenced
+sibling. Place a stage before the node it drives, and include subsequent local
+TRS exactly once. Existing model-root calibration cannot be applied again after
+an expression has already calculated the final root position. Wrapping an
+imported neck also requires accounting for its authored local TRS; simply adding
+an operator child beneath the neck does not rotate that neck bone.
+
+## 5. Reuse one result for the neck and body branches
+
+Body-position math can be a single-input/output operator. The complete avatar
+behavior also needs the mapped neck to receive the **same** selected rotation.
+Representing it as two declarations is possible if both consume the same inputs
+and calibration. Shared named derived values make that relationship clearer.
+
+Semantic dataflow, not proposed runnable MMS syntax:
+
+```text
+inputs: head_pose, current_body_yaw, rig_calibration, bend_settings
+
+relative_head = relative_rotation(current_body_yaw, head_pose.rotation)
+neck_bend    = bounded_pitch_share(relative_head, bend_settings, rig_calibration)
+neck_world   = compose_neck_rotation(current_body_yaw, neck_bend, rig_calibration)
+body_world_p = head_pose.position - root_to_neck_world
+                                 - rotate(neck_world, neck_to_head_local)
+
+body output: translation = body_world_p, rotation = current_body_yaw
+neck output: rotation = neck_world, rest translations/scales retained
+head output: existing tracked pose
+```
+
+The composite names above abbreviate the scalar/quaternion/vector operations;
+they need not become avatar-specific TOP constructors. The real rig's virtual
+FK path supplies `root_to_neck_world` and the segment geometry.
+
+Prefer evaluating reusable values in an upstream scope available to descendant
+branches. These are value dependencies with explicit outputs, not circular reads
+between a solved body's FK neck and the head target. A shared filtered bend or
+body-yaw value must have one temporal owner; two independently instantiated
+filters do not become one state just because their settings match.
+
+## 6. Declarative relationships differ from ordinary MMS reads
+
+[Transform accessors](../../crates/meow-meow-script/docs/draft/transform-component-accessors.md)
+copy values when evaluated. An expression such as `head.world.rotation()` does
+not establish a retained relationship. Adding `Math.rotate(q, v)` as an ordinary
+function alone would not make an authored body follow live head motion.
+
+The current host's `Math` dispatch has scalar trigonometry/clamp and dot/cross
+helpers; TOP channel lists have a fixed operation vocabulary. Neither currently
+provides this retained cross-channel expression surface.
+
+A declarative expression should be an explicit typed value/program descriptor:
+construction builds a bounded operation list or acyclic value graph; runtime
+evaluation reads live bound inputs during transform propagation. Constants remain
+constants, referenced inputs remain references, and copied snapshots remain
+snapshots. Exact constructor names and `let` syntax are still open; do not silently
+reinterpret ordinary MMS arithmetic or getters as live expressions.
+
+Minimum vocabulary to assess before adding more:
+
+- Scalar/Vec3/Quat constants and explicit input-channel reads.
+- Vec3 addition/subtraction, scalar multiplication, and quaternion-vector rotation.
+- Quaternion composition/inverse and axis-angle construction; signed pitch
+  extraction, scalar weighting, and clamping for the bounded neck example.
+- Explicit output translation replacement/addition and output rotation selection.
+- Reusable scoped derived values when both neck/body outputs are authored together.
+
+Normalize valid nonzero quaternions at a defined boundary; reject non-finite or
+zero-length inputs rather than producing NaNs. Invalid expressions preserve input
+and expose invalid status; avatar readiness must honor that status. Validate
+operation types at construction without requiring a new general MMS type system.
+Keep runtime evaluation free of script callbacks and repeated selector resolution.
+
+Initially restrict live inputs to the incoming basis, available ancestor inputs,
+and explicit upstream derived values. If arbitrary external source references
+are added, they require binding lifetime, invalidation, source-before-consumer
+ordering, and cycle handling described in
+[retained operator sources](../task/transform-operator-source-bindings-and-invalidation.md).
+Do not expand the existing ancestor-only translation sampler implicitly.
+
+## Delivery and checks
+
+1. Prove the fixed-vector/full-rotation example with existing hierarchy
+   composition and record which desired controls it cannot express.
+2. Specify the small typed expression/value vocabulary and single-output patch
+   contract. Add numeric fixtures for `q -> rotate(q, v) -> translation`, absolute
+   versus delta equivalence, input/output rotation separation, world/local offset
+   distinction, parent transforms, supported scale, and repeated evaluation.
+3. Specify scoped shared values and output placement for the neck/body fixture.
+   Advance temporal stages once per intended time step even if propagation visits
+   them repeatedly. Preserve independent state for separate avatars.
+4. Bind rig measurements/bases through AVC, validate connected neck geometry and
+   propagation before arm/leg solves, and run the linked XR headset checkpoint.
+
+Serialization must retain expression operations, constants, and durable source
+references, not sampled values or runtime caches. Rebinding/configuration changes,
+deletion, invalid inputs/recovery, output-local offset order, and shared-value
+identity are part of verification. Exact authoring syntax, expression storage,
+and whether reusable math is a new TOP kind or a common value facility remain
+design decisions for the next iteration.

@@ -156,3 +156,10 @@ The TOP migration/consolidation passed the user’s smoke test. Axis-selective
 sampling and XR capsule Y decoupling are implemented and have automated coverage.
 The [AVC task](../task/avc-capsule-before-hmd-tracking.md) retains headset acceptance
 and calibration limits. Crouch IK follows that manual checkpoint.
+
+[Declarative transform math](../draft/declarative-transform-math.md) explores a
+small extension for typed quaternion/vector calculations and explicit output
+patches, using XR neck bend/body placement as a fixture. Ordinary local offsets
+already turn rotation into position through composition; partial bend selection,
+cross-channel expressions, and shared derived values are proposed additions,
+not current TOP APIs.

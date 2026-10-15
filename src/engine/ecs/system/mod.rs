@@ -95,6 +95,7 @@ pub mod transition_system;
 pub mod velocity_system;
 pub mod vr_types;
 pub mod xr_eye_tracking_system;
+pub mod xr_settings_system;
 pub mod zone_query;
 pub mod zone_visualization_system;
 
@@ -190,6 +191,7 @@ pub use transition_system::TransitionSystem;
 pub use velocity_system::VelocitySystem;
 pub use vr_types::{XrGamepadState, XrHandGamepadState, XrInputState};
 pub use xr_eye_tracking_system::XREyeTrackingSystem;
+pub use xr_settings_system::XrSettingsSystem;
 pub use zone_query::{
     ZoneContact, ZoneOverlap, ZoneQueryError, ZoneRelation, ZoneSeparation, ZoneSweepHit,
     classify_point as classify_zone_point, contact_zones, overlap_zones, resolve_zone_frame,

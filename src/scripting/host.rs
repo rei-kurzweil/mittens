@@ -35,6 +35,7 @@ pub(crate) struct MittensHost<'a, 'bindings> {
     pub rx: Option<&'a mut RxWorld>,
     pub render_assets: Option<&'a mut RenderAssets>,
     graphics_settings: Option<&'a mut crate::engine::ecs::system::GraphicsSettingsSystem>,
+    xr_settings: Option<&'a mut crate::engine::ecs::system::XrSettingsSystem>,
     pub emit: &'a mut dyn SignalEmitter,
     pub intents: &'a mut Vec<IntentValue>,
     bindings: Option<&'bindings mms::ImplementationBindings<super::runtime_config::MittensBinding>>,
@@ -72,6 +73,7 @@ impl<'a, 'bindings> MittensHost<'a, 'bindings> {
             rx: None,
             render_assets: None,
             graphics_settings: None,
+            xr_settings: None,
             emit,
             intents,
             bindings: None,
@@ -101,6 +103,14 @@ impl<'a, 'bindings> MittensHost<'a, 'bindings> {
         self
     }
 
+    pub fn with_xr_settings(
+        mut self,
+        settings: &'a mut crate::engine::ecs::system::XrSettingsSystem,
+    ) -> Self {
+        self.xr_settings = Some(settings);
+        self
+    }
+
     pub fn with_bindings<'next>(
         self,
         bindings: &'next mms::ImplementationBindings<super::runtime_config::MittensBinding>,
@@ -110,6 +120,7 @@ impl<'a, 'bindings> MittensHost<'a, 'bindings> {
             rx: self.rx,
             render_assets: self.render_assets,
             graphics_settings: self.graphics_settings,
+            xr_settings: self.xr_settings,
             emit: self.emit,
             intents: self.intents,
             bindings: Some(bindings),
@@ -399,6 +410,43 @@ impl mms::Host for MittensHost<'_, '_> {
                     });
                 };
                 match binding {
+                    super::runtime_config::MittensBinding::Api(
+                        super::runtime_config::MittensApi::XrFloorCorrectionSet,
+                    ) => {
+                        let operation = "XrSettings.floor.set_correction_meters";
+                        let [mms::TransportValue::Number(meters)] = args.as_slice() else {
+                            return Err(mms::HostError::failure(operation, "expects one number"));
+                        };
+                        let settings = self.xr_settings.as_deref_mut().ok_or_else(|| {
+                            mms::HostError::unavailable(
+                                operation,
+                                "XR settings service is unavailable",
+                            )
+                        })?;
+                        if self.deferred_callback_phase != Some(DeferredCallbackHostPhase::Audio) {
+                            settings
+                                .set_floor_correction_meters(*meters, self.emit)
+                                .map_err(|error| mms::HostError::failure(operation, error))?;
+                        }
+                        Ok(S::Unit)
+                    }
+                    super::runtime_config::MittensBinding::Api(
+                        super::runtime_config::MittensApi::XrFloorCorrectionGet,
+                    ) => {
+                        let operation = "XrSettings.floor.correction_meters";
+                        if !args.is_empty() {
+                            return Err(mms::HostError::failure(operation, "expects no arguments"));
+                        }
+                        let settings = self.xr_settings.as_deref().ok_or_else(|| {
+                            mms::HostError::unavailable(
+                                operation,
+                                "XR settings service is unavailable",
+                            )
+                        })?;
+                        Ok(S::Transport(mms::TransportValue::Number(
+                            settings.floor_correction_meters() as f64,
+                        )))
+                    }
                     super::runtime_config::MittensBinding::Api(
                         super::runtime_config::MittensApi::Smoke,
                     ) if args.is_empty() => Ok(S::Unit),
