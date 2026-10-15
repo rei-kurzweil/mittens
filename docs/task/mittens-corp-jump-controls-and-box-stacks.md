@@ -15,6 +15,12 @@ platform.
 
 ## Current implementation
 
+2026-10-14 source recheck: the XR example still binds `ButtonY`; XR and desktop
+still launch at 4.5 m/s, and the proposed box-stack route is absent from both
+corp examples. This task remains pending. The separately shared studio crates
+have a new [collision-after-movement bug](../bugs/moved-crates-lose-zone-collision.md)
+to investigate before relying on repositionable stacks.
+
 - `src/engine/ecs/system/input_xr_gamepad_system.rs` already publishes
   `XrButtonDown` for right-hand `ButtonB` and left-hand `ButtonY`.
 - The jump binding currently lives in the example's `on_global("XrButtonDown",
@@ -73,3 +79,4 @@ platform.
 - [Simplify default TOP translation sampling](simplify-transform-translation-sampling.md)
 - [Mounted action capabilities and jump routing](mounted-action-capabilities-and-jump-routing.md)
 - [Player keeps drifting after jumping onto crates](../bugs/player-keeps-drifting-after-jumping-onto-crates.md)
+- [Moved crates lose Zone collision](../bugs/moved-crates-lose-zone-collision.md)

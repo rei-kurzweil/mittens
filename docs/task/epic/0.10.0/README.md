@@ -4,6 +4,9 @@ Date: 2026-10-09
 Status: next-release planning; the items below are completion targets, not
 claims of implemented support. This pass changes documentation only.
 
+See the [recent graphics and XR task status](recent-task-status.md) for the
+2026-10-14 overview of water, XR calibration/settings, jump controls, and Materials v3.
+
 ## Scope and uncertainty comparison
 
 Planning assessment from source inspection, not measured effort estimates:

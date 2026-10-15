@@ -41,8 +41,9 @@ to open a known settings asset.
 
 - [graphics_settings_panel.mms](../../assets/components/panels/graphics_settings_panel.mms)
   exports a factory around `info_panel`; its mirror Toggle changes real backend
-  state. Its resolution Slider remains UI-only, so copy the backend-backed
-  Toggle flow rather than treating that Slider as an implemented settings API.
+  state. As of the 2026-10-14 source recheck, its resolution Slider also writes
+  the backend quality override, and its secondary-motion Toggle uses backend
+  readback. Reuse those setter/readback and change-notification flows for XR.
 - [graphics-settings.mms](../../examples/graphics-settings.mms) imports and places
   that panel as an independent authored subtree, with an XR avatar and mirror.
 - [info_panel.mms](../../assets/components/ui/info_panel.mms) provides the title,

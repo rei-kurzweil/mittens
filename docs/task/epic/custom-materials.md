@@ -45,6 +45,31 @@ that integration plan, not a second competing program registry.
 
 ## Checked implementation boundary
 
+### 2026-10-14 progress audit
+
+Git history identifies this epic and its prerequisite tasks as the current
+**Materials v3** plan: `dce84efc` introduced the epic on 2026-10-10;
+`bac0d61f` updated the v3 proposal that day. Source inspection on 2026-10-14
+still finds the large refactor pending; the existing built-in renderer is the
+starting point, not a completed generic material-instance implementation.
+
+| Slice | Checked status |
+| --- | --- |
+| Built-in groundwork | Anime/Toon shading, fixed material handles, and bounded immutable descriptor caching exist. These precede the v3 refactor. |
+| [Stable instances and family contracts](../material-instances-and-family-contracts.md) | Planned; no generic family/definition/instance registry. Anime remains the first internal prototype. |
+| [LED example preparation](../custom-materials-led-strip-example-preparation.md) | Planned; `examples/custom-materials.mms` is absent. Existing strip assets remain the preparation starting point. |
+| [Opaque custom program with animated f32 input](../material-f32-time-animation-first-slice.md) | Planned; no MMS `Material.custom` / `input_f32` API or generic custom surface-program loader. |
+| [Material component and resolved contract](../material-component-and-resolved-contract.md) | Planned; authored properties still resolve through existing specialized paths. |
+| [Emission capabilities and LED proof](../material-emission-capabilities-and-led-strip.md) | Planned; extraction still recognizes fixed emissive Toon handles. |
+| [Lighting/emission/extraction policy](../material-lighting-emission-and-extraction-policy.md) | Proposed on 2026-10-13; zero-intensity unlit behavior is not implemented. |
+| [Water and refracted lighting](../water-surface-and-refracted-lighting.md) | Later consumer; existing transmission resources do not implement the proposed combined water surface or receiver lighting. |
+
+The next material implementation slice remains the minimal stable-instance
+foundation using Anime, followed by the opaque custom-program/f32-time proof.
+This audit is read-only source inspection, not runtime renderer validation.
+
+### Existing implementation
+
 - [Material and MaterialHandle](../../../src/engine/graphics/primitives.rs)
   currently name fixed shader paths and built-in handles. The existing Rust
   `Material` struct is not an MMS `MaterialComponent` or a dynamic definition/
