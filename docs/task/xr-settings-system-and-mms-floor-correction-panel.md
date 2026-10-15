@@ -3,6 +3,9 @@
 Date: 2026-10-13.
 
 Status: feasibility investigated; implementation proposed. Documentation only.
+Architecture clarified on 2026-10-14: InputXR's driven head transform is the
+authoritative engine-world pose for its CXR's rendered eyes. A current-frame
+tracking/update/render handoff is the prerequisite; implementation is pending.
 
 ## Outcome
 
@@ -11,6 +14,9 @@ and an explicitly imported `xr_settings_panel(options)` MMS factory. Its first
 setting is a live floor-height correction slider that can be operated in XR
 without reloading the scene. Examples choose whether and where to attach it.
 The setting remains effective when the panel is minimized, removed, or absent.
+InputXR applies the correction when driving its head transform. CXR derives
+its rendered eye poses from that transform, rather than independently applying
+the setting in rendering.
 
 Retain the user's longer-term direction: a settings launcher/control panel with
 Windows XP-era icon-and-label organization, using Mittens' editor/paint visual
@@ -132,7 +138,7 @@ Changing the runtime's room calibration or reference space should be diagnosed;
 do not silently derive another correction. Saved personal/runtime profiles and
 cross-scene persistence are follow-up decisions.
 
-## XR composition: the main implementation work
+## Selected architecture: InputXR drives the camera's head frame
 
 [openxr_system.rs](../../src/engine/ecs/system/openxr_system.rs) currently creates
 identity `STAGE`, caches raw poses, and composes them through separate paths:
@@ -142,18 +148,60 @@ identity `STAGE`, caches raw poses, and composes them through separate paths:
 3. `render_xr`: each eye through `xr_rig_origin_world`, published to VisualWorld.
 4. Projection submission: original located eye poses in the original reference space.
 
-The correction belongs to the shared **application tracking-to-world mapping**:
+InputXR currently writes its first direct Transform child; the component itself
+does not retain a separate authoritative world pose. Use that driven transform's
+final propagated world matrix as the head frame. Resolve the active CXR's owning
+InputXR using the existing ancestor discovery, then resolve its driven transform.
+Cache this binding with lifecycle invalidation; do not discover it from raw GLTF
+bone names or use an unrelated avatar's head.
+
+Define the correction at InputXR's tracking-to-world boundary:
 
 ```text
-world_from_tracked_pose = base_rig_world * T(0, -c, 0) * raw_stage_pose
+H_raw   = raw STAGE head pose derived from this frame's located eye views
+H_world = InputXR driven transform's final engine-world matrix
+
+InputXR initially drives:
+H_world = base_rig_world * T(0, -c, 0) * H_raw
+
+eye_relative_to_head = inverse(H_raw) * eye_raw
+eye_world           = H_world * eye_relative_to_head
 ```
 
-Use that relationship once for every headset/controller/hand/eye consumer.
-Preserve raw caches for diagnostics, and preserve located projection-view poses
-with their original OpenXR space at submission. Do not correct raw poses and
-also correct the rig origin. The correction is in STAGE metres before the rig
-mapping; supported rig scale therefore transforms it consistently. Define the
-supported upright/yaw/scale contract and diagnose unsupported frames.
+Rendering reads `H_world`; it must not reconstruct an independent corrected
+head pose from the setting and rig origin. The inverse removes tracking already
+contained in the head matrix, so head motion is not applied twice. Obtain each
+eye's full relative pose from the matching OpenXR view, retaining relative
+orientation and position; do not replace it with a hard-coded IPD translation.
+Projection/FOV still comes from OpenXR.
+
+For tracked controllers or a selected hand-root pose, use the same mapping:
+
+```text
+world_from_stage = H_world * inverse(H_raw)
+hand_world       = world_from_stage * hand_raw
+```
+
+This keeps the independently located hands aligned with the head and camera.
+It is equivalent to the corrected rig mapping for an ordinary InputXR pose,
+but also respects the selected InputXR driven transform's world placement.
+Convert hand world targets back into their authored parent-local coordinates
+as the current controller path does. Propagate the head before hands consume
+its matrix; changing an ancestor through contact/mounting requires recomposition
+from retained raw samples before final consumers.
+
+Preserve raw samples for diagnostics and original located projection-view poses
+with their original OpenXR space at submission. Do not rewrite raw compositor
+poses, apply the floor correction to eye-relative offsets, or apply it twice.
+The correction is in STAGE metres before the rig mapping; supported rig scale
+therefore transforms it consistently. Define the supported upright/yaw/scale
+contract and diagnose unsupported frames.
+
+For this slice, CXR identifies its owning InputXR and receives per-eye camera
+poses. Its nearest transform wrapper under AVC remains avatar camera-anchor
+authoring data. It is not selected as another independent headset placement
+matrix. Changing those wrapper semantics is separate work and is unnecessary
+for the slider to affect both InputXR and the view.
 
 Keep the existing rig origin used for locomotion/grounding independently
 identifiable. AVC's capsule samples Y from the pre-tracking locomotion transform;
@@ -163,17 +211,48 @@ part of that sampled Y. A correction on the outer physics root can be undone by
 contact. A CXR-only wrapper does not move the rendered eyes on the current
 InputXR path and would leave independent hands inconsistent.
 
-Audit all uses of rig-origin composition before changing the helper. The existing
-headset path and controller/render paths differ, so changing only
-`xr_rig_origin_world` is insufficient. Support the active CXR path without AVC as
-well as the current humanoid scene. Reuse the engine's existing single active
-XR rig policy; adding independent multi-rig tracking is out of scope.
+Support the active CXR/InputXR path without AVC as well as the current humanoid
+scene. Reuse the engine's single active XR rig policy; independent multi-rig
+tracking is out of scope. Define explicit validity for disabled/removed InputXR,
+missing driven transforms, and invalid tracking. A CXR with no owning InputXR
+needs a documented compatibility policy; do not silently substitute a stale
+matrix from another rig.
 
-Scheduling must cover an update made by a slider callback after the XR pose tick.
-Either consume one latched revision across the next update/render pose frame or
-refresh affected headset/controller/AVC transforms before rendering the new
-revision. Do not accept a permanent frame mismatch or filter only the camera.
-Test existing raw-pose cache timing separately from correction-revision timing.
+### Required prerequisite: current-frame tracking handoff
+
+The 2026-10-14 source check confirms that `Universe.update` drives InputXR from
+the existing pose cache, then `Universe.render` calls `render_xr` with an
+immutable World. `render_xr` waits/begins the XR frame and locates fresh views,
+controllers, and hands before drawing. Those fresh samples populate the cache
+used by the next update. Reading the current InputXR matrix in rendering without
+changing that handoff would therefore use an older head pose.
+
+Split frame preparation/tracking from eye drawing/submission. The preferred
+path is to obtain a prepared XR frame early enough for the engine's XR pose,
+contact, AVC/IK, and final skinning phases to consume that frame's samples;
+rendering later consumes the retained prepared views and final InputXR matrix.
+The implementation must identify the actual update boundary and integrate it
+with active-camera selection and existing contact passes, not simply move a
+single function call and assume ordering is correct.
+
+Retain a small prepared-frame record with predicted display time, raw head,
+eye views/FOV, controller/hand samples, sample validity/sequence, and applied
+settings revision. The raw head and eye-relative poses must come from the same
+prepared frame. Preserve one wait/begin/end lifecycle per XR frame and finish
+non-rendering/error frames appropriately. With no active XR camera, preserve
+the current behavior that avoids entering blocking headset frame pacing.
+
+After simulated motion/contact changes the base frame, recompose InputXR and
+hand targets from the prepared samples and propagate affected transforms before
+dependent avatar/camera consumers. Do not rerun arbitrary gameplay callbacks,
+animation, or physics steps to refresh poses. Final skin palettes, mirror eye
+views, and the XR view must receive the intended corrected poses.
+
+A slider callback arriving after the applied settings snapshot is latched can
+take effect on the next coherent pose frame. All current-frame consumers use
+one revision; rendering must not separately read a newer setting. This is a
+bounded settings-update delay, not permission to render permanently stale head
+tracking. Preserve raw caches/settings state separately from applied frame data.
 
 Changing only floor correction should not alter grounded state, inject Velocity,
 rebuild the capsule, move static geometry, or change the movement root. Physical
@@ -236,11 +315,19 @@ The first XR panel remains explicitly importable without this launcher.
 1. Add `XrSettingsSystem`, typed namespace/host lease, validation, readback,
    notifications, and lifecycle reset. Test setters without any panel or XR
    hardware; invalid calls leave state unchanged.
-2. Implement correction composition and coherent application timing. Synthetic
-   nonzero poses prove +0.15 m lowers head, both hands, and both eyes by the
-   corresponding mapped amount, preserving rotations and inter-eye separation.
-   Reset returns to the original poses without accumulation. Raw cached poses
-   and submitted projection poses/reference space remain unchanged.
+2. Split tracking/frame preparation from rendering/submission and establish the
+   prepared-frame handoff. Test frame lifecycle, absent cameras, invalid samples,
+   and matching raw-head/eye sample identity without a headset. Then make the
+   owning InputXR driven transform authoritative for CXR eyes and shared hand
+   mapping. Synthetic nonzero poses prove +0.15 m lowers head, both hands, and
+   both eyes by the corresponding mapped amount, preserving rotations and
+   inter-eye separation. Reset returns to the original poses without accumulation.
+   Raw samples and submitted projection poses/reference space remain unchanged.
+   A separate test changes the driven transform's world placement while leaving
+   settings/raw tracking fixed and verifies that rendered eye placement follows
+   that matrix. This proves rendering consumes the transform rather than merely
+   duplicating the same correction arithmetic. Use changing head translation and
+   rotation on successive frames to catch old-cache/current-eye mixing.
 3. Integrate with grounded AVC and a CXR rig without AVC. Repeated adjustments,
    crouch/stand, gamepad motion, gravity/contact, teleport, and mount/dismount
    must not make the capsule or movement-root Y chase the setting. Verify scale
