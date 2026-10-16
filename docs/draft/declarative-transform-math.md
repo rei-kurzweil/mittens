@@ -5,7 +5,7 @@ below are semantic notation, not an implemented MMS API.
 
 ## Motivation and scope
 
-The [XR head/neck task](../task/xr-head-neck-bend-and-body-offset.md) can be
+The [AVC head/neck task](../task/xr-head-neck-bend-and-body-offset.md) can be
 decomposed into reusable math and avatar-specific choices. Calling the whole
 behavior an IK constraint describes its goal, but does not require the math
 to live in a dedicated IK solver. A declarative operator can calculate the
@@ -254,7 +254,34 @@ head motion relative to that frame uses the lean allowance; teleports/recenters
 must transport or reset the state explicitly. This small retained state does
 not require a history of HMD samples or a walking-versus-leaning classifier.
 
-## 7. Declarative relationships differ from ordinary MMS reads
+## 7. Choose which quantity to derive from the driver contract
+
+AVC should construct the supported behavior by default under both `Input` and
+`InputXR`; authors should not need to assemble this graph themselves. Shared
+math does not mean treating desktop look input as measured HMD position.
+
+The same relation can be evaluated in either direction:
+
+```text
+root_to_head = root_to_neck + rotate(neck_world, neck_to_head_local)
+
+XR fixed head target:     body_position = head_position - root_to_head
+Desktop fixed body root: head_position = body_position + root_to_head
+```
+
+The bounded XR follow variant chooses a feasible body anchor and solves the
+remaining neck geometry before accepting state. Desktop look-only input keeps
+body translation fixed and derives the head's position on its arc. A derived
+head displacement must not be mistaken for new positional input to the follower.
+Intentional desktop locomotion moves the anchor directly. Desktop camera position
+follows the derived eye frame; the XR view continues to follow measured tracking.
+
+This is a choice of known inputs and desired outputs, not a request for an
+automatic bidirectional equation solver. Build an explicit acyclic evaluation
+for each source contract from the same primitives. The public expression syntax
+can be refined separately from the default AVC prototype.
+
+## 8. Declarative relationships differ from ordinary MMS reads
 
 [Transform accessors](../../crates/meow-meow-script/docs/draft/transform-component-accessors.md)
 copy values when evaluated. An expression such as `head.world.rotation()` does
@@ -306,7 +333,9 @@ Do not expand the existing ancestor-only translation sampler implicitly.
    Advance temporal stages once per intended time step even if propagation visits
    them repeatedly. Preserve independent state for separate avatars.
 4. Bind rig measurements/bases through AVC, validate connected neck geometry and
-   propagation before arm/leg solves, and run the linked XR headset checkpoint.
+   propagation before arm/leg solves, and run default-AVC desktop and XR fixtures.
+   Desktop look must leave body translation fixed while moving the head along
+   the neck arc; desktop movement must move the complete avatar.
 5. Add the thresholded X/Z fixture as a separate increment: a retained planar
    follower plus position-responsive neck closure. Test the finite reach bound,
    diagonal motion, state commit/reset/frame changes, and propagation cadence.

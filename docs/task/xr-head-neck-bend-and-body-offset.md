@@ -1,9 +1,14 @@
-# Task: XR head/neck bend and derived body offset
+# Task: AVC head/neck bend, body offset, and bounded follow
 
 ## Status and outcome
 
 Proposed, 2026-10-15; feasibility review and implementation task only. No
 runtime changes have been made for this task.
+
+Scope update, 2026-10-16: this is intended as automatic behavior of `AVC {}` for
+supported humanoids under both `Input {}` and `InputXR {}`. The original filename
+reflects the XR repro, not an XR-only activation rule. The desktop contract below
+supersedes earlier suggestions to leave desktop on its existing rigid-head path.
 
 Design direction update: [declarative transform math](../draft/declarative-transform-math.md)
 breaks this behavior into rotation selection, quaternion/vector math, translation
@@ -23,6 +28,73 @@ motion classification, pose history, or a full-body IK solver for the initial
 rotation-derived placement. The 2026-10-16 follow-up below adds thresholded X/Z
 following with a retained body anchor and a position-driven neck constraint.
 The exact bend share and limits need headset evaluation on Bisket and Rei(mu).
+
+## Default AVC behavior and driver authority
+
+No extra component, authored TOP graph, or opt-in flag should be required for
+the normal mapped-humanoid case. AVC binds calibration and constructs/owns the
+necessary math, follow state, and pose outputs automatically. Expose tuning and
+an explicit opt-out, but the intended shipped default is enabled whenever its
+rig prerequisites validate. Missing neck/unsupported rigs retain diagnosed
+fallback behavior without breaking head control. Desktop needs no XR component
+or XR runtime to activate the supported head/neck behavior.
+
+Share the geometry while making the source's authority explicit:
+
+| Driver | Authoritative inputs | Derived output / body-follow trigger |
+| --- | --- | --- |
+| `InputXR` | Valid measured head position and orientation, composed with locomotion | Derive connected neck/body pose; measured positional excess beyond the feasible lean region moves the body |
+| `Input` | Desired look orientation and intentional locomotion translation | Keep the calibrated body anchor on look-only input; derive head position from the connected neck arc and let the mapped desktop camera follow it |
+
+For desktop with no locomotion, hold body-root translation fixed through the
+supported look range. The neck receives its bounded rotation share, the head
+receives the remaining orientation, and head/eye positions follow the resulting
+FK geometry. The head can therefore move forward/sideways relative to the body
+and need not remain vertically above it in world space. This positional movement
+is a result of rotating the connected joints, not a new tracked displacement
+that should feed back into the planar follower. Body yaw-follow may still turn
+the body; it must not introduce root translation as a side effect of looking.
+
+For the simple segment fixture, compare the two uses of the same geometry:
+
+```text
+XR:      p_body = measured_head_p - c - rotate(q_neck, v)
+         or choose a feasible retained body anchor and solve q_neck for closure
+
+Desktop: p_body = calibrated_locomotion_body_anchor
+         p_head = p_body + c + rotate(q_neck, v)
+         p_eye  = p_head + rotate(q_head, calibrated_head_to_eye)
+```
+
+Use the real rest path, basis conversions, and supported scale in both modes.
+`p_body` remains fixed for desktop look-only input in XYZ, not just X/Z; the
+head can change height on its arc. Desktop movement commands translate the body
+anchor directly, carrying the connected pose without consuming a lean deadzone.
+Keep existing scene calibration/locomotion-origin conventions instead of treating
+every desktop input translation as an HMD/eye position or redefining its origin.
+
+This requires a source adapter, not just increasing a shared deadzone radius.
+The current unconditional head-under-driver mount makes the desktop head pivot
+follow a fixed-eye-style target. A neck bend plus a fixed head position would
+force a body countertranslation, contradicting the new desktop requirement.
+Derive desktop head position from the body/neck geometry before publishing the
+head pose; either adapt the existing mount or use a compatible FK arrangement.
+Do not let head maintenance overwrite the derived result or feed camera/head
+output back into the input's locomotion state. The mapped Camera3D follows that
+derived head/eye frame. XR rendered eye poses keep their existing authoritative
+tracking path and receive no synthetic neck-arc offset.
+
+`Input` itself does not promise anatomical limits: FPS pitch currently clamps
+to +/-1.55 radians, while relative/flight rotation can continue through complete
+turns. Do not change generic Input behavior to solve this AVC feature. Bound the
+neck contribution and leave remaining requested orientation on the head for the
+initial desktop fixture; stricter anatomical head-angle clamping would be an
+explicit separate policy. Ordinary look, including reaching the neck bound,
+must not make the body translate to satisfy the XR positional constraint.
+
+Changing between desktop and XR rebinds source authority and initializes the
+appropriate anchor state from the current calibrated pose. Never reuse a
+desktop-derived head position as if it were a measured XR sample.
 
 ## Existing documentation and actual implementation
 
@@ -271,7 +343,9 @@ expression branches with incompatible targets do not enforce a constraint.
    Saturate neck flexion while the head retains the rest of its tracked
    rotation. Test the virtual endpoint and derived body translation together.
 4. **Integrate ownership and scheduling.** Enable only for the avatar's active,
-   valid XR pose driver. Desktop and invalid/unbound cases keep their baseline.
+   usable pose driver by default. XR waits for valid tracking; desktop uses the
+   look/locomotion authority contract above and does not need XR readiness.
+   Invalid/unbound rigs keep their diagnosed fallback.
    Make one module own neck rotation and body translation; compose the neck
    rest-position pin with it. For the first fixture the neck has one pose owner;
    future animation supplies an explicit base pose instead of racing writes.
@@ -283,8 +357,8 @@ expression branches with incompatible targets do not enforce a constraint.
    replacement, and clean up per-instance state on removal. Invalid tracking
    suspends solving; reacquisition evaluates the current pose without replaying
    accumulated correction. Suspend for mounted/seated modes until their body
-   ownership is defined. Enable by default only after both headset fixtures
-   pass neck, arm, and grounding checks.
+   ownership is defined. Default activation is part of the implementation, not
+   an author opt-in; validate both desktop and headset fixtures before shipping.
 
 The model-root update must use the current transform propagation contract
 through operator boundaries. Existing body-follow comments describe an older
@@ -293,9 +367,10 @@ workaround into a second writer.
 
 ## Acceptance and meaningful verification
 
-- Repeating the same input produces the same neck rotation/body pose with no
-  accumulation, drift, oscillation, or dependency on previous corrected FK.
-- Neutral pose reproduces calibrated rest geometry, including nonzero authored
+- Holding an input produces a stable accepted neck/body pose with no accumulation,
+  drift, oscillation, or feedback from previous corrected FK. The initial pure
+  geometry fixture is stateless; bounded follow intentionally retains its anchor.
+- Initial calibrated neutral pose reproduces rest geometry, including nonzero authored
   horizontal offsets. Virtual neck endpoint and tracked head pivot agree within
   a stated numeric tolerance; neck lengths/translations/scales stay fixed.
 - Pitch down through a supported sweep (for example 0, 30, 60, 80 degrees):
@@ -307,7 +382,10 @@ workaround into a second writer.
   Near vertical gaze, retain a stable body/anatomical frame rather than
   extracting yaw from a vanishing horizontal forward vector.
 - Translating the whole tracked pose at fixed orientation translates the solved
-  body by the same amount. Rotated parents, both avatar forward conventions,
+  body by the same amount in the immediate-follow fixture. In bounded-follow
+  mode, translation inside the allowed lean range leaves the retained body
+  anchor in place; beyond it the body follows to maintain a feasible pose.
+  Rotated parents, both avatar forward conventions,
   nonidentity rest rotations, uniform scale, and renamed bones remain correct.
 - Confirm current shoulders are used by arm IK and future crouch targets use
   the corrected body pose in the same frame. Inspect sole motion from the Y
@@ -315,6 +393,34 @@ workaround into a second writer.
   the rendered XR origin.
 - Missing neck, unsupported scale, tracking loss/reacquisition, disable/re-enable,
   avatar replacement, and desktop mode behave according to the lifecycle above.
+- Plain `AVC {}` binds supported rigs automatically under either driver. A
+  desktop-only scene exercises the feature without initializing XR. No authored
+  operators or additional constraint component are needed for default behavior.
+- With desktop translation input disabled, sweep look pitch/yaw/roll and combined
+  rotations, hold at neck limits, return, and repeat: body-root XYZ remains fixed
+  within a stated numeric tolerance while head position follows the connected
+  arc. Include a nonzero-X/Z head-to-body offset and check the mapped camera
+  follows the derived eye frame. Existing body-yaw follow may change yaw.
+- Desktop WASD/other intended locomotion still moves the complete avatar;
+  look-only motion never changes retained locomotion translation. Test source
+  switching without inherited XR/desktop anchor state or feedback drift.
+
+## Implementation readiness
+
+Ready for a focused prototype with the source-authority contract above, shared
+rig geometry, and existing binding/propagation infrastructure. No further
+product decision is required to start that prototype. First prove default
+desktop rotation with a fixed body anchor, then rotation-derived XR placement,
+then bounded XR positional follow and geometric closure.
+
+Use internal typed math and a bounded pose owner as needed; the final public
+declarative expression syntax is not settled and need not be invented merely
+to run the first fixture. Keep the pure math reusable by the proposed operator
+facility, and keep the stateful follow/acceptance boundary explicit. Exact bend
+shares, anatomical limits, and feasible lean margins are measured/tuned during
+implementation on supported rigs, with values recorded in the fixtures. They
+are not yet validated shipping defaults. The generic declarative math facility
+remains a separate API design deliverable if included in the same implementation.
 
 Pure geometry tests and a small integration fixture should establish closure,
 frame ordering, and ownership before the headset checkpoint. A plausible

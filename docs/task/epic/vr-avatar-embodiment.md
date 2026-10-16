@@ -111,7 +111,9 @@ the posture work below.
   placement from the neck arc while preserving the tracked head/view. Includes
   operator feasibility, state requirements, and grounding/arm ordering. The
   2026-10-16 follow-up adds a retained X/Z lean allowance, with positional neck
-  closure and earlier body follow wherever anatomical reach requires it.
+  closure and earlier body follow wherever anatomical reach requires it. Intended
+  as default AVC behavior for both drivers: desktop look moves the head on its
+  neck arc while body translation stays fixed; XR retains measured-head authority.
 - [Transform operator API and output-contract cleanup](../transform-operator-api-cleanup.md)
   — grouped constructors/builders and uniform downstream-child composition;
   the focused phase precedes the capsule height fix; remaining specialized
