@@ -6,10 +6,12 @@ Date: 2026-03-23
 
 Planned default behavior (2026-10-16): [head/neck bend and bounded body follow](../task/xr-head-neck-bend-and-body-offset.md)
 is intended to activate automatically for supported mapped humanoids under
-either `Input` or `InputXR`. Desktop look keeps body-root translation fixed and
-derives head position along the connected neck arc; XR preserves measured head
-position and moves the body when feasible lean is exhausted. This is a proposal,
-not current runtime behavior; it supersedes XR-only scope in earlier notes.
+either `Input` or `InputXR`, implemented through AVC-generated transform operators.
+Both use the same per-rig follow threshold, calibrated to contain the full
+rotation-generated head/body displacement. Desktop look remains inside that
+range; XR measured positional excess can cause follow. Both retain geometric
+neck closure. This is a proposal, not current runtime behavior; it supersedes
+XR-only scope and separate follow-policy assumptions in earlier notes.
 
 A single coordination point that rigs a humanoid avatar for first-person control from a
 primary body/head driver (`InputComponent` or `InputXRComponent`) plus any number of

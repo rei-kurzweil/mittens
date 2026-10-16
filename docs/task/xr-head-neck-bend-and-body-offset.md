@@ -12,10 +12,11 @@ supersedes earlier suggestions to leave desktop on its existing rigid-head path.
 
 Design direction update: [declarative transform math](../draft/declarative-transform-math.md)
 breaks this behavior into rotation selection, quaternion/vector math, translation
-patching, and shared derived values. Explore those small reusable pieces before
-choosing a dedicated IK implementation. The constraint goal and the operator
-implementation are compatible; existing TOP composition already expresses part
-of the geometry.
+patching, and shared derived values. Implement the constraint through composed
+transform operators, automatically wired by AVC. Small shared math helpers may
+back the operator primitives; a separate dedicated avatar IK solver is not the
+selected implementation. Existing TOP composition already expresses part of the
+geometry; retained math/follow capabilities still need to be added.
 
 When looking down at their torso or legs in XR, the user should see a connected
 neck bending with the head, with the body placed behind the head as required by
@@ -29,7 +30,7 @@ rotation-derived placement. The 2026-10-16 follow-up below adds thresholded X/Z
 following with a retained body anchor and a position-driven neck constraint.
 The exact bend share and limits need headset evaluation on Bisket and Rei(mu).
 
-## Default AVC behavior and driver authority
+## Default AVC behavior and shared follow policy
 
 No extra component, authored TOP graph, or opt-in flag should be required for
 the normal mapped-humanoid case. AVC binds calibration and constructs/owns the
@@ -39,21 +40,27 @@ rig prerequisites validate. Missing neck/unsupported rigs retain diagnosed
 fallback behavior without breaking head control. Desktop needs no XR component
 or XR runtime to activate the supported head/neck behavior.
 
+Use the same operator-based constraint and calibrated body-follow threshold for
+both drivers. Driver-specific source preparation supplies the desired head pose;
+it does not select a different follow algorithm or a desktop bypass.
+
 Share the geometry while making the source's authority explicit:
 
 | Driver | Authoritative inputs | Derived output / body-follow trigger |
 | --- | --- | --- |
-| `InputXR` | Valid measured head position and orientation, composed with locomotion | Derive connected neck/body pose; measured positional excess beyond the feasible lean region moves the body |
-| `Input` | Desired look orientation and intentional locomotion translation | Keep the calibrated body anchor on look-only input; derive head position from the connected neck arc and let the mapped desktop camera follow it |
+| `InputXR` | Valid measured head position and orientation, composed with locomotion | Apply the common calibrated range and geometric closure; excess displacement moves the body |
+| `Input` | Desired look orientation and intentional locomotion translation; head position on the connected rotation arc | Apply the same range and closure; the generated rotation-only offset fits inside the calibrated allowance |
 
 For desktop with no locomotion, hold body-root translation fixed through the
 supported look range. The neck receives its bounded rotation share, the head
 receives the remaining orientation, and head/eye positions follow the resulting
 FK geometry. The head can therefore move forward/sideways relative to the body
 and need not remain vertically above it in world space. This positional movement
-is a result of rotating the connected joints, not a new tracked displacement
-that should feed back into the planar follower. Body yaw-follow may still turn
-the body; it must not introduce root translation as a side effect of looking.
+is a result of rotating the connected joints. It may be presented to the common
+follower: calibration must ensure this rotation-only displacement cannot cross
+its boundary from the neutral anchor. Do not accumulate that generated output
+as new input next frame. Body yaw-follow may still turn the body; it must not
+introduce root translation as a side effect of looking.
 
 For the simple segment fixture, compare the two uses of the same geometry:
 
@@ -73,10 +80,10 @@ anchor directly, carrying the connected pose without consuming a lean deadzone.
 Keep existing scene calibration/locomotion-origin conventions instead of treating
 every desktop input translation as an HMD/eye position or redefining its origin.
 
-This requires a source adapter, not just increasing a shared deadzone radius.
+The source adapter and the common threshold solve different parts of the task.
 The current unconditional head-under-driver mount makes the desktop head pivot
-follow a fixed-eye-style target. A neck bend plus a fixed head position would
-force a body countertranslation, contradicting the new desktop requirement.
+follow a fixed-eye-style target. Merely enlarging its threshold does not create
+the desired connected desktop head arc; source preparation must supply it.
 Derive desktop head position from the body/neck geometry before publishing the
 head pose; either adapt the existing mount or use a compatible FK arrangement.
 Do not let head maintenance overwrite the derived result or feed camera/head
@@ -95,6 +102,70 @@ must not make the body translate to satisfy the XR positional constraint.
 Changing between desktop and XR rebinds source authority and initializes the
 appropriate anchor state from the current calibrated pose. Never reuse a
 desktop-derived head position as if it were a measured XR sample.
+
+## Calibrate one follow threshold from the rotational motion envelope
+
+Direction update, 2026-10-16: the allowed relative displacement generated by
+the rotational constraint provides a principled minimum for the common follow
+range. The preceding desktop/XR distinction concerns pose inputs, not separate
+body-follow policies. This replaces the earlier implication that desktop must
+skip positional follow to keep look-only motion from translating the body.
+
+Measure a consistent anatomical point and subtract its neutral offset. For a
+head-pivot target in the locomotion frame:
+
+```text
+b             = retained body anchor
+d0            = neutral body-root-to-head displacement under current body yaw
+relative_xz   = (head_position - b - d0).xz
+rotation_only(q) = relative_xz generated with fixed b and no positional input
+
+R_rotation = max(length(rotation_only(q))) over all supported rotation states
+R_follow   >= R_rotation
+```
+
+`R_follow` is the same calibrated value for this avatar/configuration regardless
+of driver type. The maximum is over the complete supported rotation composition,
+including simultaneous axes, rest frames, eye/head conversion if it affects the
+chosen target point, and configured uniform scale. It is not the absolute
+distance from feet/root to head, nor just one nod from a neutral sample.
+
+For the simple vertical neck segment with pitch share capped at 25 degrees,
+12 cm length gives about 5.1 cm maximum planar rotational displacement. Keep
+these as explanatory measurements, not a universal threshold. Derive bounds
+from the permitted operations/ranges where possible; use pose sweeps including
+combined rotations to validate them on the actual rig. Recompute calibration
+when rig, scale, geometry, or rotation limits change.
+
+Pure desktop look generated by that same calibrated constraint remains inside
+the allowance. XR head movement can also remain inside it; additional measured
+translation can cross it and cause follow. No source-type branch is needed in
+the follower. Intentional simulated locomotion transports the anchor frame and
+continues to move the avatar immediately in either mode.
+
+Containment of generated rotational motion and anatomical reach are separate
+checks. The allowed range must contain the generated envelope, while its accepted
+poses must still close the neck/head geometry under the selected limits. If
+there is no reach beyond the maximum preferred rotation, there is no guaranteed
+extra lean margin in that direction. Reserve bend/reach for any physical margin;
+use numerical comparison tolerance at the boundary rather than permitting an
+unreachable gap. A conservative circle can include unreachable off-axis points,
+so keep the geometric validation described below even with a radial threshold.
+
+Choose one threshold measurement and keep its calibration consistent. The
+formula above measures total departure from neutral geometry. If instead a
+stage subtracts the expected rotation-induced displacement first, its output is
+a residual and its threshold means additional lean. Do not subtract that motion
+and also charge it against the same total-distance budget. The first shared
+threshold fixture uses the total neutral-relative measure above.
+
+This guarantees rotation-only containment from the neutral anchor. If XR has
+already leaned near the boundary, further rotation can cross a total-distance
+threshold without additional physical translation. That is a consequence of
+using one total range, not a desktop/XR difference. Test this explicitly. A
+stronger rule that rotations never initiate follow at any existing lean would
+require rotation-compensated residual measurement or an orientation-dependent
+allowed region; it is not implied by increasing one scalar radius.
 
 ## Existing documentation and actual implementation
 
@@ -225,12 +296,14 @@ cannot close an arbitrary positional gap.
 
 Separate the pieces:
 
-1. **Preferred geometry:** the current head pose, body yaw, and bounded
-   rotation-sharing policy calculate the preferred root position `a`. Use the
-   calibrated head pivot and virtual chain, not raw eye/HMD-center X/Z.
+1. **Shared measurement:** the current desired head pivot and neutral virtual
+   root-to-head displacement calculate the target `a = head_position - d0`.
+   The neutral-relative displacement includes the bounded rotational arc used
+   to calibrate the common range. The chosen neck rotation remains a preference
+   for geometric closure, not an independently applied second translation.
 2. **Retained planar anchor:** keep the previous accepted body X/Z `b` in an
    explicit locomotion frame. Small movement of `a` can leave `b` unchanged.
-3. **Comfort bound:** move `b` when the preferred anchor is too far away.
+3. **Comfort bound:** move `b` when the neutral-relative target is too far away.
    Begin with a radial X/Z bound; independently clamping X and Z permits a
    larger diagonal displacement. Directional/body-relative bounds can follow.
 4. **Geometric closure:** solve neck orientation from the actual head-to-body
@@ -241,7 +314,7 @@ Separate the pieces:
 An illustrative planar follower, before anatomical validation, is:
 
 ```text
-a = preferred_root_position.xz
+a = (head_position - neutral_root_to_head_displacement).xz
 b = previous_accepted_body_anchor.xz
 e = a - b
 
@@ -251,8 +324,9 @@ b_candidate = a - radius * e / length(e)     otherwise
 
 This moves only the amount needed to remain at the permitted boundary. It is
 not a speed-limited chase or a perpetual easing toward the head. At zero radius
-it becomes immediate preferred-anchor follow. After a lean and return, the body
-may remain at its newly accepted anchor; automatic recentering would be another
+it becomes immediate neutral-anchor follow (disabling the rotational allowance).
+After a lean and return, the body may remain at its newly accepted anchor;
+automatic recentering would be another
 explicit policy, not an accidental consequence of smoothing.
 
 The comfort radius is not a guarantee of reachability. Validate the candidate
@@ -282,7 +356,7 @@ bounded pose policy, not inferred foot planting.
 Implement after the rotation-only geometry fixture. Add captures/tests for
 translation with fixed head orientation, small sway, threshold crossing in both
 directions and diagonally, holding a lean, returning, and looking down while
-leaning. Record preferred anchor, retained anchor, final neck rotation, body Y,
+leaning. Record neutral-relative target, retained anchor, final neck rotation, body Y,
 endpoint residual, and the reason for early follow. Repeat under different frame
 rates, fast motion, frame/teleport changes, tracking loss, and avatar replacement.
 
@@ -305,13 +379,13 @@ there is no operation that distributes head orientation into a neck joint and
 derives a second body output from the resulting FK geometry. An ordinary child
 operator also cannot update its parent or sibling neck branch.
 
-Explore the [declarative math decomposition](../draft/declarative-transform-math.md)
-before committing to a dedicated solver. The body calculation can be a
-single-output transform operator; shared upstream values can supply both that
-output and the neck rotation. Current TOPs do not expose that full expression
-surface. A pure calculation helper with an AVC-adjacent owner remains a viable
-implementation if the declarative extension proves larger than the use case.
-Keep calibration, eligibility, and pose ownership explicit in either design.
+Use the [declarative math decomposition](../draft/declarative-transform-math.md)
+to implement the constraint through transform operators. The body calculation
+can be a single-output stage; shared upstream values supply both it and neck
+rotation. Current TOPs need the retained math and stateful-follow extension to
+express the full behavior. AVC binds calibration/eligibility and owns the
+generated composition; backend math helpers should implement reusable primitives
+without introducing an alternative standalone avatar solver.
 Current translation sampling is restricted to structural ancestor sources and
 cannot simply sample a solved sibling branch. No general transform constraint
 graph is a prerequisite for the first slice.
@@ -396,6 +470,12 @@ workaround into a second writer.
 - Plain `AVC {}` binds supported rigs automatically under either driver. A
   desktop-only scene exercises the feature without initializing XR. No authored
   operators or additional constraint component are needed for default behavior.
+- Run the same calibrated source-pose sequence through the shared follow stage
+  independent of driver type: identical poses, initial anchor, and configuration
+  produce identical accepted anchors. Sweep the complete generated rotational
+  envelope without moving the neutral anchor, then add positional excess and
+  verify follow begins at the same threshold in both cases. Exercise XR rotation
+  after leaning near the boundary and record total-range behavior explicitly.
 - With desktop translation input disabled, sweep look pitch/yaw/roll and combined
   rotations, hold at neck limits, return, and repeat: body-root XYZ remains fixed
   within a stated numeric tolerance while head position follows the connected
@@ -413,7 +493,7 @@ product decision is required to start that prototype. First prove default
 desktop rotation with a fixed body anchor, then rotation-derived XR placement,
 then bounded XR positional follow and geometric closure.
 
-Use internal typed math and a bounded pose owner as needed; the final public
+Use internal typed operator composition with explicit state acceptance; the final public
 declarative expression syntax is not settled and need not be invented merely
 to run the first fixture. Keep the pure math reusable by the proposed operator
 facility, and keep the stateful follow/acceptance boundary explicit. Exact bend
