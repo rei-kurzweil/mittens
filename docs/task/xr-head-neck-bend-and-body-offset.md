@@ -19,8 +19,10 @@ is derived from the articulated neck geometry, rather than an arbitrary
 pitch-to-backward-translation multiplier.
 
 This is feasible as a small bounded kinematic constraint. It does not require
-motion classification, pose history, or a full-body IK solver. The exact bend
-share and limits need headset evaluation on Bisket and Rei(mu).
+motion classification, pose history, or a full-body IK solver for the initial
+rotation-derived placement. The 2026-10-16 follow-up below adds thresholded X/Z
+following with a retained body anchor and a position-driven neck constraint.
+The exact bend share and limits need headset evaluation on Bisket and Rei(mu).
 
 ## Existing documentation and actual implementation
 
@@ -127,11 +129,98 @@ For an eligible avatar this constraint replaces that model-root translation
 write, deriving the complete root position from the shared head target and
 virtual chain. Ineligible avatars retain the current behavior.
 
+## Follow-up: bounded X/Z lean before body follow
+
+Direction update, 2026-10-16: rotation-derived placement is the first fixture,
+not the complete desired body behavior. Allow some head/body displacement in
+X/Z, then move the body once that separation exceeds its permitted range.
+Keep the head tracked and close the neck geometry throughout.
+
+The earlier [body-follow attempt](avatar-control-simple-humanoid-body-follow.md)
+reported rotation-induced HMD motion dragging the body and a stretching neck.
+The [older alignment analysis](../analysis/cameraxr-avatar-alignment.md#13-the-ik-problem-and-why-it-surfaces-with-translationfollow)
+also explicitly identified an unsolved head/neck gap when body position lags.
+Sharing head rotation with the neck could address part of this failure, but
+the available notes do not establish it as the sole cause. Keep anchor
+calibration, positional closure, and update order in the investigation.
+
+Importantly, `P_root = P_head - d(chosen_neck_rotation)` still follows head
+translation 1:1 when orientation and the chosen neck rotation are unchanged.
+It creates an anatomical offset, not a region in which the body stays put.
+Allowing that region requires neck rotation to respond to positional error as
+well as the preferred share of head rotation. An orientation-only neck driver
+cannot close an arbitrary positional gap.
+
+Separate the pieces:
+
+1. **Preferred geometry:** the current head pose, body yaw, and bounded
+   rotation-sharing policy calculate the preferred root position `a`. Use the
+   calibrated head pivot and virtual chain, not raw eye/HMD-center X/Z.
+2. **Retained planar anchor:** keep the previous accepted body X/Z `b` in an
+   explicit locomotion frame. Small movement of `a` can leave `b` unchanged.
+3. **Comfort bound:** move `b` when the preferred anchor is too far away.
+   Begin with a radial X/Z bound; independently clamping X and Z permits a
+   larger diagonal displacement. Directional/body-relative bounds can follow.
+4. **Geometric closure:** solve neck orientation from the actual head-to-body
+   separation, using the rotation-share result as a preference. Enforce neck
+   limits and the residual head-versus-neck orientation limits; preserve the
+   tracked head's full pose. An unsupported target makes the body follow sooner.
+
+An illustrative planar follower, before anatomical validation, is:
+
+```text
+a = preferred_root_position.xz
+b = previous_accepted_body_anchor.xz
+e = a - b
+
+b_candidate = b                              if length(e) <= radius
+b_candidate = a - radius * e / length(e)     otherwise
+```
+
+This moves only the amount needed to remain at the permitted boundary. It is
+not a speed-limited chase or a perpetual easing toward the head. At zero radius
+it becomes immediate preferred-anchor follow. After a lean and return, the body
+may remain at its newly accepted anchor; automatic recentering would be another
+explicit policy, not an accidental consequence of smoothing.
+
+The comfort radius is not a guarantee of reachability. Validate the candidate
+against the current chain, bend limits, and available head/neck orientation
+range. If it cannot close, move the body to a feasible position and solve the
+neck against that final position. A short neck permits only a small lean; a
+12 cm segment with a 25-degree bend has about 5.1 cm horizontal reach from
+vertical, and a preferred bend already consumes some of that range. Do not
+select a generic 10 cm deadzone without measuring the rig and directional
+limits. Larger torso lean requires an explicit chest/spine extension or earlier
+body translation; it cannot be supplied by neck stretching.
+
+Body Y remains derived from the final connected chain, not independently
+frozen by the planar follower. Even a reachable horizontal offset can need a
+vertical correction. If a standing/foot constraint later fixes Y, re-evaluate
+feasibility jointly; the planar bound alone no longer proves closure.
+
+The hard reach/bend bound takes priority over a cosmetic follow-rate cap. Fast
+physical motion or a teleport must not leave the tracked head detached while
+the body slowly catches up. Init/rebind/tracking reacquisition establish a
+current feasible anchor; removal clears state. Locomotion-frame motion carries
+the retained anchor with it, so simulated walking/turning is not delayed by this
+lean allowance. Define teleport/recenter frame changes explicitly. One HMD does
+not identify whether room-scale translation was leaning or stepping; this is a
+bounded pose policy, not inferred foot planting.
+
+Implement after the rotation-only geometry fixture. Add captures/tests for
+translation with fixed head orientation, small sway, threshold crossing in both
+directions and diagonally, holding a lean, returning, and looking down while
+leaning. Record preferred anchor, retained anchor, final neck rotation, body Y,
+endpoint residual, and the reason for early follow. Repeat under different frame
+rates, fast motion, frame/teleport changes, tracking loss, and avatar replacement.
+
 ## State and transform-operator feasibility
 
 | Concern | Required state / existing fit |
 | --- | --- |
-| Neck bend and body placement | Current tracked head pose, current body yaw, rig calibration and limits; deterministic without pose history |
+| Initial rotation-derived placement | Current tracked head pose, current body yaw, rig calibration and limits; deterministic without pose history |
+| Thresholded X/Z body follow | Previous accepted planar anchor and explicit locomotion frame; deterministic per update with retained state |
+| Neck pose during allowed lean | Positional closure and joint limits in addition to preferred rotation sharing; use the final accepted anchor |
 | Rig binding | Per-instance IDs, original FK path, immutable rest transforms, anatomical basis, supported scale, and map generation |
 | Existing body yaw | Already stateful in `TOP.yaw_follow`; consume its current result |
 | Optional smoothing | Retained per-avatar filter values, reset on rebind/tracking transitions; not needed for the first fixture |
@@ -154,6 +243,13 @@ Keep calibration, eligibility, and pose ownership explicit in either design.
 Current translation sampling is restricted to structural ancestor sources and
 cannot simply sample a solved sibling branch. No general transform constraint
 graph is a prerequisite for the first slice.
+
+The thresholded follow-up also needs an explicit stateful planar-follow stage
+and geometric feasibility/closure. Those are separate from pure quaternion/vector
+math. Statefulness is compatible with TOPs, as yaw follow demonstrates, but
+state advances must be bounded to one intended update. The final pose must be
+validated before it is published to neck/body consumers; two independent
+expression branches with incompatible targets do not enforce a constraint.
 
 ## Implementation slices
 

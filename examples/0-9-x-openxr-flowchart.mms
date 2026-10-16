@@ -6,7 +6,10 @@
 // All card positions come from styled flex rows under one LayoutRoot. Connectors
 // are an unstyled geometry sibling aligned to that grid in glyph units. MMS Style
 // absolute offsets are not implemented by layout; geometry avoids relying on them.
-// Every edge segment and arrowhead stays horizontal/vertical.
+// Connector paths stay horizontal/vertical; each arrowhead is one oriented triangle.
+
+import { info_panel, info_panel_body } from "../assets/components/ui/info_panel.mms"
+import { openxr_calibration_notes } from "../assets/components/diagrams/openxr_calibration_notes.mms"
 
 RendererSettings { window_size(1920, 1200) }
 BGC.rgba(0.009, 0.014, 0.025, 1.0)
@@ -22,6 +25,67 @@ let violet = [0.72, 0.54, 1.0, 1.0]
 let green = [0.40, 0.90, 0.68, 1.0]
 let muted = [0.60, 0.68, 0.78, 1.0]
 let white = [0.91, 0.95, 1.0, 1.0]
+let black = [0.0, 0.0, 0.0, 1.0]
+let calibration_notes = openxr_calibration_notes()
+let detail_state = { selected_id = null body_mount = null }
+
+fn detail_text(value, size, tint) {
+    return T {
+        Style { display("block") width(100%) font_size(size) word_wrap("normal") }
+        Text { value C.rgba(tint[0], tint[1], tint[2], tint[3]) }
+    }
+}
+
+fn detail_section(section_title, value) {
+    return T {
+        Style { display("flex") flex_direction("column") width(100%) row_gap(0.25) margin_top(0.5) }
+        detail_text(section_title, 0.66, cyan)
+        detail_text(value, 0.82, white)
+    }
+}
+
+fn detail_content(id) {
+    let note = null
+    if id != null { note = calibration_notes[id] }
+    return T {
+        name = "flowchart_detail_content"
+        Style { display("flex") flex_direction("column") width(100%) row_gap(0.3) padding(0.4) }
+        if note {
+            detail_text(note.symbol, 0.92, white)
+            detail_text(note.owner, 0.72, muted)
+            detail_text(note.status, 0.74, gold)
+            detail_text("Commit 01ccbe73 / 2026-10-15", 0.66, muted)
+            detail_section("BEFORE THIS COMMIT", note.before)
+            detail_section("WHAT CHANGED", note.after)
+            detail_section("WHY IT MATTERS", note.why)
+            detail_section("SOURCE", note.source)
+        } else {
+            detail_text("Select an engine card", 1.05, white)
+            detail_text("Click any card on the internal side to read its relationship to the XR floor-height calibration commit, 01ccbe73.", 0.86, white)
+            detail_section("SOLID COLOR / BLACK TEXT", "This card's named symbol or field was added in that commit. A new field inside an existing struct is identified explicitly in the notes.")
+            detail_section("OUTLINED CARDS", "Existing functions and downstream consumers remain outlined. Their notes distinguish changed behavior from unchanged context.")
+            detail_section("MOVE THIS PANEL", "Drag the title bar on desktop, or grab its title bar in XR. Collapse and restore it without losing the selected item.")
+        }
+    }
+}
+
+fn detail_body() {
+    return info_panel_body({
+        content = detail_content(detail_state.selected_id)
+        body_background_color = [0.018, 0.026, 0.042, 1.0]
+        body_text_color = white
+    })
+}
+
+fn show_detail(id) {
+    detail_state.selected_id = id
+    let current_body = detail_state.body_mount.query("#accordion_body")
+    if current_body {
+        current_body.remove_subtree()
+        detail_state.body_mount.attach(detail_body())
+    }
+    // A collapsed panel retains the selection and rebuilds it when restored.
+}
 
 fn words(value, size, color, box_w, box_h) {
     return T {
@@ -65,21 +129,37 @@ fn stroke(points, color) {
 
 fn wire(points, color) {
     return T {
-        stroke(points, color)
-        // Stair-step arrowheads also stay on the orthogonal grid.
         let tip = points[len(points) - 1]
         let prev = points[len(points) - 2]
-        for step in range(4) {
-            let back = step * 0.16
-            let span = 0.14 + step * 0.22
-            if tip[0] == prev[0] {
-                let direction = 1.0
-                if tip[1] < prev[1] { direction = -1.0 }
-                ink(tip[0] - span / 2.0, tip[1] - direction * back, span, 0.17, color)
-            } else {
-                let direction = 1.0
-                if tip[0] < prev[0] { direction = -1.0 }
-                ink(tip[0] - direction * back, tip[1] - span / 2.0, 0.17, span, color)
+        let direction_x = 0.0
+        let direction_y = 1.0
+        let arrow_angle = 0.0
+        if tip[0] == prev[0] {
+            if tip[1] > prev[1] { direction_y = -1.0 arrow_angle = 3.14159265 }
+        } else {
+            direction_y = 0.0
+            direction_x = 1.0
+            arrow_angle = -1.57079633
+            if tip[0] < prev[0] { direction_x = -1.0 arrow_angle = 1.57079633 }
+        }
+
+        // R.triangle() points along local +Y. Its centroid is 2/3 of the
+        // triangle's height behind the tip; account for that to dock exactly.
+        let head_length = 0.62
+        let tip_offset = head_length * 2.0 / 3.0
+        let neck = [tip[0] - direction_x * tip_offset, tip[1] + direction_y * tip_offset]
+        for i in range(len(points) - 2) {
+            stroke([points[i], points[i + 1]], color)
+        }
+        // End the shaft inside the head so no square corners protrude at its tip.
+        stroke([prev, neck], color)
+        T.position(neck[0], -neck[1], 0.03)
+            .rotation(0.0, 0.0, arrow_angle)
+            .scale(0.80, head_length / 0.8660254, 1.0) {
+            name = "flow_arrowhead"
+            R.triangle() {
+                C.rgba(color[0], color[1], color[2], color[3])
+                Emissive.on() { intensity(1.25) }
             }
         }
     }
@@ -87,7 +167,7 @@ fn wire(points, color) {
 
 // Input and output have separate bands, fixed label rows, and aligned values.
 // Keep their authored line breaks to two lines; purpose is a short caption.
-fn port_section(section_label, detail, tint, fill, section_w) {
+fn port_section(section_label, detail, tint, fill, detail_ink, section_w) {
     return T {
         Style {
             display("flex") flex_direction("column")
@@ -95,33 +175,64 @@ fn port_section(section_label, detail, tint, fill, section_w) {
             background_color(fill)
         }
         words(section_label, 0.48, tint, section_w - 0.8, 0.65)
-        words(detail, 0.64, white, section_w - 0.8, 1.35)
+        words(detail, 0.64, detail_ink, section_w - 0.8, 1.35)
     }
 }
 
-fn card(id, kind, title, input, output, purpose, color, box_w) {
-    return T {
+fn card(id, kind, title, input, output, purpose, card_tint, box_w) {
+    let note = calibration_notes[id]
+    let added = false
+    if note { added = note.added }
+    // XrSettings is new too, but scripting-shell cards stay non-interactive.
+    if id == "mms_settings" { added = true }
+    let card_fill = [0.022, 0.033, 0.054, 1.0]
+    let card_ink = white
+    let caption_ink = muted
+    let kind_ink = card_tint
+    let input_ink = cyan
+    let output_ink = green
+    let input_fill = [0.028, 0.065, 0.085, 1.0]
+    let output_fill = [0.028, 0.075, 0.062, 1.0]
+    let kind_label = kind
+    if added {
+        card_fill = card_tint
+        card_ink = black
+        caption_ink = black
+        kind_ink = black
+        input_ink = black
+        output_ink = black
+        input_fill = card_tint
+        output_fill = card_tint
+        kind_label = "ADDED / " + kind
+    }
+    let item = T {
         name = id
+        if note {
+            Option {}
+            Raycastable.enabled() { interaction_priority(25.0) }
+        }
         Style {
             display("block") flex_shrink(0.0) width(box_w) height(12.0)
-            padding(0.07) background_color(color)
+            padding(0.07) background_color(card_tint)
         }
         T {
             Style {
                 display("flex") flex_direction("column")
                 width(box_w - 0.14) height(11.86) padding(0.68)
-                background_color([0.022, 0.033, 0.054, 1.0])
+                background_color(card_fill)
             }
-            words(kind, 0.50, color, box_w - 1.5, 0.75)
-            words(title, 0.86, white, box_w - 1.5, 2.0)
-            port_section("INPUT", input, cyan, [0.028, 0.065, 0.085, 1.0], box_w - 1.5)
+            words(kind_label, 0.50, kind_ink, box_w - 1.5, 0.75)
+            words(title, 0.86, card_ink, box_w - 1.5, 2.0)
+            port_section("INPUT", input, input_ink, input_fill, card_ink, box_w - 1.5)
             T { Style { display("block") width(box_w - 1.5) height(0.20) } }
-            port_section("OUTPUT", output, green, [0.028, 0.075, 0.062, 1.0], box_w - 1.5)
+            port_section("OUTPUT", output, output_ink, output_fill, card_ink, box_w - 1.5)
             T { Style { display("block") width(box_w - 1.5) height(0.20) } }
-            words("PURPOSE", 0.46, muted, box_w - 1.5, 0.50)
-            words(purpose, 0.58, muted, box_w - 1.5, 1.25)
+            words("PURPOSE", 0.46, caption_ink, box_w - 1.5, 0.50)
+            words(purpose, 0.58, caption_ink, box_w - 1.5, 1.25)
         }
     }
+    if note { on(item, "Click", fn(event) { show_detail(id) }) }
+    return item
 }
 
 // Each owner gets a shared frame and heading. Nested padding draws its border.
@@ -159,7 +270,7 @@ T.position(-9.3, 5.75, 0.0).scale(0.10, 0.10, 0.10) {
         T {
             Style { display("flex") flex_direction("column") width(186.0) height(115.0) }
             words("OPENXR / ONE PRESENTATION SAMPLE", 1.65, white, 186.0, 2.3)
-            words("GOLD: authored components / selection    CYAN: tracking / calls    VIOLET: camera state    GREEN: GPU / submission    GRAY: abandoned frame", 0.77, muted, 186.0, 1.7)
+            words("GOLD: authored components / selection    CYAN: tracking / calls    VIOLET: camera state    GREEN: GPU / submission    SOLID: added in 01ccbe73", 0.77, muted, 186.0, 1.7)
             T {
                 Style { display("flex") flex_direction("row") column_gap(8.0) width(186.0) height(3.0) }
                 words("01 / SCRIPTING SHELL", 1.0, gold, 26.0, 3.0)
@@ -179,6 +290,7 @@ T.position(-9.3, 5.75, 0.0).scale(0.10, 0.10, 0.10) {
                     card("mms_hand_transform", "MMS COMPONENT / TransformComponent", "T { name = \"hand\" }", "XRHand pose\nparent transform", "translation / rotation\nUpdateTransform intent", "Feeds pointers, attachments,\navatar hands and IK.", gold, 26.0)
                 }
                 T {
+                    Selection { name = "flowchart_selection" }
                     Style { display("flex") flex_direction("column") row_gap(5.0) width(152.0) height(105.0) flex_shrink(0.0) }
                     T {
                         Style { display("flex") flex_direction("row") column_gap(4.0) width(152.0) height(20.0) flex_shrink(0.0) }
@@ -231,7 +343,7 @@ T.position(-9.3, 5.75, 0.0).scale(0.10, 0.10, 0.10) {
                     }
                 }
             }
-            words("InputXRComponent: pose driver    XrInputState: trigger / grip edges    XrGamepadState: analog actions / stick / buttons\nArrows inside a group join functions / state; arrows between owners dock at group frames.    WASD / R / F: move; right mouse: look.", 0.72, muted, 186.0, 3.0)
+            words("InputXRComponent: pose driver    XrInputState: trigger / grip edges    XrGamepadState: analog actions / stick / buttons\nClick engine cards for calibration-commit notes. Arrowheads dock on named cards.    WASD / R / F: move; right mouse: look.", 0.72, muted, 186.0, 3.0)
         }
     }
     // Header is 7 gu high. Lines use body coordinates, beside the layout tree.
@@ -243,14 +355,15 @@ T.position(-9.3, 5.75, 0.0).scale(0.10, 0.10, 0.10) {
         wire([[13.0, 76.0], [13.0, 80.0]], gold)
 
         // Script configuration, component registration, and driven head writeback.
-        wire([[26.0, 6.0], [30.0, 6.0], [30.0, -0.8], [51.5, -0.8], [51.5, 0.0]], gold)
-        wire([[26.0, 22.0], [31.0, 22.0], [31.0, 36.0], [34.0, 36.0]], gold)
-        wire([[34.0, 40.0], [30.0, 40.0], [30.0, 38.0], [26.0, 38.0]], cyan)
+        wire([[26.0, 6.0], [30.0, 6.0], [30.0, -0.8], [51.5, -0.8], [51.5, 5.0]], gold)
+        wire([[26.0, 22.0], [29.0, 22.0], [29.0, 29.5], [108.5, 29.5], [108.5, 34.0], [111.5, 34.0]], gold)
+        wire([[171.5, 42.0], [171.5, 43.4], [28.0, 43.4], [28.0, 38.0], [26.0, 38.0]], cyan)
 
-        // Cross-owner inputs end at the shared OpenXRSystem frame.
-        wire([[51.5, 20.0], [51.5, 25.0]], cyan)
-        wire([[110.0, 20.0], [110.0, 25.0]], cyan)
-        wire([[167.5, 20.0], [167.5, 25.0]], gold)
+        // Every cross-owner edge names a concrete target: preparation, or the
+        // selected rig's tracking_world_frame. Routes avoid owner headings.
+        wire([[51.5, 17.0], [51.5, 22.5], [32.0, 22.5], [32.0, 34.0], [35.5, 34.0]], cyan)
+        wire([[91.5, 17.0], [91.5, 21.0], [33.0, 21.0], [33.0, 39.0], [35.5, 39.0]], cyan)
+        wire([[167.5, 17.0], [167.5, 23.5], [184.5, 23.5], [184.5, 44.5], [127.5, 44.5], [127.5, 48.0]], gold)
 
         // OpenXRSystem: prepare / retain sample / drive head.
         wire([[67.5, 36.0], [73.5, 36.0]], cyan)
@@ -267,22 +380,62 @@ T.position(-9.3, 5.75, 0.0).scale(0.10, 0.10, 0.10) {
         wire([[149.5, 70.0], [146.5, 70.0], [146.5, 63.0], [89.5, 63.0], [89.5, 66.0]], violet)
         wire([[73.5, 72.0], [67.5, 72.0]], muted)
 
-        // Published cameras / GPU work cross owner boundaries at their frames.
-        wire([[167.5, 78.0], [167.5, 85.0]], violet)
-        wire([[89.5, 78.0], [89.5, 85.0]], green)
-        wire([[148.0, 96.0], [146.0, 96.0]], violet)
-        wire([[110.0, 96.0], [108.0, 96.0]], violet)
-        wire([[72.0, 96.0], [70.0, 96.0]], green)
+        // Publication and GPU work dock on their destination cards too.
+        wire([[167.5, 78.0], [167.5, 83.0], [185.0, 83.0], [185.0, 96.0], [181.5, 96.0]], violet)
+        wire([[89.5, 78.0], [89.5, 81.0], [109.0, 81.0], [109.0, 98.0], [105.5, 98.0]], green)
+        wire([[149.5, 96.0], [143.5, 96.0]], violet)
+        wire([[111.5, 94.0], [105.5, 94.0]], violet)
+        wire([[73.5, 96.0], [67.5, 96.0]], green)
 
         // Completed copy returns to image release. A small gap at the crossing
         // keeps this return distinct from render_xr()'s downward renderer call.
-        stroke([[51.5, 85.0], [51.5, 82.5], [88.7, 82.5]], green)
-        wire([[90.3, 82.5], [127.5, 82.5], [127.5, 78.0]], green)
+        stroke([[67.5, 94.0], [69.0, 94.0], [69.0, 82.5], [108.2, 82.5]], green)
+        wire([[109.8, 82.5], [127.5, 82.5], [127.5, 78.0]], green)
 
         // OpenXRSystem submits the layer back to the external FrameStream API.
-        wire([[186.0, 74.0], [189.0, 74.0], [189.0, 22.0], [148.0, 22.0], [148.0, 11.0], [146.0, 11.0]], green)
+        wire([[143.5, 74.0], [145.5, 74.0], [145.5, 79.2], [189.0, 79.2], [189.0, 22.0], [148.0, 22.0], [148.0, 11.0], [143.5, 11.0]], green)
     }
 }
+
+// Only the body is replaced on selection. The title, drag/grab target and
+// world-space panel Transform remain alive across clicks and accordion toggles.
+let details_panel = info_panel({
+    root_name = "flowchart_details"
+    width_gu = 52.0
+    unit_scale = 0.075
+    title = T {
+        name = "flowchart_details_title_bar"
+        Grabbable.parent()
+        Draggable.target("../../#flowchart_details")
+        Raycastable.enabled()
+        Style {
+            display("flex") flex_direction("row") align_items("center")
+            width(100%) height(3.5)
+            background_color([0.075, 0.16, 0.22, 1.0])
+        }
+        T {
+            Style {
+                display("flex") width(0.0) flex_grow(1.0) height(3.5)
+                align_items("center") padding_xy(0.9, 0.3) font_size(0.9)
+            }
+            Text { "XR floor calibration / 01ccbe73" C.rgba(0.91, 0.95, 1.0, 1.0) }
+        }
+    }
+    toggle_icon_glow_intensity = 0.25
+    body_background_color = [0.018, 0.026, 0.042, 1.0]
+    body_text_color = white
+    content = detail_content(null)
+})
+T.position(4.7, 4.5, 1.5) {
+    name = "flowchart_details_placement"
+    details_panel
+}
+detail_state.body_mount = details_panel.query("#accordion_body_mount")
+on(details_panel, "DataEvent", fn(event) {
+    if event == "AccordionRestoreRequested" {
+        detail_state.body_mount.attach(detail_body())
+    }
+})
 
 // Desktop camera only. Loading this diagram does not require an XR runtime.
 Input.speed(3.0) {

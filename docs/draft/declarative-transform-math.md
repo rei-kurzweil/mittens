@@ -212,7 +212,49 @@ between a solved body's FK neck and the head target. A shared filtered bend or
 body-yaw value must have one temporal owner; two independently instantiated
 filters do not become one state just because their settings match.
 
-## 6. Declarative relationships differ from ordinary MMS reads
+## 6. Thresholded X/Z following adds retained state and positional closure
+
+Direction update, 2026-10-16: the body should also allow a bounded amount of
+head movement before following in X/Z. The [XR task](../task/xr-head-neck-bend-and-body-offset.md#follow-up-bounded-xz-lean-before-body-follow)
+defines the candidate follower and geometric limits.
+
+This is a distinct composition from the initial stateless example:
+
+```text
+head pose + preferred neck bend -> preferred body anchor
+preferred anchor + previous accepted anchor -> planar follow candidate
+candidate + tracked head + calibrated joint limits -> feasible body/neck pose
+accepted planar anchor -> retained state for the next update
+```
+
+With a prescribed neck rotation, body translation has a unique answer for exact
+closure. Merely inserting a deadzone after that answer breaks the closure. Neck
+rotation must also depend on head/body positional separation; orientation sharing
+becomes a preference subject to positional reach and joint limits. If the gap
+cannot be absorbed, the body moves sooner. A larger deadzone requires sufficient
+articulated reach, potentially chest/spine participation in a later extension.
+
+The generic reusable temporal primitive is a bounded planar follower: retain an
+anchor inside a radius of a moving target, moving only when required to stay in
+range. Keep radius, axes/frame, optional recentering, and optional rate control
+explicit. Radial X/Z distance needs vector projection/length rather than separate
+scalar clamps. The avatar consumer supplies its geometric feasibility policy;
+a generic follower does not know neck anatomy or guarantee a connected skeleton.
+
+This adds a genuine state boundary beyond scalar/Vec3/Quat expressions. Give
+each live follower its own anchor, initialization/reset rules, and frame
+identity. Use the final feasible anchor, not an unvalidated intermediate, as next
+update's state. Advance once per intended update even if transform propagation
+re-evaluates consumers, and keep repeated reads of the same update stable.
+If implemented as separate stages, define how the accepted result commits that
+state; otherwise one composite pose owner should perform the update atomically.
+
+An upstream simulated locomotion frame carries the anchor with it. Physical
+head motion relative to that frame uses the lean allowance; teleports/recenters
+must transport or reset the state explicitly. This small retained state does
+not require a history of HMD samples or a walking-versus-leaning classifier.
+
+## 7. Declarative relationships differ from ordinary MMS reads
 
 [Transform accessors](../../crates/meow-meow-script/docs/draft/transform-component-accessors.md)
 copy values when evaluated. An expression such as `head.world.rotation()` does
@@ -265,6 +307,10 @@ Do not expand the existing ancestor-only translation sampler implicitly.
    them repeatedly. Preserve independent state for separate avatars.
 4. Bind rig measurements/bases through AVC, validate connected neck geometry and
    propagation before arm/leg solves, and run the linked XR headset checkpoint.
+5. Add the thresholded X/Z fixture as a separate increment: a retained planar
+   follower plus position-responsive neck closure. Test the finite reach bound,
+   diagonal motion, state commit/reset/frame changes, and propagation cadence.
+   The initial rotation-only fixture remains independently testable.
 
 Serialization must retain expression operations, constants, and durable source
 references, not sampled values or runtime caches. Rebinding/configuration changes,

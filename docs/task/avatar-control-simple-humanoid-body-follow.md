@@ -7,6 +7,12 @@ without reviving spine FABRIK. Older offset-vector sketches below use inconsiste
 direction/sign wording; use an explicitly named displacement and its endpoints
 when implementing the follow-up.
 
+Direction update (2026-10-16): the follow-up now includes bounded X/Z lean before
+body follow. The rejection of the previous raw-HMD deadzone below describes that
+failed implementation, not a ban on thresholded following. The replacement must
+use calibrated geometry, solve the allowed positional gap, and make the body
+follow before joint limits are exceeded. Rotation sharing alone is insufficient.
+
 Replace the current spine-FABRIK body-follow experiment in AVC with a simpler,
 more stable heuristic body module. The head/camera lock that was just landed is
 the foundation; the body should now follow the pose driver in a limited,

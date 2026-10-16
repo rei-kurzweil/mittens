@@ -109,7 +109,9 @@ the posture work below.
 - [XR head/neck bend and derived body offset](../xr-head-neck-bend-and-body-offset.md)
   — proposed bounded neck flexion for looking down at the body; derive body
   placement from the neck arc while preserving the tracked head/view. Includes
-  operator feasibility, state requirements, and grounding/arm ordering.
+  operator feasibility, state requirements, and grounding/arm ordering. The
+  2026-10-16 follow-up adds a retained X/Z lean allowance, with positional neck
+  closure and earlier body follow wherever anatomical reach requires it.
 - [Transform operator API and output-contract cleanup](../transform-operator-api-cleanup.md)
   — grouped constructors/builders and uniform downstream-child composition;
   the focused phase precedes the capsule height fix; remaining specialized
