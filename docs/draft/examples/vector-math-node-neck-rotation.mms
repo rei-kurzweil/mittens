@@ -46,8 +46,8 @@ VMN {
         .right(bend)
 
     // Explicit export; Quaternion uniquely maps to rotation among TRS channels.
-    // Keep .rotation while the inferred-export shorthand is still undecided.
-    TransformChannelOutput
+    // .rotation tags this pose export; generic exports can use .value instead.
+    VMNOutput
         .rotation(orientation)
         .space("world")
 

@@ -435,7 +435,7 @@ fn constraint_composition_content() {
             }
         }
         T { Style { display("block") width(263.0) height(8.0) } }
-        flow_words("Numeric components return typed values. TransformChannelOutput bridges the accepted pose into the transform system; only then is next follow state committed.", 0.66 * graph_text_scale, muted, 263.0)
+        flow_words("Numeric components return typed values. VMNOutput bridges the accepted pose into the transform system; only then is next follow state committed.", 0.66 * graph_text_scale, muted, 263.0)
     }
 }
 

@@ -173,8 +173,9 @@ and the boundary case of rotating after already leaning near the threshold.
 a flat native operation list. The graph is the authoring/validation form; a
 small typed instruction enum is the preferred execution form. MMS can construct
 the graph and edit its configuration; ordinary numeric updates should not traverse MMS ASTs, invoke
-closures or repeatedly resolve scene selectors. `TransformChannelOutput` is the
-explicit adapter into the transform system. Pure value nodes do not mutate
+closures or repeatedly resolve scene selectors. `VMNOutput` is the
+recipient-independent export declaration; transform adapters consume compatible
+exports at the hierarchy boundary. Pure value nodes do not mutate
 matrices as a side effect.
 
 The output stage must propagate the accepted body/neck pose before dependent arm

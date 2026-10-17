@@ -167,7 +167,8 @@ not current TOP APIs.
 The [2026-10-17 value-component proposal](../draft/declarative-vector-operator-components.md)
 now places numeric operations in a separate typed graph constructed by MMS and
 evaluated by a retained native plan. Existing TOPs supply transform composition;
-an explicit `TransformChannelOutput` bridges values into that system. The new
+`VMNOutput` exports typed values for other nodes or consumers; automatic child
+adapters or explicit `TOP.channels` consumers bridge them into transforms. The new
 numeric components are not all new TOP kinds.
 The draft proposes `Vec`/`Quat` operator families and explicit transform-channel
 output bundles. A graph with one bundle supplies it to child transforms; several

@@ -71,7 +71,7 @@ fn head_neck_pose_driver(source_kind, bounded_follow) {
                 .left(body_yaw)
                 .right(bend)
 
-            TransformChannelOutput
+            VMNOutput
                 .rotation(orientation)
                 .space("world")
         }
@@ -105,7 +105,7 @@ fn head_neck_pose_driver(source_kind, bounded_follow) {
                     .type("vec3")
             }
 
-            TransformChannelOutput
+            VMNOutput
                 .translation(position)
                 .rotation(head_orientation)
                 .space("world")
@@ -250,19 +250,19 @@ fn head_neck_pose_driver(source_kind, bounded_follow) {
                 .left(body_position)
                 .right(root_to_neck)
 
-            TransformChannelOutput
+            VMNOutput
                 .name("body")
                 .translation(body_position)
                 .rotation(body_yaw)
                 .space("world")
 
-            TransformChannelOutput
+            VMNOutput
                 .name("neck")
                 .translation(neck_position)
                 .rotation(neck_orientation)
                 .space("world")
 
-            TransformChannelOutput
+            VMNOutput
                 .from(desired_head.output)
                 .name("head")
         }
@@ -270,13 +270,13 @@ fn head_neck_pose_driver(source_kind, bounded_follow) {
         // Forward bundles from a nested graph without applying a matrix or
         // copying sampled values. One bundle uses .output; named multiple
         // bundles use .outputs.<name>. These are retained graph port accesses.
-        let body_pose = TransformChannelOutput
+        let body_pose = VMNOutput
             .from(placement.outputs.body)
             .name("body")
-        let neck_pose = TransformChannelOutput
+        let neck_pose = VMNOutput
             .from(placement.outputs.neck)
             .name("neck")
-        let head_pose = TransformChannelOutput
+        let head_pose = VMNOutput
             .from(placement.outputs.head)
             .name("head")
 
@@ -288,7 +288,7 @@ fn head_neck_pose_driver(source_kind, bounded_follow) {
         // for existing bone locals. Real AVC binding must preserve the original
         // FK path/rest offsets and avoid applying model calibration twice.
         MG {
-            TransformChannelOutput.from(body_pose)
+            VMNOutput.from(body_pose)
             T { name = "spec_body_root" }
         }
         TOP.channels(neck_pose) {

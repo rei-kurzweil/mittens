@@ -59,12 +59,13 @@ operation and arity; it does not contain an MMS callback or arbitrary expression
 | `VectorMeasure` | Fixed length/dot operation / vectors -> Scalar | Measure departure and support geometric reach checks |
 | `QuaternionFromDirections` | Rest direction, desired direction -> Quaternion | Align the neck with positional separation, with explicit singularity handling |
 | `PlanarFollow` | Target, previous anchor, frame, range -> candidate Vec3; accepted next state | Retain the body anchor until the common calibrated allowance is exceeded |
-| `TransformChannelOutput` | Named translation/rotation/scale ports, declared output space -> transform output bundle | Bridge accepted values into the body/neck pose |
+| `VMNOutput` | Typed producer ports -> named public value or bundle | Export values to other math nodes or consumers; optional channel metadata supports transform adapters |
 
 `TOP.yaw_follow` remains an existing transform operator. A `ValueSource` can
 expose its current output; this proposal does not replace it with a second yaw
 implementation. The outer `MathGraph` is an evaluation owner, `ValueSource` an input
-boundary, and `TransformChannelOutput` an output adapter. The other components
+boundary, and `VMNOutput` an export declaration. Transform application belongs
+to an automatic child adapter or explicit `TOP.channels` consumer. The other components
 are numeric operations or explicit temporal behavior.
 
 `MG` groups a graph of individual math operations and exposes its outputs. When
@@ -158,7 +159,7 @@ MathGraph {
         )
         .right(arc)
 
-    TransformChannelOutput
+    VMNOutput
         .translation(body_position)
         .space("world")
 
@@ -172,7 +173,7 @@ scope. Exact method names remain proposals. Prefer semantic names such as
 Noncommutative operands must never be inferred from sibling order.
 
 Default construction is implicit: the first builder can be
-`TransformChannelOutput.translation(p)`, without a `.new()` call. The first
+`VMNOutput.translation(p)`, without a `.new()` call. The first
 operand builder must work just like subsequent builders; it does not select a
 different constructor. Named operation selectors such as
 `Vec.subtract()` remain useful because they choose the operation.
@@ -203,28 +204,98 @@ component handles into graph-owned node/port references. The current generic
 `arg_component_ref` helper accepts live handles or selectors, not arbitrary
 inline component descriptions, so it is not sufficient by itself.
 
+## Named outputs and input bindings
+
+Use `VMNOutput` for public exports regardless of recipient. The name replaces
+the earlier transform-specific output name throughout this proposal. Exporting
+a value does not apply a matrix or restrict its consumers to transforms.
+
+`VMNOutput.name("pitch").value(pitch)` exports one typed Scalar, Vec3 or
+Quaternion port. Access that port as `producer.outputs.pitch.value`. A channel
+bundle can instead use `.rotation(q)`, `.translation(p)` and/or `.scale(s)`;
+those fields remain typed ports reusable by numeric consumers. Do not mix
+`.value(...)` with channel-bundle builders on one declaration. `.name(...)`
+identifies the producer's public export; names are unique within that node.
+
+The enclosing node connects an exported port to an enclosed node's local input
+with `VMN.input(local_name, producer_port)`. Inside the enclosed node,
+`ValueSource.input(local_name).type(type)` reads that binding. The local name is
+an arbitrary part of the recipient's interface, not a global lookup, a reserved
+engine property or an inferred match with the producer's output name. Types
+must match; `.type(...)` validates rather than converts values. Native AVC
+assembly supplies bindings through the same typed input interface.
+
+For example, this complete wiring fragment passes a scalar between two nodes
+before turning it into a rotation for a child transform:
+
+```mms
+VMN {
+    let producer = VMN {
+        let pitch = ValueSource.constant(0.2)
+        VMNOutput
+            .name("pitch")
+            .value(pitch)
+    }
+
+    let consumer = VMN
+        .input("angle", producer.outputs.pitch.value)
+    {
+        let angle = ValueSource
+            .input("angle")
+            .type("scalar")
+        let orientation = Quat
+            .axis_angle()
+            .axis([-1.0, 0.0, 0.0])
+            .radians(angle)
+        VMNOutput
+            .rotation(orientation)
+            .space("world")
+    }
+
+    VMNOutput.from(consumer.output)
+    T { name = "rotation_recipient" }
+}
+```
+
+The connection is `producer.outputs.pitch.value -> consumer input "angle" ->
+angle node`. It is explicit even though the output and input names differ.
+Bind names and validate types once, then retain slot/port connections; reads
+reuse current values without per-update string lookup or MMS calls. Missing
+bindings, duplicate export names, invalid ports and type mismatches fail graph
+validation. Already-declared ancestor ports can also be passed directly to
+inline operations when a reusable named-input boundary is unnecessary.
+
+`node.output` selects exactly one export, whether a value or a bundle;
+`node.outputs.name` selects a named export. `VMNOutput.from(export)` forwards
+its ports and metadata, without copying sampled values or applying a transform.
+These declarations, bindings and live member accesses remain proposed APIs.
+
 ## Transform output bundles and child transforms
 
 The graph computes typed values. A transform output additionally specifies what
 those values mean: **translation: Vec3**, **rotation: Quaternion**, and
 **scale: Vec3**. A Vec3 alone cannot tell a child transform whether it supplies
 translation or scale. Declare that channel explicitly inside the graph through
-`TransformChannelOutput`. Within the supported TRS channels, an explicitly
+`VMNOutput`. Within the supported TRS channels, an explicitly
 exported Quaternion can infer rotation; Vec3 must specify translation or scale.
 Explicit `.rotation(...)` remains valid and clear. This inference only selects
 a channel for an export: it does not make every Quaternion node an output,
 choose the last node, select a transform destination, or choose coordinate space.
-The shorthand spelling for a type-inferred export remains to be specified;
-existing examples keep explicit channel builders. Scalars have no direct TRS
+The pose examples keep explicit channel builders. A generic `.value(q)`
+export can infer rotation when adapted to a transform. For `.value(v)` with
+Vec3, optional `.channel("translation")` or `.channel("scale")` metadata selects
+the transform role; ordinary numeric consumers do not require that metadata.
+Automatic transform application never guesses a Vec3's role. Transform space
+must also be specified when applying a value to a transform. Scalars have no direct TRS
 channel mapping. Each output bundle has at most one value per channel and an explicit
 coordinate space. One bundle can carry one, two, or all three channels for the
 same destination basis.
 
-The graph export interface is proposed as `graph.output` for exactly one bundle
-and `graph.outputs.name` for a bundle declared with
-`TransformChannelOutput.name("name")`. `graph.output.translation`, `.rotation`
+The graph export interface is proposed as `graph.output` for exactly one export
+and `graph.outputs.name` for an export declared with
+`VMNOutput.name("name")`. `graph.output.translation`, `.rotation`
 and `.scale` expose the declared live typed ports; accessing an undeclared
-channel is an error. `TransformChannelOutput.from(bundle)` forwards those ports
+channel is an error. `VMNOutput.from(bundle)` forwards those ports
 and their space metadata, without sampling a scene matrix or relabeling space.
 
 A named nested `MG` is a producer/owner. Its declaration does not also apply its
@@ -236,13 +307,13 @@ reachable computations together, with one input snapshot and acceptance boundary
 for the owning pose update. A nested graph with ordinary content children may
 also supply their basis under the same selection rules as the outer graph.
 
-When a graph declares exactly one transform output bundle, that bundle is its
+When a graph declares exactly one transform-compatible output, that export is its
 implicit transform output. A `T` can be a direct child of `MathGraph`:
 
 ```mms
 MathGraph {
     // position and orientation denote declared typed producer nodes/ports.
-    TransformChannelOutput
+    VMNOutput
         .translation(position)
         .rotation(orientation)
         .space("world")
@@ -272,11 +343,11 @@ For several destination bundles, bind explicit output consumers. Proposed syntax
 
 ```mms
 MathGraph {
-    let body_pose = TransformChannelOutput
+    let body_pose = VMNOutput
         .translation(body_position)
         .rotation(body_orientation)
         .space("world")
-    let neck_pose = TransformChannelOutput
+    let neck_pose = VMNOutput
         .rotation(neck_orientation)
         .space("world")
 
@@ -290,7 +361,7 @@ It consumes the selected bundle and supplies its basis to its own descendants;
 it does not mutate a transform identified by a target query. Its first scope is
 bundles owned by the enclosing graph, with retained bindings rather than
 per-update selector lookup. It does not evaluate the graph again per consumer.
-More than one bundle disables implicit output: unqualified transform content
+More than one transform-compatible export disables implicit output: unqualified transform content
 must be rejected with a selection diagnostic, not silently receive the first
 bundle. Node/output declarations are exempt from that content check. A named
 bundle can also be selected explicitly when it is the only one.
@@ -371,7 +442,7 @@ arc        = VectorRotate(q_neck, neck_to_head_rest)
 ... derive desktop target / retain measured XR target; measure planar departure
 candidate  = PlanarFollowPropose(target, previous_anchor, range)
 ... positional closure and joint-limit validation
-outputs    = TransformChannelOutput(accepted_pose)
+outputs    = VMNOutput(accepted_pose)  // export values; adapters apply the pose
 ... publish / propagate accepted channels successfully
 next_anchor = PlanarFollowAccept(accepted_body_xz)
 ```

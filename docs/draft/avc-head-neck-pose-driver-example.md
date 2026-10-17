@@ -105,16 +105,25 @@ The example proposes the following concrete export spelling:
 
 | Syntax | Meaning |
 | --- | --- |
-| `graph.output` | The graph's single transform-channel bundle; reject if there are zero or several bundles |
+| `graph.output` | The graph's single export, a typed value or bundle; reject if there are zero or several exports |
 | `graph.output.rotation` | A live Quaternion port from that bundle; translation/scale similarly expose Vec3 ports when declared |
-| `graph.outputs.body` | Bundle explicitly named `body` with `.name("body")` |
-| `TransformChannelOutput.from(bundle)` | Re-export the same channel ports and coordinate-space metadata; no new evaluation or scene-matrix readback |
+| `graph.outputs.body` | Export explicitly named `body` with `.name("body")` |
+| `VMNOutput.from(bundle)` | Re-export the same channel ports and coordinate-space metadata; no new evaluation or scene-matrix readback |
 | `TOP.channels(bundle) { T {} }` | Apply the selected bundle at this hierarchy boundary, then compose the T's local TRS |
+
+`VMNOutput` is recipient-independent. Generic math exports use
+`.name("pitch").value(pitch)` and expose a typed port at
+`producer.outputs.pitch.value`; they need no transform channel. The channel
+builders used in this pose example are a convenience for exports destined for
+transforms, and their ports remain reusable by other VMNs. Another VMN binds a
+port with `.input("local_name", producer.outputs.pitch.value)`; its internal
+`ValueSource.input("local_name")` reads that node-local binding. See the
+[complete scalar-to-node wiring example](declarative-vector-operator-components.md#named-outputs-and-input-bindings).
 
 For supported TRS outputs, Quaternion uniquely identifies rotation, while Vec3
 requires translation/scale selection. This does not remove explicit export or
-destination selection. The existing source uses `.rotation(...)`; a shorthand
-for inferred rotation is still to be designed.
+destination selection. The pose source uses `.rotation(...)`; a generic
+`.value(q)` export can instead infer rotation at a transform consumer.
 
 Graph ownership and data connections are separate. Nested graphs can capture
 already-declared ancestor ports; the compiler validates/lower dependencies across
@@ -122,13 +131,13 @@ these scopes without copying shared producers or separately ticking each nested
 graph. One outer evaluation snapshots inputs, computes the reachable operations,
 and publishes related outputs. Reject same-update cycles across graph boundaries.
 
-For a graph with one bundle, a direct child T consumes it automatically. That is
+For a graph with one transform-compatible export, a direct child T consumes it automatically. That is
 the same bundle interface as explicit selection, with the output adapter inserted
 internally. A named graph producer with no content children just exports data.
-With several bundles, unqualified transform content is ambiguous and rejected.
+With several transform-compatible exports, unqualified transform content is ambiguous and rejected.
 An inline content MG which explicitly forwards a selected outer bundle supplies
 its own output basis, so it is also an explicit consumer at the outer boundary.
-The example uses `MG { TransformChannelOutput.from(body_pose) T {} }` for the
+The example uses `MG { VMNOutput.from(body_pose) T {} }` for the
 body branch and `TOP.channels(...)` for neck/head to show both forms. Either
 starts from the outer graph's incoming basis, without applying an implicit
 outer bundle first. A nested numeric producer with no content is not a consumer.

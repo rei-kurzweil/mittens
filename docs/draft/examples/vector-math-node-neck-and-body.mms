@@ -66,11 +66,11 @@ VMN {
 
     // The SAME orientation node drives neck rotation and the arc calculation.
     // Vec3 needs an explicit translation/scale role; Quaternion means rotation.
-    let neck_output = TransformChannelOutput
+    let neck_output = VMNOutput
         .name("neck")
         .rotation(orientation)
         .space("world")
-    let body_output = TransformChannelOutput
+    let body_output = VMNOutput
         .name("body")
         .translation(body_position)
         .space("world")

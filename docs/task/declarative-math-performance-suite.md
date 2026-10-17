@@ -170,6 +170,10 @@ Then extend the suite with:
    source binding, rebind, and invalidation/rebuild measurements.
 2. Connected multiple outputs, graph-local sharing versus duplicated expressions,
    multiple graphs/independent per-avatar state, and nontrivial depth/fan-out.
+   Include generic `VMNOutput.value` exports (Scalar/Vec3/Quaternion), named
+   node-local input bindings and reuse of the same port by numeric and transform
+   consumers. Check that pure value exports do not apply scene transforms and
+   that missing/mismatched input bindings fail validation.
 3. PlanarFollow propose/accept, repeated propagation within an update, rejection
    without state commit, and reset/reacquisition. Pure-kernel speed says nothing
    about correct temporal scheduling.
