@@ -5,6 +5,12 @@
 Proposed, 2026-10-15; feasibility review and implementation task only. No
 runtime changes have been made for this task.
 
+[Interactive proposal diagram](../how_to/avc-head-neck-constraint-diagram.md):
+run `examples/avc-head-neck-constraint-diagram.mms` to inspect the operator
+facilities, generated constraint and future MMS example. All 15 cards expose
+additional contracts and open questions through an info panel. This visual
+proposal does not implement or execute the new avatar behavior.
+
 Scope update, 2026-10-16: this is intended as automatic behavior of `AVC {}` for
 supported humanoids under both `Input {}` and `InputXR {}`. The original filename
 reflects the XR repro, not an XR-only activation rule. The desktop contract below

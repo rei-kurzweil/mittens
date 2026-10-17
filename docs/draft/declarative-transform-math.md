@@ -3,6 +3,10 @@
 Status: design exploration, 2026-10-15. Documentation only; operation names
 below are semantic notation, not an implemented MMS API.
 
+[Interactive proposal diagram](../how_to/avc-head-neck-constraint-diagram.md)
+shows the three facilities and their reuse in the AVC algorithm, with clickable
+contracts and a separate future-example section.
+
 ## Motivation and scope
 
 The [AVC head/neck task](../task/xr-head-neck-bend-and-body-offset.md) is to be
