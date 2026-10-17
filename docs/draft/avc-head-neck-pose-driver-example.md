@@ -6,7 +6,11 @@ It uses the [typed math proposal](declarative-vector-operator-components.md) to
 spell out the two slices of the [head/neck task](../task/xr-head-neck-bend-and-body-offset.md):
 rotation-derived placement, followed by bounded planar follow and geometric
 closure. The ordinary user-facing behavior remains automatically wired by AVC;
-this file exposes the graph AVC would construct for a simple fixture.
+this file exposes a future graph representation for a simple fixture. The
+selected first implementation is native `HeadNeckBodyConstraint`, replacing
+the eligible avatar's current body-follow constraint without depending on VMN.
+These examples remain specifications for VMN and reference math, not required
+runtime machinery for that native implementation.
 
 ## Read the example
 

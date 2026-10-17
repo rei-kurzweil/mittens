@@ -5,6 +5,23 @@
 Proposed, 2026-10-15; feasibility review and implementation task only. No
 runtime changes have been made for this task.
 
+Implementation direction, 2026-10-17: deliver native Rust first, independently
+of VMN. Proposed name: **HeadNeckBodyConstraint**, evaluated by
+**HeadNeckBodyConstraintSystem** in `system/ik/head_neck_body_constraint.rs`.
+This is one coordinated per-avatar pose constraint with several calculation
+stages and outputs. It replaces `HeadPoseBodyXzFollowSystem` for eligible avatars,
+including that system's neck-rest pin; the old and new implementations must not
+both write the same eligible avatar's pose. Existing body yaw keeps its current
+owner. Unsupported rigs retain the diagnosed fallback behavior.
+
+The two delivery slices are rotation-derived immediate placement, then retained
+planar follow with geometric closure. They are not two competing constraint
+writers. Body placement and neck pose are coordinated outputs; desktop also
+derives a connected head pose, while XR preserves measured head/view authority.
+No new TOP operator, VMN runtime, public MMS component or IKChain solver variant
+is required to implement the native first slice. The names above are proposed
+implementation names, not existing registered APIs.
+
 [Interactive proposal diagram](../how_to/avc-head-neck-constraint-diagram.md):
 run `examples/avc-head-neck-constraint-diagram.mms` to inspect the operator
 components, generated constraint and future MMS example. All cards expose
@@ -38,9 +55,10 @@ now gives the numeric graph named component boundaries: MMS constructs it,
 while a flat typed native operation list evaluates it. The authored graph is
 compiled when its topology/configuration changes; value updates reuse its slots.
 Existing transform operators and an explicit output bridge connect the graph to
-scene transforms. AVC wires this
-constraint automatically; a separate dedicated avatar IK solver is not the
-selected implementation. The new numeric graph is still proposed work.
+scene transforms. That remains a future declarative representation of this
+behavior. The selected first implementation is a native constraint assembled
+automatically by AVC, using ordinary typed Rust data/functions. VMN and its
+output adapters remain independent proposed work, not delivery prerequisites.
 
 When looking down at their torso or legs in XR, the user should see a connected
 neck bending with the head, with the body placed behind the head as required by
@@ -403,13 +421,20 @@ there is no operation that distributes head orientation into a neck joint and
 derives a second body output from the resulting FK geometry. An ordinary child
 operator also cannot update its parent or sibling neck branch.
 
-Use the [named value components](../draft/declarative-vector-operator-components.md)
-to implement the numeric graph and explicit transform outputs. Shared upstream
-values supply body placement and neck rotation. `MathGraph` prepares retained
-typed execution; `PlanarFollow` owns the accepted anchor boundary. Existing TOPs
-still supply yaw and hierarchy composition. AVC binds calibration/eligibility
-and owns the generated graph, without introducing an alternative standalone
-avatar solver.
+Use one native `HeadNeckBodyConstraint` runtime record per eligible avatar and
+ordinary Rust functions for preferred rotation, virtual FK displacement,
+placement and validation. Keep retained rig bindings/calibration separate from
+per-update input snapshots and candidate outputs. Shared values supply body
+placement and neck rotation without a graph interpreter or compiled VMN plan.
+AVC binds eligibility and owns the runtime; existing TOPs still supply yaw and
+hierarchy composition. The bounded-follow slice adds previous/next anchor
+state to this same owner, committed only after coordinated pose acceptance.
+
+The [named value components](../draft/declarative-vector-operator-components.md)
+can later express the same math, with `PlanarFollow` representing the temporal
+boundary. Keep typed native inputs/results and numerical fixtures reusable for
+that comparison, without requiring the first implementation to contain VMN nodes
+or a generic output framework.
 Current translation sampling is restricted to structural ancestor sources and
 cannot simply sample a solved sibling branch. No general transform constraint
 graph is a prerequisite for the first slice.
@@ -447,6 +472,9 @@ expression branches with incompatible targets do not enforce a constraint.
    Make one module own neck rotation and body translation; compose the neck
    rest-position pin with it. For the first fixture the neck has one pose owner;
    future animation supplies an explicit base pose instead of racing writes.
+   Replace the existing body's follow tick/registration for eligible avatars
+   rather than stacking another constraint after it. The old system is a
+   mutually exclusive fallback until unsupported-rig behavior is migrated.
    Flush and propagate neck/body results before arm IK and future leg target
    generation, then propagate solves before secondary motion and skinning.
    Do not depend on IK chain HashSet order.
@@ -517,10 +545,9 @@ product decision is required to start that prototype. First prove default
 desktop rotation with a fixed body anchor, then rotation-derived XR placement,
 then bounded XR positional follow and geometric closure.
 
-Use internal typed value graphs with explicit state acceptance; the final public
-declarative expression syntax is not settled and need not be invented merely
-to run the first fixture. Keep the pure math reusable by the proposed operator
-facility, and keep the stateful follow/acceptance boundary explicit. Exact bend
+Use typed Rust structs/functions with explicit state acceptance; a value graph
+is not required. Keep the pure math reusable by a future VMN implementation and
+keep the stateful follow/acceptance boundary explicit. Exact bend
 shares, anatomical limits, and feasible lean margins are measured/tuned during
 implementation on supported rigs, with values recorded in the fixtures. They
 are not yet validated shipping defaults. The generic declarative math facility
@@ -540,6 +567,7 @@ skeleton result alone does not prove skin deformation or first-person comfort.
 - [Joint basis retargeting](../spec/joint-basis-retargeting-system.md): anatomical
   frame conventions; inspect available runtime basis support during binding.
 
-This task extends the simpler body-follow baseline with bounded neck flexion;
+This task replaces the eligible avatar's simpler body-follow constraint with
+coordinated head/neck geometry and body placement;
 it does not revive spine FABRIK, infer whole-body posture from one headset,
 change eye tracking, or implement walking/foot planting.

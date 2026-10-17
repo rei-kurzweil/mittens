@@ -510,8 +510,14 @@ silently mutate referenced parent/sibling transforms.
 
 ## AVC use and remaining design work
 
-AVC automatically binds rig measurements and constructs this graph for supported
-humanoids. Both input drivers use the same calibrated follower. Desktop intent
+The selected initial avatar implementation is native `HeadNeckBodyConstraint`,
+replacing the current body-follow constraint for supported rigs. It does not
+require VMN or construct this graph. The graph is a future declarative
+representation/reference consumer for the same behavior, with reusable typed
+native inputs/results and numerical fixtures. VMN delivery remains independent.
+
+In that future representation, AVC would bind rig measurements and construct
+the graph automatically for supported humanoids. Both input drivers use the same calibrated follower. Desktop intent
 derives a connected head arc; XR keeps measured head position authoritative.
 The [constraint task](../task/xr-head-neck-bend-and-body-offset.md) owns those
 consumer policies and headset/desktop acceptance.
