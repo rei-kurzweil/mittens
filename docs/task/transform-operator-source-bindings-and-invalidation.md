@@ -200,6 +200,9 @@ identity, desktop behavior, live camera settings, and filtered runtime-helper sa
 
 ## Related work
 
+- [Declarative math performance suite](declarative-math-performance-suite.md):
+  numeric execution and MMS baselines; parent-dependent scans and real source
+  binding/rebuild costs still need their own measurements here.
 - [Transform operators spec](../spec/transform-operators.md)
 - [Transform parent ComponentRef routing](transform-parent-component-ref-routing.md)
 - [Axis-selective translation sampling](transform-sample-translation-axes.md)

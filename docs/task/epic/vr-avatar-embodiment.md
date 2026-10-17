@@ -112,7 +112,8 @@ the posture work below.
   operator feasibility, state requirements, and grounding/arm ordering. The
   2026-10-16 follow-up adds a retained X/Z lean allowance, with positional neck
   closure and earlier body follow wherever anatomical reach requires it. Intended
-  as default AVC behavior through composed transform operators. Both drivers use
+  as default AVC behavior through a native typed value graph and transform
+  output bridges. Both drivers use
   one per-rig follow threshold containing the rotational motion envelope; desktop
   look stays inside it, while XR positional excess can trigger follow.
 - [Transform operator API and output-contract cleanup](../transform-operator-api-cleanup.md)

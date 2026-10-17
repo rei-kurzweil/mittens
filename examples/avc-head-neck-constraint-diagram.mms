@@ -1,19 +1,16 @@
 // Interactive proposal, not an implementation of the avatar constraint.
 // Run: cargo run --release -- load examples/avc-head-neck-constraint-diagram.mms
-// All operator names except TOP.yaw_follow describe proposed capabilities.
+// New value-component names are proposals. TOP.yaw_follow is existing context.
 // Avatar snippets are displayed text. Only this diagram and its desktop camera run.
 // Styled rows place cards; unstyled geometry draws orthogonal dataflow edges.
 
 import { info_panel, info_panel_body } from "../assets/components/ui/info_panel.mms"
-import { avc_head_neck_notes } from "../assets/components/diagrams/avc_head_neck_notes.mms"
+import { avc_head_neck_notes, avc_math_component_colors } from "../assets/components/diagrams/avc_head_neck_notes.mms"
 
 RendererSettings { window_size(1920, 1200) }
 BGC.rgba(0.009, 0.014, 0.025, 1.0)
 AL.rgb(1.0, 1.0, 1.0)
-RenderGraph {
-    EmissivePass { BlurPass { radius_ndc(0.008) half_res(true) } }
-    Bloom { intensity(0.30) radius_ndc(0.008) emissive_scale(1.0) half_res(true) }
-}
+// No blur/bloom passes: this text-heavy diagnostic scene needs no glow postprocess.
 
 let cyan = [0.24, 0.82, 0.95, 1.0]
 let gold = [1.0, 0.72, 0.30, 1.0]
@@ -22,7 +19,9 @@ let green = [0.40, 0.90, 0.68, 1.0]
 let muted = [0.60, 0.68, 0.78, 1.0]
 let white = [0.91, 0.95, 1.0, 1.0]
 let black = [0.0, 0.0, 0.0, 1.0]
+let graph_text_scale = 2.6
 let notes = avc_head_neck_notes()
+let component_colors = avc_math_component_colors()
 let detail_state = { selected_id = null body_mount = null }
 
 fn detail_text(value, size, tint) {
@@ -50,6 +49,7 @@ fn detail_content(id) {
             detail_text(note.title, 1.02, white)
             detail_text(note.kind, 0.70, gold)
             detail_text(note.role, 0.68, muted)
+            if note["operators"] { component_badges(id, 49.9) }
             detail_section("IN THIS PROPOSAL", note.detail)
             detail_section("OWNERSHIP / EVALUATION", note.contract)
             detail_section("OPEN DESIGN / VALIDATION", note.open)
@@ -57,12 +57,12 @@ fn detail_content(id) {
             detail_section("DESIGN DOC", note.reference)
         } else {
             detail_text("Select any proposal card", 1.05, white)
-            detail_text("All 15 cards are clickable. Their short input / output / how / why stays on the diagram; this panel explains the contracts and open decisions.", 0.84, white)
-            detail_section("01 / OPERATOR LIBRARY", "One existing yaw-follow facility, a proposed typed math/patch facility, and a proposed bounded translation follower. Math primitives are value operations, not separate ECS components.")
-            detail_section("02 / CONSTRAINT COMPOSITION", "Read the main pose lane from left to right. Rig calibration and yaw feed it from above. The accepted anchor returns below the lane through a violet next-update loop.")
+            detail_text("Each card is clickable. Input / output / how / why stays on the diagram; this panel explains the typed contracts, native execution model and open decisions.", 0.84, white)
+            detail_section("01 / OPERATOR LIBRARY", "Proposed long names identify typed value components for scalar, Vec3 and quaternion operations. MathGraph binds them into a native execution plan. MMS constructs descriptions; the engine evaluates the values without per-update MMS callbacks.")
+            detail_section("02 / CONSTRAINT COMPOSITION", "Read the main pose lane from left to right. Its cards name the value components they compose in matching catalog colors. Calibration/yaw feed it from above; accepted follow state returns underneath on the next update.")
             detail_section("03 / FUTURE MMS EXAMPLE", "Ordinary Input or InputXR with AVC will request the default behavior. These cards outline the later example; this scene does not spawn an avatar or run a solver.")
             detail_section("CARD APPEARANCE", "Solid bright backgrounds with black text identify proposed behavior or future examples. Outlined cards identify existing input/facility context. All cards remain clickable.")
-            detail_section("STATUS / CONTROLS", "Visual proposal / 2026-10-16. Exact new TOP syntax and pose-limit projection remain open. WASD / R / F: navigate; right mouse: look. Drag the panel title; collapse and restore it while retaining your selection.")
+            detail_section("STATUS / CONTROLS", "Visual proposal / 2026-10-17. Full component names are proposals; shortforms and connection syntax remain open. Drag a section title or its short left bar; use the arrow to unload / restore its content. Drag this panel by its title. WASD / R / F: navigate; right mouse: look. Collapsing retains the selected card.")
         }
     }
 }
@@ -84,27 +84,110 @@ fn show_detail(id) {
     }
 }
 
-fn words(value, size, color, box_w, box_h) {
+fn words(value, size, ink, box_w, box_h) {
     return T {
-        Style { display("block") width(box_w) height(box_h) font_size(size) word_wrap("break-all") }
-        Text { value C.rgba(color[0], color[1], color[2], color[3]) }
+        Style { display("block") width(box_w) height(box_h) font_size(size) word_wrap("break-all") color(ink) }
+        Text { value C.rgba(ink[0], ink[1], ink[2], ink[3]) }
     }
 }
 
-fn port(label, value, tint, fill, value_ink, box_w) {
+// Lower cards flow at word boundaries; omitting height lets layout measure
+// their text, ports and containers. The compact catalog keeps its current sizing.
+fn card_words(value, size, ink, box_w, box_h, auto_height) {
+    let wrap_mode = "break-all"
+    if auto_height { wrap_mode = "normal" }
     return T {
         Style {
-            display("flex") flex_direction("column")
-            width(box_w) height(2.35) padding_xy(0.35, 0.18)
-            background_color(fill)
+            display("block") width(box_w) font_size(size)
+            word_wrap(wrap_mode) color(ink)
+            // Preserve the words in the long compound operator name when the
+            // enlarged tag needs another line at the same width.
+            if auto_height && value == "QuaternionFromDirections" {
+                word_wrap_tokens(["From"])
+            }
+            if auto_height { margin_bottom(0.20) }
+            else { height(box_h) }
         }
-        words(label, 0.44, tint, box_w - 0.70, 0.55)
-        words(value, 0.63, value_ink, box_w - 0.70, 1.40)
+        Text { value C.rgba(ink[0], ink[1], ink[2], ink[3]) }
     }
 }
 
-fn card(id, tint, box_w) {
+fn flow_words(value, size, ink, box_w) {
+    return card_words(value, size, ink, box_w, 0.0, true)
+}
+
+fn port(label, value, tint, fill, value_ink, box_w, text_scale, auto_height) {
+    return T {
+        Style {
+            display("flex") flex_direction("column") width(box_w)
+            padding_xy(0.35, 0.18) background_color(fill)
+            if !auto_height { height(2.35 * text_scale) }
+        }
+        card_words(label, 0.44 * text_scale, tint, box_w - 0.70, 0.55 * text_scale, auto_height)
+        card_words(value, 0.63 * text_scale, value_ink, box_w - 0.70, 1.40 * text_scale, auto_height)
+    }
+}
+
+fn component_color(id, fallback) {
+    let key = id
+    if notes[id]["operators"] { key = notes[id].operators[0] }
+    if component_colors[key] { return component_colors[key] }
+    return fallback
+}
+
+// Composite stages contain several operations. Name each with exactly the same
+// fill as its catalog card; the large stage uses its primary component's color.
+fn component_badges(stage_id, box_w) {
+    return scaled_component_badges(stage_id, box_w, 1.0)
+}
+
+fn scaled_component_badges(stage_id, box_w, text_scale) {
+    let auto_height = text_scale > 1.0
+    return T {
+        name = stage_id + "_components"
+        Style {
+            display("flex") flex_direction("column") width(box_w)
+            if !auto_height { row_gap(0.15 * text_scale) }
+        }
+        card_words("Uses", 0.43 * text_scale, muted, box_w, 0.8 * text_scale, auto_height)
+        for operator_id in notes[stage_id].operators {
+            let tint = component_colors[operator_id]
+            let badge = T {
+                name = "badge_" + stage_id + "_" + operator_id
+                Option {}
+                Raycastable.enabled() { interaction_priority(25.0) }
+                Style {
+                    display("flex") width(box_w) flex_shrink(0.0)
+                    if auto_height { margin_bottom(0.15 * text_scale) }
+                    else { height(1.2 * text_scale) }
+                    align_items("center") padding_xy(0.12, 0.4) background_color(tint) color(black)
+                }
+                card_words(notes[operator_id].title, 0.62 * text_scale, black, box_w - 0.8, 0.9 * text_scale, auto_height)
+            }
+            on(badge, "Click", fn(event) { show_detail(operator_id) })
+            badge
+        }
+    }
+}
+
+fn card(id, fallback_tint, box_w) {
+    return sized_card(id, fallback_tint, box_w, 1.0, 15.5)
+}
+
+fn graph_card(id, fallback_tint, box_w) {
+    return sized_card(id, fallback_tint, box_w, graph_text_scale, null)
+}
+
+fn example_card(id, fallback_tint, box_w) {
+    return sized_card(id, fallback_tint, box_w, 1.0, null)
+}
+
+// A null height selects intrinsic content sizing and word-boundary wrapping.
+// Width and font size stay explicit; the compact catalog still uses fixed boxes.
+fn sized_card(id, fallback_tint, box_w, text_scale, card_h) {
+    let auto_height = card_h == null
     let note = notes[id]
+    let tint = component_color(id, fallback_tint)
     let card_fill = [0.018, 0.030, 0.049, 1.0]
     let card_ink = white
     let kind_ink = tint
@@ -128,52 +211,94 @@ fn card(id, tint, box_w) {
         Option {}
         Raycastable.enabled() { interaction_priority(25.0) }
         Style {
-            display("block") flex_shrink(0.0) width(box_w) height(15.5)
-            padding(0.06) background_color(tint)
+            display("block") flex_shrink(0.0) width(box_w)
+            if !auto_height { height(card_h) }
+            padding(0.06) background_color(tint) color(card_ink)
         }
         T {
             Style {
                 display("flex") flex_direction("column")
-                width(box_w - 0.12) height(15.38) padding(0.60)
-                background_color(card_fill)
+                width(box_w - 0.12) padding(0.60)
+                // Use measured child margins for spacing in auto-height cards.
+                if !auto_height { height(card_h - 0.12) }
+                background_color(card_fill) color(card_ink)
             }
-            words(note.kind, 0.50, kind_ink, box_w - 1.32, 0.8)
-            words(note.title, 0.96, card_ink, box_w - 1.32, 1.9)
-            port("INPUT", note.input, input_ink, input_fill, card_ink, box_w - 1.32)
+            card_words(note.kind, 0.50 * text_scale, kind_ink, box_w - 1.32, 0.8 + 1.4 * (text_scale - 1.0), auto_height)
+            card_words(note.title, 0.96 * text_scale, card_ink, box_w - 1.32, 1.9 + 2.2 * (text_scale - 1.0), auto_height)
+            port("INPUT", note.input, input_ink, input_fill, card_ink, box_w - 1.32, text_scale, auto_height)
             T { Style { display("block") width(box_w - 1.32) height(0.20) } }
-            port("OUTPUT", note.output, output_ink, output_fill, card_ink, box_w - 1.32)
+            port("OUTPUT", note.output, output_ink, output_fill, card_ink, box_w - 1.32, text_scale, auto_height)
             T { Style { display("block") width(box_w - 1.32) height(0.25) } }
-            words("HOW IT WORKS", 0.44, kind_ink, box_w - 1.32, 0.55)
-            words(note.how, 0.65, card_ink, box_w - 1.32, 1.65)
-            words("WHY USEFUL", 0.44, caption_ink, box_w - 1.32, 0.55)
-            words(note.why, 0.65, caption_ink, box_w - 1.32, 1.65)
-            words("CLICK FOR CONTRACTS / OPEN DESIGN", 0.43, kind_ink, box_w - 1.32, 0.60)
+            card_words("HOW IT WORKS", 0.44 * text_scale, kind_ink, box_w - 1.32, 0.55 * text_scale, auto_height)
+            card_words(note.how, 0.65 * text_scale, card_ink, box_w - 1.32, 1.65 + 3.85 * (text_scale - 1.0), auto_height)
+            card_words("WHY USEFUL", 0.44 * text_scale, caption_ink, box_w - 1.32, 0.55 * text_scale, auto_height)
+            card_words(note.why, 0.65 * text_scale, caption_ink, box_w - 1.32, 1.65 + 3.85 * (text_scale - 1.0), auto_height)
+            card_words("CLICK FOR CONTRACTS / OPEN DESIGN", 0.43 * text_scale, kind_ink, box_w - 1.32, 0.60 * text_scale, auto_height)
         }
     }
     on(item, "Click", fn(event) { show_detail(id) })
     return item
 }
 
-// Content starts at (1.5, 5.0) in each section's glyph-unit coordinate frame.
-fn section(id, title, description, content, section_w, section_h, tint) {
-    return T {
-        name = id
-        Style {
-            display("block") width(section_w) height(section_h) flex_shrink(0.0)
-            padding(0.06) background_color([tint[0] * 0.28, tint[1] * 0.28, tint[2] * 0.28, 1.0])
-        }
-        T {
+// Retain a draggable header and minimize control; construct the entire expensive
+// body (including wires) afresh. No detached live component tree is cached.
+fn section(id, title, description, content_factory, section_w, section_h, tint, group_x, group_y, decorations_factory) {
+    let text_scale = 1.0
+    if id == "avc_constraint_composition" { text_scale = graph_text_scale }
+    let panel = info_panel({
+        root_name = id
+        width_gu = section_w
+        unit_scale = 1.0
+        transparent_background = true
+        // The nested card layout supplies its own colors. A shell-level color
+        // can register after that layout and overwrite its rendered glyphs.
+        inherit_body_text_color = false
+        body_padding = 0.0
+        toggle_icon_glow_intensity = 0.0
+        title = T {
+            name = id + "_handle"
+            Draggable.target("../../#" + id).plane("camera")
+            Raycastable.enabled() { interaction_priority(35.0) }
             Style {
-                display("flex") flex_direction("column")
-                width(section_w - 0.12) height(section_h - 0.12) padding(1.44)
-                background_color([0.012, 0.021, 0.036, 1.0])
+                display("flex") flex_direction("row") align_items("center")
+                width(100%) height(3.5) background_color([0.018, 0.030, 0.049, 1.0])
             }
-            words(title, 1.02, tint, section_w - 3.0, 1.5)
-            words(description, 0.65, muted, section_w - 3.0, 1.4)
-            T { Style { display("block") width(section_w - 3.0) height(0.6) } }
-            content
+            // A layout boundary keeps the decorative handle at its authored
+            // left position instead of centering its visual bounds in the bar.
+            LayoutRoot {
+                available_width(2.0) unit_scale(1.0)
+                T.position(-2.1, -1.75, 0.08).scale(2.0, 3.5, 1.0) {
+                    R.square() { C.rgba(tint[0], tint[1], tint[2], tint[3]) }
+                }
+            }
+            T {
+                Style { display("flex") width(0.0) flex_grow(1.0) height(3.5) align_items("center") padding_xy(0.3, 1.5) font_size(text_scale) }
+                Text { title C.rgba(tint[0], tint[1], tint[2], tint[3]) }
+            }
         }
-    }
+        content_factory = fn() {
+            return T {
+                name = id + "_content"
+                Style { display("block") width(section_w) height(section_h) }
+                LayoutRoot {
+                    name = id + "_layout"
+                    available_width(section_w) available_height(section_h) unit_scale(1.0)
+                    T {
+                        Style {
+                            display("flex") flex_direction("column")
+                            width(section_w) height(section_h) padding(1.5)
+                        }
+                        words("INPUT / OUTPUT / HOW / WHY  —  CLICK A CARD FOR DETAILS", 0.70 * text_scale, tint, section_w - 3.0, 1.5 * text_scale)
+                        words(description, 0.65 * text_scale, muted, section_w - 3.0, 1.4 * text_scale)
+                        T { Style { display("block") width(section_w - 3.0) height(0.6 * text_scale) } }
+                        content_factory()
+                    }
+                }
+                decorations_factory()
+            }
+        }
+    })
+    return T.position(group_x, group_y, 0.0).scale(0.10, 0.10, 0.10) { panel }
 }
 
 fn ink(x, y, line_w, line_h, color) {
@@ -235,89 +360,144 @@ fn wire(points, color) {
     }
 }
 
-// Section tops: library 6, composition 34, future example 107.5.
-// Composition main lane: x=1.5 + 45*n, y=26.5; six cards 38x15.5.
-// Rig and yaw sit above; accepted state sits below publication with a return wire.
-T.position(-13.3, 6.70, 0.0).scale(0.10, 0.10, 0.10) {
-    LayoutRoot {
-        name = "avc_constraint_proposal"
-        available_width(266.0) available_height(133.5) unit_scale(1.0)
-        Selection { name = "avc_diagram_selection" }
+fn empty_decorations() { return T {} }
+
+fn operator_catalog_content() {
+    return T {
+        Style { display("flex") flex_direction("column") row_gap(5.0) width(173.0) height(77.0) }
         T {
-            Style { display("flex") flex_direction("column") width(266.0) height(133.5) }
-            words("AVC / HEAD, NECK AND BODY FOLLOW", 1.55, white, 266.0, 2.3)
-            words("INTERACTIVE PROPOSAL / 2026-10-16     Click any card for contracts, geometry and unresolved API decisions.", 0.75, muted, 266.0, 1.7)
-            words("SOLID / BLACK TEXT: proposed behavior or future example.    OUTLINED: existing facility / input context.\nCYAN: pure math / pose flow    VIOLET: retained state    GOLD: calibration / authored shell    GREEN: accepted pose", 0.68, muted, 266.0, 2.0)
-            section("avc_operator_library", "01 / OPERATOR FACILITIES", "Three facilities, not a component for every arithmetic step. These cards are independent library entries; section 02 shows their composition.",
-                T {
-                    Style { display("flex") flex_direction("row") column_gap(5.0) width(169.0) height(15.5) }
-                    card("op_yaw", cyan, 53.0)
-                    card("op_math", cyan, 53.0)
-                    card("op_follow", violet, 53.0)
-                }, 172.0, 23.0, cyan)
-            T { Style { display("block") width(266.0) height(5.0) } }
-            section("avc_constraint_composition", "02 / AVC-GENERATED CONSTRAINT", "Read the pose flow left to right. Rig calibration and yaw feed it from above; the accepted anchor returns underneath on the next update.",
-                T {
-                    Style { display("flex") flex_direction("column") width(263.0) height(62.0) }
-                    T {
-                        Style { display("flex") flex_direction("column") row_gap(6.0) width(263.0) height(58.5) }
-                        T {
-                            Style { display("flex") flex_direction("row") column_gap(7.0) width(263.0) height(15.5) }
-                            T {
-                                Style { display("flex") flex_direction("column") width(38.0) height(15.5) flex_shrink(0.0) }
-                                words("SUPPORTING VALUES", 0.70, muted, 38.0, 1.5)
-                                words("Rig calibration and current body yaw\nfeed the main pose lane below.\n\nShared context travels with its result;\nno duplicate filters are implied.", 0.65, muted, 38.0, 5.0)
-                            }
-                            card("rig_bind", gold, 38.0)
-                            card("used_yaw", cyan, 38.0)
-                        }
-                        T {
-                            Style { display("flex") flex_direction("row") column_gap(7.0) width(263.0) height(15.5) }
-                            card("pose_inputs", muted, 38.0)
-                            card("used_math_rotation", cyan, 38.0)
-                            card("used_math_measure", cyan, 38.0)
-                            card("used_follow", violet, 38.0)
-                            card("used_math_closure", green, 38.0)
-                            card("used_math_publish", green, 38.0)
-                        }
-                        T {
-                            Style { display("flex") flex_direction("row") width(263.0) height(15.5) }
-                            T { Style { display("block") width(225.0) height(15.5) flex_shrink(0.0) } }
-                            card("accepted_anchor", violet, 38.0)
-                        }
-                    }
-                    T { Style { display("block") width(263.0) height(0.7) } }
-                    words("Shared range: rotation-only movement fits; positional excess can trigger follow. Reach limits still apply. Commit state only after a connected pose is accepted.", 0.66, muted, 263.0, 2.0)
-                }, 266.0, 68.5, green)
-            T { Style { display("block") width(266.0) height(5.0) } }
-            section("avc_future_example", "03 / FUTURE MMS EXAMPLE", "Author ordinary Input or InputXR with AVC. The future default wires section 02 automatically; these displayed snippets are not running avatars.",
-                T {
-                    Style { display("flex") flex_direction("row") column_gap(5.0) width(169.0) height(15.5) }
-                    card("scene_desktop", gold, 53.0)
-                    card("scene_xr", gold, 53.0)
-                    card("scene_checks", gold, 53.0)
-                }, 172.0, 24.0, gold)
-            words("This scene runs only the diagram. No new TOP constructors, avatar solver, model or XR session are executed.   WASD / R / F: navigate; right mouse: look.", 0.66, muted, 266.0, 2.0)
+            Style { display("flex") flex_direction("row") column_gap(7.0) width(173.0) height(15.5) }
+            card("math_graph", violet, 38.0)
+            card("value_source", gold, 38.0)
+            card("quat_relative", cyan, 38.0)
+            card("quat_pitch", cyan, 38.0)
+        }
+        T {
+            Style { display("flex") flex_direction("row") column_gap(7.0) width(173.0) height(15.5) }
+            card("scalar_arithmetic", cyan, 38.0)
+            card("scalar_clamp", cyan, 38.0)
+            card("quat_axis_angle", cyan, 38.0)
+            card("quat_compose", cyan, 38.0)
+        }
+        T {
+            Style { display("flex") flex_direction("row") column_gap(7.0) width(173.0) height(15.5) }
+            card("vector_rotate", cyan, 38.0)
+            card("vector_arithmetic", cyan, 38.0)
+            card("vector_project", cyan, 38.0)
+            card("vector_measure", cyan, 38.0)
+        }
+        T {
+            Style { display("flex") flex_direction("row") column_gap(7.0) width(173.0) height(15.5) }
+            card("quat_directions", green, 38.0)
+            card("op_follow", violet, 38.0)
+            card("channel_output", green, 38.0)
+            card("op_yaw", cyan, 38.0)
         }
     }
-    T.position(0.0, -34.0, 0.08) {
-        // Source orientation branches upward to yaw. A small crossing gap
-        // distinguishes it from the vertical gold calibration connection.
-        stroke([[20.5, 26.5], [20.5, 23.0], [64.7, 23.0]], cyan)
-        wire([[66.3, 23.0], [110.5, 23.0], [110.5, 20.5]], cyan)
-        wire([[65.5, 20.5], [65.5, 26.5]], gold)
-        wire([[121.5, 20.5], [121.5, 24.0], [78.5, 24.0], [78.5, 26.5]], cyan)
-        // The entire current-update pose flow is one left-to-right lane.
-        wire([[39.5, 34.25], [46.5, 34.25]], cyan)
-        wire([[84.5, 34.25], [91.5, 34.25]], cyan)
-        wire([[129.5, 34.25], [136.5, 34.25]], violet)
-        wire([[174.5, 34.25], [181.5, 34.25]], green)
-        wire([[219.5, 34.25], [226.5, 34.25]], green)
-        // Commit below publication, then return only on the next update.
-        wire([[245.5, 42.0], [245.5, 48.0]], green)
-        wire([[226.5, 55.75], [155.5, 55.75], [155.5, 42.0]], violet)
-        T.position(176.0, -52.5, 0.03) { words("ACCEPTED ANCHOR / NEXT UPDATE", 0.62, violet, 48.0, 1.0) }
+}
+
+fn constraint_composition_content() {
+    return T {
+        Style { display("flex") flex_direction("column") width(263.0) }
+        T {
+            Style { display("flex") flex_direction("column") width(263.0) }
+            T {
+                name = "avc_graph_support_row"
+                Style { display("flex") flex_direction("row") align_items("start") column_gap(7.0) width(263.0) height(48.0) margin_bottom(6.0) }
+                T {
+                    Style { display("flex") flex_direction("column") width(38.0) flex_shrink(0.0) }
+                    flow_words("BOUND INPUTS / SHARED VALUES", 0.70 * graph_text_scale, muted, 38.0)
+                    flow_words("Rest geometry and existing body yaw\nfeed typed inputs in the graph below.\n\nNo MMS AST or callback is evaluated\nfor an ordinary numeric update.", 0.65 * graph_text_scale, muted, 38.0)
+                }
+                graph_card("rig_bind", gold, 38.0)
+                graph_card("used_yaw", cyan, 38.0)
+            }
+            T {
+                name = "avc_graph_pose_row"
+                Style { display("flex") flex_direction("row") align_items("start") column_gap(7.0) width(263.0) height(54.0) margin_bottom(6.0) }
+                graph_card("pose_inputs", muted, 38.0)
+                graph_card("used_math_rotation", cyan, 38.0)
+                graph_card("used_math_measure", cyan, 38.0)
+                graph_card("used_follow", violet, 38.0)
+                graph_card("used_math_closure", green, 38.0)
+                graph_card("used_math_publish", green, 38.0)
+            }
+            T {
+                name = "avc_graph_state_row"
+                Style { display("flex") flex_direction("row") align_items("start") column_gap(7.0) width(263.0) height(48.0) }
+                for stage_id in ["pose_inputs", "used_math_rotation", "used_math_measure", "used_follow", "used_math_closure"] {
+                    T {
+                        Style { display("block") width(38.0) flex_shrink(0.0) }
+                        scaled_component_badges(stage_id, 38.0, graph_text_scale)
+                    }
+                }
+                graph_card("accepted_anchor", violet, 38.0)
+            }
+        }
+        T { Style { display("block") width(263.0) height(8.0) } }
+        flow_words("Numeric components return typed values. TransformChannelOutput bridges the accepted pose into the transform system; only then is next follow state committed.", 0.66 * graph_text_scale, muted, 263.0)
     }
+}
+
+fn constraint_wires() {
+    // The parent body is styled. A private layout boundary protects the
+    // authored connector coordinates from visual-content auto-alignment.
+    return LayoutRoot {
+        available_width(266.0) unit_scale(1.0)
+        T.position(0.0, 0.0, 0.08) {
+            name = "avc_constraint_wires"
+            // Reserved routing lanes are separate from intrinsic card heights.
+            // Coordinates follow the word-wrapped card bounds, not fixed card sizes.
+            stroke([[20.5, 64.6], [20.5, 61.6], [64.7, 61.6]], cyan)
+            wire([[66.3, 61.6], [110.5, 61.6], [110.5, 54.216]], cyan)
+            wire([[65.5, 56.322], [65.5, 64.6]], gold)
+            wire([[121.5, 54.216], [121.5, 62.6], [78.5, 62.6], [78.5, 64.6]], cyan)
+            wire([[39.5, 84.6], [46.5, 84.6]], cyan)
+            wire([[84.5, 84.6], [91.5, 84.6]], cyan)
+            wire([[129.5, 84.6], [136.5, 84.6]], violet)
+            wire([[174.5, 84.6], [181.5, 84.6]], green)
+            wire([[219.5, 84.6], [226.5, 84.6]], green)
+            wire([[245.5, 109.854], [245.5, 124.6]], green)
+            wire([[226.5, 147.656], [223.0, 147.656], [223.0, 174.6], [178.0, 174.6], [178.0, 120.6], [155.5, 120.6], [155.5, 106.474]], violet)
+            T.position(136.5, -177.1, 0.03) {
+                LayoutRoot {
+                    available_width(88.0) unit_scale(1.0)
+                    flow_words("ACCEPTED ANCHOR / NEXT UPDATE", 0.62 * graph_text_scale, violet, 88.0)
+                }
+            }
+        }
+    }
+}
+
+fn future_example_content() {
+    return T {
+        Style { display("flex") flex_direction("row") column_gap(5.0) width(169.0) height(14.0) align_items("start") }
+        example_card("scene_desktop", gold, 53.0)
+        example_card("scene_xr", gold, 53.0)
+        example_card("scene_checks", gold, 53.0)
+    }
+}
+
+// These three groups are independently draggable; no outer layout repositions
+// them after a drag. The middle lane keeps its connectors in its own local frame.
+T {
+    name = "avc_constraint_proposal"
+    Selection { name = "avc_diagram_selection" }
+    T.position(-13.3, 11.40, 0.0).scale(0.10, 0.10, 0.10) {
+        LayoutRoot {
+            available_width(266.0) available_height(6.0) unit_scale(1.0)
+            T {
+                Style { display("flex") flex_direction("column") width(266.0) height(6.0) }
+                words("AVC / TYPED VALUE OPERATORS", 1.55, white, 266.0, 2.3)
+                words("INTERACTIVE PROPOSAL / 2026-10-17     MMS constructs the graph; the engine evaluates retained typed operations.", 0.75, muted, 266.0, 1.7)
+                words("SOLID / BLACK TEXT: proposed. OUTLINED: existing context. Named operator tags match catalog fills.
+Drag a title / left bar; arrow unloads / restores content. Wires: CYAN pose, VIOLET state, GOLD calibration, GREEN accepted outputs.", 0.68, muted, 266.0, 2.0)
+            }
+        }
+    }
+    section("avc_operator_library", "01 / PROPOSED VALUE OPERATOR COMPONENTS", "Proposed long names; shortforms are undecided. Scalar / Vec3 / Quaternion ports form a small native graph, with input and transform-output boundaries.", operator_catalog_content, 176.0, 84.5, cyan, -13.3, 10.8, empty_decorations)
+    section("avc_constraint_composition", "02 / AVC-GENERATED VALUE GRAPH", "Read the pose flow left to right. Click a stage for the named components it composes. Calibration/yaw feed it from above; accepted state returns underneath.", constraint_composition_content, 266.0, 188.0, green, -13.3, 1.85, constraint_wires)
+    section("avc_future_example", "03 / FUTURE MMS EXAMPLE", "Ordinary Input or InputXR with AVC requests automatic graph construction. These displayed outlines are not running avatars.", future_example_content, 172.0, 21.0, gold, -13.3, -17.9, empty_decorations)
 }
 
 let details_panel = info_panel({
@@ -326,7 +506,6 @@ let details_panel = info_panel({
     unit_scale = 0.075
     title = T {
         name = "avc_diagram_details_title_bar"
-        Grabbable.parent()
         Draggable.target("../../#avc_diagram_details")
         Raycastable.enabled()
         Style {
@@ -347,7 +526,7 @@ let details_panel = info_panel({
     body_text_color = white
     content = detail_content(null)
 })
-T.position(5.8, 6.15, 1.0) {
+T.position(6.0, 10.65, 1.0) {
     name = "avc_diagram_details_placement"
     details_panel
 }
@@ -361,5 +540,5 @@ on(details_panel, "DataEvent", fn(event) {
 // Desktop camera only. Use W to approach individual sections for comfortable text.
 Input.speed(3.0) {
     InputTransformMode.forward_z() { fps_rotation() roll_axis_y() }
-    T.position(0.0, 0.0, 15.5) { C3D { Pointer {} } }
+    T.position(0.0, 1.4, 18.0) { C3D { Pointer {} } }
 }

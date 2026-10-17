@@ -3,17 +3,33 @@
 Status: design exploration, 2026-10-15. Documentation only; operation names
 below are semantic notation, not an implemented MMS API.
 
+Direction update, 2026-10-17: [declarative vector operator components](declarative-vector-operator-components.md)
+names the proposed typed value nodes and native evaluation model. The numeric
+graph is not limited to transform operators. MMS describes it at construction;
+the engine evaluates a retained typed plan. Existing transform operators and an
+explicit channel-output bridge connect it to scene transforms. This supersedes
+the generic math/patch box as the proposed component decomposition below.
+The value-component proposal also specifies `Vec`/`Quat` MMS operation families
+and [transform output bundles](declarative-vector-operator-components.md#transform-output-bundles-and-child-transforms):
+one bundle supplies the basis for graph child transforms, while multiple bundles
+require explicit selection. Translation/rotation/scale are declared output roles,
+separate from Vec3/Quaternion value types. These remain proposed APIs.
+The [MMS pose-driver example](avc-head-neck-pose-driver-example.md) writes out
+both placement slices and their nested graph/output wiring as an implementation
+target, with explicit fixture limits and expected results.
+
 [Interactive proposal diagram](../how_to/avc-head-neck-constraint-diagram.md)
-shows the three facilities and their reuse in the AVC algorithm, with clickable
+shows the typed component catalog and its use in the AVC algorithm, with clickable
 contracts and a separate future-example section.
 
 ## Motivation and scope
 
 The [AVC head/neck task](../task/xr-head-neck-bend-and-body-offset.md) is to be
-implemented through composed transform operators using reusable math and
-avatar-specific calibration. Calling the whole behavior an IK constraint
-describes its goal; it does not require a dedicated IK solver. AVC automatically
-constructs this operator composition for supported rigs.
+implemented through composed typed value components, existing transform
+operators and explicit transform outputs, using avatar-specific calibration.
+Calling the whole behavior an IK constraint describes its goal; it does not
+require a dedicated IK solver. AVC automatically constructs the graph for
+supported rigs.
 
 The useful chain is:
 

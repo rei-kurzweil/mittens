@@ -6,7 +6,9 @@ Date: 2026-03-23
 
 Planned default behavior (2026-10-16): [head/neck bend and bounded body follow](../task/xr-head-neck-bend-and-body-offset.md)
 is intended to activate automatically for supported mapped humanoids under
-either `Input` or `InputXR`, implemented through AVC-generated transform operators.
+either `Input` or `InputXR`, implemented through an AVC-generated
+[typed value graph](../draft/declarative-vector-operator-components.md), existing
+transform operators and explicit output bridges.
 Both use the same per-rig follow threshold, calibrated to contain the full
 rotation-generated head/body displacement. Desktop look remains inside that
 range; XR measured positional excess can cause follow. Both retain geometric

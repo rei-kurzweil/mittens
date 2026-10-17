@@ -163,3 +163,15 @@ patches, using XR neck bend/body placement as a fixture. Ordinary local offsets
 already turn rotation into position through composition; partial bend selection,
 cross-channel expressions, and shared derived values are proposed additions,
 not current TOP APIs.
+
+The [2026-10-17 value-component proposal](../draft/declarative-vector-operator-components.md)
+now places numeric operations in a separate typed graph constructed by MMS and
+evaluated by a retained native plan. Existing TOPs supply transform composition;
+an explicit `TransformChannelOutput` bridges values into that system. The new
+numeric components are not all new TOP kinds.
+The draft proposes `Vec`/`Quat` operator families and explicit transform-channel
+output bundles. A graph with one bundle supplies it to child transforms; several
+bundles require explicit selection through a proposed `TOP.channels(bundle)`
+adapter. Translation and scale both use Vec3 ports but must declare their channel
+roles. See [output bundles and child transforms](../draft/declarative-vector-operator-components.md#transform-output-bundles-and-child-transforms)
+for the proposal; graph inheritance and `TOP.channels` are not implemented.

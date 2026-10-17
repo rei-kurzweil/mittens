@@ -7,9 +7,23 @@ runtime changes have been made for this task.
 
 [Interactive proposal diagram](../how_to/avc-head-neck-constraint-diagram.md):
 run `examples/avc-head-neck-constraint-diagram.mms` to inspect the operator
-facilities, generated constraint and future MMS example. All 15 cards expose
+components, generated constraint and future MMS example. All cards expose
 additional contracts and open questions through an info panel. This visual
 proposal does not implement or execute the new avatar behavior.
+
+[MMS graph specification example](../draft/avc-head-neck-pose-driver-example.md):
+the [source](../draft/examples/avc-head-neck-pose-driver.mms) now spells out both
+construction slices, nested typed exports, desktop/XR preparation and transform
+consumers. It uses explicit geometric closure for a calibrated single-segment
+fixture; real-rig rest paths and anatomical limit projection remain work below.
+This is proposed MMS, not an implemented constraint or runnable scene.
+Start with the two smaller flat specification examples:
+[preferred neck rotation with one child transform](../draft/examples/vector-math-node-neck-rotation.mms)
+and [stateless immediate placement with two output bundles](../draft/examples/vector-math-node-neck-and-body.mms).
+They use the tentative `VMN` naming and have no nested composite nodes. Their
+reusable numeric operations cover a narrower behavior than the complete bounded
+follow/closure and real-rig integration contract, as explained in the
+[companion document](../draft/avc-head-neck-pose-driver-example.md#two-smaller-examples).
 
 Scope update, 2026-10-16: this is intended as automatic behavior of `AVC {}` for
 supported humanoids under both `Input {}` and `InputXR {}`. The original filename
@@ -18,11 +32,15 @@ supersedes earlier suggestions to leave desktop on its existing rigid-head path.
 
 Design direction update: [declarative transform math](../draft/declarative-transform-math.md)
 breaks this behavior into rotation selection, quaternion/vector math, translation
-patching, and shared derived values. Implement the constraint through composed
-transform operators, automatically wired by AVC. Small shared math helpers may
-back the operator primitives; a separate dedicated avatar IK solver is not the
-selected implementation. Existing TOP composition already expresses part of the
-geometry; retained math/follow capabilities still need to be added.
+patching, and shared derived values. The
+[2026-10-17 value-component proposal](../draft/declarative-vector-operator-components.md)
+now gives the numeric graph named component boundaries: MMS constructs it,
+while a flat typed native operation list evaluates it. The authored graph is
+compiled when its topology/configuration changes; value updates reuse its slots.
+Existing transform operators and an explicit output bridge connect the graph to
+scene transforms. AVC wires this
+constraint automatically; a separate dedicated avatar IK solver is not the
+selected implementation. The new numeric graph is still proposed work.
 
 When looking down at their torso or legs in XR, the user should see a connected
 neck bending with the head, with the body placed behind the head as required by
@@ -385,13 +403,13 @@ there is no operation that distributes head orientation into a neck joint and
 derives a second body output from the resulting FK geometry. An ordinary child
 operator also cannot update its parent or sibling neck branch.
 
-Use the [declarative math decomposition](../draft/declarative-transform-math.md)
-to implement the constraint through transform operators. The body calculation
-can be a single-output stage; shared upstream values supply both it and neck
-rotation. Current TOPs need the retained math and stateful-follow extension to
-express the full behavior. AVC binds calibration/eligibility and owns the
-generated composition; backend math helpers should implement reusable primitives
-without introducing an alternative standalone avatar solver.
+Use the [named value components](../draft/declarative-vector-operator-components.md)
+to implement the numeric graph and explicit transform outputs. Shared upstream
+values supply body placement and neck rotation. `MathGraph` prepares retained
+typed execution; `PlanarFollow` owns the accepted anchor boundary. Existing TOPs
+still supply yaw and hierarchy composition. AVC binds calibration/eligibility
+and owns the generated graph, without introducing an alternative standalone
+avatar solver.
 Current translation sampling is restricted to structural ancestor sources and
 cannot simply sample a solved sibling branch. No general transform constraint
 graph is a prerequisite for the first slice.
@@ -499,7 +517,7 @@ product decision is required to start that prototype. First prove default
 desktop rotation with a fixed body anchor, then rotation-derived XR placement,
 then bounded XR positional follow and geometric closure.
 
-Use internal typed operator composition with explicit state acceptance; the final public
+Use internal typed value graphs with explicit state acceptance; the final public
 declarative expression syntax is not settled and need not be invented merely
 to run the first fixture. Keep the pure math reusable by the proposed operator
 facility, and keep the stateful follow/acceptance boundary explicit. Exact bend
