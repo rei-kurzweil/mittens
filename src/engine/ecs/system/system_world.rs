@@ -52,7 +52,7 @@ use crate::engine::ecs::system::static_contact_system::StaticContactSystem;
 use crate::engine::ecs::system::{
     AmplitudeSystem, AssetSystem, AvatarBodyYawSystem, AvatarControlSystem, Cursor3dSystem,
     EditorContextSystem, EditorInspectorSystem, EditorPaintSystem, EditorSystem, FitBoundsSystem,
-    GestureSystem, GridSystem, HeadPoseBodyXzFollowSystem, IKSystem, LayoutSystem,
+    GestureSystem, GridSystem, HeadNeckBodyConstraintSystem, IKSystem, LayoutSystem,
     SecondaryMotionConstraintSystem, SecondaryMotionSystem, SelectionSystem, TransformGizmoSystem,
 };
 use crate::engine::ecs::system::{AnimationSystem, AudioInputSystem, AudioSystem};
@@ -136,7 +136,7 @@ pub struct SystemWorld {
     pub editor_paint: EditorPaintSystem,
     pub avatar_body_yaw: AvatarBodyYawSystem,
     pub avatar_control: AvatarControlSystem,
-    pub head_pose_body_xz_follow: HeadPoseBodyXzFollowSystem,
+    pub head_neck_body_constraint: HeadNeckBodyConstraintSystem,
     pub ik: IKSystem,
     pub secondary_motion: SecondaryMotionSystem,
     pub secondary_motion_constraint: SecondaryMotionConstraintSystem,
@@ -1382,7 +1382,7 @@ impl SystemWorld {
                 .is_some()
             {
                 self.avatar_control.remove(n);
-                self.head_pose_body_xz_follow.remove(n);
+                self.head_neck_body_constraint.remove(n);
             }
             if world
                 .get_component_by_id_as::<AvatarBodyYawComponent>(n)
@@ -1477,7 +1477,7 @@ impl SystemWorld {
 
     pub fn register_avatar_control(&mut self, component: ComponentId) {
         self.avatar_control.register(component);
-        self.head_pose_body_xz_follow.register(component);
+        self.head_neck_body_constraint.register(component);
     }
 
     pub fn register_eye_tracking(&mut self, world: &World, component: ComponentId) {
@@ -3493,10 +3493,12 @@ impl SystemWorld {
         // never consume queued/stale AVC transforms.
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
-        // head_pose_body_xz_follow owns model_root XZ translation + neck
-        // rest-pin. Runs after AVC init so model_root_id / body_operator_id
-        // are populated and all of AVC's writes above have landed.
-        self.head_pose_body_xz_follow.tick(world, queue, dt_sec);
+        // Native head/neck/body geometry replaces legacy follow for eligible
+        // rigs. Publish the coordinated root/neck/head pose before arm IK reads
+        // shoulder worlds; unsupported rigs use the mutually exclusive fallback.
+        self.head_neck_body_constraint
+            .tick(world, queue, &self.attachment);
+        queue.flush(world, self, visuals, render_assets);
         self.ik.tick(world, queue, dt_sec);
         if let Some(started) = phase_started {
             self.phase_profile.avatar_ik += started.elapsed();

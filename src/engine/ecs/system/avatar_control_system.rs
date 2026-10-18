@@ -21,8 +21,8 @@ use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::engine::graphics::{RenderAssets, primitives::Transform};
 use crate::engine::user_input::InputState;
 use crate::utils::math::{
-    mat_to_quat, mat4_identity, mat4_mul, quat_conjugate, quat_mul, quat_rotate_vec3,
-    quat_rotation_y, quat_to_axis_angle, shortest_arc_quat,
+    mat_to_quat, mat4_identity, mat4_mul, mat4_mul_vec4, quat_conjugate, quat_mul,
+    quat_rotate_vec3, quat_rotation_y, quat_to_axis_angle, shortest_arc_quat,
 };
 use std::collections::HashSet;
 use std::sync::OnceLock;
@@ -748,6 +748,17 @@ fn refresh_map_camera_anchor(
         }
     }
     if let Some(avc) = world.get_component_by_id_as_mut::<AvatarControlComponent>(avc_id) {
+        if let Some(constraint) = &mut avc.head_neck_body_constraint {
+            if constraint.matches_map(
+                map_target(report, HumanoidSlot::Head),
+                map_target(report, HumanoidSlot::Neck),
+            ) {
+                constraint.map_generation = report.generation;
+            } else {
+                avc.head_neck_body_bind_error =
+                    Some("mapped head/neck changed; avatar requires reinitialization");
+            }
+        }
         avc.splice_camera_bone = new_anchor;
         avc.humanoid_map_gltf = Some(gltf);
         avc.humanoid_map_generation = report.generation;
@@ -1526,16 +1537,32 @@ fn try_init_splices(
             None
         })
         .collect();
-    let eye_offset_head_local: [f32; 3] = camera_children
+    let authored_eye_offset = camera_children
         .iter()
         .map(|&(_, off, _)| off)
         .find(|off| off != &[0.0, 0.0, 0.0])
         .unwrap_or([0.0, eye_height_from_head_bone.unwrap_or(0.0), 0.0]);
+    // The wrapper is attached beneath the mapped camera anchor, not directly
+    // beneath the head. Include that rest path (including helper rotations)
+    // before converting the eye origin back to the displaced head pivot.
+    let anchor_in_head = camera_bone_id
+        .and_then(|anchor| rest_model_relative_to(world, head_bone_id, anchor))
+        .unwrap_or_else(mat4_identity);
+    let eye = mat4_mul_vec4(
+        anchor_in_head,
+        [
+            authored_eye_offset[0],
+            authored_eye_offset[1],
+            authored_eye_offset[2],
+            1.0,
+        ],
+    );
+    let eye_offset_head_local = [eye[0], eye[1], eye[2]];
 
     // Eye offset mapped from head-local into driven_t-local space.
     // This remains the source for the head target offset. It no longer owns
-    // body/root XZ placement; steady-state body XZ is handled by
-    // HeadPoseBodyXzFollowSystem.
+    // body/root placement; the native constraint owns supported rigs and the
+    // legacy follow calculation handles its mutually exclusive fallback.
     let head_ik_offset_yaw = if resolved_head_target_forward_plus_z {
         0.0
     } else {
@@ -1544,7 +1571,7 @@ fn try_init_splices(
 
     // Body Y is anchored to `displaced_head.world.y` (which already has
     // -eye_offset.y baked in via the head_target chain) in
-    // HeadPoseBodyXzFollowSystem, so model_root.y must NOT also include an
+    // the legacy fallback, so model_root.y must NOT also include an
     // eye-offset term — that would subtract it twice and stretch the
     // rest-pose neck by `eye_offset.y`.
     let model_root_translation: Option<[f32; 3]> = if let Some(h) = avatar_height_override {
@@ -1687,9 +1714,40 @@ fn try_init_splices(
         -ik_eye_offset_head_local[2],
     ];
     // Full desired head-pivot offset in driven_t local space.
-    let head_target_offset = quat_rotate_vec3(quat_rotation_y(head_ik_offset_yaw), neg_eye);
+    let scaled_neg_eye = std::array::from_fn(|i| neg_eye[i] * head_rest_s[i]);
+    let head_target_offset = quat_rotate_vec3(
+        quat_mul(quat_rotation_y(head_ik_offset_yaw), head_rest_rot),
+        scaled_neg_eye,
+    );
 
-    // Dedicated fixed visible-head mount under driven_t.
+    // Capture the original head FK segment before the attach intents splice it.
+    // The constraint replaces legacy follow only after this calibration validates.
+    let binding = neck_bone_id
+        .ok_or("mapped neck/rest pin unavailable")
+        .and_then(|neck| {
+            super::ik::HeadNeckBodyConstraint::bind(
+                world,
+                model_root_id,
+                neck,
+                head_bone_id,
+                driven_t_id,
+                head_target_offset,
+                quat_rotation_y(resolved_initial_body_yaw),
+                humanoid_map.generation,
+            )
+        });
+    if let Some(avc) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
+        match binding {
+            Ok(constraint) => {
+                avc.head_neck_body_constraint = Some(constraint);
+                avc.head_neck_body_bind_error = None;
+            }
+            Err(reason) => avc.head_neck_body_bind_error = Some(reason),
+        }
+    }
+
+    // Calibrated visible-head mount under driven_t. Native desktop pose solving
+    // can move this mount along the connected head arc without moving Input.
     let head_target_id = world.add_component(
         TransformComponent::new()
             .with_position(
@@ -2130,7 +2188,10 @@ fn update_local_rotation(
 /// sidecar that `GLTFSystem` stamps at node-spawn time.  Falls back to the
 /// live `TransformComponent` (then to identity) for non-GLTF skeletons that
 /// never had a rest-pose snapshot attached.
-fn read_bone_rest_pose(world: &World, bone_id: ComponentId) -> ([f32; 3], [f32; 4], [f32; 3]) {
+pub(super) fn read_bone_rest_pose(
+    world: &World,
+    bone_id: ComponentId,
+) -> ([f32; 3], [f32; 4], [f32; 3]) {
     if let Some(rest) = world
         .children_of(bone_id)
         .iter()
@@ -2156,7 +2217,7 @@ fn read_bone_rest_pose(world: &World, bone_id: ComponentId) -> ([f32; 3], [f32; 
 /// Non-GLTF transforms fall back to their local model matrix. World matrices
 /// are deliberately ignored because XR may update an ancestor before the
 /// imported subtree has been propagated for the same frame.
-fn rest_model_relative_to(
+pub(super) fn rest_model_relative_to(
     world: &World,
     ancestor: ComponentId,
     descendant: ComponentId,
@@ -2865,6 +2926,342 @@ mod hand_pose_correction_tests {
             diagnostics: Vec::new(),
             slots,
         }
+    }
+
+    #[test]
+    fn native_head_neck_body_aligns_mapped_eyes_with_xr_view_on_checked_in_rigs() {
+        use crate::engine::ecs::CommandQueue;
+        use crate::engine::ecs::system::{HeadNeckBodyConstraintSystem, SystemWorld};
+        use crate::engine::graphics::VisualWorld;
+        use crate::utils::math::{quat_from_axis_angle, vec3_len, vec3_sub};
+
+        // Check actual skinned body surfaces, not only joint endpoints. A ray
+        // exiting a back face first is the first-person "inside torso" failure.
+        fn body_hit(
+            document: &gltf::Gltf,
+            world: &World,
+            nodes: &[ComponentId],
+            view: [[f32; 4]; 4],
+            ray: [f32; 3],
+        ) -> Option<(f32, f32)> {
+            use crate::utils::math::{vec3_cross, vec3_dot, vec3_sub};
+            let origin = view[3][..3].try_into().unwrap();
+            let direction4 = mat4_mul_vec4(view, [ray[0], ray[1], ray[2], 0.0]);
+            let direction: [f32; 3] = direction4[..3].try_into().unwrap();
+            let mut nearest: Option<(f32, f32)> = None;
+            for node in document.nodes() {
+                let Some(mesh) = node
+                    .mesh()
+                    .filter(|m| m.name().is_some_and(|n| n.starts_with("Body")))
+                else {
+                    continue;
+                };
+                let skin = node.skin().unwrap();
+                let inverse: Vec<_> = skin
+                    .reader(|_| document.blob.as_deref())
+                    .read_inverse_bind_matrices()
+                    .unwrap()
+                    .collect();
+                let joints: Vec<_> = skin
+                    .joints()
+                    .enumerate()
+                    .map(|(i, joint)| {
+                        mat4_mul(
+                            world
+                                .get_component_by_id_as::<TransformComponent>(nodes[joint.index()])
+                                .unwrap()
+                                .transform
+                                .matrix_world,
+                            inverse[i],
+                        )
+                    })
+                    .collect();
+                for primitive in mesh.primitives() {
+                    let reader = primitive.reader(|_| document.blob.as_deref());
+                    let positions = reader.read_positions().unwrap();
+                    let joint_ids = reader.read_joints(0).unwrap().into_u16();
+                    let weights = reader.read_weights(0).unwrap().into_f32();
+                    let vertices: Vec<[f32; 3]> = positions
+                        .zip(joint_ids)
+                        .zip(weights)
+                        .map(|((p, ids), weights)| {
+                            let mut skinned = [0.0; 3];
+                            for i in 0..4 {
+                                let p =
+                                    mat4_mul_vec4(joints[ids[i] as usize], [p[0], p[1], p[2], 1.0]);
+                                for axis in 0..3 {
+                                    skinned[axis] += weights[i] * p[axis];
+                                }
+                            }
+                            skinned
+                        })
+                        .collect();
+                    let indices: Vec<_> = reader.read_indices().unwrap().into_u32().collect();
+                    for triangle in indices.chunks_exact(3) {
+                        let a = vertices[triangle[0] as usize];
+                        let e1 = vec3_sub(vertices[triangle[1] as usize], a);
+                        let e2 = vec3_sub(vertices[triangle[2] as usize], a);
+                        let cross = vec3_cross(direction, e2);
+                        let det = vec3_dot(e1, cross);
+                        if det.abs() < 1e-9 {
+                            continue;
+                        }
+                        let offset = vec3_sub(origin, a);
+                        let u = vec3_dot(offset, cross) / det;
+                        let v = vec3_dot(direction, vec3_cross(offset, e1)) / det;
+                        if u < 0.0 || v < 0.0 || u + v > 1.0 {
+                            continue;
+                        }
+                        let distance = vec3_dot(e2, vec3_cross(offset, e1)) / det;
+                        if distance > 0.0001 && nearest.is_none_or(|hit| distance < hit.0) {
+                            nearest = Some((distance, vec3_dot(vec3_cross(e1, e2), direction)));
+                        }
+                    }
+                }
+            }
+            nearest
+        }
+
+        for asset in ["assets/models/bisket.glb", "assets/models/rei(mu).glb"] {
+            let document = gltf::Gltf::open(asset).unwrap();
+            let mut world = World::default();
+            let mut xr = InputXRComponent::on();
+            xr.pose_valid = true;
+            let input = world.add_component(xr);
+            let driven =
+                world.add_component(TransformComponent::new().with_position(0.0, 1.6, 0.0));
+            let mut config = AvatarControlComponent::new();
+            config.collision_enabled = false;
+            let avatar = world.add_component(config);
+            let root = world.add_component(TransformComponent::new());
+            for (p, c) in [(input, driven), (driven, avatar), (avatar, root)] {
+                world.add_child(p, c).unwrap();
+            }
+            let mut nodes = Vec::new();
+            for node in document.nodes() {
+                let (t, r, s) = node.transform().decomposed();
+                let id = world.add_component(
+                    TransformComponent::new()
+                        .with_position(t[0], t[1], t[2])
+                        .with_rotation_quat(r)
+                        .with_scale(s[0], s[1], s[2]),
+                );
+                world.add_child(root, id).unwrap();
+                let rest = world.add_component(BoneRestPoseComponent::new(t, r, s));
+                world.add_child(id, rest).unwrap();
+                nodes.push(id);
+            }
+            for node in document.nodes() {
+                for child in node.children() {
+                    world
+                        .set_parent(nodes[child.index()], Some(nodes[node.index()]))
+                        .unwrap();
+                }
+            }
+            let find = |name| {
+                nodes[document
+                    .nodes()
+                    .find(|n| n.name() == Some(name))
+                    .unwrap()
+                    .index()]
+            };
+            let head = find("J_Bip_C_Head");
+            let neck = find("J_Bip_C_Neck");
+            let left = rest_model_relative_to(&world, head, find("J_Adj_L_FaceEye")).unwrap();
+            let right = rest_model_relative_to(&world, head, find("J_Adj_R_FaceEye")).unwrap();
+            let eye = std::array::from_fn::<_, 3, _>(|i| (left[3][i] + right[3][i]) * 0.5);
+            let anchor = world
+                .add_component(TransformComponent::new().with_position(eye[0], eye[1], eye[2]));
+            world.add_child(head, anchor).unwrap();
+            // Same authored wrapper as rei(mu).mms / mittens-corp.mms.
+            let wrapper =
+                world.add_component(TransformComponent::new().with_position(0.0, 0.08, 0.12));
+            let camera = world.add_component(CameraXRComponent::on());
+            world.add_child(avatar, wrapper).unwrap();
+            world.add_child(wrapper, camera).unwrap();
+            let mut report = left_arm_report(head, head, head);
+            report.slots.clear();
+            for (slot, component) in [
+                (HumanoidSlot::Head, head),
+                (HumanoidSlot::Neck, neck),
+                (HumanoidSlot::CameraAnchor, anchor),
+            ] {
+                report.slots.insert(
+                    slot,
+                    HumanoidSlotReport {
+                        slot,
+                        status: HumanoidSlotStatus::Resolved(ResolvedHumanoidTarget {
+                            component,
+                            kind: ResolvedHumanoidTargetKind::Transform,
+                        }),
+                        provenance: HumanoidSlotProvenance::ConventionName,
+                        diagnostic: None,
+                    },
+                );
+            }
+            let mut queue = CommandQueue::new();
+            try_init_splices(
+                avatar,
+                &mut world,
+                &mut Default::default(),
+                &report,
+                &mut queue,
+            );
+            let mut systems = SystemWorld::default();
+            let mut visuals = VisualWorld::default();
+            let mut assets = RenderAssets::new();
+            queue.flush(&mut world, &mut systems, &mut visuals, &mut assets);
+            let mut constraint = HeadNeckBodyConstraintSystem::default();
+            constraint.register(avatar);
+            let mut visible_body_hits = 0;
+            for (pitch, roll) in [
+                (0_f32, 0_f32),
+                (50.0, 0.0),
+                (90.0, 0.0),
+                (0.0, 45.0),
+                (50.0, -35.0),
+            ] {
+                let t = world
+                    .get_component_by_id_as_mut::<TransformComponent>(driven)
+                    .unwrap();
+                t.transform.rotation = quat_mul(
+                    quat_rotation_y(0.3),
+                    quat_mul(
+                        quat_from_axis_angle([-1.0, 0.0, 0.0], pitch.to_radians()),
+                        quat_from_axis_angle([0.0, 0.0, -1.0], roll.to_radians()),
+                    ),
+                );
+                t.transform.recompute_model();
+                systems.transform_changed(&mut world, &mut visuals, driven);
+                constraint.tick(&mut world, &mut queue, &systems.attachment);
+                queue.flush(&mut world, &mut systems, &mut visuals, &mut assets);
+                let view = world
+                    .get_component_by_id_as::<TransformComponent>(driven)
+                    .unwrap()
+                    .transform
+                    .matrix_world;
+                let eye_world = world
+                    .get_component_by_id_as::<TransformComponent>(wrapper)
+                    .unwrap()
+                    .transform
+                    .matrix_world;
+                let delta = vec3_sub(
+                    eye_world[3][..3].try_into().unwrap(),
+                    view[3][..3].try_into().unwrap(),
+                );
+                assert!(
+                    vec3_len(delta) < 0.00003,
+                    "{asset}, pitch {pitch}, roll {roll}: eye/view mismatch {delta:?}"
+                );
+                // The rendered head/view source must not be shifted by this solve.
+                assert_eq!(view[3], [0.0, 1.6, 0.0, 1.0]);
+                for y in [0.0, -0.2, -0.4, -0.6] {
+                    for x in [-0.1, 0.0, 0.1] {
+                        if let Some((distance, facing)) =
+                            body_hit(&document, &world, &nodes, view, [x, y, -1.0])
+                        {
+                            visible_body_hits += 1;
+                            assert!(
+                                facing < 0.0,
+                                "{asset}, pitch {pitch}, roll {roll}: view enters a body back face"
+                            );
+                            assert!(
+                                distance >= CameraXRComponent::DEFAULT_Z_NEAR,
+                                "{asset}, pitch {pitch}, roll {roll}: nearest body surface at {distance} is clipped"
+                            );
+                        }
+                    }
+                }
+                assert_eq!(constraint.status(avatar), super::super::ik::head_neck_body_constraint::HeadNeckBodyConstraintStatus::Ready);
+            }
+            assert!(
+                visible_body_hits > 0,
+                "fixture rays must exercise visible body surfaces"
+            );
+        }
+    }
+
+    #[test]
+    fn native_head_neck_body_binding_is_captured_before_head_splicing() {
+        use crate::engine::ecs::CommandQueue;
+        use crate::engine::ecs::system::{HeadNeckBodyConstraintSystem, SystemWorld};
+        use crate::engine::graphics::VisualWorld;
+        let mut world = World::default();
+        let driven = world.add_component(TransformComponent::new().with_position(0.0, 1.42, 0.0));
+        let mut config = AvatarControlComponent::new();
+        config.collision_enabled = false;
+        let avatar = world.add_component(config);
+        let root = world.add_component(TransformComponent::new());
+        let neck = world.add_component(TransformComponent::new().with_position(0.0, 1.3, 0.0));
+        let head = world.add_component(TransformComponent::new().with_position(0.0, 0.12, 0.0));
+        for (p, c) in [(driven, avatar), (avatar, root), (root, neck), (neck, head)] {
+            world.add_child(p, c).unwrap();
+        }
+        let mut report = left_arm_report(head, head, head);
+        report.slots.clear();
+        for (slot, component) in [(HumanoidSlot::Head, head), (HumanoidSlot::Neck, neck)] {
+            report.slots.insert(
+                slot,
+                HumanoidSlotReport {
+                    slot,
+                    status: HumanoidSlotStatus::Resolved(ResolvedHumanoidTarget {
+                        component,
+                        kind: ResolvedHumanoidTargetKind::SkinJoint,
+                    }),
+                    provenance: HumanoidSlotProvenance::ConventionName,
+                    diagnostic: None,
+                },
+            );
+        }
+        let mut queue = CommandQueue::new();
+        try_init_splices(
+            avatar,
+            &mut world,
+            &mut Default::default(),
+            &report,
+            &mut queue,
+        );
+        assert!(
+            world
+                .get_component_by_id_as::<AvatarControlComponent>(avatar)
+                .unwrap()
+                .head_neck_body_constraint
+                .is_some()
+        );
+        let mut systems = SystemWorld::default();
+        let mut visuals = VisualWorld::default();
+        let mut assets = RenderAssets::new();
+        queue.flush(&mut world, &mut systems, &mut visuals, &mut assets);
+        assert_ne!(world.parent_of(head), Some(neck));
+        let driven_t = world
+            .get_component_by_id_as_mut::<TransformComponent>(driven)
+            .unwrap();
+        driven_t.transform.rotation =
+            crate::utils::math::quat_from_axis_angle([-1.0, 0.0, 0.0], 50_f32.to_radians());
+        driven_t.transform.recompute_model();
+        systems.transform_changed(&mut world, &mut visuals, driven);
+        let mut constraint = HeadNeckBodyConstraintSystem::default();
+        constraint.register(avatar);
+        constraint.tick(&mut world, &mut queue, &systems.attachment);
+        queue.flush(&mut world, &mut systems, &mut visuals, &mut assets);
+        let neck_world = world
+            .get_component_by_id_as::<TransformComponent>(neck)
+            .unwrap()
+            .transform
+            .matrix_world;
+        let endpoint = crate::utils::math::mat4_mul_vec4(neck_world, [0.0, 0.12, 0.0, 1.0]);
+        let head_world = world
+            .get_component_by_id_as::<TransformComponent>(head)
+            .unwrap()
+            .transform
+            .matrix_world;
+        for axis in 0..3 {
+            assert!((endpoint[axis] - head_world[3][axis]).abs() < 0.00003);
+        }
+        assert_eq!(
+            constraint.status(avatar),
+            super::super::ik::head_neck_body_constraint::HeadNeckBodyConstraintStatus::Ready
+        );
     }
 
     #[test]

@@ -2,11 +2,21 @@
 
 ## Status and outcome
 
-Proposed, 2026-10-15; feasibility review and implementation task only. No
-runtime changes have been made for this task.
+Native slice 1 implemented, 2026-10-17; headset/manual acceptance pending.
+Slice 2 (retained planar allowance and feasibility-limited follow) remains planned.
+
+First headset feedback: looking down with Rei(mu) still exposed the torso/legs
+interior. Follow-up corrects the omitted mapped-eye-anchor displacement in
+head/HMD calibration and includes roll alongside pitch. Joint closure alone is
+insufficient acceptance: also verify eye/view alignment and visible body surfaces.
+XR also used a hard-coded 10 cm near clip plane; the corrected fixture has
+torso surfaces roughly 5–7 cm from the eye. XR now uses a 1 cm near plane so
+those surfaces survive clipping. This is a projection change, not a head/view
+translation workaround.
+Headset confirmation of this correction is pending.
 
 Implementation direction, 2026-10-17: deliver native Rust first, independently
-of VMN. Proposed name: **HeadNeckBodyConstraint**, evaluated by
+of VMN. Name: **HeadNeckBodyConstraint**, evaluated by
 **HeadNeckBodyConstraintSystem** in `system/ik/head_neck_body_constraint.rs`.
 This is one coordinated per-avatar pose constraint with several calculation
 stages and outputs. It replaces `HeadPoseBodyXzFollowSystem` for eligible avatars,
@@ -19,8 +29,43 @@ planar follow with geometric closure. They are not two competing constraint
 writers. Body placement and neck pose are coordinated outputs; desktop also
 derives a connected head pose, while XR preserves measured head/view authority.
 No new TOP operator, VMN runtime, public MMS component or IKChain solver variant
-is required to implement the native first slice. The names above are proposed
-implementation names, not existing registered APIs.
+is required to implement the native first slice. These are native runtime names,
+not standalone MMS component APIs.
+
+The implementation captures the original rest neck-to-head displacement before
+AVC splices the head, retains generation/ancestry-checked rig bindings and uses
+the current upstream FK/body-yaw basis. It bends from neck rest, preserves neck
+translation/scale and derives complete root XYZ. XR retains measured head pose;
+desktop derives the head arc from the intentional locomotion anchor. Root/neck/
+head updates flush before arm IK. The old follow calculation is a mutually
+exclusive fallback for missing/unsupported bindings or an explicit opt-out;
+mounted avatars keep that fallback until seated ownership is defined.
+
+There is immediate positional body follow in slice 1: with orientation fixed,
+XR head translation moves the body by the same amount. There is no retained
+anchor, deadzone or easing stage yet. Looking at a stationary desktop avatar
+changes head position along the connected arc while body XYZ stays fixed.
+
+Tuning is available on AVC through `head_neck_body_enabled(bool)`,
+`neck_pitch(share, extension_radians, flexion_radians)` and
+`neck_roll(share, lateral_radians)`. Initial defaults are enabled, 0.5 pitch/roll
+shares, 15-degree extension, 25-degree flexion and 25-degree lateral bend. They
+are provisional headset-test values, not validated anatomical defaults. Disabling restores the
+neck rest pose and raw head-mount offset before reverting to legacy follow.
+Nonuniform/sheared transforms or changed rig bindings report fallback status.
+Invalid/unavailable input suspends solving; reacquisition uses the current pose.
+
+Automated checks cover fixed-head pitch/roll geometry, yaw-only exclusion,
+combined tilt and quaternion sign equivalence, repeated-update stability,
+immediate translation, desktop look/locomotion separation, forward conventions,
+uniform scale, imported rest rotations, tracking reacquisition, mode switching,
+fallback, AVC pre-splice binding, arm ordering, and both checked-in Bisket/Rei(mu)
+rest paths and mapped-eye/view alignment with the examples' authored wrapper.
+CPU-skinned mesh ray checks verify sampled first body hits are front faces and
+survive the XR near plane, including looking straight down. The OpenXR eye
+projection test verifies a surface 5 cm away remains inside the clip volume.
+These establish numerical/integration behavior, not complete visible mesh
+quality, first-person comfort or foot planting.
 
 [Interactive proposal diagram](../how_to/avc-head-neck-constraint-diagram.md):
 run `examples/avc-head-neck-constraint-diagram.mms` to inspect the operator
@@ -211,6 +256,10 @@ allowed region; it is not implied by increasing one scalar radius.
 
 ## Existing documentation and actual implementation
 
+The code audit below records the pre-slice-1 baseline. The native implementation
+above now replaces its body-follow writer for eligible rigs; the legacy module
+remains only as fallback. VMN and bounded follow are still unimplemented.
+
 - [IK system](../spec/ik-system.md) describes AimConstraint, TwoBoneIK, and
   FABRIK. Parts of its AVC wiring and frame-order descriptions are historical.
 - [Simple humanoid body follow](avatar-control-simple-humanoid-body-follow.md)
@@ -259,13 +308,23 @@ Distinguish three landmarks: HMD/eye origin, head-bone pivot at the skull base,
 and neck base on the upper torso. Rotating the eye-to-head offset finds the
 head pivot; it does not also solve the neck-base location once the neck bends.
 
-For the first supported fixture, leave the upper torso upright and choose a
-bounded fraction of head pitch as neck flexion. Compute pitch in a calibrated
-anatomical frame relative to the current yaw-only body frame, accounting for
-the rig's rest rotations. Avoid raw imported Euler axes. Retain the head's
-full world orientation; the remaining head-versus-neck rotation is whatever
-is needed to preserve that orientation. Begin with pitch sharing; separate
-roll/yaw sharing and chest bending can follow.
+For the first supported fixture, leave the upper torso upright and distribute
+bounded pitch and roll tilt to the neck, excluding yaw. Decompose calibrated
+head orientation into an up-axis yaw twist and a tilt swing. Limit the swing's
+pitch/roll rotation-vector components, then express the bend in the current
+heading and imported joint-parent/rest frame. The combined bend is capped at
+90 degrees even if independently configured limits would exceed it. Pure yaw
+does not bend the neck; yaw combined with tilt changes the tilt's direction.
+At exactly upside-down, yaw is underdetermined; v1 chooses zero twist.
+Retain the head's full world orientation; the remaining head-versus-neck
+rotation preserves that orientation. Chest bending remains separate work.
+
+Calibrate head/HMD translation from the entire immutable head-to-camera-anchor
+path plus the authored camera wrapper. Include the displaced head's retained
+rest rotation/scale when expressing the inverse eye offset in the driver frame.
+The XR view remains measured: calibration places anatomy relative to it.
+Required eye-to-pivot conversion can vary with yaw; that is distinct from
+assigning yaw bend to the neck.
 
 Evaluate a virtual copy of the original root-to-head FK path using immutable
 rest transforms, current body yaw, and the chosen neck rotation. Include
@@ -461,7 +520,7 @@ expression branches with incompatible targets do not enforce a constraint.
    unsupported rigs, or missing calibration skip with a retained reason.
    Preserve the original pre-splice path rather than walking toward the head
    in the already-reparented runtime tree.
-3. **Deterministic fixture.** Implement pitch sharing with configurable weight
+3. **Deterministic fixture.** Implement pitch/roll sharing with configurable weight
    and separate flexion/extension bounds; exact defaults/API remain TBD.
    Saturate neck flexion while the head retains the rest of its tracked
    rotation. Test the virtual endpoint and derived body translation together.
@@ -539,11 +598,11 @@ workaround into a second writer.
 
 ## Implementation readiness
 
-Ready for a focused prototype with the source-authority contract above, shared
-rig geometry, and existing binding/propagation infrastructure. No further
-product decision is required to start that prototype. First prove default
-desktop rotation with a fixed body anchor, then rotation-derived XR placement,
-then bounded XR positional follow and geometric closure.
+The native immediate-placement slice is ready for manual desktop/XR validation
+with the source-authority contract above. Check Bisket and Rei(mu) pitch up/down,
+look-only desktop root stability, connected neck placement, raw XR view, capsule
+grounding and mounted fallback. Tune geometry/configuration from those results
+before adding bounded positional follow and more general geometric closure.
 
 Use typed Rust structs/functions with explicit state acceptance; a value graph
 is not required. Keep the pure math reusable by a future VMN implementation and

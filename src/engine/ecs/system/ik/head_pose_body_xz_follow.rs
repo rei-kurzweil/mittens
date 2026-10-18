@@ -1,4 +1,4 @@
-//! Head-pose-sensitive body XZ translate follow for AVC.
+//! Legacy body follow, retained only as the native constraint's fallback.
 //!
 //! See `docs/task/avatar-control-simple-humanoid-body-follow.md`, Phase 1.
 //!
@@ -6,10 +6,9 @@
 //!
 //! Each tick, the body's `model_root.local.translation` is recomputed so
 //! that `model_root.world.xz` lands at the **displaced head bone's world
-//! XZ** — i.e. the skull-base / head-pivot point the head solver itself
-//! treats as the anchor. Y stays at the init-time `model_root_local_y`
-//! (avatar height calibration), and body yaw still comes from the
-//! yaw-follow operator.
+//! XZ** — i.e. the skull-base / head-pivot point. Y follows that pivot plus
+//! the init-time `model_root_local_y` height calibration. Body yaw still
+//! comes from the yaw-follow operator.
 //!
 //! `displaced_head` is re-parented under `driven_t -> head_target` at AVC
 //! init (see `avatar_control_system.rs`), so its world transform is a pure
@@ -43,36 +42,13 @@
 use crate::engine::ecs::component::{AvatarControlComponent, TransformComponent};
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
 use crate::utils::math::{mat_to_quat, quat_conjugate, quat_rotate_vec3};
-use std::collections::HashSet;
 
-#[derive(Debug, Default)]
-pub struct HeadPoseBodyXzFollowSystem {
-    avatars: HashSet<ComponentId>,
-}
-
-impl HeadPoseBodyXzFollowSystem {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn tick(&mut self, world: &mut World, emit: &mut dyn SignalEmitter, _dt_sec: f32) {
-        let ids: Vec<_> = self.avatars.iter().copied().collect();
-
-        for id in ids {
-            tick_one(id, world, emit);
-        }
-    }
-
-    pub fn register(&mut self, component: ComponentId) {
-        self.avatars.insert(component);
-    }
-
-    pub fn remove(&mut self, component: ComponentId) {
-        self.avatars.remove(&component);
-    }
-}
-
-fn tick_one(avc_id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter) {
+pub(super) fn tick_one(
+    avc_id: ComponentId,
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+    restored_head_world: Option<crate::engine::transform::TransformMatrix>,
+) {
     let (model_root_id_opt, body_local_y, head_bone_id_opt, neck_bone_id_opt, neck_rest_t_opt) = {
         let Some(c) = world.get_component_by_id_as::<AvatarControlComponent>(avc_id) else {
             return;
@@ -82,7 +58,7 @@ fn tick_one(avc_id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter
             c.model_root_local_y,
             c.displaced_head,
             c.neck_bone_id,
-            c.neck_rest_translation,
+            c.neck_rest_translation.filter(|_| c.neck_pin_enabled),
         )
     };
 
@@ -99,10 +75,11 @@ fn tick_one(avc_id: ComponentId, world: &mut World, emit: &mut dyn SignalEmitter
     // Target = displaced head bone world XZ (skull-base / head-pivot).
     // `displaced_head` lives under driven_t->head_target, so this is a
     // function of HMD pose only — no feedback from writing model_root below.
-    let Some(head_world) = world
-        .get_component_by_id_as::<TransformComponent>(head_bone_id)
-        .map(|t| t.transform.matrix_world)
-    else {
+    let Some(head_world) = restored_head_world.or_else(|| {
+        world
+            .get_component_by_id_as::<TransformComponent>(head_bone_id)
+            .map(|t| t.transform.matrix_world)
+    }) else {
         return;
     };
 

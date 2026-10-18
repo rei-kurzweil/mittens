@@ -4393,6 +4393,21 @@ fn apply_call(
             }
             "neck_pin_disabled" => *avc = avc.clone().without_neck_pin(),
             "neck_pin_enabled" => *avc = avc.clone().with_neck_pin_enabled(arg_bool(args, 0)?),
+            "head_neck_body_enabled" => {
+                *avc = avc.clone().with_head_neck_body_enabled(arg_bool(args, 0)?)
+            }
+            "neck_pitch" => {
+                *avc = avc.clone().with_neck_pitch(
+                    arg_f32(args, 0)?,
+                    arg_f32(args, 1)?,
+                    arg_f32(args, 2)?,
+                )?
+            }
+            "neck_roll" => {
+                *avc = avc
+                    .clone()
+                    .with_neck_roll(arg_f32(args, 0)?, arg_f32(args, 1)?)?
+            }
             "mouth_open_rms_floor" => {
                 *avc = avc.clone().with_mouth_open_rms_floor(arg_f32(args, 0)?)?
             }

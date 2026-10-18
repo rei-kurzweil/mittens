@@ -1,10 +1,10 @@
 //! IK-adjacent humanoid policy systems.
 //!
-//! Houses the head-pose-sensitive body XZ translate follow module that
-//! replaced the scrapped planar-deadzone heuristic.  The original
-//! `ik_system` module remains at the parent level for chain-solver kinds
-//! (AimConstraint, TwoBoneIK, FABRIK).
+//! The native head/neck/body constraint owns coordinated avatar placement.
+//! Legacy body follow is its mutually exclusive unsupported-rig fallback.
+//! `ik_system` remains at the parent level for chain-solver kinds.
 
-pub mod head_pose_body_xz_follow;
+pub mod head_neck_body_constraint;
+mod head_pose_body_xz_follow;
 
-pub use head_pose_body_xz_follow::HeadPoseBodyXzFollowSystem;
+pub use head_neck_body_constraint::{HeadNeckBodyConstraint, HeadNeckBodyConstraintSystem};

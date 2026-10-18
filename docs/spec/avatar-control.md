@@ -4,16 +4,29 @@ Date: 2026-03-23
 
 ## Goal
 
-Planned default behavior (2026-10-16): [head/neck bend and bounded body follow](../task/xr-head-neck-bend-and-body-offset.md)
-is intended to activate automatically for supported mapped humanoids under
-either `Input` or `InputXR`, implemented through an AVC-generated
-[typed value graph](../draft/declarative-vector-operator-components.md), existing
-transform operators and explicit output bridges.
-Both use the same per-rig follow threshold, calibrated to contain the full
-rotation-generated head/body displacement. Desktop look remains inside that
-range; XR measured positional excess can cause follow. Both retain geometric
-neck closure. This is a proposal, not current runtime behavior; it supersedes
-XR-only scope and separate follow-policy assumptions in earlier notes.
+Native first slice (2026-10-17): [HeadNeckBodyConstraint](../task/xr-head-neck-bend-and-body-offset.md)
+automatically replaces legacy body follow for supported mapped humanoids under
+either `Input` or `InputXR`, independently of the proposed
+[VMN facility](../draft/declarative-vector-operator-components.md).
+XR preserves measured head pose and derives body placement from the bent neck;
+desktop look derives a connected head arc while intentional locomotion owns body
+translation. This slice follows positional input immediately, with no lean
+allowance. The calibrated common threshold and bounded follow remain planned.
+Manual/headset acceptance and tuning are pending.
+
+AVC builders: `head_neck_body_enabled(bool)` selects native geometry versus the
+legacy fallback. `neck_pitch(share, extension_radians, flexion_radians)` and
+`neck_roll(share, lateral_radians)` tune tilt distribution. Initial values are
+true, 0.5 shares, 15-degree extension, 25-degree flexion and 25-degree lateral
+bend (angles supplied in radians). Neck tilt excludes up-axis yaw twist;
+existing yaw follow still owns body heading. Missing/unsupported rigs and
+mounted avatars use diagnosed legacy fallback; invalid tracking suspends solving.
+Current body yaw retains its existing owner. Coordinated pose writes propagate
+before arm IK. Capsule grounding and rendered XR eye pose remain separately owned.
+Head/HMD offset calibration includes the mapped head-to-eye-anchor rest path,
+the authored camera wrapper, and the displaced head's retained rest rotation/scale.
+Headset feedback exposed the missing anchor term in the initial implementation;
+eye/view alignment now has an integration check on Rei(mu) and Bisket.
 
 A single coordination point that rigs a humanoid avatar for first-person control from a
 primary body/head driver (`InputComponent` or `InputXRComponent`) plus any number of

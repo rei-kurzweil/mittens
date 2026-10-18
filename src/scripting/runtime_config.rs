@@ -1518,6 +1518,9 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         ],
                     );
                     constructor_and_builder(component, "neck_pin_enabled", booleans(1));
+                    constructor_and_builder(component, "head_neck_body_enabled", booleans(1));
+                    constructor_and_builder(component, "neck_pitch", floats(3));
+                    constructor_and_builder(component, "neck_roll", floats(2));
                 }
                 _ => {}
             }

@@ -232,19 +232,31 @@ pub struct AvatarControlComponent {
     pub ik_debug: bool,
 
     // ---------------------------------------------------------------------
-    // Head-pose-sensitive body XZ translate follow (see
-    // `docs/task/avatar-control-simple-humanoid-body-follow.md`, Phase 1).
+    // Native head/neck/body constraint and mutually exclusive legacy fallback.
     // ---------------------------------------------------------------------
-    /// Enables the optional neck rest-pin when the map resolves a neck slot.
+    /// Enables neck ownership when the map resolves a neck slot.
     pub neck_pin_enabled: bool,
 
-    // Runtime state set by AvatarControlSystem / HeadPoseBodyXzFollowSystem:
+    /// Native head/neck/body geometry. Disable to retain legacy body-follow placement.
+    pub head_neck_body_enabled: bool,
+    /// Fraction of anatomical head pitch assigned to the neck before limits.
+    pub neck_pitch_share: f32,
+    /// Positive neck bend limits in radians (downward/upward respectively).
+    pub neck_flexion_limit: f32,
+    pub neck_extension_limit: f32,
+    /// Fraction of lateral head tilt assigned to the neck, with a symmetric limit.
+    pub neck_roll_share: f32,
+    pub neck_lateral_limit: f32,
+    pub(crate) head_neck_body_constraint:
+        Option<crate::engine::ecs::system::ik::HeadNeckBodyConstraint>,
+    pub(crate) head_neck_body_bind_error: Option<&'static str>,
+
+    // Runtime state set by AvatarControlSystem / HeadNeckBodyConstraintSystem:
     /// `model_root` component id, stashed at init so the body-follow system
     /// doesn't have to re-walk topology each tick.
     pub(crate) model_root_id: Option<ComponentId>,
 
-    /// `model_root.local.translation.y` at rest (body height offset).  Set
-    /// Set once at init from resolved camera-anchor calibration or `avatar_height`.
+    /// Legacy fallback height offset, captured from camera/height calibration.
     pub(crate) model_root_local_y: f32,
 
     /// Resolved neck bone id (under `model_root`).  `None` if not found.
@@ -273,6 +285,48 @@ pub struct AvatarControlComponent {
 }
 
 impl AvatarControlComponent {
+    pub fn with_head_neck_body_enabled(mut self, enabled: bool) -> Self {
+        self.head_neck_body_enabled = enabled;
+        self
+    }
+
+    pub fn with_neck_pitch(
+        mut self,
+        share: f32,
+        extension: f32,
+        flexion: f32,
+    ) -> Result<Self, String> {
+        if !share.is_finite()
+            || !(0.0..=1.0).contains(&share)
+            || !extension.is_finite()
+            || !(0.0..=std::f32::consts::FRAC_PI_2).contains(&extension)
+            || !flexion.is_finite()
+            || !(0.0..=std::f32::consts::FRAC_PI_2).contains(&flexion)
+        {
+            return Err("AvatarControl.neck_pitch requires share in [0,1] and extension/flexion radians in [0,pi/2]".into());
+        }
+        self.neck_pitch_share = share;
+        self.neck_extension_limit = extension;
+        self.neck_flexion_limit = flexion;
+        Ok(self)
+    }
+
+    pub fn with_neck_roll(mut self, share: f32, lateral: f32) -> Result<Self, String> {
+        if !share.is_finite()
+            || !(0.0..=1.0).contains(&share)
+            || !lateral.is_finite()
+            || !(0.0..=std::f32::consts::FRAC_PI_2).contains(&lateral)
+        {
+            return Err(
+                "AvatarControl.neck_roll requires share in [0,1] and lateral radians in [0,pi/2]"
+                    .into(),
+            );
+        }
+        self.neck_roll_share = share;
+        self.neck_lateral_limit = lateral;
+        Ok(self)
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -506,6 +560,14 @@ impl Default for AvatarControlComponent {
             model_root_local_y: 0.0,
             neck_bone_id: None,
             neck_rest_translation: None,
+            head_neck_body_enabled: true,
+            neck_pitch_share: 0.5,
+            neck_flexion_limit: 25.0_f32.to_radians(),
+            neck_extension_limit: 15.0_f32.to_radians(),
+            neck_roll_share: 0.5,
+            neck_lateral_limit: 25.0_f32.to_radians(),
+            head_neck_body_constraint: None,
+            head_neck_body_bind_error: None,
             capsule_transform_id: None,
             capsule_collidable_id: None,
             capsule_sample_id: None,
@@ -628,6 +690,31 @@ impl Component for AvatarControlComponent {
         }
         if !self.neck_pin_enabled {
             c = c.with_call("neck_pin_disabled", vec![]);
+        }
+        if !self.head_neck_body_enabled {
+            c = c.with_call("head_neck_body_enabled", vec![b(false)]);
+        }
+        if self.neck_pitch_share != 0.5
+            || self.neck_extension_limit != 15.0_f32.to_radians()
+            || self.neck_flexion_limit != 25.0_f32.to_radians()
+        {
+            c = c.with_call(
+                "neck_pitch",
+                vec![
+                    num(self.neck_pitch_share as f64),
+                    num(self.neck_extension_limit as f64),
+                    num(self.neck_flexion_limit as f64),
+                ],
+            );
+        }
+        if self.neck_roll_share != 0.5 || self.neck_lateral_limit != 25.0_f32.to_radians() {
+            c = c.with_call(
+                "neck_roll",
+                vec![
+                    num(self.neck_roll_share as f64),
+                    num(self.neck_lateral_limit as f64),
+                ],
+            );
         }
         if let Some(source) = &self.movement_target {
             let source = match source {

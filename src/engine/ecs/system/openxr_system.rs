@@ -1696,7 +1696,11 @@ impl OpenXRSystem {
                         Self::mul_mat4(&world_from_stage, &Self::mat4_from_pose(v.pose));
                     CameraData {
                         view: Self::invert_affine_transform(&world_from_eye),
-                        proj: Self::proj_from_fov_rh_zo(v.fov, 0.1, 100.0),
+                        proj: Self::proj_from_fov_rh_zo(
+                            v.fov,
+                            CameraXRComponent::DEFAULT_Z_NEAR,
+                            CameraXRComponent::DEFAULT_Z_FAR,
+                        ),
                         transform: Self::transform_from_matrix_world(world_from_eye),
                     }
                 })
@@ -4184,6 +4188,9 @@ mod floor_calibration_tests {
                 near(head_world[3][1], 3.0 + height - correction);
                 for eye in &eyes {
                     near(eye.transform.matrix_world[3][1], head_world[3][1]);
+                    // Avatar surfaces 5 cm from the eyes must survive near clipping.
+                    let clip = math::mat4_mul_vec4(eye.proj, [0.0, 0.0, -0.05, 1.0]);
+                    assert!(clip[2] >= 0.0 && clip[2] <= clip[3]);
                 }
                 let eye_delta: [f32; 3] = std::array::from_fn(|i| {
                     eyes[1].transform.matrix_world[3][i] - eyes[0].transform.matrix_world[3][i]

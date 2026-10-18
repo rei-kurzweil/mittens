@@ -15,8 +15,12 @@ with body-follow policy.
 ## Current checkpoint
 
 - AVC already derives a displaced head pivot from the HMD pose and calibrated
-  eye-to-head offset.  `HeadPoseBodyXzFollowSystem` places body X/Z at that
-  pivot, rather than at raw HMD-center X/Z.
+  eye-to-head offset. Native `HeadNeckBodyConstraintSystem` now replaces simple
+  body follow for eligible rigs, placing the body from the bent neck geometry.
+  It follows positional input immediately; bounded planar follow remains planned.
+  Desktop look keeps the intentional body anchor fixed and derives the head arc.
+  Automated checks pass for the supported fixture/rest paths; headset acceptance
+  and tuning remain pending.
 - The body-follow task specifies the desired kinematic rule:
 
   ```text

@@ -16,6 +16,10 @@ pub struct CameraXRComponent {
 }
 
 impl CameraXRComponent {
+    /// Keep nearby avatar surfaces and held objects inside the XR frustum.
+    pub const DEFAULT_Z_NEAR: f32 = 0.01;
+    pub const DEFAULT_Z_FAR: f32 = 100.0;
+
     pub fn new(enabled: bool) -> Self {
         Self {
             enabled,
