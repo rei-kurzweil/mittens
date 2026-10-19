@@ -58,12 +58,20 @@ Current root-pose construction in
 [src/engine/ecs/system/openxr_system.rs](../../src/engine/ecs/system/openxr_system.rs):
 
 - prefer `WRIST` position and fall back to `PALM` position
-- synthesize orientation from middle-finger forward and little-to-index across the palm
+- prefer a valid root reported as unobstructed tracking over emulated controller actions;
+  controller-derived and unclassified joints retain controller priority
+- prefer runtime `PALM` orientation, then `WRIST`, converting OpenXR joint axes into the
+  per-side canonical hand frame
+- when neither orientation is usable, synthesize from middle-metacarpal forward and
+  little-to-index across the palm
 - pass that canonical frame through the same retained avatar-basis correction as controller Aim
 
 That means the visible hand-tracked `CTLXR` result is currently driven by a simplified root pose,
-not by a stabilized full skeletal hand solve. This removes dependence on runtime-specific wrist
-joint quaternion axes, but it does not distribute forearm twist or provide temporal filtering.
+not by a stabilized full skeletal hand solve. The runtime root uses the specified OpenXR joint
+axes rather than inferring rotation from knuckle positions. AVC/IK forearm twist handling remains
+separate from root acquisition; full finger driving is still pending. See the
+[current wrist-frame audit](../task/hand-tracking-wrist-arm-and-finger-basis-audit.md) for the
+Focus 3 handoff and yaw/roll reports.
 
 ## Why this may be happening
 

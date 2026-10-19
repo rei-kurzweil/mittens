@@ -2,6 +2,8 @@
 
 This note explores how cat-engine could use Vulkan multiview (`VK_KHR_multiview`, core since Vulkan 1.1) to speed up XR rendering.
 
+2026-10-19 source audit: locked Vulkano 0.35.2 exposes `view_mask` in both `RenderingInfo` and `PipelineRenderingCreateInfo`. The wrapper uncertainty discussed below is resolved for this version; engine integration and device support remain unimplemented/unverified. See the [Focus 3 Android audit](../../android/docs/focus-3-port-audit.md).
+
 ## Why multiview helps
 
 Typical stereo rendering does the same draw sequence twice:
@@ -101,12 +103,12 @@ Dynamic rendering can support multiview in modern Vulkan via:
 - `VkRenderingInfo::viewMask` (bitmask of active views)
 - pipeline must be created for multiview-compatible rendering (implementation detail depends on wrapper)
 
-Action item: verify what Vulkano 0.35 exposes for multiview dynamic rendering:
+Verified in the locked Vulkano 0.35.2 source:
 
-- a `view_mask` field in the begin-rendering / rendering info
-- a pipeline create field for view mask / multiview
+- `RenderingInfo::view_mask` in `command_buffer/commands/render_pass.rs`
+- `PipelineRenderingCreateInfo::view_mask` in `pipeline/graphics/subpass.rs`
 
-If Vulkano doesn’t expose multiview for dynamic rendering cleanly, we can:
+If the target driver lacks dynamic rendering, we can:
 
 - add an XR-only render pass path using a multiview render pass
 - keep dynamic rendering for window rendering
@@ -211,7 +213,7 @@ Keep the current per-eye path for:
 
 ## Risks and gotchas
 
-- **Wrapper support**: Vulkano must expose view masks for dynamic rendering or we need an XR-specific render pass.
+- **Device support**: Vulkano exposes the view masks, but the target must support the selected rendering API and multiview feature.
 - **Shader work**: all pipelines used for XR need to be multiview-safe (camera indexing via `gl_ViewIndex`).
 - **Culling**: if culling is currently eye-dependent, multiview needs either:
   - conservative culling for both eyes

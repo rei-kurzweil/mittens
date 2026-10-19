@@ -90,8 +90,10 @@ Flow:
    - For each controller space: `Space::locate(reference_space, predicted_display_time)`
    - If pose is valid (`POSITION_VALID` and `ORIENTATION_VALID`), write to `controller_pose_cache`
 4. Query hand-tracking (if available):
-   - If `XR_EXT_hand_tracking` is supported, locate hand-root joint at `predicted_display_time`
-   - Write to `hand_root_pose_cache` if valid
+   - Locate joint arrays at `predicted_display_time` using `XR_EXT_hand_tracking`
+   - When supported, request controller and unobstructed sources at tracker creation and chain
+     `XrHandTrackingDataSourceStateEXT` into that same locate call
+   - Cache the valid hand root and its data source together; clear them on tracking loss or errors
 
 The caches store optional poses:
 - left controller aim / grip
@@ -132,11 +134,18 @@ For each registered `VRHandComponent`:
 
 ### Pose precedence
 
-The current precedence is intentionally simple:
+Selection is independent for each hand:
 
-1. Prefer the tracked hand root when hand tracking is available and valid
-2. Otherwise fall back to the controller action pose (`Aim` or `Grip`)
-3. Otherwise leave the target without a resolved pose for that frame
+1. Prefer a valid anatomical hand root when `XR_EXT_hand_tracking_data_source` reports
+   `UNOBSTRUCTED`, even if the device also exposes active controller actions
+2. Otherwise prefer the active requested action pose (`Aim`, `Grip`, or `GripAim`)
+3. Otherwise use a valid hand root as a fallback
+4. Otherwise leave the target without a resolved pose for that frame
+
+Controller-derived joints retain controller priority. Runtimes without the data-source
+extension retain the same controller-first fallback. Interaction profile names and localized
+device names do not decide this: a free-hand device can emulate a controller profile.
+See [OpenXR hand data sources](https://registry.khronos.org/OpenXR/specs/1.1/html/xrspec.html#XR_EXT_hand_tracking_data_source).
 
 This gives one consistent transform-driving path for:
 - Controller-backed interaction profiles (e.g., Meta Quest, HTC Vive)
@@ -198,17 +207,28 @@ The current hand-tracking path uses `XR_EXT_hand_tracking` as a raw joint input 
 
 **Selection policy:**
 1. Use `WRIST` position when valid, otherwise `PALM` position
-2. Derive canonical `-Z` forward from `MIDDLE_PROXIMAL → MIDDLE_DISTAL`
-3. Derive canonical `+Y` up from `LITTLE_PROXIMAL → INDEX_PROXIMAL`
-4. Reject the root pose when those landmark positions are missing or degenerate
+2. Prefer valid runtime `PALM` orientation, otherwise `WRIST` orientation
+3. Convert native joint axes into the canonical hand frame: preserve `-Z` forward and map
+   canonical `+Y` to native `+X` for the left hand, native `-X` for the right hand
+4. When neither native orientation is usable, synthesize `-Z` from
+   `MIDDLE_METACARPAL → MIDDLE_PROXIMAL` and `+Y` from projected
+   `LITTLE_PROXIMAL → INDEX_PROXIMAL`
+5. Reject the root when no valid origin or orientation source remains
 
 **Important distinction:**
 - A controller `grip` pose is an interaction/runtime-defined holding pose
 - A hand `palm` or `wrist` position is anatomical joint data from hand tracking
 
-The runtime joint quaternion is not treated as a canonical Aim or Grip frame. The engine synthesizes
-the same two-axis canonical hand basis consumed by `JointRetargetBasis`, then AVC applies the
-avatar's retained target-rest correction.
+The runtime joint quaternion is not treated as a canonical Aim or Grip frame. OpenXR native
+`+Y` points out of the back of the hand, while the retained avatar basis uses palm width for
+canonical `+Y`. The per-side conversion above reconciles those conventions before AVC applies
+the avatar's retained target-rest correction. See the
+[OpenXR joint conventions](https://registry.khronos.org/OpenXR/specs/1.1/html/xrspec.html#convention-of-hand-joints).
+
+Native orientation avoids inferring wrist rotation from knuckle geometry. The landmark fallback
+uses the middle metacarpal rather than a curling finger segment, so closing the fingers does not
+pitch the wrist target. Orientations are validated independently of positions; non-finite or
+zero-length quaternions fall through to the next source.
 
 For per-finger/per-joint hand tracking, see `docs/spec/hand-tracking-armature.md`.
 

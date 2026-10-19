@@ -2107,7 +2107,7 @@ fn update_hand_pose_corrections(
 
 fn log_hand_alignment(
     avc_id: ComponentId,
-    _world: &World,
+    world: &World,
     hand: ControllerHand,
     controller: Option<&ControllerXRComponent>,
     source: ControllerPoseSource,
@@ -2126,6 +2126,38 @@ fn log_hand_alignment(
         _ => None,
     };
     let mount = correction.map(quat_conjugate);
+    let observed = world
+        .get_component_by_id_as::<AvatarControlComponent>(avc_id)
+        .and_then(|avatar| {
+            let (raw, bone) = match hand {
+                ControllerHand::Left => (avatar.left_hand_raw_target_id, avatar.left_hand_bone_id),
+                ControllerHand::Right => {
+                    (avatar.right_hand_raw_target_id, avatar.right_hand_bone_id)
+                }
+            };
+            let rotation = |id| {
+                world
+                    .get_component_by_id_as::<TransformComponent>(id)
+                    .map(|t| mat_to_quat(t.transform.matrix_world))
+            };
+            let target = rotation(raw?)?;
+            let observed_canonical = quat_mul(rotation(bone?)?, mount?);
+            // Native palm +Y is canonical -X for left, +X for right. These
+            // observed bones precede this tick's IK, so compare while holding still.
+            let normal_axis = [
+                match hand {
+                    ControllerHand::Left => -1.0,
+                    ControllerHand::Right => 1.0,
+                },
+                0.0,
+                0.0,
+            ];
+            let target_normal = quat_rotate_vec3(target, normal_axis);
+            let observed_normal = quat_rotate_vec3(observed_canonical, normal_axis);
+            let (axis, radians) =
+                quat_to_axis_angle(quat_mul(quat_conjugate(target), observed_canonical));
+            Some((target_normal, observed_normal, (axis, radians.to_degrees())))
+        });
     let predicted = if matches!(
         source,
         ControllerPoseSource::ControllerAim
@@ -2137,14 +2169,14 @@ fn log_hand_alignment(
         None
     };
     let calibration = match source {
-        ControllerPoseSource::WristPalm => "synthesized-hand-calibrated",
+        ControllerPoseSource::WristPalm => "canonical-hand-calibrated",
         ControllerPoseSource::ControllerAim | ControllerPoseSource::ControllerGripAim => {
             "aim-calibrated"
         }
         _ => "identity",
     };
     eprintln!(
-        "[AVC][hand-alignment] avc={avc_id:?} hand={hand:?} aim_valid={} grip_valid={} aim_q={aim:?} grip_q={grip:?} source={source:?} mode={calibration} avatar_basis={basis_mode} grip_to_aim_axis_angle={grip_to_aim:?} canonical_to_hand_q={mount:?} applied_correction_q={applied:?} final_basis_to_aim_axis_angle={predicted:?}",
+        "[AVC][hand-alignment] avc={avc_id:?} hand={hand:?} aim_valid={} grip_valid={} aim_q={aim:?} grip_q={grip:?} source={source:?} mode={calibration} avatar_basis={basis_mode} grip_to_aim_axis_angle={grip_to_aim:?} canonical_to_hand_q={mount:?} applied_correction_q={applied:?} final_basis_to_aim_axis_angle={predicted:?} pre_ik_target_normal_observed_normal_error_deg={observed:?}",
         aim.is_some(),
         grip.is_some(),
     );

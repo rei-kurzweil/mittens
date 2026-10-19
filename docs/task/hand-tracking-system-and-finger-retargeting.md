@@ -14,12 +14,16 @@ optional MediaPipe bridge in dependency order.
 Controller tracking and hand-root tracking are implemented. Individual tracked fingers are not.
 The current flow in [OpenXRSystem](../../src/engine/ecs/system/openxr_system.rs) is:
 
-1. Create left/right `XR_EXT_hand_tracking` trackers when supported.
+1. Create left/right `XR_EXT_hand_tracking` trackers when supported, requesting both controller
+   and unobstructed sources when `XR_EXT_hand_tracking_data_source` is available.
 2. Locate the complete joint arrays in the session reference space at predicted display time.
-3. Synthesize one orientation from middle-finger direction and little-to-index palm width.
-4. Use wrist position, falling back to palm position. Retain only that root pose and root identity
-   in `HandRootPoseCache`; the arrays remain local to sampling/debugging.
-5. Use that pose as `WristPalm` when the requested active controller pose is unavailable.
+3. Prefer runtime palm orientation, falling back to wrist orientation, with a per-side conversion
+   from native OpenXR axes to the canonical hand frame. If neither orientation is usable,
+   synthesize from `MIDDLE_METACARPAL -> MIDDLE_PROXIMAL` and little-to-index palm width.
+4. Use wrist position, falling back to palm position. Retain the root pose, root identity, and
+   reported data source in `HandRootPoseCache`; arrays remain local to sampling/debugging.
+5. Prefer `WristPalm` for a valid root reported as unobstructed tracking. Otherwise retain
+   controller priority, falling back to the root when the requested action pose is unavailable.
 6. AVC applies the retained avatar hand-basis correction and drives arm IK.
 
 There is no full joint snapshot handed to a finger system, no retained mapping for all finger
@@ -103,7 +107,9 @@ MediaPipe, with explicit provider selection available. Only fresh, capable sampl
 Timeouts, confidence thresholds, recovery hysteresis, and transition duration must be configurable
 and measured during implementation, not fixed by this document.
 
-Preserve current controller root priority during the first slice. Controller actions stay active
+Preserve current per-hand source selection during the first slice: unobstructed tracking owns
+the root when valid; controller-derived or unclassified joints retain controller priority.
+Controller actions stay active
 regardless of which provider supplies skeletal articulation. Controller-driven wrist plus tracked
 fingers is a supported combination: derive articulation in the provider's hand-relative frame,
 then retarget it under the controller-driven avatar hand. Do not copy unrelated world joint poses.
