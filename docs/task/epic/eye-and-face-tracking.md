@@ -23,6 +23,12 @@ and the HTC transport adds per-eye face data where the sender provides it.
 
 ## Workstreams
 
+The [avatar tracking component design](../avatar-tracking-components-and-mediapipe.md) records
+the 2026-10-20 webcam direction: `WebcamEyeTracking` (lowercase `c`) complements `XREyeTracking`,
+`LowerFaceTracking` owns lower-face semantic channels, and MediaPipe is a shared backend owned
+by `MediaPipeSystem`. Hand/body consumers reuse that provider with independent channel state;
+new webcam/body components and their adapters remain proposed.
+
 1. [Pupil direction, pupil size, and eye openness](../pupil-direction-size-and-openness.md)
    establishes the generic OSC baseline and its calibration surface.
 2. Per-eye face channels via the HTC transport, following the generic baseline:

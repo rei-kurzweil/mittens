@@ -9,6 +9,12 @@ Policy revision: [One-shot XR eye-tracking source election](one-shot-xr-eye-trac
 replaces the continuous/per-channel selection described in this task with a bounded startup window
 and one locked whole-eye source.
 
+Naming direction (2026-10-20): [Avatar tracking components and MediaPipe](avatar-tracking-components-and-mediapipe.md)
+proposes `WebcamEyeTracking` (lowercase `c`) as the webcam counterpart to the existing
+`XREyeTracking`, with MediaPipe as one webcam backend. The MediaPipe enum/component placeholders
+documented here remain existing compatibility surface; that proposed webcam component is not yet
+implemented. There is currently no registered unprefixed `EyeTracking` component.
+
 Parent: [Eye and face tracking epic](epic/eye-and-face-tracking.md)
 
 Related:

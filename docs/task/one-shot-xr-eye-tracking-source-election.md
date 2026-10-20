@@ -10,6 +10,13 @@ Revises: [Generic XR eye-tracking source selection](generic-xr-eye-tracking-sour
 
 Parent: [Eye and face tracking epic](epic/eye-and-face-tracking.md)
 
+2026-10-20 authoring direction: the new
+[avatar tracking component design](avatar-tracking-components-and-mediapipe.md) introduces
+`WebcamEyeTracking` (lowercase `c`) as the webcam counterpart to `XREyeTracking`, with MediaPipe
+as one backend. `LowerFaceTracking` is the generic lower-face consumer. Existing MediaPipe
+placeholder spellings below are historical configuration and require compatibility migration;
+they are not the preferred names for the new capability components.
+
 ## Outcome
 
 An avatar must have exactly one active eye-tracking source after startup discovery. `XREyeTracking`
@@ -174,17 +181,20 @@ The one-source rule applies to the eye-tracking semantic group. Lower-face track
 support composition because different devices may provide complementary mouth, jaw, cheek, or lip
 signals.
 
-MediaPipe must expose eye and mouth tracking separately at the component/API boundary:
+Expose webcam eyes and lower-face tracking separately at the component/API boundary:
 
-- `MediaPipeEyeTracking` participates in the one-shot eye-source election;
-- `MediaPipeMouthTracking` participates in the future lower-face routing/mixing policy.
+- `WebcamEyeTracking` selects a webcam inference backend such as MediaPipe and publishes the
+  shared eye semantics; it is the counterpart to the XR eye selector;
+- `LowerFaceTracking` participates in lower-face routing/composition with a configured provider;
+- XR and webcam eye components need explicit mutually exclusive selection when both are authored,
+  preserving one whole-eye owner rather than racing or mixing their packets.
 
 They share the planned engine-side
 [`MediaPipeSystem`](optional-mediapipe-tracking-bridge.md#engine-owner-mediapipesystem) for
 receiver/session state, decoding, normalization, and independent channel snapshots. The external
-Python bridge owns the shared webcam capture and inference backend. `MediaPipeEyeTracking`,
-`MediaPipeMouthTracking`, and hand tracking subscribe to that provider while retaining their own
-semantic components and ownership policies. Hand/eye/mouth traffic has independent freshness;
+Python bridge owns the shared webcam capture and inference backend. `WebcamEyeTracking`,
+`LowerFaceTracking`, hand tracking, and body tracking subscribe to that provider while retaining
+their own semantic components and ownership policies. Each channel has independent freshness;
 receiving one channel never makes another channel live.
 
 Do not let the future face mixer feed MediaPipe mouth availability into eye-source election, or vice
@@ -208,8 +218,9 @@ camera frame.
    sources and a generic selector combined with a direct source sibling.
 9. Preserve the manual transport-selection example using direct `VRChatOSCEyeTracking` and
    `HTCEyeTracking` components.
-10. Add `MediaPipeMouthTracking` only with the MediaPipe implementation or its lower-face task; keep
-    it out of the eye-source enum.
+10. Implement the generic `LowerFaceTracking` through its own task and routing contract; keep
+    lower-face availability out of eye-source election. Migrate the MediaPipe eye placeholder
+    toward `WebcamEyeTracking` through an explicit compatibility step.
 
 ## Tests
 
@@ -240,8 +251,8 @@ camera frame.
 - A stopped winner becomes neutral/stale without automatic failover.
 - Reselection occurs only through explicit lifecycle action.
 - Lower-face tracking remains free to mix complementary sources.
-- MediaPipe exposes separate eye and mouth components even if both share one capture/inference
-  provider.
+- `WebcamEyeTracking` and `LowerFaceTracking` expose separate capabilities even when MediaPipe
+  is their shared capture/inference provider.
 
 ## Expected files
 

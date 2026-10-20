@@ -74,9 +74,13 @@ order. Keep their current paths so existing links continue to work:
    explicit ownership, freshness, and release behavior. The first OpenXR/Reimu
    slice is implemented with deterministic rig tests; live headset validation remains.
 3. [ ] [Optional MediaPipe bridge](../../optional-mediapipe-tracking-bridge.md):
-   independent optional process, bounded transport, replay fixtures, and
+   independent optional process, shared `MediaPipeSystem`, bounded transport, replay fixtures, and
    hand-relative articulation without making camera/Python dependencies
-   mandatory for engine startup or OpenXR.
+   mandatory for engine startup or OpenXR. The
+   [avatar tracking component design](../../avatar-tracking-components-and-mediapipe.md) defines
+   the planned `WebcamEyeTracking`, `LowerFaceTracking`, and full/lower-body consumers; implement
+   those in separate slices after the initial hand bridge, sharing provider channels and ownership
+   contracts rather than assuming all modalities are delivered by the first slice.
 
 The shared hand task is the current plan. The older
 [hand-armature spec](../../../spec/hand-tracking-armature.md) is conceptual

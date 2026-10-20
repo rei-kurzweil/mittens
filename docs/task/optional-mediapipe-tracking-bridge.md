@@ -3,8 +3,13 @@
 Date: 2026-10-09
 
 Status: proposed architecture and protocol outline; no bridge or receiver implemented.
-Ownership decision (2026-10-19): a shared engine-side `MediaPipeSystem` owns the provider
-state and publishes independent hand/eye channels to their semantic tracking systems.
+Ownership decision (2026-10-19, expanded 2026-10-20): a shared engine-side `MediaPipeSystem`
+owns provider state and publishes independent hand, eye, lower-face, and body channels.
+
+The [avatar tracking component design](avatar-tracking-components-and-mediapipe.md) defines
+`WebcamEyeTracking` (lowercase `c`) as the webcam counterpart to `XREyeTracking`, plus generic
+`LowerFaceTracking`, `HandTracking`, `FullBodyTracking`, and `LowerBodyTracking` consumers.
+MediaPipe is a backend for those capabilities, not a required prefix on their component names.
 
 Release target: [mittens-engine 0.10.0](epic/0.10.0/README.md), following the
 normalized hand sample/selection foundation. The bridge remains optional.
@@ -27,8 +32,8 @@ not engine startup behavior. Keep the engine/bridge protocol independently versi
 ## Engine owner: MediaPipeSystem
 
 Introduce `MediaPipeSystem` in `src/engine/ecs/system/mediapipe_system.rs`, retained as
-`SystemWorld.mediapipe`. This is the shared engine-side provider owner for hands, eyes, and
-eventually mouth/face channels. The external Python process owns camera capture, model loading,
+`SystemWorld.mediapipe`. This is the shared engine-side provider owner for hands, eyes,
+lower-face expressions, and body pose. The external Python process owns camera capture, model loading,
 and inference; the Rust system owns ingestion and the provider state consumed by engine systems.
 The name and ownership boundary are decided here; this system is not implemented yet.
 
@@ -37,12 +42,13 @@ The name and ownership boundary are decided here; this system is not implemented
 | Python MediaPipe bridge | Camera/device, loaded models, inference work, producer identity, capture timestamps, encoded channel snapshots |
 | `MediaPipeSystem` | Shared receiver registrations, sockets, bounded receive/decode, protocol validation, stream epochs, retired-stream rejection, per-channel sequences and receipt times, coordinate/calibration metadata, normalization, latest immutable snapshots, provider diagnostics |
 | `HandTrackingSystem` | Hand-source selection, articulation freshness policy, rig bindings, finger rotation ownership, and release/fallback |
-| `XREyeTrackingSystem` | MediaPipe eye-source subscriptions, eye-source selection, normalized eye state consumed by AVC, and eye-channel staleness policy |
-| Future lower-face consumer | Mouth/face routing and composition, independent of eye-source selection |
+| Eye tracking consumer | `WebcamEyeTracking` backend subscriptions, normalized eye state consumed by AVC, eye ownership, and staleness policy; shares semantics with the existing XR eye path |
+| Future lower-face consumer | `LowerFaceTracking` expression routing and composition, independent of eye-source selection |
+| Future shared body consumer | One normalized body sample/solver with `FullBodyTracking` and `LowerBodyTracking` masks and explicit bone/root ownership |
 
 One `MediaPipeSystem` can retain endpoint-keyed receiver/session records. Each record owns one
 socket and the latest validated state for its configured producer, plus subscribers keyed by
-component and requested channel. Hand, eye, and future mouth source components share that record;
+component and requested channel. Hand, eye, lower-face, and body consumers share that record;
 multiple avatars consume its snapshots without binding additional sockets. Configuration belongs
 to the provider/source declarations; components do not each own a copy of the live receiver.
 Removing the final subscriber releases its receiver and retained session state. Registration
@@ -56,16 +62,16 @@ restart retires the old stream and invalidates every channel from that stream; c
 invalidates the affected normalized samples. Reusing a cached snapshot preserves its original
 receipt time and sequence rather than making it appear newly received each tick.
 
-Run a bounded, nonblocking `MediaPipeSystem` receive/update phase before the hand and eye
+Run a bounded, nonblocking `MediaPipeSystem` receive/update phase before the semantic tracking
 consumers read samples in `SystemWorld`. If a worker is needed later, it publishes complete
 snapshots through a latest-value mailbox; only the engine phase updates retained provider state.
 Channel adapters live with the MediaPipe provider and publish the existing semantic contracts:
-`HandTrackingFrame` with `HandTrackingProvider::MediaPipe`, and the eye system's normalized
-eye-sample contract once its adapter exists. The semantic systems consume those outputs and own
+`HandTrackingFrame` with `HandTrackingProvider::MediaPipe`, and normalized eye, expression, and
+body-sample contracts as their adapters are implemented. The semantic systems consume those outputs and own
 their selection/release decisions. `MediaPipeSystem` does not resolve avatar bones or write poses.
 
 The first implementation supplies hands, using a replay producer before camera inference. Keep
-eye/mouth channels explicitly unavailable until their adapters and semantic contracts are
+eye/lower-face/body channels explicitly unavailable until their adapters and semantic contracts are
 implemented. Sharing this system does not make the existing `MediaPipeEyeTracking` placeholder
 functional or require eye inference for hand tracking. Manual bridge launch remains sufficient;
 a later explicitly configured process launcher can attach its lifecycle/status to this system.
@@ -142,10 +148,14 @@ An accepted snapshot with an empty detection mask immediately clears both hands.
 in a complete snapshot mean absent, not "reuse previous pose". A provider heartbeat can carry
 an empty snapshot; lack of any packet triggers a separate receipt-time timeout.
 
-If eye/face channels are added later, reuse the envelope, stream identity, coordinate metadata,
-and bridge lifecycle; give each channel its own payload/version and sequence semantics. Do not
-design one giant mandatory packet for all tracking modalities. Eye tracking needs its own real
-adapter and normalized gaze contract; the existing placeholder is not made functional by this task.
+As eye, lower-face, and body adapters are added, reuse the envelope, stream identity, coordinate
+metadata, and bridge lifecycle. Each channel has its own payload/version and sequence semantics.
+The two body component masks share one `body` message. Keep each datagram within its channel's
+budget rather than putting every landmark/model result in one mandatory packet. The
+[component design](avatar-tracking-components-and-mediapipe.md#channels-and-packet-scope) defines
+the channel boundaries and dense-face export limits. Webcam eye tracking still needs a real
+adapter; gaze is a separately validated capability rather than an automatic consequence of
+receiving face/iris landmarks.
 
 ## MediaPipeSystem receive behavior and timing
 
@@ -174,7 +184,7 @@ console spam. Payload validation and loss tests must not need a camera or instal
       explicit model asset instructions, configurable camera/endpoint, and clear startup errors.
 - [ ] A synthetic/replay producer emits the same protocol without importing MediaPipe.
 - [ ] Bridge restart and engine restart work independently; receiver never blocks rendering.
-- [ ] `SystemWorld.mediapipe` owns shared endpoint/session state; hand/eye consumers subscribe
+- [ ] `SystemWorld.mediapipe` owns shared endpoint/session state; semantic tracking consumers subscribe
       without creating competing sockets or duplicating producer lifecycle logic.
 - [ ] Removing the final subscriber releases its receiver; unused MediaPipe support remains idle.
 - [ ] Engine builds/runs without Python, MediaPipe, camera libraries, or model files installed.
@@ -184,10 +194,12 @@ console spam. Payload validation and loss tests must not need a camera or instal
 - [ ] Left/right stay correct with mirrored preview, unmirrored camera input, and hands crossing.
 - [ ] Calibration and capabilities prevent hand-centered landmarks from moving an absolute wrist.
 - [ ] OpenXR retains controller/wrist behavior while MediaPipe articulation is selected or absent.
-- [ ] A future shared eye/hand process can reuse camera/lifecycle infrastructure without coupling
-      the engine's independent channel adapters or making eye inference mandatory.
+- [ ] Face/hand/body tasks share camera/lifecycle infrastructure as configured, without coupling
+      independent channel adapters or making eye/face inference mandatory for hands/body.
 - [ ] Per-channel receipt times, sequence watermarks, and validity prevent hand traffic from
       refreshing stale eyes, while producer restart invalidates all affected channel snapshots.
+- [ ] Full-body/lower-body consumers share one body inference/sample and apply explicit disjoint
+      ownership masks when composed with XR head/controllers or other pose drivers.
 
 Decide the port, exact binary layout, timeout values, supported Python/platform matrix, model
 version, and whether managed launch is useful during implementation. Benchmark the simple UDP
