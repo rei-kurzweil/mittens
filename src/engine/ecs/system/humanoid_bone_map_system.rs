@@ -713,6 +713,29 @@ fn slot_patterns(slot: HumanoidSlot) -> Vec<Vec<String>> {
             v.push(p(&["right", "hand", "pinky1"]));
             v
         }
+        // Complete finger articulation is explicit in this slice; expand inference separately.
+        LeftThumbMetacarpal
+        | LeftThumbProximal
+        | LeftThumbDistal
+        | LeftIndexIntermediate
+        | LeftIndexDistal
+        | LeftMiddleIntermediate
+        | LeftRingProximal
+        | LeftRingIntermediate
+        | LeftRingDistal
+        | LeftLittleIntermediate
+        | LeftLittleDistal
+        | RightThumbMetacarpal
+        | RightThumbProximal
+        | RightThumbDistal
+        | RightIndexIntermediate
+        | RightIndexDistal
+        | RightMiddleIntermediate
+        | RightRingProximal
+        | RightRingIntermediate
+        | RightRingDistal
+        | RightLittleIntermediate
+        | RightLittleDistal => vec![],
         LeftUpperLeg => {
             let mut v = lr("left", &["upper", "leg"]);
             v.push(p(&["left", "up", "leg"]));

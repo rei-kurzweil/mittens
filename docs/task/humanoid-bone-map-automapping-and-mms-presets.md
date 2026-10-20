@@ -24,8 +24,9 @@ when they contain a map or a report is explicitly requested.
 
 ## Slots and reports
 
-`HumanoidSlot` covers the center chain, bilateral shoulder/arm/hand chains, middle-forward and
-index/little palm-width landmarks, eyes, legs/feet/toes, and `camera_anchor`. Authored state is
+`HumanoidSlot` covers the center chain, bilateral shoulder/arm/hand chains, all three rotating
+bones of each finger, eyes, legs/feet/toes, and `camera_anchor`. The 0.10 hand-tracking slice
+expanded the original palm-basis landmarks to complete explicit finger chains. Authored state is
 `Unspecified`, `Reference`, or `Absent`.
 
 The generation-numbered GLTF report distinguishes skin joints, arbitrary transforms, and generated
@@ -72,6 +73,8 @@ including two avatar instances without cross-resolution, incomplete/nonhumanoid 
 removal, late camera attachment, and controller/hand source switching. Lower-body inference is
 reported but leg IK is not a blocker.
 
-Full finger driving, general animation retargeting, VRM metadata, LLM proposals, multi-avatar
-selection below one AVC, and the editor mapping panel are deferred. The editor work is tracked in
+Full finger driving was deferred from 0.8 and now has an explicit VRoid/OpenXR slice in
+[shared hand tracking](hand-tracking-system-and-finger-retargeting.md). Broader finger automapping,
+general animation retargeting, VRM metadata, LLM proposals, multi-avatar selection below one AVC,
+and the editor mapping panel remain deferred. The editor work is tracked in
 [humanoid-bone-mapping-editor.md](humanoid-bone-mapping-editor.md).

@@ -179,8 +179,13 @@ MediaPipe must expose eye and mouth tracking separately at the component/API bou
 - `MediaPipeEyeTracking` participates in the one-shot eye-source election;
 - `MediaPipeMouthTracking` participates in the future lower-face routing/mixing policy.
 
-They may share one internal webcam capture, frame cache, and MediaPipe inference backend. Sharing an
-expensive provider does not require combining their semantic components or ownership policies.
+They share the planned engine-side
+[`MediaPipeSystem`](optional-mediapipe-tracking-bridge.md#engine-owner-mediapipesystem) for
+receiver/session state, decoding, normalization, and independent channel snapshots. The external
+Python bridge owns the shared webcam capture and inference backend. `MediaPipeEyeTracking`,
+`MediaPipeMouthTracking`, and hand tracking subscribe to that provider while retaining their own
+semantic components and ownership policies. Hand/eye/mouth traffic has independent freshness;
+receiving one channel never makes another channel live.
 
 Do not let the future face mixer feed MediaPipe mouth availability into eye-source election, or vice
 versa. Each capability has independent validity and lifecycle even when produced from the same

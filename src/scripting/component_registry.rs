@@ -25,13 +25,13 @@ use crate::engine::ecs::component::{
     EditorUIPanelSpec, ElementType, EmissiveComponent, EmissivePassComponent, EyeTrackingSource,
     FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent,
     GestureCoordTypeComponent, GrabbableComponent, GravityComponent, GridBindingComponent,
-    GridComponent, GridVisualSpace, HTCEyeTrackingComponent, HtmlElementComponent,
-    HttpClientComponent, HttpServerComponent, HumanoidBoneMapComponent, IKChainComponent, IKSolver,
-    ImplicitSphereComponent, ImplicitSurfaceComponent, InputComponent, InputTransformModeComponent,
-    InputXRComponent, InputXRGamepadComponent, InspectLayoutComponent, JointRetargetBasisComponent,
-    JustifyContent, KeyframeComponent, LayoutBoundsComponent, LayoutComponent,
-    LightQuantizationComponent, MediaPipeEyeTrackingComponent, MeshComponent, MirrorComponent,
-    MorphTargetMapComponent, MountableComponent, MusicNote, MusicNoteComponent,
+    GridComponent, GridVisualSpace, HTCEyeTrackingComponent, HandTrackingComponent,
+    HtmlElementComponent, HttpClientComponent, HttpServerComponent, HumanoidBoneMapComponent,
+    IKChainComponent, IKSolver, ImplicitSphereComponent, ImplicitSurfaceComponent, InputComponent,
+    InputTransformModeComponent, InputXRComponent, InputXRGamepadComponent, InspectLayoutComponent,
+    JointRetargetBasisComponent, JustifyContent, KeyframeComponent, LayoutBoundsComponent,
+    LayoutComponent, LightQuantizationComponent, MediaPipeEyeTrackingComponent, MeshComponent,
+    MirrorComponent, MorphTargetMapComponent, MountableComponent, MusicNote, MusicNoteComponent,
     NormalVisualisationComponent, OpacityComponent, OptionComponent, OscillatorType, Overflow,
     OverlayComponent, PointLightComponent, PointerComponent, PointerEvents, PoseCaptureComponent,
     PoseCaptureLibraryComponent, PoseCapturePoseComponent, Position, RayCastComponent,
@@ -132,6 +132,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "HTCEyeTracking",
     "MediaPipeEyeTracking",
     "HumanoidBoneMap",
+    "HandTracking",
     "MorphTargetMap",
     "IKChain",
     "ImplicitSphere",
@@ -2189,6 +2190,14 @@ fn create_component(
             )),
             _ => Err("JointRetargetBasis requires .new(target, forward_start, forward_end, up_start, up_end)".into()),
         },
+        "HandTracking" => {
+            let id = world.add_component(HandTrackingComponent::new());
+            if let Some(method) = ctor {
+                if method != "new" { apply_call(world, id, method, args)?; }
+                else if !args.is_empty() { return Err("HandTracking.new() takes no arguments".into()); }
+            }
+            Ok(id)
+        }
         "HumanoidBoneMap" => {
             let id = world.add_component(HumanoidBoneMapComponent::new());
             if let Some(method) = ctor {
@@ -4425,6 +4434,21 @@ fn apply_call(
             }
             _ => {}
         }
+        return Ok(());
+    }
+    if let Some(config) = world
+        .get_component_by_id_as::<HandTrackingComponent>(id)
+        .cloned()
+    {
+        let updated = match method {
+            "source" => config.source(arg_str(args, 0)?)?,
+            "timeout" => config.timeout(arg_f32(args, 0)?)?,
+            "release_duration" => config.release_duration(arg_f32(args, 0)?)?,
+            _ => return Err(format!("unknown HandTracking builder '.{method}'")),
+        };
+        *world
+            .get_component_by_id_as_mut::<HandTrackingComponent>(id)
+            .unwrap() = updated;
         return Ok(());
     }
     if world

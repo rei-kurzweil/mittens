@@ -71,7 +71,8 @@ order. Keep their current paths so existing links continue to work:
 2. [ ] [Shared hand tracking and finger retargeting](../../hand-tracking-system-and-finger-retargeting.md):
    retain complete coherent provider samples, introduce `HandTrackingSystem`,
    and drive all five fingers on both hands with rotation-only retargeting,
-   explicit ownership, freshness, and release behavior.
+   explicit ownership, freshness, and release behavior. The first OpenXR/Reimu
+   slice is implemented with deterministic rig tests; live headset validation remains.
 3. [ ] [Optional MediaPipe bridge](../../optional-mediapipe-tracking-bridge.md):
    independent optional process, bounded transport, replay fixtures, and
    hand-relative articulation without making camera/Python dependencies

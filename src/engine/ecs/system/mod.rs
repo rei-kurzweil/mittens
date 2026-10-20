@@ -46,6 +46,8 @@ pub mod grabbable_system;
 pub mod graphics_settings_system;
 pub mod grid_gesture;
 pub mod grid_system;
+pub mod hand_tracking;
+pub mod hand_tracking_system;
 pub mod http_client_system;
 pub mod http_server_system;
 pub mod humanoid_bone_map_system;
@@ -137,6 +139,7 @@ pub use gltf_system::GLTFSystem;
 pub use grabbable_system::GrabbableSystem;
 pub use graphics_settings_system::GraphicsSettingsSystem;
 pub use grid_system::GridSystem;
+pub use hand_tracking_system::HandTrackingSystem;
 pub use http_client_system::HttpClientSystem;
 pub use http_server_system::HttpServerSystem;
 pub use humanoid_bone_map_system::{

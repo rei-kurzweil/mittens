@@ -1,6 +1,9 @@
 import { studio_stage, studio_floor } from "../assets/components/studio_stage.mms"
 import { teleport_pit } from "../assets/components/teleport_pit.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
+import { star_kawaii_background } from "../assets/components/backgrounds/star_kawaii_background.mms"
+import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
+import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
 
 // mittens-corp-desktop — desktop Rei(mu) camera and pose-authoring scene.
 //
@@ -34,6 +37,20 @@ RenderGraph {
     Bloom { intensity(0.42) radius_ndc(0.025) emissive_scale(1.0) half_res(true) }
 }
 
+
+BG.occlusion_and_lighting() {
+    star_kawaii_background([1.0, 0.90, 0.65, 1.0], { count = 160 scale = 2.0 })
+}
+
+// Shared settings are draggable from their title bars and grabbable in XR.
+T.position(-5.5, 2.3, -1.5) {
+    Grabbable {}
+    graphics_settings_panel({ root_name = "mittens_corp_graphics_settings" })
+}
+T.position(-2.6, 2.3, -1.5) {
+    Grabbable {}
+    xr_settings_panel({ root_name = "mittens_corp_xr_settings" })
+}
 
 // Keep the studio stage so this tool retains a stable lighting and mirror
 // reference while desktop transforms and gizmos are exercised.

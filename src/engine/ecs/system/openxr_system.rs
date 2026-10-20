@@ -1,3 +1,7 @@
+use super::hand_tracking::{
+    HandCoordinateSpace, HandDataSource, HandJoint, HandJointLocation, HandOrientationProvenance,
+    HandSampleTime, HandTrackingFrame, HandTrackingProvider, TrackedHand,
+};
 use crate::engine::ecs::component::CameraXRComponent;
 use crate::engine::ecs::component::{
     ControllerHand, ControllerPoseKind, ControllerPoseSource, InputXRComponent, XRHandComponent,
@@ -22,7 +26,7 @@ use crate::utils::math;
 use ash::vk::Handle as _;
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 fn openxr_debug_enabled() -> bool {
@@ -205,6 +209,68 @@ mod grip_aim_tests {
         );
         assert_eq!(selected.unwrap().position.x, 2.0);
         assert_eq!(source, ControllerPoseSource::ControllerGripAim);
+    }
+
+    #[test]
+    fn full_hand_sample_preserves_all_joint_flags_raw_values_and_root_identity() {
+        let mut joints = [openxr::HandJointLocationEXT::default(); openxr::HAND_JOINT_COUNT];
+        for (index, joint) in joints.iter_mut().enumerate() {
+            *joint = tracked_joint([index as f32, 2.0, 3.0], [0.0, 0.0, 0.0, 1.0]);
+            if index % 2 == 0 {
+                joint.location_flags |= openxr::SpaceLocationFlags::POSITION_TRACKED;
+            }
+            if index % 3 == 0 {
+                joint.location_flags |= openxr::SpaceLocationFlags::ORIENTATION_TRACKED;
+            }
+        }
+        joints[openxr::HandJointEXT::WRIST].location_flags =
+            openxr::SpaceLocationFlags::ORIENTATION_VALID;
+        joints[openxr::HandJointEXT::THUMB_TIP].pose.position.x = f32::NAN;
+        let sample = HandJointSample {
+            joints,
+            data_source: Some(openxr::HandTrackingDataSourceEXT::CONTROLLER),
+        };
+        let normalized = OpenXRSystem::normalize_hand_sample(&sample, ControllerHand::Left);
+        assert_eq!(normalized.data_source, HandDataSource::Controller);
+        assert_eq!(normalized.root_position.unwrap().0, HandJoint::Palm);
+        assert!(normalized.canonical_orientation.is_some());
+        assert!(!normalized.joints[HandJoint::Wrist as usize].position_valid);
+        assert!(normalized.joints[HandJoint::ThumbTip as usize].position[0].is_nan());
+        assert!(normalized.position(HandJoint::ThumbTip).is_none());
+        for index in 2..26 {
+            let joint = normalized.joints[index];
+            assert_eq!(joint.position_tracked, index % 2 == 0);
+            assert_eq!(joint.orientation_tracked, index % 3 == 0);
+            assert!(joint.position_valid && joint.orientation_valid);
+            assert_eq!(joint.radius_meters, Some(0.01));
+            assert_eq!(
+                joint.orientation_provenance,
+                HandOrientationProvenance::NativeOpenXr
+            );
+        }
+        // Articulation does not need authority over wrist translation.
+        let mut sample = sample;
+        sample.joints[openxr::HandJointEXT::PALM].location_flags =
+            openxr::SpaceLocationFlags::ORIENTATION_VALID;
+        let normalized = OpenXRSystem::normalize_hand_sample(&sample, ControllerHand::Left);
+        assert!(normalized.root_position.is_none());
+        assert!(normalized.has_articulation());
+    }
+
+    #[test]
+    fn prepare_without_session_discards_previous_full_hand_frame() {
+        let mut xr = OpenXRSystem::default();
+        xr.hand_tracking_frame = Some(Arc::new(HandTrackingFrame {
+            provider: HandTrackingProvider::OpenXr,
+            epoch: 1,
+            sequence: 1,
+            sample_time: HandSampleTime::OpenXrPredictedNanoseconds(1),
+            received_at: Instant::now(),
+            space: HandCoordinateSpace::OpenXrStage { generation: 1 },
+            hands: [None, None],
+        }));
+        xr.prepare_frame(&World::default(), &mut VisualWorld::default(), 0.0);
+        assert!(xr.hand_tracking_frame().is_none());
     }
 
     fn tracked_joint(position: [f32; 3], orientation: [f32; 4]) -> openxr::HandJointLocationEXT {
@@ -950,6 +1016,9 @@ pub struct OpenXRSystem {
     xr_input_state: XrInputState,
     xr_gamepad_state: XrGamepadState,
     xr_gamepad_state_last_logged: XrGamepadState,
+    hand_tracking_frame: Option<Arc<HandTrackingFrame>>,
+    hand_tracking_epoch: u64,
+    hand_tracking_sequence: u64,
 }
 
 #[derive(Debug, Default)]
@@ -1550,6 +1619,9 @@ impl Default for OpenXRSystem {
             xr_input_state: XrInputState::default(),
             xr_gamepad_state: XrGamepadState::default(),
             xr_gamepad_state_last_logged: XrGamepadState::default(),
+            hand_tracking_frame: None,
+            hand_tracking_epoch: 1,
+            hand_tracking_sequence: 0,
         }
     }
 }
@@ -2263,6 +2335,8 @@ impl OpenXRSystem {
 
             match evt {
                 openxr::Event::InstanceLossPending(_) => {
+                    self.hand_tracking_frame = None;
+                    self.hand_tracking_epoch = self.hand_tracking_epoch.wrapping_add(1);
                     eprintln!("[OpenXR] Event: InstanceLossPending");
                 }
                 openxr::Event::SessionStateChanged(e) => {
@@ -2277,10 +2351,14 @@ impl OpenXRSystem {
                                         eprintln!("[OpenXR] session.begin failed: {err:?}");
                                     } else {
                                         sess.running = true;
+                                        self.hand_tracking_epoch =
+                                            self.hand_tracking_epoch.wrapping_add(1);
                                     }
                                 }
                             }
                             openxr::SessionState::STOPPING => {
+                                self.hand_tracking_frame = None;
+                                self.hand_tracking_epoch = self.hand_tracking_epoch.wrapping_add(1);
                                 if sess.running {
                                     if let Err(err) = sess.session.end() {
                                         eprintln!("[OpenXR] session.end failed: {err:?}");
@@ -2290,6 +2368,8 @@ impl OpenXRSystem {
                             }
                             openxr::SessionState::EXITING | openxr::SessionState::LOSS_PENDING => {
                                 sess.running = false;
+                                self.hand_tracking_frame = None;
+                                self.hand_tracking_epoch = self.hand_tracking_epoch.wrapping_add(1);
                             }
                             _ => {}
                         }
@@ -2297,6 +2377,10 @@ impl OpenXRSystem {
                 }
                 openxr::Event::EventsLost(e) => {
                     eprintln!("[OpenXR] Event: EventsLost ({})", e.lost_event_count());
+                }
+                openxr::Event::ReferenceSpaceChangePending(_) => {
+                    self.hand_tracking_frame = None;
+                    self.hand_tracking_epoch = self.hand_tracking_epoch.wrapping_add(1);
                 }
                 _ => {
                     // Too noisy to print everything by default.
@@ -2785,6 +2869,68 @@ impl OpenXRSystem {
             }
         }
         None
+    }
+
+    fn normalize_hand_sample(sample: &HandJointSample, hand: ControllerHand) -> TrackedHand {
+        let joints = std::array::from_fn(|index| {
+            let joint = &sample.joints[openxr::HandJointEXT::from_raw(index as i32)];
+            let flags = joint.location_flags;
+            let position_valid = flags.contains(openxr::SpaceLocationFlags::POSITION_VALID);
+            HandJointLocation {
+                position: [
+                    joint.pose.position.x,
+                    joint.pose.position.y,
+                    joint.pose.position.z,
+                ],
+                orientation: [
+                    joint.pose.orientation.x,
+                    joint.pose.orientation.y,
+                    joint.pose.orientation.z,
+                    joint.pose.orientation.w,
+                ],
+                position_valid,
+                orientation_valid: flags.contains(openxr::SpaceLocationFlags::ORIENTATION_VALID),
+                position_tracked: flags.contains(openxr::SpaceLocationFlags::POSITION_TRACKED),
+                orientation_tracked: flags
+                    .contains(openxr::SpaceLocationFlags::ORIENTATION_TRACKED),
+                radius_meters: (position_valid && joint.radius.is_finite() && joint.radius > 0.0)
+                    .then_some(joint.radius),
+                orientation_provenance: HandOrientationProvenance::NativeOpenXr,
+            }
+        });
+        let root_position = [HandJoint::Wrist, HandJoint::Palm]
+            .into_iter()
+            .find_map(|joint| joints[joint as usize].valid_position().map(|p| (joint, p)));
+        let canonical_orientation =
+            Self::canonical_hand_orientation(&sample.joints, hand).map(|q| [q.x, q.y, q.z, q.w]);
+        TrackedHand {
+            active: true,
+            data_source: match sample.data_source {
+                Some(openxr::HandTrackingDataSourceEXT::UNOBSTRUCTED) => {
+                    HandDataSource::Unobstructed
+                }
+                Some(openxr::HandTrackingDataSourceEXT::CONTROLLER) => HandDataSource::Controller,
+                _ => HandDataSource::Unknown,
+            },
+            joints,
+            root_position,
+            canonical_orientation,
+            canonical_orientation_provenance: if Self::valid_orientation_from_hand_joint(
+                &sample.joints[openxr::HandJointEXT::PALM],
+            )
+            .is_some()
+                || Self::valid_orientation_from_hand_joint(
+                    &sample.joints[openxr::HandJointEXT::WRIST],
+                )
+                .is_some()
+            {
+                HandOrientationProvenance::NativeOpenXr
+            } else if canonical_orientation.is_some() {
+                HandOrientationProvenance::LandmarkDerived
+            } else {
+                HandOrientationProvenance::Absent
+            },
+        }
     }
 
     fn log_hand_frame(
@@ -3637,6 +3783,11 @@ impl System for OpenXRSystem {
 }
 
 impl OpenXRSystem {
+    /// One coherent sample from prepare_frame; no OpenXR calls on the consumer side.
+    pub fn hand_tracking_frame(&self) -> Option<Arc<HandTrackingFrame>> {
+        self.hand_tracking_frame.clone()
+    }
+
     pub fn last_render_dt_sec(&self) -> Option<f32> {
         self.last_render_dt_sec
     }
@@ -3652,6 +3803,8 @@ impl OpenXRSystem {
         let perf_enabled = self.vr_perf.is_some();
         let started = Instant::now();
         let mut perf_wait_frame = Duration::ZERO;
+        // Every early return publishes loss rather than preserving last frame's joints.
+        self.hand_tracking_frame = None;
         self.discard_prepared_frame();
         self.pump_events();
         self.floor_correction_meters = floor_correction_meters;
@@ -3778,6 +3931,7 @@ impl OpenXRSystem {
         let mut right_root_for_debug: Option<(openxr::Posef, openxr::HandJointEXT)> = None;
         let mut left_joints_for_debug: Option<openxr::HandJointLocations> = None;
         let mut right_joints_for_debug: Option<openxr::HandJointLocations> = None;
+        let mut tracked_hands = [None, None];
 
         // Source and root belong to one sample. Clear both before locating so a
         // lost hand or failed query cannot leave stale source-selection authority.
@@ -3796,6 +3950,8 @@ impl OpenXRSystem {
 
             match left_joints {
                 Ok(Some(sample)) => {
+                    tracked_hands[0] =
+                        Some(Self::normalize_hand_sample(&sample, ControllerHand::Left));
                     let joints = sample.joints;
                     let root = Self::select_hand_root_pose(&joints, ControllerHand::Left);
                     sess.hand_root_pose_cache.left_root = root.map(|(pose, _)| pose);
@@ -3812,6 +3968,8 @@ impl OpenXRSystem {
 
             match right_joints {
                 Ok(Some(sample)) => {
+                    tracked_hands[1] =
+                        Some(Self::normalize_hand_sample(&sample, ControllerHand::Right));
                     let joints = sample.joints;
                     let root = Self::select_hand_root_pose(&joints, ControllerHand::Right);
                     sess.hand_root_pose_cache.right_root = root.map(|(pose, _)| pose);
@@ -3826,6 +3984,21 @@ impl OpenXRSystem {
                 }
             }
         }
+
+        self.hand_tracking_sequence = self.hand_tracking_sequence.wrapping_add(1);
+        self.hand_tracking_frame = Some(Arc::new(HandTrackingFrame {
+            provider: HandTrackingProvider::OpenXr,
+            epoch: self.hand_tracking_epoch,
+            sequence: self.hand_tracking_sequence,
+            sample_time: HandSampleTime::OpenXrPredictedNanoseconds(
+                frame_state.predicted_display_time.as_nanos(),
+            ),
+            received_at: Instant::now(),
+            space: HandCoordinateSpace::OpenXrStage {
+                generation: self.hand_tracking_epoch,
+            },
+            hands: tracked_hands,
+        }));
 
         Self::log_hand_debug_snapshot(
             sess,

@@ -1,6 +1,8 @@
 import { studio_stage, studio_floor } from "../assets/components/studio_stage.mms"
 import { teleport_pit } from "../assets/components/teleport_pit.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
+import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
+import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
 
 // XR-only button-driven linear Velocity test. Forward/back change the outer
 // grounding root's world velocity using the active XR eye's horizontal heading.
@@ -30,7 +32,17 @@ RenderGraph {
 
 
 BG.occlusion_and_lighting() {
-    star_kawaii_background([1.0, 0.72, 0.15, 1.0])
+    star_kawaii_background([1.0, 0.90, 0.65, 1.0], { count = 160 scale = 2.0 })
+}
+
+// Shared settings are draggable from their title bars and grabbable in XR.
+T.position(-5.5, 2.3, -1.5) {
+    Grabbable {}
+    graphics_settings_panel({ root_name = "mittens_corp_graphics_settings" })
+}
+T.position(-2.6, 2.3, -1.5) {
+    Grabbable {}
+    xr_settings_panel({ root_name = "mittens_corp_xr_settings" })
 }
 studio_floor()
 studio_stage("mittens_corp_stage")

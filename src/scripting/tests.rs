@@ -55,6 +55,36 @@ fn repo_path(rel: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel)
 }
 
+// Supply initial settings when constructing scene fixtures. Tests that interact
+// with settings retain the services through Universe instead.
+fn start_settings_scene(
+    source: &str,
+    path: &str,
+    world: &mut World,
+    rx: &mut RxWorld,
+    assets: Option<&mut RenderAssets>,
+    emit: &mut dyn SignalEmitter,
+) -> Result<(RuntimeSpecSession, crate::scripting::runner::EvalOutput), String> {
+    let mut graphics = crate::engine::ecs::system::GraphicsSettingsSystem::default();
+    let mut xr = crate::engine::ecs::system::XrSettingsSystem::default();
+    let mut intents = Vec::new();
+    let mut host = crate::scripting::host::MittensHost::new(world, emit, &mut intents)
+        .with_rx(rx)
+        .with_graphics_settings(&mut graphics)
+        .with_xr_settings(&mut xr);
+    if let Some(assets) = assets {
+        host = host.with_render_assets(assets);
+    }
+    let session = RuntimeSpecSession::start_at_path_with_host(source, path, host)?;
+    Ok((
+        session,
+        crate::scripting::runner::EvalOutput {
+            intents,
+            errors: Vec::new(),
+        },
+    ))
+}
+
 #[test]
 fn rhythm_game_asset_factories_build_configured_strip_and_paused_markers() {
     use crate::engine::ecs::component::{
@@ -174,7 +204,7 @@ fn agc_desktop_example_evaluates_and_live_policy_methods_preserve_the_running_un
     let mut rx = RxWorld::default();
     let mut assets = RenderAssets::new();
     let mut queue = CommandQueue::new();
-    let (mut session, output) = RuntimeSpecSession::start_at_path(
+    let (mut session, output) = start_settings_scene(
         include_str!("../../examples/mittens-corp-agc-desktop.mms"),
         "examples/mittens-corp-agc-desktop.mms",
         &mut world,
@@ -209,13 +239,12 @@ fn agc_desktop_example_evaluates_and_live_policy_methods_preserve_the_running_un
         1,
         "desktop Bisket should start in the captured relaxed pose"
     );
+    let mouth_panel = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("agc_desktop_settings_panel"))
+        .expect("mouth-response panel");
     assert_eq!(
-        world
-            .all_components()
-            .filter(|&id| world
-                .get_component_by_id_as::<SliderComponent>(id)
-                .is_some())
-            .count(),
+        world.find_all_components(mouth_panel, "Slider").len(),
         3,
         "desktop panel should expose only the small mouth-response control set"
     );
@@ -406,7 +435,7 @@ fn agc_xr_example_evaluates_and_binds_avc_to_normalized_level() {
     let mut rx = RxWorld::default();
     let mut assets = RenderAssets::new();
     let mut queue = CommandQueue::new();
-    let (mut session, output) = RuntimeSpecSession::start_at_path(
+    let (mut session, output) = start_settings_scene(
         include_str!("../../examples/mittens-corp-agc.mms"),
         "examples/mittens-corp-agc.mms",
         &mut world,
@@ -2994,55 +3023,101 @@ fn live_eval_imported_kawaii_background_module_emits_without_errors() {
         import { star_kawaii_background } from "../assets/components/backgrounds/star_kawaii_background.mms"
 
         BG {
-            star_kawaii_background()
+            star_kawaii_background([1.0, 0.82, 0.12, 1.0])
         }
     "##;
 
     let mut world = World::default();
     let mut rx = RxWorld::default();
     let mut emit = CommandQueue::new();
+    let mut assets = RenderAssets::new();
 
-    let out = MeowMeowRunner::eval_with_world_at_path(
+    let out = MeowMeowRunner::eval_with_runtime_spec_at_path(
         src,
         Some("examples/_mms_test_star_kawaii_background_import.mms"),
         &mut world,
         &mut rx,
+        Some(&mut assets),
         &mut emit,
     );
     assert!(out.errors.is_empty(), "errors: {:?}", out.errors);
     assert!(
-        !out.intents.is_empty(),
-        "expected imported background to emit content"
+        world.all_components().any(|id| world
+            .get_component_by_id_as::<RenderableComponent>(id)
+            .is_some()),
+        "expected imported background to materialize stars"
     );
 }
 
 #[test]
-fn star_kawaii_background_derives_rotation_from_position() {
-    let src = fs::read_to_string(repo_path(
-        "assets/components/backgrounds/star_kawaii_background.mms",
-    ))
-    .expect("read star background");
-    assert!(
-        src.contains("let dir_x = -x / radius")
-            && src.contains("let dir_y = -y / radius")
-            && src.contains("let dir_z = -z / radius"),
-        "expected star background to derive inward direction from position"
-    );
-    assert!(
-        src.contains("let look_raw = [-dir_y, dir_x, 0.0, 1.0 + dir_z]")
-            && src.contains("let look_inv_len = 1.0 / Math.sqrt("),
-        "expected star background to build a shortest-arc look quaternion"
-    );
-    assert!(
-        src.contains("let twist_quat = [0.0, 0.0, Math.sin(half_twist), Math.cos(half_twist)]")
-            && src.contains("let rotation = quat_mul(look, twist_quat)")
-            && src.contains(".quat(rotation)"),
-        "expected star background to use quaternion look-at plus local twist"
-    );
-    assert!(
-        !src.contains(".rotation("),
-        "expected Euler rotation authoring to be removed from the star background"
-    );
+fn star_kawaii_background_configures_density_and_size_without_scaling_positions() {
+    fn stars(options: &str) -> Vec<TransformComponent> {
+        let src = format!(
+            r#"
+            import {{ star_kawaii_background }} from "../assets/components/backgrounds/star_kawaii_background.mms"
+            star_kawaii_background([1.0, 0.90, 0.65, 1.0]{options})
+            "#
+        );
+        let mut world = World::default();
+        let mut rx = RxWorld::default();
+        let mut emit = CommandQueue::new();
+        let mut assets = RenderAssets::new();
+        let out = MeowMeowRunner::eval_with_runtime_spec_at_path(
+            &src,
+            Some("examples/_mms_test_star_kawaii_background_import.mms"),
+            &mut world,
+            &mut rx,
+            Some(&mut assets),
+            &mut emit,
+        );
+        assert!(out.errors.is_empty(), "{options}: {:?}", out.errors);
+        let stars: Vec<_> = world
+            .all_components()
+            .filter_map(|id| {
+                let renderable = world.get_component_by_id_as::<RenderableComponent>(id)?;
+                if !matches!(
+                    renderable.authored_shape,
+                    Some(AuthoredRenderableShape::Star { .. })
+                ) {
+                    return None;
+                }
+                Some(*world.get_component_by_id_as::<TransformComponent>(world.parent_of(id)?)?)
+            })
+            .collect();
+        emit.drain_into_rx(&mut rx);
+        let inward_facing = rx
+            .drain_ready_intents()
+            .iter()
+            .filter(|envelope| {
+                matches!(
+                    envelope.intent.as_ref().map(|intent| &intent.value),
+                    Some(IntentValue::LookAt { target_world, .. }) if *target_world == [0.0; 3]
+                )
+            })
+            .count();
+        assert_eq!(inward_facing, stars.len());
+        stars
+    }
+
+    let original = stars("");
+    let doubled = stars(", { scale = 2.0 }");
+    let explicit_defaults = stars(", { count = 320 scale = 1.0 }");
+    assert!(!original.is_empty());
+    assert_eq!(original.len(), doubled.len());
+    assert_eq!(original.len(), explicit_defaults.len());
+    for ((original, doubled), defaults) in original.iter().zip(&doubled).zip(&explicit_defaults) {
+        assert_eq!(original.translation(), doubled.translation());
+        assert_eq!(original.translation(), defaults.translation());
+        assert_eq!(original.scale(), defaults.scale());
+        assert_eq!(doubled.scale(), original.scale().map(|value| value * 2.0));
+    }
+    let sparse = stars(", { count = 160 scale = 2.0 }");
+    let ratio = sparse.len() as f32 / original.len() as f32;
+    assert!((0.35..0.65).contains(&ratio), "density ratio: {ratio}");
+    assert!(sparse.iter().any(|star| star.translation()[1] > 30.0));
+    assert!(sparse.iter().any(|star| star.translation()[1] < -30.0));
+    assert!(stars(", { count = 0 }").is_empty());
+    assert!(stars(", { count = -1 }").is_empty());
 }
 
 #[test]
@@ -8342,14 +8417,15 @@ fn mittens_corp_linear_velocity_scene_evaluates_with_xr_basis_and_panel() {
     let mut queue = CommandQueue::new();
     let mut assets = RenderAssets::new();
     let path = "examples/mittens-corp-linear-velocity.mms";
-    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+    let (_session, output) = start_settings_scene(
         include_str!("../../examples/mittens-corp-linear-velocity.mms"),
-        Some(path),
+        path,
         &mut world,
         &mut rx,
         Some(&mut assets),
         &mut queue,
-    );
+    )
+    .expect("linear velocity scene should start with settings services");
     assert!(output.errors.is_empty(), "{path}: {:?}", output.errors);
     let named = |label: &str| {
         world
@@ -8487,7 +8563,7 @@ fn mittens_corp_linear_velocity_buttons_emit_one_change_each() {
     let mut rx = RxWorld::default();
     let mut queue = CommandQueue::new();
     let mut assets = RenderAssets::new();
-    let (mut session, output) = RuntimeSpecSession::start_at_path(
+    let (mut session, output) = start_settings_scene(
         include_str!("../../examples/mittens-corp-linear-velocity.mms"),
         "examples/mittens-corp-linear-velocity.mms",
         &mut world,
@@ -8579,7 +8655,7 @@ fn mittens_corp_linear_velocity_readout_changes_once_after_applied_click() {
     let mut visuals = VisualWorld::default();
     let mut assets = RenderAssets::new();
     let mut queue = CommandQueue::new();
-    let (mut session, output) = RuntimeSpecSession::start_at_path(
+    let (mut session, output) = start_settings_scene(
         include_str!("../../examples/mittens-corp-linear-velocity.mms"),
         "examples/mittens-corp-linear-velocity.mms",
         &mut world,
@@ -8697,14 +8773,15 @@ fn mittens_corp_linear_velocity_scene_advances_multiple_headless_frames() {
     let mut assets = RenderAssets::new();
     let mut queue = CommandQueue::new();
     let input = InputState::default();
-    let output = MeowMeowRunner::eval_with_world_and_assets_at_path(
+    let (_session, output) = start_settings_scene(
         include_str!("../../examples/mittens-corp-linear-velocity.mms"),
-        Some("examples/mittens-corp-linear-velocity.mms"),
+        "examples/mittens-corp-linear-velocity.mms",
         &mut world,
         &mut systems.rx,
         Some(&mut assets),
         &mut queue,
-    );
+    )
+    .expect("linear velocity scene should start with settings services");
     assert!(output.errors.is_empty(), "{:?}", output.errors);
     for intent in output.intents {
         queue.push_intent_now(ComponentId::default(), intent);
@@ -11615,6 +11692,37 @@ fn volume_normalization_rejects_a_known_non_amplitude_source() {
 }
 
 #[test]
+fn roundtrip_hand_tracking_preserves_provider_and_loss_policy() {
+    use crate::engine::ecs::component::HandTrackingComponent;
+    crate::scripting::runtime_config::build_mittens_runtime()
+        .unwrap()
+        .runtime()
+        .materialize_component(
+            "HandTracking.new().source(\"openxr\").timeout(0.12).release_duration(0.2) {}",
+        )
+        .expect("strict MMS must expose all HandTracking builders");
+    let original = HandTrackingComponent::new()
+        .source("openxr")
+        .unwrap()
+        .timeout(0.12)
+        .unwrap()
+        .release_duration(0.2)
+        .unwrap();
+    let expected = original.clone();
+    let (world, id) = roundtrip_component(original);
+    assert_eq!(
+        world
+            .get_component_by_id_as::<HandTrackingComponent>(id)
+            .unwrap(),
+        &expected
+    );
+    assert!(HandTrackingComponent::new().source("unknown").is_err());
+    assert!(HandTrackingComponent::new().timeout(f32::NAN).is_err());
+    assert!(HandTrackingComponent::new().timeout(0.0).is_err());
+    assert!(HandTrackingComponent::new().release_duration(-1.0).is_err());
+}
+
+#[test]
 fn roundtrip_humanoid_bone_map_preserves_authored_policy() {
     use crate::engine::ecs::component::{
         AuthoredSlot, ComponentRef, HumanoidBoneMapComponent, HumanoidSlot,
@@ -11871,7 +11979,7 @@ fn mittens_corp_desktop_evaluates_with_a_desktop_camera_and_no_xr_player_compone
     let mut rx = RxWorld::default();
     let mut queue = CommandQueue::new();
     let mut assets = RenderAssets::new();
-    let (_session, output) = RuntimeSpecSession::start_at_path(
+    let (_session, output) = start_settings_scene(
         include_str!("../../examples/mittens-corp-desktop.mms"),
         "examples/mittens-corp-desktop.mms",
         &mut world,
@@ -12009,7 +12117,7 @@ fn mittens_corp_desktop_wasd_moves_its_input_driver() {
     let mut visuals = VisualWorld::default();
     let mut assets = RenderAssets::new();
     let mut queue = CommandQueue::new();
-    let (_session, output) = RuntimeSpecSession::start_at_path(
+    let (_session, output) = start_settings_scene(
         include_str!("../../examples/mittens-corp-desktop.mms"),
         "examples/mittens-corp-desktop.mms",
         &mut world,
@@ -12072,7 +12180,7 @@ fn mittens_corp_managed_car_attachments_survive_topology_cleanup() {
         let mut visuals = VisualWorld::default();
         let mut assets = RenderAssets::new();
         let mut queue = CommandQueue::new();
-        let (_session, output) = RuntimeSpecSession::start_at_path(
+        let (_session, output) = start_settings_scene(
             source,
             path,
             &mut world,
@@ -12254,7 +12362,7 @@ fn mittens_corp_desktop_routes_mounted_wasd_to_the_car() {
     let mut rx = RxWorld::default();
     let mut queue = CommandQueue::new();
     let mut assets = RenderAssets::new();
-    let (mut session, output) = RuntimeSpecSession::start_at_path(
+    let (mut session, output) = start_settings_scene(
         include_str!("../../examples/mittens-corp-desktop.mms"),
         "examples/mittens-corp-desktop.mms",
         &mut world,
@@ -12366,7 +12474,7 @@ fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
     let mut rx = RxWorld::default();
     let mut queue = CommandQueue::new();
     let mut assets = RenderAssets::new();
-    let (mut session, output) = RuntimeSpecSession::start_at_path(
+    let (mut session, output) = start_settings_scene(
         include_str!("../../examples/mittens-corp.mms"),
         "examples/mittens-corp.mms",
         &mut world,
@@ -12579,6 +12687,33 @@ fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
                 .is_some_and(|gltf| gltf.uri == "assets/models/rei(mu).glb")
         })
         .expect("mittens-corp should load Rei(mu)");
+    assert!(
+        world.children_of(rei_mu).iter().any(|id| {
+            world
+                .get_component_by_id_as::<crate::engine::ecs::component::HandTrackingComponent>(*id)
+                .is_some()
+        }),
+        "Reimu should opt in to full finger tracking under its owning GLTF"
+    );
+    let finger_map = world
+        .children_of(rei_mu)
+        .iter()
+        .find_map(|id| world.get_component_by_id_as::<HumanoidBoneMapComponent>(*id))
+        .unwrap();
+    assert_eq!(
+        finger_map
+            .slots()
+            .keys()
+            .filter(|slot| {
+                let name = slot.as_str();
+                ["thumb_", "index_", "middle_", "ring_", "little_"]
+                    .iter()
+                    .any(|finger| name.contains(finger))
+            })
+            .count(),
+        30,
+        "the shared VRoid map must declare every rotating finger bone"
+    );
     let mut rei_mu_ancestor = world.parent_of(rei_mu);
     while rei_mu_ancestor.is_some() && rei_mu_ancestor != Some(editor) {
         rei_mu_ancestor = rei_mu_ancestor.and_then(|id| world.parent_of(id));
@@ -13788,8 +13923,8 @@ fn teleport_pit_enter_callback_respawns_offset_mover_and_clears_fall_speed() {
 #[test]
 fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
     use crate::engine::ecs::component::{
-        CollidableComponent, CollidableMode, GLTFComponent, GravityComponent, SpringBoneComponent,
-        XREyeTrackingComponent, ZoneComponent,
+        CollidableComponent, CollidableMode, ColorComponent, GLTFComponent, GravityComponent,
+        SpringBoneComponent, XREyeTrackingComponent, ZoneComponent,
     };
     for path in [
         "examples/mittens-corp.mms",
@@ -13804,7 +13939,7 @@ fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
         let mut rx = RxWorld::default();
         let mut queue = CommandQueue::new();
         let mut assets = RenderAssets::new();
-        let (mut session, output) = RuntimeSpecSession::start_at_path(
+        let (mut session, output) = start_settings_scene(
             &source,
             path,
             &mut world,
@@ -13814,6 +13949,46 @@ fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
         )
         .unwrap();
         assert!(output.errors.is_empty(), "{path}: {:?}", output.errors);
+        if path.contains("mittens-corp") {
+            for label in [
+                "mittens_corp_graphics_settings",
+                "graphics_mirrors_toggle_control",
+                "graphics_mirrors_quality_slider",
+                "mittens_corp_xr_settings",
+                "xr_floor_correction_slider",
+                "xr_floor_correction_reset",
+            ] {
+                assert!(
+                    world
+                        .all_components()
+                        .any(|id| world.component_label(id) == Some(label)),
+                    "{path}: missing {label}"
+                );
+            }
+            let mut star_count = 0;
+            for id in world.all_components() {
+                let Some(renderable) = world.get_component_by_id_as::<RenderableComponent>(id)
+                else {
+                    continue;
+                };
+                if matches!(
+                    renderable.authored_shape,
+                    Some(AuthoredRenderableShape::Star { .. })
+                ) {
+                    star_count += 1;
+                    let color = world
+                        .children_of(id)
+                        .iter()
+                        .find_map(|child| world.get_component_by_id_as::<ColorComponent>(*child))
+                        .expect("star color");
+                    assert_eq!(color.rgba, [1.0, 0.90, 0.65, 1.0], "{path}");
+                }
+            }
+            assert!(
+                (1..160).contains(&star_count),
+                "{path}: star count {star_count}"
+            );
+        }
         let gravity = world
             .all_components()
             .find(|id| {
@@ -14041,7 +14216,7 @@ fn assert_desktop_player_lands_jumps_and_recovers(
     let mut assets = RenderAssets::new();
     let mut queue = CommandQueue::new();
     let source = std::fs::read_to_string(scene).unwrap();
-    let (mut session, output) = RuntimeSpecSession::start_at_path(
+    let (mut session, output) = start_settings_scene(
         &source,
         scene,
         &mut world,

@@ -141,6 +141,7 @@ pub struct SystemWorld {
     pub secondary_motion: SecondaryMotionSystem,
     pub secondary_motion_constraint: SecondaryMotionConstraintSystem,
     pub joint_basis_retargeting: crate::engine::ecs::system::JointBasisRetargetingSystem,
+    pub hand_tracking: crate::engine::ecs::system::HandTrackingSystem,
     pub humanoid_bone_map: crate::engine::ecs::system::HumanoidBoneMapSystem,
 
     pub gesture: GestureSystem,
@@ -1397,6 +1398,7 @@ impl SystemWorld {
                 self.ik.remove(n);
             }
             self.xr_eye_tracking.component_removed(n);
+            self.hand_tracking.component_removed(n);
             // Retained secondary-motion indexes cover roots, chains, joint
             // configurations, owning GLTFs, and imported transforms.
             self.secondary_motion.component_removed(world, n);
@@ -3505,6 +3507,17 @@ impl SystemWorld {
         }
         queue.flush(world, self, visuals, render_assets);
         self.tick_transition_runtime(world, visuals);
+
+        self.hand_tracking
+            .set_openxr_frame(self.xr.hand_tracking_frame());
+        self.hand_tracking.tick(
+            world,
+            &mut self.humanoid_bone_map,
+            &self.joint_basis_retargeting,
+            queue,
+            dt_sec,
+        );
+        queue.flush(world, self, visuals, render_assets);
 
         // Post-pose stage: propagate primary pose, solve tails, explicitly propagate
         // the affected spring subtrees, then refresh skin palettes for the frame that

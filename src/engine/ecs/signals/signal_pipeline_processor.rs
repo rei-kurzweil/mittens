@@ -116,6 +116,8 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterCollision { component_id }
             | IntentValue::RemoveCollision { component_id }
             | IntentValue::RegisterAvatarControl { component_id }
+            | IntentValue::RegisterHandTracking { component_id }
+            | IntentValue::UnregisterHandTracking { component_id }
             | IntentValue::RegisterHumanoidBoneMap { component_id }
             | IntentValue::UnregisterHumanoidBoneMap { component_id }
             | IntentValue::HumanoidBoneMapGltfInitialized { component_id }
@@ -269,6 +271,8 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterCollision { component_id }
             | IntentValue::RemoveCollision { component_id }
             | IntentValue::RegisterAvatarControl { component_id }
+            | IntentValue::RegisterHandTracking { component_id }
+            | IntentValue::UnregisterHandTracking { component_id }
             | IntentValue::RegisterHumanoidBoneMap { component_id }
             | IntentValue::UnregisterHumanoidBoneMap { component_id }
             | IntentValue::HumanoidBoneMapGltfInitialized { component_id }

@@ -509,7 +509,11 @@ fn rest_local(world: &World, id: ComponentId) -> Result<[[f32; 4]; 4], String> {
     Ok(transform.model)
 }
 
-fn imported_rest_space_root(world: &World, owner: ComponentId, member: ComponentId) -> ComponentId {
+pub(crate) fn imported_rest_space_root(
+    world: &World,
+    owner: ComponentId,
+    member: ComponentId,
+) -> ComponentId {
     let mut member_ancestor = world.parent_of(member);
     while let Some(node) = member_ancestor {
         if node == owner {
@@ -532,7 +536,7 @@ fn imported_rest_space_root(world: &World, owner: ComponentId, member: Component
     owner
 }
 
-fn rest_model_from_root(
+pub(crate) fn rest_model_from_root(
     world: &World,
     root: ComponentId,
     id: ComponentId,

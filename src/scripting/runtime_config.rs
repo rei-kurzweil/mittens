@@ -900,6 +900,13 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         .builder_call("absent", strings(1))
                         .builder_call("automap_disable", no_args());
                 }
+                "HandTracking" => {
+                    component.constructor("new", no_args());
+                    component.builder_call("source", strings(1));
+                    for name in ["timeout", "release_duration"] {
+                        component.builder_call(name, floats(1));
+                    }
+                }
                 "MorphTargetMap" => {
                     component.constructor("new", no_args());
                     component.builder_call(

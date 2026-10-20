@@ -817,6 +817,12 @@ pub enum IntentValue {
     RegisterAvatarControl {
         component_id: ComponentId,
     },
+    RegisterHandTracking {
+        component_id: ComponentId,
+    },
+    UnregisterHandTracking {
+        component_id: ComponentId,
+    },
     RegisterHumanoidBoneMap {
         component_id: ComponentId,
     },
@@ -1110,6 +1116,8 @@ impl IntentValue {
             IntentValue::RegisterCollision { .. } => "register_collision",
             IntentValue::RemoveCollision { .. } => "remove_collision",
             IntentValue::RegisterAvatarControl { .. } => "register_avatar_control",
+            IntentValue::RegisterHandTracking { .. } => "register_hand_tracking",
+            IntentValue::UnregisterHandTracking { .. } => "unregister_hand_tracking",
             IntentValue::RegisterHumanoidBoneMap { .. } => "register_humanoid_bone_map",
             IntentValue::UnregisterHumanoidBoneMap { .. } => "unregister_humanoid_bone_map",
             IntentValue::HumanoidBoneMapGltfInitialized { .. } => {

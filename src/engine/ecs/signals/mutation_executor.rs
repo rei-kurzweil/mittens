@@ -494,6 +494,12 @@ impl RxMutationExecutor {
                 let component = *component_id;
                 systems.register_avatar_control(component);
             }
+            IntentValue::RegisterHandTracking { component_id } => {
+                systems.hand_tracking.register(*component_id);
+            }
+            IntentValue::UnregisterHandTracking { component_id } => {
+                systems.hand_tracking.unregister(world, *component_id, emit);
+            }
             IntentValue::RegisterHumanoidBoneMap { component_id } => {
                 systems
                     .humanoid_bone_map

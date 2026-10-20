@@ -3,6 +3,8 @@
 Date: 2026-10-09
 
 Status: proposed architecture and protocol outline; no bridge or receiver implemented.
+Ownership decision (2026-10-19): a shared engine-side `MediaPipeSystem` owns the provider
+state and publishes independent hand/eye channels to their semantic tracking systems.
 
 Release target: [mittens-engine 0.10.0](epic/0.10.0/README.md), following the
 normalized hand sample/selection foundation. The bridge remains optional.
@@ -14,13 +16,59 @@ Depends on the normalized sample/selection contract in
 
 Run MediaPipe in a separately installed Python process, with a dedicated virtual environment,
 camera capture dependencies, and explicitly installed model assets. Mittens receives compact
-tracking snapshots through a provider adapter. Building and starting Mittens, or using OpenXR,
+tracking snapshots through `MediaPipeSystem`. Building and starting Mittens, or using OpenXR,
 must require none of those dependencies. Keep camera inference outside the render/tick thread.
 
 Start with one-way nonblocking UDP over loopback and full snapshots. Manual launch is sufficient
 for the first slice; a later opt-in launcher can manage an explicitly configured interpreter and
 report install/model/camera failures. Installation and model download are separate user actions,
 not engine startup behavior. Keep the engine/bridge protocol independently versioned.
+
+## Engine owner: MediaPipeSystem
+
+Introduce `MediaPipeSystem` in `src/engine/ecs/system/mediapipe_system.rs`, retained as
+`SystemWorld.mediapipe`. This is the shared engine-side provider owner for hands, eyes, and
+eventually mouth/face channels. The external Python process owns camera capture, model loading,
+and inference; the Rust system owns ingestion and the provider state consumed by engine systems.
+The name and ownership boundary are decided here; this system is not implemented yet.
+
+| Owner | State and logic |
+| --- | --- |
+| Python MediaPipe bridge | Camera/device, loaded models, inference work, producer identity, capture timestamps, encoded channel snapshots |
+| `MediaPipeSystem` | Shared receiver registrations, sockets, bounded receive/decode, protocol validation, stream epochs, retired-stream rejection, per-channel sequences and receipt times, coordinate/calibration metadata, normalization, latest immutable snapshots, provider diagnostics |
+| `HandTrackingSystem` | Hand-source selection, articulation freshness policy, rig bindings, finger rotation ownership, and release/fallback |
+| `XREyeTrackingSystem` | MediaPipe eye-source subscriptions, eye-source selection, normalized eye state consumed by AVC, and eye-channel staleness policy |
+| Future lower-face consumer | Mouth/face routing and composition, independent of eye-source selection |
+
+One `MediaPipeSystem` can retain endpoint-keyed receiver/session records. Each record owns one
+socket and the latest validated state for its configured producer, plus subscribers keyed by
+component and requested channel. Hand, eye, and future mouth source components share that record;
+multiple avatars consume its snapshots without binding additional sockets. Configuration belongs
+to the provider/source declarations; components do not each own a copy of the live receiver.
+Removing the final subscriber releases its receiver and retained session state. Registration
+must remain idle when no MediaPipe consumer is configured.
+
+Keep the common stream envelope separate from channel state. Each channel has its own supported
+schema/version, sequence watermark, engine receipt time, validity/capabilities, calibration
+generation, and latest sample. Hand traffic cannot refresh eye freshness, or vice versa. A hand
+disappearance clears the hand channel while leaving a valid eye channel available. Producer
+restart retires the old stream and invalidates every channel from that stream; changed calibration
+invalidates the affected normalized samples. Reusing a cached snapshot preserves its original
+receipt time and sequence rather than making it appear newly received each tick.
+
+Run a bounded, nonblocking `MediaPipeSystem` receive/update phase before the hand and eye
+consumers read samples in `SystemWorld`. If a worker is needed later, it publishes complete
+snapshots through a latest-value mailbox; only the engine phase updates retained provider state.
+Channel adapters live with the MediaPipe provider and publish the existing semantic contracts:
+`HandTrackingFrame` with `HandTrackingProvider::MediaPipe`, and the eye system's normalized
+eye-sample contract once its adapter exists. The semantic systems consume those outputs and own
+their selection/release decisions. `MediaPipeSystem` does not resolve avatar bones or write poses.
+
+The first implementation supplies hands, using a replay producer before camera inference. Keep
+eye/mouth channels explicitly unavailable until their adapters and semantic contracts are
+implemented. Sharing this system does not make the existing `MediaPipeEyeTracking` placeholder
+functional or require eye inference for hand tracking. Manual bridge launch remains sufficient;
+a later explicitly configured process launcher can attach its lifecycle/status to this system.
 
 ## Why UDP initially
 
@@ -41,8 +89,8 @@ but the MediaPipe eye source is currently a placeholder.
 
 Bind an explicitly configured loopback address/port by default. A port conflict reports provider
 unavailability without failing engine startup. Remote transport, discovery, encryption, and a
-general tracking daemon are deferred. Separate receiver instances must not silently compete for
-the same endpoint; multiple avatars should share one received provider snapshot.
+general tracking daemon are deferred. `MediaPipeSystem` shares one receiver per configured
+endpoint; multiple avatars consume the same received provider snapshot.
 
 ## MediaPipe data and coordinate limits
 
@@ -99,7 +147,7 @@ and bridge lifecycle; give each channel its own payload/version and sequence sem
 design one giant mandatory packet for all tracking modalities. Eye tracking needs its own real
 adapter and normalized gaze contract; the existing placeholder is not made functional by this task.
 
-## Receiver behavior and timing
+## MediaPipeSystem receive behavior and timing
 
 1. Decode outside retargeting. Reject wrong magic/version/length/schema, oversized/truncated
    datagrams, nonfinite values, invalid side/masks, and unsupported coordinate conventions.
@@ -126,6 +174,9 @@ console spam. Payload validation and loss tests must not need a camera or instal
       explicit model asset instructions, configurable camera/endpoint, and clear startup errors.
 - [ ] A synthetic/replay producer emits the same protocol without importing MediaPipe.
 - [ ] Bridge restart and engine restart work independently; receiver never blocks rendering.
+- [ ] `SystemWorld.mediapipe` owns shared endpoint/session state; hand/eye consumers subscribe
+      without creating competing sockets or duplicating producer lifecycle logic.
+- [ ] Removing the final subscriber releases its receiver; unused MediaPipe support remains idle.
 - [ ] Engine builds/runs without Python, MediaPipe, camera libraries, or model files installed.
 - [ ] Protocol fixtures verify Python encoding and Rust decoding, including malformed packets,
       sequence reorder, retired epochs, loss, empty detections, and unavailable endpoint.
@@ -135,6 +186,8 @@ console spam. Payload validation and loss tests must not need a camera or instal
 - [ ] OpenXR retains controller/wrist behavior while MediaPipe articulation is selected or absent.
 - [ ] A future shared eye/hand process can reuse camera/lifecycle infrastructure without coupling
       the engine's independent channel adapters or making eye inference mandatory.
+- [ ] Per-channel receipt times, sequence watermarks, and validity prevent hand traffic from
+      refreshing stale eyes, while producer restart invalidates all affected channel snapshots.
 
 Decide the port, exact binary layout, timeout values, supported Python/platform matrix, model
 version, and whether managed launch is useful during implementation. Benchmark the simple UDP

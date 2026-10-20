@@ -2,8 +2,8 @@
 
 Date: 2026-10-09
 
-Status: proposed; repository investigation complete, implementation not started.
-This task and its companion tasks authorize no source changes in this documentation pass.
+Status: first OpenXR/finger slice implemented (2026-10-19); Vive Focus 3 visual validation
+pending. The MediaPipe bridge and broader finger automapping remain separate follow-ups.
 
 Release target: [mittens-engine 0.10.0](epic/0.10.0/README.md).
 The release epic includes this task, its prerequisite basis audit, and the
@@ -11,7 +11,7 @@ optional MediaPipe bridge in dependency order.
 
 ## Where we got to
 
-Controller tracking and hand-root tracking are implemented. Individual tracked fingers are not.
+Controller tracking, hand-root tracking, and opt-in individual finger rotation are implemented.
 The current flow in [OpenXRSystem](../../src/engine/ecs/system/openxr_system.rs) is:
 
 1. Create left/right `XR_EXT_hand_tracking` trackers when supported, requesting both controller
@@ -21,18 +21,87 @@ The current flow in [OpenXRSystem](../../src/engine/ecs/system/openxr_system.rs)
    from native OpenXR axes to the canonical hand frame. If neither orientation is usable,
    synthesize from `MIDDLE_METACARPAL -> MIDDLE_PROXIMAL` and little-to-index palm width.
 4. Use wrist position, falling back to palm position. Retain the root pose, root identity, and
-   reported data source in `HandRootPoseCache`; arrays remain local to sampling/debugging.
+   reported data source in `HandRootPoseCache`. Publish all 26 joints, flags, native values,
+   root identity, source, epoch, sequence, reference space, and timestamps in one immutable
+   `HandTrackingFrame`, containing both hands.
 5. Prefer `WristPalm` for a valid root reported as unobstructed tracking. Otherwise retain
    controller priority, falling back to the root when the requested action pose is unavailable.
 6. AVC applies the retained avatar hand-basis correction and drives arm IK.
+7. `HandTrackingSystem` selects a fresh articulation sample independently per hand and
+   retargets mapped finger rotations after arm IK has flushed, before skinning.
 
-There is no full joint snapshot handed to a finger system, no retained mapping for all finger
-bones, and no `hand_tracking_system` today. Existing hand landmarks support basis construction;
-they do not mean those fingers are individually tracked.
+The new [sample contract](../../src/engine/ecs/system/hand_tracking.rs) and
+[hand system](../../src/engine/ecs/system/hand_tracking_system.rs) keep provider selection separate
+from imported bone names. OpenXR remains the only live adapter; a MediaPipe enum/configuration
+entry and replay tests establish its boundary without a camera or Python dependency.
 
 The [humanoid map work](humanoid-bone-map-automapping-and-mms-presets.md) implemented conservative
-semantic mapping and automatic hand bases. Its current finger slots are only middle
-proximal/distal and index/little proximal landmarks on each side. Full finger driving was deferred.
+semantic mapping and automatic hand bases. It now includes all 30 rotating finger slots;
+the shared VRoid preset explicitly maps three bones per finger on both sides. Thumb1 maps to
+metacarpal, Thumb2 to proximal, Thumb3 to distal. Non-thumb 1/2/3 map to
+proximal/intermediate/distal. New slots require explicit declarations in this slice.
+
+## Implemented first slice
+
+Opt in under the owning GLTF alongside its humanoid map:
+
+```mms
+GLTF.new("assets/models/rei(mu).glb") {
+    bisket_humanoid_bone_map()
+    HandTracking.new()
+        .source("auto")
+        .timeout(0.15)
+        .release_duration(0.15)
+}
+```
+
+`examples/mittens-corp.mms` enables this for Reimu. Source accepts `auto`, `openxr`, or
+`mediapipe`; auto prefers OpenXR independently on each side. Selecting MediaPipe alone produces
+no articulation until its adapter is implemented. The 150 ms timeout/release defaults are
+provisional and configurable, awaiting live headset tuning. There is no additional tracking
+smoothing or activation hysteresis in this slice.
+
+Finger directions come from measured segment endpoints. Roll comes from transporting the
+canonical palm width down each finger with successive minimum rotations, rather than projecting
+a fixed palm normal through a closed fist. Native joint orientations and their validity/tracked
+flags remain available for diagnostics/future twist refinement. This slice estimates finger twist;
+it does not reproduce every native joint's axial twist. Thumb opposition follows its three
+measured segments. Nearly antiparallel adjacent segments and zero-length segments release the
+affected finger instead of selecting an arbitrary roll axis.
+
+Bindings use the existing owning-GLTF semantic report and immutable rest geometry, honor
+published `JointRetargetBasis` overrides, and refuse invalid/conflicting authored bases. A
+VRoid distal bone has no imported tip: its rest direction continues the incoming rest segment.
+Tracked tips are endpoints, never extra rotating bones. No translations or scales are written.
+Actual helper-parent rotations and desired rotations of already-driven parents participate in
+the local conversion. Wrist translation/rotation remain owned by the existing XR/AVC/IK path.
+
+Tracking overrides evaluated finger animation while active. The system retains the underlying
+pose, observes new animation writes, and blends toward it on missing/invalid/stale samples;
+without animation this is the imported rest pose. A missing segment releases its complete finger
+chain, while other valid fingers continue. Duplicate HandTracking components on one GLTF disable
+that rig's tracking. Removal or map/basis-generation changes restore surviving owned bones before
+rebinding. Source epochs and spaces never carry joint filters or geometry across frames: each
+articulation uses one complete sample and independently recomputes its frames.
+
+Set `CAT_DEBUG_HAND_TRACKING=1` to log source/epoch/data-source and tracked-finger-count changes.
+Binding diagnostics identify unresolved chains and unusable rest bases. The existing laser still
+uses its immutable `RestAttachment`; it does not automatically follow a curled fingertip.
+
+Automated tests import the actual Reimu skeleton without GPU assets and cover rest reconstruction,
+five independent fingers on both sides, fists/splay/opposition, changed bone axes, helper twists,
+current parent ordering, partial/NaN/degenerate/stale data, animation release, provider selection,
+map rebinding, component removal, and two identically named avatar instances. OpenXR adapter tests
+cover all 26 slots/flags and loss publication; existing wrist/arm IK regression tests remain in
+place. Live skinning, thumb appearance, source handover, and timeout tuning still require a
+Vive Focus 3 run.
+
+Validation for this slice: 43 hand-related tests, 11 humanoid-map tests, 6 generic retarget-basis
+tests, 3 runtime-schema tests, and the retained `mittens-corp` Reimu scene test pass. Broader
+scene checks also encounter two unrelated legacy linear-velocity scene failures
+(`undefined: 'is_string'`) and an old humanoid-example count assertion expecting 29 while 31
+qualifying examples exist. The latter 31-example set already exists in HEAD; this slice adds
+no example files. Those unrelated failures are outside the focused passing gate.
 
 The older [hand-armature design](../spec/hand-tracking-armature.md) is conceptual, not implemented.
 Its joint numbering is incorrect, its per-joint `Space::locate` sketch does not describe the
@@ -53,14 +122,16 @@ and little 21–25. Use semantic enums, not the older document's numeric table.
    A replay producer can develop this adapter independently of camera setup.
 5. Add conservative finger automapping and broader rig validation after the explicit path works.
 
-## Proposed responsibilities
+## Responsibilities and follow-ups
 
-Names below are proposed, not existing APIs or finalized MMS syntax.
+`HandTrackingSystem`, `HandTracking`, and the OpenXR publication path now exist. The planned
+[`MediaPipeSystem`](optional-mediapipe-tracking-bridge.md#engine-owner-mediapipesystem)
+owns the shared receiver/provider state for the next slice and feeds independent semantic systems.
 
 | Owner | Responsibility |
 | --- | --- |
 | `OpenXRSystem` | Own session/trackers, locate joints at predicted time, publish an immutable sample |
-| MediaPipe receiver/adapter | Receive snapshots, validate freshness, normalize landmark semantics and coordinate metadata |
+| `MediaPipeSystem` (planned) | Own shared endpoint/stream/channel state, receive and normalize snapshots, and publish independent hand/eye provider samples |
 | `HandTrackingSystem` in `hand_tracking_system.rs` | Retain sources, choose per-hand samples, expose normalized capabilities/status |
 | Hand rig binding/retargeting consumer | Resolve imported bones and bases once; derive and queue finger rotations |
 | AVC and IK | Consume the selected wrist target and solve arms using the corrected visual hand frame |
@@ -165,21 +236,23 @@ avatar-hand aim, and fingertip position as explicit choices.
 
 ## Acceptance criteria
 
-- [ ] All 26 OpenXR joints reach a coherent retained sample with flags, time, and source space.
-- [ ] An explicit mapping animates five fingers independently on both sides of a tested VRoid rig.
-- [ ] Flexion, extension, splay, thumb opposition, and fist gestures preserve avatar bone lengths.
-- [ ] Wrist frame remains stable when only fingers curl, and controller behavior remains correct.
-- [ ] Missing joints, partial hands, degenerate geometry, stale data, and provider loss release
+The checked items have deterministic coverage. Live headset/model verification remains below.
+
+- [x] All 26 OpenXR joints reach a coherent retained sample with flags, time, and source space.
+- [x] An explicit mapping animates five fingers independently on both sides of the imported Reimu rig.
+- [x] Flexion, extension, splay, thumb opposition, and fist gestures preserve avatar bone lengths.
+- [x] Wrist frame remains stable when only fingers curl, and controller behavior remains correct.
+- [x] Missing joints, partial hands, degenerate geometry, stale data, and provider loss release
       ownership predictably without NaNs, sudden flips, or stale poses.
-- [ ] Controller wrist with hand-relative tracked fingers works without moving the wrist twice.
+- [x] Controller wrist with hand-relative tracked fingers works without moving the wrist twice.
 - [ ] Source switches, session restarts, reference-space resets, and rig respawns invalidate filters
       and bindings correctly; two avatar instances do not cross-resolve.
 - [ ] Replay tests cover arbitrary bone axes, helper parents, mirrored hands, and parent update order;
       live hardware/model checks verify visual skinning and source switching.
-- [ ] MediaPipe is optional at build, startup, and runtime; absence does not block OpenXR operation.
+- [x] MediaPipe is optional at build, startup, and runtime; absence does not block OpenXR operation.
 
-## Open decisions for implementation
+## Follow-up decisions
 
-Finalize component/MMS names, complete finger slots, calibration poses, joint roll constraints,
-filter settings, measured timeouts, and live pointer policy after the basis audit and replay slice.
+Tune timeouts/release durations with hardware; evaluate thumb roll and optional native joint twist,
+source recovery hysteresis, broader finger automapping, and any live fingertip pointer policy.
 Gesture recognition can consume normalized samples later; it is not required for initial fingers.
