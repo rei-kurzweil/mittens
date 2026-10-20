@@ -602,7 +602,7 @@ mod vulkano_backend {
         deformation_output_capacity: u32,
         deformation_stats: DeformationStats,
 
-        xr_offscreen: Option<XrOffscreenTargets>,
+        xr_eye_attachments: Option<XrEyeAttachments>,
         mirror_offscreen: std::collections::HashMap<String, MirrorOffscreenTargets>,
 
         pub window_resized: bool,
@@ -610,14 +610,15 @@ mod vulkano_backend {
         pub images_in_flight: Vec<Option<Box<dyn GpuFuture>>>,
         /// One renderer-wide ordering chain for all commands that may touch shared caches.
         submission_future: Option<Box<dyn GpuFuture>>,
+        // Drop after submission_future so submitted views retire before their
+        // last retained OpenXR swapchain owner can be destroyed.
+        xr_image_in_flight: Option<Arc<crate::engine::graphics::xr_renderer::XrSwapchainImage>>,
     }
 
-    struct XrOffscreenTargets {
+    struct XrEyeAttachments {
         extent: [u32; 2],
         color_format: Format,
-        color_images: Vec<Arc<vulkano::image::Image>>,
         msaa_color_views: Vec<Arc<ImageView>>,
-        color_views: Vec<Arc<ImageView>>,
         /// Combined depth+stencil views (same view used for both attachments).
         depth_views: Vec<Arc<ImageView>>,
     }
@@ -2411,12 +2412,13 @@ mod vulkano_backend {
                 deformation_output_capacity: 0,
                 deformation_stats: DeformationStats::default(),
 
-                xr_offscreen: None,
+                xr_eye_attachments: None,
                 mirror_offscreen: HashMap::new(),
 
                 window_resized: false,
                 recreate_swapchain: false,
                 images_in_flight: (0..framebuffer_count).map(|_| None).collect(),
+                xr_image_in_flight: None,
                 submission_future: Some(sync::now(device.clone()).boxed()),
             };
 
@@ -2463,17 +2465,17 @@ mod vulkano_backend {
             }
         }
 
-        fn ensure_xr_offscreen_targets(
+        fn ensure_xr_eye_attachments(
             &mut self,
             view_count: usize,
             extent: [u32; 2],
         ) -> Result<(), Box<dyn std::error::Error>> {
             let color_format = self.swapchain_state.swapchain.image_format();
 
-            let needs_recreate = self.xr_offscreen.as_ref().is_none_or(|t| {
+            let needs_recreate = self.xr_eye_attachments.as_ref().is_none_or(|t| {
                 t.extent != extent
                     || t.color_format != color_format
-                    || t.color_views.len() != view_count
+                    || t.depth_views.len() != view_count
                     || (self.msaa_samples == SampleCount::Sample1) != t.msaa_color_views.is_empty()
                     || (self.msaa_samples != SampleCount::Sample1
                         && t.msaa_color_views.len() != view_count)
@@ -2485,37 +2487,11 @@ mod vulkano_backend {
 
             let memory_allocator = self.context.memory_allocator().clone();
 
-            let mut color_images = Vec::with_capacity(view_count);
             let mut msaa_color_views = Vec::with_capacity(view_count);
-            let mut color_views = Vec::with_capacity(view_count);
             let mut depth_views = Vec::with_capacity(view_count);
 
             for _ in 0..view_count {
-                // Resolve target (single-sampled): used for transfer/copy out.
-                let color_image = vulkano::image::Image::new(
-                    memory_allocator.clone(),
-                    vulkano::image::ImageCreateInfo {
-                        image_type: vulkano::image::ImageType::Dim2d,
-                        format: color_format,
-                        extent: [extent[0], extent[1], 1],
-                        samples: SampleCount::Sample1,
-                        // OpenXR copies from these images into the XR swapchain target, so keep
-                        // them usable for both transfer and sampling.
-                        usage: vulkano::image::ImageUsage::COLOR_ATTACHMENT
-                            | vulkano::image::ImageUsage::SAMPLED
-                            | vulkano::image::ImageUsage::TRANSFER_SRC,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
-                        ..Default::default()
-                    },
-                )?;
-
-                let color_view = ImageView::new_default(color_image.clone())
-                    .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
-
-                // Multisampled color attachment (optional): resolved into `color_view`.
+                // Optional MSAA color resolves directly into the acquired XR image.
                 if self.msaa_samples != SampleCount::Sample1 {
                     let msaa_color_image = vulkano::image::Image::new(
                         memory_allocator.clone(),
@@ -2567,17 +2543,13 @@ mod vulkano_backend {
                 )
                 .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
 
-                color_images.push(color_image);
-                color_views.push(color_view);
                 depth_views.push(depth_view);
             }
 
-            self.xr_offscreen = Some(XrOffscreenTargets {
+            self.xr_eye_attachments = Some(XrEyeAttachments {
                 extent,
                 color_format,
-                color_images,
                 msaa_color_views,
-                color_views,
                 depth_views,
             });
 
@@ -2702,30 +2674,39 @@ mod vulkano_backend {
             Ok(self.mirror_offscreen.get(mirror_key).unwrap())
         }
 
-        pub fn submit_xr_eye_offscreen(
+        pub fn begin_xr_frame(
+            &mut self,
+            swapchain: &mut crate::engine::graphics::XRSwapchain,
+            image_index: u32,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            if self.xr_image_in_flight.is_some() {
+                return Err("previous XR image has not completed".into());
+            }
+            self.xr_image_in_flight =
+                Some(swapchain.render_image(self.context.device().clone(), image_index)?);
+            Ok(())
+        }
+
+        pub fn submit_xr_eye(
             &mut self,
             visual_world: &mut VisualWorld,
             eye: usize,
             extent: [u32; 2],
         ) -> Result<(), Box<dyn std::error::Error>> {
-            // Submitted command buffers retain their descriptor sets and image
-            // views. Replacing the cache entry is therefore safe without idling
-            // the device, while submission_future orders consumers of the new
-            // mirror texture after its publication copy.
             self.apply_pending_runtime_texture_updates();
-
-            // MVP: assume PRIMARY_STEREO (2 eyes).
-            let view_count = 2;
-            self.ensure_xr_offscreen_targets(view_count, extent)?;
-            let color_format = self
-                .xr_offscreen
+            let target = self
+                .xr_image_in_flight
                 .as_ref()
-                .ok_or("XR offscreen targets missing")?
-                .color_format;
+                .ok_or("no acquired XR image")?;
+            let view_count = target.view_count();
+            let output_view = target.eye_view(eye).ok_or("XR eye out of range")?;
+            let color_format = output_view.format();
+            if color_format != self.window_color_format() {
+                return Err("XR color format does not match the scene pipelines".into());
+            }
 
             let post_process_config = visual_world.post_processing().clone();
-            let post_process_active = post_process_config.is_active();
-            if post_process_active {
+            let post_process = if post_process_config.is_active() {
                 self.post_processing_renderer.ensure_xr_targets(
                     view_count,
                     extent,
@@ -2733,31 +2714,19 @@ mod vulkano_backend {
                     self.msaa_samples,
                     &post_process_config,
                 )?;
-            }
-
-            let Some(targets) = self.xr_offscreen.as_ref() else {
-                return Err("XR offscreen targets missing".into());
-            };
-
-            let resolve_view = targets
-                .color_views
-                .get(eye)
-                .ok_or("XR offscreen eye out of range")?
-                .clone();
-
-            let post_process = if post_process_active {
-                let pp_targets = self
+                let targets = self
                     .post_processing_renderer
                     .xr_frame_targets(eye)
                     .ok_or("missing XR post-processing targets")?
                     .clone();
                 Some(PostProcessInvocation {
-                    final_output_view: resolve_view.clone(),
-                    final_color_format: targets.color_format,
+                    final_output_view: output_view.clone(),
+                    final_color_format: color_format,
                     config: post_process_config,
-                    targets: pp_targets,
+                    targets,
                 })
             } else {
+                self.ensure_xr_eye_attachments(view_count, extent)?;
                 None
             };
 
@@ -2768,32 +2737,32 @@ mod vulkano_backend {
                             .main_msaa_color
                             .clone()
                             .unwrap_or_else(|| post.targets.main_color.clone()),
-                        if post.targets.main_msaa_color.is_some() {
-                            Some(post.targets.main_color.clone())
-                        } else {
-                            None
-                        },
+                        post.targets
+                            .main_msaa_color
+                            .as_ref()
+                            .map(|_| post.targets.main_color.clone()),
                         post.targets.depth.clone(),
                     )
-                } else if self.msaa_samples != SampleCount::Sample1 {
-                    let msaa_view = targets
-                        .msaa_color_views
-                        .get(eye)
-                        .ok_or("XR MSAA color eye out of range")?
-                        .clone();
-                    let depth_view = targets
-                        .depth_views
-                        .get(eye)
-                        .ok_or("XR depth eye out of range")?
-                        .clone();
-                    (msaa_view, Some(resolve_view.clone()), depth_view)
                 } else {
+                    let targets = self
+                        .xr_eye_attachments
+                        .as_ref()
+                        .ok_or("XR eye attachments missing")?;
                     let depth_view = targets
                         .depth_views
                         .get(eye)
                         .ok_or("XR depth eye out of range")?
                         .clone();
-                    (resolve_view.clone(), None, depth_view)
+                    if self.msaa_samples != SampleCount::Sample1 {
+                        let msaa_view = targets
+                            .msaa_color_views
+                            .get(eye)
+                            .ok_or("XR MSAA color eye out of range")?
+                            .clone();
+                        (msaa_view, Some(output_view), depth_view)
+                    } else {
+                        (output_view, None, depth_view)
+                    }
                 };
 
             let xr_camera = visual_world
@@ -2848,16 +2817,10 @@ mod vulkano_backend {
         pub fn submit_xr_mirror_captures(
             &mut self,
             visual_world: &mut VisualWorld,
-            extent: [u32; 2],
         ) -> Result<(), Box<dyn std::error::Error>> {
             self.apply_pending_runtime_texture_updates();
 
-            self.ensure_xr_offscreen_targets(2, extent)?;
-            let color_format = self
-                .xr_offscreen
-                .as_ref()
-                .ok_or("XR offscreen targets missing")?
-                .color_format;
+            let color_format = self.window_color_format();
 
             self.render_mirror_captures(
                 visual_world,
@@ -2996,19 +2959,13 @@ mod vulkano_backend {
             Ok(())
         }
 
-        pub fn xr_offscreen_vk_image(&self, eye: usize) -> Option<ash::vk::Image> {
-            let targets = self.xr_offscreen.as_ref()?;
-            let img = targets.color_images.get(eye)?;
-            Some(img.handle())
-        }
-
         /// Marks the renderer-wide submission chain complete after an external
         /// same-queue fence has been observed.
         ///
         /// # Safety
         ///
         /// The caller must have established that all GPU work represented by
-        /// `submission_future` has completed. The OpenXR raw-copy fence is such
+        /// `submission_future` has completed. The OpenXR completion fence is such
         /// a proof because its submission follows the Vulkano work on the same
         /// graphics queue.
         pub unsafe fn finish_xr_batch_after_external_wait(&mut self) {
@@ -3020,14 +2977,15 @@ mod vulkano_backend {
                 future.cleanup_finished();
             }
             self.submission_future = Some(sync::now(device).boxed());
+            self.xr_image_in_flight = None;
         }
 
-        /// Completes an interrupted XR batch without allowing a raw copy to
-        /// consume partially rendered offscreen targets.
+        /// Completes an interrupted XR batch before releasing its acquired image.
         pub fn wait_for_xr_batch_on_error(&mut self) -> Result<(), Box<dyn std::error::Error>> {
             let device = self.context.device().clone();
             let Some(mut future) = self.submission_future.take() else {
                 self.submission_future = Some(sync::now(device).boxed());
+                self.xr_image_in_flight = None;
                 return Ok(());
             };
 
@@ -3041,6 +2999,7 @@ mod vulkano_backend {
             }
             future.cleanup_finished();
             self.submission_future = Some(sync::now(device).boxed());
+            self.xr_image_in_flight = None;
             Ok(())
         }
 
@@ -6541,7 +6500,21 @@ impl VulkanoRenderer {
             })
     }
 
-    pub fn submit_xr_eye_offscreen(
+    /// Begins rendering to an image that the caller has acquired and waited.
+    /// Complete/retire the batch before releasing that image back to OpenXR.
+    pub fn begin_xr_frame(
+        &mut self,
+        swapchain: &mut crate::engine::graphics::XRSwapchain,
+        image_index: u32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let vulkano = self
+            .vulkano
+            .as_mut()
+            .ok_or("VulkanoRenderer not initialized")?;
+        vulkano.begin_xr_frame(swapchain, image_index)
+    }
+
+    pub fn submit_xr_eye(
         &mut self,
         visual_world: &mut VisualWorld,
         eye: usize,
@@ -6551,13 +6524,12 @@ impl VulkanoRenderer {
             return Err("VulkanoRenderer not initialized (call init_for_window first)".into());
         };
 
-        vulkano.submit_xr_eye_offscreen(visual_world, eye, extent)
+        vulkano.submit_xr_eye(visual_world, eye, extent)
     }
 
     pub fn submit_xr_mirror_captures(
         &mut self,
         visual_world: &mut VisualWorld,
-        extent: [u32; 2],
     ) -> Result<(), Box<dyn std::error::Error>> {
         if !visual_world.mirror_captures_enabled() {
             return Ok(());
@@ -6566,11 +6538,7 @@ impl VulkanoRenderer {
             return Err("VulkanoRenderer not initialized (call init_for_window first)".into());
         };
 
-        vulkano.submit_xr_mirror_captures(visual_world, extent)
-    }
-
-    pub fn xr_offscreen_vk_image(&self, eye: usize) -> Option<ash::vk::Image> {
-        self.vulkano.as_ref()?.xr_offscreen_vk_image(eye)
+        vulkano.submit_xr_mirror_captures(visual_world)
     }
 
     /// Runs a raw Vulkan operation while holding Vulkano's external-

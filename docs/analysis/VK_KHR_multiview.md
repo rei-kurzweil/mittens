@@ -1,243 +1,65 @@
-# VK_KHR_multiview for XR rendering
+# Vulkan multiview for XR rendering
 
-This note explores how cat-engine could use Vulkan multiview (`VK_KHR_multiview`, core since Vulkan 1.1) to speed up XR rendering.
+Status: future optimization. As of 2026-10-20, final output already renders directly into OpenXR image layers; stereo draw recording is still per eye. Locked Vulkano 0.35.2 exposes multiview view masks, so wrapper support is established. Device support and engine integration still need implementation and validation.
 
-2026-10-19 source audit: locked Vulkano 0.35.2 exposes `view_mask` in both `RenderingInfo` and `PipelineRenderingCreateInfo`. The wrapper uncertainty discussed below is resolved for this version; engine integration and device support remain unimplemented/unverified. See the [Focus 3 Android audit](../../android/docs/focus-3-port-audit.md).
+## Current renderer
 
-## Why multiview helps
+`XRSwapchain` creates a single-sample array swapchain with `array_size = view_count`. Once an image is acquired and waited, `VulkanoRenderer::begin_xr_frame` borrows it through Vulkano and caches a 2D view for each eye layer.
 
-Typical stereo rendering does the same draw sequence twice:
+`submit_xr_eye` records the draw stream separately for each eye:
 
-- eye 0: bind pipeline, bind descriptors, draw scene
-- eye 1: bind pipeline, bind descriptors, draw scene
+- Without MSAA, draw into the corresponding runtime-owned image layer.
+- With MSAA, resolve directly into that layer.
+- With post-processing, write the final composite into that layer.
 
-Even if the GPU cost is similar, the CPU cost (command buffer building/submission, state setup, culling, draw-call overhead) often doubles.
+A completion-only submission/fence follows the mirror/eye submissions on the shared graphics queue. After completion, retire Vulkano tracking and release the image to OpenXR. No final eye-image copy is needed. See [submission and ownership](../task/openxr-render-submission-pipelining.md).
 
-**Multiview** renders multiple views (eyes) in a single render pass/rendering scope by targeting an **array image** with multiple layers and using `gl_ViewIndex` (SPIR-V `BuiltIn ViewIndex`) in shaders.
+## Proposed multiview path
 
-High-level result:
+Render both eyes in one draw sequence by using array attachments and shader `gl_ViewIndex`:
 
-- build/submit one render sequence
-- rasterize into layer 0 and layer 1 in one go
-- reduce CPU overhead and pipeline state churn
+1. Query/enable `multiview` and check the maximum view count.
+2. Add a runtime-output image view covering both array layers. Retain the existing per-eye views for fallback and diagnostics.
+3. Use array depth/stencil and, when enabled, array multisample color attachments. Resolve directly into the runtime output array.
+4. Set matching `view_mask` values in `RenderingInfo` and `PipelineRenderingCreateInfo` (normally `0b11`).
+5. Upload both eyes' camera data together and select it by `gl_ViewIndex` in every participating shader.
+6. Record the shared draw sequence once, retaining the existing completion and OpenXR ownership protocol.
 
-## Current engine XR path (today)
+No offscreen-copy stage is needed to introduce multiview.
 
-The XR swapchain is already created as an array swapchain:
+## Vulkan and wrapper requirements
 
-- [XRSwapchain::new](../../src/engine/graphics/xr_swapchain.rs) uses `array_size = view_count`.
+Multiview is core in Vulkan 1.1, but its device feature must still be enabled. For older APIs, use `VK_KHR_multiview` when supported.
 
-However, the current rendering path is **not multiview**:
+The engine uses dynamic rendering. Vulkano 0.35.2 exposes:
 
-- OpenXR acquires a runtime-owned swapchain image.
-- Renderer renders each eye into a separate offscreen image (`render_xr_eye_offscreen`).
-- Engine copies offscreen eye 0 → XR swapchain layer 0 and eye 1 → layer 1 using `ash` copy commands.
+- `RenderingInfo::view_mask` in `command_buffer/commands/render_pass.rs`.
+- `PipelineRenderingCreateInfo::view_mask` in `pipeline/graphics/subpass.rs`.
 
-Relevant code:
+An Android device without dynamic rendering needs a compatible classic render-pass path independently of the multiview optimization. See the [Focus 3 audit](../../android/docs/focus-3-port-audit.md).
 
-- XR per-eye render + copy loop: [openxr_system.rs](../../src/engine/ecs/system/openxr_system.rs)
-- Offscreen eye targets: [vulkano_renderer.rs](../../src/engine/graphics/vulkano_renderer.rs)
+## Shader and scene work
 
-This is a correct bring-up path, but it intentionally duplicates all draw work per eye.
+Camera buffers currently select an eye for each recorded view. Multiview needs camera arrays and shader indexing, for example:
 
-## Two practical multiview options
+```glsl
+mat4 V = camera.view[gl_ViewIndex];
+mat4 P = camera.proj[gl_ViewIndex];
+```
 
-### Option A (low-risk): multiview into an offscreen **array** image, then copy to XR
+Audit ordinary, skinned, outline, clipped UI, mirror, and fullscreen-effect pipelines. Preserve shared deformation results and correctly select camera-dependent state.
 
-Keep the “copy into runtime swapchain images” model, but reduce the render work to **one** render instead of `view_count` renders.
+Culling must retain geometry visible in either eye. Multi-layer transparency currently sorts per eye; one shared ordering may be incorrect. Keep a per-eye transparency path or implement another correct stereo policy. Mirrors and post-processing also need explicit array/per-eye handling.
 
-1. Allocate XR offscreen targets as a single array image:
-   - color: `2D array`, layers = `view_count`, usage = `COLOR_ATTACHMENT | TRANSFER_SRC`
-   - depth: `2D array`, layers = `view_count`, usage = `DEPTH_STENCIL_ATTACHMENT`
-   - if MSAA: a multisampled color array + resolve to single-sample color array
-2. Begin rendering (dynamic rendering) or begin a render pass with multiview enabled.
-3. Draw the scene once.
-4. Copy array layer `i` into XR swapchain array layer `i`.
+## Expected gains and validation
 
-This removes:
+Multiview can reduce CPU draw recording, descriptor/state setup, and submission overhead. It still rasterizes/shades both eye views; do not assume that it halves GPU time.
 
-- per-eye command buffer build/submit
-- per-eye state binding, per-eye draw list iteration
+Keep the current direct per-eye renderer as a fallback. Compare:
 
-It keeps:
+- CPU command preparation/submission time and GPU time.
+- Correct eye selection, depth/stencil clipping, and transparency.
+- MSAA off/on, bloom off/on, and mirrors off/on.
+- Repeated image acquisition and session stop/restart.
 
-- the final copy step (still required unless we render directly into OpenXR images)
-
-### Option B (higher ambition): render directly into the OpenXR swapchain array image
-
-If the runtime swapchain image can be wrapped as a Vulkano image view (or rendered to via `ash` pipelines), we can eliminate the copy.
-
-This is more complex because OpenXR owns the images and the engine must:
-
-- create a suitable `VkImageView` covering array layers
-- ensure image usage/layout transitions are correct
-- ensure the image is compatible with the engine’s rendering abstraction
-
-Given the current architecture (Vulkano for draws, `ash` only for copies), **Option A** is the most straightforward first step.
-
-## Vulkan mechanics (what changes in the API)
-
-### Feature/extension availability
-
-- Vulkan 1.1+ includes multiview in core.
-- Otherwise: enable `VK_KHR_multiview`.
-- Device feature: `VkPhysicalDeviceMultiviewFeatures.multiview = VK_TRUE`.
-
-The engine already queries and passes OpenXR-required Vulkan extensions into renderer initialization (see [universe.rs](../../src/engine/universe.rs)).
-
-Multiview enabling is *not* something OpenXR mandates; it is purely a renderer optimization. We should:
-
-- enable it only when supported
-- keep a non-multiview fallback path
-
-### Render pass vs dynamic rendering
-
-Multiview originally shipped as a render-pass feature:
-
-- `VkRenderPassMultiviewCreateInfo` with `viewMasks` and `correlationMasks`
-
-But cat-engine currently uses **dynamic rendering** (see comments in [vulkano_renderer.rs](../../src/engine/graphics/vulkano_renderer.rs)).
-
-Dynamic rendering can support multiview in modern Vulkan via:
-
-- `VkRenderingInfo::viewMask` (bitmask of active views)
-- pipeline must be created for multiview-compatible rendering (implementation detail depends on wrapper)
-
-Verified in the locked Vulkano 0.35.2 source:
-
-- `RenderingInfo::view_mask` in `command_buffer/commands/render_pass.rs`
-- `PipelineRenderingCreateInfo::view_mask` in `pipeline/graphics/subpass.rs`
-
-If the target driver lacks dynamic rendering, we can:
-
-- add an XR-only render pass path using a multiview render pass
-- keep dynamic rendering for window rendering
-
-### Shader changes: using `ViewIndex`
-
-Multiview requires shaders to select per-eye camera data.
-
-In Vulkan GLSL:
-
-- use `gl_ViewIndex` (SPIR-V built-in `ViewIndex`)
-
-Typical pattern:
-
-- Store view/projection arrays in a uniform/SSBO:
-  - `view[view_count]`, `proj[view_count]`
-- Index by `gl_ViewIndex`:
-  - `mat4 V = view[gl_ViewIndex];`
-  - `mat4 P = proj[gl_ViewIndex];`
-
-This implies:
-
-- descriptor layout changes: camera data becomes an array (2 eyes)
-- renderer must upload both eye matrices together
-
-### Attachments: array images and resolves
-
-For multiview you render into array layers.
-
-- Color attachment: `VkImageView` type `2D_ARRAY`
-- Depth attachment: also `2D_ARRAY`
-
-If MSAA is enabled:
-
-- MSAA color array as attachment
-- resolve target is the single-sample color array
-
-Both must match layer count.
-
-### Copy step
-
-Even in Option A, the copy step becomes simpler:
-
-- copy from *one* offscreen color array image to the OpenXR swapchain array image
-- region per layer still needed (or use one region per layer)
-
-The current copy code already targets `dst_range.base_array_layer = eye`.
-
-## What we’d change in cat-engine (concrete)
-
-This is a practical implementation checklist tailored to the current code layout.
-
-### 1) Add a multiview-capable XR offscreen target
-
-Today: `XrOffscreenTargets` stores `Vec<Image>` per eye.
-
-Proposed:
-
-- Replace per-eye images with a single image that has `array_layers = view_count`.
-- Keep per-eye views only if needed for debugging.
-
-### 2) Add a renderer entry point: render all XR eyes in one pass
-
-Today:
-
-- `render_xr_eye_offscreen(eye)` renders exactly one eye.
-
-Proposed:
-
-- `render_xr_multiview_offscreen(view_count, extent)` which:
-  - ensures array targets
-  - begins rendering with `view_mask = (1 << view_count) - 1`
-  - binds camera descriptor containing arrays
-  - draws once
-
-### 3) Update camera buffer upload path for XR
-
-Today:
-
-- `build_draw_batches_command_buffer(..., camera_target = Xr, eye_index, ...)`
-
-Proposed:
-
-- supply a camera buffer that contains both eyes
-- shaders pick the right one via `gl_ViewIndex`
-
-This also affects skinned meshes if bone matrices are currently indexed by “eye slot” (the code hints at per-eye bone slots to avoid contention).
-
-### 4) Keep the OpenXRSystem mostly the same
-
-OpenXR path becomes:
-
-- render multiview offscreen once
-- copy offscreen array layers to runtime swapchain layers
-
-### 5) Fallback
-
-Keep the current per-eye path for:
-
-- devices without multiview
-- platforms where wrapper limitations block multiview + dynamic rendering
-
-## Risks and gotchas
-
-- **Device support**: Vulkano exposes the view masks, but the target must support the selected rendering API and multiview feature.
-- **Shader work**: all pipelines used for XR need to be multiview-safe (camera indexing via `gl_ViewIndex`).
-- **Culling**: if culling is currently eye-dependent, multiview needs either:
-  - conservative culling for both eyes
-  - multiview-aware culling (harder)
-- **Depth precision and clip control**: ensure both eyes use consistent conventions.
-- **Debuggability**: multiview makes “render just one eye” harder; keep a debug toggle.
-
-## Expected payoff
-
-- Lower CPU time for XR rendering (command buffer build + submission)
-- Potentially improved GPU efficiency (fewer pipeline transitions, better cache locality)
-- Simplifies the high-level XR render loop (one render, one copy)
-
-Copy cost remains unless we move to direct rendering into OpenXR images.
-
-## Suggested next steps
-
-1. Add a capability probe in renderer init:
-   - is multiview supported (`multiview` feature)?
-2. Prototype Option A:
-   - multiview offscreen array image
-   - multiview shader variant
-3. Add a runtime toggle:
-   - `xr.multiview = on/off`
-4. Measure:
-   - CPU time in `OpenXRSystem::render_xr`
-   - GPU time if available (timestamp queries)
+Measure the same representative scene and display cadence before claiming a performance gain.

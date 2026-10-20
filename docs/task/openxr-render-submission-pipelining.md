@@ -1,6 +1,6 @@
 # OpenXR render submission pipelining
 
-Status: implemented through Phase 4 in source; headset/validation/performance verification pending.
+Status: pipelining implemented through Phase 4; direct XR output added 2026-10-20. Headset/session verification and performance comparison remain pending.
 
 Related:
 
@@ -16,32 +16,25 @@ Keep XR rendering validation-clean while replacing the current sequence of per-c
 with GPU-ordered submissions and one bounded completion wait before the acquired OpenXR swapchain
 image is released.
 
-The first implementation target is:
+The current implementation uses runtime-owned final output images:
 
 ```text
-mirror submissions ─> eye 0 submission ─> eye 1 submission ─> raw XR copy ─> fence
-       no wait              no wait              no wait                  CPU wait once
-                                                                          release XR image
+mirror submissions -> eye 0 -> eye 1 -> completion-only submission/fence
+       no wait       no wait  no wait             CPU wait once
+                                                  release XR image
 ```
 
 ## Implementation status
 
-The source implementation now follows that target:
-
-- mirror captures and eyes extend the renderer-wide `submission_future` and flush without a CPU
-  wait;
-- runtime-texture cache publication no longer idles the device between mirror and eye submissions;
-- the raw copy uses the exact graphics-queue handle exported by Vulkano;
-- raw Ash submissions hold Vulkano's graphics-queue guard for external synchronization;
-- one reusable raw Vulkan fence is attached to the copy (or format-mismatch clear), waited before
-  `xrReleaseSwapchainImage`, and reset only after the wait succeeds;
-- after that fence signals, the retained Vulkano future is explicitly marked complete and cleaned;
-- failed mirror/eye batches do not proceed to the raw copy, and failed completion fences are not
-  reused;
-- `CAT_OPENXR_DEBUG=1` logs batch generation, acquired image index, queue handle, eye/mirror counts,
-  submission counts, and the single completion wait;
-- VR performance reports count the raw wait as a CPU fence wait and leave steady-state
-  queue-idle waits at zero.
+- OpenXR creates single-sample stereo array images. Vulkano borrows their handles and caches a 2D view for each eye layer; the runtime retains image/allocation ownership.
+- With MSAA off, eyes render directly into those views. With MSAA on, transient color resolves into them. Post-processing's final composite also writes directly into them.
+- There are no separate single-sample eye-output images or final eye-image copies.
+- Mirror captures and eyes extend `submission_future` and flush without intermediate CPU waits.
+- An empty raw Vulkan submission on the exact shared graphics queue signals one reusable fence. Queue access uses Vulkano's external-synchronization guard.
+- The fence is waited before release, then Vulkano's retained submission chain is retired. Pending image views retain the runtime swapchain and Vulkan device until that retirement, including failure/teardown paths.
+- The wrapper checks acquire/wait ordering and Vulkan device identity before exposing an image to rendering. Failed waits/incomplete GPU work do not release an image or submit it for projection.
+- The existing format-mismatch clear remains available because scene pipelines still use the window's color format.
+- `CAT_OPENXR_DEBUG=1` reports image index, submissions and completion waits. CPU reports use `completion_wait` / "GPU completion wait" in place of the old copy duration.
 
 The remaining acceptance work requires an OpenXR runtime and headset: validation-layer runs,
 2,000-frame mirror-off/mirror-on captures, session stop/restart coverage, and before/after
@@ -52,6 +45,19 @@ Vulkan semaphore or fence in `XrSwapchainImageReleaseInfo`. The application must
 runtime consume an image while application GPU work still references it. Unless a supported and
 verified runtime synchronization mechanism provides that handoff, retain one completion wait
 before `xrReleaseSwapchainImage`.
+
+## Direct-output checks (2026-10-20)
+
+- Focused graphics/OpenXR/mirror checks: 81 passed; the hardware-only test is ignored in that run.
+- Hardware regression: passed on an NVIDIA GeForce GTX 1080. Three cached stereo images are reused across direct rendering, 4x MSAA resolves, and the actual final bloom-composite pipeline, with per-eye pixel readback. The same completion-only fence path is exercised. Khronos validation layers were unavailable; Vulkano's checks remained enabled.
+- A wider library run encountered 51 failures and hanging audio checks. All 51 observed failures also reproduce on an unchanged HEAD snapshot. The hanging run was stopped.
+- All-target compilation is blocked by the pre-existing `TransformParentComponent` import in `tests/editor_visualization_transform_regressions.rs`; the unchanged snapshot reproduces that error.
+- Actual OpenXR acquire/release, headset visuals, session restart, and runtime validation-layer checks remain to be performed with a headset.
+
+```bash
+cargo test --lib -- engine::graphics engine::ecs::system::openxr_system mirror
+cargo test --lib xr_renderer::tests -- --ignored --nocapture
+```
 
 ## Historical serialized baseline
 
@@ -71,15 +77,15 @@ This is safe but introduces CPU/GPU bubbles. The CPU cannot build later eye work
 runs earlier eye work, and the whole graphics queue is drained for a copy whose completion can be
 tracked with one fence.
 
-The involved code is:
+The corresponding current entry points are:
 
-- `VulkanoState::submit_xr_eye_offscreen` in `src/engine/graphics/vulkano_renderer.rs`;
+- `VulkanoState::submit_xr_eye` in `src/engine/graphics/vulkano_renderer.rs`;
 - `VulkanoState::submit_xr_mirror_captures` in
   `src/engine/graphics/vulkano_renderer.rs`;
-- `submit_offscreen_copy_to_xr_and_wait` in `src/engine/graphics/xr_renderer.rs`;
-- the acquire/render/copy/release sequence in `src/engine/ecs/system/openxr_system.rs`.
+- `submit_xr_completion_and_wait` in `src/engine/graphics/xr_renderer.rs`;
+- the acquire/render/complete/release sequence in `src/engine/ecs/system/openxr_system.rs`.
 
-## Performance hypothesis
+## Original pipelining performance hypothesis
 
 Removing intermediate waits should allow:
 
@@ -112,7 +118,7 @@ eye number.
 
 ### Offscreen target ownership
 
-Each offscreen eye, mirror capture, and reusable command-buffer slot must have a completion rule.
+Each per-eye MSAA/depth attachment, mirror capture, and reusable command-buffer slot must have a completion rule.
 A target or command buffer must not be reset or overwritten while an earlier submission can still
 use it.
 
@@ -283,7 +289,7 @@ Candidates include:
 - multiple completion-tracked offscreen eye target generations;
 - multiple raw copy command-buffer/fence slots keyed by OpenXR image index;
 - acquiring more than one OpenXR image when the frame-loop design can usefully support it;
-- direct rendering into OpenXR array layers to remove the offscreen copy;
+- direct rendering into OpenXR array layers to remove the offscreen copy (completed 2026-10-20);
 - timeline semaphores for internal renderer milestones;
 - a runtime- or extension-specific asynchronous release handoff, only when explicitly supported
   and verified.

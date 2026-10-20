@@ -1,7 +1,78 @@
 use ash::vk;
+use std::sync::{Arc, Mutex};
+use vulkano::device::Device;
+use vulkano::image::sys::RawImage;
+use vulkano::image::view::{ImageView, ImageViewCreateInfo, ImageViewType};
+use vulkano::image::{ImageCreateInfo, ImageSubresourceRange};
 
-use crate::engine::graphics::VulkanoRenderer;
-use crate::engine::graphics::XRSwapchain;
+/// Cached views into one runtime-owned array image. Views are dropped before
+/// the shared swapchain owner, including when a failed batch retains a clone.
+pub(crate) struct XrSwapchainImage {
+    eye_views: Vec<Arc<ImageView>>,
+    _swapchain: Arc<Mutex<openxr::Swapchain<openxr::Vulkan>>>,
+    // The runtime may use VkDevice while destroying its swapchain, so retain
+    // the device after both the views and the swapchain owner in drop order.
+    _device: Arc<Device>,
+}
+
+impl XrSwapchainImage {
+    /// # Safety
+    /// The image must belong to `device` and `swapchain`, have memory bound by
+    /// the runtime, and match `create_info`. All accesses must follow OpenXR's
+    /// acquire/wait/release protocol and the renderer's completion tracking.
+    pub(crate) unsafe fn new(
+        device: Arc<Device>,
+        handle: vk::Image,
+        create_info: ImageCreateInfo,
+        swapchain: Arc<Mutex<openxr::Swapchain<openxr::Vulkan>>>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        // SAFETY: the runtime owns the image and its bound allocation. Borrowed
+        // wrappers never destroy either; the retained owner outlives the views.
+        let eye_views = unsafe { borrow_xr_image_views(device.clone(), handle, create_info) }?;
+        Ok(Self {
+            eye_views,
+            _swapchain: swapchain,
+            _device: device,
+        })
+    }
+
+    pub(crate) fn eye_view(&self, eye: usize) -> Option<Arc<ImageView>> {
+        self.eye_views.get(eye).cloned()
+    }
+
+    pub(crate) fn view_count(&self) -> usize {
+        self.eye_views.len()
+    }
+}
+
+/// # Safety
+/// `handle` must be an already-bound image from `device` matching `create_info`.
+/// Its external owner must outlive every returned view and all submitted uses.
+unsafe fn borrow_xr_image_views(
+    device: Arc<Device>,
+    handle: vk::Image,
+    create_info: ImageCreateInfo,
+) -> Result<Vec<Arc<ImageView>>, Box<dyn std::error::Error>> {
+    let view_count = create_info.array_layers;
+    let raw = unsafe { RawImage::from_handle_borrowed(device, handle, create_info) }?;
+    let image = Arc::new(unsafe { raw.assume_bound() });
+    (0..view_count)
+        .map(|eye| {
+            ImageView::new(
+                image.clone(),
+                ImageViewCreateInfo {
+                    view_type: ImageViewType::Dim2d,
+                    subresource_range: ImageSubresourceRange {
+                        array_layers: eye..eye + 1,
+                        ..image.subresource_range()
+                    },
+                    ..ImageViewCreateInfo::from_image(&image)
+                },
+            )
+            .map_err(Into::into)
+        })
+        .collect()
+}
 
 pub fn submit_clear_xr_swapchain_image_and_wait(
     vk_device: &ash::Device,
@@ -107,156 +178,26 @@ pub fn submit_clear_xr_swapchain_image_and_wait(
     Ok(())
 }
 
-pub fn submit_offscreen_copy_to_xr_and_wait(
+/// Establishes completion of the preceding same-queue eye/mirror submissions.
+/// No image copy or extra output image is needed. The wait must complete before
+/// releasing the acquired image to OpenXR or retiring Vulkano's resource chain.
+///
+/// # Safety
+/// Queue and fence must belong to the live device, the fence must be unsignaled
+/// and reusable, and the caller must externally synchronize queue access.
+pub unsafe fn submit_xr_completion_and_wait(
     vk_device: &ash::Device,
     vk_queue: vk::Queue,
-    vk_command_buffer: vk::CommandBuffer,
     completion_fence: vk::Fence,
-    xr_swapchain: &XRSwapchain,
-    renderer: &VulkanoRenderer,
-    dst_image: vk::Image,
-    dst_was_initialized: bool,
-    view_count: usize,
 ) -> Result<(), vk::Result> {
-    let dst_old_layout = if dst_was_initialized {
-        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
-    } else {
-        vk::ImageLayout::UNDEFINED
-    };
-
-    let dst_src_access = if dst_was_initialized {
-        vk::AccessFlags::COLOR_ATTACHMENT_WRITE
-    } else {
-        vk::AccessFlags::empty()
-    };
-
     unsafe {
-        vk_device.reset_command_buffer(vk_command_buffer, vk::CommandBufferResetFlags::empty())?;
-
-        vk_device.begin_command_buffer(
-            vk_command_buffer,
-            &vk::CommandBufferBeginInfo::default()
-                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
-        )?;
-
-        for eye in 0..view_count {
-            let Some(src_image) = renderer.xr_offscreen_vk_image(eye) else {
-                continue;
-            };
-
-            let src_range = vk::ImageSubresourceRange::default()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .base_mip_level(0)
-                .level_count(1)
-                .base_array_layer(0)
-                .layer_count(1);
-
-            let dst_range = vk::ImageSubresourceRange::default()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .base_mip_level(0)
-                .level_count(1)
-                .base_array_layer(eye as u32)
-                .layer_count(1);
-
-            // src: COLOR_ATTACHMENT_OPTIMAL -> TRANSFER_SRC_OPTIMAL
-            let barrier_src_to_copy = vk::ImageMemoryBarrier::default()
-                .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-                .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-                .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
-                .image(src_image)
-                .subresource_range(src_range);
-
-            // dst: UNDEFINED/COLOR_ATTACHMENT_OPTIMAL -> TRANSFER_DST_OPTIMAL
-            let barrier_dst_to_copy = vk::ImageMemoryBarrier::default()
-                .old_layout(dst_old_layout)
-                .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                .src_access_mask(dst_src_access)
-                .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-                .image(dst_image)
-                .subresource_range(dst_range);
-
-            vk_device.cmd_pipeline_barrier(
-                vk_command_buffer,
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                vk::PipelineStageFlags::TRANSFER,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[barrier_src_to_copy, barrier_dst_to_copy],
-            );
-
-            let extent = xr_swapchain.extent();
-            let region = vk::ImageCopy::default()
-                .src_subresource(
-                    vk::ImageSubresourceLayers::default()
-                        .aspect_mask(vk::ImageAspectFlags::COLOR)
-                        .mip_level(0)
-                        .base_array_layer(0)
-                        .layer_count(1),
-                )
-                .dst_subresource(
-                    vk::ImageSubresourceLayers::default()
-                        .aspect_mask(vk::ImageAspectFlags::COLOR)
-                        .mip_level(0)
-                        .base_array_layer(eye as u32)
-                        .layer_count(1),
-                )
-                .extent(vk::Extent3D {
-                    width: extent.width as u32,
-                    height: extent.height as u32,
-                    depth: 1,
-                });
-
-            vk_device.cmd_copy_image(
-                vk_command_buffer,
-                src_image,
-                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                dst_image,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                &[region],
-            );
-
-            // src: TRANSFER_SRC_OPTIMAL -> COLOR_ATTACHMENT_OPTIMAL
-            let barrier_src_back = vk::ImageMemoryBarrier::default()
-                .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-                .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                .src_access_mask(vk::AccessFlags::TRANSFER_READ)
-                .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-                .image(src_image)
-                .subresource_range(src_range);
-
-            // dst: TRANSFER_DST_OPTIMAL -> COLOR_ATTACHMENT_OPTIMAL
-            let barrier_dst_back = vk::ImageMemoryBarrier::default()
-                .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-                .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-                .image(dst_image)
-                .subresource_range(dst_range);
-
-            vk_device.cmd_pipeline_barrier(
-                vk_command_buffer,
-                vk::PipelineStageFlags::TRANSFER,
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[barrier_src_back, barrier_dst_back],
-            );
-        }
-
-        vk_device.end_command_buffer(vk_command_buffer)?;
-
-        let command_buffers = [vk_command_buffer];
-        let submit_info = vk::SubmitInfo::default().command_buffers(&command_buffers);
-        // Vulkano submitted every mirror and eye to this same queue before this raw
-        // submission. Queue order therefore makes this fence a completion proof for
-        // the entire XR render batch, not just the copy command buffer.
-        vk_device.queue_submit(vk_queue, &[submit_info], completion_fence)?;
+        vk_device.queue_submit(vk_queue, &[vk::SubmitInfo::default()], completion_fence)?;
         vk_device.wait_for_fences(&[completion_fence], true, u64::MAX)?;
         vk_device.reset_fences(&[completion_fence])?;
     }
-
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "xr_renderer_tests.rs"]
+mod tests;

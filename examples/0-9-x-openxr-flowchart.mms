@@ -332,10 +332,10 @@ T.position(-9.3, 5.75, 0.0).scale(0.10, 0.10, 0.10) {
                         }, 152.0, 55.0, cyan)
                     T {
                         Style { display("flex") flex_direction("row") column_gap(2.0) width(152.0) height(20.0) flex_shrink(0.0) }
-                        owner_group("owner_raw_copy", "xr_renderer", "Raw Vulkan copy / completion",
-                            card("raw_copy", "GRAPHICS MODULE / xr_renderer", "submit_offscreen_copy_\nto_xr_and_wait()", "Offscreen eye images / XRSwapchain\nacquired array image / graphics queue", "Eye pixels copied to XR image layers\ncompletion fence signaled", "Wait for GPU completion before release.\nExceptional clear path omitted.", green, 32.0), 36.0, 20.0, green)
+                        owner_group("owner_raw_copy", "xr_renderer", "GPU completion",
+                            card("raw_copy", "GRAPHICS MODULE / xr_renderer", "submit_xr_completion_\nand_wait()", "Completed mirror / eye submissions\nshared graphics queue", "Completion fence signaled\nno final eye-image copy", "Wait for GPU completion before release.\nExceptional clear path omitted.", green, 32.0), 36.0, 20.0, green)
                         owner_group("owner_vulkano", "VulkanoRenderer", "Scene and mirror GPU submissions",
-                            card("vulkano", "GRAPHICS / VulkanoRenderer", "submit_xr_mirror_captures()\nsubmit_xr_eye_offscreen()", "VisualWorld eye cameras + draw data\nMirrorCaptureRequest.camera", "Offscreen mirror / left / right images\nordered GPU submissions", "CameraData drives the rendered view.\nsubmission_future orders shared GPU work.", green, 32.0), 36.0, 20.0, green)
+                            card("vulkano", "GRAPHICS / VulkanoRenderer", "submit_xr_mirror_captures()\nsubmit_xr_eye()", "VisualWorld eye cameras + draw data\nMirrorCaptureRequest.camera", "Mirror textures / acquired XR layers\nordered GPU submissions", "CameraData drives the rendered view.\nsubmission_future orders shared GPU work.", green, 32.0), 36.0, 20.0, green)
                         owner_group("owner_mirrors", "MirrorSystem", "Reflected capture cameras",
                             card("mirrors", "ECS SYSTEM / MirrorSystem", "tick()", "VisualWorld XR eyes\nmirror surfaces", "VisualMirror.captures\nMirrorCaptureRequest.camera", "Make reflected per-eye capture cameras.\nEyes refresh before MirrorSystem::tick().", violet, 32.0), 36.0, 20.0, violet)
                         owner_group("owner_visual_world", "VisualWorld", "Published renderer camera state",
@@ -387,7 +387,7 @@ T.position(-9.3, 5.75, 0.0).scale(0.10, 0.10, 0.10) {
         wire([[111.5, 94.0], [105.5, 94.0]], violet)
         wire([[73.5, 96.0], [67.5, 96.0]], green)
 
-        // Completed copy returns to image release. A small gap at the crossing
+        // GPU completion returns to image release. A small gap at the crossing
         // keeps this return distinct from render_xr()'s downward renderer call.
         stroke([[67.5, 94.0], [69.0, 94.0], [69.0, 82.5], [108.2, 82.5]], green)
         wire([[109.8, 82.5], [127.5, 82.5], [127.5, 78.0]], green)

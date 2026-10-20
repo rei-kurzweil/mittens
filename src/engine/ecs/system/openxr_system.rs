@@ -1029,7 +1029,7 @@ struct XrRenderProfile {
     tracking_input: std::time::Duration,
     acquire_wait: std::time::Duration,
     eye_render: std::time::Duration,
-    copy: std::time::Duration,
+    completion_wait: std::time::Duration,
     submit: std::time::Duration,
 }
 
@@ -1053,6 +1053,7 @@ struct OpenXRSessionState {
     frame_stream: openxr::FrameStream<openxr::Vulkan>,
     reference_space: openxr::Space,
     running: bool,
+    render_failed: bool,
     current_state: openxr::SessionState,
 
     xr_swapchain: XRSwapchain,
@@ -1723,14 +1724,14 @@ impl OpenXRSystem {
         let frames = self.render_profile.frames as f64;
         let avg_ms = |duration: std::time::Duration| duration.as_secs_f64() * 1000.0 / frames;
         let line = format!(
-            "[xr-render-profile] frames={} avg_ms total={:.3} wait_frame={:.3} tracking_input={:.3} acquire_wait={:.3} eye_render={:.3} copy={:.3} submit={:.3}",
+            "[xr-render-profile] frames={} avg_ms total={:.3} wait_frame={:.3} tracking_input={:.3} acquire_wait={:.3} eye_render={:.3} completion_wait={:.3} submit={:.3}",
             self.render_profile.frames,
             avg_ms(self.render_profile.total),
             avg_ms(self.render_profile.wait_frame),
             avg_ms(self.render_profile.tracking_input),
             avg_ms(self.render_profile.acquire_wait),
             avg_ms(self.render_profile.eye_render),
-            avg_ms(self.render_profile.copy),
+            avg_ms(self.render_profile.completion_wait),
             avg_ms(self.render_profile.submit),
         );
         eprintln!("{line}");
@@ -3250,13 +3251,18 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
             }
         };
 
-        let xr_swapchain = XRSwapchain::new(
-            &state.instance,
-            &session,
-            state.system,
-            state.view_type,
-            preferred_swapchain_format,
-        )?;
+        // SAFETY: the session was created from this exact graphics binding;
+        // the engine retains its Vulkan device until after XR teardown.
+        let xr_swapchain = unsafe {
+            XRSwapchain::new(
+                &state.instance,
+                &session,
+                state.system,
+                state.view_type,
+                preferred_swapchain_format,
+                ash::vk::Device::from_raw(gfx.vk_device as usize as u64),
+            )
+        }?;
 
         let swapchain_image_initialized = vec![false; xr_swapchain.images().len()];
 
@@ -3268,8 +3274,8 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
 
         let vk_instance = unsafe { ash::Instance::load(entry.static_fn(), vk_instance) };
         let vk_device = unsafe { ash::Device::load(vk_instance.fp_v1_0(), vk_device_handle) };
-        // Use the exact queue handle exported by Vulkano. The raw XR copy relies
-        // on same-queue submission order to follow all mirror and eye work.
+        // Use the exact queue exported by Vulkano. The completion fence must
+        // follow every mirror/eye submission on this same queue.
         let vk_queue = ash::vk::Queue::from_raw(gfx.vk_queue as usize as u64);
 
         let vk_command_pool = unsafe {
@@ -3309,6 +3315,7 @@ If this fails with Vulkan extension errors, the Vulkan instance/device created b
             frame_stream,
             reference_space,
             running: false,
+            render_failed: false,
             current_state: openxr::SessionState::IDLE,
 
             xr_swapchain,
@@ -3824,7 +3831,7 @@ impl OpenXRSystem {
         sess.head_pose_cache = None;
         sess.hand_root_pose_cache = HandRootPoseCache::default();
         sess.controller_pose_cache = ControllerPoseCache::default();
-        if !sess.running {
+        if !sess.running || sess.render_failed {
             self.xr_input_state = XrInputState::default();
             self.xr_gamepad_state = XrGamepadState::default();
             visuals.set_xr_frame_dt_sec(None);
@@ -4457,15 +4464,17 @@ impl OpenXRSystem {
         let perf_renderer_before = renderer.perf_counters();
         let perf_pre_xr = self.vr_perf_pre_xr;
         let mut perf_eye_render = Duration::ZERO;
-        let mut perf_copy = Duration::ZERO;
+        let mut perf_completion_wait = Duration::ZERO;
         let mut perf_raw_queue_submissions = 0;
         let mut perf_raw_fence_waits = 0;
         let mut image_ready_for_projection = false;
+        let mut image_waited = false;
+        let mut gpu_work_complete = true;
 
         // Acquire XR swapchain image.
         let acquire_started = profile.then(Instant::now);
         let image_index = {
-            let swapchain = sess.xr_swapchain.swapchain_mut();
+            let swapchain = &mut sess.xr_swapchain;
             match swapchain.acquire_image() {
                 Ok(i) => i,
                 Err(e) => {
@@ -4480,17 +4489,14 @@ impl OpenXRSystem {
             }
         };
 
-        if let Err(e) = sess
-            .xr_swapchain
-            .swapchain_mut()
-            .wait_image(openxr::Duration::INFINITE)
-        {
+        if let Err(e) = sess.xr_swapchain.wait_image(openxr::Duration::INFINITE) {
             eprintln!("[OpenXR] wait_image failed: {e:?}");
         } else {
+            image_waited = true;
             if let Some(started) = acquire_started {
                 self.render_profile.acquire_wait += started.elapsed();
             }
-            // Render into offscreen Vulkano images (per eye), then copy into the OpenXR swapchain layers.
+            // Render/resolve each eye directly into the acquired OpenXR image layer.
             let extent = sess.xr_swapchain.extent();
             let extent_u = [extent.width as u32, extent.height as u32];
 
@@ -4503,14 +4509,15 @@ impl OpenXRSystem {
                 .copied()
                 .unwrap_or(false);
 
-            // Render both eyes first (blocking bring-up path).
+            // The runtime owns the output; only transient MSAA/depth and effect
+            // intermediates are engine-owned.
             let view_count = sess.xr_swapchain.view_count() as usize;
 
             let xr_format = sess.xr_swapchain.format();
             let window_format = renderer.window_vk_format_raw();
             let format_matches = window_format.map(|f| f == xr_format).unwrap_or(true);
 
-            // Copy requires compatible formats. If we couldn't match formats at swapchain creation,
+            // Scene pipelines currently use the window format. If it was unavailable,
             // fall back to a pink clear to prove we're submitting frames.
             let dst_image = sess.xr_swapchain.images()[image_index_usize];
             if !format_matches {
@@ -4526,6 +4533,7 @@ impl OpenXRSystem {
                     eprintln!("[OpenXR] clear skipped: XR completion fence is not reusable");
                 } else if let Err(e) = renderer
                     .with_xr_graphics_queue_lock(|| {
+                        gpu_work_complete = false;
                         xr_renderer::submit_clear_xr_swapchain_image_and_wait(
                             &sess.vk_device,
                             sess.vk_queue,
@@ -4541,7 +4549,9 @@ impl OpenXRSystem {
                 {
                     sess.vk_completion_fence_usable = false;
                     eprintln!("[OpenXR] clear XR image failed: {e:?}");
+                    gpu_work_complete = renderer.wait_for_xr_batch_on_error().is_ok();
                 } else {
+                    gpu_work_complete = true;
                     perf_raw_queue_submissions += 1;
                     perf_raw_fence_waits += 1;
                     image_ready_for_projection = true;
@@ -4558,6 +4568,7 @@ impl OpenXRSystem {
                     }
                 }
             } else {
+                gpu_work_complete = false;
                 let eye_render_started = (profile || perf_enabled).then(Instant::now);
                 let mut batch_error = None;
                 if !sess.vk_completion_fence_usable {
@@ -4567,12 +4578,15 @@ impl OpenXRSystem {
                         "located {} views for {view_count} swapchain layers",
                         views.len()
                     ));
-                } else if let Err(e) = renderer.submit_xr_mirror_captures(visuals, extent_u) {
+                } else if let Err(e) = renderer.begin_xr_frame(&mut sess.xr_swapchain, image_index)
+                {
+                    batch_error = Some(format!("XR image import failed: {e}"));
+                } else if let Err(e) = renderer.submit_xr_mirror_captures(visuals) {
                     batch_error = Some(format!("mirror capture submission failed: {e}"));
                 }
                 if batch_error.is_none() {
                     for eye in 0..view_count {
-                        if let Err(e) = renderer.submit_xr_eye_offscreen(visuals, eye, extent_u) {
+                        if let Err(e) = renderer.submit_xr_eye(visuals, eye, extent_u) {
                             batch_error = Some(format!("eye {eye} submission failed: {e}"));
                             break;
                         }
@@ -4588,41 +4602,42 @@ impl OpenXRSystem {
 
                 if let Some(error) = batch_error {
                     eprintln!("[OpenXR] XR batch {batch_generation} aborted: {error}");
-                    if let Err(wait_error) = renderer.wait_for_xr_batch_on_error() {
-                        eprintln!(
+                    match renderer.wait_for_xr_batch_on_error() {
+                        Ok(()) => gpu_work_complete = true,
+                        Err(wait_error) => eprintln!(
                             "[OpenXR] XR batch {batch_generation} recovery wait failed: {wait_error}"
-                        );
+                        ),
                     }
                 } else {
-                    let copy_started = (profile || perf_enabled).then(Instant::now);
+                    let completion_started = (profile || perf_enabled).then(Instant::now);
                     if let Err(e) = renderer
                         .with_xr_graphics_queue_lock(|| {
-                            xr_renderer::submit_offscreen_copy_to_xr_and_wait(
-                                &sess.vk_device,
-                                sess.vk_queue,
-                                sess.vk_command_buffer,
-                                sess.vk_completion_fence,
-                                &sess.xr_swapchain,
-                                renderer,
-                                dst_image,
-                                dst_was_initialized,
-                                view_count,
-                            )
+                            // SAFETY: the queue guard provides synchronization;
+                            // this session owns the live, reusable fence.
+                            unsafe {
+                                xr_renderer::submit_xr_completion_and_wait(
+                                    &sess.vk_device,
+                                    sess.vk_queue,
+                                    sess.vk_completion_fence,
+                                )
+                            }
                         })
                         .unwrap_or(Err(ash::vk::Result::ERROR_DEVICE_LOST))
                     {
                         sess.vk_completion_fence_usable = false;
                         eprintln!(
-                            "[OpenXR] XR batch {batch_generation} copy submission failed: {e:?}"
+                            "[OpenXR] XR batch {batch_generation} completion submission/wait failed: {e:?}"
                         );
-                        if let Err(wait_error) = renderer.wait_for_xr_batch_on_error() {
-                            eprintln!(
+                        match renderer.wait_for_xr_batch_on_error() {
+                            Ok(()) => gpu_work_complete = true,
+                            Err(wait_error) => eprintln!(
                                 "[OpenXR] XR batch {batch_generation} recovery wait failed: {wait_error}"
-                            );
+                            ),
                         }
                     } else {
+                        gpu_work_complete = true;
                         perf_raw_queue_submissions += 1;
-                        // The raw-copy fence also proves completion of every preceding
+                        // The completion fence proves completion of every preceding
                         // Vulkano submission on this queue. Only now may Vulkano release
                         // the retained resource-use chain.
                         unsafe {
@@ -4652,19 +4667,30 @@ impl OpenXRSystem {
                             *slot = true;
                         }
                     }
-                    if let Some(started) = copy_started {
+                    if let Some(started) = completion_started {
                         let elapsed = started.elapsed();
-                        perf_copy = elapsed;
+                        perf_completion_wait = elapsed;
                         if profile {
-                            self.render_profile.copy += elapsed;
+                            self.render_profile.completion_wait += elapsed;
                         }
                     }
                 }
             }
         }
 
-        if let Err(e) = sess.xr_swapchain.swapchain_mut().release_image() {
-            eprintln!("[OpenXR] release_image failed: {e:?}");
+        if image_waited && gpu_work_complete {
+            if let Err(e) = sess.xr_swapchain.release_image() {
+                image_ready_for_projection = false;
+                eprintln!("[OpenXR] release_image failed: {e:?}");
+                let _ = sess.session.request_exit();
+                sess.render_failed = true;
+            }
+        } else {
+            // Never release an unwaited image or one still referenced by GPU
+            // work. Stop producing frames and let session teardown recover.
+            image_ready_for_projection = false;
+            let _ = sess.session.request_exit();
+            sess.render_failed = true;
         }
 
         // Submit a projection layer.
@@ -4674,12 +4700,13 @@ impl OpenXRSystem {
                 extent: sess.xr_swapchain.extent(),
             };
 
+            let projection_swapchain = sess.xr_swapchain.swapchain();
             let pv0 = openxr::CompositionLayerProjectionView::new()
                 .pose(views[0].pose)
                 .fov(views[0].fov)
                 .sub_image(
                     openxr::SwapchainSubImage::new()
-                        .swapchain(sess.xr_swapchain.swapchain())
+                        .swapchain(&projection_swapchain)
                         .image_array_index(0)
                         .image_rect(rect),
                 );
@@ -4689,7 +4716,7 @@ impl OpenXRSystem {
                 .fov(views[1].fov)
                 .sub_image(
                     openxr::SwapchainSubImage::new()
-                        .swapchain(sess.xr_swapchain.swapchain())
+                        .swapchain(&projection_swapchain)
                         .image_array_index(1)
                         .image_rect(rect),
                 );
@@ -4707,6 +4734,7 @@ impl OpenXRSystem {
             ) {
                 eprintln!("[OpenXR] end_frame failed: {e:?}");
             }
+            drop(projection_swapchain);
             let submit_elapsed = submit_started.map_or(Duration::ZERO, |started| started.elapsed());
             if profile {
                 self.render_profile.submit += submit_elapsed;
@@ -4737,7 +4765,7 @@ impl OpenXRSystem {
                     total: perf_frame_started.elapsed(),
                     wait_frame: perf_wait_frame,
                     eye_render: perf_eye_render,
-                    copy: perf_copy,
+                    completion_wait: perf_completion_wait,
                     submit: submit_elapsed,
                     renderer: {
                         let mut counters = renderer
@@ -4788,7 +4816,7 @@ impl OpenXRSystem {
                 total: perf_frame_started.elapsed(),
                 wait_frame: perf_wait_frame,
                 eye_render: perf_eye_render,
-                copy: perf_copy,
+                completion_wait: perf_completion_wait,
                 submit: submit_elapsed,
                 renderer: {
                     let mut counters = renderer

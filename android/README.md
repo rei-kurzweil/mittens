@@ -41,7 +41,7 @@ The GPU and driver perform hardware tiling. **Vulkan dynamic rendering can use t
 1. **Probe the headset.** Package a small Android/OpenXR Vulkan application and record the [capability report](docs/focus-3-probe.md). Clear both eyes, then draw a triangle. Test passthrough composition separately if required.
 2. **Choose the renderer compatibility path.** Confirm dynamic rendering, supported formats, compute limits, and multiview on the actual firmware. Add a classic render-pass path if dynamic rendering is unavailable.
 3. **Run an embedded Mittens scene.** Initialize the engine's Vulkan device and XR targets without a desktop surface or swapchain. Drive update/render work from OpenXR frame timing and connect controller input.
-4. **Reduce mobile rendering costs.** Render/resolve into runtime-owned XR images, add multiview where appropriate, and tune attachment lifetime, resolution, materials, and MSAA. Start with bloom, mirrors, and scene-color transmission disabled.
+4. **Reduce mobile rendering costs.** Validate the existing direct XR output path (added 2026-10-20), add multiview where appropriate, and tune attachment lifetime, resolution, materials, and MSAA. Start with bloom, mirrors, and scene-color transmission disabled.
 5. **Complete app integration.** Package assets and script imports, test audio output then microphone input, add optional HTC tracking/passthrough, and validate pause/resume and shutdown.
 6. **Measure sustained behavior.** Record CPU/GPU time, missed XR frames, image memory, and thermal behavior in a representative scene.
 

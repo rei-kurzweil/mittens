@@ -899,9 +899,7 @@ mod tests {
         );
         assert_eq!(keys(&visuals), original_keys);
         let mut renderer = crate::engine::graphics::VulkanoRenderer::new();
-        renderer
-            .submit_xr_mirror_captures(&mut visuals, [100, 100])
-            .unwrap();
+        renderer.submit_xr_mirror_captures(&mut visuals).unwrap();
         assert_eq!(renderer.perf_counters().mirror_captures, 0);
         // Newly created mirrors inherit the same override without rewriting their component.
         let root = world.add_component(TransformComponent::new());
@@ -1080,9 +1078,7 @@ mod tests {
         }
         let mut renderer = crate::engine::graphics::VulkanoRenderer::new();
         // Pausing succeeds before any Vulkan resources/targets can be created.
-        renderer
-            .submit_xr_mirror_captures(&mut visuals, [100, 100])
-            .unwrap();
+        renderer.submit_xr_mirror_captures(&mut visuals).unwrap();
         assert_eq!(renderer.perf_counters().mirror_captures, 0);
         let new_root = world.add_component(TransformComponent::new());
         let new_surface = world.add_component(RenderableComponent::square());
@@ -1148,9 +1144,7 @@ mod tests {
             );
         }
         assert!(
-            renderer
-                .submit_xr_mirror_captures(&mut visuals, [100, 100])
-                .is_err(),
+            renderer.submit_xr_mirror_captures(&mut visuals).is_err(),
             "enabled captures require an initialized renderer again"
         );
     }

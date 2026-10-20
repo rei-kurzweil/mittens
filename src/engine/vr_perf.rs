@@ -96,7 +96,7 @@ pub struct VrPerfFrameCpu {
     pub total: Duration,
     pub wait_frame: Duration,
     pub eye_render: Duration,
-    pub copy: Duration,
+    pub completion_wait: Duration,
     pub submit: Duration,
     pub renderer: RendererPerfCounters,
 }
@@ -362,8 +362,8 @@ impl VrPerfCollector {
         write_cpu_mean(&mut out, "Eye render", &self.cpu_frames, |frame| {
             frame.eye_render
         });
-        write_cpu_mean(&mut out, "Swapchain copy", &self.cpu_frames, |frame| {
-            frame.copy
+        write_cpu_mean(&mut out, "GPU completion wait", &self.cpu_frames, |frame| {
+            frame.completion_wait
         });
         write_cpu_mean(&mut out, "Frame submit", &self.cpu_frames, |frame| {
             frame.submit
