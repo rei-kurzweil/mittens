@@ -1,6 +1,6 @@
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::startup_trace::{StartupCheckpoint, log_startup_progress};
-use crate::engine::user_input::InputState;
+use crate::engine::user_input::{HidProviders, InputState};
 use crate::engine::{ecs, graphics};
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -15,6 +15,7 @@ pub struct Universe {
 
     pub visuals: graphics::VisualWorld,
     pub render_assets: graphics::RenderAssets,
+    pub input_providers: HidProviders,
 
     repl: Option<crate::engine::repl::Repl>,
     repl_backend: Option<crate::engine::repl::ReplBackend>,
@@ -34,6 +35,7 @@ impl Universe {
             visuals: graphics::VisualWorld::new(),
             render_assets: graphics::RenderAssets::new(),
             renderer: graphics::VulkanoRenderer::new(),
+            input_providers: HidProviders::new(),
 
             repl: None,
             repl_backend: None,
@@ -531,7 +533,15 @@ impl Universe {
         self.renderer.resize(size);
     }
 
-    /// Game/update step
+    /// Poll zero or more host HID providers, then update the engine. With no
+    /// providers, desktop input is neutral; XR and simulation remain active.
+    pub fn update_with_input_providers(&mut self, dt_sec: f32) {
+        let input = self.input_providers.poll();
+        self.update(dt_sec, &input);
+    }
+
+    /// Game/update step using an explicitly supplied snapshot. Hosts normally
+    /// use `update_with_input_providers`; this also supports replay and tests.
     pub fn update(&mut self, dt_sec: f32, input: &InputState) {
         let vr_update_started = self.systems.vr_perf_enabled().then(Instant::now);
         self.sync_repl(true);
@@ -1173,6 +1183,203 @@ mod tests {
         click(&mut universe, reset);
         assert_eq!(universe.systems.xr_settings.floor_correction_meters(), 0.0);
         assert_eq!(readout(&universe), "0.0 cm");
+    }
+
+    #[test]
+    fn settings_panels_in_grabbable_wrappers_allow_xr_slider_drags() {
+        use ecs::component::{
+            ControllerHand, ControllerPoseKind, ControllerXRComponent, PointerComponent,
+            SliderComponent, TextComponent, TransformComponent,
+        };
+        use ecs::system::TransformSystem;
+        use ecs::system::grabbable_system::grabbable_owner_for_hit;
+        use ecs::system::pointer_system::PointerActivations;
+
+        fn pointer_frame(
+            universe: &mut Universe,
+            driver: ComponentId,
+            origin: [f32; 3],
+            activations: PointerActivations,
+        ) {
+            universe
+                .world
+                .get_component_by_id_as_mut::<TransformComponent>(driver)
+                .unwrap()
+                .set_position(&mut universe.command_queue, origin[0], origin[1], origin[2]);
+            universe.drain_pending_signals();
+            universe.systems.rx.begin_frame();
+            universe.systems.gesture.begin_frame();
+            universe.systems.bvh.flush_pending(&universe.world);
+            universe.systems.raycast.tick_with_queue(
+                &mut universe.world,
+                &mut universe.visuals,
+                &InputState::default(),
+                &mut universe.systems.rx,
+                &universe.systems.bvh,
+                &activations,
+                &universe.systems.pointer,
+                1.0 / 90.0,
+            );
+            universe.drain_pending_signals();
+            universe.systems.gesture.tick_with_rx(
+                &mut universe.world,
+                &InputState::default(),
+                &activations,
+                &universe.systems.pointer,
+                &universe.systems.raycast,
+                &mut universe.systems.rx,
+            );
+            pump_settings_callbacks(universe);
+        }
+
+        for (factory, slider_name, readout_name, expected_text) in [
+            (
+                "graphics_settings_panel",
+                "graphics_mirrors_quality_slider",
+                "graphics_mirrors_quality_readout",
+                "1440",
+            ),
+            (
+                "xr_settings_panel",
+                "xr_floor_correction_slider",
+                "xr_floor_correction_readout",
+                "+30.0 cm",
+            ),
+        ] {
+            let mut universe = Universe::new(ecs::World::default());
+            let source = format!(
+                r#"
+                import {{ {factory} }} from "../assets/components/panels/{factory}.mms"
+                T.position(-2.6, 2.3, -1.5) {{
+                    name = "settings_mount"
+                    Grabbable {{}}
+                    {factory}({{ root_name = "settings_panel" }})
+                }}
+                "#
+            );
+            universe
+                .load_mms_source_at_path(&source, "examples/_settings_drag_test.mms")
+                .unwrap();
+            universe
+                .systems
+                .slider
+                .install_handlers(&mut universe.systems.rx);
+            universe
+                .systems
+                .gesture
+                .install_handlers(&mut universe.systems.rx);
+            let controller = universe.world.add_component(ControllerXRComponent::new(
+                true,
+                ControllerHand::Left,
+                ControllerPoseKind::Aim,
+            ));
+            let driver = universe.world.add_component(TransformComponent::new());
+            let pointer = universe.world.add_component(PointerComponent::new());
+            universe.world.add_child(controller, driver).unwrap();
+            universe.world.add_child(driver, pointer).unwrap();
+            universe
+                .world
+                .init_component_tree(driver, &mut universe.command_queue);
+            universe.drain_pending_signals();
+            let panel = labelled(&universe, "settings_panel");
+            let mount = labelled(&universe, "settings_mount");
+            let panel_model = TransformSystem::world_model(&universe.world, panel).unwrap();
+
+            for restored in [false, true] {
+                if restored {
+                    let toggle = labelled(&universe, "accordion_toggle");
+                    click(&mut universe, toggle);
+                    click(&mut universe, toggle);
+                }
+                universe
+                    .systems
+                    .layout
+                    .tick(&mut universe.world, &mut universe.command_queue);
+                universe.drain_pending_signals();
+                let slider = labelled(&universe, slider_name);
+                let config = universe
+                    .world
+                    .get_component_by_id_as::<SliderComponent>(slider)
+                    .unwrap();
+                let width = config.width();
+                let track = universe
+                    .world
+                    .find_component(config.track_mount.unwrap(), "Renderable")
+                    .unwrap();
+                let slider_model = TransformSystem::world_model(&universe.world, slider).unwrap();
+                let ray_origin = |fraction: f32| {
+                    let point = crate::utils::math::mat4_mul_vec4(
+                        slider_model,
+                        [(fraction - 0.5) * width, 0.0, 0.0, 1.0],
+                    );
+                    [point[0], point[1], point[2] + 1.0]
+                };
+                pointer_frame(
+                    &mut universe,
+                    driver,
+                    ray_origin(0.2),
+                    PointerActivations {
+                        pressed: vec![pointer],
+                        down: vec![pointer],
+                        ..Default::default()
+                    },
+                );
+                assert_eq!(
+                    universe.systems.gesture.state().drag_renderable,
+                    Some(track),
+                    "{factory}: XR trigger must acquire the track (restored={restored})"
+                );
+                pointer_frame(
+                    &mut universe,
+                    driver,
+                    ray_origin(0.8),
+                    PointerActivations {
+                        down: vec![pointer],
+                        ..Default::default()
+                    },
+                );
+                assert_eq!(
+                    universe
+                        .world
+                        .get_component_by_id_as::<TextComponent>(labelled(&universe, readout_name))
+                        .unwrap()
+                        .text,
+                    expected_text,
+                    "{factory}: moving the controller must apply the slider value"
+                );
+                if factory == "xr_settings_panel" {
+                    assert!(
+                        (universe.systems.xr_settings.floor_correction_meters() - 0.3).abs() < 1e-5
+                    );
+                } else {
+                    assert_eq!(
+                        universe.systems.graphics_settings.mirror_quality_override(),
+                        Some(1440)
+                    );
+                }
+                pointer_frame(
+                    &mut universe,
+                    driver,
+                    ray_origin(0.8),
+                    PointerActivations {
+                        released: vec![pointer],
+                        ..Default::default()
+                    },
+                );
+                assert!(!universe.systems.gesture.state().dragging);
+                assert_eq!(
+                    TransformSystem::world_model(&universe.world, panel).unwrap(),
+                    panel_model,
+                    "slider input must not move the panel"
+                );
+                let title = universe.world.find_component(panel, "#title_bar").unwrap();
+                let title_hit = universe.world.find_component(title, "Renderable").unwrap();
+                assert_eq!(
+                    grabbable_owner_for_hit(&universe.world, title_hit),
+                    Some(mount)
+                );
+            }
+        }
     }
 
     #[test]

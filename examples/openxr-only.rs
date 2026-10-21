@@ -7,7 +7,6 @@
 
 use std::time::{Duration, Instant};
 
-use mittens_engine::engine::user_input::InputState;
 use mittens_engine::{engine, utils};
 
 const SCENE: &str = r#"
@@ -63,13 +62,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let started = Instant::now();
     let mut previous = started;
-    let input = InputState::default();
     println!("[openxr-only] Driving Mittens from OpenXR; no desktop window");
     loop {
         let now = Instant::now();
         let dt = now.saturating_duration_since(previous).as_secs_f32();
         previous = now;
-        universe.update(dt, &input);
+        universe.update_with_input_providers(dt);
         universe.render();
 
         if universe.systems.xr.render_failed() {

@@ -1,7 +1,8 @@
-//! Input handling (winit -> engine state).
-//!
-//! Goal: keep `Windowing` focused on window lifecycle + rendering, while `UserInput`
-//! owns interpreting window events into a small, reusable `InputState`.
+//! Shared input snapshots and host HID providers. `UserInput` retains the
+//! desktop event adapter; providers can be absent or combined by the host.
+
+mod providers;
+pub use providers::{HidProvider, HidProviders, InputProviderId, WinitHidProvider};
 
 use std::collections::HashSet;
 
@@ -11,6 +12,8 @@ use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
 /// One ordered gameplay-keyboard transition captured at the platform boundary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyboardInputRecord {
+    /// Identifies the source so two keyboards can hold the same physical key.
+    pub provider_id: InputProviderId,
     pub physical_key: PhysicalKey,
     pub code: Option<String>,
     pub key: String,
@@ -69,12 +72,16 @@ pub struct InputState {
     text_input_events: Vec<TextInputFrameEvent>,
     keyboard_events: Vec<KeyboardInputRecord>,
     physical_keys_down: Vec<(PhysicalKey, Option<String>, String, Key)>,
+    // None preserves manually supplied snapshots. A provider-produced snapshot
+    // explicitly lists live sources, including an empty list for idle hosts.
+    active_providers: Option<HashSet<InputProviderId>>,
 }
 
 impl InputState {
     fn release_all_keys(&mut self) {
         for (physical_key, code, key, gameplay_key) in self.physical_keys_down.drain(..) {
             self.keyboard_events.push(KeyboardInputRecord {
+                provider_id: InputProviderId::MANUAL,
                 physical_key,
                 code,
                 key,
@@ -182,9 +189,18 @@ impl InputState {
         &self.keyboard_events
     }
 
-    #[cfg(test)]
-    pub(crate) fn push_keyboard_event(&mut self, event: KeyboardInputRecord) {
+    pub fn push_keyboard_event(&mut self, event: KeyboardInputRecord) {
         self.keyboard_events.push(event);
+    }
+
+    pub fn push_text_input_event(&mut self, event: TextInputFrameEvent) {
+        self.text_input_events.push(event);
+    }
+
+    pub(crate) fn provider_is_active(&self, provider: InputProviderId) -> bool {
+        self.active_providers
+            .as_ref()
+            .is_none_or(|active| active.contains(&provider))
     }
 }
 
@@ -267,6 +283,7 @@ impl UserInput {
                                 key.clone(),
                             ));
                             self.state.keyboard_events.push(KeyboardInputRecord {
+                                provider_id: InputProviderId::MANUAL,
                                 physical_key: event.physical_key,
                                 code: public_event.0.clone(),
                                 key: public_event.1.clone(),
@@ -277,6 +294,7 @@ impl UserInput {
                             return true;
                         }
                         self.state.keyboard_events.push(KeyboardInputRecord {
+                            provider_id: InputProviderId::MANUAL,
                             physical_key: event.physical_key,
                             code: public_event.0,
                             key: public_event.1,
@@ -330,6 +348,7 @@ impl UserInput {
                             let (_, code, logical_key, gameplay_key) =
                                 self.state.physical_keys_down.remove(index);
                             self.state.keyboard_events.push(KeyboardInputRecord {
+                                provider_id: InputProviderId::MANUAL,
                                 physical_key: event.physical_key,
                                 code,
                                 key: logical_key,
@@ -348,6 +367,10 @@ impl UserInput {
 
             WindowEvent::Focused(false) => {
                 self.state.release_all_keys();
+                self.state
+                    .mouse_released
+                    .extend(self.state.mouse_down.drain());
+                self.state.cursor_pos = None;
                 true
             }
 

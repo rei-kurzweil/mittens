@@ -73,6 +73,8 @@ fn settings_content() {
                 T.position(0.0, 0.0, 0.03) { Text { "Floor correction" } }
             }
             T {
+                // Floor calibration must not inherit the panel's grip target.
+                Grabbable.off()
                 Style {
                     display("flex") width(10.5) height(3.2) flex_grow(1.0)
                     align_items("center") justify_content("center")

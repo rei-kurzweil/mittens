@@ -1,12 +1,12 @@
 use winit::keyboard::PhysicalKey;
 
 use crate::engine::ecs::{ComponentId, EventSignal, KeyboardEvent, SignalEmitter};
-use crate::engine::user_input::{InputState, KeyboardTransition};
+use crate::engine::user_input::{InputProviderId, InputState, KeyboardTransition};
 
 /// Turns ordered platform keyboard records into scene-wide gameplay signals.
 #[derive(Debug, Default)]
 pub struct KeyboardInputSystem {
-    delivered_down: Vec<(PhysicalKey, KeyboardEvent)>,
+    delivered_down: Vec<((InputProviderId, PhysicalKey), KeyboardEvent)>,
     was_captured: bool,
 }
 
@@ -21,6 +21,10 @@ impl KeyboardInputSystem {
         captured_by_text_input: bool,
         emit: &mut dyn SignalEmitter,
     ) {
+        // Removed providers stop contributing immediately. Do not synthesize
+        // gameplay key events when a host has no HID sources.
+        self.delivered_down
+            .retain(|((provider, _), _)| input.provider_is_active(*provider));
         if captured_by_text_input && !self.was_captured {
             for (_, event) in self.delivered_down.drain(..) {
                 emit.push_event(ComponentId::default(), EventSignal::KeyUp(event));
@@ -36,17 +40,17 @@ impl KeyboardInputSystem {
                 code: record.code.clone(),
                 key: record.key.clone(),
             };
+            let source_key = (record.provider_id, record.physical_key);
             match record.transition {
                 KeyboardTransition::Down => {
                     if self
                         .delivered_down
                         .iter()
-                        .any(|(physical_key, _)| *physical_key == record.physical_key)
+                        .any(|(physical_key, _)| *physical_key == source_key)
                     {
                         continue;
                     }
-                    self.delivered_down
-                        .push((record.physical_key, event.clone()));
+                    self.delivered_down.push((source_key, event.clone()));
                     emit.push_event(ComponentId::default(), EventSignal::KeyDown(event));
                 }
                 KeyboardTransition::Press => {
@@ -55,7 +59,7 @@ impl KeyboardInputSystem {
                     if self
                         .delivered_down
                         .iter()
-                        .any(|(physical_key, _)| *physical_key == record.physical_key)
+                        .any(|(physical_key, _)| *physical_key == source_key)
                     {
                         emit.push_event(ComponentId::default(), EventSignal::KeyPress(event));
                     }
@@ -64,7 +68,7 @@ impl KeyboardInputSystem {
                     if let Some(index) = self
                         .delivered_down
                         .iter()
-                        .position(|(physical_key, _)| *physical_key == record.physical_key)
+                        .position(|(physical_key, _)| *physical_key == source_key)
                     {
                         let (_, delivered) = self.delivered_down.remove(index);
                         emit.push_event(ComponentId::default(), EventSignal::KeyUp(delivered));
@@ -95,6 +99,7 @@ mod tests {
 
     fn record(code: KeyCode, key: &str, transition: KeyboardTransition) -> KeyboardInputRecord {
         KeyboardInputRecord {
+            provider_id: InputProviderId::MANUAL,
             physical_key: PhysicalKey::Code(code),
             code: Some(
                 match code {

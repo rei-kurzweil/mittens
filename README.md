@@ -56,6 +56,10 @@ and [generic REPL migration](docs/task/mms-repl-navigation-and-cat-unification.m
 + uses winit to make a window and passes the RawDisplayHandle to renderer to render into the window
 + provides user input events and frame loop
 
+Host input supports [zero or more HID providers](docs/spec/hid-providers.md).
+Desktop windowing installs a Winit provider automatically; XR-only hosts can
+update with no keyboard/mouse provider while OpenXR tracking remains active.
+
 ## Universe
 + holds all the layers below,
 + and provides simple API to build component trees and add them to the world

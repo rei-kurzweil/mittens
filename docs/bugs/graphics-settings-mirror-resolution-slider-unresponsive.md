@@ -1,12 +1,24 @@
 # Graphics settings mirror resolution Slider stays on Authored in XR
 
 Date: 2026-10-14
-Status: open; headset failure reported, source-based cause identified;
-real ray/gesture reproduction still required. No implementation in this review.
+Status: MMS control boundaries implemented; automated controller ray/trigger
+regression passes. Headset verification and initial Authored-label ambiguity
+remain open.
 2026-10-14 follow-up: the whole-panel grab marker was removed. The example now
 supplies a custom component title with title-only `Grabbable.parent()`;
 automated ownership checks confirm the Slider is outside that grab scope.
 Headset input/image checks and the initial Authored-label ambiguity remain open.
+2026-10-20 follow-up: the Mittens Corp scenes reintroduced whole-panel grab
+wrappers, blocking both mirror resolution and XR floor correction Sliders.
+The shared graphics and XR settings prefabs now put `Grabbable.off()` on their
+control containers. Labels and title bars retain the panel's grip target.
+`settings_panels_in_grabbable_wrappers_allow_xr_slider_drags` reproduces the
+original failure and passes with the boundaries: it lays out the real imported
+prefabs, casts controller rays against their geometry, presses/moves/releases
+the trigger, and verifies backend values and readouts before and after restore.
+It also checks that slider input leaves the panel stationary and that title
+geometry still resolves the panel's grab target. No setter or drag events are
+injected directly.
 Example: `examples/graphics-settings.mms`.
 Task: [runtime graphics controls](../task/runtime-mirror-resolution-info-panel.md).
 
@@ -55,10 +67,10 @@ The previous panel test directly queued `SliderSet { emit_changed: true }`.
 It proved callback/backend/readback/restore behavior, while bypassing ray hits,
 XR trigger acquisition, drag mapping, and this grabbable-ancestor rule.
 
-1. [ ] Reproduce with the real imported panel, its outer Grabbable wrapper,
+1. [x] Reproduce with the real imported panel, its outer Grabbable wrapper,
    initialized slider visuals/layout, a controller-backed pointer, and actual
    ray hits. Check DragStart/Move reach the Slider before checking resolution.
-2. [ ] Prefer an MMS-only boundary: put `Grabbable.off()` on the resolution
+2. [x] Prefer an MMS-only boundary: put `Grabbable.off()` on the resolution
    control's containing Transform, or limit the panel's grab marker to its
    title/handle. The current grabbable resolver stops at the nearest disabled
    marker. Preserve title dragging and intentional grip movement.

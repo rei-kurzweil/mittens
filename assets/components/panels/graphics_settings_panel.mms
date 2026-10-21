@@ -87,6 +87,8 @@ fn setting_row(label, control, readout) {
         }
         setting_label(label)
         T {
+            // Controls own trigger drags even inside a grip-grabbable panel.
+            Grabbable.off()
             Style {
                 display("flex") width(10.5) height(ROW_HEIGHT) flex_grow(1.0)
                 align_items("center") justify_content("center")

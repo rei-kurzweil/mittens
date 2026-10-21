@@ -12,6 +12,12 @@ An entirely separate scene renderer is not a prerequisite. A separate implementa
 
 2026-10-20 startup follow-up: `Universe::init_renderer_for_xr` and the [desktop XR-only example](../../docs/desktop/xr-only.md) now initialize Vulkan without a Winit event loop, window, surface, or desktop swapchain. XR-only pipeline format comes from the actual XR swapchain and eye slots have no desktop dependency. Test this desktop path first; Android integration and Focus 3 capability validation still follow. Winit remains a Cargo dependency through desktop/input types.
 
+2026-10-20 input follow-up: [host HID providers](../../docs/spec/hid-providers.md)
+now support zero or more sources. Desktop windowing registers a Winit adapter;
+the XR-only host registers none and supplies neutral desktop input. An Android
+adapter and engine-owned key/button types are still pending; this does not yet
+remove Winit from the build.
+
 ## What ALVR provides
 
 The local reference at `/home/rei/_/ALVR/ALVR` supplies an Android activity entry point, packaging metadata, loader initialization, and HTC integrations. Its `alvr/client_openxr/src/lib.rs` enables `XR_KHR_opengl_es_enable`, uses `Session<OpenGlEs>`, and explicitly has a Vulkan migration TODO. `alvr/client_openxr/src/graphics.rs` binds an EGL context to the XR session. It does **not** demonstrate Vulkan dynamic rendering on the Focus 3.

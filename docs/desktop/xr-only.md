@@ -25,7 +25,9 @@ swapchain. Surface/presentation extensions are not requested by the engine
 unless the runtime explicitly requires them. Per-eye frame slots do not depend
 on a desktop swapchain. The ordinary windowed entry point remains available.
 
-The example calls the existing `Universe::update`/`render` methods.
+The example calls `Universe::update_with_input_providers` and `render`. It
+registers no HID providers: the host logs that once and supplies neutral
+keyboard/mouse state. See [host HID providers](../spec/hid-providers.md).
 `OpenXRSystem::prepare_frame` performs `xrWaitFrame` and locates the predicted
 views before the pose systems run. Rendering writes/resolves directly into the
 acquired XR image layers, waits for completion, and releases/submits them.

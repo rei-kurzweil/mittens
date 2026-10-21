@@ -52,6 +52,7 @@ impl InputSystem {
         }
 
         let held = self.held_arrows.entry(input_cid).or_default();
+        held.retain(|key| input.key_down(&Key::Named(*key)));
         for key in [
             NamedKey::ArrowLeft,
             NamedKey::ArrowRight,

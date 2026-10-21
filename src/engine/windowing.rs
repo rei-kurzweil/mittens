@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::engine::startup_trace::{StartupCheckpoint, log_startup_progress};
-use crate::engine::user_input::UserInput;
+use crate::engine::user_input::{UserInput, WinitHidProvider};
 use crate::engine::{EngineError, EngineResult};
 
 use winit::application::ApplicationHandler;
@@ -25,7 +25,13 @@ impl Windowing {
         universe: crate::engine::Universe,
         user_input: UserInput,
     ) -> EngineResult<()> {
-        Self::run_app_with_input_and_frame_hook(universe, user_input, None)
+        Self::run_app_with_input_and_frame_hook(universe, Some(user_input), None)
+    }
+
+    /// Run using only the HID providers configured on the Universe, including
+    /// an empty collection. Window lifecycle events remain handled by the host.
+    pub fn run_app_with_providers(universe: crate::engine::Universe) -> EngineResult<()> {
+        Self::run_app_with_input_and_frame_hook(universe, None, None)
     }
 
     /// Run a Universe and invoke `frame_hook` after each update and before
@@ -37,19 +43,24 @@ impl Windowing {
     ) -> EngineResult<()> {
         Self::run_app_with_input_and_frame_hook(
             universe,
-            UserInput::new(),
+            Some(UserInput::new()),
             Some(Box::new(frame_hook)),
         )
     }
 
     fn run_app_with_input_and_frame_hook(
-        universe: crate::engine::Universe,
-        user_input: UserInput,
+        mut universe: crate::engine::Universe,
+        user_input: Option<UserInput>,
         frame_hook: Option<Box<dyn FnMut(&mut crate::engine::Universe)>>,
     ) -> EngineResult<()> {
         let event_loop = EventLoop::new()
             .map_err(|error| EngineError::Windowing(format!("event loop init failed: {error}")))?;
         event_loop.set_control_flow(ControlFlow::Poll);
+
+        let user_input = user_input.map(WinitHidProvider::new);
+        if let Some(provider) = &user_input {
+            universe.input_providers.add(provider.clone());
+        }
 
         let mut app = App {
             window: None,
@@ -76,7 +87,7 @@ struct App {
     window: Option<Arc<Window>>,
     universe: Option<crate::engine::Universe>,
     last_frame: Option<Instant>,
-    user_input: UserInput,
+    user_input: Option<WinitHidProvider>,
     frame_hook: Option<Box<dyn FnMut(&mut crate::engine::Universe)>>,
     startup_error: Option<EngineError>,
 }
@@ -138,7 +149,9 @@ impl ApplicationHandler for App {
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         // Feed input events into our input handler, but keep window lifecycle/render events here.
         // This intentionally ignores resize/draw.
-        let _was_input_event = self.user_input.handle_window_event(&event);
+        if let Some(provider) = &self.user_input {
+            provider.handle_window_event(&event);
+        }
 
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
@@ -165,10 +178,6 @@ impl ApplicationHandler for App {
 
             WindowEvent::RedrawRequested => {
                 log_startup_progress(StartupCheckpoint::FirstRedrawRequested);
-                // Start of our "frame" from an input perspective: compute deltas, but keep
-                // edge-triggered sets so they remain visible during `universe.update`.
-                self.user_input.start_frame();
-
                 let now = Instant::now();
                 let dt = self
                     .last_frame
@@ -178,16 +187,13 @@ impl ApplicationHandler for App {
 
                 let universe = self.universe.as_mut().expect("universe missing");
 
-                universe.update(dt, self.user_input.state());
+                universe.update_with_input_providers(dt);
 
                 if let Some(frame_hook) = self.frame_hook.as_mut() {
                     frame_hook(universe);
                 }
 
                 universe.render();
-
-                // Clear edge-triggered sets after the frame has consumed them.
-                self.user_input.end_frame();
 
                 if universe.exit_requested() {
                     event_loop.exit();
