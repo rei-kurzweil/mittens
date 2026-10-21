@@ -4,9 +4,11 @@ Status: initial investigation 2026-09-28; renderer/platform audit updated 2026-1
 
 The Android port now has a home in [`android/`](../../../../android/README.md), with a [current source audit](../../../../android/docs/focus-3-port-audit.md) and [Focus 3 capability-probe specification](../../../../android/docs/focus-3-probe.md). This epic preserves the earlier integration investigation. Dynamic rendering can use tile-based GPUs; whether a classic render-pass implementation is needed depends first on the headset's driver capabilities, then measured rendering costs.
 
+Next implementation work is broken into [five focused slices](implementation-slices.md), starting with the `crates/mitten-droid/` host APK and activity lifecycle before OpenXR/Vulkan bring-up.
+
 ## Desired end state
 
-`mittens_android` should host **Mittens Engine itself** on the headset. The Android shell owns activity lifecycle, OpenXR initialization, device integration, and headset packaging; Mittens owns its ECS, scripts, simulation, audio graph, and Vulkan scene rendering. The first visual target is a Mittens scene over Focus 3 passthrough, with HMD/controller poses and HTC eye samples available locally. The ALVR streamer and video path are unnecessary.
+`mitten-droid` should host **Mittens Engine itself** on the headset. The Android shell owns activity lifecycle, OpenXR initialization, device integration, and headset packaging; Mittens owns its ECS, scripts, simulation, audio graph, and Vulkan scene rendering. The first visual target is a Mittens scene over Focus 3 passthrough, with HMD/controller poses and HTC eye samples available locally. The ALVR streamer and video path are unnecessary.
 
 ## What the two codebases currently do
 

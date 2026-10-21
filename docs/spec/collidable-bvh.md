@@ -38,9 +38,13 @@ behavior remain. The final non-convergence check also queries the BVH.
 The index caches world frames and primitive contact geometry. Sweep and
 separation math are shared with synchronous zone geometry; it does not infer
 physical contact from a world AABB alone. Ordinary contact includes floors,
-walls, and ceilings. Future crouch support will query an appropriate neighborhood
-and then filter zone centers below the AVC capsule center; no floor flag or
-per-avatar Y index is required.
+walls, and ceilings. Native crouch support now shares this index through
+`StaticContactSystem::support_index` after pose propagation. It queries a padded
+capsule/sole AABB, then checks centers below the capsule center, exact yawed-box
+footprints and top heights near the capsule bottom for each foot. Own-avatar
+zones and effective frames are excluded, including redirected `Zone.at` frames.
+No floor flag, duplicate BVH or per-avatar Y index is required. Per-foot support
+does not alter contact response or publish a new grounded state.
 
 ## Legacy migration
 

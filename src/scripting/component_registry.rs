@@ -4377,6 +4377,19 @@ fn apply_call(
                 )
             }
             "neck_pin_disabled" => *avc = avc.clone().without_neck_pin(),
+            "crouch_enabled" => *avc = avc.clone().with_crouch_enabled(arg_bool(args, 0)?),
+            "crouch_sole_offsets" => {
+                *avc = avc
+                    .clone()
+                    .with_crouch_sole_offsets(arg_f32_arr(args, 0)?, arg_f32_arr(args, 1)?)?
+            }
+            "crouch_knee_pole" => {
+                *avc = avc.clone().with_crouch_knee_pole(arg_f32_arr(args, 0)?)?
+            }
+            "crouch_knee_limit" => *avc = avc.clone().with_crouch_knee_limit(arg_f32(args, 0)?)?,
+            "crouch_support_margin" => {
+                *avc = avc.clone().with_crouch_support_margin(arg_f32(args, 0)?)?
+            }
             "neck_pin_enabled" => *avc = avc.clone().with_neck_pin_enabled(arg_bool(args, 0)?),
             "head_neck_body_enabled" => {
                 *avc = avc.clone().with_head_neck_body_enabled(arg_bool(args, 0)?)

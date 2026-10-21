@@ -18,6 +18,7 @@ type YawBox = ([f32; 3], [f32; 3], [[f32; 3]; 3]);
 pub(crate) struct Surface {
     pub collidable: ComponentId,
     pub zone: ComponentId,
+    pub frame_id: ComponentId,
     pub friction: f32,
     shape: CollisionShape,
     frame: Frame,
@@ -40,6 +41,30 @@ impl BHShape for Surface {
     }
 }
 impl Surface {
+    /// Horizontal top face containing this X/Z point. Broad-phase bounds alone
+    /// are insufficient, particularly for yawed boxes and stacked geometry.
+    pub fn flat_support(
+        &self,
+        sole: [f32; 3],
+        capsule_center: [f32; 3],
+        bottom: f32,
+        margin: f32,
+    ) -> Option<f32> {
+        let (center, extents, axes) = self.yaw_box?;
+        let height = center[1] + extents[1];
+        if center[1] >= capsule_center[1] || (height - bottom).abs() > margin {
+            return None;
+        }
+        let relative = [sole[0] - center[0], 0.0, sole[2] - center[2]];
+        for axis in [0, 2] {
+            let coordinate: f32 = (0..3).map(|i| relative[i] * axes[axis][i]).sum();
+            if coordinate.abs() > extents[axis] + 1e-5 {
+                return None;
+            }
+        }
+        Some(height)
+    }
+
     pub fn translation(&self, center: [f32; 3], shape: CollisionShape) -> Option<[f32; 3]> {
         if let Some((position, surface_shape)) = self.axis_shape {
             return collision_geometry::minimum_translation(
@@ -163,6 +188,7 @@ impl CollidableBvh {
                     }
                     Some((
                         zone_id,
+                        frame_id?,
                         z.shape,
                         TransformSystem::world_model(world, frame_id?)?,
                         c.friction,
@@ -177,7 +203,7 @@ impl CollidableBvh {
                 }
                 self.dependencies.insert(id, dependencies);
             }
-            let Some((zone, shape, frame, friction)) = resolved else {
+            let Some((zone, frame_id, shape, frame, friction)) = resolved else {
                 if let Some(index) = self.indices.remove(&id) {
                     self.surfaces.swap_remove(index);
                     if let Some(swapped) = self.surfaces.get(index) {
@@ -190,7 +216,11 @@ impl CollidableBvh {
             let existing = self.indices.get(&id).copied();
             if existing.is_some_and(|i| {
                 let s = &self.surfaces[i];
-                s.zone == zone && s.shape == shape && s.frame == frame && s.friction == friction
+                s.zone == zone
+                    && s.frame_id == frame_id
+                    && s.shape == shape
+                    && s.frame == frame
+                    && s.friction == friction
             }) {
                 continue;
             }
@@ -208,6 +238,7 @@ impl CollidableBvh {
             let surface = Surface {
                 collidable: id,
                 zone,
+                frame_id,
                 shape,
                 frame,
                 friction,

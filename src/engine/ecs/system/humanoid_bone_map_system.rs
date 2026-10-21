@@ -93,6 +93,19 @@ impl HumanoidBoneMapReport {
         };
         slots.into_iter().all(|slot| self.target(slot).is_some())
     }
+    pub fn lower_body_ready(&self) -> bool {
+        [
+            HumanoidSlot::Hips,
+            HumanoidSlot::LeftUpperLeg,
+            HumanoidSlot::LeftLowerLeg,
+            HumanoidSlot::LeftFoot,
+            HumanoidSlot::RightUpperLeg,
+            HumanoidSlot::RightLowerLeg,
+            HumanoidSlot::RightFoot,
+        ]
+        .into_iter()
+        .all(|slot| self.target(slot).is_some())
+    }
 }
 
 #[derive(Debug, Default)]
@@ -738,26 +751,38 @@ fn slot_patterns(slot: HumanoidSlot) -> Vec<Vec<String>> {
         | RightLittleDistal => vec![],
         LeftUpperLeg => {
             let mut v = lr("left", &["upper", "leg"]);
+            v.push(p(&["j", "bip", "l", "upper", "leg"]));
             v.push(p(&["left", "up", "leg"]));
             v
         }
         RightUpperLeg => {
             let mut v = lr("right", &["upper", "leg"]);
+            v.push(p(&["j", "bip", "r", "upper", "leg"]));
             v.push(p(&["right", "up", "leg"]));
             v
         }
         LeftLowerLeg => {
             let mut v = lr("left", &["lower", "leg"]);
+            v.push(p(&["j", "bip", "l", "lower", "leg"]));
             v.push(p(&["left", "leg"]));
             v
         }
         RightLowerLeg => {
             let mut v = lr("right", &["lower", "leg"]);
+            v.push(p(&["j", "bip", "r", "lower", "leg"]));
             v.push(p(&["right", "leg"]));
             v
         }
-        LeftFoot => lr("left", &["foot"]),
-        RightFoot => lr("right", &["foot"]),
+        LeftFoot => {
+            let mut v = lr("left", &["foot"]);
+            v.push(p(&["j", "bip", "l", "foot"]));
+            v
+        }
+        RightFoot => {
+            let mut v = lr("right", &["foot"]);
+            v.push(p(&["j", "bip", "r", "foot"]));
+            v
+        }
         LeftToes => {
             let mut v = lr("left", &["toes"]);
             v.push(p(&["left", "toe", "base"]));

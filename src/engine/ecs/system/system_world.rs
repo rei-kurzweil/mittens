@@ -133,6 +133,7 @@ pub struct SystemWorld {
     pub avatar_body_yaw: AvatarBodyYawSystem,
     pub avatar_control: AvatarControlSystem,
     pub head_neck_body_constraint: HeadNeckBodyConstraintSystem,
+    pub humanoid_crouch: super::HumanoidCrouchSystem,
     pub ik: IKSystem,
     pub secondary_motion: SecondaryMotionSystem,
     pub secondary_motion_constraint: SecondaryMotionConstraintSystem,
@@ -1367,6 +1368,7 @@ impl SystemWorld {
             {
                 self.avatar_control.remove(n);
                 self.head_neck_body_constraint.remove(n);
+                self.humanoid_crouch.remove(n);
             }
             if world
                 .get_component_by_id_as::<AvatarBodyYawComponent>(n)
@@ -1463,6 +1465,7 @@ impl SystemWorld {
     pub fn register_avatar_control(&mut self, component: ComponentId) {
         self.avatar_control.register(component);
         self.head_neck_body_constraint.register(component);
+        self.humanoid_crouch.register(component);
     }
 
     pub fn register_eye_tracking(&mut self, world: &World, component: ComponentId) {
@@ -3449,6 +3452,9 @@ impl SystemWorld {
         // shoulder worlds; unsupported rigs use the mutually exclusive fallback.
         self.head_neck_body_constraint
             .tick(world, queue, &self.attachment);
+        queue.flush(world, self, visuals, render_assets);
+        self.humanoid_crouch
+            .tick(world, queue, &mut self.static_contact, &self.attachment);
         queue.flush(world, self, visuals, render_assets);
         self.ik.tick(world, queue, dt_sec);
         if let Some(started) = phase_started {

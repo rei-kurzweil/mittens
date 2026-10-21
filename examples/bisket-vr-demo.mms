@@ -220,6 +220,8 @@ ED {
         }
         T {
             AVC {
+                // Foot-local sole landmarks for these shoes, shared with Rei(mu).
+                crouch_sole_offsets([0.0, 0.0530325, 0.0874534], [0.0, 0.0530325, 0.0874534])
 
                 mouth_open_from_amplitude(voice_level)
                 mouth_open_rms_floor(0.005)

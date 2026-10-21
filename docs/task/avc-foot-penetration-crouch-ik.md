@@ -2,11 +2,73 @@
 
 ## Status and outcome
 
-Leg solving remains planned. The [retained collidable BVH](../spec/collidable-bvh.md)
-was implemented on 2026-10-21 as its neighborhood-query foundation. Future crouch
-support queries will filter nearby zone centers below the AVC capsule center;
-there is no authored floor marker or separate Y-only index. Per-foot support
-selection and leg solving are still pending.
+Native flat-support first slice implemented, 2026-10-21; headset acceptance is
+pending. `HumanoidCrouchConstraint` / `HumanoidCrouchSystem` live in
+`src/engine/ecs/system/ik/humanoid_crouch.rs`. AVC binds mapped legs automatically;
+explicit foot-local sole calibration enables solving. Rei(mu), mittens-corp and
+bisket-vr-demo now supply landmarks for their shared shoes.
+
+The system shares the [retained collidable BVH](../spec/collidable-bvh.md) with
+static contact. One padded world AABB covers the capsule and predicted soles.
+Candidates are filtered by center below capsule center, exact yawed-box X/Z
+footprint, and top height within the support margin of the capsule bottom.
+Each foot chooses the eligible top closest to that bottom; stable collidable
+ordering breaks ties. No authored floor marker, world-Y-zero floor assumption,
+new collider, second BVH or separate Y-only index is introduced.
+
+Cached rest FK supplies the base feet every update, independently of last frame's
+crouch. Thigh/knee rotations close the bounded positional solve; foot rotation
+preserves its base sole frame. Shared two-bone triangle math is extracted from
+the arm solver, retaining its separate forearm-twist behavior. Reach and knee
+flexion limits report residual penetration instead of moving the tracked view.
+There are no generated IKChain/target components to allocate or serialize.
+
+Automated checks exercise synthetic semantic mappings, both actual GLB reports,
+rest rotations, scale/yaw, repeated holds, bounded depth, individual foot support,
+floor edits/removal, airborne support loss, opt-out/tracking recovery, mount and
+dismount, multiple instances, MMS configuration, and the complete avatar stage.
+Frame propagation precedes arm IK and skin palette updates. These are CPU checks;
+visible shoe alignment, full-scene cost and headset comfort remain to verify.
+
+Validation: 12 crouch checks pass, plus the head/neck, avatar/capsule, collidable
+BVH, static-contact and bone-map groups. Two older IK reference-resolution tests
+fail identically when compiled from the committed `ik_system.rs`: their chains
+are not registered with the local IKSystem. Arm geometry/twist checks pass.
+
+## First-slice MMS controls and checkpoint
+
+```mms
+AVC
+    .crouch_sole_offsets([0.0, 0.0530325, 0.0874534], [0.0, 0.0530325, 0.0874534])
+    .crouch_knee_pole([0.0, 0.0, 1.0])
+    .crouch_knee_limit(2.617994)
+    .crouch_support_margin(0.05)
+```
+
+`crouch_enabled(bool)` defaults true; false releases leg ownership and restores
+the cached rest pose if solving was active. Sole offsets default unset and are
+in each foot's local bind frame; unset calibration yields `NeedsSoleCalibration`,
+never an ankle-as-sole guess. The example values are specific to the checked-in
+Rei(mu)/Bisket shoes: original ankle height about 0.131308 m and shoe-bottom height
+about 0.029031 m, converted through each foot's nonidentity bind basis. They are
+not a universal VRoid measurement. No live standing-height/HMD calibration is
+needed to bind these immutable landmarks, including at crouched startup.
+
+The pole is body-local, +Z by default. Knee limit is radians, default 150 degrees;
+support margin defaults 0.05 model metres and scales with the body. Runtime
+support is required near the independently grounded capsule bottom, so a nearby
+table top or distant floor during a jump cannot pull the feet toward it.
+No valid per-foot support restores that leg's base pose. Tracking loss, mounting,
+disabled collision, unsupported bindings/scale, or opt-out release the pose.
+Map changes refresh calibration and release previously owned joints.
+
+Rust diagnostics are available through `SystemWorld.humanoid_crouch.status(id)`
+and `.feet(id)`: support zone/height, base and solved soles, penetration, knee
+flexion and residual. A dedicated MMS diagnostic panel remains follow-up work.
+Use normal `mittens-corp`, `rei(mu)` or `bisket-vr-demo` for the first headset
+check: standing → crouch → hold → stand, then physical rise, look/roll, walking,
+button jump/fall and car entry/exit. Slopes, stair planting, world-locked steps,
+pelvis/torso adjustments and authored crouch blending remain separate work.
 
 First leg-solver fixtures are Rei(mu) and Bisket. AVC should
 automatically prepare a bounded lower-body crouch solver for a mapped humanoid
@@ -26,9 +88,8 @@ locomotion Y. This task owns leg posture.
 
 ## Existing seams and findings
 
-- `src/engine/ecs/system/ik/head_pose_body_xz_follow.rs` currently places body
-  world Y at displaced head Y plus `model_root_local_y`. Its header still
-  describes fixed Y; update that comment when implementing the relevant change.
+- Supported rigs now use `HeadNeckBodyConstraintSystem` for body placement before
+  crouch evaluation. `head_pose_body_xz_follow.rs` is its legacy fallback.
 - AVC's capsule follows the body's translation but responds on the outer
   movement root. Resolve [HMD floor-contact feedback](../bugs/mittens-corp-hmd-height-floor-contact-feedback.md)
   before using an XR smoke check to validate crouching. Crouch IK must not be
@@ -37,19 +98,17 @@ locomotion Y. This task owns leg posture.
   and Toes. The map report provides resolved IDs, diagnostic statuses, and a
   generation for invalidation. `head_ready` and `arm_ready` exist; a lower-body
   eligibility check is still needed.
-- The shared VRoid MMS preset explicitly lists hips and arm landmarks but
-  relies on automapping for legs. Leg convention candidates already exist in
-  `humanoid_bone_map_system.rs`. Verify both complete reports; extend the preset
-  only if explicit declarations improve its contract. Never query raw names
-  from the crouch solver.
+- The shared VRoid preset now explicitly lists both leg chains. The mapper also
+  recognizes VRoid thigh/knee/foot convention names; real-GLB tests verify complete
+  reports. `lower_body_ready()` checks hips plus both complete chains. The crouch
+  solver never queries raw bone names.
 - Inspection of the two checked-in GLBs confirms identical local TRS on the
   hips and both thigh/knee/foot joints. Thigh-to-knee local distance is about
   0.40625 m and knee-to-foot about 0.46191 m in both files. These are fixture
   observations, not constants for the solver. Bind rotations are nonidentity.
-- `IKSolver::TwoBoneIK` already accepts explicit root/mid/end joint IDs and a
-  body-local pole. However, `solve_two_bone` currently applies forearm twist
-  toward target orientation even when `copy_end_rotation` is false. Audit and
-  separate that arm policy before reusing the implementation for legs.
+- `IKSolver::TwoBoneIK` retains its existing arm policy. Both systems now use
+  `system/ik/two_bone.rs` for positional triangle math; crouch adds leg limits
+  and sole orientation without applying arm/forearm twist.
 - `ik_system.rs` is about 1,500 lines and AVC's system about 3,100. Keep crouch
   policy in a separate `system/ik/` module. Existing `zone_query` contacts and
   capsule floor sweeps are useful geometry primitives, but are not a retained
@@ -84,11 +143,11 @@ Toes are optional aids for foot orientation, not a prerequisite. Begin with
 explicit per-model sole offsets and visible landmarks; automatic shoe-mesh
 measurement is separate work.
 
-The support provider is read-only. For the first deterministic fixture it
-supplies an explicit horizontal floor plane. Runtime integration must resolve
-a valid bounded support surface from actual static floor geometry, or consume
-a valid grounding-support record if one exists by then. Neither is currently
-a guaranteed API. Do not assume world Y = 0 or use HMD Y as the floor height.
+The support provider is read-only, using bounded static zone geometry through
+the retained contact index. Flat, upright (including yawed) boxes are supported.
+The capsule bottom bounds the permitted support height; each foot's X/Z must
+lie within that particular surface footprint. Tests use real collidable zones,
+including a floor above world Y = 0. HMD Y never supplies the floor height.
 
 For an upward unit normal `n`, plane point `p`, and predicted sole position `s`:
 
@@ -143,15 +202,17 @@ properly configured IKChain; do not copy an entire solver into AVC.
 AVC automatically attempts preparation after its own GLTF map is ready. Require
 Hips and both complete three-joint leg chains for the initial symmetric crouch.
 Missing/ambiguous/absent mappings skip crouch with a retained reason and leave
-head and arm tracking usable. Invalid tracking postpones calibration. Calibrate
-only in an explicit valid standing/support state; do not redefine standing
-height every frame or when the application initially starts with a crouched user.
-Expose an opt-out and sole/pole calibration overrides; exact MMS names are TBD.
+head and arm tracking usable. Invalid tracking postpones AVC initialization.
+Binding uses immutable rig rest geometry and authored sole landmarks, so a
+crouched startup cannot become a new standing baseline. A future measured
+standing-height or sole-calibration flow must require an explicit valid standing/
+support state rather than redefining that reference each frame.
+Expose the opt-out and sole/pole/limit/margin controls documented above.
 
 Retain IDs, lengths, sole frames, mapping generation, and baseline state per
-AVC/GLTF instance. Rebuild on relevant mapping/rig changes, clean up generated
-targets/chains on removal, and avoid duplicate wiring. Own generated helpers
-with runtime-only serialization semantics like existing AVC helpers. Mounting
+AVC/GLTF instance. Rebuild on relevant mapping/rig changes and release previously
+owned joints. The native first slice uses no generated target/chain components;
+bindings are runtime-only and removal clears retained system state. Mounting
 suspends floor crouch; dismounting re-evaluates current support without carrying
 vehicle-floor state into pedestrian mode. Seated posture is separate work.
 

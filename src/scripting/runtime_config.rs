@@ -1519,6 +1519,19 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     constructor_and_builder(component, "head_neck_body_enabled", booleans(1));
                     constructor_and_builder(component, "neck_pitch", floats(3));
                     constructor_and_builder(component, "neck_roll", floats(2));
+                    constructor_and_builder(component, "crouch_enabled", booleans(1));
+                    constructor_and_builder(
+                        component,
+                        "crouch_sole_offsets",
+                        component_signature(vec![mms::ValueType::Array; 2]),
+                    );
+                    constructor_and_builder(
+                        component,
+                        "crouch_knee_pole",
+                        component_signature(vec![mms::ValueType::Array]),
+                    );
+                    constructor_and_builder(component, "crouch_knee_limit", floats(1));
+                    constructor_and_builder(component, "crouch_support_margin", floats(1));
                 }
                 _ => {}
             }

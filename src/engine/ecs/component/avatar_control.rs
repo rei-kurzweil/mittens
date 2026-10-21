@@ -251,6 +251,16 @@ pub struct AvatarControlComponent {
         Option<crate::engine::ecs::system::ik::HeadNeckBodyConstraint>,
     pub(crate) head_neck_body_bind_error: Option<&'static str>,
 
+    /// Native XR lower-body posture; requires explicit foot-local sole landmarks.
+    pub crouch_enabled: bool,
+    pub crouch_sole_offsets: Option<[[f32; 3]; 2]>,
+    pub crouch_knee_pole: [f32; 3],
+    pub crouch_knee_limit: f32,
+    /// Support tolerance in model metres, scaled into world units.
+    pub crouch_support_margin: f32,
+    pub(crate) crouch_constraint: Option<crate::engine::ecs::system::ik::HumanoidCrouchConstraint>,
+    pub(crate) crouch_bind_error: Option<&'static str>,
+
     // Runtime state set by AvatarControlSystem / HeadNeckBodyConstraintSystem:
     /// `model_root` component id, stashed at init so the body-follow system
     /// doesn't have to re-walk topology each tick.
@@ -285,6 +295,44 @@ pub struct AvatarControlComponent {
 }
 
 impl AvatarControlComponent {
+    pub fn with_crouch_enabled(mut self, enabled: bool) -> Self {
+        self.crouch_enabled = enabled;
+        self
+    }
+    pub fn with_crouch_sole_offsets(
+        mut self,
+        left: [f32; 3],
+        right: [f32; 3],
+    ) -> Result<Self, String> {
+        if !left.into_iter().chain(right).all(f32::is_finite) {
+            return Err("crouch sole offsets must be finite foot-local vectors".into());
+        }
+        self.crouch_sole_offsets = Some([left, right]);
+        Ok(self)
+    }
+    pub fn with_crouch_knee_pole(mut self, pole: [f32; 3]) -> Result<Self, String> {
+        let length = crate::utils::math::vec3_len(pole);
+        if !pole.into_iter().all(f32::is_finite) || !length.is_finite() || length < 1e-5 {
+            return Err("crouch knee pole must be finite and nonzero".into());
+        }
+        self.crouch_knee_pole = pole;
+        Ok(self)
+    }
+    pub fn with_crouch_knee_limit(mut self, radians: f32) -> Result<Self, String> {
+        if !radians.is_finite() || !(0.0..std::f32::consts::PI).contains(&radians) {
+            return Err("crouch knee limit must be radians in [0,pi)".into());
+        }
+        self.crouch_knee_limit = radians;
+        Ok(self)
+    }
+    pub fn with_crouch_support_margin(mut self, metres: f32) -> Result<Self, String> {
+        if !metres.is_finite() || metres <= 0.0 {
+            return Err("crouch support margin must be positive metres".into());
+        }
+        self.crouch_support_margin = metres;
+        Ok(self)
+    }
+
     pub fn with_head_neck_body_enabled(mut self, enabled: bool) -> Self {
         self.head_neck_body_enabled = enabled;
         self
@@ -568,6 +616,13 @@ impl Default for AvatarControlComponent {
             neck_lateral_limit: 25.0_f32.to_radians(),
             head_neck_body_constraint: None,
             head_neck_body_bind_error: None,
+            crouch_enabled: true,
+            crouch_sole_offsets: None,
+            crouch_knee_pole: [0.0, 0.0, 1.0],
+            crouch_knee_limit: 150.0_f32.to_radians(),
+            crouch_support_margin: 0.05,
+            crouch_constraint: None,
+            crouch_bind_error: None,
             capsule_transform_id: None,
             capsule_collidable_id: None,
             capsule_sample_id: None,
@@ -714,6 +769,36 @@ impl Component for AvatarControlComponent {
                     num(self.neck_roll_share as f64),
                     num(self.neck_lateral_limit as f64),
                 ],
+            );
+        }
+        if !self.crouch_enabled {
+            c = c.with_call("crouch_enabled", vec![b(false)]);
+        }
+        if let Some([left, right]) = self.crouch_sole_offsets {
+            c = c.with_call(
+                "crouch_sole_offsets",
+                vec![
+                    array(nums(left.map(f64::from))),
+                    array(nums(right.map(f64::from))),
+                ],
+            );
+        }
+        if self.crouch_knee_pole != [0.0, 0.0, 1.0] {
+            c = c.with_call(
+                "crouch_knee_pole",
+                vec![array(nums(self.crouch_knee_pole.map(f64::from)))],
+            );
+        }
+        if self.crouch_knee_limit != 150.0_f32.to_radians() {
+            c = c.with_call(
+                "crouch_knee_limit",
+                vec![num(self.crouch_knee_limit as f64)],
+            );
+        }
+        if self.crouch_support_margin != 0.05 {
+            c = c.with_call(
+                "crouch_support_margin",
+                vec![num(self.crouch_support_margin as f64)],
             );
         }
         if let Some(source) = &self.movement_target {

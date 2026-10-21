@@ -166,6 +166,8 @@ let player_motion = Velocity {
                 }
                 let rei_mu_avatar_control = AVC.movement_target("[name='rei_mu_locomotion_root']") {
                     name = "rei_mu_avatar_control"
+                    // Foot-local sole landmarks for the shared Rei(mu)/Bisket shoes.
+                    crouch_sole_offsets([0.0, 0.0530325, 0.0874534], [0.0, 0.0530325, 0.0874534])
                     mouth_open_from_amplitude(voice_level)
                     mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
                     mouth_open_amount(mouth_tuning.amount)

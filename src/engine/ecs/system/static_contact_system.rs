@@ -32,6 +32,13 @@ pub struct StaticContactSystem {
 }
 
 impl StaticContactSystem {
+    /// Share the retained index with read-only pose consumers after propagation.
+    /// Synchronize once at their phase boundary; never build a per-avatar index.
+    pub(crate) fn support_index(&mut self, world: &World) -> &CollidableBvh {
+        self.broad_phase.sync(world);
+        &self.broad_phase
+    }
+
     pub(crate) fn forget_zone(&mut self, zone: ComponentId) {
         self.previous_centers.remove(&zone);
     }

@@ -511,11 +511,6 @@ fn solve_two_bone(
         [0.0, 1.0, 0.0]
     };
 
-    let cos_upper = ((upper_len * upper_len + reach * reach - lower_len * lower_len)
-        / (2.0 * upper_len * reach))
-        .clamp(-1.0, 1.0);
-    let upper_angle = cos_upper.acos();
-
     // Build elbow plane from pole hint.
     // Transform body-local pole to world space when under an AVC.
     let model_rotation = avc_id.and_then(|avc| {
@@ -563,12 +558,8 @@ fn solve_two_bone(
         chain.last_solved_plane_normal_world = Some(plane_normal);
         chain.last_bend_plane_clipped = vec3_dot(raw_plane_normal, plane_normal) < 1.0 - 1e-5;
     }
-    let perp = vec3_normalize(vec3_cross(plane_normal, reach_dir));
-
-    let elbow_dir = vec3_normalize(vec3_add(
-        vec3_scale(reach_dir, upper_angle.cos()),
-        vec3_scale(perp, upper_angle.sin()),
-    ));
+    let elbow_dir =
+        super::ik::two_bone::bend_direction(reach_dir, plane_normal, upper_len, lower_len, reach);
     let elbow_pos = vec3_add(root_pos, vec3_scale(elbow_dir, upper_len));
 
     maybe_update_two_bone_debug(

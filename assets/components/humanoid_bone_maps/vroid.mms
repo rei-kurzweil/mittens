@@ -2,6 +2,12 @@
 export fn vroid_humanoid_bone_map() {
     return HumanoidBoneMap.new()
         .slot("hips", "[name='J_Bip_C_Hips']")
+        .slot("left_upper_leg", "[name='J_Bip_L_UpperLeg']")
+        .slot("left_lower_leg", "[name='J_Bip_L_LowerLeg']")
+        .slot("left_foot", "[name='J_Bip_L_Foot']")
+        .slot("right_upper_leg", "[name='J_Bip_R_UpperLeg']")
+        .slot("right_lower_leg", "[name='J_Bip_R_LowerLeg']")
+        .slot("right_foot", "[name='J_Bip_R_Foot']")
         .slot("neck", "[name='J_Bip_C_Neck']")
         .slot("head", "[name='J_Bip_C_Head']")
         .slot("left_eye", "[name='J_Adj_L_FaceEye']")

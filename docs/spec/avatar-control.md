@@ -33,6 +33,18 @@ primary body/head driver (`InputComponent` or `InputXRComponent`) plus any numbe
 auxiliary pose drivers (`ControllerXRComponent` for hands, etc.) — without the
 input-broadcast problem that causes body rotation when only the head should move.
 
+Native crouch first slice (2026-10-21): AVC binds hips and both mapped leg chains
+and solves foot penetration against flat static collidable support through the
+retained BVH. `crouch_enabled(bool)` defaults true; explicit foot-local landmarks
+via `crouch_sole_offsets(left_vec3, right_vec3)` are required. Knee direction,
+maximum flexion and support search tolerance use `crouch_knee_pole(vec3)`,
+`crouch_knee_limit(radians)` and `crouch_support_margin(metres)` respectively.
+Default policy is body-local +Z, 150 degrees and 0.05 model metres. Only thigh,
+knee and foot poses are owned; tracking, hips/spine, capsule and locomotion stay
+with their current owners. Mounted/tracking-invalid/unsupported avatars release
+the solve. See [crouch IK](../task/avc-foot-penetration-crouch-ik.md) for calibration,
+diagnostics, test coverage and pending headset acceptance.
+
 ---
 
 ## Design principle — route all drivers through AvatarControlComponent
