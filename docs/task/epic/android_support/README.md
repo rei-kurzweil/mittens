@@ -12,14 +12,14 @@ The Android port now has a home in [`android/`](../../../../android/README.md), 
 
 - The verified Focus 3 ALVR client (`/home/rei/_/ALVR/ALVR`) uses **OpenGL ES**, EGL, `XR_KHR_opengl_es_enable`, and an OpenXR `Session<OpenGlEs>` (`alvr/client_openxr/src/lib.rs`, `graphics.rs`). Its waiting lobby combines an HTC passthrough layer with an alpha blended projection layer. It also probes `XR_HTC_eye_tracker` locally without a stream. This is useful for lifecycle, passthrough, tracker ABI, and Android manifest knowledge, but supplies **no Vulkan context** to reuse.
 - Mittens already has a desktop **Vulkan OpenXR** path. `Universe::init_renderer_for_window` queries OpenXR's Vulkan extension requirements, creates a Vulkano renderer, and passes its raw instance/physical device/device/queue handles back to `OpenXRSystem` (`src/engine/universe.rs:424`, `src/engine/graphics/vulkano_renderer.rs:6608`). `OpenXRSystem` creates `Session<Vulkan>` and its own XR swapchain (`src/engine/ecs/system/openxr_system.rs:2300`, `src/engine/graphics/xr_swapchain.rs`). As of 2026-10-20, the renderer writes/resolves/composites directly into runtime-owned XR image layers, with a completion-only fence submission (`src/engine/graphics/xr_renderer.rs`).
-- The desktop bootstrap assumes a `winit` window and window Vulkan swapchain (`src/engine/windowing.rs`, `src/engine/graphics/vulkano_swapchain.rs`, `VulkanoRenderer::new`). That assumption is the main engine architecture gap for a headset-only app. The XR swapchain must become a valid rendering target without first creating a desktop window surface.
+- The engine now also has `Universe::init_renderer_for_xr` and a [desktop XR-only example](../../../desktop/xr-only.md). This path creates no Winit event loop, window, Vulkan surface, or desktop swapchain. It selects the runtime-required GPU before device creation and uses the actual XR format for scene pipelines. Winit remains a compile dependency through desktop/input APIs; Android packaging and runtime validation remain outstanding.
 - Mittens currently pins `openxr 0.19`, `vulkano 0.35`, and `cpal 0.15` (`Cargo.toml`); the ALVR reference uses `openxr 0.21`. Directly sharing their OpenXR types is therefore not a simple copy. Prefer porting the HTC ABI/extension calls into Mittens' selected OpenXR version or deliberately aligning versions after a compatibility check.
 
 ## Vulkan/OpenXR ownership proposal
 
 1. Android shell initializes the OpenXR loader and runtime, enumerates headset extensions, obtains the HMD system, and confirms `XR_KHR_vulkan_enable` or `XR_KHR_vulkan_enable2`. Keep the working ALVR Android activity/loader setup as a reference.
 2. Create **one** Vulkan instance, physical device, logical device, and graphics queue that satisfy both OpenXR's requirements and Mittens/Vulkano's requirements. OpenXR's requested physical device and graphics API limits must be respected. Use these same handles in `XrGraphicsBindingVulkan*KHR` for session creation. Which of the legacy and enable2 paths works on Focus 3 is a device test, not yet known.
-3. Refactor Mittens' renderer setup into a headless XR variant: construct Vulkano resources without a `winit::Window`/Android `VkSurfaceKHR` or window swapchain, and render to offscreen or XR-owned images. Retain the same ECS, visual world, shaders, and scene submission where possible.
+3. Reuse Mittens' window-free `Universe::init_renderer_for_xr` bootstrap and shared ECS/visual world/shaders. Adapt Android initialization and the selected Vulkan binding; validate this extraction first with the desktop XR-only example.
 4. Android OpenXR session owns frame timing and XR swapchain acquire/wait/release; Mittens renders the predicted stereo views. Submit the HTC passthrough composition layer first and an alpha blended Vulkan projection layer above it. Check alpha format, clear alpha, image layout, and layer lifetime on the headset. Feed timestamped view/HMD/controller/hand/eye samples into engine input, with validity and reference space preserved.
 
 Passing Mittens an arbitrary second Vulkan context, or trying to render into ALVR's OpenGL ES swapchain, would not satisfy its existing `Session<Vulkan>` and XR image path. A temporary GL-to-Vulkan bridge is possible in principle but adds synchronization and image sharing complexity before the basic runtime capability is known.
@@ -42,9 +42,11 @@ Build a tiny Android probe using the known ALVR packaging/loader recipe to log: 
 
 ## Recommended sequence
 
+- [x] Extract window-free Vulkan resources, XR format/pipeline selection, and eye slots; add the desktop `openxr-only` example.
+- [x] Validate desktop stereo presentation: SteamVR/OpenXR 2.16.7, 4x MSAA, bounded run exited successfully; user confirmed headset presentation.
+- [ ] Explicitly exercise session stop/restart with the desktop XR-only example.
 - [ ] Capture Focus 3 Vulkan extension/session capability with a tiny Android probe.
 - [ ] Prove Vulkan stereo clear plus HTC passthrough on the headset.
-- [ ] Extract a headless XR renderer initialization path from Mittens' window-bound Vulkano setup.
 - [ ] Run an embedded Mittens scene, then wire HMD/controller/hand/eye inputs.
 - [ ] Probe CPAL output, then microphone input and audio clock behavior.
 - [ ] Test pause/resume, headset removal, eye accessory attached, and packaging of assets.

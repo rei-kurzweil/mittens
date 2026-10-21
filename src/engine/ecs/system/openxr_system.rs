@@ -998,6 +998,7 @@ pub struct OpenXRSystem {
     last_init_error: Option<String>,
     vulkan_graphics: Option<XrVulkanGraphics>,
     preferred_swapchain_format: Option<u32>,
+    runtime_exit_requested: bool,
 
     // Best-effort XR frame timing diagnostics.
     last_render_instant: Option<Instant>,
@@ -1603,6 +1604,7 @@ impl Default for OpenXRSystem {
             last_init_error: None,
             vulkan_graphics: None,
             preferred_swapchain_format: None,
+            runtime_exit_requested: false,
 
             last_render_instant: None,
             last_render_dt_sec: None,
@@ -2156,8 +2158,8 @@ impl OpenXRSystem {
 
     /// Hint: prefer this Vulkan `VkFormat` (as raw `u32`) when creating the OpenXR swapchain.
     ///
-    /// This is used to match the window renderer's color attachment format, so we can copy
-    /// rendered images into the OpenXR swapchain without format mismatch.
+    /// Windowed startup uses this to match scene pipelines to the runtime's
+    /// output. XR-only startup builds pipelines from the actual XR format.
     pub fn set_preferred_swapchain_format(&mut self, format: u32) {
         self.preferred_swapchain_format = Some(format);
     }
@@ -2189,6 +2191,37 @@ impl OpenXRSystem {
         Some((split(instance_exts), split(device_exts)))
     }
 
+    /// Clone the initialized runtime handles for Vulkan bootstrap. Query its
+    /// required GPU before creating a device, not only when creating a session.
+    pub(crate) fn vulkan_runtime(&self) -> Option<(openxr::Instance, openxr::SystemId)> {
+        let state = self.state.as_ref()?;
+        Some((state.instance.clone(), state.system))
+    }
+
+    pub(crate) fn swapchain_format(&self) -> Option<u32> {
+        Some(self.state.as_ref()?.session.as_ref()?.xr_swapchain.format())
+    }
+
+    /// Whether the XR-only host should keep driving frames. STOPPING is not
+    /// terminal: the runtime can subsequently send READY and restart a session.
+    pub fn runtime_exit_requested(&self) -> bool {
+        self.runtime_exit_requested
+    }
+
+    pub fn session_running(&self) -> bool {
+        self.state
+            .as_ref()
+            .and_then(|state| state.session.as_ref())
+            .is_some_and(|session| session.running)
+    }
+
+    pub fn render_failed(&self) -> bool {
+        self.state
+            .as_ref()
+            .and_then(|state| state.session.as_ref())
+            .is_some_and(|session| session.render_failed)
+    }
+
     pub fn set_vulkan_graphics(&mut self, gfx: XrVulkanGraphics) {
         self.vulkan_graphics = Some(gfx);
 
@@ -2215,6 +2248,7 @@ impl OpenXRSystem {
                 println!("[OpenXR] Initialized.");
                 self.state = Some(state);
                 self.last_init_error = None;
+                self.runtime_exit_requested = false;
 
                 if let (Some(state), Some(gfx)) = (self.state.as_mut(), self.vulkan_graphics) {
                     if state.session.is_none() {
@@ -2336,6 +2370,7 @@ impl OpenXRSystem {
 
             match evt {
                 openxr::Event::InstanceLossPending(_) => {
+                    self.runtime_exit_requested = true;
                     self.hand_tracking_frame = None;
                     self.hand_tracking_epoch = self.hand_tracking_epoch.wrapping_add(1);
                     eprintln!("[OpenXR] Event: InstanceLossPending");
@@ -2368,6 +2403,7 @@ impl OpenXRSystem {
                                 }
                             }
                             openxr::SessionState::EXITING | openxr::SessionState::LOSS_PENDING => {
+                                self.runtime_exit_requested = true;
                                 sess.running = false;
                                 self.hand_tracking_frame = None;
                                 self.hand_tracking_epoch = self.hand_tracking_epoch.wrapping_add(1);
@@ -4514,18 +4550,19 @@ impl OpenXRSystem {
             let view_count = sess.xr_swapchain.view_count() as usize;
 
             let xr_format = sess.xr_swapchain.format();
-            let window_format = renderer.window_vk_format_raw();
-            let format_matches = window_format.map(|f| f == xr_format).unwrap_or(true);
+            let scene_format = renderer.scene_vk_format_raw();
+            let format_matches = scene_format.map(|f| f == xr_format).unwrap_or(true);
 
-            // Scene pipelines currently use the window format. If it was unavailable,
-            // fall back to a pink clear to prove we're submitting frames.
+            // Windowed startup can still negotiate a different XR format.
+            // XR-only startup builds scene pipelines from the XR format itself.
+            // Keep the diagnostic clear for a window/XR mismatch.
             let dst_image = sess.xr_swapchain.images()[image_index_usize];
             if !format_matches {
                 if !sess.did_log_format_mismatch {
                     sess.did_log_format_mismatch = true;
                     eprintln!(
-                        "[OpenXR] XR swapchain format mismatch (xr={} window={:?}); falling back to clear_color",
-                        xr_format, window_format
+                        "[OpenXR] XR swapchain format mismatch (xr={} scene={:?}); falling back to clear_color",
+                        xr_format, scene_format
                     );
                 }
 

@@ -446,18 +446,7 @@ impl Universe {
 
         self.systems.xr.prepare_for_renderer_init(&self.world);
 
-        // Apply renderer settings from the component graph if the caller didn't explicitly
-        // override them (e.g. via CLI).
-        if self.renderer.msaa_mode_override().is_none() {
-            for cid in self.world.all_components() {
-                if let Some(s) = self
-                    .world
-                    .get_component_by_id_as::<ecs::component::RendererSettingsComponent>(cid)
-                {
-                    let _ = self.renderer.set_msaa_mode(s.msaa_mode());
-                }
-            }
-        }
+        self.apply_renderer_settings();
 
         let xr_required = self.systems.xr.required_vulkan_extensions();
         if let Some((ref instance_exts, ref device_exts)) = xr_required {
@@ -491,6 +480,47 @@ impl Universe {
             self.systems.xr.set_vulkan_graphics(gfx);
         }
 
+        Ok(())
+    }
+
+    fn apply_renderer_settings(&mut self) {
+        // Apply renderer settings from the component graph if the caller didn't explicitly
+        // override them (e.g. via CLI).
+        if self.renderer.msaa_mode_override().is_none() {
+            for cid in self.world.all_components() {
+                if let Some(s) = self
+                    .world
+                    .get_component_by_id_as::<ecs::component::RendererSettingsComponent>(cid)
+                {
+                    let _ = self.renderer.set_msaa_mode(s.msaa_mode());
+                }
+            }
+        }
+    }
+
+    /// Initialize an XR-only renderer without a Winit event loop, window,
+    /// Vulkan surface, or desktop swapchain. Requires an available XR runtime.
+    pub fn init_renderer_for_xr(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.apply_renderer_settings();
+        self.systems.xr.initialize_runtime()?;
+        let (instance, system) = self
+            .systems
+            .xr
+            .vulkan_runtime()
+            .ok_or("OpenXR runtime not initialized")?;
+        self.renderer.init_xr_graphics(&instance, system)?;
+        let graphics = self
+            .renderer
+            .xr_vulkan_graphics()
+            .ok_or("XR graphics not initialized")?;
+        self.systems.xr.set_vulkan_graphics(graphics);
+        self.systems.xr.retry_runtime()?;
+        let format = self
+            .systems
+            .xr
+            .swapchain_format()
+            .ok_or("OpenXR swapchain not initialized")?;
+        self.renderer.init_xr_scene(format)?;
         Ok(())
     }
 
@@ -571,9 +601,9 @@ impl Universe {
             .render_xr(&self.world, &mut self.visuals, &mut self.renderer);
         log_startup_progress(StartupCheckpoint::XrRenderCompleted);
 
-        // Skip the window scene draw when there is no active Camera3D/Camera2D.
-        // The winit loop and XR rendering continue to run independently.
-        if self.systems.camera.has_active_window_camera() {
+        // XR-only startup has no window output. Windowed startup also skips
+        // presentation when there is no active Camera3D/Camera2D.
+        if self.renderer.has_window_output() && self.systems.camera.has_active_window_camera() {
             // TODO: rebuild inspector around component graph instead of entities.
             self.renderer
                 .render_visual_world(&mut self.visuals)

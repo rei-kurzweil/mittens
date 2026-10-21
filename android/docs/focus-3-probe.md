@@ -2,6 +2,10 @@
 
 This specifies the first Android executable to implement. It is not a completed test or a claim about installed headset capabilities.
 
+First verify the portable renderer extraction with the desktop
+[`openxr-only` example](../../docs/desktop/xr-only.md). Android packaging and the
+capability checks below follow that desktop milestone.
+
 ## Build and launch
 
 Use the local ALVR Android packaging/lifecycle setup as a reference. Give the probe a Mittens package identity, an arm64 native activity entry point, logcat logging, and the matching OpenXR loader. Include OpenXR runtime discovery declarations and required HTC activity metadata. Request microphone/tracking permissions only as their tests are introduced.
@@ -40,7 +44,7 @@ Keep the first visual test independent of audio, eye accessories, scripting, mir
 
 ## Decisions from the result
 
-- Vulkan session succeeds and dynamic rendering works: extract Mittens' XR-only initialization and reuse its base dynamic rendering path.
+- Vulkan session succeeds and dynamic rendering works: adapt Mittens' existing XR-only initialization to the Android runtime/binding and reuse its base dynamic rendering path.
 - Vulkan session succeeds without dynamic rendering: implement classic render-pass/framebuffer and pipeline variants while keeping shared scene preparation.
 - Mittens' deformation limits fail: make that subsystem optional or lower its resource requirements before expecting an ordinary static scene to run.
 - Vulkan binding/session fails: preserve logs and firmware/loader identity; investigate that failure before choosing a different graphics backend.

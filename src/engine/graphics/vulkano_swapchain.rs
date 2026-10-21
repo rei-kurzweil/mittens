@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use super::renderer_context::RendererContext;
 use vulkano::Validated;
 use vulkano::format::Format;
 use vulkano::image::view::{ImageView, ImageViewCreateInfo};
@@ -8,7 +9,6 @@ use vulkano::image::{
 };
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter};
 use vulkano::swapchain::{Surface, Swapchain, SwapchainCreateInfo};
-use vulkano_util::context::VulkanoContext;
 use winit::window::Window;
 
 /// Swapchain + swapchain-dependent attachments (views/depth).
@@ -38,7 +38,7 @@ impl VulkanoSwapchainState {
     pub(crate) const DEPTH_FORMAT: Format = Format::D32_SFLOAT_S8_UINT;
 
     pub(crate) fn new(
-        context: &VulkanoContext,
+        context: &RendererContext,
         window: Arc<Window>,
         msaa_samples: SampleCount,
     ) -> Result<Self, Box<dyn std::error::Error>> {
@@ -122,7 +122,7 @@ impl VulkanoSwapchainState {
 
     pub(crate) fn recreate(
         &mut self,
-        context: &VulkanoContext,
+        context: &RendererContext,
         window: &Window,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let new_dimensions = window.inner_size();
@@ -167,7 +167,7 @@ impl VulkanoSwapchainState {
     }
 
     fn create_depth_stencil_views(
-        context: &VulkanoContext,
+        context: &RendererContext,
         swapchain_views: &[Arc<ImageView>],
         extent: [u32; 2],
         samples: SampleCount,
@@ -216,7 +216,7 @@ impl VulkanoSwapchainState {
     }
 
     fn create_msaa_color_views(
-        context: &VulkanoContext,
+        context: &RendererContext,
         swapchain_views: &[Arc<ImageView>],
         extent: [u32; 2],
         format: Format,

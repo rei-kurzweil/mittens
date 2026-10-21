@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use super::renderer_context::RendererContext;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
 use vulkano::command_buffer::PrimaryCommandBufferAbstract;
 use vulkano::command_buffer::{
@@ -11,10 +12,9 @@ use vulkano::image::view::ImageView;
 use vulkano::image::{Image, ImageCreateInfo, ImageType, ImageUsage};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter};
 use vulkano::sync::GpuFuture;
-use vulkano_util::context::VulkanoContext;
 
 pub(crate) fn upload_texture_rgba8(
-    context: &VulkanoContext,
+    context: &RendererContext,
     command_buffer_allocator: &Arc<StandardCommandBufferAllocator>,
     rgba: &[u8],
     width: u32,
@@ -87,7 +87,7 @@ pub(crate) fn upload_texture_rgba8(
 }
 
 pub(crate) fn upload_texture_bc7(
-    context: &VulkanoContext,
+    context: &RendererContext,
     command_buffer_allocator: &Arc<StandardCommandBufferAllocator>,
     bc7_blocks: &[u8],
     width: u32,

@@ -11,6 +11,7 @@ pub mod post_processing;
 pub mod primitives;
 pub mod render_assets;
 pub mod render_info;
+pub(crate) mod renderer_context;
 pub mod skin;
 pub mod visual_world;
 pub mod vulkano_renderer;
