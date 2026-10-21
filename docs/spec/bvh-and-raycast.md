@@ -172,7 +172,7 @@ This:
 - Commits pending adds (building AABBs, inserting shapes)
 - Updates AABBs for pending refits
 - If topology changed (add/remove), does a full `BVH::build(&mut shapes)`
-- Else performs `bvh.optimize(pending_refit_shape_indices, &shapes)`
+- Else performs the shared safe ancestor-bounds refit (without rotating nodes)
 
 Important note: `BvhSystem::tick` is essentially a no-op; **flush_pending is the real update point**.
 
@@ -250,3 +250,10 @@ Practical implication:
 - Add AABB computation for arbitrary meshes (imported vertex bounds) so BVH covers glTF geometry.
 - Add per-mesh BVH (or triangle-level intersection) for accurate hits.
 - Extend `RayCastComponent` with a “ray source” mode (e.g. from a `TransformComponent` or XR controller pose) in addition to cursor/camera.
+
+
+## Physical contact
+
+Raycasting and BVH maintenance run on the simulation thread. Physical zones
+have a separate retained [collidable BVH](collidable-bvh.md); neither index
+requires an asynchronous overlap worker.

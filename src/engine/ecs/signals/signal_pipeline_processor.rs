@@ -65,7 +65,6 @@ impl SignalPipelineProcessor {
             | IntentValue::ToggleSet { component_id, .. }
             | IntentValue::ToggleSyncValue { component_id, .. }
             | IntentValue::SliderSet { component_id, .. }
-            | IntentValue::CollisionVisualizationSet { component_id, .. }
             | IntentValue::SpringBoneVisualizationSet { component_id, .. }
             | IntentValue::ZoneVisualizationSet { component_id, .. }
             | IntentValue::CameraVisualizationSet { component_id, .. }
@@ -113,8 +112,6 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterText { component_id }
             | IntentValue::RegisterGLTF { component_id }
             | IntentValue::RegisterTextInput { component_id }
-            | IntentValue::RegisterCollision { component_id }
-            | IntentValue::RemoveCollision { component_id }
             | IntentValue::RegisterAvatarControl { component_id }
             | IntentValue::RegisterHandTracking { component_id }
             | IntentValue::UnregisterHandTracking { component_id }
@@ -220,7 +217,6 @@ impl SignalPipelineProcessor {
             | IntentValue::ToggleSet { component_id, .. }
             | IntentValue::ToggleSyncValue { component_id, .. }
             | IntentValue::SliderSet { component_id, .. }
-            | IntentValue::CollisionVisualizationSet { component_id, .. }
             | IntentValue::SpringBoneVisualizationSet { component_id, .. }
             | IntentValue::ZoneVisualizationSet { component_id, .. }
             | IntentValue::CameraVisualizationSet { component_id, .. }
@@ -268,8 +264,6 @@ impl SignalPipelineProcessor {
             | IntentValue::RegisterText { component_id }
             | IntentValue::RegisterGLTF { component_id }
             | IntentValue::RegisterTextInput { component_id }
-            | IntentValue::RegisterCollision { component_id }
-            | IntentValue::RemoveCollision { component_id }
             | IntentValue::RegisterAvatarControl { component_id }
             | IntentValue::RegisterHandTracking { component_id }
             | IntentValue::UnregisterHandTracking { component_id }

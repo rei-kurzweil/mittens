@@ -482,14 +482,6 @@ impl RxMutationExecutor {
                 systems.text_input.execute_intent(world, emit, env);
             }
 
-            IntentValue::RegisterCollision { component_id } => {
-                let component = *component_id;
-                systems.register_collision(world, visuals, component);
-            }
-            IntentValue::RemoveCollision { component_id } => {
-                let component = *component_id;
-                systems.remove_collision(world, visuals, component);
-            }
             IntentValue::RegisterAvatarControl { component_id } => {
                 let component = *component_id;
                 systems.register_avatar_control(component);
@@ -768,20 +760,6 @@ impl RxMutationExecutor {
             IntentValue::RegisterEditorUI { component_id } => {
                 let component = *component_id;
                 systems.register_editor_ui(world, visuals, render_assets, component, emit);
-            }
-            IntentValue::CollisionVisualizationSet {
-                component_id,
-                scope_roots,
-                mode,
-            } => {
-                let owner = component_id;
-                if let Some(mode) = mode {
-                    systems
-                        .collision_visualization
-                        .set_request(*owner, scope_roots.clone(), *mode);
-                } else {
-                    systems.collision_visualization.remove_request(*owner);
-                }
             }
             IntentValue::SpringBoneVisualizationSet {
                 component_id,

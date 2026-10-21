@@ -82,6 +82,10 @@ impl<'a> WorldContext<'a> {
 pub struct World {
     /// Invalidates retained selector results on topology/label/GUID changes.
     query_revision: u64,
+    /// Typed contact registry: discovery never walks unrelated scene components.
+    collidable_ids: std::collections::HashSet<ComponentId>,
+    /// Consumed by the simulation's StaticContactSystem after pose propagation.
+    contact_changes: RefCell<std::collections::HashSet<ComponentId>>,
     components: SlotMap<ComponentId, crate::engine::ecs::component::ComponentNode>,
     guid_index: HashMap<uuid::Uuid, ComponentId>,
     /// MMQ parser instance with per-instance AST cache. Behind a RefCell so
@@ -171,6 +175,7 @@ impl World {
         let node = crate::engine::ecs::component::ComponentNode::new(c);
         let guid = node.guid;
         let id = self.components.insert(node);
+        self.track_contact_component(id);
         let _old = self.guid_index.insert(guid, id);
         if let Some(node) = self.get_component_record_mut(id) {
             node.component.set_id(id);
@@ -187,6 +192,7 @@ impl World {
         let node = crate::engine::ecs::component::ComponentNode::new_named(name, c);
         let guid = node.guid;
         let id = self.components.insert(node);
+        self.track_contact_component(id);
         let _old = self.guid_index.insert(guid, id);
         if let Some(node) = self.get_component_record_mut(id) {
             node.component.set_id(id);
@@ -210,6 +216,7 @@ impl World {
         let node = crate::engine::ecs::component::ComponentNode::new_with_guid_named(guid, name, c);
         let guid = node.guid;
         let id = self.components.insert(node);
+        self.track_contact_component(id);
         self.guid_index.insert(guid, id);
         if let Some(node) = self.get_component_record_mut(id) {
             node.component.set_id(id);
@@ -244,6 +251,24 @@ impl World {
         self.query_revision
     }
 
+    fn track_contact_component(&mut self, id: ComponentId) {
+        if self
+            .get_component_by_id_as::<component::CollidableComponent>(id)
+            .is_some()
+        {
+            self.collidable_ids.insert(id);
+        }
+        self.contact_changes.get_mut().insert(id);
+    }
+
+    pub(crate) fn collidable_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
+        self.collidable_ids.iter().copied()
+    }
+
+    pub(crate) fn take_contact_changes(&self) -> std::collections::HashSet<ComponentId> {
+        std::mem::take(&mut *self.contact_changes.borrow_mut())
+    }
+
     pub fn get_component_record_mut(
         &mut self,
         id: ComponentId,
@@ -251,6 +276,7 @@ impl World {
         // Raw record access can change selector metadata or topology. Ordinary
         // typed component writes bypass this conservative invalidation.
         self.query_revision = self.query_revision.wrapping_add(1);
+        self.contact_changes.get_mut().insert(id);
         self.components.get_mut(id)
     }
 
@@ -310,7 +336,15 @@ impl World {
 
     pub fn get_component_by_id_as_mut<T: 'static>(&mut self, c: ComponentId) -> Option<&mut T> {
         let node = self.components.get_mut(c)?;
-        node.component.as_any_mut().downcast_mut::<T>()
+        let typed = node.component.as_any_mut().downcast_mut::<T>()?;
+        let kind = std::any::TypeId::of::<T>();
+        if kind == std::any::TypeId::of::<component::TransformComponent>()
+            || kind == std::any::TypeId::of::<component::ZoneComponent>()
+            || kind == std::any::TypeId::of::<component::CollidableComponent>()
+        {
+            self.contact_changes.get_mut().insert(c);
+        }
+        Some(typed)
     }
 
     /// Find the first component under `root` matching `selector`.
@@ -386,8 +420,7 @@ impl World {
     ) -> Option<(ComponentId, &mut T)> {
         let parent = self.parent_of(c)?;
         // Avoid borrowing self twice by doing the downcast via the node.
-        let node = self.components.get_mut(parent)?;
-        let typed = node.component.as_any_mut().downcast_mut::<T>()?;
+        let typed = self.get_component_by_id_as_mut::<T>(parent)?;
         Some((parent, typed))
     }
 
@@ -527,6 +560,8 @@ impl World {
 
         self.detach_from_parent(c);
         self.components.remove(c);
+        self.collidable_ids.remove(&c);
+        self.contact_changes.get_mut().insert(c);
         self.query_revision = self.query_revision.wrapping_add(1);
         Ok(())
     }
@@ -563,6 +598,8 @@ impl World {
                 node.children.clear();
             }
             self.components.remove(c);
+            self.collidable_ids.remove(&c);
+            self.contact_changes.get_mut().insert(c);
         }
 
         Ok(())

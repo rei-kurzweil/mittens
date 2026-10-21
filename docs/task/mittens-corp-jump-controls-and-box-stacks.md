@@ -15,6 +15,13 @@ platform.
 
 ## Current implementation
 
+2026-10-21 update: pedestrian XR jump now uses right-controller `ButtonB`
+across the corp and other XR jump examples. The grounded guard and 4.5 m/s
+launch impulse are unchanged; Y no longer triggers jump. The existing headless
+XR control test covers B, Y rejection, and airborne rejection. The AGC example
+moves its microphone-mode toggle to Y so B only triggers jump. The height
+increase and box-stack route below remain pending, as does headset acceptance.
+
 2026-10-14 source recheck: the XR example still binds `ButtonY`; XR and desktop
 still launch at 4.5 m/s, and the proposed box-stack route is absent from both
 corp examples. This task remains pending. The separately shared studio crates
@@ -25,7 +32,7 @@ to investigate before relying on repositionable stacks.
   `XrButtonDown` for right-hand `ButtonB` and left-hand `ButtonY`.
 - The jump binding currently lives in the example's `on_global("XrButtonDown",
   ...)` handler, rather than the gamepad's built-in locomotion implementation.
-  Mittens-corp checks `ButtonY` and calls
+  Mittens-corp now checks `ButtonB` and calls
   `player_motion.translate_world([0.0, 4.5, 0.0])` when grounded.
 - The desktop example uses Space with the same launch velocity. Keep Space
   and make the height increase consistent between XR and desktop.

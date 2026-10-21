@@ -2,7 +2,13 @@
 
 ## Status and outcome
 
-Planned; documentation only. First fixtures are Rei(mu) and Bisket. AVC should
+Leg solving remains planned. The [retained collidable BVH](../spec/collidable-bvh.md)
+was implemented on 2026-10-21 as its neighborhood-query foundation. Future crouch
+support queries will filter nearby zone centers below the AVC capsule center;
+there is no authored floor marker or separate Y-only index. Per-foot support
+selection and leg solving are still pending.
+
+First leg-solver fixtures are Rei(mu) and Bisket. AVC should
 automatically prepare a bounded lower-body crouch solver for a mapped humanoid
 with valid XR tracking and a usable ground reference. Lowering the physical
 head lowers the body; the solver bends the legs to keep the feet above the

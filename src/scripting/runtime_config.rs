@@ -1240,12 +1240,6 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 "GestureCoordType" => {
                     no_arg_constructors(component, &["screen_space_1d_slider", "world_plane"]);
                 }
-                "CollisionShape" => {
-                    component
-                        .constructor("cube", any(1))
-                        .constructor("sphere", floats(1))
-                        .constructor("capsule_y", floats(2));
-                }
                 "Zone" => {
                     component
                         .constructor("cube", any(1))
@@ -1277,9 +1271,6 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                             "box",
                         ],
                     );
-                }
-                "Collision" => {
-                    no_arg_constructors(component, &["static", "kinematic", "rigged"]);
                 }
                 "Gravity" => {
                     host_method(
@@ -1547,8 +1538,6 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "SliderChanged",
         "SliderCommitted",
         "DataEvent",
-        "CollisionStarted",
-        "CollisionEnded",
         "DragStart",
         "DragMove",
         "DragEnd",

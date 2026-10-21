@@ -159,7 +159,7 @@ ED.active() {
     }
     Gravity.enabled(false) { name = "player_gravity" player_motion }
     on_global("XrButtonDown", fn(event) {
-        if event.control == "ButtonY" && player_motion.grounded() {
+        if event.control == "ButtonB" && player_motion.grounded() {
             player_motion.translate_world([0.0, 4.5, 0.0])
         }
     })

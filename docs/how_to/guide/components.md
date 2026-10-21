@@ -722,22 +722,6 @@ XR {}
 
 ## Physics and motion
 
-### `CollisionComponent`
-<!-- catalog:component source="CollisionComponent" mms="direct" names="Collision" -->
-Carries collision state used when that engine feature is present in a component tree. Use it when a tree needs this state or behavior. Collision systems; registration/removal intents plus `CollisionStarted` and `CollisionEnded` are relevant.
-**Directly constructible** as `Collision`. Sources: [Rust implementation](../../../src/engine/ecs/component/collision.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
-```mms parse-only
-Collision {}
-```
-
-### `CollisionShapeComponent`
-<!-- catalog:component source="CollisionShapeComponent" mms="direct" names="CollisionShape" -->
-Carries collision shape state used when that engine feature is present in a component tree. Use it when a tree needs this state or behavior. Collision systems; registration/removal intents plus `CollisionStarted` and `CollisionEnded` are relevant.
-**Directly constructible** as `CollisionShape`. Sources: [Rust implementation](../../../src/engine/ecs/component/collision_shape.rs) and [MMS registry](../../../src/scripting/component_registry.rs).
-```mms parse-only
-CollisionShape {}
-```
-
 ### `GravityComponent`
 <!-- catalog:component source="GravityComponent" mms="direct" names="Gravity" -->
 Carries gravity state used when that engine feature is present in a component tree. Use it when a tree needs this state or behavior. The Gravity engine subsystem; its component lifecycle is processed at signal drain points.

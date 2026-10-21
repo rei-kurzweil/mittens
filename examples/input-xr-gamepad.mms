@@ -66,9 +66,7 @@ T.position(0.75, 0.35, -0.75) {
 
 ED {
     T.position(0.0, -0.75, 0.0).scale(120.0, 0.12, 120.0) {
-        Collision.static() {
-            CollisionShape.cube([60.0, 0.06, 60.0])
-        }
+        Zone.cube([0.5, 0.5, 0.5]) { Collidable.static() {} }
         R.cube() { C.rgba(0.75, 0.75, 0.75, 1.0) }
     }
 }

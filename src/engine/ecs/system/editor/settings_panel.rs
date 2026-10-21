@@ -760,7 +760,7 @@ mod tests {
     }
 
     #[test]
-    fn spring_bone_toggle_is_independent_from_collision_visualization() {
+    fn spring_bone_toggle_is_independent_from_zone_visualization() {
         let mut world = World::default();
         let mut emit = CommandQueue::new();
         let mut visuals = VisualWorld::default();
@@ -801,7 +801,6 @@ mod tests {
                 .requests()
                 .contains_key(&editor_ui)
         );
-        assert!(systems.collision_visualization.requests().is_empty());
     }
 
     #[test]
@@ -844,7 +843,6 @@ mod tests {
             systems.zone_visualization.requests()[&editor_ui].scope_roots,
             vec![editor_root]
         );
-        assert!(systems.collision_visualization.requests().is_empty());
 
         assert!(handle_editor_settings_panel_click(
             &mut world, &mut emit, editor_ui, row, &context, &roots,

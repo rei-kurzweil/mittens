@@ -17,8 +17,13 @@ child transform. Zone shapes use local coordinates and inherit transform scale.
 The old push acceleration, damping, speed clamp, and bounce policy are retired.
 Movable-body pushing is separate work in
 [surface contact and coupled motion](../task/surface-contact-and-coupled-motion.md).
-Legacy Collision detection and its overlap events remain pending their own
-consumer audit/removal; deleting response does not delete geometric queries.
+The legacy Collision detection worker, Collision/CollisionShape components,
+CollisionMode, CollisionStarted/CollisionEnded events, and COL/COLS shortforms
+were removed on 2026-10-21. Use Zone shapes with Collidable roles; authored shape
+dimensions are local and inherit transform scale once. Existing Zone enter/exit
+events and synchronous geometric queries remain supported.
+
+Static contact now uses a retained [collidable BVH](collidable-bvh.md).
 
 See [static non-penetration migration](../task/retire-collision-response-to-static-nonpenetration.md)
 and [gravity and acceleration](../task/gravity-and-acceleration-velocity-drivers.md).

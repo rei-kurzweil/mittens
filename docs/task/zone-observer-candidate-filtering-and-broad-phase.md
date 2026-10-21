@@ -21,7 +21,9 @@ per-pair checks, not an indexed broad phase, and frames/bounds can be recomputed
 for the same zone across many pairs. The rendering BVH is not a Zone index.
 
 Static contact is a separate consumer: slide movers versus static collidables,
-with AABB rejection, a downward floor sweep, and up to six correction passes.
+with a retained [collidable BVH](../spec/collidable-bvh.md), a downward floor sweep,
+and up to six correction passes. The static index was implemented on 2026-10-21;
+this observer still uses its existing pair enumeration.
 Its candidate/test/iteration counters do not currently profile the observer.
 Shared acceleration must preserve each consumer's candidate and response rules.
 

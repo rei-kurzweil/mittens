@@ -95,24 +95,6 @@ pub enum EventSignal {
         dir: [f32; 3],
     },
 
-    /// Two collision objects began overlapping this tick.
-    ///
-    /// `delta` is the vector from `a` to `b` in world space: `pos(b) - pos(a)`.
-    CollisionStarted {
-        a: ComponentId,
-        b: ComponentId,
-        delta: [f32; 3],
-    },
-
-    /// Two collision objects stopped overlapping this tick.
-    ///
-    /// `delta` is the last known vector from `a` to `b` in world space: `pos(b) - pos(a)`.
-    CollisionEnded {
-        a: ComponentId,
-        b: ComponentId,
-        delta: [f32; 3],
-    },
-
     /// A drag gesture started.
     DragStart {
         activation_source: PointerActivationSource,
@@ -386,8 +368,6 @@ impl EventSignal {
             EventSignal::GltfInitialized { .. } => SignalKind::GltfInitialized,
             EventSignal::ParentChanged { .. } => SignalKind::ParentChanged,
             EventSignal::RayIntersected { .. } => SignalKind::RayIntersected,
-            EventSignal::CollisionStarted { .. } => SignalKind::CollisionStarted,
-            EventSignal::CollisionEnded { .. } => SignalKind::CollisionEnded,
             EventSignal::DragStart { .. } => SignalKind::DragStart,
             EventSignal::DragMove { .. } => SignalKind::DragMove,
             EventSignal::DragEnd { .. } => SignalKind::DragEnd,
@@ -533,11 +513,6 @@ pub enum IntentValue {
         component_id: ComponentId,
         value: f32,
         emit_changed: bool,
-    },
-    CollisionVisualizationSet {
-        component_id: ComponentId,
-        scope_roots: Vec<ComponentId>,
-        mode: Option<crate::engine::ecs::system::CollisionVisualizationMode>,
     },
     SpringBoneVisualizationSet {
         component_id: ComponentId,
@@ -808,12 +783,6 @@ pub enum IntentValue {
         index: usize,
     },
 
-    RegisterCollision {
-        component_id: ComponentId,
-    },
-    RemoveCollision {
-        component_id: ComponentId,
-    },
     RegisterAvatarControl {
         component_id: ComponentId,
     },
@@ -1038,7 +1007,6 @@ impl IntentValue {
             IntentValue::ToggleSet { .. } => "toggle_set",
             IntentValue::ToggleSyncValue { .. } => "toggle_sync_value",
             IntentValue::SliderSet { .. } => "slider_set",
-            IntentValue::CollisionVisualizationSet { .. } => "collision_visualization_set",
             IntentValue::SpringBoneVisualizationSet { .. } => "spring_bone_visualization_set",
             IntentValue::ZoneVisualizationSet { .. } => "zone_visualization_set",
             IntentValue::CameraVisualizationSet { .. } => "camera_visualization_set",
@@ -1113,8 +1081,6 @@ impl IntentValue {
             IntentValue::TextInputMoveCaret { .. } => "text_input_move_caret",
             IntentValue::TextInputMoveCaretTo { .. } => "text_input_move_caret_to",
 
-            IntentValue::RegisterCollision { .. } => "register_collision",
-            IntentValue::RemoveCollision { .. } => "remove_collision",
             IntentValue::RegisterAvatarControl { .. } => "register_avatar_control",
             IntentValue::RegisterHandTracking { .. } => "register_hand_tracking",
             IntentValue::UnregisterHandTracking { .. } => "unregister_hand_tracking",
@@ -1217,8 +1183,6 @@ pub enum SignalKind {
     GltfInitialized,
     ParentChanged,
     RayIntersected,
-    CollisionStarted,
-    CollisionEnded,
     DragStart,
     DragMove,
     DragEnd,

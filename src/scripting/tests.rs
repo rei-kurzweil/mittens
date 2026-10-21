@@ -4434,10 +4434,9 @@ fn gltf_pose_animation_example_imports_named_pose_factories() {
 #[test]
 fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
     use crate::engine::ecs::component::{
-        Camera3DComponent, CameraXRComponent, CollidableComponent, CollidableMode,
-        CollisionComponent, CollisionMode, InputComponent, InputTransformModeComponent,
-        InputXRComponent, RenderableComponent, SecondaryMotionComponent, SpotLightComponent,
-        SpringBoneComponent, SpringColliderComponent,
+        Camera3DComponent, CameraXRComponent, CollidableComponent, CollidableMode, InputComponent,
+        InputTransformModeComponent, InputXRComponent, RenderableComponent,
+        SecondaryMotionComponent, SpotLightComponent, SpringBoneComponent, SpringColliderComponent,
     };
     let source = include_str!("../../examples/secondary-motion-desktop.mms");
     let mut world = World::default();
@@ -4649,8 +4648,8 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
         avatar_tree
             .iter()
             .filter(|&&id| world
-                .get_component_by_id_as::<CollisionComponent>(id)
-                .is_some_and(|collision| collision.mode == CollisionMode::Kinematic))
+                .get_component_by_id_as::<CollidableComponent>(id)
+                .is_some_and(|collision| collision.mode == CollidableMode::Slide))
             .count(),
         0
     );
@@ -5082,7 +5081,7 @@ fn secondary_motion_desktop_gravity_lands_jumps_and_routes_capsule_to_falling_ro
 }
 
 #[test]
-fn secondary_motion_xr_gravity_y_button_targets_falling_velocity() {
+fn secondary_motion_xr_gravity_b_button_targets_falling_velocity() {
     use crate::engine::ecs::component::{
         ControllerHand, InputXRGamepadComponent, VelocityComponent, XrButtonControl,
     };
@@ -5142,13 +5141,17 @@ fn secondary_motion_xr_gravity_y_button_targets_falling_velocity() {
             gamepad,
             EventSignal::XrButtonDown {
                 source_component: gamepad,
-                hand: ControllerHand::Left,
+                hand: if control == XrButtonControl::ButtonB {
+                    ControllerHand::Right
+                } else {
+                    ControllerHand::Left
+                },
                 control,
                 value: 1.0,
             },
         );
     };
-    press(&mut systems, XrButtonControl::ButtonX);
+    press(&mut systems, XrButtonControl::ButtonY);
     systems.process_signals(&mut world, &mut visuals, &mut assets, &mut queue, 100_000);
     queue.flush(&mut world, &mut systems, &mut visuals, &mut assets);
     assert_eq!(
@@ -5158,7 +5161,7 @@ fn secondary_motion_xr_gravity_y_button_targets_falling_velocity() {
             .linear_local_mps,
         [0.0; 3]
     );
-    press(&mut systems, XrButtonControl::ButtonY);
+    press(&mut systems, XrButtonControl::ButtonB);
     systems.process_signals(&mut world, &mut visuals, &mut assets, &mut queue, 100_000);
     queue.flush(&mut world, &mut systems, &mut visuals, &mut assets);
     assert_eq!(
@@ -5174,7 +5177,7 @@ fn secondary_motion_xr_gravity_y_button_targets_falling_velocity() {
             .unwrap()
             .grounded
     );
-    press(&mut systems, XrButtonControl::ButtonY);
+    press(&mut systems, XrButtonControl::ButtonB);
     systems.process_signals(&mut world, &mut visuals, &mut assets, &mut queue, 100_000);
     queue.flush(&mut world, &mut systems, &mut visuals, &mut assets);
     assert_eq!(
@@ -8297,7 +8300,7 @@ fn capsule_stick_figure_grounding_boundary_preserves_xr_locomotion_and_local_pos
     use crate::engine::ecs::component::InputXRComponent;
     use crate::engine::ecs::system::input_xr_gamepad_system::xr_locomotion_target_transform;
     use crate::engine::ecs::system::{
-        CameraSystem, CollisionSystem, LightSystem, TransformOperatorSystem, TransformSystem,
+        CameraSystem, LightSystem, TransformOperatorSystem, TransformSystem,
     };
 
     let mut world = World::default();
@@ -8352,7 +8355,6 @@ fn capsule_stick_figure_grounding_boundary_preserves_xr_locomotion_and_local_pos
     let mut streams = TransformOperatorSystem::new();
     let mut cameras = CameraSystem::new();
     let mut lights = LightSystem::new();
-    let mut collisions = CollisionSystem::new();
     let mut visuals = VisualWorld::default();
     transforms.transform_changed(
         &mut world,
@@ -8361,7 +8363,6 @@ fn capsule_stick_figure_grounding_boundary_preserves_xr_locomotion_and_local_pos
         &mut streams,
         &mut cameras,
         &mut lights,
-        &mut collisions,
     );
     let watched = [locomotion, driver, camera_anchor];
     let before: Vec<_> = watched
@@ -8388,7 +8389,6 @@ fn capsule_stick_figure_grounding_boundary_preserves_xr_locomotion_and_local_pos
         &mut streams,
         &mut cameras,
         &mut lights,
-        &mut collisions,
     );
     for (id, (local_before, world_before)) in watched.into_iter().zip(before) {
         let local_after = world
@@ -10445,45 +10445,6 @@ fn roundtrip_gesture_coord_type() {
 }
 
 #[test]
-fn roundtrip_collision_shape_cube() {
-    use crate::engine::ecs::component::{CollisionShape, CollisionShapeComponent};
-    let original = CollisionShapeComponent::new(CollisionShape::cube_half_extents([2.0, 3.0, 4.0]));
-    let (world, id) = roundtrip_component(original);
-    let got = world
-        .get_component_by_id_as::<CollisionShapeComponent>(id)
-        .unwrap();
-    match got.shape {
-        CollisionShape::Cube { half_extents } => assert_eq!(half_extents, [2.0, 3.0, 4.0]),
-        _ => panic!("expected Cube"),
-    }
-}
-
-#[test]
-fn roundtrip_collision_shape_sphere() {
-    use crate::engine::ecs::component::{CollisionShape, CollisionShapeComponent};
-    let original = CollisionShapeComponent::new(CollisionShape::sphere_radius(1.5));
-    let (world, id) = roundtrip_component(original);
-    let got = world
-        .get_component_by_id_as::<CollisionShapeComponent>(id)
-        .unwrap();
-    match got.shape {
-        CollisionShape::Sphere { radius } => assert!((radius - 1.5).abs() < 1e-6),
-        _ => panic!("expected Sphere"),
-    }
-}
-
-#[test]
-fn roundtrip_collision_shape_capsule_clamps_dimensions() {
-    use crate::engine::ecs::component::{CollisionShape, CollisionShapeComponent};
-    let original = CollisionShapeComponent::capsule_y(-1.5, 2.25);
-    let (world, id) = roundtrip_component(original);
-    let got = world
-        .get_component_by_id_as::<CollisionShapeComponent>(id)
-        .unwrap();
-    assert_eq!(got.shape, CollisionShape::capsule_y(0.0, 2.25));
-}
-
-#[test]
 fn roundtrip_zone_preserves_shape_frame_roles_and_enabled_state() {
     use crate::engine::ecs::component::{CollisionShape, ComponentRef, ZoneComponent};
     let original = ZoneComponent::capsule_y(0.25, 0.75)
@@ -10643,16 +10604,6 @@ fn roundtrip_raycastable_shape() {
         .get_component_by_id_as::<RaycastableShapeComponent>(id)
         .unwrap();
     assert_eq!(got.shape, RaycastableShapeType::Cone);
-}
-
-#[test]
-fn roundtrip_collision() {
-    use crate::engine::ecs::component::{CollisionComponent, CollisionMode};
-    let (world, id) = roundtrip_component(CollisionComponent::KINEMATIC());
-    let got = world
-        .get_component_by_id_as::<CollisionComponent>(id)
-        .unwrap();
-    assert_eq!(got.mode, CollisionMode::Kinematic);
 }
 
 #[test]
@@ -14765,4 +14716,76 @@ fn avatar_capsule_ready_runtime_getter_supports_late_subscribers() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn retired_collision_constructors_aliases_and_events_are_rejected() {
+    for source in [
+        "Collision.static() {}",
+        "CollisionShape.cube([0.5, 0.5, 0.5]) {}",
+        "COL.static() {}",
+        "COLS.sphere(0.5) {}",
+        "let target = T {}\non(target, \"CollisionStarted\", fn(event) {})\ntarget",
+        "let target = T {}\non(target, \"CollisionEnded\", fn(event) {})\ntarget",
+    ] {
+        let mut world = World::default();
+        let out = MeowMeowRunner::eval_with_runtime_spec_at_path(
+            source,
+            None,
+            &mut world,
+            &mut RxWorld::default(),
+            None,
+            &mut CommandQueue::new(),
+        );
+        assert!(
+            !out.errors.is_empty(),
+            "retired API unexpectedly accepted: {source}"
+        );
+    }
+}
+
+#[test]
+fn migrated_collision_examples_load_with_local_zone_dimensions() {
+    use crate::engine::ecs::component::{CollidableComponent, CollidableMode, ZoneComponent};
+    for fixture in [
+        "examples/input-xr-gamepad.mms",
+        "examples/vtuber-editor-example.mms",
+        "examples/vtuber-mirror-example.mms",
+        "examples/vtuber-slidedeck.mms",
+        "examples/xr-grab-demo.mms",
+    ] {
+        let path = repo_path(fixture);
+        let source = fs::read_to_string(&path).unwrap();
+        let mut world = World::default();
+        let (_session, out) = RuntimeSpecSession::start_at_path(
+            &source,
+            path.to_str().unwrap(),
+            &mut world,
+            &mut RxWorld::default(),
+            Some(&mut RenderAssets::new()),
+            &mut CommandQueue::new(),
+        )
+        .unwrap_or_else(|error| panic!("{fixture}: {error:?}"));
+        assert!(out.errors.is_empty(), "{fixture}: {:?}", out.errors);
+        let zones: Vec<_> = world
+            .collidable_ids()
+            .filter_map(|id| {
+                let c = world.get_component_by_id_as::<CollidableComponent>(id)?;
+                (c.mode == CollidableMode::Static).then_some(world.parent_of(id)?)
+            })
+            .collect();
+        assert!(!zones.is_empty(), "{fixture}: missing physical surfaces");
+        for zone in zones {
+            let shape = world
+                .get_component_by_id_as::<ZoneComponent>(zone)
+                .unwrap()
+                .shape;
+            if let crate::engine::ecs::component::CollisionShape::Cube { half_extents } = shape {
+                assert_eq!(
+                    half_extents, [0.5; 3],
+                    "{fixture}: physical cube dimensions must be local"
+                );
+            }
+        }
+    }
 }

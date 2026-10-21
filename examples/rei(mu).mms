@@ -222,7 +222,7 @@ let player_motion = Velocity {
 }
 Gravity.enabled(false) { name = "player_gravity" player_motion }
 on_global("XrButtonDown", fn(event) {
-    if event.control == "ButtonY" && player_motion.grounded() { player_motion.translate_world([0.0, 4.5, 0.0]) }
+    if event.control == "ButtonB" && player_motion.grounded() { player_motion.translate_world([0.0, 4.5, 0.0]) }
 })
 teleport_pit("rei_mu_teleport_pit", [0.0, -24.0, 0.0], [180.0, 12.0, 180.0], [-5.0, 1.2, 0.0], "none")
 

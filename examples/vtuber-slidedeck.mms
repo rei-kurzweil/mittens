@@ -77,9 +77,7 @@ T.position(-2.75, 2.8, -1.5) {
 // of vtuber-mirror-example without reproducing every decorative primitive.
 ED.active() {
     T.position(0.0, -1.75, 0.0).scale(120.0, 0.12, 120.0) {
-        Collision.static() {
-            CollisionShape.cube([60.0, 0.06, 60.0])
-        }
+        Zone.cube([0.5, 0.5, 0.5]) { Collidable.static() {} }
         R.cube() { C.rgba(0.73, 0.71, 0.70, 1.0) Raycastable.enabled() }
     }
 

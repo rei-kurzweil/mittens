@@ -1,10 +1,3 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum CollisionMode {
-    Static,
-    Kinematic,
-    Rigged,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CollisionShape {
     Cube {

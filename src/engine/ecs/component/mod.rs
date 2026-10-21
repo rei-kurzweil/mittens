@@ -26,8 +26,6 @@ pub mod camera_2d;
 pub mod camera_3d;
 pub mod camera_xr;
 pub mod clock;
-pub mod collision;
-pub mod collision_shape;
 pub mod color;
 pub mod combine_mesh;
 pub mod component_ref;
@@ -121,7 +119,7 @@ pub mod unlit;
 pub mod uv;
 
 pub use self::gltf::GLTFComponent;
-pub use crate::engine::ecs::system::model::collision_types::{CollisionMode, CollisionShape};
+pub use crate::engine::ecs::system::model::collision_types::CollisionShape;
 pub use ambient_light::AmbientLightComponent;
 pub use amplitude::{AmplitudeComponent, AmplitudeSample, AmplitudeStatus};
 pub use volume_normalization::{VolumeNormalizationComponent, VolumeNormalizationReason};
@@ -245,10 +243,8 @@ pub use camera_2d::Camera2DComponent;
 pub use camera_3d::Camera3DComponent;
 pub use camera_xr::CameraXRComponent;
 pub use clock::ClockComponent;
-pub use collision::CollisionComponent;
 mod collidable;
 pub use collidable::{CollidableComponent, CollidableMode};
-pub use collision_shape::CollisionShapeComponent;
 pub use color::ColorComponent;
 pub use combine_mesh::CombineMeshComponent;
 pub use component_ref::{

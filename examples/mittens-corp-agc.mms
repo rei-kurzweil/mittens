@@ -47,7 +47,7 @@ let mouth_tuning = {
 // audio callback data. The graph is rebuilt from twelve scalar snapshots at
 // 10 Hz, so the columns are always left-to-right chronological: oldest on the
 // left, newest on the right. It continues to show the normalizer's decision
-// even while B routes AVC to the raw meter.
+// even while Y routes AVC to the raw meter.
 fn fixed_3(value) {
     let scaled = Math.round(Math.abs(value) * 1000.0)
     let whole = Math.floor(scaled / 1000.0)
@@ -512,7 +512,7 @@ T.position(1.60, 2.05, 1.35) {
 let agc_status_glow = EM.on() { intensity(2.4) }
 let agc_status_text = Text {
     name = "agc_status_text"
-    "AGC = ON\nB: raw amplitude"
+    "AGC = ON\nY: raw amplitude"
     C.rgba(1.0, 0.56, 0.10, 1.0)
     agc_status_glow
 }
@@ -716,18 +716,18 @@ ED.active() {
                     bisket_avatar_control
 
                     on(vehicle_controls, "XrButtonDown", fn(event) {
-                        if event.control == "ButtonB" {
+                        if event.control == "ButtonY" {
                             if agc_mode.enabled {
                                 // Keep normalization live for its diagnostics, but
                                 // route AVC to the raw observer for A/B tuning.
                                 agc_mode.enabled = false
                                 bisket_avatar_control.mouth_open_from_amplitude(raw_voice_level)
-                                agc_status_text.set_text("AGC = OFF\nB: normalized AGC")
+                                agc_status_text.set_text("AGC = OFF\nY: normalized AGC")
                                 agc_status_glow.set_intensity(0.28)
                             } else {
                                 agc_mode.enabled = true
                                 bisket_avatar_control.mouth_open_from_amplitude(voice_level)
-                                agc_status_text.set_text("AGC = ON\nB: raw amplitude")
+                                agc_status_text.set_text("AGC = ON\nY: raw amplitude")
                                 agc_status_glow.set_intensity(2.4)
                             }
                         }
@@ -752,7 +752,7 @@ ED.active() {
     }
     Gravity.enabled(false) { name = "player_gravity" player_motion }
     on_global("XrButtonDown", fn(event) {
-        if event.control == "ButtonY" && player_motion.grounded() { player_motion.translate_world([0.0, 4.5, 0.0]) }
+        if event.control == "ButtonB" && player_motion.grounded() { player_motion.translate_world([0.0, 4.5, 0.0]) }
     })
 
     let car_root = display_car_xr(

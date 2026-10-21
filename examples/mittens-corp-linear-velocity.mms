@@ -243,7 +243,7 @@ on(vel, "DataEvent", fn(event) {
 XR.on()
 
 on_global("XrButtonDown", fn(event) {
-    if event.control == "ButtonY" && vel.grounded() { vel.translate_world([0.0, 4.5, 0.0]) }
+    if event.control == "ButtonB" && vel.grounded() { vel.translate_world([0.0, 4.5, 0.0]) }
 })
 
 // Falling starts only after AVC's generated slide capsule is usable.

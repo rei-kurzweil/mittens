@@ -2,7 +2,7 @@ import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
 
 let arm_ik = vroid_arm_ik(-0.35, 1)
 
-// XR-only secondary-motion prototype. ButtonY jumps while supported. Spring metadata is attached by the Rust loader.
+// XR-only secondary-motion prototype. ButtonB jumps while supported. Spring metadata is attached by the Rust loader.
 // Move and turn your head/body in front of the mirror: hair, bust, tail, and
 // shirt-hem chains should sag visibly under gravity, lag behind the primary
 // avatar pose, keep their lengths, and oscillate briefly before settling.
@@ -112,7 +112,7 @@ ED {
     // Existing button events remain live while gamepad locomotion is enabled.
     // Profiles without a Y button need another binding; see the input-actions task.
     on(xr_gamepad, "XrButtonDown", fn(event) {
-        if event.control == "ButtonY" && xr_motion.grounded() {
+        if event.control == "ButtonB" && xr_motion.grounded() {
             xr_motion.translate_world([0.0, 4.5, 0.0])
         }
     })

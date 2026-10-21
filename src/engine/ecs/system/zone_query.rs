@@ -132,6 +132,27 @@ pub fn sweep_capsule_floor(
     let (end, moving_shape) =
         collision_geometry::axis_aligned_world_shape(moving_shape, moving_frame)
             .ok_or(ZoneQueryError::UnsupportedContactFrame(moving))?;
+    sweep_capsule_floor_geometry(
+        moving,
+        surface,
+        end,
+        moving_shape,
+        floor_shape,
+        floor_frame,
+        previous_center,
+    )
+}
+
+/// Same floor-crossing math for consumers with resolved, cached world geometry.
+pub(crate) fn sweep_capsule_floor_geometry(
+    moving: ComponentId,
+    surface: ComponentId,
+    end: [f32; 3],
+    moving_shape: CollisionShape,
+    floor_shape: CollisionShape,
+    floor_frame: [[f32; 4]; 4],
+    previous_center: [f32; 3],
+) -> Result<Option<ZoneSweepHit>, ZoneQueryError> {
     let (floor_center, half_extents, axes) = collision_geometry::yaw_box(floor_shape, floor_frame)
         .ok_or(ZoneQueryError::UnsupportedContactFrame(surface))?;
     let CollisionShape::CapsuleY {

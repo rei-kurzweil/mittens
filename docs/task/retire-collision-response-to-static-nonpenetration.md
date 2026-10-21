@@ -2,6 +2,21 @@
 
 ## Status and outcome
 
+2026-10-21 update: the retained static-collidable BVH is implemented on the
+simulation thread. Static contact now queries neighborhoods instead of scanning
+all static surfaces. The legacy Collision worker, components, modes, overlap
+events, MMS constructors/aliases, registration intents, and visualization have
+been removed. Remaining MMS consumers were migrated; the existing Zone
+visualization and Zone enter/exit events remain. Shared CollisionShape geometry
+and AVC capsule inference remain supported.
+
+See [collidable BVH](../spec/collidable-bvh.md) for current ownership, invalidation,
+profiling, and migration details. The dated notes below record the earlier
+migration stages; statements there about a remaining worker or missing contact
+broadphase are historical. Slopes, general sweeps, movable-body response, and
+crouch IK are separate work.
+
+
 Response retirement completed 2026-10-04: the component/system, scheduling,
 registration/removal intents, MMS registry/builders, `CRSP` shortform, and old
 serialization test are removed. `bisket-desktop-demo.mms` was the last authored

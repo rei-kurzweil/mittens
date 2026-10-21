@@ -1,8 +1,10 @@
+use super::collidable_bvh::CollidableBvh;
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 use crate::engine::ecs::component::{
-    CollidableComponent, CollidableMode, QueryRootMode, TransformComponent, VelocityComponent,
-    ZoneComponent, resolve_component_ref,
+    CollidableComponent, QueryRootMode, TransformComponent, VelocityComponent, ZoneComponent,
+    resolve_component_ref,
 };
 use crate::engine::ecs::system::{TransformSystem, VelocitySystem, collision_geometry, zone_query};
 use crate::engine::ecs::{ComponentId, World};
@@ -11,6 +13,18 @@ use crate::utils::math::{mat4_inverse, mat4_mul_vec4};
 #[derive(Debug, Default)]
 pub struct StaticContactSystem {
     previous_centers: HashMap<ComponentId, [f32; 3]>,
+    broad_phase: CollidableBvh,
+    traversal: Vec<usize>,
+    candidates: Vec<usize>,
+    additional: Vec<usize>,
+    pub bvh_node_visits: u64,
+    pub index_update_time: Duration,
+    pub query_time: Duration,
+    pub exact_test_time: Duration,
+    pub total_time: Duration,
+    profile_passes: u64,
+    profile_times: [Duration; 4],
+    profile_counts: [u64; 3],
     pub candidate_pairs: u64,
     pub narrow_phase_tests: u64,
     pub correction_iterations: u64,
@@ -64,35 +78,27 @@ impl StaticContactSystem {
         self.candidate_pairs = 0;
         self.narrow_phase_tests = 0;
         self.correction_iterations = 0;
-        let collidables: Vec<_> = world
-            .all_components()
-            .filter_map(|id| {
-                let c = world.get_component_by_id_as::<CollidableComponent>(id)?;
-                let zone = world.parent_of(id)?;
-                (c.enabled
-                    && world
-                        .get_component_by_id_as::<ZoneComponent>(zone)
-                        .is_some_and(|z| z.enabled))
-                .then_some((id, zone, c.mode, c.friction))
-            })
-            .collect();
-        let live_movers: HashSet<_> = collidables
+        let profiling = spatial_profiling();
+        let started = profiling.then(Instant::now);
+        self.bvh_node_visits = 0;
+        self.query_time = Duration::ZERO;
+        self.exact_test_time = Duration::ZERO;
+        let maintenance = profiling.then(Instant::now);
+        self.broad_phase.sync(world);
+        self.index_update_time = maintenance.map(|t| t.elapsed()).unwrap_or_default();
+        let movers: Vec<_> = self
+            .broad_phase
+            .movers
             .iter()
-            .filter(|(_, _, mode, _)| *mode == CollidableMode::Slide)
-            .map(|(_, zone, _, _)| *zone)
+            .map(|(&id, &zone)| (id, zone))
             .collect();
+        let live_movers: HashSet<_> = movers.iter().map(|&(_, zone)| zone).collect();
         self.previous_centers
             .retain(|zone, _| live_movers.contains(zone));
-        let statics: Vec<_> = collidables
-            .iter()
-            .filter(|(_, _, mode, _)| *mode == CollidableMode::Static)
-            .map(|(_, zone, _, friction)| (*zone, *friction))
-            .collect();
+        let mut candidates = std::mem::take(&mut self.candidates);
+        let mut additional = std::mem::take(&mut self.additional);
         let mut changed = Vec::new();
-        for (collidable_id, moving, mode, _) in collidables {
-            if mode != CollidableMode::Slide {
-                continue;
-            }
+        for (collidable_id, moving) in movers {
             let Some((center, shape)) = zone_world_shape(world, moving) else {
                 continue;
             };
@@ -110,29 +116,26 @@ impl StaticContactSystem {
             let mut desired_center = center;
             for iteration in 0..6 {
                 let mut corrected = false;
-                for &(surface, friction) in &statics {
-                    if surface == moving {
+                self.query_candidates(
+                    previous,
+                    desired_center,
+                    shape,
+                    iteration == 0,
+                    &mut candidates,
+                );
+                let mut cursor = 0;
+                while cursor < candidates.len() {
+                    let index = candidates[cursor];
+                    cursor += 1;
+                    let surface = self.broad_phase.surface(index);
+                    if surface.zone == moving {
                         continue;
                     }
-                    let Some((static_center, static_shape)) = surface_world_shape(world, surface)
-                    else {
-                        continue;
-                    };
-                    let (moving_min, moving_max) = shape_aabb(desired_center, shape);
-                    let (previous_min, previous_max) = shape_aabb(previous, shape);
-                    let (static_min, static_max) = shape_aabb(static_center, static_shape);
                     self.candidate_pairs += 1;
-                    if !(0..3).all(|axis| {
-                        moving_min[axis].min(previous_min[axis]) <= static_max[axis]
-                            && static_min[axis] <= moving_max[axis].max(previous_max[axis])
-                    }) {
-                        continue;
-                    }
                     self.narrow_phase_tests += 1;
+                    let exact = profiling.then(Instant::now);
                     let sweep = if iteration == 0 {
-                        zone_query::sweep_capsule_floor(world, moving, surface, previous)
-                            .ok()
-                            .flatten()
+                        surface.floor_sweep(moving, desired_center, shape, previous)
                     } else {
                         None
                     };
@@ -150,9 +153,11 @@ impl StaticContactSystem {
                             0.0,
                         ]
                     } else {
-                        surface_translation(world, surface, desired_center, shape)
+                        surface
+                            .translation(desired_center, shape)
                             .unwrap_or([0.0; 3])
                     };
+                    self.exact_test_time += exact.map(|t| t.elapsed()).unwrap_or_default();
                     if displacement.iter().all(|v| v.abs() < 1.0e-6) {
                         continue;
                     }
@@ -160,26 +165,57 @@ impl StaticContactSystem {
                         world,
                         target,
                         displacement,
-                        if apply_friction { friction } else { 0.0 },
+                        if apply_friction {
+                            surface.friction
+                        } else {
+                            0.0
+                        },
                     );
                     for axis in 0..3 {
                         desired_center[axis] += displacement[axis];
                     }
                     corrected = true;
                     self.correction_iterations += 1;
+                    // A correction can expose a neighbor outside the original query.
+                    // Discover it now; already-processed surfaces are revisited next pass.
+                    self.query_candidates(
+                        previous,
+                        desired_center,
+                        shape,
+                        iteration == 0,
+                        &mut additional,
+                    );
+                    for &new in &additional {
+                        if !candidates.contains(&new) {
+                            candidates.push(new);
+                        }
+                    }
+                    candidates[cursor..]
+                        .sort_unstable_by_key(|&i| self.broad_phase.surface(i).collidable);
                 }
                 if !corrected {
                     break;
                 }
             }
-            if statics.iter().any(|&(surface, _)| {
-                surface != moving
-                    && surface_world_shape(world, surface).is_some_and(|_| {
-                        surface_translation(world, surface, desired_center, shape).is_some_and(
-                            |displacement| displacement.iter().any(|v| v.abs() >= 1.0e-6),
-                        )
-                    })
-            }) {
+            self.query_candidates(previous, desired_center, shape, false, &mut candidates);
+            let mut remaining = false;
+            for &index in &candidates {
+                let surface = self.broad_phase.surface(index);
+                if surface.zone == moving {
+                    continue;
+                }
+                self.candidate_pairs += 1;
+                self.narrow_phase_tests += 1;
+                let exact = profiling.then(Instant::now);
+                remaining = surface
+                    .translation(desired_center, shape)
+                    .is_some_and(|delta| delta.iter().any(|v| v.abs() >= 1.0e-6));
+                self.exact_test_time += exact.map(|t| t.elapsed()).unwrap_or_default();
+                if remaining {
+                    break;
+                }
+            }
+            if remaining {
                 self.non_convergences += 1;
             }
             let displacement: [f32; 3] = std::array::from_fn(|i| desired_center[i] - center[i]);
@@ -198,8 +234,86 @@ impl StaticContactSystem {
                 self.previous_centers.insert(moving, desired_center);
             }
         }
+        self.candidates = candidates;
+        self.additional = additional;
+        self.total_time = started.map(|t| t.elapsed()).unwrap_or_default();
+        if profiling {
+            self.profile_passes += 1;
+            for (sum, elapsed) in self.profile_times.iter_mut().zip([
+                self.index_update_time,
+                self.query_time,
+                self.exact_test_time,
+                self.total_time,
+            ]) {
+                *sum += elapsed;
+            }
+            for (sum, count) in self.profile_counts.iter_mut().zip([
+                self.bvh_node_visits,
+                self.candidate_pairs,
+                self.narrow_phase_tests,
+            ]) {
+                *sum += count;
+            }
+            if self.profile_passes == 120 {
+                let times = self.profile_times.map(|t| t.as_secs_f64() * 1000.0 / 120.0);
+                let line = format!(
+                    "[spatial-profile][contact] passes=120 statics={} movers={} avg_ms maintenance={:.4} query={:.4} exact={:.4} total={:.4} nodes={} candidates={} exact_tests={} rebuilds={} refits={}",
+                    self.broad_phase.len(),
+                    self.broad_phase.movers.len(),
+                    times[0],
+                    times[1],
+                    times[2],
+                    times[3],
+                    self.profile_counts[0],
+                    self.profile_counts[1],
+                    self.profile_counts[2],
+                    self.broad_phase.rebuilds,
+                    self.broad_phase.refits
+                );
+                eprintln!("{line}");
+                crate::utils::profile_log::append("spatial-profile", &line);
+                self.profile_passes = 0;
+                self.profile_times = [Duration::ZERO; 4];
+                self.profile_counts = [0; 3];
+            }
+        }
         changed
     }
+
+    fn query_candidates(
+        &mut self,
+        previous: [f32; 3],
+        center: [f32; 3],
+        shape: crate::engine::ecs::component::CollisionShape,
+        swept: bool,
+        out: &mut Vec<usize>,
+    ) {
+        let started = spatial_profiling().then(Instant::now);
+        let (mut min, mut max) = shape_aabb(center, shape);
+        if swept {
+            let (start_min, start_max) = shape_aabb(previous, shape);
+            for i in 0..3 {
+                min[i] = min[i].min(start_min[i]);
+                max[i] = max[i].max(start_max[i]);
+            }
+        }
+        self.bvh_node_visits += self.broad_phase.query(min, max, &mut self.traversal, out);
+        self.query_time += started.map(|t| t.elapsed()).unwrap_or_default();
+    }
+}
+
+fn spatial_profiling() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        matches!(
+            std::env::var("CAT_PROFILE_SPATIAL")
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase()
+                .as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
 }
 
 /// Only the Velocity directly driving the corrected transform owns this
@@ -348,7 +462,7 @@ pub(crate) fn world_to_local(world: &World, transform: ComponentId, desired: [f3
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::ecs::component::CollisionShape;
+    use crate::engine::ecs::component::{CollidableMode, CollisionShape};
 
     fn add_zone(
         world: &mut World,
@@ -374,9 +488,7 @@ mod tests {
     }
 
     fn propagate(world: &mut World, target: ComponentId) {
-        use crate::engine::ecs::system::{
-            CameraSystem, CollisionSystem, LightSystem, TransformOperatorSystem,
-        };
+        use crate::engine::ecs::system::{CameraSystem, LightSystem, TransformOperatorSystem};
         TransformSystem::new().transform_changed(
             world,
             &mut crate::engine::graphics::VisualWorld::default(),
@@ -384,7 +496,6 @@ mod tests {
             &mut TransformOperatorSystem::new(),
             &mut CameraSystem::new(),
             &mut LightSystem::new(),
-            &mut CollisionSystem::new(),
         );
     }
 
@@ -906,8 +1017,338 @@ mod tests {
             [0.0; 3]
         );
     }
+    #[derive(Default)]
+    struct ScanContact {
+        previous_centers: HashMap<ComponentId, [f32; 3]>,
+        candidate_pairs: u64,
+        narrow_phase_tests: u64,
+        correction_iterations: u64,
+        non_convergences: u64,
+    }
+    impl ScanContact {
+        fn tick_contacts(
+            &mut self,
+            world: &mut World,
+            mounts: &super::super::AttachmentSystem,
+            apply_friction: bool,
+        ) -> Vec<ComponentId> {
+            self.candidate_pairs = 0;
+            self.narrow_phase_tests = 0;
+            self.correction_iterations = 0;
+            let collidables: Vec<_> = world
+                .all_components()
+                .filter_map(|id| {
+                    let c = world.get_component_by_id_as::<CollidableComponent>(id)?;
+                    let zone = world.parent_of(id)?;
+                    (c.enabled
+                        && world
+                            .get_component_by_id_as::<ZoneComponent>(zone)
+                            .is_some_and(|z| z.enabled))
+                    .then_some((id, zone, c.mode, c.friction))
+                })
+                .collect();
+            let live_movers: HashSet<_> = collidables
+                .iter()
+                .filter(|(_, _, mode, _)| *mode == CollidableMode::Slide)
+                .map(|(_, zone, _, _)| *zone)
+                .collect();
+            self.previous_centers
+                .retain(|zone, _| live_movers.contains(zone));
+            let statics: Vec<_> = collidables
+                .iter()
+                .filter(|(_, _, mode, _)| *mode == CollidableMode::Static)
+                .map(|(_, zone, _, friction)| (*zone, *friction))
+                .collect();
+            let mut changed = Vec::new();
+            for (collidable_id, moving, mode, _) in collidables {
+                if mode != CollidableMode::Slide {
+                    continue;
+                }
+                let Some((center, shape)) = zone_world_shape(world, moving) else {
+                    continue;
+                };
+                let previous = self
+                    .previous_centers
+                    .insert(moving, center)
+                    .unwrap_or(center);
+                let Some(target) = movement_target(world, collidable_id, moving) else {
+                    continue;
+                };
+                if mounts.is_movement_root_mounted(world, target) {
+                    self.previous_centers.remove(&moving);
+                    continue;
+                }
+                let mut desired_center = center;
+                for iteration in 0..6 {
+                    let mut corrected = false;
+                    for &(surface, friction) in &statics {
+                        if surface == moving {
+                            continue;
+                        }
+                        let Some((static_center, static_shape)) =
+                            surface_world_shape(world, surface)
+                        else {
+                            continue;
+                        };
+                        let (moving_min, moving_max) = shape_aabb(desired_center, shape);
+                        let (previous_min, previous_max) = shape_aabb(previous, shape);
+                        let (static_min, static_max) = shape_aabb(static_center, static_shape);
+                        self.candidate_pairs += 1;
+                        if !(0..3).all(|axis| {
+                            moving_min[axis].min(previous_min[axis]) <= static_max[axis]
+                                && static_min[axis] <= moving_max[axis].max(previous_max[axis])
+                        }) {
+                            continue;
+                        }
+                        self.narrow_phase_tests += 1;
+                        let sweep = if iteration == 0 {
+                            zone_query::sweep_capsule_floor(world, moving, surface, previous)
+                                .ok()
+                                .flatten()
+                        } else {
+                            None
+                        };
+                        let displacement = if let Some(hit) = sweep {
+                            let half_height = match shape {
+                                crate::engine::ecs::component::CollisionShape::CapsuleY {
+                                    radius,
+                                    half_segment,
+                                } => radius + half_segment,
+                                _ => 0.0,
+                            };
+                            [
+                                0.0,
+                                (hit.point[1] + half_height - desired_center[1]).max(0.0),
+                                0.0,
+                            ]
+                        } else {
+                            surface_translation(world, surface, desired_center, shape)
+                                .unwrap_or([0.0; 3])
+                        };
+                        if displacement.iter().all(|v| v.abs() < 1.0e-6) {
+                            continue;
+                        }
+                        resolve_contact_velocity(
+                            world,
+                            target,
+                            displacement,
+                            if apply_friction { friction } else { 0.0 },
+                        );
+                        for axis in 0..3 {
+                            desired_center[axis] += displacement[axis];
+                        }
+                        corrected = true;
+                        self.correction_iterations += 1;
+                    }
+                    if !corrected {
+                        break;
+                    }
+                }
+                if statics.iter().any(|&(surface, _)| {
+                    surface != moving
+                        && surface_world_shape(world, surface).is_some_and(|_| {
+                            surface_translation(world, surface, desired_center, shape).is_some_and(
+                                |displacement| displacement.iter().any(|v| v.abs() >= 1.0e-6),
+                            )
+                        })
+                }) {
+                    self.non_convergences += 1;
+                }
+                let displacement: [f32; 3] = std::array::from_fn(|i| desired_center[i] - center[i]);
+                if displacement.iter().all(|v| v.abs() < 1.0e-6) {
+                    continue;
+                }
+                let Some(target_world) = TransformSystem::world_position(world, target) else {
+                    continue;
+                };
+                let desired = std::array::from_fn(|i| target_world[i] + displacement[i]);
+                let local = world_to_local(world, target, desired);
+                if let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target) {
+                    t.transform.translation = local;
+                    t.transform.recompute_model();
+                    changed.push(target);
+                    self.previous_centers.insert(moving, desired_center);
+                }
+            }
+            changed
+        }
+    }
+
+    fn dense_fixture(count: usize) -> (World, ComponentId, ComponentId) {
+        let mut world = World::default();
+        add_zone(
+            &mut world,
+            [0.0, -0.5, 0.0],
+            CollisionShape::cube_half_extents([5.0, 0.5, 5.0]),
+            CollidableMode::Static,
+        );
+        for i in 0..count {
+            add_zone(
+                &mut world,
+                [20.0 + (i % 64) as f32 * 3.0, 0.0, (i / 64) as f32 * 3.0],
+                CollisionShape::cube_half_extents([0.5; 3]),
+                CollidableMode::Static,
+            );
+        }
+        let (target, zone) = add_zone(
+            &mut world,
+            [0.0, 0.8, 0.0],
+            CollisionShape::capsule_y(0.25, 0.75),
+            CollidableMode::Slide,
+        );
+        (world, target, zone)
+    }
+
+    #[test]
+    fn indexed_contact_matches_original_scan_with_multiple_movers_and_edits() {
+        let (mut indexed_world, indexed_target, _) = dense_fixture(256);
+        let (mut scan_world, scan_target, _) = dense_fixture(256);
+        let mut indexed = StaticContactSystem::default();
+        let mut scan = ScanContact::default();
+        let mounts = super::super::AttachmentSystem::default();
+        for frame in 0..30 {
+            for (world, target) in [
+                (&mut indexed_world, indexed_target),
+                (&mut scan_world, scan_target),
+            ] {
+                let transform = world
+                    .get_component_by_id_as_mut::<TransformComponent>(target)
+                    .unwrap();
+                transform.transform.translation = [frame as f32 * 0.02, 0.8, 0.0];
+                transform.transform.recompute_model();
+                propagate(world, target);
+                if frame == 10 {
+                    add_zone(
+                        world,
+                        [0.4, 0.5, 0.0],
+                        CollisionShape::cube_half_extents([0.1, 0.5, 1.0]),
+                        CollidableMode::Static,
+                    );
+                    add_zone(
+                        world,
+                        [-1.0, 0.7, 0.0],
+                        CollisionShape::sphere_radius(0.3),
+                        CollidableMode::Slide,
+                    );
+                }
+            }
+            let indexed_changed = indexed.tick(&mut indexed_world);
+            let scan_changed = scan.tick_contacts(&mut scan_world, &mounts, false);
+            assert_eq!(indexed_changed, scan_changed, "writers at frame {frame}");
+            for id in indexed_changed {
+                let a = indexed_world
+                    .get_component_by_id_as::<TransformComponent>(id)
+                    .unwrap()
+                    .transform
+                    .translation;
+                let b = scan_world
+                    .get_component_by_id_as::<TransformComponent>(id)
+                    .unwrap()
+                    .transform
+                    .translation;
+                for axis in 0..3 {
+                    assert!(
+                        (a[axis] - b[axis]).abs() < 1.0e-5,
+                        "frame={frame}: {a:?} != {b:?}"
+                    );
+                }
+            }
+            assert_eq!(indexed.non_convergences, scan.non_convergences);
+        }
+    }
+
+    #[test]
+    fn corrections_discover_neighbors_outside_initial_bounds() {
+        let mut world = World::default();
+        // First box lifts the sphere; that exposes the ceiling outside its original bounds.
+        add_zone(
+            &mut world,
+            [0.0, -0.5, 0.0],
+            CollisionShape::cube_half_extents([2.0, 0.5, 2.0]),
+            CollidableMode::Static,
+        );
+        add_zone(
+            &mut world,
+            [0.0, 0.45, 0.0],
+            CollisionShape::cube_half_extents([2.0, 0.05, 2.0]),
+            CollidableMode::Static,
+        );
+        add_zone(
+            &mut world,
+            [0.0, 0.05, 0.0],
+            CollisionShape::sphere_radius(0.2),
+            CollidableMode::Slide,
+        );
+        let mut indexed = StaticContactSystem::default();
+        indexed.tick(&mut world);
+        // The gap is exactly the diameter: resolving both surfaces yields a tangent pose.
+        assert!(indexed.correction_iterations >= 1);
+        assert_eq!(indexed.non_convergences, 0);
+        assert!(
+            indexed.narrow_phase_tests >= 3,
+            "both neighbors must be visited"
+        );
+    }
+
+    #[test]
+    fn distant_collidables_do_not_increase_exact_contact_tests() {
+        let (mut small, _, _) = dense_fixture(0);
+        let (mut dense, _, _) = dense_fixture(2048);
+        let mut small_contact = StaticContactSystem::default();
+        let mut dense_contact = StaticContactSystem::default();
+        small_contact.tick(&mut small);
+        dense_contact.tick(&mut dense);
+        assert_eq!(
+            small_contact.narrow_phase_tests,
+            dense_contact.narrow_phase_tests
+        );
+        assert!(dense_contact.candidate_pairs < 10);
+        assert!(dense_contact.bvh_node_visits < 150);
+        let rebuilds = dense_contact.broad_phase.rebuilds;
+        dense_contact.tick(&mut dense);
+        assert_eq!(dense_contact.broad_phase.rebuilds, rebuilds);
+    }
+
+    #[test]
+    #[ignore = "manual baseline/indexed contact timing"]
+    fn profile_original_scan_against_retained_bvh() {
+        let (mut indexed_world, _, _) = dense_fixture(4096);
+        let (mut scan_world, _, _) = dense_fixture(4096);
+        let mut indexed = StaticContactSystem::default();
+        let mut scan = ScanContact::default();
+        let mounts = super::super::AttachmentSystem::default();
+        let started = Instant::now();
+        indexed.tick(&mut indexed_world);
+        let initial_indexed = started.elapsed();
+        let started = Instant::now();
+        scan.tick_contacts(&mut scan_world, &mounts, false);
+        let initial_scan = started.elapsed();
+        let started = Instant::now();
+        for _ in 0..120 {
+            indexed.tick(&mut indexed_world);
+        }
+        let indexed_time = started.elapsed();
+        let started = Instant::now();
+        for _ in 0..120 {
+            scan.tick_contacts(&mut scan_world, &mounts, false);
+        }
+        let scan_time = started.elapsed();
+        eprintln!(
+            "contact benchmark debug={} statics=4097 movers=1 passes=120 first_scan_ms={:.3} first_indexed_ms={:.3} steady_scan_ms={:.4} steady_indexed_ms={:.4} scan_candidates={} indexed_candidates={} indexed_exact_tests={}",
+            cfg!(debug_assertions),
+            initial_scan.as_secs_f64() * 1000.0,
+            initial_indexed.as_secs_f64() * 1000.0,
+            scan_time.as_secs_f64() * 1000.0 / 120.0,
+            indexed_time.as_secs_f64() * 1000.0 / 120.0,
+            scan.candidate_pairs,
+            indexed.candidate_pairs,
+            indexed.narrow_phase_tests
+        );
+        assert!(indexed.candidate_pairs < scan.candidate_pairs);
+    }
 }
 
+#[cfg(test)]
 fn surface_world_shape(
     world: &World,
     id: ComponentId,
@@ -928,6 +1369,7 @@ fn surface_world_shape(
     ))
 }
 
+#[cfg(test)]
 fn surface_translation(
     world: &World,
     surface: ComponentId,

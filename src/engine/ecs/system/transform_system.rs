@@ -1,11 +1,9 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
-    Camera2DComponent, Camera3DComponent, CollisionComponent, LayoutBoundsComponent,
-    LayoutVisualPlacementComponent, RenderableComponent, TransformComponent,
-    TransformOperatorComponent,
+    Camera2DComponent, Camera3DComponent, LayoutBoundsComponent, LayoutVisualPlacementComponent,
+    RenderableComponent, TransformComponent, TransformOperatorComponent,
 };
-use crate::engine::ecs::system::CollisionSystem;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformOperatorSystem;
 use crate::engine::ecs::system::bounds_system::BoundsSystem;
@@ -175,7 +173,6 @@ impl TransformSystem {
         inherited_world: TransformMatrix,
         transform_operator: &mut TransformOperatorSystem,
         camera_system: &mut crate::engine::ecs::system::CameraSystem,
-        collision_system: &mut CollisionSystem,
     ) {
         let mut stack: Vec<(ComponentId, TransformMatrix)> = vec![(root_node, inherited_world)];
         while let Some((node, current_world)) = stack.pop() {
@@ -246,13 +243,6 @@ impl TransformSystem {
                     {
                         camera_system
                             .update_camera_3d_from_parent_transform(world, visuals, child, node);
-                    }
-
-                    if world
-                        .get_component_by_id_as::<CollisionComponent>(child)
-                        .is_some()
-                    {
-                        collision_system.update_from_transform(world, child, node);
                     }
                 }
 
@@ -414,7 +404,6 @@ impl TransformSystem {
         transform_operator: &mut TransformOperatorSystem,
         camera_system: &mut crate::engine::ecs::system::CameraSystem,
         light_system: &mut crate::engine::ecs::system::LightSystem,
-        collision_system: &mut CollisionSystem,
     ) {
         let dependents: Vec<ComponentId> = world
             .all_components()
@@ -455,7 +444,6 @@ impl TransformSystem {
                 inherited_world,
                 transform_operator,
                 camera_system,
-                collision_system,
             );
 
             let child_transform_roots: Vec<ComponentId> = world
@@ -482,7 +470,6 @@ impl TransformSystem {
         transform_operator: &mut TransformOperatorSystem,
         camera_system: &mut crate::engine::ecs::system::CameraSystem,
         light_system: &mut crate::engine::ecs::system::LightSystem,
-        collision_system: &mut CollisionSystem,
     ) {
         let dependents = transform_operator.inverse_local_dependents(changed_component);
 
@@ -498,7 +485,6 @@ impl TransformSystem {
                 inherited_world,
                 transform_operator,
                 camera_system,
-                collision_system,
             );
             let children = world.children_of(dependent).to_vec();
             for child in children {
@@ -676,7 +662,6 @@ impl TransformSystem {
         transform_operator: &mut TransformOperatorSystem,
         camera_system: &mut crate::engine::ecs::system::CameraSystem,
         light_system: &mut crate::engine::ecs::system::LightSystem,
-        collision_system: &mut CollisionSystem,
     ) {
         // A local write to the first T below a sampler must recompose its
         // offset from the operator output, rather than reuse that T's old world
@@ -704,7 +689,6 @@ impl TransformSystem {
                         transform_operator,
                         camera_system,
                         light_system,
-                        collision_system,
                     );
                     // This is still a write to `component`: preserve the
                     // existing refresh of parent/inverse consumers of that T.
@@ -715,7 +699,6 @@ impl TransformSystem {
                         transform_operator,
                         camera_system,
                         light_system,
-                        collision_system,
                     );
                     self.update_inverse_local_dependents(
                         world,
@@ -724,7 +707,6 @@ impl TransformSystem {
                         transform_operator,
                         camera_system,
                         light_system,
-                        collision_system,
                     );
                     return;
                 }
@@ -748,7 +730,6 @@ impl TransformSystem {
                 inherited_world,
                 transform_operator,
                 camera_system,
-                collision_system,
             );
             let children = world.children_of(component).to_vec();
             for child in children {
@@ -769,7 +750,6 @@ impl TransformSystem {
                 inherited_world,
                 transform_operator,
                 camera_system,
-                collision_system,
             );
             light_system.transform_changed(world, visuals, component);
         }
@@ -888,7 +868,6 @@ impl TransformSystem {
             root_world,
             transform_operator,
             camera_system,
-            collision_system,
         );
 
         // If any point lights live under this transform, update their world-space position.
@@ -901,7 +880,6 @@ impl TransformSystem {
             transform_operator,
             camera_system,
             light_system,
-            collision_system,
         );
         self.update_inverse_local_dependents(
             world,
@@ -910,7 +888,6 @@ impl TransformSystem {
             transform_operator,
             camera_system,
             light_system,
-            collision_system,
         );
     }
 }
@@ -923,9 +900,7 @@ mod tests {
         ComponentRef, LayoutVisualPlacementComponent, TransformComponent,
         TransformOperatorComponent,
     };
-    use crate::engine::ecs::system::{
-        CameraSystem, CollisionSystem, LightSystem, TransformOperatorSystem,
-    };
+    use crate::engine::ecs::system::{CameraSystem, LightSystem, TransformOperatorSystem};
     use crate::engine::graphics::VisualWorld;
     use crate::engine::graphics::bounds::Aabb;
     use crate::engine::transform::{TransformTrs, TransformTrsError};
@@ -1158,7 +1133,6 @@ mod tests {
         let mut transform_operator = TransformOperatorSystem::new();
         let mut camera_system = CameraSystem::new();
         let mut light_system = LightSystem::new();
-        let mut collision_system = CollisionSystem::new();
 
         let driver = world.add_component(TransformComponent::new().with_position(10.0, 0.0, 0.0));
         let source = world.add_component(TransformComponent::new().with_position(0.0, 3.0, 0.0));
@@ -1178,7 +1152,6 @@ mod tests {
             &mut transform_operator,
             &mut camera_system,
             &mut light_system,
-            &mut collision_system,
         );
         assert_eq!(
             TransformSystem::world_position(&world, car),
@@ -1198,7 +1171,6 @@ mod tests {
             &mut transform_operator,
             &mut camera_system,
             &mut light_system,
-            &mut collision_system,
         );
         assert_eq!(
             TransformSystem::world_position(&world, car),
@@ -1214,7 +1186,6 @@ mod tests {
         let mut transform_operator = TransformOperatorSystem::new();
         let mut camera_system = CameraSystem::new();
         let mut light_system = LightSystem::new();
-        let mut collision_system = CollisionSystem::new();
 
         let source = world.add_component(TransformComponent::new().with_position(1.0, 0.0, 0.0));
         let dependent_root = world.add_component(TransformComponent::new());
@@ -1235,7 +1206,6 @@ mod tests {
             &mut transform_operator,
             &mut camera_system,
             &mut light_system,
-            &mut collision_system,
         );
 
         assert_eq!(
@@ -1295,7 +1265,6 @@ mod tests {
         let mut transform_operator = TransformOperatorSystem::new();
         let mut camera_system = CameraSystem::new();
         let mut light_system = LightSystem::new();
-        let mut collision_system = CollisionSystem::new();
 
         let root = world.add_component(TransformComponent::new());
         let visual = world.add_component(
@@ -1320,7 +1289,6 @@ mod tests {
             &mut transform_operator,
             &mut camera_system,
             &mut light_system,
-            &mut collision_system,
         );
 
         let authored = world

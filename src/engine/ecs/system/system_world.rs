@@ -10,8 +10,6 @@ use crate::engine::ecs::system::BvhSystem;
 use crate::engine::ecs::system::CameraSystem;
 use crate::engine::ecs::system::ClippingSystem;
 use crate::engine::ecs::system::ClockSystem;
-use crate::engine::ecs::system::CollisionSystem;
-use crate::engine::ecs::system::CollisionVisualizationSystem;
 use crate::engine::ecs::system::CombineMeshSystem;
 use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::system::GltfBoundsVisualizationSystem;
@@ -96,8 +94,6 @@ pub struct SystemWorld {
     pub transform_operator: TransformOperatorSystem,
     pub transform: TransformSystem,
     pub bvh: BvhSystem,
-    pub collision: CollisionSystem,
-    pub collision_visualization: CollisionVisualizationSystem,
     pub zone_visualization: ZoneVisualizationSystem,
     pub spring_bone_visualization: crate::engine::ecs::system::SpringBoneVisualizationSystem,
     pub camera_visualization: crate::engine::ecs::system::CameraVisualizationSystem,
@@ -1329,10 +1325,9 @@ impl SystemWorld {
         root: ComponentId,
     ) {
         use crate::engine::ecs::component::{
-            CollisionComponent, ControllerXRComponent, HttpClientComponent, HttpServerComponent,
-            InputComponent, InputXRComponent, PointerComponent, RayCastComponent,
-            RenderableComponent, SignalRouteUpwardComponent, StencilClipComponent,
-            TransformComponent,
+            ControllerXRComponent, HttpClientComponent, HttpServerComponent, InputComponent,
+            InputXRComponent, PointerComponent, RayCastComponent, RenderableComponent,
+            SignalRouteUpwardComponent, StencilClipComponent, TransformComponent,
         };
 
         // Best-effort: remove system state for known component types before deleting.
@@ -1365,12 +1360,6 @@ impl SystemWorld {
             {
                 self.remove_renderable(world, visuals, n);
                 self.skinned_mesh.remove_renderable(n);
-            }
-            if world
-                .get_component_by_id_as::<CollisionComponent>(n)
-                .is_some()
-            {
-                self.remove_collision(world, visuals, n);
             }
             if world
                 .get_component_by_id_as::<AvatarControlComponent>(n)
@@ -1836,13 +1825,6 @@ impl SystemWorld {
                 for text_cid in text_cids {
                     apply_set_text_to_component(self, world, visuals, emit, text_cid, text);
                 }
-            }
-
-            IntentValue::RegisterCollision { component } => {
-                self.register_collision(world, visuals, *component);
-            }
-            IntentValue::RemoveCollision { component } => {
-                self.remove_collision(world, visuals, *component);
             }
 
             IntentValue::RemoveSubtree { target } => {
@@ -2562,26 +2544,6 @@ impl SystemWorld {
             .register_toon_outline(world, visuals, component);
     }
 
-    /// Register a CollisionComponent instance with the CollisionSystem.
-    pub fn register_collision(
-        &mut self,
-        world: &mut World,
-        visuals: &mut VisualWorld,
-        component: ComponentId,
-    ) {
-        self.collision.register_collision(world, visuals, component);
-    }
-
-    /// Remove a CollisionComponent instance from the CollisionSystem.
-    pub fn remove_collision(
-        &mut self,
-        world: &mut World,
-        visuals: &mut VisualWorld,
-        component: ComponentId,
-    ) {
-        self.collision.remove_collision(world, visuals, component);
-    }
-
     /// Register an XrComponent (initializes the XR runtime if enabled).
     pub fn register_xr(
         &mut self,
@@ -2886,7 +2848,6 @@ impl SystemWorld {
             &mut self.transform_operator,
             &mut self.camera,
             &mut self.light,
-            &mut self.collision,
         );
 
         // Any transform changes can affect joint world matrices for skinning.
@@ -3272,8 +3233,6 @@ impl SystemWorld {
             render_assets,
             queue,
         );
-        self.collision_visualization
-            .tick_with_queue(world, visuals, render_assets, queue);
         self.zone_visualization
             .tick_with_queue(world, render_assets, queue);
         self.camera_visualization
@@ -3346,10 +3305,6 @@ impl SystemWorld {
 
         // Spatial acceleration structure built from latest world transforms.
         self.bvh.tick(world, visuals, input, dt_sec);
-
-        // Collision runs before camera/OpenXR for now; it reads cached world transforms.
-        self.collision
-            .tick_with_rx(world, visuals, input, dt_sec, &mut self.rx);
 
         // Integrate outer motion before camera/OpenXR publish this frame's eye
         // poses. Click commands capture the previous published eye at dispatch

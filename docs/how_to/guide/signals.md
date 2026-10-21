@@ -288,24 +288,6 @@ on(scope, "RayIntersected", fn(event) { print(event) })
 scope
 ```
 
-#### `CollisionStarted`
-<!-- catalog:signal source="CollisionStarted" kind="event" mms="observable-null" -->
-**Event.** Two collision objects began overlapping. The interaction and physics subsystem produces it; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. Related components are the producers or scopes named by the variant and its subsystem. MMS `on(...)` accepts this event. Handler exposure: **Observable with `null`**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), and [payload conversion](../../../src/scripting/runner.rs).
-```mms parse-only
-let scope = Transform {}
-on(scope, "CollisionStarted", fn(event) { print(event) })
-scope
-```
-
-#### `CollisionEnded`
-<!-- catalog:signal source="CollisionEnded" kind="event" mms="observable-null" -->
-**Event.** Two collision objects stopped overlapping. The interaction and physics subsystem produces it; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. Related components are the producers or scopes named by the variant and its subsystem. MMS `on(...)` accepts this event. Handler exposure: **Observable with `null`**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), and [payload conversion](../../../src/scripting/runner.rs).
-```mms parse-only
-let scope = Transform {}
-on(scope, "CollisionEnded", fn(event) { print(event) })
-scope
-```
-
 #### `ZoneEntered`
 <!-- catalog:signal source="ZoneEntered" kind="event" mms="observable-payload" -->
 
@@ -1039,13 +1021,6 @@ slider
 Slider.range(0.0, 1.0)
 ```
 
-#### `CollisionVisualizationSet`
-<!-- catalog:signal source="CollisionVisualizationSet" kind="intent" mms="engine-only" -->
-**Intent — Engine-only.** Adds, updates, or removes an EditorUI-owned collider visualization request.
-```mms parse-only
-EditorUI {}
-```
-
 #### `SpringBoneVisualizationSet`
 <!-- catalog:signal source="SpringBoneVisualizationSet" kind="intent" mms="engine-only" -->
 **Intent — Engine-only.** Adds, updates, or removes an EditorUI-owned spring-bone visualization request.
@@ -1060,20 +1035,6 @@ EditorUI {}
 let target = Transform {}
 Transform {}
 target
-```
-
-#### `RegisterCollision`
-<!-- catalog:signal source="RegisterCollision" kind="intent" mms="component-lifecycle" -->
-**Intent — Indirectly emitted by component lifecycle.** Requests the `RegisterCollision` operation. Component creation, initialization, teardown, or topology work emits this intent indirectly; user MMS does not author the enum variant. It is scoped to the requesting/affected component and executes at an explicit drain point; `AtBeat` delays eligibility when the producer supplies timed metadata. Related components and systems are the targets named by the variant; see executor matching for exact effects. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [intent interpretation](../../../src/engine/ecs/signals/intent_executor.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [MMS component registry](../../../src/scripting/component_registry.rs).
-```mms parse-only
-Transform {}
-```
-
-#### `RemoveCollision`
-<!-- catalog:signal source="RemoveCollision" kind="intent" mms="component-lifecycle" -->
-**Intent — Indirectly emitted by component lifecycle.** Requests the `RemoveCollision` operation. Component creation, initialization, teardown, or topology work emits this intent indirectly; user MMS does not author the enum variant. It is scoped to the requesting/affected component and executes at an explicit drain point; `AtBeat` delays eligibility when the producer supplies timed metadata. Related components and systems are the targets named by the variant; see executor matching for exact effects. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [intent interpretation](../../../src/engine/ecs/signals/intent_executor.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [MMS component registry](../../../src/scripting/component_registry.rs).
-```mms parse-only
-Transform {}
 ```
 
 #### `RegisterRaycast`

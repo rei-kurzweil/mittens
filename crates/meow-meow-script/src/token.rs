@@ -225,14 +225,6 @@ pub const COMPONENT_SHORTFORMS: &[ComponentShortformEntry] = &[
         full: "Pointer",
     },
     ComponentShortformEntry {
-        short: "COL",
-        full: "Collision",
-    },
-    ComponentShortformEntry {
-        short: "COLS",
-        full: "CollisionShape",
-    },
-    ComponentShortformEntry {
         short: "GVT",
         full: "Gravity",
     },

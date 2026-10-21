@@ -1113,8 +1113,6 @@ fn signal_kind(name: &str) -> Option<SignalKind> {
         "SliderChanged" => SignalKind::SliderChanged,
         "SliderCommitted" => SignalKind::SliderCommitted,
         "DataEvent" => SignalKind::DataEvent,
-        "CollisionStarted" => SignalKind::CollisionStarted,
-        "CollisionEnded" => SignalKind::CollisionEnded,
         "DragStart" => SignalKind::DragStart,
         "GrabStart" => SignalKind::GrabStart,
         "GrabEnd" => SignalKind::GrabEnd,

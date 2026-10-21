@@ -23,9 +23,7 @@ pub struct VelocitySystem {
 mod tests {
     use super::*;
     use crate::engine::ecs::RxWorld;
-    use crate::engine::ecs::system::{
-        CameraSystem, CollisionSystem, LightSystem, TransformOperatorSystem,
-    };
+    use crate::engine::ecs::system::{CameraSystem, LightSystem, TransformOperatorSystem};
 
     #[test]
     fn gravity_provider_respects_branches_overrides_and_velocity_boundaries() {
@@ -106,7 +104,6 @@ mod tests {
             &mut TransformOperatorSystem::new(),
             &mut CameraSystem::new(),
             &mut LightSystem::new(),
-            &mut CollisionSystem::new(),
         );
     }
 

@@ -17,23 +17,23 @@ use crate::engine::ecs::component::{
     AudioOscillatorComponent, AudioOutputComponent, AudioTriggerMode, AvatarBodyYawComponent,
     AvatarControlComponent, BackgroundColorComponent, BackgroundComponent, BloomComponent,
     BlurPassComponent, BoundsComponent, BoxSizing, Camera2DComponent, Camera3DComponent,
-    CameraXRComponent, ClockComponent, CollidableComponent, CollisionComponent, CollisionShape,
-    CollisionShapeComponent, ColorComponent, CombineMeshComponent, ControllerHand,
-    ControllerPoseKind, DataComponent, DataValue, DirectionalLightComponent, Display,
-    DragContinuationPolicy, DragMappingPolicy, DraggableComponent, DraggablePlane, EdgeInsets,
-    EditorComponent, EditorInteractionMode, EditorPanel, EditorUIComponent, EditorUIPanelConfig,
-    EditorUIPanelSpec, ElementType, EmissiveComponent, EmissivePassComponent, EyeTrackingSource,
-    FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection, FlexWrap, GLTFComponent,
-    GestureCoordTypeComponent, GrabbableComponent, GravityComponent, GridBindingComponent,
-    GridComponent, GridVisualSpace, HTCEyeTrackingComponent, HandTrackingComponent,
-    HtmlElementComponent, HttpClientComponent, HttpServerComponent, HumanoidBoneMapComponent,
-    IKChainComponent, IKSolver, ImplicitSphereComponent, ImplicitSurfaceComponent, InputComponent,
-    InputTransformModeComponent, InputXRComponent, InputXRGamepadComponent, InspectLayoutComponent,
-    JointRetargetBasisComponent, JustifyContent, KeyframeComponent, LayoutBoundsComponent,
-    LayoutComponent, LightQuantizationComponent, MediaPipeEyeTrackingComponent, MeshComponent,
-    MirrorComponent, MorphTargetMapComponent, MountableComponent, MusicNote, MusicNoteComponent,
-    NormalVisualisationComponent, OpacityComponent, OptionComponent, OscillatorType, Overflow,
-    OverlayComponent, PointLightComponent, PointerComponent, PointerEvents, PoseCaptureComponent,
+    CameraXRComponent, ClockComponent, CollidableComponent, ColorComponent, CombineMeshComponent,
+    ControllerHand, ControllerPoseKind, DataComponent, DataValue, DirectionalLightComponent,
+    Display, DragContinuationPolicy, DragMappingPolicy, DraggableComponent, DraggablePlane,
+    EdgeInsets, EditorComponent, EditorInteractionMode, EditorPanel, EditorUIComponent,
+    EditorUIPanelConfig, EditorUIPanelSpec, ElementType, EmissiveComponent, EmissivePassComponent,
+    EyeTrackingSource, FitBoundsComponent, FitBoundsMode, FitBoundsTarget, FlexDirection, FlexWrap,
+    GLTFComponent, GestureCoordTypeComponent, GrabbableComponent, GravityComponent,
+    GridBindingComponent, GridComponent, GridVisualSpace, HTCEyeTrackingComponent,
+    HandTrackingComponent, HtmlElementComponent, HttpClientComponent, HttpServerComponent,
+    HumanoidBoneMapComponent, IKChainComponent, IKSolver, ImplicitSphereComponent,
+    ImplicitSurfaceComponent, InputComponent, InputTransformModeComponent, InputXRComponent,
+    InputXRGamepadComponent, InspectLayoutComponent, JointRetargetBasisComponent, JustifyContent,
+    KeyframeComponent, LayoutBoundsComponent, LayoutComponent, LightQuantizationComponent,
+    MediaPipeEyeTrackingComponent, MeshComponent, MirrorComponent, MorphTargetMapComponent,
+    MountableComponent, MusicNote, MusicNoteComponent, NormalVisualisationComponent,
+    OpacityComponent, OptionComponent, OscillatorType, Overflow, OverlayComponent,
+    PointLightComponent, PointerComponent, PointerEvents, PoseCaptureComponent,
     PoseCaptureLibraryComponent, PoseCapturePoseComponent, Position, RayCastComponent,
     RaycastableComponent, RaycastableShapeComponent, RaycastableShapeType, RefractionComponent,
     RenderGraphComponent, RenderableComponent, RendererSettingsComponent, RendererStatsComponent,
@@ -104,9 +104,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "Camera3D",
     "CameraXR",
     "Clock",
-    "Collision",
     "Collidable",
-    "CollisionShape",
     "Color",
     "Data",
     "DirectionalLight",
@@ -2559,22 +2557,6 @@ fn create_component(
             Some("world_plane") => add!(GestureCoordTypeComponent::world_plane()),
             _ => add!(GestureCoordTypeComponent::world_plane()),
         },
-        "CollisionShape" => match ctor {
-            Some("cube") => {
-                let half_extents = arg_f32_arr::<3>(args, 0)?;
-                add!(CollisionShapeComponent::new(
-                    CollisionShape::cube_half_extents(half_extents)
-                ))
-            }
-            Some("sphere") => add!(CollisionShapeComponent::new(CollisionShape::sphere_radius(
-                arg_f32(args, 0)?
-            ))),
-            Some("capsule_y") => add!(CollisionShapeComponent::capsule_y(
-                arg_f32(args, 0)?,
-                arg_f32(args, 1)?
-            )),
-            _ => add!(CollisionShapeComponent::cube()),
-        },
         "Zone" => {
             let zone = match ctor {
                 Some("cube") => ZoneComponent::cube(arg_f32_arr::<3>(args, 0)?),
@@ -2609,12 +2591,6 @@ fn create_component(
             };
             add!(RaycastableShapeComponent::new(shape))
         }
-        "Collision" => match ctor {
-            Some("static") => add!(CollisionComponent::STATIC()),
-            Some("kinematic") => add!(CollisionComponent::KINEMATIC()),
-            Some("rigged") => add!(CollisionComponent::RIGGED()),
-            _ => add!(CollisionComponent::STATIC()),
-        },
         "Gravity" => {
             let id = world.add_component(GravityComponent::new());
             if let Some(method) = ctor {

@@ -266,31 +266,7 @@ impl BvhSystem {
     /// rotation-based `optimize` can panic when several moving leaves cause a
     /// queued ancestor's depth to change during the same optimization sweep.
     fn refit_changed_shapes(bvh: &mut BVH, shapes: &[RenderableAabb], changed: &HashSet<usize>) {
-        let mut ancestors = HashSet::new();
-        for &shape_index in changed {
-            let mut node_index = shapes[shape_index].bh_node_index();
-            while node_index != 0 {
-                node_index = bvh.nodes[node_index].parent();
-                ancestors.insert(node_index);
-            }
-        }
-
-        let mut ancestors: Vec<_> = ancestors.into_iter().collect();
-        ancestors.sort_unstable_by_key(|&index| std::cmp::Reverse(bvh.nodes[index].depth()));
-        for index in ancestors {
-            let BVHNode::Node {
-                child_l_index,
-                child_r_index,
-                ..
-            } = bvh.nodes[index]
-            else {
-                continue;
-            };
-            let left = bvh.nodes[child_l_index].get_node_aabb(shapes);
-            let right = bvh.nodes[child_r_index].get_node_aabb(shapes);
-            *bvh.nodes[index].child_l_aabb_mut() = left;
-            *bvh.nodes[index].child_r_aabb_mut() = right;
-        }
+        super::spatial_bvh::refit(bvh, shapes, changed);
     }
 
     /// Apply any queued add/remove/refit requests.
