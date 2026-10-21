@@ -8,7 +8,7 @@ use mittens_engine::engine::ecs::system::{EditorContextSystem, PointerSystem, Xr
 use mittens_engine::engine::ecs::{CommandQueue, IntentValue, SignalEmitter, SystemWorld, World};
 use mittens_engine::engine::graphics::{RenderAssets, VisualWorld};
 use mittens_engine::engine::user_input::InputState;
-use winit::event::MouseButton;
+use mittens_engine::engine::user_input::MouseButton;
 
 fn translation(world: &World, component: mittens_engine::engine::ecs::ComponentId) -> [f32; 3] {
     let matrix = world

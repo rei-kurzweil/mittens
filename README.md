@@ -60,6 +60,11 @@ Host input supports [zero or more HID providers](docs/spec/hid-providers.md).
 Desktop windowing installs a Winit provider automatically; XR-only hosts can
 update with no keyboard/mouse provider while OpenXR tracking remains active.
 
+The default `desktop` Cargo feature includes Winit, windowed rendering, the
+desktop executable, and windowed examples. Libraries embedding the engine can
+disable default features to use engine-owned input types and XR-only rendering
+without Winit. See [Android library builds](android/docs/base-library-build.md).
+
 ## Universe
 + holds all the layers below,
 + and provides simple API to build component trees and add them to the world

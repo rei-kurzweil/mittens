@@ -29,8 +29,10 @@ pointer interactions. Other providers' held controls remain active.
 Each `HidProvider::poll()` returns a current held-state snapshot and the keyboard,
 text, button, and wheel transitions collected since its previous poll. A provider
 must consume its frame events and clear held controls when focus/device access
-is lost. `UserInput` implements this contract using its existing Winit event
-translation. `WinitHidProvider` provides a shared handle for window callbacks.
+is lost. `UserInput` implements the shared event/state processor. A consuming
+crate can translate platform events to engine-owned `HidEvent` values and call
+`UserInput::handle_event`, then use its `HidProvider::poll` implementation.
+`WinitHidProvider` provides a shared handle for desktop window callbacks.
 
 ```rust,ignore
 let provider_id = universe.input_providers.add(my_provider);
@@ -62,18 +64,28 @@ through its own provider.
 
 ## Build boundary
 
-This establishes provider selection and neutral operation without a provider.
-`InputState` key/button types still reference Winit, and the Android HID adapter
-is not implemented. Moving those types into the engine and feature-gating the
-Winit adapter/windowing APIs remain Android build preparation work.
+`InputState`, `Key`, `KeyCode`, `NamedKey`, `PhysicalKey`, `MouseButton`, and
+`HidEvent` are engine-owned types under `engine::user_input`. Consumers should
+import these instead of Winit types. Physical identity, logical text, native
+unidentified codes, and public MMS key/code spellings remain distinct.
+
+The default `desktop` Cargo feature provides `WinitHidProvider`,
+`UserInput::handle_window_event`, `Windowing`, and window renderer APIs. Disable
+default features to build the library without Winit. Generic `UserInput`, the
+provider collection, and XR-only rendering remain available. Android activity
+input translation belongs in the consuming Android host and is not implemented
+yet. See [Android library builds](../../android/docs/base-library-build.md).
 
 ## Validation
 
-Twenty-four focused input/keyboard/text tests and the embedded XR scene test
-pass. Coverage includes zero sources, actual desktop movement from one source,
+Focused input/keyboard/text tests pass with desktop support enabled and disabled.
+The public-API consumer test supplies input from an external crate without
+Winit. Coverage includes zero sources, actual desktop movement from one source,
 overlapping holds from two sources, pointer handoffs, focus loss, and removing
 the last source after an arrow key was held. The zero-source test polls three
-frames and prints the informational message once.
+frames and prints the informational message once. Shared HID-event tests cover
+modifier/key identity, logical text, repeat, and focus loss. Desktop adapter
+tests cover platform key/native-code conversion and window pointer events.
 
 The desktop cube/bloom example reached the present loop through the Winit
 provider path. A bounded XR-only run completed successfully with no HID

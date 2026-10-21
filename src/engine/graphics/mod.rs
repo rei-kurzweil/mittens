@@ -15,6 +15,7 @@ pub(crate) mod renderer_context;
 pub mod skin;
 pub mod visual_world;
 pub mod vulkano_renderer;
+#[cfg(feature = "desktop")]
 pub(crate) mod vulkano_swapchain;
 pub mod xr_renderer;
 pub mod xr_swapchain;
@@ -105,3 +106,7 @@ impl Graphics {
         Self
     }
 }
+
+/// Shared scene depth/stencil format, independent of window presentation.
+pub(crate) const DEPTH_STENCIL_FORMAT: vulkano::format::Format =
+    vulkano::format::Format::D32_SFLOAT_S8_UINT;

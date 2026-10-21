@@ -8,8 +8,8 @@ use crate::engine::ecs::system::rest_attachment::{find_descendant_gltf, resolve_
 use crate::engine::ecs::system::{JointBasisRetargetingSystem, RetargetBasisStatus, XrInputState};
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 use crate::engine::user_input::InputState;
+use crate::engine::user_input::MouseButton;
 use std::collections::HashMap;
-use winit::event::MouseButton;
 
 /// Runtime owner for pointer-specific state and lifecycle.
 ///

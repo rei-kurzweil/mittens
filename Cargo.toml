@@ -32,6 +32,11 @@ exclude = [
 [[bin]]
 name = "mittens-engine"
 path = "src/main.rs"
+required-features = ["desktop"]
+
+[features]
+default = ["desktop"]
+desktop = ["dep:winit"]
 
 [dependencies]
 meow-meow-script = { path = "crates/meow-meow-script", version = "0.9.0" }
@@ -40,14 +45,13 @@ rspirv = "0.12"
 
 vulkano = "0.35"
 vulkano-shaders = "0.35"
-vulkano-util = "0.35"
 ash = "0.38"
 
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 openxr = "0.19"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "json", "blocking"] }
 tiny_http = "0.12"
-winit = "0.30"
+winit = { version = "0.30", optional = true }
 slotmap = "1.0.7"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -83,3 +87,332 @@ gltf = { version = "1", features = ["import", "extras"] }
 [[example]]
 name = "panel-pierce"
 path = "examples/triage/panel-pierce.rs"
+required-features = ["desktop"]
+
+[[example]]
+name = "accordion"
+required-features = ["desktop"]
+
+[[example]]
+name = "animation-example"
+required-features = ["desktop"]
+
+[[example]]
+name = "animation-for-topology"
+required-features = ["desktop"]
+
+[[example]]
+name = "audio-clip-instance-demo"
+required-features = ["desktop"]
+
+[[example]]
+name = "audio-graph-example"
+required-features = ["desktop"]
+
+[[example]]
+name = "audio-music-demo"
+required-features = ["desktop"]
+
+[[example]]
+name = "background-example"
+required-features = ["desktop"]
+
+[[example]]
+name = "background-occlusion-example"
+required-features = ["desktop"]
+
+[[example]]
+name = "bisket-bones-and-ik"
+required-features = ["desktop"]
+
+[[example]]
+name = "bisket-desktop-demo"
+required-features = ["desktop"]
+
+[[example]]
+name = "bisket-vr-demo"
+required-features = ["desktop"]
+
+[[example]]
+name = "bisket-vr-only-example"
+required-features = ["desktop"]
+
+[[example]]
+name = "bloom"
+required-features = ["desktop"]
+
+[[example]]
+name = "button-press"
+required-features = ["desktop"]
+
+[[example]]
+name = "camera-constraint"
+required-features = ["desktop"]
+
+[[example]]
+name = "camera-toggle"
+required-features = ["desktop"]
+
+[[example]]
+name = "clip-shape"
+required-features = ["desktop"]
+
+[[example]]
+name = "collision-perimeter"
+required-features = ["desktop"]
+
+[[example]]
+name = "combine-mesh"
+required-features = ["desktop"]
+
+[[example]]
+name = "component-method-call"
+required-features = ["desktop"]
+
+[[example]]
+name = "diy-panel"
+required-features = ["desktop"]
+
+[[example]]
+name = "folder-text"
+required-features = ["desktop"]
+
+[[example]]
+name = "font-example"
+required-features = ["desktop"]
+
+[[example]]
+name = "font-size"
+required-features = ["desktop"]
+
+[[example]]
+name = "gestures-and-gizmos"
+required-features = ["desktop"]
+
+[[example]]
+name = "gltf-pose-animation"
+required-features = ["desktop"]
+
+[[example]]
+name = "gravity-fields"
+required-features = ["desktop"]
+
+[[example]]
+name = "http-server-example"
+required-features = ["desktop"]
+
+[[example]]
+name = "ik-rest-pose-vr"
+required-features = ["desktop"]
+
+[[example]]
+name = "inline-block-layout"
+required-features = ["desktop"]
+
+[[example]]
+name = "input-xr-gamepad"
+required-features = ["desktop"]
+
+[[example]]
+name = "keyboard-events"
+required-features = ["desktop"]
+
+[[example]]
+name = "lights"
+required-features = ["desktop"]
+
+[[example]]
+name = "mesh-factory-example"
+required-features = ["desktop"]
+
+[[example]]
+name = "mms-functions"
+required-features = ["desktop"]
+
+[[example]]
+name = "mms-loops"
+required-features = ["desktop"]
+
+[[example]]
+name = "mms-module-example"
+required-features = ["desktop"]
+
+[[example]]
+name = "mms-tables"
+required-features = ["desktop"]
+
+[[example]]
+name = "neon-kawaii"
+required-features = ["desktop"]
+
+[[example]]
+name = "observer-router"
+required-features = ["desktop"]
+
+[[example]]
+name = "opacity-example"
+required-features = ["desktop"]
+
+[[example]]
+name = "openxr"
+required-features = ["desktop"]
+
+[[example]]
+name = "padding-demo"
+required-features = ["desktop"]
+
+[[example]]
+name = "paint-grids-desktop"
+required-features = ["desktop"]
+
+[[example]]
+name = "paint-stroke-debug"
+required-features = ["desktop"]
+
+[[example]]
+name = "pc-rei-mirror-example"
+required-features = ["desktop"]
+
+[[example]]
+name = "percentage-layout"
+required-features = ["desktop"]
+
+[[example]]
+name = "pipe-demo"
+required-features = ["desktop"]
+
+[[example]]
+name = "pointer-events"
+required-features = ["desktop"]
+
+[[example]]
+name = "pride"
+required-features = ["desktop"]
+
+[[example]]
+name = "query-demo"
+required-features = ["desktop"]
+
+[[example]]
+name = "raycast-topology-animation"
+required-features = ["desktop"]
+
+[[example]]
+name = "render-graph-diagram"
+required-features = ["desktop"]
+
+[[example]]
+name = "rotate-look-at-example"
+required-features = ["desktop"]
+
+[[example]]
+name = "router"
+required-features = ["desktop"]
+
+[[example]]
+name = "runtime-spec-emissive-cubes"
+required-features = ["desktop"]
+
+[[example]]
+name = "scrolling"
+required-features = ["desktop"]
+
+[[example]]
+name = "secondary-motion-desktop"
+required-features = ["desktop"]
+
+[[example]]
+name = "signal-handler"
+required-features = ["desktop"]
+
+[[example]]
+name = "simple-demo"
+required-features = ["desktop"]
+
+[[example]]
+name = "table-field-reassign"
+required-features = ["desktop"]
+
+[[example]]
+name = "terrain-edit-desktop"
+required-features = ["desktop"]
+
+[[example]]
+name = "text-animation"
+required-features = ["desktop"]
+
+[[example]]
+name = "text-editor"
+required-features = ["desktop"]
+
+[[example]]
+name = "text-example"
+required-features = ["desktop"]
+
+[[example]]
+name = "text-input"
+required-features = ["desktop"]
+
+[[example]]
+name = "transition"
+required-features = ["desktop"]
+
+[[example]]
+name = "transparent-cutout-example"
+required-features = ["desktop"]
+
+[[example]]
+name = "ui-layout"
+required-features = ["desktop"]
+
+[[example]]
+name = "vr-input-mms"
+required-features = ["desktop"]
+
+[[example]]
+name = "vr-input"
+required-features = ["desktop"]
+
+[[example]]
+name = "vtuber-desktop-first-person"
+required-features = ["desktop"]
+
+[[example]]
+name = "vtuber-desktop"
+required-features = ["desktop"]
+
+[[example]]
+name = "vtuber-editor-example"
+required-features = ["desktop"]
+
+[[example]]
+name = "vtuber-example"
+required-features = ["desktop"]
+
+[[example]]
+name = "vtuber-joints-example"
+required-features = ["desktop"]
+
+[[example]]
+name = "vtuber-mirror-example"
+required-features = ["desktop"]
+
+[[example]]
+name = "vtuber-secondary-motion"
+required-features = ["desktop"]
+
+[[example]]
+name = "vtuber-slidedeck"
+required-features = ["desktop"]
+
+[[example]]
+name = "vulkano-frame-future-regression"
+required-features = ["desktop"]
+
+[[example]]
+name = "world-panel"
+required-features = ["desktop"]
+
+[[example]]
+name = "xr-grab-demo"
+required-features = ["desktop"]

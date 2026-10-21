@@ -5,6 +5,7 @@ Run Mittens without a desktop window before testing the Android host:
 ```sh
 cargo run --release --example openxr-only
 cargo run --release --example openxr-only -- --seconds 30 --no-msaa
+cargo run --release --no-default-features --example openxr-only
 ```
 
 Start the desktop OpenXR runtime and connect the headset first. The example
@@ -35,11 +36,11 @@ While the session is stopped or waiting for READY, the host sleeps briefly
 between event polls. EXITING, LOSS_PENDING, instance loss, and fatal rendering
 failure terminate the example; STOPPING alone permits a subsequent restart.
 
-Winit is still a Cargo dependency: desktop APIs and the shared keyboard/mouse
-input types reference it. This establishes window-free execution, not a build
-with Winit removed. Android loader/activity initialization, packaging, an
-advertised-binding negotiation/enable2 path, and actual Focus 3 feature testing
-remain separate work.
+The default `desktop` feature retains the windowed APIs and Winit adapter. With
+`--no-default-features`, the XR-only example and base library compile without
+Winit; input types are owned by the engine. Android loader/activity
+initialization, packaging, an advertised-binding negotiation/enable2 path, and
+actual Focus 3 feature testing remain separate work.
 
 For GPU verification without an OpenXR runtime or display server:
 

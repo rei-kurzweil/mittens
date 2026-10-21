@@ -11,11 +11,11 @@ use crate::engine::ecs::{EventSignal, RxWorld};
 use crate::engine::graphics::VisualWorld;
 use crate::engine::graphics::primitives::{CpuMeshHandle, TransformMatrix};
 use crate::engine::user_input::InputState;
+use crate::engine::user_input::MouseButton;
 use crate::utils::math;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
-use winit::event::MouseButton;
 
 #[derive(Debug, Default)]
 pub struct RayCastSystem {

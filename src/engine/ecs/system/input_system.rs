@@ -7,10 +7,10 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::system::System;
 use crate::engine::graphics::VisualWorld;
 use crate::engine::user_input::InputState;
+use crate::engine::user_input::MouseButton;
+use crate::engine::user_input::{Key, NamedKey};
 use crate::utils::math;
 use std::collections::{HashMap, HashSet};
-use winit::event::MouseButton;
-use winit::keyboard::{Key, NamedKey};
 
 /// System that processes input components and updates transforms based on WASD input.
 ///

@@ -1468,7 +1468,6 @@ dependencies = [
  "uuid",
  "vulkano",
  "vulkano-shaders",
- "vulkano-util",
  "winit",
 ]
 
@@ -3381,17 +3380,6 @@ dependencies = [
  "shaderc",
  "syn 2.0.111",
  "vulkano",
-]
-
-[[package]]
-name = "vulkano-util"
-version = "0.35.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e25dc54fd5e14a0e01c7282f9b5d9c6e133745e1df3228b0352366e34c83bb6b"
-dependencies = [
- "foldhash",
- "vulkano",
- "winit",
 ]
 
 [[package]]

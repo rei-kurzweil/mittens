@@ -9,10 +9,10 @@ use crate::engine::graphics::visual_world::{
 };
 use crate::engine::graphics::{CameraData, CameraTarget, VisualWorld};
 use crate::engine::user_input::InputState;
+use crate::engine::user_input::MouseButton;
 use crate::utils::math;
 use std::collections::HashSet;
 use uuid::Uuid;
-use winit::event::MouseButton;
 
 const MIRROR_CLIP_BIAS_WORLD_UNITS: f32 = 0.01;
 const MIRROR_ENABLE_OBLIQUE_CLIP_PLANE: bool = false;

@@ -4,9 +4,9 @@ use super::*;
 use crate::engine::ecs::component::{InputComponent, TransformComponent};
 use crate::engine::ecs::system::{InputSystem, KeyboardInputSystem};
 use crate::engine::ecs::{ComponentId, EventSignal, IntentSignal, SignalEmitter, World};
+use crate::engine::user_input::MouseButton;
+use crate::engine::user_input::{Key, KeyCode, NamedKey, PhysicalKey};
 use crate::engine::user_input::{KeyboardInputRecord, KeyboardTransition, TextInputFrameEvent};
-use winit::event::MouseButton;
-use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
 
 struct Frames(VecDeque<InputState>);
 
@@ -323,7 +323,7 @@ fn focus_loss_only_releases_the_affected_provider() {
         .insert(Key::Character("w".into()));
     first.state_mut().mouse_down.insert(MouseButton::Right);
     first.state_mut().cursor_pos = Some((20.0, 20.0));
-    let handle = WinitHidProvider::new(first);
+    let handle = std::rc::Rc::new(std::cell::RefCell::new(first));
     let mut second = UserInput::new();
     second
         .state_mut()
@@ -334,7 +334,9 @@ fn focus_loss_only_releases_the_affected_provider() {
     providers.add(handle.clone());
     let second_id = providers.add(second);
     providers.poll();
-    handle.handle_window_event(&winit::event::WindowEvent::Focused(false));
+    handle
+        .borrow_mut()
+        .handle_event(&crate::engine::user_input::HidEvent::Focused(false));
     let snapshot = providers.poll();
     assert!(snapshot.key_down(&Key::Character("w".into())));
     assert!(snapshot.mouse_down.contains(&MouseButton::Right));

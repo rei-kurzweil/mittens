@@ -3,9 +3,11 @@ use crate::engine::startup_trace::{StartupCheckpoint, log_startup_progress};
 use crate::engine::user_input::{HidProviders, InputState};
 use crate::engine::{ecs, graphics};
 use std::collections::HashSet;
+#[cfg(feature = "desktop")]
 use std::sync::Arc;
 use std::sync::mpsc;
 use std::time::Instant;
+#[cfg(feature = "desktop")]
 use winit::window::Window;
 
 pub struct Universe {
@@ -438,6 +440,7 @@ impl Universe {
 
     /// Initialize the renderer for a window.
     /// This must be called before rendering.
+    #[cfg(feature = "desktop")]
     pub fn init_renderer_for_window(
         &mut self,
         window: &Arc<Window>,
@@ -527,6 +530,7 @@ impl Universe {
     }
 
     /// Resize the renderer when the window is resized.
+    #[cfg(feature = "desktop")]
     pub fn resize_renderer(&mut self, size: winit::dpi::PhysicalSize<u32>) {
         self.visuals
             .set_viewport([size.width as f32, size.height as f32]);
@@ -613,6 +617,7 @@ impl Universe {
 
         // XR-only startup has no window output. Windowed startup also skips
         // presentation when there is no active Camera3D/Camera2D.
+        #[cfg(feature = "desktop")]
         if self.renderer.has_window_output() && self.systems.camera.has_active_window_camera() {
             // TODO: rebuild inspector around component graph instead of entities.
             self.renderer

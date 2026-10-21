@@ -35,8 +35,6 @@ pub(crate) struct VulkanoSwapchainState {
 }
 
 impl VulkanoSwapchainState {
-    pub(crate) const DEPTH_FORMAT: Format = Format::D32_SFLOAT_S8_UINT;
-
     pub(crate) fn new(
         context: &RendererContext,
         window: Arc<Window>,
@@ -185,7 +183,7 @@ impl VulkanoSwapchainState {
                 memory_allocator.clone(),
                 ImageCreateInfo {
                     image_type: ImageType::Dim2d,
-                    format: Self::DEPTH_FORMAT,
+                    format: super::DEPTH_STENCIL_FORMAT,
                     extent: [extent[0], extent[1], 1],
                     samples,
                     usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT,

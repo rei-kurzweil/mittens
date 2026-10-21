@@ -1,4 +1,4 @@
-use winit::keyboard::PhysicalKey;
+use crate::engine::user_input::PhysicalKey;
 
 use crate::engine::ecs::{ComponentId, EventSignal, KeyboardEvent, SignalEmitter};
 use crate::engine::user_input::{InputProviderId, InputState, KeyboardTransition};
@@ -83,8 +83,8 @@ impl KeyboardInputSystem {
 mod tests {
     use super::*;
     use crate::engine::ecs::{IntentSignal, SignalEmitter};
+    use crate::engine::user_input::KeyCode;
     use crate::engine::user_input::{KeyboardInputRecord, KeyboardTransition};
-    use winit::keyboard::KeyCode;
 
     #[derive(Default)]
     struct Events(Vec<EventSignal>);

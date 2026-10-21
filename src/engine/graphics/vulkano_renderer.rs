@@ -6,6 +6,7 @@ use crate::engine::graphics::primitives::MeshHandle;
 use crate::engine::graphics::primitives::TextureHandle;
 use crate::engine::graphics::visual_world::VisualWorld;
 use std::sync::Arc;
+#[cfg(feature = "desktop")]
 use winit::window::Window;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -81,6 +82,7 @@ mod vulkano_backend {
     use crate::engine::graphics::primitives::MeshHandle;
     use crate::engine::graphics::primitives::TextureHandle;
     use crate::engine::graphics::visual_world::{TextureFiltering, VisualWorld};
+    #[cfg(feature = "desktop")]
     use crate::engine::graphics::vulkano_swapchain::VulkanoSwapchainState;
     use crate::engine::graphics::vulkano_texture_upload;
     use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
@@ -137,9 +139,12 @@ mod vulkano_backend {
         PipelineShaderStageCreateInfo,
     };
     use vulkano::render_pass::{AttachmentLoadOp, AttachmentStoreOp, ResolveMode};
+    #[cfg(feature = "desktop")]
     use vulkano::swapchain::{self, SwapchainPresentInfo};
     use vulkano::sync::{self, GpuFuture};
+    #[cfg(feature = "desktop")]
     use vulkano::{Validated, VulkanError};
+    #[cfg(feature = "desktop")]
     use winit::window::Window;
 
     fn env_flag(name: &str) -> bool {
@@ -438,6 +443,7 @@ mod vulkano_backend {
         #[allow(dead_code)]
         pub context: Arc<RendererContext>,
         #[allow(dead_code)]
+        #[cfg(feature = "desktop")]
         window_output: Option<WindowOutput>,
         scene_color_format: Format,
 
@@ -611,6 +617,13 @@ mod vulkano_backend {
         xr_image_in_flight: Option<Arc<crate::engine::graphics::xr_renderer::XrSwapchainImage>>,
     }
 
+    pub(super) enum RendererOutput {
+        #[cfg(feature = "desktop")]
+        Window(Arc<Window>),
+        Xr(Format),
+    }
+
+    #[cfg(feature = "desktop")]
     struct WindowOutput {
         window: Arc<Window>,
         swapchain: VulkanoSwapchainState,
@@ -833,8 +846,7 @@ mod vulkano_backend {
 
         pub fn new(
             context: Arc<RendererContext>,
-            window: Option<Arc<Window>>,
-            xr_color_format: Option<Format>,
+            output: RendererOutput,
             msaa_mode: MsaaMode,
         ) -> Result<Self, Box<dyn std::error::Error>> {
             let device = context.device().clone();
@@ -886,21 +898,24 @@ mod vulkano_backend {
                 _ => println!("[VulkanoRenderer] MSAA disabled"),
             }
 
-            let window_output = window
-                .map(|window| {
+            #[cfg(feature = "desktop")]
+            let (window_output, color_format) = match output {
+                RendererOutput::Window(window) => {
                     let swapchain =
                         VulkanoSwapchainState::new(&context, window.clone(), msaa_samples)?;
-                    Ok::<_, Box<dyn std::error::Error>>(WindowOutput { window, swapchain })
-                })
-                .transpose()?;
+                    let format = swapchain.swapchain.image_format();
+                    (Some(WindowOutput { window, swapchain }), format)
+                }
+                RendererOutput::Xr(format) => (None, format),
+            };
+            #[cfg(not(feature = "desktop"))]
+            let RendererOutput::Xr(color_format) = output;
+            #[cfg(feature = "desktop")]
             let framebuffer_count = window_output
                 .as_ref()
                 .map_or(0, |output| output.swapchain.swapchain_views.len());
-            let color_format = window_output
-                .as_ref()
-                .map(|output| output.swapchain.swapchain.image_format())
-                .or(xr_color_format)
-                .ok_or("renderer requires a window or an XR color format")?;
+            #[cfg(not(feature = "desktop"))]
+            let framebuffer_count = 0;
 
             let set_layouts = PipelineDescriptorSetLayouts::new(device.clone())?;
 
@@ -1501,9 +1516,10 @@ mod vulkano_backend {
             // The pipeline is keyed by attachment formats rather than a specific RenderPass.
             let mut pipeline_rendering = PipelineRenderingCreateInfo::default();
             pipeline_rendering.color_attachment_formats = vec![Some(color_format)];
-            pipeline_rendering.depth_attachment_format = Some(VulkanoSwapchainState::DEPTH_FORMAT);
+            pipeline_rendering.depth_attachment_format =
+                Some(crate::engine::graphics::DEPTH_STENCIL_FORMAT);
             pipeline_rendering.stencil_attachment_format =
-                Some(VulkanoSwapchainState::DEPTH_FORMAT);
+                Some(crate::engine::graphics::DEPTH_STENCIL_FORMAT);
 
             pipeline_ci.subpass = Some(PipelineSubpassType::BeginRendering(pipeline_rendering));
 
@@ -2163,6 +2179,7 @@ mod vulkano_backend {
 
             let mut state = Self {
                 context,
+                #[cfg(feature = "desktop")]
                 window_output,
                 scene_color_format: color_format,
 
@@ -2319,9 +2336,16 @@ mod vulkano_backend {
         }
 
         pub(super) fn window_frame_slots(&self) -> usize {
-            self.window_output
-                .as_ref()
-                .map_or(0, |output| output.swapchain.swapchain_views.len())
+            #[cfg(feature = "desktop")]
+            {
+                self.window_output
+                    .as_ref()
+                    .map_or(0, |output| output.swapchain.swapchain_views.len())
+            }
+            #[cfg(not(feature = "desktop"))]
+            {
+                0
+            }
         }
 
         pub fn gpu_device_name(&self) -> String {
@@ -2411,7 +2435,7 @@ mod vulkano_backend {
                     memory_allocator.clone(),
                     vulkano::image::ImageCreateInfo {
                         image_type: vulkano::image::ImageType::Dim2d,
-                        format: VulkanoSwapchainState::DEPTH_FORMAT,
+                        format: crate::engine::graphics::DEPTH_STENCIL_FORMAT,
                         extent: [extent[0], extent[1], 1],
                         samples: self.msaa_samples,
                         usage: vulkano::image::ImageUsage::DEPTH_STENCIL_ATTACHMENT,
@@ -2521,7 +2545,7 @@ mod vulkano_backend {
                         memory_allocator.clone(),
                         ImageCreateInfo {
                             image_type: ImageType::Dim2d,
-                            format: VulkanoSwapchainState::DEPTH_FORMAT,
+                            format: crate::engine::graphics::DEPTH_STENCIL_FORMAT,
                             extent: [extent[0], extent[1], 1],
                             samples: self.msaa_samples,
                             usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT,
@@ -3129,7 +3153,7 @@ mod vulkano_backend {
                     self.context.memory_allocator().clone(),
                     ImageCreateInfo {
                         image_type: ImageType::Dim2d,
-                        format: VulkanoSwapchainState::DEPTH_FORMAT,
+                        format: crate::engine::graphics::DEPTH_STENCIL_FORMAT,
                         extent: [extent[0], extent[1], 1],
                         samples: SampleCount::Sample1,
                         usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT
@@ -3736,6 +3760,7 @@ mod vulkano_backend {
             Ok(())
         }
 
+        #[cfg(feature = "desktop")]
         fn recreate_swapchain_if_needed(&mut self) -> Result<(), Box<dyn std::error::Error>> {
             if !(self.window_resized || self.recreate_swapchain) {
                 return Ok(());
@@ -5609,6 +5634,7 @@ mod vulkano_backend {
             Ok(cb)
         }
 
+        #[cfg(feature = "desktop")]
         pub fn render_visual_world(
             &mut self,
             visual_world: &mut VisualWorld,
@@ -6357,6 +6383,7 @@ impl VulkanoRenderer {
         Ok(())
     }
 
+    #[cfg(feature = "desktop")]
     pub fn init_for_window(
         &mut self,
         window: &Arc<Window>,
@@ -6373,8 +6400,7 @@ impl VulkanoRenderer {
             self.context = Some(context.clone());
             self.vulkano = Some(vulkano_backend::VulkanoState::new(
                 context,
-                Some(window.clone()),
-                None,
+                vulkano_backend::RendererOutput::Window(window.clone()),
                 msaa_mode,
             )?);
             println!("[VulkanoRenderer] Vulkano swapchain/render-pass initialized");
@@ -6423,8 +6449,7 @@ impl VulkanoRenderer {
             .map_err(|_| "unsupported OpenXR color format")?;
         self.vulkano = Some(vulkano_backend::VulkanoState::new(
             context,
-            None,
-            Some(format),
+            vulkano_backend::RendererOutput::Xr(format),
             self.msaa_mode_override.unwrap_or_default(),
         )?);
         println!("[VulkanoRenderer] XR-only renderer initialized (no window or surface)");
@@ -6437,6 +6462,7 @@ impl VulkanoRenderer {
             .is_some_and(|state| state.window_frame_slots() > 0)
     }
 
+    #[cfg(feature = "desktop")]
     pub fn resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
         let _ = size;
         if let Some(vulkano) = self.vulkano.as_mut() {
@@ -6461,6 +6487,7 @@ impl VulkanoRenderer {
         Ok(handle)
     }
 
+    #[cfg(feature = "desktop")]
     pub fn render_visual_world(
         &mut self,
         visual_world: &mut VisualWorld,
@@ -6486,6 +6513,7 @@ impl VulkanoRenderer {
         Some(vk.as_raw() as u32)
     }
 
+    #[cfg(feature = "desktop")]
     pub fn window_vk_format_raw(&self) -> Option<u32> {
         self.has_window_output()
             .then(|| self.scene_vk_format_raw())

@@ -1,13 +1,57 @@
-//! Shared input snapshots and host HID providers. `UserInput` retains the
-//! desktop event adapter; providers can be absent or combined by the host.
+//! Shared input snapshots, engine-owned key/button types, and host HID providers.
 
 mod providers;
-pub use providers::{HidProvider, HidProviders, InputProviderId, WinitHidProvider};
+pub use providers::{HidProvider, HidProviders, InputProviderId};
+mod keyboard;
+pub use keyboard::{
+    Key, KeyCode, NamedKey, NativeKey, NativeKeyCode, PhysicalKey, logical_key, physical_key_code,
+};
+#[cfg(feature = "desktop")]
+mod winit_adapter;
+#[cfg(feature = "desktop")]
+pub use winit_adapter::WinitHidProvider;
 
 use std::collections::HashSet;
 
-use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+    Back,
+    Forward,
+    Other(u16),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ButtonState {
+    Pressed,
+    Released,
+}
+
+/// Normalized host events consumed by the same state processor on every platform.
+#[derive(Debug, Clone, PartialEq)]
+pub enum HidEvent {
+    Keyboard {
+        physical_key: PhysicalKey,
+        logical_key: Key,
+        state: ButtonState,
+        repeat: bool,
+        is_synthetic: bool,
+        text: Option<String>,
+    },
+    Focused(bool),
+    MouseButton {
+        state: ButtonState,
+        button: MouseButton,
+    },
+    CursorMoved {
+        position: (f32, f32),
+    },
+    MouseWheel {
+        delta: (f32, f32),
+    },
+}
 
 /// One ordered gameplay-keyboard transition captured at the platform boundary.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,7 +97,7 @@ pub struct InputState {
     pub mouse_pressed: HashSet<MouseButton>,
     pub mouse_released: HashSet<MouseButton>,
 
-    /// Cursor position in physical pixels (as reported by winit).
+    /// Cursor position in physical pixels of the host input surface.
     pub cursor_pos: Option<(f32, f32)>,
 
     /// Previous cursor position (updated at `begin_frame`).
@@ -231,15 +275,16 @@ impl UserInput {
         self.state.end_frame();
     }
 
-    /// Feed a winit event into this input handler.
-    ///
-    /// Returns `true` if the event was recognized/consumed as input.
-    pub fn handle_window_event(&mut self, event: &WindowEvent) -> bool {
+    /// Apply one platform-independent event. Providers can reuse this processor.
+    pub fn handle_event(&mut self, event: &HidEvent) {
         match event {
-            WindowEvent::KeyboardInput {
-                event,
+            HidEvent::Keyboard {
+                physical_key,
+                logical_key: logical,
+                state,
+                repeat,
                 is_synthetic,
-                ..
+                text,
             } => {
                 fn normalize_key(key: &Key) -> Key {
                     match key {
@@ -249,9 +294,7 @@ impl UserInput {
                             if s.len() == 1 {
                                 let c = s.chars().next().unwrap_or('\0');
                                 if c.is_ascii_alphabetic() {
-                                    return Key::Character(
-                                        c.to_ascii_lowercase().to_string().into(),
-                                    );
+                                    return Key::Character(c.to_ascii_lowercase().to_string());
                                 }
                             }
                             Key::Character(s.clone())
@@ -260,42 +303,39 @@ impl UserInput {
                     }
                 }
 
-                let key = normalize_key(&event.logical_key);
-                let public_event = (
-                    physical_key_code(event.physical_key),
-                    logical_key(&event.logical_key),
-                );
-                match event.state {
-                    ElementState::Pressed => {
+                let key = normalize_key(logical);
+                let public_event = (physical_key_code(*physical_key), logical_key(logical));
+                match state {
+                    ButtonState::Pressed => {
                         if *is_synthetic {
-                            return true;
+                            return;
                         }
                         let was_physically_down = self
                             .state
                             .physical_keys_down
                             .iter()
-                            .any(|(physical_key, ..)| *physical_key == event.physical_key);
-                        if !was_physically_down && !event.repeat {
+                            .any(|(held_key, ..)| held_key == physical_key);
+                        if !was_physically_down && !*repeat {
                             self.state.physical_keys_down.push((
-                                event.physical_key,
+                                *physical_key,
                                 public_event.0.clone(),
                                 public_event.1.clone(),
                                 key.clone(),
                             ));
                             self.state.keyboard_events.push(KeyboardInputRecord {
                                 provider_id: InputProviderId::MANUAL,
-                                physical_key: event.physical_key,
+                                physical_key: *physical_key,
                                 code: public_event.0.clone(),
                                 key: public_event.1.clone(),
                                 transition: KeyboardTransition::Down,
                             });
                         }
-                        if event.repeat && !was_physically_down {
-                            return true;
+                        if *repeat && !was_physically_down {
+                            return;
                         }
                         self.state.keyboard_events.push(KeyboardInputRecord {
                             provider_id: InputProviderId::MANUAL,
-                            physical_key: event.physical_key,
+                            physical_key: *physical_key,
                             code: public_event.0,
                             key: public_event.1,
                             transition: KeyboardTransition::Press,
@@ -305,7 +345,7 @@ impl UserInput {
                         if !was_down {
                             self.state.keys_pressed.insert(key);
                         }
-                        match &event.logical_key {
+                        match logical {
                             Key::Named(NamedKey::Backspace) => {
                                 self.state
                                     .text_input_events
@@ -328,7 +368,7 @@ impl UserInput {
                             }
                             _ => {}
                         }
-                        if let Some(text) = event.text.as_ref() {
+                        if let Some(text) = text.as_ref() {
                             let filtered: String =
                                 text.chars().filter(|c| !c.is_control()).collect();
                             if !filtered.is_empty() {
@@ -338,18 +378,18 @@ impl UserInput {
                             }
                         }
                     }
-                    ElementState::Released => {
+                    ButtonState::Released => {
                         if let Some(index) = self
                             .state
                             .physical_keys_down
                             .iter()
-                            .position(|(physical_key, ..)| *physical_key == event.physical_key)
+                            .position(|(held_key, ..)| held_key == physical_key)
                         {
                             let (_, code, logical_key, gameplay_key) =
                                 self.state.physical_keys_down.remove(index);
                             self.state.keyboard_events.push(KeyboardInputRecord {
                                 provider_id: InputProviderId::MANUAL,
-                                physical_key: event.physical_key,
+                                physical_key: *physical_key,
                                 code,
                                 key: logical_key,
                                 transition: KeyboardTransition::Up,
@@ -362,597 +402,169 @@ impl UserInput {
                         }
                     }
                 }
-                true
             }
 
-            WindowEvent::Focused(false) => {
+            HidEvent::Focused(false) => {
                 self.state.release_all_keys();
                 self.state
                     .mouse_released
                     .extend(self.state.mouse_down.drain());
                 self.state.cursor_pos = None;
-                true
             }
 
-            WindowEvent::MouseInput { state, button, .. } => {
-                match state {
-                    ElementState::Pressed => {
-                        let was_down = self.state.mouse_down.contains(button);
-                        self.state.mouse_down.insert(*button);
-                        if !was_down {
-                            self.state.mouse_pressed.insert(*button);
-                        }
-                    }
-                    ElementState::Released => {
-                        self.state.mouse_down.remove(button);
-                        self.state.mouse_released.insert(*button);
+            HidEvent::MouseButton { state, button } => match state {
+                ButtonState::Pressed => {
+                    let was_down = self.state.mouse_down.contains(button);
+                    self.state.mouse_down.insert(*button);
+                    if !was_down {
+                        self.state.mouse_pressed.insert(*button);
                     }
                 }
-                true
+                ButtonState::Released => {
+                    self.state.mouse_down.remove(button);
+                    self.state.mouse_released.insert(*button);
+                }
+            },
+
+            HidEvent::CursorMoved { position } => {
+                self.state.cursor_pos = Some(*position);
+            }
+            HidEvent::MouseWheel { delta } => {
+                self.state.wheel_delta.0 += delta.0;
+                self.state.wheel_delta.1 += delta.1;
             }
 
-            WindowEvent::CursorMoved { position, .. } => {
-                self.state.cursor_pos = Some((position.x as f32, position.y as f32));
-                true
-            }
-
-            WindowEvent::MouseWheel { delta, .. } => {
-                let (dx, dy) = match delta {
-                    MouseScrollDelta::LineDelta(x, y) => (*x, *y),
-                    MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
-                };
-                self.state.wheel_delta.0 += dx;
-                self.state.wheel_delta.1 += dy;
-                true
-            }
-
-            _ => false,
+            HidEvent::Focused(true) => {}
         }
     }
-}
-
-fn physical_key_code(key: PhysicalKey) -> Option<String> {
-    let PhysicalKey::Code(code) = key else {
-        return None;
-    };
-    macro_rules! standard_code {
-        ($($variant:ident),+ $(,)?) => {
-            match code {
-                $(KeyCode::$variant => stringify!($variant),)+
-                KeyCode::SuperLeft => "MetaLeft",
-                KeyCode::SuperRight => "MetaRight",
-                _ => return None,
-            }
-        };
-    }
-    // Explicit allowlist: these strings are the public API, not enum Debug output.
-    let name = standard_code!(
-        Backquote,
-        Backslash,
-        BracketLeft,
-        BracketRight,
-        Comma,
-        Digit0,
-        Digit1,
-        Digit2,
-        Digit3,
-        Digit4,
-        Digit5,
-        Digit6,
-        Digit7,
-        Digit8,
-        Digit9,
-        Equal,
-        IntlBackslash,
-        IntlRo,
-        IntlYen,
-        KeyA,
-        KeyB,
-        KeyC,
-        KeyD,
-        KeyE,
-        KeyF,
-        KeyG,
-        KeyH,
-        KeyI,
-        KeyJ,
-        KeyK,
-        KeyL,
-        KeyM,
-        KeyN,
-        KeyO,
-        KeyP,
-        KeyQ,
-        KeyR,
-        KeyS,
-        KeyT,
-        KeyU,
-        KeyV,
-        KeyW,
-        KeyX,
-        KeyY,
-        KeyZ,
-        Minus,
-        Period,
-        Quote,
-        Semicolon,
-        Slash,
-        AltLeft,
-        AltRight,
-        Backspace,
-        CapsLock,
-        ContextMenu,
-        ControlLeft,
-        ControlRight,
-        Enter,
-        ShiftLeft,
-        ShiftRight,
-        Space,
-        Tab,
-        Convert,
-        KanaMode,
-        Lang1,
-        Lang2,
-        Lang3,
-        Lang4,
-        Lang5,
-        NonConvert,
-        Delete,
-        End,
-        Help,
-        Home,
-        Insert,
-        PageDown,
-        PageUp,
-        ArrowDown,
-        ArrowLeft,
-        ArrowRight,
-        ArrowUp,
-        NumLock,
-        Numpad0,
-        Numpad1,
-        Numpad2,
-        Numpad3,
-        Numpad4,
-        Numpad5,
-        Numpad6,
-        Numpad7,
-        Numpad8,
-        Numpad9,
-        NumpadAdd,
-        NumpadBackspace,
-        NumpadClear,
-        NumpadClearEntry,
-        NumpadComma,
-        NumpadDecimal,
-        NumpadDivide,
-        NumpadEnter,
-        NumpadEqual,
-        NumpadHash,
-        NumpadMemoryAdd,
-        NumpadMemoryClear,
-        NumpadMemoryRecall,
-        NumpadMemoryStore,
-        NumpadMemorySubtract,
-        NumpadMultiply,
-        NumpadParenLeft,
-        NumpadParenRight,
-        NumpadStar,
-        NumpadSubtract,
-        Escape,
-        Fn,
-        FnLock,
-        PrintScreen,
-        ScrollLock,
-        Pause,
-        BrowserBack,
-        BrowserFavorites,
-        BrowserForward,
-        BrowserHome,
-        BrowserRefresh,
-        BrowserSearch,
-        BrowserStop,
-        Eject,
-        LaunchApp1,
-        LaunchApp2,
-        LaunchMail,
-        MediaPlayPause,
-        MediaSelect,
-        MediaStop,
-        MediaTrackNext,
-        MediaTrackPrevious,
-        Power,
-        Sleep,
-        AudioVolumeDown,
-        AudioVolumeMute,
-        AudioVolumeUp,
-        WakeUp,
-        Meta,
-        Hyper,
-        Turbo,
-        Abort,
-        Resume,
-        Suspend,
-        Again,
-        Copy,
-        Cut,
-        Find,
-        Open,
-        Paste,
-        Props,
-        Select,
-        Undo,
-        Hiragana,
-        Katakana,
-        F1,
-        F2,
-        F3,
-        F4,
-        F5,
-        F6,
-        F7,
-        F8,
-        F9,
-        F10,
-        F11,
-        F12,
-        F13,
-        F14,
-        F15,
-        F16,
-        F17,
-        F18,
-        F19,
-        F20,
-        F21,
-        F22,
-        F23,
-        F24,
-        F25,
-        F26,
-        F27,
-        F28,
-        F29,
-        F30,
-        F31,
-        F32,
-        F33,
-        F34,
-        F35,
-    );
-    Some(name.to_string())
-}
-
-fn logical_key(key: &Key) -> String {
-    match key {
-        Key::Character(value) => value.to_string(),
-        Key::Named(named) => named_key_name(*named).to_string(),
-        Key::Dead(_) => "Dead".to_string(),
-        Key::Unidentified(_) => "Unidentified".to_string(),
-    }
-}
-
-fn named_key_name(key: NamedKey) -> &'static str {
-    macro_rules! standard_key {
-        ($($variant:ident),+ $(,)?) => {
-            match key {
-                $(NamedKey::$variant => stringify!($variant),)+
-                NamedKey::Meta | NamedKey::Super => "Meta",
-                NamedKey::Space => " ",
-                _ => "Unidentified",
-            }
-        };
-    }
-    standard_key!(
-        Alt,
-        AltGraph,
-        CapsLock,
-        Control,
-        Fn,
-        FnLock,
-        NumLock,
-        ScrollLock,
-        Shift,
-        Symbol,
-        SymbolLock,
-        Hyper,
-        Enter,
-        Tab,
-        ArrowDown,
-        ArrowLeft,
-        ArrowRight,
-        ArrowUp,
-        End,
-        Home,
-        PageDown,
-        PageUp,
-        Backspace,
-        Clear,
-        Copy,
-        CrSel,
-        Cut,
-        Delete,
-        EraseEof,
-        ExSel,
-        Insert,
-        Paste,
-        Redo,
-        Undo,
-        Accept,
-        Again,
-        Attn,
-        Cancel,
-        ContextMenu,
-        Escape,
-        Execute,
-        Find,
-        Help,
-        Pause,
-        Play,
-        Props,
-        Select,
-        ZoomIn,
-        ZoomOut,
-        BrightnessDown,
-        BrightnessUp,
-        Eject,
-        LogOff,
-        Power,
-        PowerOff,
-        PrintScreen,
-        Hibernate,
-        Standby,
-        WakeUp,
-        AllCandidates,
-        Alphanumeric,
-        CodeInput,
-        Compose,
-        Convert,
-        FinalMode,
-        GroupFirst,
-        GroupLast,
-        GroupNext,
-        GroupPrevious,
-        ModeChange,
-        NextCandidate,
-        NonConvert,
-        PreviousCandidate,
-        Process,
-        SingleCandidate,
-        HangulMode,
-        HanjaMode,
-        JunjaMode,
-        Eisu,
-        Hankaku,
-        Hiragana,
-        HiraganaKatakana,
-        KanaMode,
-        KanjiMode,
-        Katakana,
-        Romaji,
-        Zenkaku,
-        ZenkakuHankaku,
-        Soft1,
-        Soft2,
-        Soft3,
-        Soft4,
-        ChannelDown,
-        ChannelUp,
-        Close,
-        MailForward,
-        MailReply,
-        MailSend,
-        MediaClose,
-        MediaFastForward,
-        MediaPause,
-        MediaPlay,
-        MediaPlayPause,
-        MediaRecord,
-        MediaRewind,
-        MediaStop,
-        MediaTrackNext,
-        MediaTrackPrevious,
-        New,
-        Open,
-        Print,
-        Save,
-        SpellCheck,
-        Key11,
-        Key12,
-        AudioBalanceLeft,
-        AudioBalanceRight,
-        AudioBassBoostDown,
-        AudioBassBoostToggle,
-        AudioBassBoostUp,
-        AudioFaderFront,
-        AudioFaderRear,
-        AudioSurroundModeNext,
-        AudioTrebleDown,
-        AudioTrebleUp,
-        AudioVolumeDown,
-        AudioVolumeUp,
-        AudioVolumeMute,
-        MicrophoneToggle,
-        MicrophoneVolumeDown,
-        MicrophoneVolumeUp,
-        MicrophoneVolumeMute,
-        SpeechCorrectionList,
-        SpeechInputToggle,
-        LaunchApplication1,
-        LaunchApplication2,
-        LaunchCalendar,
-        LaunchContacts,
-        LaunchMail,
-        LaunchMediaPlayer,
-        LaunchMusicPlayer,
-        LaunchPhone,
-        LaunchScreenSaver,
-        LaunchSpreadsheet,
-        LaunchWebBrowser,
-        LaunchWebCam,
-        LaunchWordProcessor,
-        BrowserBack,
-        BrowserFavorites,
-        BrowserForward,
-        BrowserHome,
-        BrowserRefresh,
-        BrowserSearch,
-        BrowserStop,
-        AppSwitch,
-        Call,
-        Camera,
-        CameraFocus,
-        EndCall,
-        GoBack,
-        GoHome,
-        HeadsetHook,
-        LastNumberRedial,
-        Notification,
-        MannerMode,
-        VoiceDial,
-        TV,
-        TV3DMode,
-        TVAntennaCable,
-        TVAudioDescription,
-        TVAudioDescriptionMixDown,
-        TVAudioDescriptionMixUp,
-        TVContentsMenu,
-        TVDataService,
-        TVInput,
-        TVInputComponent1,
-        TVInputComponent2,
-        TVInputComposite1,
-        TVInputComposite2,
-        TVInputHDMI1,
-        TVInputHDMI2,
-        TVInputHDMI3,
-        TVInputHDMI4,
-        TVInputVGA1,
-        TVMediaContext,
-        TVNetwork,
-        TVNumberEntry,
-        TVPower,
-        TVRadioService,
-        TVSatellite,
-        TVSatelliteBS,
-        TVSatelliteCS,
-        TVSatelliteToggle,
-        TVTerrestrialAnalog,
-        TVTerrestrialDigital,
-        TVTimer,
-        AVRInput,
-        AVRPower,
-        ColorF0Red,
-        ColorF1Green,
-        ColorF2Yellow,
-        ColorF3Blue,
-        ColorF4Grey,
-        ColorF5Brown,
-        ClosedCaptionToggle,
-        Dimmer,
-        DisplaySwap,
-        DVR,
-        Exit,
-        FavoriteClear0,
-        FavoriteClear1,
-        FavoriteClear2,
-        FavoriteClear3,
-        FavoriteRecall0,
-        FavoriteRecall1,
-        FavoriteRecall2,
-        FavoriteRecall3,
-        FavoriteStore0,
-        FavoriteStore1,
-        FavoriteStore2,
-        FavoriteStore3,
-        Guide,
-        GuideNextDay,
-        GuidePreviousDay,
-        Info,
-        InstantReplay,
-        Link,
-        ListProgram,
-        LiveContent,
-        Lock,
-        MediaApps,
-        MediaAudioTrack,
-        MediaLast,
-        MediaSkipBackward,
-        MediaSkipForward,
-        MediaStepBackward,
-        MediaStepForward,
-        MediaTopMenu,
-        NavigateIn,
-        NavigateNext,
-        NavigateOut,
-        NavigatePrevious,
-        NextFavoriteChannel,
-        NextUserProfile,
-        OnDemand,
-        Pairing,
-        PinPDown,
-        PinPMove,
-        PinPToggle,
-        PinPUp,
-        PlaySpeedDown,
-        PlaySpeedReset,
-        PlaySpeedUp,
-        RandomToggle,
-        RcLowBattery,
-        RecordSpeedNext,
-        RfBypass,
-        ScanChannelsToggle,
-        ScreenModeNext,
-        Settings,
-        SplitScreenToggle,
-        STBInput,
-        STBPower,
-        Subtitle,
-        Teletext,
-        VideoModeNext,
-        Wink,
-        ZoomToggle,
-        F1,
-        F2,
-        F3,
-        F4,
-        F5,
-        F6,
-        F7,
-        F8,
-        F9,
-        F10,
-        F11,
-        F12,
-        F13,
-        F14,
-        F15,
-        F16,
-        F17,
-        F18,
-        F19,
-        F20,
-        F21,
-        F22,
-        F23,
-        F24,
-        F25,
-        F26,
-        F27,
-        F28,
-        F29,
-        F30,
-        F31,
-        F32,
-        F33,
-        F34,
-        F35,
-    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn keyboard(
+        physical: KeyCode,
+        logical: Key,
+        state: ButtonState,
+        repeat: bool,
+        text: Option<&str>,
+    ) -> HidEvent {
+        HidEvent::Keyboard {
+            physical_key: physical.into(),
+            logical_key: logical,
+            state,
+            repeat,
+            is_synthetic: false,
+            text: text.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn portable_events_preserve_physical_identity_modifiers_and_ordered_text() {
+        let mut input = UserInput::new();
+        input.handle_event(&keyboard(
+            KeyCode::ShiftLeft,
+            Key::Named(NamedKey::Shift),
+            ButtonState::Pressed,
+            false,
+            None,
+        ));
+        input.handle_event(&keyboard(
+            KeyCode::KeyW,
+            Key::Character("W".into()),
+            ButtonState::Pressed,
+            false,
+            Some("W"),
+        ));
+        input.handle_event(&keyboard(
+            KeyCode::KeyW,
+            Key::Character("W".into()),
+            ButtonState::Pressed,
+            true,
+            Some("W"),
+        ));
+        assert!(input.state().key_down(&Key::Character("w".into())));
+        assert!(input.state().key_down(&Key::Named(NamedKey::Shift)));
+        // A changed logical value on release must still release the physical W,
+        // leaving Shift held and preserving W's original public key spelling.
+        input.handle_event(&keyboard(
+            KeyCode::KeyW,
+            Key::Character("w".into()),
+            ButtonState::Released,
+            false,
+            None,
+        ));
+        assert!(!input.state().key_down(&Key::Character("w".into())));
+        assert!(input.state().key_down(&Key::Named(NamedKey::Shift)));
+        let records = input.state().keyboard_events();
+        assert_eq!(
+            records
+                .iter()
+                .map(|record| record.transition)
+                .collect::<Vec<_>>(),
+            vec![
+                KeyboardTransition::Down,
+                KeyboardTransition::Press,
+                KeyboardTransition::Down,
+                KeyboardTransition::Press,
+                KeyboardTransition::Press,
+                KeyboardTransition::Up,
+            ]
+        );
+        assert_eq!(records.last().unwrap().code.as_deref(), Some("KeyW"));
+        assert_eq!(records.last().unwrap().key, "W");
+        assert_eq!(
+            input.state().text_input_events(),
+            &[
+                TextInputFrameEvent::InsertText("W".into()),
+                TextInputFrameEvent::InsertText("W".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn portable_focus_loss_clears_keys_buttons_and_prevents_repeat_reactivation() {
+        let mut input = UserInput::new();
+        input.handle_event(&keyboard(
+            KeyCode::KeyW,
+            Key::Character("w".into()),
+            ButtonState::Pressed,
+            false,
+            None,
+        ));
+        input.handle_event(&HidEvent::CursorMoved {
+            position: (10.0, 10.0),
+        });
+        input.handle_event(&HidEvent::MouseButton {
+            state: ButtonState::Pressed,
+            button: MouseButton::Right,
+        });
+        input.poll();
+        input.handle_event(&HidEvent::CursorMoved {
+            position: (14.0, 17.0),
+        });
+        input.handle_event(&HidEvent::MouseWheel { delta: (1.0, -2.0) });
+        let snapshot = input.poll();
+        assert_eq!(snapshot.mouse_drag_delta(), (4.0, 7.0));
+        assert_eq!(snapshot.wheel_delta, (1.0, -2.0));
+        input.handle_event(&HidEvent::Focused(false));
+        let snapshot = input.poll();
+        assert!(snapshot.keys_down.is_empty());
+        assert!(snapshot.mouse_down.is_empty());
+        assert!(snapshot.mouse_released.contains(&MouseButton::Right));
+        assert_eq!(snapshot.cursor_pos, None);
+        input.handle_event(&keyboard(
+            KeyCode::KeyW,
+            Key::Character("w".into()),
+            ButtonState::Pressed,
+            true,
+            None,
+        ));
+        let snapshot = input.poll();
+        assert!(snapshot.keyboard_events().is_empty());
+        assert!(snapshot.keys_down.is_empty());
+    }
 
     #[test]
     fn public_keyboard_names_preserve_physical_and_logical_meaning() {

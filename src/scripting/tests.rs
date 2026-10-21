@@ -12061,7 +12061,7 @@ fn mittens_corp_desktop_evaluates_with_a_desktop_camera_and_no_xr_player_compone
 #[test]
 fn mittens_corp_desktop_wasd_moves_its_input_driver() {
     use crate::engine::ecs::component::{InputComponent, TransformComponent};
-    use winit::keyboard::Key;
+    use crate::engine::user_input::Key;
 
     let mut world = World::default();
     let mut systems = crate::engine::ecs::system::SystemWorld::default();

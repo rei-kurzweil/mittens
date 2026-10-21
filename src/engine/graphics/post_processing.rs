@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::mem::size_of;
 use std::sync::Arc;
 
-use crate::engine::graphics::vulkano_swapchain::VulkanoSwapchainState;
 use vulkano::buffer::BufferContents;
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, PrimaryAutoCommandBuffer, RenderingAttachmentInfo, RenderingInfo,
@@ -636,7 +635,7 @@ impl PostProcessingRenderer {
             memory_allocator,
             ImageCreateInfo {
                 image_type: ImageType::Dim2d,
-                format: VulkanoSwapchainState::DEPTH_FORMAT,
+                format: crate::engine::graphics::DEPTH_STENCIL_FORMAT,
                 extent: [extent[0], extent[1], 1],
                 samples,
                 usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT | ImageUsage::TRANSFER_SRC,

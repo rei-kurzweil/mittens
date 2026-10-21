@@ -1,6 +1,4 @@
-use std::cell::RefCell;
 use std::fmt;
-use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::{InputState, UserInput};
@@ -31,24 +29,9 @@ impl HidProvider for UserInput {
     }
 }
 
-/// Shared handle: the window callback supplies events while the provider
-/// collection polls the same adapter once per update.
-#[derive(Debug, Clone)]
-pub struct WinitHidProvider(Rc<RefCell<UserInput>>);
-
-impl WinitHidProvider {
-    pub fn new(input: UserInput) -> Self {
-        Self(Rc::new(RefCell::new(input)))
-    }
-
-    pub fn handle_window_event(&self, event: &winit::event::WindowEvent) -> bool {
-        self.0.borrow_mut().handle_window_event(event)
-    }
-}
-
-impl HidProvider for WinitHidProvider {
+impl<T: HidProvider + ?Sized> HidProvider for std::rc::Rc<std::cell::RefCell<T>> {
     fn poll(&mut self) -> InputState {
-        self.0.borrow_mut().poll()
+        self.borrow_mut().poll()
     }
 }
 

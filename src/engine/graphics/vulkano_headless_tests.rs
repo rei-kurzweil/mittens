@@ -17,7 +17,8 @@ fn headless_scene_draws_stereo_without_surface_extensions() -> Result<(), Box<dy
     let extent = [16, 16];
 
     for msaa in [MsaaMode::Off, MsaaMode::Msaa4x] {
-        let mut renderer = VulkanoState::new(context.clone(), None, Some(format), msaa)?;
+        let mut renderer = VulkanoState::new(context.clone(), RendererOutput::Xr(format), msaa)?;
+        #[cfg(feature = "desktop")]
         assert!(renderer.window_output.is_none());
         assert_eq!(renderer.window_frame_slots(), 0);
         assert_eq!(renderer.scene_color_format(), format);

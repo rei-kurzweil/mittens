@@ -1,6 +1,6 @@
 # Mittens on Android
 
-Status: port planning and source audit, 2026-10-19. This directory does not yet contain a buildable Android app. No Mittens APK or Focus 3 Vulkan session has been tested.
+Status: portable base-library Android check and build passed on 2026-10-21. This directory does not yet contain a buildable Android app. No Mittens APK or Focus 3 Vulkan session has been tested.
 
 The target is **Mittens running locally on a Vive Focus 3**: the engine runs its ECS, MMS scripts, simulation, audio, and Vulkan renderer on the headset.
 
@@ -32,7 +32,7 @@ Only the documentation exists today. Start with the ALVR packaging recipe; choos
 
 ## Rendering direction
 
-Share `VisualWorld`, mesh/material preparation, draw ordering, and shaders where their capability requirements allow. The desktop [XR-only example](../docs/desktop/xr-only.md) now provides renderer initialization without a window, surface, or desktop swapchain. Winit remains a build dependency through desktop/input APIs. Add an Android XR frame driver and a mobile quality policy.
+Share `VisualWorld`, mesh/material preparation, draw ordering, and shaders where their capability requirements allow. The desktop [XR-only example](../docs/desktop/xr-only.md) now provides renderer initialization without a window, surface, or desktop swapchain. The default `desktop` feature includes Winit; disabling it builds the library and XR-only example without Winit, using engine-owned input types. See [library build commands](docs/base-library-build.md). Add an Android XR frame driver and a mobile quality policy.
 
 The GPU and driver perform hardware tiling. **Vulkan dynamic rendering can use tile-based hardware efficiently.** Classic render passes are needed as a compatibility path if the headset lacks dynamic rendering, or for a measured benefit from subpasses. We do not yet have device evidence that decides this. See the [renderer and platform audit](docs/focus-3-port-audit.md).
 
