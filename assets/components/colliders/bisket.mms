@@ -3,7 +3,7 @@
 // ignored by SecondaryMotionSystem.
 export fn bisket_colliders() {
     return SpringColliders {
-        SpringCollider.sphere("[name='J_Bip_C_Head']", 0.11) { name = "bisket_collider_head" }
+        SpringCollider.sphere("[name='J_Bip_C_Head']", 0.1375) { name = "bisket_collider_head" }
         SpringCollider.sphere("[name='J_Bip_C_Neck']", 0.055) { name = "bisket_collider_neck" }
         SpringCollider.sphere("[name='J_Bip_C_UpperChest']", 0.065) { name = "bisket_collider_upper_chest" }
         SpringCollider.sphere("[name='J_Bip_C_Spine']", 0.09) { name = "bisket_collider_spine" }
@@ -12,6 +12,6 @@ export fn bisket_colliders() {
         SpringCollider.spheres(["[name='J_Bip_L_UpperArm']", "[name='J_Bip_R_UpperArm']"], 0.05) { name = "bisket_colliders_upper_arms" }
         SpringCollider.spheres(["[name='J_Bip_L_UpperLeg']", "[name='J_Bip_R_UpperLeg']"], 0.075) { name = "bisket_colliders_upper_legs" }
         // Bisket has no authored hips collider node, so use the hips bone center.
-        SpringCollider.sphere("[name='J_Bip_C_Hips']", 0.1375) { name = "bisket_collider_hips" }
+        SpringCollider.sphere("[name='J_Bip_C_Hips']", 0.171875) { name = "bisket_collider_hips" }
     }
 }

@@ -1,3 +1,4 @@
+import { colored_box_pile } from "../assets/components/colored_box_pile.mms"
 import { teleport_pit } from "../assets/components/teleport_pit.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 
@@ -228,27 +229,10 @@ on_global("XrButtonDown", fn(event) {
 })
 teleport_pit("rei_mu_teleport_pit", [0.0, -24.0, 0.0], [180.0, 12.0, 180.0], [-5.0, 1.2, 0.0], "none")
 
-fn pile_box(box_name, x, y, z, color) {
-    return T.position(x, y, z).scale(1.0, 1.0, 1.0) {
-        name = box_name
-        Grabbable {}
-        R.cube() { C.rgba(color[0], color[1], color[2], 1.0) }
-    }
-}
-
 // Only the two small box piles are part of the editable scene.
 ED {
-    // Three boxes below, two above.
-    pile_box("left_pile_red_base",   -13.0, 0.62, -2.8, [0.95, 0.62, 0.65])
-    pile_box("left_pile_green_base", -12.0, 0.62, -2.8, [0.66, 0.90, 0.68])
-    pile_box("left_pile_blue_base",  -11.0, 0.62, -2.8, [0.67, 0.80, 0.97])
-    pile_box("left_pile_blue_top",   -12.5, 1.62, -2.8, [0.67, 0.80, 0.97])
-    pile_box("left_pile_red_top",    -11.5, 1.62, -2.8, [0.95, 0.62, 0.65])
-
-    // Two boxes below, one above.
-    pile_box("right_pile_green_base", -12.0, 0.62, 1.0, [0.66, 0.90, 0.68])
-    pile_box("right_pile_blue_base",  -11.0, 0.62, 1.0, [0.67, 0.80, 0.97])
-    pile_box("right_pile_red_top",    -11.5, 1.62, 1.0, [0.95, 0.62, 0.65])
+    colored_box_pile("left_box_pile", [-12.0, 0.12, -2.8])
+    colored_box_pile("right_box_pile", [-11.5, 0.12, 1.0])
 }
 
 // Explicit panel selection suppresses the default world/assets/inspector UI.

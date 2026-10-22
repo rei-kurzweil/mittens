@@ -1,3 +1,4 @@
+import { colored_box_pile } from "../assets/components/colored_box_pile.mms"
 import { studio_stage, studio_floor } from "../assets/components/studio_stage.mms"
 import { teleport_pit } from "../assets/components/teleport_pit.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
@@ -571,6 +572,9 @@ RenderGraph {
 // lighting and mirror reference while XR transforms and gizmos are exercised.
 studio_floor()
 studio_stage("mittens_corp_stage")
+// Pile bottoms rest on the stage deck at y=0.12.
+colored_box_pile("left_box_pile", [-12.0, 0.12, -2.8])
+colored_box_pile("right_box_pile", [-11.5, 0.12, 1.0])
 teleport_pit("studio_teleport_pit", [0.0, -14.0, 0.0], [100.0, 12.0, 100.0], [-5.0, 1.2, 0.0], "spikes")
 
 T.position(0.0, 2.55, 8.10).scale(1.5, 1.5, 0.08).rotation(0.0, 3.1416, 0.0) {

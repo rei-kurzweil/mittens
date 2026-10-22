@@ -4576,7 +4576,7 @@ fn secondary_motion_desktop_example_has_studio_collision_and_no_xr() {
             .get_component_by_id_as::<SpringColliderComponent>(named("bisket_collider_hips"))
             .unwrap()
             .radius,
-        0.1375
+        0.171875
     );
 
     for light_name in ["studio_key_light", "studio_fill_light", "studio_rim_light"] {
