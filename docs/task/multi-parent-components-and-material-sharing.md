@@ -1,12 +1,23 @@
 # Task: multi-parent components, starting with shared material declarations
 
 Date: 2026-10-10
-Status: focused investigation/refactor plan; documentation only.
+Status: first leaf-Shading sharing slice implemented and user-confirmed in VR, 2026-10-22; broader graph migration pending.
 Parent use case: [custom materials](epic/custom-materials.md).
 Related foundation: [material instances and families](material-instances-and-family-contracts.md).
 Prerequisite: [AttachmentSystem topology/lifecycle cleanup](attachment-system-world-owned-topology-cleanup.md),
-verified with the mittens-corp car before adding multiple parents.
+with existing automated single-parent checks accepted as the baseline. Manual
+mittens-corp car validation is tracked separately and does not block this slice.
 Release tracking: [0.10.0](epic/0.10.0/README.md), with material-sharing slice first.
+
+2026-10-22: the existing single-parent automated checks are accepted as the
+baseline; manual car validation no longer blocks material work. The first
+[VR checkpoint](shared-materials-xr-checkpoint.md) implements shared leaf Anime/
+Toon declarations, detach-one/all, safe shared deletion and a controller-driven
+scene. The user confirmed independent rightmost-sphere shading, detaching the
+shared source from the other objects and reattaching both. Keep implementation
+on hold at the user's request; this follow-up updates documentation only.
+The broader contracts below remain the target; generic material instances and
+graph-preserving save/clone are not implemented by that checkpoint.
 
 ## Goal
 
@@ -21,7 +32,13 @@ Define the semantics and migrate affected assumptions carefully before claiming
 arbitrary spatial subtrees can be shared. The initial material use case needs
 shared declarations, not multiple copies of geometry or a new transform model.
 
-## Checked current assumptions
+## Original single-parent audit (2026-10-10)
+
+The table records the starting point before the leaf-Shading slice. Current
+implemented behavior is described in the [accepted VR checkpoint](shared-materials-xr-checkpoint.md):
+additional incoming edges for leaf Shading, exact edge references, detach-one/
+all, shared-aware deletion, consumer refresh and identity-deduplicated queries.
+Structural components retain their original single-parent behavior.
 
 | Boundary | Current source/behavior |
 | --- | --- |
@@ -43,7 +60,7 @@ is useful motivation; its single-ancestor helpers are not a multi-parent spec.
 
 ## First observable MMS examples
 
-Proposed behavior, not currently working multi-parent syntax:
+Working first-slice syntax, now confirmed by the user in the VR fixture:
 
 ```mms
 let shared = Shading.anime().shade_strength(0.35) {}
@@ -51,7 +68,7 @@ T.position(-1.0, 0.0, 0.0) { R.cube() { shared } }
 T.position( 1.0, 0.0, 0.0) { R.sphere() { shared } }
 ```
 
-This can use the existing Anime program to test graph sharing before custom
+This uses the existing Anime program to test graph sharing before custom
 shader loading exists. Both renderables remain in their original transform
 trees and reference the same shading component ID. Mutating its scalar updates
 both; neither attachment steals it from the other.
@@ -167,8 +184,9 @@ Tick and targeted interaction reconciliation validate endpoints and references.
 The [cleanup task](attachment-system-world-owned-topology-cleanup.md) records
 passing automated/car-scene tests and performance costs; hardware validation is
 still pending. [GrabbableSystem](../../src/engine/ecs/system/grabbable_system.rs)
-retains its own active-grab/original-parent state. Neither generic endpoint
-valence nor the shared retained-edge foundation is implemented yet; see
+retains its own active-grab/original-parent state. Shared leaf-Shading edges now
+use the World attachment boundary; generic endpoint valence and broader shared
+relationship support remain pending. See
 [attachment valence/unification](attachment-valence-and-grabbable-unification.md)
 and [movement authority](attachment-movement-authority-and-input-routing.md).
 
@@ -265,8 +283,13 @@ component is free. State measured regression budgets before merging.
 
 Concrete implementation sequence:
 
-1. [ ] Complete the AttachmentSystem cleanup/car verification prerequisite,
-   then inventory singular-parent callers and freeze graph/operation/lifecycle
+First-slice result: shared leaf Shading, explicit detach-one/all and primitive
+consumer lifetime handling are implemented, with automated checks and the
+user-confirmed VR workflow. The following checklist retains the broader task
+scope; its unimplemented portions must not be inferred from that narrow proof.
+
+1. [ ] Build on the accepted AttachmentSystem cleanup/automated baseline;
+   complete the singular-parent caller inventory and graph/operation/lifecycle
    contracts, initial shareable kinds, query/event policies, and tree baseline.
 2. [ ] Add edge/parent storage and low-level tests for duplicate edges, cycles,
    detach-one vs detach-all, shared deletion, stale handles, and tree compatibility.

@@ -69,6 +69,7 @@ impl SignalPipelineProcessor {
             | IntentValue::ZoneVisualizationSet { component_id, .. }
             | IntentValue::CameraVisualizationSet { component_id, .. }
             | IntentValue::Detach { component_id }
+            | IntentValue::DetachAll { component_id }
             | IntentValue::RemoveSubtree { component_id }
             | IntentValue::AudioGraphRebuild { component_id }
             | IntentValue::RequestRaycast { component_id }
@@ -175,6 +176,7 @@ impl SignalPipelineProcessor {
             | IntentValue::Print { .. }
             | IntentValue::ReplExec { .. }
             | IntentValue::Attach { .. }
+            | IntentValue::DetachChild { .. }
             | IntentValue::AttachClone { .. }
             | IntentValue::QueryFindComponent { .. }
             | IntentValue::QueryFindAllComponents { .. }
@@ -221,6 +223,7 @@ impl SignalPipelineProcessor {
             | IntentValue::ZoneVisualizationSet { component_id, .. }
             | IntentValue::CameraVisualizationSet { component_id, .. }
             | IntentValue::Detach { component_id }
+            | IntentValue::DetachAll { component_id }
             | IntentValue::RemoveSubtree { component_id }
             | IntentValue::AudioGraphRebuild { component_id }
             | IntentValue::RequestRaycast { component_id }
@@ -329,6 +332,7 @@ impl SignalPipelineProcessor {
             | IntentValue::Print { .. }
             | IntentValue::ReplExec { .. }
             | IntentValue::Attach { .. }
+            | IntentValue::DetachChild { .. }
             | IntentValue::AttachClone { .. }
             | IntentValue::QueryFindComponent { .. }
             | IntentValue::QueryFindAllComponents { .. }

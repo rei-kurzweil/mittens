@@ -87,6 +87,11 @@ pub struct World {
     /// Consumed by the simulation's StaticContactSystem after pose propagation.
     contact_changes: RefCell<std::collections::HashSet<ComponentId>>,
     components: SlotMap<ComponentId, crate::engine::ecs::component::ComponentNode>,
+    /// Additional incoming edges for shared leaf Shading declarations. Ordinary
+    /// trees retain their inline parent and allocate no adjacency side storage.
+    additional_parents: HashMap<ComponentId, Vec<AttachmentRef>>,
+    attachment_sequence: u64,
+    shading_topology_changes: std::collections::HashSet<ComponentId>,
     guid_index: HashMap<uuid::Uuid, ComponentId>,
     /// MMQ parser instance with per-instance AST cache. Behind a RefCell so
     /// `find_component(&self, ...)` can mutate the cache without forcing
@@ -292,12 +297,68 @@ impl World {
     }
 
     // --- Topology helpers (component-graph) ---
+    /// Unique incoming parent. Returns None for roots and ambiguous shared
+    /// declarations; use parents_of for attachment-aware traversal.
     pub fn parent_of(&self, c: ComponentId) -> Option<ComponentId> {
-        self.get_component_record(c)?.parent
+        // There is no implicit "first parent" for a shared declaration.
+        let node = self.get_component_record(c)?;
+        if node.has_additional_parents {
+            return None;
+        }
+        node.parent
+    }
+
+    /// All attachment parents, without allocating. Shared declarations do not
+    /// inherit a transform or scope from an arbitrarily selected parent.
+    pub fn parents_of(&self, c: ComponentId) -> impl Iterator<Item = ComponentId> + '_ {
+        self.get_component_record(c)
+            .and_then(|n| n.parent)
+            .into_iter()
+            .chain(
+                self.additional_parents
+                    .get(&c)
+                    .into_iter()
+                    .flatten()
+                    .map(|edge| edge.parent),
+            )
+    }
+
+    pub fn attachment_between(
+        &self,
+        parent: ComponentId,
+        child: ComponentId,
+    ) -> Option<AttachmentRef> {
+        let node = self.get_component_record(child)?;
+        if node.parent == Some(parent) {
+            return Some(AttachmentRef {
+                parent,
+                child,
+                revision: node.attachment_revision,
+            });
+        }
+        self.additional_parents
+            .get(&child)?
+            .iter()
+            .find(|edge| edge.parent == parent)
+            .copied()
+    }
+
+    pub(crate) fn take_shading_topology_changes(
+        &mut self,
+    ) -> std::collections::HashSet<ComponentId> {
+        std::mem::take(&mut self.shading_topology_changes)
+    }
+
+    pub(crate) fn is_shading_declaration(&self, c: ComponentId) -> bool {
+        self.get_component_by_id_as::<component::ShadingComponent>(c)
+            .is_some()
     }
 
     /// Allocation-free reference to the current incoming attachment.
     pub fn attachment_of(&self, child: ComponentId) -> Option<AttachmentRef> {
+        if self.get_component_record(child)?.has_additional_parents {
+            return None;
+        }
         let node = self.get_component_record(child)?;
         Some(AttachmentRef {
             parent: node.parent?,
@@ -309,7 +370,7 @@ impl World {
     /// All World mutation paths invalidate references at the storage boundary,
     /// including direct mutations that do not emit runtime ParentChanged events.
     pub fn attachment_is_live(&self, attachment: AttachmentRef) -> bool {
-        self.attachment_of(attachment.child) == Some(attachment)
+        self.attachment_between(attachment.parent, attachment.child) == Some(attachment)
     }
 
     /// Iterator over all component IDs in the world.
@@ -389,7 +450,7 @@ impl World {
 
     pub fn world_roots(&self) -> Vec<ComponentId> {
         self.all_components()
-            .filter(|&cid| self.parent_of(cid).is_none())
+            .filter(|&cid| self.parents_of(cid).next().is_none())
             .collect()
     }
 
@@ -405,7 +466,12 @@ impl World {
             return Vec::new();
         };
         let adapter = WorldQueryAdapter::new(self);
-        QueryEvaluator::evaluate(&adapter, root, &ast)
+        let matches = QueryEvaluator::evaluate(&adapter, root, &ast);
+        if self.additional_parents.is_empty() {
+            return matches;
+        }
+        let mut seen = std::collections::HashSet::new();
+        matches.into_iter().filter(|id| seen.insert(*id)).collect()
     }
 
     pub fn get_parent_as<T: 'static>(&self, c: ComponentId) -> Option<(ComponentId, &T)> {
@@ -453,7 +519,7 @@ impl World {
     ///
     /// Safety rules:
     /// - Both ids must exist.
-    /// - `child` is detached from its current parent first.
+    /// - Structural children are reparented; leaf Shading declarations share.
     /// - Cycles are rejected.
     pub fn add_child(
         &mut self,
@@ -466,25 +532,53 @@ impl World {
         if self.get_component_record(child).is_none() {
             return Err("child does not exist");
         }
+        if self.additional_parents.contains_key(&parent) {
+            return Err("shared Shading declarations must remain leaves");
+        }
         if parent == child {
             return Err("cannot parent component to itself");
         }
         if self.is_ancestor_of(child, parent) {
             return Err("cycle detected");
         }
+        let shared_declaration = self.is_shading_declaration(child);
+        if shared_declaration && self.parents_of(child).next().is_some() {
+            if !self.children_of(child).is_empty() {
+                return Err("only leaf Shading declarations support multiple parents");
+            }
+            if self.attachment_between(parent, child).is_some() {
+                return Err("attachment already exists");
+            }
+        } else {
+            self.detach_from_parent(child);
+        }
 
-        self.detach_from_parent(child);
-
-        // Set child's parent.
-        {
-            let child_node = self
-                .get_component_record_mut(child)
-                .ok_or("child missing")?;
-            child_node.parent = Some(parent);
-            child_node.attachment_revision = child_node
-                .attachment_revision
-                .checked_add(1)
-                .expect("attachment revision exhausted");
+        self.attachment_sequence = self
+            .attachment_sequence
+            .checked_add(1)
+            .expect("attachment revision exhausted");
+        let revision = self.attachment_sequence;
+        if shared_declaration && self.get_component_record(child).unwrap().parent.is_some() {
+            self.additional_parents
+                .entry(child)
+                .or_default()
+                .push(AttachmentRef {
+                    parent,
+                    child,
+                    revision,
+                });
+            self.get_component_record_mut(child)
+                .unwrap()
+                .has_additional_parents = true;
+        } else {
+            // Set child's parent.
+            {
+                let child_node = self
+                    .get_component_record_mut(child)
+                    .ok_or("child missing")?;
+                child_node.parent = Some(parent);
+                child_node.attachment_revision = revision;
+            }
         }
         // Push into parent's children list.
         {
@@ -494,6 +588,10 @@ impl World {
             if !parent_node.children.contains(&child) {
                 parent_node.children.push(child);
             }
+        }
+
+        if shared_declaration {
+            self.shading_topology_changes.insert(parent);
         }
 
         Ok(())
@@ -507,35 +605,92 @@ impl World {
         child: ComponentId,
         new_parent: Option<ComponentId>,
     ) -> Result<(), &'static str> {
+        if self.additional_parents.contains_key(&child) {
+            return Err(
+                "set_parent is ambiguous for a shared declaration; use detach_child or detach_all_parents",
+            );
+        }
         match new_parent {
             None => {
                 self.detach_from_parent(child);
                 Ok(())
             }
-            Some(parent) => self.add_child(parent, child),
+            Some(parent) => {
+                // Explicit structural movement never adds another attachment.
+                if self.is_shading_declaration(child) {
+                    if self.get_component_record(parent).is_none() {
+                        return Err("parent does not exist");
+                    }
+                    if parent == child || self.is_ancestor_of(child, parent) {
+                        return Err("cycle detected");
+                    }
+                    if self.additional_parents.contains_key(&parent) {
+                        return Err("shared Shading declarations must remain leaves");
+                    }
+                    self.detach_from_parent(child);
+                }
+                self.add_child(parent, child)
+            }
         }
     }
 
     /// Detach `child` from its current parent.
     ///
     /// This does *not* delete anything.
+    /// Ambiguous shared declarations are unchanged; use detach_child or
+    /// detach_all_parents instead.
     pub fn detach_from_parent(&mut self, child: ComponentId) {
         let Some(old_parent) = self.parent_of(child) else {
             return;
         };
+        self.detach_child(old_parent, child);
+    }
 
-        // Clear child's parent.
-        if let Some(node) = self.get_component_record_mut(child) {
-            node.parent = None;
-            node.attachment_revision = node
-                .attachment_revision
-                .checked_add(1)
-                .expect("attachment revision exhausted");
+    /// Remove exactly one edge, preserving the component and every other edge.
+    pub fn detach_child(&mut self, parent: ComponentId, child: ComponentId) -> bool {
+        if self.attachment_between(parent, child).is_none() {
+            return false;
         }
+        let inline = self.get_component_record(child).unwrap().parent == Some(parent);
+        if inline {
+            let replacement = self
+                .additional_parents
+                .get_mut(&child)
+                .and_then(|edges| edges.pop());
+            if let Some(node) = self.get_component_record_mut(child) {
+                node.parent = replacement.map(|edge| edge.parent);
+                if let Some(edge) = replacement {
+                    node.attachment_revision = edge.revision;
+                }
+            }
+        } else if let Some(edges) = self.additional_parents.get_mut(&child) {
+            edges.retain(|edge| edge.parent != parent);
+        }
+        if self
+            .additional_parents
+            .get(&child)
+            .is_some_and(Vec::is_empty)
+        {
+            self.additional_parents.remove(&child);
+            self.get_component_record_mut(child)
+                .unwrap()
+                .has_additional_parents = false;
+        }
+        if let Some(node) = self.get_component_record_mut(parent) {
+            node.children.retain(|&c| c != child);
+        }
+        if self.is_shading_declaration(child) {
+            self.shading_topology_changes.insert(parent);
+        }
+        true
+    }
 
-        // Remove from old parent's children list.
-        if let Some(parent_node) = self.get_component_record_mut(old_parent) {
-            parent_node.children.retain(|&c| c != child);
+    pub fn detach_all_parents(&mut self, child: ComponentId) {
+        while let Some(parent) = self
+            .get_component_record(child)
+            .and_then(|node| node.parent)
+        {
+            self.detach_child(parent, child);
         }
     }
 
@@ -558,7 +713,7 @@ impl World {
 
         self.guid_index.remove(&guid);
 
-        self.detach_from_parent(c);
+        self.detach_all_parents(c);
         self.components.remove(c);
         self.collidable_ids.remove(&c);
         self.contact_changes.get_mut().insert(c);
@@ -572,37 +727,34 @@ impl World {
             return Err("component does not exist");
         }
 
-        // Detach root first so parent doesn't retain dead child.
-        self.detach_from_parent(root);
-
-        // Post-order delete: collect subtree ids, then delete leaves upward.
-        let mut stack = vec![root];
-        let mut order: Vec<ComponentId> = Vec::new();
-        while let Some(c) = stack.pop() {
-            order.push(c);
-            let children: Vec<ComponentId> = self.children_of(c).to_vec();
-            for ch in children {
-                stack.push(ch);
+        let nodes = self.owned_subtree(root);
+        // Unlink outgoing shared edges even when the source survives elsewhere.
+        for c in nodes.into_iter().rev() {
+            let children = self.children_of(c).to_vec();
+            for child in children {
+                self.detach_child(c, child);
             }
-        }
-
-        // Delete in reverse (children first).
-        for c in order.into_iter().rev() {
-            let guid = self.get_component_record(c).map(|n| n.guid);
-            if let Some(guid) = guid {
-                self.guid_index.remove(&guid);
-            }
-            // Clear parent/children links if node still exists.
-            if let Some(node) = self.get_component_record_mut(c) {
-                node.parent = None;
-                node.children.clear();
-            }
-            self.components.remove(c);
-            self.collidable_ids.remove(&c);
-            self.contact_changes.get_mut().insert(c);
+            self.remove_component_leaf(c)?;
         }
 
         Ok(())
+    }
+
+    /// Destruction owns structural descendants, but shared declaration leaves
+    /// survive when an incoming attachment originates outside this subtree.
+    pub(crate) fn owned_subtree(&self, root: ComponentId) -> Vec<ComponentId> {
+        let mut stack = vec![root];
+        let mut nodes = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        while let Some(node) = stack.pop() {
+            if !seen.insert(node) {
+                continue;
+            }
+            nodes.push(node);
+            stack.extend(self.children_of(node).iter().copied());
+        }
+        nodes.retain(|&node| node == root || self.parents_of(node).all(|p| seen.contains(&p)));
+        nodes
     }
 
     /// Initialize a component tree starting from the given root component.

@@ -240,7 +240,7 @@ impl MusicNoteComponent {
                 ComponentRef::Query(selector) => {
                     let roots: Vec<ComponentId> = world
                         .all_components()
-                        .filter(|&cid| world.parent_of(cid).is_none())
+                        .filter(|&cid| world.parents_of(cid).next().is_none())
                         .collect();
                     roots
                         .into_iter()

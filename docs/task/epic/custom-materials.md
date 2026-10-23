@@ -1,7 +1,7 @@
 # Epic: custom materials, typed inputs, and renderer capabilities
 
 Date: 2026-10-09
-Status: proposed architecture; documentation only.
+Status: first shared-Shading checkpoint implemented and user-confirmed in VR; generic material refactor pending.
 Release: [mittens-engine 0.10.0](0.10.0/README.md).
 
 2026-10-10 first-phase decision: [f32 time-animation proof](../material-f32-time-animation-first-slice.md)
@@ -44,6 +44,22 @@ public custom-material contract joining these responsibilities. This epic is
 that integration plan, not a second competing program registry.
 
 ## Checked implementation boundary
+
+### 2026-10-22 first VR checkpoint
+
+Shared leaf Anime/Toon Shading declarations now support multiple attachments,
+detach-one/all and shared-source lifetime handling. The existing single-parent
+automated checks are accepted as the baseline; manual car validation no longer
+blocks this slice. [The VR scene and checklist](../shared-materials-xr-checkpoint.md)
+exercise one source on two primitives plus an independent comparison. After
+correcting the avatar-free controller topology, the user confirmed independent
+rightmost-sphere shading, detaching the source from the other objects and
+reattaching both. Implementation remains on hold at the user's request; this
+follow-up changes documentation only. Generic material instances/families,
+custom programs and LED/burning shaders remain pending; the broader multi-parent
+task is not complete. Shared Shading component identity is not yet a generic
+renderer MaterialInstance ID; the checkpoint records the terminology and current
+per-renderable Anime value/cache flow.
 
 ### 2026-10-14 progress audit
 
@@ -169,12 +185,14 @@ multi-material primitive by this slice.
 
 One instantiated Material component means one logical renderer material
 instance; another instantiation means another instance even with identical
-values. Current ECS attachment reparents a single-parent component. The selected
-sharing direction is the [multi-parent component refactor](../multi-parent-components-and-material-sharing.md),
-with shared material/shading declarations as its first verified use case.
-Do not infer that repeating a bare material handle as a child already creates
-multiple simultaneous attachments. Reference bindings and generated projections
-share the source instance; they do not create additional Material instances.
+values. Structural components still reparent, while leaf Shading declarations
+now support simultaneous attachments through the
+[multi-parent component refactor](../multi-parent-components-and-material-sharing.md).
+The shared Anime case is user-confirmed in VR. The public Material component
+and its generic renderer instance bridge remain pending; do not infer an
+implemented `Material.custom` API or MaterialInstance registry from that proof.
+Reference bindings and generated projections must share the source instance
+rather than create additional Material instances when that bridge is introduced.
 
 The resolver must define full-material replacement vs individual property
 inheritance. Proposed starting policy:

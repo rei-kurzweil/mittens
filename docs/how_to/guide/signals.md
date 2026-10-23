@@ -268,6 +268,14 @@ scope
 
 ### Rendering and assets
 
+#### `AttachmentChanged`
+<!-- catalog:signal source="AttachmentChanged" kind="event" mms="observable-payload" -->
+**Event.** A live attachment to a shared leaf Shading declaration was added or
+removed. Payload: `parent`, `child`, and `attached`. It is scoped to the source
+declaration; multiple parents do not produce a singular `ParentChanged` event.
+Observe it directly on the source. Low-level World assembly does not emit
+runtime topology events. See [the sharing checkpoint](../../task/shared-materials-xr-checkpoint.md).
+
 #### `GltfInitialized`
 <!-- catalog:signal source="GltfInitialized" kind="event" mms="observable-payload" -->
 **Event.** A glTF asset finished spawning and its runtime nodes can be queried. The rendering and assets subsystem produces it; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. Related components are the producers or scopes named by the variant and its subsystem. MMS `on(...)` accepts this event. Handler exposure: **Observable with payload**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), and [payload conversion](../../../src/scripting/runner.rs).
@@ -743,6 +751,19 @@ let target = Transform {}
 Transform {}
 target
 ```
+
+#### `DetachChild`
+<!-- catalog:signal source="DetachChild" kind="intent" mms="action" -->
+**Intent.** `parent.detach(child)` removes exactly that attachment, preserving
+the child and any other parents. Runtime execution refreshes the affected scope
+and emits the corresponding topology event.
+
+#### `DetachAll`
+<!-- catalog:signal source="DetachAll" kind="intent" mms="action" -->
+**Intent.** `child.detach_all()` removes every incoming attachment without
+destroying the child or its outgoing attachments. Each removed shared Shading
+edge emits `AttachmentChanged`. Structural children retain their ordinary
+single-parent detach behavior.
 
 #### `RemoveChild`
 <!-- catalog:signal source="RemoveChild" kind="intent" mms="component-lifecycle" -->

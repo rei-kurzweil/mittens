@@ -41,6 +41,8 @@ impl RxIntentExecutor {
                 | IntentValue::QueryFindAllComponents { .. }
                 | IntentValue::AttachClone { .. }
                 | IntentValue::Detach { .. }
+                | IntentValue::DetachChild { .. }
+                | IntentValue::DetachAll { .. }
                 | IntentValue::RemoveChild { .. }
                 | IntentValue::RemoveChildren { .. }
                 | IntentValue::AudioGraphRebuild { .. }
@@ -281,14 +283,30 @@ fn handle_intent_signal(
                     return;
                 }
 
-                emit.push_event(
-                    *child,
-                    EventSignal::ParentChanged {
-                        child: *child,
-                        old_parent,
-                        new_parent: Some(parent),
-                    },
-                );
+                if !world.is_shading_declaration(*child) {
+                    emit.push_event(
+                        *child,
+                        EventSignal::ParentChanged {
+                            child: *child,
+                            old_parent,
+                            new_parent: Some(parent),
+                        },
+                    );
+                } else {
+                    emit.push_event(
+                        *child,
+                        EventSignal::AttachmentChanged {
+                            parent,
+                            parent_type: world
+                                .get_component_record(parent)
+                                .unwrap()
+                                .component
+                                .name(),
+                            child: *child,
+                            attached: true,
+                        },
+                    );
+                }
 
                 if world.is_initialized(parent) {
                     world.init_component_tree(*child, emit);
@@ -415,17 +433,18 @@ fn handle_intent_signal(
 
         IntentValue::Detach { component_id } => {
             let child = *component_id;
+            if world.parents_of(child).nth(1).is_some() {
+                eprintln!(
+                    "[IntentExecutor] detach: shared declaration requires detach-one or detach-all"
+                );
+                return;
+            }
             let old_parent = world.parent_of(child);
             world.detach_from_parent(child);
 
-            emit.push_event(
-                child,
-                EventSignal::ParentChanged {
-                    child,
-                    old_parent,
-                    new_parent: None,
-                },
-            );
+            if let Some(parent) = old_parent {
+                emit_detachment_fact(world, emit, parent, child);
+            }
 
             if let Some(p) = old_parent {
                 emit.push_intent_now(p, IntentValue::AudioGraphDirtyImmediate { component_id: p });
@@ -435,6 +454,49 @@ fn handle_intent_signal(
             if let Some(p) = old_parent {
                 emit_topology_transform_refresh(world, emit, p);
             }
+        }
+
+        IntentValue::DetachChild { parent, child } => {
+            if world.detach_child(*parent, *child) {
+                emit_detachment_fact(world, emit, *parent, *child);
+                emit_topology_transform_refresh(world, emit, *parent);
+                emit_topology_transform_refresh(world, emit, *child);
+                emit.push_intent_now(
+                    *parent,
+                    IntentValue::AudioGraphDirtyImmediate {
+                        component_id: *parent,
+                    },
+                );
+                emit.push_intent_now(
+                    *child,
+                    IntentValue::AudioGraphDirtyImmediate {
+                        component_id: *child,
+                    },
+                );
+            }
+        }
+
+        IntentValue::DetachAll { component_id } => {
+            let child = *component_id;
+            let parents: Vec<_> = world.parents_of(child).collect();
+            world.detach_all_parents(child);
+            for parent in parents {
+                emit_detachment_fact(world, emit, parent, child);
+                emit_topology_transform_refresh(world, emit, parent);
+                emit.push_intent_now(
+                    parent,
+                    IntentValue::AudioGraphDirtyImmediate {
+                        component_id: parent,
+                    },
+                );
+            }
+            emit_topology_transform_refresh(world, emit, child);
+            emit.push_intent_now(
+                child,
+                IntentValue::AudioGraphDirtyImmediate {
+                    component_id: child,
+                },
+            );
         }
 
         IntentValue::RemoveChild { parent, index } => {
@@ -458,23 +520,18 @@ fn handle_intent_signal(
                     },
                 );
 
-                world.detach_from_parent(child);
+                world.detach_child(parent, child);
 
-                emit.push_event(
-                    child,
-                    EventSignal::ParentChanged {
+                emit_detachment_fact(world, emit, parent, child);
+
+                if world.parents_of(child).next().is_none() {
+                    emit.push_intent_now(
                         child,
-                        old_parent: Some(parent),
-                        new_parent: None,
-                    },
-                );
-
-                emit.push_intent_now(
-                    child,
-                    IntentValue::RemoveSubtree {
-                        component_id: child,
-                    },
-                );
+                        IntentValue::RemoveSubtree {
+                            component_id: child,
+                        },
+                    );
+                }
 
                 emit_topology_transform_refresh(world, emit, parent);
             }
@@ -502,22 +559,17 @@ fn handle_intent_signal(
                         },
                     );
 
-                    world.detach_from_parent(child);
-                    emit.push_event(
-                        child,
-                        EventSignal::ParentChanged {
-                            child,
-                            old_parent: Some(parent),
-                            new_parent: None,
-                        },
-                    );
+                    world.detach_child(parent, child);
+                    emit_detachment_fact(world, emit, parent, child);
 
-                    emit.push_intent_now(
-                        child,
-                        IntentValue::RemoveSubtree {
-                            component_id: child,
-                        },
-                    );
+                    if world.parents_of(child).next().is_none() {
+                        emit.push_intent_now(
+                            child,
+                            IntentValue::RemoveSubtree {
+                                component_id: child,
+                            },
+                        );
+                    }
                 }
 
                 emit_topology_transform_refresh(world, emit, parent);
@@ -1104,6 +1156,47 @@ mod tests {
     use crate::engine::graphics::RenderAssets;
 
     #[test]
+    fn removing_children_preserves_shared_declarations_and_reports_the_changed_edge() {
+        use crate::engine::ecs::component::ShadingComponent;
+        use crate::engine::ecs::{EventSignal, RxWorld};
+        for remove_all in [false, true] {
+            let mut world = World::default();
+            let a = world.add_component(TransformComponent::new());
+            let b = world.add_component(TransformComponent::new());
+            let source = world.add_component(ShadingComponent::new());
+            world.add_child(a, source).unwrap();
+            world.add_child(b, source).unwrap();
+            let survivor = world.attachment_between(b, source).unwrap();
+            let mut rx = RxWorld::default();
+            let intent = if remove_all {
+                IntentValue::RemoveChildren { parent: a }
+            } else {
+                IntentValue::RemoveChild {
+                    parent: a,
+                    index: 0,
+                }
+            };
+            RxIntentExecutor::new().execute(
+                &mut world,
+                &mut RenderAssets::new(),
+                &mut rx,
+                &Signal::intent(a, IntentSignal::now(intent)),
+            );
+            assert!(world.get_component_record(source).is_some());
+            assert!(world.attachment_is_live(survivor));
+            assert_eq!(world.parents_of(source).collect::<Vec<_>>(), vec![b]);
+            assert!(rx.drain_ready_events().iter().any(|env| matches!(env.event,
+                Some(EventSignal::AttachmentChanged { parent, child, attached: false, .. }) if parent == a && child == source)));
+            assert!(
+                !rx.drain_ready_intents()
+                    .iter()
+                    .any(|env| matches!(env.intent.as_ref().map(|i| &i.value),
+                Some(IntentValue::RemoveSubtree { component_id }) if *component_id == source))
+            );
+        }
+    }
+
+    #[test]
     fn attaching_an_initialized_subtree_dirties_its_new_layout_root() {
         let mut world = World::default();
         let outer_layout_root = world.add_component(LayoutComponent::new(80.0));
@@ -1149,4 +1242,30 @@ mod tests {
             "an intrinsic-size change below a nested layout root must invalidate its outer flow"
         );
     }
+}
+
+fn emit_detachment_fact(
+    world: &World,
+    emit: &mut dyn SignalEmitter,
+    parent: ComponentId,
+    child: ComponentId,
+) {
+    let event = if world.is_shading_declaration(child) {
+        crate::engine::ecs::EventSignal::AttachmentChanged {
+            parent,
+            parent_type: world
+                .get_component_record(parent)
+                .map(|node| node.component.name())
+                .unwrap_or("Component"),
+            child,
+            attached: false,
+        }
+    } else {
+        crate::engine::ecs::EventSignal::ParentChanged {
+            child,
+            old_parent: Some(parent),
+            new_parent: None,
+        }
+    };
+    emit.push_event(child, event);
 }

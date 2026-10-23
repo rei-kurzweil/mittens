@@ -47,6 +47,10 @@ fn openxr_debug_enabled() -> bool {
 mod hand_alignment_tests;
 
 #[cfg(test)]
+#[path = "openxr_avatar_free_pointer_tests.rs"]
+mod avatar_free_pointer_tests;
+
+#[cfg(test)]
 mod grip_aim_tests {
     use super::*;
 
@@ -2313,12 +2317,21 @@ impl OpenXRSystem {
 
     pub fn register_controller_xr(
         &mut self,
-        _world: &mut World,
+        world: &mut World,
         _visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
         self.controller_components.insert(component);
         self.controller_pose_source_last_logged.remove(&component);
+        if world
+            .get_component_by_id_as::<XRHandComponent>(component)
+            .is_some_and(|config| config.enabled)
+            && Self::transform_child_of(world, component).is_none()
+        {
+            eprintln!(
+                "[XRHand] {component:?} has no direct Transform child to receive tracking; use XRHand.new(...) {{ T {{ Pointer {{}} }} }}. No avatar is required."
+            );
+        }
     }
 
     pub fn register_input_xr(
@@ -2569,57 +2582,65 @@ impl OpenXRSystem {
                 continue;
             };
 
-            // Semantics: ControllerXRComponent drives a TransformComponent child, if present.
-            let Some(tcid) = Self::transform_child_of(world, controller_cid) else {
-                continue;
-            };
-
-            // Pose is in OpenXR reference space; convert to engine world by applying rig transform.
-            let world_from_controller = Self::mul_mat4(&rig_world, &Self::mat4_from_pose(pose));
-            let desired_world_pos = [
-                world_from_controller[3][0],
-                world_from_controller[3][1],
-                world_from_controller[3][2],
-            ];
-            let desired_world_rot = math::mat_to_quat(world_from_controller);
-
-            let local_translation =
-                Self::world_to_local_translation(world, tcid, desired_world_pos);
-            let parent_world_rot =
-                Self::parent_world_rotation_quat(world, tcid).unwrap_or([0.0, 0.0, 0.0, 1.0]);
-            let local_rotation =
-                math::quat_mul(math::quat_conjugate(parent_world_rot), desired_world_rot);
-
-            let Some(t) = world
-                .get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(
-                    tcid,
-                )
-            else {
-                continue;
-            };
-
-            // Convert world-space target into local-space values relative to the nearest parent
-            // transform above `tcid` (if any), matching how transform chains are composed.
-            t.transform.translation = local_translation;
-            t.transform.rotation = local_rotation;
-            t.transform.recompute_model();
-
-            let transform = t.transform;
-            emit.push_intent_now(
-                tcid,
-                IntentValue::UpdateTransform {
-                    component_id: tcid,
-                    translation: transform.translation,
-                    rotation_quat_xyzw: transform.rotation,
-                    scale: transform.scale,
-                },
-            );
-            if let Some(controller) =
-                world.get_component_by_id_as_mut::<XRHandComponent>(controller_cid)
-            {
-                controller.pose_valid = true;
-            }
+            Self::drive_controller_pose(world, controller_cid, pose, rig_world, emit);
         }
+    }
+
+    fn drive_controller_pose(
+        world: &mut World,
+        controller_cid: ComponentId,
+        pose: openxr::Posef,
+        rig_world: [[f32; 4]; 4],
+        emit: &mut dyn SignalEmitter,
+    ) -> bool {
+        // Semantics: ControllerXRComponent drives a TransformComponent child, if present.
+        let Some(tcid) = Self::transform_child_of(world, controller_cid) else {
+            return false;
+        };
+
+        // Pose is in OpenXR reference space; convert to engine world by applying rig transform.
+        let world_from_controller = Self::mul_mat4(&rig_world, &Self::mat4_from_pose(pose));
+        let desired_world_pos = [
+            world_from_controller[3][0],
+            world_from_controller[3][1],
+            world_from_controller[3][2],
+        ];
+        let desired_world_rot = math::mat_to_quat(world_from_controller);
+
+        let local_translation = Self::world_to_local_translation(world, tcid, desired_world_pos);
+        let parent_world_rot =
+            Self::parent_world_rotation_quat(world, tcid).unwrap_or([0.0, 0.0, 0.0, 1.0]);
+        let local_rotation =
+            math::quat_mul(math::quat_conjugate(parent_world_rot), desired_world_rot);
+
+        let Some(t) = world
+            .get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(tcid)
+        else {
+            return false;
+        };
+
+        // Convert world-space target into local-space values relative to the nearest parent
+        // transform above `tcid` (if any), matching how transform chains are composed.
+        t.transform.translation = local_translation;
+        t.transform.rotation = local_rotation;
+        t.transform.recompute_model();
+
+        let transform = t.transform;
+        emit.push_intent_now(
+            tcid,
+            IntentValue::UpdateTransform {
+                component_id: tcid,
+                translation: transform.translation,
+                rotation_quat_xyzw: transform.rotation,
+                scale: transform.scale,
+            },
+        );
+        if let Some(controller) =
+            world.get_component_by_id_as_mut::<XRHandComponent>(controller_cid)
+        {
+            controller.pose_valid = true;
+        }
+        true
     }
 
     fn world_to_local_translation(

@@ -84,5 +84,10 @@ with tracking; existing capsule restrictions still govern supported avatar scale
 An avatar eye-to-sole/proportion mismatch requires separate AVC calibration and
 posture work, even when the tracking floor is correct.
 
+The crouch IK system consumes the corrected tracking pose and collision support;
+physical floor-height calibration remains owned by the XR runtime/settings layer.
+Initial headset feedback (2026-10-22) reports that crouching works fairly well,
+with correct XR floor calibration required for the pose to look right.
+
 See [the implementation task](../task/xr-settings-system-and-mms-floor-correction-panel.md)
 and [AVC standing calibration](../task/avc-vr-standing-height-and-sole-floor-calibration.md).

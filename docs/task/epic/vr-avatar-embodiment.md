@@ -17,8 +17,10 @@ with body-follow policy.
 - Native flat-support crouch IK is implemented (2026-10-21), with explicit sole
   landmarks configured in Rei(mu), mittens-corp and bisket-vr-demo. It shares the
   retained collidable BVH, preserves tracking/locomotion ownership and suspends
-  while mounted. Automated coverage is in place; headset acceptance remains
-  pending. See [crouch task](../avc-foot-penetration-crouch-ik.md).
+  while mounted. Initial headset feedback (2026-10-22) reports that it works
+  fairly well with correctly calibrated XR floor height; broader scenario checks
+  remain open. Tracking-floor calibration belongs to the XR runtime/settings
+  layer, independently of crouch IK. See [crouch task](../avc-foot-penetration-crouch-ik.md).
 
 - AVC already derives a displaced head pivot from the HMD pose and calibrated
   eye-to-head offset. Native `HeadNeckBodyConstraintSystem` now replaces simple

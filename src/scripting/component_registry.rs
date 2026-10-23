@@ -476,7 +476,7 @@ pub fn subtree_to_ce_ast(world: &World, root: ComponentId) -> Result<ComponentEx
 pub fn filtered_world_to_ce_ast(world: &World) -> Result<Vec<ComponentExpression>, String> {
     let roots: Vec<ComponentId> = world
         .all_components()
-        .filter(|&cid| world.parent_of(cid).is_none())
+        .filter(|&cid| world.parents_of(cid).next().is_none())
         .collect();
     filtered_roots_to_ce_ast(world, &roots)
 }
@@ -484,7 +484,7 @@ pub fn filtered_world_to_ce_ast(world: &World) -> Result<Vec<ComponentExpression
 pub fn filtered_world_root_ids(world: &World) -> Vec<ComponentId> {
     let roots: Vec<ComponentId> = world
         .all_components()
-        .filter(|&cid| world.parent_of(cid).is_none())
+        .filter(|&cid| world.parents_of(cid).next().is_none())
         .collect();
     filtered_root_ids_for_roots(world, &roots)
 }
@@ -720,6 +720,11 @@ fn ensure_subtree_has_no_opaque_keyframe_callback(
     world: &World,
     root: ComponentId,
 ) -> Result<(), String> {
+    if world.parents_of(root).nth(1).is_some() {
+        return Err(format!(
+            "cannot serialize shared Shading {root:?}: graph-preserving save/clone is not supported by this first sharing slice"
+        ));
+    }
     if world
         .get_component_by_id_as::<KeyframeComponent>(root)
         .is_some_and(|keyframe| keyframe.session_callback.is_some())
@@ -1596,7 +1601,7 @@ pub(crate) fn resolve_component_ref(
         ComponentRef::Query(selector) => {
             let roots: Vec<ComponentId> = world
                 .all_components()
-                .filter(|&cid| world.parent_of(cid).is_none())
+                .filter(|&cid| world.parents_of(cid).next().is_none())
                 .collect();
             roots
                 .into_iter()

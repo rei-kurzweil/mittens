@@ -554,6 +554,28 @@ fn headers_to_value(headers: &[(String, String)]) -> Value {
 
 pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
     match signal.event.as_ref() {
+        Some(crate::engine::ecs::EventSignal::AttachmentChanged {
+            parent,
+            parent_type,
+            child,
+            attached,
+        }) => Value::Map(HashMap::from([
+            (
+                "parent".into(),
+                Value::ComponentObject {
+                    id: *parent,
+                    component_type: (*parent_type).into(),
+                },
+            ),
+            (
+                "child".into(),
+                Value::ComponentObject {
+                    id: *child,
+                    component_type: "Shading".into(),
+                },
+            ),
+            ("attached".into(), Value::Bool(*attached)),
+        ])),
         Some(crate::engine::ecs::EventSignal::KeyDown(event))
         | Some(crate::engine::ecs::EventSignal::KeyUp(event))
         | Some(crate::engine::ecs::EventSignal::KeyPress(event)) => Value::Map(HashMap::from([
@@ -1392,7 +1414,7 @@ impl MeowMeowRunner {
                                 Some(id) => world.scripting_query_roots(id),
                                 None => world
                                     .all_components()
-                                    .filter(|&id| world.parent_of(id).is_none())
+                                    .filter(|&id| world.parents_of(id).next().is_none())
                                     .collect(),
                             };
                             let mut all_ids: Vec<crate::engine::ecs::ComponentId> = Vec::new();

@@ -42,8 +42,12 @@ maximum flexion and support search tolerance use `crouch_knee_pole(vec3)`,
 Default policy is body-local +Z, 150 degrees and 0.05 model metres. Only thigh,
 knee and foot poses are owned; tracking, hips/spine, capsule and locomotion stay
 with their current owners. Mounted/tracking-invalid/unsupported avatars release
-the solve. See [crouch IK](../task/avc-foot-penetration-crouch-ik.md) for calibration,
-diagnostics, test coverage and pending headset acceptance.
+the solve. Initial headset feedback (2026-10-22) reports that crouching works
+fairly well when XR floor height is calibrated correctly. The XR runtime and
+[XR settings](xr-settings.md) own tracking-floor calibration; crouch IK consumes
+the calibrated pose and collision support without correcting the tracking origin.
+See [crouch IK](../task/avc-foot-penetration-crouch-ik.md) for rig calibration,
+diagnostics, test coverage and remaining headset checks.
 
 ---
 

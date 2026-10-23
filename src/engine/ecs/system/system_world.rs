@@ -1332,14 +1332,7 @@ impl SystemWorld {
         };
 
         // Best-effort: remove system state for known component types before deleting.
-        let mut stack = vec![root];
-        let mut nodes = Vec::new();
-        while let Some(n) = stack.pop() {
-            nodes.push(n);
-            for &ch in world.children_of(n) {
-                stack.push(ch);
-            }
-        }
+        let nodes = world.owned_subtree(root);
 
         for n in nodes.iter().copied().rev() {
             if world
@@ -3608,6 +3601,7 @@ impl SystemWorld {
         commands.flush(world, self, visuals, render_assets);
 
         // Batch audio graph rebuild work once after all mutations for this frame.
+        self.renderable.refresh_shading_topology(world, visuals);
         self.audio.rebuild_dirty_audio_graphs(world);
 
         // Drain decode-worker completion messages so newly-loaded clips

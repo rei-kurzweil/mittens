@@ -293,6 +293,7 @@ fn event_exposure_classifications_match_mms_conversion() {
         "KeyUp",
         "KeyPress",
         "GltfInitialized",
+        "AttachmentChanged",
         "HttpRequest",
         "HttpResponse",
         "HttpError",

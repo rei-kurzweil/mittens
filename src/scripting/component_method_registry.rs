@@ -26,7 +26,13 @@ fn arg_f32(args: &[Value], index: usize) -> Result<f32, String> {
 pub(crate) fn legacy_supports_component_method(component_type: &str, method: &str) -> bool {
     matches!(
         method,
-        "attach" | "attach_clone" | "detach" | "remove_child" | "remove_subtree" | "set_color"
+        "attach"
+            | "attach_clone"
+            | "detach"
+            | "detach_all"
+            | "remove_child"
+            | "remove_subtree"
+            | "set_color"
     ) || (matches!(component_type, "T" | "Transform" | "transform")
         && matches!(
             method,
@@ -640,11 +646,31 @@ pub(crate) fn invoke_component_method(
             Ok(Value::Null)
         }
         (_, "detach") => {
-            if !args.is_empty() {
-                return Err(format!("detach(): expected no arguments, got {args:?}"));
-            }
             require_live_component(world, id, "detach()")?;
-            emit_intent(IntentValue::Detach { component_id: id });
+            match args {
+                [] => {
+                    if world.parents_of(id).nth(1).is_some() {
+                        return Err("detach(): shared components require parent.detach(child) or child.detach_all()".into());
+                    }
+                    emit_intent(IntentValue::Detach { component_id: id });
+                }
+                [Value::ComponentObject { id: child, .. }] => {
+                    require_live_component(world, *child, "detach(child)")?;
+                    emit_intent(IntentValue::DetachChild {
+                        parent: id,
+                        child: *child,
+                    });
+                }
+                _ => return Err("detach(): expected zero arguments or one child component".into()),
+            }
+            Ok(Value::Null)
+        }
+        (_, "detach_all") => {
+            if !args.is_empty() {
+                return Err("detach_all(): expected no arguments".into());
+            }
+            require_live_component(world, id, "detach_all()")?;
+            emit_intent(IntentValue::DetachAll { component_id: id });
             Ok(Value::Null)
         }
         (_, "remove_child") => {

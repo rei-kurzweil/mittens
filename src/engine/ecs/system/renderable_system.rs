@@ -255,6 +255,31 @@ impl RenderableSystem {
         }
     }
 
+    fn resolved_surface_material(
+        world: &World,
+        renderable: ComponentId,
+        base: MaterialHandle,
+    ) -> MaterialHandle {
+        match resolve_transmissive_model(world, renderable) {
+            Ok(Some(TransmissiveModel::Refraction(_))) => match base {
+                MaterialHandle::SKINNED_TOON_MESH | MaterialHandle::SKINNED_EMISSIVE_TOON_MESH => {
+                    MaterialHandle::SKINNED_REFRACTION_MESH
+                }
+                _ => MaterialHandle::REFRACTION_MESH,
+            },
+            Ok(Some(TransmissiveModel::RoughTransmission { .. })) => match base {
+                MaterialHandle::SKINNED_TOON_MESH | MaterialHandle::SKINNED_EMISSIVE_TOON_MESH => {
+                    MaterialHandle::SKINNED_ROUGH_TRANSMISSION_MESH
+                }
+                _ => MaterialHandle::ROUGH_TRANSMISSION_MESH,
+            },
+            _ if Self::has_immediate_unlit_child(world, renderable) => MaterialHandle::UNLIT_MESH,
+            _ => Self::resolve_anime_shading(world, renderable)
+                .map(|(_, shading)| Self::shading_material_for(base, shading))
+                .unwrap_or(base),
+        }
+    }
+
     fn uv_clone_audit_enabled() -> bool {
         std::env::var("CAT_DEBUG_RENDERABLE_UV_CLONES")
             .ok()
@@ -1148,10 +1173,15 @@ impl RenderableSystem {
             }
         }
         // A shading wrapper may itself be a scene root.
-        let owner = world.parent_of(component).unwrap_or(component);
-
-        let mut queue = VecDeque::from([owner]);
+        let mut queue: VecDeque<_> = world
+            .parents_of(component)
+            .chain(std::iter::once(component))
+            .collect();
+        let mut visited = std::collections::HashSet::new();
         while let Some(node) = queue.pop_front() {
+            if !visited.insert(node) {
+                continue;
+            }
             queue.extend(world.children_of(node).iter().copied());
             if world
                 .get_component_by_id_as::<RenderableComponent>(node)
@@ -1164,6 +1194,48 @@ impl RenderableSystem {
             };
             if resolved_id == component {
                 self.pending_anime_shading.insert(node, shading);
+            }
+        }
+        self.apply_pending_anime_updates_to_registered_renderables(world, visuals);
+    }
+
+    /// Edge edits must re-resolve former consumers too, including when their
+    /// source was destroyed. Work is bounded by affected scopes, not the world.
+    pub(crate) fn refresh_shading_topology(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+    ) {
+        let scopes = world.take_shading_topology_changes();
+        if scopes.is_empty() {
+            return;
+        }
+        let mut stack: Vec<_> = scopes.into_iter().collect();
+        let mut visited = std::collections::HashSet::new();
+        while let Some(node) = stack.pop() {
+            if !visited.insert(node) {
+                continue;
+            }
+            stack.extend(world.children_of(node).iter().copied());
+            let Some(renderable) = world.get_component_by_id_as::<RenderableComponent>(node) else {
+                continue;
+            };
+            let handle = renderable.get_handle();
+            let base_material = renderable.renderable.material;
+            if let Some((_, shading)) = Self::resolve_anime_shading(world, node) {
+                self.pending_anime_shading.insert(node, shading);
+            } else {
+                self.pending_anime_shading.remove(&node);
+                if let Some(handle) = handle {
+                    if let Some(instance) = visuals.instance(handle) {
+                        let material = Self::material_with_emissive(
+                            Self::resolved_surface_material(world, node, base_material),
+                            instance.emissive,
+                        );
+                        let _ = visuals.update_material(handle, material);
+                        let _ = visuals.update_anime_shading(handle, Default::default());
+                    }
+                }
             }
         }
         self.apply_pending_anime_updates_to_registered_renderables(world, visuals);
@@ -1549,6 +1621,7 @@ impl RenderableSystem {
         uploader: &mut dyn MeshUploader,
         queue: &mut crate::engine::ecs::CommandQueue,
     ) -> bool {
+        self.refresh_shading_topology(world, visuals);
         let parse_bool_env = |name: &str| {
             std::env::var(name)
                 .ok()
@@ -1679,32 +1752,8 @@ impl RenderableSystem {
                     None
                 }
             };
-            let resolved_material = match transmission {
-                Some(TransmissiveModel::Refraction(_)) => match p.material {
-                    MaterialHandle::SKINNED_TOON_MESH
-                    | MaterialHandle::SKINNED_EMISSIVE_TOON_MESH => {
-                        MaterialHandle::SKINNED_REFRACTION_MESH
-                    }
-                    _ => MaterialHandle::REFRACTION_MESH,
-                },
-                Some(TransmissiveModel::RoughTransmission { .. }) => match p.material {
-                    MaterialHandle::SKINNED_TOON_MESH
-                    | MaterialHandle::SKINNED_EMISSIVE_TOON_MESH => {
-                        MaterialHandle::SKINNED_ROUGH_TRANSMISSION_MESH
-                    }
-                    _ => MaterialHandle::ROUGH_TRANSMISSION_MESH,
-                },
-                _ if Self::has_immediate_unlit_child(world, p.renderable_cid) => {
-                    MaterialHandle::UNLIT_MESH
-                }
-                _ if self.pending_anime_shading.contains_key(&p.renderable_cid) => {
-                    Self::shading_material_for(
-                        p.material,
-                        self.pending_anime_shading[&p.renderable_cid],
-                    )
-                }
-                _ => p.material,
-            };
+            let resolved_material =
+                Self::resolved_surface_material(world, p.renderable_cid, p.material);
 
             let gpu_r = GpuRenderable {
                 mesh,

@@ -233,7 +233,15 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     "attach_clone",
                     method(vec![mms::ValueType::Component], mms::ValueType::Null),
                 ),
-                ("detach", method(vec![], mms::ValueType::Null)),
+                (
+                    "detach",
+                    mms::ValueSignature::with_optional(
+                        vec![mms::ValueType::Component],
+                        0,
+                        mms::ValueType::Null,
+                    ),
+                ),
+                ("detach_all", method(vec![], mms::ValueType::Null)),
                 (
                     "remove_child",
                     method(vec![mms::ValueType::U32], mms::ValueType::Null),
@@ -1561,6 +1569,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "MountStarted",
         "MountEnded",
         "ParentChanged",
+        "AttachmentChanged",
         "RayIntersected",
         "Scrolling",
         "TextInputChanged",
@@ -1887,6 +1896,7 @@ mod tests {
                         "attach"
                             | "attach_clone"
                             | "detach"
+                            | "detach_all"
                             | "remove_child"
                             | "remove_subtree"
                             | "set_color"

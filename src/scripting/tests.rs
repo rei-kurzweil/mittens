@@ -13765,6 +13765,289 @@ fn anime_shading_xr_fixture_materializes_shared_source_and_controls() {
 }
 
 #[test]
+fn shared_materials_xr_controls_preserve_sources_and_update_surviving_consumers() {
+    use crate::engine::ecs::component::{CameraXRComponent, ShadingComponent, SliderComponent};
+    use crate::engine::ecs::system::{RenderableSystem, SystemWorld};
+    use crate::engine::graphics::{CpuMesh, MaterialHandle, MeshHandle, MeshUploader};
+    #[derive(Default)]
+    struct Uploader(u32);
+    impl MeshUploader for Uploader {
+        fn upload_mesh(&mut self, _: &CpuMesh) -> Result<MeshHandle, Box<dyn std::error::Error>> {
+            self.0 += 1;
+            Ok(MeshHandle(self.0))
+        }
+    }
+    fn label(w: &World, name: &str) -> ComponentId {
+        w.all_components()
+            .find(|&id| w.component_label(id) == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+    }
+    fn service(
+        session: &mut RuntimeSpecSession,
+        w: &mut World,
+        s: &mut SystemWorld,
+        v: &mut VisualWorld,
+        a: &mut RenderAssets,
+        q: &mut CommandQueue,
+    ) {
+        let output = session.service_callbacks(w, &mut s.rx, Some(a), q);
+        assert!(output.errors.is_empty(), "{:?}", output.errors);
+        for intent in output.intents {
+            q.push_intent_now(ComponentId::default(), intent);
+        }
+        s.process_commands(w, v, a, q);
+    }
+    fn click(
+        name: &str,
+        session: &mut RuntimeSpecSession,
+        w: &mut World,
+        s: &mut SystemWorld,
+        v: &mut VisualWorld,
+        a: &mut RenderAssets,
+        q: &mut CommandQueue,
+    ) {
+        let target = label(w, name);
+        s.rx.dispatch_event_handlers(
+            w,
+            &Signal::event(
+                target,
+                EventSignal::Click {
+                    raycaster: ComponentId::default(),
+                    renderable: target,
+                    hit_point: [0.0; 3],
+                    screen_pos_px: None,
+                },
+            ),
+        );
+        service(session, w, s, v, a, q);
+    }
+    let mut w = World::default();
+    let mut s = SystemWorld::default();
+    let mut v = VisualWorld::default();
+    let mut a = RenderAssets::new();
+    let mut q = CommandQueue::new();
+    let (mut session, output) = RuntimeSpecSession::start_at_path(
+        include_str!("../../examples/shared-materials-xr.mms"),
+        "examples/shared-materials-xr.mms",
+        &mut w,
+        &mut s.rx,
+        Some(&mut a),
+        &mut q,
+    )
+    .unwrap();
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    for intent in output.intents {
+        q.push_intent_now(ComponentId::default(), intent);
+    }
+    s.process_commands(&mut w, &mut v, &mut a, &mut q);
+    s.renderable
+        .flush_pending(&mut w, &mut v, &mut a, &mut Uploader::default(), &mut q);
+    let source = label(&w, "shared_anime_source");
+    let independent = label(&w, "independent_anime_source");
+    let cube = label(&w, "shared_cube");
+    let sphere = label(&w, "shared_sphere");
+    let comparison = label(&w, "independent_sphere");
+    assert_ne!(source, independent);
+    assert_eq!(
+        w.get_component_by_id_as::<ShadingComponent>(source),
+        w.get_component_by_id_as::<ShadingComponent>(independent)
+    );
+    assert_eq!(w.parents_of(source).count(), 2);
+    assert!(
+        w.all_components()
+            .any(|id| w.get_component_by_id_as::<CameraXRComponent>(id).is_some())
+    );
+    assert_eq!(
+        RenderableSystem::resolve_anime_shading(&w, cube).unwrap().0,
+        source
+    );
+    assert_eq!(
+        RenderableSystem::resolve_anime_shading(&w, sphere)
+            .unwrap()
+            .0,
+        source
+    );
+    let cube_handle = w
+        .get_component_by_id_as::<RenderableComponent>(cube)
+        .unwrap()
+        .get_handle()
+        .unwrap();
+    let sphere_handle = w
+        .get_component_by_id_as::<RenderableComponent>(sphere)
+        .unwrap()
+        .get_handle()
+        .unwrap();
+    let comparison_handle = w
+        .get_component_by_id_as::<RenderableComponent>(comparison)
+        .unwrap()
+        .get_handle()
+        .unwrap();
+    let cube_pose = v.instance(cube_handle).unwrap().transform.model;
+    let baseline_count = w.component_count();
+    let initial_edge = w.attachment_between(sphere, source).unwrap();
+
+    let slider = label(&w, "anime_shade_strength_slider");
+    assert!(
+        w.get_component_by_id_as::<SliderComponent>(slider)
+            .is_some()
+    );
+    s.rx.dispatch_event_handlers(
+        &mut w,
+        &Signal::event(slider, EventSignal::SliderChanged { slider, value: 0.2 }),
+    );
+    service(&mut session, &mut w, &mut s, &mut v, &mut a, &mut q);
+    for handle in [cube_handle, sphere_handle] {
+        assert_eq!(
+            v.instance(handle).unwrap().renderable.material,
+            MaterialHandle::ANIME_MESH
+        );
+        assert_eq!(
+            v.instance(handle)
+                .unwrap()
+                .anime_shading
+                .shade_color_strength[3],
+            0.2
+        );
+    }
+    assert_eq!(
+        v.instance(comparison_handle)
+            .unwrap()
+            .anime_shading
+            .shade_color_strength[3],
+        0.75
+    );
+
+    click(
+        "shared_detach_one",
+        &mut session,
+        &mut w,
+        &mut s,
+        &mut v,
+        &mut a,
+        &mut q,
+    );
+    assert!(!w.attachment_is_live(initial_edge));
+    assert_eq!(w.parents_of(source).collect::<Vec<_>>(), vec![cube]);
+    assert_eq!(
+        v.instance(sphere_handle).unwrap().renderable.material,
+        MaterialHandle::TOON_MESH
+    );
+    assert_eq!(
+        v.instance(cube_handle).unwrap().renderable.material,
+        MaterialHandle::ANIME_MESH
+    );
+    s.rx.dispatch_event_handlers(
+        &mut w,
+        &Signal::event(slider, EventSignal::SliderChanged { slider, value: 0.9 }),
+    );
+    service(&mut session, &mut w, &mut s, &mut v, &mut a, &mut q);
+    assert_eq!(
+        v.instance(cube_handle)
+            .unwrap()
+            .anime_shading
+            .shade_color_strength[3],
+        0.9
+    );
+    assert_eq!(
+        v.instance(sphere_handle).unwrap().renderable.material,
+        MaterialHandle::TOON_MESH
+    );
+
+    click(
+        "shared_detach_all",
+        &mut session,
+        &mut w,
+        &mut s,
+        &mut v,
+        &mut a,
+        &mut q,
+    );
+    assert_eq!(w.parents_of(source).count(), 0);
+    assert!(w.get_component_record(source).is_some());
+    assert_eq!(
+        v.instance(cube_handle).unwrap().renderable.material,
+        MaterialHandle::TOON_MESH
+    );
+    for _ in 0..10 {
+        click(
+            "shared_restore",
+            &mut session,
+            &mut w,
+            &mut s,
+            &mut v,
+            &mut a,
+            &mut q,
+        );
+        assert_eq!(w.parents_of(source).count(), 2);
+        assert_eq!(w.component_count(), baseline_count);
+        for handle in [cube_handle, sphere_handle] {
+            assert_eq!(
+                v.instance(handle).unwrap().renderable.material,
+                MaterialHandle::ANIME_MESH
+            );
+            assert_eq!(
+                v.instance(handle)
+                    .unwrap()
+                    .anime_shading
+                    .shade_color_strength[3],
+                0.9
+            );
+        }
+    }
+    click(
+        "shared_move",
+        &mut session,
+        &mut w,
+        &mut s,
+        &mut v,
+        &mut a,
+        &mut q,
+    );
+    assert_eq!(
+        w.get_component_by_id_as::<TransformComponent>(w.parent_of(sphere).unwrap())
+            .unwrap()
+            .transform
+            .translation[1],
+        1.85
+    );
+    assert_eq!(v.instance(cube_handle).unwrap().transform.model, cube_pose);
+    assert!(
+        crate::scripting::component_registry::filtered_world_to_ce_ast(&w)
+            .unwrap_err()
+            .contains("cannot serialize shared Shading")
+    );
+
+    // Real runtime destruction must preserve a source owned by another subtree.
+    q.push_intent_now(cube, IntentValue::RemoveSubtree { component_id: cube });
+    s.process_commands(&mut w, &mut v, &mut a, &mut q);
+    assert!(w.get_component_record(source).is_some());
+    assert_eq!(w.parents_of(source).collect::<Vec<_>>(), vec![sphere]);
+    assert_eq!(
+        v.instance(sphere_handle).unwrap().renderable.material,
+        MaterialHandle::ANIME_MESH
+    );
+    q.push_intent_now(
+        source,
+        IntentValue::RemoveSubtree {
+            component_id: source,
+        },
+    );
+    s.process_commands(&mut w, &mut v, &mut a, &mut q);
+    assert!(w.get_component_record(source).is_none());
+    assert_eq!(
+        v.instance(sphere_handle).unwrap().renderable.material,
+        MaterialHandle::TOON_MESH
+    );
+    assert_eq!(
+        v.instance(comparison_handle)
+            .unwrap()
+            .anime_shading
+            .shade_color_strength[3],
+        0.75
+    );
+}
+
+#[test]
 fn teleport_pit_enter_callback_respawns_offset_mover_and_clears_fall_speed() {
     use crate::engine::ecs::component::{TransformComponent, VelocityComponent};
     let mut world = World::default();

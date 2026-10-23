@@ -1,11 +1,11 @@
 # mittens-engine 0.10.0
 
 Date: 2026-10-09
-Status: next-release planning; the items below are completion targets, not
-claims of implemented support. This pass changes documentation only.
+Status: next-release tracking; unchecked items below remain completion targets.
 
 See the [recent graphics and XR task status](recent-task-status.md) for the
-2026-10-14 overview of water, XR calibration/settings, jump controls, and Materials v3.
+2026-10-14 overview of water, XR calibration/settings and jump controls, with a
+2026-10-22 Materials v3 sharing-checkpoint update.
 
 ## Scope and uncertainty comparison
 
@@ -90,13 +90,22 @@ requires runtime rig/hardware evidence in addition to deterministic replay tests
 ### Custom materials and renderer capabilities
 
 - [ ] Prerequisite: [AttachmentSystem topology/lifecycle cleanup](../../attachment-system-world-owned-topology-cleanup.md).
-  Verify managed Rider/Mountable car attachments in mittens-corp with current
-  single-parent storage; then add multiple-parent support through that boundary.
+  Core cleanup and automated checks are implemented. The existing single-parent
+  checks are the accepted material-work baseline; remaining manual vehicle
+  validation is tracked separately and does not block the sharing slice.
+
+- [x] [First shared-Shading VR checkpoint](../../shared-materials-xr-checkpoint.md):
+  user confirmed independent rightmost-sphere shading and detaching/reattaching
+  the shared source on the other two primitives. Avatar-free controller pointers
+  work after correcting their driven-Transform topology. Source implementation
+  is on hold at the user's request.
 
 - [ ] [Multi-parent components for shared material declarations](../../multi-parent-components-and-material-sharing.md):
   repeated live MMS attachments share one source/instance, with explicit edge
   removal/lifetime rules, tree compatibility, and measured performance. General
   spatial subtree sharing requires its own transform/occurrence contract.
+  The first leaf-Shading proof above is complete; broad migration, graph-preserving
+  save/clone and performance gates remain open.
 
 - [ ] Internal prerequisite: [stable material instances and family contracts](../../material-instances-and-family-contracts.md).
   Prove the representation/update refactor with Anime before custom programs;

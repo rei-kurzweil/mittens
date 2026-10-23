@@ -6,6 +6,121 @@ mod tests {
     };
 
     #[test]
+    fn shared_shading_edges_keep_identity_and_independent_revisions() {
+        use crate::engine::ecs::component::{ShadingComponent, TransformComponent};
+        let mut w = World::default();
+        let a = w.add_component(TransformComponent::new());
+        let b = w.add_component(TransformComponent::new());
+        let c = w.add_component(TransformComponent::new());
+        let source = w.add_component(ShadingComponent::new());
+        w.add_child(a, source).unwrap();
+        let original = w.attachment_between(a, source).unwrap();
+        w.add_child(b, source).unwrap();
+        w.add_child(c, source).unwrap();
+        let b_edge = w.attachment_between(b, source).unwrap();
+        let c_edge = w.attachment_between(c, source).unwrap();
+        assert_eq!(w.parents_of(source).count(), 3);
+        assert_eq!(
+            w.parent_of(source),
+            None,
+            "ambiguous ancestry has no first-parent fallback"
+        );
+        assert_eq!(w.attachment_of(source), None);
+        assert!(!w.world_roots().contains(&source));
+        assert!(w.add_child(a, source).is_err());
+        assert!(w.attachment_is_live(original));
+        assert!(
+            w.add_child(source, a).is_err(),
+            "shared declarations must stay leaves"
+        );
+        assert!(w.set_parent(source, None).is_err());
+        assert!(w.detach_child(a, source));
+        assert!(!w.attachment_is_live(original));
+        assert!(w.attachment_is_live(b_edge));
+        assert!(
+            w.attachment_is_live(c_edge),
+            "promoting an inline edge preserves its revision"
+        );
+        w.add_child(a, source).unwrap();
+        assert!(!w.attachment_is_live(original));
+        assert!(!w.detach_child(a, b));
+        w.detach_all_parents(source);
+        assert_eq!(w.parents_of(source).count(), 0);
+        assert!(w.children_of(a).is_empty());
+        assert!(w.children_of(b).is_empty());
+        assert!(w.children_of(c).is_empty());
+        assert!(w.get_component_record(source).is_some());
+        w.add_child(b, source).unwrap();
+        assert!(!w.attachment_is_live(b_edge));
+        assert_eq!(w.parent_of(source), Some(b));
+    }
+
+    #[test]
+    fn deleting_a_parent_preserves_shared_shading_but_explicit_destruction_unlinks_all() {
+        use crate::engine::ecs::component::{ShadingComponent, TransformComponent};
+        let mut w = World::default();
+        let a = w.add_component(TransformComponent::new());
+        let b = w.add_component(TransformComponent::new());
+        let source = w.add_component(ShadingComponent::new());
+        w.add_child(a, source).unwrap();
+        w.add_child(b, source).unwrap();
+        let survivor = w.attachment_between(b, source).unwrap();
+        w.remove_component_subtree(a).unwrap();
+        assert!(w.get_component_record(source).is_some());
+        assert!(w.attachment_is_live(survivor));
+        let c = w.add_component(TransformComponent::new());
+        w.add_child(c, source).unwrap();
+        w.remove_component_subtree(source).unwrap();
+        assert!(w.children_of(b).is_empty());
+        assert!(w.children_of(c).is_empty());
+        assert!(!w.attachment_is_live(survivor));
+    }
+
+    #[test]
+    fn shared_shading_diamond_initializes_once_and_dies_with_its_last_owners() {
+        use crate::engine::ecs::component::{ShadingComponent, TransformComponent};
+        use crate::engine::ecs::{CommandQueue, IntentValue};
+        let mut w = World::default();
+        let root = w.add_component(TransformComponent::new());
+        let a = w.add_component(TransformComponent::new());
+        let b = w.add_component(TransformComponent::new());
+        let source = w.add_component(ShadingComponent::new());
+        w.add_child(root, a).unwrap();
+        w.add_child(root, b).unwrap();
+        w.add_child(a, source).unwrap();
+        w.add_child(b, source).unwrap();
+        let mut queue = CommandQueue::new();
+        w.init_component_tree(root, &mut queue);
+        let mut rx = crate::engine::ecs::RxWorld::default();
+        queue.drain_into_rx(&mut rx);
+        let count = rx.drain_ready_intents().iter().filter(|env| {
+            matches!(env.intent.as_ref().map(|i| &i.value), Some(IntentValue::RegisterAnimeShading { component_id }) if *component_id == source)
+        }).count();
+        assert_eq!(count, 1);
+        assert_eq!(w.find_all_components(root, "Shading"), vec![source]);
+        w.remove_component_subtree(root).unwrap();
+        assert_eq!(w.component_count(), 0);
+    }
+
+    #[test]
+    fn shading_wrappers_cannot_be_shared_but_structural_reparenting_is_preserved() {
+        use crate::engine::ecs::component::{ShadingComponent, TransformComponent};
+        let mut w = World::default();
+        let a = w.add_component(TransformComponent::new());
+        let b = w.add_component(TransformComponent::new());
+        let wrapper = w.add_component(ShadingComponent::new());
+        let spatial = w.add_component(TransformComponent::new());
+        w.add_child(wrapper, spatial).unwrap();
+        w.add_child(a, wrapper).unwrap();
+        assert!(w.add_child(b, wrapper).is_err());
+        assert!(w.add_child(spatial, a).is_err());
+        assert_eq!(w.parent_of(wrapper), Some(a));
+        w.add_child(b, spatial).unwrap();
+        assert_eq!(w.parent_of(spatial), Some(b));
+        assert!(w.children_of(wrapper).is_empty());
+    }
+
+    #[test]
     fn selector_revision_tracks_metadata_and_topology_but_not_typed_pose_writes() {
         use crate::engine::ecs::component::TransformComponent;
         let mut world = World::default();

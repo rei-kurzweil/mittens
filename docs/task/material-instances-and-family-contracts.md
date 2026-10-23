@@ -1,11 +1,18 @@
 # Task: stable material instances and material-family contracts
 
 Date: 2026-10-10
-Status: proposed internal prerequisite; documentation only.
+Status: generic instance/family refactor planned; implementation pending after the accepted shared-Shading VR checkpoint.
 Parent: [custom materials epic](epic/custom-materials.md).
 Consumer: [Material component/resolution](material-component-and-resolved-contract.md).
 First custom-program proof: [f32 time animation](material-f32-time-animation-first-slice.md).
 Sharing topology: [multi-parent component task](multi-parent-components-and-material-sharing.md).
+
+2026-10-22 checkpoint: shared leaf Anime Shading sources are implemented and
+user-confirmed in VR, including independent sources and detach/reattach. This
+task's generic family/definition/instance records and GPU storage refactor remain
+unimplemented. [Current terminology and evidence](shared-materials-xr-checkpoint.md)
+distinguish shared component identity from a renderer MaterialInstance ID.
+Source implementation is on hold at the user's request.
 
 ## Goal and current prototype
 
@@ -58,15 +65,15 @@ Material instance identity does not change when a threshold or time value
 changes. Program/definition/pipeline resources can be shared independently of
 the separately mutable material components.
 
-Current ECS topology is single-parent: attaching an existing component under
-another parent reparents it. Therefore repeated `R.cube() { shared_material }`
-does not currently attach one source at multiple places. Wrapper inheritance
-shares one source within a subtree. The newly selected direction is to support
-multiple attachment parents for shared declarations through the linked focused
-graph task. It must preserve structural movement/lifetime/performance contracts
-rather than simply change every parent walk to pick the first parent. Multiple
-attachments do not instantiate another Material or renderer material instance.
-The earlier non-parenting binding proposal remains an optional alternative.
+Structural ECS components remain single-parent. Leaf Shading declarations now
+support multiple attachments through the linked graph task, so repeating one
+live Shading handle beneath unrelated renderables shares its component identity
+and settings. Wrapper inheritance also shares a source within one subtree.
+`Material.custom` itself and the generic renderer material records remain
+pending. Multiple Shading attachments do not construct another authored source;
+the v3 bridge must preserve that ownership rule when it introduces renderer
+material-instance IDs. Broader sharing must preserve structural movement,
+lifetime and performance contracts without picking an arbitrary first parent.
 
 Dirty tracking uploads values to bounded frame-safe slots; it must not overwrite
 data referenced by an in-flight command buffer. Descriptor sets may be reused

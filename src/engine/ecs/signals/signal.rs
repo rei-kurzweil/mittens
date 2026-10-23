@@ -85,6 +85,13 @@ pub enum EventSignal {
         old_parent: Option<ComponentId>,
         new_parent: Option<ComponentId>,
     },
+    /// One shared declaration edge changed; this does not reparent its source.
+    AttachmentChanged {
+        parent: ComponentId,
+        parent_type: &'static str,
+        child: ComponentId,
+        attached: bool,
+    },
 
     /// A raycast intersected a renderable.
     RayIntersected {
@@ -367,6 +374,7 @@ impl EventSignal {
             EventSignal::KeyPress(_) => SignalKind::KeyPress,
             EventSignal::GltfInitialized { .. } => SignalKind::GltfInitialized,
             EventSignal::ParentChanged { .. } => SignalKind::ParentChanged,
+            EventSignal::AttachmentChanged { .. } => SignalKind::AttachmentChanged,
             EventSignal::RayIntersected { .. } => SignalKind::RayIntersected,
             EventSignal::DragStart { .. } => SignalKind::DragStart,
             EventSignal::DragMove { .. } => SignalKind::DragMove,
@@ -549,6 +557,13 @@ pub enum IntentValue {
         prefab_root: ComponentId,
     },
     Detach {
+        component_id: ComponentId,
+    },
+    DetachChild {
+        parent: ComponentId,
+        child: ComponentId,
+    },
+    DetachAll {
         component_id: ComponentId,
     },
     RemoveChild {
@@ -1016,6 +1031,8 @@ impl IntentValue {
             IntentValue::QueryFindAllComponents { .. } => "query_find_all_components",
             IntentValue::AttachClone { .. } => "attach_clone",
             IntentValue::Detach { .. } => "detach",
+            IntentValue::DetachChild { .. } => "detach_child",
+            IntentValue::DetachAll { .. } => "detach_all",
             IntentValue::RemoveChild { .. } => "remove_child",
             IntentValue::RemoveChildren { .. } => "remove_children",
             IntentValue::RemoveSubtree { .. } => "remove_subtree",
@@ -1182,6 +1199,7 @@ pub enum SignalKind {
     KeyPress,
     GltfInitialized,
     ParentChanged,
+    AttachmentChanged,
     RayIntersected,
     DragStart,
     DragMove,

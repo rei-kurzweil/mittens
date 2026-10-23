@@ -1123,6 +1123,7 @@ fn signal_kind(name: &str) -> Option<SignalKind> {
         "DragMove" => SignalKind::DragMove,
         "DragEnd" => SignalKind::DragEnd,
         "ParentChanged" => SignalKind::ParentChanged,
+        "AttachmentChanged" => SignalKind::AttachmentChanged,
         "RayIntersected" => SignalKind::RayIntersected,
         "Scrolling" => SignalKind::Scrolling,
         "TextInputChanged" => SignalKind::TextInputChanged,

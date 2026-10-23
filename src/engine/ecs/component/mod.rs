@@ -396,6 +396,7 @@ pub struct ComponentNode {
     pub(super) parent: Option<crate::engine::ecs::ComponentId>,
     /// Changed by World whenever the incoming structural attachment changes.
     pub(super) attachment_revision: u64,
+    pub(super) has_additional_parents: bool,
     pub(super) children: Vec<crate::engine::ecs::ComponentId>,
     pub initialized: bool,
 }
@@ -411,6 +412,7 @@ impl ComponentNode {
             component,
             parent: None,
             attachment_revision: 0,
+            has_additional_parents: false,
             children: Vec::new(),
             initialized: false,
         }
@@ -428,6 +430,7 @@ impl ComponentNode {
             component,
             parent: None,
             attachment_revision: 0,
+            has_additional_parents: false,
             children: Vec::new(),
             initialized: false,
         }
@@ -447,6 +450,7 @@ impl ComponentNode {
             component,
             parent: None,
             attachment_revision: 0,
+            has_additional_parents: false,
             children: Vec::new(),
             initialized: false,
         }

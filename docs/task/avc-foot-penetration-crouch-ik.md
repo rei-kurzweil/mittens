@@ -2,11 +2,21 @@
 
 ## Status and outcome
 
-Native flat-support first slice implemented, 2026-10-21; headset acceptance is
-pending. `HumanoidCrouchConstraint` / `HumanoidCrouchSystem` live in
+Native flat-support first slice implemented, 2026-10-21. Initial headset feedback
+on 2026-10-22: crouching seems to work fairly well, provided XR floor height is
+calibrated properly. Broader scenario acceptance and tuning remain open.
+`HumanoidCrouchConstraint` / `HumanoidCrouchSystem` live in
 `src/engine/ecs/system/ik/humanoid_crouch.rs`. AVC binds mapped legs automatically;
 explicit foot-local sole calibration enables solving. Rei(mu), mittens-corp and
 bisket-vr-demo now supply landmarks for their shared shoes.
+
+XR floor-height calibration belongs to the XR runtime's room setup and the
+[XR settings/floor-correction layer](../spec/xr-settings.md). Crouch IK consumes
+the resulting tracked pose and collision support geometry; it does not determine
+the physical floor height or adjust the tracking origin, camera, or floor
+correction to make a pose fit. Correct tracking-floor alignment is a prerequisite
+for the pose to look right. Avatar proportions and foot-local sole landmarks
+remain separate rig-calibration concerns even when the XR floor is correct.
 
 The system shares the [retained collidable BVH](../spec/collidable-bvh.md) with
 static contact. One padded world AABB covers the capsule and predicted soles.
@@ -28,7 +38,8 @@ rest rotations, scale/yaw, repeated holds, bounded depth, individual foot suppor
 floor edits/removal, airborne support loss, opt-out/tracking recovery, mount and
 dismount, multiple instances, MMS configuration, and the complete avatar stage.
 Frame propagation precedes arm IK and skin palette updates. These are CPU checks;
-visible shoe alignment, full-scene cost and headset comfort remain to verify.
+the initial visual report is positive, but measured shoe alignment, full-scene
+cost and the complete headset scenario checklist remain to verify.
 
 Validation: 12 crouch checks pass, plus the head/neck, avatar/capsule, collidable
 BVH, static-contact and bone-map groups. Two older IK reference-resolution tests
@@ -65,9 +76,10 @@ Map changes refresh calibration and release previously owned joints.
 Rust diagnostics are available through `SystemWorld.humanoid_crouch.status(id)`
 and `.feet(id)`: support zone/height, base and solved soles, penetration, knee
 flexion and residual. A dedicated MMS diagnostic panel remains follow-up work.
-Use normal `mittens-corp`, `rei(mu)` or `bisket-vr-demo` for the first headset
-check: standing → crouch → hold → stand, then physical rise, look/roll, walking,
-button jump/fall and car entry/exit. Slopes, stair planting, world-locked steps,
+Use normal `mittens-corp`, `rei(mu)` or `bisket-vr-demo` for remaining headset
+checks with a calibrated XR floor: standing → crouch → hold → stand, then physical
+rise, look/roll, walking, button jump/fall and car entry/exit. The initial report
+does not establish acceptance of every scenario. Slopes, stair planting, world-locked steps,
 pelvis/torso adjustments and authored crouch blending remain separate work.
 
 First leg-solver fixtures are Rei(mu) and Bisket. AVC should

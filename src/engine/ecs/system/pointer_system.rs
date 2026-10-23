@@ -37,6 +37,15 @@ pub fn ensure_xr_hand_laser(
     if !config.enabled || !config.laser {
         return;
     }
+    // OpenXR drives a direct Transform child. A pointer elsewhere must not
+    // borrow an outer scene/head transform and leave a static laser at its origin.
+    let Some(pose_driver) = world.children_of(hand).iter().copied().find(|&child| {
+        world
+            .get_component_by_id_as::<TransformComponent>(child)
+            .is_some()
+    }) else {
+        return;
+    };
     let mut stack = world.children_of(hand).to_vec();
     let mut pointer = None;
     let mut attachment = None;
@@ -56,16 +65,36 @@ pub fn ensure_xr_hand_laser(
         }
         stack.extend_from_slice(world.children_of(node));
     }
-    let legacy_driver = pointer
-        .and_then(|p| world.parent_of(p))
-        .and_then(|p| nearest_ancestor_transform(world, p))
-        .or_else(|| {
-            world.children_of(hand).iter().copied().find(|c| {
-                world
-                    .get_component_by_id_as::<TransformComponent>(*c)
+    let legacy_driver = if let Some(pointer) = pointer {
+        let mut current = world.parent_of(pointer);
+        let mut nearest = None;
+        let mut driver = None;
+        while let Some(node) = current {
+            if node == hand {
+                break;
+            }
+            if nearest.is_none()
+                && world
+                    .get_component_by_id_as::<TransformComponent>(node)
                     .is_some()
-            })
-        });
+            {
+                nearest = Some(node);
+            }
+            if node == pose_driver {
+                driver = nearest;
+                break;
+            }
+            current = world.parent_of(node);
+        }
+        if driver.is_none() {
+            eprintln!(
+                "[XRHand] pointer {pointer:?} must be beneath the tracked Transform child of {hand:?}; use XRHand.new(...).laser() {{ T {{ Pointer {{}} }} }}"
+            );
+        }
+        driver
+    } else {
+        Some(pose_driver)
+    };
     let Some(mut driver) = legacy_driver else {
         return;
     };
@@ -594,6 +623,34 @@ mod tests {
                 .get_component_by_id_as::<OpacityComponent>(*c)
                 .is_some_and(|o| o.opacity < 1.0)
         }));
+    }
+
+    #[test]
+    fn malformed_xr_pointer_never_mounts_a_laser_on_an_outer_scene_transform() {
+        for with_unused_transform in [false, true] {
+            let mut world = World::default();
+            let scene = world.add_component(TransformComponent::new());
+            let hand = world.add_component(ControllerXRComponent::on_left_aim().laser());
+            let pointer = world.add_component(PointerComponent::new());
+            world.add_child(scene, hand).unwrap();
+            world.add_child(hand, pointer).unwrap();
+            if with_unused_transform {
+                let unused = world.add_component(TransformComponent::new());
+                world.add_child(hand, unused).unwrap();
+            }
+            ensure_xr_hand_laser(
+                &mut world,
+                &mut JointBasisRetargetingSystem::default(),
+                hand,
+                &mut CommandQueue::new(),
+            );
+            assert!(
+                !world
+                    .all_components()
+                    .any(|id| world.component_label(id) == Some("xr_pointer_laser")),
+                "a malformed controller must not create an untracked beam on its scene/head ancestor"
+            );
+        }
     }
 
     fn assert_rest_attachment_mount(hand_side: ControllerHand, direction: [f32; 3]) {
