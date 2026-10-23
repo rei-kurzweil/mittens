@@ -482,6 +482,12 @@ pub(crate) fn invoke_component_method(
             | "get_rim_power"
             | "set_rim_power"),
         ) => {
+            // Runtime GLTF projections consume their authored source instance;
+            // live reads/edits address that same retained source, not a stale copy.
+            let id = world
+                .get_component_by_id_as::<ShadingComponent>(id)
+                .and_then(|shading| shading.source_component())
+                .unwrap_or(id);
             let shading = world
                 .get_component_by_id_as_mut::<ShadingComponent>(id)
                 .ok_or_else(|| format!("{method}(): not a ShadingComponent"))?;
@@ -1698,4 +1704,40 @@ mod tests {
             invoke_component_method(&mut world, child, "Color", "detach", &[], |_| {}).is_err()
         );
     }
+}
+#[test]
+fn projected_shading_methods_address_the_authored_material_source() {
+    let mut world = World::default();
+    let source = world.add_component(ShadingComponent::new().with_shade_strength(0.25));
+    let projection = world.add_component(ShadingComponent::new().projected_from(source));
+    let value = invoke_component_method(
+        &mut world,
+        projection,
+        "Shading",
+        "get_shade_strength",
+        &[],
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(value, Value::Number(0.25));
+    let mut intents = Vec::new();
+    invoke_component_method(
+        &mut world,
+        projection,
+        "Shading",
+        "set_shade_strength",
+        &[Value::Number(0.8)],
+        |intent| intents.push(intent),
+    )
+    .unwrap();
+    assert_eq!(
+        world
+            .get_component_by_id_as::<ShadingComponent>(source)
+            .unwrap()
+            .shade_strength,
+        0.8
+    );
+    assert!(
+        matches!(intents.as_slice(), [IntentValue::RegisterAnimeShading { component_id }] if *component_id == source)
+    );
 }

@@ -49,6 +49,11 @@ the calibrated pose and collision support without correcting the tracking origin
 See [crouch IK](../task/avc-foot-penetration-crouch-ik.md) for rig calibration,
 diagnostics, test coverage and remaining headset checks.
 
+IK visualization uses AVC's shared `ik_debug` switch. Existing arm-chain visuals
+are implemented; extending that switch to native crouch markers is planned.
+Those markers will show predicted soles, desired support targets, solved soles
+and correction/residual lines through shared IK debug drawing helpers.
+
 ---
 
 ## Design principle — route all drivers through AvatarControlComponent

@@ -1,32 +1,42 @@
-# Task: stable material instances and material-family contracts
+# Task: stable material instances and MaterialBase contracts
 
 Date: 2026-10-10
-Status: generic instance/family refactor planned; implementation pending after the accepted shared-Shading VR checkpoint.
+Status: built-in Anime/Toon instance foundation accepted in VR; generic parameter/base-contract migration pending.
 Parent: [custom materials epic](epic/custom-materials.md).
 Consumer: [Material component/resolution](material-component-and-resolved-contract.md).
 First custom-program proof: [f32 time animation](material-f32-time-animation-first-slice.md).
 Sharing topology: [multi-parent component task](multi-parent-components-and-material-sharing.md).
 
-2026-10-22 checkpoint: shared leaf Anime Shading sources are implemented and
-user-confirmed in VR, including independent sources and detach/reattach. This
-task's generic family/definition/instance records and GPU storage refactor remain
-unimplemented. [Current terminology and evidence](shared-materials-xr-checkpoint.md)
-distinguish shared component identity from a renderer MaterialInstance ID.
-Source implementation is on hold at the user's request.
+2026-10-23: the user resumed implementation after accepting shared declarations
+in VR. [The second checkpoint](material-instances-anime-vr-checkpoint.md) adds
+generation-checked family/definition/instance records, source-linked Anime/Toon
+draw bindings and bounded mutable GPU storage to the same scene. A new pulse
+control exercises sustained updates. The user subsequently confirmed that the
+updated scene works. Record that foundation as accepted without treating it as
+completion of generic material values, authoring or renderer feature selection.
+
+Naming decision: exactly three layers, **MaterialBase -> Material ->
+MaterialInstance**. MaterialBase is the new name for MaterialFamily, not another
+layer. Material is the definition; MaterialDefinition is its current Rust name.
+Source symbols/file paths retain their existing names until a source refactor.
+The [checkpoint's specialization inventory](material-instances-anime-vr-checkpoint.md)
+records Anime-typed parameters/defaults, fixed upload packing and Shading-specific
+resolution hooks that remain to be generalized. This pass changes docs only.
 
 ## Goal and current prototype
 
 Give mutable material state stable handle identity, and define how a material
-family/base declares its standard per-renderable inputs and renderer contracts.
+base declares its standard per-renderable inputs and renderer contracts.
 Complete the minimal internal foundation before adding custom shader programs.
-Reuse Anime as the built-in proof; do not rewrite every material family first.
+Reuse Anime as the built-in proof; do not rewrite every built-in material first.
 
-Anime already approximates this model: an authored Shading source owns settings,
-RenderableSystem copies effective `AnimeShadingParams` to VisualInstances,
-batches distinguish values, and the renderer caches their UBO/descriptor sets.
-There is no stable generic material-instance record tying these layers together.
+The built-in bridge now implements this model: one initialized authored Shading
+source owns a retained material instance; renderables/batches store its ID.
+Anime scalar edits change one shared record/revision without copying settings
+into renderables or changing batch keys. GLTF projections consume the source
+record and their live getters/setters address that source.
 
-The current descriptor cache uses a HashMap keyed by material, texture/filtering,
+Before this slice, the descriptor cache used a HashMap keyed by material, texture/filtering,
 quantization and exact Anime parameter bits. Lookup is average O(1), not a linear
 search of all material values. The concerns are repeated value-key work and
 allocations for each new animated value; eviction also scans for the oldest
@@ -34,16 +44,24 @@ entry. Cache capacity bounds retained entries, not allocation rate or resources
 kept alive by in-flight submissions. Profile actual lookup cost before claiming
 hashing itself is the dominant problem.
 
+Authored Anime/Toon now use indexed instance records plus a bounded structural
+resource cache. Parameter values are not part of the GPU binding key. Unauthored
+built-in fallback draws retain the original immutable descriptor cache.
+
 ## Identity, storage, and draw lookup
 
-Use proposed separate identities:
+The first implementation provides these three identities under their current
+source names:
 
-- `MaterialFamilyId`: shared interface/input/pass contract and defaults.
-- `MaterialDefinitionId`: one validated built-in/custom program selection,
-  family contract, supported state, and additional material input schema.
+- `MaterialFamilyId` (target name `MaterialBaseId`): shared interface/input/pass
+  and renderer state/configuration contract.
+- `MaterialDefinitionId` (the Material): built-in program selection and defaults
+  now; validated custom programs/input schemas remain pending.
 - `MaterialInstanceId`: stable mutable values/resource bindings for one definition.
-- The existing renderable `InstanceHandle`: geometry/transform plus standard
-  per-renderable properties and its resolved MaterialInstanceId.
+
+The existing renderable `InstanceHandle` identifies a drawable's geometry,
+transform and standard per-renderable properties plus its selected material
+instance. It is not a fourth layer in the material model.
 
 Prefer generation-checked arena/slot handles for material instances and
 definitions; retained draw records resolve those handles to already selected
@@ -79,8 +97,13 @@ Dirty tracking uploads values to bounded frame-safe slots; it must not overwrite
 data referenced by an in-flight command buffer. Descriptor sets may be reused
 with safe buffer slots/offsets or allocated in a bounded per-frame scheme. A
 material instance is a logical record, not a requirement for one dedicated
-descriptor set per primitive. Freeze the actual storage strategy after measuring
-the existing cache workload and target Vulkan constraints.
+descriptor set per primitive. The initial implementation uses at most eight
+UBO/descriptor snapshots per structural binding variant and retains at most 16
+variants per material. Descriptor Arc ownership protects even unsubmitted
+recordings; Vulkano write guards additionally protect GPU use. Pool exhaustion
+returns an explicit error instead of allocating indefinitely or overwriting a
+retained revision. See the checkpoint for measured allocation/readback evidence
+and the remaining resource-variation/performance limits.
 
 Batch records use definition/resolved-pipeline and material-instance/binding
 identity rather than all changing float bits. Distinct mutable material bindings
@@ -104,7 +127,7 @@ or an authored `time_seconds` input.
 | Shared material parameters | Anime thresholds/shade tint, custom time_seconds | Material instance; shared consumers observe the same retained revision |
 | Material resources | texture/sampler bindings | Declared owner and compatible descriptor identity; not a scalar value |
 
-A material-family/base contract declares which standard inputs it consumes,
+A MaterialBase contract declares which standard inputs it supports,
 their types/semantics/defaults, compatible vertex/varying/descriptor interfaces,
 supported state profiles, and renderer capabilities/pass implementations.
 The definition selects actual surface programs and adds its custom inputs.
@@ -132,7 +155,7 @@ shading. Keep three independent declarations/decisions:
 3. **Renderer activation:** the scene enables EmissivePass/Bloom and the draw is
    eligible in its phase/view with appropriate depth/coverage/clip behavior.
 
-A family/base can bundle sensible defaults, but all three meanings remain
+A base can bundle sensible defaults, but all three meanings remain
 explicit. Positive intensity alone must not create a pass or select Toon shaders.
 The [lighting/emission/extraction policy review](material-lighting-emission-and-extraction-policy.md)
 adds the proposed built-in rule that intensity 0 suppresses extraction while
@@ -151,19 +174,24 @@ Do not make that full migration block the opaque f32 proof.
 
 ## First refactoring slices and gates
 
-1. [ ] Inventory field owners, Anime value/cache/batch flow, shader interfaces,
+1. [x] Audit the Anime/Toon field owners, value/cache/batch flow, fixed interface
    and actual input/pass consumption. Document current ignored fields and
    material-handle classification rather than assume generic behavior.
-2. [ ] Define family/definition/instance IDs and records with generation-safe
+2. [x] Define built-in base/material/instance IDs and records with generation-safe
    lifecycle, source sharing, defaults, resource ownership, and dirty revisions.
-   Publish the fixed standard-instance interface and family metadata contract.
-3. [ ] Adapt Anime through a compatibility bridge: authored Shading sources map
+   Publish the fixed standard-instance interface and initial base metadata contract.
+3. [x] Adapt Anime through a compatibility bridge: authored Shading sources map
    to stable logical material instances; generated primitives retain source
    identity; local settings remain independent. Keep existing appearance.
-4. [ ] Introduce indexed resolved draw bindings and bounded frame-safe parameter
+4. [x] Introduce indexed resolved draw bindings and bounded frame-safe parameter
    storage. Verify animated Anime scalar edits without creating one persistent
-   UBO/descriptor per new value. Compare cache/lookup/allocation/batch costs.
-5. [ ] Add the opaque mesh family/definition needed by the custom f32 slice,
+   UBO/descriptor per new value. Verify allocation and batch-rebuild counts;
+   comprehensive CPU timing comparisons remain follow-up work.
+5. [ ] Replace Anime-specific value/default storage and upload packing with
+   schema-backed material data and layout. Generalize the Shading-specific
+   resolution bridge; consolidate renderer state/features under MaterialBase
+   and perform the agreed source renames without adding a layer.
+6. [ ] Add the opaque mesh base/material support needed by the custom f32 slice,
    using the same instance/update machinery. Declare emission metadata without
    inferring extraction from consumption of a standard input.
 
@@ -181,7 +209,7 @@ same ID; mutation leaves those IDs/counts stable. When cross-subtree material
 references are implemented, binding one source in two places must preserve
 both bindings without reparenting it or allocating another logical instance.
 
-Gate for family semantics: an illustrative custom program may consume emissive
+Gate for base semantics: an illustrative custom program may consume emissive
 intensity without participating in extraction. The emission-capable LED variant
 adds explicit pass support/participation later. Neither case gets classified by
 Toon handle identity. Record unsupported combinations instead of inventing

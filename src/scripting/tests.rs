@@ -13443,7 +13443,7 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
             visuals
                 .instance(h)
                 .unwrap()
-                .anime_shading
+                .anime_shading(&visuals.materials)
                 .shade_color_strength[3],
             0.8
         );
@@ -13474,10 +13474,13 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
         let effective = value.clamp(0.0, 1.0);
         for &id in &projections {
             assert_eq!(
-                world
-                    .get_component_by_id_as::<ShadingComponent>(id)
-                    .unwrap()
-                    .shade_strength,
+                crate::engine::ecs::system::RenderableSystem::resolve_anime_shading(
+                    &world,
+                    world.parent_of(id).unwrap()
+                )
+                .unwrap()
+                .1
+                .shade_strength,
                 effective
             );
         }
@@ -13486,7 +13489,7 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
                 visuals
                     .instance(h)
                     .unwrap()
-                    .anime_shading
+                    .anime_shading(&visuals.materials)
                     .shade_color_strength[3],
                 effective
             );
@@ -13495,7 +13498,7 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
             visuals
                 .instance(isolated_handle)
                 .unwrap()
-                .anime_shading
+                .anime_shading(&visuals.materials)
                 .shade_color_strength[3],
             0.23
         );
@@ -13565,7 +13568,11 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
     assert!((shading.lit_threshold - 0.25).abs() < 1e-6);
     for &h in &handles {
         assert_eq!(
-            visuals.instance(h).unwrap().anime_shading.controls[0..2],
+            visuals
+                .instance(h)
+                .unwrap()
+                .anime_shading(&visuals.materials)
+                .controls[0..2],
             [0.25, 0.25]
         );
     }
@@ -13592,7 +13599,14 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
         1
     );
     for &h in &handles {
-        assert_eq!(visuals.instance(h).unwrap().anime_shading.controls[3], 9.5);
+        assert_eq!(
+            visuals
+                .instance(h)
+                .unwrap()
+                .anime_shading(&visuals.materials)
+                .controls[3],
+            9.5
+        );
     }
     let readout = label(&world, "anime_shade_strength_readout");
     assert_eq!(
@@ -13694,7 +13708,10 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
     assert_eq!(reset_shading.rim_strength, 0.38);
     assert_eq!(reset_shading.rim_power, 4.0);
     for &h in &handles {
-        let gpu = visuals.instance(h).unwrap().anime_shading;
+        let gpu = visuals
+            .instance(h)
+            .unwrap()
+            .anime_shading(&visuals.materials);
         assert_eq!(gpu.shade_color_strength[3], 0.5);
         assert_eq!(gpu.controls, [0.4, 0.55, 0.38, 4.0]);
     }
@@ -13882,9 +13899,67 @@ fn shared_materials_xr_controls_preserve_sources_and_update_surviving_consumers(
         .unwrap()
         .get_handle()
         .unwrap();
+    let shared_id = v.materials.source_instance(source).unwrap();
+    let independent_id = v.materials.source_instance(independent).unwrap();
+    assert_ne!(shared_id, independent_id);
+    assert_eq!(
+        v.materials.instance(shared_id).unwrap().definition,
+        v.materials.instance(independent_id).unwrap().definition
+    );
+    assert_eq!(
+        v.instance(cube_handle).unwrap().material_instance,
+        Some(shared_id)
+    );
+    assert_eq!(
+        v.instance(sphere_handle).unwrap().material_instance,
+        Some(shared_id)
+    );
+    assert_eq!(
+        v.instance(comparison_handle).unwrap().material_instance,
+        Some(independent_id)
+    );
+    let material_count = v.materials.instance_count();
     let cube_pose = v.instance(cube_handle).unwrap().transform.model;
     let baseline_count = w.component_count();
     let initial_edge = w.attachment_between(sphere, source).unwrap();
+
+    click(
+        "shared_pulse",
+        &mut session,
+        &mut w,
+        &mut s,
+        &mut v,
+        &mut a,
+        &mut q,
+    );
+    s.rx.dispatch_event_handlers(
+        &mut w,
+        &Signal::event(
+            ComponentId::default(),
+            EventSignal::FrameTick { dt_sec: 0.25 },
+        ),
+    );
+    service(&mut session, &mut w, &mut s, &mut v, &mut a, &mut q);
+    assert_ne!(
+        v.anime_shading(cube_handle).unwrap().shade_color_strength[3],
+        0.75
+    );
+    assert_eq!(v.anime_shading(cube_handle), v.anime_shading(sphere_handle));
+    assert_eq!(
+        v.anime_shading(comparison_handle)
+            .unwrap()
+            .shade_color_strength[3],
+        0.75
+    );
+    click(
+        "shared_pulse",
+        &mut session,
+        &mut w,
+        &mut s,
+        &mut v,
+        &mut a,
+        &mut q,
+    );
 
     let slider = label(&w, "anime_shade_strength_slider");
     assert!(
@@ -13904,7 +13979,7 @@ fn shared_materials_xr_controls_preserve_sources_and_update_surviving_consumers(
         assert_eq!(
             v.instance(handle)
                 .unwrap()
-                .anime_shading
+                .anime_shading(&v.materials)
                 .shade_color_strength[3],
             0.2
         );
@@ -13912,7 +13987,7 @@ fn shared_materials_xr_controls_preserve_sources_and_update_surviving_consumers(
     assert_eq!(
         v.instance(comparison_handle)
             .unwrap()
-            .anime_shading
+            .anime_shading(&v.materials)
             .shade_color_strength[3],
         0.75
     );
@@ -13944,7 +14019,7 @@ fn shared_materials_xr_controls_preserve_sources_and_update_surviving_consumers(
     assert_eq!(
         v.instance(cube_handle)
             .unwrap()
-            .anime_shading
+            .anime_shading(&v.materials)
             .shade_color_strength[3],
         0.9
     );
@@ -13988,12 +14063,40 @@ fn shared_materials_xr_controls_preserve_sources_and_update_surviving_consumers(
             assert_eq!(
                 v.instance(handle)
                     .unwrap()
-                    .anime_shading
+                    .anime_shading(&v.materials)
                     .shade_color_strength[3],
                 0.9
             );
         }
     }
+    // Sustained scalar edits update one shared record, without regrouping draws.
+    v.prepare_draw_cache();
+    for edit in 0..10_000 {
+        let value = (edit as f32 / 10_000.0).clamp(0.0, 1.0);
+        let shading = w
+            .get_component_by_id_as_mut::<ShadingComponent>(source)
+            .unwrap();
+        *shading = shading.with_shade_strength(value);
+        s.renderable.register_anime_shading(&mut w, &mut v, source);
+        assert_eq!(v.materials.source_instance(source), Some(shared_id));
+        assert_eq!(v.materials.instance_count(), material_count);
+        assert_eq!(
+            v.instance(cube_handle).unwrap().material_instance,
+            Some(shared_id)
+        );
+        assert_eq!(
+            v.instance(sphere_handle).unwrap().material_instance,
+            Some(shared_id)
+        );
+        assert!(
+            !v.prepare_draw_cache(),
+            "parameter revisions must not rebuild batches"
+        );
+    }
+    assert_eq!(
+        v.instance(comparison_handle).unwrap().material_instance,
+        Some(independent_id)
+    );
     click(
         "shared_move",
         &mut session,
@@ -14034,6 +14137,8 @@ fn shared_materials_xr_controls_preserve_sources_and_update_surviving_consumers(
     );
     s.process_commands(&mut w, &mut v, &mut a, &mut q);
     assert!(w.get_component_record(source).is_none());
+    assert!(v.materials.instance(shared_id).is_none());
+    assert_eq!(v.instance(sphere_handle).unwrap().material_instance, None);
     assert_eq!(
         v.instance(sphere_handle).unwrap().renderable.material,
         MaterialHandle::TOON_MESH
@@ -14041,7 +14146,7 @@ fn shared_materials_xr_controls_preserve_sources_and_update_surviving_consumers(
     assert_eq!(
         v.instance(comparison_handle)
             .unwrap()
-            .anime_shading
+            .anime_shading(&v.materials)
             .shade_color_strength[3],
         0.75
     );

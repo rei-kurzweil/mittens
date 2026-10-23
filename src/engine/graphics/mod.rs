@@ -4,6 +4,7 @@ pub mod deformation;
 pub(crate) mod deformation_reference;
 pub(crate) mod implicit_mesh;
 mod material_cache;
+pub mod materials;
 pub mod mesh;
 pub mod pipeline_descriptor_set_layouts;
 pub mod planar_transparency_optimizer;

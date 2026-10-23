@@ -1,7 +1,7 @@
 # Epic: custom materials, typed inputs, and renderer capabilities
 
 Date: 2026-10-09
-Status: first shared-Shading checkpoint implemented and user-confirmed in VR; generic material refactor pending.
+Status: shared declarations and built-in instance foundation accepted in VR; generic parameter/resolution migration and custom programs remain pending.
 Release: [mittens-engine 0.10.0](0.10.0/README.md).
 
 2026-10-10 first-phase decision: [f32 time-animation proof](../material-f32-time-animation-first-slice.md)
@@ -45,6 +45,36 @@ that integration plan, not a second competing program registry.
 
 ## Checked implementation boundary
 
+### 2026-10-23 acceptance and terminology
+
+The user reports that the updated material-instance test scene works. Both VR
+checkpoints are accepted. The selected model has exactly three layers:
+**MaterialBase -> Material -> MaterialInstance**. MaterialBase renames the earlier
+MaterialFamily concept; it is not an additional layer. Material is the definition
+(currently `MaterialDefinition` in Rust). Source names are unchanged in this
+documentation pass.
+
+The registry/identity/revision/binding foundation is implemented, but the data
+and integration remain specialized: instance parameters and definition defaults
+are `AnimeShadingParams`, schemas are fixed to None/AnimeV1, and Shading-specific
+resolution, fixed UBO packing and built-in program/state branches remain.
+[The accepted checkpoint](../material-instances-anime-vr-checkpoint.md) records
+these boundaries. Generalizing them is still required before the custom-f32
+program slice; the full generic material system is not complete.
+
+### 2026-10-23 stable instance foundation
+
+[The second VR checkpoint](../material-instances-anime-vr-checkpoint.md) keeps
+the same scene and adds generation-checked family/definition/instance records,
+retained Anime/Toon values, material IDs in draw batches and bounded reusable
+GPU UBO/descriptor snapshots. Scalar edits leave identity/batching unchanged;
+GLTF projections consume the authored source. A shared-pulse control exercises
+continuous updates. Automated GPU tests cover 10,000 edits, retained recordings
+and independent stereo output. The user has now accepted this checkpoint in VR.
+Custom programs, LED/burning shaders, broad serialization and generalized
+emission classification remain pending. The previous sections below record
+earlier checkpoints rather than current missing-instance status.
+
 ### 2026-10-22 first VR checkpoint
 
 Shared leaf Anime/Toon Shading declarations now support multiple attachments,
@@ -54,12 +84,10 @@ blocks this slice. [The VR scene and checklist](../shared-materials-xr-checkpoin
 exercise one source on two primitives plus an independent comparison. After
 correcting the avatar-free controller topology, the user confirmed independent
 rightmost-sphere shading, detaching the source from the other objects and
-reattaching both. Implementation remains on hold at the user's request; this
-follow-up changes documentation only. Generic material instances/families,
-custom programs and LED/burning shaders remain pending; the broader multi-parent
-task is not complete. Shared Shading component identity is not yet a generic
-renderer MaterialInstance ID; the checkpoint records the terminology and current
-per-renderable Anime value/cache flow.
+reattaching both. At that checkpoint, source implementation was paused and the
+renderer still copied Anime values into renderables. The 2026-10-23 checkpoint
+above supersedes that implementation boundary; the broader multi-parent task
+remains incomplete.
 
 ### 2026-10-14 progress audit
 
@@ -84,7 +112,7 @@ The next material implementation slice remains the minimal stable-instance
 foundation using Anime, followed by the opaque custom-program/f32-time proof.
 This audit is read-only source inspection, not runtime renderer validation.
 
-### Existing implementation
+### Implementation at the 2026-10-14 audit
 
 - [Material and MaterialHandle](../../../src/engine/graphics/primitives.rs)
   currently name fixed shader paths and built-in handles. The existing Rust
@@ -111,24 +139,33 @@ This audit is read-only source inspection, not runtime renderer validation.
 These are specific coupling points to audit; this epic does not claim that all
 renderer variants or post-processing behavior were validated in this docs pass.
 
-## Definition, instance, and resolved draw contract
+## MaterialBase, Material, and MaterialInstance
 
-First internal prerequisite: [stable material instances and family contracts](../material-instances-and-family-contracts.md).
+First internal prerequisite: [stable material instances and base contracts](../material-instances-and-family-contracts.md).
 Anime provides the built-in prototype. Introduce stable generation-safe handles,
 indexed draw bindings, and bounded mutable storage before loading custom programs.
-Families/bases declare standard instance-input consumption and renderer contracts;
+Bases declare standard instance-input support and renderer contracts;
 definitions select programs and additional inputs. Consuming emissive intensity
 and opting into extraction/Bloom are separate declarations.
 
-Keep three identities separate:
+Keep exactly three authored material identities separate. MaterialBase replaces
+the earlier MaterialFamily name; Material and material definition are the same
+middle layer:
 
 | Record | Responsibility |
 | --- | --- |
-| `MaterialDefinition` | Built-in/custom surface program, versioned interfaces, parameter schema, supported vertex families, constrained render-state profile, declared renderer capabilities and required resources |
-| `MaterialInstance` | Stable shared authored identity, current typed values/resource bindings, explicit update bindings, generation/dirty state, optional instanced copy policy |
-| `ResolvedMaterial` / draw contract | Selected definition/instance plus resolved color/texture/emission/alpha and property provenance, geometry/view compatibility, pass participation, batch identity and pipeline key |
+| `MaterialBase` | Renderer interfaces, supported instance inputs/features, renderer state/configuration contract and required resources; current Rust name is `MaterialFamily` |
+| `Material` | Shader/program selection, parameter schema/defaults and supported choices within the base contract; current Rust record name is `MaterialDefinition` |
+| `MaterialInstance` | Stable shared authored identity, current typed values/resource bindings, explicit update bindings and generation/dirty state |
 
-These are proposed data structures, not existing Rust API. Renderer globals
+`ResolvedMaterial` / the draw contract is a derived resolution result, not a
+fourth authored layer. It records the selected material/instance plus resolved
+color/texture/emission/alpha and provenance, geometry/view compatibility, pass
+participation, batching and pipeline keys.
+
+The accepted built-in implementation provides initial records under the source
+names above. Generic values, custom programs and full base-driven state/feature
+selection remain planned. Renderer globals
 and per-view resources remain renderer-owned. Vulkan pipelines/descriptors are
 cached renderer products, not mutable MMS fields. Dynamic scalar changes dirty
 uploads; resource changes dirty bindings; changing program/state/capability may

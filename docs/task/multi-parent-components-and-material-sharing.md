@@ -14,10 +14,14 @@ baseline; manual car validation no longer blocks material work. The first
 [VR checkpoint](shared-materials-xr-checkpoint.md) implements shared leaf Anime/
 Toon declarations, detach-one/all, safe shared deletion and a controller-driven
 scene. The user confirmed independent rightmost-sphere shading, detaching the
-shared source from the other objects and reattaching both. Keep implementation
-on hold at the user's request; this follow-up updates documentation only.
-The broader contracts below remain the target; generic material instances and
-graph-preserving save/clone are not implemented by that checkpoint.
+shared source from the other objects and reattaching both. The 2026-10-23
+[second checkpoint](material-instances-anime-vr-checkpoint.md) adds renderer
+material-instance IDs and bounded GPU bindings behind those same sources after
+the user resumed work. Broader graph migration and graph-preserving save/clone
+remain pending. The user has accepted the second checkpoint in VR. The selected
+three-layer names are MaterialBase -> Material -> MaterialInstance; MaterialBase
+renames MaterialFamily. The current record payload/packing and resolution still
+need generalization beyond the Anime/Toon compatibility bridge.
 
 ## Goal
 

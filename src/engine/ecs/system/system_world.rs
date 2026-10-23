@@ -1336,6 +1336,12 @@ impl SystemWorld {
 
         for n in nodes.iter().copied().rev() {
             if world
+                .get_component_by_id_as::<crate::engine::ecs::component::ShadingComponent>(n)
+                .is_some_and(|shading| shading.source_component().is_none())
+            {
+                visuals.remove_material_source(n);
+            }
+            if world
                 .get_component_by_id_as::<SignalRouteUpwardComponent>(n)
                 .is_some()
             {

@@ -170,6 +170,11 @@ mod vulkano_backend {
     // `vulkano_backend` is an inline module, so `#[path = "..."]` would be resolved relative to
     // a *virtual* module directory (`.../vulkano_renderer/vulkano_backend/`) that doesn't exist
     // on disk. Using `include!` lets us keep the helpers in a normal file next to the renderer.
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/graphics/vulkano_material_instances.rs"
+    ));
+
     mod vulkano_cbb {
         include!(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -569,6 +574,11 @@ mod vulkano_backend {
 
         cached_overlay_instance_buffer: Option<Subbuffer<[InstanceData]>>,
         cached_overlay_instance_count: usize,
+        material_instances: slotmap::SecondaryMap<
+            crate::engine::graphics::materials::MaterialInstanceId,
+            GpuMaterialInstance,
+        >,
+        material_upload_stats: MaterialUploadStats,
         cached_material_sets: crate::engine::graphics::material_cache::MaterialCache<
             (
                 crate::engine::graphics::MaterialHandle,
@@ -2291,6 +2301,8 @@ mod vulkano_backend {
 
                 cached_overlay_instance_buffer: None,
                 cached_overlay_instance_count: 0,
+                material_instances: slotmap::SecondaryMap::new(),
+                material_upload_stats: MaterialUploadStats::default(),
                 cached_material_sets: crate::engine::graphics::material_cache::MaterialCache::new(
                     512,
                 ),
@@ -3274,7 +3286,7 @@ mod vulkano_backend {
                         texture: None,
                         texture_filtering: TextureFiltering::Nearest,
                         quant_steps: 1.0,
-                        anime_shading: Default::default(),
+                        material_instance: None,
                         stencil_ref: 0,
                         start: slot,
                         count: 1,
@@ -3410,6 +3422,11 @@ mod vulkano_backend {
                 self.textures.insert(handle, texture);
                 self.cached_material_sets
                     .retain(|(_, texture_handle, _, _, _), _| *texture_handle != handle);
+                for (_, entry) in self.material_instances.iter_mut() {
+                    entry
+                        .bindings
+                        .retain(|(_, texture, _, _), _| *texture != handle);
+                }
             }
         }
 
@@ -3969,8 +3986,16 @@ mod vulkano_backend {
             texture_handle: TextureHandle,
             filtering: TextureFiltering,
             quant_steps: f32,
-            anime_shading: crate::engine::graphics::visual_world::AnimeShadingParams,
+            material_instance: Option<crate::engine::graphics::materials::MaterialInstanceId>,
         ) -> Result<Option<Arc<DescriptorSet>>, Box<dyn std::error::Error>> {
+            if let Some(id) = material_instance {
+                let result =
+                    self.mutable_material_set(id, material, texture_handle, filtering, quant_steps);
+                self.log_material_upload_stats();
+                return result;
+            }
+            let anime_shading =
+                crate::engine::graphics::visual_world::AnimeShadingParams::default();
             match material {
                 crate::engine::graphics::MaterialHandle::TOON_MESH
                 | crate::engine::graphics::MaterialHandle::UNLIT_MESH
@@ -4418,6 +4443,7 @@ mod vulkano_backend {
             Arc<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
             Box<dyn std::error::Error>,
         > {
+            self.sync_material_instances(visual_world);
             Self::retarget_mirror_surface_textures_for_render_view(visual_world, &render_view.kind);
 
             let (camera_target, eye) = match render_view.kind {

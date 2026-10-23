@@ -97,8 +97,8 @@ requires runtime rig/hardware evidence in addition to deterministic replay tests
 - [x] [First shared-Shading VR checkpoint](../../shared-materials-xr-checkpoint.md):
   user confirmed independent rightmost-sphere shading and detaching/reattaching
   the shared source on the other two primitives. Avatar-free controller pointers
-  work after correcting their driven-Transform topology. Source implementation
-  is on hold at the user's request.
+  work after correcting their driven-Transform topology. The same scene now
+  also hosts the second internal-instance checkpoint below.
 
 - [ ] [Multi-parent components for shared material declarations](../../multi-parent-components-and-material-sharing.md):
   repeated live MMS attachments share one source/instance, with explicit edge
@@ -108,8 +108,13 @@ requires runtime rig/hardware evidence in addition to deterministic replay tests
   save/clone and performance gates remain open.
 
 - [ ] Internal prerequisite: [stable material instances and family contracts](../../material-instances-and-family-contracts.md).
-  Prove the representation/update refactor with Anime before custom programs;
-  declare standard per-renderable inputs separately from emission pass participation.
+  The built-in Anime/Toon foundation is implemented: generation-checked IDs,
+  retained revisions, identity-based batches and bounded mutable GPU bindings.
+  [Second VR checkpoint](../../material-instances-anime-vr-checkpoint.md) is
+  accepted by the user, who reports the updated scene works. Generic
+  parameter/default storage, resolution, base-driven state/features and custom
+  program validation remain pending. The selected three-layer naming is
+  MaterialBase -> Material -> MaterialInstance; MaterialBase replaces MaterialFamily.
 
 - [ ] [Prepare the four-strip custom-materials example](../../custom-materials-led-strip-example-preparation.md):
   LED-only combined geometry with `animated_led_strip`, separate Toon backings,

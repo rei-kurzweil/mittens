@@ -1670,7 +1670,7 @@ mod tests {
                 instance.renderable.material,
                 MaterialHandle::ANIME_MESH | MaterialHandle::SKINNED_ANIME_MESH
             ));
-            assert_eq!(instance.anime_shading, expected_params);
+            assert_eq!(instance.anime_shading(&visuals.materials), expected_params);
             let mut expected_renderable_outline = expected_outline;
             if matched_renderables.contains(renderable) {
                 expected_renderable_outline.width = 0.006;
@@ -1692,7 +1692,7 @@ mod tests {
             visuals
                 .instances()
                 .iter()
-                .all(|instance| instance.anime_shading == updated_params)
+                .all(|instance| instance.anime_shading(&visuals.materials) == updated_params)
         );
         let updated_outline_value = outline_value
             .with_width(0.026)
@@ -1723,13 +1723,55 @@ mod tests {
                 .iter()
                 .find_map(|&child| world.get_component_by_id_as::<AnimeShadingComponent>(child))
                 .unwrap();
-            assert_eq!(anime_projection.gpu_params(), updated_params);
+            assert_eq!(anime_projection.source_component(), Some(modifier));
+            assert_eq!(
+                RenderableSystem::resolve_anime_shading(&world, renderable)
+                    .unwrap()
+                    .1
+                    .gpu_params(),
+                updated_params
+            );
+            let handle = world
+                .get_component_by_id_as::<RenderableComponent>(renderable)
+                .unwrap()
+                .get_handle()
+                .unwrap();
+            assert_eq!(
+                visuals.instance(handle).unwrap().material_instance,
+                visuals.materials.source_instance(modifier)
+            );
             let outline_projection = world
                 .children_of(renderable)
                 .iter()
                 .find_map(|&child| world.get_component_by_id_as::<ToonOutlineComponent>(child))
                 .unwrap();
             assert_eq!(outline_projection.gpu_params(), updated_outline);
+        }
+        // Definition edits preserve logical identity and invalidate generated draws.
+        let source_instance = visuals.materials.source_instance(modifier).unwrap();
+        world
+            .get_component_by_id_as_mut::<AnimeShadingComponent>(modifier)
+            .unwrap()
+            .model = crate::engine::ecs::component::ShadingModel::Toon;
+        renderable_system.register_anime_shading(&mut world, &mut visuals, modifier);
+        assert_eq!(
+            visuals.materials.source_instance(modifier),
+            Some(source_instance)
+        );
+        assert_eq!(
+            visuals
+                .materials
+                .instance(source_instance)
+                .unwrap()
+                .definition,
+            visuals.materials.toon_definition
+        );
+        for instance in visuals.instances() {
+            assert_eq!(instance.material_instance, Some(source_instance));
+            assert!(matches!(
+                instance.renderable.material,
+                MaterialHandle::TOON_MESH | MaterialHandle::SKINNED_TOON_MESH
+            ));
         }
     }
 

@@ -1,3 +1,4 @@
+use super::materials::{MaterialInstanceId, MaterialRegistry};
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::Transform;
 use crate::engine::graphics::GpuRenderable;
@@ -81,7 +82,7 @@ pub struct DrawBatch {
     pub texture: Option<crate::engine::graphics::TextureHandle>,
     pub texture_filtering: TextureFiltering,
     pub quant_steps: f32,
-    pub anime_shading: AnimeShadingParams,
+    pub material_instance: Option<MaterialInstanceId>,
     /// Effective stencil reference value for this batch.
     /// 0 = unclipped; >0 = draw only where stencil == this value.
     /// For clip-source instances this is `parent_ref + 1` (their visual draw is inside their own region).
@@ -154,6 +155,8 @@ pub enum RenderOp {
 }
 
 pub struct VisualWorld {
+    pub materials: MaterialRegistry,
+    material_consumers: slotmap::SecondaryMap<MaterialInstanceId, Vec<InstanceHandle>>,
     instances: Vec<VisualInstance>,
     clear_color: [f32; 4],
     renderer_msaa_mode: MsaaMode,
@@ -284,6 +287,7 @@ pub struct VisualWorld {
 
 #[derive(Debug, Clone, Copy)]
 pub struct VisualInstance {
+    pub component: ComponentId,
     pub renderable: GpuRenderable,
     pub transform: Transform,
     pub color: [f32; 4],
@@ -297,7 +301,7 @@ pub struct VisualInstance {
     pub texture: Option<crate::engine::graphics::TextureHandle>,
     pub texture_filtering: TextureFiltering,
     pub quant_steps: f32,
-    pub anime_shading: AnimeShadingParams,
+    pub material_instance: Option<MaterialInstanceId>,
     pub toon_outline: Option<ToonOutlineParams>,
     /// IOR, effective thickness, strength, and viewport-edge fade.
     pub transmission: [f32; 4],
@@ -319,6 +323,100 @@ pub struct VisualInstance {
     /// When true, this instance writes stencil before its descendant subtree draws.
     /// It also draws normally in the color pass (double duty: clip source + background quad).
     pub is_stencil_clip: bool,
+}
+
+impl VisualInstance {
+    /// Read shared retained values; draw records store only material identity.
+    pub fn anime_shading(&self, materials: &MaterialRegistry) -> AnimeShadingParams {
+        self.material_instance
+            .and_then(|id| materials.instance(id))
+            .map_or_else(AnimeShadingParams::default, |record| record.parameters)
+    }
+}
+
+#[cfg(test)]
+mod material_identity_tests {
+    use super::*;
+    use crate::engine::ecs::{World, component::ShadingComponent};
+    use crate::engine::graphics::{MaterialHandle, MeshHandle};
+
+    #[test]
+    fn equal_valued_materials_keep_distinct_batches_and_shared_color_stays_per_renderable() {
+        let mut world = World::default();
+        let a = world.add_component(ShadingComponent::new());
+        let b = world.add_component(ShadingComponent::new());
+        let mut visuals = VisualWorld::new();
+        let definition = visuals.materials.anime_definition;
+        let id_a = visuals
+            .materials
+            .upsert_source(a, definition, AnimeShadingParams::default());
+        let id_b = visuals
+            .materials
+            .upsert_source(b, definition, AnimeShadingParams::default());
+        let mut handles = Vec::new();
+        for (index, id) in [id_a, id_a, id_b].into_iter().enumerate() {
+            let handle = visuals.register(
+                a,
+                GpuRenderable::new(MeshHandle(0), MaterialHandle::ANIME_MESH),
+                Transform::default(),
+                [index as f32 * 0.4, 1.0, 1.0, 1.0],
+                1.0,
+                false,
+                false,
+                false,
+                false,
+                false,
+                index as f32,
+                None,
+                3.0,
+            );
+            assert!(visuals.bind_material_instance(handle, Some(id)));
+            handles.push(handle);
+        }
+        visuals.prepare_draw_cache();
+        let (stream, _) = visuals.opaque_stream();
+        let batches: Vec<_> = stream
+            .iter()
+            .filter_map(|op| match op {
+                RenderOp::DrawBatch(batch) => Some(batch),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(batches.len(), 2);
+        assert!(
+            batches
+                .iter()
+                .any(|batch| batch.material_instance == Some(id_a) && batch.count == 2)
+        );
+        assert!(
+            batches
+                .iter()
+                .any(|batch| batch.material_instance == Some(id_b) && batch.count == 1)
+        );
+        assert_ne!(
+            visuals.instance(handles[0]).unwrap().color,
+            visuals.instance(handles[1]).unwrap().color
+        );
+        assert_ne!(
+            visuals.instance(handles[0]).unwrap().emissive,
+            visuals.instance(handles[1]).unwrap().emissive
+        );
+        let mut edited = AnimeShadingParams::default();
+        edited.controls[0] = 0.8;
+        visuals.materials.upsert_source(a, definition, edited);
+        assert!(!visuals.prepare_draw_cache());
+        assert_eq!(visuals.anime_shading(handles[1]), Some(edited));
+        assert_eq!(
+            visuals.anime_shading(handles[2]),
+            Some(AnimeShadingParams::default())
+        );
+        visuals.remove_material_source(a);
+        assert!(!visuals.bind_material_instance(handles[2], Some(id_a)));
+        assert_eq!(
+            visuals.instance(handles[2]).unwrap().material_instance,
+            Some(id_b)
+        );
+    }
 }
 
 fn sanitize_quant_steps(steps: f32) -> f32 {
@@ -345,6 +443,8 @@ impl Default for VisualWorld {
         t.matrix_world = ident4;
 
         Self {
+            materials: MaterialRegistry::default(),
+            material_consumers: slotmap::SecondaryMap::new(),
             instances: Vec::new(),
             clear_color: [0.0, 0.0, 0.0, 1.0],
             renderer_msaa_mode: MsaaMode::default(),
@@ -1874,7 +1974,7 @@ impl VisualWorld {
             let texture = inst0.texture;
             let texture_filtering = inst0.texture_filtering;
             let quant_steps = sanitize_quant_steps(inst0.quant_steps);
-            let anime_shading = inst0.anime_shading;
+            let material_instance = inst0.material_instance;
             let stencil_ref = inst0.stencil_ref;
 
             let start = cursor;
@@ -1889,7 +1989,7 @@ impl VisualWorld {
                     && inst.texture == texture
                     && inst.texture_filtering == texture_filtering
                     && sanitize_quant_steps(inst.quant_steps).to_bits() == quant_steps.to_bits()
-                    && inst.anime_shading.key_bits() == anime_shading.key_bits()
+                    && inst.material_instance == material_instance
                     && inst.stencil_ref == stencil_ref
                 {
                     cursor += 1;
@@ -1904,7 +2004,7 @@ impl VisualWorld {
                 texture,
                 texture_filtering,
                 quant_steps,
-                anime_shading,
+                material_instance,
                 stencil_ref,
                 start,
                 count: cursor - start,
@@ -1966,7 +2066,7 @@ impl VisualWorld {
                 texture: None,
                 texture_filtering: TextureFiltering::Linear,
                 quant_steps: 1.0,
-                anime_shading: AnimeShadingParams::default(),
+                material_instance: None,
                 stencil_ref: 0,
                 start,
                 count: cursor - start,
@@ -2272,7 +2372,7 @@ impl VisualWorld {
             let texture = inst0.texture;
             let texture_filtering = inst0.texture_filtering;
             let quant_steps = sanitize_quant_steps(inst0.quant_steps);
-            let anime_shading = inst0.anime_shading;
+            let material_instance = inst0.material_instance;
 
             let start = out_instances.len();
             out_instances.push(indices[cursor]);
@@ -2287,7 +2387,7 @@ impl VisualWorld {
                     && inst.texture == texture
                     && inst.texture_filtering == texture_filtering
                     && sanitize_quant_steps(inst.quant_steps).to_bits() == quant_steps.to_bits()
-                    && inst.anime_shading.key_bits() == anime_shading.key_bits()
+                    && inst.material_instance == material_instance
                 {
                     out_instances.push(indices[cursor]);
                     cursor += 1;
@@ -2302,7 +2402,7 @@ impl VisualWorld {
                 texture,
                 texture_filtering,
                 quant_steps,
-                anime_shading,
+                material_instance,
                 stencil_ref: effective_ref,
                 start,
                 count: out_instances.len() - start,
@@ -2393,6 +2493,8 @@ impl VisualWorld {
     }
 
     pub fn clear(&mut self) {
+        self.materials.clear_instances();
+        self.material_consumers.clear();
         self.instances.clear();
         self.handle_to_index.clear();
         self.component_to_handle.clear();
@@ -3120,7 +3222,7 @@ impl VisualWorld {
                 tex,
                 inst.texture_filtering as u8,
                 sanitize_quant_steps(inst.quant_steps).to_bits(),
-                inst.anime_shading.key_bits(),
+                inst.material_instance.map(|id| id.data().as_ffi()),
             )
         });
         let instances = &self.instances;
@@ -3142,7 +3244,7 @@ impl VisualWorld {
                 tex,
                 inst.texture_filtering as u8,
                 sanitize_quant_steps(inst.quant_steps).to_bits(),
-                inst.anime_shading.key_bits(),
+                inst.material_instance.map(|id| id.data().as_ffi()),
             )
         });
         let background_occluded_lit_draw_order = &self.background_occluded_lit_order;
@@ -3186,7 +3288,7 @@ impl VisualWorld {
                 r.mesh.0,
                 inst.texture_filtering as u8,
                 sanitize_quant_steps(inst.quant_steps).to_bits(),
-                inst.anime_shading.key_bits(),
+                inst.material_instance.map(|id| id.data().as_ffi()),
             )
         });
 
@@ -3222,7 +3324,7 @@ impl VisualWorld {
                 tex,
                 inst.texture_filtering as u8,
                 sanitize_quant_steps(inst.quant_steps).to_bits(),
-                inst.anime_shading.key_bits(),
+                inst.material_instance.map(|id| id.data().as_ffi()),
             )
         });
         Self::build_phase_render_stream(
@@ -3296,7 +3398,7 @@ impl VisualWorld {
                 tex,
                 inst.texture_filtering as u8,
                 sanitize_quant_steps(inst.quant_steps).to_bits(),
-                inst.anime_shading.key_bits(),
+                inst.material_instance.map(|id| id.data().as_ffi()),
             )
         });
         Self::build_phase_render_stream(
@@ -3323,7 +3425,7 @@ impl VisualWorld {
                 r.mesh.0,
                 inst.texture_filtering as u8,
                 sanitize_quant_steps(inst.quant_steps).to_bits(),
-                inst.anime_shading.key_bits(),
+                inst.material_instance.map(|id| id.data().as_ffi()),
             )
         });
         // Build the DFS render stream for the overlay phase.
@@ -3414,6 +3516,7 @@ impl VisualWorld {
 
         let idx = self.instances.len();
         self.instances.push(VisualInstance {
+            component: cid,
             renderable,
             transform,
             color,
@@ -3435,7 +3538,7 @@ impl VisualWorld {
             texture,
             texture_filtering: TextureFiltering::default(),
             quant_steps: sanitize_quant_steps(quant_steps),
-            anime_shading: AnimeShadingParams::default(),
+            material_instance: None,
             toon_outline: None,
             transmission: [1.5, 0.1, 1.0, 0.02],
             transmission_roughness: 0.0,
@@ -3473,21 +3576,75 @@ impl VisualWorld {
         }
     }
 
-    pub fn update_anime_shading(
+    pub fn bind_material_instance(
         &mut self,
         handle: InstanceHandle,
-        anime_shading: AnimeShadingParams,
+        material: Option<MaterialInstanceId>,
     ) -> bool {
-        if let Some(&idx) = self.handle_to_index.get(&handle) {
-            if self.instances[idx].anime_shading == anime_shading {
-                return true;
-            }
-            self.instances[idx].anime_shading = anime_shading;
-            self.dirty_draw_cache = true;
-            true
-        } else {
-            false
+        if material.is_some_and(|id| self.materials.instance(id).is_none()) {
+            return false;
         }
+        let Some(&idx) = self.handle_to_index.get(&handle) else {
+            return false;
+        };
+        if self.instances[idx].material_instance != material {
+            if let Some(previous) = self.instances[idx].material_instance {
+                if let Some(consumers) = self.material_consumers.get_mut(previous) {
+                    consumers.retain(|&consumer| consumer != handle);
+                }
+            }
+            if let Some(id) = material {
+                if self.material_consumers.get(id).is_none() {
+                    self.material_consumers.insert(id, Vec::new());
+                }
+                self.material_consumers.get_mut(id).unwrap().push(handle);
+            }
+            self.instances[idx].material_instance = material;
+            self.dirty_draw_cache = true;
+        }
+        true
+    }
+
+    pub fn anime_shading(&self, handle: InstanceHandle) -> Option<AnimeShadingParams> {
+        let instance = self.instance(handle)?;
+        Some(
+            instance
+                .material_instance
+                .and_then(|id| self.materials.instance(id))
+                .map_or_else(AnimeShadingParams::default, |record| record.parameters),
+        )
+    }
+
+    pub fn remove_material_source(&mut self, source: ComponentId) {
+        let Some(id) = self.materials.remove_source(source) else {
+            return;
+        };
+        let consumers = self.material_consumers.remove(id).unwrap_or_default();
+        for consumer in consumers {
+            if let Some(&index) = self.handle_to_index.get(&consumer) {
+                let instance = &mut self.instances[index];
+                instance.material_instance = None;
+                instance.renderable.material = match instance.renderable.material {
+                    super::MaterialHandle::ANIME_MESH => super::MaterialHandle::TOON_MESH,
+                    super::MaterialHandle::SKINNED_ANIME_MESH => {
+                        super::MaterialHandle::SKINNED_TOON_MESH
+                    }
+                    other => other,
+                };
+                self.dirty_draw_cache = true;
+            }
+        }
+    }
+
+    pub(crate) fn material_consumer_components(
+        &self,
+        id: MaterialInstanceId,
+    ) -> impl Iterator<Item = ComponentId> + '_ {
+        self.material_consumers
+            .get(id)
+            .into_iter()
+            .flatten()
+            .filter_map(|&handle| self.instance(handle).map(|instance| instance.component))
     }
 
     pub fn update_toon_outline(
@@ -3520,6 +3677,11 @@ impl VisualWorld {
                 vertex_count: self.instances[idx].deformed_count,
             });
 
+            if let Some(id) = self.instances[idx].material_instance {
+                if let Some(consumers) = self.material_consumers.get_mut(id) {
+                    consumers.retain(|&consumer| consumer != handle);
+                }
+            }
             self.instances.swap_remove(idx);
 
             if idx < self.instances.len() {
@@ -3778,7 +3940,7 @@ impl VisualWorld {
             let texture = self.instances[idx].texture;
             let texture_filtering = self.instances[idx].texture_filtering;
             let quant_steps = self.instances[idx].quant_steps;
-            let anime_shading = self.instances[idx].anime_shading;
+            let material_instance = self.instances[idx].material_instance;
             let toon_outline = self.instances[idx].toon_outline;
             let transmission = self.instances[idx].transmission;
             let transmission_roughness = self.instances[idx].transmission_roughness;
@@ -3791,6 +3953,7 @@ impl VisualWorld {
             let stencil_ref = self.instances[idx].stencil_ref;
             let is_stencil_clip = self.instances[idx].is_stencil_clip;
             self.instances[idx] = VisualInstance {
+                component: self.instances[idx].component,
                 renderable,
                 transform,
                 color,
@@ -3804,7 +3967,7 @@ impl VisualWorld {
                 texture,
                 texture_filtering,
                 quant_steps,
-                anime_shading,
+                material_instance,
                 toon_outline,
                 transmission,
                 transmission_roughness,

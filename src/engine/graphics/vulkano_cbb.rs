@@ -92,7 +92,7 @@ impl VulkanoState {
         let mut bound_texture: Option<TextureHandle> = None;
         let mut bound_filtering: Option<TextureFiltering> = None;
         let mut bound_quant: Option<u32> = None;
-        let mut bound_anime: Option<[u32; 12]> = None;
+        let mut bound_instance = None;
 
         for batch in batches {
             let pipeline = self.pipeline_for_material(
@@ -109,20 +109,20 @@ impl VulkanoState {
             let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
             let filtering = batch.texture_filtering;
             let quant_bits = batch.quant_steps.to_bits();
-            let anime_bits = batch.anime_shading.key_bits();
+            let material_instance = batch.material_instance;
 
             if bound_material != Some(batch.material)
                 || bound_texture != Some(texture_handle)
                 || bound_filtering != Some(filtering)
                 || bound_quant != Some(quant_bits)
-                || bound_anime != Some(anime_bits)
+                || bound_instance != Some(material_instance)
             {
                 let Some(material_set) = self.get_or_create_material_set(
                     batch.material,
                     texture_handle,
                     filtering,
                     batch.quant_steps,
-                    batch.anime_shading,
+                    batch.material_instance,
                 )?
                 else {
                     continue;
@@ -140,7 +140,7 @@ impl VulkanoState {
                 bound_texture = Some(texture_handle);
                 bound_filtering = Some(filtering);
                 bound_quant = Some(quant_bits);
-                bound_anime = Some(anime_bits);
+                bound_instance = Some(material_instance);
             }
 
             let Some(mesh) = self.meshes.get(&batch.mesh) else {
@@ -268,7 +268,7 @@ impl VulkanoState {
         let mut bound_texture: Option<TextureHandle> = None;
         let mut bound_filtering: Option<TextureFiltering> = None;
         let mut bound_quant: Option<u32> = None;
-        let mut bound_anime: Option<[u32; 12]> = None;
+        let mut bound_instance = None;
 
         for op in ops {
             match op {
@@ -299,7 +299,7 @@ impl VulkanoState {
                         texture_handle,
                         inst.texture_filtering,
                         inst.quant_steps,
-                        inst.anime_shading,
+                        inst.material_instance,
                     )?
                     else {
                         continue;
@@ -355,20 +355,20 @@ impl VulkanoState {
                     let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
                     let filtering = batch.texture_filtering;
                     let quant_bits = batch.quant_steps.to_bits();
-                    let anime_bits = batch.anime_shading.key_bits();
+                    let material_instance = batch.material_instance;
 
                     if bound_material != Some(batch.material)
                         || bound_texture != Some(texture_handle)
                         || bound_filtering != Some(filtering)
                         || bound_quant != Some(quant_bits)
-                        || bound_anime != Some(anime_bits)
+                        || bound_instance != Some(material_instance)
                     {
                         let Some(material_set) = self.get_or_create_material_set(
                             batch.material,
                             texture_handle,
                             filtering,
                             batch.quant_steps,
-                            batch.anime_shading,
+                            batch.material_instance,
                         )?
                         else {
                             continue;
@@ -384,7 +384,7 @@ impl VulkanoState {
                         bound_texture = Some(texture_handle);
                         bound_filtering = Some(filtering);
                         bound_quant = Some(quant_bits);
-                        bound_anime = Some(anime_bits);
+                        bound_instance = Some(material_instance);
                     }
 
                     if batch.stencil_ref > 0 {
@@ -437,7 +437,7 @@ impl VulkanoState {
                         texture_handle,
                         inst.texture_filtering,
                         inst.quant_steps,
-                        inst.anime_shading,
+                        inst.material_instance,
                     )?
                     else {
                         continue;
@@ -805,26 +805,26 @@ impl VulkanoState {
         let mut bound_texture: Option<TextureHandle> = None;
         let mut bound_filtering: Option<TextureFiltering> = None;
         let mut bound_quant: Option<u32> = None;
-        let mut bound_anime: Option<[u32; 12]> = None;
+        let mut bound_instance = None;
 
         for batch in transparent_multi_batches {
             let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
             let filtering = batch.texture_filtering;
             let quant_bits = batch.quant_steps.to_bits();
-            let anime_bits = batch.anime_shading.key_bits();
+            let material_instance = batch.material_instance;
 
             if bound_material != Some(batch.material)
                 || bound_texture != Some(texture_handle)
                 || bound_filtering != Some(filtering)
                 || bound_quant != Some(quant_bits)
-                || bound_anime != Some(anime_bits)
+                || bound_instance != Some(material_instance)
             {
                 let Some(material_set) = self.get_or_create_material_set(
                     batch.material,
                     texture_handle,
                     filtering,
                     batch.quant_steps,
-                    batch.anime_shading,
+                    batch.material_instance,
                 )?
                 else {
                     continue;
@@ -853,7 +853,7 @@ impl VulkanoState {
                 bound_texture = Some(texture_handle);
                 bound_filtering = Some(filtering);
                 bound_quant = Some(quant_bits);
-                bound_anime = Some(anime_bits);
+                bound_instance = Some(material_instance);
             }
 
             let Some(mesh) = self.meshes.get(&batch.mesh) else {

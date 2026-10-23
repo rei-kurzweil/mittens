@@ -76,6 +76,18 @@ Map changes refresh calibration and release previously owned joints.
 Rust diagnostics are available through `SystemWorld.humanoid_crouch.status(id)`
 and `.feet(id)`: support zone/height, base and solved soles, penetration, knee
 flexion and residual. A dedicated MMS diagnostic panel remains follow-up work.
+
+Debug visualization decision (2026-10-23): crouch foot/target markers should use
+AVC's existing `ik_debug` switch, alongside arm-chain diagnostics. Currently that
+switch draws the existing IKChain visuals only; native crouch visualization is
+not implemented yet. Show each foot's predicted base sole, desired support target
+and solved sole, with connecting lines exposing correction and residual error.
+The desired support target and bounded solve result must remain distinguishable
+when a depth/reach limit prevents contact. Native constraints should share the
+IK debug drawing helpers without requiring generated IKChain objects. Keep the
+visuals runtime-only and release them when disabled or their avatar is removed.
+The MMS readout panel complements these spatial markers.
+
 Use normal `mittens-corp`, `rei(mu)` or `bisket-vr-demo` for remaining headset
 checks with a calibrated XR floor: standing → crouch → hold → stand, then physical
 rise, look/roll, walking, button jump/fall and car entry/exit. The initial report

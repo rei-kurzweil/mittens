@@ -1,5 +1,6 @@
-//! Bounded ownership of immutable material descriptor sets. Command buffers keep
-//! their own Arc references, so eviction never mutates data used by a GPU frame.
+//! Bounded ownership of material bindings and structural resource variants.
+//! Descriptor snapshots keep their own Arc references in command buffers;
+//! eviction drops cache ownership without changing resources used by a GPU frame.
 use std::collections::HashMap;
 use std::hash::Hash;
 
@@ -50,6 +51,18 @@ impl<K: Copy + Eq + Hash, V> MaterialCache<K, V> {
         }
         self.clock += 1;
         self.entries.insert(key, (self.clock, value));
+    }
+
+    pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
+        self.clock += 1;
+        if let Some((last_used, value)) = self.entries.get_mut(key) {
+            *last_used = self.clock;
+            self.hits += 1;
+            Some(value)
+        } else {
+            self.misses += 1;
+            None
+        }
     }
 
     pub fn retain(&mut self, mut keep: impl FnMut(&K, &V) -> bool) {

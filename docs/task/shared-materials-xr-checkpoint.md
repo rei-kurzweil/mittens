@@ -1,8 +1,14 @@
 # Shared Shading: first VR checkpoint
 
 Date: 2026-10-22
-Status: first leaf-Shading sharing checkpoint confirmed in VR by the user; further source work on hold.
+Status: first sharing checkpoint and second internal-instance checkpoint accepted in VR by the user.
 Parent: [multi-parent declarations](multi-parent-components-and-material-sharing.md).
+
+2026-10-23: work resumed at the user's request. The
+[second VR checkpoint](material-instances-anime-vr-checkpoint.md) introduces
+retained family/definition/instance records and bounded GPU bindings behind the
+same scene, with a new shared-pulse control. The user has now accepted that
+updated scene too; generic parameters/resolution remain unfinished.
 
 2026-10-22 headset follow-up: the original scene omitted the driven Transform
 below each XRHand, leaving stationary scene-root lasers. The
@@ -12,9 +18,9 @@ confirmed that pointer interaction and the sharing workflow work in VR.
 
 The existing single-parent automated checks are the accepted starting baseline.
 Manual mittens-corp vehicle validation no longer blocks this material slice.
-The first VR test is complete. Keep implementation on hold at the user's request;
-this follow-up updates documentation only. Generic material-instance storage,
-custom programs, the LED wave and the burning shader remain future slices.
+The first VR test is complete. The internal material-instance foundation is now
+implemented for Anime/Toon. Custom programs, the LED wave and the burning shader
+remain future slices after the second checkpoint.
 
 ## User-confirmed headset result
 
@@ -32,18 +38,25 @@ reported success. The broader multi-parent and material-system work remains open
 
 | Term | Materials v3 responsibility | Current implementation |
 | --- | --- | --- |
-| Material family | Shared geometry/shader interface, supported standard instance inputs, state profiles and renderer capabilities/pass contracts | Proposed; no generic family records or IDs |
-| Material definition | A built-in/custom program selection implementing a family, with its additional input schema, defaults and supported state/capabilities | Fixed built-in `Material` shader-path records and `MaterialHandle`s exist; the generic v3 definition registry is pending |
-| Material instance | Stable identity and retained mutable values/resource bindings for a definition, shared by its consumers | An authored Shading component has stable component identity and shared mutable settings; a generic renderer MaterialInstance record/ID and bounded mutable GPU storage are pending |
-| Renderable/GPU instance | One drawable's geometry, transform and standard per-renderable properties such as color, opacity and emissive intensity | Existing renderable/VisualWorld instances; distinct from a shared material instance |
+| MaterialBase | Shared geometry/shader interface, supported standard instance inputs, state profiles and renderer capabilities/pass contracts | Current Rust name `MaterialFamily`; initial fixed-mesh metadata implemented, broader contract pending |
+| Material (the definition) | Shader/program choice with its input schema and defaults within the base contract | Current Rust name `MaterialDefinition`; Anime/Toon records implemented, generic data/custom programs pending |
+| Material instance | Stable identity and retained mutable values/resource bindings for a definition, shared by its consumers | One retained renderer instance ID per initialized authored Shading source; bounded mutable Anime/Toon GPU bindings |
+
+These are exactly three layers. MaterialBase is the new name for MaterialFamily;
+Material and material definition refer to the same middle layer. A renderable/GPU
+instance identifies a drawable (geometry, transform, color, opacity, emissive
+intensity) that consumes a material instance; it is not a fourth material layer.
 
 For the three test objects, there are two authored Shading sources: one shared
 by the cube and middle sphere, and one owned by the rightmost sphere. All three
 use the same built-in Anime shader path and retain separate renderable instances.
-Anime settings are still copied into per-renderable state, and GPU bindings are
-cached by material/texture/settings values. Successful source sharing does not
-mean the v3 family/definition/instance renderer refactor has happened. That is
-the next implementation slice when work resumes.
+At the first checkpoint, Anime settings were copied into per-renderable state
+and GPU bindings were cached by parameter values. The second checkpoint now
+stores a material-instance ID in renderables/batches and reads retained shared
+values through that ID. Scalar revisions no longer create value-keyed bindings.
+The retained values/defaults and upload packing still use the Anime-specific
+schema; the Shading-to-material integration is a compatibility bridge, not a
+completed generic authoring/resolution system.
 
 Agreed later consumers remain the LED and burning materials. The LED wave uses
 shared time/scalar controls and continuous strip UVs on combined LED geometry,
@@ -117,10 +130,11 @@ baseline either; four audio-device/microphone tests were skipped after stalling.
 The new attachment event's payload/documentation check passes. Formatting and
 diff whitespace checks pass.
 
-This is the primitive/Anime proof. Generic material IDs, bounded mutable GPU
-uniform storage, GLTF projection and CombineMesh sharing, broad graph event/query
-semantics, graph performance benchmarks and custom materials remain subsequent
-slices. Existing Anime descriptor caching still uses parameter values.
+The second checkpoint adds material IDs, bounded mutable GPU uniform storage
+and source-linked GLTF material consumption. CombineMesh sharing, broad graph
+event/query semantics, graph performance benchmarks and custom materials remain
+subsequent slices. The original automated evidence above records the first
+checkpoint; new renderer validation is recorded in the second checkpoint.
 
 Graph-preserving save/clone is pending. Serialization explicitly rejects a
 subtree containing a multiply attached declaration, preventing silent conversion
