@@ -311,16 +311,13 @@ impl World {
     /// All attachment parents, without allocating. Shared declarations do not
     /// inherit a transform or scope from an arbitrarily selected parent.
     pub fn parents_of(&self, c: ComponentId) -> impl Iterator<Item = ComponentId> + '_ {
-        self.get_component_record(c)
-            .and_then(|n| n.parent)
+        let node = self.get_component_record(c);
+        let additional = node
+            .filter(|n| n.has_additional_parents)
+            .and_then(|_| self.additional_parents.get(&c));
+        node.and_then(|n| n.parent)
             .into_iter()
-            .chain(
-                self.additional_parents
-                    .get(&c)
-                    .into_iter()
-                    .flatten()
-                    .map(|edge| edge.parent),
-            )
+            .chain(additional.into_iter().flatten().map(|edge| edge.parent))
     }
 
     pub fn attachment_between(
@@ -335,6 +332,9 @@ impl World {
                 child,
                 revision: node.attachment_revision,
             });
+        }
+        if !node.has_additional_parents {
+            return None;
         }
         self.additional_parents
             .get(&child)?
@@ -356,10 +356,10 @@ impl World {
 
     /// Allocation-free reference to the current incoming attachment.
     pub fn attachment_of(&self, child: ComponentId) -> Option<AttachmentRef> {
-        if self.get_component_record(child)?.has_additional_parents {
+        let node = self.get_component_record(child)?;
+        if node.has_additional_parents {
             return None;
         }
-        let node = self.get_component_record(child)?;
         Some(AttachmentRef {
             parent: node.parent?,
             child,
@@ -526,13 +526,13 @@ impl World {
         parent: ComponentId,
         child: ComponentId,
     ) -> Result<(), &'static str> {
-        if self.get_component_record(parent).is_none() {
-            return Err("parent does not exist");
-        }
+        let parent_node = self
+            .get_component_record(parent)
+            .ok_or("parent does not exist")?;
         if self.get_component_record(child).is_none() {
             return Err("child does not exist");
         }
-        if self.additional_parents.contains_key(&parent) {
+        if parent_node.has_additional_parents {
             return Err("shared Shading declarations must remain leaves");
         }
         if parent == child {
@@ -605,7 +605,10 @@ impl World {
         child: ComponentId,
         new_parent: Option<ComponentId>,
     ) -> Result<(), &'static str> {
-        if self.additional_parents.contains_key(&child) {
+        if self
+            .get_component_record(child)
+            .is_some_and(|node| node.has_additional_parents)
+        {
             return Err(
                 "set_parent is ambiguous for a shared declaration; use detach_child or detach_all_parents",
             );
@@ -618,13 +621,13 @@ impl World {
             Some(parent) => {
                 // Explicit structural movement never adds another attachment.
                 if self.is_shading_declaration(child) {
-                    if self.get_component_record(parent).is_none() {
-                        return Err("parent does not exist");
-                    }
+                    let parent_node = self
+                        .get_component_record(parent)
+                        .ok_or("parent does not exist")?;
                     if parent == child || self.is_ancestor_of(child, parent) {
                         return Err("cycle detected");
                     }
-                    if self.additional_parents.contains_key(&parent) {
+                    if parent_node.has_additional_parents {
                         return Err("shared Shading declarations must remain leaves");
                     }
                     self.detach_from_parent(child);
@@ -651,12 +654,17 @@ impl World {
         if self.attachment_between(parent, child).is_none() {
             return false;
         }
-        let inline = self.get_component_record(child).unwrap().parent == Some(parent);
+        let node = self.get_component_record(child).unwrap();
+        let inline = node.parent == Some(parent);
+        let has_additional_parents = node.has_additional_parents;
         if inline {
-            let replacement = self
-                .additional_parents
-                .get_mut(&child)
-                .and_then(|edges| edges.pop());
+            let replacement = if has_additional_parents {
+                self.additional_parents
+                    .get_mut(&child)
+                    .and_then(|edges| edges.pop())
+            } else {
+                None
+            };
             if let Some(node) = self.get_component_record_mut(child) {
                 node.parent = replacement.map(|edge| edge.parent);
                 if let Some(edge) = replacement {
@@ -666,10 +674,11 @@ impl World {
         } else if let Some(edges) = self.additional_parents.get_mut(&child) {
             edges.retain(|edge| edge.parent != parent);
         }
-        if self
-            .additional_parents
-            .get(&child)
-            .is_some_and(Vec::is_empty)
+        if has_additional_parents
+            && self
+                .additional_parents
+                .get(&child)
+                .is_some_and(Vec::is_empty)
         {
             self.additional_parents.remove(&child);
             self.get_component_record_mut(child)

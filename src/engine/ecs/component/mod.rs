@@ -396,6 +396,8 @@ pub struct ComponentNode {
     pub(super) parent: Option<crate::engine::ecs::ComponentId>,
     /// Changed by World whenever the incoming structural attachment changes.
     pub(super) attachment_revision: u64,
+    /// True exactly when World stores additional incoming edges in its sidecar.
+    /// Ordinary topology operations use this to skip sidecar lookups.
     pub(super) has_additional_parents: bool,
     pub(super) children: Vec<crate::engine::ecs::ComponentId>,
     pub initialized: bool,

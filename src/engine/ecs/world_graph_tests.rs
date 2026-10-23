@@ -41,6 +41,16 @@ mod tests {
             w.attachment_is_live(c_edge),
             "promoting an inline edge preserves its revision"
         );
+        assert!(w.detach_child(b, source));
+        assert!(!w.attachment_is_live(b_edge));
+        assert!(w.attachment_is_live(c_edge));
+        assert_eq!(w.parent_of(source), Some(c));
+        assert_eq!(w.parents_of(source).collect::<Vec<_>>(), vec![c]);
+        assert_eq!(w.attachment_of(source), Some(c_edge));
+        assert_eq!(w.attachment_between(b, source), None);
+        w.add_child(b, source).unwrap();
+        let b_edge = w.attachment_between(b, source).unwrap();
+        assert_eq!(w.parent_of(source), None);
         w.add_child(a, source).unwrap();
         assert!(!w.attachment_is_live(original));
         assert!(!w.detach_child(a, b));
