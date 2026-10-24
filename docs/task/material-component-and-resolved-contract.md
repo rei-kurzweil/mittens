@@ -23,8 +23,12 @@ separate pending work. See the [implemented language boundary](../../crates/meow
 The subsequent [record/type/value proposal](../../crates/meow-meow-script/docs/draft/record-types-and-values.md)
 revises definition schemas to colon-style type expressions, with commas allowed.
 That `TypeExpression` AST/resolution foundation remains pending; primitive tags
-alone do not implement it. Settle the record-role ambiguities before continuing
-the Material API. No code changes are part of this revision.
+alone do not implement it. The later first-slice decision allows a current-grammar
+f32 declaration builder or names-only list on MaterialDefinition: each MMS author
+chooses field names/count, every field is f32, and shader reflection validates
+the schema/layout. This narrow API can precede type expressions and the open
+record-role semantics. The colon-style examples below describe the eventual
+generic API. No code changes are part of this revision.
 
 ## Authoring decision (2026-10-23)
 
@@ -198,9 +202,11 @@ insufficient.
   and per-view resources. Link to the existing material/resource-graph ticket.
 - [ ] Specify definition/instance/resolved-record schemas, capability constraints,
   authored vs renderer-owned fields, retained generation, and serialization.
-- [ ] Resolve the record-role design gate, then implement the constructor
-  overloads and definition/type-expression versus instance/value records above
-  after the MMS type-expression/resolution foundation; freeze the exact
+- [ ] Implement the f32-only constructor/schema slice with MMS-authored custom
+  field names/count using existing grammar, independent of type-expression work.
+  Preserve the definition/schema versus instance/value ownership above.
+- [ ] For the later colon-style generic API, resolve the record-role design gate
+  and implement the MMS type-expression/resolution foundation; freeze the exact
   descriptor-table shape and finite `f32` setter/readback validation. Full
   source annotations/static checking are not prerequisites. Phase 1 GPU fields
   support f32 only; vectors/colors, matrices, integer/boolean fields,

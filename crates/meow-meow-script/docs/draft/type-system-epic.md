@@ -25,6 +25,12 @@ Current primitive tags and equals-style table storage remain implemented;
 the new record syntax and restrictions are not. This revision supersedes
 equals-style type-tag tables as the proposed material schema syntax.
 
+The later f32-only material scope can proceed independently: MMS authors declare
+custom names and different field counts per definition through existing grammar,
+with f32 implicit in the declaration API. The backend still resolves/validates
+a real schema and GPU layout. This does not implement type expressions or
+depend on the open dual-role record behavior.
+
 ## Runtime type-tag direction (2026-10-14)
 
 Revised 2026-10-23: lowercase exports and distinct tag/numeric identity below

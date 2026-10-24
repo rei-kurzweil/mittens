@@ -118,7 +118,8 @@ requires runtime rig/hardware evidence in addition to deterministic replay tests
   replaces MaterialFamily. The [MMS authoring contract](../../material-component-and-resolved-contract.md#authoring-decision-2026-10-23)
   specifies definition/type-expression and instance/value records and constructor
   overloads. The [record/type/value design](../../../../crates/meow-meow-script/docs/draft/record-types-and-values.md)
-  remains under review before further implementation.
+  remains under review for the generic colon-style API; the f32-only first slice
+  can use existing-grammar declarations independently.
 
 - [ ] [Prepare the four-strip custom-materials example](../../custom-materials-led-strip-example-preparation.md):
   LED-only combined geometry with `animated_led_strip`, separate Toon backings,
@@ -128,8 +129,10 @@ requires runtime rig/hardware evidence in addition to deterministic replay tests
   Prove an opaque static custom fragment with named scalar defaults, explicit
   FrameTick updates, shared/independent instances, and bounded GPU uploads.
   Lowercase first-class type-tag imports/values and host transport are implemented
-  as one prerequisite. Colon-style schema `TypeExpression` AST/resolution and
-  the record-role design gate remain pending; full numeric
+  as one prerequisite. MMS authors choose field names/count per definition,
+  with all custom fields f32; a declaration builder or names-only list avoids
+  waiting for colon-style TypeExpression AST/resolution. The record-role design
+  gate and full numeric
   annotations/precise `typeof` are separate MMS work. Richer GPU field types
   and emission are subsequent material slices.
 

@@ -19,10 +19,13 @@ before definition schema tables. Those tags may include f32/vector identities
 without implementing all corresponding GPU field types in this first proof.
 The primitive tag-value/import/storage/transport prerequisite is implemented.
 The subsequent [record-role revision](../../crates/meow-meow-script/docs/draft/record-types-and-values.md)
-changes definition fields to colon-style type expressions. Settle that design
-and its `TypeExpression` AST/resolution before implementing the Material API;
-tag storage alone is insufficient. MaterialDefinition/Material and shader
-reflection/upload remain pending.
+proposes colon-style schemas for the eventual generic API. The later scope
+clarification selects a narrower first slice: MMS authors declare a variable
+number of custom-named fields per MaterialDefinition, all restricted to f32.
+Use an ordinary builder or names-only declaration API supported by the current
+grammar. This needs a real retained schema and GPU layout validation, but not
+the pending `TypeExpression` AST or record-role semantics.
+MaterialDefinition/Material and shader reflection/upload remain pending.
 Full source annotations, numeric default initialization and precise numeric
 `typeof` are separate MMS work, not required to pass explicit initial values.
 
@@ -42,23 +45,36 @@ the new path. Reuse the loading/validation/storage tests from the earlier
 
 ## Input and authoring contract
 
-Every authored shader input is a named finite `f32` with a default. Support
-more than one such field if the schema/storage path naturally permits it, but
-the first example needs just `time_seconds`. Definitions declare types using
-colon-style type expressions resolving imported type identities; Material
-instances provide actual initial values through equals-style fields.
+The MMS author declares the names and count of each definition's custom fields.
+Every field has type f32 in this slice; instances supply finite initial values
+and subsequent updates. Supporting different definitions with different names
+and field counts is required, not an optional extension of a hard-coded
+`time_seconds` field. A compiled definition's schema is fixed; changing a value
+does not add, remove or rename fields.
+
+Shader reflection checks the MMS-authored schema against the declared shader
+interface and supplies/validates byte offsets, block size and binding layout.
+It does not replace the author's field declaration with a fixed engine field
+list or silently rename inputs. Fields may occupy a single material uniform
+buffer binding; a distinct Vulkan descriptor per float is not required, and
+compatible descriptor-set layouts may be shared.
+
+The exact declaration spelling remains open. A definition-specific f32 builder
+or names-only list is enough; do not require colon-style type expressions or
+resurrect the earlier combined `Material.custom` definition/instance API.
+Instances continue to supply ordinary equals-style value tables.
 
 Illustrative syntax to freeze during implementation, not available MMS API:
 
 ```mms
-import { f32 } from "types"
-
 let definition = MaterialDefinition(MaterialBase())
     .fragment("assets/shaders/mms-time-test.frag")
-    .descriptor_set({ time_seconds: f32 })
+    .input_f32("time_seconds")
+    .input_f32("speed")
+    .input_f32("intensity")
 
 let animated_material = Material(definition)
-    .descriptor_set({ time_seconds = 0.0 })
+    .descriptor_set({ time_seconds = 0.0, speed = 1.0, intensity = 1.0 })
 
 R.cube() { animated_material }
 R.sphere() { animated_material }
@@ -69,6 +85,11 @@ on_global("FrameTick", fn(event) {
     animated_material.set_input("time_seconds", animation.elapsed_seconds)
 })
 ```
+
+The `.input_f32(name)` declaration method above is a candidate spelling, not
+implemented or frozen API. It declares a field on a definition; values belong
+to the Material instance. A names-only declaration list could express the same
+contract without new language syntax.
 
 `Material(base)` is also the selected shorthand for an instance with an implicit
 definition: `.fragment(...)` supplies its program and `.descriptor_set(...)`
@@ -130,11 +151,14 @@ material instance. Preserve this wrapper through baking and test direct-child
 Material attachment on a renderable as the other supported authoring form.
 
 - [ ] Construction and retained f32 get/set work in top-level and runtime MMS.
-- [ ] Definition schemas resolve colon-style `f32` type expressions, while
-  Material records accept numeric initial values. Reject type tags where
-  ordinary values are required; type-expression support is not satisfied by
-  an untyped map containing tags.
-  Verify explicit definition construction and the implicit-definition shorthand.
+- [ ] MMS-authored definitions declare different custom names and field counts,
+  with every declared field constrained to f32. Verify one-field and multi-field
+  definitions and reject duplicates or incompatible shader declarations. No
+  TypeExpression syntax is required for this first slice.
+- [ ] Material records accept finite numeric initial values and updates; reject
+  unknown names and type tags where ordinary values are required. Verify explicit
+  definition construction and the implicit-definition shorthand without confusing
+  declared field names with mutable instance values.
 - [ ] Invalid/nonfinite/out-of-range conversion, unknown fields, incompatible
   shader layouts, and failed compilation produce useful errors/fallback.
 - [ ] Shared consumers stay synchronized; independent instance values stay

@@ -9,8 +9,10 @@ names the three layers MaterialBase, MaterialDefinition and Material (instance).
 Definition schemas use colon-style type expressions resolving lowercase
 imported type identities; Material records use equals-style initial values.
 This follows the later [record/type/value revision](../../../crates/meow-meow-script/docs/draft/record-types-and-values.md),
-whose mixed forms and dual roles remain under review. Primitive tags and a
-real `TypeExpression`/schema-resolution foundation precede this API; typed numeric
+whose mixed forms and dual roles remain under review. A real `TypeExpression`
+foundation precedes that generic schema syntax. The later first-slice decision
+allows MMS-authored field names/count through an existing-grammar declaration
+API, with every field f32, before type expressions are available. Typed numeric
 defaults/precise `typeof` are separate language work. No generic authoring API
 is implemented by that documentation update. The subsequent primitive MMS
 tag-value slice is now implemented: lowercase imports, identity equality,
@@ -286,10 +288,12 @@ reuse is separate from material/state inheritance.
 ## LED strip and input update contract
 
 First establish [Phase 1: f32-only time animation](../material-f32-time-animation-first-slice.md)
-on opaque static geometry. Imported lowercase type identities and the agreed
-type-expression/record-resolution slice are the definition-schema prerequisites;
-the record-role design gate is still open. Full source annotations/static
-checking are separate language work. Explicit initial values/setter updates
+on opaque static geometry. The MMS author chooses a different field-name set
+and count for each definition, with all custom fields f32. An ordinary f32
+declaration builder or names-only list establishes the retained schema; shader
+reflection validates its names, types and GPU layout. Type expressions and the
+record-role design gate are not prerequisites for this narrow API. Full source
+annotations/static checking are separate language work. Explicit initial values/setter updates
 are sufficient; callbacks stored
 as material inputs and automatic renderer/global bindings are not first-phase
 prerequisites. The LED example

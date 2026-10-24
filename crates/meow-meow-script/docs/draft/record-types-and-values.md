@@ -193,6 +193,14 @@ operation via its corresponding view is part of the open dual-role design.
 GPU reflection/layout validation and packing remain necessary regardless of
 source syntax. The Material API is not implemented.
 
+Later first-slice clarification: custom materials need not wait for this record
+syntax. MMS authors can declare a variable number of custom-named fields on
+each definition using an ordinary builder or names-only list, with every field
+f32 initially. Reflection validates that author-declared schema and the GPU
+layout; instances supply numeric values. This exercises custom material storage
+without implementing or deciding the ambiguous record roles above. The eventual
+colon-style API still depends on this proposal's design gate.
+
 ## Current implementation and next design gate
 
 Primitive `f32`, `vec2`, `vec3`, `vec4` and `str` tag values/imports, table
