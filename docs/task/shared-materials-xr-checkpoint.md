@@ -39,11 +39,13 @@ reported success. The broader multi-parent and material-system work remains open
 | Term | Materials v3 responsibility | Current implementation |
 | --- | --- | --- |
 | MaterialBase | Shared geometry/shader interface, supported standard instance inputs, state profiles and renderer capabilities/pass contracts | Current Rust name `MaterialFamily`; initial fixed-mesh metadata implemented, broader contract pending |
-| Material (the definition) | Shader/program choice with its input schema and defaults within the base contract | Current Rust name `MaterialDefinition`; Anime/Toon records implemented, generic data/custom programs pending |
-| Material instance | Stable identity and retained mutable values/resource bindings for a definition, shared by its consumers | One retained renderer instance ID per initialized authored Shading source; bounded mutable Anime/Toon GPU bindings |
+| MaterialDefinition | Shader/program choice with its typed input schema within the base contract | Current Rust name `MaterialDefinition`; Anime/Toon records implemented, generic data/custom programs pending |
+| Material (the instance) | Stable identity and retained mutable values/resource bindings for a definition, shared by its consumers | Current Rust name `MaterialInstance`; one retained renderer instance ID per initialized authored Shading source; bounded mutable Anime/Toon GPU bindings |
 
 These are exactly three layers. MaterialBase is the new name for MaterialFamily;
-Material and material definition refer to the same middle layer. A renderable/GPU
+the later 2026-10-23 authoring decision names the middle layer MaterialDefinition
+and the instance Material. See the [constructor/type-table contract](material-component-and-resolved-contract.md#authoring-decision-2026-10-23).
+A renderable/GPU
 instance identifies a drawable (geometry, transform, color, opacity, emissive
 intensity) that consumes a material instance; it is not a fourth material layer.
 
@@ -61,7 +63,7 @@ completed generic authoring/resolution system.
 Agreed later consumers remain the LED and burning materials. The LED wave uses
 shared time/scalar controls and continuous strip UVs on combined LED geometry,
 with a separate backing material and no per-LED CPU animation. Burning needs
-independent progress and airflow values per renderable, a UV burn direction,
+independent progress and airflow values per cigarette Material instance, a UV burn direction,
 and matching cutout/glow boundaries in color, depth and emission. These are
 future slices after the instance foundation and custom-program/emission work.
 

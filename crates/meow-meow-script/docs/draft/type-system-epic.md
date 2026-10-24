@@ -1,6 +1,7 @@
 # MMS type-system epic
 
-Status: canonical draft; implementation has not started.
+Status: canonical draft; implementation has not started. Type-tag spelling,
+numeric defaults and nullability decisions updated 2026-10-23.
 
 MMS remains gradually typed: annotations are optional, and unannotated code
 keeps today's dynamic behavior. This epic owns the implementation order. The
@@ -8,43 +9,79 @@ focused drafts beside it own syntax and boundary details.
 
 ## Runtime type-tag direction (2026-10-14)
 
+Revised 2026-10-23: lowercase exports and distinct tag/numeric identity below
+supersede the earlier capitalized-tag examples.
+
 Future runtime inspection should return a first-class, immutable type-tag value,
 not an allocated type-name string. The intended inspection spelling is
 `typeof(value)`. This is proposed API, not implemented syntax. `is_string(value)`
 remains the supported pure predicate for current dynamic factories.
 
 V1 requires an explicit import to refer to tag constants. The language-owned
-`"types"` module exports capitalized names, initially including `String`:
+`"types"` module exports lowercase names matching annotation spellings. This
+replaces the earlier capitalized `String` proposal. Material schemas motivate
+initial `f32`, `vec2`, `vec3` and `vec4` tags; `mat4` is a candidate extension
+whose element order and GPU layout must be specified before material use.
+String inspection uses `str`, consistent with its annotation spelling.
 
 ```mms
 // Proposed first type-tag slice; not supported by the current runtime.
-import { String } from "types"
+import { f32, vec2, vec3, vec4, str } from "types"
 
-if typeof(title) == String {
-    // String is a type-tag value, not the string literal "String".
+if typeof(title) == str {
+    // str is a type-tag value, not a string containing a type name.
 }
+
+f32 == f32  // true
+f32 != 0.0  // true
+f32 != 1.0  // true
+```
+
+The additional typed-value target, after numeric identity and default
+initialization are implemented, is:
+
+```mms
+import { f32 } from "types"
+
+let some_type = f32
+let some_value: f32  // Default initialization to the f32 value 0.0.
+
+some_value != some_type          // true
+typeof(some_value) == some_type  // true
 ```
 
 Named aliases use the existing import form, e.g.
-`import { String as StringType } from "types"`. An alias retains the same tag
-identity. No automatic global `String` or `Types` binding is part of V1.
-Qualified access such as `Types.String` is a follow-up using an explicitly
+`import { f32 as float_type } from "types"`. An alias retains the same tag
+identity. No automatic global type-tag or `Types` binding is part of V1.
+Qualified access such as `Types.f32` is a follow-up using an explicitly
 imported module namespace; its import syntax remains to be decided. MMS has
 modules, and this design does not require a package system.
 
-Tags need an explicit runtime value representation and comparable identity.
-Primitive tags can be enum-like values; nominal/compound tags must reuse the
-shared registry's type/declaration identities. Equality compares tags/IDs,
+Tags need an explicit runtime value representation and comparable identity,
+separate from ordinary numbers. An internal numeric tag/registry ID is allowed,
+but `TypeTag(id)` is not `Number(id)`: a tag never equals a number, and arithmetic
+on a tag is an error. Tags are immutable first-class values: ordinary bindings,
+table fields and imports can carry them. Primitive tags can be enum-like
+values; nominal/compound tags must reuse the shared registry's type/declaration
+identities. Equality compares tags/IDs,
 not formatted names, Rust debug output, or public numeric ordinals. Display
 names belong in diagnostics. Keep coarse value-kind checks distinct from
 concrete nominal identity and define that boundary before exposing more tags.
-Capitalized tag exports do not rename canonical annotation types such as `str`.
+Lowercase exports and annotation names refer to the same canonical types;
+an expression such as `let some_type = f32` stores a tag, while `: f32`
+constrains and initializes a numeric value rather than storing the tag.
 
-The first slice depends on retained runtime value information and module
-exports, not optional annotations, a static checker, or pattern matching.
+The tag-value/schema slice depends on tag identity and module exports, not
+optional annotations, a static checker, or pattern matching.
 Do not claim numeric-width or array-element precision the current value does
-not retain. Distinguishing intentionally deferred components from live handles
-must remain possible through a documented lifecycle/kind contract; inspection
+not retain. Current `Value::Number(f64)` and arrays do not preserve f32/vector
+identity. The typed example above additionally requires annotated/default
+initialization to produce a value retaining its declared type; binding-only
+metadata is insufficient for `typeof` after passing or copying that value.
+Defining a vector tag does not itself implement vector arithmetic or make an
+ordinary array report that vector type. Distinguishing intentionally deferred
+components from live handles must remain possible through a documented
+lifecycle/kind contract; inspection
 must not become a workaround for broken live-binding provenance.
 
 Before implementation, freeze the initial export set, equality/error rules,
@@ -53,14 +90,38 @@ must produce an actionable name/type error in a tag comparison instead of
 silently comparing an unresolved symbolic identifier. Preserve existing
 enum-like identifier uses outside that context.
 
-Exit checks: imported `String` and an alias compare equal to the tag returned
+Exit checks: imported `str` and an alias compare equal to the tag returned
 for a string; a component compares differently; unimported tag names fail;
 ordinary variable bindings preserve tag identity; repeated inspection and
-equality do not allocate type-name strings or require host inspection. Full
+equality do not allocate type-name strings or require host inspection. Imported
+`f32` equals itself and its aliases, differs from every number and other type
+tags, and rejects arithmetic. Schema tables retain tags without string/numeric
+substitutes. Precise `typeof` on an f32-typed value is a separate gate requiring
+retained numeric identity; it must not be claimed by the tag-only slice. Full
 annotations and matching remain later work. The
 [runtime configuration epic](../../../../docs/meow_meow/task/epic/runtime-configuration-frontends-types-and-method-dispatch.md#phase-6-runtime-type-foundation)
 and [component lifecycle/introspection task](../../../../docs/task/mms-live-component-handles-and-pattern-matching.md)
 consume this direction.
+
+## Initialization and nullability decision (2026-10-23)
+
+A typed numeric declaration without an initializer uses that numeric type's
+zero value: `let amount: f32` means an f32 value initialized to `0.0`, not an
+undefined value, a type tag, or null. Numeric types are never nullable.
+
+Nullability is an explicit option only for functions, tables and lists. Empty
+tables/lists differ from null: empty means present with no entries, null means
+absent. Do not silently make those categories nullable or substitute null for
+a missing initializer. Types without a defined default require an initializer;
+defaults for nonnumeric categories remain to be specified. There is no implicit
+undefined value. The `null` literal already exists in the current runtime;
+these annotation/default/nullability rules are proposed, not implemented.
+
+Nullable annotation spelling remains open. The existing `T?` grammar is a
+candidate, not permission to make arbitrary types nullable. Numeric nullable
+forms, including a union with null, must be rejected. See
+[typed declarations](typed-declarations-and-functions.md) and
+[compound types](compound-types.md).
 
 ## Source contract
 

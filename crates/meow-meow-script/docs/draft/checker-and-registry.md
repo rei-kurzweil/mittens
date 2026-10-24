@@ -15,15 +15,21 @@ use spans and show a value path for compound failures.
 
 The [runtime type-tag direction](type-system-epic.md#runtime-type-tag-direction-2026-10-14)
 uses this same identity model for first-class tag values. The proposed
-`typeof(value)` result compares against capitalized exports imported from the
-language-owned `"types"` module, e.g. `String`. Imported aliases preserve tag
+`typeof(value)` result compares against lowercase exports imported from the
+language-owned `"types"` module, e.g. `str` and `f32`. Imported aliases preserve tag
 identity; equality must not compare names or expose numeric registry slots as
-the source API. V1 requires imports, with no ambient `String`/`Types` binding.
+the source API. A numeric internal type ID never makes a tag equal to a number.
+V1 requires imports, with no ambient type-tag/`Types` binding.
 Qualified module access is later work, without introducing packages. Define
 coarse-kind versus precise nominal tags, compatibility with canonical type
 names such as `str`, and registry/session lifetime before implementing them.
-This runtime inspection slice does not depend on static inference or annotation
-syntax. Keep `is_string(value)` supported in the meantime.
+The tag-value/coarse inspection slice does not depend on static inference or
+annotation syntax. Precise numeric/vector inspection requires values retaining
+that identity; ordinary `Number(f64)`/array contents must not be used to guess
+it. Typed numeric declarations default to zero and never permit null. Only
+functions, tables and lists may explicitly be nullable; see the linked epic
+for initialization rules and the still-open nullable spelling. Keep
+`is_string(value)` supported in the meantime.
 
 Gradual mode infers what it can and permits dynamic/unknown values at
 unannotated sites. Annotated boundaries always validate. Strict mode rejects

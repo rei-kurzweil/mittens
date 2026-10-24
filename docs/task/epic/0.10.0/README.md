@@ -114,7 +114,9 @@ requires runtime rig/hardware evidence in addition to deterministic replay tests
   accepted by the user, who reports the updated scene works. Generic
   parameter/default storage, resolution, base-driven state/features and custom
   program validation remain pending. The selected three-layer naming is
-  MaterialBase -> Material -> MaterialInstance; MaterialBase replaces MaterialFamily.
+  MaterialBase -> MaterialDefinition -> Material (the instance); MaterialBase
+  replaces MaterialFamily. The [MMS authoring contract](../../material-component-and-resolved-contract.md#authoring-decision-2026-10-23)
+  specifies definition/type-tag and instance/value tables and constructor overloads.
 
 - [ ] [Prepare the four-strip custom-materials example](../../custom-materials-led-strip-example-preparation.md):
   LED-only combined geometry with `animated_led_strip`, separate Toon backings,
@@ -123,7 +125,9 @@ requires runtime rig/hardware evidence in addition to deterministic replay tests
 - [ ] First custom-program phase: [f32-only material time animation](../../material-f32-time-animation-first-slice.md).
   Prove an opaque static custom fragment with named scalar defaults, explicit
   FrameTick updates, shared/independent instances, and bounded GPU uploads.
-  Richer MMS/material types and emission are subsequent slices.
+  Lowercase first-class type tags are an authoring prerequisite; full numeric
+  annotations/precise `typeof` are separate MMS work. Richer GPU field types
+  and emission are subsequent material slices.
 
 - [ ] Complete the release scope of
   [custom materials and renderer capabilities](../custom-materials.md):

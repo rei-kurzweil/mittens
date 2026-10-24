@@ -39,7 +39,16 @@ by accidental equivalence between declarations.
 
 ## Nullable, intersections, and unions
 
-`T?` admits `null`. `A & B` requires both constraints; this is the primary way
+As of 2026-10-23, only functions, tables and lists may explicitly admit `null`.
+Numeric types are never nullable, including through unions with null. Empty
+tables/lists are present values and differ from null. `T?` remains candidate
+syntax, restricted to permitted categories if selected; the exact spelling
+and treatment of compound types still need to be settled. Do not infer that
+strings, type tags, structs, components or every reference-like runtime variant
+are nullable. The current `null` literal exists independently of this planned
+annotation feature.
+
+`A & B` requires both constraints; this is the primary way
 to compose structural record requirements. `A | B` admits either member.
 Precedence is postfix, then intersection, then union.
 

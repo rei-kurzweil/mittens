@@ -4,11 +4,19 @@ Date: 2026-10-09
 Status: shared declarations and built-in instance foundation accepted in VR; generic parameter/resolution migration and custom programs remain pending.
 Release: [mittens-engine 0.10.0](0.10.0/README.md).
 
+2026-10-23 authoring revision: [the MMS material contract](../material-component-and-resolved-contract.md#authoring-decision-2026-10-23)
+names the three layers MaterialBase, MaterialDefinition and Material (instance).
+Definition tables contain lowercase imported type tags; Material tables contain
+initial values. First-class MMS tags precede these schema tables; typed numeric
+defaults/precise `typeof` are separate language work. No generic authoring API
+is implemented by this documentation update.
+
 2026-10-10 first-phase decision: [f32 time-animation proof](../material-f32-time-animation-first-slice.md)
 is the first testable custom-program slice, after the internal instance/family
 foundation below. Authored shader inputs support
-only finite `f32` values initially. Broader MMS type integration, additional
-input types/providers, and renderer emission follow after that proof.
+only finite `f32` GPU fields initially. Beyond the type-tag prerequisite,
+broader MMS type integration, additional input types/providers, and renderer
+emission follow after that proof.
 
 ## Outcome
 
@@ -49,10 +57,11 @@ that integration plan, not a second competing program registry.
 
 The user reports that the updated material-instance test scene works. Both VR
 checkpoints are accepted. The selected model has exactly three layers:
-**MaterialBase -> Material -> MaterialInstance**. MaterialBase renames the earlier
-MaterialFamily concept; it is not an additional layer. Material is the definition
-(currently `MaterialDefinition` in Rust). Source names are unchanged in this
-documentation pass.
+**MaterialBase -> MaterialDefinition -> Material**. MaterialBase renames the earlier
+MaterialFamily concept; it is not an additional layer. The later MMS discussion
+selected Material for the instance (currently `MaterialInstance` in Rust),
+superseding the earlier Material-as-definition naming. Source names are
+unchanged in this documentation pass.
 
 The registry/identity/revision/binding foundation is implemented, but the data
 and integration remain specialized: instance parameters and definition defaults
@@ -139,7 +148,7 @@ This audit is read-only source inspection, not runtime renderer validation.
 These are specific coupling points to audit; this epic does not claim that all
 renderer variants or post-processing behavior were validated in this docs pass.
 
-## MaterialBase, Material, and MaterialInstance
+## MaterialBase, MaterialDefinition, and Material
 
 First internal prerequisite: [stable material instances and base contracts](../material-instances-and-family-contracts.md).
 Anime provides the built-in prototype. Introduce stable generation-safe handles,
@@ -149,14 +158,14 @@ definitions select programs and additional inputs. Consuming emissive intensity
 and opting into extraction/Bloom are separate declarations.
 
 Keep exactly three authored material identities separate. MaterialBase replaces
-the earlier MaterialFamily name; Material and material definition are the same
-middle layer:
+the earlier MaterialFamily name; MaterialDefinition is the middle layer and
+Material is the concrete scene-facing instance:
 
 | Record | Responsibility |
 | --- | --- |
 | `MaterialBase` | Renderer interfaces, supported instance inputs/features, renderer state/configuration contract and required resources; current Rust name is `MaterialFamily` |
-| `Material` | Shader/program selection, parameter schema/defaults and supported choices within the base contract; current Rust record name is `MaterialDefinition` |
-| `MaterialInstance` | Stable shared authored identity, current typed values/resource bindings, explicit update bindings and generation/dirty state |
+| `MaterialDefinition` | Shader/program selection, parameter types/layout and supported choices within the base contract; current Rust record name is `MaterialDefinition` |
+| `Material` | Stable shared authored identity, initial/current typed values and resource bindings, explicit updates and generation/dirty state; current Rust record name is `MaterialInstance` |
 
 `ResolvedMaterial` / the draw contract is a derived resolution result, not a
 fourth authored layer. It records the selected material/instance plus resolved
@@ -178,8 +187,16 @@ unrestricted Vulkan state or arbitrary user-declared render passes.
 
 ## High-level authoring and granular controls
 
-Use `Material.custom(...)` for a full custom material, and a built-in material
-constructor/selection path for built-ins. `Shading.anime()`/`.toon()` configure
+Use `MaterialDefinition(base)` to author a reusable shader/schema and
+`Material(definition)` to construct independent instances. `Material(base)`
+creates an instance with an implicit definition; `MaterialBase()` selects the
+default surface without extraction or transmission. Without customization,
+use its standard default shading implementation. `.fragment(...)` configures
+the implicit definition, while `.descriptor_set(...)` on Material supplies
+initial values validated against the shader's declared types. Definition
+tables contain type tags instead. See the [authoring contract](../material-component-and-resolved-contract.md#authoring-decision-2026-10-23)
+for sharing, initial values and open descriptor-layout details.
+`Shading.anime()`/`.toon()` configure
 the surface model in that same resolved contract. Existing color, texture,
 emissive, alpha/cutout and other components remain useful granular overrides
 when supported by the selected definition.
@@ -195,8 +212,9 @@ when supported by the selected definition.
 Illustrative Phase 1 forms, with constructor spelling still proposed:
 
 ```mms
-Material.custom("assets/shaders/animated-led-strip.frag")
-    .input_f32("time_seconds", 0.0) {
+Material(MaterialBase())
+    .fragment("assets/shaders/animated-led-strip.frag")
+    .descriptor_set({ time_seconds = 0.0 }) {
     CombineMesh {
         // All LED rectangles resolve this same material instance.
         R.cube() {}
@@ -205,8 +223,9 @@ Material.custom("assets/shaders/animated-led-strip.frag")
 }
 
 R.cube() {
-    Material.custom("assets/shaders/animated-led-strip.frag")
-        .input_f32("time_seconds", 0.0)
+    Material(MaterialBase())
+        .fragment("assets/shaders/animated-led-strip.frag")
+        .descriptor_set({ time_seconds = 0.0 })
 }
 ```
 
@@ -227,7 +246,8 @@ now support simultaneous attachments through the
 [multi-parent component refactor](../multi-parent-components-and-material-sharing.md).
 The shared Anime case is user-confirmed in VR. The public Material component
 and its generic renderer instance bridge remain pending; do not infer an
-implemented `Material.custom` API or MaterialInstance registry from that proof.
+implemented generic Material API from that proof. The second checkpoint does
+provide the built-in renderer instance registry under existing Rust names.
 Reference bindings and generated projections must share the source instance
 rather than create additional Material instances when that bridge is introduced.
 
@@ -258,21 +278,26 @@ reuse is separate from material/state inheritance.
 ## LED strip and input update contract
 
 First establish [Phase 1: f32-only time animation](../material-f32-time-animation-first-slice.md)
-on opaque static geometry. Explicit default/setter updates are sufficient;
-callbacks stored as material inputs, generic type declarations, and automatic
-renderer/global bindings are not first-phase prerequisites. The LED example
+on opaque static geometry. Imported lowercase type tags are the definition-table
+prerequisite; full source annotations/static checking are separate language
+work. Explicit initial values/setter updates are sufficient; callbacks stored
+as material inputs and automatic renderer/global bindings are not first-phase
+prerequisites. The LED example
 below adds renderer emission in a subsequent slice.
 
 Desired shape, **not valid committed MMS syntax**:
 
 ```mms
-let light_strip_material = Material.custom({
-    emissive = true
-    fragment_stage = "assets/shaders/led_light_strip.frag"
-    inputs = {
-        glow_amount = 0.0  // schema declares f32 and validation
-    }
-})
+import { f32 } from "types"
+
+// extraction_base is an engine-provided extraction-capable MaterialBase;
+// its lookup spelling and extraction program contract remain to be specified.
+let light_strip_definition = MaterialDefinition(extraction_base)
+    .fragment("assets/shaders/led_light_strip.frag")
+    .descriptor_set({ glow_amount = f32 })
+
+let light_strip_material = Material(light_strip_definition)
+    .descriptor_set({ glow_amount = 0.0 })
 ```
 
 An illustrative explicit update path:
@@ -284,8 +309,9 @@ on_global("FrameTick", fn(event) {
 ```
 
 The function and material methods here are proposed. Avoid requiring typed MMS
-field declarations or arbitrary callbacks merely to prove one float upload.
-Freeze actual constructor/schema syntax in the foundation ticket.
+annotations or arbitrary callbacks merely to prove one float upload. Runtime
+type-tag values for schema tables are required; they are distinct from source
+annotations. Freeze remaining descriptor-table/layout details in the authoring ticket.
 
 Distinguish four input sources: literal defaults, explicit retained setters/
 animation channels, renderer-owned globals, and optional script/provider
@@ -313,8 +339,8 @@ whether positive visible emission also needs an authored extraction opt-out.
 This review feeds the emission slice; it does not block the opaque f32 proof.
 
 Separate visible emission, emission radiance/intensity, eligibility for emission
-extraction, and bloom enable/configuration. `emissive = true` is shorthand for
-a declared supported capability; it is not sufficient shader output by itself
+extraction, and bloom enable/configuration. An extraction-capable MaterialBase
+declares the supported capability; it is not sufficient shader output by itself
 and does not turn bloom on globally. `Emissive` sets supported instance/material
 intensity; `EmissivePass`/Bloom remain renderer/post-process configuration.
 

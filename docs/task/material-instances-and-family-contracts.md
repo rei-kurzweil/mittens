@@ -15,9 +15,12 @@ control exercises sustained updates. The user subsequently confirmed that the
 updated scene works. Record that foundation as accepted without treating it as
 completion of generic material values, authoring or renderer feature selection.
 
-Naming decision: exactly three layers, **MaterialBase -> Material ->
-MaterialInstance**. MaterialBase is the new name for MaterialFamily, not another
-layer. Material is the definition; MaterialDefinition is its current Rust name.
+Naming decision (revised by the later MMS discussion): exactly three layers,
+**MaterialBase -> MaterialDefinition -> Material**. MaterialBase is the new name
+for MaterialFamily, not another layer. Material is the concrete instance;
+MaterialInstance remains its current Rust name. Definitions declare field types,
+instances supply values. The [authoring contract](material-component-and-resolved-contract.md#authoring-decision-2026-10-23)
+records constructor overloads, default `MaterialBase()` and lowercase type tags.
 Source symbols/file paths retain their existing names until a source refactor.
 The [checkpoint's specialization inventory](material-instances-anime-vr-checkpoint.md)
 records Anime-typed parameters/defaults, fixed upload packing and Shading-specific
@@ -55,9 +58,9 @@ source names:
 
 - `MaterialFamilyId` (target name `MaterialBaseId`): shared interface/input/pass
   and renderer state/configuration contract.
-- `MaterialDefinitionId` (the Material): built-in program selection and defaults
+- `MaterialDefinitionId` (the MaterialDefinition): built-in program selection and defaults
   now; validated custom programs/input schemas remain pending.
-- `MaterialInstanceId`: stable mutable values/resource bindings for one definition.
+- `MaterialInstanceId` (the public Material): stable mutable values/resource bindings for one definition.
 
 The existing renderable `InstanceHandle` identifies a drawable's geometry,
 transform and standard per-renderable properties plus its selected material
@@ -87,10 +90,10 @@ Structural ECS components remain single-parent. Leaf Shading declarations now
 support multiple attachments through the linked graph task, so repeating one
 live Shading handle beneath unrelated renderables shares its component identity
 and settings. Wrapper inheritance also shares a source within one subtree.
-`Material.custom` itself and the generic renderer material records remain
-pending. Multiple Shading attachments do not construct another authored source;
-the v3 bridge must preserve that ownership rule when it introduces renderer
-material-instance IDs. Broader sharing must preserve structural movement,
+The public `Material` / `MaterialDefinition` components and generic parameter
+schemas remain pending. Multiple Shading attachments do not construct another
+authored source; the existing instance-ID bridge preserves that ownership rule.
+Broader sharing must preserve structural movement,
 lifetime and performance contracts without picking an arbitrary first parent.
 
 Dirty tracking uploads values to bounded frame-safe slots; it must not overwrite

@@ -325,13 +325,26 @@ twice.
       display strings as final dispatch identity.
 - [ ] Add first-class immutable runtime type-tag values and equality by tag/
       registry identity. Follow the [canonical type-tag direction](../../../../crates/meow-meow-script/docs/draft/type-system-epic.md#runtime-type-tag-direction-2026-10-14):
-      proposed `typeof(value)` returns a tag; V1 references capitalized
+      proposed `typeof(value)` returns a tag; V1 references lowercase
       constants through explicit imports such as
-      `import { String } from "types"`, with existing named aliases supported.
-      No ambient `String` or `Types` binding, package system, annotations,
+      `import { f32, vec2, vec3, vec4 } from "types"` (and `str` for string
+      inspection), with existing named aliases supported. Tags are distinct
+      runtime values even if their internal identities are numeric: `f32 == f32`,
+      but a tag never equals an ordinary number and cannot be used in arithmetic.
+      `mat4` is a candidate once its order/layout contract is specified.
+      No ambient type-tag or `Types` binding, package system, annotations,
       pattern matching, or new namespace-import grammar is required for V1.
-      Qualified access such as `Types.String` is a later module-namespace
+      Qualified access such as `Types.f32` is a later module-namespace
       feature. Reuse the same registry and keep names for display/diagnostics.
+- [ ] Implement typed numeric default initialization without an initializer:
+      `let value: f32` produces an f32 zero value, while `let kind = f32`
+      stores a type tag. `typeof(value) == kind` requires the value to retain
+      numeric type identity through passing/copying; current `Number(f64)`
+      storage cannot provide this precision by itself.
+- [ ] Enforce the 2026-10-23 nullability decision: numeric types never accept
+      null. Only functions, tables and lists may explicitly allow it; spelling
+      and nonnumeric defaults remain open. Never silently initialize a binding
+      to undefined; a type without a defined default needs an initializer.
 - [ ] Keep tables and any dynamic host values representable through `any`
       until more precise information is available.
 - [ ] Normalize table/object transport and other plain-data seams enough that
@@ -340,8 +353,10 @@ twice.
 This phase does not require structs, arbitrary unions, an LSP, or
 user-authored generic functions.
 
-The type-tag inspection slice may land independently of the full numeric/type
-foundation: expose only distinctions retained by current values. Keep the
+The type-tag/schema and coarse inspection slice may land independently of the
+full numeric/type foundation: expose only distinctions retained by current
+values. Defining f32/vector tags does not make existing numbers/arrays retain
+their precision or shape as runtime type identity. Keep the
 implemented `is_string(value)` predicate until general tags are available.
 Define primitive/coarse-kind versus precise nominal identity and component
 lifecycle inspection deliberately; do not mirror every Rust storage variant

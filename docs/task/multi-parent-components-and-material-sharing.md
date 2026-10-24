@@ -19,8 +19,10 @@ shared source from the other objects and reattaching both. The 2026-10-23
 material-instance IDs and bounded GPU bindings behind those same sources after
 the user resumed work. Broader graph migration and graph-preserving save/clone
 remain pending. The user has accepted the second checkpoint in VR. The selected
-three-layer names are MaterialBase -> Material -> MaterialInstance; MaterialBase
-renames MaterialFamily. The current record payload/packing and resolution still
+three-layer MMS names are MaterialBase -> MaterialDefinition -> Material (the
+instance); MaterialBase renames MaterialFamily. See the revised
+[authoring contract](material-component-and-resolved-contract.md#authoring-decision-2026-10-23).
+The current record payload/packing and resolution still
 need generalization beyond the Anime/Toon compatibility bridge.
 
 ## Goal

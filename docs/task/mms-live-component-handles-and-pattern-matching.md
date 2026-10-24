@@ -64,12 +64,12 @@ component handles across scene attachment and callback capture.
    - `ComponentObject` / live handles;
    - values captured by `on(...)` callbacks.
 3. Follow the [runtime type-tag direction](../../crates/meow-meow-script/docs/draft/type-system-epic.md#runtime-type-tag-direction-2026-10-14)
-   confirmed 2026-10-14: proposed `typeof(value)` returns a first-class,
+   confirmed 2026-10-14 and revised 2026-10-23: proposed `typeof(value)` returns a first-class,
    immutable type-tag value. Tags are referred to through explicit imports
-   from `"types"` in V1, with capitalized exports such as `String` and normal
+   from `"types"` in V1, with lowercase exports such as `str` and `f32` and normal
    import aliases. Compare tag identities, not strings or Rust debug output.
-   No automatic `String`/`Types` globals or package system are required;
-   qualified `Types.String` module access is a follow-up. Freeze the component
+   No automatic type-tag/`Types` globals or package system are required;
+   qualified `Types.str` module access is a follow-up. Freeze the component
    lifecycle/kind distinction and its tag or predicate spellings before
    implementing it; both deferred and live values must remain diagnosable.
    Concrete component type identity and deferred/live state are different

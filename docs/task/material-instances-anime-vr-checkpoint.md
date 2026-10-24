@@ -17,12 +17,19 @@ The selected terminology has exactly three layers:
 | Concept | Current Rust name | Responsibility |
 | --- | --- | --- |
 | `MaterialBase` | `MaterialFamily` / `MaterialFamilyId` | Renderer interfaces, supported features, render-state/configuration contract |
-| `Material` (the definition) | `MaterialDefinition` / `MaterialDefinitionId` | Shader/program choice, input schema and defaults within that contract |
-| `MaterialInstance` | `MaterialInstance` / `MaterialInstanceId` | Stable shared identity and independently mutable values/bindings for one material |
+| `MaterialDefinition` | `MaterialDefinition` / `MaterialDefinitionId` | Shader/program choice and typed input schema within that contract |
+| `Material` (the instance) | `MaterialInstance` / `MaterialInstanceId` | Stable shared identity and independently mutable values/bindings for one definition |
 
 `MaterialBase` replaces the earlier name `MaterialFamily`; they are the same
-concept, not two layers. Likewise, Material and material definition name the
-same middle layer. The current Rust names are recorded for accuracy; this
+concept, not two layers. The later 2026-10-23 MMS API discussion selected
+`Material` for the concrete instance, superseding the earlier Material-as-
+definition naming. `MaterialDefinition(base)` declares field types;
+`Material(definition)` supplies initial values. `Material(base)` creates an
+instance with an implicit definition; `MaterialBase()` is the default surface
+without extraction or transmission. See the
+[authoring contract](material-component-and-resolved-contract.md#authoring-decision-2026-10-23)
+for the proposed type-tag tables and constructor overloads. The current Rust
+names are recorded for accuracy; this
 documentation pass does not rename source symbols or add an abstraction.
 Renderer state/capability metadata is currently split between the family and
 definition records and still needs migration toward that base contract.
@@ -92,7 +99,7 @@ they are not counts of the three comparison objects or draw calls.
 ## Implemented representation
 
 - `MaterialFamilyId`, `MaterialDefinitionId`, and `MaterialInstanceId` are the
-  current source names for the base/material/instance IDs and use
+  current source names for the base/definition/instance IDs and use
   generation-checked arenas. The first base describes the versioned fixed
   mesh-instance interface. Anime and Toon have separate shared definitions,
   schemas/defaults, compatibility-state profiles and input/capability metadata.
@@ -130,7 +137,7 @@ they are not counts of the three comparison objects or draw calls.
 The registry and GPU path cover authored Anime/Toon sources and their existing
 static/cached-deformed programs. Unauthored built-in fallback draws retain the
 immutable descriptor cache. This is not the custom-program loader or MMS
-`Material.custom` API. Custom f32 schemas/reflection, custom LED/burning programs,
+`Material` / `MaterialDefinition` API. Custom f32 schemas/reflection, custom LED/burning programs,
 generalized emission extraction, CombineMesh source transfer and broad material
 serialization remain subsequent work. Existing emission classification still
 uses the built-in compatibility path; metadata does not change pass activation.

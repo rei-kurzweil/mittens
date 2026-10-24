@@ -1,7 +1,7 @@
 # Task: Material component and resolved material contract
 
 Date: 2026-10-09
-Status: proposed; no implementation in this documentation pass.
+Status: proposed authoring API, revised 2026-10-23; built-in sharing/instance foundation accepted in VR, generic components not implemented.
 Parent: [custom materials epic](epic/custom-materials.md).
 Release: [0.10.0](epic/0.10.0/README.md).
 
@@ -12,6 +12,114 @@ Implement the minimum anchor/resolution needed for its opaque static example
 before expanding to this task's full compatibility/cascade contract. The wider
 inventory can proceed independently; it must not turn Phase 1 into a wholesale
 material migration.
+
+## Authoring decision (2026-10-23)
+
+There are exactly three layers, with the following public MMS names. This
+supersedes the earlier Material-as-definition / MaterialInstance authoring
+proposal and the combined `Material.custom(...).input_f32(...)` examples.
+Current Rust source names remain unchanged in this documentation pass.
+
+| MMS type | Responsibility | Current Rust record |
+| --- | --- | --- |
+| `MaterialBase` | Read-only engine-provided renderer interfaces, features, state and resource contract | `MaterialFamily` |
+| `MaterialDefinition` | Authored program and field types/layout within a base | `MaterialDefinition` |
+| `Material` | Concrete shared scene component with independently mutable values/resource bindings | `MaterialInstance` |
+
+`MaterialBase()` selects the ordinary surface contract without emission
+extraction or transmission. The initial base choices are that default, a
+surface with extraction, and a transmissive surface; spellings for the latter
+two remain open. Visible-only emissive/unlit shading is definition behavior,
+not another base. The definition decides lighting interpretation, including
+whether illumination can brighten beyond authored albedo. Scene Bloom/pass
+activation remains separate from a base's extraction support.
+
+Construct a definition from a base and a material from a definition. Proposed
+syntax, not currently supported MMS API:
+
+```mms
+import { f32, vec2, vec3 } from "types"
+
+let definition = MaterialDefinition(MaterialBase())
+    .fragment(fragment_shader_uri)
+    .descriptor_set({
+        burn_progress = f32
+        airflow = f32
+        burn_direction = vec2
+        glow_color = vec3
+    })
+
+let cigarette = Material(definition)
+    .descriptor_set({
+        burn_progress = 0.0
+        airflow = 0.2
+        burn_direction = [1.0, 0.0]
+        glow_color = [1.0, 0.2, 0.0]
+    })
+
+let independent_cigarette = Material(definition)
+    .descriptor_set({
+        burn_progress = 0.4
+        airflow = 0.1
+        burn_direction = [1.0, 0.0]
+        glow_color = [1.0, 0.2, 0.0]
+    })
+```
+
+The definition's table contains immutable type-tag values; the material's
+table contains initial field values, validated against those types. Both are
+ordinary table expressions using `=`, not declaration annotations using `:`.
+Names and types must match the shader interface and base contract. This table
+shape is illustrative: literal descriptor-set/binding numbers, nested tables,
+resource entries, layout metadata and the precise validation API remain open.
+The engine owns GPU packing/alignment and renderer-reserved bindings.
+
+Initial schema tags are `f32`, `vec2`, `vec3` and `vec4`; `mat4` is a candidate
+after matrix ordering/layout is specified. See the
+[MMS type-tag/default/nullability contract](../../crates/meow-meow-script/docs/draft/type-system-epic.md#runtime-type-tag-direction-2026-10-14).
+Tags are first-class values distinct from numbers even if internally backed by
+numeric IDs. Supporting these schema tags does not commit the first custom
+shader upload proof to all those GPU field types; that proof remains f32-only.
+It also does not claim native vector/matrix arithmetic or precise vector
+`typeof` for an ordinary array.
+
+The convenient overload takes a base directly and creates an instance with
+an implicit definition:
+
+```mms
+let std_material = Material(MaterialBase())
+
+let animated_material = Material(MaterialBase())
+    .fragment(fragment_shader_uri)
+    .descriptor_set({
+        time_seconds = 0.0
+    })
+```
+
+Without customization, use the standard default shading implementation for
+the selected base. `.fragment(...)` configures the implicit definition, while
+`.descriptor_set(...)` on a Material always supplies values. This shorthand
+must obtain its field types from the shader interface/reflection and validate
+values against them, not infer the declared shader layout from sample values.
+It must not mutate another material's definition or a built-in preset.
+
+These constructor arguments are retained references, not structural parent
+edges or copies of the referenced object's mutable state. Bases and definitions
+must be usable without insertion into the scene tree. Only Material selects
+appearance through scene attachment. Every `Material(definition)` or
+`Material(base)` creates a new material-instance identity; reusing its live
+handle shares that instance. Independent instances can share definition,
+program and pipeline resources. Definition mutation/reload and compatibility
+rules after instances exist remain to be specified.
+
+Defaults and current values are separate from field types. The exact policy for
+omitted material fields remains to be specified; numeric defaults, if used,
+are their type's zero value, and resource/other fields without a defined default
+require an initial value. Numeric fields cannot contain null. Only functions,
+tables and lists may explicitly allow null under the future MMS type rules;
+that language rule does not authorize function-valued GPU uniforms or new
+material resource types. `.set_input(name, value)` remains the proposed explicit
+live update path; no closure executes during draw recording or on the GPU.
 
 ## Goal
 
@@ -33,27 +141,27 @@ instance, regardless of its parameter values. A separate constructor invocation
 owns a different instance even when all values match. Sharing the same source
 shares its instance; bindings/projections do not count as new material sources.
 
-Current ECS components have one parent; attaching the same live component at a
-second location reparents it. The current requested direction is
-[multi-parent component attachments](multi-parent-components-and-material-sharing.md),
-starting with material/shading declarations so repeated `R.cube() { shared }`
-can preserve both edges. Implement that graph prerequisite carefully; it is
-not working behavior today. A non-parenting material-source reference remains
-an alternative binding API if useful, not the required sharing solution.
-Historical candidate syntax, not implemented API:
+Structural ECS components remain single-parent; shared leaf Anime/Toon Shading
+declarations now preserve multiple attachments and passed both VR checkpoints.
+The public Material component must adopt that
+[multi-parent attachment contract](multi-parent-components-and-material-sharing.md)
+so repeated live child attachments preserve both edges. Broader spatial sharing
+is separate. Proposed Material attachment syntax, not implemented API:
 
 ```mms
-let shared = Material.custom("assets/shaders/animated-led-strip.frag")
-    .input_f32("time_seconds", 0.0)
-R.cube().material(shared) {}
-R.sphere().material(shared) {}
+let shared = Material(MaterialBase())
+    .fragment("assets/shaders/animated-led-strip.frag")
+    .descriptor_set({ time_seconds = 0.0 })
+R.cube() { shared }
+R.sphere() { shared }
 ```
 
-The proposed `.material(shared)` stores a reference and does not construct or
-reparent Material. Wrapper/direct-child declaration remains the ordinary
-topology form; define reference precedence/conflicts through the same resolver.
-Decide source-removal fallback and serialize a durable reference. No new
-MaterialInstance constructor or parameter-equality algorithm is needed.
+Wrapper/direct-child declaration remains the ordinary topology form. A future
+`.material(shared)` reference is optional and needs precedence/conflict rules
+through the same resolver. Decide source-removal fallback and serialize durable
+references. `Material` is already the instance constructor: there is no fourth
+layer or separate public `MaterialInstance` constructor. No parameter-equality
+algorithm is needed to establish sharing.
 For the selected multi-parent path, test repeated live child attachment itself
 and edge-specific removal in addition to renderer identity.
 
@@ -69,9 +177,11 @@ insufficient.
   and per-view resources. Link to the existing material/resource-graph ticket.
 - [ ] Specify definition/instance/resolved-record schemas, capability constraints,
   authored vs renderer-owned fields, retained generation, and serialization.
-- [ ] Freeze the first `Material.custom` schema/constructor and finite `f32`
-  input setter/readback syntax without requiring new typed MMS syntax.
-  Phase 1 supports f32 only; vectors/colors, matrices, integer/boolean fields,
+- [ ] Implement the constructor overloads and definition/type-tag versus
+  instance/value tables above after the MMS tag prerequisite; freeze the exact
+  descriptor-table shape and finite `f32` setter/readback validation. Full
+  source annotations/static checking are not prerequisites. Phase 1 GPU fields
+  support f32 only; vectors/colors, matrices, integer/boolean fields,
   arrays/structs, resource inputs, and stored callback bindings are later work.
 - [ ] Specify material wrapper/local selection, reuse of one live handle,
   independent instances, complete replacement, granular overrides/reset,
@@ -80,7 +190,7 @@ insufficient.
 - [ ] Test wrapper and direct-child forms, inherited material resolution for
   combined source geometry, and first-source instance transfer to the generated
   primitive without rebaking on parameter updates.
-- [ ] Specify/test non-parenting source references for cross-subtree sharing:
+- [ ] Specify/test live multi-parent attachments for cross-subtree sharing:
   one Material used by two renderables preserves both bindings and one logical
   renderer instance. Equal-valued separately instantiated Materials stay distinct.
 - [ ] Define `Shading` as a built-in surface configuration within this resolver;
