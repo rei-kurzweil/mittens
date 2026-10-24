@@ -2997,6 +2997,7 @@ fn value_as_u16(value: &Value) -> Result<u16, String> {
 fn value_display(val: &Value) -> String {
     match val {
         Value::Null => "null".into(),
+        Value::TypeTag(tag) => format!("<type {tag}>"),
         Value::Bool(b) => b.to_string(),
         Value::Number(n) => {
             if n.fract() == 0.0 && n.abs() < 1e15 {

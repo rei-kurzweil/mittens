@@ -23,6 +23,9 @@ V1 requires imports, with no ambient type-tag/`Types` binding.
 Qualified module access is later work, without introducing packages. Define
 coarse-kind versus precise nominal tags, compatibility with canonical type
 names such as `str`, and registry/session lifetime before implementing them.
+Primitive tags/imports/storage and typed host/callback transport are implemented
+as of 2026-10-23. Primitive IDs are fixed language-owned identities across
+sessions/hosts; nominal/compound registries and general `typeof` remain pending.
 The tag-value/coarse inspection slice does not depend on static inference or
 annotation syntax. Precise numeric/vector inspection requires values retaining
 that identity; ordinary `Number(f64)`/array contents must not be used to guess

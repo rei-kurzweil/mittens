@@ -19,6 +19,43 @@ Current crate-owned how-to documentation lives with the crate:
 - [Configuring a script host](../how_to/configuring_a_script_host.md)
 - [Using the standard host](../how_to/use_the_standard_host.md)
 
+## Type-tag values
+
+The language-owned `"types"` module exports immutable type tags. Import them
+explicitly using lowercase names:
+
+```mms
+import { f32, vec2, vec3, vec4, str } from "types"
+import { f32 as float_type } from "types"
+
+let some_type = f32
+let fields = {
+    progress = some_type
+    direction = vec2
+    color = vec3
+}
+
+some_type == float_type  // true
+fields.progress == f32  // true
+f32 != 0.0              // true
+f32 != 1.0              // true
+f32 != "f32"            // true
+f32 != vec2             // true
+```
+
+Tags are type identities, not numbers, strings or value constructors. They can
+be stored in tables/lists, captured by functions and passed through host APIs
+and callback payloads without losing their identity. Arithmetic, ordering and
+mutation of a tag are errors. The module is available without filesystem or
+host loading; it has only named exports, not positional or AST exports.
+
+These tags prepare material schema declarations. They do not change ordinary
+numeric/array values or implement typed annotations/defaults: `let value: f32`
+and `typeof(value)` remain planned, as do native vector/matrix values and
+`mat4`. Mittens JSON encoding rejects tags instead of coercing them to strings
+or numeric IDs. See the [type-system draft](../draft/type-system-epic.md)
+for the separate annotation, inspection and nullability work.
+
 The remaining host-neutral material under the workspace's `docs/meow_meow`
 directory will move into the crate incrementally; the
 [documentation-move tracker](../../../../docs/task/move-meow-meow-documentation-into-crate.md)

@@ -13,14 +13,14 @@ a string; components, numbers, tables, and other values return false. It makes
 dynamic string/component factory options possible without a host request or
 type-annotation parser changes.
 
-Future direction (2026-10-14): [first-class runtime type tags](../../../crates/meow-meow-script/docs/draft/type-system-epic.md#runtime-type-tag-direction-2026-10-14).
-The proposed `typeof(value)` returns a tag compared by identity. V1 requires
-explicit imports of lowercase constants (revised 2026-10-23), e.g.
-`import { str } from "types"` followed by `typeof(title) == str`;
-import aliases preserve that identity. No ambient type-tag or `Types` binding
-is introduced. Qualified `Types.str` access belongs to a later module-
-namespace slice, without requiring packages. These are planned APIs;
-`is_string` stays supported now. Diagnostic names are separate from tag equality.
+Current type-tag slice (2026-10-23): [first-class runtime type tags](../../../crates/meow-meow-script/docs/draft/type-system-epic.md#implemented-tag-value-boundary-2026-10-23).
+Explicit lowercase imports such as `import { f32, vec2, vec3, vec4, str } from
+"types"` provide immutable tag values. The language resolves this module without
+a host source request. Aliases, tables, closures and typed host/callback
+transport preserve tag identity. No ambient type-tag or `Types` binding is
+introduced. `typeof(value)` remains proposed; its result will compare against
+those identities. Qualified module access and type annotations are also later
+work. `is_string` stays supported now. Diagnostic names are separate from tag equality.
 Tags are distinct from numbers even if backed by numeric IDs. Numeric/vector
 tags used in material schemas do not imply that current f64 numbers or arrays
 retain precise f32/vector identity; typed-value inspection needs that additional

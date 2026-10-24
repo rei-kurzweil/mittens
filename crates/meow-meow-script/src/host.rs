@@ -96,6 +96,8 @@ pub enum TransportValue {
     Null,
     Bool(bool),
     Number(f64),
+    /// Retains type identity through schema tables, host calls and callbacks.
+    TypeTag(crate::TypeTag),
     String(String),
     Array(Vec<TransportValue>),
     Table(Vec<(String, TransportValue)>),

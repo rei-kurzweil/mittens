@@ -21,6 +21,7 @@ pub enum ComponentNamePolicy {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValueType {
     Any,
+    TypeTag,
     Null,
     Bool,
     /// Compatibility type for the pre-0.8 single-`f64` numeric surface.
@@ -51,6 +52,7 @@ impl ValueType {
                 (Self::Null, Value::Null)
                     | (Self::Bool, Value::Bool(_))
                     | (Self::Number, Value::Number(_))
+                    | (Self::TypeTag, Value::TypeTag(_))
                     | (Self::String, Value::String(_))
                     | (Self::Array, Value::Array(_))
                     | (Self::Table, Value::Map(_) | Value::Object(_))
@@ -89,6 +91,7 @@ impl ValueType {
     pub fn name(&self) -> &'static str {
         match self {
             Self::Any => "any",
+            Self::TypeTag => "type_tag",
             Self::Null => "null",
             Self::Bool => "bool",
             Self::Number => "number",

@@ -19,7 +19,7 @@ use crate::runtime::{
     Catalog, ComponentBodyMode, ComponentNamePolicy, ComponentOperationIds, ComponentSpec,
     SignalDeclaration, ValueSignature, api_key,
 };
-use crate::{MeowMeowParser, MeowMeowTokenizer, SourceId};
+use crate::{MeowMeowParser, MeowMeowTokenizer, SourceId, TypeTag};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum EvalError {
@@ -383,6 +383,11 @@ impl<'a, H: Host> Evaluator<'a, H> {
         items: &[ImportItem],
         specifier: &str,
     ) -> Result<Flow, EvalError> {
+        // This module belongs to the language, not a host filesystem or source
+        // loader. Primitive identities need no session-local allocation/cache.
+        if specifier == "types" {
+            return self.eval_type_import(ast, items);
+        }
         let response = self.dispatch(HostRequest::LoadSource {
             importer: self.source_id.clone(),
             specifier: specifier.into(),
@@ -493,6 +498,39 @@ impl<'a, H: Host> Evaluator<'a, H> {
             }
             self.module_cache.insert(loaded.identity, module);
         }
+        Ok(Flow::Continue)
+    }
+
+    fn eval_type_import(&mut self, ast: bool, items: &[ImportItem]) -> Result<Flow, EvalError> {
+        if ast {
+            return Err(EvalError::Runtime(
+                "the 'types' module exports type tags, not component templates; use import without ast"
+                    .into(),
+            ));
+        }
+        // Validate all imports before introducing bindings, including aliases.
+        let bindings = items
+            .iter()
+            .map(|item| {
+                let (name, local) = match item {
+                    ImportItem::Named(name) => (&name.0, &name.0),
+                    ImportItem::NamedAlias { name, alias } => (&name.0, &alias.0),
+                    ImportItem::PositionalAlias { .. } => {
+                        return Err(EvalError::Runtime(
+                            "the 'types' module has only named exports; use import { f32 } from \"types\""
+                                .into(),
+                        ));
+                    }
+                };
+                let tag = TypeTag::from_name(name).ok_or_else(|| {
+                    EvalError::Runtime(format!(
+                        "unknown type tag '{name}' in 'types'; available exports: f32, vec2, vec3, vec4, str"
+                    ))
+                })?;
+                Ok((local.clone(), Value::TypeTag(tag)))
+            })
+            .collect::<Result<Vec<_>, EvalError>>()?;
+        self.scopes.last_mut().unwrap().extend(bindings);
         Ok(Flow::Continue)
     }
 
@@ -1502,6 +1540,7 @@ impl<'a, H: Host> Evaluator<'a, H> {
             TransportValue::Null => Value::Null,
             TransportValue::Bool(value) => Value::Bool(value),
             TransportValue::Number(value) => Value::Number(value),
+            TransportValue::TypeTag(tag) => Value::TypeTag(tag),
             TransportValue::String(value) => Value::String(value),
             TransportValue::Array(values) => Value::Array(
                 values
@@ -1549,6 +1588,7 @@ impl<'a, H: Host> Evaluator<'a, H> {
             Value::Null => Ok(TransportValue::Null),
             Value::Bool(v) => Ok(TransportValue::Bool(v)),
             Value::Number(v) => Ok(TransportValue::Number(v)),
+            Value::TypeTag(tag) => Ok(TransportValue::TypeTag(tag)),
             Value::String(v) | Value::Identifier(v) => Ok(TransportValue::String(v)),
             Value::Array(values) => values
                 .into_iter()
@@ -1682,6 +1722,7 @@ pub(crate) fn transport_to_value(value: TransportValue) -> Result<Value, EvalErr
         TransportValue::Null => Value::Null,
         TransportValue::Bool(v) => Value::Bool(v),
         TransportValue::Number(v) => Value::Number(v),
+        TransportValue::TypeTag(tag) => Value::TypeTag(tag),
         TransportValue::String(v) => Value::String(v),
         TransportValue::Array(values) => Value::Array(
             values
@@ -1926,6 +1967,21 @@ fn number_array(value: &Value, context: &str) -> Result<Vec<f64>, EvalError> {
 }
 
 fn binary_values(op: &BinOpKind, lhs: Value, rhs: Value) -> Result<Value, EvalError> {
+    if matches!(op, BinOpKind::Eq | BinOpKind::NotEq) {
+        for (value, other) in [(&lhs, &rhs), (&rhs, &lhs)] {
+            if let Value::Identifier(name) = value
+                && (matches!(other, Value::TypeTag(_)) || TypeTag::from_name(name).is_some())
+            {
+                return Err(EvalError::Runtime(format!(
+                    "unbound type tag '{name}'; import the type from \"types\" before comparing it"
+                )));
+            }
+        }
+    } else if matches!(&lhs, Value::TypeTag(_)) || matches!(&rhs, Value::TypeTag(_)) {
+        return Err(EvalError::Runtime(
+            "type tags support identity equality, not arithmetic or ordering".into(),
+        ));
+    }
     match (op, lhs, rhs) {
         (BinOpKind::Add, Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)),
         (BinOpKind::Add, Value::String(a), b) => Ok(Value::String(a + &value_text(&b))),
@@ -1953,6 +2009,7 @@ fn value_text(value: &Value) -> String {
     match value {
         Value::String(s) | Value::Identifier(s) => s.clone(),
         Value::Number(n) => n.to_string(),
+        Value::TypeTag(tag) => format!("<type {tag}>"),
         Value::Bool(b) => b.to_string(),
         Value::Null => "null".into(),
         other => format!("{other:?}"),

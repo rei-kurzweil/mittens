@@ -323,12 +323,17 @@ twice.
       dynamic/heterogeneous values explicitly rather than guessing.
 - [ ] Give named components stable catalog type identities instead of using
       display strings as final dispatch identity.
-- [ ] Add first-class immutable runtime type-tag values and equality by tag/
-      registry identity. Follow the [canonical type-tag direction](../../../../crates/meow-meow-script/docs/draft/type-system-epic.md#runtime-type-tag-direction-2026-10-14):
-      proposed `typeof(value)` returns a tag; V1 references lowercase
+- [x] Add the first primitive immutable runtime type-tag values and equality
+      by identity (2026-10-23). `Value::TypeTag` / `TransportValue::TypeTag`
+      preserve tags through schemas, aliases, host calls and callbacks;
+      `ValueType::TypeTag` validates host signatures. Primitive identities are
+      fixed across sessions/hosts; nominal/compound registry types remain later
+      work. Follow the [canonical type-tag boundary](../../../../crates/meow-meow-script/docs/draft/type-system-epic.md#implemented-tag-value-boundary-2026-10-23):
+      V1 references lowercase
       constants through explicit imports such as
-      `import { f32, vec2, vec3, vec4 } from "types"` (and `str` for string
-      inspection), with existing named aliases supported. Tags are distinct
+      `import { f32, vec2, vec3, vec4, str } from "types"`, with existing named
+      aliases supported. The module belongs to the language and bypasses host
+      source loading. Tags are distinct
       runtime values even if their internal identities are numeric: `f32 == f32`,
       but a tag never equals an ordinary number and cannot be used in arithmetic.
       `mat4` is a candidate once its order/layout contract is specified.
@@ -336,6 +341,10 @@ twice.
       pattern matching, or new namespace-import grammar is required for V1.
       Qualified access such as `Types.f32` is a later module-namespace
       feature. Reuse the same registry and keep names for display/diagnostics.
+- [ ] Implement `typeof(value)` inspection using those tag identities. Freeze
+      the export/kind contract for component identity and deferred/live state;
+      precise numeric/vector tags require values retaining that information.
+      Keep `is_string(value)` available until general inspection is implemented.
 - [ ] Implement typed numeric default initialization without an initializer:
       `let value: f32` produces an f32 zero value, while `let kind = f32`
       stores a type tag. `typeof(value) == kind` requires the value to retain
@@ -357,7 +366,7 @@ The type-tag/schema and coarse inspection slice may land independently of the
 full numeric/type foundation: expose only distinctions retained by current
 values. Defining f32/vector tags does not make existing numbers/arrays retain
 their precision or shape as runtime type identity. Keep the
-implemented `is_string(value)` predicate until general tags are available.
+implemented `is_string(value)` predicate until general inspection is available.
 Define primitive/coarse-kind versus precise nominal identity and component
 lifecycle inspection deliberately; do not mirror every Rust storage variant
 as a public type or infer element/numeric types from sample contents.

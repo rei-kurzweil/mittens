@@ -27,7 +27,8 @@ Two declarations with equal fields remain different nominal types.
 ## Type values and default initialization (2026-10-23)
 
 Types also have immutable first-class tag values, imported using lowercase
-annotation spellings. Proposed syntax, not implemented:
+annotation spellings. Tag imports/values are implemented; annotations and the
+typed/default-initialized value example below remain proposed:
 
 ```mms
 import { f32 } from "types"

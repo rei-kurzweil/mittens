@@ -9,6 +9,7 @@ use crate::scripting::unparser::{unparse_component, unparse_expression};
 
 pub fn format_repl_value(value: &Value, world: &World) -> Result<String, String> {
     match value {
+        Value::TypeTag(tag) => Ok(format!("<type {tag}>")),
         Value::Identifier(name) if name == "__mms_world__" => Ok("<world>".into()),
         Value::ComponentObject { id, .. } => {
             let ce = subtree_to_ce_ast(world, *id)
@@ -55,6 +56,8 @@ fn value_to_expression(value: &Value, world: &World) -> Result<Expression, Strin
         Value::Null => Expression::Null,
         Value::Bool(v) => Expression::Bool(*v),
         Value::Number(v) => Expression::Number(*v),
+        // The source reference requires the corresponding explicit import.
+        Value::TypeTag(tag) => Expression::Identifier(Ident(tag.name().into())),
         Value::Dimension { value, unit } => Expression::Dimension(*value, *unit),
         Value::String(v) => Expression::String(v.clone()),
         Value::Identifier(v) => Expression::Identifier(Ident(v.clone())),

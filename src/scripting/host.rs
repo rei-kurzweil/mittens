@@ -1074,6 +1074,12 @@ fn transport_to_json(value: &mms::TransportValue) -> Result<serde_json::Value, m
             .map(serde_json::Value::Number)
             .ok_or_else(|| mms::HostError::failure("JSON.stringify", "numbers must be finite"))?,
         mms::TransportValue::String(value) => serde_json::Value::String(value.clone()),
+        mms::TransportValue::TypeTag(_) => {
+            return Err(mms::HostError::failure(
+                "JSON.stringify",
+                "type tags are not JSON values",
+            ));
+        }
         mms::TransportValue::Array(values) => serde_json::Value::Array(
             values
                 .iter()
@@ -1158,6 +1164,7 @@ fn legacy_event_value_to_transport(
         legacy::Value::Null => mms::TransportValue::Null,
         legacy::Value::Bool(value) => mms::TransportValue::Bool(value),
         legacy::Value::Number(value) => mms::TransportValue::Number(value),
+        legacy::Value::TypeTag(tag) => mms::TransportValue::TypeTag(tag),
         legacy::Value::String(value) | legacy::Value::Identifier(value) => {
             mms::TransportValue::String(value)
         }
@@ -1268,6 +1275,7 @@ fn external_value_to_legacy(value: mms::Value) -> Result<legacy::Value, mms::Hos
         mms::Value::Null => legacy::Value::Null,
         mms::Value::Bool(v) => legacy::Value::Bool(v),
         mms::Value::Number(v) => legacy::Value::Number(v),
+        mms::Value::TypeTag(tag) => legacy::Value::TypeTag(tag),
         mms::Value::String(v) => legacy::Value::String(v),
         mms::Value::Dimension { value, unit } => legacy::Value::Dimension { value, unit },
         mms::Value::Array(v) => legacy::Value::Array(
@@ -1336,6 +1344,7 @@ fn legacy_value_to_external(value: legacy::Value) -> Result<mms::Value, mms::Hos
         legacy::Value::Null => mms::Value::Null,
         legacy::Value::Bool(v) => mms::Value::Bool(v),
         legacy::Value::Number(v) => mms::Value::Number(v),
+        legacy::Value::TypeTag(tag) => mms::Value::TypeTag(tag),
         legacy::Value::String(v) => mms::Value::String(v),
         legacy::Value::Dimension { value, unit } => mms::Value::Dimension { value, unit },
         legacy::Value::Array(v) => mms::Value::Array(
@@ -1369,6 +1378,71 @@ fn legacy_value_to_external(value: legacy::Value) -> Result<mms::Value, mms::Hos
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn type_tags_work_in_the_configured_mittens_runtime_and_repl() {
+        let configured = crate::scripting::runtime_config::build_mittens_runtime().unwrap();
+        let mut world = World::default();
+        let mut queue = crate::engine::ecs::CommandQueue::new();
+        let mut intents = Vec::new();
+        let host = MittensHost::new(&mut world, &mut queue, &mut intents)
+            .with_bindings(configured.bindings());
+        let mut session = configured.runtime().session(host);
+        let value = session
+            .eval(
+                r#"
+            import { f32, vec2, vec3, vec4 } from "types"
+            let schema = { progress = f32, direction = vec2, tint = vec3, color = vec4 }
+            let read = fn() { return schema.progress }
+            read()
+        "#,
+            )
+            .unwrap()
+            .value
+            .unwrap();
+        assert_eq!(value, mms::Value::TypeTag(mms::TypeTag::F32));
+        let retained = external_value_to_legacy(value.clone()).unwrap();
+        assert_eq!(
+            crate::scripting::repl::format_repl_value(&retained, session.host().world).unwrap(),
+            "<type f32>"
+        );
+        assert_eq!(legacy_value_to_external(retained).unwrap(), value);
+        let schema =
+            external_value_to_legacy(session.eval("schema").unwrap().value.unwrap()).unwrap();
+        let formatted =
+            crate::scripting::repl::format_repl_value(&schema, session.host().world).unwrap();
+        assert!(formatted.contains("progress = f32"), "{formatted}");
+        assert!(formatted.contains("direction = vec2"), "{formatted}");
+        assert_eq!(session.host().legacy_component_fallbacks(), 0);
+    }
+
+    #[test]
+    fn type_tags_are_not_silently_coerced_through_json() {
+        let configured = crate::scripting::runtime_config::build_mittens_runtime().unwrap();
+        let mut world = World::default();
+        let mut queue = crate::engine::ecs::CommandQueue::new();
+        let mut intents = Vec::new();
+        let host = MittensHost::new(&mut world, &mut queue, &mut intents)
+            .with_bindings(configured.bindings());
+        let mut session = configured.runtime().session(host);
+        session.eval("import { f32 } from \"types\"").unwrap();
+        for source in ["JSON.stringify(f32)", "JSON.stringify({ field = f32 })"] {
+            let error = session.eval(source).unwrap_err().to_string();
+            assert!(error.contains("type tags are not JSON values"), "{error}");
+        }
+        assert_eq!(
+            session
+                .eval(
+                    r#"
+            let parsed = JSON.parse("{\"field\":\"f32\"}")
+            parsed.field != f32
+        "#
+                )
+                .unwrap()
+                .value,
+            Some(mms::Value::Bool(true))
+        );
+    }
 
     #[test]
     fn emit_data_queues_named_events_and_validates_optional_component_payloads() {

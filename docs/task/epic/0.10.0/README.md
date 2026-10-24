@@ -125,7 +125,8 @@ requires runtime rig/hardware evidence in addition to deterministic replay tests
 - [ ] First custom-program phase: [f32-only material time animation](../../material-f32-time-animation-first-slice.md).
   Prove an opaque static custom fragment with named scalar defaults, explicit
   FrameTick updates, shared/independent instances, and bounded GPU uploads.
-  Lowercase first-class type tags are an authoring prerequisite; full numeric
+  Lowercase first-class type-tag imports/values and host transport are implemented
+  as the authoring prerequisite; full numeric
   annotations/precise `typeof` are separate MMS work. Richer GPU field types
   and emission are subsequent material slices.
 

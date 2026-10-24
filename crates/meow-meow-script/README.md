@@ -56,6 +56,15 @@ integer signatures enforce integrality and range at the call boundary, and an
 `f32` signature rejects finite values outside the `f32` range. This is
 contextual boundary validation, not yet source-level numeric inference.
 
+First-class immutable type tags are available through
+`import { f32, vec2, vec3, vec4, str } from "types"`. Tags retain their identity
+in tables, closures and `TransportValue::TypeTag` host/callback payloads; they
+never compare equal to ordinary numbers or strings. `ValueType::TypeTag` is
+the corresponding host-signature constraint. The module is language-owned
+and needs no host source loader. These are schema/type values, not numeric or
+vector constructors. Source annotations, numeric default initialization and
+`typeof` remain planned. See the [language guide](docs/guide/language.md#type-tag-values).
+
 `Runtime::standard()` provides the crate-owned `OpenUppercase` runtime without
 a builder. Unknown open components are unvalidated structural data, suitable
 for standalone trees and tools.

@@ -1,10 +1,10 @@
 # MMS type-system epic
 
-Status: canonical draft; implementation has not started. Type-tag spelling,
-numeric defaults and nullability decisions updated 2026-10-23.
+Status: primitive type-tag values/imports implemented 2026-10-23; annotations,
+typed numeric values/defaults, nullability checking and `typeof` remain planned.
 
-MMS remains gradually typed: annotations are optional, and unannotated code
-keeps today's dynamic behavior. This epic owns the implementation order. The
+MMS's planned type system is gradual: annotations are optional, and unannotated
+code keeps today's dynamic behavior. This epic owns the implementation order. The
 focused drafts beside it own syntax and boundary details.
 
 ## Runtime type-tag direction (2026-10-14)
@@ -25,12 +25,11 @@ whose element order and GPU layout must be specified before material use.
 String inspection uses `str`, consistent with its annotation spelling.
 
 ```mms
-// Proposed first type-tag slice; not supported by the current runtime.
+// Implemented tag-value slice.
 import { f32, vec2, vec3, vec4, str } from "types"
 
-if typeof(title) == str {
-    // str is a type-tag value, not a string containing a type name.
-}
+let some_type = f32
+let fields = { progress = some_type, direction = vec2 }
 
 f32 == f32  // true
 f32 != 0.0  // true
@@ -63,8 +62,8 @@ but `TypeTag(id)` is not `Number(id)`: a tag never equals a number, and arithmet
 on a tag is an error. Tags are immutable first-class values: ordinary bindings,
 table fields and imports can carry them. Primitive tags can be enum-like
 values; nominal/compound tags must reuse the shared registry's type/declaration
-identities. Equality compares tags/IDs,
-not formatted names, Rust debug output, or public numeric ordinals. Display
+identities. Equality compares tags/IDs, not formatted names, Rust debug output,
+or public numeric ordinals. Display
 names belong in diagnostics. Keep coarse value-kind checks distinct from
 concrete nominal identity and define that boundary before exposing more tags.
 Lowercase exports and annotation names refer to the same canonical types;
@@ -81,22 +80,47 @@ metadata is insufficient for `typeof` after passing or copying that value.
 Defining a vector tag does not itself implement vector arithmetic or make an
 ordinary array report that vector type. Distinguishing intentionally deferred
 components from live handles must remain possible through a documented
-lifecycle/kind contract; inspection
-must not become a workaround for broken live-binding provenance.
+lifecycle/kind contract; inspection must not become a workaround for broken
+live-binding provenance.
 
-Before implementation, freeze the initial export set, equality/error rules,
-registry/session lifetime, and builtin-module resolution. Unimported tag names
-must produce an actionable name/type error in a tag comparison instead of
-silently comparing an unresolved symbolic identifier. Preserve existing
-enum-like identifier uses outside that context.
+### Implemented tag-value boundary (2026-10-23)
 
-Exit checks: imported `str` and an alias compare equal to the tag returned
-for a string; a component compares differently; unimported tag names fail;
-ordinary variable bindings preserve tag identity; repeated inspection and
-equality do not allocate type-name strings or require host inspection. Imported
+The initial exports are exactly `f32`, `vec2`, `vec3`, `vec4` and `str`.
+`Value::TypeTag(TypeTag)` is a separate value variant; it is not a number or
+type-name string. Primitive identities are fixed language-owned enum values,
+equal across sessions and hosts without session-local registry allocation.
+Nominal/compound types still need registry-backed identities when introduced.
+
+The exact import specifier `"types"` is reserved to the language and is resolved
+without asking a host to load source. Named imports and aliases work; AST and
+positional imports fail. All requested exports are validated before introducing
+bindings. Other module specifiers continue through the normal host loader;
+modules can re-export tags with their identity intact. No ambient tag bindings
+or namespace-import syntax were added.
+
+Tags retain identity through variables, tables, lists, closures and
+`TransportValue::TypeTag` host/callback payloads. `ValueType::TypeTag` validates
+host signatures without accepting numbers or strings. Arithmetic, string-add
+coercion, ordering and tag-field mutation fail. Numeric internal identities
+are never exposed as ordinary numeric values. Mittens JSON encoding rejects
+tags rather than silently turning them into numbers or strings; REPL display
+uses `<type f32>` for a tag and imported type references in schema tables.
+
+Unimported known type names in equality/inequality, and unresolved identifiers
+compared against an actual tag, produce an actionable import error. Symbolic
+enum-like identifiers outside that tag-comparison context retain their existing
+behavior. `mat4`, `typeof`, source annotations, zero-default numeric declarations
+and native vector/matrix values/arithmetic are not implemented by this slice.
+
+Tag-value checks now cover import/alias/session identity, schema/table/closure
+storage, host round trips, callback transport, rejected numeric operations,
+actionable import errors and isolation from ordinary numbers/strings. Imported
 `f32` equals itself and its aliases, differs from every number and other type
 tags, and rejects arithmetic. Schema tables retain tags without string/numeric
-substitutes. Precise `typeof` on an f32-typed value is a separate gate requiring
+substitutes. The later inspection gate remains: imported `str` and an alias
+compare equal to `typeof` of a string, while a component compares differently;
+repeated inspection/equality must not allocate type-name strings or require
+host inspection. Precise `typeof` on an f32-typed value additionally requires
 retained numeric identity; it must not be claimed by the tag-only slice. Full
 annotations and matching remain later work. The
 [runtime configuration epic](../../../../docs/meow_meow/task/epic/runtime-configuration-frontends-types-and-method-dispatch.md#phase-6-runtime-type-foundation)

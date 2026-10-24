@@ -13,6 +13,7 @@ pub mod standard_host;
 pub mod token;
 pub mod tokenizer;
 pub mod transform;
+pub mod types;
 pub mod unparser;
 pub mod worker;
 
@@ -28,6 +29,7 @@ pub use runtime::*;
 pub use standard_host::*;
 pub use token::*;
 pub use tokenizer::*;
+pub use types::TypeTag;
 pub use worker::*;
 
 #[cfg(test)]

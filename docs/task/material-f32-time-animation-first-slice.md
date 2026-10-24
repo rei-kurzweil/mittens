@@ -17,6 +17,8 @@ supersedes `Material.custom(...).input_f32(...)`. Land lowercase first-class
 [MMS type tags](../../crates/meow-meow-script/docs/draft/type-system-epic.md#runtime-type-tag-direction-2026-10-14)
 before definition schema tables. Those tags may include f32/vector identities
 without implementing all corresponding GPU field types in this first proof.
+The primitive tag-value/import/storage/transport prerequisite is implemented;
+MaterialDefinition/Material and shader reflection/upload remain pending.
 Full source annotations, numeric default initialization and precise numeric
 `typeof` are separate MMS work, not required to pass explicit initial values.
 

@@ -116,5 +116,7 @@ The OpenXR/ALVR transport itself continued working; the issue is MMS value
 materialization and diagnostics, not eye tracking.
 
 `is_string(value)` is implemented and remains appropriate for the current
-string/component title factory. Type tags and pattern matching are planned;
-their API does not imply annotation or match syntax is supported today.
+string/component title factory. Primitive type-tag imports, values and
+host/callback transport are implemented as of 2026-10-23. General `typeof`,
+component/lifecycle inspection, annotations and pattern matching remain planned;
+the tag-value slice does not implement those later features.

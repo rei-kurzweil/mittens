@@ -9,7 +9,11 @@ names the three layers MaterialBase, MaterialDefinition and Material (instance).
 Definition tables contain lowercase imported type tags; Material tables contain
 initial values. First-class MMS tags precede these schema tables; typed numeric
 defaults/precise `typeof` are separate language work. No generic authoring API
-is implemented by this documentation update.
+is implemented by that documentation update. The subsequent primitive MMS
+tag-value slice is now implemented: lowercase imports, identity equality,
+schema-table storage and lossless host/callback transport. `typeof`, numeric
+annotations/defaults and the Material API remain pending. See the
+[implemented tag boundary](../../../crates/meow-meow-script/docs/draft/type-system-epic.md#implemented-tag-value-boundary-2026-10-23).
 
 2026-10-10 first-phase decision: [f32 time-animation proof](../material-f32-time-animation-first-slice.md)
 is the first testable custom-program slice, after the internal instance/family
