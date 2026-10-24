@@ -105,6 +105,7 @@ pub struct SystemWorld {
     pub implicit_surface: ImplicitSurfaceSystem,
     pub mesh_bounds: MeshBoundsSystem,
     pub renderable: RenderableSystem,
+    pub material: super::material_system::MaterialSystem,
     pub clipping: ClippingSystem,
     pub renderer_stats: RendererStatsSystem,
     pub router: RouterSystem,
@@ -1335,9 +1336,13 @@ impl SystemWorld {
         let nodes = world.owned_subtree(root);
 
         for n in nodes.iter().copied().rev() {
+            if world.get_component_by_id_as::<crate::engine::ecs::component::material::MaterialDefinitionComponent>(n).is_some() {
+                for source in visuals.materials.remove_definition_source(n) { visuals.remove_material_source(source); }
+            }
             if world
                 .get_component_by_id_as::<crate::engine::ecs::component::ShadingComponent>(n)
                 .is_some_and(|shading| shading.source_component().is_none())
+                || world.get_component_by_id_as::<crate::engine::ecs::component::material::MaterialComponent>(n).is_some()
             {
                 visuals.remove_material_source(n);
             }
@@ -2789,6 +2794,9 @@ impl SystemWorld {
         uploader: &mut dyn RenderUploader,
         queue: &mut crate::engine::ecs::CommandQueue,
     ) {
+        // MMS callbacks are serviced after simulation tick. Publish their
+        // coalesced material updates before this frame's draw preparation.
+        self.material.tick(world, visuals);
         // Ensure any imported assets are registered before renderables try to resolve meshes/textures.
         self.gltf
             .flush_imports(render_assets, &mut self.texture, uploader);
@@ -3607,6 +3615,7 @@ impl SystemWorld {
         commands.flush(world, self, visuals, render_assets);
 
         // Batch audio graph rebuild work once after all mutations for this frame.
+        self.material.tick(world, visuals);
         self.renderable.refresh_shading_topology(world, visuals);
         self.audio.rebuild_dirty_audio_graphs(world);
 

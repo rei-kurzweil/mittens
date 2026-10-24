@@ -1,13 +1,23 @@
 # Task: prepare LED strip asset and custom-materials example
 
 Date: 2026-10-10
-Status: focused preparation plan; documentation only, implementation pending.
+Status: original plane fixture superseded by the combined-LED youtuber-room checkpoint; reusable strip asset remains follow-up work.
 Parent: [custom materials epic](epic/custom-materials.md).
 First material milestone: [f32 time-animation Phase 1](material-f32-time-animation-first-slice.md).
 Emission milestone: [capability and LED proof](material-emission-capabilities-and-led-strip.md).
 Release: [0.10.0](epic/0.10.0/README.md).
 
-## Goal
+2026-10-24: the user selected [youtuber-room.mms](../../examples/youtuber-room.mms)
+as the new custom-material example. Its [checkpoint](youtuber-room-custom-material-checkpoint.md)
+now uses 308 LED cubes baked into four CombineMesh outputs, with perimeter UVs,
+a shared extracted-emissive custom material and separate white Anime backing.
+The named-f32 shader, bounded uploads and matching extraction are GPU-tested.
+The initial room was tried in VR; the combined-LED follow-up awaits another test.
+The original plane/cloud/individual-LED asset plan below is retained for later
+reuse; it is not an additional prerequisite to testing the room. Custom material
+retention and UV transfer through source collapse are covered by the room proof.
+
+## Original asset and plane-fixture plan
 
 Prepare one small, attractive scene at **`examples/custom-materials.mms`**:
 four LED strips, one on each edge of a plane; an FPS-controlled desktop camera;

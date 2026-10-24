@@ -10,6 +10,15 @@ new_key_type! {
     pub struct MaterialInstanceId;
 }
 
+/// Read-only renderer contracts exposed by MMS MaterialBase constructors.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum MaterialBaseKind {
+    #[default]
+    Surface,
+    /// Opaque static meshes whose fragment output is also their emitted radiance.
+    ExtractedEmissive,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StandardMaterialInputs {
     pub color: bool,
@@ -31,6 +40,7 @@ pub enum MaterialInstanceInterface {
 pub enum MaterialParameterSchema {
     None,
     AnimeV1,
+    CustomF32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +60,7 @@ pub struct MaterialFamily {
 
 #[derive(Debug, Clone)]
 pub struct MaterialDefinition {
+    pub custom: Option<std::sync::Arc<super::custom_material::CustomMaterialDefinition>>,
     pub name: &'static str,
     pub family: MaterialFamilyId,
     pub static_program: MaterialHandle,
@@ -63,8 +74,9 @@ pub struct MaterialDefinition {
     pub supports_emission_extraction: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct MaterialInstance {
+    pub values: std::sync::Arc<[f32]>,
     pub source: ComponentId,
     pub definition: MaterialDefinitionId,
     pub revision: u64,
@@ -76,7 +88,10 @@ pub struct MaterialRegistry {
     definitions: SlotMap<MaterialDefinitionId, MaterialDefinition>,
     instances: SlotMap<MaterialInstanceId, MaterialInstance>,
     sources: SecondaryMap<ComponentId, MaterialInstanceId>,
+    definition_sources: SecondaryMap<ComponentId, MaterialDefinitionId>,
+    next_custom_program: u32,
     pub mesh_family: MaterialFamilyId,
+    pub extracted_emissive_family: MaterialFamilyId,
     pub anime_definition: MaterialDefinitionId,
     pub toon_definition: MaterialDefinitionId,
 }
@@ -94,8 +109,13 @@ impl Default for MaterialRegistry {
                 emissive_intensity: true,
             },
         });
+        let extracted_emissive_family = families.insert(MaterialFamily {
+            name: "ExtractedEmissiveMeshV1",
+            ..families[mesh_family].clone()
+        });
         let mut definitions = SlotMap::with_key();
         let anime_definition = definitions.insert(MaterialDefinition {
+            custom: None,
             name: "Anime",
             family: mesh_family,
             static_program: MaterialHandle::ANIME_MESH,
@@ -111,6 +131,7 @@ impl Default for MaterialRegistry {
             supports_emission_extraction: false,
         });
         let toon_definition = definitions.insert(MaterialDefinition {
+            custom: None,
             name: "Toon",
             family: mesh_family,
             static_program: MaterialHandle::TOON_MESH,
@@ -130,7 +151,10 @@ impl Default for MaterialRegistry {
             definitions,
             instances: SlotMap::with_key(),
             sources: SecondaryMap::new(),
+            definition_sources: SecondaryMap::new(),
+            next_custom_program: 1024,
             mesh_family,
+            extracted_emissive_family,
             anime_definition,
             toon_definition,
         }
@@ -162,6 +186,10 @@ impl MaterialRegistry {
         // could make a retained GPU binding mistake a new source for an old ID.
         self.instances.clear();
         self.sources.clear();
+        let anime = self.anime_definition;
+        let toon = self.toon_definition;
+        self.definitions.retain(|id, _| id == anime || id == toon);
+        self.definition_sources.clear();
     }
 
     pub fn upsert_source(
@@ -184,6 +212,7 @@ impl MaterialRegistry {
             return id;
         }
         let id = self.instances.insert(MaterialInstance {
+            values: std::sync::Arc::from([]),
             source,
             definition,
             revision: 1,
@@ -197,6 +226,77 @@ impl MaterialRegistry {
         let id = self.sources.remove(source)?;
         self.instances.remove(id);
         Some(id)
+    }
+
+    pub fn remove_definition_source(&mut self, source: ComponentId) -> Vec<ComponentId> {
+        let Some(definition) = self.definition_sources.remove(source) else {
+            return Vec::new();
+        };
+        let sources = self
+            .instances
+            .iter()
+            .filter_map(|(_, record)| (record.definition == definition).then_some(record.source))
+            .collect();
+        self.definitions.remove(definition);
+        sources
+    }
+
+    pub fn source_definition(&self, source: ComponentId) -> Option<MaterialDefinitionId> {
+        self.definition_sources.get(source).copied()
+    }
+
+    pub fn register_custom_definition(
+        &mut self,
+        source: ComponentId,
+        custom: std::sync::Arc<super::custom_material::CustomMaterialDefinition>,
+    ) -> MaterialDefinitionId {
+        if let Some(id) = self.source_definition(source) {
+            return id;
+        }
+        let program = MaterialHandle(self.next_custom_program);
+        self.next_custom_program = self
+            .next_custom_program
+            .checked_add(1)
+            .expect("custom program IDs exhausted");
+        let id = self.definitions.insert(MaterialDefinition {
+            supports_emission_extraction: custom.base == MaterialBaseKind::ExtractedEmissive,
+            family: match custom.base {
+                MaterialBaseKind::Surface => self.mesh_family,
+                MaterialBaseKind::ExtractedEmissive => self.extracted_emissive_family,
+            },
+            custom: Some(custom),
+            name: "CustomF32",
+            static_program: program,
+            deformed_program: program,
+            parameter_schema: MaterialParameterSchema::CustomF32,
+            defaults: AnimeShadingParams::default(),
+            state_profile: MaterialStateProfile::BuiltinMeshCompatibility,
+            consumed_inputs: StandardMaterialInputs {
+                color: true,
+                opacity: true,
+                emissive_intensity: false,
+            },
+        });
+        self.definition_sources.insert(source, id);
+        id
+    }
+
+    pub fn upsert_custom_source(
+        &mut self,
+        source: ComponentId,
+        definition: MaterialDefinitionId,
+        values: Vec<f32>,
+    ) -> MaterialInstanceId {
+        let id = self.upsert_source(source, definition, AnimeShadingParams::default());
+        let instance = self.instances.get_mut(id).expect("registered source");
+        if instance.values.as_ref() != values.as_slice() {
+            instance.values = values.into();
+            instance.revision = instance
+                .revision
+                .checked_add(1)
+                .expect("material revision exhausted");
+        }
+        id
     }
 }
 

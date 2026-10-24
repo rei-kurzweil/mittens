@@ -18,8 +18,15 @@ use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 
 use super::host::MittensHost;
 use super::runtime_config::{ComponentInitializerKind, MittensBinding};
+use crate::engine::ecs::component::material::{
+    MaterialBaseComponent, MaterialComponent, MaterialDefinitionComponent,
+};
 
 const DIRECT_COMPONENTS: &[&str] = &[
+    "MaterialBase",
+    "MaterialDefinition",
+    "Material",
+    "UV",
     "AmbientLight",
     "Animation",
     "BackgroundColor",
@@ -206,6 +213,9 @@ fn spawn_tree_uninitialized(
             .add_child(id, child)
             .map_err(|error| format!("attach child to {component} failed: {error}"))?;
     }
+    if matches!(component, "MaterialDefinition" | "Material") {
+        world.mark_material_changed(id);
+    }
     Ok(id)
 }
 
@@ -218,6 +228,42 @@ fn create_component(
     deferred_callback_effect_profile: Option<mms::KeyframeEffectProfile>,
 ) -> Result<ComponentId, String> {
     let id = match component {
+        "UV" => world.add_component(crate::engine::ecs::component::UVComponent::new()),
+        "MaterialBase" => world.add_component(MaterialBaseComponent(match constructor {
+            Some("extracted_emissive") => {
+                crate::engine::graphics::materials::MaterialBaseKind::ExtractedEmissive
+            }
+            _ => crate::engine::graphics::materials::MaterialBaseKind::Surface,
+        })),
+        "MaterialDefinition" => {
+            let base = material_reference(args, 0)?;
+            if world
+                .get_component_by_id_as::<MaterialBaseComponent>(base)
+                .is_none()
+            {
+                return Err("MaterialDefinition requires a MaterialBase".into());
+            }
+            world.add_component(MaterialDefinitionComponent {
+                base,
+                fragment_uri: String::new(),
+                fields: Vec::new(),
+            })
+        }
+        "Material" => {
+            let definition = material_reference(args, 0)?;
+            if world
+                .get_component_by_id_as::<MaterialDefinitionComponent>(definition)
+                .is_none()
+            {
+                return Err(
+                    "Material requires a MaterialDefinition in the first custom slice".into(),
+                );
+            }
+            world.add_component(MaterialComponent {
+                definition,
+                values: Default::default(),
+            })
+        }
         "Transform" => world.add_component(TransformComponent::new()),
         "Animation" => {
             let mut animation = AnimationComponent::new();
@@ -323,10 +369,13 @@ fn create_component(
     if let Some(constructor) = constructor {
         let factory_only = matches!(
             (component, constructor),
-            (
-                "Animation",
-                "playing" | "paused" | "looping" | "length" | "scope"
-            ) | ("Keyframe", "at")
+            ("MaterialBase" | "MaterialDefinition" | "Material", "new")
+                | ("MaterialBase", "extracted_emissive")
+                | (
+                    "Animation",
+                    "playing" | "paused" | "looping" | "length" | "scope"
+                )
+                | ("Keyframe", "at")
                 | ("Renderable", "cube")
                 | ("Color", "rgba")
                 | ("BackgroundColor", "rgba")
@@ -355,6 +404,42 @@ fn apply_call(
     args: &[mms::Value],
 ) -> Result<(), String> {
     match component {
+        "UV" if method == "uv" => {
+            let uv = [f32_arg(args, 0)?, f32_arg(args, 1)?];
+            world
+                .get_component_by_id_as_mut::<crate::engine::ecs::component::UVComponent>(id)
+                .ok_or("missing UV component")?
+                .uvs
+                .push(uv);
+        }
+        "MaterialDefinition" => {
+            let value = string_arg(args, 0)?.to_owned();
+            let definition = world
+                .get_component_by_id_as_mut::<MaterialDefinitionComponent>(id)
+                .ok_or("missing material definition")?;
+            match method {
+                "fragment" => definition.fragment_uri = value,
+                "input_f32" => {
+                    let mut fields = definition.fields.clone();
+                    fields.push(value);
+                    crate::engine::graphics::custom_material::validate_fields(&fields)?;
+                    definition.fields = fields;
+                }
+                _ => return Err(format!("unknown MaterialDefinition builder '{method}'")),
+            }
+        }
+        "Material" if method == "descriptor_set" => {
+            let fields = match args.first() {
+                Some(mms::Value::Map(map)) => map.clone(),
+                Some(mms::Value::Object(id)) => id
+                    .with_map(Clone::clone)
+                    .ok_or("stale material values table")?,
+                _ => return Err("descriptor_set requires a table of finite f32 values".into()),
+            };
+            for (name, value) in fields {
+                set_material_input(world, id, &name, &value)?;
+            }
+        }
         "Animation" => {
             let scope = if method == "scope" {
                 Some(component_ref_arg(world, args, 0)?)
@@ -540,6 +625,82 @@ fn apply_node_properties(
         }
     }
     Ok(())
+}
+
+fn material_reference(args: &[mms::Value], index: usize) -> Result<ComponentId, String> {
+    match args.get(index) {
+        Some(mms::Value::ComponentObject { id, .. }) => Ok(MittensHost::component_id(*id)),
+        _ => Err("material constructor requires a live component reference".into()),
+    }
+}
+
+fn set_material_input(
+    world: &mut World,
+    id: ComponentId,
+    name: &str,
+    value: &mms::Value,
+) -> Result<bool, String> {
+    let mms::Value::Number(number) = value else {
+        return Err(format!(
+            "material field '{name}' requires a finite f32 value"
+        ));
+    };
+    let value = *number as f32;
+    if !number.is_finite() || !value.is_finite() {
+        return Err(format!(
+            "material field '{name}' requires a finite f32 value"
+        ));
+    }
+    let definition = world
+        .get_component_by_id_as::<MaterialComponent>(id)
+        .ok_or("missing material")?
+        .definition;
+    let schema = world
+        .get_component_by_id_as::<MaterialDefinitionComponent>(definition)
+        .ok_or("missing material definition")?;
+    if !schema.fields.iter().any(|field| field == name) {
+        return Err(format!("unknown material field '{name}'"));
+    }
+    let material = world
+        .get_component_by_id_as_mut::<MaterialComponent>(id)
+        .unwrap();
+    if material.values.get(name) != Some(&value) {
+        material.values.insert(name.to_owned(), value);
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+pub(crate) fn material_method(
+    world: &mut World,
+    id: ComponentId,
+    method: &str,
+    args: &[mms::Value],
+) -> Result<mms::Value, String> {
+    let name = string_arg(args, 0)?;
+    match method {
+        "set_input" => {
+            if set_material_input(world, id, name, args.get(1).ok_or("missing input value")?)? {
+                world.mark_material_changed(id);
+            }
+            Ok(mms::Value::Null)
+        }
+        "get_input" => {
+            let material = world
+                .get_component_by_id_as::<MaterialComponent>(id)
+                .ok_or("missing material")?;
+            let schema = world
+                .get_component_by_id_as::<MaterialDefinitionComponent>(material.definition)
+                .ok_or("missing material definition")?;
+            if !schema.fields.iter().any(|field| field == name) {
+                return Err(format!("unknown material field '{name}'"));
+            }
+            Ok(mms::Value::Number(
+                material.values.get(name).copied().unwrap_or(0.0) as f64,
+            ))
+        }
+        _ => Err(format!("unknown material method '{method}'")),
+    }
 }
 
 fn f32_arg(args: &[mms::Value], index: usize) -> Result<f32, String> {

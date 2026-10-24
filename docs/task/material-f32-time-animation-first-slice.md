@@ -1,9 +1,13 @@
 # Phase 1: custom material with f32 time-animation inputs
 
 Date: 2026-10-10
-Status: agreed first testable slice; documentation only, implementation pending.
+Status: named-f32 room path implemented and headless-GPU tested 2026-10-24; manual VR acceptance and broader compatibility gates pending.
 Parent: [custom materials epic](epic/custom-materials.md).
 Release: [0.10.0](epic/0.10.0/README.md).
+
+Current checkpoint: [youtuber room](youtuber-room-custom-material-checkpoint.md),
+with the actual API, initialization path, limits, validation and remaining work.
+This scene supersedes the previously proposed four-edge-plane fixture.
 
 Internal prerequisite: [material instances and family contracts](material-instances-and-family-contracts.md).
 First prove stable instance handles, standard input metadata, and bounded mutable
@@ -22,10 +26,11 @@ The subsequent [record-role revision](../../crates/meow-meow-script/docs/draft/r
 proposes colon-style schemas for the eventual generic API. The later scope
 clarification selects a narrower first slice: MMS authors declare a variable
 number of custom-named fields per MaterialDefinition, all restricted to f32.
-Use an ordinary builder or names-only declaration API supported by the current
-grammar. This needs a real retained schema and GPU layout validation, but not
+The implemented declaration API is `.input_f32(name)` on MaterialDefinition.
+It uses a real retained schema and GPU layout validation, but not
 the pending `TypeExpression` AST or record-role semantics.
-MaterialDefinition/Material and shader reflection/upload remain pending.
+MaterialDefinition/Material registration, local-file fragment compilation,
+reflection and bounded custom uploads are now implemented for opaque static meshes.
 Full source annotations, numeric default initialization and precise numeric
 `typeof` are separate MMS work, not required to pass explicit initial values.
 
@@ -59,12 +64,12 @@ list or silently rename inputs. Fields may occupy a single material uniform
 buffer binding; a distinct Vulkan descriptor per float is not required, and
 compatible descriptor-set layouts may be shared.
 
-The exact declaration spelling remains open. A definition-specific f32 builder
-or names-only list is enough; do not require colon-style type expressions or
-resurrect the earlier combined `Material.custom` definition/instance API.
+The selected first-slice spelling is the definition-specific f32 builder below;
+it does not require colon-style type expressions or resurrect the earlier
+combined `Material.custom` definition/instance API.
 Instances continue to supply ordinary equals-style value tables.
 
-Illustrative syntax to freeze during implementation, not available MMS API:
+Implemented first-slice syntax (the room uses the same five fields):
 
 ```mms
 let definition = MaterialDefinition(MaterialBase())
@@ -86,12 +91,12 @@ on_global("FrameTick", fn(event) {
 })
 ```
 
-The `.input_f32(name)` declaration method above is a candidate spelling, not
-implemented or frozen API. It declares a field on a definition; values belong
-to the Material instance. A names-only declaration list could express the same
-contract without new language syntax.
+`.input_f32(name)` declares a field on a definition; values belong to the Material
+instance. Missing declared initial values default to zero. Registration is queued
+when the expression finishes, independently of scene attachment.
 
-`Material(base)` is also the selected shorthand for an instance with an implicit
+`Material(base)` remains a proposed later shorthand, not implemented by the room
+checkpoint; use `Material(definition)` today. For that future implicit
 definition: `.fragment(...)` supplies its program and `.descriptor_set(...)`
 supplies values whose declared types come from the shader interface/reflection.
 Exact descriptor table/binding structure and getter/setter spelling remain
@@ -130,40 +135,40 @@ upload an f32 from an existing callback.
   textures/samplers, per-instance attributes, and raw buffers are excluded.
   Existing engine-owned descriptors and built-in inputs can still be used
   according to the fixed interface.
-- Emission/extraction, transparency/cutout, custom clipping variants, GLTF/
+- The room follow-up supports extraction of the same custom radiance output on
+  opaque foreground meshes through `MaterialBase.extracted_emissive()`.
+  Transparency/cutout, custom clipping variants, GLTF/
   cached-deformed support, hot reload, and complete material serialization/
   migration remain later acceptance slices.
 
 ## Proof and exit gate
 
-Use the planned `examples/custom-materials.mms` from the
-[LED-strip preparation ticket](custom-materials-led-strip-example-preparation.md).
-Four strips surround a plane. Their combined LED rectangles use the custom
-`animated_led_strip` material with a clearly time-varying opaque pattern/color,
-without needing emission or textures for this first proof. Three strips share
-one instance; the fourth uses an independently timed instance of the same
-shader. Separate Toon backings and the plane provide the built-in comparison.
-The simple primitive snippet above remains an API illustration, not a separate
-required example scene. Verify CombineMesh's generated-output binding explicitly.
-The LED Material wraps each LED-only CombineMesh subtree; every source rectangle
-inherits it. The first resolved source supplies the combined primitive's live
-material instance. Preserve this wrapper through baking and test direct-child
-Material attachment on a renderable as the other supported authoring form.
+Use [examples/youtuber-room.mms](../../examples/youtuber-room.mms), selected by
+the user on 2026-10-24. Following the initial quad proof, 308 LED cubes now bake
+into four CombineMesh outputs sharing one material and perimeter UV coordinates.
+The visible wave has one CPU time update per frame. White backings and furniture
+use built-in Anime shading. The extracted-emissive base feeds the same animated
+radiance into visible color and Bloom. Independent instance values are checked
+in MMS tests; one-field and five-field definitions are checked on the GPU.
 
-- [ ] Construction and retained f32 get/set work in top-level and runtime MMS.
-- [ ] MMS-authored definitions declare different custom names and field counts,
+The earlier [LED-strip asset preparation](custom-materials-led-strip-example-preparation.md)
+remains a reusable-asset follow-up. The room and focused tests now cover custom
+material retention and authored UV transfer through CombineMesh source collapse.
+
+- [x] Construction and retained f32 get/set work in top-level and runtime MMS.
+- [x] MMS-authored definitions declare different custom names and field counts,
   with every declared field constrained to f32. Verify one-field and multi-field
   definitions and reject duplicates or incompatible shader declarations. No
   TypeExpression syntax is required for this first slice.
-- [ ] Material records accept finite numeric initial values and updates; reject
+- [x] Material records accept finite numeric initial values and updates; reject
   unknown names and type tags where ordinary values are required. Verify explicit
-  definition construction and the implicit-definition shorthand without confusing
+  definition construction; the implicit-definition shorthand remains later work. Keep
   declared field names with mutable instance values.
 - [ ] Invalid/nonfinite/out-of-range conversion, unknown fields, incompatible
   shader layouts, and failed compilation produce useful errors/fallback.
 - [ ] Shared consumers stay synchronized; independent instance values stay
   independent. Compatible instances share one compilation/pipeline.
-- [ ] At least 10,000 distinct finite updates cause uploads but no further
+- [x] At least 10,000 distinct finite updates cause uploads but no further
   shader compilation/pipeline creation and no persistent UBO/descriptor growth
   after documented warm-up. Record compile/pipeline/upload/allocation counters.
 - [ ] Removing source/consumers safely retires resources while frames are in

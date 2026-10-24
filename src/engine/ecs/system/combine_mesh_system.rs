@@ -5,7 +5,7 @@ use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
     ColorComponent, CombineMeshComponent, EmissiveComponent, RenderableComponent,
-    TransformGizmoComponent,
+    TransformGizmoComponent, UVComponent,
 };
 use crate::engine::ecs::system::{
     MeshBoundsSystem, MeshOutputKind, RenderableSystem, TransformSystem,
@@ -29,6 +29,7 @@ struct CombinedOutput {
     fingerprint: u64,
     root_model: [[f32; 4]; 4],
     collapsed: bool,
+    fallback_material: MaterialHandle,
 }
 
 impl CombineMeshSystem {
@@ -92,6 +93,25 @@ impl CombineMeshSystem {
             let keep_transforms = world
                 .get_component_by_id_as::<CombineMeshComponent>(root)
                 .is_some_and(|component| component.keep_transforms);
+            let material_source = RenderableSystem::custom_material_source(
+                world,
+                sources.first().copied().unwrap_or(root),
+            );
+            if !keep_transforms {
+                if let Some(source) = material_source {
+                    // Preserve the first source's shared material when the source
+                    // geometry is discarded. Its retained values keep updating.
+                    if !world.children_of(root).contains(&source) {
+                        if let Err(error) = world.add_child(root, source) {
+                            eprintln!("[CombineMesh] cannot retain material: {error}");
+                            continue;
+                        }
+                    }
+                }
+            }
+            if let Some(output) = self.outputs.get(&root) {
+                Self::bind_material(visuals, output, material_source);
+            }
             for &source in &sources {
                 renderables.suppress_renderable(world, visuals, source);
             }
@@ -176,20 +196,42 @@ impl CombineMeshSystem {
                 None,
                 3.0,
             );
-            self.outputs.insert(
-                root,
-                CombinedOutput {
-                    handle,
-                    fingerprint,
-                    root_model,
-                    collapsed: !keep_transforms,
-                },
-            );
+            let output = CombinedOutput {
+                handle,
+                fingerprint,
+                root_model,
+                collapsed: !keep_transforms,
+                fallback_material: material,
+            };
+            Self::bind_material(visuals, &output, material_source);
+            self.outputs.insert(root, output);
             if !keep_transforms {
-                collapse_roots.extend(world.children_of(root).iter().copied());
+                collapse_roots.extend(
+                    world
+                        .children_of(root)
+                        .iter()
+                        .copied()
+                        .filter(|child| Some(*child) != material_source),
+                );
             }
         }
         collapse_roots
+    }
+
+    fn bind_material(
+        visuals: &mut VisualWorld,
+        output: &CombinedOutput,
+        source: Option<ComponentId>,
+    ) {
+        let binding = source.and_then(|source| visuals.materials.source_instance(source));
+        let program = binding
+            .and_then(|id| visuals.materials.instance(id))
+            .and_then(|instance| visuals.materials.definition(instance.definition))
+            .map_or(output.fallback_material, |definition| {
+                definition.static_program
+            });
+        visuals.update_material(output.handle, program);
+        visuals.bind_material_instance(output.handle, binding);
     }
 
     fn sources_for_root(&self, world: &World, root: ComponentId) -> Vec<ComponentId> {
@@ -254,14 +296,18 @@ fn bake(
             continue;
         }
         let model = mat4_mul(root_inverse, TransformSystem::world_model(world, source)?);
+        let uv = world
+            .children_of(source)
+            .iter()
+            .find_map(|&child| world.get_component_by_id_as::<UVComponent>(child));
         let base = vertices.len() as u32;
-        vertices.extend(mesh.vertices.iter().map(|v| {
+        vertices.extend(mesh.vertices.iter().enumerate().map(|(index, v)| {
             let p = mat4_mul_vec4(model, [v.pos[0], v.pos[1], v.pos[2], 1.0]);
             let n = mat4_mul_vec4(model, [v.normal[0], v.normal[1], v.normal[2], 0.0]);
             crate::engine::graphics::mesh::CpuVertex {
                 pos: [p[0], p[1], p[2]],
                 normal: vec3_normalize([n[0], n[1], n[2]]),
-                uv: v.uv,
+                uv: uv.map_or(v.uv, |uv| uv.uvs.get(index).copied().unwrap_or([0.0, 0.0])),
             }
         }));
         indices.extend(mesh.indices_u32.iter().map(|index| base + index));
@@ -292,6 +338,14 @@ fn fingerprint(
         if let Some(r) = world.get_component_by_id_as::<RenderableComponent>(id) {
             r.renderable.mesh.hash(&mut hasher);
             r.renderable.material.hash(&mut hasher);
+        }
+        for &child in world.children_of(id) {
+            if let Some(uv) = world.get_component_by_id_as::<UVComponent>(child) {
+                for coordinate in &uv.uvs {
+                    coordinate[0].to_bits().hash(&mut hasher);
+                    coordinate[1].to_bits().hash(&mut hasher);
+                }
+            }
         }
         if include_source_transforms {
             if let Some(matrix) = TransformSystem::world_model(world, id) {
@@ -423,5 +477,135 @@ mod tests {
             instance.renderable.material,
             MaterialHandle::EMISSIVE_TOON_MESH
         );
+    }
+
+    #[test]
+    fn combined_custom_material_and_uvs_survive_source_collapse_and_value_updates() {
+        use crate::engine::ecs::component::material::MaterialComponent;
+        use crate::engine::graphics::custom_material::CustomMaterialDefinition;
+        use crate::engine::graphics::materials::MaterialBaseKind;
+        let mut world = World::default();
+        let scene = world.add_component(TransformComponent::new());
+        let combine = world.add_component(CombineMeshComponent::default());
+        world.add_child(scene, combine).unwrap();
+        let first = world.add_component(RenderableComponent::cube());
+        let second = world.add_component(RenderableComponent::cube());
+        world.add_child(combine, first).unwrap();
+        world.add_child(combine, second).unwrap();
+        for (source, u) in [(first, 0.25), (second, 0.75)] {
+            let uv = world.add_component(UVComponent::from_vec(vec![vec![u, 0.5]; 24]));
+            world.add_child(source, uv).unwrap();
+        }
+        let material = world.add_component(MaterialComponent {
+            definition: ComponentId::default(),
+            values: Default::default(),
+        });
+        // A material nested inside the geometry must survive its source's removal.
+        world.add_child(first, material).unwrap();
+        let mut visuals = VisualWorld::default();
+        let definition = visuals.materials.register_custom_definition(
+            material,
+            std::sync::Arc::new(CustomMaterialDefinition {
+                base: MaterialBaseKind::ExtractedEmissive,
+                fields: vec!["gain".into()],
+                fragment_uri: String::new(),
+                compiled: Default::default(),
+            }),
+        );
+        let binding = visuals
+            .materials
+            .upsert_custom_source(material, definition, vec![0.5]);
+        let mut assets = RenderAssets::new();
+        let (mesh, _) = bake(
+            &world,
+            &assets,
+            crate::utils::math::mat4_identity(),
+            &[first, second],
+        )
+        .unwrap();
+        assert_eq!(mesh.vertices.len(), 48);
+        assert!(
+            mesh.vertices[..24]
+                .iter()
+                .all(|vertex| vertex.uv == [0.25, 0.5])
+        );
+        assert!(
+            mesh.vertices[24..]
+                .iter()
+                .all(|vertex| vertex.uv == [0.75, 0.5])
+        );
+        let mut uploader = TestUploader::default();
+        let mut renderables = RenderableSystem::default();
+        let mut bounds = MeshBoundsSystem::default();
+        let mut system = CombineMeshSystem::default();
+        let discarded = system.reconcile_and_build(
+            &mut world,
+            &mut visuals,
+            &mut assets,
+            &mut uploader,
+            &mut renderables,
+            &mut bounds,
+        );
+        let handle = system.outputs[&combine].handle;
+        assert_eq!(
+            visuals.instance(handle).unwrap().material_instance,
+            Some(binding)
+        );
+        assert!(world.children_of(combine).contains(&material));
+        assert!(!discarded.contains(&material));
+        for source in discarded {
+            crate::engine::ecs::SystemWorld::default().remove_subtree_immediate(
+                &mut world,
+                &mut visuals,
+                source,
+            );
+        }
+        assert!(
+            world
+                .get_component_by_id_as::<MaterialComponent>(material)
+                .is_some()
+        );
+        assert!(system.sources_for_root(&world, combine).is_empty());
+        visuals
+            .materials
+            .upsert_custom_source(material, definition, vec![0.9]);
+        system.reconcile_and_build(
+            &mut world,
+            &mut visuals,
+            &mut assets,
+            &mut uploader,
+            &mut renderables,
+            &mut bounds,
+        );
+        assert_eq!(
+            uploader.0, 1,
+            "a scalar update must not rebake or reupload geometry"
+        );
+        assert_eq!(
+            visuals.instance(handle).unwrap().material_instance,
+            Some(binding)
+        );
+        assert_eq!(
+            visuals.materials.instance(binding).unwrap().values.as_ref(),
+            &[0.9]
+        );
+        visuals.prepare_draw_cache();
+        assert_eq!(visuals.emissive_draw_order().len(), 1);
+        crate::engine::ecs::SystemWorld::default().remove_subtree_immediate(
+            &mut world,
+            &mut visuals,
+            material,
+        );
+        system.reconcile_and_build(
+            &mut world,
+            &mut visuals,
+            &mut assets,
+            &mut uploader,
+            &mut renderables,
+            &mut bounds,
+        );
+        visuals.prepare_draw_cache();
+        assert_eq!(visuals.instance(handle).unwrap().material_instance, None);
+        assert!(visuals.emissive_draw_order().is_empty());
     }
 }

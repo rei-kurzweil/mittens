@@ -428,6 +428,36 @@ impl RenderableSystem {
         None
     }
 
+    pub(crate) fn custom_material_source(
+        world: &World,
+        renderable: ComponentId,
+    ) -> Option<ComponentId> {
+        use crate::engine::ecs::component::material::MaterialComponent;
+        let mut current = Some(renderable);
+        while let Some(node) = current {
+            if world
+                .get_component_by_id_as::<MaterialComponent>(node)
+                .is_some()
+            {
+                return Some(node);
+            }
+            if let Some(material) = world.children_of(node).iter().copied().find(|&child| {
+                world
+                    .get_component_by_id_as::<MaterialComponent>(child)
+                    .is_some()
+            }) {
+                return Some(material);
+            }
+            if Self::immediate_anime_shading_child(world, node).is_some()
+                || Self::has_immediate_unlit_child(world, node)
+            {
+                return None;
+            }
+            current = world.parent_of(node);
+        }
+        None
+    }
+
     pub(crate) fn resolve_toon_outline(
         world: &World,
         renderable: ComponentId,
@@ -734,14 +764,22 @@ impl RenderableSystem {
                 continue;
             };
             if let Some(instance) = visuals.instance(handle) {
-                let material = Self::material_with_emissive(
-                    Self::resolved_surface_material(
-                        world,
-                        renderable_cid,
-                        renderable_comp.renderable.material,
-                    ),
-                    instance.emissive,
-                );
+                let custom = visuals
+                    .materials
+                    .instance(material_instance)
+                    .and_then(|record| visuals.materials.definition(record.definition))
+                    .filter(|definition| definition.custom.is_some())
+                    .map(|definition| definition.static_program);
+                let material = custom.unwrap_or_else(|| {
+                    Self::material_with_emissive(
+                        Self::resolved_surface_material(
+                            world,
+                            renderable_cid,
+                            renderable_comp.renderable.material,
+                        ),
+                        instance.emissive,
+                    )
+                });
                 let _ = visuals.update_material(handle, material);
             }
             let _ = visuals.bind_material_instance(handle, Some(material_instance));
@@ -1259,7 +1297,11 @@ impl RenderableSystem {
             };
             let handle = renderable.get_handle();
             let base_material = renderable.renderable.material;
-            if let Some((declaration, shading)) = Self::resolve_anime_shading(world, node) {
+            if let Some(instance) = Self::custom_material_source(world, node)
+                .and_then(|source| visuals.materials.source_instance(source))
+            {
+                self.pending_anime_shading.insert(node, instance);
+            } else if let Some((declaration, shading)) = Self::resolve_anime_shading(world, node) {
                 let instance =
                     Self::material_instance_for_shading(world, visuals, declaration, shading);
                 self.pending_anime_shading.insert(node, instance);
@@ -1643,6 +1685,11 @@ impl RenderableSystem {
                 Self::material_instance_for_shading(world, visuals, declaration, shading);
             self.pending_anime_shading.insert(component, instance);
         }
+        if let Some(instance) = Self::custom_material_source(world, component)
+            .and_then(|source| visuals.materials.source_instance(source))
+        {
+            self.pending_anime_shading.insert(component, instance);
+        }
         if let Some((outline_component, outline)) = Self::resolve_toon_outline(world, component) {
             self.pending_toon_outline
                 .insert(component, (outline_component, outline));
@@ -1839,9 +1886,17 @@ impl RenderableSystem {
                 .copied()
                 .unwrap_or(0.0);
 
+            let custom_program = self
+                .pending_anime_shading
+                .get(&p.renderable_cid)
+                .and_then(|&id| visuals.materials.instance(id))
+                .and_then(|instance| visuals.materials.definition(instance.definition))
+                .filter(|definition| definition.custom.is_some())
+                .map(|definition| definition.static_program);
             let gpu_r = GpuRenderable::new(
                 gpu_r.mesh,
-                Self::material_with_emissive(gpu_r.material, emissive),
+                custom_program
+                    .unwrap_or_else(|| Self::material_with_emissive(gpu_r.material, emissive)),
             );
 
             let quant_steps = self

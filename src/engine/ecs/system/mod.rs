@@ -58,6 +58,7 @@ pub mod joint_basis_retargeting_system;
 pub mod keyboard_input_system;
 pub mod layout;
 pub mod light_system;
+pub mod material_system;
 pub mod mesh_bounds_system;
 pub mod mirror_system;
 pub mod model;

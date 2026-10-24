@@ -5,6 +5,12 @@ Status: built-in instance foundation accepted in VR by the user; generic paramet
 Parent: [instance/base foundation](material-instances-and-family-contracts.md).
 Previous acceptance: [shared Shading VR checkpoint](shared-materials-xr-checkpoint.md).
 
+Later implementation: [2026-10-24 custom-f32 room checkpoint](youtuber-room-custom-material-checkpoint.md).
+The inventory below records the accepted built-in proof's boundary; custom
+definition registration/reflection/upload has since been added. Built-in and
+custom lifecycle/resolution unification remains a follow-up, not a completed
+part of that newer proof.
+
 ## Accepted result and naming decision
 
 The user retested the updated scene and reported that everything seems to work.

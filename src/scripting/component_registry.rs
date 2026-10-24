@@ -78,6 +78,9 @@ pub fn with_live_render_assets<R>(render_assets: &mut RenderAssets, f: impl FnOn
 }
 
 pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
+    "MaterialBase",
+    "MaterialDefinition",
+    "Material",
     "AmbientLight",
     "Amplitude",
     "VolumeNormalization",
@@ -720,6 +723,10 @@ fn ensure_subtree_has_no_opaque_keyframe_callback(
     world: &World,
     root: ComponentId,
 ) -> Result<(), String> {
+    if world.get_component_by_id_as::<crate::engine::ecs::component::material::MaterialComponent>(root).is_some()
+        || world.get_component_by_id_as::<crate::engine::ecs::component::material::MaterialDefinitionComponent>(root).is_some() {
+        return Err("custom material reference-preserving serialization is not implemented yet".into());
+    }
     if world.parents_of(root).nth(1).is_some() {
         return Err(format!(
             "cannot serialize shared Shading {root:?}: graph-preserving save/clone is not supported by this first sharing slice"

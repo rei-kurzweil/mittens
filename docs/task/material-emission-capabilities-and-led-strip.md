@@ -1,15 +1,21 @@
 # Task: renderer emission capabilities and custom LED strip material
 
 Date: 2026-10-09
-Status: proposed; no implementation in this documentation pass.
+Status: opaque custom radiance extraction implemented; broader phase/policy migration pending.
 Parent: [custom materials epic](epic/custom-materials.md).
 Release: [0.10.0](epic/0.10.0/README.md).
 Depends on: [Material contract](material-component-and-resolved-contract.md)
 and the adapted [custom-fragment proof](mms-custom-fragment-shader-first-slice.md).
 
-Scene/asset preparation: [four-edge custom-materials example](custom-materials-led-strip-example-preparation.md).
-Use `examples/custom-materials.mms` for the proof: custom `animated_led_strip`
-on combined LED rectangles only; separate regular Toon plastic/backing.
+Current proof: [youtuber-room checkpoint](youtuber-room-custom-material-checkpoint.md).
+`examples/youtuber-room.mms` uses `MaterialBase.extracted_emissive()` on four
+CombineMesh outputs containing 308 cubes, with separate white Anime backing.
+One shader and one retained descriptor revision supply both visible and
+extracted radiance; opaque extraction uses the scene depth buffer with depth
+writes disabled. Eligibility comes from definition metadata, while legacy Toon
+materials keep their compatibility path. Stereo extraction readback checks the
+pattern, hue, brightness and zero-intensity output. The broader gates below
+remain open where they exceed this opaque foreground proof.
 
 ## Goal
 

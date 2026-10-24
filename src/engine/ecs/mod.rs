@@ -92,6 +92,7 @@ pub struct World {
     additional_parents: HashMap<ComponentId, Vec<AttachmentRef>>,
     attachment_sequence: u64,
     shading_topology_changes: std::collections::HashSet<ComponentId>,
+    material_changes: std::collections::HashSet<ComponentId>,
     guid_index: HashMap<uuid::Uuid, ComponentId>,
     /// MMQ parser instance with per-instance AST cache. Behind a RefCell so
     /// `find_component(&self, ...)` can mutate the cache without forcing
@@ -352,6 +353,23 @@ impl World {
     pub(crate) fn is_shading_declaration(&self, c: ComponentId) -> bool {
         self.get_component_by_id_as::<component::ShadingComponent>(c)
             .is_some()
+            || self
+                .get_component_by_id_as::<component::material::MaterialComponent>(c)
+                .is_some()
+    }
+
+    pub(crate) fn mark_material_changed(&mut self, component: ComponentId) {
+        self.material_changes.insert(component);
+    }
+
+    pub(crate) fn mark_material_scope_changed(&mut self, component: ComponentId) {
+        let parents: Vec<_> = self.parents_of(component).collect();
+        self.shading_topology_changes.extend(parents);
+        self.shading_topology_changes.insert(component);
+    }
+
+    pub(crate) fn take_material_changes(&mut self) -> std::collections::HashSet<ComponentId> {
+        std::mem::take(&mut self.material_changes)
     }
 
     /// Allocation-free reference to the current incoming attachment.

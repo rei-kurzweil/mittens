@@ -634,6 +634,43 @@ impl MeowMeowParser {
         let is_builtin_table = matches!(ident.0.as_str(), "Math" | "MusicNote");
         let is_component_type = self.is_component_name(&ident.0);
 
+        // Registered component constructors also accept Type(args), equivalent
+        // to Type.new(args). Ordinary lower-case function calls are unchanged.
+        if !is_builtin_table
+            && is_component_type
+            && ident
+                .0
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_uppercase)
+            && !self.is_static_component_api(&ident.0)
+            && self.try_consume(&TokenKind::LParen)
+        {
+            let args = self.parse_call_args()?;
+            let mut constructors = vec![ConstructorCall {
+                method: Ident("new".into()),
+                args,
+            }];
+            while self.try_consume(&TokenKind::Dot) {
+                let method = self.expect_component_method_ident()?;
+                self.consume(&TokenKind::LParen)?;
+                constructors.push(ConstructorCall {
+                    method,
+                    args: self.parse_call_args()?,
+                });
+            }
+            let body = if matches!(self.peek_kind(), TokenKind::LBrace) {
+                self.parse_block_statement()?
+            } else {
+                BlockStatement { statements: vec![] }
+            };
+            return Ok(Expression::Component(ComponentExpression {
+                component_type: ident,
+                constructors,
+                body,
+            }));
+        }
+
         if !is_builtin_table
             && is_component_type
             && !self.is_static_component_api(&ident.0)

@@ -1,8 +1,21 @@
 # Epic: custom materials, typed inputs, and renderer capabilities
 
 Date: 2026-10-09
-Status: shared declarations and built-in instance foundation accepted in VR; generic parameter/resolution migration and custom programs remain pending.
+Status: built-in foundation accepted in VR; initial custom-f32 room tried in VR, combined LEDs/extraction follow-up GPU-tested, full generic migration pending.
 Release: [mittens-engine 0.10.0](0.10.0/README.md).
+
+2026-10-24: [the youtuber room checkpoint](../youtuber-room-custom-material-checkpoint.md)
+implements definition/instance MMS components, registration independent of scene
+attachment, named-f32 schema validation, background local-GLSL compilation,
+reflection and bounded custom buffers. Its 308 ceiling LED cubes are combined
+into four meshes sharing one material, with one slowly rotating shared hue and
+a UV-X brightness wave. `MaterialBase.extracted_emissive()` feeds the same
+animated radiance into extraction/Bloom; the white backing uses Anime shading.
+The room contains the requested furniture, shaped chair and fictional 100k award.
+Headless stereo and 10,000-update tests pass; the updated scene awaits another headset test.
+Anime/Toon may remain authored in Rust/GLSL, but must later share the common
+registration/resolution/update/lifetime flow. The user asked to track that
+remaining RenderableSystem coupling as a TODO for now.
 
 2026-10-23 authoring revision: [the MMS material contract](../material-component-and-resolved-contract.md#authoring-decision-2026-10-23)
 names the three layers MaterialBase, MaterialDefinition and Material (instance).

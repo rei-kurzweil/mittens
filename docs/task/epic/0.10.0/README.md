@@ -126,6 +126,10 @@ requires runtime rig/hardware evidence in addition to deterministic replay tests
   a plane with one strip on each edge, FPS camera, low ambient light, and implicit clouds.
 
 - [ ] First custom-program phase: [f32-only material time animation](../../material-f32-time-animation-first-slice.md).
+  [The youtuber-room checkpoint](../../youtuber-room-custom-material-checkpoint.md)
+  now implements the named-f32 path and has headless stereo/10,000-update
+  validation. Manual VR acceptance and broader compatibility remain pending;
+  built-in definitions still need the same generic material flow.
   Prove an opaque static custom fragment with named scalar defaults, explicit
   FrameTick updates, shared/independent instances, and bounded GPU uploads.
   Lowercase first-class type-tag imports/values and host transport are implemented

@@ -63,6 +63,7 @@ pub mod layout;
 pub mod layout_bounds;
 pub mod layout_visual_placement;
 pub mod light_quantization;
+pub mod material;
 pub mod mesh;
 pub mod mirror;
 pub mod morph_target;

@@ -807,6 +807,12 @@ impl mms::Host for MittensHost<'_, '_> {
                     return Ok(S::Value(mms::Value::Null));
                 }
                 let id = self.existing_id(component, "invoke_component_method")?;
+                if *component_type == "Material" {
+                    let value =
+                        super::configured_registry::material_method(self.world, id, method, &args)
+                            .map_err(|e| mms::HostError::failure("Material", e))?;
+                    return Ok(S::Value(value));
+                }
                 let args = args
                     .into_iter()
                     .map(external_value_to_legacy)
@@ -1378,6 +1384,52 @@ fn legacy_value_to_external(value: legacy::Value) -> Result<mms::Value, mms::Hos
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn custom_material_mms_schemas_and_instances_validate_before_attachment() {
+        let configured = crate::scripting::runtime_config::build_mittens_runtime().unwrap();
+        let mut world = World::default();
+        let mut queue = crate::engine::ecs::CommandQueue::new();
+        let mut intents = Vec::new();
+        let host = MittensHost::new(&mut world, &mut queue, &mut intents)
+            .with_bindings(configured.bindings());
+        let mut session = configured.runtime().session(host);
+        session.eval(r#"
+            import { f32 } from "types"
+            let base = MaterialBase()
+            let one = MaterialDefinition(base).fragment("assets/shaders/youtuber-led-wave.frag").input_f32("gain")
+            let two = MaterialDefinition(base).fragment("assets/shaders/youtuber-led-wave.frag").input_f32("speed").input_f32("phase")
+            let first = Material(one).descriptor_set({gain=0.75})
+            let second = Material(one).descriptor_set({gain=0.25})
+            let third = Material(two).descriptor_set({speed=1.5})
+            first.set_input("gain", 0.9)
+        "#).unwrap();
+        assert_eq!(
+            session.eval("first.get_input(\"gain\")").unwrap().value,
+            Some(mms::Value::Number(0.9_f32 as f64))
+        );
+        assert_eq!(
+            session.eval("second.get_input(\"gain\")").unwrap().value,
+            Some(mms::Value::Number(0.25))
+        );
+        assert_eq!(
+            session.eval("third.get_input(\"phase\")").unwrap().value,
+            Some(mms::Value::Number(0.0))
+        );
+        for invalid in [
+            "first.set_input(\"absent\", 1.0)",
+            "first.set_input(\"gain\", 0/0)",
+            "first.set_input(\"gain\", 1e300)",
+            "first.set_input(\"gain\", f32)",
+            "Material(one).descriptor_set({gain=f32})",
+            "Material(one).descriptor_set({absent=1.0})",
+            "MaterialDefinition(base).input_f32(\"duplicate\").input_f32(\"duplicate\")",
+        ] {
+            assert!(session.eval(invalid).is_err(), "{invalid}");
+        }
+        assert_eq!(session.host().legacy_component_fallbacks(), 0);
+        assert_eq!(session.host().legacy_method_fallbacks(), 0);
+    }
 
     #[test]
     fn type_tags_work_in_the_configured_mittens_runtime_and_repl() {

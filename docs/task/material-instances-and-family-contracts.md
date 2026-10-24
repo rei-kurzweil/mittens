@@ -2,6 +2,11 @@
 
 Date: 2026-10-10
 Status: built-in Anime/Toon instance foundation accepted in VR; generic parameter/base-contract migration pending.
+
+2026-10-24: [the custom-f32 room checkpoint](youtuber-room-custom-material-checkpoint.md)
+adds MMS definition/instance registration and reflected variable-size float
+uploads. The built-in/common-flow TODO below remains open; this does not require
+moving built-in definition authoring out of Rust/GLSL.
 Parent: [custom materials epic](epic/custom-materials.md).
 Consumer: [Material component/resolution](material-component-and-resolved-contract.md).
 First custom-program proof: [f32 time animation](material-f32-time-animation-first-slice.md).
@@ -176,6 +181,17 @@ migration and the LED extraction shader remain in the
 Do not make that full migration block the opaque f32 proof.
 
 ## First refactoring slices and gates
+
+2026-10-24 follow-up TODO: built-in Anime/Toon definitions may remain authored
+in Rust/GLSL, but must use the same material registration, initialization,
+binding, retained-update and retirement logic as other material definitions.
+The new custom-f32 prototype still reuses `pending_anime_shading` and retains
+Anime-specific selection/parameter code in RenderableSystem. Unify that flow
+through MaterialSystem and the common registry/resolver; a field rename alone
+does not complete this task. Keep `Shading.anime()` / `.toon()` as compatibility
+authoring adapters. This is migration work after the room checkpoint, not a
+requirement to move built-in shader definitions into MMS or remove Anime source
+files. The user explicitly requested recording this follow-up for now.
 
 1. [x] Audit the Anime/Toon field owners, value/cache/batch flow, fixed interface
    and actual input/pass consumption. Document current ignored fields and

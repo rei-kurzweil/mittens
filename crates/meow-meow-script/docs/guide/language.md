@@ -80,6 +80,13 @@ A component expression (CE) is the core construct: a constructor head and an
 optional body of children. Children are themselves CEs. A bare CE in
 statement position emits — i.e. spawns and attaches.
 
+Capitalized registered components with a `.new(...)` constructor also accept
+`Type(...)` as shorthand for that constructor, including chained builders and
+an optional body. Lowercase function/builder calls retain their meaning. The
+[custom-material room](../../../../examples/youtuber-room.mms) uses this for
+`MaterialBase()`, `MaterialDefinition(base)` and `Material(definition)`. This
+constructor shorthand does not add type annotations or type-expression records.
+
 ```mms
 T.position(0, 1, 0) {
     R.cube() {

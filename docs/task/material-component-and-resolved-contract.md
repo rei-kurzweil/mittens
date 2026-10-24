@@ -1,9 +1,19 @@
 # Task: Material component and resolved material contract
 
 Date: 2026-10-09
-Status: proposed authoring API, revised 2026-10-23; built-in sharing/instance foundation accepted in VR, generic components not implemented.
+Status: custom-f32 component/API subset implemented 2026-10-24; full generic contract below remains proposed.
 Parent: [custom materials epic](epic/custom-materials.md).
 Release: [0.10.0](epic/0.10.0/README.md).
+
+Implemented subset: [youtuber-room checkpoint](youtuber-room-custom-material-checkpoint.md).
+`MaterialBase()`, `MaterialDefinition(base).fragment(path).input_f32(name)` and
+`Material(definition).descriptor_set(values)` register directly from MMS without
+requiring scene attachment. The default opaque mesh base and
+`MaterialBase.extracted_emissive()`, local GLSL files and named scalar-f32 fields
+are supported. The colon-style schemas and `Material(base)`
+implicit-definition overload below remain future API. Built-in definitions still
+need the [common material-flow migration](material-instances-and-family-contracts.md#first-refactoring-slices-and-gates),
+regardless of whether they remain authored in Rust/GLSL.
 
 Internal prerequisite: [stable instances and family contracts](material-instances-and-family-contracts.md),
 proved using Anime before custom programs. First custom-material target:
@@ -44,9 +54,11 @@ Current Rust source names remain unchanged in this documentation pass.
 | `Material` | Concrete shared scene component with independently mutable values/resource bindings | `MaterialInstance` |
 
 `MaterialBase()` selects the ordinary surface contract without emission
-extraction or transmission. The initial base choices are that default, a
-surface with extraction, and a transmissive surface; spellings for the latter
-two remain open. Visible-only emissive/unlit shading is definition behavior,
+extraction or transmission. The room follow-up adds
+`MaterialBase.extracted_emissive()` for opaque static meshes whose fragment
+output is radiance shared by the visible and extraction passes. A transmissive
+base and a more general surface-plus-separate-emission contract remain pending.
+Visible-only emissive/unlit shading is definition behavior,
 not another base. The definition decides lighting interpretation, including
 whether illumination can brighten beyond authored albedo. Scene Bloom/pass
 activation remains separate from a base's extraction support.

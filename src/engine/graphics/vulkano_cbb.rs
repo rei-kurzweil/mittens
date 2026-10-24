@@ -1,6 +1,12 @@
 use super::*;
 use crate::engine::graphics::primitives::InstanceHandle;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum MaterialDrawPass {
+    Surface,
+    Emission,
+}
+
 impl VulkanoState {
     fn anime_pipeline_for_reference(
         &self,
@@ -48,6 +54,9 @@ impl VulkanoState {
         pipeline_skinned: Arc<GraphicsPipeline>,
         pipeline_skinned_emissive: Arc<GraphicsPipeline>,
     ) -> Arc<GraphicsPipeline> {
+        if let Some(Ok(program)) = self.custom_programs.get(&material) {
+            return program.pipeline.clone();
+        }
         match material {
             crate::engine::graphics::MaterialHandle::ANIME_MESH => {
                 self.anime_pipeline_for_reference(&pipeline_toon, false)
@@ -79,6 +88,7 @@ impl VulkanoState {
         instance_buffer: &Subbuffer<[InstanceData]>,
         instance_count: usize,
         batches: &[crate::engine::graphics::visual_world::DrawBatch],
+        pass: MaterialDrawPass,
         pipeline_toon: Arc<GraphicsPipeline>,
         pipeline_unlit: Arc<GraphicsPipeline>,
         pipeline_mirror: Arc<GraphicsPipeline>,
@@ -95,16 +105,33 @@ impl VulkanoState {
         let mut bound_instance = None;
 
         for batch in batches {
-            let pipeline = self.pipeline_for_material(
-                batch.material,
-                pipeline_toon.clone(),
-                pipeline_unlit.clone(),
-                pipeline_mirror.clone(),
-                pipeline_grid.clone(),
-                pipeline_emissive.clone(),
-                pipeline_skinned.clone(),
-                pipeline_skinned_emissive.clone(),
-            );
+            let custom = batch
+                .material_instance
+                .and_then(|id| self.material_instances.get(id))
+                .is_some_and(|entry| entry.custom);
+            let pipeline = if pass == MaterialDrawPass::Emission && custom {
+                let Some(pipeline) = self
+                    .custom_programs
+                    .get(&batch.material)
+                    .and_then(|program| program.as_ref().ok())
+                    .and_then(|program| program.extraction_pipeline.as_ref())
+                else {
+                    // Never extract the fallback surface while a shader is compiling.
+                    continue;
+                };
+                pipeline.clone()
+            } else {
+                self.pipeline_for_material(
+                    batch.material,
+                    pipeline_toon.clone(),
+                    pipeline_unlit.clone(),
+                    pipeline_mirror.clone(),
+                    pipeline_grid.clone(),
+                    pipeline_emissive.clone(),
+                    pipeline_skinned.clone(),
+                    pipeline_skinned_emissive.clone(),
+                )
+            };
 
             let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
             let filtering = batch.texture_filtering;
@@ -185,6 +212,7 @@ impl VulkanoState {
             instance_buffer,
             instance_count,
             visual_world.background_batches(),
+            MaterialDrawPass::Surface,
             // Plain background: no depth write.
             self.pipeline_toon_mesh_transparent.clone(),
             self.pipeline_unlit_mesh_transparent.clone(),
@@ -216,6 +244,7 @@ impl VulkanoState {
             instance_buffer,
             instance_count,
             visual_world.background_occluded_lit_batches(),
+            MaterialDrawPass::Surface,
             // Occluded+lit background: depth write ON for self-occlusion.
             self.pipeline_toon_mesh.clone(),
             self.pipeline_unlit_mesh.clone(),

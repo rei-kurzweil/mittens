@@ -547,9 +547,28 @@ impl Default for VisualWorld {
 }
 
 impl VisualWorld {
-    fn is_emissive_material(material: crate::engine::graphics::MaterialHandle) -> bool {
+    fn is_emissive_instance(instance: &VisualInstance, materials: &MaterialRegistry) -> bool {
+        if let Some(definition) = instance
+            .material_instance
+            .and_then(|id| materials.instance(id))
+            .and_then(|material| materials.definition(material.definition))
+            .filter(|definition| definition.custom.is_some())
+        {
+            // The first extracted custom base supports opaque foreground meshes.
+            // Unsupported coverage/geometry must not leak into the extraction pass.
+            return definition.supports_emission_extraction
+                && instance.opacity >= 1.0
+                && !instance.transparent_cutout
+                && !instance.multiple_layers
+                && !instance.background
+                && !instance.background_occluded_lit
+                && !instance.overlay
+                && instance.stencil_ref == 0
+                && !instance.is_stencil_clip
+                && instance.bones_count == 0;
+        }
         matches!(
-            material,
+            instance.renderable.material,
             crate::engine::graphics::MaterialHandle::EMISSIVE_TOON_MESH
                 | crate::engine::graphics::MaterialHandle::SKINNED_EMISSIVE_TOON_MESH
         )
@@ -3257,14 +3276,14 @@ impl VisualWorld {
         if self
             .background_occluded_lit_order
             .iter()
-            .any(|&i| Self::is_emissive_material(self.instances[i as usize].renderable.material))
+            .any(|&i| Self::is_emissive_instance(&self.instances[i as usize], &self.materials))
         {
             self.background_occluded_lit_emissive_order.extend(
                 self.background_occluded_lit_order
                     .iter()
                     .copied()
                     .filter(|&i| {
-                        Self::is_emissive_material(self.instances[i as usize].renderable.material)
+                        Self::is_emissive_instance(&self.instances[i as usize], &self.materials)
                     }),
             );
             Self::build_draw_batches_for_order(
@@ -3301,10 +3320,11 @@ impl VisualWorld {
             &mut self.opaque_stream_instances,
         );
 
-        self.emissive_draw_order
-            .extend(self.draw_order.iter().copied().filter(|&i| {
-                Self::is_emissive_material(self.instances[i as usize].renderable.material)
-            }));
+        self.emissive_draw_order.extend(
+            self.draw_order.iter().copied().filter(|&i| {
+                Self::is_emissive_instance(&self.instances[i as usize], &self.materials)
+            }),
+        );
         let emissive_draw_order = &self.emissive_draw_order;
         Self::build_draw_batches_for_order(
             instances,
@@ -3375,10 +3395,11 @@ impl VisualWorld {
             &mut self.rough_transmission_stream_instances,
         );
 
-        self.emissive_cutout_order
-            .extend(self.cutout_order.iter().copied().filter(|&i| {
-                Self::is_emissive_material(self.instances[i as usize].renderable.material)
-            }));
+        self.emissive_cutout_order.extend(
+            self.cutout_order.iter().copied().filter(|&i| {
+                Self::is_emissive_instance(&self.instances[i as usize], &self.materials)
+            }),
+        );
         let emissive_cutout_order = &self.emissive_cutout_order;
         Self::build_draw_batches_for_order(
             instances,
@@ -3629,6 +3650,7 @@ impl VisualWorld {
                     super::MaterialHandle::SKINNED_ANIME_MESH => {
                         super::MaterialHandle::SKINNED_TOON_MESH
                     }
+                    other if other.0 >= 1024 => super::MaterialHandle::TOON_MESH,
                     other => other,
                 };
                 self.dirty_draw_cache = true;

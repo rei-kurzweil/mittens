@@ -843,7 +843,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     }
                     constructor_and_builder(component, "duration_beats", floats(1));
                 }
-                "UV" => constructor_and_builder(component, "uv", floats(2)),
+                "UV" => host_constructor_and_builder(component, canonical, "uv", floats(2)),
                 "Text" => {
                     component.positional(mms::ValueType::String);
                     component.builder_call("font_size", floats(1));
@@ -1320,6 +1320,49 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         canonical,
                         "select_device_number",
                         method(vec![mms::ValueType::U32], mms::ValueType::Null),
+                    );
+                }
+                "MaterialBase" => {
+                    host_constructor(component, canonical, "new", no_args());
+                    host_constructor(component, canonical, "extracted_emissive", no_args());
+                }
+                "MaterialDefinition" => {
+                    host_constructor(
+                        component,
+                        canonical,
+                        "new",
+                        component_signature([mms::ValueType::Component]),
+                    );
+                    host_builder_call(component, canonical, "fragment", strings(1));
+                    host_builder_call(component, canonical, "input_f32", strings(1));
+                }
+                "Material" => {
+                    host_constructor(
+                        component,
+                        canonical,
+                        "new",
+                        component_signature([mms::ValueType::Component]),
+                    );
+                    host_builder_call(
+                        component,
+                        canonical,
+                        "descriptor_set",
+                        component_signature([mms::ValueType::Table]),
+                    );
+                    host_method(
+                        component,
+                        canonical,
+                        "set_input",
+                        method(
+                            vec![mms::ValueType::String, mms::ValueType::F32],
+                            mms::ValueType::Null,
+                        ),
+                    );
+                    host_method(
+                        component,
+                        canonical,
+                        "get_input",
+                        method(vec![mms::ValueType::String], mms::ValueType::F32),
                     );
                 }
                 "Amplitude" => {

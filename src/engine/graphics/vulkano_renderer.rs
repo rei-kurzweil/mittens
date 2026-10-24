@@ -174,11 +174,22 @@ mod vulkano_backend {
         env!("CARGO_MANIFEST_DIR"),
         "/src/engine/graphics/vulkano_material_instances.rs"
     ));
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/graphics/vulkano_custom_materials.rs"
+    ));
 
     mod vulkano_cbb {
         include!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/src/engine/graphics/vulkano_cbb.rs"
+        ));
+    }
+    #[cfg(test)]
+    mod custom_material_tests {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/engine/graphics/vulkano_custom_material_tests.rs"
         ));
     }
 
@@ -579,6 +590,9 @@ mod vulkano_backend {
             GpuMaterialInstance,
         >,
         material_upload_stats: MaterialUploadStats,
+        custom_pipeline_template: vulkano::pipeline::graphics::GraphicsPipelineCreateInfo,
+        custom_programs:
+            HashMap<crate::engine::graphics::MaterialHandle, Result<CustomGpuProgram, String>>,
         cached_material_sets: crate::engine::graphics::material_cache::MaterialCache<
             (
                 crate::engine::graphics::MaterialHandle,
@@ -1535,6 +1549,7 @@ mod vulkano_backend {
 
             let pipeline_toon_mesh =
                 GraphicsPipeline::new(device.clone(), None, pipeline_ci.clone())?;
+            let custom_pipeline_template = pipeline_ci.clone();
             let mut pipeline_ci_outline = pipeline_ci.clone();
             pipeline_ci_outline.stages = outline_stages.into();
             pipeline_ci_outline.rasterization_state = Some(RasterizationState {
@@ -2207,6 +2222,8 @@ mod vulkano_backend {
                 default_white_texture: TextureHandle(0),
 
                 set_layouts,
+                custom_pipeline_template,
+                custom_programs: HashMap::new(),
 
                 pipeline_toon_mesh,
                 pipeline_toon_mesh_transparent,
@@ -3588,6 +3605,7 @@ mod vulkano_backend {
                         instance_buffer,
                         emissive_instance_count,
                         visual_world.emissive_draw_batches(),
+                        vulkano_cbb::MaterialDrawPass::Emission,
                         self.pipeline_emissive_prepass_toon_mesh.clone(),
                         self.pipeline_emissive_prepass_toon_mesh.clone(),
                         self.pipeline_emissive_prepass_toon_mesh.clone(),
@@ -3605,6 +3623,7 @@ mod vulkano_backend {
                         instance_buffer,
                         emissive_cutout_instance_count,
                         visual_world.emissive_cutout_batches(),
+                        vulkano_cbb::MaterialDrawPass::Emission,
                         self.pipeline_emissive_prepass_toon_mesh_cutout.clone(),
                         self.pipeline_emissive_prepass_toon_mesh_cutout.clone(),
                         self.pipeline_emissive_prepass_toon_mesh_cutout.clone(),
@@ -3639,6 +3658,7 @@ mod vulkano_backend {
                         instance_buffer,
                         background_emissive_instance_count,
                         visual_world.background_occluded_lit_emissive_batches(),
+                        vulkano_cbb::MaterialDrawPass::Emission,
                         self.pipeline_emissive_prepass_depth_write_toon_mesh.clone(),
                         self.pipeline_emissive_prepass_depth_write_toon_mesh.clone(),
                         self.pipeline_emissive_prepass_depth_write_toon_mesh.clone(),
@@ -3989,6 +4009,15 @@ mod vulkano_backend {
             material_instance: Option<crate::engine::graphics::materials::MaterialInstanceId>,
         ) -> Result<Option<Arc<DescriptorSet>>, Box<dyn std::error::Error>> {
             if let Some(id) = material_instance {
+                if self
+                    .custom_programs
+                    .get(&material)
+                    .is_some_and(Result::is_ok)
+                {
+                    let result = self.custom_material_set(id, material);
+                    self.log_material_upload_stats();
+                    return result;
+                }
                 let result =
                     self.mutable_material_set(id, material, texture_handle, filtering, quant_steps);
                 self.log_material_upload_stats();
@@ -5636,6 +5665,7 @@ mod vulkano_backend {
                     debug_instance_buffer,
                     stencil_clip_debug_instance_count,
                     &stencil_clip_debug_batches,
+                    vulkano_cbb::MaterialDrawPass::Surface,
                     self.pipeline_toon_mesh.clone(),
                     self.pipeline_unlit_mesh.clone(),
                     self.pipeline_mirror_mesh.clone(),
