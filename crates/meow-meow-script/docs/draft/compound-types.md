@@ -1,6 +1,7 @@
 # Compound MMS types
 
-Status: canonical draft.
+Status: draft; record roles revised 2026-10-23, with ambiguous interactions open.
+See [record type expressions and values](record-types-and-values.md). Code is unchanged.
 
 ## Sequences and fixed arrays
 
@@ -18,12 +19,23 @@ checks required fields and known field types before execution. See the
 [fixed-layout structs task](../../../../docs/task/mms-fixed-layout-structs.md)
 for runtime identity, dynamic-boundary checks, and the first verifiable slice.
 
-`{ field: Type }` is an explicit structural anonymous-record type. Anonymous
-table and named allocation values both use equals-style fields:
+The revised proposal distinguishes three anonymous record forms:
 
 ```mms
+// Pure type expression: no data instance is allocated by this declaration.
+let shape = {
+    strength: f32,
+    label: str,
+}
+
+// Value record: field types are inferred according to ordinary value rules.
 let anonymous = {
     strength = 100
+}
+
+// Candidate typed-value syntax; not yet frozen or implemented.
+let typed = {
+    strength: f32 = 100.0,
 }
 
 let cup = coffee {
@@ -32,10 +44,25 @@ let cup = coffee {
 }
 ```
 
-Commas are optional in values; canonical formatting emits one field per line
-without commas. Named structs are nominal. Same-field compatibility is
-available only through an explicit anonymous record or intersection type, not
-by accidental equivalence between declarations.
+Colon fields describe types; equals-style fields initialize non-type values.
+The earlier `{ field = f32 }` type-tag table convention is superseded as proposed
+schema authoring syntax, although the current runtime still accepts it.
+Commas are permitted in type records and value records. Existing comma-free
+multiline value formatting remains available; formatting and separators for
+mixed records still need review.
+
+A typed record with values is proposed to expose both data and a type view.
+This does not make a pure schema an implicitly initialized instance. Whether
+value-only anonymous records also expose a reusable type view, and whether
+their shapes are open or closed, remains unresolved. The current heap-map table
+representation is unchanged; inferred field types alone do not implement a
+fixed layout or prevent future mutation.
+
+The existing named-struct plan is nominal: equal-field declarations have
+different type identities. Structural comparisons/compatibility with these
+anonymous forms must be specified separately, including the operator/API used.
+Do not silently conflate structural matching, nominal equality and comparing a
+data instance with its type.
 
 ## Nullable, intersections, and unions
 

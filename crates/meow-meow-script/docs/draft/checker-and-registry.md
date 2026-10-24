@@ -13,6 +13,17 @@ intersections, unions, fixed arrays, and function signatures are interned or
 otherwise compared canonically. Diagnostics retain definition, import, and
 use spans and show a value path for compound failures.
 
+The [record/type/value proposal](record-types-and-values.md) additionally needs
+resolution to distinguish type-only expressions, inferred anonymous record
+values and explicitly typed record values with a type role. Type consumers
+must resolve a schema; value consumers must receive initialized data. The
+selection rule and structural-versus-nominal compatibility operations remain
+open. An AST `TypeExpression` is source syntax, not a runtime data record or
+the final type identity. Validation must eventually distinguish equals-style
+non-type initializers from colon-style type fields even when an alias or
+computed value obscures the initializer's kind; timing and permitted dynamic
+type expressions remain part of that design gate.
+
 The [runtime type-tag direction](type-system-epic.md#runtime-type-tag-direction-2026-10-14)
 uses this same identity model for first-class tag values. The proposed
 `typeof(value)` result compares against lowercase exports imported from the

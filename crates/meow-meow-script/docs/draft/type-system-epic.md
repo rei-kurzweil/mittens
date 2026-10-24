@@ -4,8 +4,26 @@ Status: primitive type-tag values/imports implemented 2026-10-23; annotations,
 typed numeric values/defaults, nullability checking and `typeof` remain planned.
 
 MMS's planned type system is gradual: annotations are optional, and unannotated
-code keeps today's dynamic behavior. This epic owns the implementation order. The
-focused drafts beside it own syntax and boundary details.
+code keeps today's dynamic behavior. This epic owns the implementation order.
+The focused drafts beside it own syntax and boundary details.
+
+## Record roles under review (2026-10-23)
+
+[Record type expressions and record values](record-types-and-values.md) records
+the latest docs-only proposal: `{ field: f32 }` is a type-only structural
+expression, `{ field = 1.0 }` is a value record with inferred types, and candidate
+`{ field: f32 = 1.0 }` carries explicit field types plus values and may serve
+both roles through defined operations. Type fields allow commas; equals-style
+fields are proposed for non-type value initialization. Ordinary binding
+assignment of a type value (`let kind = f32`) remains distinct and valid.
+
+This requires a real `TypeExpression` AST, resolved structural/nominal type
+identities and validation. The type/data view selection, mixed contents,
+equality versus compatibility, mutation/layout and default-construction rules
+remain open. Do not implement those semantics by just accepting colons.
+Current primitive tags and equals-style table storage remain implemented;
+the new record syntax and restrictions are not. This revision supersedes
+equals-style type-tag tables as the proposed material schema syntax.
 
 ## Runtime type-tag direction (2026-10-14)
 
@@ -29,8 +47,9 @@ String inspection uses `str`, consistent with its annotation spelling.
 import { f32, vec2, vec3, vec4, str } from "types"
 
 let some_type = f32
-let fields = { progress = some_type, direction = vec2 }
+let alias = some_type
 
+alias == f32  // true
 f32 == f32  // true
 f32 != 0.0  // true
 f32 != 1.0  // true
@@ -72,6 +91,8 @@ constrains and initializes a numeric value rather than storing the tag.
 
 The tag-value/schema slice depends on tag identity and module exports, not
 optional annotations, a static checker, or pattern matching.
+The new type-expression record syntax is a separate pending slice; the current
+tag implementation does not provide its AST, inferred records or dual-role rules.
 Do not claim numeric-width or array-element precision the current value does
 not retain. Current `Value::Number(f64)` and arrays do not preserve f32/vector
 identity. The typed example above additionally requires annotated/default
@@ -105,6 +126,9 @@ coercion, ordering and tag-field mutation fail. Numeric internal identities
 are never exposed as ordinary numeric values. Mittens JSON encoding rejects
 tags rather than silently turning them into numbers or strings; REPL display
 uses `<type f32>` for a tag and imported type references in schema tables.
+This describes the implemented tag-only snapshot: existing ordinary tables can
+still store tag values with `=`. The newer record proposal changes the intended
+schema authoring form to `field: Type`; it has not changed that runtime behavior.
 
 Unimported known type names in equality/inequality, and unresolved identifiers
 compared against an actual tag, produce an actionable import error. Symbolic
@@ -167,17 +191,20 @@ let cup = coffee {
 }
 ```
 
-Bindings, parameters, returns, and struct fields consistently use
-`name: Type`. Anonymous-table and named-struct values use `field = value`.
-Commas are optional; canonical formatting emits one field per line without
-commas.
+Bindings, parameters, returns, and declared fields consistently use `name: Type`.
+Type-only anonymous records also use colons. Equals-style record fields supply
+non-type values; candidate typed-value fields combine `: Type` with `= value`.
+Commas are allowed; existing value formatting emits one field per line without
+commas, while the mixed-record grammar/formatting remains under review.
 
 ## Vertical slices
 
 1. **Type expressions.** Add a spanned `TypeExpression` AST, tokenizer and
    parser support, precedence, and parse/unparse round trips. Dependency:
    none. Smoke test: round-trip every form in
-   [type-expressions.md](type-expressions.md). Exit gate: malformed types have
+   [type-expressions.md](type-expressions.md), including expression-position
+   type records once the [record-role design gate](record-types-and-values.md#current-implementation-and-next-design-gate)
+   is resolved. Exit gate: malformed types have
    source-local diagnostics and canonical output reparses to the same AST.
 2. **Postfix annotations.** Add annotations to bindings, function parameters
    and returns, and struct fields. Dependency: slice 1. Smoke test: parse and

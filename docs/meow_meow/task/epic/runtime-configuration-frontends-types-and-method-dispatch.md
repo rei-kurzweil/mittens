@@ -422,6 +422,12 @@ and error behavior with receiver spellings.
 Once runtime calls have one meaning, add the source-level type system as
 another consumer of that meaning.
 
+- [ ] Resolve the [record/type/value design gate](../../../../crates/meow-meow-script/docs/draft/record-types-and-values.md):
+      colon fields describe types, equals-style fields initialize non-type data,
+      and typed records with values may expose a type role. Freeze the relevant
+      grammar, type/data view selection, structural-versus-nominal comparisons,
+      mutation and default/construction behavior before implementation. The
+      primitive tag-value slice does not satisfy this AST/resolution work.
 - [ ] Add type-expression, typed-binding, typed-parameter, and function return
       grammar.
 - [ ] Infer ordinary `let` bindings and omitted function annotations.

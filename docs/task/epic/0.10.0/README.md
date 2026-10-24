@@ -116,7 +116,9 @@ requires runtime rig/hardware evidence in addition to deterministic replay tests
   program validation remain pending. The selected three-layer naming is
   MaterialBase -> MaterialDefinition -> Material (the instance); MaterialBase
   replaces MaterialFamily. The [MMS authoring contract](../../material-component-and-resolved-contract.md#authoring-decision-2026-10-23)
-  specifies definition/type-tag and instance/value tables and constructor overloads.
+  specifies definition/type-expression and instance/value records and constructor
+  overloads. The [record/type/value design](../../../../crates/meow-meow-script/docs/draft/record-types-and-values.md)
+  remains under review before further implementation.
 
 - [ ] [Prepare the four-strip custom-materials example](../../custom-materials-led-strip-example-preparation.md):
   LED-only combined geometry with `animated_led_strip`, separate Toon backings,
@@ -126,7 +128,8 @@ requires runtime rig/hardware evidence in addition to deterministic replay tests
   Prove an opaque static custom fragment with named scalar defaults, explicit
   FrameTick updates, shared/independent instances, and bounded GPU uploads.
   Lowercase first-class type-tag imports/values and host transport are implemented
-  as the authoring prerequisite; full numeric
+  as one prerequisite. Colon-style schema `TypeExpression` AST/resolution and
+  the record-role design gate remain pending; full numeric
   annotations/precise `typeof` are separate MMS work. Richer GPU field types
   and emission are subsequent material slices.
 

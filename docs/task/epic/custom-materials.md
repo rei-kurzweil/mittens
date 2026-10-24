@@ -6,8 +6,11 @@ Release: [mittens-engine 0.10.0](0.10.0/README.md).
 
 2026-10-23 authoring revision: [the MMS material contract](../material-component-and-resolved-contract.md#authoring-decision-2026-10-23)
 names the three layers MaterialBase, MaterialDefinition and Material (instance).
-Definition tables contain lowercase imported type tags; Material tables contain
-initial values. First-class MMS tags precede these schema tables; typed numeric
+Definition schemas use colon-style type expressions resolving lowercase
+imported type identities; Material records use equals-style initial values.
+This follows the later [record/type/value revision](../../../crates/meow-meow-script/docs/draft/record-types-and-values.md),
+whose mixed forms and dual roles remain under review. Primitive tags and a
+real `TypeExpression`/schema-resolution foundation precede this API; typed numeric
 defaults/precise `typeof` are separate language work. No generic authoring API
 is implemented by that documentation update. The subsequent primitive MMS
 tag-value slice is now implemented: lowercase imports, identity equality,
@@ -198,7 +201,8 @@ default surface without extraction or transmission. Without customization,
 use its standard default shading implementation. `.fragment(...)` configures
 the implicit definition, while `.descriptor_set(...)` on Material supplies
 initial values validated against the shader's declared types. Definition
-tables contain type tags instead. See the [authoring contract](../material-component-and-resolved-contract.md#authoring-decision-2026-10-23)
+schemas instead use `field: Type`. Whether typed records with values may supply
+either role through explicit type/data views is still open. See the [authoring contract](../material-component-and-resolved-contract.md#authoring-decision-2026-10-23)
 for sharing, initial values and open descriptor-layout details.
 `Shading.anime()`/`.toon()` configure
 the surface model in that same resolved contract. Existing color, texture,
@@ -282,9 +286,11 @@ reuse is separate from material/state inheritance.
 ## LED strip and input update contract
 
 First establish [Phase 1: f32-only time animation](../material-f32-time-animation-first-slice.md)
-on opaque static geometry. Imported lowercase type tags are the definition-table
-prerequisite; full source annotations/static checking are separate language
-work. Explicit initial values/setter updates are sufficient; callbacks stored
+on opaque static geometry. Imported lowercase type identities and the agreed
+type-expression/record-resolution slice are the definition-schema prerequisites;
+the record-role design gate is still open. Full source annotations/static
+checking are separate language work. Explicit initial values/setter updates
+are sufficient; callbacks stored
 as material inputs and automatic renderer/global bindings are not first-phase
 prerequisites. The LED example
 below adds renderer emission in a subsequent slice.
@@ -298,7 +304,7 @@ import { f32 } from "types"
 // its lookup spelling and extraction program contract remain to be specified.
 let light_strip_definition = MaterialDefinition(extraction_base)
     .fragment("assets/shaders/led_light_strip.frag")
-    .descriptor_set({ glow_amount = f32 })
+    .descriptor_set({ glow_amount: f32 })
 
 let light_strip_material = Material(light_strip_definition)
     .descriptor_set({ glow_amount = 0.0 })
@@ -314,8 +320,9 @@ on_global("FrameTick", fn(event) {
 
 The function and material methods here are proposed. Avoid requiring typed MMS
 annotations or arbitrary callbacks merely to prove one float upload. Runtime
-type-tag values for schema tables are required; they are distinct from source
-annotations. Freeze remaining descriptor-table/layout details in the authoring ticket.
+type identities and schema type expressions are required; primitive tag values
+alone do not implement those records. Settle the record-role design first,
+then freeze remaining descriptor-table/layout details in the authoring ticket.
 
 Distinguish four input sources: literal defaults, explicit retained setters/
 animation channels, renderer-owned globals, and optional script/provider

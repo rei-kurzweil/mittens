@@ -24,6 +24,22 @@ module-visible type binding. Imports retain the identity of the exported
 declaration, not merely its spelling. Instances retain that declaration ID.
 Two declarations with equal fields remain different nominal types.
 
+## Record fields and type values (2026-10-23 revision)
+
+Follow the [record/type/value proposal](record-types-and-values.md):
+`{ field: Type }` describes a type-only record, while `{ field = value }`
+initializes a record with ordinary non-type data and inferred field types.
+Candidate `{ field: Type = value }` combines an explicit type with an initial
+value, allowing a data role and a type/schema role. That mixed spelling and
+the operations selecting either role remain open, not implemented syntax.
+
+`let some_type = f32` remains a normal binding holding a first-class type tag.
+The proposed restriction on equals-style table fields does not prohibit that
+binding assignment. Conversely, a schema field `field: f32` describes a field
+and does not itself allocate a numeric default. Only a declaration in a value
+construction context may initialize data. This avoids confusing a type-only
+record with the separate zero-initialized binding `let field: f32`.
+
 ## Type values and default initialization (2026-10-23)
 
 Types also have immutable first-class tag values, imported using lowercase

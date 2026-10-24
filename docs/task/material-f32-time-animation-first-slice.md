@@ -17,8 +17,12 @@ supersedes `Material.custom(...).input_f32(...)`. Land lowercase first-class
 [MMS type tags](../../crates/meow-meow-script/docs/draft/type-system-epic.md#runtime-type-tag-direction-2026-10-14)
 before definition schema tables. Those tags may include f32/vector identities
 without implementing all corresponding GPU field types in this first proof.
-The primitive tag-value/import/storage/transport prerequisite is implemented;
-MaterialDefinition/Material and shader reflection/upload remain pending.
+The primitive tag-value/import/storage/transport prerequisite is implemented.
+The subsequent [record-role revision](../../crates/meow-meow-script/docs/draft/record-types-and-values.md)
+changes definition fields to colon-style type expressions. Settle that design
+and its `TypeExpression` AST/resolution before implementing the Material API;
+tag storage alone is insufficient. MaterialDefinition/Material and shader
+reflection/upload remain pending.
 Full source annotations, numeric default initialization and precise numeric
 `typeof` are separate MMS work, not required to pass explicit initial values.
 
@@ -41,7 +45,8 @@ the new path. Reuse the loading/validation/storage tests from the earlier
 Every authored shader input is a named finite `f32` with a default. Support
 more than one such field if the schema/storage path naturally permits it, but
 the first example needs just `time_seconds`. Definitions declare types using
-imported type-tag values; Material instances provide actual initial values.
+colon-style type expressions resolving imported type identities; Material
+instances provide actual initial values through equals-style fields.
 
 Illustrative syntax to freeze during implementation, not available MMS API:
 
@@ -50,7 +55,7 @@ import { f32 } from "types"
 
 let definition = MaterialDefinition(MaterialBase())
     .fragment("assets/shaders/mms-time-test.frag")
-    .descriptor_set({ time_seconds = f32 })
+    .descriptor_set({ time_seconds: f32 })
 
 let animated_material = Material(definition)
     .descriptor_set({ time_seconds = 0.0 })
@@ -125,8 +130,10 @@ material instance. Preserve this wrapper through baking and test direct-child
 Material attachment on a renderable as the other supported authoring form.
 
 - [ ] Construction and retained f32 get/set work in top-level and runtime MMS.
-- [ ] Definition schema tables retain imported `f32` type tags, while Material
-  tables accept numeric initial values and reject tags where values are needed.
+- [ ] Definition schemas resolve colon-style `f32` type expressions, while
+  Material records accept numeric initial values. Reject type tags where
+  ordinary values are required; type-expression support is not satisfied by
+  an untyped map containing tags.
   Verify explicit definition construction and the implicit-definition shorthand.
 - [ ] Invalid/nonfinite/out-of-range conversion, unknown fields, incompatible
   shader layouts, and failed compilation produce useful errors/fallback.

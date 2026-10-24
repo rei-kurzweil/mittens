@@ -13,12 +13,18 @@ before expanding to this task's full compatibility/cascade contract. The wider
 inventory can proceed independently; it must not turn Phase 1 into a wholesale
 material migration.
 
-2026-10-23 prerequisite completed: MMS now imports primitive type-tag values
+2026-10-23 primitive-tag prerequisite completed: MMS now imports primitive type-tag values
 from `"types"` (`f32`, `vec2`, `vec3`, `vec4`, `str`) and preserves them in
 schema tables, closures and typed host/callback transport. Material components,
 descriptor tables, reflection/upload integration and constructors below remain
 proposed. `typeof`, annotations/default numeric initialization and `mat4` are
 separate pending work. See the [implemented language boundary](../../crates/meow-meow-script/docs/draft/type-system-epic.md#implemented-tag-value-boundary-2026-10-23).
+
+The subsequent [record/type/value proposal](../../crates/meow-meow-script/docs/draft/record-types-and-values.md)
+revises definition schemas to colon-style type expressions, with commas allowed.
+That `TypeExpression` AST/resolution foundation remains pending; primitive tags
+alone do not implement it. Settle the record-role ambiguities before continuing
+the Material API. No code changes are part of this revision.
 
 ## Authoring decision (2026-10-23)
 
@@ -50,10 +56,10 @@ import { f32, vec2, vec3 } from "types"
 let definition = MaterialDefinition(MaterialBase())
     .fragment(fragment_shader_uri)
     .descriptor_set({
-        burn_progress = f32
-        airflow = f32
-        burn_direction = vec2
-        glow_color = vec3
+        burn_progress: f32,
+        airflow: f32,
+        burn_direction: vec2,
+        glow_color: vec3,
     })
 
 let cigarette = Material(definition)
@@ -73,10 +79,12 @@ let independent_cigarette = Material(definition)
     })
 ```
 
-The definition's table contains immutable type-tag values; the material's
-table contains initial field values, validated against those types. Both are
-ordinary table expressions using `=`, not declaration annotations using `:`.
-Names and types must match the shader interface and base contract. This table
+The definition consumes a type-only structural expression: colon fields name
+types, and resolution produces its schema/type identity. The material consumes
+ordinary initial field values using `=`, validated against that schema. This
+supersedes the earlier proposal that both arguments were ordinary tables with
+equals-style fields storing tags or values. Names and types must match the
+shader interface and base contract. This record
 shape is illustrative: literal descriptor-set/binding numbers, nested tables,
 resource entries, layout metadata and the precise validation API remain open.
 The engine owns GPU packing/alignment and renderer-reserved bindings.
@@ -118,6 +126,12 @@ appearance through scene attachment. Every `Material(definition)` or
 handle shares that instance. Independent instances can share definition,
 program and pipeline resources. Definition mutation/reload and compatibility
 rules after instances exist remain to be specified.
+
+Typed record literals carrying both field types and values may eventually serve
+either consumer through a defined type/data view. Candidate field syntax is
+`progress: f32 = 0.0`, but its grammar, view selection, equality/compatibility
+and construction/default rules remain open in the linked proposal. Do not
+silently turn a pure schema's fields into initialized material values.
 
 Defaults and current values are separate from field types. The exact policy for
 omitted material fields remains to be specified; numeric defaults, if used,
@@ -184,8 +198,9 @@ insufficient.
   and per-view resources. Link to the existing material/resource-graph ticket.
 - [ ] Specify definition/instance/resolved-record schemas, capability constraints,
   authored vs renderer-owned fields, retained generation, and serialization.
-- [ ] Implement the constructor overloads and definition/type-tag versus
-  instance/value tables above after the MMS tag prerequisite; freeze the exact
+- [ ] Resolve the record-role design gate, then implement the constructor
+  overloads and definition/type-expression versus instance/value records above
+  after the MMS type-expression/resolution foundation; freeze the exact
   descriptor-table shape and finite `f32` setter/readback validation. Full
   source annotations/static checking are not prerequisites. Phase 1 GPU fields
   support f32 only; vectors/colors, matrices, integer/boolean fields,

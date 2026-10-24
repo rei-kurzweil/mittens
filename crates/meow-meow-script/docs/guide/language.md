@@ -29,14 +29,8 @@ import { f32, vec2, vec3, vec4, str } from "types"
 import { f32 as float_type } from "types"
 
 let some_type = f32
-let fields = {
-    progress = some_type
-    direction = vec2
-    color = vec3
-}
 
 some_type == float_type  // true
-fields.progress == f32  // true
 f32 != 0.0              // true
 f32 != 1.0              // true
 f32 != "f32"            // true
@@ -55,6 +49,14 @@ and `typeof(value)` remain planned, as do native vector/matrix values and
 `mat4`. Mittens JSON encoding rejects tags instead of coercing them to strings
 or numeric IDs. See the [type-system draft](../draft/type-system-epic.md)
 for the separate annotation, inspection and nullability work.
+
+The newer [record/type/value proposal](../draft/record-types-and-values.md)
+would use colon fields for type schemas (`{ progress: f32 }`) and equals-style
+fields for ordinary non-type data (`{ progress = 0.0 }`). Typed records carrying
+both field types and values are under discussion. None of that record syntax,
+inference, validation or dual-role behavior is implemented. Current tables can
+still store tag values using `=`; the proposed field restriction changes the
+intended authoring contract, not today's runtime behavior.
 
 The remaining host-neutral material under the workspace's `docs/meow_meow`
 directory will move into the crate incrementally; the

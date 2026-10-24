@@ -16,6 +16,13 @@ This supersedes the older proposal to implement structs as typed tables in
 The [type-system epic](../../crates/meow-meow-script/docs/draft/type-system-epic.md)
 owns the broader type-system rollout and canonical syntax.
 
+2026-10-23 design revision: [record type expressions and values](../../crates/meow-meow-script/docs/draft/record-types-and-values.md)
+adds type-only anonymous records, inferred value records and candidate typed
+records with values/type roles. Their construction, structural-versus-nominal
+comparison, mutation and layout choices remain open. This task's named nominal
+fixed-layout model is the existing baseline, not a decision that every new
+anonymous record form must use it. No code changes accompany this revision.
+
 ## Current implementation
 
 In `crates/meow-meow-script/src/evaluator.rs`, an anonymous table literal
@@ -24,13 +31,19 @@ allocates `Object::Map(HashMap<String, Value>)` and returns
 exists; `Value::Object` alone does not imply a fixed layout. There is no
 implemented named-struct layout in this path.
 
-Anonymous tables keep their dynamic map semantics. They do not gain a closed
-schema just because their literal happens to contain statically known keys.
+Current anonymous tables have dynamic map semantics and do not have a closed
+schema just because their literal contains statically known keys. Whether
+future inferred or explicitly typed anonymous records are closed structs or
+typed views of tables is reopened by the linked proposal; syntax alone must
+not silently decide that storage/mutation contract.
 
 ## Source contract
 
 Use the canonical type-system syntax: declarations use `field: Type` and
-construction uses `field = value`.
+construction uses `field = value` for non-type data. A `TypeExpression` describes
+the declaration's field types, while an instantiated struct carries actual
+values and its declaration identity. Candidate `field: Type = value` in an
+anonymous typed record remains under review; it is not implemented by this task.
 
 ```mms
 struct laser_settings {
