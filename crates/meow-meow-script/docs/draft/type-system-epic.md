@@ -9,6 +9,14 @@ The focused drafts beside it own syntax and boundary details.
 
 ## Record roles under review (2026-10-23)
 
+2026-10-25: the [primitive-record implementation](record-types-and-values.md#implemented-primitive-record-slice-2026-10-25)
+adds a spanned TypeExpression AST for type-only primitive records, resolved
+immutable RecordType values, structural equality and host/callback transport.
+Newline-separated fields need no commas. Existing value tables retain legacy
+same-line whitespace separation for compatibility. Mixed/typed-value records,
+nominal/nested types, annotations and general typeof remain future work. This
+implemented subset supersedes the historical proposal boundary below.
+
 [Record type expressions and record values](record-types-and-values.md) records
 the latest docs-only proposal: `{ field: f32 }` is a type-only structural
 expression, `{ field = 1.0 }` is a value record with inferred types, and candidate

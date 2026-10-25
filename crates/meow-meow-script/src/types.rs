@@ -5,7 +5,14 @@
 //! numeric representation or implement source annotations. Future nominal and
 //! compound tags must retain their registry/declaration identities separately.
 
+use std::collections::BTreeMap;
 use std::fmt;
+
+/// Immutable structural type for a closed record of primitive fields.
+/// Sorted fields make structural equality independent of declaration order.
+/// This is distinct from an ordinary table containing type-tag values.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordType(pub BTreeMap<String, TypeTag>);
 
 /// An immutable type-tag identity, distinct from any ordinary numeric value.
 ///

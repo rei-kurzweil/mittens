@@ -131,18 +131,21 @@ fn youtuber_room_renders_custom_wave_in_stereo() -> Result<(), Box<dyn std::erro
             .map(|(id, _)| id)
             .expect("room's shared custom instance");
         let definition = room.visuals.materials.instance(custom).unwrap().definition;
+        let fields = &room.visuals.materials.definition(definition).unwrap().custom.as_ref().unwrap().fields;
+        let time_index = fields.iter().position(|name| name == "time_seconds").unwrap();
+        let intensity_index = fields.iter().position(|name| name == "intensity").unwrap();
         if frame == 2 {
             let record = room.visuals.materials.instance(custom).unwrap();
             let source = record.source;
             let mut values = record.values.to_vec();
-            values[4] = 0.0;
+            values[intensity_index] = 0.0;
             room.visuals
                 .materials
                 .upsert_custom_source(source, definition, values);
         }
         if frame == 1 {
             assert!(
-                room.visuals.materials.instance(custom).unwrap().values[0] > 1.0,
+                room.visuals.materials.instance(custom).unwrap().values[time_index] > 1.0,
                 "FrameTick must publish a new time value"
             );
         }

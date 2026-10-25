@@ -29,7 +29,7 @@ pub use runtime::*;
 pub use standard_host::*;
 pub use token::*;
 pub use tokenizer::*;
-pub use types::TypeTag;
+pub use types::{RecordType, TypeTag};
 pub use worker::*;
 
 #[cfg(test)]

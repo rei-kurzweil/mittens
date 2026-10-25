@@ -58,6 +58,24 @@ fn value_to_expression(value: &Value, world: &World) -> Result<Expression, Strin
         Value::Number(v) => Expression::Number(*v),
         // The source reference requires the corresponding explicit import.
         Value::TypeTag(tag) => Expression::Identifier(Ident(tag.name().into())),
+        Value::RecordType(ty) => {
+            use meow_meow_script::{Span, TypeExpression, TypeField};
+            Expression::Type(TypeExpression::Record {
+                fields: ty
+                    .0
+                    .iter()
+                    .map(|(name, tag)| TypeField {
+                        name: Ident(name.clone()),
+                        ty: TypeExpression::Named {
+                            name: Ident(tag.name().into()),
+                            span: Span::new(0, 0),
+                        },
+                        span: Span::new(0, 0),
+                    })
+                    .collect(),
+                span: Span::new(0, 0),
+            })
+        }
         Value::Dimension { value, unit } => Expression::Dimension(*value, *unit),
         Value::String(v) => Expression::String(v.clone()),
         Value::Identifier(v) => Expression::Identifier(Ident(v.clone())),

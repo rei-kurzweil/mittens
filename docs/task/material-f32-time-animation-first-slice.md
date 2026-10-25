@@ -2,6 +2,13 @@
 
 Date: 2026-10-10
 Status: named-f32 room path implemented and headless-GPU tested 2026-10-24; manual VR acceptance and broader compatibility gates pending.
+
+2026-10-25: symmetric `.inputs(...)` authoring is implemented. Definitions take
+colon-style primitive type records; instances take equals-style values. The
+room uses newline-separated fields without commas. `.input_f32(...)` and
+`.descriptor_set(...)` remain compatibility entry points for the historical
+examples below. The GPU path remains f32-only and UBO-backed; mixed records,
+vector uploads and the full built-in/common-flow migration remain pending.
 Parent: [custom materials epic](epic/custom-materials.md).
 Release: [0.10.0](epic/0.10.0/README.md).
 

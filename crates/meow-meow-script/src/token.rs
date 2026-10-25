@@ -49,6 +49,7 @@ pub enum TokenKind {
     RBracket,
 
     Comma,
+    Colon,
     Dot,
     Eq,
     Semicolon,
@@ -88,6 +89,8 @@ pub enum TokenKind {
 pub struct Token {
     pub kind: TokenKind,
     pub span: Span,
+    /// A line break in the whitespace/comments preceding this token.
+    pub line_break_before: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -8,6 +8,7 @@
 // Four CombineMesh outputs share one retained material. LED cubes are baked
 // once; only time_seconds changes per frame for their hue and brightness wave.
 
+import { f32 } from "types"
 import { pose as floor_seated_pose } from "../assets/components/poses/rei-mu/floor-seated.pose.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
@@ -38,12 +39,14 @@ AL.rgb(0.0, 0.0, 0.0)
 let led_base = MaterialBase.extracted_emissive()
 let led_definition = MaterialDefinition(led_base)
     .fragment("assets/shaders/youtuber-led-wave.frag")
-    .input_f32("time_seconds")
-    .input_f32("hue_speed")
-    .input_f32("wave_speed")
-    .input_f32("wave_count")
-    .input_f32("intensity")
-let ceiling_leds = Material(led_definition).descriptor_set({
+    .inputs({
+        time_seconds: f32
+        hue_speed: f32
+        wave_speed: f32
+        wave_count: f32
+        intensity: f32
+    })
+let ceiling_leds = Material(led_definition).inputs({
     time_seconds = 0.0
     // A brightness crest takes 6 / 0.5 = 12 seconds to lap the room.
     // The entire strip completes one hue cycle every four laps (48 seconds).

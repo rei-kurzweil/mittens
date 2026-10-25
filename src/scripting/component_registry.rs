@@ -1030,6 +1030,7 @@ fn expression_to_value(e: &Expression) -> Result<Value, String> {
                 .map(|field| Ok((field.name.0.clone(), expression_to_value(&field.value)?)))
                 .collect::<Result<_, String>>()?,
         )),
+        Expression::Type(_) => Err("type expressions require the RuntimeSpec runtime".into()),
         Expression::Index { base, index } => {
             let base = expression_to_value(base)?;
             let index = expression_to_value(index)?;

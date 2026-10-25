@@ -1080,7 +1080,7 @@ fn transport_to_json(value: &mms::TransportValue) -> Result<serde_json::Value, m
             .map(serde_json::Value::Number)
             .ok_or_else(|| mms::HostError::failure("JSON.stringify", "numbers must be finite"))?,
         mms::TransportValue::String(value) => serde_json::Value::String(value.clone()),
-        mms::TransportValue::TypeTag(_) => {
+        mms::TransportValue::TypeTag(_) | mms::TransportValue::RecordType(_) => {
             return Err(mms::HostError::failure(
                 "JSON.stringify",
                 "type tags are not JSON values",
@@ -1171,6 +1171,7 @@ fn legacy_event_value_to_transport(
         legacy::Value::Bool(value) => mms::TransportValue::Bool(value),
         legacy::Value::Number(value) => mms::TransportValue::Number(value),
         legacy::Value::TypeTag(tag) => mms::TransportValue::TypeTag(tag),
+        legacy::Value::RecordType(ty) => mms::TransportValue::RecordType(ty),
         legacy::Value::String(value) | legacy::Value::Identifier(value) => {
             mms::TransportValue::String(value)
         }
@@ -1282,6 +1283,7 @@ fn external_value_to_legacy(value: mms::Value) -> Result<legacy::Value, mms::Hos
         mms::Value::Bool(v) => legacy::Value::Bool(v),
         mms::Value::Number(v) => legacy::Value::Number(v),
         mms::Value::TypeTag(tag) => legacy::Value::TypeTag(tag),
+        mms::Value::RecordType(ty) => legacy::Value::RecordType(ty),
         mms::Value::String(v) => legacy::Value::String(v),
         mms::Value::Dimension { value, unit } => legacy::Value::Dimension { value, unit },
         mms::Value::Array(v) => legacy::Value::Array(
@@ -1351,6 +1353,7 @@ fn legacy_value_to_external(value: legacy::Value) -> Result<mms::Value, mms::Hos
         legacy::Value::Bool(v) => mms::Value::Bool(v),
         legacy::Value::Number(v) => mms::Value::Number(v),
         legacy::Value::TypeTag(tag) => mms::Value::TypeTag(tag),
+        legacy::Value::RecordType(ty) => mms::Value::RecordType(ty),
         legacy::Value::String(v) => mms::Value::String(v),
         legacy::Value::Dimension { value, unit } => mms::Value::Dimension { value, unit },
         legacy::Value::Array(v) => mms::Value::Array(
@@ -1384,6 +1387,90 @@ fn legacy_value_to_external(value: legacy::Value) -> Result<mms::Value, mms::Hos
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn material_inputs_use_type_records_for_definitions_and_values_for_instances() {
+        let configured = crate::scripting::runtime_config::build_mittens_runtime().unwrap();
+        let mut world = World::default();
+        let mut queue = crate::engine::ecs::CommandQueue::new();
+        let mut intents = Vec::new();
+        let host = MittensHost::new(&mut world, &mut queue, &mut intents)
+            .with_bindings(configured.bindings());
+        let mut session = configured.runtime().session(host);
+        session
+            .eval(
+                r#"
+            import { f32 as scalar, vec2 } from "types"
+            let schema = {
+                gain: scalar
+                phase: scalar
+            }
+            let definition = MaterialDefinition(MaterialBase())
+                .fragment("assets/shaders/youtuber-led-wave.frag")
+                .inputs(schema)
+            let initial = 0.75
+            let first = Material(definition).inputs({
+                gain = initial
+                phase = initial * 2
+            })
+            let second = Material(definition).inputs({gain = 0.25,})
+            first.set_input("gain", 0.9)
+        "#,
+            )
+            .unwrap();
+        for (expression, expected) in [
+            ("first.get_input(\"gain\")", 0.9_f32 as f64),
+            ("first.get_input(\"phase\")", 1.5),
+            ("second.get_input(\"gain\")", 0.25),
+            ("second.get_input(\"phase\")", 0.0),
+        ] {
+            assert_eq!(
+                session.eval(expression).unwrap().value,
+                Some(mms::Value::Number(expected))
+            );
+        }
+        for (source, message) in [
+            (
+                "MaterialDefinition(MaterialBase()).inputs({gain=1})",
+                "record_type",
+            ),
+            (
+                "MaterialDefinition(MaterialBase()).inputs({gain=scalar})",
+                "record_type",
+            ),
+            (
+                "MaterialDefinition(MaterialBase()).inputs({gain: vec2})",
+                "only f32",
+            ),
+            (
+                "MaterialDefinition(MaterialBase()).inputs({gain: missing})",
+                "primitive type tag",
+            ),
+            ("Material(definition).inputs(schema)", "table"),
+            ("Material(definition).inputs({gain=scalar})", "finite f32"),
+            ("Material(definition).inputs({gain=0/0})", "finite f32"),
+            (
+                "Material(definition).inputs({gain=10000000000000000000000000000000000000000})",
+                "finite f32",
+            ),
+            (
+                "Material(definition).inputs({missing=1})",
+                "unknown material field",
+            ),
+            ("JSON.stringify(schema)", "not JSON"),
+        ] {
+            let error = session.eval(source).unwrap_err().to_string();
+            assert!(error.contains(message), "{source}: {error}");
+        }
+        let value = session.eval("schema").unwrap().value.unwrap();
+        let retained = external_value_to_legacy(value.clone()).unwrap();
+        let formatted =
+            crate::scripting::repl::format_repl_value(&retained, session.host().world).unwrap();
+        assert!(formatted.contains("gain: f32"), "{formatted}");
+        assert_eq!(legacy_value_to_external(retained).unwrap(), value);
+        assert_eq!(session.host().legacy_component_fallbacks(), 0);
+        assert_eq!(session.host().legacy_method_fallbacks(), 0);
+    }
 
     #[test]
     fn custom_material_mms_schemas_and_instances_validate_before_attachment() {

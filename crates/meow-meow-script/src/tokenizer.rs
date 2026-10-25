@@ -30,12 +30,17 @@ impl<'a> MeowMeowTokenizer<'a> {
     }
 
     fn next_token(&mut self) -> Result<Token, TokenizeError> {
+        let whitespace_start = self.idx;
         self.skip_ws_and_comments()?;
+        let line_break_before = self.bytes[whitespace_start..self.idx]
+            .iter()
+            .any(|b| matches!(b, b'\n' | b'\r'));
         let start = self.idx;
         if self.idx >= self.bytes.len() {
             return Ok(Token {
                 kind: TokenKind::Eof,
                 span: Span::new(self.idx, self.idx),
+                line_break_before,
             });
         }
 
@@ -68,6 +73,10 @@ impl<'a> MeowMeowTokenizer<'a> {
             b',' => {
                 self.idx += 1;
                 TokenKind::Comma
+            }
+            b':' => {
+                self.idx += 1;
+                TokenKind::Colon
             }
             b'.' => {
                 self.idx += 1;
@@ -209,6 +218,7 @@ impl<'a> MeowMeowTokenizer<'a> {
         Ok(Token {
             kind,
             span: Span::new(start, self.idx),
+            line_break_before,
         })
     }
 

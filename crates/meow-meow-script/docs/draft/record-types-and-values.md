@@ -1,8 +1,33 @@
 # Record type expressions and record values
 
 Date: 2026-10-23
-Status: working proposal; docs only. Parser, AST and runtime behavior are unchanged.
+Status: primitive-field type-only records implemented 2026-10-25; mixed/typed-value records and general type-system semantics remain proposed.
 Parent: [MMS type-system epic](type-system-epic.md).
+
+## Implemented primitive-record slice (2026-10-25)
+
+`{ field: imported_type }` now parses as `Expression::Type(TypeExpression)`.
+Type expressions and fields carry source spans. The current record fields resolve
+primitive tag bindings (including aliases imported from `"types"`), not arbitrary
+computed expressions, nested type records or nominal structs. Runtime
+`RecordType` values retain immutable, sorted field/type identities, support
+structural equality independent of field order, and remain distinct from tables
+of initialized values or legacy tables containing primitive tags. Field access
+reads tags; assignment to a type record is rejected. Closures and host/callback
+transport preserve the record's type role. Unparsing/REPL display uses colon fields.
+
+Type records accept comma-separated fields, newline-separated fields without
+commas, and trailing commas. Existing value tables already accept newlines
+without commas. For compatibility with existing assets, their older same-line
+whitespace-separated form is also retained for now; the intended same-line
+comma rule below is enforced for the new type-record syntax only.
+
+Mixed `:` / `=` fields, typed-value fields, nested type records, annotations,
+construction/default rules and generic `typeof` remain unsupported. Legacy
+equals-style tables of primitive tag values remain accepted for compatibility;
+they do not become type records. MaterialDefinition.inputs accepts a type record,
+whereas Material.inputs accepts a value table. Material GPU fields remain f32-only
+even though language type records can name other existing primitive tags.
 
 ## Direction and scope
 

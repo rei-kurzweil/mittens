@@ -1348,6 +1348,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     );
                     host_builder_call(component, canonical, "fragment", strings(1));
                     host_builder_call(component, canonical, "input_f32", strings(1));
+                    host_builder_call(
+                        component,
+                        canonical,
+                        "inputs",
+                        component_signature([mms::ValueType::RecordType]),
+                    );
                 }
                 "Material" => {
                     host_constructor(
@@ -1355,6 +1361,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         canonical,
                         "new",
                         component_signature([mms::ValueType::Component]),
+                    );
+                    host_builder_call(
+                        component,
+                        canonical,
+                        "inputs",
+                        component_signature([mms::ValueType::Table]),
                     );
                     host_builder_call(
                         component,

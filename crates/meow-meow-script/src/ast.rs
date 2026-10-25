@@ -34,6 +34,8 @@ pub enum Expression {
     Identifier(Ident),
     Array(Vec<Expression>),
     Table(Vec<TableFieldValue>),
+    /// A type-only expression; never an initialized table of values.
+    Type(TypeExpression),
     Index {
         base: Box<Expression>,
         index: Box<Expression>,
@@ -59,6 +61,19 @@ pub enum Expression {
 pub struct TableFieldValue {
     pub name: Ident,
     pub value: Expression,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TypeExpression {
+    Named { name: Ident, span: Span },
+    Record { fields: Vec<TypeField>, span: Span },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeField {
+    pub name: Ident,
+    pub ty: TypeExpression,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]

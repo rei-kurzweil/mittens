@@ -1,7 +1,7 @@
 use crate::ast::{
     AssignmentStatement, BinOpKind, BlockStatement, CallExpression, ComponentExpression,
     ConstructorCall, ElseBranch, Expression, Ident, IfStatement, ImportItem, ReturnStatement, Span,
-    Statement, TableFieldValue, UnaryOpKind,
+    Statement, TableFieldValue, TypeExpression, TypeField, UnaryOpKind,
 };
 use crate::token::{Token, TokenKind};
 use std::collections::HashSet;
@@ -598,16 +598,44 @@ impl MeowMeowParser {
     }
 
     fn parse_table(&mut self) -> Result<Expression, ParseError> {
+        let start = self.tokens[self.pos].span.start;
         self.consume(&TokenKind::LBrace)?;
         let mut fields = Vec::new();
+        let mut type_fields = Vec::new();
         if self.try_consume(&TokenKind::RBrace) {
             return Ok(Expression::Table(fields));
         }
         loop {
+            let field_start = self.tokens[self.pos].span.start;
             let name = self.expect_ident()?;
-            self.consume(&TokenKind::Eq)?;
-            let value = self.parse_expression()?;
-            fields.push(TableFieldValue { name, value });
+            if self.try_consume(&TokenKind::Colon) {
+                if !fields.is_empty() {
+                    return Err(self.err("mixed type and value fields are not supported yet"));
+                }
+                let span = self.tokens[self.pos].span.clone();
+                let type_name = self.expect_ident()?;
+                if type_fields
+                    .iter()
+                    .any(|field: &TypeField| field.name == name)
+                {
+                    return Err(self.err("duplicate type field"));
+                }
+                type_fields.push(TypeField {
+                    name,
+                    ty: TypeExpression::Named {
+                        name: type_name,
+                        span,
+                    },
+                    span: Span::new(field_start, self.tokens[self.pos - 1].span.end),
+                });
+            } else {
+                if !type_fields.is_empty() {
+                    return Err(self.err("mixed type and value fields are not supported yet"));
+                }
+                self.consume(&TokenKind::Eq)?;
+                let value = self.parse_expression()?;
+                fields.push(TableFieldValue { name, value });
+            }
 
             if self.try_consume(&TokenKind::Comma) {
                 if self.try_consume(&TokenKind::RBrace) {
@@ -618,8 +646,18 @@ impl MeowMeowParser {
             if self.try_consume(&TokenKind::RBrace) {
                 break;
             }
+            if !type_fields.is_empty() && !self.tokens[self.pos].line_break_before {
+                return Err(self.err("expected comma or newline between type fields"));
+            }
         }
-        Ok(Expression::Table(fields))
+        if type_fields.is_empty() {
+            Ok(Expression::Table(fields))
+        } else {
+            Ok(Expression::Type(TypeExpression::Record {
+                fields: type_fields,
+                span: Span::new(start, self.tokens[self.pos - 1].span.end),
+            }))
+        }
     }
 
     /// Parse an expression that starts with an identifier.
@@ -787,6 +825,7 @@ impl MeowMeowParser {
         let t = self.tokens.get(self.pos).cloned().unwrap_or(Token {
             kind: TokenKind::Eof,
             span: crate::ast::Span::new(0, 0),
+            line_break_before: false,
         });
         self.pos += 1;
         t

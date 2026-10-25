@@ -228,6 +228,7 @@ impl<'a> Printer<'a> {
                 self.out.push(']');
             }
             Expression::Table(fields) => self.table(fields),
+            Expression::Type(ty) => self.type_expression(ty),
             Expression::Index { base, index } => {
                 self.atom(base);
                 self.out.push('[');
@@ -265,6 +266,27 @@ impl<'a> Printer<'a> {
                 self.out.push(')');
             }
             _ => self.expression(e),
+        }
+    }
+
+    fn type_expression(&mut self, ty: &crate::ast::TypeExpression) {
+        use crate::ast::TypeExpression;
+        match ty {
+            TypeExpression::Named { name, .. } => self.out.push_str(&name.0),
+            TypeExpression::Record { fields, .. } => {
+                self.out.push_str("{\n");
+                self.indent += INDENT_STEP;
+                for field in fields {
+                    self.write_indent();
+                    self.out.push_str(&field.name.0);
+                    self.out.push_str(": ");
+                    self.type_expression(&field.ty);
+                    self.out.push('\n');
+                }
+                self.indent -= INDENT_STEP;
+                self.write_indent();
+                self.out.push('}');
+            }
         }
     }
 

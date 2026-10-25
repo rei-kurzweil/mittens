@@ -1,25 +1,26 @@
 # Task: Material component and resolved material contract
 
 Date: 2026-10-09
-Status: custom-f32 component/API subset implemented 2026-10-24; full generic contract below remains proposed.
+Status: symmetric typed-f32 inputs API implemented 2026-10-25; full generic contract below remains proposed.
 Parent: [custom materials epic](epic/custom-materials.md).
 Release: [0.10.0](epic/0.10.0/README.md).
 
 Implemented subset: [youtuber-room checkpoint](youtuber-room-custom-material-checkpoint.md).
-`MaterialBase()`, `MaterialDefinition(base).fragment(path).input_f32(name)` and
-`Material(definition).descriptor_set(values)` register directly from MMS without
+`MaterialBase()`, `MaterialDefinition(base).fragment(path).inputs(schema)` and
+`Material(definition).inputs(values)` register directly from MMS without
 requiring scene attachment. The default opaque mesh base and
 `MaterialBase.extracted_emissive()`, local GLSL files and named scalar-f32 fields
-are supported. The colon-style schemas and `Material(base)`
-implicit-definition overload below remain future API. Built-in definitions still
+are supported. Colon-style primitive schemas are implemented; `Material(base)`
+implicit-definition convenience and vector GPU fields remain future API. Built-in definitions still
 need the [common material-flow migration](material-instances-and-family-contracts.md#first-refactoring-slices-and-gates),
 regardless of whether they remain authored in Rust/GLSL.
 
-2026-10-25 input API review: the proposed common authoring method is
+2026-10-25 input API review: the implemented common authoring method is
 `.inputs(...)` on both MaterialDefinition and Material: field types on the
 definition, corresponding field values on the instance. This supersedes
-`.descriptor_set(...)` in the proposed generic API below. The implemented
-`.input_f32(...)` / `.descriptor_set(...)` subset remains unchanged.
+`.descriptor_set(...)` in the generic API below. The older
+`.input_f32(...)` / `.descriptor_set(...)` entry points remain compatibility APIs.
+The room uses the symmetric spelling, with f32 type fields and value expressions.
 
 Internal prerequisite: [stable instances and family contracts](material-instances-and-family-contracts.md),
 proved using Anime before custom programs. First custom-material target:
@@ -40,13 +41,13 @@ The subsequent [record/type/value proposal](../../crates/meow-meow-script/docs/d
 revises definition schemas to colon-style type expressions. For both type and
 value tables, commas are optional between newline-separated fields; same-line
 fields require commas. Trailing commas are allowed.
-That `TypeExpression` AST/resolution foundation remains pending; primitive tags
-alone do not implement it. The later first-slice decision allows a current-grammar
+The primitive-record `TypeExpression` AST/resolution subset is now implemented;
+mixed/typed-value records remain pending. The earlier first-slice decision allowed a current-grammar
 f32 declaration builder or names-only list on MaterialDefinition: each MMS author
 chooses field names/count, every field is f32, and shader reflection validates
 the schema/layout. This narrow API can precede type expressions and the open
 record-role semantics. The colon-style examples below describe the eventual
-generic API. No code changes are part of this revision.
+generic API beyond the implemented primitive-f32 subset.
 
 ## Authoring decision (2026-10-23)
 
@@ -177,11 +178,12 @@ during normal MMS execution and retain their results. They are not automatic
 per-frame providers. Existing explicit `set_input` / `get_input` operations
 address those same names.
 
-The source spelling remains `field: f32` for a type-only record and
-`field = expression` for an initialized value record. Colon-style
-TypeExpression resolution is still pending. Do not implement this design by
-quietly replacing type-only records with equals-style type-tag fields or by
-claiming the existing names-only builder is already the symmetric API.
+The implemented source spelling is `field: f32` for a type-only record and
+`field = expression` for an initialized value record. Type records resolve
+primitive names/imported aliases and retain their type role through host
+transport. Unsupported material field types are rejected explicitly; mixed
+records and nested schemas remain future work. Legacy equals-style tables
+containing tags do not satisfy MaterialDefinition.inputs.
 
 Vulkan exposes several input mechanisms with different semantics:
 
@@ -216,9 +218,9 @@ while separating logical schema/value storage from Anime-specific packing and
 physical layout. Route built-in and custom materials through that shared model.
 Introducing push constants, per-object attributes, specialization controls,
 resource inputs or richer field types is not required for that migration.
-The future public `.inputs(...)` API must validate schema versus values and
-shader compatibility; retain the existing API until that replacement is
-implemented and its callers are deliberately migrated.
+The public `.inputs(...)` API validates schema versus values and shader
+compatibility. The room has migrated; older spellings remain compatibility
+entry points while other callers migrate deliberately.
 
 ## Goal
 

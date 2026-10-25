@@ -133,6 +133,13 @@ mod tests {
         let mut system = MaterialSystem;
         system.tick(&mut world, &mut visuals);
         let instance = visuals.materials.source_instance(material).unwrap();
+        let time_index = world
+            .get_component_by_id_as::<MaterialDefinitionComponent>(definition)
+            .unwrap()
+            .fields
+            .iter()
+            .position(|name| name == "time_seconds")
+            .unwrap();
         assert_eq!(
             visuals.materials.instance(instance).unwrap().values.len(),
             5
@@ -150,7 +157,7 @@ mod tests {
         system.tick(&mut world, &mut visuals);
         assert_eq!(visuals.materials.source_instance(material), Some(instance));
         assert_eq!(
-            visuals.materials.instance(instance).unwrap().values[0],
+            visuals.materials.instance(instance).unwrap().values[time_index],
             0.25
         );
         assert!(visuals.materials.instance(instance).unwrap().revision > revision);

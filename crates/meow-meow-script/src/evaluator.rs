@@ -606,6 +606,7 @@ impl<'a, H: Host> Evaluator<'a, H> {
                     .collect::<Result<HashMap<_, _>, EvalError>>()?;
                 Ok(Value::Object(self.heap.alloc(Object::Map(map))))
             }
+            Expression::Type(ty) => self.eval_type(ty),
             Expression::Index { base, index } => self.eval_index(base, index),
             Expression::UnaryOp { op, operand } => {
                 let value = self.eval_expr(operand)?;
@@ -640,6 +641,13 @@ impl<'a, H: Host> Evaluator<'a, H> {
             | (Value::Map(values), Value::Identifier(key)) => {
                 Ok(values.get(&key).cloned().unwrap_or(Value::Null))
             }
+            (Value::RecordType(ty), Value::String(key))
+            | (Value::RecordType(ty), Value::Identifier(key)) => Ok(ty
+                .0
+                .get(&key)
+                .copied()
+                .map(Value::TypeTag)
+                .unwrap_or(Value::Null)),
             (Value::Object(id), Value::String(key))
             | (Value::Object(id), Value::Identifier(key)) => id
                 .with_map(|values| values.get(&key).cloned().unwrap_or(Value::Null))
@@ -741,6 +749,12 @@ impl<'a, H: Host> Evaluator<'a, H> {
                     }
                 }
                 Value::Map(values) => Ok(values.get(key).cloned().unwrap_or(Value::Null)),
+                Value::RecordType(ty) => Ok(ty
+                    .0
+                    .get(key)
+                    .copied()
+                    .map(Value::TypeTag)
+                    .unwrap_or(Value::Null)),
                 Value::Object(id) => id
                     .with_map(|values| values.get(key).cloned().unwrap_or(Value::Null))
                     .ok_or_else(|| EvalError::Runtime("stale table reference".into())),
@@ -1052,14 +1066,42 @@ impl<'a, H: Host> Evaluator<'a, H> {
         &mut self,
         component: &ComponentExpression,
     ) -> Result<MaterializedCE, EvalError> {
+        let component_spec = self
+            .catalog
+            .as_ref()
+            .and_then(|catalog| {
+                catalog
+                    .components
+                    .get(&component.component_type.0.to_lowercase())
+            })
+            .cloned();
         let mut constructors = Vec::new();
-        for constructor in &component.constructors {
+        for (call_index, constructor) in component.constructors.iter().enumerate() {
+            let signature = component_spec.as_ref().and_then(|spec| {
+                if call_index == 0 {
+                    spec.constructors.get(&constructor.method.0)
+                } else {
+                    spec.builder_calls.get(&constructor.method.0)
+                }
+            });
             constructors.push((
                 constructor.method.0.clone(),
                 constructor
                     .args
                     .iter()
-                    .map(|arg| self.eval_expr(arg))
+                    .enumerate()
+                    .map(|(index, arg)| {
+                        let value = self.eval_expr(arg)?;
+                        if signature.and_then(|signature| signature.arguments.get(index))
+                            == Some(&crate::ValueType::Component)
+                        {
+                            // A component-typed reference accepts an inline construction
+                            // with the same detached live identity as a let binding.
+                            self.register_live_component_value(value)
+                        } else {
+                            Ok(value)
+                        }
+                    })
                     .collect::<Result<Vec<_>, _>>()?,
             ));
         }
@@ -1069,11 +1111,6 @@ impl<'a, H: Host> Evaluator<'a, H> {
             .catalog
             .as_ref()
             .and_then(|catalog| catalog.component_operations.get(&component_key).cloned());
-        let component_spec = self
-            .catalog
-            .as_ref()
-            .and_then(|catalog| catalog.components.get(&component_key))
-            .cloned();
         let body_mode = component_spec
             .as_deref()
             .map_or(ComponentBodyMode::Standard, |spec| spec.body_mode);
@@ -1532,6 +1569,32 @@ impl<'a, H: Host> Evaluator<'a, H> {
         }
     }
 
+    /// Resolve a type-only expression without constructing initialized data.
+    fn eval_type(&self, ty: &crate::ast::TypeExpression) -> Result<Value, EvalError> {
+        use crate::ast::TypeExpression;
+        match ty {
+            TypeExpression::Named { name, span } => match self.lookup(&name.0) {
+                Some(Value::TypeTag(tag)) => Ok(Value::TypeTag(*tag)),
+                _ => Err(EvalError::Runtime(format!(
+                    "expected primitive type tag for '{}' at {}..{}",
+                    name.0, span.start, span.end
+                ))),
+            },
+            TypeExpression::Record { fields, .. } => {
+                let mut resolved = std::collections::BTreeMap::new();
+                for field in fields {
+                    let Value::TypeTag(tag) = self.eval_type(&field.ty)? else {
+                        return Err(EvalError::Runtime(
+                            "nested record types are not supported yet".into(),
+                        ));
+                    };
+                    resolved.insert(field.name.0.clone(), tag);
+                }
+                Ok(Value::RecordType(crate::RecordType(resolved)))
+            }
+        }
+    }
+
     /// Host API tables become ordinary heap-backed MMS tables. Transport is a
     /// snapshot boundary, but a value re-entering this session must retain the
     /// mutation and closure-capture semantics of a table literal.
@@ -1541,6 +1604,7 @@ impl<'a, H: Host> Evaluator<'a, H> {
             TransportValue::Bool(value) => Value::Bool(value),
             TransportValue::Number(value) => Value::Number(value),
             TransportValue::TypeTag(tag) => Value::TypeTag(tag),
+            TransportValue::RecordType(ty) => Value::RecordType(ty),
             TransportValue::String(value) => Value::String(value),
             TransportValue::Array(values) => Value::Array(
                 values
@@ -1589,6 +1653,7 @@ impl<'a, H: Host> Evaluator<'a, H> {
             Value::Bool(v) => Ok(TransportValue::Bool(v)),
             Value::Number(v) => Ok(TransportValue::Number(v)),
             Value::TypeTag(tag) => Ok(TransportValue::TypeTag(tag)),
+            Value::RecordType(ty) => Ok(TransportValue::RecordType(ty)),
             Value::String(v) | Value::Identifier(v) => Ok(TransportValue::String(v)),
             Value::Array(values) => values
                 .into_iter()
@@ -1723,6 +1788,7 @@ pub(crate) fn transport_to_value(value: TransportValue) -> Result<Value, EvalErr
         TransportValue::Bool(v) => Value::Bool(v),
         TransportValue::Number(v) => Value::Number(v),
         TransportValue::TypeTag(tag) => Value::TypeTag(tag),
+        TransportValue::RecordType(ty) => Value::RecordType(ty),
         TransportValue::String(v) => Value::String(v),
         TransportValue::Array(values) => Value::Array(
             values
@@ -1977,7 +2043,9 @@ fn binary_values(op: &BinOpKind, lhs: Value, rhs: Value) -> Result<Value, EvalEr
                 )));
             }
         }
-    } else if matches!(&lhs, Value::TypeTag(_)) || matches!(&rhs, Value::TypeTag(_)) {
+    } else if matches!(&lhs, Value::TypeTag(_) | Value::RecordType(_))
+        || matches!(&rhs, Value::TypeTag(_) | Value::RecordType(_))
+    {
         return Err(EvalError::Runtime(
             "type tags support identity equality, not arithmetic or ordering".into(),
         ));

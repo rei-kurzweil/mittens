@@ -1,6 +1,13 @@
 # Youtuber room: first custom-f32 material checkpoint
 
 Date: 2026-10-24
+2026-10-25 API follow-up: the room now imports f32 and uses symmetric
+`.inputs(...)`: colon-style type fields on MaterialDefinition and equals-style
+value expressions on Material. Both multiline forms omit commas. Type schemas
+are distinct immutable runtime values; GPU storage/reflection remains the same
+bounded f32 UBO path. The earlier builder spellings remain supported for
+compatibility. Built-in/common-flow migration is still pending.
+
 Current experiment: [isolated point-light comparison](youtuber-room-lighting-diagnostic.md)
 uses gray architecture, one point light and no rim. It starts in Anime mode with
 a fixed facing gate feeding distance-based light into the shade/lit ramp. The
@@ -63,16 +70,20 @@ settings). The LED units protrude only 8 mm from the backing while keeping their
 ## Implemented authoring and backend path
 
 ```mms
+import { f32 } from "types"
+
 let base = MaterialBase.extracted_emissive()
 let definition = MaterialDefinition(base)
     .fragment("assets/shaders/youtuber-led-wave.frag")
-    .input_f32("time_seconds")
-    .input_f32("hue_speed")
-    .input_f32("wave_speed")
-    .input_f32("wave_count")
-    .input_f32("intensity")
+    .inputs({
+        time_seconds: f32
+        hue_speed: f32
+        wave_speed: f32
+        wave_count: f32
+        intensity: f32
+    })
 
-let material = Material(definition).descriptor_set({
+let material = Material(definition).inputs({
     time_seconds = 0.0
     hue_speed = 0.020833333333
     wave_speed = 0.5

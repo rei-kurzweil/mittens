@@ -413,28 +413,46 @@ fn apply_call(
                 .push(uv);
         }
         "MaterialDefinition" => {
-            let value = string_arg(args, 0)?.to_owned();
             let definition = world
                 .get_component_by_id_as_mut::<MaterialDefinitionComponent>(id)
                 .ok_or("missing material definition")?;
             match method {
-                "fragment" => definition.fragment_uri = value,
+                "fragment" => definition.fragment_uri = string_arg(args, 0)?.to_owned(),
                 "input_f32" => {
                     let mut fields = definition.fields.clone();
-                    fields.push(value);
+                    fields.push(string_arg(args, 0)?.to_owned());
+                    crate::engine::graphics::custom_material::validate_fields(&fields)?;
+                    definition.fields = fields;
+                }
+                "inputs" => {
+                    let Some(mms::Value::RecordType(schema)) = args.first() else {
+                        return Err("MaterialDefinition.inputs requires a type-only record".into());
+                    };
+                    for (name, tag) in &schema.0 {
+                        if *tag != mms::TypeTag::F32 {
+                            return Err(format!(
+                                "material field '{name}': only f32 inputs are supported, got {tag}"
+                            ));
+                        }
+                    }
+                    let fields: Vec<_> = schema.0.keys().cloned().collect();
                     crate::engine::graphics::custom_material::validate_fields(&fields)?;
                     definition.fields = fields;
                 }
                 _ => return Err(format!("unknown MaterialDefinition builder '{method}'")),
             }
         }
-        "Material" if method == "descriptor_set" => {
+        "Material" if matches!(method, "inputs" | "descriptor_set") => {
             let fields = match args.first() {
                 Some(mms::Value::Map(map)) => map.clone(),
                 Some(mms::Value::Object(id)) => id
                     .with_map(Clone::clone)
                     .ok_or("stale material values table")?,
-                _ => return Err("descriptor_set requires a table of finite f32 values".into()),
+                _ => {
+                    return Err(format!(
+                        "Material.{method} requires a table of finite f32 values"
+                    ));
+                }
             };
             for (name, value) in fields {
                 set_material_input(world, id, &name, &value)?;

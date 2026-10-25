@@ -121,6 +121,7 @@ pub enum Value {
     Number(f64),
     /// A type identity, never an ordinary number or type-name string.
     TypeTag(crate::TypeTag),
+    RecordType(crate::RecordType),
     /// Numeric value tagged with a source-level unit suffix (e.g. `50%`,
     /// `20gu`, `30deg`). Produced by `Expression::Dimension`. Consumers
     /// such as the Style setters use this to disambiguate `Percent` vs

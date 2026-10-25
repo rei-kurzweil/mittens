@@ -81,6 +81,7 @@ pub enum Value {
     Number(f64),
     /// Shared language type identity; never converted to a numeric ordinal.
     TypeTag(meow_meow_script::TypeTag),
+    RecordType(meow_meow_script::RecordType),
     /// Numeric value tagged with a source-level unit suffix (e.g. `50%`,
     /// `20gu`, `30deg`). Produced by `Expression::Dimension`. Consumers
     /// such as the Style setters use this to disambiguate `Percent` vs

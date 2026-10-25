@@ -535,6 +535,9 @@ pub(crate) fn reject_legacy_animation_or_keyframe_statements(
 
     fn reject_expression(value: &Expression) -> Result<(), String> {
         match value {
+            Expression::Type(_) => {
+                return Err("type expressions require the RuntimeSpec runtime".into());
+            }
             Expression::Array(values) => {
                 for value in values {
                     reject_expression(value)?;
@@ -1434,6 +1437,7 @@ fn eval_expr(expr: &Expression, ctx: &mut EvalContext<'_>) -> Result<Value, Stri
                 ctx.object_world.alloc_object(Object::Map(map)),
             ))
         }
+        Expression::Type(_) => Err("type expressions require the RuntimeSpec runtime".into()),
         Expression::Index { base, index } => {
             let base = eval_expr(base, ctx)?;
             let index = eval_expr(index, ctx)?;
@@ -2998,6 +3002,7 @@ fn value_display(val: &Value) -> String {
     match val {
         Value::Null => "null".into(),
         Value::TypeTag(tag) => format!("<type {tag}>"),
+        Value::RecordType(ty) => format!("<type {ty:?}>"),
         Value::Bool(b) => b.to_string(),
         Value::Number(n) => {
             if n.fract() == 0.0 && n.abs() < 1e15 {
