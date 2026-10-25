@@ -11,7 +11,12 @@ custom registration/resolution into MaterialSystem and replaced Anime-typed
 registry storage with generic schema/default/value records. GPU layouts remain
 validated separately. Broader renderer capabilities still have follow-up work.
 
-Current scene: gray architecture, one monitor point light and white rim lighting
+Current scene: lilac walls, darker lilac baseboards, a white ceiling and medium
+brown stained floorboards over a darker wood substrate. The monitor shows an
+emissive gold terminal prompt (`[rei@system ~]#`) and gold/white folder, cat and
+terminal icons, each captioned `meow`. Icon fills and highlights use separate
+emission strengths so the entire screen is not uniformly luminous.
+The scene keeps one monitor point light and white rim lighting
 (strength 0.18, power 4). The temporary Distance/Diffuse/Anime menu and its debug
 shader input/API have been removed. Facing-gated Anime shading still applies to
 both room geometry and the seated Rei(mu) NPC at the middle of the left wall.
@@ -168,7 +173,9 @@ Two headless Vulkan checks cover:
   after a time update. Extraction readback confirms matching stereo images,
   matching visible/extracted brightness, one uniform hue, bright/dim wave
   regions, and black extraction when intensity is zero. Only the four combined
-  LED outputs enter extraction. The test saves previews to
+  LED outputs enter extraction in this isolated fixture, which removes the
+  independently emissive monitor content before checking LED-only output.
+  The full scene extracts both monitor graphics and LEDs. The test saves previews to
   `/tmp/youtuber-room-0.png`, `/tmp/youtuber-room-1.png` and corresponding
   `/tmp/youtuber-room-emission-*.png` extraction images.
 - Holding eight custom revisions unchanged, rejecting a ninth while all are

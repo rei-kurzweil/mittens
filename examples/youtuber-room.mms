@@ -7,8 +7,8 @@
 
 // View switches: desktop only = true/false; XR only = false/true; both = true/true.
 // Omitting the desktop camera skips desktop rendering and presentation.
-let desktop_view_enabled = false
-let xr_view_enabled = true
+let desktop_view_enabled = true
+let xr_view_enabled = false
 
 import { f32 } from "types"
 import { pose as floor_seated_pose } from "../assets/components/poses/rei-mu/floor-seated.pose.mms"
@@ -96,33 +96,100 @@ let metal = [0.18, 0.21, 0.27]
 let walnut = [0.37, 0.24, 0.16]
 let fabric = [0.15, 0.17, 0.23]
 let accent = [0.62, 0.12, 0.24]
-let wall_gray = [0.5, 0.5, 0.5]
+let wall_lilac = [0.72, 0.60, 0.82]
+let baseboard_lilac = [0.54, 0.42, 0.65]
+let ceiling_white = [0.96, 0.95, 0.98]
+let floor_wood = [0.39, 0.23, 0.12]
+let floor_underlay = [0.16, 0.085, 0.035]
 let room_shading = Shading.anime().shade_color([0.35, 0.35, 0.35]).shade_strength(0.8)
     .shade_threshold(0.35).lit_threshold(0.55)
     .rim_color([1.0, 1.0, 1.0]).rim_strength(0.18).rim_power(4.0) { name = "room_shading" }
 
+// Flat desktop graphics use ordinary emissive materials; only the ceiling LEDs
+// use the animated custom material. Non-emissive icon fills keep the glow selective.
+let screen_gold = [1.0, 0.67, 0.10]
+let screen_amber = [1.0, 0.40, 0.025]
+let screen_pale_gold = [1.0, 0.91, 0.62]
+let screen_white = [0.97, 0.98, 1.0]
+
+fn screen_rect(position, size, color, intensity) {
+    return T.position(position[0], position[1], position[2]).scale(size[0], size[1], 0.002) {
+        R.cube() {
+            C.rgba(color[0], color[1], color[2], 1.0)
+            if intensity > 0.0 { EM.on().intensity(intensity) } else { Unlit {} }
+        }
+    }
+}
+
+fn screen_text(position, scale, text, color, intensity) {
+    return T.position(position[0], position[1], position[2]).scale(scale, scale, scale) {
+        Text { text C.rgba(color[0], color[1], color[2], 1.0) EM.on().intensity(intensity) }
+    }
+}
+
+fn screen_icon(y, kind) {
+    return T.position(0.44, y, 0.008) {
+        if kind == 0 {
+            // Folder: a quiet gold body with a glowing white document and gold lip.
+            R.polygon("youtuber-room/monitor-folder/v1", [[-0.065, -0.04], [0.065, -0.04], [0.065, 0.035], [-0.005, 0.035], [-0.02, 0.055], [-0.065, 0.055]]) {
+                C.rgba(0.56, 0.31, 0.055, 1.0) Unlit {}
+            }
+            screen_rect([0.012, 0.016, 0.003], [0.052, 0.07], screen_white, 0.7)
+            screen_rect([0.0, -0.012, 0.006], [0.13, 0.048], screen_gold, 1.1)
+        } else if kind == 1 {
+            // Cat: warm amber face, bright ears/eyes and a white muzzle.
+            R.polygon("youtuber-room/monitor-cat/v1", [[-0.03, -0.047], [0.03, -0.047], [0.055, -0.03], [0.06, 0.057], [0.025, 0.032], [-0.025, 0.032], [-0.06, 0.057], [-0.055, -0.03]]) {
+                C.rgba(1.0, 0.40, 0.025, 1.0) EM.on().intensity(0.6)
+            }
+            screen_rect([-0.024, 0.008, 0.004], [0.014, 0.021], screen_pale_gold, 1.8)
+            screen_rect([0.024, 0.008, 0.004], [0.014, 0.021], screen_white, 1.3)
+            screen_rect([0.0, -0.021, 0.004], [0.021, 0.008], screen_white, 0.9)
+        } else {
+            // Terminal icon: dark inset, glowing gold frame and white prompt.
+            screen_rect([0.0, 0.0, 0.0], [0.13, 0.095], screen_amber, 0.65)
+            screen_rect([0.0, -0.003, 0.003], [0.116, 0.075], [0.045, 0.026, 0.01], 0.0)
+            screen_text([-0.047, -0.015, 0.007], 0.031, ">_", screen_white, 1.3)
+        }
+        screen_text([-0.036, -0.086, 0.009], 0.018, "meow", screen_pale_gold, 0.8)
+    }
+}
+
+let monitor_screen_content = T.position(-0.30, 1.34, -1.94) {
+    name = "monitor_screen_content"
+    Shading.toon()
+    screen_rect([-0.16, -0.005, 0.0], [0.82, 0.53], [0.025, 0.016, 0.009], 0.0)
+    screen_rect([-0.16, 0.231, 0.003], [0.82, 0.056], [0.12, 0.065, 0.015], 0.25)
+    screen_text([-0.54, 0.218, 0.008], 0.018, "terminal", screen_pale_gold, 0.65)
+    screen_rect([-0.16, 0.196, 0.005], [0.79, 0.003], screen_amber, 0.8)
+    screen_text([-0.54, 0.105, 0.009], 0.035, "[rei@system ~]#", screen_gold, 1.1)
+    screen_rect([0.008, 0.105, 0.009], [0.018, 0.032], screen_pale_gold, 1.2)
+    screen_icon(0.19, 0)
+    screen_icon(0.0, 1)
+    screen_icon(-0.19, 2)
+}
+
 T {
     name = "youtuber_room"
-    // Architectural surfaces share one gray albedo; white rim lighting is restored.
+    // Lilac walls, white ceiling and stained wood keep the shared Anime rim.
     room_shading
     // Architectural shell, 5 m wide and 4.6 m deep, with a 2.9 m ceiling.
     // A darker wood substrate sits 2 cm below the finished floor. Real gaps
     // between the planks expose it and the separately lit vertical plank edges.
-    box([0.0, -0.08, 0.0], [5.1, 0.12, 4.7], wall_gray)
+    box([0.0, -0.08, 0.0], [5.1, 0.12, 4.7], floor_underlay)
     for plank in range(12) {
-        box([-2.3375 + plank * 0.425, -0.01, 0.0], [0.413, 0.02, 4.7], wall_gray)
+        box([-2.3375 + plank * 0.425, -0.01, 0.0], [0.413, 0.02, 4.7], floor_wood)
     }
-    box([0.0, 1.45, -2.35], [5.1, 2.9, 0.12], wall_gray)
-    box([-2.55, 1.45, 0.0], [0.12, 2.9, 4.7], wall_gray)
-    box([2.55, 1.45, 0.0], [0.12, 2.9, 4.7], wall_gray)
-    box([0.0, 2.96, 0.0], [5.1, 0.12, 4.7], wall_gray)
+    box([0.0, 1.45, -2.35], [5.1, 2.9, 0.12], wall_lilac)
+    box([-2.55, 1.45, 0.0], [0.12, 2.9, 4.7], wall_lilac)
+    box([2.55, 1.45, 0.0], [0.12, 2.9, 4.7], wall_lilac)
+    box([0.0, 2.96, 0.0], [5.1, 0.12, 4.7], ceiling_white)
     // Front doorway leaves a generous entrance for desktop and room-scale XR.
-    box([-1.90, 1.45, 2.35], [1.3, 2.9, 0.12], wall_gray)
-    box([1.90, 1.45, 2.35], [1.3, 2.9, 0.12], wall_gray)
-    box([0.0, 2.65, 2.35], [2.5, 0.5, 0.12], wall_gray)
-    box([0.0, 0.075, -2.27], [5.0, 0.15, 0.035], charcoal)
-    box([-2.47, 0.075, 0.0], [0.035, 0.15, 4.6], charcoal)
-    box([2.47, 0.075, 0.0], [0.035, 0.15, 4.6], charcoal)
+    box([-1.90, 1.45, 2.35], [1.3, 2.9, 0.12], wall_lilac)
+    box([1.90, 1.45, 2.35], [1.3, 2.9, 0.12], wall_lilac)
+    box([0.0, 2.65, 2.35], [2.5, 0.5, 0.12], wall_lilac)
+    box([0.0, 0.075, -2.27], [5.0, 0.15, 0.035], baseboard_lilac)
+    box([-2.47, 0.075, 0.0], [0.035, 0.15, 4.6], baseboard_lilac)
+    box([2.47, 0.075, 0.0], [0.035, 0.15, 4.6], baseboard_lilac)
 
     // Soft acoustic panels and a rug make the blockout read as a recording room.
     for panel in range(3) {
@@ -161,7 +228,7 @@ T {
         }
     }
 
-    // Monitor body, stand and an entirely geometric faux editing interface.
+    // Monitor body and stand, with a gold terminal and emissive desktop icons.
     box([-0.30, 0.86, -2.02], [0.40, 0.025, 0.30], charcoal)
     box([-0.30, 1.05, -2.045], [0.075, 0.38, 0.07], metal)
     box([-0.30, 1.34, -1.99], [1.28, 0.72, 0.06], charcoal)
@@ -174,14 +241,9 @@ T {
         // penumbra 0.45; disabled to leave exactly one point-light source.
     }
     T.position(-0.30, 1.34, -1.953).scale(1.21, 0.65, 1.0) {
-        R.plane() { C.rgba(0.045, 0.075, 0.12, 1.0) Unlit {} }
+        R.plane() { C.rgba(0.018, 0.012, 0.008, 1.0) Unlit {} }
     }
-    box([-0.30, 1.615, -1.94], [1.14, 0.035, 0.004], [0.17, 0.24, 0.34])
-    box([-0.62, 1.34, -1.94], [0.42, 0.43, 0.004], [0.095, 0.14, 0.21])
-    for track in range(5) {
-        box([-0.08 + (track % 2) * 0.055, 1.16 + track * 0.069, -1.935], [0.50 - track * 0.04, 0.036, 0.004], [0.25, 0.48, 0.57])
-    }
-    label([-0.83, 1.59, -1.925], 0.022, "MITTENS / STUDIO", [0.75, 0.89, 0.97])
+    monitor_screen_content
 
     // Keyboard: one small box per key, a wider space bar, and a separate mouse.
     box([-0.36, 0.853, -1.39], [0.70, 0.028, 0.235], charcoal)

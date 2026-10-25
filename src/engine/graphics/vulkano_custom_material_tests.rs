@@ -64,7 +64,7 @@ fn youtuber_room_renders_custom_wave_in_stereo() -> Result<(), Box<dyn std::erro
     // Keep the emission proof active while the user-facing scene is temporarily
     // configured for isolated lighting diagnostics.
     .replace("RenderGraph.off()", "RenderGraph { EmissivePass { BlurPass { radius_ndc(0.012) half_res(true) } } Bloom { intensity(0.55) radius_ndc(0.012) emissive_scale(1.0) half_res(true) } }\n")
-    + "\nceiling_leds.set_input(\"intensity\", 1.0)\n";
+    + "\nceiling_leds.set_input(\"intensity\", 1.0)\nmonitor_screen_content.remove_subtree()\n";
     room.load_mms_source_at_path(&source, "examples/youtuber-room.mms")?;
     let mut next_mesh = 1000;
     let mut next_texture = 1000;
@@ -521,7 +521,7 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
 }
 
 #[test]
-#[ignore = "requires Vulkan; compares the real room's isolated Anime lighting modes in stereo"]
+#[ignore = "requires Vulkan; renders shared static/skinned Anime shading and the seated NPC in stereo"]
 fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn std::error::Error>> {
     use crate::engine::ecs::component::ShadingComponent;
     let context = RendererContext::new(None, None, None)?;
@@ -539,10 +539,7 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
     ))
     .replace("let desktop_view_enabled = false", "let desktop_view_enabled = true")
     .replace("let xr_view_enabled = true", "let xr_view_enabled = false")
-    .replace(
-        "let led_effects_enabled = true",
-        "let led_effects_enabled = false",
-    );
+    ;
     room.load_mms_source_at_path(&source, "examples/youtuber-room.mms")?;
     for _ in 0..4 {
         room.update(0.0, &crate::engine::user_input::InputState::default());
@@ -688,7 +685,8 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
     let mut next_mesh = 1000;
     let mut next_texture = 1000;
     let mut retained = None;
-    for closeup in [false, true] {
+    for preview in ["room", "reimu", "monitor"] {
+        let closeup = preview != "room";
         room.update(0.0, &crate::engine::user_input::InputState::default());
         let shading = room
             .world
@@ -728,9 +726,12 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
         let view = if closeup {
             use crate::engine::ecs::component::TransformComponent;
             use crate::utils::math::{mat4_inverse, quat_mul, quat_rotation_y};
-            let position = [-0.75, 0.85, 1.25];
-            let rotation =
-                TransformComponent::look_at_world_rotation(position, [-2.08, 0.45, 0.2]).unwrap();
+            let (position, target) = if preview == "monitor" {
+                ([-0.30, 1.38, -0.80], [-0.30, 1.34, -1.94])
+            } else {
+                ([-0.75, 0.85, 1.25], [-2.08, 0.45, 0.2])
+            };
+            let rotation = TransformComponent::look_at_world_rotation(position, target).unwrap();
             let camera = TransformComponent::new()
                 .with_position(position[0], position[1], position[2])
                 .with_rotation_quat(quat_mul(rotation, quat_rotation_y(std::f32::consts::PI)));
@@ -794,10 +795,10 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
             pixel.swap(0, 2);
         }
         image::save_buffer(
-            if closeup {
-                "/tmp/youtuber-reimu-seated.png"
-            } else {
-                "/tmp/youtuber-room-anime.png"
+            match preview {
+                "monitor" => "/tmp/youtuber-monitor-terminal.png",
+                "reimu" => "/tmp/youtuber-reimu-seated.png",
+                _ => "/tmp/youtuber-room-anime.png",
             },
             &rgba,
             extent[0],

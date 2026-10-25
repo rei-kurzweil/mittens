@@ -17,7 +17,7 @@ angular gate remains a possible later refinement. Rim lighting remains in the
 fragment stage, enabled by default at strength 0.18 and power 4; the room uses
 white rim tint on architecture, the seated NPC, straw and strip backing.
 
-The scene keeps its furniture, gray architecture, monitor point light, ceiling
+The scene keeps its furniture, monitor point light, ceiling
 LED wave, extraction/Bloom and avatar-free XR controllers/lasers. Ambient,
 directional fill and the monitor spotlight remain disabled from the experiment.
 The led_effects_enabled flag can disable LED emission/Bloom independently.
