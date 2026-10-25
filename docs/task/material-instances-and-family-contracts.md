@@ -182,6 +182,15 @@ Do not make that full migration block the opaque f32 proof.
 
 ## First refactoring slices and gates
 
+2026-10-25 input API review: use the same proposed `.inputs(...)` method for
+definition field types and instance field values. Named material inputs are
+independent of their GPU transport; keep schema, ownership/rate and physical
+layout separate. The current custom implementation remains f32 UBO-backed.
+See [the input/storage contract](material-component-and-resolved-contract.md#named-inputs-and-gpu-transport-2026-10-25).
+This does not add push-constant support or implement the pending type-record
+syntax. Common-flow work should remove Anime-specific storage/packing assumptions
+without requiring additional GPU input mechanisms first.
+
 2026-10-24 follow-up TODO: built-in Anime/Toon definitions may remain authored
 in Rust/GLSL, but must use the same material registration, initialization,
 binding, retained-update and retirement logic as other material definitions.

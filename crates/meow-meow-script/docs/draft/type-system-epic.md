@@ -13,7 +13,9 @@ The focused drafts beside it own syntax and boundary details.
 the latest docs-only proposal: `{ field: f32 }` is a type-only structural
 expression, `{ field = 1.0 }` is a value record with inferred types, and candidate
 `{ field: f32 = 1.0 }` carries explicit field types plus values and may serve
-both roles through defined operations. Type fields allow commas; equals-style
+both roles through defined operations. For every table/record form, newlines
+between fields make commas optional; same-line fields require commas. Trailing
+commas are allowed. Equals-style
 fields are proposed for non-type value initialization. Ordinary binding
 assignment of a type value (`let kind = f32`) remains distinct and valid.
 
@@ -200,8 +202,9 @@ let cup = coffee {
 Bindings, parameters, returns, and declared fields consistently use `name: Type`.
 Type-only anonymous records also use colons. Equals-style record fields supply
 non-type values; candidate typed-value fields combine `: Type` with `= value`.
-Commas are allowed; existing value formatting emits one field per line without
-commas, while the mixed-record grammar/formatting remains under review.
+Newlines between fields make commas optional for all table/record forms;
+same-line fields require commas, and trailing commas are allowed. Mixed-record
+roles remain under review independently of this separator rule.
 
 ## Vertical slices
 

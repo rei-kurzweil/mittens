@@ -12,10 +12,27 @@ either language's grammar. In particular, TypeScript also uses colons for
 object-literal values; MMS is proposing a different punctuation distinction.
 
 Within record/table syntax, `field: Type` declares a field type, while
-`field = value` initializes ordinary non-type data. Commas are allowed as field
-separators, including in type-only records. Multiline fields without commas
-remain the existing formatting direction; whether both forms remain supported
-everywhere and which is canonical still needs review for mixed records.
+`field = value` initializes ordinary non-type data.
+
+2026-10-25 separator decision: commas are optional when successive fields are
+separated by a newline. This applies uniformly to type-only tables, value-only
+tables and typed-value records, wherever those record forms are supported.
+Fields on the same line require commas. Commas may also be used between lines,
+and trailing commas are allowed. A newline inside an unfinished field expression
+does not split that expression into fields. This settles separators independently
+of the open questions about mixing field roles in one record.
+
+```mms
+let field_types = {
+    progress: f32
+    direction: vec2
+}
+
+let field_values = {
+    progress = 0.0
+    direction = [1.0, 0.0]
+}
+```
 
 This revises the previous material proposal that stored type tags as ordinary
 equals-style table fields. For example, the proposed schema spelling is
@@ -134,8 +151,8 @@ nominal identity or treat a struct declaration and an instance as the same thing
 
 ## Ambiguities to resolve before implementation
 
-- **Field grammar and mixed contents:** confirm `field: Type = value`, trailing
-  commas, and comma-free formatting. Decide whether one record may mix
+- **Field grammar and mixed contents:** confirm `field: Type = value` and decide
+  whether one record may mix
   type-only, value-only and typed-value fields. A type-only record is not a
   partially initialized data instance; define missing-field/default rules if
   any mixed form is permitted. `{}` is also ambiguous; preserve its current

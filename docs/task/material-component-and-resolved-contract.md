@@ -15,6 +15,12 @@ implicit-definition overload below remain future API. Built-in definitions still
 need the [common material-flow migration](material-instances-and-family-contracts.md#first-refactoring-slices-and-gates),
 regardless of whether they remain authored in Rust/GLSL.
 
+2026-10-25 input API review: the proposed common authoring method is
+`.inputs(...)` on both MaterialDefinition and Material: field types on the
+definition, corresponding field values on the instance. This supersedes
+`.descriptor_set(...)` in the proposed generic API below. The implemented
+`.input_f32(...)` / `.descriptor_set(...)` subset remains unchanged.
+
 Internal prerequisite: [stable instances and family contracts](material-instances-and-family-contracts.md),
 proved using Anime before custom programs. First custom-material target:
 [f32-only time-animation slice](material-f32-time-animation-first-slice.md).
@@ -31,7 +37,9 @@ proposed. `typeof`, annotations/default numeric initialization and `mat4` are
 separate pending work. See the [implemented language boundary](../../crates/meow-meow-script/docs/draft/type-system-epic.md#implemented-tag-value-boundary-2026-10-23).
 
 The subsequent [record/type/value proposal](../../crates/meow-meow-script/docs/draft/record-types-and-values.md)
-revises definition schemas to colon-style type expressions, with commas allowed.
+revises definition schemas to colon-style type expressions. For both type and
+value tables, commas are optional between newline-separated fields; same-line
+fields require commas. Trailing commas are allowed.
 That `TypeExpression` AST/resolution foundation remains pending; primitive tags
 alone do not implement it. The later first-slice decision allows a current-grammar
 f32 declaration builder or names-only list on MaterialDefinition: each MMS author
@@ -71,15 +79,15 @@ import { f32, vec2, vec3 } from "types"
 
 let definition = MaterialDefinition(MaterialBase())
     .fragment(fragment_shader_uri)
-    .descriptor_set({
-        burn_progress: f32,
-        airflow: f32,
-        burn_direction: vec2,
-        glow_color: vec3,
+    .inputs({
+        burn_progress: f32
+        airflow: f32
+        burn_direction: vec2
+        glow_color: vec3
     })
 
 let cigarette = Material(definition)
-    .descriptor_set({
+    .inputs({
         burn_progress = 0.0
         airflow = 0.2
         burn_direction = [1.0, 0.0]
@@ -87,7 +95,7 @@ let cigarette = Material(definition)
     })
 
 let independent_cigarette = Material(definition)
-    .descriptor_set({
+    .inputs({
         burn_progress = 0.4
         airflow = 0.1
         burn_direction = [1.0, 0.0]
@@ -100,10 +108,10 @@ types, and resolution produces its schema/type identity. The material consumes
 ordinary initial field values using `=`, validated against that schema. This
 supersedes the earlier proposal that both arguments were ordinary tables with
 equals-style fields storing tags or values. Names and types must match the
-shader interface and base contract. This record
-shape is illustrative: literal descriptor-set/binding numbers, nested tables,
-resource entries, layout metadata and the precise validation API remain open.
-The engine owns GPU packing/alignment and renderer-reserved bindings.
+shader interface and base contract. These are named material inputs, not a
+literal Vulkan descriptor-set description. Resource types, layout metadata and
+the precise validation API remain open. The engine owns GPU packing/alignment
+and renderer-reserved bindings. See the input/storage distinction below.
 
 Initial schema tags are `f32`, `vec2`, `vec3` and `vec4`; `mat4` is a candidate
 after matrix ordering/layout is specified. See the
@@ -122,14 +130,14 @@ let std_material = Material(MaterialBase())
 
 let animated_material = Material(MaterialBase())
     .fragment(fragment_shader_uri)
-    .descriptor_set({
+    .inputs({
         time_seconds = 0.0
     })
 ```
 
 Without customization, use the standard default shading implementation for
 the selected base. `.fragment(...)` configures the implicit definition, while
-`.descriptor_set(...)` on a Material always supplies values. This shorthand
+`.inputs(...)` on a Material always supplies values. This shorthand
 must obtain its field types from the shader interface/reflection and validate
 values against them, not infer the declared shader layout from sample values.
 It must not mutate another material's definition or a built-in preset.
@@ -157,6 +165,60 @@ tables and lists may explicitly allow null under the future MMS type rules;
 that language rule does not authorize function-valued GPU uniforms or new
 material resource types. `.set_input(name, value)` remains the proposed explicit
 live update path; no closure executes during draw recording or on the GPU.
+
+## Named inputs and GPU transport (2026-10-25)
+
+Definition and instance authoring should have the same named-input shape:
+`MaterialDefinition(base).inputs(schema)` consumes field types, while
+`Material(definition).inputs(values)` consumes initial values for those fields.
+The definition owns a fixed schema; instance initialization or mutation cannot
+add fields or change their types. Expressions in the value record evaluate
+during normal MMS execution and retain their results. They are not automatic
+per-frame providers. Existing explicit `set_input` / `get_input` operations
+address those same names.
+
+The source spelling remains `field: f32` for a type-only record and
+`field = expression` for an initialized value record. Colon-style
+TypeExpression resolution is still pending. Do not implement this design by
+quietly replacing type-only records with equals-style type-tag fields or by
+claiming the existing names-only builder is already the symmetric API.
+
+Vulkan exposes several input mechanisms with different semantics:
+
+| Mechanism | Relationship to material inputs |
+| --- | --- |
+| Uniform/storage buffers and sampled resources through descriptors | Current custom f32 values occupy one uniform buffer at set 1, binding 0. A descriptor references the buffer; individual fields are not separate descriptors. |
+| Push constants | Can carry small draw-time values without a descriptor set. A future base/program contract could expose material fields this way; the current custom loader explicitly rejects authored push constants. |
+| Vertex/instance attributes | Supply geometry/draw-instance data. They are not independent mutable values for each object merely because several objects share one Material. |
+| Inter-stage inputs such as fragment UVs | Supplied by preceding shader stages, not initialized by a material value record. |
+| Specialization constants | Select specialized program/pipeline variants. They are not ordinary live material fields and must not be changed through a cheap scalar setter. |
+
+References: Khronos [Mapping Data to Shaders](https://docs.vulkan.org/guide/latest/mapping_data_to_shaders.html)
+and [Push Constants](https://docs.vulkan.org/guide/latest/push_constants.html).
+
+Keep three concerns separate: field name/type, value ownership/update rate,
+and GPU transport/layout. A primitive tag such as f32 states the field type;
+it does not select a descriptor, push-constant range, vertex location or rate.
+The material's fields are shared material-instance values. Per-object,
+per-vertex, frame/view and renderer-owned inputs need their own explicit
+contracts/providers; naming the public method `inputs` does not grant arbitrary
+access to all shader inputs or add another material identity layer.
+
+The base/program interface and reflected shader layout determine valid mappings.
+Reflection validates the authored schema and supplies offsets/bindings; it
+cannot infer ownership/update rate from a float or silently move a field from a
+UBO to push constants without a compatible shader interface. Custom raw GLSL
+still declares the supported layout. An alternate transport requires its own
+validated renderer/program implementation, not just a different MMS value.
+
+For the next common-flow migration, preserve the existing bounded f32 UBO path
+while separating logical schema/value storage from Anime-specific packing and
+physical layout. Route built-in and custom materials through that shared model.
+Introducing push constants, per-object attributes, specialization controls,
+resource inputs or richer field types is not required for that migration.
+The future public `.inputs(...)` API must validate schema versus values and
+shader compatibility; retain the existing API until that replacement is
+implemented and its callers are deliberately migrated.
 
 ## Goal
 
