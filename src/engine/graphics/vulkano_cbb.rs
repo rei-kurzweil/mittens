@@ -55,7 +55,11 @@ impl VulkanoState {
         pipeline_skinned_emissive: Arc<GraphicsPipeline>,
     ) -> Arc<GraphicsPipeline> {
         if let Some(Ok(program)) = self.custom_programs.get(&material) {
-            return program.pipeline.clone();
+            return if Arc::ptr_eq(&pipeline_toon, &self.pipeline_toon_mesh_transparent) {
+                program.transparent_pipeline.clone()
+            } else {
+                program.pipeline.clone()
+            };
         }
         match material {
             crate::engine::graphics::MaterialHandle::ANIME_MESH => {

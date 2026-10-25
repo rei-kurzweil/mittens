@@ -373,14 +373,18 @@ mod tests {
                 env!("CARGO_MANIFEST_DIR"),
                 "/examples/youtuber-room.mms"
             ))
-            .replace(
-                "let desktop_view_enabled = false",
-                &format!("let desktop_view_enabled = {desktop}"),
-            )
-            .replace(
-                "let xr_view_enabled = true",
-                &format!("let xr_view_enabled = {xr}"),
-            );
+            .lines()
+            .map(|line| {
+                if line.starts_with("let desktop_view_enabled =") {
+                    format!("let desktop_view_enabled = {desktop}")
+                } else if line.starts_with("let xr_view_enabled =") {
+                    format!("let xr_view_enabled = {xr}")
+                } else {
+                    line.to_owned()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
             let mut world = World::default();
             let mut rx = RxWorld::default();
             let mut queue = CommandQueue::new();
@@ -499,6 +503,17 @@ mod tests {
         let definition_id = visuals.materials.source_definition(definition).unwrap();
         let registered = visuals.materials.definition(definition_id).unwrap();
         let prepared = registered.custom.as_ref().unwrap().clone();
+        let other_programs: Vec<_> = visuals
+            .materials
+            .instances()
+            .filter_map(|(_, record)| {
+                visuals
+                    .materials
+                    .definition(record.definition)?
+                    .custom
+                    .clone()
+            })
+            .collect();
         assert!(registered.supports_emission_extraction);
         assert_eq!(registered.base, visuals.materials.extracted_emissive_base);
         crate::engine::ecs::SystemWorld::default().remove_subtree_immediate(
@@ -517,18 +532,23 @@ mod tests {
         );
         // Let the compiler worker finish before the test process tears down
         // shaderc/glslang globals. The detached resource must remain valid.
-        for _ in 0..200 {
-            if prepared.compiled.get().is_some() {
-                break;
+        for program in std::iter::once(prepared).chain(other_programs) {
+            for _ in 0..200 {
+                if program.compiled.get().is_some() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
             }
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        assert!(
-            prepared
+            let compiled = program
                 .compiled
                 .get()
-                .expect("material compilation must complete")
-                .is_ok()
-        );
+                .expect("material compilation must complete");
+            assert!(
+                compiled.is_ok(),
+                "{}: {:?}",
+                program.fragment_uri,
+                compiled.as_ref().err()
+            );
+        }
     }
 }

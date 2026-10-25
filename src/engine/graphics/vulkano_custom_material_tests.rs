@@ -61,10 +61,11 @@ fn youtuber_room_renders_custom_wave_in_stereo() -> Result<(), Box<dyn std::erro
     ))
     .replace("let desktop_view_enabled = false", "let desktop_view_enabled = true")
     .replace("let xr_view_enabled = true", "let xr_view_enabled = false")
+    .replace("let pool_area = indoor_pool([0.0, 0.0, pool_room_origin_z], pool_room_width, pool_room_length, pool_width, pool_length, pool_water_enabled)", "let pool_area = T {}")
     // Keep the emission proof active while the user-facing scene is temporarily
     // configured for isolated lighting diagnostics.
     .replace("RenderGraph.off()", "RenderGraph { EmissivePass { BlurPass { radius_ndc(0.012) half_res(true) } } Bloom { intensity(0.55) radius_ndc(0.012) emissive_scale(1.0) half_res(true) } }\n")
-    + "\nceiling_leds.set_input(\"intensity\", 1.0)\nmonitor_screen_content.remove_subtree()\n";
+    + "\nceiling_leds.set_input(\"intensity\", 1.0)\nmonitor_screen_content.remove_subtree()\npool_area.remove_subtree()\npool_hallway.remove_subtree()\n";
     room.load_mms_source_at_path(&source, "examples/youtuber-room.mms")?;
     let mut next_mesh = 1000;
     let mut next_texture = 1000;
@@ -128,12 +129,28 @@ fn youtuber_room_renders_custom_wave_in_stereo() -> Result<(), Box<dyn std::erro
             .visuals
             .materials
             .instances()
-            .find(|(_, record)| room.visuals.materials.definition(record.definition).is_some_and(|definition| definition.custom.is_some()))
+            .find(|(_, record)| {
+                room.visuals
+                    .materials
+                    .definition(record.definition)
+                    .is_some_and(|definition| definition.custom.is_some())
+            })
             .map(|(id, _)| id)
             .expect("room's shared custom instance");
         let definition = room.visuals.materials.instance(custom).unwrap().definition;
-        let fields = &room.visuals.materials.definition(definition).unwrap().custom.as_ref().unwrap().fields;
-        let time_index = fields.iter().position(|name| name == "time_seconds").unwrap();
+        let fields = &room
+            .visuals
+            .materials
+            .definition(definition)
+            .unwrap()
+            .custom
+            .as_ref()
+            .unwrap()
+            .fields;
+        let time_index = fields
+            .iter()
+            .position(|name| name == "time_seconds")
+            .unwrap();
         let intensity_index = fields.iter().position(|name| name == "intensity").unwrap();
         if frame == 2 {
             let record = room.visuals.materials.instance(custom).unwrap();
@@ -444,14 +461,21 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
             vec![revision as f32, 0.03, 0.5, 6.0, 1.0],
         );
         renderer.sync_material_instances(&visuals);
-        held.push(renderer.custom_material_set(id, material)?.unwrap());
+        held.push(
+            renderer
+                .custom_material_set(id, material, TextureHandle(0), TextureFiltering::Linear)?
+                .unwrap(),
+        );
     }
-    let id =
-        visuals
-            .materials
-            .upsert_source(source, definition, vec![8.0, 0.03, 0.5, 6.0, 1.0]);
+    let id = visuals
+        .materials
+        .upsert_source(source, definition, vec![8.0, 0.03, 0.5, 6.0, 1.0]);
     renderer.sync_material_instances(&visuals);
-    assert!(renderer.custom_material_set(id, material).is_err());
+    assert!(
+        renderer
+            .custom_material_set(id, material, TextureHandle(0), TextureFiltering::Linear)
+            .is_err()
+    );
     for (index, snapshot) in renderer.material_instances[id]
         .custom_snapshots
         .iter()
@@ -465,13 +489,11 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
     }
     held.clear();
     for edit in 0..10_000 {
-        visuals.materials.upsert_source(
-            source,
-            definition,
-            vec![edit as f32, 0.03, 0.5, 6.0, 1.0],
-        );
+        visuals
+            .materials
+            .upsert_source(source, definition, vec![edit as f32, 0.03, 0.5, 6.0, 1.0]);
         renderer.sync_material_instances(&visuals);
-        renderer.custom_material_set(id, material)?;
+        renderer.custom_material_set(id, material, TextureHandle(0), TextureFiltering::Linear)?;
     }
     assert_eq!(renderer.material_upload_stats.allocations, 8);
     assert_eq!(renderer.material_instances[id].custom_snapshots.len(), 8);
@@ -502,7 +524,12 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
         .materials
         .upsert_source(other, other_definition, vec![0.75]);
     renderer.sync_material_instances(&visuals);
-    renderer.custom_material_set(other_id, other_material)?;
+    renderer.custom_material_set(
+        other_id,
+        other_material,
+        TextureHandle(0),
+        TextureFiltering::Linear,
+    )?;
     assert_eq!(renderer.custom_programs.len(), 2);
     assert_eq!(
         renderer.material_instances[other_id].custom_snapshots[0]
@@ -517,6 +544,43 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
         32
     );
     assert_eq!(renderer.material_upload_stats.allocations, 9);
+    // A shared material's numeric revision does not identify its per-draw
+    // texture or sampler. Inspect the actual descriptor resources as well.
+    let original = renderer
+        .custom_material_set(
+            other_id,
+            other_material,
+            TextureHandle(0),
+            TextureFiltering::Linear,
+        )?
+        .unwrap();
+    let image_handle = TextureHandle(90_001);
+    renderer.upload_texture_rgba8(image_handle, &[210, 80, 30, 255], 1, 1)?;
+    let textured = renderer
+        .custom_material_set(
+            other_id,
+            other_material,
+            image_handle,
+            TextureFiltering::Nearest,
+        )?
+        .unwrap();
+    assert!(!Arc::ptr_eq(&original, &textured));
+    assert_eq!(
+        renderer.material_instances[other_id].custom_snapshots.len(),
+        2
+    );
+    let resources = textured.resources();
+    let Some(vulkano::descriptor_set::DescriptorBindingResources::ImageViewSampler(images)) =
+        resources.binding(1)
+    else {
+        panic!("material texture descriptor")
+    };
+    let (image, sampler) = images[0].as_ref().unwrap();
+    assert!(Arc::ptr_eq(
+        &image.image_view,
+        &renderer.textures[&image_handle].view
+    ));
+    assert!(Arc::ptr_eq(sampler, &renderer.sampler_nearest));
     Ok(())
 }
 
@@ -537,12 +601,35 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
         env!("CARGO_MANIFEST_DIR"),
         "/examples/youtuber-room.mms"
     ))
-    .replace("let desktop_view_enabled = false", "let desktop_view_enabled = true")
-    .replace("let xr_view_enabled = true", "let xr_view_enabled = false")
-    ;
+    .replace(
+        "let desktop_view_enabled = false",
+        "let desktop_view_enabled = true",
+    )
+    .replace("let xr_view_enabled = true", "let xr_view_enabled = false");
     room.load_mms_source_at_path(&source, "examples/youtuber-room.mms")?;
     for _ in 0..4 {
         room.update(0.0, &crate::engine::user_input::InputState::default());
+    }
+    for (_, instance) in room.visuals.materials.instances() {
+        if let Some(custom) = room
+            .visuals
+            .materials
+            .definition(instance.definition)
+            .and_then(|definition| definition.custom.as_ref())
+        {
+            for _ in 0..200 {
+                if custom.compiled.get().is_some() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            custom
+                .compiled
+                .get()
+                .ok_or("custom compiler timed out")?
+                .as_ref()
+                .map_err(Clone::clone)?;
+        }
     }
     let reimu = room
         .world
@@ -685,7 +772,15 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
     let mut next_mesh = 1000;
     let mut next_texture = 1000;
     let mut retained = None;
-    for preview in ["room", "reimu", "monitor"] {
+    for preview in [
+        "room",
+        "reimu",
+        "monitor",
+        "pool",
+        "ladder",
+        "slide",
+        "slide_inside",
+    ] {
         let closeup = preview != "room";
         room.update(0.0, &crate::engine::user_input::InputState::default());
         let shading = room
@@ -706,6 +801,74 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
             },
             &mut room.command_queue,
         );
+        assert_eq!(
+            room.visuals
+                .lights()
+                .iter()
+                .filter(|light| light.light_type == 3)
+                .count(),
+            6
+        );
+        if preview == "pool" {
+            room.visuals.prepare_draw_cache();
+            let water = room
+                .visuals
+                .instances()
+                .iter()
+                .find(|instance| {
+                    room.world.component_label(instance.component) == Some("pool_water_surface")
+                })
+                .unwrap();
+            let definition = room
+                .visuals
+                .materials
+                .instance(water.material_instance.unwrap())
+                .unwrap()
+                .definition;
+            let program = room
+                .visuals
+                .materials
+                .definition(definition)
+                .unwrap()
+                .static_program;
+            assert!(
+                !renderer.custom_programs[&program]
+                    .as_ref()
+                    .unwrap()
+                    .transparent_pipeline
+                    .depth_stencil_state()
+                    .unwrap()
+                    .depth
+                    .as_ref()
+                    .unwrap()
+                    .write_enable
+            );
+            assert!(water.color[3] < 1.0);
+            let mut textured_materials = std::collections::HashSet::new();
+            for instance in room.visuals.instances() {
+                if let Some(material) = instance.material_instance {
+                    if room
+                        .visuals
+                        .materials
+                        .instance(material)
+                        .and_then(|record| room.visuals.materials.definition(record.definition))
+                        .and_then(|definition| definition.custom.as_ref())
+                        .is_some_and(|custom| {
+                            custom.fragment_uri.contains("pool-tiles")
+                                || custom.fragment_uri.contains("matcap")
+                        })
+                    {
+                        assert!(
+                            instance
+                                .texture
+                                .is_some_and(|texture| texture != TextureHandle(0))
+                        );
+                        textured_materials.insert(material);
+                    }
+                }
+            }
+            assert_eq!(textured_materials.len(), 2);
+        }
         let binding = room.visuals.materials.source_instance(probe).unwrap();
         assert!(
             room.visuals
@@ -726,7 +889,24 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
         let view = if closeup {
             use crate::engine::ecs::component::TransformComponent;
             use crate::utils::math::{mat4_inverse, quat_mul, quat_rotation_y};
-            let (position, target) = if preview == "monitor" {
+            let (position, target) = if preview == "pool" {
+                ([0.0, 1.8, 3.6], [0.0, 1.7, 8.8])
+            } else if preview == "ladder" {
+                ([0.85, 1.05, 4.45], [0.0, 0.15, 5.55])
+            } else if preview == "slide" {
+                ([1.65, 2.3, 9.8], [0.0, 1.4, 10.82])
+            } else if preview == "slide_inside" {
+                // Follow the centreline just inside the lower mouth.
+                let point = |t: f32| {
+                    let angle = std::f32::consts::TAU * 2.0 * t;
+                    [
+                        0.72 * angle.cos(),
+                        0.04 + 2.6 * t,
+                        4.57 + 6.25 + 0.72 * angle.sin(),
+                    ]
+                };
+                (point(0.05), point(0.08))
+            } else if preview == "monitor" {
                 ([-0.30, 1.38, -0.80], [-0.30, 1.34, -1.94])
             } else {
                 ([-0.75, 0.85, 1.25], [-2.08, 0.45, 0.2])
@@ -796,6 +976,10 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
         }
         image::save_buffer(
             match preview {
+                "pool" => "/tmp/youtuber-pool-hall.png",
+                "slide" => "/tmp/youtuber-plastic-slide.png",
+                "slide_inside" => "/tmp/youtuber-plastic-slide-inside.png",
+                "ladder" => "/tmp/youtuber-pool-ladder.png",
                 "monitor" => "/tmp/youtuber-monitor-terminal.png",
                 "reimu" => "/tmp/youtuber-reimu-seated.png",
                 _ => "/tmp/youtuber-room-anime.png",
@@ -861,23 +1045,217 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
     let test_light = room
         .world
         .add_component(crate::engine::ecs::component::PointLightComponent::new());
-    let mut samples = Vec::new();
-    for offset in [
-        [0.0, 0.0, 1.0],
-        [0.9797959, 0.0, 0.2],
-        [0.9797959, 0.0, -0.2],
-    ] {
-        room.visuals.upsert_light(
-            test_light,
-            crate::engine::graphics::visual_world::VisualLight {
-                light_type: 1,
-                position_ws: [100.0 + offset[0], offset[1], offset[2]],
-                intensity: 0.7,
-                distance: 5.0,
-                color: [1.0; 3],
-                ..Default::default()
-            },
+    // Exercise the actual custom tile program as well as built-in Anime.
+    // Disable normal/specular/rim detail to isolate the distance/cone ramp.
+    let tile_definition = room
+        .visuals
+        .materials
+        .instances()
+        .find_map(|(_, record)| {
+            let definition = room.visuals.materials.definition(record.definition)?;
+            definition
+                .custom
+                .as_ref()?
+                .fragment_uri
+                .contains("pool-tiles")
+                .then_some(record.definition)
+        })
+        .expect("pool tile definition");
+    let schema = &room
+        .visuals
+        .materials
+        .definition(tile_definition)
+        .unwrap()
+        .parameter_schema;
+    let mut tile_values = vec![0.0; schema.scalar_count];
+    tile_values[schema.field("tile_size").unwrap().slot] = 0.25;
+    tile_values[schema.field("shininess").unwrap().slot] = 80.0;
+    // Match the built-in receiver's ramp for the controlled comparison; the
+    // authored pool uses its own wider transition.
+    tile_values[schema.field("shade_threshold").unwrap().slot] = 0.35;
+    tile_values[schema.field("lit_threshold").unwrap().slot] = 0.55;
+    let tile_receiver =
+        room.visuals
+            .materials
+            .upsert_source(receiver, tile_definition, tile_values);
+    for material in [retained, Some(tile_receiver)] {
+        let record = room.visuals.materials.instance(material.unwrap()).unwrap();
+        let program = room
+            .visuals
+            .materials
+            .definition(record.definition)
+            .unwrap()
+            .static_program;
+        room.visuals.update_material(handle, program);
+        room.visuals.bind_material_instance(handle, material);
+        let mut samples = Vec::new();
+        for (kind, offset, direction) in [
+            (1, [0.0, 0.0, 1.0], [0.0, 0.0, -1.0]),
+            (1, [0.9797959, 0.0, 0.2], [0.0, 0.0, -1.0]),
+            (1, [0.9797959, 0.0, -0.2], [0.0, 0.0, -1.0]),
+            (3, [0.0, 0.0, 1.0], [0.0, 0.0, -1.0]),
+            (3, [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]),
+            (3, [0.0, 0.0, 4.0], [0.0, 0.0, -1.0]),
+            (3, [0.0, 0.0, -1.0], [0.0, 0.0, 1.0]),
+            (3, [0.9797959, 0.0, 0.2], [-0.9797959, 0.0, -0.2]),
+        ] {
+            room.visuals.upsert_light(
+                test_light,
+                crate::engine::graphics::visual_world::VisualLight {
+                    light_type: kind,
+                    direction_ws: direction,
+                    angle: 0.7,
+                    penumbra: 0.2,
+                    position_ws: [100.0 + offset[0], offset[1], offset[2]],
+                    intensity: 0.7,
+                    distance: 5.0,
+                    color: [1.0; 3],
+                    ..Default::default()
+                },
+            );
+            renderer.submit_xr_eye_to_view(&mut room.visuals, 0, extent, 2, eyes[0].clone())?;
+            let size = (extent[0] * extent[1] * 4) as usize;
+            let readback = Buffer::new_slice::<u8>(
+                context.memory_allocator().clone(),
+                BufferCreateInfo {
+                    usage: BufferUsage::TRANSFER_DST,
+                    ..Default::default()
+                },
+                AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                        | MemoryTypeFilter::HOST_RANDOM_ACCESS,
+                    ..Default::default()
+                },
+                (size * 2) as u64,
+            )?;
+            let mut commands = AutoCommandBufferBuilder::primary(
+                renderer.command_buffer_allocator.clone(),
+                context.graphics_queue().queue_family_index(),
+                CommandBufferUsage::OneTimeSubmit,
+            )?;
+            commands.copy_image_to_buffer(CopyImageToBufferInfo::image_buffer(
+                output.clone(),
+                readback.clone(),
+            ))?;
+            let done = renderer
+                .submission_future
+                .take()
+                .unwrap()
+                .then_execute(context.graphics_queue().clone(), commands.build()?)?
+                .then_signal_fence_and_flush()?;
+            done.wait(None)?;
+            renderer.submission_future = Some(done.boxed());
+            let pixels = readback.read()?;
+            let center = ((extent[1] / 2 * extent[0] + extent[0] / 2) * 4) as usize;
+            samples.push(pixels[center]);
+        }
+        assert!(
+            samples[0] > 160,
+            "head-on receiver must be lit: {samples:?}"
         );
+        assert!(
+            samples[0].abs_diff(samples[1]) <= 3,
+            "facing angle must not scale the distance-fed ramp: {samples:?}"
+        );
+        assert!(
+            u16::from(samples[2]) + 40 < u16::from(samples[0]),
+            "a back-facing receiver must stay in its shade color: {samples:?}"
+        );
+
+        assert!(
+            samples[0].abs_diff(samples[3]) <= 3,
+            "an aimed spotlight must feed the same distance ramp as a point light: {samples:?}"
+        );
+        assert!(
+            u16::from(samples[4]) + 40 < u16::from(samples[3]),
+            "an away-facing cone must not light the receiver: {samples:?}"
+        );
+        assert!(
+            u16::from(samples[5]) + 40 < u16::from(samples[3]),
+            "spotlight range attenuation must reduce ramp input: {samples:?}"
+        );
+        assert!(
+            u16::from(samples[6]) + 40 < u16::from(samples[3]),
+            "back-facing receivers must reject an aimed spotlight: {samples:?}"
+        );
+        assert!(
+            samples[7].abs_diff(samples[3]) <= 3,
+            "grazing but facing spotlight receivers must keep distance-only ramp strength: {samples:?}"
+        );
+    }
+
+    // Verify both authored scales and their independent pixel-level effects.
+    let plastic_materials: Vec<_> = room
+        .visuals
+        .materials
+        .instances()
+        .filter_map(|(_, record)| {
+            let definition = room.visuals.materials.definition(record.definition)?;
+            definition
+                .custom
+                .as_ref()?
+                .fragment_uri
+                .ends_with("/plastic.frag")
+                .then_some(record.clone())
+        })
+        .collect();
+    assert_eq!(
+        plastic_materials.len(),
+        2,
+        "outer and inner share one plastic definition"
+    );
+    let plastic_definition = plastic_materials[0].definition;
+    let definition = room
+        .visuals
+        .materials
+        .definition(plastic_definition)
+        .unwrap();
+    let schema = definition.parameter_schema.clone();
+    let program = definition.static_program;
+    let field = |name: &str| schema.field(name).unwrap().slot;
+    let outer = plastic_materials
+        .iter()
+        .find(|record| record.values[field("normal_sign")] > 0.0)
+        .unwrap();
+    let inner = plastic_materials
+        .iter()
+        .find(|record| record.values[field("normal_sign")] < 0.0)
+        .unwrap();
+    assert_eq!(inner.definition, outer.definition);
+    for name in ["diffuse_scale", "specular_scale"] {
+        assert_eq!(outer.values[field(name)], 1.0);
+        assert!((inner.values[field(name)] - 1.0 / 3.0).abs() < 0.00001);
+    }
+    room.visuals.upsert_light(
+        test_light,
+        crate::engine::graphics::visual_world::VisualLight {
+            light_type: 1,
+            position_ws: [100.0, 0.0, 1.0],
+            intensity: 0.7,
+            distance: 5.0,
+            color: [1.0; 3],
+            ..Default::default()
+        },
+    );
+    let mut plastic_samples = Vec::new();
+    for (diffuse, specular) in [
+        (1.0, 0.0),
+        (1.0 / 3.0, 0.0),
+        (0.0, 1.0),
+        (0.0, 1.0 / 3.0),
+        (1.0, 1.0),
+        (1.0 / 3.0, 1.0 / 3.0),
+    ] {
+        let mut values = outer.values.to_vec();
+        values[field("diffuse_scale")] = diffuse;
+        values[field("specular_scale")] = specular;
+        values[field("rim_strength")] = 0.0;
+        let material = room
+            .visuals
+            .materials
+            .upsert_source(receiver, plastic_definition, values);
+        room.visuals.update_material(handle, program);
+        room.visuals.bind_material_instance(handle, Some(material));
         renderer.submit_xr_eye_to_view(&mut room.visuals, 0, extent, 2, eyes[0].clone())?;
         let size = (extent[0] * extent[1] * 4) as usize;
         let readback = Buffer::new_slice::<u8>(
@@ -912,19 +1290,22 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
         renderer.submission_future = Some(done.boxed());
         let pixels = readback.read()?;
         let center = ((extent[1] / 2 * extent[0] + extent[0] / 2) * 4) as usize;
-        samples.push(pixels[center]);
+        plastic_samples.push(pixels[center]);
     }
     assert!(
-        samples[0] > 160,
-        "head-on receiver must be lit: {samples:?}"
+        plastic_samples[0] > 30 && plastic_samples[2] > 5,
+        "both plastic lobes must be visible: {plastic_samples:?}"
     );
+    for index in [0, 2, 4] {
+        assert!(
+            (i16::from(plastic_samples[index + 1]) * 3 - i16::from(plastic_samples[index])).abs()
+                <= 4,
+            "diffuse, specular and combined output must independently scale by one third: {plastic_samples:?}"
+        );
+    }
     assert!(
-        samples[0].abs_diff(samples[1]) <= 3,
-        "facing angle must not scale the distance-fed ramp: {samples:?}"
-    );
-    assert!(
-        samples[2] + 40 < samples[0],
-        "a back-facing receiver must stay in its shade color: {samples:?}"
+        plastic_samples[4] > plastic_samples[0],
+        "plastic highlights must add above diffuse: {plastic_samples:?}"
     );
 
     let eye = *joints
@@ -937,8 +1318,34 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
         .unwrap()
         .transform
         .rotation;
-    for _ in 0..4 {
+    // Animation follows ClockDriver rather than update's dt. Advance a manual
+    // driver through a complete idle hold instead of depending on render speed.
+    struct GazeClock(std::sync::atomic::AtomicU64);
+    impl crate::engine::ecs::system::ClockDriver for GazeClock {
+        fn name(&self) -> &'static str {
+            "gaze-test"
+        }
+        fn time_now_sec(&self) -> f64 {
+            self.0.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1000.0
+        }
+    }
+    let gaze_clock = Arc::new(GazeClock(std::sync::atomic::AtomicU64::new(0)));
+    room.systems.clock.set_driver(gaze_clock.clone());
+    for _ in 0..12 {
+        gaze_clock
+            .0
+            .fetch_add(250, std::sync::atomic::Ordering::Relaxed);
         room.update(0.25, &crate::engine::user_input::InputState::default());
+        if room
+            .world
+            .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(eye)
+            .unwrap()
+            .transform
+            .rotation
+            != before
+        {
+            break;
+        }
     }
     assert_ne!(
         before,

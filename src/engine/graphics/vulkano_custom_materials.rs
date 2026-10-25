@@ -3,11 +3,14 @@
 struct CustomGpuProgram {
     definition: std::sync::Arc<crate::engine::graphics::custom_material::CustomMaterialDefinition>,
     pipeline: Arc<GraphicsPipeline>,
+    transparent_pipeline: Arc<GraphicsPipeline>,
     extraction_pipeline: Option<Arc<GraphicsPipeline>>,
 }
 
 struct CustomMaterialSnapshot {
     revision: u64,
+    texture: TextureHandle,
+    filtering: TextureFiltering,
     buffer: Subbuffer<[u8]>,
     set: Arc<DescriptorSet>,
 }
@@ -60,6 +63,17 @@ impl VulkanoState {
                 let pipeline =
                     GraphicsPipeline::new(self.context.device().clone(), None, create.clone())
                         .map_err(|e| e.to_string())?;
+                let mut transparent_create = create.clone();
+                transparent_create.depth_stencil_state = Some(DepthStencilState {
+                    depth: Some(DepthState {
+                        write_enable: false,
+                        ..DepthState::simple()
+                    }),
+                    ..Default::default()
+                });
+                let transparent_pipeline =
+                    GraphicsPipeline::new(self.context.device().clone(), None, transparent_create)
+                        .map_err(|e| e.to_string())?;
                 let extraction_pipeline = if definition.supports_emission_extraction {
                     // Reuse exactly the same program and descriptor revision. Equal
                     // depth admits the visible surface without overwriting scene depth.
@@ -81,6 +95,7 @@ impl VulkanoState {
                 Ok(CustomGpuProgram {
                     definition: custom.clone(),
                     pipeline,
+                    transparent_pipeline,
                     extraction_pipeline,
                 })
             })();
@@ -97,6 +112,8 @@ impl VulkanoState {
         &mut self,
         id: crate::engine::graphics::materials::MaterialInstanceId,
         material: crate::engine::graphics::MaterialHandle,
+        texture: TextureHandle,
+        filtering: TextureFiltering,
     ) -> Result<Option<Arc<DescriptorSet>>, Box<dyn std::error::Error>> {
         let program = self
             .custom_programs
@@ -109,25 +126,30 @@ impl VulkanoState {
             .get()
             .and_then(|p| p.as_ref().ok())
             .ok_or("custom program not compiled")?;
+        let view = self
+            .textures
+            .get(&texture)
+            .ok_or("missing custom material texture")?
+            .view
+            .clone();
+        let sampler = self.sampler_for(filtering).clone();
         let entry = self
             .material_instances
             .get_mut(id)
             .ok_or("stale custom material instance")?;
         let revision = entry.record.revision;
-        if let Some(slot) = entry
-            .custom_snapshots
-            .iter()
-            .find(|slot| slot.revision == revision)
-        {
+        if let Some(slot) = entry.custom_snapshots.iter().find(|slot| {
+            slot.revision == revision && slot.texture == texture && slot.filtering == filtering
+        }) {
             self.material_upload_stats.snapshot_reuses += 1;
             return Ok(Some(slot.set.clone()));
         }
         let bytes = compiled.pack(&entry.record.values)?;
-        if let Some(slot) = entry
-            .custom_snapshots
-            .iter_mut()
-            .find(|slot| Arc::strong_count(&slot.set) == 1)
-        {
+        if let Some(slot) = entry.custom_snapshots.iter_mut().find(|slot| {
+            slot.texture == texture
+                && slot.filtering == filtering
+                && Arc::strong_count(&slot.set) == 1
+        }) {
             slot.buffer.write()?.copy_from_slice(&bytes);
             slot.revision = revision;
             self.material_upload_stats.uploads += 1;
@@ -149,25 +171,19 @@ impl VulkanoState {
             },
             bytes,
         )?;
-        let texture = self
-            .textures
-            .get(&self.default_white_texture)
-            .ok_or("missing default texture")?;
         let set = DescriptorSet::new(
             self.descriptor_set_allocator.clone(),
             self.set_layouts.material.clone(),
             [
                 WriteDescriptorSet::buffer(0, buffer.clone()),
-                WriteDescriptorSet::image_view_sampler(
-                    1,
-                    texture.view.clone(),
-                    self.sampler_linear.clone(),
-                ),
+                WriteDescriptorSet::image_view_sampler(1, view, sampler),
             ],
             [],
         )?;
         entry.custom_snapshots.push(CustomMaterialSnapshot {
             revision,
+            texture,
+            filtering,
             buffer,
             set: set.clone(),
         });

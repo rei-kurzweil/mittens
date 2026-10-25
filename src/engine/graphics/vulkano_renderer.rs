@@ -4014,7 +4014,7 @@ mod vulkano_backend {
                     .get(&material)
                     .is_some_and(Result::is_ok)
                 {
-                    let result = self.custom_material_set(id, material);
+                    let result = self.custom_material_set(id, material, texture_handle, filtering);
                     self.log_material_upload_stats();
                     return result;
                 }

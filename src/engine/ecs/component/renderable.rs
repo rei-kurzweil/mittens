@@ -28,6 +28,35 @@ pub enum AuthoredRenderableShape {
         sweep_angle_radians: f32,
         segments: u32,
     },
+    Torus {
+        radius: f32,
+        tube_radius: f32,
+        segments: u32,
+        sides: u32,
+    },
+    Cylinder {
+        radius: f32,
+        height: f32,
+        sides: u32,
+    },
+    Helix {
+        inner: f32,
+        outer: f32,
+        height: f32,
+        start: f32,
+        sweep: f32,
+        segments: u32,
+        wall_height: f32,
+    },
+    HelixTube {
+        radius: f32,
+        tube_radius: f32,
+        height: f32,
+        start: f32,
+        sweep: f32,
+        segments: u32,
+        sides: u32,
+    },
     Star {
         points: u32,
         inner_radius_fraction: f32,
@@ -297,6 +326,100 @@ impl RenderableComponent {
         s
     }
 
+    pub fn torus(
+        assets: &mut RenderAssets,
+        radius: f32,
+        tube_radius: f32,
+        segments: u32,
+        sides: u32,
+    ) -> Result<Self, String> {
+        let mesh = MeshFactory::torus(radius, tube_radius, segments, sides)?;
+        let mut component = Self::new(Renderable::new(
+            assets.register_mesh(mesh),
+            MaterialHandle::TOON_MESH,
+        ));
+        component.authored_shape = Some(AuthoredRenderableShape::Torus {
+            radius,
+            tube_radius,
+            segments,
+            sides,
+        });
+        Ok(component)
+    }
+
+    pub fn cylinder(
+        assets: &mut RenderAssets,
+        radius: f32,
+        height: f32,
+        sides: u32,
+    ) -> Result<Self, String> {
+        let mesh = MeshFactory::cylinder(radius, height, sides)?;
+        let mut component = Self::new(Renderable::new(
+            assets.register_mesh(mesh),
+            MaterialHandle::TOON_MESH,
+        ));
+        component.authored_shape = Some(AuthoredRenderableShape::Cylinder {
+            radius,
+            height,
+            sides,
+        });
+        Ok(component)
+    }
+
+    pub fn helix(
+        assets: &mut RenderAssets,
+        inner: f32,
+        outer: f32,
+        height: f32,
+        start: f32,
+        sweep: f32,
+        segments: u32,
+        wall_height: f32,
+    ) -> Result<Self, String> {
+        let mesh = MeshFactory::helix(inner, outer, height, start, sweep, segments, wall_height)?;
+        let mut component = Self::new(Renderable::new(
+            assets.register_mesh(mesh),
+            MaterialHandle::TOON_MESH,
+        ));
+        component.authored_shape = Some(AuthoredRenderableShape::Helix {
+            inner,
+            outer,
+            height,
+            start,
+            sweep,
+            segments,
+            wall_height,
+        });
+        Ok(component)
+    }
+    pub fn helix_tube(
+        assets: &mut RenderAssets,
+        radius: f32,
+        tube_radius: f32,
+        height: f32,
+        start: f32,
+        sweep: f32,
+        segments: u32,
+        sides: u32,
+    ) -> Result<Self, String> {
+        let mesh =
+            MeshFactory::helix_tube(radius, tube_radius, height, start, sweep, segments, sides)?;
+        let mut component = Self::new(Renderable::new(
+            assets.register_mesh(mesh),
+            MaterialHandle::TOON_MESH,
+        ));
+        component.authored_shape = Some(AuthoredRenderableShape::HelixTube {
+            radius,
+            tube_radius,
+            height,
+            start,
+            sweep,
+            segments,
+            sides,
+        });
+        Ok(component)
+    }
+
     pub fn partial_annulus_2d(
         render_assets: &mut RenderAssets,
         inner_radius: f32,
@@ -439,6 +562,72 @@ impl Component for RenderableComponent {
                     num(*start_angle_radians as f64),
                     num(*sweep_angle_radians as f64),
                     num(*segments as f64),
+                ],
+            ),
+            Some(AuthoredRenderableShape::Torus {
+                radius,
+                tube_radius,
+                segments,
+                sides,
+            }) => ce_call(
+                "Renderable",
+                "torus",
+                vec![
+                    num(*radius as f64),
+                    num(*tube_radius as f64),
+                    num(*segments as f64),
+                    num(*sides as f64),
+                ],
+            ),
+            Some(AuthoredRenderableShape::Cylinder {
+                radius,
+                height,
+                sides,
+            }) => ce_call(
+                "Renderable",
+                "cylinder",
+                vec![num(*radius as f64), num(*height as f64), num(*sides as f64)],
+            ),
+            Some(AuthoredRenderableShape::Helix {
+                inner,
+                outer,
+                height,
+                start,
+                sweep,
+                segments,
+                wall_height,
+            }) => ce_call(
+                "Renderable",
+                "helix",
+                vec![
+                    num(*inner as f64),
+                    num(*outer as f64),
+                    num(*height as f64),
+                    num(*start as f64),
+                    num(*sweep as f64),
+                    num(*segments as f64),
+                    num(*wall_height as f64),
+                ],
+            ),
+            Some(AuthoredRenderableShape::HelixTube {
+                radius,
+                tube_radius,
+                height,
+                start,
+                sweep,
+                segments,
+                sides,
+            }) => ce_call(
+                "Renderable",
+                "helix_tube",
+                vec![
+                    num(*radius as f64),
+                    num(*tube_radius as f64),
+                    num(*height as f64),
+                    num(*start as f64),
+                    num(*sweep as f64),
+                    num(*segments as f64),
+                    num(*sides as f64),
                 ],
             ),
             Some(AuthoredRenderableShape::Star {

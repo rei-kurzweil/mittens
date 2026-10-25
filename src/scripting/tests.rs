@@ -7514,6 +7514,33 @@ fn roundtrip_component<C: ComponentTrait + 'static>(original: C) -> (World, Comp
 }
 
 #[test]
+fn roundtrip_helix_torus_and_cylinder_preserves_authored_parameters() {
+    use crate::engine::ecs::component::RenderableComponent;
+    use crate::engine::graphics::RenderAssets;
+    let mut assets = RenderAssets::new();
+    let ribbon =
+        RenderableComponent::helix(&mut assets, 0.4, 0.9, 2.6, 0.25, 15.0, 160, 0.18).unwrap();
+    let tube =
+        RenderableComponent::helix_tube(&mut assets, 0.9, 0.025, 2.6, 0.25, 15.0, 160, 16).unwrap();
+    let cylinder = RenderableComponent::cylinder(&mut assets, 0.025, 1.75, 16).unwrap();
+    let torus = RenderableComponent::torus(&mut assets, 0.34, 0.055, 64, 4).unwrap();
+    for original in [ribbon, tube, cylinder, torus] {
+        let expected = original.authored_shape.clone();
+        let (world, id) =
+            crate::scripting::component_registry::with_live_render_assets(&mut assets, || {
+                roundtrip_component(original)
+            });
+        assert_eq!(
+            world
+                .get_component_by_id_as::<RenderableComponent>(id)
+                .unwrap()
+                .authored_shape,
+            expected
+        );
+    }
+}
+
+#[test]
 fn roundtrip_annulus_and_filled_circle_keep_their_distinct_constructors() {
     use crate::engine::ecs::component::RenderableComponent;
     use crate::engine::graphics::primitives::CpuMeshHandle;

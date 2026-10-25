@@ -10,6 +10,19 @@
 let desktop_view_enabled = true
 let xr_view_enabled = false
 
+// Pool extension dimensions (metres). Toggle water off to inspect the empty basin.
+let pool_room_width = 4.0
+let pool_room_length = 8.0
+let pool_width = 2.0
+let pool_length = 6.0
+let pool_water_enabled = true
+// Two clear metres between exterior wall faces, including both doorway depths.
+let pool_hallway_start_z = 2.35 + 0.12 / 2.0
+let pool_hallway_length = 2.0
+let pool_hallway_center_z = pool_hallway_start_z + pool_hallway_length / 2.0
+let pool_room_origin_z = pool_hallway_start_z + pool_hallway_length + 0.16
+
+import { indoor_pool } from "../assets/components/rooms/indoor-pool.mms"
 import { f32 } from "types"
 import { pose as floor_seated_pose } from "../assets/components/poses/rei-mu/floor-seated.pose.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
@@ -399,6 +412,24 @@ ceiling_strip([0.0, 2.77, -2.275], 4.94, 0.0, 0.0, 0.26, 80)
 ceiling_strip([2.475, 2.77, 0.0], 4.55, -1.5707963268, 0.26, 0.5, 74)
 ceiling_strip([0.0, 2.77, 2.275], 4.94, 3.1415926536, 0.5, 0.76, 80)
 ceiling_strip([-2.475, 2.77, 0.0], 4.55, 1.5707963268, 0.76, 1.0, 74)
+
+// The existing front doorway opens directly into a 2 m connecting hallway.
+let pool_hallway = T {
+    name = "pool_hallway"
+    Shading.anime().shade_color([0.48, 0.48, 0.50]).shade_strength(0.65)
+        .rim_color([1.0, 1.0, 1.0]).rim_strength(0.18)
+    // The floor fills the doorway thresholds; walls and ceiling stop outside
+    // the jambs/headers so their interior faces never overlap coplanar faces.
+    box([0.0, -0.06, (2.35 + pool_room_origin_z) / 2.0],
+        [2.5, 0.12, pool_room_origin_z - 2.35], [0.92, 0.94, 0.96])
+    box([-1.33, 1.20, pool_hallway_center_z], [0.16, 2.4, pool_hallway_length], [0.96, 0.97, 0.98])
+    box([1.33, 1.20, pool_hallway_center_z], [0.16, 2.4, pool_hallway_length], [0.96, 0.97, 0.98])
+    box([0.0, 2.48, pool_hallway_center_z], [2.82, 0.16, pool_hallway_length], [0.96, 0.97, 0.98])
+    T.position(0.0, 2.15, pool_hallway_center_z) { PL.color(1.0, 1.0, 1.0).intensity(0.8).distance(4.5) }
+}
+pool_hallway
+let pool_area = indoor_pool([0.0, 0.0, pool_room_origin_z], pool_room_width, pool_room_length, pool_width, pool_length, pool_water_enabled)
+pool_area
 
 if desktop_view_enabled {
     I.speed(1.8) {

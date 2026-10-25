@@ -30,6 +30,13 @@ The receiver is generally opaque and need not itself transmit anything.
 
 ## Materials v3 lookup and implementation status
 
+2026-10-25 update: the [connected pool checkpoint](youtuber-room-pool-checkpoint.md)
+now implements procedural tile/matcap textures, custom static image bindings,
+alpha-blended water with analytic normal ripples and light specular, and multi-turn
+helix geometry. The historical audit below predates the common material registry.
+Live scene reflection/refraction, displaced water geometry and receiver transport
+remain subsequent slices.
+
 There is no separately named `materials-v3.md` in this checkout. Git history
 identifies the current proposal: commit `bac0d61f` ("update materials v3
 proposal") updates `epic/custom-materials.md`,

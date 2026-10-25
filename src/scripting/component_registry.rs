@@ -1880,6 +1880,34 @@ fn create_component(
             Some("square") => add!(RenderableComponent::square()),
             Some("plane") => add!(RenderableComponent::plane()),
             Some("tetrahedron") => add!(RenderableComponent::tetrahedron()),
+            Some("torus") => with_render_assets_mut(|assets| {
+                let radius=arg_f32(args,0).unwrap_or(0.5); let tube=arg_f32(args,1).unwrap_or(0.1);
+                let segments=arg_u32(args,2).unwrap_or(64); let sides=arg_u32(args,3).unwrap_or(16);
+                let component=RenderableComponent::torus(assets,radius,tube,segments,sides)?;
+                Ok(world.add_component(component))
+            }),
+            Some("cylinder") => with_render_assets_mut(|assets| {
+                let radius=arg_f32(args,0).unwrap_or(0.5);let height=arg_f32(args,1).unwrap_or(1.0);
+                let sides=arg_u32(args,2).unwrap_or(24);
+                let component=RenderableComponent::cylinder(assets,radius,height,sides)?;
+                Ok(world.add_component(component))
+            }),
+            Some("helix") => with_render_assets_mut(|assets| {
+                let inner=arg_f32(args,0).unwrap_or(0.5); let outer=arg_f32(args,1).unwrap_or(1.0);
+                let height=arg_f32(args,2).unwrap_or(2.0); let start=arg_f32(args,3).unwrap_or(0.0);
+                let sweep=arg_f32(args,4).unwrap_or(std::f32::consts::TAU*2.0);
+                let segments=arg_u32(args,5).unwrap_or(128); let walls=arg_f32(args,6).unwrap_or(0.0);
+                let component=RenderableComponent::helix(assets,inner,outer,height,start,sweep,segments,walls)?;
+                Ok(world.add_component(component))
+            }),
+            Some("helix_tube") => with_render_assets_mut(|assets| {
+                let radius=arg_f32(args,0).unwrap_or(0.8); let tube=arg_f32(args,1).unwrap_or(0.04);
+                let height=arg_f32(args,2).unwrap_or(2.0); let start=arg_f32(args,3).unwrap_or(0.0);
+                let sweep=arg_f32(args,4).unwrap_or(std::f32::consts::TAU*2.0);
+                let segments=arg_u32(args,5).unwrap_or(128); let sides=arg_u32(args,6).unwrap_or(16);
+                let component=RenderableComponent::helix_tube(assets,radius,tube,height,start,sweep,segments,sides)?;
+                Ok(world.add_component(component))
+            }),
             Some("partial_annulus_2d") => with_render_assets_mut(|render_assets| {
                 let inner_radius = arg_f32(args, 0).unwrap_or(0.28);
                 let outer_radius = arg_f32(args, 1).unwrap_or(0.52);

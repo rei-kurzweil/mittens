@@ -1322,6 +1322,252 @@ impl MeshFactory {
         CpuMesh::new(vertices, indices)
     }
 
+    /// Closed cylinder about +Y, from y=0 to y=height.
+    pub fn cylinder(radius: f32, height: f32, sides: u32) -> Result<CpuMesh, String> {
+        if height <= 0.0 {
+            return Err("cylinder height must be positive".into());
+        }
+        let mut mesh = Self::helix_tube(0.0, radius, height, 0.0, 0.0, 1, sides)?;
+        for (y, normal) in [(0.0, [0.0, -1.0, 0.0]), (height, [0.0, 1.0, 0.0])] {
+            let base = mesh.vertices.len() as u32;
+            mesh.vertices.push(CpuVertex {
+                pos: [0.0, y, 0.0],
+                normal,
+                uv: [0.5, 0.5],
+            });
+            for j in 0..=sides {
+                let a = std::f32::consts::TAU * j as f32 / sides as f32;
+                mesh.vertices.push(CpuVertex {
+                    pos: [radius * a.cos(), y, radius * a.sin()],
+                    normal,
+                    uv: [0.5 + 0.5 * a.cos(), 0.5 + 0.5 * a.sin()],
+                });
+            }
+            for j in 0..sides {
+                let triangle = if y == 0.0 {
+                    [base, base + j + 1, base + j + 2]
+                } else {
+                    [base, base + j + 2, base + j + 1]
+                };
+                mesh.indices_u32.extend_from_slice(&triangle);
+            }
+        }
+        Ok(mesh)
+    }
+
+    /// Open helical ribbon around +Y, optionally with vertical side walls.
+    /// Height is the total signed rise; sweep is never clamped to one revolution.
+    pub fn helix(
+        inner: f32,
+        outer: f32,
+        height: f32,
+        start: f32,
+        sweep: f32,
+        segments: u32,
+        wall_height: f32,
+    ) -> Result<CpuMesh, String> {
+        if ![inner, outer, height, start, sweep, wall_height]
+            .iter()
+            .all(|v| v.is_finite())
+            || inner <= 0.0
+            || outer <= inner
+            || sweep.abs() < 0.0001
+            || segments == 0
+            || segments > 16384
+            || wall_height < 0.0
+        {
+            return Err("helix requires finite 0 < inner < outer, nonzero sweep, 1..=16384 segments and nonnegative walls".into());
+        }
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        // Bottom strip, inner wall and outer wall. Duplicate crease vertices so
+        // each surface keeps its own smooth normal and continuous authored UVs.
+        for surface in 0..if wall_height > 0.0 { 3 } else { 1 } {
+            let base = vertices.len() as u32;
+            for i in 0..=segments {
+                let t = i as f32 / segments as f32;
+                let a = start + sweep * t;
+                let (sin, cos) = a.sin_cos();
+                for edge in 0..2 {
+                    let radius = match surface {
+                        0 => {
+                            if edge == 0 {
+                                inner
+                            } else {
+                                outer
+                            }
+                        }
+                        1 => inner,
+                        _ => outer,
+                    };
+                    let y = height * t
+                        + if surface != 0 && edge == 1 {
+                            wall_height
+                        } else {
+                            0.0
+                        };
+                    let normal = match surface {
+                        0 => normalize3([height * sin, sweep * radius, -height * cos])
+                            .map(|v| v * sweep.signum()),
+                        1 => [cos, 0.0, sin],
+                        _ => [-cos, 0.0, -sin],
+                    };
+                    vertices.push(CpuVertex {
+                        pos: [radius * cos, y, radius * sin],
+                        uv: [t, edge as f32],
+                        normal,
+                    });
+                }
+            }
+            for i in 0..segments {
+                let a = base + i * 2;
+                let b = a + 2;
+                let mut triangles = [a, b, a + 1, a + 1, b, b + 1];
+                // Align winding with the supplied normals for both helix hands.
+                let p = vertices[triangles[0] as usize].pos;
+                let cross = cross3(
+                    sub3(vertices[triangles[1] as usize].pos, p),
+                    sub3(vertices[triangles[2] as usize].pos, p),
+                );
+                let n = vertices[triangles[0] as usize].normal;
+                if cross.iter().zip(n).map(|(a, b)| a * b).sum::<f32>() < 0.0 {
+                    triangles.swap(1, 2);
+                    triangles.swap(4, 5);
+                }
+                indices.extend_from_slice(&triangles);
+            }
+        }
+        Ok(CpuMesh::new(vertices, indices))
+    }
+
+    /// Torus about +Y. A four-sided profile is rotated 45 degrees and has
+    /// hard profile corners, producing flat washer faces rather than a diamond.
+    /// Scale local Y to control a washer's thickness independently of its width.
+    pub fn torus(
+        radius: f32,
+        tube_radius: f32,
+        segments: u32,
+        sides: u32,
+    ) -> Result<CpuMesh, String> {
+        if !radius.is_finite()
+            || !tube_radius.is_finite()
+            || tube_radius <= 0.0
+            || radius <= tube_radius
+            || !(3..=16384).contains(&segments)
+            || !(3..=64).contains(&sides)
+            || u64::from(segments + 1) * u64::from(sides) * 2 > 1_000_000
+        {
+            return Err("torus requires finite radius > tube_radius > 0, 3..=16384 segments and 3..=64 sides (at most one million vertices)".into());
+        }
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        let phase = if sides == 4 {
+            std::f32::consts::FRAC_PI_4
+        } else {
+            0.0
+        };
+        for side in 0..sides {
+            let a = phase + std::f32::consts::TAU * side as f32 / sides as f32;
+            let b = phase + std::f32::consts::TAU * (side + 1) as f32 / sides as f32;
+            let base = vertices.len() as u32;
+            for i in 0..=segments {
+                let u = i as f32 / segments as f32;
+                let theta = std::f32::consts::TAU * u;
+                let (sin, cos) = theta.sin_cos();
+                for (edge, angle) in [a, b].into_iter().enumerate() {
+                    let normal_angle = if sides == 4 { (a + b) * 0.5 } else { angle };
+                    let r = radius + tube_radius * angle.cos();
+                    vertices.push(CpuVertex {
+                        pos: [r * cos, tube_radius * angle.sin(), r * sin],
+                        normal: [
+                            normal_angle.cos() * cos,
+                            normal_angle.sin(),
+                            normal_angle.cos() * sin,
+                        ],
+                        uv: [u, (side as f32 + edge as f32) / sides as f32],
+                    });
+                }
+            }
+            for i in 0..segments {
+                let a = base + i * 2;
+                // Profile direction crossed with circumference points outward.
+                indices.extend_from_slice(&[a, a + 1, a + 2, a + 1, a + 3, a + 2]);
+            }
+        }
+        Ok(CpuMesh::new(vertices, indices))
+    }
+
+    /// Round tube swept along a helix about +Y. Zero major radius gives a
+    /// straight tube; zero height gives an arc. Ends are deliberately open.
+    pub fn helix_tube(
+        radius: f32,
+        tube_radius: f32,
+        height: f32,
+        start: f32,
+        sweep: f32,
+        segments: u32,
+        sides: u32,
+    ) -> Result<CpuMesh, String> {
+        if ![radius, tube_radius, height, start, sweep]
+            .iter()
+            .all(|v| v.is_finite())
+            || radius < 0.0
+            || tube_radius <= 0.0
+            || (radius * sweep).abs() + height.abs() < 0.0001
+            || segments == 0
+            || segments > 16384
+            || !(3..=64).contains(&sides)
+            || u64::from(segments + 1) * u64::from(sides + 1) > 1_000_000
+        {
+            return Err("helix_tube requires finite nondegenerate dimensions, 1..=16384 segments and 3..=64 sides (at most one million vertices)".into());
+        }
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        for i in 0..=segments {
+            let t = i as f32 / segments as f32;
+            let a = start + sweep * t;
+            let (sin, cos) = a.sin_cos();
+            let center = [radius * cos, height * t, radius * sin];
+            let tangent = normalize3([-radius * sin * sweep, height, radius * cos * sweep]);
+            let u = [cos, 0.0, sin];
+            let v = normalize3(cross3(tangent, u));
+            for j in 0..=sides {
+                let angle = std::f32::consts::TAU * j as f32 / sides as f32;
+                let normal = add3(mul3(u, angle.cos()), mul3(v, angle.sin()));
+                vertices.push(CpuVertex {
+                    pos: add3(center, mul3(normal, tube_radius)),
+                    normal,
+                    uv: [t, j as f32 / sides as f32],
+                });
+            }
+        }
+        let stride = sides + 1;
+        for i in 0..segments {
+            for j in 0..sides {
+                let a = i * stride + j;
+                let b = a + stride;
+                let mut tri = [a, b, a + 1, a + 1, b, b + 1];
+                let p = vertices[a as usize].pos;
+                let cross = cross3(
+                    sub3(vertices[b as usize].pos, p),
+                    sub3(vertices[(a + 1) as usize].pos, p),
+                );
+                if cross
+                    .iter()
+                    .zip(vertices[a as usize].normal)
+                    .map(|(a, b)| a * b)
+                    .sum::<f32>()
+                    < 0.0
+                {
+                    tri.swap(1, 2);
+                    tri.swap(4, 5);
+                }
+                indices.extend_from_slice(&tri);
+            }
+        }
+        Ok(CpuMesh::new(vertices, indices))
+    }
+
     /// 2D partial ring/annulus in the XY plane (normal +Z).
     ///
     /// `start_angle_radians` is the arc start angle in standard polar coordinates.
@@ -1476,6 +1722,87 @@ impl MeshFactory {
 #[cfg(test)]
 mod tests {
     use super::MeshFactory;
+    use super::{cross3, len3, sub3};
+
+    #[test]
+    fn torus_washer_has_flat_faces_a_clear_hole_and_outward_winding() {
+        for sides in [4, 16] {
+            let mesh = MeshFactory::torus(0.34, 0.055, 64, sides).unwrap();
+            for vertex in &mesh.vertices {
+                assert!(
+                    vertex
+                        .pos
+                        .into_iter()
+                        .chain(vertex.normal)
+                        .all(f32::is_finite)
+                );
+                assert!((len3(vertex.normal) - 1.0).abs() < 0.001);
+                let r = (vertex.pos[0] * vertex.pos[0] + vertex.pos[2] * vertex.pos[2]).sqrt();
+                assert!(r > 0.28 && r < 0.40);
+                if sides == 4 {
+                    assert!((vertex.pos[1].abs() - 0.055 / 2.0_f32.sqrt()).abs() < 0.00001);
+                    // Top/bottom are genuinely flat; corners have split normals.
+                    assert!(
+                        vertex.normal[1].abs() < 0.00001
+                            || (vertex.normal[1].abs() - 1.0).abs() < 0.00001
+                    );
+                }
+            }
+            for triangle in mesh.indices_u32.chunks_exact(3) {
+                let a = &mesh.vertices[triangle[0] as usize];
+                let b = &mesh.vertices[triangle[1] as usize];
+                let c = &mesh.vertices[triangle[2] as usize];
+                let cross = cross3(sub3(b.pos, a.pos), sub3(c.pos, a.pos));
+                assert!(cross.iter().zip(a.normal).map(|(a, b)| a * b).sum::<f32>() > 0.0);
+            }
+        }
+        assert!(MeshFactory::torus(0.1, 0.1, 64, 4).is_err());
+        assert!(MeshFactory::torus(f32::NAN, 0.1, 64, 4).is_err());
+        assert!(MeshFactory::torus(0.5, 0.1, 2, 4).is_err());
+        assert!(MeshFactory::torus(0.5, 0.1, 16384, 64).is_err());
+    }
+
+    #[test]
+    fn helix_geometry_preserves_multiple_turns_and_round_tube_frames() {
+        for sweep in [std::f32::consts::TAU * 2.5, -std::f32::consts::TAU * 2.5] {
+            let ribbon = MeshFactory::helix(0.4, 0.9, 2.6, 0.0, sweep, 160, 0.18).unwrap();
+            let tube = MeshFactory::helix_tube(0.9, 0.03, 2.6, 0.0, sweep, 160, 16).unwrap();
+            assert!((ribbon.vertices[320].pos[1] - 2.6).abs() < 0.00001);
+            assert!((tube.vertices[160 * 17].pos[1] - 2.6).abs() < 0.00001);
+            for mesh in [&ribbon, &tube] {
+                for vertex in &mesh.vertices {
+                    assert!(
+                        vertex
+                            .pos
+                            .into_iter()
+                            .chain(vertex.normal)
+                            .chain(vertex.uv)
+                            .all(f32::is_finite)
+                    );
+                    assert!((len3(vertex.normal) - 1.0).abs() < 0.001);
+                }
+                for triangle in mesh.indices_u32.chunks_exact(3) {
+                    let a = &mesh.vertices[triangle[0] as usize];
+                    let b = &mesh.vertices[triangle[1] as usize];
+                    let c = &mesh.vertices[triangle[2] as usize];
+                    let cross = cross3(sub3(b.pos, a.pos), sub3(c.pos, a.pos));
+                    assert!(cross.iter().zip(a.normal).map(|(a, b)| a * b).sum::<f32>() > 0.0);
+                }
+            }
+        }
+        let cylinder = MeshFactory::cylinder(0.025, 1.75, 16).unwrap();
+        assert_eq!(
+            cylinder
+                .vertices
+                .iter()
+                .map(|v| v.pos[1])
+                .fold(f32::NEG_INFINITY, f32::max),
+            1.75
+        );
+        assert!(MeshFactory::helix(0.0, 1.0, 2.0, 0.0, 7.0, 100, 0.0).is_err());
+        assert!(MeshFactory::helix_tube(0.0, 0.02, 0.0, 0.0, 0.0, 10, 16).is_err());
+        assert!(MeshFactory::helix_tube(1.0, 0.02, 2.0, 0.0, 7.0, 20000, 16).is_err());
+    }
 
     fn radius2(point: [f32; 3]) -> f32 {
         (point[0] * point[0] + point[1] * point[1]).sqrt()
