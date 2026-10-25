@@ -11,8 +11,7 @@ Implemented subset: [youtuber-room checkpoint](youtuber-room-custom-material-che
 requiring scene attachment. The default opaque mesh base and
 `MaterialBase.extracted_emissive()`, local GLSL files and named scalar-f32 fields
 are supported. Colon-style primitive schemas are implemented; `Material(base)`
-implicit-definition convenience and vector GPU fields remain future API. Built-in definitions still
-need the [common material-flow migration](material-instances-and-family-contracts.md#first-refactoring-slices-and-gates),
+implicit-definition convenience and vector GPU fields remain future API. Built-in definitions now share the [common material flow](material-instances-and-family-contracts.md#first-refactoring-slices-and-gates),
 regardless of whether they remain authored in Rust/GLSL.
 
 2026-10-25 input API review: the implemented common authoring method is
@@ -58,7 +57,7 @@ Current Rust source names remain unchanged in this documentation pass.
 
 | MMS type | Responsibility | Current Rust record |
 | --- | --- | --- |
-| `MaterialBase` | Read-only engine-provided renderer interfaces, features, state and resource contract | `MaterialFamily` |
+| `MaterialBase` | Read-only engine-provided renderer interfaces, features, state and resource contract | `MaterialBase` |
 | `MaterialDefinition` | Authored program and field types/layout within a base | `MaterialDefinition` |
 | `Material` | Concrete shared scene component with independently mutable values/resource bindings | `MaterialInstance` |
 
@@ -213,9 +212,10 @@ UBO to push constants without a compatible shader interface. Custom raw GLSL
 still declares the supported layout. An alternate transport requires its own
 validated renderer/program implementation, not just a different MMS value.
 
-For the next common-flow migration, preserve the existing bounded f32 UBO path
-while separating logical schema/value storage from Anime-specific packing and
-physical layout. Route built-in and custom materials through that shared model.
+The common-flow slice preserves the existing bounded f32 UBO path and separates
+logical schema/value storage from Anime-specific packing and physical layout.
+Built-in and custom sources now use the same registration/resolution/value
+update model; fixed built-in and reflected custom packing remain renderer adapters.
 Introducing push constants, per-object attributes, specialization controls,
 resource inputs or richer field types is not required for that migration.
 The public `.inputs(...)` API validates schema versus values and shader

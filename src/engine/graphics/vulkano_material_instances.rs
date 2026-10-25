@@ -16,6 +16,7 @@ struct MaterialSnapshot {
 struct GpuMaterialInstance {
     custom: bool,
     record: crate::engine::graphics::materials::MaterialInstance,
+    schema: std::sync::Arc<crate::engine::graphics::materials::MaterialParameterSchema>,
     bindings: crate::engine::graphics::material_cache::MaterialCache<
         MaterialResourceKey,
         Vec<MaterialSnapshot>,
@@ -57,6 +58,7 @@ impl VulkanoState {
                 .materials
                 .definition(record.definition)
                 .is_some_and(|definition| definition.custom.is_some());
+            let schema = visuals.materials.definition(record.definition).expect("live definition").parameter_schema.clone();
             if let Some(entry) = self.material_instances.get_mut(id) {
                 if entry.record.definition != record.definition {
                     entry.bindings =
@@ -64,12 +66,14 @@ impl VulkanoState {
                     entry.custom_snapshots.clear();
                 }
                 entry.record = record.clone();
+                entry.schema = schema;
                 entry.custom = custom;
             } else {
                 self.material_instances.insert(
                     id,
                     GpuMaterialInstance {
                         custom,
+                        schema,
                         record: record.clone(),
                         custom_snapshots: Vec::new(),
                         bindings: crate::engine::graphics::material_cache::MaterialCache::new(16),
@@ -105,7 +109,7 @@ impl VulkanoState {
             self.material_upload_stats.snapshot_reuses += 1;
             return Ok(Some(slot.set.clone()));
         }
-        let ubo = Self::create_material_ubo(material, quant_steps, entry.record.parameters);
+        let ubo = Self::create_material_ubo(material, quant_steps, crate::engine::graphics::visual_world::AnimeShadingParams::from_material(&entry.schema, &entry.record.values));
         // A command buffer retains the descriptor Arc, including after recording
         // but before submission. Reuse only an exclusively cache-owned snapshot.
         // Buffer::write additionally checks Vulkano's CPU/GPU resource-use locks.

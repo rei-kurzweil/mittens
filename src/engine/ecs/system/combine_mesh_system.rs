@@ -93,10 +93,19 @@ impl CombineMeshSystem {
             let keep_transforms = world
                 .get_component_by_id_as::<CombineMeshComponent>(root)
                 .is_some_and(|component| component.keep_transforms);
-            let material_source = RenderableSystem::custom_material_source(
+            let material_source = super::material_system::MaterialSystem::resolve_source(
                 world,
                 sources.first().copied().unwrap_or(root),
             );
+            if let Some(source) = material_source {
+                if visuals.materials.source_instance(source).is_none() {
+                    if let Err(error) = super::material_system::MaterialSystem::ensure_source(
+                        world, visuals, source,
+                    ) {
+                        eprintln!("[CombineMesh] cannot resolve material: {error}");
+                    }
+                }
+            }
             if !keep_transforms {
                 if let Some(source) = material_source {
                     // Preserve the first source's shared material when the source
@@ -230,6 +239,10 @@ impl CombineMeshSystem {
             .map_or(output.fallback_material, |definition| {
                 definition.static_program
             });
+        let emissive = visuals
+            .instance(output.handle)
+            .map_or(0.0, |instance| instance.emissive);
+        let program = super::material_system::MaterialSystem::with_emissive(program, emissive);
         visuals.update_material(output.handle, program);
         visuals.bind_material_instance(output.handle, binding);
     }
@@ -480,6 +493,93 @@ mod tests {
     }
 
     #[test]
+    fn combined_builtin_material_keeps_shared_identity_after_collapse_and_model_changes() {
+        use crate::engine::ecs::component::{ShadingComponent, ShadingModel};
+        use crate::engine::ecs::system::material_system::MaterialSystem;
+        let mut world = World::default();
+        let scene = world.add_component(TransformComponent::new());
+        let combine = world.add_component(CombineMeshComponent::default());
+        let cube = world.add_component(RenderableComponent::cube());
+        let material = world.add_component(ShadingComponent::new());
+        world.add_child(scene, combine).unwrap();
+        world.add_child(combine, cube).unwrap();
+        world.add_child(cube, material).unwrap();
+        let glow = world.add_component(EmissiveComponent::new(3.0));
+        world.add_child(cube, glow).unwrap();
+        let mut visuals = VisualWorld::default();
+        let mut assets = RenderAssets::new();
+        let mut uploader = TestUploader::default();
+        let mut renderables = RenderableSystem::default();
+        let mut bounds = MeshBoundsSystem::default();
+        let mut system = CombineMeshSystem::default();
+        let discarded = system.reconcile_and_build(
+            &mut world,
+            &mut visuals,
+            &mut assets,
+            &mut uploader,
+            &mut renderables,
+            &mut bounds,
+        );
+        let handle = system.outputs[&combine].handle;
+        let binding = visuals.materials.source_instance(material).unwrap();
+        assert_eq!(
+            visuals.instance(handle).unwrap().material_instance,
+            Some(binding)
+        );
+        assert_eq!(
+            visuals.instance(handle).unwrap().renderable.material,
+            MaterialHandle::ANIME_MESH
+        );
+        assert!(world.children_of(combine).contains(&material));
+        for source in discarded {
+            crate::engine::ecs::SystemWorld::default().remove_subtree_immediate(
+                &mut world,
+                &mut visuals,
+                source,
+            );
+        }
+        assert!(system.sources_for_root(&world, combine).is_empty());
+        world
+            .get_component_by_id_as_mut::<ShadingComponent>(material)
+            .unwrap()
+            .shade_strength = 0.9;
+        MaterialSystem::publish_source(&mut world, &mut visuals, material).unwrap();
+        assert_eq!(
+            visuals
+                .instance(handle)
+                .unwrap()
+                .anime_shading(&visuals.materials)
+                .shade_color_strength[3],
+            0.9
+        );
+        world
+            .get_component_by_id_as_mut::<ShadingComponent>(material)
+            .unwrap()
+            .model = ShadingModel::Toon;
+        MaterialSystem::publish_source(&mut world, &mut visuals, material).unwrap();
+        system.reconcile_and_build(
+            &mut world,
+            &mut visuals,
+            &mut assets,
+            &mut uploader,
+            &mut renderables,
+            &mut bounds,
+        );
+        assert_eq!(visuals.materials.source_instance(material), Some(binding));
+        assert_eq!(
+            visuals.instance(handle).unwrap().renderable.material,
+            MaterialHandle::EMISSIVE_TOON_MESH
+        );
+        assert_eq!(
+            uploader.0, 1,
+            "parameter and model changes must not rebuild the combined mesh"
+        );
+        MaterialSystem::retire_source(&mut visuals, material);
+        assert!(visuals.materials.instance(binding).is_none());
+        assert_eq!(visuals.instance(handle).unwrap().material_instance, None);
+    }
+
+    #[test]
     fn combined_custom_material_and_uvs_survive_source_collapse_and_value_updates() {
         use crate::engine::ecs::component::material::MaterialComponent;
         use crate::engine::graphics::custom_material::CustomMaterialDefinition;
@@ -514,7 +614,7 @@ mod tests {
         );
         let binding = visuals
             .materials
-            .upsert_custom_source(material, definition, vec![0.5]);
+            .upsert_source(material, definition, vec![0.5]);
         let mut assets = RenderAssets::new();
         let (mesh, _) = bake(
             &world,
@@ -568,7 +668,7 @@ mod tests {
         assert!(system.sources_for_root(&world, combine).is_empty());
         visuals
             .materials
-            .upsert_custom_source(material, definition, vec![0.9]);
+            .upsert_source(material, definition, vec![0.9]);
         system.reconcile_and_build(
             &mut world,
             &mut visuals,

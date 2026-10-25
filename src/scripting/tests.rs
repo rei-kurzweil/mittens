@@ -13474,7 +13474,7 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
         let effective = value.clamp(0.0, 1.0);
         for &id in &projections {
             assert_eq!(
-                crate::engine::ecs::system::RenderableSystem::resolve_anime_shading(
+                crate::engine::ecs::system::material_system::MaterialSystem::resolve_shading(
                     &world,
                     world.parent_of(id).unwrap()
                 )
@@ -13771,8 +13771,10 @@ fn anime_shading_xr_fixture_materializes_shared_source_and_controls() {
                 || world
                     .get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(id)
                     .is_some())
-                && crate::engine::ecs::system::RenderableSystem::resolve_anime_shading(&world, id)
-                    .is_some_and(|(source, _)| source == anime)
+                && crate::engine::ecs::system::material_system::MaterialSystem::resolve_shading(
+                    &world, id,
+                )
+                .is_some_and(|(source, _)| source == anime)
         })
         .count();
     assert_eq!(
@@ -13784,7 +13786,7 @@ fn anime_shading_xr_fixture_materializes_shared_source_and_controls() {
 #[test]
 fn shared_materials_xr_controls_preserve_sources_and_update_surviving_consumers() {
     use crate::engine::ecs::component::{CameraXRComponent, ShadingComponent, SliderComponent};
-    use crate::engine::ecs::system::{RenderableSystem, SystemWorld};
+    use crate::engine::ecs::system::SystemWorld;
     use crate::engine::graphics::{CpuMesh, MaterialHandle, MeshHandle, MeshUploader};
     #[derive(Default)]
     struct Uploader(u32);
@@ -13875,11 +13877,13 @@ fn shared_materials_xr_controls_preserve_sources_and_update_surviving_consumers(
             .any(|id| w.get_component_by_id_as::<CameraXRComponent>(id).is_some())
     );
     assert_eq!(
-        RenderableSystem::resolve_anime_shading(&w, cube).unwrap().0,
+        crate::engine::ecs::system::material_system::MaterialSystem::resolve_shading(&w, cube)
+            .unwrap()
+            .0,
         source
     );
     assert_eq!(
-        RenderableSystem::resolve_anime_shading(&w, sphere)
+        crate::engine::ecs::system::material_system::MaterialSystem::resolve_shading(&w, sphere)
             .unwrap()
             .0,
         source
@@ -14077,7 +14081,7 @@ fn shared_materials_xr_controls_preserve_sources_and_update_surviving_consumers(
             .get_component_by_id_as_mut::<ShadingComponent>(source)
             .unwrap();
         *shading = shading.with_shade_strength(value);
-        s.renderable.register_anime_shading(&mut w, &mut v, source);
+        s.register_anime_shading(&mut w, &mut v, source);
         assert_eq!(v.materials.source_instance(source), Some(shared_id));
         assert_eq!(v.materials.instance_count(), material_count);
         assert_eq!(

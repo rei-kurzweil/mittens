@@ -1,12 +1,14 @@
 // First named-f32 custom-material scene.
 // cargo run --release -- load examples/youtuber-room.mms
 // Desktop: WASD + mouse. XR: controller locomotion and avatar-free pointers.
-// Use the three pointer buttons left of the desk
-// to compare distance-only, smooth diffuse, and Anime ramp lighting. Starts in
-// Anime mode with facing-gated distance influence, gray architecture, one point light,
-// and restored rim lighting. The shared controls also shade the seated Rei(mu) NPC.
+// Facing-gated Anime lighting with rim light, including on the seated Rei(mu) NPC.
 // Four CombineMesh outputs share one retained material. LED cubes are baked
 // once; only time_seconds changes per frame for their hue and brightness wave.
+
+// View switches: desktop only = true/false; XR only = false/true; both = true/true.
+// Omitting the desktop camera skips desktop rendering and presentation.
+let desktop_view_enabled = false
+let xr_view_enabled = true
 
 import { f32 } from "types"
 import { pose as floor_seated_pose } from "../assets/components/poses/rei-mu/floor-seated.pose.mms"
@@ -94,31 +96,30 @@ let metal = [0.18, 0.21, 0.27]
 let walnut = [0.37, 0.24, 0.16]
 let fabric = [0.15, 0.17, 0.23]
 let accent = [0.62, 0.12, 0.24]
-let diagnostic_gray = [0.5, 0.5, 0.5]
-let lighting_probe = Shading.anime().shade_color([0.35, 0.35, 0.35]).shade_strength(0.8)
+let wall_gray = [0.5, 0.5, 0.5]
+let room_shading = Shading.anime().shade_color([0.35, 0.35, 0.35]).shade_strength(0.8)
     .shade_threshold(0.35).lit_threshold(0.55)
-    .rim_color([1.0, 1.0, 1.0]).rim_strength(0.18).rim_power(4.0).lighting_debug("anime") { name = "lighting_probe" }
+    .rim_color([1.0, 1.0, 1.0]).rim_strength(0.18).rim_power(4.0) { name = "room_shading" }
 
 T {
     name = "youtuber_room"
-    // Same shader/light buffer in each mode: distance -> diffuse -> Anime ramp.
     // Architectural surfaces share one gray albedo; white rim lighting is restored.
-    lighting_probe
+    room_shading
     // Architectural shell, 5 m wide and 4.6 m deep, with a 2.9 m ceiling.
     // A darker wood substrate sits 2 cm below the finished floor. Real gaps
     // between the planks expose it and the separately lit vertical plank edges.
-    box([0.0, -0.08, 0.0], [5.1, 0.12, 4.7], diagnostic_gray)
+    box([0.0, -0.08, 0.0], [5.1, 0.12, 4.7], wall_gray)
     for plank in range(12) {
-        box([-2.3375 + plank * 0.425, -0.01, 0.0], [0.413, 0.02, 4.7], diagnostic_gray)
+        box([-2.3375 + plank * 0.425, -0.01, 0.0], [0.413, 0.02, 4.7], wall_gray)
     }
-    box([0.0, 1.45, -2.35], [5.1, 2.9, 0.12], diagnostic_gray)
-    box([-2.55, 1.45, 0.0], [0.12, 2.9, 4.7], diagnostic_gray)
-    box([2.55, 1.45, 0.0], [0.12, 2.9, 4.7], diagnostic_gray)
-    box([0.0, 2.96, 0.0], [5.1, 0.12, 4.7], diagnostic_gray)
+    box([0.0, 1.45, -2.35], [5.1, 2.9, 0.12], wall_gray)
+    box([-2.55, 1.45, 0.0], [0.12, 2.9, 4.7], wall_gray)
+    box([2.55, 1.45, 0.0], [0.12, 2.9, 4.7], wall_gray)
+    box([0.0, 2.96, 0.0], [5.1, 0.12, 4.7], wall_gray)
     // Front doorway leaves a generous entrance for desktop and room-scale XR.
-    box([-1.90, 1.45, 2.35], [1.3, 2.9, 0.12], diagnostic_gray)
-    box([1.90, 1.45, 2.35], [1.3, 2.9, 0.12], diagnostic_gray)
-    box([0.0, 2.65, 2.35], [2.5, 0.5, 0.12], diagnostic_gray)
+    box([-1.90, 1.45, 2.35], [1.3, 2.9, 0.12], wall_gray)
+    box([1.90, 1.45, 2.35], [1.3, 2.9, 0.12], wall_gray)
+    box([0.0, 2.65, 2.35], [2.5, 0.5, 0.12], wall_gray)
     box([0.0, 0.075, -2.27], [5.0, 0.15, 0.035], charcoal)
     box([-2.47, 0.075, 0.0], [0.035, 0.15, 4.6], charcoal)
     box([2.47, 0.075, 0.0], [0.035, 0.15, 4.6], charcoal)
@@ -143,11 +144,11 @@ T {
         box([-1.02, 0.21 + drawer * 0.22, -1.398], [0.15, 0.018, 0.025], [0.55, 0.57, 0.61])
     }
 
-    // The imported straw is about 57 units long: at 1/20 scale it fits across
-    // the desk diagonally. Recenter its authored origin before placing it.
-    T.position(0.0, 0.845, -1.75).rotation_euler(0.0, 1.31, 0.0) {
+    // Use the resized model at its authored scale. Recenter its 85 cm length
+    // and rest its 3 cm diameter on the desktop.
+    T.position(0.0, 0.8475, -1.75).rotation_euler(0.0, 1.31, 0.0) {
         name = "desk_straw"
-        T.position(0.0, 0.0, 28.5193637) {
+        T.position(0.0, 0.0, 0.42907333) {
             GLTF.new("assets/models/straw.glb") {
                 Shading.anime().shade_color([0.5, 0.5, 0.5])
                                 .shade_strength(0.7)
@@ -279,7 +280,7 @@ T {
 // wrists above the lap. The authored pose is applied once after GLTF import.
 let room_reimu = GLTF.new("assets/models/rei(mu).glb") {
     name = "room_reimu"
-    lighting_probe
+    room_shading
     floor_seated_pose()
     bisket_colliders()
     bisket_shirt_physics(false)
@@ -337,61 +338,22 @@ ceiling_strip([2.475, 2.77, 0.0], 4.55, -1.5707963268, 0.26, 0.5, 74)
 ceiling_strip([0.0, 2.77, 2.275], 4.94, 3.1415926536, 0.5, 0.76, 80)
 ceiling_strip([-2.475, 2.77, 0.0], 4.55, 1.5707963268, 0.76, 1.0, 74)
 
-fn lighting_button(caption, button_name) {
-    return T {
-        name = button_name
-        Raycastable.enabled() { interaction_priority(120.0) }
-        Style {
-            display("flex") width(100%) height(4.0) margin_top(0.4)
-            align_items("center") padding_xy(0.6, 0.2) font_size(1.8)
-            background_color([0.16, 0.20, 0.28, 1.0]) background_z(-0.02)
-            color([0.95, 0.95, 0.95, 1.0])
+if desktop_view_enabled {
+    I.speed(1.8) {
+        InputTransformMode.forward_z() { fps_rotation() roll_axis_y() }
+        T.position(0.0, 1.65, 2.1) { C3D { fov(72.0) Pointer {} } }
+    }
+}
+if xr_view_enabled {
+    T {
+        InputXR.on() {
+            InputXRGamepad { locomotion() speed(1.4) }
+            T { CXR { Pointer {} } }
+            XRHand.new(true, "Left", "GripAim").laser() { T { Pointer {} } }
+            XRHand.new(true, "Right", "GripAim").laser() { T { Pointer {} } }
         }
-        T.position(0.0, 0.0, 0.03) { Text { caption C.rgba(0.95, 0.95, 0.95, 1.0) EM.on() } }
     }
+    XR.on()
+} else {
+    XR.off()
 }
-
-let diagnostic_label = Text { "Mode: Anime" C.rgba(1.0, 1.0, 1.0, 1.0) EM.on() }
-let diagnostic_panel = T.position(-1.2, 2.0, -0.3).rotation_euler(0.0, 0.25, 0.0) {
-    name = "lighting_diagnostic_controls"
-    Unlit {}
-    LayoutRoot {
-        available_width(36.0) unit_scale(0.02)
-        T {
-            Style { width(100%) font_size(1.8) color([1.0, 1.0, 1.0, 1.0]) }
-            diagnostic_label
-        }
-        lighting_button("1  Distance", "lighting_distance")
-        lighting_button("2  Diffuse", "lighting_diffuse")
-        lighting_button("3  Anime facing", "lighting_anime")
-
-    }
-}
-on(diagnostic_panel.query("#lighting_distance"), "Click", fn(event) {
-    lighting_probe.set_lighting_debug("distance")
-    diagnostic_label.set_text("Mode: distance")
-})
-on(diagnostic_panel.query("#lighting_diffuse"), "Click", fn(event) {
-    lighting_probe.set_lighting_debug("diffuse")
-    diagnostic_label.set_text("Mode: diffuse")
-})
-on(diagnostic_panel.query("#lighting_anime"), "Click", fn(event) {
-    lighting_probe.set_lighting_debug("anime")
-    diagnostic_label.set_text("Mode: Anime")
-})
-
-diagnostic_panel
-
-I.speed(1.8) {
-    InputTransformMode.forward_z() { fps_rotation() roll_axis_y() }
-    T.position(0.0, 1.65, 2.1) { C3D { fov(72.0) Pointer {} } }
-}
-T {
-    InputXR.on() {
-        InputXRGamepad { locomotion() speed(1.4) }
-        T { CXR { Pointer {} } }
-        XRHand.new(true, "Left", "GripAim").laser() { T { Pointer {} } }
-        XRHand.new(true, "Right", "GripAim").laser() { T { Pointer {} } }
-    }
-}
-XR.on()

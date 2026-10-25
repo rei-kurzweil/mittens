@@ -3,7 +3,7 @@ use crate::engine::ecs::component::BackgroundColorComponent;
 use crate::engine::ecs::component::OverlayComponent;
 use crate::engine::ecs::component::morph_target::active_factors;
 use crate::engine::ecs::component::{
-    AnimeShadingComponent, BackgroundComponent, BoundsComponent, ColorComponent, EmissiveComponent,
+    BackgroundComponent, BoundsComponent, ColorComponent, EmissiveComponent,
     LayoutVisualPlacementComponent, LightQuantizationComponent, MeshComponent, OpacityComponent,
     RenderableComponent, RendererSettingsComponent, ToonOutlineComponent, TransformComponent,
     TransmissiveModel, TransparentCutoutComponent, UVComponent, UnlitComponent,
@@ -11,6 +11,7 @@ use crate::engine::ecs::component::{
 };
 use crate::engine::ecs::component::{GLTFComponent, MorphTargetBindingComponent};
 
+use super::material_system::MaterialSystem;
 use crate::engine::ecs::World;
 use crate::engine::ecs::system::System;
 use crate::engine::ecs::system::TransformSystem;
@@ -77,8 +78,8 @@ pub struct RenderableSystem {
     /// Keyed by the RenderableComponent's ComponentId.
     pending_quant_steps: HashMap<ComponentId, f32>,
 
-    /// Per-renderable albedo-derived anime material parameters.
-    pending_anime_shading:
+    /// Resolved material identities awaiting a GPU-ready renderable.
+    pending_material_bindings:
         HashMap<ComponentId, crate::engine::graphics::materials::MaterialInstanceId>,
 
     /// Per-renderable inverted-hull outline parameters.
@@ -234,30 +235,31 @@ fn clone_mesh_with_uv_overrides(
 }
 
 impl RenderableSystem {
-    fn anime_material_for(material: MaterialHandle) -> MaterialHandle {
-        match material {
-            MaterialHandle::SKINNED_TOON_MESH
-            | MaterialHandle::SKINNED_EMISSIVE_TOON_MESH
-            | MaterialHandle::SKINNED_ANIME_MESH => MaterialHandle::SKINNED_ANIME_MESH,
-            _ => MaterialHandle::ANIME_MESH,
+    pub(crate) fn resolve_toon_outline(
+        world: &World,
+        renderable: ComponentId,
+    ) -> Option<(ComponentId, ToonOutlineComponent)> {
+        let mut current = Some(renderable);
+        while let Some(node) = current {
+            if let Some(outline) = world.get_component_by_id_as::<ToonOutlineComponent>(node) {
+                return Some((node, outline.clone()));
+            }
+            if let Some(outline) = world.children_of(node).iter().find_map(|&child| {
+                world
+                    .get_component_by_id_as::<ToonOutlineComponent>(child)
+                    .cloned()
+                    .map(|outline| (child, outline))
+            }) {
+                return Some(outline);
+            }
+            current = world.parent_of(node);
         }
-    }
-
-    fn shading_material_for(
-        material: MaterialHandle,
-        shading: AnimeShadingComponent,
-    ) -> MaterialHandle {
-        use crate::engine::ecs::component::ShadingModel;
-        let anime = Self::anime_material_for(material);
-        match (shading.model, anime == MaterialHandle::SKINNED_ANIME_MESH) {
-            (ShadingModel::Anime, _) => anime,
-            (ShadingModel::Toon, true) => MaterialHandle::SKINNED_TOON_MESH,
-            (ShadingModel::Toon, false) => MaterialHandle::TOON_MESH,
-        }
+        None
     }
 
     fn resolved_surface_material(
         world: &World,
+        visuals: &VisualWorld,
         renderable: ComponentId,
         base: MaterialHandle,
     ) -> MaterialHandle {
@@ -275,8 +277,9 @@ impl RenderableSystem {
                 _ => MaterialHandle::ROUGH_TRANSMISSION_MESH,
             },
             _ if Self::has_immediate_unlit_child(world, renderable) => MaterialHandle::UNLIT_MESH,
-            _ => Self::resolve_anime_shading(world, renderable)
-                .map(|(_, shading)| Self::shading_material_for(base, shading))
+            _ => MaterialSystem::resolve_source(world, renderable)
+                .and_then(|source| visuals.materials.source_instance(source))
+                .and_then(|instance| MaterialSystem::program(visuals, instance, base))
                 .unwrap_or(base),
         }
     }
@@ -289,19 +292,6 @@ impl RenderableSystem {
                 s == "1" || s == "true" || s == "on" || s == "yes"
             })
             .unwrap_or(false)
-    }
-
-    fn material_with_emissive(material: MaterialHandle, emissive_intensity: f32) -> MaterialHandle {
-        let is_emissive = emissive_intensity > 0.0;
-        match (material, is_emissive) {
-            (MaterialHandle::TOON_MESH, true) => MaterialHandle::EMISSIVE_TOON_MESH,
-            (MaterialHandle::SKINNED_TOON_MESH, true) => MaterialHandle::SKINNED_EMISSIVE_TOON_MESH,
-            (MaterialHandle::EMISSIVE_TOON_MESH, false) => MaterialHandle::TOON_MESH,
-            (MaterialHandle::SKINNED_EMISSIVE_TOON_MESH, false) => {
-                MaterialHandle::SKINNED_TOON_MESH
-            }
-            _ => material,
-        }
     }
 
     fn immediate_color_child(world: &World, node: ComponentId) -> Option<[f32; 4]> {
@@ -345,139 +335,6 @@ impl RenderableSystem {
                 .get_component_by_id_as::<UnlitComponent>(child)
                 .is_some()
         })
-    }
-
-    fn live_shading(
-        world: &World,
-        shading: AnimeShadingComponent,
-    ) -> Option<AnimeShadingComponent> {
-        match shading.source_component() {
-            Some(source) => world
-                .get_component_by_id_as::<AnimeShadingComponent>(source)
-                .copied()
-                .map(|value| value.projected_from(source)),
-            None => Some(shading),
-        }
-    }
-
-    fn material_instance_for_shading(
-        world: &World,
-        visuals: &mut VisualWorld,
-        declaration: ComponentId,
-        shading: AnimeShadingComponent,
-    ) -> crate::engine::graphics::materials::MaterialInstanceId {
-        let source = shading.source_component().unwrap_or(declaration);
-        let value = world
-            .get_component_by_id_as::<AnimeShadingComponent>(source)
-            .copied()
-            .unwrap_or(shading);
-        let definition = match value.model {
-            crate::engine::ecs::component::ShadingModel::Anime => {
-                visuals.materials.anime_definition
-            }
-            crate::engine::ecs::component::ShadingModel::Toon => visuals.materials.toon_definition,
-        };
-        visuals
-            .materials
-            .upsert_source(source, definition, value.gpu_params())
-    }
-
-    fn immediate_anime_shading_child(
-        world: &World,
-        node: ComponentId,
-    ) -> Option<(ComponentId, AnimeShadingComponent)> {
-        world
-            .children_of(node)
-            .iter()
-            .filter_map(|&child| {
-                world
-                    .get_component_by_id_as::<AnimeShadingComponent>(child)
-                    .copied()
-                    .and_then(|component| {
-                        Self::live_shading(world, component).map(|value| (child, value))
-                    })
-            })
-            .min_by_key(|(_, shading)| shading.source_component().is_some())
-    }
-
-    pub(crate) fn resolve_anime_shading(
-        world: &World,
-        renderable: ComponentId,
-    ) -> Option<(ComponentId, AnimeShadingComponent)> {
-        // A local model (including legacy specialized models) blocks inheritance.
-        let mut current = Some(renderable);
-        while let Some(node) = current {
-            if let Some(shading) = world.get_component_by_id_as::<AnimeShadingComponent>(node) {
-                if let Some(value) = Self::live_shading(world, *shading) {
-                    return Some((node, value));
-                }
-            }
-            if Self::has_immediate_unlit_child(world, node)
-                || resolve_transmissive_model(world, node)
-                    .ok()
-                    .flatten()
-                    .is_some()
-            {
-                return None;
-            }
-            if let Some(component) = Self::immediate_anime_shading_child(world, node) {
-                return Some(component);
-            }
-            current = world.parent_of(node);
-        }
-        None
-    }
-
-    pub(crate) fn custom_material_source(
-        world: &World,
-        renderable: ComponentId,
-    ) -> Option<ComponentId> {
-        use crate::engine::ecs::component::material::MaterialComponent;
-        let mut current = Some(renderable);
-        while let Some(node) = current {
-            if world
-                .get_component_by_id_as::<MaterialComponent>(node)
-                .is_some()
-            {
-                return Some(node);
-            }
-            if let Some(material) = world.children_of(node).iter().copied().find(|&child| {
-                world
-                    .get_component_by_id_as::<MaterialComponent>(child)
-                    .is_some()
-            }) {
-                return Some(material);
-            }
-            if Self::immediate_anime_shading_child(world, node).is_some()
-                || Self::has_immediate_unlit_child(world, node)
-            {
-                return None;
-            }
-            current = world.parent_of(node);
-        }
-        None
-    }
-
-    pub(crate) fn resolve_toon_outline(
-        world: &World,
-        renderable: ComponentId,
-    ) -> Option<(ComponentId, ToonOutlineComponent)> {
-        let mut current = Some(renderable);
-        while let Some(node) = current {
-            if let Some(outline) = world.get_component_by_id_as::<ToonOutlineComponent>(node) {
-                return Some((node, outline.clone()));
-            }
-            if let Some(outline) = world.children_of(node).iter().find_map(|&child| {
-                world
-                    .get_component_by_id_as::<ToonOutlineComponent>(child)
-                    .cloned()
-                    .map(|outline| (child, outline))
-            }) {
-                return Some(outline);
-            }
-            current = world.parent_of(node);
-        }
-        None
     }
 
     fn is_descendant_or_self(
@@ -709,7 +566,7 @@ impl RenderableSystem {
             let _ = visuals.update_emissive(handle, emissive);
 
             if let Some(inst) = visuals.instance(handle) {
-                let material = Self::material_with_emissive(inst.renderable.material, emissive);
+                let material = MaterialSystem::with_emissive(inst.renderable.material, emissive);
                 let _ = visuals.update_material(handle, material);
             }
             let _ = self.pending_emissive.remove(&renderable_cid);
@@ -743,47 +600,35 @@ impl RenderableSystem {
         }
     }
 
-    fn apply_pending_anime_updates_to_registered_renderables(
-        &mut self,
-        world: &mut World,
-        visuals: &mut VisualWorld,
-    ) {
-        let keys: Vec<ComponentId> = self.pending_anime_shading.keys().copied().collect();
+    fn apply_pending_material_bindings(&mut self, world: &mut World, visuals: &mut VisualWorld) {
+        let keys: Vec<ComponentId> = self.pending_material_bindings.keys().copied().collect();
         for renderable_cid in keys {
             let Some(renderable_comp) =
                 world.get_component_by_id_as::<RenderableComponent>(renderable_cid)
             else {
-                let _ = self.pending_anime_shading.remove(&renderable_cid);
+                let _ = self.pending_material_bindings.remove(&renderable_cid);
                 continue;
             };
             let Some(handle) = renderable_comp.get_handle() else {
                 continue;
             };
-            let Some(material_instance) = self.pending_anime_shading.get(&renderable_cid).copied()
+            let Some(material_instance) =
+                self.pending_material_bindings.get(&renderable_cid).copied()
             else {
                 continue;
             };
             if let Some(instance) = visuals.instance(handle) {
-                let custom = visuals
-                    .materials
-                    .instance(material_instance)
-                    .and_then(|record| visuals.materials.definition(record.definition))
-                    .filter(|definition| definition.custom.is_some())
-                    .map(|definition| definition.static_program);
-                let material = custom.unwrap_or_else(|| {
-                    Self::material_with_emissive(
-                        Self::resolved_surface_material(
-                            world,
-                            renderable_cid,
-                            renderable_comp.renderable.material,
-                        ),
-                        instance.emissive,
-                    )
-                });
+                let program = MaterialSystem::program(
+                    visuals,
+                    material_instance,
+                    renderable_comp.renderable.material,
+                )
+                .unwrap_or(renderable_comp.renderable.material);
+                let material = MaterialSystem::with_emissive(program, instance.emissive);
                 let _ = visuals.update_material(handle, material);
             }
             let _ = visuals.bind_material_instance(handle, Some(material_instance));
-            let _ = self.pending_anime_shading.remove(&renderable_cid);
+            let _ = self.pending_material_bindings.remove(&renderable_cid);
         }
     }
 
@@ -1197,86 +1042,9 @@ impl RenderableSystem {
         }
     }
 
-    pub fn register_anime_shading(
-        &mut self,
-        world: &mut World,
-        visuals: &mut VisualWorld,
-        component: ComponentId,
-    ) {
-        let Some(component_value) = world
-            .get_component_by_id_as::<AnimeShadingComponent>(component)
-            .copied()
-        else {
-            return;
-        };
-        let source_component = component_value.source_component().unwrap_or(component);
-        let Some(source_value) = world
-            .get_component_by_id_as::<AnimeShadingComponent>(source_component)
-            .copied()
-        else {
-            return;
-        };
-
-        let previous = visuals
-            .materials
-            .source_instance(source_component)
-            .and_then(|id| visuals.materials.instance(id))
-            .map(|record| record.definition);
-        let instance =
-            Self::material_instance_for_shading(world, visuals, source_component, source_value);
-        if component == source_component
-            && previous
-                == visuals
-                    .materials
-                    .instance(instance)
-                    .map(|record| record.definition)
-        {
-            return; // Parameter-only edit: retained values/revision changed; draw bindings did not.
-        }
-        if component != source_component {
-            if let Some(projection) =
-                world.get_component_by_id_as_mut::<AnimeShadingComponent>(component)
-            {
-                *projection = source_value.projected_from(source_component);
-            }
-        }
-        if previous.is_some() {
-            // A structural definition change also reaches generated consumers
-            // outside the source's ECS subtree. Scalar edits take the fast path above.
-            for consumer in visuals.material_consumer_components(instance) {
-                self.pending_anime_shading.insert(consumer, instance);
-            }
-        }
-        // A shading wrapper may itself be a scene root.
-        let mut queue: VecDeque<_> = world
-            .parents_of(component)
-            .chain(std::iter::once(component))
-            .collect();
-        let mut visited = std::collections::HashSet::new();
-        while let Some(node) = queue.pop_front() {
-            if !visited.insert(node) {
-                continue;
-            }
-            queue.extend(world.children_of(node).iter().copied());
-            if world
-                .get_component_by_id_as::<RenderableComponent>(node)
-                .is_none()
-            {
-                continue;
-            }
-            let Some((resolved_id, shading)) = Self::resolve_anime_shading(world, node) else {
-                continue;
-            };
-            if shading.source_component().unwrap_or(resolved_id) == source_component {
-                self.pending_anime_shading.insert(node, instance);
-            }
-        }
-        self.apply_pending_anime_updates_to_registered_renderables(world, visuals);
-    }
-
     /// Edge edits must re-resolve former consumers too, including when their
     /// source was destroyed. Work is bounded by affected scopes, not the world.
-    pub(crate) fn refresh_shading_topology(
+    pub(crate) fn refresh_material_topology(
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
@@ -1297,20 +1065,14 @@ impl RenderableSystem {
             };
             let handle = renderable.get_handle();
             let base_material = renderable.renderable.material;
-            if let Some(instance) = Self::custom_material_source(world, node)
-                .and_then(|source| visuals.materials.source_instance(source))
-            {
-                self.pending_anime_shading.insert(node, instance);
-            } else if let Some((declaration, shading)) = Self::resolve_anime_shading(world, node) {
-                let instance =
-                    Self::material_instance_for_shading(world, visuals, declaration, shading);
-                self.pending_anime_shading.insert(node, instance);
+            if let Some(instance) = MaterialSystem::resolve_instance(world, visuals, node) {
+                self.pending_material_bindings.insert(node, instance);
             } else {
-                self.pending_anime_shading.remove(&node);
+                self.pending_material_bindings.remove(&node);
                 if let Some(handle) = handle {
                     if let Some(instance) = visuals.instance(handle) {
-                        let material = Self::material_with_emissive(
-                            Self::resolved_surface_material(world, node, base_material),
+                        let material = MaterialSystem::with_emissive(
+                            Self::resolved_surface_material(world, visuals, node, base_material),
                             instance.emissive,
                         );
                         let _ = visuals.update_material(handle, material);
@@ -1319,7 +1081,7 @@ impl RenderableSystem {
                 }
             }
         }
-        self.apply_pending_anime_updates_to_registered_renderables(world, visuals);
+        self.apply_pending_material_bindings(world, visuals);
     }
 
     pub fn register_toon_outline(
@@ -1590,7 +1352,7 @@ impl RenderableSystem {
         let _ = self.pending_cutout.remove(&component);
         let _ = self.pending_emissive.remove(&component);
         let _ = self.pending_quant_steps.remove(&component);
-        let _ = self.pending_anime_shading.remove(&component);
+        let _ = self.pending_material_bindings.remove(&component);
         let _ = self.pending_toon_outline.remove(&component);
 
         if let Some(r) = world.get_component_by_id_as_mut::<RenderableComponent>(component) {
@@ -1680,15 +1442,8 @@ impl RenderableSystem {
                 mesh_key,
             },
         );
-        if let Some((declaration, shading)) = Self::resolve_anime_shading(world, component) {
-            let instance =
-                Self::material_instance_for_shading(world, visuals, declaration, shading);
-            self.pending_anime_shading.insert(component, instance);
-        }
-        if let Some(instance) = Self::custom_material_source(world, component)
-            .and_then(|source| visuals.materials.source_instance(source))
-        {
-            self.pending_anime_shading.insert(component, instance);
+        if let Some(instance) = MaterialSystem::resolve_instance(world, visuals, component) {
+            self.pending_material_bindings.insert(component, instance);
         }
         if let Some((outline_component, outline)) = Self::resolve_toon_outline(world, component) {
             self.pending_toon_outline
@@ -1709,7 +1464,7 @@ impl RenderableSystem {
         uploader: &mut dyn MeshUploader,
         queue: &mut crate::engine::ecs::CommandQueue,
     ) -> bool {
-        self.refresh_shading_topology(world, visuals);
+        self.refresh_material_topology(world, visuals);
         let parse_bool_env = |name: &str| {
             std::env::var(name)
                 .ok()
@@ -1841,7 +1596,7 @@ impl RenderableSystem {
                 }
             };
             let resolved_material =
-                Self::resolved_surface_material(world, p.renderable_cid, p.material);
+                Self::resolved_surface_material(world, visuals, p.renderable_cid, p.material);
 
             let gpu_r = GpuRenderable {
                 mesh,
@@ -1886,18 +1641,13 @@ impl RenderableSystem {
                 .copied()
                 .unwrap_or(0.0);
 
-            let custom_program = self
-                .pending_anime_shading
+            let program = self
+                .pending_material_bindings
                 .get(&p.renderable_cid)
-                .and_then(|&id| visuals.materials.instance(id))
-                .and_then(|instance| visuals.materials.definition(instance.definition))
-                .filter(|definition| definition.custom.is_some())
-                .map(|definition| definition.static_program);
-            let gpu_r = GpuRenderable::new(
-                gpu_r.mesh,
-                custom_program
-                    .unwrap_or_else(|| Self::material_with_emissive(gpu_r.material, emissive)),
-            );
+                .and_then(|&instance| MaterialSystem::program(visuals, instance, p.material))
+                .unwrap_or(gpu_r.material);
+            let gpu_r =
+                GpuRenderable::new(gpu_r.mesh, MaterialSystem::with_emissive(program, emissive));
 
             let quant_steps = self
                 .pending_quant_steps
@@ -1924,7 +1674,11 @@ impl RenderableSystem {
                 None,
                 quant_steps,
             );
-            if let Some(instance) = self.pending_anime_shading.get(&p.renderable_cid).copied() {
+            if let Some(instance) = self
+                .pending_material_bindings
+                .get(&p.renderable_cid)
+                .copied()
+            {
                 let _ = visuals.bind_material_instance(handle, Some(instance));
             }
             Self::trace_registered_layout_renderable(
@@ -1976,8 +1730,8 @@ impl RenderableSystem {
             // Quant steps have now been applied.
             let _ = self.pending_quant_steps.remove(&p.renderable_cid);
 
-            // Anime material parameters have now been applied.
-            let _ = self.pending_anime_shading.remove(&p.renderable_cid);
+            // Resolved material bindings have now been applied.
+            let _ = self.pending_material_bindings.remove(&p.renderable_cid);
 
             // (If you log ComponentId in a format string, use {:?}.)
             self.pending.remove(&key);
@@ -1995,7 +1749,7 @@ impl RenderableSystem {
         self.apply_pending_cutout_updates_to_registered_renderables(world, visuals);
         self.apply_pending_emissive_updates_to_registered_renderables(world, visuals);
         self.apply_pending_quant_updates_to_registered_renderables(world, visuals);
-        self.apply_pending_anime_updates_to_registered_renderables(world, visuals);
+        self.apply_pending_material_bindings(world, visuals);
         self.apply_pending_outline_updates_to_registered_renderables(world, visuals);
 
         self.spawn_pending_normal_vis(world, render_assets, queue);
@@ -2278,14 +2032,14 @@ impl System for RenderableSystem {
 
 #[cfg(test)]
 mod tests {
-    use super::RenderableSystem;
+    use super::{MaterialSystem, RenderableSystem};
     use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::World;
+    use crate::engine::ecs::component::AnimeShadingComponent;
     use crate::engine::ecs::component::{
-        AnimeShadingComponent, BackgroundComponent, ColorComponent, EmissiveComponent,
-        OpacityComponent, OverlayComponent, RefractionComponent, RenderableComponent,
-        RoughTransmissionComponent, TextComponent, TransformComponent, TransparentCutoutComponent,
-        UnlitComponent,
+        BackgroundComponent, ColorComponent, EmissiveComponent, OpacityComponent, OverlayComponent,
+        RefractionComponent, RenderableComponent, RoughTransmissionComponent, TextComponent,
+        TransformComponent, TransparentCutoutComponent, UnlitComponent,
     };
     use crate::engine::graphics::primitives::{
         CpuMeshHandle, MaterialHandle, MeshHandle, Renderable,
@@ -2495,7 +2249,8 @@ mod tests {
             .get_component_by_id_as_mut::<AnimeShadingComponent>(source)
             .unwrap()
             .shade_strength = 0.9;
-        system.register_anime_shading(&mut world, &mut visuals, source);
+        MaterialSystem::publish_source(&mut world, &mut visuals, source).unwrap();
+        system.refresh_material_topology(&mut world, &mut visuals);
         for (index, renderable) in renderables.into_iter().enumerate() {
             let handle = world
                 .get_component_by_id_as::<RenderableComponent>(renderable)

@@ -59,11 +59,12 @@ fn youtuber_room_renders_custom_wave_in_stereo() -> Result<(), Box<dyn std::erro
         env!("CARGO_MANIFEST_DIR"),
         "/examples/youtuber-room.mms"
     ))
-    .replace("\nXR.on()", "\nXR.off()")
+    .replace("let desktop_view_enabled = false", "let desktop_view_enabled = true")
+    .replace("let xr_view_enabled = true", "let xr_view_enabled = false")
     // Keep the emission proof active while the user-facing scene is temporarily
     // configured for isolated lighting diagnostics.
     .replace("RenderGraph.off()", "RenderGraph { EmissivePass { BlurPass { radius_ndc(0.012) half_res(true) } } Bloom { intensity(0.55) radius_ndc(0.012) emissive_scale(1.0) half_res(true) } }\n")
-    + "\nceiling_leds.set_input(\"intensity\", 1.0)\ndiagnostic_panel.remove_subtree()\n";
+    + "\nceiling_leds.set_input(\"intensity\", 1.0)\n";
     room.load_mms_source_at_path(&source, "examples/youtuber-room.mms")?;
     let mut next_mesh = 1000;
     let mut next_texture = 1000;
@@ -127,7 +128,7 @@ fn youtuber_room_renders_custom_wave_in_stereo() -> Result<(), Box<dyn std::erro
             .visuals
             .materials
             .instances()
-            .find(|(_, record)| !record.values.is_empty())
+            .find(|(_, record)| room.visuals.materials.definition(record.definition).is_some_and(|definition| definition.custom.is_some()))
             .map(|(id, _)| id)
             .expect("room's shared custom instance");
         let definition = room.visuals.materials.instance(custom).unwrap().definition;
@@ -141,7 +142,7 @@ fn youtuber_room_renders_custom_wave_in_stereo() -> Result<(), Box<dyn std::erro
             values[intensity_index] = 0.0;
             room.visuals
                 .materials
-                .upsert_custom_source(source, definition, values);
+                .upsert_source(source, definition, values);
         }
         if frame == 1 {
             assert!(
@@ -437,7 +438,7 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
         .static_program;
     let mut held = Vec::new();
     for revision in 0..8 {
-        let id = visuals.materials.upsert_custom_source(
+        let id = visuals.materials.upsert_source(
             source,
             definition,
             vec![revision as f32, 0.03, 0.5, 6.0, 1.0],
@@ -448,7 +449,7 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
     let id =
         visuals
             .materials
-            .upsert_custom_source(source, definition, vec![8.0, 0.03, 0.5, 6.0, 1.0]);
+            .upsert_source(source, definition, vec![8.0, 0.03, 0.5, 6.0, 1.0]);
     renderer.sync_material_instances(&visuals);
     assert!(renderer.custom_material_set(id, material).is_err());
     for (index, snapshot) in renderer.material_instances[id]
@@ -464,7 +465,7 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
     }
     held.clear();
     for edit in 0..10_000 {
-        visuals.materials.upsert_custom_source(
+        visuals.materials.upsert_source(
             source,
             definition,
             vec![edit as f32, 0.03, 0.5, 6.0, 1.0],
@@ -499,7 +500,7 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
         .static_program;
     let other_id = visuals
         .materials
-        .upsert_custom_source(other, other_definition, vec![0.75]);
+        .upsert_source(other, other_definition, vec![0.75]);
     renderer.sync_material_instances(&visuals);
     renderer.custom_material_set(other_id, other_material)?;
     assert_eq!(renderer.custom_programs.len(), 2);
@@ -521,9 +522,8 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
 
 #[test]
 #[ignore = "requires Vulkan; compares the real room's isolated Anime lighting modes in stereo"]
-fn youtuber_room_lighting_debug_modes() -> Result<(), Box<dyn std::error::Error>> {
+fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn std::error::Error>> {
     use crate::engine::ecs::component::ShadingComponent;
-    use crate::engine::ecs::component::anime_shading::AnimeLightingDebug;
     let context = RendererContext::new(None, None, None)?;
     let extent = [960, 640];
     let format = Format::B8G8R8A8_UNORM;
@@ -537,7 +537,8 @@ fn youtuber_room_lighting_debug_modes() -> Result<(), Box<dyn std::error::Error>
         env!("CARGO_MANIFEST_DIR"),
         "/examples/youtuber-room.mms"
     ))
-    .replace("\nXR.on()", "\nXR.off()")
+    .replace("let desktop_view_enabled = false", "let desktop_view_enabled = true")
+    .replace("let xr_view_enabled = true", "let xr_view_enabled = false")
     .replace(
         "let led_effects_enabled = true",
         "let led_effects_enabled = false",
@@ -655,8 +656,8 @@ fn youtuber_room_lighting_debug_modes() -> Result<(), Box<dyn std::error::Error>
     let probe = room
         .world
         .all_components()
-        .find(|&id| room.world.component_label(id) == Some("lighting_probe"))
-        .expect("room diagnostic shading");
+        .find(|&id| room.world.component_label(id) == Some("room_shading"))
+        .expect("shared room shading");
     let output = Image::new(
         context.memory_allocator().clone(),
         ImageCreateInfo {
@@ -686,20 +687,14 @@ fn youtuber_room_lighting_debug_modes() -> Result<(), Box<dyn std::error::Error>
         .collect::<Result<Vec<_>, _>>()?;
     let mut next_mesh = 1000;
     let mut next_texture = 1000;
-    let mut images = Vec::new();
     let mut retained = None;
-    for (mode, closeup) in [
-        (AnimeLightingDebug::Distance, false),
-        (AnimeLightingDebug::Diffuse, false),
-        (AnimeLightingDebug::Anime, false),
-        (AnimeLightingDebug::Anime, true),
-    ] {
+    for closeup in [false, true] {
         room.update(0.0, &crate::engine::user_input::InputState::default());
         let shading = room
             .world
             .get_component_by_id_as_mut::<ShadingComponent>(probe)
             .unwrap();
-        *shading = shading.with_lighting_debug(mode);
+        *shading = shading.with_shade_strength(if closeup { 0.8 } else { 0.6 });
         room.systems
             .register_anime_shading(&mut room.world, &mut room.visuals, probe);
         room.systems.prepare_render(
@@ -728,16 +723,7 @@ fn youtuber_room_lighting_debug_modes() -> Result<(), Box<dyn std::error::Error>
         assert_eq!(
             *retained.get_or_insert(binding),
             binding,
-            "switching modes must retain material identity"
-        );
-        assert_eq!(
-            room.visuals
-                .materials
-                .instance(binding)
-                .unwrap()
-                .parameters
-                .rim_color[3],
-            mode.gpu_value()
+            "scalar updates must retain material identity"
         );
         let view = if closeup {
             use crate::engine::ecs::component::TransformComponent;
@@ -801,7 +787,7 @@ fn youtuber_room_lighting_debug_modes() -> Result<(), Box<dyn std::error::Error>
         assert_eq!(
             &pixels[..size],
             &pixels[size..],
-            "matching eye cameras must use the same diagnostic mode"
+            "matching eye cameras must use the same material revision"
         );
         let mut rgba = pixels[..size].to_vec();
         for pixel in rgba.chunks_exact_mut(4) {
@@ -809,27 +795,15 @@ fn youtuber_room_lighting_debug_modes() -> Result<(), Box<dyn std::error::Error>
         }
         image::save_buffer(
             if closeup {
-                "/tmp/youtuber-reimu-seated.png".into()
+                "/tmp/youtuber-reimu-seated.png"
             } else {
-                format!("/tmp/youtuber-lighting-{}.png", mode.name())
+                "/tmp/youtuber-room-anime.png"
             },
             &rgba,
             extent[0],
             extent[1],
             image::ColorType::Rgba8,
         )?;
-        images.push(rgba);
-    }
-    for pair in images.windows(2) {
-        let changed = pair[0]
-            .chunks_exact(4)
-            .zip(pair[1].chunks_exact(4))
-            .filter(|(a, b)| a != b)
-            .count();
-        assert!(
-            changed > 1000,
-            "distance, diffuse and Anime must visibly differ: {changed}"
-        );
     }
     // At a fixed distance, a front-facing receiver must get the same Anime
     // contribution at head-on and grazing angles, while back-facing gets none.

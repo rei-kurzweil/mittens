@@ -6,16 +6,17 @@ Date: 2026-10-24
 value expressions on Material. Both multiline forms omit commas. Type schemas
 are distinct immutable runtime values; GPU storage/reflection remains the same
 bounded f32 UBO path. The earlier builder spellings remain supported for
-compatibility. Built-in/common-flow migration is still pending.
+compatibility. The 2026-10-25 common-flow slice subsequently moved built-in and
+custom registration/resolution into MaterialSystem and replaced Anime-typed
+registry storage with generic schema/default/value records. GPU layouts remain
+validated separately. Broader renderer capabilities still have follow-up work.
 
-Current experiment: [isolated point-light comparison](youtuber-room-lighting-diagnostic.md)
-uses gray architecture, one point light and restored white rim lighting
-(strength 0.18, power 4). It starts in Anime mode with
-a fixed facing gate feeding distance-based light into the shade/lit ramp. The
-reference buttons also control a seated Rei(mu) NPC at the middle of the left
-wall; the experimental normal-blend input/slider has been removed. LED emission and
-Bloom are restored behind the explicit `led_effects_enabled = true` scene flag.
-The material checkpoint below records the full demo.
+Current scene: gray architecture, one monitor point light and white rim lighting
+(strength 0.18, power 4). The temporary Distance/Diffuse/Anime menu and its debug
+shader input/API have been removed. Facing-gated Anime shading still applies to
+both room geometry and the seated Rei(mu) NPC at the middle of the left wall.
+LED emission and Bloom remain enabled through led_effects_enabled. The resized
+straw model is unscaled; its old 28 m recenter offset is corrected to 0.429 m.
 
 Status: initial room tried in VR; combined cube LEDs, extracted emission and scene polish tested with headless Vulkan, awaiting another headset test.
 Parent: [custom materials](epic/custom-materials.md).
@@ -26,6 +27,19 @@ Foundation: [accepted built-in instance checkpoint](material-instances-anime-vr-
 ```sh
 ./target/release/mittens-engine load examples/youtuber-room.mms
 ```
+
+View flags at the top of the example select the same scene's outputs:
+
+```mms
+let desktop_view_enabled = false
+let xr_view_enabled = true
+```
+
+These defaults select XR only. Use true/false for desktop only, or true/true
+for both. The desktop flag gates the Camera3D and desktop input subtree;
+without that camera the engine skips desktop rendering/presentation. The XR
+flag gates its camera, controllers, locomotion and XR.on()/off() declaration.
+This controls views; the normal launcher can still create its window shell.
 
 The new [room](../../examples/youtuber-room.mms) replaces the previously proposed
 four-strips-around-a-plane fixture as the current custom-material example.
@@ -184,13 +198,12 @@ changes still need the next headset test.
 
 ## Remaining work
 
-- Built-in Anime/Toon definitions may remain authored in Rust/GLSL, but must use
-  the same lifecycle/resolution/binding/update logic as other definitions.
-  The custom prototype still reuses `pending_anime_shading`, and RenderableSystem
-  retains the built-in Shading bridge. The user requested this as a follow-up
-  TODO, not a requirement to move built-in shader authoring into MMS. See
-  [the common material-flow task](material-instances-and-family-contracts.md#first-refactoring-slices-and-gates).
-- The broader colon-style type-expression/dual-role record API, `Material(base)`
+- Built-in/common source registration, resolution, retained updates and
+  retirement now share MaterialSystem and the same schema-backed registry.
+  Complete renderer feature/state capability migration and richer public
+  built-in definition authoring remain follow-ups. Shading compatibility
+  authoring and GLTF projections remain supported.
+- The broader mixed/typed-value record API, `Material(base)`
   implicit-definition convenience, other base presets, vector/matrix/resource
   fields and general source serialization remain pending.
 - Custom transparent/cutout/clipped/background variants, skinned/GLTF geometry,
@@ -200,5 +213,4 @@ changes still need the next headset test.
   interpreted by the renderer as permission to omit the entire draw/pass.
 
 The accepted Anime tests still establish the compatibility baseline. This room
-proves the first custom-f32 path; it does not complete the generic material
-resolution migration or the full Materials v3 epic.
+proves the first custom-f32 path; it does not complete the full renderer capability migration or Materials v3 epic.

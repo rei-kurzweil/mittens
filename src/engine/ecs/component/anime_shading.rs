@@ -8,42 +8,6 @@ pub enum ShadingModel {
     Toon,
 }
 
-/// Isolated views of the existing Anime lighting calculation.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum AnimeLightingDebug {
-    #[default]
-    Anime,
-    Distance,
-    Diffuse,
-}
-
-impl AnimeLightingDebug {
-    pub fn parse(value: &str) -> Result<Self, String> {
-        match value {
-            "anime" => Ok(Self::Anime),
-            "distance" => Ok(Self::Distance),
-            "diffuse" => Ok(Self::Diffuse),
-            _ => Err("lighting_debug: expected 'anime', 'distance', or 'diffuse'".into()),
-        }
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Anime => "anime",
-            Self::Distance => "distance",
-            Self::Diffuse => "diffuse",
-        }
-    }
-
-    pub fn gpu_value(self) -> f32 {
-        match self {
-            Self::Anime => 0.0,
-            Self::Distance => 1.0,
-            Self::Diffuse => 2.0,
-        }
-    }
-}
-
 /// Temporary Rust compatibility name; both authoring paths use one component.
 /// Remove with the remaining legacy scene/component migration.
 pub type AnimeShadingComponent = ShadingComponent;
@@ -56,7 +20,6 @@ pub type AnimeShadingComponent = ShadingComponent;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShadingComponent {
     pub model: ShadingModel,
-    pub lighting_debug: AnimeLightingDebug,
     pub shade_color: [f32; 3],
     pub shade_strength: f32,
     pub shade_threshold: f32,
@@ -83,7 +46,6 @@ impl ShadingComponent {
     pub fn new() -> Self {
         Self {
             model: ShadingModel::Anime,
-            lighting_debug: AnimeLightingDebug::Anime,
             shade_color: Self::DEFAULT_SHADE_COLOR,
             shade_strength: Self::DEFAULT_SHADE_STRENGTH,
             shade_threshold: Self::DEFAULT_SHADE_THRESHOLD,
@@ -152,11 +114,6 @@ impl ShadingComponent {
         self
     }
 
-    pub fn with_lighting_debug(mut self, mode: AnimeLightingDebug) -> Self {
-        self.lighting_debug = mode;
-        self
-    }
-
     pub fn gpu_params(self) -> crate::engine::graphics::visual_world::AnimeShadingParams {
         crate::engine::graphics::visual_world::AnimeShadingParams {
             shade_color_strength: [
@@ -165,12 +122,7 @@ impl ShadingComponent {
                 self.shade_color[2],
                 self.shade_strength,
             ],
-            rim_color: [
-                self.rim_color[0],
-                self.rim_color[1],
-                self.rim_color[2],
-                self.lighting_debug.gpu_value(),
-            ],
+            rim_color: [self.rim_color[0], self.rim_color[1], self.rim_color[2], 0.0],
             controls: [
                 self.shade_threshold,
                 self.lit_threshold,
@@ -178,6 +130,33 @@ impl ShadingComponent {
                 self.rim_power,
             ],
         }
+    }
+
+    /// Compatibility authoring adapter: named logical values, independent of
+    /// how the renderer packs the built-in shader's uniform block.
+    pub(crate) fn material_values(
+        self,
+        schema: &crate::engine::graphics::materials::MaterialParameterSchema,
+    ) -> std::sync::Arc<[f32]> {
+        let mut values = vec![0.0; schema.scalar_count];
+        for (name, value) in [
+            ("shade_color", self.shade_color.as_slice()),
+            ("shade_strength", std::slice::from_ref(&self.shade_strength)),
+            ("rim_color", self.rim_color.as_slice()),
+            (
+                "shade_threshold",
+                std::slice::from_ref(&self.shade_threshold),
+            ),
+            ("lit_threshold", std::slice::from_ref(&self.lit_threshold)),
+            ("rim_strength", std::slice::from_ref(&self.rim_strength)),
+            ("rim_power", std::slice::from_ref(&self.rim_power)),
+        ] {
+            if let Some(field) = schema.field(name) {
+                assert_eq!(field.ty.width(), value.len());
+                values[field.slot..field.slot + value.len()].copy_from_slice(value);
+            }
+        }
+        values.into()
     }
 }
 
@@ -218,7 +197,7 @@ impl Component for ShadingComponent {
         if self.model == ShadingModel::Toon {
             return ce("Shading").with_call("toon", vec![]);
         }
-        let mut node = ce("Shading")
+        let node = ce("Shading")
             .with_call("anime", vec![])
             .with_call(
                 "shade_color",
@@ -233,9 +212,7 @@ impl Component for ShadingComponent {
             )
             .with_call("rim_strength", vec![num(self.rim_strength as f64)])
             .with_call("rim_power", vec![num(self.rim_power as f64)]);
-        if self.lighting_debug != AnimeLightingDebug::Anime {
-            node = node.with_call("lighting_debug", vec![s(self.lighting_debug.name())]);
-        }
+
         node
     }
 }

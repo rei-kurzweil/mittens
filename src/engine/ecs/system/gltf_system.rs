@@ -323,7 +323,9 @@ impl GLTFSystem {
                 .unwrap_or(false);
 
             let anime_shading =
-                crate::engine::ecs::system::RenderableSystem::resolve_anime_shading(world, cid);
+                crate::engine::ecs::system::material_system::MaterialSystem::resolve_shading(
+                    world, cid,
+                );
             let toon_outline =
                 crate::engine::ecs::system::RenderableSystem::resolve_toon_outline(world, cid);
 
@@ -1627,11 +1629,13 @@ mod tests {
                     );
                 }
                 IntentValue::RegisterAnimeShading { component_id } => {
-                    renderable_system.register_anime_shading(
+                    crate::engine::ecs::system::material_system::MaterialSystem::publish_source(
                         &mut world,
                         &mut visuals,
                         *component_id,
-                    );
+                    )
+                    .unwrap();
+                    renderable_system.refresh_material_topology(&mut world, &mut visuals);
                 }
                 IntentValue::RegisterToonOutline { component_id } => {
                     renderable_system.register_toon_outline(
@@ -1687,7 +1691,13 @@ mod tests {
         *world
             .get_component_by_id_as_mut::<AnimeShadingComponent>(modifier)
             .unwrap() = updated_modifier;
-        renderable_system.register_anime_shading(&mut world, &mut visuals, modifier);
+        crate::engine::ecs::system::material_system::MaterialSystem::publish_source(
+            &mut world,
+            &mut visuals,
+            modifier,
+        )
+        .unwrap();
+        renderable_system.refresh_material_topology(&mut world, &mut visuals);
         assert!(
             visuals
                 .instances()
@@ -1725,10 +1735,12 @@ mod tests {
                 .unwrap();
             assert_eq!(anime_projection.source_component(), Some(modifier));
             assert_eq!(
-                RenderableSystem::resolve_anime_shading(&world, renderable)
-                    .unwrap()
-                    .1
-                    .gpu_params(),
+                crate::engine::ecs::system::material_system::MaterialSystem::resolve_shading(
+                    &world, renderable
+                )
+                .unwrap()
+                .1
+                .gpu_params(),
                 updated_params
             );
             let handle = world
@@ -1753,7 +1765,13 @@ mod tests {
             .get_component_by_id_as_mut::<AnimeShadingComponent>(modifier)
             .unwrap()
             .model = crate::engine::ecs::component::ShadingModel::Toon;
-        renderable_system.register_anime_shading(&mut world, &mut visuals, modifier);
+        crate::engine::ecs::system::material_system::MaterialSystem::publish_source(
+            &mut world,
+            &mut visuals,
+            modifier,
+        )
+        .unwrap();
+        renderable_system.refresh_material_topology(&mut world, &mut visuals);
         assert_eq!(
             visuals.materials.source_instance(modifier),
             Some(source_instance)

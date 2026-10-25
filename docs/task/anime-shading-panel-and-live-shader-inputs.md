@@ -9,8 +9,9 @@ measurements remain open. Phases 2–3 are planned.
 gate (`N·L > 0`). Admitted lights feed their full distance/cone-attenuated
 intensity into the shade/lit ramp without cosine weighting. The experimental
 normal-blend input/slider has been removed. The
-[room lighting experiment](youtuber-room-lighting-diagnostic.md) retains raw
-distance and Lambert reference views, alongside the new Anime behavior. An
+[room lighting experiment](youtuber-room-lighting-diagnostic.md) led to the new
+Anime behavior. On 2026-10-25 the temporary reference views, lighting-debug
+input/API and room comparison menu were removed; rim lighting remains enabled. An
 angular gate ramp remains a follow-up.
 
 ## Implemented slice and manual verification (2026-09-08)

@@ -1336,16 +1336,7 @@ impl SystemWorld {
         let nodes = world.owned_subtree(root);
 
         for n in nodes.iter().copied().rev() {
-            if world.get_component_by_id_as::<crate::engine::ecs::component::material::MaterialDefinitionComponent>(n).is_some() {
-                for source in visuals.materials.remove_definition_source(n) { visuals.remove_material_source(source); }
-            }
-            if world
-                .get_component_by_id_as::<crate::engine::ecs::component::ShadingComponent>(n)
-                .is_some_and(|shading| shading.source_component().is_none())
-                || world.get_component_by_id_as::<crate::engine::ecs::component::material::MaterialComponent>(n).is_some()
-            {
-                visuals.remove_material_source(n);
-            }
+            super::material_system::MaterialSystem::retire_source(visuals, n);
             if world
                 .get_component_by_id_as::<SignalRouteUpwardComponent>(n)
                 .is_some()
@@ -2536,8 +2527,12 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.renderable
-            .register_anime_shading(world, visuals, component);
+        if let Err(error) =
+            super::material_system::MaterialSystem::publish_source(world, visuals, component)
+        {
+            eprintln!("[Material] {component:?}: {error}");
+        }
+        self.renderable.refresh_material_topology(world, visuals);
     }
 
     /// Register a ToonOutlineComponent and apply it to its target renderables.
@@ -2797,6 +2792,7 @@ impl SystemWorld {
         // MMS callbacks are serviced after simulation tick. Publish their
         // coalesced material updates before this frame's draw preparation.
         self.material.tick(world, visuals);
+        self.renderable.refresh_material_topology(world, visuals);
         // Ensure any imported assets are registered before renderables try to resolve meshes/textures.
         self.gltf
             .flush_imports(render_assets, &mut self.texture, uploader);
@@ -3616,7 +3612,7 @@ impl SystemWorld {
 
         // Batch audio graph rebuild work once after all mutations for this frame.
         self.material.tick(world, visuals);
-        self.renderable.refresh_shading_topology(world, visuals);
+        self.renderable.refresh_material_topology(world, visuals);
         self.audio.rebuild_dirty_audio_graphs(world);
 
         // Drain decode-worker completion messages so newly-loaded clips

@@ -1,12 +1,18 @@
 # Task: stable material instances and MaterialBase contracts
 
 Date: 2026-10-10
-Status: built-in Anime/Toon instance foundation accepted in VR; generic parameter/base-contract migration pending.
+Status: common source registration/resolution and schema-backed value storage implemented 2026-10-25; broader renderer capability migration remains pending.
 
-2026-10-24: [the custom-f32 room checkpoint](youtuber-room-custom-material-checkpoint.md)
-adds MMS definition/instance registration and reflected variable-size float
-uploads. The built-in/common-flow TODO below remains open; this does not require
-moving built-in definition authoring out of Rust/GLSL.
+2026-10-25: Anime/Toon adapters and custom Material sources now register and
+resolve through MaterialSystem and update one generic schema-backed float store.
+Definitions carry named typed fields and generic defaults; instance records no
+longer contain AnimeShadingParams. Built-in UBO packing remains an explicit
+renderer adapter; custom physical offsets still come from reflection. The
+registry uses MaterialBase/MaterialBaseId terminology. CombineMesh resolves and
+retains either kind of source, including through source collapse and model changes.
+The temporary lighting debug input/API and the room's comparison menu are removed.
+The room retains rim lighting, LEDs, bloom, seated Rei(mu), and XR controllers.
+
 Parent: [custom materials epic](epic/custom-materials.md).
 Consumer: [Material component/resolution](material-component-and-resolved-contract.md).
 First custom-program proof: [f32 time animation](material-f32-time-animation-first-slice.md).
@@ -26,10 +32,10 @@ for MaterialFamily, not another layer. Material is the concrete instance;
 MaterialInstance remains its current Rust name. Definitions declare field types,
 instances supply values. The [authoring contract](material-component-and-resolved-contract.md#authoring-decision-2026-10-23)
 records constructor overloads, default `MaterialBase()` and lowercase type tags.
-Source symbols/file paths retain their existing names until a source refactor.
+The registry source now uses MaterialBase and MaterialBaseId.
 The [checkpoint's specialization inventory](material-instances-anime-vr-checkpoint.md)
 records Anime-typed parameters/defaults, fixed upload packing and Shading-specific
-resolution hooks that remain to be generalized. This pass changes docs only.
+resolution hooks present at that historical checkpoint; the 2026-10-25 implementation supersedes that storage/resolution boundary.
 
 ## Goal and current prototype
 
@@ -61,10 +67,10 @@ built-in fallback draws retain the original immutable descriptor cache.
 The first implementation provides these three identities under their current
 source names:
 
-- `MaterialFamilyId` (target name `MaterialBaseId`): shared interface/input/pass
+- `MaterialBaseId`: shared interface/input/pass
   and renderer state/configuration contract.
 - `MaterialDefinitionId` (the MaterialDefinition): built-in program selection and defaults
-  now; validated custom programs/input schemas remain pending.
+  plus validated custom programs and named parameter schemas.
 - `MaterialInstanceId` (the public Material): stable mutable values/resource bindings for one definition.
 
 The existing renderable `InstanceHandle` identifies a drawable's geometry,
@@ -95,8 +101,8 @@ Structural ECS components remain single-parent. Leaf Shading declarations now
 support multiple attachments through the linked graph task, so repeating one
 live Shading handle beneath unrelated renderables shares its component identity
 and settings. Wrapper inheritance also shares a source within one subtree.
-The public `Material` / `MaterialDefinition` components and generic parameter
-schemas remain pending. Multiple Shading attachments do not construct another
+The public `Material` / `MaterialDefinition` components and named f32 schemas
+are implemented; richer parameter/resource types remain follow-up work. Multiple Shading attachments do not construct another
 authored source; the existing instance-ID bridge preserves that ownership rule.
 Broader sharing must preserve structural movement,
 lifetime and performance contracts without picking an arbitrary first parent.
@@ -192,16 +198,13 @@ This adds primitive type-only records, not mixed/typed-value records or
 push-constant support. Common-flow work should remove Anime-specific storage/packing assumptions
 without requiring additional GPU input mechanisms first.
 
-2026-10-24 follow-up TODO: built-in Anime/Toon definitions may remain authored
-in Rust/GLSL, but must use the same material registration, initialization,
-binding, retained-update and retirement logic as other material definitions.
-The new custom-f32 prototype still reuses `pending_anime_shading` and retains
-Anime-specific selection/parameter code in RenderableSystem. Unify that flow
-through MaterialSystem and the common registry/resolver; a field rename alone
-does not complete this task. Keep `Shading.anime()` / `.toon()` as compatibility
-authoring adapters. This is migration work after the room checkpoint, not a
-requirement to move built-in shader definitions into MMS or remove Anime source
-files. The user explicitly requested recording this follow-up for now.
+2026-10-24 common-flow TODO, implemented 2026-10-25: built-in definitions remain
+in Rust/GLSL, while MaterialSystem owns source registration, retained publication,
+resolution and retirement for both authoring forms. RenderableSystem now keeps
+only pending material bindings and selects programs from resolved definitions.
+Shading remains a compatibility authoring/projection adapter. This is more than
+renaming the former pending_anime_shading field: the separate registration and
+resolution branches and Anime-typed registry storage are removed.
 
 1. [x] Audit the Anime/Toon field owners, value/cache/batch flow, fixed interface
    and actual input/pass consumption. Document current ignored fields and
@@ -216,11 +219,12 @@ files. The user explicitly requested recording this follow-up for now.
    storage. Verify animated Anime scalar edits without creating one persistent
    UBO/descriptor per new value. Verify allocation and batch-rebuild counts;
    comprehensive CPU timing comparisons remain follow-up work.
-5. [ ] Replace Anime-specific value/default storage and upload packing with
-   schema-backed material data and layout. Generalize the Shading-specific
-   resolution bridge; consolidate renderer state/features under MaterialBase
-   and perform the agreed source renames without adding a layer.
-6. [ ] Add the opaque mesh base/material support needed by the custom f32 slice,
+5. [x] Replace Anime-specific value/default storage with schema-backed material
+   data, separate logical field slots from GPU packing, unify source resolution
+   and perform the MaterialBase source renames. General renderer state/pass
+   capability migration remains subsequent work; fixed built-in UBO packing is
+   isolated at the renderer boundary.
+6. [x] Add the opaque mesh base/material support needed by the custom f32 slice,
    using the same instance/update machinery. Declare emission metadata without
    inferring extraction from consumption of a standard input.
 

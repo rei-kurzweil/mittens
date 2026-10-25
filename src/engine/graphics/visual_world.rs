@@ -97,7 +97,7 @@ pub struct DrawBatch {
 pub struct AnimeShadingParams {
     /// RGB shade tint, followed by shade strength.
     pub shade_color_strength: [f32; 4],
-    /// RGB rim tint; W selects Anime lighting diagnostics (0=normal, 1=distance, 2=diffuse).
+    /// RGB rim tint; W is reserved.
     pub rim_color: [f32; 4],
     /// Shade threshold, lit threshold, rim strength, and rim power.
     pub controls: [f32; 4],
@@ -110,6 +110,48 @@ pub struct ToonOutlineParams {
 }
 
 impl AnimeShadingParams {
+    /// Built-in definition schema. Slots are logical values, not GPU offsets.
+    pub fn schema() -> super::materials::MaterialParameterSchema {
+        use super::materials::{
+            MaterialFieldType::{F32, Vec3},
+            MaterialParameterSchema,
+        };
+        MaterialParameterSchema::new(
+            [
+                ("shade_color", Vec3),
+                ("shade_strength", F32),
+                ("rim_color", Vec3),
+                ("shade_threshold", F32),
+                ("lit_threshold", F32),
+                ("rim_strength", F32),
+                ("rim_power", F32),
+            ]
+            .into_iter()
+            .map(|(name, ty)| (name.to_owned(), ty)),
+        )
+    }
+
+    /// Compatibility packing for the existing built-in MaterialUBO interface.
+    pub fn from_material(
+        schema: &super::materials::MaterialParameterSchema,
+        values: &[f32],
+    ) -> Self {
+        let mut packed = Self::default();
+        let copy = |name: &str, target: &mut [f32]| {
+            if let Some(value) = schema.read(values, name) {
+                assert_eq!(value.len(), target.len());
+                target.copy_from_slice(value);
+            }
+        };
+        copy("shade_color", &mut packed.shade_color_strength[..3]);
+        copy("shade_strength", &mut packed.shade_color_strength[3..]);
+        copy("rim_color", &mut packed.rim_color[..3]);
+        copy("shade_threshold", &mut packed.controls[..1]);
+        copy("lit_threshold", &mut packed.controls[1..2]);
+        copy("rim_strength", &mut packed.controls[2..3]);
+        copy("rim_power", &mut packed.controls[3..]);
+        packed
+    }
     pub fn key_bits(self) -> [u32; 12] {
         let values = [self.shade_color_strength, self.rim_color, self.controls];
         let mut bits = [0; 12];
@@ -117,6 +159,18 @@ impl AnimeShadingParams {
             bits[index] = value.to_bits();
         }
         bits
+    }
+}
+
+impl From<AnimeShadingParams> for std::sync::Arc<[f32]> {
+    fn from(params: AnimeShadingParams) -> Self {
+        params
+            .shade_color_strength
+            .into_iter()
+            .chain(params.rim_color.into_iter().take(3))
+            .chain(params.controls)
+            .collect::<Vec<_>>()
+            .into()
     }
 }
 
@@ -330,7 +384,12 @@ impl VisualInstance {
     pub fn anime_shading(&self, materials: &MaterialRegistry) -> AnimeShadingParams {
         self.material_instance
             .and_then(|id| materials.instance(id))
-            .map_or_else(AnimeShadingParams::default, |record| record.parameters)
+            .and_then(|record| {
+                materials.definition(record.definition).map(|definition| {
+                    AnimeShadingParams::from_material(&definition.parameter_schema, &record.values)
+                })
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -3632,7 +3691,17 @@ impl VisualWorld {
             instance
                 .material_instance
                 .and_then(|id| self.materials.instance(id))
-                .map_or_else(AnimeShadingParams::default, |record| record.parameters),
+                .and_then(|record| {
+                    self.materials
+                        .definition(record.definition)
+                        .map(|definition| {
+                            AnimeShadingParams::from_material(
+                                &definition.parameter_schema,
+                                &record.values,
+                            )
+                        })
+                })
+                .unwrap_or_default(),
         )
     }
 
