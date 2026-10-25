@@ -9,7 +9,8 @@ bounded f32 UBO path. The earlier builder spellings remain supported for
 compatibility. Built-in/common-flow migration is still pending.
 
 Current experiment: [isolated point-light comparison](youtuber-room-lighting-diagnostic.md)
-uses gray architecture, one point light and no rim. It starts in Anime mode with
+uses gray architecture, one point light and restored white rim lighting
+(strength 0.18, power 4). It starts in Anime mode with
 a fixed facing gate feeding distance-based light into the shade/lit ramp. The
 reference buttons also control a seated Rei(mu) NPC at the middle of the left
 wall; the experimental normal-blend input/slider has been removed. LED emission and

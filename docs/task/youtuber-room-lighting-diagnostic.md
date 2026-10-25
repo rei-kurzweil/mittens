@@ -16,7 +16,11 @@ the selected mode. The former normal-blend setting and slider have been removed.
 
 The architectural shell and floor share gray albedo. The monitor supplies the
 only point light (white, intensity 1.5, range 5 m). Directional light, spotlight,
-ambient and rim are disabled. LED emission and Bloom have been restored; the
+and ambient are disabled. Rim lighting is restored in Anime mode at strength
+0.18, power 4, with a white tint, including on the seated NPC, straw and strip
+backing. The built-in default was never disabled: it remains strength 0.18,
+power 4, with the original warm pink tint. Raw Distance/Diffuse diagnostic modes
+still bypass rim. LED emission and Bloom have been restored; the
 explicit `led_effects_enabled` flag near the top of the example controls both.
 Set it to false for an isolated comparison. The GPU diagnostic fixture does
 this automatically; the interactive scene starts with the effects enabled.
@@ -53,7 +57,7 @@ engine light buffer, transformed world positions, normals, and attenuation:
 | --- | --- |
 | Distance only | Albedo times clamped intensity/attenuation, without the normal factor |
 | Smooth diffuse | Albedo times clamped accumulated Lambert diffuse lighting, without the Anime ramp |
-| Anime facing | Shade/lit interpolation driven by distance/cone-attenuated intensity from facing lights, with rim strength zero |
+| Anime facing | Shade/lit interpolation driven by distance/cone-attenuated intensity from facing lights, plus the restored view-dependent rim |
 
 The current built-in Anime rule is evaluated per light: `dot(N, L) > 0` admits
 its full nonnegative intensity multiplied by distance and spotlight-cone
@@ -70,7 +74,8 @@ Bloom settings are intensity 2.25, Bloom radius 0.086, and extraction blur radiu
 0.04. The flag's false branch uses `RenderGraph.off()` and zero LED intensity.
 Previous ambient was 0.12,
 directional intensity 0.26, and monitor spotlight intensity 0.65. Architectural
-colors and rim lighting can be restored after the experiment.
+colors can be restored after the experiment. Rim lighting has been restored;
+set the scene's Anime declarations to `.rim_strength(0.0)` to isolate it again.
 
 The reusable diagnostic API is:
 

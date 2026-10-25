@@ -4,7 +4,7 @@
 // Use the three pointer buttons left of the desk
 // to compare distance-only, smooth diffuse, and Anime ramp lighting. Starts in
 // Anime mode with facing-gated distance influence, gray architecture, one point light,
-// and no rim. The shared controls also shade the seated Rei(mu) NPC.
+// and restored rim lighting. The shared controls also shade the seated Rei(mu) NPC.
 // Four CombineMesh outputs share one retained material. LED cubes are baked
 // once; only time_seconds changes per frame for their hue and brightness wave.
 
@@ -97,12 +97,12 @@ let accent = [0.62, 0.12, 0.24]
 let diagnostic_gray = [0.5, 0.5, 0.5]
 let lighting_probe = Shading.anime().shade_color([0.35, 0.35, 0.35]).shade_strength(0.8)
     .shade_threshold(0.35).lit_threshold(0.55)
-    .rim_strength(0.0).lighting_debug("anime") { name = "lighting_probe" }
+    .rim_color([1.0, 1.0, 1.0]).rim_strength(0.18).rim_power(4.0).lighting_debug("anime") { name = "lighting_probe" }
 
 T {
     name = "youtuber_room"
     // Same shader/light buffer in each mode: distance -> diffuse -> Anime ramp.
-    // Architectural surfaces share one gray albedo; rim and other lights are off.
+    // Architectural surfaces share one gray albedo; white rim lighting is restored.
     lighting_probe
     // Architectural shell, 5 m wide and 4.6 m deep, with a 2.9 m ceiling.
     // A darker wood substrate sits 2 cm below the finished floor. Real gaps
@@ -154,7 +154,7 @@ T {
                                 .shade_threshold(0.35)
                                 .lit_threshold(0.55)
                                 .rim_color([1.0, 1.0, 1.0])
-                                .rim_strength(0.0)
+                                .rim_strength(0.18)
                                 .rim_power(4.0)
             }
         }
@@ -301,7 +301,7 @@ on(room_reimu, "GLTFInitialized", fn(event) {
 
 let strip_backing = Shading.anime().shade_color([0.5, 0.5, 0.5]).shade_strength(0.7)
     .shade_threshold(0.35).lit_threshold(0.55)
-    .rim_color([1.0, 1.0, 1.0]).rim_strength(0.0).rim_power(4.0)
+    .rim_color([1.0, 1.0, 1.0]).rim_strength(0.18).rim_power(4.0)
 
 // One combined mesh per wall. Each cube carries its perimeter position in UV X,
 // shared by all 24 vertices so the whole LED changes brightness together.
