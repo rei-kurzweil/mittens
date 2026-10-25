@@ -1,6 +1,14 @@
 # Youtuber room: first custom-f32 material checkpoint
 
 Date: 2026-10-24
+Current experiment: [isolated point-light comparison](youtuber-room-lighting-diagnostic.md)
+uses gray architecture, one point light and no rim. It starts in Anime mode with
+a fixed facing gate feeding distance-based light into the shade/lit ramp. The
+reference buttons also control a seated Rei(mu) NPC at the middle of the left
+wall; the experimental normal-blend input/slider has been removed. LED emission and
+Bloom are restored behind the explicit `led_effects_enabled = true` scene flag.
+The material checkpoint below records the full demo.
+
 Status: initial room tried in VR; combined cube LEDs, extracted emission and scene polish tested with headless Vulkan, awaiting another headset test.
 Parent: [custom materials](epic/custom-materials.md).
 Foundation: [accepted built-in instance checkpoint](material-instances-anime-vr-checkpoint.md).

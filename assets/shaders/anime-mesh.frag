@@ -65,6 +65,8 @@ void main() {
 
     vec3 N = normalize(v_normal);
     float light_amount = 0.0;
+    float distance_amount = 0.0;
+    float facing_amount = 0.0;
     uint light_count = min(g_lights.count, 64u);
 
     for (uint i = 0u; i < light_count; i++) {
@@ -109,10 +111,27 @@ void main() {
             }
         }
 
-        light_amount += max(dot(N, L), 0.0) * max(intensity, 0.0) * attenuation;
+        float amount = max(intensity, 0.0) * attenuation;
+        distance_amount += amount;
+        float ndotl = dot(N, L);
+        light_amount += max(ndotl, 0.0) * amount;
+        // Fixed 90-degree eligibility gate. Once facing a light, the Anime
+        // ramp receives its full distance/cone-attenuated intensity, without
+        // cosine weighting. Tangent and back-facing surfaces receive none.
+        if (ndotl > 0.0) {
+            facing_amount += amount;
+        }
     }
 
     vec3 base = base_rgba.rgb;
+    // Both diagnostics use the actual engine light buffer and world position.
+    // They bypass the Anime ramp and rim without changing draw/pipeline identity.
+    float lighting_debug = mat.anime_rim_color.w;
+    if (lighting_debug > 0.5) {
+        float amount = lighting_debug < 1.5 ? distance_amount : light_amount;
+        f_color = vec4(base * clamp(amount, 0.0, 1.0), base_rgba.a);
+        return;
+    }
     float shade_strength = clamp(mat.anime_shade_color_strength.a, 0.0, 1.0);
     vec3 shade_multiplier = mix(
         vec3(1.0),
@@ -121,7 +140,7 @@ void main() {
     );
     vec3 shaded = base * shade_multiplier;
     float ramp = anime_ramp(
-        light_amount,
+        facing_amount,
         mat.anime_controls.x,
         mat.anime_controls.y
     );

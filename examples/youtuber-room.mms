@@ -1,17 +1,37 @@
 // First named-f32 custom-material scene.
 // cargo run --release -- load examples/youtuber-room.mms
 // Desktop: WASD + mouse. XR: controller locomotion and avatar-free pointers.
+// Use the three pointer buttons left of the desk
+// to compare distance-only, smooth diffuse, and Anime ramp lighting. Starts in
+// Anime mode with facing-gated distance influence, gray architecture, one point light,
+// and no rim. The shared controls also shade the seated Rei(mu) NPC.
 // Four CombineMesh outputs share one retained material. LED cubes are baked
 // once; only time_seconds changes per frame for their hue and brightness wave.
 
+import { pose as floor_seated_pose } from "../assets/components/poses/rei-mu/floor-seated.pose.mms"
+import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
+import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
+import { rei_mu_bow_secondary_motion } from "../assets/components/secondary_motion/rei-mu-bow.mms"
+import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
+
 RendererSettings { window_size(1440, 960) }
-RenderGraph {
-    EmissivePass { BlurPass { radius_ndc(0.04) half_res(true) } }
-    Bloom { intensity(2.25) radius_ndc(0.086) emissive_scale(1.0) half_res(true) }
+Clock.bpm(120.0)
+// One explicit switch restores the LED wave and Bloom. Set false for isolated
+// lighting comparisons again; this does not change the Anime shading controls.
+let led_effects_enabled = true
+let led_intensity = 0.0
+if led_effects_enabled {
+    led_intensity = 1.0
+    RenderGraph {
+        EmissivePass { BlurPass { radius_ndc(0.04) half_res(true) } }
+        Bloom { intensity(2.25) radius_ndc(0.086) emissive_scale(1.0) half_res(true) }
+    }
+} else {
+    RenderGraph.off()
 }
 BGC.rgba(0.025, 0.032, 0.052, 1.0)
-AL.rgb(0.12, 0.12, 0.12)
-T.position(-1.2, 2.4, 0.5) { DL.color(1.0, 1.0, 1.0).intensity(0.26) }
+AL.rgb(0.0, 0.0, 0.0)
+// Directional fill and monitor spotlight are omitted during the diagnostic.
 
 // These resources deliberately have no scene-tree attachment. Completing the
 // definition queues asynchronous backend preparation immediately.
@@ -30,7 +50,7 @@ let ceiling_leds = Material(led_definition).descriptor_set({
     hue_speed = 0.020833333333
     wave_speed = 0.5
     wave_count = 6.0
-    intensity = 1.0
+    intensity = led_intensity
 })
 
 let animation = { seconds = 0.0 }
@@ -71,30 +91,31 @@ let metal = [0.18, 0.21, 0.27]
 let walnut = [0.37, 0.24, 0.16]
 let fabric = [0.15, 0.17, 0.23]
 let accent = [0.62, 0.12, 0.24]
+let diagnostic_gray = [0.5, 0.5, 0.5]
+let lighting_probe = Shading.anime().shade_color([0.35, 0.35, 0.35]).shade_strength(0.8)
+    .shade_threshold(0.35).lit_threshold(0.55)
+    .rim_strength(0.0).lighting_debug("anime") { name = "lighting_probe" }
 
 T {
     name = "youtuber_room"
-    // Try neutral, albedo-bounded Anime shading throughout the room. Local
-    // Unlit declarations still keep screens/text luminous. Set rim_strength
-    // to 0.0 here to compare the proposed rim-free default.
-    Shading.anime().shade_color([0.35, 0.35, 0.35]).shade_strength(0.8)
-        .shade_threshold(0.35).lit_threshold(0.55)
-        .rim_color([1.0, 1.0, 1.0]).rim_strength(0.16).rim_power(4.0)
+    // Same shader/light buffer in each mode: distance -> diffuse -> Anime ramp.
+    // Architectural surfaces share one gray albedo; rim and other lights are off.
+    lighting_probe
     // Architectural shell, 5 m wide and 4.6 m deep, with a 2.9 m ceiling.
     // A darker wood substrate sits 2 cm below the finished floor. Real gaps
     // between the planks expose it and the separately lit vertical plank edges.
-    box([0.0, -0.08, 0.0], [5.1, 0.12, 4.7], [0.20, 0.12, 0.07])
+    box([0.0, -0.08, 0.0], [5.1, 0.12, 4.7], diagnostic_gray)
     for plank in range(12) {
-        box([-2.3375 + plank * 0.425, -0.01, 0.0], [0.413, 0.02, 4.7], [0.28, 0.23, 0.20])
+        box([-2.3375 + plank * 0.425, -0.01, 0.0], [0.413, 0.02, 4.7], diagnostic_gray)
     }
-    box([0.0, 1.45, -2.35], [5.1, 2.9, 0.12], [0.16, 0.19, 0.26])
-    box([-2.55, 1.45, 0.0], [0.12, 2.9, 4.7], [0.21, 0.23, 0.29])
-    box([2.55, 1.45, 0.0], [0.12, 2.9, 4.7], [0.18, 0.21, 0.28])
-    box([0.0, 2.96, 0.0], [5.1, 0.12, 4.7], [0.25, 0.27, 0.33])
+    box([0.0, 1.45, -2.35], [5.1, 2.9, 0.12], diagnostic_gray)
+    box([-2.55, 1.45, 0.0], [0.12, 2.9, 4.7], diagnostic_gray)
+    box([2.55, 1.45, 0.0], [0.12, 2.9, 4.7], diagnostic_gray)
+    box([0.0, 2.96, 0.0], [5.1, 0.12, 4.7], diagnostic_gray)
     // Front doorway leaves a generous entrance for desktop and room-scale XR.
-    box([-1.90, 1.45, 2.35], [1.3, 2.9, 0.12], [0.18, 0.21, 0.28])
-    box([1.90, 1.45, 2.35], [1.3, 2.9, 0.12], [0.18, 0.21, 0.28])
-    box([0.0, 2.65, 2.35], [2.5, 0.5, 0.12], [0.18, 0.21, 0.28])
+    box([-1.90, 1.45, 2.35], [1.3, 2.9, 0.12], diagnostic_gray)
+    box([1.90, 1.45, 2.35], [1.3, 2.9, 0.12], diagnostic_gray)
+    box([0.0, 2.65, 2.35], [2.5, 0.5, 0.12], diagnostic_gray)
     box([0.0, 0.075, -2.27], [5.0, 0.15, 0.035], charcoal)
     box([-2.47, 0.075, 0.0], [0.035, 0.15, 4.6], charcoal)
     box([2.47, 0.075, 0.0], [0.035, 0.15, 4.6], charcoal)
@@ -130,7 +151,7 @@ T {
                                 .shade_threshold(0.35)
                                 .lit_threshold(0.55)
                                 .rim_color([1.0, 1.0, 1.0])
-                                .rim_strength(0.16)
+                                .rim_strength(0.0)
                                 .rim_power(4.0)
             }
         }
@@ -142,11 +163,11 @@ T {
     box([-0.30, 1.34, -1.99], [1.28, 0.72, 0.06], charcoal)
     T.position(-0.30, 1.34, -1.90) {
         name = "monitor_lights"
-        PL.color(0.48, 0.66, 1.0).intensity(1.5).distance(5.0)
+        PL.color(1.0, 1.0, 1.0).intensity(1.5).distance(5.0)
         // Spotlights aim along local +Z: out of the screen into the room.
         // A 60-degree half-angle gives a broad, soft 120-degree cone.
-        SL.color(0.48, 0.66, 1.0).intensity(0.65).distance(5.0)
-            .angle(1.0471975512).penumbra(0.45)
+        // Previous spotlight: intensity 0.65, distance 5, angle 1.0471975512,
+        // penumbra 0.45; disabled to leave exactly one point-light source.
     }
     T.position(-0.30, 1.34, -1.953).scale(1.21, 0.65, 1.0) {
         R.plane() { C.rgba(0.045, 0.075, 0.12, 1.0) Unlit {} }
@@ -250,9 +271,34 @@ T {
     }
 }
 
+// A separate NPC, with no avatar-control, XR camera or tracked-hand ownership.
+// Her back leans toward the left wall; low, open legs and bent elbows keep the
+// wrists above the lap. The authored pose is applied once after GLTF import.
+let room_reimu = GLTF.new("assets/models/rei(mu).glb") {
+    name = "room_reimu"
+    lighting_probe
+    floor_seated_pose()
+    bisket_colliders()
+    bisket_shirt_physics(false)
+    rei_mu_bow_secondary_motion()
+}
+T.position(-2.22, 0.0, 0.0).rotation_euler(0.0, 1.15, 0.0) {
+    name = "room_reimu_anchor"
+    room_reimu
+}
+on(room_reimu, "GLTFInitialized", fn(event) {
+    let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
+    let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
+    if left_eye && right_eye {
+        room_reimu.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
+    } else {
+        print("Room Rei(mu): eye joints were not found for idle gaze")
+    }
+})
+
 let strip_backing = Shading.anime().shade_color([0.5, 0.5, 0.5]).shade_strength(0.7)
     .shade_threshold(0.35).lit_threshold(0.55)
-    .rim_color([1.0, 1.0, 1.0]).rim_strength(0.16).rim_power(4.0)
+    .rim_color([1.0, 1.0, 1.0]).rim_strength(0.0).rim_power(4.0)
 
 // One combined mesh per wall. Each cube carries its perimeter position in UV X,
 // shared by all 24 vertices so the whole LED changes brightness together.
@@ -287,6 +333,51 @@ ceiling_strip([0.0, 2.77, -2.275], 4.94, 0.0, 0.0, 0.26, 80)
 ceiling_strip([2.475, 2.77, 0.0], 4.55, -1.5707963268, 0.26, 0.5, 74)
 ceiling_strip([0.0, 2.77, 2.275], 4.94, 3.1415926536, 0.5, 0.76, 80)
 ceiling_strip([-2.475, 2.77, 0.0], 4.55, 1.5707963268, 0.76, 1.0, 74)
+
+fn lighting_button(caption, button_name) {
+    return T {
+        name = button_name
+        Raycastable.enabled() { interaction_priority(120.0) }
+        Style {
+            display("flex") width(100%) height(4.0) margin_top(0.4)
+            align_items("center") padding_xy(0.6, 0.2) font_size(1.8)
+            background_color([0.16, 0.20, 0.28, 1.0]) background_z(-0.02)
+            color([0.95, 0.95, 0.95, 1.0])
+        }
+        T.position(0.0, 0.0, 0.03) { Text { caption C.rgba(0.95, 0.95, 0.95, 1.0) EM.on() } }
+    }
+}
+
+let diagnostic_label = Text { "Mode: Anime" C.rgba(1.0, 1.0, 1.0, 1.0) EM.on() }
+let diagnostic_panel = T.position(-1.2, 2.0, -0.3).rotation_euler(0.0, 0.25, 0.0) {
+    name = "lighting_diagnostic_controls"
+    Unlit {}
+    LayoutRoot {
+        available_width(36.0) unit_scale(0.02)
+        T {
+            Style { width(100%) font_size(1.8) color([1.0, 1.0, 1.0, 1.0]) }
+            diagnostic_label
+        }
+        lighting_button("1  Distance", "lighting_distance")
+        lighting_button("2  Diffuse", "lighting_diffuse")
+        lighting_button("3  Anime facing", "lighting_anime")
+
+    }
+}
+on(diagnostic_panel.query("#lighting_distance"), "Click", fn(event) {
+    lighting_probe.set_lighting_debug("distance")
+    diagnostic_label.set_text("Mode: distance")
+})
+on(diagnostic_panel.query("#lighting_diffuse"), "Click", fn(event) {
+    lighting_probe.set_lighting_debug("diffuse")
+    diagnostic_label.set_text("Mode: diffuse")
+})
+on(diagnostic_panel.query("#lighting_anime"), "Click", fn(event) {
+    lighting_probe.set_lighting_debug("anime")
+    diagnostic_label.set_text("Mode: Anime")
+})
+
+diagnostic_panel
 
 I.speed(1.8) {
     InputTransformMode.forward_z() { fps_rotation() roll_axis_y() }

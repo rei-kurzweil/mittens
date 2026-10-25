@@ -59,7 +59,11 @@ fn youtuber_room_renders_custom_wave_in_stereo() -> Result<(), Box<dyn std::erro
         env!("CARGO_MANIFEST_DIR"),
         "/examples/youtuber-room.mms"
     ))
-    .replace("\nXR.on()", "\nXR.off()");
+    .replace("\nXR.on()", "\nXR.off()")
+    // Keep the emission proof active while the user-facing scene is temporarily
+    // configured for isolated lighting diagnostics.
+    .replace("RenderGraph.off()", "RenderGraph { EmissivePass { BlurPass { radius_ndc(0.012) half_res(true) } } Bloom { intensity(0.55) radius_ndc(0.012) emissive_scale(1.0) half_res(true) } }\n")
+    + "\nceiling_leds.set_input(\"intensity\", 1.0)\ndiagnostic_panel.remove_subtree()\n";
     room.load_mms_source_at_path(&source, "examples/youtuber-room.mms")?;
     let mut next_mesh = 1000;
     let mut next_texture = 1000;
@@ -509,5 +513,463 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
         32
     );
     assert_eq!(renderer.material_upload_stats.allocations, 9);
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires Vulkan; compares the real room's isolated Anime lighting modes in stereo"]
+fn youtuber_room_lighting_debug_modes() -> Result<(), Box<dyn std::error::Error>> {
+    use crate::engine::ecs::component::ShadingComponent;
+    use crate::engine::ecs::component::anime_shading::AnimeLightingDebug;
+    let context = RendererContext::new(None, None, None)?;
+    let extent = [960, 640];
+    let format = Format::B8G8R8A8_UNORM;
+    let mut renderer = VulkanoState::new(
+        context.clone(),
+        RendererOutput::Xr(format),
+        MsaaMode::Msaa4x,
+    )?;
+    let mut room = crate::engine::Universe::new(crate::engine::ecs::World::default());
+    let source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/examples/youtuber-room.mms"
+    ))
+    .replace("\nXR.on()", "\nXR.off()")
+    .replace(
+        "let led_effects_enabled = true",
+        "let led_effects_enabled = false",
+    );
+    room.load_mms_source_at_path(&source, "examples/youtuber-room.mms")?;
+    for _ in 0..4 {
+        room.update(0.0, &crate::engine::user_input::InputState::default());
+    }
+    let reimu = room
+        .world
+        .all_components()
+        .find(|&id| room.world.component_label(id) == Some("room_reimu"))
+        .unwrap();
+    let gltf = room
+        .world
+        .get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(reimu)
+        .unwrap();
+    assert!(gltf.spawned);
+    let joints = gltf.armature_joint_transforms.clone();
+    for (name, height) in [
+        ("J_Bip_C_Hips", 0.18),
+        ("J_Bip_L_Foot", 0.1035),
+        ("J_Bip_R_Foot", 0.1035),
+        ("J_Bip_L_Hand", 0.1991),
+        ("J_Bip_R_Hand", 0.1991),
+    ] {
+        let joint = *joints
+            .iter()
+            .find(|&&id| room.world.component_label(id) == Some(name))
+            .unwrap();
+        let position =
+            crate::engine::ecs::system::TransformSystem::world_position(&room.world, joint)
+                .unwrap();
+        assert!(
+            (position[1] - height).abs() < 0.003,
+            "{name} must retain the floor-seated pose: {position:?}"
+        );
+    }
+    assert!(
+        room.systems
+            .secondary_motion
+            .bound_snapshot(&room.world)
+            .iter()
+            .filter(|chain| chain.gltf == reimu)
+            .count()
+            >= 10,
+        "hair, clothing, tail and bow chains must bind on the NPC"
+    );
+    let joint_id = |name: &str| {
+        *joints
+            .iter()
+            .find(|&&id| room.world.component_label(id) == Some(name))
+            .unwrap()
+    };
+    let left_foot = crate::engine::ecs::system::TransformSystem::world_position(
+        &room.world,
+        joint_id("J_Bip_L_Foot"),
+    )
+    .unwrap();
+    let right_foot = crate::engine::ecs::system::TransformSystem::world_position(
+        &room.world,
+        joint_id("J_Bip_R_Foot"),
+    )
+    .unwrap();
+    let spacing = left_foot
+        .iter()
+        .zip(right_foot)
+        .map(|(a, b)| (a - b) * (a - b))
+        .sum::<f32>()
+        .sqrt();
+    assert!(
+        (spacing - 0.52).abs() < 0.003,
+        "the feet must retain the narrower seated stance"
+    );
+    for name in ["J_Bip_L_LowerArm", "J_Bip_R_LowerArm"] {
+        let id = joint_id(name);
+        let local = room
+            .world
+            .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(id)
+            .unwrap()
+            .transform
+            .rotation;
+        let rest = room
+            .world
+            .children_of(id)
+            .iter()
+            .find_map(|&child| {
+                room.world
+                    .get_component_by_id_as::<crate::engine::ecs::component::BoneRestPoseComponent>(
+                        child,
+                    )
+            })
+            .unwrap();
+        let flex =
+            crate::utils::math::quat_mul(local, crate::utils::math::quat_conjugate(rest.rotation));
+        assert!(
+            flex[0] > 0.1 && flex[1].abs() < 0.001 && flex[2].abs() < 0.001,
+            "{name} must flex around the bind-local positive-X hinge, not a body-space axis: {flex:?}"
+        );
+    }
+    assert!(
+        room.world.children_of(reimu).iter().any(|&id| room
+            .world
+            .get_component_by_id_as::<crate::engine::ecs::component::AnimationComponent>(id)
+            .is_some()),
+        "the GLTFInitialized callback must attach ambient eye movement"
+    );
+    assert!(
+        !room.world.all_components().any(|id| room
+            .world
+            .get_component_by_id_as::<crate::engine::ecs::component::AvatarControlComponent>(id)
+            .is_some()),
+        "Reimu must not own the player or XR tracking"
+    );
+    let probe = room
+        .world
+        .all_components()
+        .find(|&id| room.world.component_label(id) == Some("lighting_probe"))
+        .expect("room diagnostic shading");
+    let output = Image::new(
+        context.memory_allocator().clone(),
+        ImageCreateInfo {
+            image_type: ImageType::Dim2d,
+            format,
+            extent: [extent[0], extent[1], 1],
+            array_layers: 2,
+            usage: ImageUsage::COLOR_ATTACHMENT | ImageUsage::TRANSFER_SRC,
+            ..Default::default()
+        },
+        Default::default(),
+    )?;
+    let eyes = (0..2)
+        .map(|eye| {
+            ImageView::new(
+                output.clone(),
+                ImageViewCreateInfo {
+                    view_type: vulkano::image::view::ImageViewType::Dim2d,
+                    subresource_range: ImageSubresourceRange {
+                        array_layers: eye..eye + 1,
+                        ..output.subresource_range()
+                    },
+                    ..ImageViewCreateInfo::from_image(&output)
+                },
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut next_mesh = 1000;
+    let mut next_texture = 1000;
+    let mut images = Vec::new();
+    let mut retained = None;
+    for (mode, closeup) in [
+        (AnimeLightingDebug::Distance, false),
+        (AnimeLightingDebug::Diffuse, false),
+        (AnimeLightingDebug::Anime, false),
+        (AnimeLightingDebug::Anime, true),
+    ] {
+        room.update(0.0, &crate::engine::user_input::InputState::default());
+        let shading = room
+            .world
+            .get_component_by_id_as_mut::<ShadingComponent>(probe)
+            .unwrap();
+        *shading = shading.with_lighting_debug(mode);
+        room.systems
+            .register_anime_shading(&mut room.world, &mut room.visuals, probe);
+        room.systems.prepare_render(
+            &mut room.world,
+            &mut room.visuals,
+            &mut room.render_assets,
+            &mut SceneUploader {
+                renderer: &mut renderer,
+                next_mesh: &mut next_mesh,
+                next_texture: &mut next_texture,
+            },
+            &mut room.command_queue,
+        );
+        let binding = room.visuals.materials.source_instance(probe).unwrap();
+        assert!(
+            room.visuals
+                .instances()
+                .iter()
+                .filter(|instance| instance.material_instance == Some(binding)
+                    && instance.renderable.material
+                        == crate::engine::graphics::MaterialHandle::SKINNED_ANIME_MESH)
+                .count()
+                >= 5,
+            "one retained material must shade both room and Reimu's skinned meshes"
+        );
+        assert_eq!(
+            *retained.get_or_insert(binding),
+            binding,
+            "switching modes must retain material identity"
+        );
+        assert_eq!(
+            room.visuals
+                .materials
+                .instance(binding)
+                .unwrap()
+                .parameters
+                .rim_color[3],
+            mode.gpu_value()
+        );
+        let view = if closeup {
+            use crate::engine::ecs::component::TransformComponent;
+            use crate::utils::math::{mat4_inverse, quat_mul, quat_rotation_y};
+            let position = [-0.75, 0.85, 1.25];
+            let rotation =
+                TransformComponent::look_at_world_rotation(position, [-2.08, 0.45, 0.2]).unwrap();
+            let camera = TransformComponent::new()
+                .with_position(position[0], position[1], position[2])
+                .with_rotation_quat(quat_mul(rotation, quat_rotation_y(std::f32::consts::PI)));
+            mat4_inverse(camera.transform.model).unwrap()
+        } else {
+            room.visuals.camera_view_for(CameraTarget::Window)
+        };
+        let proj = room.visuals.camera_proj_for(CameraTarget::Window);
+        room.visuals.set_camera_for_target(
+            CameraTarget::Xr,
+            (0..2)
+                .map(|_| crate::engine::graphics::CameraData {
+                    view,
+                    proj,
+                    transform: Default::default(),
+                })
+                .collect(),
+        );
+        for eye in 0..2 {
+            renderer.submit_xr_eye_to_view(&mut room.visuals, eye, extent, 2, eyes[eye].clone())?;
+        }
+        let size = (extent[0] * extent[1] * 4) as usize;
+        let readback = Buffer::new_slice::<u8>(
+            context.memory_allocator().clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::TRANSFER_DST,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                    | MemoryTypeFilter::HOST_RANDOM_ACCESS,
+                ..Default::default()
+            },
+            (size * 2) as u64,
+        )?;
+        let mut commands = AutoCommandBufferBuilder::primary(
+            renderer.command_buffer_allocator.clone(),
+            context.graphics_queue().queue_family_index(),
+            CommandBufferUsage::OneTimeSubmit,
+        )?;
+        commands.copy_image_to_buffer(CopyImageToBufferInfo::image_buffer(
+            output.clone(),
+            readback.clone(),
+        ))?;
+        let done = renderer
+            .submission_future
+            .take()
+            .unwrap()
+            .then_execute(context.graphics_queue().clone(), commands.build()?)?
+            .then_signal_fence_and_flush()?;
+        done.wait(None)?;
+        renderer.submission_future = Some(done.boxed());
+        let pixels = readback.read()?;
+        assert_eq!(
+            &pixels[..size],
+            &pixels[size..],
+            "matching eye cameras must use the same diagnostic mode"
+        );
+        let mut rgba = pixels[..size].to_vec();
+        for pixel in rgba.chunks_exact_mut(4) {
+            pixel.swap(0, 2);
+        }
+        image::save_buffer(
+            if closeup {
+                "/tmp/youtuber-reimu-seated.png".into()
+            } else {
+                format!("/tmp/youtuber-lighting-{}.png", mode.name())
+            },
+            &rgba,
+            extent[0],
+            extent[1],
+            image::ColorType::Rgba8,
+        )?;
+        images.push(rgba);
+    }
+    for pair in images.windows(2) {
+        let changed = pair[0]
+            .chunks_exact(4)
+            .zip(pair[1].chunks_exact(4))
+            .filter(|(a, b)| a != b)
+            .count();
+        assert!(
+            changed > 1000,
+            "distance, diffuse and Anime must visibly differ: {changed}"
+        );
+    }
+    // At a fixed distance, a front-facing receiver must get the same Anime
+    // contribution at head-on and grazing angles, while back-facing gets none.
+    // Use the same real material/light-buffer path, with a receiver far outside
+    // the room so its geometry and lights cannot obscure this measurement.
+    let mesh = MeshHandle(20_000);
+    renderer.upload_mesh(
+        mesh,
+        room.render_assets
+            .cpu_mesh(crate::engine::graphics::primitives::CpuMeshHandle::QUAD_2D)
+            .unwrap(),
+    )?;
+    let receiver = room
+        .world
+        .add_component(crate::engine::ecs::component::TransformComponent::new());
+    let mut model = crate::utils::math::mat4_identity();
+    model[3] = [100.0, 0.0, 0.0, 1.0];
+    let handle = room.visuals.register(
+        receiver,
+        crate::engine::graphics::primitives::GpuRenderable::new(
+            mesh,
+            crate::engine::graphics::MaterialHandle::ANIME_MESH,
+        ),
+        crate::engine::graphics::primitives::Transform {
+            model,
+            matrix_world: model,
+            ..Default::default()
+        },
+        [1.0; 4],
+        1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        0.0,
+        None,
+        3.0,
+    );
+    room.visuals.bind_material_instance(handle, retained);
+    let mut view = crate::utils::math::mat4_identity();
+    view[3] = [-100.0, 0.0, -3.0, 1.0];
+    let proj = room.visuals.camera_proj_for(CameraTarget::Window);
+    room.visuals.set_camera_for_target(
+        CameraTarget::Xr,
+        (0..2)
+            .map(|_| crate::engine::graphics::CameraData {
+                view,
+                proj,
+                transform: Default::default(),
+            })
+            .collect(),
+    );
+    let test_light = room
+        .world
+        .add_component(crate::engine::ecs::component::PointLightComponent::new());
+    let mut samples = Vec::new();
+    for offset in [
+        [0.0, 0.0, 1.0],
+        [0.9797959, 0.0, 0.2],
+        [0.9797959, 0.0, -0.2],
+    ] {
+        room.visuals.upsert_light(
+            test_light,
+            crate::engine::graphics::visual_world::VisualLight {
+                light_type: 1,
+                position_ws: [100.0 + offset[0], offset[1], offset[2]],
+                intensity: 0.7,
+                distance: 5.0,
+                color: [1.0; 3],
+                ..Default::default()
+            },
+        );
+        renderer.submit_xr_eye_to_view(&mut room.visuals, 0, extent, 2, eyes[0].clone())?;
+        let size = (extent[0] * extent[1] * 4) as usize;
+        let readback = Buffer::new_slice::<u8>(
+            context.memory_allocator().clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::TRANSFER_DST,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                    | MemoryTypeFilter::HOST_RANDOM_ACCESS,
+                ..Default::default()
+            },
+            (size * 2) as u64,
+        )?;
+        let mut commands = AutoCommandBufferBuilder::primary(
+            renderer.command_buffer_allocator.clone(),
+            context.graphics_queue().queue_family_index(),
+            CommandBufferUsage::OneTimeSubmit,
+        )?;
+        commands.copy_image_to_buffer(CopyImageToBufferInfo::image_buffer(
+            output.clone(),
+            readback.clone(),
+        ))?;
+        let done = renderer
+            .submission_future
+            .take()
+            .unwrap()
+            .then_execute(context.graphics_queue().clone(), commands.build()?)?
+            .then_signal_fence_and_flush()?;
+        done.wait(None)?;
+        renderer.submission_future = Some(done.boxed());
+        let pixels = readback.read()?;
+        let center = ((extent[1] / 2 * extent[0] + extent[0] / 2) * 4) as usize;
+        samples.push(pixels[center]);
+    }
+    assert!(
+        samples[0] > 160,
+        "head-on receiver must be lit: {samples:?}"
+    );
+    assert!(
+        samples[0].abs_diff(samples[1]) <= 3,
+        "facing angle must not scale the distance-fed ramp: {samples:?}"
+    );
+    assert!(
+        samples[2] + 40 < samples[0],
+        "a back-facing receiver must stay in its shade color: {samples:?}"
+    );
+
+    let eye = *joints
+        .iter()
+        .find(|&&id| room.world.component_label(id) == Some("J_Adj_L_FaceEye"))
+        .unwrap();
+    let before = room
+        .world
+        .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(eye)
+        .unwrap()
+        .transform
+        .rotation;
+    for _ in 0..4 {
+        room.update(0.25, &crate::engine::user_input::InputState::default());
+    }
+    assert_ne!(
+        before,
+        room.world
+            .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(eye)
+            .unwrap()
+            .transform
+            .rotation,
+        "idle gaze must animate the real eye joint without player tracking"
+    );
     Ok(())
 }

@@ -5,6 +5,14 @@ User verified Anime rim lighting and two-step shading in winit and OpenXR on
 2026-09-08. Detailed five-control interaction checks and GPU allocation/frame-cost
 measurements remain open. Phases 2–3 are planned.
 
+2026-10-24 follow-up: Anime direct lighting now uses a fixed 90-degree facing
+gate (`N·L > 0`). Admitted lights feed their full distance/cone-attenuated
+intensity into the shade/lit ramp without cosine weighting. The experimental
+normal-blend input/slider has been removed. The
+[room lighting experiment](youtuber-room-lighting-diagnostic.md) retains raw
+distance and Lambert reference views, alongside the new Anime behavior. An
+angular gate ramp remains a follow-up.
+
 ## Implemented slice and manual verification (2026-09-08)
 
 User verification: Anime's rim lighting and two-step shading are visible through

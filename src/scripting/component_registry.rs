@@ -3096,6 +3096,11 @@ fn apply_call(
             "rim_color" => component.with_rim_color(arg_f32_arr::<3>(args, 0)?),
             "rim_strength" => component.with_rim_strength(arg_f32(args, 0)?),
             "rim_power" => component.with_rim_power(arg_f32(args, 0)?),
+            "lighting_debug" => component.with_lighting_debug(
+                crate::engine::ecs::component::anime_shading::AnimeLightingDebug::parse(arg_str(
+                    args, 0,
+                )?)?,
+            ),
             _ => return Err(format!("AnimeShading: unknown builder '{method}'")),
         };
         return Ok(());

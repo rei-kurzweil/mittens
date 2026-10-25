@@ -101,9 +101,15 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/examples/youtuber-room.mms"
         ));
-        let (mut session, _) =
-            RuntimeSpecSession::start(source, &mut world, &mut rx, Some(&mut assets), &mut queue)
-                .unwrap();
+        let (mut session, _) = RuntimeSpecSession::start_at_path(
+            source,
+            "examples/youtuber-room.mms",
+            &mut world,
+            &mut rx,
+            Some(&mut assets),
+            &mut queue,
+        )
+        .unwrap();
         let definition = world
             .all_components()
             .find(|&id| {
@@ -149,8 +155,44 @@ mod tests {
         );
         assert!(visuals.materials.instance(instance).unwrap().revision > revision);
         assert_eq!(visuals.materials.instance_count(), 1);
+        let probe = world
+            .all_components()
+            .find(|&id| world.component_label(id) == Some("lighting_probe"))
+            .unwrap();
+        for mode in ["diffuse", "anime", "distance"] {
+            let button = world
+                .all_components()
+                .find(|&id| world.component_label(id) == Some(format!("lighting_{mode}").as_str()))
+                .unwrap();
+            rx.dispatch_event_handlers(
+                &mut world,
+                &Signal::event(
+                    button,
+                    EventSignal::Click {
+                        raycaster: button,
+                        renderable: button,
+                        hit_point: [0.0; 3],
+                        screen_pos_px: None,
+                    },
+                ),
+            );
+            let output =
+                session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+            assert!(output.errors.is_empty(), "{:?}", output.errors);
+            assert_eq!(
+                world
+                    .get_component_by_id_as::<crate::engine::ecs::component::ShadingComponent>(
+                        probe
+                    )
+                    .unwrap()
+                    .lighting_debug
+                    .name(),
+                mode
+            );
+        }
         let definition_id = visuals.materials.source_definition(definition).unwrap();
         let registered = visuals.materials.definition(definition_id).unwrap();
+        let prepared = registered.custom.as_ref().unwrap().clone();
         assert!(registered.supports_emission_extraction);
         assert_eq!(
             registered.family,
@@ -169,6 +211,21 @@ mod tests {
             visuals.materials.instance_count(),
             0,
             "a late update cannot resurrect a removed definition"
+        );
+        // Let the compiler worker finish before the test process tears down
+        // shaderc/glslang globals. The detached resource must remain valid.
+        for _ in 0..200 {
+            if prepared.compiled.get().is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(
+            prepared
+                .compiled
+                .get()
+                .expect("material compilation must complete")
+                .is_ok()
         );
     }
 }

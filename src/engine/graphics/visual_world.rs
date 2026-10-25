@@ -97,7 +97,7 @@ pub struct DrawBatch {
 pub struct AnimeShadingParams {
     /// RGB shade tint, followed by shade strength.
     pub shade_color_strength: [f32; 4],
-    /// RGB rim tint; W is reserved.
+    /// RGB rim tint; W selects Anime lighting diagnostics (0=normal, 1=distance, 2=diffuse).
     pub rim_color: [f32; 4],
     /// Shade threshold, lit threshold, rim strength, and rim power.
     pub controls: [f32; 4],

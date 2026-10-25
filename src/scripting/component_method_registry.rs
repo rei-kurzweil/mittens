@@ -61,6 +61,8 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
                     | "set_rim_strength"
                     | "get_rim_power"
                     | "set_rim_power"
+                    | "get_lighting_debug"
+                    | "set_lighting_debug"
             ))
         || (matches!(component_type, "Toggle" | "toggle") && method == "sync_value")
         || (matches!(component_type, "Slider" | "slider")
@@ -480,7 +482,9 @@ pub(crate) fn invoke_component_method(
             | "get_rim_strength"
             | "set_rim_strength"
             | "get_rim_power"
-            | "set_rim_power"),
+            | "set_rim_power"
+            | "get_lighting_debug"
+            | "set_lighting_debug"),
         ) => {
             // Runtime GLTF projections consume their authored source instance;
             // live reads/edits address that same retained source, not a stale copy.
@@ -493,6 +497,22 @@ pub(crate) fn invoke_component_method(
                 .ok_or_else(|| format!("{method}(): not a ShadingComponent"))?;
             if shading.model != ShadingModel::Anime {
                 return Err(format!("{method}(): requires the Anime shading model"));
+            }
+            if method == "get_lighting_debug" {
+                if !args.is_empty() {
+                    return Err(format!("{method}(): expected no arguments"));
+                }
+                return Ok(Value::String(shading.lighting_debug.name().into()));
+            }
+            if method == "set_lighting_debug" {
+                let [Value::String(value)] = args else {
+                    return Err(format!("{method}(): expected one string"));
+                };
+                let mode =
+                    crate::engine::ecs::component::anime_shading::AnimeLightingDebug::parse(value)?;
+                *shading = shading.with_lighting_debug(mode);
+                emit_intent(IntentValue::RegisterAnimeShading { component_id: id });
+                return Ok(Value::Null);
             }
             if method.starts_with("get_") {
                 if !args.is_empty() {
@@ -1373,6 +1393,52 @@ mod tests {
             0.4,
             "lowering lit threshold also lowers shade threshold"
         );
+        for (mode, packed) in [("distance", 1.0), ("diffuse", 2.0), ("anime", 0.0)] {
+            let mut intents = Vec::new();
+            invoke_component_method(
+                &mut world,
+                anime,
+                "Shading",
+                "set_lighting_debug",
+                &[Value::String(mode.into())],
+                |intent| intents.push(intent),
+            )
+            .unwrap();
+            assert_eq!(
+                invoke_component_method(
+                    &mut world,
+                    anime,
+                    "Shading",
+                    "get_lighting_debug",
+                    &[],
+                    |_| {}
+                )
+                .unwrap(),
+                Value::String(mode.into())
+            );
+            assert_eq!(
+                world
+                    .get_component_by_id_as::<ShadingComponent>(anime)
+                    .unwrap()
+                    .gpu_params()
+                    .rim_color[3],
+                packed
+            );
+            assert!(
+                matches!(intents.as_slice(), [IntentValue::RegisterAnimeShading { component_id }] if *component_id == anime)
+            );
+        }
+        assert!(
+            invoke_component_method(
+                &mut world,
+                anime,
+                "Shading",
+                "set_lighting_debug",
+                &[Value::String("unknown".into())],
+                |_| panic!("invalid mode emitted intent")
+            )
+            .is_err()
+        );
         for method in [
             "get_shade_strength",
             "set_shade_strength",
@@ -1384,6 +1450,8 @@ mod tests {
             "set_rim_strength",
             "get_rim_power",
             "set_rim_power",
+            "get_lighting_debug",
+            "set_lighting_debug",
         ] {
             let error = invoke_component_method(
                 &mut world,

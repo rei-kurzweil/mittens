@@ -1193,6 +1193,18 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 "AnimeShading" | "Shading" => {
                     if canonical == "Shading" {
                         no_arg_constructors(component, &["anime", "toon"]);
+                        host_method(
+                            component,
+                            canonical,
+                            "get_lighting_debug",
+                            method(vec![], mms::ValueType::String),
+                        );
+                        host_method(
+                            component,
+                            canonical,
+                            "set_lighting_debug",
+                            method(vec![mms::ValueType::String], mms::ValueType::Null),
+                        );
                         for (getter, setter) in [
                             ("get_shade_strength", "set_shade_strength"),
                             ("get_shade_threshold", "set_shade_threshold"),
@@ -1222,6 +1234,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         "rim_color",
                         "rim_strength",
                         "rim_power",
+                        "lighting_debug",
                     ] {
                         if canonical == "Shading" {
                             component.builder_call(method, any(1));
