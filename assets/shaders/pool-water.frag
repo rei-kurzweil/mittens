@@ -34,10 +34,15 @@ layout(set = 0, binding = 1, std430) readonly buffer LightsSSBO {
 } g_lights;
 
 
+// PlanarReflectiveMeshV1 supplies the current viewer/eye capture here.
+layout(set=1,binding=1) uniform sampler2D planar_reflection;
+
 layout(set=1,binding=0,std140) uniform WaterInputs {
     float time_seconds;
     float wave_scale;
     float wave_strength;
+    float reflection_strength;
+    float reflection_distortion;
     float specular_strength;
     float shininess;
 } water;
@@ -86,6 +91,19 @@ void main() {
         }
     }
     float fresnel=0.02+0.98*pow(1.0-max(dot(N,eye),0.0),5.0);
-    vec3 color=vec3(0.12,0.62,0.73)*v_color.rgb+reflection*(0.35+fresnel);
-    f_color=vec4(color,v_color.a*(0.7+0.3*fresnel));
+    // The capture faces local +Z with right=-local X and up=local Y.
+    // Surface V already runs top-to-bottom: flipping it swaps the pool ends.
+    // Ripple normals perturb the lookup while the capture plane stays flat.
+    vec2 reflection_uv=vec2(1.0-v_uv.x,v_uv.y)
+        +vec2(slope.x,-slope.y)*water.reflection_distortion;
+    vec3 reflected=texture(planar_reflection,clamp(reflection_uv,vec2(0.001),vec2(0.999))).rgb;
+    float reflectance=clamp(water.reflection_strength*fresnel,0.0,1.0);
+    float tint_alpha=clamp(v_color.a,0.0,1.0);
+    float alpha=reflectance+(1.0-reflectance)*tint_alpha;
+    vec3 tint=vec3(0.12,0.62,0.73)*v_color.rgb;
+    // Straight-alpha output: preserve the reflected radiance while leaving
+    // the unreflected fraction translucent, rather than fading reflection twice.
+    vec3 premultiplied=reflected*reflectance+tint*tint_alpha*(1.0-reflectance)
+        +reflection*(0.35+fresnel);
+    f_color=vec4(premultiplied/max(alpha,0.00001),alpha);
 }

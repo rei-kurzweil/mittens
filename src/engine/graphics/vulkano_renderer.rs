@@ -2776,6 +2776,9 @@ mod vulkano_backend {
             &mut self,
             visual_world: &mut VisualWorld,
         ) -> Result<(), Box<dyn std::error::Error>> {
+            if let Some(future) = self.submission_future.as_mut() {
+                future.cleanup_finished();
+            }
             self.apply_pending_runtime_texture_updates();
 
             let color_format = self.scene_color_format();
@@ -4472,6 +4475,8 @@ mod vulkano_backend {
             Arc<vulkano::command_buffer::PrimaryAutoCommandBuffer>,
             Box<dyn std::error::Error>,
         > {
+            // Captures can publish replacement image views earlier this frame.
+            self.apply_pending_runtime_texture_updates();
             self.sync_material_instances(visual_world);
             Self::retarget_mirror_surface_textures_for_render_view(visual_world, &render_view.kind);
 

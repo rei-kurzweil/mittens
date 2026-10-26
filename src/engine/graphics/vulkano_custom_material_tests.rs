@@ -581,6 +581,31 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
         &renderer.textures[&image_handle].view
     ));
     assert!(Arc::ptr_eq(sampler, &renderer.sampler_nearest));
+    // Runtime captures publish a new image view under the same texture handle.
+    // An unchanged numeric revision must still bind the replacement view.
+    let replacement = TextureHandle(90_002);
+    renderer.upload_texture_rgba8(replacement, &[30, 180, 90, 255], 1, 1)?;
+    let replacement_view = renderer.textures[&replacement].view.clone();
+    renderer.textures.get_mut(&image_handle).unwrap().view = replacement_view.clone();
+    let replaced = renderer
+        .custom_material_set(
+            other_id,
+            other_material,
+            image_handle,
+            TextureFiltering::Nearest,
+        )?
+        .unwrap();
+    assert!(!Arc::ptr_eq(&textured, &replaced));
+    let replacement_resources = replaced.resources();
+    let Some(vulkano::descriptor_set::DescriptorBindingResources::ImageViewSampler(images)) =
+        replacement_resources.binding(1)
+    else {
+        panic!("replacement image descriptor");
+    };
+    assert!(Arc::ptr_eq(
+        &images[0].as_ref().unwrap().0.image_view,
+        &replacement_view
+    ));
     Ok(())
 }
 
@@ -890,19 +915,19 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
             use crate::engine::ecs::component::TransformComponent;
             use crate::utils::math::{mat4_inverse, quat_mul, quat_rotation_y};
             let (position, target) = if preview == "pool" {
-                ([0.0, 1.8, 3.6], [0.0, 1.7, 8.8])
+                ([0.0, 2.1, 4.75], [0.0, 2.6, 11.8])
             } else if preview == "ladder" {
-                ([0.85, 1.05, 4.45], [0.0, 0.15, 5.55])
+                ([0.85, 1.05, 4.95], [0.0, 0.15, 6.05])
             } else if preview == "slide" {
-                ([1.65, 2.3, 9.8], [0.0, 1.4, 10.82])
+                ([2.4, 4.7, 10.5], [0.0, 3.6, 13.82])
             } else if preview == "slide_inside" {
                 // Follow the centreline just inside the lower mouth.
                 let point = |t: f32| {
                     let angle = std::f32::consts::TAU * 2.0 * t;
                     [
-                        0.72 * angle.cos(),
-                        0.04 + 2.6 * t,
-                        4.57 + 6.25 + 0.72 * angle.sin(),
+                        -0.70 + 1.62 * angle.cos(),
+                        0.62 + 4.5696 * t,
+                        4.57 + 9.25 + 1.62 * angle.sin(),
                     ]
                 };
                 (point(0.05), point(0.08))
@@ -920,18 +945,102 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
             room.visuals.camera_view_for(CameraTarget::Window)
         };
         let proj = room.visuals.camera_proj_for(CameraTarget::Window);
+        let matrix = crate::utils::math::mat4_inverse(view).unwrap();
         room.visuals.set_camera_for_target(
             CameraTarget::Xr,
             (0..2)
                 .map(|_| crate::engine::graphics::CameraData {
                     view,
                     proj,
-                    transform: Default::default(),
+                    transform: crate::engine::graphics::primitives::Transform {
+                        model: matrix,
+                        matrix_world: matrix,
+                        translation: [matrix[3][0], matrix[3][1], matrix[3][2]],
+                        ..Default::default()
+                    },
                 })
                 .collect(),
         );
+        // Captures must follow the preview's actual eye cameras, just as
+        // MirrorSystem runs after production XR camera publication.
+        room.systems
+            .mirror
+            .refresh_captures(&mut room.world, &mut room.visuals);
+        room.systems.prepare_render(
+            &mut room.world,
+            &mut room.visuals,
+            &mut room.render_assets,
+            &mut SceneUploader {
+                renderer: &mut renderer,
+                next_mesh: &mut next_mesh,
+                next_texture: &mut next_texture,
+            },
+            &mut room.command_queue,
+        );
+        let captures_before = renderer.perf_counters().mirror_captures;
+        renderer.submit_xr_mirror_captures(&mut room.visuals)?;
+        assert_eq!(
+            renderer.perf_counters().mirror_captures - captures_before,
+            2,
+            "one planar pool needs two eye captures, not a cubemap"
+        );
+        let water = room
+            .visuals
+            .instances()
+            .iter()
+            .find(|instance| {
+                room.world.component_label(instance.component) == Some("pool_water_surface")
+            })
+            .unwrap();
+        let definition = room
+            .visuals
+            .materials
+            .definition(
+                room.visuals
+                    .materials
+                    .instance(water.material_instance.unwrap())
+                    .unwrap()
+                    .definition,
+            )
+            .unwrap();
+        assert!(
+            room.visuals
+                .materials
+                .base(definition.base)
+                .unwrap()
+                .planar_reflection
+        );
+        assert_eq!(
+            water.renderable.material, definition.static_program,
+            "reflection capture must preserve the custom water shader"
+        );
         for eye in 0..2 {
             renderer.submit_xr_eye_to_view(&mut room.visuals, eye, extent, 2, eyes[eye].clone())?;
+            if preview == "pool" {
+                let mirror = &room.visuals.mirrors()[0];
+                assert!((mirror.plane_origin[1] + 0.12).abs() < 0.0001);
+                assert!((mirror.plane_normal[1] - 1.0).abs() < 0.0001);
+                assert!((mirror.aspect_ratio - 3.5 / 9.0).abs() < 0.0001);
+                let key = room
+                    .visuals
+                    .mirror_texture_key_for_view(
+                        mirror.mirror_component,
+                        crate::engine::graphics::visual_world::MirrorViewerFamily::Stereoscopic,
+                        eye,
+                    )
+                    .unwrap();
+                let texture = room.visuals.runtime_texture_handle(key).unwrap();
+                let water = room.visuals.instance(mirror.source_instance).unwrap();
+                assert_eq!(water.texture, Some(texture));
+                assert!(
+                    renderer.material_instances[water.material_instance.unwrap()]
+                        .custom_snapshots
+                        .iter()
+                        .any(|snapshot| snapshot.texture == texture
+                            && Arc::ptr_eq(&snapshot.view, &renderer.textures[&texture].view)),
+                    "each eye must sample its current reflection image view"
+                );
+            }
         }
         let size = (extent[0] * extent[1] * 4) as usize;
         let readback = Buffer::new_slice::<u8>(
@@ -990,6 +1099,174 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
             image::ColorType::Rgba8,
         )?;
     }
+    // A red board is toward the pool ladder; a blue board is behind the
+    // viewer at the slide end. Swapping texture V reflects the wrong board.
+    let marker_mesh = MeshHandle(19_000);
+    renderer.upload_mesh(
+        marker_mesh,
+        room.render_assets
+            .cpu_mesh(crate::engine::graphics::primitives::CpuMeshHandle::CUBE)
+            .unwrap(),
+    )?;
+    for (z, color) in [(6.5, [1.0, 0.0, 0.0, 1.0]), (14.5, [0.0, 0.0, 1.0, 1.0])] {
+        let component = room
+            .world
+            .add_component(crate::engine::ecs::component::TransformComponent::new());
+        let mut model = crate::utils::math::mat4_identity();
+        model[0][0] = 2.0;
+        model[1][1] = 1.2;
+        model[2][2] = 0.05;
+        model[3] = [0.0, 2.0, z, 1.0];
+        room.visuals.register(
+            component,
+            crate::engine::graphics::primitives::GpuRenderable::new(
+                marker_mesh,
+                crate::engine::graphics::MaterialHandle::UNLIT_MESH,
+            ),
+            crate::engine::graphics::primitives::Transform {
+                model,
+                matrix_world: model,
+                ..Default::default()
+            },
+            color,
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            1.0,
+        );
+    }
+    let water_id = room
+        .visuals
+        .instances()
+        .iter()
+        .find(|instance| {
+            room.world.component_label(instance.component) == Some("pool_water_surface")
+        })
+        .unwrap()
+        .material_instance
+        .unwrap();
+    let record = room.visuals.materials.instance(water_id).unwrap().clone();
+    let schema = room
+        .visuals
+        .materials
+        .definition(record.definition)
+        .unwrap()
+        .parameter_schema
+        .clone();
+    let mut values = record.values.to_vec();
+    // Isolate orientation from Fresnel/transmission and animated distortion.
+    values[schema.field("reflection_strength").unwrap().slot] = 100.0;
+    values[schema.field("wave_strength").unwrap().slot] = 0.0;
+    values[schema.field("specular_strength").unwrap().slot] = 0.0;
+    room.visuals
+        .materials
+        .upsert_source(record.source, record.definition, values);
+    for (label, x, target_z, expected_red) in
+        [("ladder", 0.0, 7.8, true), ("slide", 0.25, 13.3, false)]
+    {
+        use crate::engine::ecs::component::TransformComponent;
+        use crate::utils::math::{mat4_inverse, quat_mul, quat_rotation_y};
+        let position = [x, 1.3, 10.57];
+        let target = [x, -0.12, target_z];
+        let rotation = TransformComponent::look_at_world_rotation(position, target).unwrap();
+        let camera = TransformComponent::new()
+            .with_position(position[0], position[1], position[2])
+            .with_rotation_quat(quat_mul(rotation, quat_rotation_y(std::f32::consts::PI)));
+        let matrix = camera.transform.model;
+        let view = mat4_inverse(matrix).unwrap();
+        let proj = room.visuals.camera_proj_for(CameraTarget::Window);
+        room.visuals.set_xr_camera(
+            (0..2)
+                .map(|_| crate::engine::graphics::CameraData {
+                    view,
+                    proj,
+                    transform: crate::engine::graphics::primitives::Transform {
+                        model: matrix,
+                        matrix_world: matrix,
+                        translation: position,
+                        ..Default::default()
+                    },
+                })
+                .collect(),
+        );
+        room.systems
+            .mirror
+            .refresh_captures(&mut room.world, &mut room.visuals);
+        renderer.submit_xr_mirror_captures(&mut room.visuals)?;
+        for eye in 0..2 {
+            renderer.submit_xr_eye_to_view(&mut room.visuals, eye, extent, 2, eyes[eye].clone())?;
+        }
+        let size = (extent[0] * extent[1] * 4) as usize;
+        let readback = Buffer::new_slice::<u8>(
+            context.memory_allocator().clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::TRANSFER_DST,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                    | MemoryTypeFilter::HOST_RANDOM_ACCESS,
+                ..Default::default()
+            },
+            (size * 2) as u64,
+        )?;
+        let mut commands = AutoCommandBufferBuilder::primary(
+            renderer.command_buffer_allocator.clone(),
+            context.graphics_queue().queue_family_index(),
+            CommandBufferUsage::OneTimeSubmit,
+        )?;
+        commands.copy_image_to_buffer(CopyImageToBufferInfo::image_buffer(
+            output.clone(),
+            readback.clone(),
+        ))?;
+        let done = renderer
+            .submission_future
+            .take()
+            .unwrap()
+            .then_execute(context.graphics_queue().clone(), commands.build()?)?
+            .then_signal_fence_and_flush()?;
+        done.wait(None)?;
+        renderer.submission_future = Some(done.boxed());
+        let pixels = readback.read()?;
+        assert_eq!(
+            &pixels[..size],
+            &pixels[size..],
+            "matching eye cameras must use the same material revision"
+        );
+        let mut rgba = pixels[..size].to_vec();
+        for pixel in rgba.chunks_exact_mut(4) {
+            pixel.swap(0, 2);
+        }
+
+        let mut red = 0usize;
+        let mut blue = 0usize;
+        for pixel in rgba[(extent[0] * extent[1] / 2 * 4) as usize..].chunks_exact(4) {
+            red += usize::from(pixel[0] > 160 && pixel[1] < 60 && pixel[2] < 60);
+            blue += usize::from(pixel[2] > 160 && pixel[1] < 60 && pixel[0] < 60);
+        }
+        image::save_buffer(
+            format!("/tmp/youtuber-water-reflection-{label}.png"),
+            &rgba,
+            extent[0],
+            extent[1],
+            image::ColorType::Rgba8,
+        )?;
+        let (front, behind) = if expected_red {
+            (red, blue)
+        } else {
+            (blue, red)
+        };
+        assert!(
+            front > 100 && behind < front / 8,
+            "water must reflect the landmark ahead, not the one behind: view={label} red={red} blue={blue}"
+        );
+    }
+
     // At a fixed distance, a front-facing receiver must get the same Anime
     // contribution at head-on and grazing angles, while back-facing gets none.
     // Use the same real material/light-buffer path, with a receiver far outside

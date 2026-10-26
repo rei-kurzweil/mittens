@@ -700,6 +700,124 @@ mod tests {
     }
 
     #[test]
+    fn planar_material_mirror_requests_preserve_program_and_retire_with_binding() {
+        let mut world = World::default();
+        let mut visuals = VisualWorld::default();
+        let mut systems = SystemWorld::default();
+        configure_test_window_camera(&mut visuals);
+        let root = world.add_component(TransformComponent::new());
+        let surface = world.add_component(RenderableComponent::square());
+        world.add_child(root, surface).unwrap();
+        let handle = register_test_instance(&mut visuals, surface);
+        world
+            .get_component_by_id_as_mut::<RenderableComponent>(surface)
+            .unwrap()
+            .handle = Some(handle);
+        let definition = visuals.materials.register_custom_definition(
+            root,
+            std::sync::Arc::new(
+                crate::engine::graphics::custom_material::CustomMaterialDefinition {
+                    base: crate::engine::graphics::materials::MaterialBaseKind::PlanarReflective,
+                    fields: vec!["gain".into()],
+                    fragment_uri: "test-planar.frag".into(),
+                    compiled: std::sync::OnceLock::new(),
+                },
+            ),
+        );
+        let program = visuals
+            .materials
+            .definition(definition)
+            .unwrap()
+            .static_program;
+        let material = visuals.materials.upsert_source(root, definition, vec![1.0]);
+        visuals.update_material(handle, program);
+        visuals.bind_material_instance(handle, Some(material));
+        systems.mirror.refresh_captures(&mut world, &mut visuals);
+        assert_eq!(visuals.mirrors().len(), 1);
+        assert_eq!(visuals.mirrors()[0].source_instance, handle);
+        assert_eq!(visuals.mirrors()[0].mirror_component, surface);
+        assert_eq!(visuals.mirrors()[0].resolution_scale, 0.25);
+        let capture = &visuals.mirrors()[0].captures[0];
+        let clip_depth = |world_z: f32| {
+            let view_z = capture.camera.view[2][2] * world_z + capture.camera.view[3][2];
+            capture.camera.proj[2][2] * view_z + capture.camera.proj[3][2]
+        };
+        assert!(
+            clip_depth(-0.05) < 0.0,
+            "geometry behind the reflection plane must be clipped"
+        );
+        assert!(
+            clip_depth(0.05) > 0.0,
+            "geometry on the viewer side must remain visible"
+        );
+        assert_eq!(
+            visuals.instance(handle).unwrap().renderable.material,
+            program
+        );
+        assert_eq!(
+            visuals.instance(handle).unwrap().material_instance,
+            Some(material)
+        );
+        assert!(world.children_of(surface).iter().all(|&child| {
+            world
+                .get_component_by_id_as::<MirrorComponent>(child)
+                .is_none()
+                && world
+                    .get_component_by_id_as::<TextureComponent>(child)
+                    .is_none()
+        }));
+        // Moving tracked eyes must move their reflected positions by exactly
+        // the same lateral amount, preserving stereo separation.
+        for (x, y, z) in [(0.3, 0.7, 4.0), (1.3, 1.2, 6.0)] {
+            let proj = visuals.camera_proj_for(crate::engine::graphics::CameraTarget::Window);
+            visuals.set_xr_camera(
+                (0..2)
+                    .map(|eye| {
+                        let mut matrix = crate::utils::math::mat4_identity();
+                        matrix[3] = [x + eye as f32 * 0.064, y, z, 1.0];
+                        crate::engine::graphics::CameraData {
+                            view: crate::utils::math::mat4_inverse(matrix).unwrap(),
+                            proj,
+                            transform: crate::engine::graphics::primitives::Transform {
+                                model: matrix,
+                                matrix_world: matrix,
+                                translation: [matrix[3][0], y, z],
+                                ..Default::default()
+                            },
+                        }
+                    })
+                    .collect(),
+            );
+            systems.mirror.refresh_captures(&mut world, &mut visuals);
+            let eyes: Vec<_> = visuals.mirrors()[0]
+                .captures
+                .iter()
+                .filter(|capture| {
+                    capture.family
+                        == crate::engine::graphics::visual_world::MirrorViewerFamily::Stereoscopic
+                })
+                .collect();
+            assert_eq!(eyes.len(), 2);
+            for (eye, capture) in eyes.iter().enumerate() {
+                let reflected = capture.camera.transform.matrix_world[3];
+                assert!((reflected[0] - (x + eye as f32 * 0.064)).abs() < 0.0001);
+                assert!((reflected[1] - y).abs() < 0.0001);
+                assert!((reflected[2] + z).abs() < 0.0001);
+            }
+        }
+        let key = visuals.mirrors()[0].captures[0].target_key.clone();
+        visuals.set_mirror_captures_enabled(false);
+        systems.mirror.refresh_captures(&mut world, &mut visuals);
+        assert_eq!(visuals.mirrors()[0].captures[0].target_key, key);
+        visuals.bind_material_instance(handle, None);
+        systems.mirror.refresh_captures(&mut world, &mut visuals);
+        assert!(
+            visuals.mirrors().is_empty(),
+            "detaching the reflective material must stop its captures"
+        );
+    }
+
+    #[test]
     fn mirror_texture_registration_attaches_runtime_texture_for_new_child() {
         let mut world = World::default();
         let mut visuals = VisualWorld::default();
@@ -2832,6 +2950,12 @@ impl SystemWorld {
                 .flush_pending(world, visuals, render_assets, uploader, queue);
         if flushed_renderables {
             self.clipping.resync_after_renderable_flush(world, visuals);
+            // Material-base capture requests need the just-published surface
+            // handles before allocating this frame's per-view runtime textures.
+            self.mirror.refresh_captures(world, visuals);
+            for texture in self.mirror.take_pending_texture_registrations() {
+                self.register_texture(world, visuals, texture);
+            }
         }
 
         self.render_to_texture.flush_pending(visuals, uploader);

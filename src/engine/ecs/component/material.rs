@@ -58,6 +58,9 @@ impl Component for MaterialBaseComponent {
         use super::ce_helpers::*;
         match self.0 {
             MaterialBaseKind::Surface => ce("MaterialBase"),
+            MaterialBaseKind::PlanarReflective => {
+                ce("MaterialBase").with_call("planar_reflective", vec![])
+            }
             MaterialBaseKind::ExtractedEmissive => {
                 ce("MaterialBase").with_call("extracted_emissive", vec![])
             }

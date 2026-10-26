@@ -16,6 +16,8 @@ pub enum MaterialBaseKind {
     Surface,
     /// Opaque static meshes whose fragment output is also their emitted radiance.
     ExtractedEmissive,
+    /// Static planar surfaces supplied with a per-view reflection capture.
+    PlanarReflective,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,6 +106,7 @@ pub struct MaterialBase {
     pub geometry_interface: MaterialGeometryInterface,
     pub instance_interface: MaterialInstanceInterface,
     pub available_inputs: StandardMaterialInputs,
+    pub planar_reflection: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -139,6 +142,7 @@ pub struct MaterialRegistry {
     next_custom_program: u32,
     pub surface_base: MaterialBaseId,
     pub extracted_emissive_base: MaterialBaseId,
+    pub planar_reflective_base: MaterialBaseId,
     pub anime_definition: MaterialDefinitionId,
     pub toon_definition: MaterialDefinitionId,
 }
@@ -148,6 +152,7 @@ impl Default for MaterialRegistry {
         let mut bases = SlotMap::with_key();
         let surface_base = bases.insert(MaterialBase {
             name: "MeshSurfaceV1",
+            planar_reflection: false,
             geometry_interface: MaterialGeometryInterface::MeshSurfaceV1,
             instance_interface: MaterialInstanceInterface::FixedMeshV1,
             available_inputs: StandardMaterialInputs {
@@ -158,6 +163,11 @@ impl Default for MaterialRegistry {
         });
         let extracted_emissive_base = bases.insert(MaterialBase {
             name: "ExtractedEmissiveMeshV1",
+            ..bases[surface_base].clone()
+        });
+        let planar_reflective_base = bases.insert(MaterialBase {
+            name: "PlanarReflectiveMeshV1",
+            planar_reflection: true,
             ..bases[surface_base].clone()
         });
         let mut definitions = SlotMap::with_key();
@@ -202,6 +212,7 @@ impl Default for MaterialRegistry {
             next_custom_program: 1024,
             surface_base,
             extracted_emissive_base,
+            planar_reflective_base,
             anime_definition,
             toon_definition,
         }
@@ -331,6 +342,7 @@ impl MaterialRegistry {
             base: match custom.base {
                 MaterialBaseKind::Surface => self.surface_base,
                 MaterialBaseKind::ExtractedEmissive => self.extracted_emissive_base,
+                MaterialBaseKind::PlanarReflective => self.planar_reflective_base,
             },
             custom: Some(custom),
             name: "CustomF32",

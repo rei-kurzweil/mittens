@@ -438,6 +438,8 @@ mod tests {
                     "time_seconds",
                     "wave_scale",
                     "wave_strength",
+                    "reflection_strength",
+                    "reflection_distortion",
                     "specular_strength",
                     "shininess",
                 ],

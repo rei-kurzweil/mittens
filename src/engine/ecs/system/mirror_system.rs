@@ -32,6 +32,18 @@ impl MirrorSystem {
         std::mem::take(&mut self.pending_texture_registrations)
     }
 
+    fn uses_planar_material(world: &World, visuals: &VisualWorld, surface: ComponentId) -> bool {
+        world
+            .get_component_by_id_as::<RenderableComponent>(surface)
+            .and_then(|renderable| renderable.handle)
+            .and_then(|handle| visuals.instance(handle))
+            .and_then(|instance| instance.material_instance)
+            .and_then(|id| visuals.materials.instance(id))
+            .and_then(|instance| visuals.materials.definition(instance.definition))
+            .and_then(|definition| visuals.materials.base(definition.base))
+            .is_some_and(|base| base.planar_reflection)
+    }
+
     fn normalize(v: [f32; 3]) -> Option<[f32; 3]> {
         let len2 = math::vec3_dot(v, v);
         if len2 <= 1e-12 {
@@ -233,17 +245,21 @@ impl MirrorSystem {
     }
 }
 
-impl System for MirrorSystem {
-    fn tick(
+impl MirrorSystem {
+    /// Reconcile surface handles and capture requests after render preparation.
+    /// This does not advance simulation or submit reflection rendering work.
+    pub fn refresh_captures(&mut self, world: &mut World, visuals: &mut VisualWorld) {
+        self.rebuild_capture_requests(world, visuals, false);
+    }
+
+    fn rebuild_capture_requests(
         &mut self,
         world: &mut World,
         visuals: &mut VisualWorld,
-        input: &InputState,
-        _dt_sec: f32,
+        force_debug_dump: bool,
     ) {
         visuals.clear_mirrors();
         let mut pending_texture_registrations = HashSet::new();
-        let force_debug_dump = input.mouse_pressed.contains(&MouseButton::Left);
 
         let mirror_cids: Vec<ComponentId> = world
             .all_components()
@@ -251,6 +267,12 @@ impl System for MirrorSystem {
                 world
                     .get_component_by_id_as::<MirrorComponent>(id)
                     .is_some()
+                    || (Self::uses_planar_material(world, visuals, id)
+                        && !world.children_of(id).iter().any(|&child| {
+                            world
+                                .get_component_by_id_as::<MirrorComponent>(child)
+                                .is_some()
+                        }))
             })
             .collect();
 
@@ -259,7 +281,7 @@ impl System for MirrorSystem {
                 world
                     .get_component_by_id_as::<MirrorComponent>(cid)
                     .map(|m| m.quality)
-                    .unwrap_or(512)
+                    .unwrap_or(256)
             });
 
             // 1. Find transform (nearest ancestor).
@@ -284,18 +306,23 @@ impl System for MirrorSystem {
             let world_matrix = transform.transform.matrix_world;
 
             // 2. Find parent renderable (the surface that should be reflective).
-            let mut renderable_cid = None;
-            if let Some(p) = world.parent_of(cid) {
-                if world
-                    .get_component_by_id_as::<RenderableComponent>(p)
-                    .is_some()
-                {
-                    renderable_cid = Some(p);
+            let mut renderable_cid = world
+                .get_component_by_id_as::<RenderableComponent>(cid)
+                .map(|_| cid);
+            if renderable_cid.is_none() {
+                if let Some(p) = world.parent_of(cid) {
+                    if world
+                        .get_component_by_id_as::<RenderableComponent>(p)
+                        .is_some()
+                    {
+                        renderable_cid = Some(p);
+                    }
                 }
             }
             let Some(renderable_cid) = renderable_cid else {
                 continue;
             };
+            let material_capture = Self::uses_planar_material(world, visuals, renderable_cid);
 
             // 3. Find bounds (for aspect ratio).
             let bounds = world
@@ -447,7 +474,19 @@ impl System for MirrorSystem {
                     reflected_transform.model = ref_world;
                     reflected_transform.translation = ref_pos;
 
-                    let z_near = eye_data.proj[3][2] / eye_data.proj[2][2];
+                    let source_near = eye_data.proj[3][2] / eye_data.proj[2][2];
+                    // The capture basis faces straight through the plane, so
+                    // a conventional near plane can clip everything on its
+                    // hidden side. Otherwise an underwater camera sees the
+                    // basin floor instead of the room's reflection.
+                    let z_near = if material_capture {
+                        source_near.max(
+                            math::vec3_dot(math::vec3_sub(plane_pos, ref_pos), plane_normal)
+                                + MIRROR_CLIP_BIAS_WORLD_UNITS,
+                        )
+                    } else {
+                        source_near
+                    };
                     let z_far = eye_data.proj[3][2] / (1.0 + eye_data.proj[2][2]);
                     let half_w = mirror_world_w * 0.5;
                     let half_h = mirror_world_h * 0.5;
@@ -575,6 +614,13 @@ impl System for MirrorSystem {
                 resolution_scale: quality as f32 / 1024.0, // normalized scale? renderer decides
             });
 
+            // Material-base capture requests retain their program, values and
+            // authored texture topology. The renderer binds this view's capture
+            // at the common image slot immediately before drawing the surface.
+            if material_capture {
+                continue;
+            }
+
             // 6. Override parent renderable's material and texture.
             if let Some(renderable) =
                 world.get_component_by_id_as_mut::<RenderableComponent>(renderable_cid)
@@ -615,6 +661,22 @@ impl System for MirrorSystem {
 
         self.pending_texture_registrations
             .extend(pending_texture_registrations);
+    }
+}
+
+impl System for MirrorSystem {
+    fn tick(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        input: &InputState,
+        _dt_sec: f32,
+    ) {
+        self.rebuild_capture_requests(
+            world,
+            visuals,
+            input.mouse_pressed.contains(&MouseButton::Left),
+        );
     }
 }
 

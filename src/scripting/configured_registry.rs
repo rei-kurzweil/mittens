@@ -230,6 +230,9 @@ fn create_component(
     let id = match component {
         "UV" => world.add_component(crate::engine::ecs::component::UVComponent::new()),
         "MaterialBase" => world.add_component(MaterialBaseComponent(match constructor {
+            Some("planar_reflective") => {
+                crate::engine::graphics::materials::MaterialBaseKind::PlanarReflective
+            }
             Some("extracted_emissive") => {
                 crate::engine::graphics::materials::MaterialBaseKind::ExtractedEmissive
             }
@@ -370,7 +373,7 @@ fn create_component(
         let factory_only = matches!(
             (component, constructor),
             ("MaterialBase" | "MaterialDefinition" | "Material", "new")
-                | ("MaterialBase", "extracted_emissive")
+                | ("MaterialBase", "extracted_emissive" | "planar_reflective")
                 | (
                     "Animation",
                     "playing" | "paused" | "looping" | "length" | "scope"

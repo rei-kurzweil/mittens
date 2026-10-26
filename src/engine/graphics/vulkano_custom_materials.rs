@@ -11,6 +11,7 @@ struct CustomMaterialSnapshot {
     revision: u64,
     texture: TextureHandle,
     filtering: TextureFiltering,
+    view: Arc<ImageView>,
     buffer: Subbuffer<[u8]>,
     set: Arc<DescriptorSet>,
 }
@@ -139,7 +140,10 @@ impl VulkanoState {
             .ok_or("stale custom material instance")?;
         let revision = entry.record.revision;
         if let Some(slot) = entry.custom_snapshots.iter().find(|slot| {
-            slot.revision == revision && slot.texture == texture && slot.filtering == filtering
+            slot.revision == revision
+                && slot.texture == texture
+                && slot.filtering == filtering
+                && Arc::ptr_eq(&slot.view, &view)
         }) {
             self.material_upload_stats.snapshot_reuses += 1;
             return Ok(Some(slot.set.clone()));
@@ -151,6 +155,18 @@ impl VulkanoState {
                 && Arc::strong_count(&slot.set) == 1
         }) {
             slot.buffer.write()?.copy_from_slice(&bytes);
+            if !Arc::ptr_eq(&slot.view, &view) {
+                slot.set = DescriptorSet::new(
+                    self.descriptor_set_allocator.clone(),
+                    self.set_layouts.material.clone(),
+                    [
+                        WriteDescriptorSet::buffer(0, slot.buffer.clone()),
+                        WriteDescriptorSet::image_view_sampler(1, view.clone(), sampler.clone()),
+                    ],
+                    [],
+                )?;
+                slot.view = view.clone();
+            }
             slot.revision = revision;
             self.material_upload_stats.uploads += 1;
             return Ok(Some(slot.set.clone()));
@@ -176,7 +192,7 @@ impl VulkanoState {
             self.set_layouts.material.clone(),
             [
                 WriteDescriptorSet::buffer(0, buffer.clone()),
-                WriteDescriptorSet::image_view_sampler(1, view, sampler),
+                WriteDescriptorSet::image_view_sampler(1, view.clone(), sampler),
             ],
             [],
         )?;
@@ -184,6 +200,7 @@ impl VulkanoState {
             revision,
             texture,
             filtering,
+            view,
             buffer,
             set: set.clone(),
         });

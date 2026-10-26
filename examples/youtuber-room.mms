@@ -1,7 +1,7 @@
 // First named-f32 custom-material scene.
 // cargo run --release -- load examples/youtuber-room.mms
-// Desktop: WASD + mouse. XR: controller locomotion and avatar-free pointers.
-// Facing-gated Anime lighting with rim light, including on the seated Rei(mu) NPC.
+// Desktop: WASD + mouse. XR-only: tracked Rei(mu); both views: avatar-free XR.
+// Facing-gated Anime lighting with rim light on the scene and Rei(mu).
 // Four CombineMesh outputs share one retained material. LED cubes are baked
 // once; only time_seconds changes per frame for their hue and brightness wave.
 
@@ -9,12 +9,13 @@
 // Omitting the desktop camera skips desktop rendering and presentation.
 let desktop_view_enabled = true
 let xr_view_enabled = false
+let xr_player_avatar_enabled = xr_view_enabled && !desktop_view_enabled
 
 // Pool extension dimensions (metres). Toggle water off to inspect the empty basin.
-let pool_room_width = 4.0
-let pool_room_length = 8.0
-let pool_width = 2.0
-let pool_length = 6.0
+let pool_room_width = 8.2
+let pool_room_length = 14.0
+let pool_width = 3.5
+let pool_length = 9.0
 let pool_water_enabled = true
 // Two clear metres between exterior wall faces, including both doorway depths.
 let pool_hallway_start_z = 2.35 + 0.12 / 2.0
@@ -29,6 +30,8 @@ import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
 import { rei_mu_bow_secondary_motion } from "../assets/components/secondary_motion/rei-mu-bow.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
+import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
+import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 
 RendererSettings { window_size(1440, 960) }
 Clock.bpm(120.0)
@@ -82,6 +85,7 @@ on_global("FrameTick", fn(event) {
 fn box(position, size, color) {
     return T.position(position[0], position[1], position[2]).scale(size[0], size[1], size[2]) {
         R.cube() { C.rgba(color[0], color[1], color[2], 1.0) }
+        Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.8) {} }
     }
 }
 
@@ -350,30 +354,33 @@ T {
     }
 }
 
-// A separate NPC, with no avatar-control, XR camera or tracked-hand ownership.
-// Her back leans toward the left wall; low, open legs and bent elbows keep the
-// wrists above the lap. The authored pose is applied once after GLTF import.
-let room_reimu = GLTF.new("assets/models/rei(mu).glb") {
-    name = "room_reimu"
-    room_shading
-    floor_seated_pose()
-    bisket_colliders()
-    bisket_shirt_physics(false)
-    rei_mu_bow_secondary_motion()
-}
-T.position(-2.22, 0.0, 0.0).rotation_euler(0.0, 1.15, 0.0) {
-    name = "room_reimu_anchor"
-    room_reimu
-}
-on(room_reimu, "GLTFInitialized", fn(event) {
-    let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
-    let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
-    if left_eye && right_eye {
-        room_reimu.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
-    } else {
-        print("Room Rei(mu): eye joints were not found for idle gaze")
+// Only XR-only mode replaces the seated NPC with the player avatar.
+if !xr_player_avatar_enabled {
+    // A separate NPC, with no avatar-control, XR camera or tracked-hand ownership.
+    // Her back leans toward the left wall; low, open legs and bent elbows keep the
+    // wrists above the lap. The authored pose is applied once after GLTF import.
+    let room_reimu = GLTF.new("assets/models/rei(mu).glb") {
+        name = "room_reimu"
+        room_shading
+        floor_seated_pose()
+        bisket_colliders()
+        bisket_shirt_physics(false)
+        rei_mu_bow_secondary_motion()
     }
-})
+    T.position(-2.22, 0.0, 0.0).rotation_euler(0.0, 1.15, 0.0) {
+        name = "room_reimu_anchor"
+        room_reimu
+    }
+    on(room_reimu, "GLTFInitialized", fn(event) {
+        let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
+        let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
+        if left_eye && right_eye {
+            room_reimu.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
+        } else {
+            print("Room Rei(mu): eye joints were not found for idle gaze")
+        }
+    })
+}
 
 let strip_backing = Shading.anime().shade_color([0.5, 0.5, 0.5]).shade_strength(0.7)
     .shade_threshold(0.35).lit_threshold(0.55)
@@ -438,12 +445,96 @@ if desktop_view_enabled {
     }
 }
 if xr_view_enabled {
-    T {
-        InputXR.on() {
-            InputXRGamepad { locomotion() speed(1.4) }
-            T { CXR { Pointer {} } }
-            XRHand.new(true, "Left", "GripAim").laser() { T { Pointer {} } }
-            XRHand.new(true, "Right", "GripAim").laser() { T { Pointer {} } }
+    if xr_player_avatar_enabled {
+        // Same tracked character setup as rei(mu).mms, with this scene's shared
+        // Anime material. Gravity starts only after the tracked capsule is ready.
+        let microphone = AudioInput { name = "room_reimu_microphone" }
+        let voice_level = Amplitude.rolling_window(0.080).highpass(120.0).highpass_resonance(0.707).from(microphone) {
+            name = "room_reimu_voice_level"
+        }
+        let player_motion = Velocity {
+            name = "room_reimu_velocity"
+            T.position(0.0, 0.0, 1.0) {
+                name = "room_reimu_locomotion_root"
+                InputXR.on() {
+                    InputXRGamepad { locomotion() speed(1.4) }
+                    T {
+                        name = "room_reimu_xr_driver"
+                        let xr_reimu = GLTF.new("assets/models/rei(mu).glb") {
+                            name = "xr_reimu"
+                            room_shading
+                            bisket_humanoid_bone_map()
+                            MorphTargetMap.new()
+                                .slot("left_eye_blink", "Fcl_EYE_Close_L")
+                                .slot("right_eye_blink", "Fcl_EYE_Close_R")
+                                .slot("viseme_aa", "Fcl_MTH_A")
+                            bisket_colliders()
+                            bisket_shirt_physics(false)
+                            rei_mu_bow_secondary_motion()
+                        }
+                        let xr_avatar_control = AVC.movement_target("[name='room_reimu_locomotion_root']") {
+                            name = "room_reimu_avatar_control"
+                            crouch_enabled(true)
+                            crouch_sole_offsets([0.0, 0.0530325, 0.0874534], [0.0, 0.0530325, 0.0874534])
+                            mouth_open_from_amplitude(voice_level)
+                            mouth_open_rms_center_range(0.0475, 0.085)
+                            mouth_open_amount(1.0)
+                            mouth_open_smoothing(16.0)
+                            voice_level
+                            initial_yaw(3.14159)
+                            arm_ik(vroid_arm_ik_bend_plane_prototype())
+                            hand_rotation_smoothing(220.0)
+                            T { xr_reimu }
+                            T.position(0.0, 0.08, 0.12) {
+                                name = "room_reimu_xr_camera"
+                                CXR { Pointer {} }
+                            }
+                            // Live tracking supplies eyelid closure; idle animation
+                            // owns pupil direction, as in the main Rei(mu) example.
+                            XREyeTracking.on().priority(["htc", "vrchat_osc"]).enable_pupil_direction_tracking(false)
+                            XRHand.new(true, "Left", "GripAim").laser() {
+                                T {
+                                    RestAttachment.new("[name='J_Bip_L_Hand']", "[name='J_Bip_L_Middle3']") { Pointer {} }
+                                }
+                            }
+                            XRHand.new(true, "Right", "GripAim").laser() {
+                                T {
+                                    RestAttachment.new("[name='J_Bip_R_Hand']", "[name='J_Bip_R_Middle3']") { Pointer {} }
+                                }
+                            }
+                        }
+                        xr_avatar_control
+                        on(xr_reimu, "GLTFInitialized", fn(event) {
+                            let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
+                            let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
+                            if left_eye && right_eye {
+                                xr_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
+                            } else {
+                                print("XR Rei(mu): eye joints were not found for idle gaze")
+                            }
+                        })
+                    }
+                }
+            }
+        }
+        Gravity.enabled(false) { name = "room_reimu_gravity" player_motion }
+        let gravity_avatar = query("[name='room_reimu_avatar_control']")
+        on(gravity_avatar, "DataEvent", fn(event) {
+            if event == "CapsuleReady" {
+                query("[name='room_reimu_gravity']").set_enabled(true)
+            }
+        })
+        if gravity_avatar.capsule_ready() {
+            query("[name='room_reimu_gravity']").set_enabled(true)
+        }
+    } else {
+        T {
+            InputXR.on() {
+                InputXRGamepad { locomotion() speed(1.4) }
+                T { CXR { Pointer {} } }
+                XRHand.new(true, "Left", "GripAim").laser() { T { Pointer {} } }
+                XRHand.new(true, "Right", "GripAim").laser() { T { Pointer {} } }
+            }
         }
     }
     XR.on()

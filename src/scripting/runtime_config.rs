@@ -1378,6 +1378,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 "MaterialBase" => {
                     host_constructor(component, canonical, "new", no_args());
                     host_constructor(component, canonical, "extracted_emissive", no_args());
+                    host_constructor(component, canonical, "planar_reflective", no_args());
                 }
                 "MaterialDefinition" => {
                     host_constructor(

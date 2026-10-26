@@ -367,7 +367,11 @@ mod tests {
 
     #[test]
     fn youtuber_room_view_switches_select_desktop_xr_or_both() {
-        use crate::engine::ecs::component::{Camera3DComponent, CameraXRComponent, XrComponent};
+        use crate::engine::ecs::component::{
+            AmplitudeComponent, AvatarControlComponent, Camera3DComponent, CameraXRComponent,
+            CollidableComponent, CollidableMode, GravityComponent, MorphTargetMapComponent,
+            VelocityComponent, XREyeTrackingComponent, XrComponent,
+        };
         for (desktop, xr) in [(true, false), (false, true), (true, true)] {
             let source = include_str!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
@@ -425,6 +429,85 @@ mod tests {
                 })
                 .collect();
             assert_eq!(states, vec![xr]);
+            let xr_only = xr && !desktop;
+            let named = |name| {
+                world
+                    .all_components()
+                    .find(|&id| world.component_label(id) == Some(name))
+            };
+            assert_eq!(named("room_reimu").is_some(), !xr_only);
+            assert_eq!(named("room_reimu_anchor").is_some(), !xr_only);
+            assert_eq!(named("xr_reimu").is_some(), xr_only);
+            let avatars: Vec<_> = world
+                .all_components()
+                .filter_map(|id| world.get_component_by_id_as::<AvatarControlComponent>(id))
+                .collect();
+            assert_eq!(avatars.len(), usize::from(xr_only));
+            assert_eq!(named("room_reimu_microphone").is_some(), xr_only);
+            assert_eq!(
+                world
+                    .all_components()
+                    .filter(|&id| world.component_label(id) == Some("slide_wall_collision"))
+                    .count(),
+                64 * 12
+            );
+            assert!(
+                world
+                    .all_components()
+                    .filter_map(|id| world.get_component_by_id_as::<CollidableComponent>(id))
+                    .filter(|collider| collider.mode == CollidableMode::Static && collider.enabled)
+                    .count()
+                    > 768
+            );
+            assert_eq!(named("room_reimu_gravity").is_some(), xr_only);
+            if xr_only {
+                let avatar = avatars[0];
+                assert!(avatar.collision_enabled && avatar.movement_target.is_some());
+                assert!(
+                    !world
+                        .get_component_by_id_as::<GravityComponent>(
+                            named("room_reimu_gravity").unwrap()
+                        )
+                        .unwrap()
+                        .enabled,
+                    "gravity must wait for CapsuleReady rather than fall before tracking initializes"
+                );
+                assert!(
+                    world
+                        .get_component_by_id_as::<VelocityComponent>(
+                            named("room_reimu_velocity").unwrap()
+                        )
+                        .is_some()
+                );
+                assert!(avatar.mouth_open_amplitude.is_some());
+                assert!((avatar.mouth_open_rms_floor - 0.005).abs() < 0.00001);
+                assert!((avatar.mouth_open_rms_ceiling - 0.09).abs() < 0.00001);
+                assert_eq!(avatar.mouth_open_smoothing, 16.0);
+                assert!(avatar.crouch_enabled && avatar.crouch_sole_offsets.is_some());
+                let amplitude = world
+                    .get_component_by_id_as::<AmplitudeComponent>(
+                        named("room_reimu_voice_level").unwrap(),
+                    )
+                    .unwrap();
+                assert!(amplitude.source.is_some());
+                assert_eq!(amplitude.highpass_hz, Some(120.0));
+                let gltf = named("xr_reimu").unwrap();
+                let morphs = world
+                    .children_of(gltf)
+                    .iter()
+                    .find_map(|&id| world.get_component_by_id_as::<MorphTargetMapComponent>(id))
+                    .unwrap();
+                assert_eq!(
+                    morphs.slots().get("viseme_aa").map(String::as_str),
+                    Some("Fcl_MTH_A")
+                );
+                assert_eq!(morphs.slots().len(), 3);
+                let tracking = world
+                    .all_components()
+                    .find_map(|id| world.get_component_by_id_as::<XREyeTrackingComponent>(id))
+                    .unwrap();
+                assert!(!tracking.enable_pupil_direction_tracking);
+            }
         }
     }
 
