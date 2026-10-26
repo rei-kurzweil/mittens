@@ -18,12 +18,22 @@ available as a builder on the existing on/off/parent modes. Default is false.
 Serialization preserves the flag with the existing mode.
 
 For XR controller/hand pointers, the moved Transform's local translation eases
-to zero in the grabbing pointer's nearest Transform frame, and its rotation eases
+to zero in the resolved grip frame, and its rotation eases
 to identity. This uses the existing exponential levitation speed (12 per second).
 The initial reparent preserves world pose; there is no instantaneous jump. Scale
 is preserved. Bounds-based surface clearance and the initial sideways offset do
-not displace the held grip in this mode. The actual hand frame is the authored
-pointer/controller or RestAttachment frame, not a separately inferred palm point.
+not displace the held grip in this mode. AVC supplies a grip Transform beneath
+its solved hand bone, with the retained hand basis correction inverted into the
+canonical grip orientation. Raw tracking continues to drive IK independently;
+the pointer ray stays in its original topology. Overextending tracking therefore
+keeps the held object at the reachable avatar hand.
+
+`Pointer.grab_attachment("[name='custom_grip']")` overrides this automatic frame
+for to_hand objects. It references a Transform; author its offset and orientation
+for a custom palm location. Queries resolve within the owning AVC subtree;
+explicit world-root and UUID selectors also work. Without a resolved avatar or
+explicit grip, the pointer/controller frame remains the fallback. The explicit
+reference serializes; AVC-generated handles and grip nodes do not.
 
 Position and orient model children relative to that moved Transform to define
 its held grip pose. This does not automatically infer a handle from mesh geometry.
@@ -47,14 +57,17 @@ pose preservation, desktop fallback, default clearance, flag serialization and
 Sakura's actual resting model transform. The Vulkan scene check also checks that
 imported pistol primitives resolve to the authored grabbable grip root.
 
+`Grabbable.hand_offset([x, y, z])` adds a local translation in the resolved grip
+frame. Sakura uses `[0, 0, -0.105]` to place the pistol 10.5 cm forward along its
+aiming axis while retaining the prior authored model offset.
+
 Focused grab, serialization and scene checks pass, as does the release build.
 The broader grabbable filter also selects xr_grab_demo's stale SpringBone count
 assertion (expects 23, current fixture produces 21). The existing shared preset
 already disables both bust chains; that fixture expectation is separate from this
 flag change and is left unchanged here.
 
-Discussion follow-up: prefer the solved avatar hand/grip frame when available,
-with the tracked controller frame as a fallback. This would keep an object near
-the avatar's reachable hand when tracking exceeds arm length, while raw tracking
-continues to drive IK independently. This behavior is proposed, not implemented;
-the current flag still aligns to the authored pointer frame.
+Implemented follow-up: automatic solved-hand grip attachment and an explicit
+Pointer override. Tests cover raw-controller overextension, override priority,
+AVC basis correction without moving tracking/pointer topology, idempotent setup,
+and RuntimeSpec authoring alongside other pointer options without legacy fallback.

@@ -8,6 +8,8 @@ The obvious switches at the top select desktop preview, XR, or both. Default is
 XR only to avoid rendering a desktop view. Desktop preview is a free camera;
 XR uses Rei(mu)'s tracked rig, hand lasers/pointers, arm/crouch IK, mouth amplitude,
 eye closure/idle gaze, secondary motion, collisions and CapsuleReady-gated gravity.
+HandTracking.new().source("openxr") on the avatar opts its mapped finger bones
+into OpenXR hand tracking.
 XR B jumps, allowing access over low parapets. Spawn is on the 25.6 m roof.
 
 Six eight-storey towers and three lower annexes use the same ceramic shader,
@@ -30,7 +32,12 @@ The ground is a muted pinkish grey-brown. Every building uses two CombineMesh
 outputs, one white ceramic group and one trim group, with separate collision
 boxes. Tile textures and filtering are attached to the combined outputs. The
 engine retains those bindings when a combined mesh is published again and reuses
-identical immutable combined geometry across regenerations.
+identical immutable combined geometry across regenerations. Building CombineMesh
+roots now use keep_transforms and Raycastable.enabled: individual source boxes
+remain registered in the BVH as spatial targets while only the combined meshes
+draw. Rays hit individual slabs, walls, columns and rails; windows and stairwell
+openings do not become a solid building-sized bounding box. Simplified neighbors
+retain the intentional solid lower block and detailed top floors.
 
 The example-local info panel has a 0–8 slider for fully generated neighboring
 buildings. Other neighbors have a solid lower block and two detailed top floors.

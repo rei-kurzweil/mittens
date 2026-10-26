@@ -16,6 +16,10 @@ pub enum RayCastMode {
 ///   desktop cursor-through-camera pointers which currently auto-cast from desktop mouse input.
 #[derive(Debug, Clone, Copy)]
 pub struct RayCastComponent {
+    /// Use this component's transform -Z even beneath a desktop camera.
+    pub parent_forward: bool,
+    /// Emit only the nearest geometric hit, ignoring UI interaction priority.
+    pub nearest_hit_only: bool,
     pub mode: RayCastMode,
 
     /// Minimum ray distance in world units. Hits closer than this are ignored.
@@ -37,6 +41,8 @@ pub struct RayCastComponent {
 impl RayCastComponent {
     pub fn new(mode: RayCastMode) -> Self {
         Self {
+            parent_forward: false,
+            nearest_hit_only: false,
             mode,
             min_distance: 0.0,
             max_distance: 200.0,
@@ -135,8 +141,18 @@ impl Component for RayCastComponent {
             RayCastMode::Continuous => "continuous",
             RayCastMode::EventDriven => "event_driven",
         };
-        ce_call("Raycast", ctor, vec![])
+        let expression = ce_call("Raycast", ctor, vec![])
             .with_call("min_distance", vec![num(self.min_distance as f64)])
-            .with_call("max_distance", vec![num(self.max_distance as f64)])
+            .with_call("max_distance", vec![num(self.max_distance as f64)]);
+        let expression = if self.parent_forward {
+            expression.with_call("parent_forward", vec![b(true)])
+        } else {
+            expression
+        };
+        if self.nearest_hit_only {
+            expression.with_call("nearest_hit_only", vec![b(true)])
+        } else {
+            expression
+        }
     }
 }

@@ -10,6 +10,8 @@ pub struct GrabbableComponent {
     /// XR hands ease the target's grip origin/orientation into the pointer frame.
     /// Camera/desktop pointers retain their ordinary surface-clearance behavior.
     pub to_hand: bool,
+    /// Local translation from the solved hand grip frame while in hand mode.
+    pub hand_offset: [f32; 3],
 }
 
 impl GrabbableComponent {
@@ -22,6 +24,7 @@ impl GrabbableComponent {
             enabled: true,
             move_parent: false,
             to_hand: false,
+            hand_offset: [0.0; 3],
         }
     }
 
@@ -30,6 +33,7 @@ impl GrabbableComponent {
             enabled: false,
             move_parent: false,
             to_hand: false,
+            hand_offset: [0.0; 3],
         }
     }
 
@@ -38,6 +42,7 @@ impl GrabbableComponent {
             enabled: true,
             move_parent: true,
             to_hand: false,
+            hand_offset: [0.0; 3],
         }
     }
 }
@@ -88,6 +93,15 @@ impl Component for GrabbableComponent {
         } else {
             authored
         }
+        .with_call(
+            "hand_offset",
+            vec![array(
+                self.hand_offset
+                    .into_iter()
+                    .map(|v| num(v as f64))
+                    .collect(),
+            )],
+        )
     }
 }
 

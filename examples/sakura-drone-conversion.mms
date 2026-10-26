@@ -25,7 +25,7 @@ let pistol_scale = 0.085
 let pistol_hand_offset = 0.05 // metres back toward the wrist, in the held grip frame
 
 import { info_panel } from "../assets/components/ui/info_panel.mms"
-import { laser_burst } from "../assets/components/laser.mms"
+import { laser_machine_pistol } from "../assets/components/laser-machine-pistol.mms"
 import { gradient_skybox, background_sun } from "../assets/components/backgrounds/gradient_skybox.mms"
 import { sakura_tree } from "../assets/components/plants/sakura_tree.mms"
 import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
@@ -81,7 +81,7 @@ let pistol_material = Material(anime).inputs({
     rim_color = [1.0, 0.86, 0.94]
     rim_strength = 0.24
 })
-let pistol_laser = laser_burst({ name = "sakura_pistol_laser" length = 40.0 flash_size = 0.14 beam_radius = 0.004 })
+let pistol_laser = laser_machine_pistol({ name = "sakura_pistol_laser" length = 40.0 flash_size = 0.28 beam_radius = 0.025 ray_origin_offset = 0.06 })
 let pistol_held = { active = false hand = "" pointer = null }
 let white = [0.94, 0.96, 0.97]
 let pink = [0.88, 0.65, 0.73]
@@ -129,7 +129,7 @@ fn regenerate_buildings(value) {
 regenerate_buildings(initial_full_buildings)
 
 // Muted, greyish pink-brown ground fills the spaces around the road and towers.
-T { name = "sakura_ground" box([0.0, -0.48, 0.0], [240.0, 0.5, 240.0], ground_color) }
+T { name = "sakura_ground" box([0.0, -0.48, 0.0], [120.0, 0.5, 140.0], ground_color) }
 
 // This panel is local to this example. The general graphics panel currently
 // controls mirrors/secondary motion; this bloom toggle replaces this scene's graph.
@@ -162,7 +162,6 @@ fn scene_controls() {
         Unlit {}
         Style { display("flex") flex_direction("column") width(100%) row_gap(0.5) font_size(0.75) }
         readout
-        Text { "Other buildings keep their top two floors.\nYour rooftop building stays unchanged." }
         T {
             Grabbable.off()
             Style { display("flex") width(100%) height(3.0) align_items("center") justify_content("center") }
@@ -215,7 +214,7 @@ T.position(-18.0, roof_height, 0.0) {
     // Compensate for the held-model offset so the resting model stays in place.
     T.position(pistol_hand_offset, 1.045, -3.80).rotation_quat(0.5, -0.5, -0.5, 0.5) {
         name = "sakura_machine_pistol_placement"
-        Grabbable.to_hand(true) {}
+        Grabbable.to_hand(true).hand_offset([0.0, 0.0, -0.105]) {}
         // Measured GLB muzzle: +Z=3.342659, Y=1.048425 in model space.
         // Effects live in metre-scaled grip space, outside the 0.085 model scale.
         T.position(0.0, 1.048425 * pistol_scale, pistol_hand_offset - 3.342659 * pistol_scale - 0.015) {
@@ -285,6 +284,7 @@ if xr_view_enabled {
                     name = "sakura_reimu_xr_driver"
                     let xr_reimu = GLTF.new("assets/models/rei(mu).glb") {
                         name = "sakura_xr_reimu"
+                        HandTracking.new().source("openxr")
                         pistol_material
                         bisket_humanoid_bone_map()
                         MorphTargetMap.new()

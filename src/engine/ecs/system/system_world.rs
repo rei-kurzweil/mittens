@@ -2291,11 +2291,20 @@ impl SystemWorld {
         visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        if self.combine_mesh.owner_of(world, component).is_some() {
-            return;
+        let combined_owner = self.combine_mesh.owner_of(world, component);
+        if let Some(owner) = combined_owner {
+            let keep_sources = world
+                .get_component_by_id_as::<crate::engine::ecs::component::CombineMeshComponent>(
+                    owner,
+                )
+                .is_some_and(|combine| combine.keep_transforms);
+            if !keep_sources || !BvhSystem::renderable_is_raycastable(world, component) {
+                return;
+            }
+        } else {
+            self.renderable
+                .register_renderable(world, visuals, component);
         }
-        self.renderable
-            .register_renderable(world, visuals, component);
 
         // Cache the renderable's local-space AABB as a child BoundsComponent
         // so layout (and future CPU culling) can read mesh extents without
@@ -2310,7 +2319,9 @@ impl SystemWorld {
         // Keep RayCastSystem's eligibility index in sync for brute-force fallback.
         self.raycast.notify_renderable_added(&*world, component);
 
-        self.clipping.register_renderable(world, visuals, component);
+        if combined_owner.is_none() {
+            self.clipping.register_renderable(world, visuals, component);
+        }
     }
 
     fn refresh_raycastable_bindings(&mut self, world: &World, component: ComponentId) {

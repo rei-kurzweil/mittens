@@ -213,7 +213,7 @@ impl GrabbableSystem {
         if self.active.contains_key(&pointer) || self.owned.contains(&target) {
             return;
         }
-        let Some(pointer_parent) = world
+        let Some(mut pointer_parent) = world
             .parent_of(pointer)
             .and_then(|p| nearest_ancestor_transform(world, p))
         else {
@@ -223,11 +223,53 @@ impl GrabbableSystem {
             return;
         };
         let original_parent = world.parent_of(target);
-        let align_to_hand = pointer_topology_context(world, pointer).has_controller_driver
-            && resolve_marker::<GrabbableComponent>(world, renderable, |marker| {
-                (marker.enabled, marker.move_parent)
-            })
-            .is_some_and(|(owner, marker)| owner == target && marker.to_hand);
+        let attachment = world
+            .get_component_by_id_as::<PointerComponent>(pointer)
+            .and_then(|config| {
+                use crate::engine::ecs::component::{
+                    AvatarControlComponent, QueryRootMode, resolve_component_ref,
+                };
+                let mut owner = pointer;
+                while let Some(parent) = world.parent_of(owner) {
+                    owner = parent;
+                    if world
+                        .get_component_by_id_as::<AvatarControlComponent>(owner)
+                        .is_some()
+                    {
+                        break;
+                    }
+                }
+                config
+                    .grab_attachment
+                    .as_ref()
+                    .and_then(|reference| {
+                        resolve_component_ref(
+                            world,
+                            reference,
+                            Some(owner),
+                            QueryRootMode::SelfSubtree,
+                        )
+                    })
+                    .or(config.avatar_grab_attachment)
+                    .filter(|&id| {
+                        world
+                            .get_component_by_id_as::<TransformComponent>(id)
+                            .is_some()
+                    })
+            });
+        let hand_marker = resolve_marker::<GrabbableComponent>(world, renderable, |marker| {
+            (marker.enabled, marker.move_parent)
+        })
+        .filter(|(owner, marker)| *owner == target && marker.to_hand)
+        .map(|(_, marker)| *marker);
+        let align_to_hand = (pointer_topology_context(world, pointer).has_controller_driver
+            || attachment.is_some())
+            && hand_marker.is_some();
+        if align_to_hand {
+            if let Some(attachment) = attachment {
+                pointer_parent = attachment;
+            }
+        }
 
         let dir = vec3_normalize(ray_dir);
         if !dir.iter().all(|v| v.is_finite()) {
@@ -288,7 +330,7 @@ impl GrabbableSystem {
             return;
         };
         let destination_local = if align_to_hand {
-            [0.0; 3]
+            hand_marker.map_or([0.0; 3], |marker| marker.hand_offset)
         } else {
             transform_point(parent_world_inv, desired_world)
         };
@@ -505,6 +547,86 @@ fn transform_point(m: [[f32; 4]; 4], p: [f32; 3]) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn hand_grab_follows_solved_attachment_with_explicit_override() {
+        use crate::engine::ecs::component::{
+            ComponentRef, ControllerHand, ControllerXRComponent, RenderableComponent,
+        };
+        for explicit in [false, true] {
+            let mut world = World::default();
+            let controller = world.add_component(ControllerXRComponent::new(
+                true,
+                ControllerHand::Right,
+                ControllerPoseKind::GripAim,
+            ));
+            let raw = world.add_component(TransformComponent::new().with_position(4., 1., 0.));
+            world.add_child(controller, raw).unwrap();
+            let pointer = world.add_component(PointerComponent::new());
+            world.add_child(raw, pointer).unwrap();
+            let solved = world.add_component(TransformComponent::new().with_position(1., 1., 0.));
+            let override_frame =
+                world.add_component(TransformComponent::new().with_position(2., 1., 0.));
+            let reference =
+                ComponentRef::Guid(world.get_component_record(override_frame).unwrap().guid);
+            let config = world
+                .get_component_by_id_as_mut::<PointerComponent>(pointer)
+                .unwrap();
+            config.avatar_grab_attachment = Some(solved);
+            if explicit {
+                config.grab_attachment = Some(reference);
+            }
+            let target = world.add_component(TransformComponent::new().with_position(0., 0., -2.));
+            let marker = world.add_component(GrabbableComponent {
+                enabled: true,
+                move_parent: false,
+                to_hand: true,
+                hand_offset: [0.0; 3],
+            });
+            world.add_child(target, marker).unwrap();
+            let mesh = world.add_component(RenderableComponent::cube());
+            world.add_child(target, mesh).unwrap();
+            for id in [raw, solved, override_frame, target] {
+                sync_world(&mut world, id, None);
+            }
+            let mut system = GrabbableSystem::default();
+            let mut queue = crate::engine::ecs::CommandQueue::new();
+            system.start(
+                &mut world,
+                &RenderAssets::new(),
+                &mut queue,
+                pointer,
+                target,
+                mesh,
+                [4., 1., 0.],
+                [0., 0., -1.],
+            );
+            system.tick(&mut world, &RenderAssets::new(), &mut queue, 10.);
+            assert_eq!(
+                world.parent_of(target),
+                Some(if explicit { override_frame } else { solved })
+            );
+            assert_eq!(
+                world
+                    .get_component_by_id_as::<TransformComponent>(target)
+                    .unwrap()
+                    .transform
+                    .translation,
+                [0.; 3]
+            );
+            // Overextending the tracked controller cannot carry the held object
+            // past the separately solved hand frame.
+            world
+                .get_component_by_id_as_mut::<TransformComponent>(raw)
+                .unwrap()
+                .transform
+                .translation = [40., 1., 0.];
+            system.tick(&mut world, &RenderAssets::new(), &mut queue, 0.1);
+            assert_eq!(
+                world.parent_of(target),
+                Some(if explicit { override_frame } else { solved })
+            );
+        }
+    }
     use crate::engine::ecs::CommandQueue;
     use crate::engine::ecs::component::{
         ControllerHand, ControllerPoseKind, ControllerXRComponent, RenderableComponent,
@@ -675,6 +797,7 @@ mod tests {
                 enabled: true,
                 move_parent,
                 to_hand: true,
+                hand_offset: [0.0; 3],
             });
             world.add_child(handle, marker).unwrap();
             let cube = world.add_component(RenderableComponent::cube());

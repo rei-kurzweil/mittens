@@ -181,6 +181,23 @@ fn sakura_scene_has_open_ceramic_towers_typed_sky_rooftop_rig_and_reset() {
             })
             .unwrap();
         assert!(marker.enabled && marker.to_hand && !marker.move_parent);
+        assert_eq!(marker.hand_offset, [0., 0., -0.105]);
+        let tracked_hands: Vec<_> = world
+            .all_components()
+            .filter_map(|id| {
+                world
+                    .get_component_by_id_as::<crate::engine::ecs::component::HandTrackingComponent>(
+                        id,
+                    )
+            })
+            .collect();
+        assert_eq!(tracked_hands.len(), usize::from(xr));
+        if xr {
+            assert_eq!(
+                tracked_hands[0].provider,
+                Some(crate::engine::ecs::system::hand_tracking::HandTrackingProvider::OpenXr)
+            );
+        }
         let pistol = named("sakura_machine_pistol");
         let model = authored_model(&world, pistol);
         assert!(
@@ -456,6 +473,25 @@ fn sakura_pistol_grab_gates_three_shot_subanimations_and_release_cancels_them() 
         trigger(ControllerHand::Right),
     );
     assert!(start.iter().any(|intent| matches!(intent,IntentValue::SetAnimationState {component_id,state:AnimationState::Playing} if *component_id==burst)),"{start:?}");
+    let busy = deliver_scene_event(
+        &mut world,
+        &mut rx,
+        &mut session,
+        &mut assets,
+        &mut queue,
+        ComponentId::default(),
+        trigger(ControllerHand::Right),
+    );
+    assert!(
+        !busy.iter().any(|intent| matches!(
+            intent,
+            IntentValue::SetAnimationState {
+                state: AnimationState::Playing,
+                ..
+            }
+        )),
+        "a trigger cannot restart an active burst"
+    );
     let mut animation = AnimationSystem::new();
     let components: Vec<_> = world.all_components().collect();
     for id in components {
@@ -474,8 +510,10 @@ fn sakura_pistol_grab_gates_three_shot_subanimations_and_release_cancels_them() 
     }
     animation.set_animation_state(burst, AnimationState::Playing);
     let mut fired = Vec::new();
+    let mut shot_times = Vec::new();
     let mut shown = std::collections::HashSet::new();
     let mut sounds = Vec::new();
+    let mut casts = Vec::new();
     for step in 0..100 {
         let mut executor =
             crate::engine::ecs::system::animation_keyframe_evaluator::SessionCallbackExecutor {
@@ -493,6 +531,7 @@ fn sakura_pistol_grab_gates_three_shot_subanimations_and_release_cancels_them() 
         for signal in rx.drain_ready_intents() {
             if let Some(intent) = signal.intent.map(|intent| intent.value) {
                 match intent {
+                    IntentValue::RequestRaycast { component_id } => casts.push(component_id),
                     IntentValue::AudioSchedulePlay { component_id, .. } => {
                         sounds.push(component_id);
                     }
@@ -502,6 +541,7 @@ fn sakura_pistol_grab_gates_three_shot_subanimations_and_release_cancels_them() 
                     } => {
                         if state == AnimationState::Playing && shots.contains(&component_id) {
                             fired.push(component_id);
+                            shot_times.push(step as f64 * 0.01 / 2.0);
                         }
                         animation.set_animation_state(component_id, state);
                     }
@@ -521,11 +561,64 @@ fn sakura_pistol_grab_gates_three_shot_subanimations_and_release_cancels_them() 
                 }
             }
         }
+        queue.drain_into_rx(&mut rx);
+        for event in rx.drain_ready_events() {
+            rx.dispatch_event_handlers(&mut world, &event);
+        }
+        let output = session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+        assert!(output.errors.is_empty(), "{:?}", output.errors);
+        if step == 65 {
+            let busy = deliver_scene_event(
+                &mut world,
+                &mut rx,
+                &mut session,
+                &mut assets,
+                &mut queue,
+                ComponentId::default(),
+                trigger(ControllerHand::Right),
+            );
+            assert!(
+                !busy.iter().any(|intent| matches!(
+                    intent,
+                    IntentValue::SetAnimationState {
+                        state: AnimationState::Playing,
+                        ..
+                    }
+                )),
+                "audio lookahead must not unlock the gun early"
+            );
+        }
     }
     assert_eq!(
         fired, shots,
         "burst must play all three distinct shot clips exactly once, including audio-lookahead scheduling"
     );
+    for pair in shot_times.windows(2) {
+        assert!(
+            (2.0 / 75.0..=3.0 / 75.0).contains(&(pair[1] - pair[0])),
+            "shots must be separated by 2–3 frames at 75 fps: {shot_times:?}"
+        );
+    }
+    assert_eq!(
+        casts.len(),
+        3,
+        "each visual shot must request its own cast, without audio-lookahead duplication"
+    );
+    assert_eq!(
+        casts
+            .iter()
+            .copied()
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        3
+    );
+    for id in &casts {
+        let ray = world
+            .get_component_by_id_as::<crate::engine::ecs::component::RayCastComponent>(*id)
+            .unwrap();
+        assert!(ray.parent_forward && ray.nearest_hit_only);
+        assert_eq!(ray.max_distance, 40.);
+    }
     assert_eq!(
         shown.len(),
         3,
@@ -533,8 +626,8 @@ fn sakura_pistol_grab_gates_three_shot_subanimations_and_release_cancels_them() 
     );
     assert_eq!(
         sounds.len(),
-        3,
-        "one sound per shot, without phase duplication"
+        1,
+        "one full-burst recording per accepted trigger"
     );
     for id in sounds {
         let clip = world
@@ -542,6 +635,16 @@ fn sakura_pistol_grab_gates_three_shot_subanimations_and_release_cancels_them() 
             .unwrap();
         assert_eq!(clip.uri, "assets/audio/tool/laser_machine_pistol_C.0.wav");
     }
+    let next = deliver_scene_event(
+        &mut world,
+        &mut rx,
+        &mut session,
+        &mut assets,
+        &mut queue,
+        ComponentId::default(),
+        trigger(ControllerHand::Right),
+    );
+    assert!(next.iter().any(|intent| matches!(intent, IntentValue::SetAnimationState {component_id, state: AnimationState::Playing} if *component_id == burst)), "completion must allow the next burst");
     let released = deliver_scene_event(
         &mut world,
         &mut rx,
@@ -565,7 +668,7 @@ fn sakura_pistol_grab_gates_three_shot_subanimations_and_release_cancels_them() 
                 }
             ))
             .count(),
-        4
+        3
     );
     assert_eq!(
         released
@@ -592,4 +695,275 @@ fn sakura_pistol_grab_gates_three_shot_subanimations_and_release_cancels_them() 
             ..
         }
     )));
+    deliver_scene_event(
+        &mut world,
+        &mut rx,
+        &mut session,
+        &mut assets,
+        &mut queue,
+        grip,
+        EventSignal::GrabStart {
+            pointer,
+            raycaster: pointer,
+            renderable: grip,
+            target: grip,
+            ray_origin_world: [0.; 3],
+            ray_dir_world: [0., 0., -1.],
+        },
+    );
+    let regrabbed = deliver_scene_event(
+        &mut world,
+        &mut rx,
+        &mut session,
+        &mut assets,
+        &mut queue,
+        ComponentId::default(),
+        trigger(ControllerHand::Right),
+    );
+    assert!(
+        !regrabbed.iter().any(|intent| matches!(
+            intent,
+            IntentValue::SetAnimationState {
+                state: AnimationState::Playing,
+                ..
+            }
+        )),
+        "release/regrab must not bypass the unfinished second burst"
+    );
+}
+
+#[test]
+fn laser_hit_spawns_world_space_impact_only_for_its_own_ray_and_despawns() {
+    use crate::engine::ecs::component::{
+        AnimationComponent, AnimationState, KeyframeComponent, RayCastComponent,
+    };
+    use crate::engine::ecs::system::pointer_system::{PointerActivations, PointerSystem};
+    use crate::engine::ecs::system::{BvhSystem, RayCastSystem};
+    use crate::engine::ecs::{EventSignal, IntentValue};
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut queue = CommandQueue::new();
+    let mut assets = RenderAssets::new();
+    let (mut session, initial) = RuntimeSpecSession::start_at_path(
+        r#"import { laser } from "../assets/components/laser.mms"
+        let gun = laser({ name = "test_laser" sound = false ray_origin_offset = 0.06 })
+        gun.root
+        T.position(0.0, 0.0, -3.0) {
+            R.cube() { name = "laser_target" Raycastable.enabled() }
+        }
+        gun.fire_laser()"#,
+        "examples/_laser_hit_test.mms",
+        &mut world,
+        &mut rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .unwrap();
+    let ray = named(&world, "test_laser_raycaster");
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    assert!(initial.intents.iter().any(|intent| matches!(intent, IntentValue::RequestRaycast { component_id } if *component_id == ray)));
+    assert!((authored_model(&world, ray)[3][2] + 0.06).abs() < 1e-6);
+    let hit = |raycaster| EventSignal::RayIntersected {
+        raycaster,
+        renderable: ComponentId::default(),
+        t: 2.,
+        origin: [2., 3., 4.],
+        dir: [0., 0., -1.],
+    };
+    deliver_scene_event(
+        &mut world,
+        &mut rx,
+        &mut session,
+        &mut assets,
+        &mut queue,
+        ComponentId::default(),
+        hit(ComponentId::default()),
+    );
+    assert!(
+        !world
+            .all_components()
+            .any(|id| world.component_label(id) == Some("mini_explosion"))
+    );
+    // Follow a real shot request through geometry intersection and the MMS hit
+    // handler, including the offset mount used by the actual pistol.
+    for id in world.all_components().collect::<Vec<_>>() {
+        if world
+            .get_component_by_id_as::<TransformComponent>(id)
+            .is_some()
+        {
+            let model = authored_model(&world, id);
+            world
+                .get_component_by_id_as_mut::<TransformComponent>(id)
+                .unwrap()
+                .transform
+                .matrix_world = model;
+        }
+    }
+    world
+        .get_component_by_id_as_mut::<RayCastComponent>(ray)
+        .unwrap()
+        .cast_requests = 1;
+    let target = named(&world, "laser_target");
+    let mut raycasts = RayCastSystem::default();
+    let mut visuals = crate::engine::graphics::VisualWorld::default();
+    raycasts.register_raycast(&mut world, &mut visuals, ray);
+    raycasts.notify_renderable_added(&world, target);
+    raycasts.tick_with_queue(
+        &mut world,
+        &mut visuals,
+        &crate::engine::user_input::InputState::default(),
+        &mut rx,
+        &BvhSystem::default(),
+        &PointerActivations::default(),
+        &PointerSystem::default(),
+        0.016,
+    );
+    let hits = rx.drain_ready_events();
+    assert_eq!(hits.len(), 1);
+    let event = hits.into_iter().next().unwrap();
+    let output = deliver_scene_event(
+        &mut world,
+        &mut rx,
+        &mut session,
+        &mut assets,
+        &mut queue,
+        event.scope,
+        event.event.unwrap(),
+    );
+    let impact = named(&world, "mini_explosion");
+    assert_eq!(
+        world
+            .get_component_by_id_as::<TransformComponent>(impact)
+            .unwrap()
+            .transform
+            .translation,
+        [0., 0., -2.5]
+    );
+    assert_eq!(
+        world.parent_of(impact),
+        None,
+        "impact must not move with the gun"
+    );
+    let clip = output
+        .iter()
+        .find_map(|intent| match intent {
+            IntentValue::SetAnimationState {
+                component_id,
+                state: AnimationState::Playing,
+            } => Some(*component_id),
+            _ => None,
+        })
+        .unwrap();
+    let mut animation = crate::engine::ecs::system::AnimationSystem::new();
+    for id in world.all_components().collect::<Vec<_>>() {
+        if world
+            .get_component_by_id_as::<AnimationComponent>(id)
+            .is_some()
+        {
+            animation.register_animation(&mut world, id);
+        }
+        if world
+            .get_component_by_id_as::<KeyframeComponent>(id)
+            .is_some()
+        {
+            animation.register_keyframe(&mut world, id);
+        }
+    }
+    animation.set_animation_state(clip, AnimationState::Playing);
+    for beat in [0., 0.2, 0.4, 0.7] {
+        let mut executor =
+            crate::engine::ecs::system::animation_keyframe_evaluator::SessionCallbackExecutor {
+                session: &mut session,
+                render_assets: &mut assets,
+                emit: &mut queue,
+            };
+        animation.tick_with_beat_and_executor(&mut world, beat, 120., &mut rx, Some(&mut executor));
+    }
+    let intents = rx.drain_ready_intents();
+    assert!(intents.iter().any(|signal| matches!(signal.intent.as_ref().map(|v| &v.value), Some(IntentValue::SetEmissiveIntensity{intensity,..}) if *intensity==0.5)));
+    assert!(intents.iter().any(|signal| matches!(signal.intent.as_ref().map(|v| &v.value), Some(IntentValue::RemoveSubtree{component_id}) if *component_id==impact)), "impact clip must retire its whole subtree");
+}
+
+#[test]
+fn fired_laser_copies_world_trs_and_stays_put_when_barrel_moves() {
+    use crate::engine::ecs::{EventSignal, IntentValue};
+    use crate::engine::graphics::primitives::Transform;
+    use crate::engine::transform::TransformSpace;
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut queue = CommandQueue::new();
+    let mut assets = RenderAssets::new();
+    let (mut session, _) = RuntimeSpecSession::start_at_path(
+        r#"
+        import { laser } from "../assets/components/laser.mms"
+        let gun=laser({name="frozen_laser" sound=false ray_origin_offset=0.06})
+        T.position(2.0,3.0,4.0).rotation(0.0,0.4,0.0) {
+            name="moving_barrel"
+            gun.root
+        }
+        on_global("DataEvent", fn(event) { if event == "Fire" { gun.fire_laser() } })
+    "#,
+        "examples/_frozen_laser_test.mms",
+        &mut world,
+        &mut rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .unwrap();
+    for id in world.all_components().collect::<Vec<_>>() {
+        if world
+            .get_component_by_id_as::<TransformComponent>(id)
+            .is_some()
+        {
+            let model = authored_model(&world, id);
+            world
+                .get_component_by_id_as_mut::<TransformComponent>(id)
+                .unwrap()
+                .transform
+                .matrix_world = model;
+        }
+    }
+    let flight = named(&world, "frozen_laser_flight");
+    let muzzle = named(&world, "frozen_laser_root");
+    let source = named(&world, "moving_barrel");
+    assert_eq!(world.parent_of(flight), None);
+    let before = crate::engine::ecs::system::TransformSystem::world_trs(&world, muzzle).unwrap();
+    let intents = deliver_scene_event(
+        &mut world,
+        &mut rx,
+        &mut session,
+        &mut assets,
+        &mut queue,
+        ComponentId::default(),
+        EventSignal::DataEvent {
+            name: "Fire".into(),
+            payload: None,
+        },
+    );
+    let snapshot = intents
+        .iter()
+        .find_map(|intent| match intent {
+            IntentValue::SetTransformTrs {
+                component_id,
+                space: TransformSpace::World,
+                value,
+            } if *component_id == flight => Some(*value),
+            _ => None,
+        })
+        .expect("a shot must copy the barrel's world TRS into a separate world root");
+    assert_eq!(snapshot, before);
+    world
+        .get_component_by_id_as_mut::<TransformComponent>(flight)
+        .unwrap()
+        .transform = Transform::try_from(snapshot).unwrap();
+    let frozen = authored_model(&world, flight);
+    *world
+        .get_component_by_id_as_mut::<TransformComponent>(source)
+        .unwrap() = TransformComponent::new().with_position(20., 30., 40.);
+    assert_ne!(authored_model(&world, muzzle), frozen);
+    assert_eq!(
+        authored_model(&world, flight),
+        frozen,
+        "moving the gun must not drag an existing beam"
+    );
 }

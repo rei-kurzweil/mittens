@@ -2940,8 +2940,16 @@ fn apply_call(
     args: &[Value],
 ) -> Result<(), String> {
     if let Some(grabbable) = world.get_component_by_id_as_mut::<GrabbableComponent>(id) {
-        if method == "to_hand" {
-            grabbable.to_hand = arg_bool(args, 0)?;
+        match method {
+            "to_hand" => grabbable.to_hand = arg_bool(args, 0)?,
+            "hand_offset" => {
+                let offset = arg_f32_arr::<3>(args, 0)?;
+                if !offset.iter().all(|v| v.is_finite()) {
+                    return Err("Grabbable.hand_offset requires finite values".into());
+                }
+                grabbable.hand_offset = offset;
+            }
+            _ => {}
         }
         return Ok(());
     }

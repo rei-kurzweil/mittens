@@ -668,6 +668,12 @@ impl RayCastSystem {
     /// We also classify outer driver ancestry here so gesture trigger policy can later prefer a
     /// stronger enclosing driver without requiring the pointer to move in the authored topology.
     fn inferred_source_kind(world: &World, raycaster_cid: ComponentId) -> RaySourceKind {
+        if world
+            .get_component_by_id_as::<RayCastComponent>(raycaster_cid)
+            .is_some_and(|ray| ray.parent_forward)
+        {
+            return RaySourceKind::ParentForward;
+        }
         let topology = pointer_topology_context(world, raycaster_cid);
 
         let _future_trigger_policy_hint = (
@@ -932,6 +938,56 @@ impl RayCastSystem {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn weapon_ray_uses_muzzle_forward_and_nearest_geometry_beneath_desktop_camera() {
+        use crate::engine::ecs::EventSignal;
+        use crate::engine::ecs::component::{Camera3DComponent, RayCastComponent};
+        let mut world = World::default();
+        let camera = world.add_component(Camera3DComponent::new());
+        let muzzle = world.add_component(TransformComponent::new());
+        world.add_child(camera, muzzle).unwrap();
+        let mut ray = RayCastComponent::event_driven();
+        ray.parent_forward = true;
+        ray.nearest_hit_only = true;
+        ray.cast_requests = 1;
+        let ray = world.add_component(ray);
+        world.add_child(muzzle, ray).unwrap();
+        let near = add_raycastable_cube(&mut world, -2.);
+        let far = add_raycastable_cube(&mut world, -5.);
+        let priority = world.children_of(far)[0];
+        world
+            .get_component_by_id_as_mut::<RaycastableComponent>(priority)
+            .unwrap()
+            .interaction_priority = 255;
+        let mut system = RayCastSystem::default();
+        system.notify_renderable_added(&world, near);
+        system.notify_renderable_added(&world, far);
+        let mut visuals = VisualWorld::default();
+        let mut rx = RxWorld::default();
+        system.register_raycast(&mut world, &mut visuals, ray);
+        system.tick_with_queue(
+            &mut world,
+            &mut visuals,
+            &InputState::default(),
+            &mut rx,
+            &BvhSystem::default(),
+            &PointerActivations::default(),
+            &PointerSystem::default(),
+            0.016,
+        );
+        let hits = rx.drain_ready_events();
+        assert_eq!(hits.len(), 1);
+        assert!(
+            matches!(hits[0].event, Some(EventSignal::RayIntersected {raycaster, renderable, origin:[0.,0.,0.], dir:[0.,0.,-1.], ..}) if raycaster == ray && renderable == near)
+        );
+        assert_eq!(
+            world
+                .get_component_by_id_as::<RayCastComponent>(ray)
+                .unwrap()
+                .cast_requests,
+            0
+        );
+    }
     use super::RayCastSystem;
     use crate::engine::ecs::component::RaycastableShapeType;
     use crate::engine::ecs::component::{
@@ -1313,6 +1369,13 @@ impl RayCastSystem {
                     );
                 }
 
+                if world
+                    .get_component_by_id_as::<RayCastComponent>(rcid)
+                    .is_some_and(|ray| ray.nearest_hit_only)
+                {
+                    hits.sort_by(|a, b| a.1.total_cmp(&b.1));
+                    hits.truncate(1);
+                }
                 // Emit one RayIntersected per hit (front-to-back). GestureSystem accumulates
                 // all of them within the frame and picks drag/click targets independently.
                 for &(hit_cid, t) in &hits {

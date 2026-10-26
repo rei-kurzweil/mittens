@@ -6,8 +6,12 @@ use crate::engine::ecs::component::Component;
 /// Attach this under the pose-driving part of the topology (for example a desktop camera rig
 /// transform, an XR camera, or a controller-driven transform). At init time the engine spawns
 /// and owns a child `RayCastComponent`, so authoring only needs to describe the pointer itself.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct PointerComponent {
+    /// Explicit grip frame for Grabbable.to_hand objects. AVC supplies a runtime
+    /// default when this override is absent or unresolved.
+    pub grab_attachment: Option<crate::engine::ecs::component::ComponentRef>,
+    pub(crate) avatar_grab_attachment: Option<ComponentId>,
     pub enabled: bool,
     /// Enables diagnostics owned by this pointer, currently its active drag mapping surface.
     pub debug_enabled: bool,
@@ -30,6 +34,8 @@ impl PointerComponent {
 
     pub fn new() -> Self {
         Self {
+            grab_attachment: None,
+            avatar_grab_attachment: None,
             enabled: true,
             debug_enabled: false,
             min_grab_distance: None,
@@ -42,6 +48,8 @@ impl PointerComponent {
 
     pub fn disabled() -> Self {
         Self {
+            grab_attachment: None,
+            avatar_grab_attachment: None,
             enabled: false,
             debug_enabled: false,
             min_grab_distance: None,
@@ -147,6 +155,17 @@ impl Component for PointerComponent {
             expression.with_call("debug_enable", vec![b(true)])
         } else {
             expression
+        };
+        let expression = match &self.grab_attachment {
+            Some(reference) => {
+                use crate::engine::ecs::component::ComponentRef;
+                let selector = match reference {
+                    ComponentRef::Guid(id) => format!("@uuid:{id}"),
+                    ComponentRef::Query(query) => query.clone(),
+                };
+                expression.with_call("grab_attachment", vec![s(&selector)])
+            }
+            None => expression,
         };
         let expression = match self.min_grab_distance {
             Some(distance) => expression.with_call("min_grab_distance", vec![num(distance as f64)]),

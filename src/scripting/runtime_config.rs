@@ -301,6 +301,16 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                             mms::ValueType::Any,
                         ),
                     );
+                    host_method(
+                        component,
+                        canonical,
+                        "world_trs",
+                        mms::ValueSignature::with_optional(
+                            vec![mms::ValueType::Any],
+                            0,
+                            mms::ValueType::Any,
+                        ),
+                    );
                 }
                 "TransformWorld" => {
                     host_method(
@@ -808,15 +818,21 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     component.builder_call("translation_basis", any(1));
                 }
                 "Pointer" => {
+                    host_constructor_and_builder(
+                        component,
+                        canonical,
+                        "grab_attachment",
+                        strings(1),
+                    );
                     host_constructor(component, canonical, "disabled", no_args());
-                    constructor_and_builder(component, "debug_enable", booleans(1));
+                    host_constructor_and_builder(component, canonical, "debug_enable", booleans(1));
                     for method in [
                         "min_grab_distance",
                         "click_max_screen_distance_px",
                         "click_max_ray_angle_deg",
                         "click_max_origin_distance",
                     ] {
-                        constructor_and_builder(component, method, floats(1));
+                        host_constructor_and_builder(component, canonical, method, floats(1));
                     }
                 }
                 "TransformOperator" => {
@@ -1154,6 +1170,8 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 "Grabbable" => {
                     no_arg_constructors(component, &["parent", "off", "on"]);
                     constructor_and_builder(component, "to_hand", booleans(1));
+                    component
+                        .builder_call("hand_offset", component_signature([mms::ValueType::Array]));
                 }
                 "Rider" => {
                     component
@@ -1357,9 +1375,15 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     no_arg_constructors_and_builders(component, &["forward_plus_z"]);
                 }
                 "Raycast" => {
-                    no_arg_constructors(component, &["continuous", "event_driven"]);
-                    component.builder_call("min_distance", floats(1));
-                    component.builder_call("max_distance", floats(1));
+                    for name in ["parent_forward", "nearest_hit_only"] {
+                        host_builder_call(component, canonical, name, booleans(1));
+                    }
+                    for name in ["continuous", "event_driven"] {
+                        host_constructor(component, canonical, name, no_args());
+                    }
+                    for name in ["min_distance", "max_distance"] {
+                        host_builder_call(component, canonical, name, floats(1));
+                    }
                 }
                 "AudioOutput" => {
                     component.constructor("off", no_args());

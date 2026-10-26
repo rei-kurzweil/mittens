@@ -10,9 +10,9 @@ use crate::engine::ecs::component::{
     AmbientLightComponent, AnimationComponent, AnimationState, BackgroundColorComponent,
     BloomComponent, BlurPassComponent, Camera3DComponent, ColorComponent,
     DirectionalLightComponent, EmissiveComponent, EmissivePassComponent, KeyframeComponent,
-    PointerComponent, RaycastableComponent, RefractionComponent, RenderGraphComponent,
-    RenderableComponent, RendererSettingsComponent, RoughTransmissionComponent, TransformComponent,
-    UnlitComponent,
+    PointerComponent, RayCastComponent, RaycastableComponent, RefractionComponent,
+    RenderGraphComponent, RenderableComponent, RendererSettingsComponent,
+    RoughTransmissionComponent, TransformComponent, UnlitComponent,
 };
 use crate::engine::ecs::{ComponentId, SignalEmitter, World};
 
@@ -23,6 +23,7 @@ use crate::engine::ecs::component::material::{
 };
 
 const DIRECT_COMPONENTS: &[&str] = &[
+    "Raycast",
     "MaterialBase",
     "MaterialDefinition",
     "Material",
@@ -388,6 +389,10 @@ fn create_component(
         "Bloom" => world.add_component(BloomComponent::new()),
         "BlurPass" => world.add_component(BlurPassComponent::new()),
         "Camera3D" => world.add_component(Camera3DComponent::new()),
+        "Raycast" => world.add_component(match constructor {
+            Some("continuous") => RayCastComponent::continuous(),
+            _ => RayCastComponent::event_driven(),
+        }),
         "Pointer" => world.add_component(match constructor {
             Some("disabled") => PointerComponent::disabled(),
             _ => PointerComponent::new(),
@@ -428,6 +433,7 @@ fn create_component(
                 | ("AmbientLight", "rgb")
                 | ("RenderGraph", "on" | "off")
                 | ("Pointer", "disabled")
+                | ("Raycast", "continuous" | "event_driven")
                 | (
                     "Raycastable",
                     "disabled" | "drag_only" | "click_only" | "enabled"
@@ -555,6 +561,58 @@ fn apply_call(
             *world
                 .get_component_by_id_as_mut::<TransformComponent>(id)
                 .ok_or("missing Transform after construction")? = updated;
+        }
+        "Raycast" => {
+            let mut ray = *world
+                .get_component_by_id_as::<RayCastComponent>(id)
+                .ok_or("missing Raycast")?;
+            match method {
+                "parent_forward" => ray.parent_forward = bool_arg(args, 0)?,
+                "nearest_hit_only" => ray.nearest_hit_only = bool_arg(args, 0)?,
+                "min_distance" => ray.min_distance = f32_arg(args, 0)?,
+                "max_distance" => ray.max_distance = f32_arg(args, 0)?,
+                _ => return Err(format!("unsupported Raycast call {method}")),
+            }
+            if !RayCastComponent::valid_distance_interval(ray.min_distance, ray.max_distance) {
+                return Err(
+                    "raycast distance interval requires finite non-negative bounds with min <= max"
+                        .into(),
+                );
+            }
+            *world
+                .get_component_by_id_as_mut::<RayCastComponent>(id)
+                .unwrap() = ray;
+        }
+        "Pointer" if method == "grab_attachment" => {
+            let reference = component_ref_arg(world, args, 0)?;
+            world
+                .get_component_by_id_as_mut::<PointerComponent>(id)
+                .ok_or("missing Pointer")?
+                .grab_attachment = Some(reference);
+        }
+        "Pointer" => {
+            let updated = world
+                .get_component_by_id_as::<PointerComponent>(id)
+                .ok_or("missing Pointer")?
+                .clone();
+            let updated = if method == "debug_enable" {
+                updated.debug_enable(bool_arg(args, 0)?)
+            } else {
+                let value = f32_arg(args, 0)?;
+                if value < 0. || (method == "click_max_ray_angle_deg" && value > 180.) {
+                    return Err(format!("invalid Pointer.{method} value"));
+                }
+                match method {
+                    "min_grab_distance" => updated.min_grab_distance(value),
+                    "click_max_screen_distance_px" => updated.click_max_screen_distance_px(value),
+                    "click_max_ray_angle_deg" => updated.click_max_ray_angle_deg(value),
+                    "click_max_origin_distance" => updated.click_max_origin_distance(value),
+                    _ => return Err(format!("unsupported Pointer call {method}")),
+                }
+            };
+            *world
+                .get_component_by_id_as_mut::<PointerComponent>(id)
+                .unwrap() = updated;
         }
         "Emissive" if method == "intensity" => {
             world

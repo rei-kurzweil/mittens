@@ -572,6 +572,45 @@ fn grab_event_payload(pointer: ComponentId, target: ComponentId) -> HashMap<Stri
 
 pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
     match signal.event.as_ref() {
+        Some(crate::engine::ecs::EventSignal::RayIntersected {
+            raycaster,
+            renderable,
+            t,
+            origin,
+            dir,
+        }) => {
+            let vector = |values: [f32; 3]| {
+                Value::Array(
+                    values
+                        .into_iter()
+                        .map(|v| Value::Number(v as f64))
+                        .collect(),
+                )
+            };
+            Value::Map(HashMap::from([
+                (
+                    "raycaster".into(),
+                    Value::ComponentObject {
+                        id: *raycaster,
+                        component_type: "Raycast".into(),
+                    },
+                ),
+                (
+                    "renderable".into(),
+                    Value::ComponentObject {
+                        id: *renderable,
+                        component_type: "Renderable".into(),
+                    },
+                ),
+                ("distance".into(), Value::Number(*t as f64)),
+                ("origin".into(), vector(*origin)),
+                ("direction".into(), vector(*dir)),
+                (
+                    "hit_point".into(),
+                    vector(std::array::from_fn(|axis| origin[axis] + dir[axis] * t)),
+                ),
+            ]))
+        }
         Some(crate::engine::ecs::EventSignal::AttachmentChanged {
             parent,
             parent_type,

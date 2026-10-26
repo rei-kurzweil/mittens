@@ -1705,6 +1705,10 @@ fn try_init_splices(
         );
     }
 
+    for ((binding, _, _), correction) in [left, right].into_iter().flatten() {
+        ensure_hand_grab_attachment(world, binding.controller, binding.hand, correction, emit);
+    }
+
     // -----------------------------------------------------------------------
     // Body operator: created as a child of AVC; model_root re-parented under it.
     //
@@ -1966,6 +1970,66 @@ fn find_xr_pose_driver(world: &World, start: ComponentId) -> Option<ComponentId>
         current = world.parent_of(component);
     }
     None
+}
+
+/// A canonical grip follows the solved skeleton, independently of the raw IK driver.
+fn ensure_hand_grab_attachment(
+    world: &mut World,
+    controller: ComponentId,
+    hand: ComponentId,
+    correction: Option<[f32; 4]>,
+    emit: &mut dyn SignalEmitter,
+) {
+    use crate::engine::ecs::component::PointerComponent;
+    let pointers: Vec<_> = world
+        .all_components()
+        .filter(|&id| {
+            if world
+                .get_component_by_id_as::<PointerComponent>(id)
+                .is_none()
+            {
+                return false;
+            }
+            let mut cursor = world.parent_of(id);
+            while let Some(parent) = cursor {
+                if parent == controller {
+                    return true;
+                }
+                cursor = world.parent_of(parent);
+            }
+            false
+        })
+        .collect();
+    if pointers.is_empty() {
+        return;
+    }
+    let existing = world
+        .children_of(hand)
+        .iter()
+        .copied()
+        .find(|&id| world.component_label(id) == Some("avatar_hand_grip_attachment"));
+    let grip = existing.unwrap_or_else(|| {
+        let id = world.add_component(
+            TransformComponent::new()
+                .with_rotation_quat(quat_conjugate(correction.unwrap_or([0., 0., 0., 1.]))),
+        );
+        world.get_component_record_mut(id).unwrap().name = "avatar_hand_grip_attachment".into();
+        let serialization = world.add_component(SerializeComponent::off());
+        world
+            .add_child(id, serialization)
+            .expect("runtime grip serialization marker");
+        world
+            .add_child(hand, id)
+            .expect("new grip frame under hand");
+        world.init_component_tree(id, emit);
+        id
+    });
+    for pointer in pointers {
+        world
+            .get_component_by_id_as_mut::<PointerComponent>(pointer)
+            .unwrap()
+            .avatar_grab_attachment = Some(grip);
+    }
 }
 
 /// Create the optional rotation-correction child beneath an already classified hand target.
@@ -2348,6 +2412,43 @@ pub(super) fn rest_model_relative_to(
 #[cfg(test)]
 mod hand_pose_correction_tests {
     use super::*;
+    #[test]
+    fn avatar_supplies_solved_hand_grip_without_moving_tracking_or_pointer() {
+        use crate::engine::ecs::component::PointerComponent;
+        let mut world = World::default();
+        let controller = world.add_component(TransformComponent::new());
+        let tracked = world.add_component(TransformComponent::new().with_position(3., 1., 0.));
+        let hand = world.add_component(TransformComponent::new().with_position(1., 1., 0.));
+        let pointer = world.add_component(PointerComponent::new());
+        world.add_child(controller, tracked).unwrap();
+        world.add_child(tracked, pointer).unwrap();
+        let correction = [0., 0.70710677, 0., 0.70710677];
+        let mut queue = crate::engine::ecs::CommandQueue::new();
+        ensure_hand_grab_attachment(&mut world, controller, hand, Some(correction), &mut queue);
+        let grip = world
+            .get_component_by_id_as::<PointerComponent>(pointer)
+            .unwrap()
+            .avatar_grab_attachment
+            .unwrap();
+        assert_eq!(world.parent_of(grip), Some(hand));
+        assert_eq!(world.parent_of(pointer), Some(tracked));
+        assert_eq!(
+            world
+                .get_component_by_id_as::<TransformComponent>(grip)
+                .unwrap()
+                .transform
+                .rotation,
+            quat_conjugate(correction)
+        );
+        ensure_hand_grab_attachment(&mut world, controller, hand, Some(correction), &mut queue);
+        assert_eq!(
+            world
+                .get_component_by_id_as::<PointerComponent>(pointer)
+                .unwrap()
+                .avatar_grab_attachment,
+            Some(grip)
+        );
+    }
     use crate::engine::ecs::component::xr_eye_tracking::{EyeClosureSample, EyeGazeSample};
     use crate::engine::ecs::component::{
         AmplitudeComponent, AmplitudeSample, AmplitudeStatus, ComponentRef, EyeRotationLimits,

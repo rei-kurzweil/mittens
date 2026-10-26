@@ -240,6 +240,10 @@ impl<'a, 'bindings> MittensHost<'a, 'bindings> {
     ) -> Result<mms::HostResponse, mms::HostError> {
         use mms::TransportValue as V;
 
+        if self.deferred_callback_phase == Some(DeferredCallbackHostPhase::Audio) {
+            return Ok(mms::HostResponse::Unit);
+        }
+
         let (scope, name, payload) = match args.as_slice() {
             [scope, V::String(name)] => (scope, name, None),
             [scope, V::String(name), payload] => (scope, name, Some(payload)),
@@ -821,6 +825,115 @@ impl mms::Host for MittensHost<'_, '_> {
                     return Ok(S::Value(mms::Value::Null));
                 }
                 let id = self.existing_id(component, "invoke_component_method")?;
+                if (*component_type == "Transform" && matches!(*method, "trs" | "world_trs"))
+                    || (*component_type == "TransformWorld" && *method == "trs")
+                {
+                    use crate::engine::ecs::component::TransformComponent;
+                    use crate::engine::transform::{TransformSpace, TransformTrs};
+                    let space = if *method == "world_trs" || *component_type == "TransformWorld" {
+                        TransformSpace::World
+                    } else {
+                        TransformSpace::Local
+                    };
+                    let error = |message| mms::HostError::failure("Transform.trs", message);
+                    match args.as_slice() {
+                        [] => {
+                            let pose = if space == TransformSpace::World {
+                                crate::engine::ecs::system::TransformSystem::world_trs(
+                                    self.world, id,
+                                )
+                                .map_err(|e| error(e.to_string()))?
+                            } else {
+                                self.world
+                                    .get_component_by_id_as::<TransformComponent>(id)
+                                    .ok_or_else(|| error("receiver is not a Transform".into()))?
+                                    .trs()
+                            };
+                            let vector = |values: &[f32]| {
+                                mms::Value::Array(
+                                    values
+                                        .iter()
+                                        .map(|v| mms::Value::Number(*v as f64))
+                                        .collect(),
+                                )
+                            };
+                            return Ok(S::Value(mms::Value::Map(HashMap::from([
+                                ("translation".into(), vector(&pose.translation)),
+                                (
+                                    "rotation_quat_xyzw".into(),
+                                    vector(&pose.rotation_quat_xyzw),
+                                ),
+                                ("scale".into(), vector(&pose.scale)),
+                            ]))));
+                        }
+                        [value] => {
+                            let fields = match value {
+                                mms::Value::Map(fields) => fields.clone(),
+                                mms::Value::Object(id) => id
+                                    .with_map(Clone::clone)
+                                    .ok_or_else(|| error("stale TRS table".into()))?,
+                                _ => return Err(error("expected a copied TRS table".into())),
+                            };
+                            fn vector<const N: usize>(
+                                fields: &HashMap<String, mms::Value>,
+                                name: &str,
+                            ) -> Result<[f32; N], mms::HostError> {
+                                let Some(mms::Value::Array(values)) = fields.get(name) else {
+                                    return Err(mms::HostError::failure(
+                                        "Transform.trs",
+                                        format!("missing {name} array"),
+                                    ));
+                                };
+                                if values.len() != N {
+                                    return Err(mms::HostError::failure(
+                                        "Transform.trs",
+                                        format!("{name} requires {N} values"),
+                                    ));
+                                }
+                                let mut result = [0.; N];
+                                for (out, value) in result.iter_mut().zip(values) {
+                                    let mms::Value::Number(value) = value else {
+                                        return Err(mms::HostError::failure(
+                                            "Transform.trs",
+                                            "TRS values must be numbers",
+                                        ));
+                                    };
+                                    *out = *value as f32;
+                                }
+                                Ok(result)
+                            }
+                            let pose = TransformTrs::new(
+                                vector(&fields, "translation")?,
+                                vector(&fields, "rotation_quat_xyzw")?,
+                                vector(&fields, "scale")?,
+                            )
+                            .normalized()
+                            .map_err(|e| error(e.to_string()))?;
+                            self.intents.push(IntentValue::SetTransformTrs {
+                                component_id: id,
+                                space,
+                                value: pose,
+                            });
+                            return Ok(S::Value(mms::Value::Null));
+                        }
+                        _ => return Err(error("expects zero arguments or one TRS table".into())),
+                    }
+                }
+                if *component_type == "Raycast" && *method == "request_raycast" {
+                    self.world
+                        .get_component_by_id_as::<crate::engine::ecs::component::RayCastComponent>(
+                            id,
+                        )
+                        .ok_or_else(|| {
+                            mms::HostError::failure(
+                                "Raycast.request_raycast",
+                                "receiver is not a Raycast",
+                            )
+                        })?;
+                    self.intents
+                        .push(IntentValue::RequestRaycast { component_id: id });
+                    return Ok(S::Value(mms::Value::Null));
+                }
                 if *component_type == "AudioClip" && *method == "play" {
                     self.world
                         .get_component_by_id_as::<crate::engine::ecs::component::AudioClipComponent>(id)
@@ -1836,6 +1949,32 @@ mod tests {
                 .message
                 .contains("cannot be invoked as a component method")
         );
+    }
+
+    #[test]
+    fn configured_pointer_grip_reference_uses_direct_authoring_with_other_options() {
+        use crate::engine::ecs::component::{ComponentRef, PointerComponent};
+        let configured = super::super::runtime_config::build_mittens_runtime().unwrap();
+        let mut world = World::default();
+        let mut commands = crate::engine::ecs::CommandQueue::new();
+        let mut intents = Vec::new();
+        {
+            let host = MittensHost::new(&mut world, &mut commands, &mut intents)
+                .with_bindings(configured.bindings());
+            let mut session = configured.runtime().session(host);
+            session.eval(r#"Pointer.grab_attachment("[name='grip']").min_grab_distance(0.1).debug_enable(true) { name = "hand_pointer" }"#).unwrap();
+            assert_eq!(session.host().legacy_component_fallbacks(), 0);
+        }
+        let pointer = world
+            .all_components()
+            .find_map(|id| world.get_component_by_id_as::<PointerComponent>(id))
+            .unwrap();
+        assert_eq!(
+            pointer.grab_attachment,
+            Some(ComponentRef::Query("[name='grip']".into()))
+        );
+        assert_eq!(pointer.min_grab_distance, Some(0.1));
+        assert!(pointer.debug_enabled);
     }
 
     #[test]

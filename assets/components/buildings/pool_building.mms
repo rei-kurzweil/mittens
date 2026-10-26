@@ -3,6 +3,7 @@
 export fn ceramic_box(position, size, color, material) {
     return T.position(position[0], position[1], position[2]).scale(size[0], size[1], size[2]) {
         R.cube() {
+            Raycastable.enabled()
             material
             C.rgba(color[0], color[1], color[2], 1.0)
             Texture.with_uri("assets/textures/pool/white-tiles-surface.png")
@@ -28,8 +29,10 @@ fn building_box(data, position, size, trim) {
 }
 
 fn combined_ceramic(label, parts, count, color, material) {
-    return CombineMesh {
+    return CombineMesh.keep_transforms() {
         name = label
+        // Retained boxes remain BVH ray targets; only the combined mesh draws.
+        Raycastable.enabled()
         material
         Texture.with_uri("assets/textures/pool/white-tiles-surface.png")
         TextureFiltering.linear()

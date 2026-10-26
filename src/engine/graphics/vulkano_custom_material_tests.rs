@@ -1893,6 +1893,30 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
         18,
         "two independently colored ceramic groups per building"
     );
+    let check_building_rays = |scene: &crate::engine::Universe| {
+        assert!(scene.systems.bvh.has_index());
+        assert!(scene.systems.bvh.raycast_renderables_candidates(
+            [-10.5,11.4,0.],[-1.,0.,0.],1.,0).is_empty(),
+            "window openings must remain clear after visual combination");
+        let hits=scene.systems.bvh.raycast_renderables_candidates(
+            [-10.5,10.05,0.],[-1.,0.,0.],1.,0);
+        assert!(!hits.is_empty(),"the solid ceramic wall beneath the window must be a BVH ray target");
+        for (id, _) in hits {
+            let primitive=scene.world.get_component_by_id_as::<crate::engine::ecs::component::RenderableComponent>(id).unwrap();
+            assert!(primitive.get_handle().is_none(),"ray targets must use retained source boxes while only combined meshes draw");
+        }
+        for id in scene.world.all_components() {
+            if let Some(combine)=scene.world.get_component_by_id_as::<crate::engine::ecs::component::CombineMeshComponent>(id) {
+                assert!(combine.keep_transforms);
+                let sources=scene.world.find_all_components(id,"Renderable");
+                assert!(!sources.is_empty());
+                for source in sources {
+                    assert!(scene.systems.bvh.debug_renderable_bounds(source).is_some(),"retained source {source:?} in {:?} must enter BVH (eligible={})", scene.world.component_label(id), crate::engine::ecs::system::bvh_system::BvhSystem::renderable_is_raycastable(&scene.world,source));
+                }
+            }
+        }
+    };
+    check_building_rays(&scene);
     let player = scene
         .world
         .all_components()
@@ -1948,6 +1972,10 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
             18,
             "old combined outputs must retire on regeneration"
         );
+        // Slider callbacks publish after simulation; the following simulation
+        // frame commits their queued BVH registrations before casting rays.
+        scene.update(0., &crate::engine::user_input::InputState::default());
+        check_building_rays(&scene);
         assert_eq!(
             scene
                 .world
