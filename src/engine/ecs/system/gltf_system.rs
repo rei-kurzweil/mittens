@@ -1125,6 +1125,10 @@ impl GLTFSystem {
                     CpuMeshHandle(0),
                     material_handle,
                 )));
+                world
+                    .get_component_by_id_as_mut::<RenderableComponent>(renderable)
+                    .unwrap()
+                    .material_scope = Some(gltf_component);
                 let mesh_ref = world.add_component(MeshComponent::new(mesh_key));
 
                 let _ = world.add_child(this_transform, renderable);
@@ -1791,6 +1795,84 @@ mod tests {
                 MaterialHandle::TOON_MESH | MaterialHandle::SKINNED_TOON_MESH
             ));
         }
+        // Explicit Material definitions override legacy projections without
+        // replacing imported textures/colors or splitting shared identity.
+        use crate::engine::ecs::component::material::{
+            MaterialComponent, MaterialDefinitionComponent,
+        };
+        use crate::engine::ecs::system::material_system::MaterialSystem;
+        let imported: Vec<_> = visuals
+            .instances()
+            .iter()
+            .map(|instance| (instance.component, instance.texture, instance.color))
+            .collect();
+        let definition = world.add_component(MaterialDefinitionComponent::builtin(
+            crate::engine::ecs::component::ShadingModel::Anime,
+        ));
+        let material = world.add_component(MaterialComponent {
+            definition,
+            values: [
+                ("rim_color".into(), vec![0.2, 0.4, 0.6]),
+                ("rim_strength".into(), vec![0.3]),
+            ]
+            .into_iter()
+            .collect(),
+        });
+        world.add_child(gltf, material).unwrap();
+        MaterialSystem::publish_source(&mut world, &mut visuals, material).unwrap();
+        renderable_system.refresh_material_topology(&mut world, &mut visuals);
+        let shared = visuals.materials.source_instance(material).unwrap();
+        for instance in visuals.instances() {
+            assert_eq!(instance.material_instance, Some(shared));
+            assert_eq!(
+                instance.renderable.material,
+                MaterialHandle::SKINNED_ANIME_MESH
+            );
+            assert_eq!(
+                instance.anime_shading(&visuals.materials).rim_color[..3],
+                [0.2, 0.4, 0.6]
+            );
+            let (_, texture, color) = imported
+                .iter()
+                .find(|(component, _, _)| *component == instance.component)
+                .unwrap();
+            assert_eq!(instance.texture, *texture);
+            assert_eq!(instance.color, *color);
+        }
+        // A local primitive override stays independent, and detaching it restores
+        // the GLTF-scoped source rather than a copied material.
+        let first = visuals.instances()[0].component;
+        let local = world.add_component(MaterialComponent {
+            definition,
+            values: Default::default(),
+        });
+        world.add_child(first, local).unwrap();
+        MaterialSystem::publish_source(&mut world, &mut visuals, local).unwrap();
+        renderable_system.refresh_material_topology(&mut world, &mut visuals);
+        let first_handle = world
+            .get_component_by_id_as::<RenderableComponent>(first)
+            .unwrap()
+            .handle
+            .unwrap();
+        assert_eq!(
+            visuals.instance(first_handle).unwrap().material_instance,
+            visuals.materials.source_instance(local)
+        );
+        world.detach_child(first, local);
+        renderable_system.refresh_material_topology(&mut world, &mut visuals);
+        assert_eq!(
+            visuals.instance(first_handle).unwrap().material_instance,
+            Some(shared)
+        );
+        // Detaching a GLTF-scoped material also refreshes its generated roots.
+        world.detach_child(gltf, material);
+        renderable_system.refresh_material_topology(&mut world, &mut visuals);
+        assert!(
+            visuals
+                .instances()
+                .iter()
+                .all(|instance| instance.material_instance == Some(source_instance))
+        );
     }
 
     #[test]

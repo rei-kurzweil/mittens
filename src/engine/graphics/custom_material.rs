@@ -1,4 +1,5 @@
-//! The first custom surface contract: a named block of scalar f32 uniforms.
+//! Typed, named custom material uniforms with reflected GPU offsets.
+use super::materials::MaterialInputField;
 use rspirv::{
     dr::Operand,
     spirv::{Decoration, Op, StorageClass},
@@ -9,7 +10,7 @@ use std::sync::{Arc, OnceLock};
 #[derive(Debug)]
 pub struct CustomMaterialDefinition {
     pub base: super::materials::MaterialBaseKind,
-    pub fields: Vec<String>,
+    pub fields: Vec<MaterialInputField>,
     pub fragment_uri: String,
     pub compiled: OnceLock<Result<CompiledMaterial, String>>,
 }
@@ -24,7 +25,7 @@ pub struct CompiledMaterial {
 impl CustomMaterialDefinition {
     pub fn prepare(
         fragment_uri: String,
-        fields: Vec<String>,
+        fields: Vec<MaterialInputField>,
         base: super::materials::MaterialBaseKind,
     ) -> Result<Arc<Self>, String> {
         validate_fields(&fields)?;
@@ -49,28 +50,28 @@ impl CustomMaterialDefinition {
     }
 }
 
-pub fn validate_fields(fields: &[String]) -> Result<(), String> {
+pub fn validate_fields(fields: &[MaterialInputField]) -> Result<(), String> {
     if fields.is_empty() || fields.len() > 256 {
-        return Err("custom materials require 1..=256 f32 fields".into());
+        return Err("custom materials require 1..=256 numeric fields".into());
     }
     let mut seen = std::collections::HashSet::new();
     for field in fields {
-        let mut chars = field.chars();
+        let mut chars = field.name.chars();
         if !chars
             .next()
             .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
             || !chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
         {
-            return Err(format!("invalid material field name '{field}'"));
+            return Err(format!("invalid material field name '{}'", field.name));
         }
-        if !seen.insert(field) {
-            return Err(format!("duplicate material field '{field}'"));
+        if !seen.insert(&field.name) {
+            return Err(format!("duplicate material field '{}'", field.name));
         }
     }
     Ok(())
 }
 
-pub fn compile(uri: &str, fields: &[String]) -> Result<CompiledMaterial, String> {
+pub fn compile(uri: &str, fields: &[MaterialInputField]) -> Result<CompiledMaterial, String> {
     let source = std::fs::read_to_string(uri).map_err(|e| format!("{uri}: {e}"))?;
     compile_source(&source, uri, fields)
 }
@@ -78,7 +79,7 @@ pub fn compile(uri: &str, fields: &[String]) -> Result<CompiledMaterial, String>
 pub(crate) fn compile_source(
     source: &str,
     uri: &str,
-    fields: &[String],
+    fields: &[MaterialInputField],
 ) -> Result<CompiledMaterial, String> {
     validate_fields(fields)?;
     let compiler = shaderc::Compiler::new().ok_or("cannot create GLSL compiler")?;
@@ -88,7 +89,7 @@ pub(crate) fn compile_source(
     reflect(artifact.as_binary().to_vec(), fields).map_err(|e| format!("{uri}: {e}"))
 }
 
-pub fn reflect(words: Vec<u32>, fields: &[String]) -> Result<CompiledMaterial, String> {
+pub fn reflect(words: Vec<u32>, fields: &[MaterialInputField]) -> Result<CompiledMaterial, String> {
     let module = rspirv::dr::load_words(&words).map_err(|e| e.to_string())?;
     let id = |operand: &Operand| {
         if let Operand::IdRef(id) = operand {
@@ -203,7 +204,7 @@ pub fn reflect(words: Vec<u32>, fields: &[String]) -> Result<CompiledMaterial, S
                 continue;
             }
             (Some(1), Some(0)) if *storage == StorageClass::Uniform => {}
-            _ => return Err("custom descriptors must use the engine camera/lights, material f32 block (set=1 binding=0), or base texture (set=1 binding=1)".into()),
+            _ => return Err("custom descriptors must use the engine camera/lights, material numeric block (set=1 binding=0), or base texture (set=1 binding=1)".into()),
         }
         if block.replace(struct_id).is_some() {
             return Err("multiple custom material blocks".into());
@@ -220,9 +221,32 @@ pub fn reflect(words: Vec<u32>, fields: &[String]) -> Result<CompiledMaterial, S
         let ty = types
             .get(&id(ty).ok_or("invalid member type")?)
             .ok_or("unknown member type")?;
-        if ty.class.opcode != Op::TypeFloat || ty.operands.first().and_then(number) != Some(32) {
-            return Err("custom material fields must all be scalar f32".into());
-        }
+        let width = if ty.class.opcode == Op::TypeFloat
+            && ty.operands.first().and_then(number) == Some(32)
+        {
+            1
+        } else if ty.class.opcode == Op::TypeVector {
+            let scalar = ty
+                .operands
+                .first()
+                .and_then(id)
+                .and_then(|id| types.get(&id))
+                .ok_or("missing vector scalar type")?;
+            let width = ty
+                .operands
+                .get(1)
+                .and_then(number)
+                .ok_or("missing vector width")? as usize;
+            if scalar.class.opcode != Op::TypeFloat
+                || scalar.operands.first().and_then(number) != Some(32)
+                || !(2..=4).contains(&width)
+            {
+                return Err("custom material fields must be f32 or vec2/vec3/vec4 of f32".into());
+            }
+            width
+        } else {
+            return Err("custom material fields must be f32 or vec2/vec3/vec4 of f32".into());
+        };
         let member = member as u32;
         let name = names
             .get(&(struct_id, member))
@@ -233,18 +257,22 @@ pub fn reflect(words: Vec<u32>, fields: &[String]) -> Result<CompiledMaterial, S
         if offset % 4 != 0 || offset > 65532 {
             return Err("unsupported uniform member offset".into());
         }
-        byte_size = byte_size.max(offset + 4);
-        reflected.insert(name.clone(), offset);
+        byte_size = byte_size.max(offset + width * 4);
+        reflected.insert(name.clone(), (offset, width));
     }
-    let offsets = fields
-        .iter()
-        .map(|name| {
-            reflected
-                .get(name)
-                .copied()
-                .ok_or_else(|| format!("shader has no f32 field '{name}'"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut offsets = Vec::new();
+    for field in fields {
+        let &(offset, width) = reflected
+            .get(&field.name)
+            .ok_or_else(|| format!("shader has no field '{}'", field.name))?;
+        if width != field.ty.width() {
+            return Err(format!(
+                "shader type does not match material field '{}' ({:?})",
+                field.name, field.ty
+            ));
+        }
+        offsets.extend((0..width).map(|component| offset + component * 4));
+    }
     Ok(CompiledMaterial {
         words,
         offsets,
@@ -406,6 +434,54 @@ mod tests {
     use super::*;
 
     #[test]
+    fn typed_vectors_pack_reflected_padding_and_reject_schema_mismatches() {
+        use super::super::materials::{MaterialFieldType as T, MaterialInputField};
+        let source = "#version 450\nlayout(location=0) out vec4 color; layout(set=1,binding=0,std140) uniform Params {float gain; vec3 tint; float tail; vec2 uv; vec4 rgba;} p; void main(){color=p.rgba*vec4(p.tint*p.gain,p.tail)+vec4(p.uv,0,0);}";
+        // Authored order deliberately differs from GLSL declaration order.
+        let fields = [
+            ("rgba", T::Vec4),
+            ("gain", T::F32),
+            ("uv", T::Vec2),
+            ("tint", T::Vec3),
+            ("tail", T::F32),
+        ]
+        .map(|(name, ty)| MaterialInputField {
+            name: name.into(),
+            ty,
+        });
+        let shader = compile_source(source, "mixed-vectors", &fields).unwrap();
+        assert_eq!(shader.offsets, [48, 52, 56, 60, 0, 32, 36, 16, 20, 24, 28]);
+        let bytes = shader
+            .pack(&[1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11.])
+            .unwrap();
+        assert_eq!(bytes.len(), 64);
+        assert_eq!(&bytes[4..16], &[0; 12]);
+        assert_eq!(&bytes[40..48], &[0; 8]);
+        for (slot, offset) in shader.offsets.iter().enumerate() {
+            assert_eq!(
+                f32::from_ne_bytes(bytes[*offset..*offset + 4].try_into().unwrap()),
+                slot as f32 + 1.
+            );
+        }
+        let mut wrong = fields.clone();
+        wrong[3].ty = T::Vec4;
+        assert!(
+            compile_source(source, "wrong-width", &wrong)
+                .unwrap_err()
+                .contains("type does not match")
+        );
+        wrong[3].name = "missing".into();
+        assert!(
+            compile_source(source, "wrong-name", &wrong)
+                .unwrap_err()
+                .contains("no field")
+        );
+        let mut invalid_values = vec![1.; 11];
+        invalid_values[9] = f32::INFINITY;
+        assert!(shader.pack(&invalid_values).is_err());
+    }
+
+    #[test]
     fn pool_materials_validate_reserved_engine_resources_and_named_inputs() {
         for (path, names) in [
             (
@@ -445,7 +521,7 @@ mod tests {
                 ],
             ),
         ] {
-            let names: Vec<_> = names.into_iter().map(str::to_owned).collect();
+            let names: Vec<_> = names.into_iter().map(MaterialInputField::from).collect();
             let compiled = compile(path, &names).unwrap();
             assert_eq!(
                 compiled.pack(&vec![0.5; names.len()]).unwrap().len(),
@@ -453,7 +529,7 @@ mod tests {
             );
         }
         let metal = std::fs::read_to_string("assets/shaders/pool-metal-matcap.frag").unwrap();
-        let fields = ["brightness".to_owned()];
+        let fields = ["brightness".into()];
         assert!(
             compile_source(
                 &metal.replace("mat4 proj;", "mat3 proj;"),
@@ -521,7 +597,7 @@ mod tests {
             "hue_speed",
             "wave_speed",
         ]
-        .map(str::to_owned);
+        .map(MaterialInputField::from);
         let shader = compile("assets/shaders/youtuber-led-wave.frag", &fields).unwrap();
         assert_eq!(shader.offsets, [16, 12, 0, 4, 8]);
         assert_eq!(shader.byte_size, 32);
@@ -535,7 +611,7 @@ mod tests {
         let single = compile_source("#version 450\nlayout(location=0) out vec4 color; layout(set=1,binding=0) uniform Params {float arbitrary_name;} p; void main(){color=vec4(p.arbitrary_name);}", "one-f32", &["arbitrary_name".into()]).unwrap();
         assert_eq!(single.byte_size, 16);
         assert_eq!(single.offsets, [0]);
-        assert!(compile_source("#version 450\nlayout(location=0) out vec4 color; layout(set=1,binding=0) uniform Params {vec2 arbitrary_name;} p; void main(){color=vec4(p.arbitrary_name,0,1);}", "wrong-type", &["arbitrary_name".into()]).unwrap_err().contains("scalar f32"));
+        assert!(compile_source("#version 450\nlayout(location=0) out vec4 color; layout(set=1,binding=0) uniform Params {vec2 arbitrary_name;} p; void main(){color=vec4(p.arbitrary_name,0,1);}", "wrong-type", &["arbitrary_name".into()]).unwrap_err().contains("type does not match"));
         assert!(compile_source("#version 450\nlayout(location=0) out vec4 color; layout(set=3,binding=0) uniform Params {float arbitrary_name;} p; void main(){color=vec4(p.arbitrary_name);}", "wrong-set", &["arbitrary_name".into()]).is_err());
     }
 }

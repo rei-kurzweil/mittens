@@ -69,6 +69,33 @@ pub(crate) fn try_spawn_tree(
     }))
 }
 
+/// Material resources have no legacy constructor. Materialize them through the
+/// configured host before an enclosing legacy scene subtree is converted.
+/// The enclosing spawn owns initialization after attaching these children.
+pub(crate) fn materialize_material_children(
+    tree: &mut mms::MaterializedCE,
+    bindings: &mms::ImplementationBindings<MittensBinding>,
+    world: &mut World,
+    emit: &mut dyn SignalEmitter,
+) -> Result<(), String> {
+    for child in &mut tree.children {
+        let mms::CeChild::Spawn(subtree) = child else {
+            continue;
+        };
+        if matches!(
+            subtree.component_type.as_str(),
+            "Material" | "MaterialDefinition" | "MaterialBase"
+        ) {
+            let id = try_spawn_tree(subtree, bindings, world, emit, false)
+                .ok_or("material resources require configured construction")??;
+            *child = mms::CeChild::Attach(MittensHost::component_handle(id));
+        } else {
+            materialize_material_children(subtree, bindings, world, emit)?;
+        }
+    }
+    Ok(())
+}
+
 fn tree_is_direct(
     tree: &mms::MaterializedCE,
     bindings: &mms::ImplementationBindings<MittensBinding>,
@@ -239,6 +266,21 @@ fn create_component(
             _ => crate::engine::graphics::materials::MaterialBaseKind::Surface,
         })),
         "MaterialDefinition" => {
+            if matches!(constructor, Some("anime" | "toon")) {
+                let model = if constructor == Some("anime") {
+                    crate::engine::ecs::component::ShadingModel::Anime
+                } else {
+                    crate::engine::ecs::component::ShadingModel::Toon
+                };
+                if let Some(existing) = world.all_components().find(|&id| {
+                    world
+                        .get_component_by_id_as::<MaterialDefinitionComponent>(id)
+                        .is_some_and(|definition| definition.builtin == Some(model))
+                }) {
+                    return Ok(existing);
+                }
+                return Ok(world.add_component(MaterialDefinitionComponent::builtin(model)));
+            }
             let base = material_reference(args, 0)?;
             if world
                 .get_component_by_id_as::<MaterialBaseComponent>(base)
@@ -250,6 +292,7 @@ fn create_component(
                 base,
                 fragment_uri: String::new(),
                 fields: Vec::new(),
+                builtin: None,
             })
         }
         "Material" => {
@@ -258,9 +301,7 @@ fn create_component(
                 .get_component_by_id_as::<MaterialDefinitionComponent>(definition)
                 .is_none()
             {
-                return Err(
-                    "Material requires a MaterialDefinition in the first custom slice".into(),
-                );
+                return Err("Material requires a MaterialDefinition".into());
             }
             world.add_component(MaterialComponent {
                 definition,
@@ -374,6 +415,7 @@ fn create_component(
             (component, constructor),
             ("MaterialBase" | "MaterialDefinition" | "Material", "new")
                 | ("MaterialBase", "extracted_emissive" | "planar_reflective")
+                | ("MaterialDefinition", "anime" | "toon")
                 | (
                     "Animation",
                     "playing" | "paused" | "looping" | "length" | "scope"
@@ -419,11 +461,14 @@ fn apply_call(
             let definition = world
                 .get_component_by_id_as_mut::<MaterialDefinitionComponent>(id)
                 .ok_or("missing material definition")?;
+            if definition.builtin.is_some() {
+                return Err("built-in material definitions are read-only; create a custom definition to change its shader or schema".into());
+            }
             match method {
                 "fragment" => definition.fragment_uri = string_arg(args, 0)?.to_owned(),
                 "input_f32" => {
                     let mut fields = definition.fields.clone();
-                    fields.push(string_arg(args, 0)?.to_owned());
+                    fields.push(string_arg(args, 0)?.to_owned().into());
                     crate::engine::graphics::custom_material::validate_fields(&fields)?;
                     definition.fields = fields;
                 }
@@ -431,14 +476,20 @@ fn apply_call(
                     let Some(mms::Value::RecordType(schema)) = args.first() else {
                         return Err("MaterialDefinition.inputs requires a type-only record".into());
                     };
-                    for (name, tag) in &schema.0 {
-                        if *tag != mms::TypeTag::F32 {
-                            return Err(format!(
-                                "material field '{name}': only f32 inputs are supported, got {tag}"
-                            ));
-                        }
-                    }
-                    let fields: Vec<_> = schema.0.keys().cloned().collect();
+                    let fields = schema
+                        .0
+                        .iter()
+                        .map(|(name, tag)| {
+                            Ok(crate::engine::graphics::materials::MaterialInputField {
+                                name: name.clone(),
+                                ty:
+                                    crate::engine::graphics::materials::MaterialFieldType::from_tag(
+                                        *tag,
+                                    )
+                                    .map_err(|error| format!("material field '{name}': {error}"))?,
+                            })
+                        })
+                        .collect::<Result<Vec<_>, String>>()?;
                     crate::engine::graphics::custom_material::validate_fields(&fields)?;
                     definition.fields = fields;
                 }
@@ -453,7 +504,7 @@ fn apply_call(
                     .ok_or("stale material values table")?,
                 _ => {
                     return Err(format!(
-                        "Material.{method} requires a table of finite f32 values"
+                        "Material.{method} requires a table of numeric material values"
                     ));
                 }
             };
@@ -661,17 +712,6 @@ fn set_material_input(
     name: &str,
     value: &mms::Value,
 ) -> Result<bool, String> {
-    let mms::Value::Number(number) = value else {
-        return Err(format!(
-            "material field '{name}' requires a finite f32 value"
-        ));
-    };
-    let value = *number as f32;
-    if !number.is_finite() || !value.is_finite() {
-        return Err(format!(
-            "material field '{name}' requires a finite f32 value"
-        ));
-    }
     let definition = world
         .get_component_by_id_as::<MaterialComponent>(id)
         .ok_or("missing material")?
@@ -679,9 +719,35 @@ fn set_material_input(
     let schema = world
         .get_component_by_id_as::<MaterialDefinitionComponent>(definition)
         .ok_or("missing material definition")?;
-    if !schema.fields.iter().any(|field| field == name) {
-        return Err(format!("unknown material field '{name}'"));
-    }
+    let field = schema
+        .fields
+        .iter()
+        .find(|field| field.name == name)
+        .ok_or_else(|| format!("unknown material field '{name}'"))?;
+    let components: Vec<&mms::Value> = match value {
+        mms::Value::Number(_) if field.ty.width() == 1 => vec![value],
+        mms::Value::Array(values) if field.ty.width() > 1 && values.len() == field.ty.width() => {
+            values.iter().collect()
+        }
+        _ => {
+            return Err(format!(
+                "material field '{name}' requires {:?} ({} finite f32 components)",
+                field.ty,
+                field.ty.width()
+            ));
+        }
+    };
+    let value = components
+        .into_iter()
+        .map(|value| match value {
+            mms::Value::Number(number) if number.is_finite() && (*number as f32).is_finite() => {
+                Ok(*number as f32)
+            }
+            _ => Err(format!(
+                "material field '{name}' requires finite f32 components"
+            )),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let material = world
         .get_component_by_id_as_mut::<MaterialComponent>(id)
         .unwrap();
@@ -713,12 +779,26 @@ pub(crate) fn material_method(
             let schema = world
                 .get_component_by_id_as::<MaterialDefinitionComponent>(material.definition)
                 .ok_or("missing material definition")?;
-            if !schema.fields.iter().any(|field| field == name) {
-                return Err(format!("unknown material field '{name}'"));
+            let parameter_schema = schema.parameter_schema();
+            let field = parameter_schema
+                .field(name)
+                .ok_or_else(|| format!("unknown material field '{name}'"))?;
+            let defaults = schema.default_values();
+            let values = material
+                .values
+                .get(name)
+                .map(Vec::as_slice)
+                .unwrap_or(&defaults[field.slot..field.slot + field.ty.width()]);
+            if field.ty.width() == 1 {
+                Ok(mms::Value::Number(values[0] as f64))
+            } else {
+                Ok(mms::Value::Array(
+                    values
+                        .iter()
+                        .map(|value| mms::Value::Number(*value as f64))
+                        .collect(),
+                ))
             }
-            Ok(mms::Value::Number(
-                material.values.get(name).copied().unwrap_or(0.0) as f64,
-            ))
         }
         _ => Err(format!("unknown material method '{method}'")),
     }
@@ -897,5 +977,130 @@ mod tests {
             .materialize_component("Refraction.roughness(0.5) {}")
             .unwrap_err();
         assert!(error.to_string().contains("roughness"), "{error}");
+    }
+}
+
+#[cfg(test)]
+mod material_input_tests {
+    use super::*;
+    use crate::engine::ecs::component::ShadingComponent;
+    use crate::engine::ecs::system::material_system::MaterialSystem;
+    use crate::engine::ecs::{CommandQueue, RxWorld};
+    use crate::engine::graphics::{RenderAssets, VisualWorld};
+    use crate::scripting::runner::RuntimeSpecSession;
+    #[test]
+    fn typed_material_inputs_and_builtin_definitions_share_one_runtime_path() {
+        let source = r#"
+import { f32, vec2, vec3, vec4 } from "types"
+let schema = { gain: f32
+    uv: vec2
+    tint: vec3
+    color: vec4 }
+let custom = MaterialDefinition(MaterialBase()).fragment("assets/shaders/youtuber-led-wave.frag").inputs(schema)
+let sample = Material(custom).inputs({ gain = 2.0
+    uv = [0.1, 0.2]
+    tint = [0.2, 0.3, 0.4]
+    color = [1.0, 0.5, 0.0, 1.0] }) { name = "typed_sample" }
+let anime = MaterialDefinition.anime()
+let another_anime = MaterialDefinition.anime()
+let shared = Material(anime).inputs({ shade_color = [0.2, 0.3, 0.4]
+    shade_strength = 0.7 }) { name = "shared_anime" }
+let independent = Material(another_anime) { name = "independent_anime" }
+R.cube() { shared }
+R.cube() { shared }
+R.cube() { independent }
+shared.set_input("rim_color", [0.4, 0.5, 0.6])
+shared.set_input("rim_strength", 0.25)
+let readback = shared.get_input("rim_color")
+shared.set_input("shade_color", readback)
+"#;
+        let mut world = World::default();
+        let mut rx = RxWorld::default();
+        let mut queue = CommandQueue::new();
+        let mut assets = RenderAssets::new();
+        let (_session, _) = RuntimeSpecSession::start_at_path(
+            source,
+            "examples/typed-material-test.mms",
+            &mut world,
+            &mut rx,
+            Some(&mut assets),
+            &mut queue,
+        )
+        .unwrap();
+        let named = |name| {
+            world
+                .all_components()
+                .find(|&id| world.component_label(id) == Some(name))
+                .unwrap()
+        };
+        let shared = named("shared_anime");
+        let independent = named("independent_anime");
+        let sample = named("typed_sample");
+        let material = world
+            .get_component_by_id_as::<MaterialComponent>(sample)
+            .unwrap();
+        let definition = world
+            .get_component_by_id_as::<MaterialDefinitionComponent>(material.definition)
+            .unwrap();
+        assert_eq!(definition.fields.len(), 4);
+        assert_eq!(
+            definition
+                .fields
+                .iter()
+                .find(|field| field.name == "tint")
+                .unwrap()
+                .ty,
+            crate::engine::graphics::materials::MaterialFieldType::Vec3
+        );
+        assert_eq!(material.values["color"], [1., 0.5, 0., 1.]);
+        assert_eq!(world.parents_of(shared).count(), 2);
+        let mut visuals = VisualWorld::default();
+        let a = MaterialSystem::ensure_source(&world, &mut visuals, shared).unwrap();
+        let b = MaterialSystem::ensure_source(&world, &mut visuals, independent).unwrap();
+        assert_ne!(a, b);
+        let a_record = visuals.materials.instance(a).unwrap();
+        let b_record = visuals.materials.instance(b).unwrap();
+        assert_eq!(a_record.definition, visuals.materials.anime_definition);
+        assert_eq!(a_record.definition, b_record.definition);
+        let schema = &visuals
+            .materials
+            .definition(a_record.definition)
+            .unwrap()
+            .parameter_schema;
+        assert_eq!(
+            schema.read(&a_record.values, "shade_color").unwrap(),
+            [0.4, 0.5, 0.6]
+        );
+        assert_eq!(
+            schema.read(&a_record.values, "rim_strength").unwrap(),
+            [0.25]
+        );
+        let expected = ShadingComponent::new().material_values(schema);
+        assert_eq!(b_record.values, expected);
+        let before = a_record.revision;
+        let args = [
+            meow_meow_script::Value::String("rim_color".into()),
+            meow_meow_script::Value::Array(vec![meow_meow_script::Value::Number(1.0); 3]),
+        ];
+        material_method(&mut world, shared, "set_input", &args).unwrap();
+        MaterialSystem::publish_source(&mut world, &mut visuals, shared).unwrap();
+        assert_eq!(visuals.materials.source_instance(shared), Some(a));
+        assert!(visuals.materials.instance(a).unwrap().revision > before);
+        assert_eq!(visuals.materials.instance(b).unwrap().values, expected);
+        for value in [
+            meow_meow_script::Value::Number(1.0),
+            meow_meow_script::Value::Array(vec![meow_meow_script::Value::Number(1.0); 2]),
+            meow_meow_script::Value::Array(vec![meow_meow_script::Value::Number(f64::INFINITY); 3]),
+        ] {
+            assert!(
+                material_method(
+                    &mut world,
+                    shared,
+                    "set_input",
+                    &[meow_meow_script::Value::String("rim_color".into()), value]
+                )
+                .is_err()
+            );
+        }
     }
 }

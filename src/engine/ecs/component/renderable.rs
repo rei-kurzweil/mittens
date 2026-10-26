@@ -93,6 +93,9 @@ pub struct RenderableComponent {
     /// VisualWorld instance handle created for this renderable.
     pub handle: Option<InstanceHandle>,
 
+    /// Imported geometry resolves scene material declarations through its GLTF owner.
+    pub(crate) material_scope: Option<ComponentId>,
+
     component: Option<ComponentId>,
 }
 
@@ -102,6 +105,7 @@ impl RenderableComponent {
             renderable,
             authored_shape: None,
             handle: None,
+            material_scope: None,
             component: None,
         }
     }

@@ -552,6 +552,24 @@ fn headers_to_value(headers: &[(String, String)]) -> Value {
     )
 }
 
+fn grab_event_payload(pointer: ComponentId, target: ComponentId) -> HashMap<String, Value> {
+    [
+        ("pointer", pointer, "pointer"),
+        ("target", target, "transform"),
+    ]
+    .into_iter()
+    .map(|(name, id, kind)| {
+        (
+            name.into(),
+            Value::ComponentObject {
+                id,
+                component_type: kind.into(),
+            },
+        )
+    })
+    .collect()
+}
+
 pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
     match signal.event.as_ref() {
         Some(crate::engine::ecs::EventSignal::AttachmentChanged {
@@ -620,6 +638,46 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
                 ),
                 ("value".into(), Value::Bool(*value)),
             ]))
+        }
+        Some(crate::engine::ecs::EventSignal::GrabStart {
+            pointer,
+            raycaster,
+            renderable,
+            target,
+            ray_origin_world,
+            ray_dir_world,
+        }) => {
+            let mut payload = grab_event_payload(*pointer, *target);
+            for (key, id, kind) in [
+                ("raycaster", *raycaster, "Raycast"),
+                ("renderable", *renderable, "Renderable"),
+            ] {
+                payload.insert(
+                    key.into(),
+                    Value::ComponentObject {
+                        id,
+                        component_type: kind.into(),
+                    },
+                );
+            }
+            for (key, vector) in [
+                ("ray_origin_world", ray_origin_world),
+                ("ray_dir_world", ray_dir_world),
+            ] {
+                payload.insert(
+                    key.into(),
+                    Value::Array(
+                        vector
+                            .iter()
+                            .map(|value| Value::Number(*value as f64))
+                            .collect(),
+                    ),
+                );
+            }
+            Value::Map(payload)
+        }
+        Some(crate::engine::ecs::EventSignal::GrabEnd { pointer, target }) => {
+            Value::Map(grab_event_payload(*pointer, *target))
         }
         Some(crate::engine::ecs::EventSignal::ZoneEntered {
             zone,

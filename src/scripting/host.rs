@@ -642,6 +642,13 @@ impl mms::Host for MittensHost<'_, '_> {
                     }
                 }
                 reject_animation_legacy_fallback(&tree, "spawn")?;
+                let mut tree = tree;
+                if let Some(bindings) = self.bindings {
+                    super::configured_registry::materialize_material_children(
+                        &mut tree, bindings, self.world, self.emit,
+                    )
+                    .map_err(|error| mms::HostError::failure("spawn", error))?;
+                }
                 self.legacy_component_fallbacks += 1;
                 let tree = external_tree_to_legacy(tree)?;
                 let result = if let Some(assets) = self.render_assets.as_deref_mut() {
@@ -679,6 +686,13 @@ impl mms::Host for MittensHost<'_, '_> {
                     }
                 }
                 reject_animation_legacy_fallback(&tree, "register")?;
+                let mut tree = tree;
+                if let Some(bindings) = self.bindings {
+                    super::configured_registry::materialize_material_children(
+                        &mut tree, bindings, self.world, self.emit,
+                    )
+                    .map_err(|error| mms::HostError::failure("register", error))?;
+                }
                 self.legacy_component_fallbacks += 1;
                 let tree = external_tree_to_legacy(tree)?;
                 let result = if let Some(assets) = self.render_assets.as_deref_mut() {
@@ -807,6 +821,21 @@ impl mms::Host for MittensHost<'_, '_> {
                     return Ok(S::Value(mms::Value::Null));
                 }
                 let id = self.existing_id(component, "invoke_component_method")?;
+                if *component_type == "AudioClip" && *method == "play" {
+                    self.world
+                        .get_component_by_id_as::<crate::engine::ecs::component::AudioClipComponent>(id)
+                        .ok_or_else(|| mms::HostError::failure("AudioClip.play", "receiver is not an AudioClip"))?;
+                    self.intents.push(IntentValue::AudioSchedulePlay {
+                        component_id: id,
+                        beat_offset: 0.0,
+                        beat_context: None,
+                        note: None,
+                        gain: None,
+                        rate: None,
+                        duration: None,
+                    });
+                    return Ok(S::Value(mms::Value::Null));
+                }
                 if *component_type == "Material" {
                     let value =
                         super::configured_registry::material_method(self.world, id, method, &args)
@@ -1400,7 +1429,7 @@ mod tests {
         session
             .eval(
                 r#"
-            import { f32 as scalar, vec2 } from "types"
+            import { f32 as scalar, vec2, vec3, vec4, str } from "types"
             let schema = {
                 gain: scalar
                 phase: scalar
@@ -1429,6 +1458,54 @@ mod tests {
                 Some(mms::Value::Number(expected))
             );
         }
+        session
+            .eval(
+                r#"
+            let vectors = MaterialDefinition(MaterialBase()).inputs({ uv: vec2
+                tint: vec3
+                rgba: vec4 })
+            let vector_values = Material(vectors).inputs({ uv = [0.25,0.5]
+                tint = [0.1,0.2,0.3] })
+            let anime = MaterialDefinition.anime()
+            let anime_again = MaterialDefinition.anime()
+            let builtin = Material(anime)
+            let builtin_defaults = builtin.get_input("rim_color")
+            builtin.set_input("rim_color", [0.25,0.5,0.75])
+        "#,
+            )
+            .unwrap();
+        assert_eq!(
+            session
+                .eval("vector_values.get_input(\"uv\")")
+                .unwrap()
+                .value,
+            Some(mms::Value::Array(vec![
+                mms::Value::Number(0.25),
+                mms::Value::Number(0.5)
+            ]))
+        );
+        assert_eq!(
+            session
+                .eval("vector_values.get_input(\"rgba\")")
+                .unwrap()
+                .value,
+            Some(mms::Value::Array(vec![mms::Value::Number(0.0); 4]))
+        );
+        assert_eq!(
+            session.eval("anime == anime_again").unwrap().value,
+            Some(mms::Value::Bool(true))
+        );
+        for invalid in [
+            "vector_values.set_input(\"tint\", [1,2])",
+            "vector_values.set_input(\"tint\", [1,2,3,4])",
+            "vector_values.set_input(\"uv\", [1,scalar])",
+            "vector_values.set_input(\"uv\", [1,1e300])",
+            "vector_values.set_input(\"rgba\", 1)",
+            "anime.inputs({anything: scalar})",
+            "anime.fragment(\"anything.frag\")",
+        ] {
+            assert!(session.eval(invalid).is_err(), "{invalid}");
+        }
         for (source, message) in [
             (
                 "MaterialDefinition(MaterialBase()).inputs({gain=1})",
@@ -1439,8 +1516,8 @@ mod tests {
                 "record_type",
             ),
             (
-                "MaterialDefinition(MaterialBase()).inputs({gain: vec2})",
-                "only f32",
+                "MaterialDefinition(MaterialBase()).inputs({gain: str})",
+                "unsupported material input type",
             ),
             (
                 "MaterialDefinition(MaterialBase()).inputs({gain: missing})",
@@ -1758,6 +1835,32 @@ mod tests {
             error
                 .message
                 .contains("cannot be invoked as a component method")
+        );
+    }
+
+    #[test]
+    fn configured_audio_clip_play_schedules_directly_without_music_notes() {
+        let configured = super::super::runtime_config::build_mittens_runtime().unwrap();
+        let mut world = World::default();
+        let clip = world.add_component(crate::engine::ecs::component::AudioClipComponent::new(
+            "assets/audio/tool/laser_machine_pistol_C.0.wav",
+        ));
+        world.get_component_record_mut(clip).unwrap().name = "shot_sound".into();
+        let mut commands = crate::engine::ecs::CommandQueue::new();
+        let mut intents = Vec::new();
+        {
+            let host = MittensHost::new(&mut world, &mut commands, &mut intents)
+                .with_bindings(configured.bindings());
+            let mut session = configured.runtime().session(host);
+            session.eval("query(\"#shot_sound\").play()").unwrap();
+            assert!(session.eval("query(\"#shot_sound\").play(1.0)").is_err());
+            assert_eq!(session.host().legacy_method_fallbacks(), 0);
+        }
+        assert!(
+            matches!(intents.as_slice(), [IntentValue::AudioSchedulePlay {
+            component_id, beat_offset: 0.0, beat_context: None,
+            note: None, gain: None, rate: None, duration: None,
+        }] if *component_id == clip)
         );
     }
 

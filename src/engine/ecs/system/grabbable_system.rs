@@ -11,7 +11,9 @@ use crate::engine::ecs::{
     ComponentId, EventSignal, IntentValue, RxWorld, SignalEmitter, SignalKind, World,
 };
 use crate::engine::graphics::RenderAssets;
-use crate::utils::math::{mat_to_quat, mat4_inverse, mat4_mul, vec3_dot, vec3_len, vec3_normalize};
+use crate::utils::math::{
+    mat_to_quat, mat4_inverse, mat4_mul, quat_nlerp, vec3_dot, vec3_len, vec3_normalize,
+};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -20,6 +22,7 @@ enum GrabCommand {
     Start {
         pointer: ComponentId,
         target: ComponentId,
+        renderable: ComponentId,
         ray_origin: [f32; 3],
         ray_dir: [f32; 3],
     },
@@ -34,6 +37,7 @@ struct ActiveGrab {
     pointer_parent: ComponentId,
     original_parent: Option<ComponentId>,
     destination_local: [f32; 3],
+    align_to_hand: bool,
 }
 
 #[derive(Debug, Default)]
@@ -54,6 +58,7 @@ impl GrabbableSystem {
             let Some(EventSignal::GrabStart {
                 pointer,
                 target,
+                renderable,
                 ray_origin_world,
                 ray_dir_world,
                 ..
@@ -65,6 +70,7 @@ impl GrabbableSystem {
                 commands.push(GrabCommand::Start {
                     pointer: *pointer,
                     target: *target,
+                    renderable: *renderable,
                     ray_origin: *ray_origin_world,
                     ray_dir: *ray_dir_world,
                 });
@@ -121,6 +127,7 @@ impl GrabbableSystem {
                 GrabCommand::Start {
                     pointer,
                     target,
+                    renderable,
                     ray_origin,
                     ray_dir,
                 } => self.start(
@@ -129,6 +136,7 @@ impl GrabbableSystem {
                     emit,
                     pointer,
                     target,
+                    renderable,
                     ray_origin,
                     ray_dir,
                 ),
@@ -174,6 +182,10 @@ impl GrabbableSystem {
                 next = grab.destination_local;
             }
             transform.transform.translation = next;
+            if grab.align_to_hand {
+                transform.transform.rotation =
+                    quat_nlerp(transform.transform.rotation, [0.0, 0.0, 0.0, 1.0], alpha);
+            }
             transform.transform.recompute_model();
             emit.push_intent_now(
                 grab.target,
@@ -194,6 +206,7 @@ impl GrabbableSystem {
         emit: &mut dyn SignalEmitter,
         pointer: ComponentId,
         target: ComponentId,
+        renderable: ComponentId,
         ray_origin: [f32; 3],
         ray_dir: [f32; 3],
     ) {
@@ -210,6 +223,12 @@ impl GrabbableSystem {
             return;
         };
         let original_parent = world.parent_of(target);
+        let align_to_hand = pointer_topology_context(world, pointer).has_controller_driver
+            && resolve_marker::<GrabbableComponent>(world, renderable, |marker| {
+                (marker.enabled, marker.move_parent)
+            })
+            .is_some_and(|(owner, marker)| owner == target && marker.to_hand);
+
         let dir = vec3_normalize(ray_dir);
         if !dir.iter().all(|v| v.is_finite()) {
             return;
@@ -268,7 +287,11 @@ impl GrabbableSystem {
             let _ = reparent_preserving_world(world, target, original_parent, emit);
             return;
         };
-        let destination_local = transform_point(parent_world_inv, desired_world);
+        let destination_local = if align_to_hand {
+            [0.0; 3]
+        } else {
+            transform_point(parent_world_inv, desired_world)
+        };
         self.owned.insert(target);
         self.active.insert(
             pointer,
@@ -277,6 +300,7 @@ impl GrabbableSystem {
                 pointer_parent,
                 original_parent,
                 destination_local,
+                align_to_hand,
             },
         );
     }
@@ -322,6 +346,14 @@ pub(crate) fn resolve_marker_target<T: 'static>(
     renderable: ComponentId,
     fields: impl Fn(&T) -> (bool, bool),
 ) -> Option<ComponentId> {
+    resolve_marker(world, renderable, fields).map(|(target, _)| target)
+}
+
+fn resolve_marker<T: 'static>(
+    world: &World,
+    renderable: ComponentId,
+    fields: impl Fn(&T) -> (bool, bool),
+) -> Option<(ComponentId, &T)> {
     let mut current = Some(renderable);
     while let Some(id) = current {
         if world
@@ -338,7 +370,7 @@ pub(crate) fn resolve_marker_target<T: 'static>(
                     return None;
                 }
                 if !move_parent {
-                    return Some(id);
+                    return Some((id, marker));
                 }
                 let mut parent = world.parent_of(id);
                 while let Some(candidate) = parent {
@@ -346,7 +378,7 @@ pub(crate) fn resolve_marker_target<T: 'static>(
                         .get_component_by_id_as::<TransformComponent>(candidate)
                         .is_some()
                     {
-                        return Some(candidate);
+                        return Some((candidate, marker));
                     }
                     parent = world.parent_of(candidate);
                 }
@@ -558,6 +590,7 @@ mod tests {
             &mut queue,
             pointer,
             target,
+            target,
             [0.0; 3],
             [0.0, 0.0, -1.0],
         );
@@ -590,6 +623,7 @@ mod tests {
             &mut queue,
             pointer,
             target,
+            target,
             [0.0; 3],
             [0.0, 0.0, -1.0],
         );
@@ -603,5 +637,171 @@ mod tests {
             (z + 0.6).abs() < 0.001,
             "center should be clearance plus cube half extent: {z}"
         );
+    }
+    #[test]
+    fn hand_mode_eases_grip_pose_and_releases_without_teleporting() {
+        for move_parent in [false, true] {
+            let mut world = World::default();
+            let controller = world.add_component(ControllerXRComponent::new(
+                true,
+                ControllerHand::Right,
+                ControllerPoseKind::Grip,
+            ));
+            let driver = world.add_component(
+                TransformComponent::new()
+                    .with_position(4., 2., 3.)
+                    .with_rotation_euler(0., 0.8, 0.),
+            );
+            let pointer = world.add_component(PointerComponent::new().min_grab_distance(0.4));
+            world.add_child(controller, driver).unwrap();
+            world.add_child(driver, pointer).unwrap();
+            let original_parent =
+                world.add_component(TransformComponent::new().with_position(-2., 1., 0.));
+            let target = world.add_component(
+                TransformComponent::new()
+                    .with_position(0.8, 0.4, -2.)
+                    .with_rotation_euler(0.3, 0.6, 0.4)
+                    .with_scale(0.7, 0.7, 0.7),
+            );
+            world.add_child(original_parent, target).unwrap();
+            let handle = if move_parent {
+                let handle = world.add_component(TransformComponent::new());
+                world.add_child(target, handle).unwrap();
+                handle
+            } else {
+                target
+            };
+            let marker = world.add_component(GrabbableComponent {
+                enabled: true,
+                move_parent,
+                to_hand: true,
+            });
+            world.add_child(handle, marker).unwrap();
+            let cube = world.add_component(RenderableComponent::cube());
+            world.add_child(handle, cube).unwrap();
+            sync_world(&mut world, driver, None);
+            sync_world(&mut world, original_parent, None);
+            let old_parent_matrix = TransformSystem::world_model(&world, original_parent).unwrap();
+            sync_world(&mut world, target, Some(old_parent_matrix));
+            if move_parent {
+                let target_matrix = TransformSystem::world_model(&world, target).unwrap();
+                sync_world(&mut world, handle, Some(target_matrix));
+            }
+            let before = TransformSystem::world_model(&world, target).unwrap();
+            let mut system = GrabbableSystem::default();
+            let mut queue = CommandQueue::new();
+            let mut rx = RxWorld::default();
+            system.install_handlers(&mut rx);
+            rx.dispatch_event_handlers(
+                &mut world,
+                &crate::engine::ecs::Signal::event(
+                    cube,
+                    EventSignal::GrabStart {
+                        pointer,
+                        raycaster: pointer,
+                        renderable: cube,
+                        target,
+                        ray_origin_world: [4., 2., 3.],
+                        ray_dir_world: [0., 0., -1.],
+                    },
+                ),
+            );
+            system.tick(&mut world, &RenderAssets::new(), &mut queue, 0.);
+            assert_eq!(
+                TransformSystem::world_model(&world, target),
+                Some(before),
+                "grabbing must start from the existing world pose"
+            );
+            let initial = world
+                .get_component_by_id_as::<TransformComponent>(target)
+                .unwrap()
+                .transform
+                .translation;
+            system.tick(&mut world, &RenderAssets::new(), &mut queue, 0.03);
+            let midway = world
+                .get_component_by_id_as::<TransformComponent>(target)
+                .unwrap()
+                .transform
+                .translation;
+            assert!(
+                vec3_len(midway) > 0.001 && vec3_len(midway) < vec3_len(initial),
+                "levitate gradually into the hand"
+            );
+            system.tick(&mut world, &RenderAssets::new(), &mut queue, 10.);
+            let held = &world
+                .get_component_by_id_as::<TransformComponent>(target)
+                .unwrap()
+                .transform;
+            assert_eq!(
+                held.translation, [0.; 3],
+                "bounds, ray clearance and sideways offsets must not displace the grip"
+            );
+            assert!(held.rotation[..3].iter().all(|value| value.abs() < 0.001));
+            assert!((held.rotation[3].abs() - 1.).abs() < 0.001);
+            assert!(held.scale.iter().all(|value| (*value - 0.7).abs() < 0.001));
+            let driver_matrix = TransformSystem::world_model(&world, driver).unwrap();
+            sync_world(&mut world, target, Some(driver_matrix));
+            let held_world = TransformSystem::world_model(&world, target).unwrap();
+            rx.dispatch_event_handlers(
+                &mut world,
+                &crate::engine::ecs::Signal::event(cube, EventSignal::GrabEnd { pointer, target }),
+            );
+            system.tick(&mut world, &RenderAssets::new(), &mut queue, 0.);
+            assert_eq!(world.parent_of(target), Some(original_parent));
+            assert_eq!(
+                TransformSystem::world_model(&world, target),
+                Some(held_world)
+            );
+        }
+    }
+
+    #[test]
+    fn hand_flag_keeps_desktop_surface_clearance_and_rotation() {
+        let mut world = World::default();
+        let driver = world.add_component(TransformComponent::new());
+        let pointer = world.add_component(PointerComponent::new());
+        world.add_child(driver, pointer).unwrap();
+        let target = world.add_component(
+            TransformComponent::new()
+                .with_position(0.6, 0.2, -3.)
+                .with_rotation_euler(0., 0., 0.4),
+        );
+        let cube = world.add_component(RenderableComponent::cube());
+        world.add_child(target, cube).unwrap();
+        let marker = world.add_component(GrabbableComponent {
+            to_hand: true,
+            ..GrabbableComponent::new()
+        });
+        world.add_child(target, marker).unwrap();
+        sync_world(&mut world, driver, None);
+        sync_world(&mut world, target, None);
+        let rotation = world
+            .get_component_by_id_as::<TransformComponent>(target)
+            .unwrap()
+            .transform
+            .rotation;
+        let mut system = GrabbableSystem::default();
+        let mut queue = CommandQueue::new();
+        system.start(
+            &mut world,
+            &RenderAssets::new(),
+            &mut queue,
+            pointer,
+            target,
+            cube,
+            [0.; 3],
+            [0., 0., -1.],
+        );
+        system.tick(&mut world, &RenderAssets::new(), &mut queue, 10.);
+        let held = &world
+            .get_component_by_id_as::<TransformComponent>(target)
+            .unwrap()
+            .transform;
+        assert!((held.translation[0] - 0.6).abs() < 0.001);
+        assert!((held.translation[1] - 0.2).abs() < 0.001);
+        assert!((held.translation[2] + 1.25).abs() < 0.001);
+        for (a, b) in held.rotation.into_iter().zip(rotation) {
+            assert!((a - b).abs() < 0.001);
+        }
     }
 }

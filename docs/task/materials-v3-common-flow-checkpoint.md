@@ -5,8 +5,9 @@ Status: implemented and regression-tested; headset acceptance pending.
 
 The later [capture/capability cleanup](materials-v3-capture-capability-cleanup.md)
 adds runtime image reuse/retirement and a resolved renderer capability contract.
-The [built-in authoring API](../draft/material-builtin-authoring-api.md) is proposed
-for review; Shading remains unchanged. Basic custom alpha blending and planar
+The [built-in authoring API](../draft/material-builtin-authoring-api.md) is now
+implemented with [typed scalar/vector inputs](materials-v3-typed-inputs-and-builtins.md);
+Shading remains a compatibility adapter. Basic custom alpha blending and planar
 reflection are already implemented in the pool checkpoint.
 
 MaterialSystem now resolves and registers both explicit Material components and

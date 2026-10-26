@@ -1,6 +1,7 @@
 use crate::engine::ecs::component::texture::TextureSource;
 use crate::engine::ecs::component::{
-    CatEngineTextureFormat, RenderableComponent, TextureComponent, TextureFilteringComponent,
+    CatEngineTextureFormat, CombineMeshComponent, RenderableComponent, TextureComponent,
+    TextureFilteringComponent,
 };
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::{TextureFiltering, TextureHandle, TextureUploader, VisualWorld};
@@ -22,12 +23,29 @@ struct TextureFilteringRecord {
 }
 
 #[derive(Debug, Default)]
+struct CombinedTextureBinding {
+    texture: Option<ComponentId>,
+    filtering: Option<ComponentId>,
+    published: Option<crate::engine::graphics::primitives::InstanceHandle>,
+}
+
+fn is_texture_target(world: &World, component: ComponentId) -> bool {
+    world
+        .get_component_by_id_as::<RenderableComponent>(component)
+        .is_some()
+        || world
+            .get_component_by_id_as::<CombineMeshComponent>(component)
+            .is_some()
+}
+
+#[derive(Debug, Default)]
 pub struct TextureSystem {
     textures: HashMap<ComponentId, TextureRecord>,
     uri_cache: HashMap<String, TextureHandle>,
     /// RenderableComponent cid -> TextureComponent cid
     pending_attach: HashMap<ComponentId, ComponentId>,
 
+    combined_targets: HashMap<ComponentId, CombinedTextureBinding>,
     filterings: HashMap<ComponentId, TextureFilteringRecord>,
     /// RenderableComponent cid -> TextureFilteringComponent cid
     pending_filtering_attach: HashMap<ComponentId, ComponentId>,
@@ -73,11 +91,16 @@ impl TextureSystem {
         // If this texture is attached under a renderable, remember that relationship.
         let mut cur = component;
         while let Some(parent) = world.parent_of(cur) {
-            if world
-                .get_component_by_id_as::<RenderableComponent>(parent)
-                .is_some()
-            {
+            if is_texture_target(world, parent) {
                 self.pending_attach.insert(parent, component);
+                if world
+                    .get_component_by_id_as::<CombineMeshComponent>(parent)
+                    .is_some()
+                {
+                    let binding = self.combined_targets.entry(parent).or_default();
+                    binding.texture = Some(component);
+                    binding.published = None;
+                }
                 break;
             }
             cur = parent;
@@ -105,11 +128,16 @@ impl TextureSystem {
         // If this filtering is attached under a renderable, remember that relationship.
         let mut cur = component;
         while let Some(parent) = world.parent_of(cur) {
-            if world
-                .get_component_by_id_as::<RenderableComponent>(parent)
-                .is_some()
-            {
+            if is_texture_target(world, parent) {
                 self.pending_filtering_attach.insert(parent, component);
+                if world
+                    .get_component_by_id_as::<CombineMeshComponent>(parent)
+                    .is_some()
+                {
+                    let binding = self.combined_targets.entry(parent).or_default();
+                    binding.filtering = Some(component);
+                    binding.published = None;
+                }
                 break;
             }
             cur = parent;
@@ -125,6 +153,34 @@ impl TextureSystem {
         visuals: &mut VisualWorld,
         uploader: &mut dyn TextureUploader,
     ) {
+        // Regenerating scene geometry must not retain obsolete authoring records.
+        self.textures.retain(|&id, _| {
+            world
+                .get_component_by_id_as::<TextureComponent>(id)
+                .is_some()
+        });
+        self.filterings.retain(|&id, _| {
+            world
+                .get_component_by_id_as::<TextureFilteringComponent>(id)
+                .is_some()
+        });
+        self.combined_targets.retain(|&id, _| {
+            world
+                .get_component_by_id_as::<CombineMeshComponent>(id)
+                .is_some()
+        });
+        for (&target, binding) in &mut self.combined_targets {
+            let handle = visuals.instance_handle_for_component(target);
+            if handle != binding.published {
+                binding.published = handle;
+                if let Some(texture) = binding.texture {
+                    self.pending_attach.insert(target, texture);
+                }
+                if let Some(filtering) = binding.filtering {
+                    self.pending_filtering_attach.insert(target, filtering);
+                }
+            }
+        }
         // Apply any pending filtering choices to renderable instances.
         let filtering_pairs: Vec<(ComponentId, ComponentId)> = self
             .pending_filtering_attach
@@ -133,14 +189,12 @@ impl TextureSystem {
             .collect();
 
         for (renderable_cid, filtering_cid) in filtering_pairs {
-            let Some(renderable_comp) =
-                world.get_component_by_id_as::<RenderableComponent>(renderable_cid)
-            else {
-                let _ = self.pending_filtering_attach.remove(&renderable_cid);
+            if !is_texture_target(world, renderable_cid) {
+                self.pending_filtering_attach.remove(&renderable_cid);
                 continue;
-            };
-
-            let Some(instance_handle) = renderable_comp.get_handle() else {
+            }
+            let Some(instance_handle) = visuals.instance_handle_for_component(renderable_cid)
+            else {
                 // Renderable not in VisualWorld yet.
                 continue;
             };
@@ -158,14 +212,12 @@ impl TextureSystem {
             self.pending_attach.iter().map(|(&r, &t)| (r, t)).collect();
 
         for (renderable_cid, texture_cid) in pairs {
-            let Some(renderable_comp) =
-                world.get_component_by_id_as::<RenderableComponent>(renderable_cid)
-            else {
-                let _ = self.pending_attach.remove(&renderable_cid);
+            if !is_texture_target(world, renderable_cid) {
+                self.pending_attach.remove(&renderable_cid);
                 continue;
-            };
-
-            let Some(instance_handle) = renderable_comp.get_handle() else {
+            }
+            let Some(instance_handle) = visuals.instance_handle_for_component(renderable_cid)
+            else {
                 // Renderable not in VisualWorld yet.
                 continue;
             };

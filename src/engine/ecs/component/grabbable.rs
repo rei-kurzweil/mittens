@@ -7,6 +7,9 @@ pub struct GrabbableComponent {
     pub enabled: bool,
     /// Handle mode: move the owner's parent Transform instead of the owner itself.
     pub move_parent: bool,
+    /// XR hands ease the target's grip origin/orientation into the pointer frame.
+    /// Camera/desktop pointers retain their ordinary surface-clearance behavior.
+    pub to_hand: bool,
 }
 
 impl GrabbableComponent {
@@ -18,6 +21,7 @@ impl GrabbableComponent {
         Self {
             enabled: true,
             move_parent: false,
+            to_hand: false,
         }
     }
 
@@ -25,6 +29,7 @@ impl GrabbableComponent {
         Self {
             enabled: false,
             move_parent: false,
+            to_hand: false,
         }
     }
 
@@ -32,6 +37,7 @@ impl GrabbableComponent {
         Self {
             enabled: true,
             move_parent: true,
+            to_hand: false,
         }
     }
 }
@@ -70,12 +76,56 @@ impl Component for GrabbableComponent {
     ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::*;
 
-        if !self.enabled {
+        let authored = if !self.enabled {
             ce_call("Grabbable", "off", vec![])
         } else if self.move_parent {
             ce_call("Grabbable", "parent", vec![])
         } else {
             ce("Grabbable")
+        };
+        if self.to_hand {
+            authored.with_call("to_hand", vec![b(true)])
+        } else {
+            authored
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::ecs::{CommandQueue, RxWorld, World};
+    use crate::scripting::runner::RuntimeSpecSession;
+    use crate::scripting::unparser::unparse_component;
+
+    #[test]
+    fn hand_flag_round_trips_with_enabled_disabled_and_parent_modes() {
+        for mut authored in [
+            GrabbableComponent::on(),
+            GrabbableComponent::off(),
+            GrabbableComponent::parent(),
+        ] {
+            authored.to_hand = true;
+            let text = unparse_component(&authored.to_mms_ast(&World::default()));
+            assert!(text.contains("to_hand(true)"), "{text}");
+            let mut world = World::default();
+            let mut rx = RxWorld::default();
+            let mut queue = CommandQueue::new();
+            let (_session, _) = RuntimeSpecSession::start_at_path(
+                &text,
+                "examples/grabbable-to-hand-test.mms",
+                &mut world,
+                &mut rx,
+                None,
+                &mut queue,
+            )
+            .unwrap();
+            let restored = world
+                .all_components()
+                .find_map(|id| world.get_component_by_id_as::<GrabbableComponent>(id))
+                .unwrap();
+            assert_eq!(*restored, authored);
+        }
+        assert!(!GrabbableComponent::new().to_hand);
     }
 }

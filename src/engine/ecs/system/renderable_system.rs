@@ -1070,6 +1070,12 @@ impl RenderableSystem {
                 continue;
             }
             stack.extend(world.children_of(node).iter().copied());
+            if world
+                .get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(node)
+                .is_some()
+            {
+                stack.extend(world.scripting_query_roots(node));
+            }
             let Some(renderable) = world.get_component_by_id_as::<RenderableComponent>(node) else {
                 continue;
             };

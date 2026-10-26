@@ -1,5 +1,10 @@
 # Task: Material component and resolved material contract
 
+2026-10-26 update: [typed inputs and built-in definitions](materials-v3-typed-inputs-and-builtins.md)
+now implement f32/vec2/vec3/vec4 material fields and MaterialDefinition.anime()/toon().
+Earlier scalar-only limits below describe the preceding checkpoint.
+
+
 Date: 2026-10-09
 Status: symmetric typed-f32 inputs API implemented 2026-10-25; full generic contract below remains proposed.
 Parent: [custom materials epic](epic/custom-materials.md).

@@ -45,6 +45,12 @@ impl MaterialSystem {
         let authored = world
             .get_component_by_id_as::<MaterialDefinitionComponent>(source)
             .ok_or("material references a missing definition")?;
+        if let Some(model) = authored.builtin {
+            return Ok(match model {
+                ShadingModel::Anime => visuals.materials.anime_definition,
+                ShadingModel::Toon => visuals.materials.toon_definition,
+            });
+        }
         let base = world
             .get_component_by_id_as::<MaterialBaseComponent>(authored.base)
             .ok_or("definition references a missing MaterialBase")?
@@ -89,7 +95,7 @@ impl MaterialSystem {
             }) {
                 return Some(source);
             }
-            if let Some((_, source)) = world
+            let shading = world
                 .children_of(node)
                 .iter()
                 .filter_map(|&child| {
@@ -99,8 +105,18 @@ impl MaterialSystem {
                         Self::shading_source(world, child)?,
                     ))
                 })
-                .min_by_key(|(projected, _)| *projected)
+                .min_by_key(|(projected, _)| *projected);
+            if let Some((false, source)) = shading {
+                return Some(source);
+            }
+            if let Some(source) = world
+                .get_component_by_id_as::<crate::engine::ecs::component::RenderableComponent>(node)
+                .and_then(|renderable| renderable.material_scope)
+                .and_then(|scope| Self::resolve_source(world, scope))
             {
+                return Some(source);
+            }
+            if let Some((_, source)) = shading {
                 return Some(source);
             }
             current = world.parent_of(node);
@@ -149,7 +165,15 @@ impl MaterialSystem {
             let mut values = record.defaults.to_vec();
             for field in &record.parameter_schema.fields {
                 if let Some(value) = material.values.get(&field.name) {
-                    values[field.slot] = *value;
+                    if value.len() != field.ty.width()
+                        || value.iter().any(|value| !value.is_finite())
+                    {
+                        return Err(format!(
+                            "material field '{}' requires {:?}",
+                            field.name, field.ty
+                        ));
+                    }
+                    values[field.slot..field.slot + value.len()].copy_from_slice(value);
                 }
             }
             (source, definition, std::sync::Arc::<[f32]>::from(values))
@@ -584,7 +608,7 @@ mod tests {
             .unwrap()
             .fields
             .iter()
-            .position(|name| name == "time_seconds")
+            .position(|field| field.name == "time_seconds")
             .unwrap();
         assert_eq!(
             visuals.materials.instance(instance).unwrap().values.len(),

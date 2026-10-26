@@ -1,14 +1,16 @@
-# Built-in material authoring: API review
+# Built-in material authoring API
 
-Status: proposal for review; no public authoring migration implemented.
+Status: implemented 2026-10-26; legacy Shading remains available.
+
+See [typed material checkpoint](../task/materials-v3-typed-inputs-and-builtins.md)
+for implementation and validation details.
 
 Keep the three authored concepts: MaterialBase owns renderer contracts and
 resources, MaterialDefinition owns the shader/schema/defaults, and Material owns
-instance values. Built-ins should use the same Material component as custom
-definitions. Shading remains supported until the replacement is reviewed and its
-compatibility behavior is implemented.
+instance values. Built-ins use the same Material component as custom
+definitions. Shading remains supported as a compatibility authoring adapter.
 
-## Proposed authoring
+## Authoring
 
 ```mms
 let anime = MaterialDefinition.anime()
@@ -26,10 +28,9 @@ R.cube() {
 }
 ```
 
-MaterialDefinition.anime() and MaterialDefinition.toon() are proposed constructors,
-not available methods yet. They should reference engine-owned built-in definitions;
-calling them repeatedly should not compile another shader or allocate another
-underlying definition. Creating two Material objects should create independent
+MaterialDefinition.anime() and MaterialDefinition.toon() reference engine-owned
+built-in definitions. Repeated calls reuse the authored built-in reference and
+the same renderer definition. Creating two Material objects creates independent
 instances, even if their initial values are identical.
 
 Keep .inputs(...) and .set_input(name, value) as the common parameter API. Partial
@@ -40,7 +41,7 @@ separate ownership and semantics.
 
 ## Colors and complete Shading compatibility
 
-The intended complete replacement also needs named color fields:
+Named vector inputs, including colors, use lists of the declared width:
 
 ```mms
 let character = Material(MaterialDefinition.anime()).inputs({
@@ -51,24 +52,32 @@ let character = Material(MaterialDefinition.anime()).inputs({
 })
 ```
 
-This color syntax is also a proposal. Built-in schemas already retain Vec3 fields,
-but public Material.inputs currently accepts scalar f32 values only. We must
-review and implement schema-checked vector values before claiming a complete
-replacement or removing Shading's color builders. Custom vector GPU uploads
-remain a separate physical-layout extension.
+Material.inputs and set_input validate scalar f32 values or lists containing exactly
+2, 3 or 4 finite f32 components against each declared field. get_input returns the
+same shape, including definition defaults for unset inputs. These are
+schema-validated lists, not new language-level vector value objects.
 
-Built-in material attachment to GLTF should preserve imported texture/color
-defaults, local overrides and shared instance identity. The existing Shading
-projection adapter must be migrated deliberately; exposing the constructor alone
-does not establish complete GLTF compatibility.
+GLTF-generated primitives resolve Material through their GLTF owner while retaining
+imported texture/color inputs. Local material overrides precede the owner scope;
+sharing the authored Material preserves one renderer instance identity. Structural
+edits refresh generated roots; value edits update the shared instance revision.
+Legacy Shading projections remain supported.
 
 ## Custom materials keep the current API
 
 ```mms
+import { f32, vec3 } from "types"
+
 let definition = MaterialDefinition(MaterialBase.planar_reflective())
-    .fragment("assets/shaders/pool-water.frag")
-    .inputs({ /* named f32 type fields */ })
-let water = Material(definition).inputs({ /* named initial values */ })
+    .fragment("my-water.frag")
+    .inputs({
+        time_seconds: f32
+        tint: vec3
+    })
+let water = Material(definition).inputs({
+    time_seconds = 0.0
+    tint = [0.1, 0.5, 0.7]
+})
 ```
 
 The reflective base supplies capture resources; the fragment program controls
@@ -77,14 +86,14 @@ material concept is introduced. Built-in constructors select their renderer
 contract; replacing their fragment/schema requires an explicitly authored custom
 definition, rather than mutating a shared engine definition.
 
-## Review decisions before implementation
+## Remaining scope
 
-- Confirm MaterialDefinition.anime()/toon() as the built-in entry points.
-- Confirm that instance values, including colors, use .inputs/.set_input rather
-  than duplicating every Shading builder on Material.
-- Confirm schema-checked three-element lists as values for Vec3 color fields.
-- Keep engine defaults and current emission behavior during the API migration;
-  changing lighting/emission policy is an independent decision.
+The existing engine defaults and emission behavior are preserved. Custom schemas
+support f32, vec2, vec3 and vec4, matched by name and exact type to GLSL fields.
+Logical values are densely stored; reflected byte offsets determine GPU packing.
+Nested records, matrices, typed variable annotations and new descriptor kinds
+are outside this slice. Reference-preserving serialization and eventual removal
+of Shading remain separate migration work.
 
-No Material(base) implicit-definition convenience, custom vertex API, new
-transmissive preset, or removal/deprecation of Shading is included in this pass.
+No Material(base) implicit-definition convenience, custom vertex API or new
+transmissive preset is included in this pass.

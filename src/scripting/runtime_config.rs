@@ -1153,6 +1153,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 }
                 "Grabbable" => {
                     no_arg_constructors(component, &["parent", "off", "on"]);
+                    constructor_and_builder(component, "to_hand", booleans(1));
                 }
                 "Rider" => {
                     component
@@ -1381,6 +1382,8 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     host_constructor(component, canonical, "planar_reflective", no_args());
                 }
                 "MaterialDefinition" => {
+                    host_constructor(component, canonical, "anime", no_args());
+                    host_constructor(component, canonical, "toon", no_args());
                     host_constructor(
                         component,
                         canonical,
@@ -1420,7 +1423,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         canonical,
                         "set_input",
                         method(
-                            vec![mms::ValueType::String, mms::ValueType::F32],
+                            vec![mms::ValueType::String, mms::ValueType::Any],
                             mms::ValueType::Null,
                         ),
                     );
@@ -1428,7 +1431,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         component,
                         canonical,
                         "get_input",
-                        method(vec![mms::ValueType::String], mms::ValueType::F32),
+                        method(vec![mms::ValueType::String], mms::ValueType::Any),
                     );
                 }
                 "Amplitude" => {
@@ -1529,6 +1532,13 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         .builder_call("enabled", booleans(1));
                 }
                 "AudioClip" => {
+                    component.alias("audio_clip");
+                    host_method(
+                        component,
+                        canonical,
+                        "play",
+                        mms::ValueSignature::new(vec![], mms::ValueType::Null),
+                    );
                     for method in [
                         "new", "wav", "opus", "ogg", "mp3", "flac", "one_shot", "latched",
                     ] {

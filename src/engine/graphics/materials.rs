@@ -41,15 +41,51 @@ pub enum MaterialInstanceInterface {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MaterialFieldType {
     F32,
+    Vec2,
     Vec3,
+    Vec4,
 }
 
 impl MaterialFieldType {
+    pub fn from_tag(tag: meow_meow_script::TypeTag) -> Result<Self, String> {
+        use meow_meow_script::TypeTag;
+        match tag {
+            TypeTag::F32 => Ok(Self::F32),
+            TypeTag::Vec2 => Ok(Self::Vec2),
+            TypeTag::Vec3 => Ok(Self::Vec3),
+            TypeTag::Vec4 => Ok(Self::Vec4),
+            _ => Err(format!("unsupported material input type '{tag}'")),
+        }
+    }
+
     pub fn width(self) -> usize {
         match self {
             Self::F32 => 1,
+            Self::Vec2 => 2,
             Self::Vec3 => 3,
+            Self::Vec4 => 4,
         }
+    }
+}
+
+/// Authored field identity; scalar slots are assigned by MaterialParameterSchema.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MaterialInputField {
+    pub name: String,
+    pub ty: MaterialFieldType,
+}
+
+impl From<String> for MaterialInputField {
+    fn from(name: String) -> Self {
+        Self {
+            name,
+            ty: MaterialFieldType::F32,
+        }
+    }
+}
+impl From<&str> for MaterialInputField {
+    fn from(name: &str) -> Self {
+        name.to_owned().into()
     }
 }
 
@@ -452,8 +488,7 @@ impl MaterialRegistry {
             custom
                 .fields
                 .iter()
-                .cloned()
-                .map(|name| (name, MaterialFieldType::F32)),
+                .map(|field| (field.name.clone(), field.ty)),
         );
         let defaults = vec![0.0; parameter_schema.scalar_count].into();
         let id = self.definitions.insert(MaterialDefinition {
@@ -472,7 +507,7 @@ impl MaterialRegistry {
                 MaterialBaseKind::PlanarReflective => self.planar_reflective_base,
             },
             custom: Some(custom),
-            name: "CustomF32",
+            name: "Custom",
             static_program: program,
             deformed_program: None,
             parameter_schema: parameter_schema.into(),

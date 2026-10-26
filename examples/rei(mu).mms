@@ -1,3 +1,4 @@
+import { sakura_tree } from "../assets/components/plants/sakura_tree.mms"
 import { colored_box_pile } from "../assets/components/colored_box_pile.mms"
 import { teleport_pit } from "../assets/components/teleport_pit.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
@@ -39,31 +40,6 @@ fn garden_box(box_name, x, y, z, width, height, depth, color) {
     }
 }
 
-// Each level places a branch and recursively grows three smaller branches.
-// Four levels keep the tree compact enough for a live XR scene.
-fn tree_branch(depth, length, width) {
-    return T {
-        T.position(0.0, length * 0.5, 0.0).scale(width, length, width) {
-            R.cube() { C.rgba(0.34, 0.21, 0.12, 1.0) }
-        }
-        if depth > 0 {
-            T.position(0.0, length, 0.0).rotation(0.48, 0.0, 0.43) {
-                tree_branch(depth - 1, length * 0.68, width * 0.70)
-            }
-            T.position(0.0, length, 0.0).rotation(-0.40, 2.10, -0.46) {
-                tree_branch(depth - 1, length * 0.68, width * 0.70)
-            }
-            T.position(0.0, length, 0.0).rotation(0.38, -2.10, 0.34) {
-                tree_branch(depth - 1, length * 0.68, width * 0.70)
-            }
-        } else {
-            T.position(0.0, length, 0.0).scale(0.26, 0.26, 0.26) {
-                R.sphere() { C.rgba(0.96, 0.75, 0.83, 1.0) }
-            }
-        }
-    }
-}
-
 fn tree_garden() {
     return T.position(6.0, 0.0, -1.3) {
         name = "tree_garden"
@@ -74,7 +50,7 @@ fn tree_garden() {
         garden_box("garden_west_border", -2.10, 0.29, 0.0, 0.16, 0.34, 4.2, [0.64, 0.61, 0.55])
         T.position(0.0, 0.28, 0.0) {
             name = "garden_tree"
-            tree_branch(3, 1.15, 0.24)
+            sakura_tree(3, 1.15, 0.24)
         }
     }
 }

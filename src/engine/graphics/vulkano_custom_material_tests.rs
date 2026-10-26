@@ -149,9 +149,12 @@ fn youtuber_room_renders_custom_wave_in_stereo() -> Result<(), Box<dyn std::erro
             .fields;
         let time_index = fields
             .iter()
-            .position(|name| name == "time_seconds")
+            .position(|field| field.name == "time_seconds")
             .unwrap();
-        let intensity_index = fields.iter().position(|name| name == "intensity").unwrap();
+        let intensity_index = fields
+            .iter()
+            .position(|field| field.name == "intensity")
+            .unwrap();
         if frame == 2 {
             let record = room.visuals.materials.instance(custom).unwrap();
             let source = record.source;
@@ -434,7 +437,7 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
         "wave_count",
         "intensity",
     ]
-    .map(str::to_owned)
+    .map(crate::engine::graphics::materials::MaterialInputField::from)
     .to_vec();
     let shader = compile("assets/shaders/youtuber-led-wave.frag", &fields)?;
     let definition = Arc::new(CustomMaterialDefinition {
@@ -497,12 +500,24 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
     }
     assert_eq!(renderer.material_upload_stats.allocations, 8);
     assert_eq!(renderer.material_instances[id].custom_snapshots.len(), 8);
-    // A second authored schema has a different name/count and buffer size,
-    // while retaining the same renderer-provided descriptor binding contract.
+    // A second typed schema exercises all vector widths and std140 padding
+    // through actual GPU buffers/descriptors, alongside scalar snapshots.
+    use crate::engine::graphics::materials::{MaterialFieldType as T, MaterialInputField};
+    let mixed_fields = [
+        ("gain", T::F32),
+        ("tint", T::Vec3),
+        ("uv", T::Vec2),
+        ("rgba", T::Vec4),
+    ]
+    .map(|(name, ty)| MaterialInputField {
+        name: name.into(),
+        ty,
+    })
+    .to_vec();
     let single = crate::engine::graphics::custom_material::compile_source(
-        "#version 450\nlayout(location=0) out vec4 color; layout(set=1,binding=0) uniform Params {float gain;} p; void main(){color=vec4(p.gain);}",
-        "one-f32",
-        &["gain".into()],
+        "#version 450\nlayout(location=0) out vec4 color; layout(set=1,binding=0,std140) uniform Params {float gain;vec3 tint;vec2 uv;vec4 rgba;} p; void main(){color=p.rgba*vec4(p.tint*p.gain,1)+vec4(p.uv,0,0);}",
+        "mixed-numeric",
+        &mixed_fields,
     )?;
     let other = world
         .add_component(crate::engine::ecs::component::material::MaterialBaseComponent::default());
@@ -510,8 +525,8 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
         other,
         Arc::new(CustomMaterialDefinition {
             base: crate::engine::graphics::materials::MaterialBaseKind::Surface,
-            fields: vec!["gain".into()],
-            fragment_uri: "one-f32".into(),
+            fields: mixed_fields,
+            fragment_uri: "mixed-numeric".into(),
             compiled: std::sync::OnceLock::from(Ok(single)),
         }),
     );
@@ -520,9 +535,11 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
         .definition(other_definition)
         .unwrap()
         .static_program;
-    let other_id = visuals
-        .materials
-        .upsert_source(other, other_definition, vec![0.75]);
+    let other_id = visuals.materials.upsert_source(
+        other,
+        other_definition,
+        vec![0.75, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
+    );
     renderer.sync_material_instances(&visuals);
     renderer.custom_material_set(
         other_id,
@@ -535,7 +552,7 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
         renderer.material_instances[other_id].custom_snapshots[0]
             .buffer
             .len(),
-        16
+        64
     );
     assert_eq!(
         renderer.material_instances[id].custom_snapshots[0]
@@ -612,7 +629,7 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
 #[test]
 #[ignore = "requires Vulkan; renders shared static/skinned Anime shading and the seated NPC in stereo"]
 fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn std::error::Error>> {
-    use crate::engine::ecs::component::ShadingComponent;
+    use crate::engine::ecs::component::material::MaterialComponent;
     let context = RendererContext::new(None, None, None)?;
     let extent = [960, 640];
     let format = Format::B8G8R8A8_UNORM;
@@ -808,13 +825,19 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
     ] {
         let closeup = preview != "room";
         room.update(0.0, &crate::engine::user_input::InputState::default());
-        let shading = room
-            .world
-            .get_component_by_id_as_mut::<ShadingComponent>(probe)
-            .unwrap();
-        *shading = shading.with_shade_strength(if closeup { 0.8 } else { 0.6 });
-        room.systems
-            .register_anime_shading(&mut room.world, &mut room.visuals, probe);
+        room.world
+            .get_component_by_id_as_mut::<MaterialComponent>(probe)
+            .unwrap()
+            .values
+            .insert(
+                "shade_strength".into(),
+                vec![if closeup { 0.8 } else { 0.6 }],
+            );
+        crate::engine::ecs::system::material_system::MaterialSystem::publish_source(
+            &mut room.world,
+            &mut room.visuals,
+            probe,
+        )?;
         room.systems.prepare_render(
             &mut room.world,
             &mut room.visuals,
@@ -1695,5 +1718,453 @@ fn runtime_capture_storage_reuses_and_retires_without_dropping_retained_views()
         [32, 16, 1],
         "in-flight/external owners keep the old view alive"
     );
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires Vulkan; renders the Sakura rooftop, city, bench and gradient/sun in stereo"]
+fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::engine::ecs::component::TransformComponent;
+    use crate::utils::math::{mat4_inverse, quat_mul, quat_rotation_y};
+    let context = RendererContext::new(None, None, None)?;
+    let extent = [960, 640];
+    let format = Format::B8G8R8A8_UNORM;
+    let mut renderer = VulkanoState::new(
+        context.clone(),
+        RendererOutput::Xr(format),
+        MsaaMode::Msaa4x,
+    )?;
+    let source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/examples/sakura-drone-conversion.mms"
+    ))
+    .replace(
+        "let desktop_view_enabled = false",
+        "let desktop_view_enabled = true",
+    )
+    .replace("let xr_view_enabled = true", "let xr_view_enabled = false");
+    let mut scene = crate::engine::Universe::new(crate::engine::ecs::World::default());
+    scene.load_mms_source_at_path(&source, "examples/sakura-drone-conversion.mms")?;
+    for _ in 0..3 {
+        scene.update(0., &crate::engine::user_input::InputState::default());
+    }
+    for (_, instance) in scene.visuals.materials.instances() {
+        if let Some(custom) = scene
+            .visuals
+            .materials
+            .definition(instance.definition)
+            .and_then(|definition| definition.custom.as_ref())
+        {
+            for _ in 0..200 {
+                if custom.compiled.get().is_some() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            custom
+                .compiled
+                .get()
+                .ok_or("custom compiler timed out")?
+                .as_ref()
+                .map_err(Clone::clone)?;
+        }
+    }
+    let mut next_mesh = 1000;
+    let mut next_texture = 1000;
+    scene.systems.prepare_render(
+        &mut scene.world,
+        &mut scene.visuals,
+        &mut scene.render_assets,
+        &mut SceneUploader {
+            renderer: &mut renderer,
+            next_mesh: &mut next_mesh,
+            next_texture: &mut next_texture,
+        },
+        &mut scene.command_queue,
+    );
+    scene.visuals.prepare_draw_cache();
+    let pistol_grip = scene
+        .world
+        .all_components()
+        .find(|&id| scene.world.component_label(id) == Some("sakura_machine_pistol_placement"))
+        .unwrap();
+    assert_eq!(
+        scene
+            .world
+            .all_components()
+            .filter(|&id| scene
+                .world
+                .get_component_by_id_as::<crate::engine::ecs::component::RenderableComponent>(id)
+                .is_some_and(|renderable| renderable.material_scope.is_some())
+                && crate::engine::ecs::system::grabbable_system::grabbable_owner_for_hit(
+                    &scene.world,
+                    id
+                ) == Some(pistol_grip))
+            .count(),
+        2,
+        "both imported pistol primitives must resolve their grabbable grip root"
+    );
+
+    assert_eq!(scene.visuals.background_order().len(), 1);
+    assert_eq!(
+        scene.visuals.background_occluded_lit_emissive_order().len(),
+        1,
+        "sun participates in background extraction independently of the gradient"
+    );
+    let sky = &scene.visuals.instances()[scene.visuals.background_order()[0] as usize];
+    let sky_definition = scene
+        .visuals
+        .materials
+        .definition(
+            scene
+                .visuals
+                .materials
+                .instance(sky.material_instance.unwrap())
+                .unwrap()
+                .definition,
+        )
+        .unwrap();
+    assert_eq!(
+        sky_definition.custom.as_ref().unwrap().fragment_uri,
+        "assets/shaders/sky-gradient.frag"
+    );
+    let tile_instances: Vec<_> = scene
+        .visuals
+        .instances()
+        .iter()
+        .filter(|instance| {
+            instance
+                .material_instance
+                .and_then(|id| scene.visuals.materials.instance(id))
+                .and_then(|record| scene.visuals.materials.definition(record.definition))
+                .and_then(|definition| definition.custom.as_ref())
+                .is_some_and(|custom| custom.fragment_uri == "assets/shaders/pool-tiles.frag")
+        })
+        .collect();
+    assert!(tile_instances.len() >= 18);
+    assert!(
+        tile_instances
+            .iter()
+            .all(|instance| instance.texture.is_some()),
+        "ceramics retain their packed tile image"
+    );
+    let blossom_count = scene
+        .visuals
+        .cutout_order()
+        .iter()
+        .filter(|&&index| {
+            let instance = &scene.visuals.instances()[index as usize];
+            scene
+                .world
+                .children_of(instance.component)
+                .iter()
+                .any(|&child| {
+                    scene
+                        .world
+                        .get_component_by_id_as::<crate::engine::ecs::component::TextureComponent>(
+                            child,
+                        )
+                        .is_some_and(|texture| {
+                            texture.uri()
+                                == Some("assets/textures/cherry-blossoms/sakura-blossom-256.png")
+                        })
+                })
+        })
+        .count();
+    assert_eq!(blossom_count, 3 * 27 * 3);
+    let combined = |scene: &crate::engine::Universe| {
+        scene
+            .visuals
+            .instances()
+            .iter()
+            .filter(|instance| {
+                scene
+                    .world
+                    .get_component_by_id_as::<crate::engine::ecs::component::CombineMeshComponent>(
+                        instance.component,
+                    )
+                    .is_some()
+            })
+            .count()
+    };
+    assert_eq!(
+        combined(&scene),
+        18,
+        "two independently colored ceramic groups per building"
+    );
+    let player = scene
+        .world
+        .all_components()
+        .find(|&id| scene.world.component_label(id) == Some("sakura_rooftop_building"))
+        .unwrap();
+    let player_meshes: Vec<_> = scene
+        .world
+        .all_components()
+        .filter(|&id| {
+            scene.world.component_label(id).is_some_and(|label| {
+                label == "sakura_rooftop_building_ceramic_white"
+                    || label == "sakura_rooftop_building_ceramic_trim"
+            })
+        })
+        .map(|id| (id, scene.visuals.instance_handle_for_component(id).unwrap()))
+        .collect();
+    let slider = scene
+        .world
+        .all_components()
+        .find(|&id| scene.world.component_label(id) == Some("sakura_building_detail_slider"))
+        .unwrap();
+    let mut warm_meshes = None;
+    for (iteration, count) in [0, 3, 8, 0, 8, 0, 8].into_iter().enumerate() {
+        scene.systems.rx.push_event(
+            slider,
+            crate::engine::ecs::EventSignal::SliderChanged {
+                slider,
+                value: count as f32,
+            },
+        );
+        scene.update(0., &crate::engine::user_input::InputState::default());
+        scene.systems.prepare_render(
+            &mut scene.world,
+            &mut scene.visuals,
+            &mut scene.render_assets,
+            &mut SceneUploader {
+                renderer: &mut renderer,
+                next_mesh: &mut next_mesh,
+                next_texture: &mut next_texture,
+            },
+            &mut scene.command_queue,
+        );
+        assert!(scene.world.get_component_record(player).is_some());
+        for &(id, handle) in &player_meshes {
+            assert_eq!(
+                scene.visuals.instance_handle_for_component(id),
+                Some(handle),
+                "player building must never regenerate"
+            );
+        }
+        assert_eq!(
+            combined(&scene),
+            18,
+            "old combined outputs must retire on regeneration"
+        );
+        assert_eq!(
+            scene
+                .world
+                .all_components()
+                .filter(|&id| scene
+                    .world
+                    .component_label(id)
+                    .is_some_and(|label| label.ends_with("_full_detail")))
+                .count(),
+            count + 1
+        );
+        assert_eq!(
+            scene
+                .world
+                .all_components()
+                .filter(|&id| scene
+                    .world
+                    .component_label(id)
+                    .is_some_and(|label| label.ends_with("_top_two_only")))
+                .count(),
+            8 - count
+        );
+        if iteration == 2 {
+            warm_meshes = Some(scene.render_assets.combined_mesh_count());
+        }
+        if iteration > 2 {
+            assert_eq!(
+                scene.render_assets.combined_mesh_count(),
+                warm_meshes.unwrap(),
+                "identical regenerations must reuse their immutable mesh assets"
+            );
+        }
+        for instance in scene.visuals.instances().iter().filter(|instance| {
+            scene
+                .world
+                .get_component_by_id_as::<crate::engine::ecs::component::CombineMeshComponent>(
+                    instance.component,
+                )
+                .is_some()
+        }) {
+            assert!(
+                instance.texture.is_some(),
+                "regenerated outputs must retain ceramic textures"
+            );
+        }
+    }
+    let toggle = scene
+        .world
+        .all_components()
+        .find(|&id| scene.world.component_label(id) == Some("sakura_scene_bloom_toggle"))
+        .unwrap();
+    for enabled in [false, true] {
+        scene.systems.rx.push_event(
+            toggle,
+            crate::engine::ecs::EventSignal::ToggleChanged {
+                toggle,
+                value: enabled,
+            },
+        );
+        scene.update(0., &crate::engine::user_input::InputState::default());
+        assert_eq!(
+            scene.visuals.post_processing().enabled,
+            enabled,
+            "scene bloom control must update the actual renderer graph"
+        );
+    }
+    scene.visuals.prepare_draw_cache();
+    let output = Image::new(
+        context.memory_allocator().clone(),
+        ImageCreateInfo {
+            image_type: ImageType::Dim2d,
+            format,
+            extent: [extent[0], extent[1], 1],
+            array_layers: 2,
+            usage: ImageUsage::COLOR_ATTACHMENT | ImageUsage::TRANSFER_SRC,
+            ..Default::default()
+        },
+        Default::default(),
+    )?;
+    let eyes = (0..2)
+        .map(|eye| {
+            ImageView::new(
+                output.clone(),
+                ImageViewCreateInfo {
+                    view_type: vulkano::image::view::ImageViewType::Dim2d,
+                    subresource_range: ImageSubresourceRange {
+                        array_layers: eye..eye + 1,
+                        ..output.subresource_range()
+                    },
+                    ..ImageViewCreateInfo::from_image(&output)
+                },
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let projection = scene.visuals.camera_proj_for(CameraTarget::Window);
+    for (label, position, target) in [
+        ("rooftop", [-12.8, 28.4, 4.2], [-18., 26.5, -3.3]),
+        ("city", [0., 35., 52.0], [0., 13., 0.]),
+        ("bench", [-18., 27.0, -2.45], [-18., 26.65, -4.1]),
+        ("tree", [-13.0, 27.8, 5.3], [-14.1, 27.7, 2.4]),
+        ("sky", [0., 60., 0.], [-7., 66., -17.6]),
+    ] {
+        let rotation = TransformComponent::look_at_world_rotation(position, target).unwrap();
+        let camera = TransformComponent::new()
+            .with_position(position[0], position[1], position[2])
+            .with_rotation_quat(quat_mul(rotation, quat_rotation_y(std::f32::consts::PI)));
+        scene.visuals.set_camera_for_target(
+            CameraTarget::Xr,
+            (0..2)
+                .map(|eye| {
+                    let mut model = camera.transform.model;
+                    for axis in 0..3 {
+                        model[3][axis] += model[0][axis] * if eye == 0 { -0.032 } else { 0.032 };
+                    }
+                    crate::engine::graphics::CameraData {
+                        view: mat4_inverse(model).unwrap(),
+                        proj: projection,
+                        transform: Default::default(),
+                    }
+                })
+                .collect(),
+        );
+        for eye in 0..2 {
+            renderer.submit_xr_eye_to_view(
+                &mut scene.visuals,
+                eye,
+                extent,
+                2,
+                eyes[eye].clone(),
+            )?;
+        }
+        let size = (extent[0] * extent[1] * 4) as u64;
+        let readback = Buffer::new_slice::<u8>(
+            context.memory_allocator().clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::TRANSFER_DST,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                    | MemoryTypeFilter::HOST_RANDOM_ACCESS,
+                ..Default::default()
+            },
+            size * 2,
+        )?;
+        let emission = Buffer::new_slice::<u8>(
+            context.memory_allocator().clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::TRANSFER_DST,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                    | MemoryTypeFilter::HOST_RANDOM_ACCESS,
+                ..Default::default()
+            },
+            size,
+        )?;
+        let mut commands = AutoCommandBufferBuilder::primary(
+            renderer.command_buffer_allocator.clone(),
+            context.graphics_queue().queue_family_index(),
+            CommandBufferUsage::OneTimeSubmit,
+        )?;
+        commands.copy_image_to_buffer(CopyImageToBufferInfo::image_buffer(
+            output.clone(),
+            readback.clone(),
+        ))?;
+        if label == "sky" {
+            let source = renderer
+                .post_processing_renderer
+                .xr_frame_targets(0)
+                .unwrap()
+                .bloom_source
+                .as_ref()
+                .unwrap()
+                .image()
+                .clone();
+            commands.copy_image_to_buffer(CopyImageToBufferInfo::image_buffer(
+                source,
+                emission.clone(),
+            ))?;
+        }
+        let done = renderer
+            .submission_future
+            .take()
+            .unwrap()
+            .then_execute(context.graphics_queue().clone(), commands.build()?)?
+            .then_signal_fence_and_flush()?;
+        done.wait(None)?;
+        renderer.submission_future = Some(done.boxed());
+        let pixels = readback.read()?;
+        let rgb: Vec<u8> = pixels[..size as usize]
+            .chunks_exact(4)
+            .flat_map(|p| [p[2], p[1], p[0], p[3]])
+            .collect();
+        image::save_buffer(
+            format!("/tmp/sakura-{label}.png"),
+            &rgb,
+            extent[0],
+            extent[1],
+            image::ColorType::Rgba8,
+        )?;
+        if label == "sky" {
+            assert!(
+                emission
+                    .read()?
+                    .chunks_exact(4)
+                    .filter(|p| p[0] > 0 || p[1] > 0 || p[2] > 0)
+                    .count()
+                    > 100,
+                "sun must reach bloom extraction"
+            );
+            let top = &rgb[40 * extent[0] as usize * 4..41 * extent[0] as usize * 4];
+            let bottom = &rgb[600 * extent[0] as usize * 4..601 * extent[0] as usize * 4];
+            assert_ne!(top, bottom, "two-stop sky must vary with viewing direction");
+        }
+    }
+    assert!(renderer.custom_programs.values().all(Result::is_ok));
     Ok(())
 }

@@ -1,6 +1,7 @@
 // Source-built pool hall. Measurements are metres; entrance is centred on local Z=0.
 // Regenerate textures with the Rust examples generate-pool-tiles and generate-metal-matcap.
 import { f32 } from "types"
+import { pool_tile_material } from "../materials/pool_tiles.mms"
 
 fn tile_box(position, size, material) {
     return T.position(position[0], position[1], position[2]).scale(size[0], size[1], size[2]) {
@@ -28,24 +29,7 @@ fn metal_cylinder(position, radius, height, material) {
 }
 
 export fn indoor_pool(origin, width, length, basin_width, basin_length, water_enabled) {
-    let tile_definition = MaterialDefinition(MaterialBase()).fragment("assets/shaders/pool-tiles.frag").inputs({
-        tile_size: f32
-        normal_strength: f32
-        specular_strength: f32
-        shininess: f32
-        rim_strength: f32
-        shade_threshold: f32
-        lit_threshold: f32
-    })
-    let tiles = Material(tile_definition).inputs({
-        tile_size = 0.25
-        normal_strength = 1.0
-        specular_strength = 0.65
-        shininess = 64.0
-        rim_strength = 0.2
-        shade_threshold = 0.05
-        lit_threshold = 2.0
-    })
+    let tiles = pool_tile_material()
     let metal_definition = MaterialDefinition(MaterialBase()).fragment("assets/shaders/pool-metal-matcap.frag").inputs({
         brightness: f32
     })

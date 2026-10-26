@@ -2441,6 +2441,11 @@ fn create_component(
             add!(layout)
         }
         "Grabbable" => match ctor {
+            Some("to_hand") => {
+                let mut grabbable = GrabbableComponent::new();
+                grabbable.to_hand = arg_bool(args, 0)?;
+                add!(grabbable)
+            }
             Some("parent") => add!(GrabbableComponent::parent()),
             Some("off") => add!(GrabbableComponent::off()),
             Some("on") => add!(GrabbableComponent::on()),
@@ -2934,6 +2939,13 @@ fn apply_call(
     method: &str,
     args: &[Value],
 ) -> Result<(), String> {
+    if let Some(grabbable) = world.get_component_by_id_as_mut::<GrabbableComponent>(id) {
+        if method == "to_hand" {
+            grabbable.to_hand = arg_bool(args, 0)?;
+        }
+        return Ok(());
+    }
+
     if world
         .get_component_by_id_as::<TransformOperatorComponent>(id)
         .and_then(|operator| operator.sample_translation_settings())

@@ -1466,6 +1466,7 @@ dependencies = [
  "smallvec",
  "symphonia",
  "tiny_http",
+ "ttf-parser",
  "uuid",
  "vulkano",
  "vulkano-shaders",

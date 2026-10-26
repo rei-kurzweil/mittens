@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 use crate::engine::graphics::MeshUploader;
 use crate::engine::graphics::mesh::CpuMesh;
@@ -27,6 +28,7 @@ pub enum BuiltinMeshType {
 pub struct RenderAssets {
     cpu_meshes: Vec<CpuMesh>,
     gpu_meshes: HashMap<CpuMeshHandle, MeshHandle>,
+    combined_meshes: HashMap<u64, Vec<CpuMeshHandle>>,
 
     /// Imported CPU meshes keyed by a stable string (e.g. "{gltf_name}:{mesh_name_or_index}:{prim_index}").
     imported_meshes: HashMap<String, CpuMeshHandle>,
@@ -107,6 +109,40 @@ impl RenderAssets {
         let h = CpuMeshHandle(self.cpu_meshes.len() as u32);
         self.cpu_meshes.push(mesh);
         h
+    }
+
+    /// Reuse immutable static geometry when a scene regenerates the same building.
+    pub(crate) fn register_combined_mesh(&mut self, mesh: CpuMesh) -> CpuMeshHandle {
+        debug_assert!(
+            mesh.joints0.is_none() && mesh.weights0.is_none() && mesh.morph_targets.is_empty()
+        );
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        mesh.indices_u32.hash(&mut hasher);
+        for vertex in &mesh.vertices {
+            for value in vertex.pos.into_iter().chain(vertex.normal).chain(vertex.uv) {
+                value.to_bits().hash(&mut hasher);
+            }
+        }
+        let key = hasher.finish();
+        if let Some(bucket) = self.combined_meshes.get(&key) {
+            for &id in bucket {
+                let cached = &self.cpu_meshes[id.0 as usize];
+                if cached.primitive_topology == mesh.primitive_topology
+                    && cached.indices_u32 == mesh.indices_u32
+                    && cached.vertices.len() == mesh.vertices.len()
+                    && cached
+                        .vertices
+                        .iter()
+                        .zip(&mesh.vertices)
+                        .all(|(a, b)| a.pos == b.pos && a.normal == b.normal && a.uv == b.uv)
+                {
+                    return id;
+                }
+            }
+        }
+        let id = self.register_mesh(mesh);
+        self.combined_meshes.entry(key).or_default().push(id);
+        id
     }
 
     /// Return the mesh registered under `mesh_key`, defining it from `points` on first use.
@@ -237,6 +273,11 @@ impl RenderAssets {
 
     pub fn cpu_mesh(&self, h: CpuMeshHandle) -> Option<&CpuMesh> {
         self.cpu_meshes.get(h.0 as usize)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn combined_mesh_count(&self) -> usize {
+        self.combined_meshes.values().map(Vec::len).sum()
     }
 
     pub fn cpu_mesh_count(&self) -> usize {

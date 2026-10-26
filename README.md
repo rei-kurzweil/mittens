@@ -52,7 +52,11 @@ and [generic REPL migration](docs/task/mms-repl-navigation-and-cat-unification.m
   GitHub. Run the script manually to prefetch models. Set
   `MITTENS_MODEL_ASSET_BASE_URL` to override the download source.
 
+Offline texture generators: [cherry blossom emoji backgrounds](assets/textures/cherry-blossoms/README.md)
+and `cargo run --release --example generate-pool-tiles`.
+
 ## Windowing
+
 + uses winit to make a window and passes the RawDisplayHandle to renderer to render into the window
 + provides user input events and frame loop
 

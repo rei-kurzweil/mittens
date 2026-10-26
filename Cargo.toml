@@ -85,6 +85,10 @@ bvh = "0.7"
 # glTF 2.0 import (used by GLTFSystem to load .glb models and embedded images)
 gltf = { version = "1", features = ["import", "extras"] }
 
+[dev-dependencies]
+# Offline texture generators can read Noto Color Emoji's embedded PNG glyphs.
+ttf-parser = "0.25"
+
 [[example]]
 name = "panel-pierce"
 path = "examples/triage/panel-pierce.rs"

@@ -634,6 +634,14 @@ impl VisualWorld {
         }
     }
 
+    /// Published geometry, including outputs owned by CombineMesh rather than a Renderable.
+    pub(crate) fn instance_handle_for_component(
+        &self,
+        component: ComponentId,
+    ) -> Option<InstanceHandle> {
+        self.component_to_handle.get(&component).copied()
+    }
+
     pub fn instance(&self, handle: InstanceHandle) -> Option<&VisualInstance> {
         let idx = *self.handle_to_index.get(&handle)?;
         self.instances.get(idx)

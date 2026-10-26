@@ -167,7 +167,7 @@ impl CombineMeshSystem {
             let Some(local_bounds) = local_bounds(&mesh) else {
                 continue;
             };
-            let cpu_mesh = assets.register_mesh(mesh);
+            let cpu_mesh = assets.register_combined_mesh(mesh);
             let Ok(gpu_mesh) = assets.gpu_mesh_handle(uploader, cpu_mesh) else {
                 continue;
             };
@@ -220,7 +220,9 @@ impl CombineMeshSystem {
                         .children_of(root)
                         .iter()
                         .copied()
-                        .filter(|child| Some(*child) != material_source),
+                        .filter(|child| Some(*child) != material_source
+                            && world.get_component_by_id_as::<crate::engine::ecs::component::TextureComponent>(*child).is_none()
+                            && world.get_component_by_id_as::<crate::engine::ecs::component::TextureFilteringComponent>(*child).is_none()),
                 );
             }
         }

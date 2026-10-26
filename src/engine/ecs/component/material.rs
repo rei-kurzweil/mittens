@@ -1,6 +1,9 @@
 use super::Component;
+use super::ShadingModel;
 use crate::engine::ecs::ComponentId;
-use crate::engine::graphics::materials::MaterialBaseKind;
+use crate::engine::graphics::materials::{
+    MaterialBaseKind, MaterialInputField, MaterialParameterSchema,
+};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Default)]
@@ -10,13 +13,56 @@ pub struct MaterialBaseComponent(pub MaterialBaseKind);
 pub struct MaterialDefinitionComponent {
     pub base: ComponentId,
     pub fragment_uri: String,
-    pub fields: Vec<String>,
+    pub fields: Vec<MaterialInputField>,
+    pub builtin: Option<ShadingModel>,
 }
 
 #[derive(Debug)]
 pub struct MaterialComponent {
     pub definition: ComponentId,
-    pub values: BTreeMap<String, f32>,
+    pub values: BTreeMap<String, Vec<f32>>,
+}
+
+impl MaterialDefinitionComponent {
+    pub fn builtin(model: ShadingModel) -> Self {
+        let schema = match model {
+            ShadingModel::Anime => {
+                crate::engine::graphics::visual_world::AnimeShadingParams::schema()
+            }
+            ShadingModel::Toon => MaterialParameterSchema::default(),
+        };
+        Self {
+            base: ComponentId::default(),
+            fragment_uri: String::new(),
+            fields: schema
+                .fields
+                .into_iter()
+                .map(|field| MaterialInputField {
+                    name: field.name,
+                    ty: field.ty,
+                })
+                .collect(),
+            builtin: Some(model),
+        }
+    }
+
+    pub fn parameter_schema(&self) -> MaterialParameterSchema {
+        MaterialParameterSchema::new(
+            self.fields
+                .iter()
+                .map(|field| (field.name.clone(), field.ty)),
+        )
+    }
+
+    pub fn default_values(&self) -> Vec<f32> {
+        let schema = self.parameter_schema();
+        match self.builtin {
+            Some(ShadingModel::Anime) => super::ShadingComponent::new()
+                .material_values(&schema)
+                .to_vec(),
+            _ => vec![0.0; schema.scalar_count],
+        }
+    }
 }
 
 macro_rules! material_component {

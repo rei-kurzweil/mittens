@@ -913,10 +913,18 @@ impl<'a, H: Host> Evaluator<'a, H> {
                         response => component_response(response, "Component".into()),
                     }
                 }
-                Value::Map(map) => Ok(map.get(&method).cloned().unwrap_or(Value::Null)),
-                Value::Object(id) => id
-                    .with_map(|map| map.get(&method).cloned().unwrap_or(Value::Null))
-                    .ok_or_else(|| EvalError::Runtime("stale table reference".into())),
+                Value::Map(map) => {
+                    let callback = map.get(&method).cloned().unwrap_or(Value::Null);
+                    self.invoke_value(callback, args)
+                }
+                Value::Object(id) => {
+                    // Release the table lock before invoking a closure: it may
+                    // read or mutate the same table through its captured state.
+                    let callback = id
+                        .with_map(|map| map.get(&method).cloned().unwrap_or(Value::Null))
+                        .ok_or_else(|| EvalError::Runtime("stale table reference".into()))?;
+                    self.invoke_value(callback, args)
+                }
                 Value::Identifier(name) if name == "Math" => math(&method, &args),
                 Value::Identifier(namespace)
                     if self

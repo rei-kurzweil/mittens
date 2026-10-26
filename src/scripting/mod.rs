@@ -49,3 +49,6 @@ pub use world_evaluator::*;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod sakura_scene_tests;

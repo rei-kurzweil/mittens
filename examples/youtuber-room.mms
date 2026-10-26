@@ -1,4 +1,4 @@
-// First named-f32 custom-material scene.
+// Built-in material definitions and named custom-material inputs.
 // cargo run --release -- load examples/youtuber-room.mms
 // Desktop: WASD + mouse. XR-only: tracked Rei(mu); both views: avatar-free XR.
 // Facing-gated Anime lighting with rim light on the scene and Rei(mu).
@@ -118,9 +118,15 @@ let baseboard_lilac = [0.54, 0.42, 0.65]
 let ceiling_white = [0.96, 0.95, 0.98]
 let floor_wood = [0.39, 0.23, 0.12]
 let floor_underlay = [0.16, 0.085, 0.035]
-let room_shading = Shading.anime().shade_color([0.35, 0.35, 0.35]).shade_strength(0.8)
-    .shade_threshold(0.35).lit_threshold(0.55)
-    .rim_color([1.0, 1.0, 1.0]).rim_strength(0.18).rim_power(4.0) { name = "room_shading" }
+let room_shading = Material(MaterialDefinition.anime()).inputs({
+    shade_color = [0.35, 0.35, 0.35]
+    shade_strength = 0.8
+    shade_threshold = 0.35
+    lit_threshold = 0.55
+    rim_color = [1.0, 1.0, 1.0]
+    rim_strength = 0.18
+    rim_power = 4.0
+}) { name = "room_shading" }
 
 // Flat desktop graphics use ordinary emissive materials; only the ceiling LEDs
 // use the animated custom material. Non-emissive icon fills keep the glow selective.
@@ -173,7 +179,7 @@ fn screen_icon(y, kind) {
 
 let monitor_screen_content = T.position(-0.30, 1.34, -1.94) {
     name = "monitor_screen_content"
-    Shading.toon()
+    Material(MaterialDefinition.toon())
     screen_rect([-0.16, -0.005, 0.0], [0.82, 0.53], [0.025, 0.016, 0.009], 0.0)
     screen_rect([-0.16, 0.231, 0.003], [0.82, 0.056], [0.12, 0.065, 0.015], 0.25)
     screen_text([-0.54, 0.218, 0.008], 0.018, "terminal", screen_pale_gold, 0.65)
@@ -234,17 +240,18 @@ T {
         name = "desk_straw"
         T.position(0.0, 0.0, 0.42907333) {
             GLTF.new("assets/models/straw.glb") {
-                Shading.anime().shade_color([0.5, 0.5, 0.5])
-                                .shade_strength(0.7)
-                                .shade_threshold(0.35)
-                                .lit_threshold(0.55)
-                                .rim_color([1.0, 1.0, 1.0])
-                                .rim_strength(0.18)
-                                .rim_power(4.0)
+                Material(MaterialDefinition.anime()).inputs({
+                        shade_color = [0.5, 0.5, 0.5]
+                        shade_strength = 0.7
+                        shade_threshold = 0.35
+                        lit_threshold = 0.55
+                        rim_color = [1.0, 1.0, 1.0]
+                        rim_strength = 0.18
+                        rim_power = 4.0
+                    })
+                }
             }
         }
-    }
-
     // Monitor body and stand, with a gold terminal and emissive desktop icons.
     box([-0.30, 0.86, -2.02], [0.40, 0.025, 0.30], charcoal)
     box([-0.30, 1.05, -2.045], [0.075, 0.38, 0.07], metal)
@@ -382,9 +389,15 @@ if !xr_player_avatar_enabled {
     })
 }
 
-let strip_backing = Shading.anime().shade_color([0.5, 0.5, 0.5]).shade_strength(0.7)
-    .shade_threshold(0.35).lit_threshold(0.55)
-    .rim_color([1.0, 1.0, 1.0]).rim_strength(0.18).rim_power(4.0)
+let strip_backing = Material(MaterialDefinition.anime()).inputs({
+    shade_color = [0.5, 0.5, 0.5]
+    shade_strength = 0.7
+    shade_threshold = 0.35
+    lit_threshold = 0.55
+    rim_color = [1.0, 1.0, 1.0]
+    rim_strength = 0.18
+    rim_power = 4.0
+})
 
 // One combined mesh per wall. Each cube carries its perimeter position in UV X,
 // shared by all 24 vertices so the whole LED changes brightness together.
@@ -423,8 +436,12 @@ ceiling_strip([-2.475, 2.77, 0.0], 4.55, 1.5707963268, 0.76, 1.0, 74)
 // The existing front doorway opens directly into a 2 m connecting hallway.
 let pool_hallway = T {
     name = "pool_hallway"
-    Shading.anime().shade_color([0.48, 0.48, 0.50]).shade_strength(0.65)
-        .rim_color([1.0, 1.0, 1.0]).rim_strength(0.18)
+    Material(MaterialDefinition.anime()).inputs({
+    shade_color = [0.48, 0.48, 0.50]
+    shade_strength = 0.65
+    rim_color = [1.0, 1.0, 1.0]
+    rim_strength = 0.18
+})
     // The floor fills the doorway thresholds; walls and ceiling stop outside
     // the jambs/headers so their interior faces never overlap coplanar faces.
     box([0.0, -0.06, (2.35 + pool_room_origin_z) / 2.0],
