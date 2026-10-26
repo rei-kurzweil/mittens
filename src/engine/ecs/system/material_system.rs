@@ -181,7 +181,16 @@ impl MaterialSystem {
     ) -> Option<MaterialInstanceId> {
         let source = Self::resolve_source(world, consumer)?;
         match Self::ensure_source(world, visuals, source) {
-            Ok(instance) => Some(instance),
+            Ok(instance) => {
+                if let Some(renderable) = world
+                    .get_component_by_id_as::<crate::engine::ecs::component::RenderableComponent>(
+                        consumer,
+                    )
+                {
+                    Self::program(visuals, instance, renderable.renderable.material)?;
+                }
+                Some(instance)
+            }
             Err(error) => {
                 eprintln!("[Material] {source:?}: {error}");
                 None
@@ -238,36 +247,29 @@ impl MaterialSystem {
             .materials
             .instance(instance)
             .and_then(|record| visuals.materials.definition(record.definition))?;
-        Some(
-            if matches!(
-                fallback,
-                MaterialHandle::SKINNED_TOON_MESH
-                    | MaterialHandle::SKINNED_EMISSIVE_TOON_MESH
-                    | MaterialHandle::SKINNED_ANIME_MESH
-                    | MaterialHandle::SKINNED_REFRACTION_MESH
-                    | MaterialHandle::SKINNED_ROUGH_TRANSMISSION_MESH
-            ) {
-                definition.deformed_program
-            } else {
-                definition.static_program
-            },
-        )
+        if crate::engine::graphics::materials::builtin_program_capabilities(fallback)
+            .cached_deformation
+        {
+            if definition.deformed_program.is_none() {
+                eprintln!(
+                    "[Material] definition '{}' has no cached-deformation program for this geometry",
+                    definition.name
+                );
+            }
+            definition.deformed_program
+        } else {
+            Some(definition.static_program)
+        }
     }
 
     pub(crate) fn with_emissive(
         material: MaterialHandle,
         emissive_intensity: f32,
     ) -> MaterialHandle {
-        let is_emissive = emissive_intensity > 0.0;
-        match (material, is_emissive) {
-            (MaterialHandle::TOON_MESH, true) => MaterialHandle::EMISSIVE_TOON_MESH,
-            (MaterialHandle::SKINNED_TOON_MESH, true) => MaterialHandle::SKINNED_EMISSIVE_TOON_MESH,
-            (MaterialHandle::EMISSIVE_TOON_MESH, false) => MaterialHandle::TOON_MESH,
-            (MaterialHandle::SKINNED_EMISSIVE_TOON_MESH, false) => {
-                MaterialHandle::SKINNED_TOON_MESH
-            }
-            _ => material,
-        }
+        crate::engine::graphics::materials::builtin_emission_variant(
+            material,
+            emissive_intensity > 0.0,
+        )
     }
 
     pub(crate) fn retire_source(visuals: &mut VisualWorld, source: ComponentId) {
@@ -284,6 +286,30 @@ mod tests {
     use crate::engine::ecs::{CommandQueue, EventSignal, RxWorld, Signal};
     use crate::engine::graphics::RenderAssets;
     use crate::scripting::runner::RuntimeSpecSession;
+
+    #[test]
+    fn material_program_contract_rejects_unavailable_custom_deformation() {
+        let mut world = World::default();
+        let source = world.add_component(ShadingComponent::new());
+        let mut visuals = VisualWorld::default();
+        let definition = visuals.materials.register_custom_definition(
+            source,
+            std::sync::Arc::new(CustomMaterialDefinition {
+                base: crate::engine::graphics::materials::MaterialBaseKind::Surface,
+                fields: vec!["gain".into()],
+                fragment_uri: "test.frag".into(),
+                compiled: std::sync::OnceLock::new(),
+            }),
+        );
+        let instance = visuals
+            .materials
+            .upsert_source(source, definition, vec![1.0]);
+        assert!(MaterialSystem::program(&visuals, instance, MaterialHandle::TOON_MESH).is_some());
+        assert!(
+            MaterialSystem::program(&visuals, instance, MaterialHandle::SKINNED_TOON_MESH)
+                .is_none()
+        );
+    }
 
     #[test]
     fn one_resolver_preserves_local_material_overrides_and_legacy_boundaries() {
@@ -597,7 +623,7 @@ mod tests {
                     .clone()
             })
             .collect();
-        assert!(registered.supports_emission_extraction);
+        assert!(registered.capabilities.supports_emission_extraction());
         assert_eq!(registered.base, visuals.materials.extracted_emissive_base);
         crate::engine::ecs::SystemWorld::default().remove_subtree_immediate(
             &mut world,

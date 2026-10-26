@@ -1635,3 +1635,65 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
     );
     Ok(())
 }
+
+#[test]
+#[ignore = "requires Vulkan; checks runtime capture storage reuse, resizing and retirement"]
+fn runtime_capture_storage_reuses_and_retires_without_dropping_retained_views()
+-> Result<(), Box<dyn std::error::Error>> {
+    let context = RendererContext::new(None, None, None)?;
+    let mut renderer = VulkanoState::new(
+        context,
+        RendererOutput::Xr(Format::B8G8R8A8_UNORM),
+        MsaaMode::Msaa4x,
+    )?;
+    let mut visuals = VisualWorld::default();
+    let source = TextureHandle(91_000);
+    let target = TextureHandle(91_001);
+    renderer.upload_texture_rgba8(source, &vec![180; 32 * 16 * 4], 32, 16)?;
+    renderer.upload_texture_rgba8(target, &[0, 0, 0, 255], 1, 1)?;
+    visuals.set_runtime_texture_handle("capture.mirror.test.stereo.0.color", target);
+    renderer.retire_runtime_resources(&mut visuals);
+    let source_view = renderer.textures[&source].view.clone();
+    let retained = renderer.ensure_runtime_texture_target(target, &source_view)?;
+    for _ in 0..1_000 {
+        let view = renderer.ensure_runtime_texture_target(target, &source_view)?;
+        assert!(
+            Arc::ptr_eq(&retained, &view),
+            "matching runtime publications must not allocate another image"
+        );
+        renderer.apply_pending_runtime_texture_updates();
+    }
+    let resized_source = TextureHandle(91_002);
+    renderer.upload_texture_rgba8(resized_source, &vec![90; 64 * 16 * 4], 64, 16)?;
+    let resized_view = renderer.textures[&resized_source].view.clone();
+    let resized = renderer.ensure_runtime_texture_target(target, &resized_view)?;
+    assert!(!Arc::ptr_eq(&retained, &resized));
+    renderer.apply_pending_runtime_texture_updates();
+    assert!(Arc::ptr_eq(
+        &resized,
+        &renderer.ensure_runtime_texture_target(target, &resized_view)?
+    ));
+    renderer.ensure_mirror_offscreen_targets(
+        "capture.mirror.test.stereo.0.color",
+        2,
+        [32, 16],
+        Format::B8G8R8A8_UNORM,
+    )?;
+    assert_eq!(renderer.mirror_offscreen.len(), 1);
+    visuals.retain_runtime_textures(|_| false);
+    renderer.retire_runtime_resources(&mut visuals);
+    assert!(!renderer.textures.contains_key(&target));
+    assert!(
+        !renderer
+            .pending_runtime_texture_updates
+            .contains_key(&target)
+    );
+    assert!(renderer.mirror_offscreen.is_empty());
+    assert!(renderer.managed_runtime_textures.is_empty());
+    assert_eq!(
+        retained.image().extent(),
+        [32, 16, 1],
+        "in-flight/external owners keep the old view alive"
+    );
+    Ok(())
+}

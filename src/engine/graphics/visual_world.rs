@@ -67,6 +67,8 @@ pub struct MirrorCaptureRequest {
 #[derive(Debug, Clone)]
 pub struct VisualMirror {
     pub mirror_component: ComponentId,
+    /// Producer lifetime is independent of transient tracking/view availability.
+    pub capture_prefix: String,
     pub captures: Vec<MirrorCaptureRequest>,
     pub plane_origin: [f32; 3],
     pub plane_normal: [f32; 3],
@@ -256,6 +258,7 @@ pub struct VisualWorld {
     // Most recent render target size in pixels (width, height).
     viewport: [f32; 2],
     runtime_texture_handles: HashMap<String, crate::engine::graphics::TextureHandle>,
+    retired_runtime_textures: Vec<crate::engine::graphics::TextureHandle>,
     stencil_clip_debug_requested: bool,
     // 2D camera view transform for translation/scale/rotation.
     // Stored as mat3 column vectors padded to vec4 columns (std140 friendly).
@@ -545,6 +548,7 @@ impl Default for VisualWorld {
             active_xr_camera: None,
             viewport: [1.0, 1.0],
             runtime_texture_handles: HashMap::new(),
+            retired_runtime_textures: Vec::new(),
             stencil_clip_debug_requested: false,
             camera_2d: [
                 [1.0, 0.0, 0.0, 0.0],
@@ -607,30 +611,27 @@ impl Default for VisualWorld {
 
 impl VisualWorld {
     fn is_emissive_instance(instance: &VisualInstance, materials: &MaterialRegistry) -> bool {
-        if let Some(definition) = instance
-            .material_instance
-            .and_then(|id| materials.instance(id))
-            .and_then(|material| materials.definition(material.definition))
-            .filter(|definition| definition.custom.is_some())
-        {
-            // The first extracted custom base supports opaque foreground meshes.
-            // Unsupported coverage/geometry must not leak into the extraction pass.
-            return definition.supports_emission_extraction
-                && instance.opacity >= 1.0
-                && !instance.transparent_cutout
-                && !instance.multiple_layers
-                && !instance.background
-                && !instance.background_occluded_lit
-                && !instance.overlay
-                && instance.stencil_ref == 0
-                && !instance.is_stencil_clip
-                && instance.bones_count == 0;
+        use super::materials::{MaterialEmission, MaterialStateProfile};
+        let capabilities = materials
+            .resolved_capabilities(instance.material_instance, instance.renderable.material);
+        if capabilities.material.emission == MaterialEmission::None {
+            return false;
         }
-        matches!(
-            instance.renderable.material,
-            crate::engine::graphics::MaterialHandle::EMISSIVE_TOON_MESH
-                | crate::engine::graphics::MaterialHandle::SKINNED_EMISSIVE_TOON_MESH
-        )
+        match capabilities.material.state_profile {
+            MaterialStateProfile::BuiltinMeshCompatibility => true,
+            MaterialStateProfile::CustomSurface => {
+                // Current custom extraction has an explicit coverage contract.
+                instance.opacity >= 1.0
+                    && !instance.transparent_cutout
+                    && !instance.multiple_layers
+                    && !instance.background
+                    && !instance.background_occluded_lit
+                    && !instance.overlay
+                    && instance.stencil_ref == 0
+                    && !instance.is_stencil_clip
+                    && instance.bones_count == 0
+            }
+        }
     }
 
     pub fn instance(&self, handle: InstanceHandle) -> Option<&VisualInstance> {
@@ -2090,19 +2091,14 @@ impl VisualWorld {
         }
     }
 
-    fn uses_cached_deformation(material: crate::engine::graphics::MaterialHandle) -> bool {
-        use crate::engine::graphics::MaterialHandle;
-        matches!(
-            material,
-            MaterialHandle::SKINNED_TOON_MESH
-                | MaterialHandle::SKINNED_EMISSIVE_TOON_MESH
-                | MaterialHandle::SKINNED_ANIME_MESH
-                | MaterialHandle::SKINNED_REFRACTION_MESH
-                | MaterialHandle::SKINNED_ROUGH_TRANSMISSION_MESH
-        )
+    fn uses_cached_deformation(instance: &VisualInstance, materials: &MaterialRegistry) -> bool {
+        materials
+            .resolved_capabilities(instance.material_instance, instance.renderable.material)
+            .cached_deformation
     }
 
     fn build_outline_render_stream(
+        materials: &MaterialRegistry,
         instances: &[VisualInstance],
         order: &[u32],
         ops: &mut Vec<RenderOp>,
@@ -2117,7 +2113,7 @@ impl VisualWorld {
         let mut cursor = 0usize;
         while cursor < order.len() {
             let first = instances[order[cursor] as usize];
-            let material = if Self::uses_cached_deformation(first.renderable.material) {
+            let material = if Self::uses_cached_deformation(&first, materials) {
                 MaterialHandle::SKINNED_TOON_MESH
             } else {
                 MaterialHandle::TOON_MESH
@@ -2127,12 +2123,11 @@ impl VisualWorld {
             cursor += 1;
             while cursor < order.len() {
                 let instance = instances[order[cursor] as usize];
-                let candidate_material =
-                    if Self::uses_cached_deformation(instance.renderable.material) {
-                        MaterialHandle::SKINNED_TOON_MESH
-                    } else {
-                        MaterialHandle::TOON_MESH
-                    };
+                let candidate_material = if Self::uses_cached_deformation(&instance, materials) {
+                    MaterialHandle::SKINNED_TOON_MESH
+                } else {
+                    MaterialHandle::TOON_MESH
+                };
                 if candidate_material != material || instance.renderable.mesh != mesh {
                     break;
                 }
@@ -2873,7 +2868,13 @@ impl VisualWorld {
         let order = self.filtered_phase_order(&self.outline_order, excluded_instance);
         let mut ops = Vec::new();
         let mut instances = Vec::new();
-        Self::build_outline_render_stream(&self.instances, &order, &mut ops, &mut instances);
+        Self::build_outline_render_stream(
+            &self.materials,
+            &self.instances,
+            &order,
+            &mut ops,
+            &mut instances,
+        );
         (ops, instances)
     }
 
@@ -3048,15 +3049,23 @@ impl VisualWorld {
     }
 
     pub fn has_transmissive_instances(&self) -> bool {
-        self.instances
-            .iter()
-            .any(|instance| instance.renderable.material.is_transmissive())
+        self.instances.iter().any(|instance| {
+            self.materials
+                .resolved_capabilities(instance.material_instance, instance.renderable.material)
+                .material
+                .transmission
+                != super::materials::MaterialTransmission::None
+        })
     }
 
     pub fn has_rough_transmission_instances(&self) -> bool {
-        self.instances
-            .iter()
-            .any(|instance| instance.renderable.material.is_rough_transmission())
+        self.instances.iter().any(|instance| {
+            self.materials
+                .resolved_capabilities(instance.material_instance, instance.renderable.material)
+                .material
+                .transmission
+                == super::materials::MaterialTransmission::Rough
+        })
     }
 
     /// Indices into `instances()` in the order they should be drawn (emissive cutout batching).
@@ -3237,12 +3246,16 @@ impl VisualWorld {
         // Opaque pass: exclude anything that is transparent.
         for i in 0..self.instances.len() {
             let inst = &self.instances[i];
+            let capabilities = self
+                .materials
+                .resolved_capabilities(inst.material_instance, inst.renderable.material);
             if inst.toon_outline.is_some_and(|outline| outline.width > 0.0)
                 && !inst.overlay
                 && !inst.background
                 && !inst.transparent_cutout
                 && !Self::is_transparent(inst)
-                && !inst.renderable.material.is_transmissive()
+                && capabilities.material.transmission
+                    == super::materials::MaterialTransmission::None
                 && inst.stencil_ref == 0
             {
                 self.outline_order.push(i as u32);
@@ -3258,9 +3271,13 @@ impl VisualWorld {
                 } else {
                     self.background_order.push(i as u32);
                 }
-            } else if inst.renderable.material.is_refraction() {
+            } else if capabilities.material.transmission
+                == super::materials::MaterialTransmission::Sharp
+            {
                 self.refraction_order.push(i as u32);
-            } else if inst.renderable.material.is_rough_transmission() {
+            } else if capabilities.material.transmission
+                == super::materials::MaterialTransmission::Rough
+            {
                 self.rough_transmission_order.push(i as u32);
             } else if inst.transparent_cutout {
                 self.cutout_order.push(i as u32);
@@ -3277,11 +3294,12 @@ impl VisualWorld {
         self.outline_order.sort_by_key(|&i| {
             let instance = self.instances[i as usize];
             (
-                u8::from(Self::uses_cached_deformation(instance.renderable.material)),
+                u8::from(Self::uses_cached_deformation(&instance, &self.materials)),
                 instance.renderable.mesh.0,
             )
         });
         Self::build_outline_render_stream(
+            &self.materials,
             &self.instances,
             &self.outline_order,
             &mut self.outline_stream,
@@ -3978,7 +3996,54 @@ impl VisualWorld {
         key: impl Into<String>,
         handle: crate::engine::graphics::TextureHandle,
     ) {
-        self.runtime_texture_handles.insert(key.into(), handle);
+        if let Some(previous) = self.runtime_texture_handles.insert(key.into(), handle) {
+            if previous != handle
+                && !self
+                    .runtime_texture_handles
+                    .values()
+                    .any(|&live| live == previous)
+            {
+                self.retired_runtime_textures.push(previous);
+            }
+        }
+    }
+
+    pub(crate) fn runtime_texture_handles(
+        &self,
+    ) -> impl Iterator<Item = crate::engine::graphics::TextureHandle> + '_ {
+        self.runtime_texture_handles.values().copied()
+    }
+
+    pub(crate) fn retain_runtime_textures(&mut self, mut live: impl FnMut(&str) -> bool) {
+        let mut removed = Vec::new();
+        self.runtime_texture_handles.retain(|key, handle| {
+            if live(key) {
+                true
+            } else {
+                removed.push(*handle);
+                false
+            }
+        });
+        let still_live: std::collections::HashSet<_> = self.runtime_texture_handles().collect();
+        removed.retain(|handle| !still_live.contains(handle));
+        if !removed.is_empty() {
+            for instance in &mut self.instances {
+                if instance
+                    .texture
+                    .is_some_and(|texture| removed.contains(&texture))
+                {
+                    instance.texture = None;
+                }
+            }
+            self.dirty_draw_cache = true;
+            self.retired_runtime_textures.extend(removed);
+        }
+    }
+
+    pub(crate) fn take_retired_runtime_textures(
+        &mut self,
+    ) -> Vec<crate::engine::graphics::TextureHandle> {
+        std::mem::take(&mut self.retired_runtime_textures)
     }
 
     pub fn update_texture(

@@ -37,11 +37,13 @@ impl MirrorSystem {
             .get_component_by_id_as::<RenderableComponent>(surface)
             .and_then(|renderable| renderable.handle)
             .and_then(|handle| visuals.instance(handle))
-            .and_then(|instance| instance.material_instance)
-            .and_then(|id| visuals.materials.instance(id))
-            .and_then(|instance| visuals.materials.definition(instance.definition))
-            .and_then(|definition| visuals.materials.base(definition.base))
-            .is_some_and(|base| base.planar_reflection)
+            .filter(|instance| instance.material_instance.is_some())
+            .is_some_and(|instance| {
+                visuals
+                    .materials
+                    .resolved_capabilities(instance.material_instance, instance.renderable.material)
+                    .planar_reflection
+            })
     }
 
     fn normalize(v: [f32; 3]) -> Option<[f32; 3]> {
@@ -594,10 +596,6 @@ impl MirrorSystem {
                 }
             }
 
-            if captures.is_empty() {
-                continue;
-            }
-
             // 5. Register with VisualWorld.
             let source_instance = world
                 .get_component_by_id_as::<RenderableComponent>(renderable_cid)
@@ -606,6 +604,7 @@ impl MirrorSystem {
 
             visuals.register_mirror(VisualMirror {
                 mirror_component: cid,
+                capture_prefix: format!("capture.mirror.{guid}."),
                 captures: captures.clone(),
                 plane_origin: plane_pos,
                 plane_normal,

@@ -75,7 +75,8 @@ impl VulkanoState {
                 let transparent_pipeline =
                     GraphicsPipeline::new(self.context.device().clone(), None, transparent_create)
                         .map_err(|e| e.to_string())?;
-                let extraction_pipeline = if definition.supports_emission_extraction {
+                let extraction_pipeline = if definition.capabilities.supports_emission_extraction()
+                {
                     // Reuse exactly the same program and descriptor revision. Equal
                     // depth admits the visible surface without overwriting scene depth.
                     create.depth_stencil_state = Some(DepthStencilState {

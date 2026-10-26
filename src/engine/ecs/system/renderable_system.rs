@@ -264,18 +264,24 @@ impl RenderableSystem {
         base: MaterialHandle,
     ) -> MaterialHandle {
         match resolve_transmissive_model(world, renderable) {
-            Ok(Some(TransmissiveModel::Refraction(_))) => match base {
-                MaterialHandle::SKINNED_TOON_MESH | MaterialHandle::SKINNED_EMISSIVE_TOON_MESH => {
+            Ok(Some(TransmissiveModel::Refraction(_))) => {
+                if crate::engine::graphics::materials::builtin_program_capabilities(base)
+                    .cached_deformation
+                {
                     MaterialHandle::SKINNED_REFRACTION_MESH
+                } else {
+                    MaterialHandle::REFRACTION_MESH
                 }
-                _ => MaterialHandle::REFRACTION_MESH,
-            },
-            Ok(Some(TransmissiveModel::RoughTransmission { .. })) => match base {
-                MaterialHandle::SKINNED_TOON_MESH | MaterialHandle::SKINNED_EMISSIVE_TOON_MESH => {
+            }
+            Ok(Some(TransmissiveModel::RoughTransmission { .. })) => {
+                if crate::engine::graphics::materials::builtin_program_capabilities(base)
+                    .cached_deformation
+                {
                     MaterialHandle::SKINNED_ROUGH_TRANSMISSION_MESH
+                } else {
+                    MaterialHandle::ROUGH_TRANSMISSION_MESH
                 }
-                _ => MaterialHandle::ROUGH_TRANSMISSION_MESH,
-            },
+            }
             _ if Self::has_immediate_unlit_child(world, renderable) => MaterialHandle::UNLIT_MESH,
             _ => MaterialSystem::resolve_source(world, renderable)
                 .and_then(|source| visuals.materials.source_instance(source))
@@ -618,12 +624,16 @@ impl RenderableSystem {
                 continue;
             };
             if let Some(instance) = visuals.instance(handle) {
-                let program = MaterialSystem::program(
+                let Some(program) = MaterialSystem::program(
                     visuals,
                     material_instance,
                     renderable_comp.renderable.material,
-                )
-                .unwrap_or(renderable_comp.renderable.material);
+                ) else {
+                    visuals.bind_material_instance(handle, None);
+                    visuals.update_material(handle, renderable_comp.renderable.material);
+                    self.pending_material_bindings.remove(&renderable_cid);
+                    continue;
+                };
                 let material = MaterialSystem::with_emissive(program, instance.emissive);
                 let _ = visuals.update_material(handle, material);
             }

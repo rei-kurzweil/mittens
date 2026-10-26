@@ -74,6 +74,23 @@ impl RenderToTextureSystem {
         }
     }
 
+    pub(crate) fn reconcile_consumers(&mut self, world: &World) {
+        let stale: Vec<_> = self
+            .consumers_by_component
+            .iter()
+            .filter_map(|(&id, registration)| {
+                (world
+                    .get_component_by_id_as::<TextureComponent>(id)
+                    .and_then(|texture| texture.render_image.as_deref())
+                    != Some(registration.selector.as_str()))
+                .then_some(id)
+            })
+            .collect();
+        for id in stale {
+            self.unregister_texture(id);
+        }
+    }
+
     fn unregister_texture(&mut self, component: ComponentId) {
         if let Some(previous) = self.consumers_by_component.remove(&component) {
             self.remove_selector_if_unused(&previous.selector);
@@ -122,6 +139,17 @@ impl RenderToTextureSystem {
             })
             .collect();
 
+        // Keep frozen captures through pause/tracking loss, but release images
+        // when neither an authored consumer nor a live mirror producer owns them.
+        let prefixes: Vec<_> = visuals
+            .mirrors()
+            .iter()
+            .map(|mirror| mirror.capture_prefix.clone())
+            .collect();
+        visuals.retain_runtime_textures(|key| {
+            selectors.contains(key) || prefixes.iter().any(|prefix| key.starts_with(prefix))
+        });
+
         for selector in selectors {
             if visuals.runtime_texture_handle(&selector).is_some() {
                 continue;
@@ -159,5 +187,119 @@ fn producer_kind_for_selector(selector: &str) -> RenderTextureProducerKind {
         RenderTextureProducerKind::Mirror
     } else {
         RenderTextureProducerKind::InternalRendererImage
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::ecs::component::TransformComponent;
+    use crate::engine::graphics::primitives::InstanceHandle;
+    use crate::engine::graphics::visual_world::{
+        MirrorCaptureRequest, MirrorViewerFamily, VisualMirror,
+    };
+    use crate::engine::graphics::{CameraData, TextureHandle};
+
+    #[derive(Default)]
+    struct Uploader(u32);
+    impl TextureUploader for Uploader {
+        fn upload_texture_rgba8(
+            &mut self,
+            _: &[u8],
+            _: u32,
+            _: u32,
+        ) -> Result<TextureHandle, Box<dyn std::error::Error>> {
+            self.0 += 1;
+            Ok(TextureHandle(self.0))
+        }
+        fn upload_texture_bc7(
+            &mut self,
+            _: &[u8],
+            _: u32,
+            _: u32,
+            _: bool,
+        ) -> Result<TextureHandle, Box<dyn std::error::Error>> {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn runtime_capture_consumer_retirement_waits_for_the_last_live_reference() {
+        let mut world = World::default();
+        let a = world.add_component(TextureComponent::render_image("render_graph.test"));
+        let b = world.add_component(TextureComponent::render_image("render_graph.test"));
+        let mut system = RenderToTextureSystem::default();
+        let mut visuals = VisualWorld::default();
+        let mut uploader = Uploader::default();
+        system.register_texture(&mut world, a);
+        system.register_texture(&mut world, b);
+        system.flush_pending(&mut visuals, &mut uploader);
+        assert_eq!(uploader.0, 1);
+        let _ = world.remove_component_subtree(a);
+        system.reconcile_consumers(&world);
+        system.flush_pending(&mut visuals, &mut uploader);
+        assert_eq!(
+            visuals.runtime_texture_handle("render_graph.test"),
+            Some(TextureHandle(1))
+        );
+        assert!(visuals.take_retired_runtime_textures().is_empty());
+        let _ = world.remove_component_subtree(b);
+        system.reconcile_consumers(&world);
+        system.flush_pending(&mut visuals, &mut uploader);
+        assert!(
+            visuals
+                .runtime_texture_handle("render_graph.test")
+                .is_none()
+        );
+        assert_eq!(
+            visuals.take_retired_runtime_textures(),
+            vec![TextureHandle(1)]
+        );
+        assert_eq!(system.producer_requests().count(), 0);
+    }
+
+    #[test]
+    fn runtime_capture_images_survive_tracking_loss_and_retire_with_the_producer() {
+        let mut world = World::default();
+        let owner = world.add_component(TransformComponent::new());
+        let mut visuals = VisualWorld::default();
+        let mut system = RenderToTextureSystem::default();
+        let mut uploader = Uploader::default();
+        let mut mirror = VisualMirror {
+            mirror_component: owner,
+            capture_prefix: "capture.mirror.test.".into(),
+            captures: vec![MirrorCaptureRequest {
+                family: MirrorViewerFamily::Stereoscopic,
+                view_index: 0,
+                camera: CameraData {
+                    view: crate::utils::math::mat4_identity(),
+                    proj: crate::utils::math::mat4_identity(),
+                    transform: Default::default(),
+                },
+                target_key: "capture.mirror.test.stereo.0.color".into(),
+            }],
+            plane_origin: [0.0; 3],
+            plane_normal: [0.0, 0.0, 1.0],
+            aspect_ratio: 1.0,
+            source_instance: InstanceHandle(1),
+            resolution_scale: 0.25,
+        };
+        visuals.register_mirror(mirror.clone());
+        system.flush_pending(&mut visuals, &mut uploader);
+        mirror.captures.clear();
+        visuals.clear_mirrors();
+        visuals.register_mirror(mirror);
+        visuals.set_mirror_captures_enabled(false);
+        system.flush_pending(&mut visuals, &mut uploader);
+        assert_eq!(uploader.0, 1);
+        assert_eq!(visuals.runtime_texture_handles().count(), 1);
+        assert!(visuals.take_retired_runtime_textures().is_empty());
+        visuals.clear_mirrors();
+        system.flush_pending(&mut visuals, &mut uploader);
+        assert_eq!(visuals.runtime_texture_handles().count(), 0);
+        assert_eq!(
+            visuals.take_retired_runtime_textures(),
+            vec![TextureHandle(1)]
+        );
     }
 }

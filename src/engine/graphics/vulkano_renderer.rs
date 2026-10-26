@@ -604,6 +604,7 @@ mod vulkano_backend {
             Arc<DescriptorSet>,
         >,
         pending_runtime_texture_updates: HashMap<TextureHandle, VulkanoGpuTexture>,
+        managed_runtime_textures: std::collections::HashSet<TextureHandle>,
         window_runtime_debug_targets: Option<WindowRuntimeDebugTargets>,
         window_refraction_targets: Option<WindowRefractionTargets>,
         window_rough_transmission_targets: Option<WindowRoughTransmissionTargets>,
@@ -2324,6 +2325,7 @@ mod vulkano_backend {
                     512,
                 ),
                 pending_runtime_texture_updates: HashMap::new(),
+                managed_runtime_textures: std::collections::HashSet::new(),
                 window_runtime_debug_targets: None,
                 window_refraction_targets: None,
                 window_rough_transmission_targets: None,
@@ -2796,6 +2798,7 @@ mod vulkano_backend {
             color_format: Format,
             family: crate::engine::graphics::visual_world::MirrorViewerFamily,
         ) -> Result<(), Box<dyn std::error::Error>> {
+            self.retire_runtime_resources(visual_world);
             // Preserve published images and per-eye surface bindings while
             // paused. Gate before allocating targets or submitting any work.
             if !visual_world.mirror_captures_enabled() {
@@ -3039,6 +3042,26 @@ mod vulkano_backend {
             let src_extent = src_image.extent();
             let extent = [src_extent[0], src_extent[1]];
             let format = src_image.format();
+
+            // All publications and sampling commands use the same renderer-wide
+            // ordered submission chain. Reusing this GPU image cannot overwrite
+            // an earlier view before its reads complete; no CPU writes occur.
+            if let Some(texture) = self
+                .pending_runtime_texture_updates
+                .get(&handle)
+                .or_else(|| self.textures.get(&handle))
+                .filter(|texture| {
+                    texture.extent == extent
+                        && texture.format == format
+                        && texture
+                            .view
+                            .image()
+                            .usage()
+                            .contains(ImageUsage::TRANSFER_DST)
+                })
+            {
+                return Ok(texture.view.clone());
+            }
 
             let image = Image::new(
                 self.context.memory_allocator().clone(),
@@ -3431,6 +3454,42 @@ mod vulkano_backend {
             )?;
 
             Ok(Some(buf))
+        }
+
+        fn retire_runtime_resources(&mut self, visuals: &mut VisualWorld) {
+            let live: std::collections::HashSet<_> = visuals.runtime_texture_handles().collect();
+            let mut retired: std::collections::HashSet<_> = visuals
+                .take_retired_runtime_textures()
+                .into_iter()
+                .collect();
+            retired.extend(self.managed_runtime_textures.difference(&live).copied());
+            // A selector may have been re-registered before this draw boundary.
+            retired.retain(|handle| !live.contains(handle));
+            self.managed_runtime_textures = live;
+            for texture in &retired {
+                self.textures.remove(texture);
+                self.pending_runtime_texture_updates.remove(texture);
+            }
+            if !retired.is_empty() {
+                self.cached_material_sets
+                    .retain(|(_, texture, _, _, _), _| !retired.contains(texture));
+                for (_, entry) in self.material_instances.iter_mut() {
+                    entry
+                        .bindings
+                        .retain(|(_, texture, _, _), _| !retired.contains(texture));
+                    entry
+                        .custom_snapshots
+                        .retain(|snapshot| !retired.contains(&snapshot.texture));
+                }
+            }
+            // Dropping cache ownership is safe: recorded/submitted commands keep
+            // the image, descriptor and buffer Arcs until their GPU work retires.
+            self.mirror_offscreen.retain(|key, _| {
+                visuals
+                    .mirrors()
+                    .iter()
+                    .any(|mirror| key.starts_with(&mirror.capture_prefix))
+            });
         }
 
         fn apply_pending_runtime_texture_updates(&mut self) {
@@ -4476,6 +4535,7 @@ mod vulkano_backend {
             Box<dyn std::error::Error>,
         > {
             // Captures can publish replacement image views earlier this frame.
+            self.retire_runtime_resources(visual_world);
             self.apply_pending_runtime_texture_updates();
             self.sync_material_instances(visual_world);
             Self::retarget_mirror_surface_textures_for_render_view(visual_world, &render_view.kind);

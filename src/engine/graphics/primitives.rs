@@ -394,18 +394,24 @@ impl MaterialHandle {
     /// Albedo-derived anime material for a cached-deformed mesh.
     pub const SKINNED_ANIME_MESH: MaterialHandle = MaterialHandle(12);
 
-    pub const fn is_refraction(self) -> bool {
-        matches!(self, Self::REFRACTION_MESH | Self::SKINNED_REFRACTION_MESH)
+    pub fn is_refraction(self) -> bool {
+        super::materials::builtin_program_capabilities(self)
+            .material
+            .transmission
+            == super::materials::MaterialTransmission::Sharp
     }
 
-    pub const fn is_rough_transmission(self) -> bool {
-        matches!(
-            self,
-            Self::ROUGH_TRANSMISSION_MESH | Self::SKINNED_ROUGH_TRANSMISSION_MESH
-        )
+    pub fn is_rough_transmission(self) -> bool {
+        super::materials::builtin_program_capabilities(self)
+            .material
+            .transmission
+            == super::materials::MaterialTransmission::Rough
     }
 
-    pub const fn is_transmissive(self) -> bool {
-        self.is_refraction() || self.is_rough_transmission()
+    pub fn is_transmissive(self) -> bool {
+        super::materials::builtin_program_capabilities(self)
+            .material
+            .transmission
+            != super::materials::MaterialTransmission::None
     }
 }

@@ -3,6 +3,12 @@
 Date: 2026-10-25
 Status: implemented and regression-tested; headset acceptance pending.
 
+The later [capture/capability cleanup](materials-v3-capture-capability-cleanup.md)
+adds runtime image reuse/retirement and a resolved renderer capability contract.
+The [built-in authoring API](../draft/material-builtin-authoring-api.md) is proposed
+for review; Shading remains unchanged. Basic custom alpha blending and planar
+reflection are already implemented in the pool checkpoint.
+
 MaterialSystem now resolves and registers both explicit Material components and
 the Shading.anime()/toon() compatibility adapters. Definitions own named typed
 schemas and generic defaults; all instances use the same retained float-value

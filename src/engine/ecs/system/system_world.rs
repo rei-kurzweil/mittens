@@ -2958,6 +2958,7 @@ impl SystemWorld {
             }
         }
 
+        self.render_to_texture.reconcile_consumers(world);
         self.render_to_texture.flush_pending(visuals, uploader);
 
         // Must run after renderables are flushed so instance handles exist.

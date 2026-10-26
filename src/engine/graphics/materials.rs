@@ -95,9 +95,102 @@ impl MaterialParameterSchema {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MaterialStateProfile {
-    /// Preserve built-in phase, alpha, clipping and depth behavior. Custom state
-    /// profiles and interface reflection belong to the custom-program slice.
+    /// Preserve built-in phase, alpha, clipping and depth behavior.
     BuiltinMeshCompatibility,
+    /// Current custom programs support ordinary opaque/alpha surface passes.
+    CustomSurface,
+}
+
+/// Renderer-facing behavior, separate from shader/pipeline handle identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MaterialTransmission {
+    #[default]
+    None,
+    Sharp,
+    Rough,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MaterialEmission {
+    #[default]
+    None,
+    /// Compatibility Toon variants activate extraction via the standard input.
+    ToonIntensity,
+    /// The fragment program supplies emitted radiance; opaque foreground only.
+    ShaderProvided,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MaterialCapabilities {
+    pub transmission: MaterialTransmission,
+    pub emission: MaterialEmission,
+    pub state_profile: MaterialStateProfile,
+}
+
+impl MaterialCapabilities {
+    pub const BUILTIN_SURFACE: Self = Self {
+        transmission: MaterialTransmission::None,
+        emission: MaterialEmission::None,
+        state_profile: MaterialStateProfile::BuiltinMeshCompatibility,
+    };
+    pub fn supports_emission_extraction(self) -> bool {
+        self.emission != MaterialEmission::None
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResolvedMaterialCapabilities {
+    pub material: MaterialCapabilities,
+    pub cached_deformation: bool,
+    pub planar_reflection: bool,
+}
+
+/// The sole compatibility boundary for legacy built-in program identities.
+/// Feature consumers use the resolved contract, not ad-hoc handle lists.
+pub fn builtin_program_capabilities(program: MaterialHandle) -> ResolvedMaterialCapabilities {
+    let cached_deformation = matches!(
+        program,
+        MaterialHandle::SKINNED_TOON_MESH
+            | MaterialHandle::SKINNED_EMISSIVE_TOON_MESH
+            | MaterialHandle::SKINNED_ANIME_MESH
+            | MaterialHandle::SKINNED_REFRACTION_MESH
+            | MaterialHandle::SKINNED_ROUGH_TRANSMISSION_MESH
+    );
+    let transmission = match program {
+        MaterialHandle::REFRACTION_MESH | MaterialHandle::SKINNED_REFRACTION_MESH => {
+            MaterialTransmission::Sharp
+        }
+        MaterialHandle::ROUGH_TRANSMISSION_MESH
+        | MaterialHandle::SKINNED_ROUGH_TRANSMISSION_MESH => MaterialTransmission::Rough,
+        _ => MaterialTransmission::None,
+    };
+    let emission = if matches!(
+        program,
+        MaterialHandle::EMISSIVE_TOON_MESH | MaterialHandle::SKINNED_EMISSIVE_TOON_MESH
+    ) {
+        MaterialEmission::ToonIntensity
+    } else {
+        MaterialEmission::None
+    };
+    ResolvedMaterialCapabilities {
+        material: MaterialCapabilities {
+            transmission,
+            emission,
+            ..MaterialCapabilities::BUILTIN_SURFACE
+        },
+        cached_deformation,
+        planar_reflection: program == MaterialHandle::MIRROR,
+    }
+}
+
+pub(crate) fn builtin_emission_variant(program: MaterialHandle, enabled: bool) -> MaterialHandle {
+    match (program, enabled) {
+        (MaterialHandle::TOON_MESH, true) => MaterialHandle::EMISSIVE_TOON_MESH,
+        (MaterialHandle::SKINNED_TOON_MESH, true) => MaterialHandle::SKINNED_EMISSIVE_TOON_MESH,
+        (MaterialHandle::EMISSIVE_TOON_MESH, false) => MaterialHandle::TOON_MESH,
+        (MaterialHandle::SKINNED_EMISSIVE_TOON_MESH, false) => MaterialHandle::SKINNED_TOON_MESH,
+        _ => program,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -115,14 +208,11 @@ pub struct MaterialDefinition {
     pub name: &'static str,
     pub base: MaterialBaseId,
     pub static_program: MaterialHandle,
-    pub deformed_program: MaterialHandle,
+    pub deformed_program: Option<MaterialHandle>,
     pub parameter_schema: std::sync::Arc<MaterialParameterSchema>,
     pub defaults: std::sync::Arc<[f32]>,
-    pub state_profile: MaterialStateProfile,
+    pub capabilities: MaterialCapabilities,
     pub consumed_inputs: StandardMaterialInputs,
-    /// Capability metadata, independent of consuming the intensity input.
-    /// Toon still uses the existing compatibility extraction path in this slice.
-    pub supports_emission_extraction: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -176,32 +266,33 @@ impl Default for MaterialRegistry {
             name: "Anime",
             base: surface_base,
             static_program: MaterialHandle::ANIME_MESH,
-            deformed_program: MaterialHandle::SKINNED_ANIME_MESH,
+            deformed_program: Some(MaterialHandle::SKINNED_ANIME_MESH),
             parameter_schema: super::visual_world::AnimeShadingParams::schema().into(),
             defaults: super::visual_world::AnimeShadingParams::default().into(),
-            state_profile: MaterialStateProfile::BuiltinMeshCompatibility,
+            capabilities: MaterialCapabilities::BUILTIN_SURFACE,
             consumed_inputs: StandardMaterialInputs {
                 color: true,
                 opacity: true,
                 emissive_intensity: false,
             },
-            supports_emission_extraction: false,
         });
         let toon_definition = definitions.insert(MaterialDefinition {
             custom: None,
             name: "Toon",
             base: surface_base,
             static_program: MaterialHandle::TOON_MESH,
-            deformed_program: MaterialHandle::SKINNED_TOON_MESH,
+            deformed_program: Some(MaterialHandle::SKINNED_TOON_MESH),
             parameter_schema: MaterialParameterSchema::default().into(),
             defaults: std::sync::Arc::from([]),
-            state_profile: MaterialStateProfile::BuiltinMeshCompatibility,
+            capabilities: MaterialCapabilities {
+                emission: MaterialEmission::ToonIntensity,
+                ..MaterialCapabilities::BUILTIN_SURFACE
+            },
             consumed_inputs: StandardMaterialInputs {
                 color: true,
                 opacity: true,
                 emissive_intensity: true,
             },
-            supports_emission_extraction: true,
         });
         Self {
             bases,
@@ -220,6 +311,34 @@ impl Default for MaterialRegistry {
 }
 
 impl MaterialRegistry {
+    pub fn resolved_capabilities(
+        &self,
+        instance: Option<MaterialInstanceId>,
+        program: MaterialHandle,
+    ) -> ResolvedMaterialCapabilities {
+        let fallback = builtin_program_capabilities(program);
+        let Some(definition) = instance
+            .and_then(|id| self.instance(id))
+            .and_then(|record| self.definition(record.definition))
+        else {
+            return fallback;
+        };
+        let mut material = definition.capabilities;
+        // The compatibility adapter selects an emissive/non-emissive Toon
+        // program when its standard intensity changes. Preserve that activation.
+        if material.emission == MaterialEmission::ToonIntensity {
+            material.emission = fallback.material.emission;
+        }
+        ResolvedMaterialCapabilities {
+            material,
+            cached_deformation: definition.deformed_program == Some(program)
+                || (definition.custom.is_none() && fallback.cached_deformation),
+            planar_reflection: self
+                .base(definition.base)
+                .is_some_and(|base| base.planar_reflection),
+        }
+    }
+
     pub fn base(&self, id: MaterialBaseId) -> Option<&MaterialBase> {
         self.bases.get(id)
     }
@@ -338,7 +457,15 @@ impl MaterialRegistry {
         );
         let defaults = vec![0.0; parameter_schema.scalar_count].into();
         let id = self.definitions.insert(MaterialDefinition {
-            supports_emission_extraction: custom.base == MaterialBaseKind::ExtractedEmissive,
+            capabilities: MaterialCapabilities {
+                emission: if custom.base == MaterialBaseKind::ExtractedEmissive {
+                    MaterialEmission::ShaderProvided
+                } else {
+                    MaterialEmission::None
+                },
+                transmission: MaterialTransmission::None,
+                state_profile: MaterialStateProfile::CustomSurface,
+            },
             base: match custom.base {
                 MaterialBaseKind::Surface => self.surface_base,
                 MaterialBaseKind::ExtractedEmissive => self.extracted_emissive_base,
@@ -347,10 +474,9 @@ impl MaterialRegistry {
             custom: Some(custom),
             name: "CustomF32",
             static_program: program,
-            deformed_program: program,
+            deformed_program: None,
             parameter_schema: parameter_schema.into(),
             defaults,
-            state_profile: MaterialStateProfile::BuiltinMeshCompatibility,
             consumed_inputs: StandardMaterialInputs {
                 color: true,
                 opacity: true,
@@ -367,6 +493,77 @@ mod tests {
     use super::*;
     use crate::engine::ecs::{World, component::ShadingComponent};
     use crate::engine::graphics::visual_world::AnimeShadingParams;
+
+    #[test]
+    fn resolved_material_capabilities_override_legacy_program_feature_guesses() {
+        let mut world = World::default();
+        let source = world.add_component(ShadingComponent::new());
+        let mut materials = MaterialRegistry::default();
+        let definition = materials.register_custom_definition(
+            source,
+            std::sync::Arc::new(super::super::custom_material::CustomMaterialDefinition {
+                base: MaterialBaseKind::PlanarReflective,
+                fields: vec!["gain".into()],
+                fragment_uri: "test.frag".into(),
+                compiled: std::sync::OnceLock::new(),
+            }),
+        );
+        let instance = materials.upsert_source(source, definition, vec![1.0]);
+        assert!(
+            materials
+                .definition(definition)
+                .unwrap()
+                .deformed_program
+                .is_none()
+        );
+        let resolved =
+            materials.resolved_capabilities(Some(instance), MaterialHandle::REFRACTION_MESH);
+        assert_eq!(resolved.material.transmission, MaterialTransmission::None);
+        assert_eq!(resolved.material.emission, MaterialEmission::None);
+        assert_eq!(
+            resolved.material.state_profile,
+            MaterialStateProfile::CustomSurface
+        );
+        assert!(resolved.planar_reflection);
+        assert!(!resolved.cached_deformation);
+        // Explicit definition metadata, rather than a handle number, routes
+        // renderer work. This is an internal contract, not a new MMS preset.
+        materials.definitions[definition].capabilities.transmission = MaterialTransmission::Rough;
+        let custom_program = materials.definitions[definition].static_program;
+        assert_eq!(
+            materials
+                .resolved_capabilities(Some(instance), custom_program)
+                .material
+                .transmission,
+            MaterialTransmission::Rough
+        );
+        let legacy = materials.resolved_capabilities(None, MaterialHandle::SKINNED_REFRACTION_MESH);
+        assert_eq!(legacy.material.transmission, MaterialTransmission::Sharp);
+        assert!(legacy.cached_deformation);
+    }
+
+    #[test]
+    fn builtin_material_capabilities_preserve_geometry_and_emission_activation() {
+        let mut world = World::default();
+        let source = world.add_component(ShadingComponent::new());
+        let mut materials = MaterialRegistry::default();
+        let instance =
+            materials.upsert_source(source, materials.toon_definition, Vec::<f32>::new());
+        for (program, cached, emissive) in [
+            (MaterialHandle::TOON_MESH, false, false),
+            (MaterialHandle::EMISSIVE_TOON_MESH, false, true),
+            (MaterialHandle::SKINNED_TOON_MESH, true, false),
+            (MaterialHandle::SKINNED_EMISSIVE_TOON_MESH, true, true),
+        ] {
+            let resolved = materials.resolved_capabilities(Some(instance), program);
+            assert_eq!(resolved.cached_deformation, cached);
+            assert_eq!(resolved.material.supports_emission_extraction(), emissive);
+            assert_eq!(
+                resolved.material.state_profile,
+                MaterialStateProfile::BuiltinMeshCompatibility
+            );
+        }
+    }
 
     #[test]
     fn logical_material_schema_is_independent_of_builtin_gpu_packing_order() {
@@ -432,7 +629,7 @@ mod tests {
         assert_ne!(materials.upsert_source(a, definition, params), replacement);
         let anime = materials.definition(definition).unwrap();
         assert!(!anime.consumed_inputs.emissive_intensity);
-        assert!(!anime.supports_emission_extraction);
+        assert!(!anime.capabilities.supports_emission_extraction());
         assert!(
             materials
                 .base(anime.base)
