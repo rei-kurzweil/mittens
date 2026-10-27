@@ -424,10 +424,30 @@ impl VrPerfCollector {
             &self.cpu_frames,
             |frame| frame.renderer.deformation_weight_upload_bytes,
         );
+        write_counter(
+            &mut out,
+            "Morph-delta upload bytes",
+            &self.cpu_frames,
+            |frame| frame.renderer.deformation_morph_delta_upload_bytes,
+        );
+        write_counter(
+            &mut out,
+            "Deformation buffer allocations",
+            &self.cpu_frames,
+            |frame| frame.renderer.deformation_buffer_allocations,
+        );
+        write_counter(
+            &mut out,
+            "Deformation output resizes",
+            &self.cpu_frames,
+            |frame| frame.renderer.deformation_output_resizes,
+        );
+        write_counter(&mut out, "Bone buffer resizes", &self.cpu_frames, |frame| {
+            frame.renderer.deformation_bone_resizes
+        });
         let _ = writeln!(
             out,
-            "\nMirror GPU time, per-eye GPU time, deformation allocations, and per-view draw counts: \
-             unavailable."
+            "\nMirror GPU time, per-eye GPU time, and per-view draw counts: unavailable."
         );
         out
     }

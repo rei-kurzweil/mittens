@@ -1,6 +1,11 @@
-# Sakura rooftop CPU profile
+# Sakura rooftop CPU and GPU profiling
 
-Date: 2026-10-26
+Initial CPU investigation: 2026-10-26. Stereo follow-up: 2026-10-27.
+
+The [controlled stereo follow-up](#2026-10-27-controlled-stereo-follow-up-with-springs-disabled)
+identifies repeated global morph staging and per-material binding eviction while
+springs are disabled. The earlier CPU-only results below cover running springs
+and explain a separate transform-propagation bottleneck.
 
 Scene snapshot: these measurements precede per-floor building chunks, the
 opt-in Lumae pedestal, three-pistol table and scoped projectile hit callbacks.
@@ -178,3 +183,284 @@ CAT_PROFILE_SPATIAL=1 CAT_PROFILE_SYSTEMS=1 \
 
 Investigation logs and `perf` recordings are under `/tmp/mittens-rooftop-*`.
 The periodic engine logs are also written under `docs/.debug/`.
+
+## 2026-10-27: controlled stereo follow-up with springs disabled
+
+The larger motion-dependent cost is a repeated **global morph-delta upload**,
+not bone-palette eviction. A separate **material binding cache does thrash**.
+Repeated Lumae already share immutable GPU meshes/textures and use instanced
+opaque draws. This pass adds measurement tools and counters; it does not change
+resource lifetime, cache capacity, batching, or deformation behavior.
+
+### Workload and instrumentation
+
+Base revision: `afa0e172`, plus this diagnostic instrumentation. The ignored
+`profile_sakura_lumae_stereo` fixture loads the actual Sakura scene with 0, 1 or 2
+Lumae, disables secondary motion, and renders both eyes at 1440×1600 with 4× MSAA
+and the scene's bloom. A separate Rei(mu) model stands behind the camera. Static
+cases leave its pose unchanged; moving cases rotate its head joint by a small
+sine wave through the normal transform/palette path. The same simulated 75 Hz
+sequence is used for every run. NPCs stay in the same relaxed pose at fixed,
+visible positions. Live tracking, IK, microphone and compositor pacing are not
+part of this automated fixture. After loading, idle weapon audio is retired so
+its real-time clock cannot replace the deterministic test clock.
+
+Each case runs in a fresh process: 240 warmup frames, 600 measured frames, three
+repetitions. Repetitions alternate case order and run sequentially. Loading,
+GPU uploads and pipeline creation are reported separately. The hidden control
+suppresses only NPC graphics draws, retaining their ECS nodes, visual instances,
+mesh/morph arenas and bone/deformation allocations. Saved images verify the
+visible and suppressed controls.
+
+CPU timers cover driver transform notification, update, palette calculation,
+render preparation, command recording/submission, morph staging and completion
+wait. Test-only Vulkan timestamps divide each eye into transfer/deformation and
+graphics/post-processing intervals. The fixture waits the already-submitted
+second-eye fence to bound frames in flight and safely reuse timestamp queries;
+it adds no new queue submissions. This is an offscreen workload comparison,
+**not headset FPS**. GPU and CPU columns overlap and should not be summed.
+
+### Results
+
+Milliseconds below are the median of the three per-run medians. Frame p95 is
+the median of the three per-run p95 values. MB uses decimal bytes. Uploads are
+averaged over all measured frames; the sine wave occasionally produces an
+unchanged pose, so a moving run has deformation work on 596 of 600 frames.
+
+| Case | Frame median ms | Frame p95 ms | CPU morph staging ms | GPU transfer/deform ms | GPU graphics ms | Morph MB/frame |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0-static | 8.27 | 8.88 | 0.00 | 0.00 | 3.05 | 0.00 |
+| 0-moving | 12.43 | 12.87 | 2.68 | 0.64 | 3.59 | 7.61 |
+| 1-static | 8.45 | 8.88 | 0.00 | 0.00 | 3.24 | 0.00 |
+| 1-moving | 15.59 | 16.21 | 5.26 | 1.22 | 3.31 | 15.16 |
+| 2-static | 8.56 | 9.04 | 0.00 | 0.00 | 3.30 | 0.00 |
+| 2-moving | 16.82 | 17.57 | 5.34 | 1.24 | 4.39 | 15.16 |
+| 2-moving-hidden | 15.60 | 16.28 | 5.31 | 1.23 | 3.19 | 15.16 |
+
+Removing NPC draws recovers about 1.22 ms in the two-avatar moving case, while
+about 3.17 ms remains above the moving baseline. CPU morph staging alone grows
+by about 2.66 ms; GPU transfer/deformation grows by about 0.59 ms. Their size and
+the suppressed-draw control identify the transfer path as the first fix to try.
+This does not measure hardware cache misses or establish their absence.
+
+### Resource sharing, palettes and draw batches
+
+- One and two Lumae both use exactly two unique NPC GPU mesh handles and the same
+  material/texture bindings. Their morph data is registered once: the global
+  morph arena is 7,657,152 bytes without Lumae and 15,257,760 bytes with either
+  one or two. A second Lumae does not duplicate its 7,600,608-byte morph payload.
+- All stationary cases have zero deformation jobs, bone uploads, morph-delta
+  uploads and deformation allocations after warmup. Moving cases have **zero
+  dirty NPC jobs**. Only the driver deforms: about 16.89 primitive jobs/frame,
+  independent of NPC count.
+- Moving cases upload the same approximately 153,466 bone bytes/frame for all
+  NPC counts. Palette CPU time stays near 0.041–0.042 ms/frame. No bone-buffer or
+  deformation-output growth occurs in any measured case. The output allocation
+  grows at setup from 1 MiB to 2 MiB for two NPCs, then stays retained.
+- One NPC uses four NPC graphics draws per stereo frame (two primitives × two
+  eyes). Two NPCs also use four draws, now with batch size two, drawing eight
+  primitive instances. Neither uses sorted multi-layer transparency. The hidden
+  control submits no NPC graphics draws. There is no missing instancing feature
+  to implement for this case.
+
+### Repeated immutable morph staging
+
+`record_dirty_deformations` correctly returns early when no instance needs
+work. When any job exists, however, it clones `deformation_morph_cpu`, allocates
+new staging and device buffers, and copies the **whole global arena**, even
+though these deltas are immutable and the NPCs are not dirty. In this fixture
+there are no active driver morph targets, but the full arena is still copied.
+
+The GPU morph buffer already created during `upload_mesh` is retained on the
+renderer; the frame path creates another local buffer instead of reusing it.
+Moving cases make approximately 8.94 deformation buffer allocations/frame (nine
+per active frame), including the full morph staging/device pair. The delta array
+is transferred only on the first eye; this is not duplicate skinning per eye.
+
+Nsight independently supports the CPU timing: its dominant moving-case leaf
+symbol is `Buffer::from_iter<GpuMorphDelta, ...>`, with 1,722 sampled leaves out
+of 8,912 for zero NPCs and 3,393 out of 11,047 for two. The sample counts describe
+profiled runs and include process threads; use the unprofiled table for timings.
+
+### Material binding eviction
+
+The legacy renderer-wide cache (capacity 512) has zero steady-state misses or
+evictions. The per-material binding caches are separate and hold only **16
+resource variants**. The shared pistol/avatar material's cache remains full and
+cycles through more variants than fit:
+
+| Case family | Binding misses/frame | Binding evictions/frame | New material UBO/descriptor snapshots/frame |
+| --- | ---: | ---: | ---: |
+| No NPCs | 38 | 38 | 38 |
+| One or two visible NPCs | 42 | 42 | 42 |
+| Two NPCs, draws suppressed | 38 | 38 | 38 |
+
+This churn exists even in completely static scenes and is distinct from bone
+palettes and mutable material revisions. This pass counts it but does not isolate
+its CPU cost with a changed-capacity experiment. It is a separate follow-up.
+
+### Nsight support and capture overhead
+
+Nsight Systems **2025.3.2.474** successfully captured Vulkan API calls, process
+CPU samples and OS runtime activity on the GTX 1080. The automated controller
+starts recording after the fixture's warmup barrier and stops before teardown.
+SQLite exports contain 288,200–336,748 Vulkan API events over 600 measured frames;
+there are no startup pipeline-creation events in the warmed captures. GPU workload
+rows were not produced for this offscreen configuration, so GPU timings above
+come from the fixture's Vulkan timestamp queries. Hardware utilization metrics
+remain unavailable on this Pascal GPU. Kernel CPU samples are restricted by
+`perf_event_paranoid=2`; user-space CPU sampling works. No driver or kernel
+permission setting was changed.
+
+The captured frame medians were 8.65, 10.06, 13.17 and 17.25 ms for 0-static,
+2-static, 0-moving and 2-moving respectively: approximately 4.6%, 17.6%, 5.9%
+and 2.5% above the corresponding unprofiled repetition medians. Profiling
+perturbs the workload; captured timings are not substituted into the result table.
+
+### Artifacts and reproduction
+
+The diagnostic fixture is private to test builds, including draw suppression,
+per-component dirty-job attribution and timestamp queries. Additive renderer
+counters for morph-delta uploads, deformation allocations and buffer growth also
+appear in real XR performance reports. Existing weight-upload counters now count
+the actual active-morph staging payload, including the required empty placeholder.
+
+```sh
+cargo test --release --lib profile_sakura_lumae_stereo --no-run
+python3 scripts/profile_sakura_lumae.py \
+  --binary <test-executable-printed-by-Cargo> \
+  --output /tmp/sakura-stereo-profile --capture
+```
+
+The runner records the executable SHA-256 and frame counts in `run-config.json`,
+refuses to mix incompatible runs, and can resume completed compatible cases.
+Individual `--case 2-moving-hidden`, `--repeat`, `--warmup`, `--frames`, and
+`--capture-only` options support focused validation. Capture defaults to the
+installed `~/.local/bin/nsys-2025.3`; override with `--nsys`.
+
+Measured artifacts: `/tmp/mittens-sakura-lumae-gpu-20261027/`. Each case has a
+summary JSON, all frame samples in `.frames.json`, and a log. The visible and
+hidden controls have PNG previews. Four `*-nsight.nsys-rep` captures and matching
+SQLite exports retain the warmed traces. `results.json` indexes all 25 runs.
+The earlier short probes under `/tmp/mittens-sakura-profile-*-smoke*` validate
+instrumentation and are not part of the result table.
+
+### Recommended follow-up
+
+1. Reuse the immutable GPU morph arena uploaded during mesh loading; update it
+   when the arena grows instead of rebuilding it for each deformation job batch.
+   Keep per-instance active weights, poses and output ranges independent. Verify
+   distinct poses/morph weights and repeat this matrix to quantify the change.
+2. Investigate the 16-entry per-material binding cache with the measured resource
+   working set. Retain enough structural bindings or choose a lifetime policy
+   that avoids steady-state eviction while remaining bounded.
+3. Retain the separate transform-parent scan optimization investigation. A single
+   driven joint's transform notification grows only from about 0.225 to 0.239 ms
+   here, but full live tracking/IK updates many more joints.
+4. Sharing identical already-posed vertex output is a possible later memory
+   optimization; ordinary instancing already works and the measured NPC output
+   is not being recomputed each frame.
+
+Live XR confirmation uses `examples/profile-sakura-xr.rs`, with the real tracked
+player, springs disabled, the original scene placements, 4× MSAA and no desktop
+window. It records ten seconds of warmup followed by fifteen seconds of samples:
+
+```sh
+cargo run --release --example profile-sakura-xr -- 0 /tmp/sakura-xr-0
+cargo run --release --example profile-sakura-xr -- 2 /tmp/sakura-xr-2
+```
+
+Keep the same view toward the left roof edge/graphics panel, gently move head
+and hands, and avoid locomotion or firing. Runtime extent, refresh rate, frame
+statistics and renderer counters are saved by the existing XR perf collector.
+Live confirmation results are recorded separately below.
+
+### Live XR confirmation: completed
+
+With the user's headset assistance, both timed runs completed successfully on
+SteamVR/OpenXR 2.16.7, GTX 1080, 1940×1940 per eye, 4× MSAA. These are one
+15-second capture per case after ten seconds of warmup, with natural head/hand
+motion and the original roof placements. They confirm the transfer behavior,
+not a precisely controlled FPS delta.
+
+| Metric | 0 Lumae | 2 Lumae |
+| --- | ---: | ---: |
+| Sampled frames | 562 | 511 |
+| Mean headset frame ms | 26.739 | 29.380 |
+| Median headset frame ms | 26.675 | 26.862 |
+| p95 headset frame ms | 27.281 | 40.253 |
+| Arithmetic average FPS | 37.398 | 34.036 |
+| Mean update before XR ms | 8.323 | 9.143 |
+| Mean eye-render CPU ms | 6.698 | 9.368 |
+| Mean GPU completion wait ms | 3.039 | 4.072 |
+| Mean post-secondary palette CPU ms | 0.036 | 0.039 |
+| Morph-delta bytes/frame | 7,657,152 | 15,257,760 |
+| Bone bytes/frame | 154,496 | 154,496 |
+| Deformation jobs/frame | 17 | 17 |
+| Dirty vertices/frame | 33,779 | 33,779 |
+| Deformation buffer allocations/frame | 9 | 9 |
+| Bone/output buffer resizes | 0 | 0 |
+
+The extra 2.670 ms in eye-render CPU time is consistent with the automated
+morph-staging increase. Unchanged job counts and bone traffic confirm that the
+NPCs do not need to be animated for the extra immutable morph payload to be
+transferred. Additional live update cost (about 0.82 ms) also leaves room for the
+tracked player's scene-size-dependent transform/IK work, beyond the single-joint
+automated control.
+
+SteamVR reported different average predicted display intervals during the two
+runs (22.341 and 26.701 ms). Those values are not an independent measurement of
+the physical panel's refresh setting. Do not interpret the corresponding report
+"target refresh" or "frames exceeding display interval" percentages as a
+controlled change in headset mode. Compositor pacing and non-identical human
+motion limit interpretation of the FPS/tail-time comparison. Runtime dropped and
+reprojected frame counts are unavailable. Real XR per-eye GPU timestamps and
+material-binding eviction counts were not collected; the headless fixture
+provides those separate diagnostics.
+
+Reports and complete logs are in the artifact root's `xr-0/`, `xr-2/`, `xr-0.log`
+and `xr-2.log`. The timed applications exited normally and left SteamVR running.
+
+### Next CPU profiling pass: the remaining stereo submission cost
+
+The zero-Lumae run's **6.698 ms eye-render CPU time covers both eyes together**.
+In `OpenXRSystem`, that timer wraps XR image import, mirror-capture submission
+(disabled for these runs), and the loop calling `submit_xr_eye`. It includes CPU
+preparation, command recording and submission; GPU completion waiting has its
+own timer. It is not a measurement of GPU execution or a demonstrated minimum
+rendering cost.
+
+First address the two measured sources of repeated work: immutable morph staging
+and per-material binding eviction. Both also affect the zero-Lumae baseline.
+Then split the remaining eye-render CPU time into:
+
+- Resource/material synchronization and draw preparation, including sorting.
+- Instance-buffer creation and uploads.
+- Vulkan command recording, including Vulkano resource tracking and validation.
+- Driver queue submission.
+
+The existing Nsight samples include Vulkano's `AutoSyncState::add_command`, which
+makes command recording a useful next target, but does not yet quantify how much
+of the baseline it explains. Compare the two eyes' CPU scopes to identify repeated
+view-independent preparation or material synchronization. Preserve work that
+depends on each camera, such as transparency ordering. Deformation already runs
+only for the first eye in the controlled fixture; do not assume skinning is
+duplicated.
+
+Repeat the same static/moving, visible/hidden, and avatar-count comparisons after
+each change, then confirm in the headset with the same view and settings. Keep
+CPU submission, GPU execution and completion waiting separate. The scene update
+cost, including transform/IK propagation, remains a separate investigation from
+this eye-render timer. No optimization in this plan is included in this checkpoint.
+
+### Verification of this diagnostic change
+
+- All 21 automated unprofiled case runs and four warmed Nsight captures completed;
+  the fixture enforces stationary NPC reuse, correct hidden-draw suppression,
+  deterministic clock ownership, and stable post-warmup bone/output capacities.
+- Eighteen native deformation tests, eleven Sakura scene regressions, three XR
+  perf collector tests, and both existing headless stereo/material GPU tests pass.
+- The normal library check and release XR example build pass. Formatting, Python
+  syntax and whitespace checks pass.
+- No optimization was applied during this study. The existing bone allocator,
+  immutable morph upload behavior and material-cache capacities are preserved.

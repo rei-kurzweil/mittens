@@ -109,6 +109,8 @@ impl VulkanoState {
         let mut bound_instance = None;
 
         for batch in batches {
+            #[cfg(test)]
+            if self.profile.as_ref().is_some_and(|p|p.suppressed_meshes.contains(&batch.mesh)) { continue; }
             let custom = batch
                 .material_instance
                 .and_then(|id| self.material_instances.get(id))
@@ -181,6 +183,10 @@ impl VulkanoState {
             cbb.bind_index_buffer(mesh.indices.clone())?;
 
             if instance_count > 0 && batch.count > 0 {
+                #[cfg(test)]
+                if let Some(profile) = self.profile.as_mut() {
+                    profile.draw(if pass == MaterialDrawPass::Emission {"emission"} else {"surface-batches"}, batch.mesh, batch.count);
+                }
                 unsafe {
                     cbb.draw_indexed(
                         mesh.index_count,
@@ -348,12 +354,16 @@ impl VulkanoState {
                     cbb.set_stencil_reference(StencilFaces::FrontAndBack, *parent_ref as u32)?;
                     cbb.bind_vertex_buffers(0, (mesh_verts, instance_buffer.clone()))?;
                     cbb.bind_index_buffer(mesh_indices)?;
+                    #[cfg(test)]
+                    if let Some(profile) = self.profile.as_mut() { profile.draw("stencil", inst.renderable.mesh, 1); }
                     unsafe { cbb.draw_indexed(mesh_index_count, 1, 0, 0, slot as u32)? };
                     // Invalidate bound-state cache so the next DrawBatch rebinds.
                     bound_material = None;
                 }
 
                 RenderOp::DrawBatch(batch) => {
+                    #[cfg(test)]
+                    if self.profile.as_ref().is_some_and(|p|p.suppressed_meshes.contains(&batch.mesh)) { continue; }
                     let pipeline = if batch.stencil_ref > 0 {
                         // Clipped draw: non-skinned only (UI quads are never skinned).
                         match batch.material {
@@ -433,6 +443,14 @@ impl VulkanoState {
                     cbb.bind_vertex_buffers(0, (mesh.vertices.clone(), instance_buffer.clone()))?;
                     cbb.bind_index_buffer(mesh.indices.clone())?;
                     if batch.count > 0 {
+                        #[cfg(test)]
+                        if let Some(profile) = self.profile.as_mut() {
+                            let pass = if Arc::ptr_eq(&pipeline_normal, &self.pipeline_toon_outline) { "outline" }
+                                else if Arc::ptr_eq(&pipeline_normal, &self.pipeline_toon_mesh_cutout) { "cutout" }
+                                else if Arc::ptr_eq(&pipeline_normal, &self.pipeline_toon_mesh_transparent) { "single-transparent" }
+                                else { "opaque/other" };
+                            profile.draw(pass, batch.mesh, batch.count);
+                        }
                         unsafe {
                             cbb.draw_indexed(
                                 mesh.index_count,
@@ -486,6 +504,8 @@ impl VulkanoState {
                     cbb.set_stencil_reference(StencilFaces::FrontAndBack, *ref_value as u32)?;
                     cbb.bind_vertex_buffers(0, (mesh_verts, instance_buffer.clone()))?;
                     cbb.bind_index_buffer(mesh_indices)?;
+                    #[cfg(test)]
+                    if let Some(profile) = self.profile.as_mut() { profile.draw("stencil", inst.renderable.mesh, 1); }
                     unsafe { cbb.draw_indexed(mesh_index_count, 1, 0, 0, slot as u32)? };
                     bound_material = None;
                 }
@@ -841,6 +861,8 @@ impl VulkanoState {
         let mut bound_instance = None;
 
         for batch in transparent_multi_batches {
+            #[cfg(test)]
+            if self.profile.as_ref().is_some_and(|p|p.suppressed_meshes.contains(&batch.mesh)) { continue; }
             let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
             let filtering = batch.texture_filtering;
             let quant_bits = batch.quant_steps.to_bits();
@@ -904,6 +926,8 @@ impl VulkanoState {
             // IMPORTANT: for correct alpha blending order, draw transparent instances
             // one-by-one in sorted order (do not rely on instancing order).
             for j in batch.start..(batch.start + batch.count) {
+                #[cfg(test)]
+                if let Some(profile) = self.profile.as_mut() { profile.draw("multi-transparent", batch.mesh, 1); }
                 unsafe {
                     cbb.draw_indexed(mesh.index_count, 1, 0, 0, j as u32)?;
                 }

@@ -50,6 +50,10 @@ pub struct SkinnedMeshSystem {
     // if a joint node wasn't spawned.
     instance_joints: HashMap<(ComponentId, SkinId), Vec<Option<ComponentId>>>,
     binding_profile: SkinBindingProfile,
+    #[cfg(test)]
+    pub(crate) profile_tick_ns: u64,
+    #[cfg(test)]
+    pub(crate) profile_bindings_updated: u64,
 }
 
 #[derive(Debug, Default)]
@@ -300,6 +304,8 @@ impl System for SkinnedMeshSystem {
         _input: &InputState,
         _dt_sec: f32,
     ) {
+        #[cfg(test)]
+        let profile_tick_started = Instant::now();
         let profile = imported_binding_profile_enabled();
         let debug_skin_apply = std::env::var("CAT_DEBUG_SKIN_APPLY")
             .ok()
@@ -325,6 +331,10 @@ impl System for SkinnedMeshSystem {
                 continue;
             }
             self.dirty_bindings[index] = false;
+            #[cfg(test)]
+            {
+                self.profile_bindings_updated += 1;
+            }
             let Some(binding) = self.bindings[index].clone() else {
                 continue;
             };
@@ -399,6 +409,10 @@ impl System for SkinnedMeshSystem {
             }
         }
 
+        #[cfg(test)]
+        {
+            self.profile_tick_ns += profile_tick_started.elapsed().as_nanos() as u64;
+        }
         if let Some(started) = started {
             self.binding_profile
                 .record(started.elapsed(), binding_count, renderable_count);

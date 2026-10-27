@@ -9,7 +9,7 @@ use std::sync::Arc;
 #[cfg(feature = "desktop")]
 use winit::window::Window;
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
 pub struct RendererPerfCounters {
     pub queue_submissions: u64,
     pub cpu_fence_waits: u64,
@@ -23,6 +23,10 @@ pub struct RendererPerfCounters {
     pub deformation_bone_upload_bytes: u64,
     pub deformation_job_upload_bytes: u64,
     pub deformation_weight_upload_bytes: u64,
+    pub deformation_morph_delta_upload_bytes: u64,
+    pub deformation_buffer_allocations: u64,
+    pub deformation_output_resizes: u64,
+    pub deformation_bone_resizes: u64,
 }
 
 impl RendererPerfCounters {
@@ -56,6 +60,18 @@ impl RendererPerfCounters {
             deformation_weight_upload_bytes: self
                 .deformation_weight_upload_bytes
                 .saturating_sub(earlier.deformation_weight_upload_bytes),
+            deformation_morph_delta_upload_bytes: self
+                .deformation_morph_delta_upload_bytes
+                .saturating_sub(earlier.deformation_morph_delta_upload_bytes),
+            deformation_buffer_allocations: self
+                .deformation_buffer_allocations
+                .saturating_sub(earlier.deformation_buffer_allocations),
+            deformation_output_resizes: self
+                .deformation_output_resizes
+                .saturating_sub(earlier.deformation_output_resizes),
+            deformation_bone_resizes: self
+                .deformation_bone_resizes
+                .saturating_sub(earlier.deformation_bone_resizes),
         }
     }
 }
@@ -450,6 +466,9 @@ mod vulkano_backend {
         pub bone_upload_bytes: u64,
         pub job_upload_bytes: u64,
         pub weight_upload_bytes: u64,
+        pub morph_delta_upload_bytes: u64,
+        pub buffer_allocations: u64,
+        pub bone_resizes: u64,
         pub live_cache_bytes: u64,
         pub allocated_cache_bytes: u64,
         pub resizes: u64,
@@ -628,6 +647,8 @@ mod vulkano_backend {
         deformation_output_buffer: Option<Subbuffer<[GpuDeformedVertex]>>,
         deformation_output_capacity: u32,
         deformation_stats: DeformationStats,
+        #[cfg(test)]
+        profile: Option<sakura_profile::ProfileState>,
 
         xr_eye_attachments: Option<XrEyeAttachments>,
         mirror_offscreen: std::collections::HashMap<String, MirrorOffscreenTargets>,
@@ -2345,6 +2366,8 @@ mod vulkano_backend {
                 deformation_output_buffer: None,
                 deformation_output_capacity: 0,
                 deformation_stats: DeformationStats::default(),
+                #[cfg(test)]
+                profile: None,
 
                 xr_eye_attachments: None,
                 mirror_offscreen: HashMap::new(),
@@ -2409,6 +2432,12 @@ mod vulkano_backend {
                 deformation_bone_upload_bytes: self.deformation_stats.bone_upload_bytes,
                 deformation_job_upload_bytes: self.deformation_stats.job_upload_bytes,
                 deformation_weight_upload_bytes: self.deformation_stats.weight_upload_bytes,
+                deformation_morph_delta_upload_bytes: self
+                    .deformation_stats
+                    .morph_delta_upload_bytes,
+                deformation_buffer_allocations: self.deformation_stats.buffer_allocations,
+                deformation_output_resizes: self.deformation_stats.resizes,
+                deformation_bone_resizes: self.deformation_stats.bone_resizes,
             }
         }
 
@@ -2769,6 +2798,15 @@ mod vulkano_backend {
                 .then_signal_fence_and_flush()?;
             self.perf_queue_submissions += 1;
             self.perf_xr_eyes += 1;
+            #[cfg(test)]
+            if let Some(profile) = self.profile.as_mut() {
+                let future = Arc::new(future);
+                let completion = future.clone();
+                profile.completion =
+                    Some(Box::new(move || completion.wait(None).map_err(Into::into)));
+                self.submission_future = Some(future.boxed());
+                return Ok(());
+            }
             self.submission_future = Some(future.boxed());
 
             Ok(())
@@ -4197,6 +4235,7 @@ mod vulkano_backend {
                 self.deformation_output_buffer = Some(new_output);
                 self.deformation_output_capacity = new_capacity;
                 self.deformation_stats.resizes += 1;
+                self.deformation_stats.buffer_allocations += 1;
             }
             let output = self
                 .deformation_output_buffer
@@ -4210,6 +4249,8 @@ mod vulkano_backend {
                 .as_ref()
                 .is_none_or(|buffer| buffer.len() < bones_len as DeviceSize);
             if bones_reallocated {
+                self.deformation_stats.bone_resizes += 1;
+                self.deformation_stats.buffer_allocations += 1;
                 self.deformation_bones_buffer = Some(Buffer::new_slice::<GpuMat4>(
                     memory_allocator.clone(),
                     BufferCreateInfo {
@@ -4264,6 +4305,7 @@ mod vulkano_backend {
                         .clone()
                         .slice(start as DeviceSize..end as DeviceSize),
                 ))?;
+                self.deformation_stats.buffer_allocations += 1;
                 self.deformation_stats.bone_upload_bytes +=
                     (range.vertex_count as usize * size_of::<GpuMat4>()) as u64;
             }
@@ -4308,6 +4350,10 @@ mod vulkano_backend {
                     )
                     .into());
                 }
+                #[cfg(test)]
+                if let Some(profile) = self.profile.as_mut() {
+                    profile.dirty_components.push(instance.component);
+                }
                 jobs.push(GpuDeformationJob {
                     base_vertex,
                     skin_vertex,
@@ -4341,6 +4387,8 @@ mod vulkano_backend {
                 .clone();
             // Vulkan storage buffers cannot be zero-length. The zero record is
             // never read when every job has an empty active range.
+            #[cfg(test)]
+            let morph_upload_started = self.profile.as_ref().map(|_| std::time::Instant::now());
             let morph_upload: Vec<_> = if self.deformation_morph_cpu.is_empty() {
                 vec![GpuMorphDelta::default()]
             } else {
@@ -4377,6 +4425,15 @@ mod vulkano_backend {
                 morph_upload.len() as DeviceSize,
             )?;
             cbb.copy_buffer(CopyBufferInfo::buffers(morph_staging, morph_buffer.clone()))?;
+            self.deformation_stats.morph_delta_upload_bytes +=
+                (morph_upload.len() * size_of::<GpuMorphDelta>()) as u64;
+            #[cfg(test)]
+            if let (Some(profile), Some(started)) = (self.profile.as_mut(), morph_upload_started) {
+                profile.morph_upload_cpu_ns += started.elapsed().as_nanos() as u64;
+            }
+            self.deformation_stats.weight_upload_bytes +=
+                (active_morph_upload.len() * size_of::<GpuActiveMorph>()) as u64;
+            self.deformation_stats.buffer_allocations += 8;
             let active_morph_staging = Buffer::from_iter(
                 memory_allocator.clone(),
                 BufferCreateInfo {
@@ -5126,8 +5183,19 @@ mod vulkano_backend {
                 queue.queue_family_index(),
                 CommandBufferUsage::OneTimeSubmit,
             )?;
+            #[cfg(test)]
+            if let Some(profile) = self.profile.as_ref() {
+                profile.timestamp(&mut cbb, eye, 0)?;
+            }
+            #[cfg(test)]
+            let deform_started = self.profile.as_ref().map(|_| std::time::Instant::now());
             let deformation_output =
                 self.record_dirty_deformations(&mut cbb, visual_world, &dirty_bones_ranges)?;
+            #[cfg(test)]
+            if let Some(profile) = self.profile.as_mut() {
+                profile.timestamp(&mut cbb, eye, 1)?;
+                profile.deformation_cpu_ns += deform_started.unwrap().elapsed().as_nanos() as u64;
+            }
 
             // Rig descriptor set (set=2): persistent deformation cache + placeholder lighting.
             // Layout is defined in `PipelineDescriptorSetLayouts::rig`.
@@ -5749,6 +5817,10 @@ mod vulkano_backend {
                 ))?;
             }
 
+            #[cfg(test)]
+            if let Some(profile) = self.profile.as_ref() {
+                profile.timestamp(&mut cbb, eye, 2)?;
+            }
             visual_world.mark_deformations_clean();
             let cb = cbb.build()?;
 
@@ -6437,6 +6509,14 @@ mod vulkano_backend {
             Ok(())
         }
     }
+    #[cfg(test)]
+    mod sakura_profile {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/engine/graphics/vulkano_sakura_profile.rs"
+        ));
+    }
+
     #[cfg(test)]
     mod headless_tests {
         include!(concat!(
