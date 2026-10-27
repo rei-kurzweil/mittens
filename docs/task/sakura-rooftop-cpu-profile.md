@@ -453,6 +453,10 @@ CPU submission, GPU execution and completion waiting separate. The scene update
 cost, including transform/IK propagation, remains a separate investigation from
 this eye-render timer. No optimization in this plan is included in this checkpoint.
 
+The [material pipeline and multiview slice plan](material-pipeline-multiview-slices.md)
+details the proposed camera/pipeline migration, per-slice smoke/performance gates,
+and an audit of profiling instrumentation overhead outside captures.
+
 ### Verification of this diagnostic change
 
 - All 21 automated unprofiled case runs and four warmed Nsight captures completed;
