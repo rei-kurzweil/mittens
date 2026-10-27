@@ -25,6 +25,9 @@ let pistol_scale = 0.085
 let pistol_hand_offset = 0.05 // metres back toward the wrist, in the held grip frame
 
 import { info_panel } from "../assets/components/ui/info_panel.mms"
+import { mini_explosion } from "../assets/components/mini-explosion.mms"
+import { metal_can } from "../assets/components/targets/metal-can.mms"
+import { matcap_metal } from "../assets/components/materials/matcap_metal.mms"
 import { laser_machine_pistol } from "../assets/components/laser-machine-pistol.mms"
 import { gradient_skybox, background_sun } from "../assets/components/backgrounds/gradient_skybox.mms"
 import { sakura_tree } from "../assets/components/plants/sakura_tree.mms"
@@ -81,7 +84,35 @@ let pistol_material = Material(anime).inputs({
     rim_color = [1.0, 0.86, 0.94]
     rim_strength = 0.24
 })
-let pistol_laser = laser_machine_pistol({ name = "sakura_pistol_laser" length = 40.0 flash_size = 0.28 beam_radius = 0.025 ray_origin_offset = 0.06 })
+// Target response is ordinary MMS for now. This is the place to experiment
+// with hit policy before committing to Damageable or a general damage API.
+let range_state = { hits = 0 last_hit = null }
+fn can_hit(hit, target_state) {
+    range_state.hits = range_state.hits + 1
+    range_state.last_hit = hit
+    let readout = query("[name='sakura_can_hit_readout']")
+    if readout != null { readout.set_text("Can hits: " + range_state.hits) }
+}
+let can_metal = matcap_metal()
+let shooting_cans = [
+    metal_can({ name = "sakura_bench_can_1" position = [-19.2, roof_height + 1.023, -4.28] material = can_metal on_hit = can_hit }),
+    metal_can({ name = "sakura_bench_can_2" position = [-18.75, roof_height + 1.023, -4.28] material = can_metal on_hit = can_hit }),
+    metal_can({ name = "sakura_bench_can_3" position = [-16.7, roof_height + 1.023, -4.28] material = can_metal on_hit = can_hit }),
+    metal_can({ name = "sakura_range_can_1" position = [-15.0, roof_height + 0.866, -4.2] material = can_metal on_hit = can_hit }),
+    metal_can({ name = "sakura_range_can_2" position = [-14.2, roof_height + 0.866, -4.2] material = can_metal on_hit = can_hit }),
+    metal_can({ name = "sakura_range_can_3" position = [-13.4, roof_height + 0.866, -4.2] material = can_metal on_hit = can_hit }),
+]
+for can in shooting_cans { can.root }
+fn handle_laser_hit(hit) {
+    let impact = mini_explosion(hit.hit_point, 2.0)
+    impact.root
+    impact.animation.play()
+    for can in shooting_cans { can.handle_hit(hit) }
+}
+let pistol_laser = laser_machine_pistol({
+    name = "sakura_pistol_laser" length = 40.0 flash_size = 0.28 beam_radius = 0.025
+    ray_origin_offset = 0.06 on_hit = handle_laser_hit
+})
 let pistol_held = { active = false hand = "" pointer = null }
 let white = [0.94, 0.96, 0.97]
 let pink = [0.88, 0.65, 0.73]
@@ -145,6 +176,7 @@ fn scene_controls() {
     let readout = Text { name = "sakura_building_detail_readout" "" + neighborhood_state.full_count + " / 8 fully generated" }
     let bloom = Toggle.on() { name = "sakura_scene_bloom_toggle" }
     if !scene_settings.bloom { bloom = Toggle.off() { name = "sakura_scene_bloom_toggle" } }
+    let can_readout = Text { name = "sakura_can_hit_readout" "Can hits: " + range_state.hits }
     let bloom_readout = Text { name = "sakura_scene_bloom_readout" "Bloom: " + scene_settings.bloom }
     on(slider, "SliderChanged", fn(event) {
         regenerate_buildings(event.value)
@@ -162,6 +194,10 @@ fn scene_controls() {
         Unlit {}
         Style { display("flex") flex_direction("column") width(100%) row_gap(0.5) font_size(0.75) }
         readout
+        T {
+            Style { display("block") width(100%) font_size(0.75) }
+            can_readout
+        }
         T {
             Grabbable.off()
             Style { display("flex") width(100%) height(3.0) align_items("center") justify_content("center") }
@@ -240,6 +276,12 @@ T.position(-18.0, roof_height, 0.0) {
     T.position(-1.75, 2.14, -4.71).scale(0.085, 0.085, 0.085) {
         Text { "SAKURA / DRONE CONVERSION" C.rgba(0.42, 0.22, 0.34, 1.0) Unlit {} }
     }
+}
+
+// Small rooftop target stand, with three more cans beyond the workbench.
+box([-14.2, roof_height + 0.80, -4.2], [2.4, 0.12, 0.70], [0.30, 0.32, 0.40])
+for x in [-15.1, -13.3] {
+    box([x, roof_height + 0.37, -4.2], [0.10, 0.74, 0.50], [0.30, 0.32, 0.40])
 }
 
 // The upgraded Rei(mu) tree: one rooftop specimen and two street planters.
@@ -362,7 +404,7 @@ if xr_view_enabled {
 }
 
 // Input handling stays dormant until this particular object is held. Release
-// cancels pending burst/sub-clips and immediately hides their visual effects.
+// cancels pending shots and the weapon flash; launched projectiles finish independently.
 let pistol_grip = query("[name='sakura_machine_pistol_placement']")
 on(pistol_grip, "GrabStart", fn(event) {
     if event.target == pistol_grip {
@@ -377,14 +419,14 @@ on(pistol_grip, "GrabEnd", fn(event) {
     if event.target == pistol_grip && event.pointer == pistol_held.pointer {
         pistol_held.active = false
         pistol_held.pointer = null
-        pistol_laser.stop()
+        pistol_laser.use_end()
     }
 })
 on_global("XrButtonDown", fn(event) {
     if pistol_held.active && event.hand == pistol_held.hand {
-        if event.control == "LeftTrigger" || event.control == "RightTrigger" { pistol_laser.fire_burst() }
+        if event.control == "LeftTrigger" || event.control == "RightTrigger" { pistol_laser.use_start({ user = query("[name='sakura_reimu_avatar_control']") }) }
     }
 })
 on_global("KeyDown", fn(event) {
-    if pistol_held.active && pistol_held.hand == "Desktop" && event.code == "Space" { pistol_laser.fire_burst() }
+    if pistol_held.active && pistol_held.hand == "Desktop" && event.code == "Space" { pistol_laser.use_start({ user = pistol_held.pointer }) }
 })

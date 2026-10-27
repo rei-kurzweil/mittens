@@ -2066,6 +2066,18 @@ fn binary_values(op: &BinOpKind, lhs: Value, rhs: Value) -> Result<Value, EvalEr
         (BinOpKind::Mul, Value::Number(a), Value::Number(b)) => Ok(Value::Number(a * b)),
         (BinOpKind::Div, Value::Number(a), Value::Number(b)) => Ok(Value::Number(a / b)),
         (BinOpKind::Rem, Value::Number(a), Value::Number(b)) => Ok(Value::Number(a % b)),
+        // Query and event adapters can use different dispatch type names for
+        // the same live component. Identity belongs to its opaque handle.
+        (
+            BinOpKind::Eq,
+            Value::ComponentObject { id: a, .. },
+            Value::ComponentObject { id: b, .. },
+        ) => Ok(Value::Bool(a == b)),
+        (
+            BinOpKind::NotEq,
+            Value::ComponentObject { id: a, .. },
+            Value::ComponentObject { id: b, .. },
+        ) => Ok(Value::Bool(a != b)),
         (BinOpKind::Eq, a, b) => Ok(Value::Bool(a == b)),
         (BinOpKind::NotEq, a, b) => Ok(Value::Bool(a != b)),
         (BinOpKind::Lt, Value::Number(a), Value::Number(b)) => Ok(Value::Bool(a < b)),
@@ -2089,5 +2101,32 @@ fn value_text(value: &Value) -> String {
         Value::Bool(b) => b.to_string(),
         Value::Null => "null".into(),
         other => format!("{other:?}"),
+    }
+}
+
+#[cfg(test)]
+mod component_identity_tests {
+    use super::*;
+
+    #[test]
+    fn equality_uses_component_handles_independent_of_dispatch_labels() {
+        let component = |raw, label: &str| Value::ComponentObject {
+            id: crate::host::ComponentHandle::from_raw(raw),
+            component_type: label.into(),
+        };
+        for (other, equal) in [
+            (component(7, "renderable"), true),
+            (component(8, "Renderable"), false),
+        ] {
+            let authored = component(7, "Renderable");
+            assert_eq!(
+                binary_values(&BinOpKind::Eq, authored.clone(), other.clone()).unwrap(),
+                Value::Bool(equal)
+            );
+            assert_eq!(
+                binary_values(&BinOpKind::NotEq, authored, other).unwrap(),
+                Value::Bool(!equal)
+            );
+        }
     }
 }

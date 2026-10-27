@@ -28,6 +28,21 @@ frame eases into an XR hand while desktop grabbing retains clearance. Two displa
 the road below. The pistol now uses the [shared laser and three-shot burst](reusable-laser-and-pistol-burst.md).
 The conversion interaction itself is still pending.
 
+Six shootable metal cans are now on the roof: three on the workbench and three
+on a small stand beside it. Bodies are lime green and lids white, sharing the
+pool handrails' chrome matcap shader/texture through `matcap_metal()`. Explicit
+mesh bounds make all body/lid surfaces BVH raycast targets at startup. Hits
+trigger a short wobble/color response, an independent mini explosion, a temporary
+floating "1" and a running total on the scene panel. There is no text attached
+to the cans; each hit number rises/shrinks and removes itself after 0.6 seconds.
+Target hit routing is ordinary MMS; destruction
+and physics knockback remain deferred.
+
+The pistol's flash stays attached to its muzzle while each beam copies a world
+pose and finishes independently. The scene routes trigger input through
+`use_start({ user })` and release/drop through `use_end()`. Its `on_hit` callback
+receives projectile, tool and user identity and routes hits to `can.handle_hit`.
+
 The ground is a muted pinkish grey-brown. Every building uses two CombineMesh
 outputs, one white ceramic group and one trim group, with separate collision
 boxes. Tile textures and filtering are attached to the combined outputs. The
@@ -95,9 +110,9 @@ also uses the upgraded tree in its existing garden placement.
   256×256 with opaque, transparent and antialiased pixels.
 - The shared pool-material extraction preserves the existing youtuber scene's
   three view modes and material registration/update tests.
-- Vulkan renders both eyes for rooftop, city, bench, tree and sky views; verifies
+- Vulkan renders both eyes for rooftop, city, bench, targets, tree and sky views; verifies
   ceramic textures, the sky's typed shader, blossom cutout routing and sun bloom.
-  Review images are written to /tmp/sakura-{rooftop,city,bench,tree,sky}.png.
+  Review images are written to /tmp/sakura-{rooftop,city,bench,targets,tree,sky}.png.
 
 VR headset acceptance remains manual. Broad bloom pyramids remain deferred.
 
@@ -105,4 +120,5 @@ VR headset acceptance remains manual. Broad bloom pyramids remain deferred.
 0.103125 m head sphere (75% of its prior 0.1375 m radius) and 0.09 m hand spheres
 (twice the prior 0.045 m radii). These are SpringCollider volumes in
 assets/components/colliders/bisket.mms. The pistol has a 5 cm rearward held-model
-offset, with compensation in its bench pose.
+offset, with compensation in its bench pose. Subsequent VR tuning put the held
+grip offset at `[0, 0, -0.105]` m; the separate authored model offset remains.

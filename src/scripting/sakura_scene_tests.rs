@@ -380,7 +380,7 @@ fn deliver_scene_event(
 }
 
 #[test]
-fn sakura_pistol_grab_gates_three_shot_subanimations_and_release_cancels_them() {
+fn sakura_pistol_grab_gates_burst_and_release_only_stops_weapon_flash() {
     use crate::engine::ecs::component::XrButtonControl;
     use crate::engine::ecs::component::{
         AnimationComponent, AnimationState, ControllerHand, KeyframeComponent,
@@ -635,6 +635,53 @@ fn sakura_pistol_grab_gates_three_shot_subanimations_and_release_cancels_them() 
             .unwrap();
         assert_eq!(clip.uri, "assets/audio/tool/laser_machine_pistol_C.0.wav");
     }
+    let flash = named(&world, "sakura_pistol_laser_muzzle_flash");
+    assert_eq!(
+        world.parent_of(flash),
+        Some(named(&world, "sakura_pistol_laser_root"))
+    );
+    for name in ["first", "second", "third"] {
+        assert_eq!(
+            world.parent_of(named(&world, &format!("sakura_pistol_laser_{name}_flight"))),
+            None
+        );
+    }
+    let can = named(&world, "sakura_bench_can_1_body");
+    let point = [-19.2, 26.7, -4.235];
+    let hit = deliver_scene_event(
+        &mut world,
+        &mut rx,
+        &mut session,
+        &mut assets,
+        &mut queue,
+        can,
+        EventSignal::RayIntersected {
+            raycaster: casts[0],
+            renderable: can,
+            t: 1.,
+            origin: [point[0], point[1], point[2] + 1.],
+            dir: [0., 0., -1.],
+        },
+    );
+    let reaction = named(&world, "sakura_bench_can_1_hit_reaction");
+    assert!(hit.iter().any(|intent|matches!(intent,IntentValue::SetAnimationState{component_id,state:AnimationState::Playing} if *component_id==reaction)));
+    let number = named(&world, "hit_number");
+    assert_eq!(
+        world.parent_of(number),
+        None,
+        "hit feedback must float independently of the can"
+    );
+    assert_eq!(authored_position(&world, number), point);
+    assert!(
+        !world.all_components().any(|id| world
+            .component_label(id)
+            .is_some_and(|name| name.ends_with("_hit_count"))),
+        "cans must not have permanent text labels"
+    );
+    let readout = named(&world, "sakura_can_hit_readout");
+    assert!(hit.iter().any(|intent| matches!(intent, IntentValue::SetText {component_id,text} if *component_id == readout && text == "Can hits: 1")));
+    let other = named(&world, "sakura_bench_can_2_hit_reaction");
+    assert!(!hit.iter().any(|intent| matches!(intent, IntentValue::SetAnimationState {component_id,..} if *component_id == other)));
     let next = deliver_scene_event(
         &mut world,
         &mut rx,
@@ -657,28 +704,10 @@ fn sakura_pistol_grab_gates_three_shot_subanimations_and_release_cancels_them() 
             target: grip,
         },
     );
-    assert_eq!(
-        released
-            .iter()
-            .filter(|intent| matches!(
-                intent,
-                IntentValue::SetAnimationState {
-                    state: AnimationState::Paused,
-                    ..
-                }
-            ))
-            .count(),
-        3
-    );
-    assert_eq!(
-        released
-            .iter()
-            .filter(
-                |intent| matches!(intent,IntentValue::UpdateTransform {scale,..} if *scale==[0.;3])
-            )
-            .count(),
-        12
-    );
+    let flash_clip = named(&world, "sakura_pistol_laser_muzzle_flash_clip");
+    assert!(released.iter().any(|intent| matches!(intent, IntentValue::SetAnimationState {component_id,state:AnimationState::Paused} if *component_id==flash_clip)));
+    assert!(!released.iter().any(|intent| matches!(intent, IntentValue::SetAnimationState {component_id,..} if shots.contains(component_id))), "release must not cancel a launched projectile");
+    assert!(!released.iter().any(|intent| matches!(intent, IntentValue::UpdateTransform {component_id,..} if world.component_label(*component_id).is_some_and(|name| name.ends_with("_beam")))), "release must not hide a launched beam");
     let after = deliver_scene_event(
         &mut world,
         &mut rx,
@@ -733,6 +762,96 @@ fn sakura_pistol_grab_gates_three_shot_subanimations_and_release_cancels_them() 
 }
 
 #[test]
+fn hit_number_rises_and_retires_its_world_subtree() {
+    use crate::engine::ecs::IntentValue;
+    use crate::engine::ecs::component::{AnimationState, TextComponent, TransitionComponent};
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut queue = CommandQueue::new();
+    let mut assets = RenderAssets::new();
+    let (mut session, initial) = RuntimeSpecSession::start_at_path(
+        r#"import { hit_number } from "../assets/components/hit-number.mms"
+        let number = hit_number({hit_point=[2.0,3.0,4.0] origin=[2.0,3.0,6.0]})
+        number.root
+        number.animation.play()"#,
+        "examples/_hit_number_test.mms",
+        &mut world,
+        &mut rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .unwrap();
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    let root = named(&world, "hit_number");
+    let lift = named(&world, "hit_number_lift");
+    let text = named(&world, "hit_number_text");
+    assert_eq!(world.parent_of(root), None);
+    assert_eq!(authored_position(&world, root), [2., 3., 4.]);
+    let label = world.get_component_by_id_as::<TextComponent>(text).unwrap();
+    assert_eq!(label.text, "1");
+    assert!((label.font_size - 0.065).abs() < 1e-6);
+    assert!(world.children_of(lift).iter().any(|&id| {
+        world
+            .get_component_by_id_as::<TransitionComponent>(id)
+            .is_some()
+    }));
+    let clip = named(&world, "hit_number_animation");
+    let mut animation = crate::engine::ecs::system::AnimationSystem::new();
+    animation.register_animation(&mut world, clip);
+    for keyframe in world.children_of(clip).to_vec() {
+        animation.register_keyframe(&mut world, keyframe);
+    }
+    animation.set_animation_state(clip, AnimationState::Playing);
+    for beat in [0., 0.6, 1.21] {
+        let mut executor =
+            crate::engine::ecs::system::animation_keyframe_evaluator::SessionCallbackExecutor {
+                session: &mut session,
+                render_assets: &mut assets,
+                emit: &mut queue,
+            };
+        animation.tick_with_beat_and_executor(&mut world, beat, 120., &mut rx, Some(&mut executor));
+    }
+    let intents = rx.drain_ready_intents();
+    assert!(intents.iter().any(|signal| matches!(signal.intent.as_ref().map(|v| &v.value), Some(IntentValue::UpdateTransform{component_id,translation,..}) if *component_id == lift && translation[1] > 0.4)));
+    assert!(intents.iter().any(|signal| matches!(signal.intent.as_ref().map(|v| &v.value), Some(IntentValue::RemoveSubtree{component_id}) if *component_id == root)), "transient text must retire its complete subtree");
+}
+
+#[test]
+fn can_hit_callback_spawns_feedback_through_the_live_world() {
+    let mut scene = crate::engine::Universe::new(World::default());
+    scene.load_mms_source_at_path(r#"
+        import { metal_can } from "../assets/components/targets/metal-can.mms"
+        let can = metal_can({name="live_can" material=Material(MaterialDefinition.toon()) position=[0.0,0.0,0.0]})
+        can.root
+        on_global("DataEvent", fn(event) {
+            if event == "Hit" {
+                let target = query("[name='live_can_body']")
+                can.handle_hit({renderable=target hit_point=[0.0,0.1,0.045] origin=[0.0,0.1,2.0]})
+            }
+        })
+    "#, "examples/_live_can_test.mms").unwrap();
+    for _ in 0..2 {
+        scene.update(0., &Default::default());
+    }
+    scene.systems.rx.push_event(
+        ComponentId::default(),
+        crate::engine::ecs::EventSignal::DataEvent {
+            name: "Hit".into(),
+            payload: None,
+        },
+    );
+    for _ in 0..2 {
+        scene.update(0., &Default::default());
+    }
+    assert!(
+        scene
+            .world
+            .all_components()
+            .any(|id| scene.world.component_label(id) == Some("hit_number_text"))
+    );
+}
+
+#[test]
 fn laser_hit_spawns_world_space_impact_only_for_its_own_ray_and_despawns() {
     use crate::engine::ecs::component::{
         AnimationComponent, AnimationState, KeyframeComponent, RayCastComponent,
@@ -746,12 +865,21 @@ fn laser_hit_spawns_world_space_impact_only_for_its_own_ray_and_despawns() {
     let mut assets = RenderAssets::new();
     let (mut session, initial) = RuntimeSpecSession::start_at_path(
         r#"import { laser } from "../assets/components/laser.mms"
-        let gun = laser({ name = "test_laser" sound = false ray_origin_offset = 0.06 })
-        gun.root
+        import { mini_explosion } from "../assets/components/mini-explosion.mms"
+        let source_tool=T {}
+        let source_user=T {}
+        fn impact_hit(hit) {
+            if hit.source_tool == source_tool && hit.source_user == source_user {
+                let impact=mini_explosion(hit.hit_point,2.0)
+                impact.root
+                impact.animation.play()
+            }
+        }
+        let gun = laser({ name = "test_laser" ray_origin_offset = 0.06 })
         T.position(0.0, 0.0, -3.0) {
             R.cube() { name = "laser_target" Raycastable.enabled() }
         }
-        gun.fire_laser()"#,
+        gun.launch({pose=source_tool.world_trs() source_tool=source_tool source_user=source_user on_hit=impact_hit})"#,
         "examples/_laser_hit_test.mms",
         &mut world,
         &mut rx,
@@ -896,12 +1024,15 @@ fn fired_laser_copies_world_trs_and_stays_put_when_barrel_moves() {
     let (mut session, _) = RuntimeSpecSession::start_at_path(
         r#"
         import { laser } from "../assets/components/laser.mms"
-        let gun=laser({name="frozen_laser" sound=false ray_origin_offset=0.06})
+        let gun=laser({name="frozen_laser" ray_origin_offset=0.06})
+        let muzzle=T {name="frozen_laser_root"}
         T.position(2.0,3.0,4.0).rotation(0.0,0.4,0.0) {
             name="moving_barrel"
-            gun.root
+            muzzle
         }
-        on_global("DataEvent", fn(event) { if event == "Fire" { gun.fire_laser() } })
+        on_global("DataEvent", fn(event) { if event == "Fire" {
+            gun.launch({pose=muzzle.world_trs() source_tool=muzzle source_user=null on_hit=null})
+        } })
     "#,
         "examples/_frozen_laser_test.mms",
         &mut world,

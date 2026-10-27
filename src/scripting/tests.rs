@@ -12953,28 +12953,40 @@ fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
         }
     )));
 
-    let animation_id = fire_output
+    let active_clips: Vec<_> = fire_output
         .intents
         .iter()
-        .find_map(|intent| match intent {
-            IntentValue::SetAnimationState { component_id, .. } => Some(*component_id),
+        .filter_map(|intent| match intent {
+            IntentValue::SetAnimationState {
+                component_id,
+                state: crate::engine::ecs::component::AnimationState::Playing,
+            } => Some(*component_id),
             _ => None,
         })
-        .unwrap();
-    let mut animation = crate::engine::ecs::system::AnimationSystem::new();
-    animation.register_animation(&mut world, animation_id);
-    for keyframe in world.children_of(animation_id).to_vec() {
-        if world
-            .get_component_by_id_as::<crate::engine::ecs::component::KeyframeComponent>(keyframe)
-            .is_some()
-        {
-            animation.register_keyframe(&mut world, keyframe);
-        }
-    }
-    animation.set_animation_state(
-        animation_id,
-        crate::engine::ecs::component::AnimationState::Playing,
+        .collect();
+    assert_eq!(
+        active_clips.len(),
+        2,
+        "the weapon flash and independent beam each have their own clip"
     );
+    let mut animation = crate::engine::ecs::system::AnimationSystem::new();
+    for &animation_id in &active_clips {
+        animation.register_animation(&mut world, animation_id);
+        for keyframe in world.children_of(animation_id).to_vec() {
+            if world
+                .get_component_by_id_as::<crate::engine::ecs::component::KeyframeComponent>(
+                    keyframe,
+                )
+                .is_some()
+            {
+                animation.register_keyframe(&mut world, keyframe);
+            }
+        }
+        animation.set_animation_state(
+            animation_id,
+            crate::engine::ecs::component::AnimationState::Playing,
+        );
+    }
     let mut animation_executor =
         crate::engine::ecs::system::animation_keyframe_evaluator::SessionCallbackExecutor {
             session: &mut session,
@@ -12996,51 +13008,40 @@ fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
             .into_iter()
             .filter_map(|signal| signal.intent.map(|intent| intent.value)),
     );
-    // A square is centered in its local XY plane. After the beam root rotates
-    // its Y axis onto local -Z, its 40-unit scale needs a -20-unit center
-    // offset for the near edge to coincide with the shared muzzle origin.
-    for (name, offset) in [("car_laser_muzzle_flash", 0.0), ("laser_beam_glow", -20.0)] {
-        let effect = world
+    let named_effect = |name| {
+        world
             .all_components()
             .find(|&id| world.component_label(id) == Some(name))
-            .unwrap();
-        let translation = shot_intents
-            .iter()
-            .find_map(|intent| match intent {
-                IntentValue::UpdateTransform {
-                    component_id,
-                    translation,
-                    ..
-                } if *component_id == effect => Some(*translation),
-                _ => None,
-            })
-            .expect("shot should position its effects using the live bounds-derived state");
-        assert!(
-            (origin_translation[2] + translation[2] - (model_bounds.min[2] - 0.10 + offset)).abs()
-                < 1e-4
-        );
-        assert_eq!(translation[1], 0.0);
-    }
-
-    let flash = world
-        .all_components()
-        .find(|&id| world.component_label(id) == Some("car_laser_muzzle_flash"))
-        .unwrap();
-    let flash_rotation = shot_intents
-        .iter()
-        .find_map(|intent| match intent {
-            IntentValue::UpdateTransform {
-                component_id,
-                rotation_quat_xyzw,
-                ..
-            } if *component_id == flash => Some(*rotation_quat_xyzw),
-            _ => None,
-        })
-        .expect("shot should preserve the flash frame's firing-axis orientation");
-    assert!(flash_rotation[0].abs() < 1.0e-4);
-    assert!((flash_rotation[1] - 1.0).abs() < 1.0e-4);
-    assert!(flash_rotation[2].abs() < 1.0e-4);
-    assert!(flash_rotation[3].abs() < 1.0e-4);
+            .unwrap()
+    };
+    let flash = named_effect("car_laser_muzzle_flash");
+    let flight = named_effect("car_laser_flight");
+    let beam = named_effect("laser_beam_glow");
+    let flash_frame = named_effect("car_laser_muzzle_flash_0");
+    assert_eq!(
+        world.parent_of(flash),
+        Some(origin),
+        "muzzle flash must stay attached to the car's weapon"
+    );
+    assert_eq!(
+        world.parent_of(flight),
+        None,
+        "launched beam must be independent of the car"
+    );
+    assert!(fire_output.intents.iter().any(|intent|matches!(intent, IntentValue::SetTransformTrs {component_id,space:crate::engine::transform::TransformSpace::World,..} if *component_id==flight)));
+    assert!(shot_intents.iter().any(|intent|matches!(intent, IntentValue::UpdateTransform {component_id,scale,..} if *component_id==beam && *scale==[1.;3])));
+    assert!(shot_intents.iter().any(|intent|matches!(intent, IntentValue::UpdateTransform {component_id,scale,..} if *component_id==flash_frame && *scale==[0.90;3])));
+    let flash_rotation = world
+        .get_component_by_id_as::<TransformComponent>(flash)
+        .unwrap()
+        .transform
+        .rotation;
+    assert!(
+        flash_rotation[0].abs() < 1e-4
+            && (flash_rotation[1] - 1.).abs() < 1e-4
+            && flash_rotation[2].abs() < 1e-4
+            && flash_rotation[3].abs() < 1e-4
+    );
 
     rx.dispatch_event_handlers(
         &mut world,

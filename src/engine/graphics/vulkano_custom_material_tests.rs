@@ -1744,7 +1744,29 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
         "let desktop_view_enabled = true",
     )
     .replace("let xr_view_enabled = true", "let xr_view_enabled = false");
+    let source = source + r#"
+        on_global("DataEvent", fn(event) {
+            if event == "PreviewCanHit" {
+                shooting_cans[4].handle_hit({
+                    renderable = query("[name='sakura_range_can_2_body']")
+                    hit_point = [-14.2, 26.56, -4.155]
+                    origin = [-14.2, 26.9, -3.1]
+                })
+            }
+        })
+    "#;
+    // Capturing several GPU views can outlast a transient effect. Freeze the
+    // animation clock until the hit preview explicitly advances it.
+    struct TargetClock(std::sync::atomic::AtomicU64);
+    impl crate::engine::ecs::system::ClockDriver for TargetClock {
+        fn name(&self) -> &'static str { "target-preview" }
+        fn time_now_sec(&self) -> f64 {
+            self.0.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1000.0
+        }
+    }
+    let target_clock = Arc::new(TargetClock(std::sync::atomic::AtomicU64::new(0)));
     let mut scene = crate::engine::Universe::new(crate::engine::ecs::World::default());
+    scene.systems.clock.set_driver(target_clock.clone());
     scene.load_mms_source_at_path(&source, "examples/sakura-drone-conversion.mms")?;
     for _ in 0..3 {
         scene.update(0., &crate::engine::user_input::InputState::default());
@@ -1849,6 +1871,16 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
             .all(|instance| instance.texture.is_some()),
         "ceramics retain their packed tile image"
     );
+    let metal_instances: Vec<_> = scene.visuals.instances().iter().filter(|instance| {
+        instance.material_instance.and_then(|id|scene.visuals.materials.instance(id))
+            .and_then(|instance|scene.visuals.materials.definition(instance.definition))
+            .and_then(|definition|definition.custom.as_ref())
+            .is_some_and(|shader|shader.fragment_uri=="assets/shaders/pool-metal-matcap.frag")
+    }).collect();
+    assert_eq!(metal_instances.len(),18,"six cans each have a colored body and two metal lids");
+    assert!(metal_instances.iter().all(|instance|instance.texture.is_some()));
+    let can = scene.world.all_components().find(|&id|scene.world.component_label(id)==Some("sakura_bench_can_1_body")).unwrap();
+    assert!(scene.systems.bvh.raycast_renderables_candidates([-19.2,26.713,-3.5],[0.,0.,-1.],1.,0).iter().any(|(id,_)|*id==can),"can body must be a real ray target");
     let blossom_count = scene
         .visuals
         .cutout_order()
@@ -2075,9 +2107,42 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
         ("rooftop", [-12.8, 28.4, 4.2], [-18., 26.5, -3.3]),
         ("city", [0., 35., 52.0], [0., 13., 0.]),
         ("bench", [-18., 27.0, -2.45], [-18., 26.65, -4.1]),
+        ("targets", [-14.2, 26.9, -3.1], [-14.2, 26.56, -4.2]),
         ("tree", [-13.0, 27.8, 5.3], [-14.1, 27.7, 2.4]),
         ("sky", [0., 60., 0.], [-7., 66., -17.6]),
     ] {
+        if label == "targets" {
+            scene.systems.rx.push_event(
+                crate::engine::ecs::ComponentId::default(),
+                crate::engine::ecs::EventSignal::DataEvent {
+                    name: "PreviewCanHit".into(), payload: None,
+                },
+            );
+            for millis in [0, 0, 150] {
+                target_clock.0.store(millis, std::sync::atomic::Ordering::Relaxed);
+                scene.update(0., &crate::engine::user_input::InputState::default());
+            }
+            assert!(scene.world.all_components().any(|id| scene.world.component_label(id) == Some("hit_number_text")));
+            scene.systems.prepare_render(
+                &mut scene.world, &mut scene.visuals, &mut scene.render_assets,
+                &mut SceneUploader {
+                    renderer: &mut renderer, next_mesh: &mut next_mesh, next_texture: &mut next_texture,
+                },
+                &mut scene.command_queue,
+            );
+            for instance in scene.visuals.instances() {
+                let mut node = Some(instance.component);
+                while let Some(id) = node {
+                    if matches!(scene.world.component_label(id), Some("hit_number_text" | "sakura_can_hit_readout")) {
+                        let column = instance.transform.matrix_world[0];
+                        let width = (column[0]*column[0]+column[1]*column[1]+column[2]*column[2]).sqrt();
+                        assert!(width < 0.1, "hit feedback glyphs must remain small in world space: {width}");
+                        break;
+                    }
+                    node = scene.world.parent_of(id);
+                }
+            }
+        }
         let rotation = TransformComponent::look_at_world_rotation(position, target).unwrap();
         let camera = TransformComponent::new()
             .with_position(position[0], position[1], position[2])

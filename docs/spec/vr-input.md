@@ -13,6 +13,10 @@ This document describes how cat-engine integrates OpenXR controller and hand-tra
 - Button/trigger gameplay semantics
 - Haptic feedback
 
+The proposed output API and implementation sequence are tracked in
+[XR haptic actuators and tool recoil](../task/haptic-actuator-xr-and-tool-recoil.md).
+That work is documentation only; controller motor output is not implemented yet.
+
 ---
 
 ## High-level overview

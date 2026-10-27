@@ -2,6 +2,7 @@
 // Regenerate textures with the Rust examples generate-pool-tiles and generate-metal-matcap.
 import { f32 } from "types"
 import { pool_tile_material } from "../materials/pool_tiles.mms"
+import { matcap_metal } from "../materials/matcap_metal.mms"
 
 fn tile_box(position, size, material) {
     return T.position(position[0], position[1], position[2]).scale(size[0], size[1], size[2]) {
@@ -30,10 +31,7 @@ fn metal_cylinder(position, radius, height, material) {
 
 export fn indoor_pool(origin, width, length, basin_width, basin_length, water_enabled) {
     let tiles = pool_tile_material()
-    let metal_definition = MaterialDefinition(MaterialBase()).fragment("assets/shaders/pool-metal-matcap.frag").inputs({
-        brightness: f32
-    })
-    let chrome = Material(metal_definition).inputs({ brightness = 1.0 })
+    let chrome = matcap_metal()
     let water_definition = MaterialDefinition(MaterialBase.planar_reflective()).fragment("assets/shaders/pool-water.frag").inputs({
         time_seconds: f32
         wave_scale: f32

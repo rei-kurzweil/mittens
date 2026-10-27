@@ -6,6 +6,8 @@
 // front.
 
 import { laser } from "../laser.mms"
+import { muzzle_flash } from "../muzzle-flash.mms"
+import { mini_explosion } from "../mini-explosion.mms"
 import { bisket_anime_shading } from "../materials/bisket_anime_shading.mms"
 
 export fn display_car(root_name, position, yaw, mount_anchor_name, extra_children) {
@@ -53,6 +55,7 @@ export fn display_car(root_name, position, yaw, mount_anchor_name, extra_childre
 fn display_car_with_controls(root_name, position, yaw, mount_anchor_name, input_mode, input_source) {
     let vehicle_state = {
         mounted = false
+        user = null
         movement = [0.0, 0.0]
         w_held = false
         a_held = false
@@ -71,13 +74,13 @@ fn display_car_with_controls(root_name, position, yaw, mount_anchor_name, input_
     let muzzle_clearance = 0.10
     let muzzle_height_fraction = 0.56
 
-    let weapon_laser = laser({ name = "car_laser" beam_name = "laser_beam_glow" length = laser_length flash_size = 0.90 beam_radius = 0.014 })
-    fn fire_laser() {
-        if laser_placement.ready { weapon_laser.fire_laser() }
-    }
+    let weapon_laser = laser({ name = "car_laser" beam_name = "laser_beam_glow" length = laser_length beam_radius = 0.014 })
+    let weapon_flash = muzzle_flash({ name = "car_laser" size = 0.90 })
+    let weapon_sound = AudioClip.wav("assets/audio/tool/laser_machine_pistol_C.0.wav")
     let laser_origin = T {
         name = "car_laser_origin"
-        weapon_laser.root
+        weapon_flash.root
+        AudioOutput { weapon_sound }
     }
     let car_root = display_car(
         root_name,
@@ -87,8 +90,23 @@ fn display_car_with_controls(root_name, position, yaw, mount_anchor_name, input_
         [laser_origin],
     )
 
+    fn handle_laser_hit(hit) {
+        let impact = mini_explosion(hit.hit_point, 2.0)
+        impact.root
+        impact.animation.play()
+    }
+    fn fire_laser() {
+        if laser_placement.ready {
+            weapon_sound.play()
+            weapon_flash.play()
+            weapon_laser.launch({ pose = laser_origin.world_trs() source_tool = car_root
+                source_user = vehicle_state.user on_hit = handle_laser_hit })
+        }
+    }
+
     on(car_root, "MountStarted", fn(event) {
         vehicle_state.mounted = true
+        vehicle_state.user = event.rider
         vehicle_state.movement = [0.0, 0.0]
         vehicle_state.w_held = false
         vehicle_state.a_held = false
@@ -98,6 +116,7 @@ fn display_car_with_controls(root_name, position, yaw, mount_anchor_name, input_
     })
     on(car_root, "MountEnded", fn(event) {
         vehicle_state.mounted = false
+        vehicle_state.user = null
         vehicle_state.movement = [0.0, 0.0]
         vehicle_state.w_held = false
         vehicle_state.a_held = false
