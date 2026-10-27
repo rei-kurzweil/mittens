@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 
@@ -151,6 +151,8 @@ pub struct HostContext {
     next_callback: u32,
     components: HashSet<ComponentHandle>,
     callbacks: HashSet<CallbackHandle>,
+    /// Language values stay in the session, never in host property/JSON storage.
+    pub(crate) component_fields: HashMap<ComponentHandle, HashMap<String, Value>>,
 }
 
 impl HostContext {
@@ -161,6 +163,7 @@ impl HostContext {
             next_callback: 1,
             components: HashSet::new(),
             callbacks: HashSet::new(),
+            component_fields: HashMap::new(),
         }
     }
     pub fn allocate_component(&mut self) -> ComponentHandle {
@@ -206,6 +209,11 @@ impl fmt::Debug for ComponentHandle {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum HostRequest {
+    /// Return the still-live subset and their canonical dispatch types. Used
+    /// for field receiver validation and batched session field cleanup.
+    ValidateComponents {
+        components: Vec<ComponentHandle>,
+    },
     /// Register an uninitialized component. The host returns its component
     /// identity in `HostResponse::Component`.
     RegisterComponent {
@@ -281,6 +289,7 @@ pub enum HostRequest {
 impl HostRequest {
     pub fn operation_name(&self) -> &str {
         match self {
+            Self::ValidateComponents { .. } => "validate_components",
             Self::RegisterComponent { .. } => "register_component",
             Self::Emit { .. } => "emit",
             Self::Spawn { .. } => "spawn",

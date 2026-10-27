@@ -1,4 +1,4 @@
-// Provisional target API: handle_hit(hit) returns whether this can received it.
+// Per-component target API: can.on_hit(hit) reports whether this can received it.
 // This is visual feedback and a hit counter, without damage or destruction.
 import { hit_number } from "../hit-number.mms"
 export fn metal_can(options) {
@@ -69,5 +69,11 @@ export fn metal_can(options) {
         if options["on_hit"] != null { options.on_hit(hit, state) }
         return true
     }
-    return { root = root state = state handle_hit = handle_hit }
+    root.on_hit = handle_hit
+    root.hit_count = fn() { return state.hits }
+    // Each raycastable surface exposes the same handler and private state.
+    body.on_hit = handle_hit
+    top.on_hit = handle_hit
+    bottom.on_hit = handle_hit
+    return root
 }

@@ -1530,6 +1530,7 @@ impl<H: Host> Session<H> {
         source: &str,
         source_id: Option<crate::SourceId>,
     ) -> Result<Evaluation, EvalError> {
+        self.prune_component_fields()?;
         let scopes = std::mem::take(&mut self.scopes);
         let callbacks = std::mem::take(&mut self.callbacks);
         let module_cache = std::mem::take(&mut self.module_cache);
@@ -1555,6 +1556,7 @@ impl<H: Host> Session<H> {
         handle: CallbackHandle,
         args: Vec<Value>,
     ) -> Result<Value, EvalError> {
+        self.prune_component_fields()?;
         if !self.context.owns_callback(handle) {
             return Err(crate::HostError {
                 kind: crate::HostErrorKind::ForeignHandle,
@@ -1628,6 +1630,27 @@ impl<H: Host> Session<H> {
     pub fn context(&self) -> &HostContext {
         &self.context
     }
+
+    fn prune_component_fields(&mut self) -> Result<(), EvalError> {
+        if self.context.component_fields.is_empty() {
+            return Ok(());
+        }
+        let components = self.context.component_fields.keys().copied().collect();
+        let response = self.host.dispatch_with_context(
+            &mut self.context,
+            crate::HostRequest::ValidateComponents { components },
+        )?;
+        let crate::HostResponse::Components(live) = response else {
+            return Err(EvalError::Runtime(
+                "validate_components must return live components".into(),
+            ));
+        };
+        let live: HashSet<_> = live.into_iter().map(|(id, _)| id).collect();
+        self.context
+            .component_fields
+            .retain(|id, _| live.contains(id));
+        Ok(())
+    }
 }
 
 fn adopt_transport_components(context: &mut HostContext, value: &crate::TransportValue) {
@@ -1655,6 +1678,54 @@ mod tests {
         CeChild, EventStreamHost, HostError, HostErrorKind, HostEvent, HostRequest, HostResponse,
         TransportValue,
     };
+
+    #[test]
+    fn component_fields_are_retired_when_the_host_removes_their_owner() {
+        #[derive(Default)]
+        struct LiveHost {
+            inner: crate::StandardHost,
+            removed: HashSet<crate::ComponentHandle>,
+        }
+        impl Host for LiveHost {
+            fn dispatch_with_context(
+                &mut self,
+                context: &mut HostContext,
+                request: HostRequest,
+            ) -> Result<HostResponse, HostError> {
+                let response = self.inner.dispatch_with_context(context, request)?;
+                Ok(match response {
+                    HostResponse::Components(live) => HostResponse::Components(
+                        live.into_iter()
+                            .filter(|(id, _)| !self.removed.contains(id))
+                            .collect(),
+                    ),
+                    other => other,
+                })
+            }
+        }
+        let mut session = Runtime::standard().session(LiveHost::default());
+        session
+            .eval("let node = T {}; node.state = {hits=0}; node.run = fn() { return 7 }")
+            .unwrap();
+        let Value::ComponentObject { id, .. } = session.eval("node").unwrap().value.unwrap() else {
+            panic!("component")
+        };
+        assert_eq!(session.context.component_fields.len(), 1);
+        session.host_mut().removed.insert(id);
+        session.eval("1").unwrap();
+        assert!(session.context.component_fields.is_empty());
+        for source in ["node.state", "node.state = 9", "node.run()"] {
+            let EvalError::Host(error) = session.eval(source).unwrap_err() else {
+                panic!("typed stale handle error")
+            };
+            assert_eq!(error.kind, HostErrorKind::StaleHandle);
+        }
+        session.eval("let replacement = T {}").unwrap();
+        assert_eq!(
+            session.eval("replacement.state").unwrap().value,
+            Some(Value::Null)
+        );
+    }
 
     #[test]
     fn is_string_distinguishes_dynamic_values_without_host_dispatch() {

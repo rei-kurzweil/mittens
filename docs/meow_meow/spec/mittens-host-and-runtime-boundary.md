@@ -30,6 +30,7 @@ The language crate owns:
 - expression, statement, component-expression, and builtin evaluation
 - the public runtime `Value` and component-tree DTOs
 - scopes, frames, heap objects, closures, captures, and shared object identity
+- per-session script fields keyed by live component identity, including function values
 - module loading semantics, module state, imports, and exports
 - callback registration and invocation state
 - template and live evaluation modes
@@ -53,6 +54,8 @@ Mittens owns:
 - the engine implementations bound to host operations in that expression
 - `MittensHost`, which translates host requests into engine operations
 - opaque component-handle translation and ECS lifetime validation
+- generic batched component-liveness inspection (`ValidateComponents`), without
+  storing or evaluating the script fields themselves
 - component construction, registration, attachment, and initialization
 - queries, component-method dispatch, and engine API dispatch
 - `World`, `RxWorld`, render assets, intents, audio, and engine mutations

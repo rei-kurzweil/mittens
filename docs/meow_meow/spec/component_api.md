@@ -19,10 +19,17 @@ For the engine-specific method inventory, non-scope:
 
 ## Current reflection gap
 
+Live components support session-owned script fields: `component.field = value`,
+`component.field` and calls to function-valued fields. See
+[the per-instance field contract](../../task/mms-component-instance-methods.md).
+This does not implement native authored-property reflection or expose component
+block locals. Native methods/properties cannot be replaced by script fields.
+
 Rust can inspect `MaterializedCE` labels and ordered children today. MMS cannot
-yet reliably call `type()`, enumerate component children, read component
-fields uniformly, or use table dot methods. The universal behavior below is
-the target that closes that gap. Functions already return ordinary component
+yet uniformly inspect native types, enumerate component children or read native
+authored properties. Script component fields and table function-field calls are
+supported; the universal behavior below concerns the remaining reflection gap.
+Functions already return ordinary component
 expressions; they do not need a separate component runtime type.
 
 ## Universal component reflection

@@ -102,12 +102,13 @@ let shooting_cans = [
     metal_can({ name = "sakura_range_can_2" position = [-14.2, roof_height + 0.866, -4.2] material = can_metal on_hit = can_hit }),
     metal_can({ name = "sakura_range_can_3" position = [-13.4, roof_height + 0.866, -4.2] material = can_metal on_hit = can_hit }),
 ]
-for can in shooting_cans { can.root }
+for can in shooting_cans { can }
 fn handle_laser_hit(hit) {
     let impact = mini_explosion(hit.hit_point, 2.0)
     impact.root
     impact.animation.play()
-    for can in shooting_cans { can.handle_hit(hit) }
+    let on_hit = hit.renderable.on_hit
+    if on_hit != null { on_hit(hit) }
 }
 let pistol_laser = laser_machine_pistol({
     name = "sakura_pistol_laser" length = 40.0 flash_size = 0.28 beam_radius = 0.025

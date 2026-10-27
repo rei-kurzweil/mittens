@@ -1747,7 +1747,8 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
     let source = source + r#"
         on_global("DataEvent", fn(event) {
             if event == "PreviewCanHit" {
-                shooting_cans[4].handle_hit({
+                let target = query("[name='sakura_range_can_2_body']")
+                target.on_hit({
                     renderable = query("[name='sakura_range_can_2_body']")
                     hit_point = [-14.2, 26.56, -4.155]
                     origin = [-14.2, 26.9, -3.1]

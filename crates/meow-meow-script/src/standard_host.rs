@@ -156,6 +156,16 @@ impl Host for StandardHost {
         request: HostRequest,
     ) -> Result<HostResponse, HostError> {
         match request {
+            HostRequest::ValidateComponents { components } => {
+                let mut live = Vec::new();
+                for handle in components {
+                    require_local_handle(context, handle, "validate_components")?;
+                    if let Some(tree) = self.component(handle) {
+                        live.push((handle, tree.component_type.clone()));
+                    }
+                }
+                Ok(HostResponse::Components(live))
+            }
             HostRequest::Emit { tree } | HostRequest::Spawn { tree } => {
                 let handle = context.allocate_component();
                 let component_type = tree.component_type.clone();

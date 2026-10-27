@@ -1,13 +1,12 @@
 # MMS fields on individual component instances
 
 Date: 2026-10-26
-Status: agreed direction for the next slice; documentation/example only.
-Direct component field assignment is not implemented yet.
+Status: direct live-component fields implemented; VR acceptance pending.
 
-See [the proposed example](../../examples/proposals/component-instance-methods.mms).
-The working Sakura scene still returns a table from each can factory and loops
-over those tables to route hits. This document describes the next change, not
-behavior already available in the interpreter.
+See [the component-field example](../../examples/proposals/component-instance-methods.mms).
+The Sakura factory now returns its root component. Its root, body and lids have
+an `on_hit` function field; the scene calls the hit primitive's field directly.
+The separate method-syntax and scope-inheritance ideas remain future work.
 
 ## Small first slice: fields holding any MMS value
 
@@ -61,15 +60,15 @@ new script fields: assigning a script value is not implicitly an engine setter.
 
 ## Identity, reads and calls
 
-- Fields belong to the live component identity, not its reference wrapper,
+- Fields belong to the live component identity within the owning MMS session, not its reference wrapper,
   display name, component type or parent. Query/event aliases see the same
   additions and changes; independent factory instances remain independent.
 - Reading a missing script field returns null, permitting optional callbacks.
   Calling a missing/non-function field is an error. A component may also hold
   ordinary non-function fields; field assignment itself does not demand a
   callable value.
-- Table/list/function values retain ordinary MMS identity and capture behavior.
-  Returning or reading a field must not deep-copy its contents or its closure.
+- Values retain ordinary MMS copy/identity and capture behavior. In particular,
+  table identity and a function's captured state are retained across field reads.
 - `can.on_hit(hit)` invokes the field's function synchronously and returns its
   result. Engine mutations inside it retain their existing host/intent timing.
 - Assigning `can.on_hit` does not subscribe to an engine event. Call sites or
@@ -77,8 +76,7 @@ new script fields: assigning a script value is not implicitly an engine setter.
 - Direct calls/read access are local to that component. No implicit lookup of
   parent fields, ancestor methods or unrelated objects is introduced.
 
-Native members need a collision rule before implementation. The recommended
-first-slice policy is to reject attempts to overwrite registered native methods
+The first slice rejects attempts to overwrite registered native methods
 or properties, preserving existing RuntimeSpec validation and native dispatch.
 Replacing an existing script field is ordinary reassignment. Native property
 reflection/mutation and optional bracket access should be reviewed separately;
@@ -86,8 +84,8 @@ do not silently redesign the whole native component API to add script fields.
 
 ## Concrete can migration
 
-The current factory already has `root`, `state` and a `handle_hit(hit)` closure
-that recognizes its body/lids and plays feedback. Its first migration can be:
+The factory keeps `state` and its descendant handles private. It publishes the
+existing `handle_hit(hit)` function, which recognizes its body/lids and plays feedback:
 
 ```mms
 root.on_hit = handle_hit
@@ -95,12 +93,11 @@ root.hit_count = fn() { return state.hits }
 return root
 ```
 
-The caller would receive a component directly, rather than a separate
-`{ root, state, handle_hit }` table. For the smallest behavioral change, keep
-the existing six-can loop but invoke `can.on_hit(hit)` on those components.
+The caller receives a component directly, replacing the earlier
+`{ root, state, handle_hit }` table.
 
-Then, if we want direct dispatch from raycast geometry without inventing an
-ancestor API, publish the same handler explicitly on each participating primitive:
+For direct dispatch from raycast geometry, the same function is assigned to each
+participating primitive:
 
 ```mms
 body.on_hit = handle_hit
@@ -119,21 +116,50 @@ These references all invoke the same captured target state. The callback still
 receives the exact hit primitive, point and source tool/user. The closure is not
 rebound to whichever primitive happens to carry it. This supports an opaque root
 API and explicit forwarding on private hit surfaces without automatic scope
-inheritance. Decide whether to do this forwarding in the first can migration or
-retain the list temporarily; neither is implemented by this document.
+inheritance. The scene's list is now only used to construct/attach the cans;
+it is not searched to dispatch hits. The controlled car uses the same optional
+target-field call after playing its impact effect.
+
+## Root event handlers are another valid construction pattern
+
+A factory can register `on(root, "RayIntersected", fn(event) { ... })` and
+capture private state/descendants in that handler. The current RayCastSystem
+emits at the hit renderable; RxWorld dispatches scoped handlers from that
+component up its unique parent chain. Body/lid hits can already reach a can's
+root handler without inherited script fields.
+
+Raw RayIntersected includes hand-pointer hits too and does not carry the full
+projectile/tool/user context assembled by the laser callback. A root-handler
+design therefore needs weapon-ray recognition or a separately routed weapon-hit
+event. Do not simply subscribe to every ray intersection and treat it as damage.
+This is an alternative routing design; the current can migration uses explicit
+function fields. Component fields, event bubbling and lexical scope inheritance
+are three separate mechanisms.
+
+## Future note: opt-in ancestor-scope inheritance
+
+Explore a modifier, analogous in role to visibility modifiers, which explicitly
+allows descendants to resolve fields/functions from an ancestor's script scope.
+No modifier spelling is selected and no implementation is part of this slice.
+Review which members are inherited, reads versus writes, child overrides,
+propagation boundaries, multiple-parent ambiguity and cleanup before choosing
+semantics. Do not change lexical closure capture or infer scope inheritance just
+because an event bubbles to an ancestor.
 
 Generic ancestor-owner discovery, a Damageable component and destruction remain
 separate later decisions. None is needed to demonstrate component fields.
 
-## Runtime/lifecycle decisions before implementation
+## Runtime/lifecycle behavior and follow-ups
 
 - Keep script values and closures in the MMS runtime/session. Any host-side
   route carries opaque identity and lifecycle metadata, following the
   [host/runtime boundary](../meow_meow/spec/mittens-host-and-runtime-boundary.md).
   Avoid a second interpreter or conversion to engine JSON/property storage.
-- Define removal/session cleanup, foreign/stale component errors and extracted
-  callback behavior. Reusing an engine component slot must not inherit its old
-  fields. Consider aliases and captures when releasing the per-instance store.
+- The session checks field receiver ownership/liveness and prunes fields of
+  removed components at subsequent evaluation/callback boundaries. Closing the
+  session releases its field store. Reused component generations do not inherit
+  old fields. A function already extracted into a variable remains an ordinary
+  function value; it is not a new owner-bound method-wrapper type.
 - Decide behavior for cloning and cross-session access. Copying closures that
   capture original descendants is not equivalent to rerunning the factory.
 - Preserve animation visual/audio phase rules through function-valued fields;
@@ -144,7 +170,13 @@ separate later decisions. None is needed to demonstrate component fields.
   native-name collisions need explicit tests. Future typed interfaces may add
   constraints, but are not a dependency for the initial dynamic field surface.
 
-Suggested sequence: implement/read/write/call per-instance fields; verify query
-and event aliases, different instances and native collisions; migrate can roots;
-optionally publish primitive forwarding fields; validate the existing hit
-feedback in VR. Add shorthand method declarations only in a future slice.
+The implementation uses crate-owned session storage and a generic batched
+ValidateComponents host request; values/functions are not sent to engine
+property storage. StandardHost, EventStreamHost and MittensHost implement the
+liveness request. Cross-session field sharing, automatic field copying during
+native tree cloning, persistence and bracket access are not added.
+
+Language tests cover values/closures, aliases, independent instances, replacement,
+native collisions and lifecycle checks; scene tests exercise real hit feedback.
+Finish with VR acceptance. Shorthand methods, inherited scope and alternative
+root-event routing remain future slices.

@@ -80,6 +80,23 @@ impl Host for EventStreamHost {
         request: HostRequest,
     ) -> Result<HostResponse, HostError> {
         let event = match request {
+            HostRequest::ValidateComponents { components } => {
+                let mut live = Vec::new();
+                for component in components {
+                    require_handle(context, component, "validate_components")?;
+                    if let Some(tree) = self.events.iter().find_map(|event| match event {
+                        HostEvent::Emit { handle, tree } | HostEvent::Register { handle, tree }
+                            if *handle == component =>
+                        {
+                            Some(tree)
+                        }
+                        _ => None,
+                    }) {
+                        live.push((component, tree.component_type.clone()));
+                    }
+                }
+                return Ok(HostResponse::Components(live));
+            }
             HostRequest::Emit { tree } => {
                 let handle = context.allocate_component();
                 HostEvent::Emit { handle, tree }
@@ -202,6 +219,11 @@ impl<W: Write> Host for JsonLinesHost<W> {
         context: &mut HostContext,
         request: HostRequest,
     ) -> Result<HostResponse, HostError> {
+        // Liveness inspection records no effect and must not repeat the last
+        // emitted event in the JSON-lines stream.
+        if matches!(&request, HostRequest::ValidateComponents { .. }) {
+            return self.inner.dispatch_with_context(context, request);
+        }
         let response = self.inner.dispatch_with_context(context, request)?;
         let event = self
             .inner

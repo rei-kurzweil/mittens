@@ -41,7 +41,9 @@ and physics knockback remain deferred.
 The pistol's flash stays attached to its muzzle while each beam copies a world
 pose and finishes independently. The scene routes trigger input through
 `use_start({ user })` and release/drop through `use_end()`. Its `on_hit` callback
-receives projectile, tool and user identity and routes hits to `can.handle_hit`.
+receives projectile, tool and user identity and calls the hit surface's optional
+`on_hit` function field. Each can publishes its shared handler on the root, body
+and lids, with a `hit_count()` getter on the root. There is no six-can dispatch loop.
 
 The ground is a muted pinkish grey-brown. Every building uses two CombineMesh
 outputs, one white ceramic group and one trim group, with separate collision

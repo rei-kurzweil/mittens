@@ -37,10 +37,11 @@ add a separate function-component runtime type.
 ## Universal component reflection
 
 Design follow-up: [per-instance MMS fields, including functions](mms-component-instance-methods.md)
-proposes direct `component.field = value` assignment for any MMS value. This
-supersedes the tentative `.data`/method-registry sketches. It remains unimplemented
-and is separate from native authored-property reflection below; coordinate native
-name collisions before implementation. Fancy method declarations are deferred.
+implements direct `component.field = value` assignment for MMS values on live
+components. This supersedes the tentative `.data`/method-registry sketches and
+is separate from native authored-property reflection below. Native-name
+replacement is rejected. Fancy method declarations and opt-in ancestor scope
+inheritance remain deferred.
 
 Implement the same script surface for static `ComponentExpr` and live
 `ComponentObject`:

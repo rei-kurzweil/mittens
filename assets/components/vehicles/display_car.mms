@@ -94,6 +94,8 @@ fn display_car_with_controls(root_name, position, yaw, mount_anchor_name, input_
         let impact = mini_explosion(hit.hit_point, 2.0)
         impact.root
         impact.animation.play()
+        let on_hit = hit.renderable.on_hit
+        if on_hit != null { on_hit(hit) }
     }
     fn fire_laser() {
         if laser_placement.ready {

@@ -364,6 +364,35 @@ fn named(world: &World, label: &str) -> ComponentId {
         .unwrap()
 }
 
+#[test]
+fn component_field_example_uses_queries_and_shared_function_values() {
+    let source = format!(
+        "{}\nText {{ name = \"field_example_result\" description }}\n",
+        include_str!("../../examples/proposals/component-instance-methods.mms")
+    );
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut queue = CommandQueue::new();
+    let mut assets = RenderAssets::new();
+    let (_, output) = RuntimeSpecSession::start_at_path(
+        &source,
+        "examples/proposals/component-instance-methods.mms",
+        &mut world,
+        &mut rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .unwrap();
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    let result = world
+        .get_component_by_id_as::<crate::engine::ecs::component::TextComponent>(named(
+            &world,
+            "field_example_result",
+        ))
+        .unwrap();
+    assert_eq!(result.text, "Lime can: 0 hits");
+}
+
 fn deliver_scene_event(
     world: &mut World,
     rx: &mut RxWorld,
@@ -822,11 +851,11 @@ fn can_hit_callback_spawns_feedback_through_the_live_world() {
     scene.load_mms_source_at_path(r#"
         import { metal_can } from "../assets/components/targets/metal-can.mms"
         let can = metal_can({name="live_can" material=Material(MaterialDefinition.toon()) position=[0.0,0.0,0.0]})
-        can.root
+        can
         on_global("DataEvent", fn(event) {
             if event == "Hit" {
                 let target = query("[name='live_can_body']")
-                can.handle_hit({renderable=target hit_point=[0.0,0.1,0.045] origin=[0.0,0.1,2.0]})
+                target.on_hit({renderable=target hit_point=[0.0,0.1,0.045] origin=[0.0,0.1,2.0]})
             }
         })
     "#, "examples/_live_can_test.mms").unwrap();

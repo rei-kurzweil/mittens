@@ -370,6 +370,16 @@ impl mms::Host for MittensHost<'_, '_> {
     fn dispatch(&mut self, request: mms::HostRequest) -> Result<mms::HostResponse, mms::HostError> {
         use mms::{HostRequest as R, HostResponse as S};
         match request {
+            R::ValidateComponents { components } => Ok(S::Components(
+                components
+                    .into_iter()
+                    .filter_map(|handle| {
+                        self.world
+                            .component_name(Self::component_id(handle))
+                            .map(|ty| (handle, ty.to_owned()))
+                    })
+                    .collect(),
+            )),
             R::Emit { tree } => {
                 let component_type = tree.component_type.clone();
                 let response = self.dispatch(R::Spawn { tree })?;

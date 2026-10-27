@@ -74,6 +74,7 @@ pub struct Evaluator<'a, H: Host> {
     source_id: Option<SourceId>,
     module_cache: HashMap<SourceId, Value>,
     module_depth: usize,
+    local_component_fields: HashMap<ComponentHandle, HashMap<String, Value>>,
 }
 
 impl<'a, H: Host> Evaluator<'a, H> {
@@ -91,6 +92,7 @@ impl<'a, H: Host> Evaluator<'a, H> {
             source_id: None,
             module_cache: HashMap::new(),
             module_depth: 0,
+            local_component_fields: HashMap::new(),
         }
     }
 
@@ -115,6 +117,7 @@ impl<'a, H: Host> Evaluator<'a, H> {
             source_id,
             module_cache,
             module_depth: 0,
+            local_component_fields: HashMap::new(),
         }
     }
 
@@ -130,6 +133,7 @@ impl<'a, H: Host> Evaluator<'a, H> {
             source_id: None,
             module_cache: HashMap::new(),
             module_depth: 0,
+            local_component_fields: HashMap::new(),
         }
     }
 
@@ -292,6 +296,10 @@ impl<'a, H: Host> Evaluator<'a, H> {
                         .with_map_mut(|map| map.insert(key, value))
                         .ok_or_else(|| EvalError::Runtime("stale table reference".into()))
                         .map(|_| Flow::Continue),
+                    Value::ComponentObject { id, .. } => {
+                        self.set_component_field(id, key, value)?;
+                        Ok(Flow::Continue)
+                    }
                     _ => Err(EvalError::Runtime(
                         "field reassignment requires a table".into(),
                     )),
@@ -758,6 +766,10 @@ impl<'a, H: Host> Evaluator<'a, H> {
                 Value::Object(id) => id
                     .with_map(|values| values.get(key).cloned().unwrap_or(Value::Null))
                     .ok_or_else(|| EvalError::Runtime("stale table reference".into())),
+                Value::ComponentObject { id, .. } => {
+                    self.validate_field_receiver(id)?;
+                    Ok(self.component_field(id, key).unwrap_or(Value::Null))
+                }
                 other => Err(EvalError::Runtime(format!(
                     "field access requires a table; receiver was {other:?}"
                 ))),
@@ -848,6 +860,26 @@ impl<'a, H: Host> Evaluator<'a, H> {
             let receiver = self.eval_expr(lhs)?;
             return match receiver {
                 Value::ComponentObject { id, component_type } => {
+                    if let Some(callback) = self.component_field(id, &method) {
+                        self.validate_field_receiver(id)?;
+                        return self.invoke_value(callback, args);
+                    }
+                    if !matches!(method.as_str(), "query" | "query_all")
+                        && self.catalog.as_ref().is_some_and(|catalog| {
+                            !catalog
+                                .components
+                                .get(&component_type.to_lowercase())
+                                .is_some_and(|spec| spec.methods.contains_key(&method))
+                        })
+                    {
+                        // Cleanup may already have retired a deleted receiver's
+                        // fields. Preserve stale/foreign errors before reporting
+                        // a missing callable on an otherwise live component.
+                        self.validate_field_receiver(id)?;
+                        return Err(EvalError::Runtime(format!(
+                            "component field or method '{method}' is missing"
+                        )));
+                    }
                     if matches!(method.as_str(), "query" | "query_all") {
                         let selector = match args.first() {
                             Some(Value::String(selector)) => selector.clone(),
@@ -1746,6 +1778,87 @@ impl<'a, H: Host> Evaluator<'a, H> {
 
     fn lookup(&self, name: &str) -> Option<&Value> {
         self.scopes.iter().rev().find_map(|scope| scope.get(name))
+    }
+
+    fn component_field(&self, id: ComponentHandle, name: &str) -> Option<Value> {
+        let fields = self
+            .context
+            .as_deref()
+            .map(|context| &context.component_fields)
+            .unwrap_or(&self.local_component_fields);
+        fields.get(&id).and_then(|fields| fields.get(name)).cloned()
+    }
+
+    fn validate_field_receiver(&mut self, id: ComponentHandle) -> Result<String, EvalError> {
+        if self
+            .context
+            .as_deref()
+            .is_some_and(|context| !context.owns_component(id))
+        {
+            return Err(HostError {
+                kind: HostErrorKind::ForeignHandle,
+                operation: "component_field".into(),
+                message: "component belongs to another session".into(),
+            }
+            .into());
+        }
+        let response = self.dispatch(HostRequest::ValidateComponents {
+            components: vec![id],
+        })?;
+        if let HostResponse::Components(live) = response {
+            if let Some((_, ty)) = live.into_iter().find(|(handle, _)| *handle == id) {
+                return Ok(ty);
+            }
+        } else {
+            return Err(EvalError::Runtime(
+                "validate_components must return live components".into(),
+            ));
+        }
+        if let Some(context) = self.context.as_deref_mut() {
+            context.component_fields.remove(&id);
+        }
+        self.local_component_fields.remove(&id);
+        Err(HostError {
+            kind: HostErrorKind::StaleHandle,
+            operation: "component_field".into(),
+            message: "component no longer exists".into(),
+        }
+        .into())
+    }
+
+    fn set_component_field(
+        &mut self,
+        id: ComponentHandle,
+        name: String,
+        value: Value,
+    ) -> Result<(), EvalError> {
+        let ty = self.validate_field_receiver(id)?;
+        let native = matches!(name.as_str(), "query" | "query_all")
+            || self
+                .catalog
+                .as_ref()
+                .and_then(|catalog| catalog.components.get(&ty.to_lowercase()))
+                .is_some_and(|spec| {
+                    spec.methods
+                        .keys()
+                        .any(|key| key.eq_ignore_ascii_case(&name))
+                        || spec
+                            .properties
+                            .keys()
+                            .any(|key| key.eq_ignore_ascii_case(&name))
+                });
+        if native {
+            return Err(EvalError::Runtime(format!(
+                "cannot replace native component member '{name}'"
+            )));
+        }
+        let fields = self
+            .context
+            .as_deref_mut()
+            .map(|context| &mut context.component_fields)
+            .unwrap_or(&mut self.local_component_fields);
+        fields.entry(id).or_default().insert(name, value);
+        Ok(())
     }
     fn snapshot(&self) -> HashMap<String, Value> {
         self.scopes.iter().flat_map(|scope| scope.clone()).collect()

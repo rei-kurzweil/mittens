@@ -1,5 +1,4 @@
-// DESIGN SKETCH — not runnable with the current engine/interpreter.
-// Next slice: ordinary fields on live component objects, holding any MMS value.
+// Ordinary fields on live component objects, holding any MMS value.
 // Function-valued fields are called with normal syntax and explicit arguments.
 // No special .data/.methods namespace or inline method-declaration syntax.
 // Discussion: docs/task/mms-component-instance-methods.md
@@ -31,7 +30,7 @@ fn make_target(label, position) {
         return true
     }
 
-    // PROPOSED: add fields directly to this particular component instance.
+    // Add fields directly to this particular component instance.
     root.label = label
     root.tags = ["target", "metal"]
     root.settings = { damage_scale = 1.0 }
@@ -85,5 +84,5 @@ fn route_weapon_hit(hit) {
 // The real can's body and BOTH lids would publish the same handler this way.
 // The weapon callback still chooses when to call route_weapon_hit(hit).
 // Assigning .on_hit does not automatically subscribe to an engine event.
-// Native-name collision policy, lifetimes and optional callable checks are
-// discussed in the document. Fancy inline method syntax is a later slice.
+// Native-name collision policy and lifetimes are documented. Fancy inline
+// methods, inherited scope and root-event routing are separate future slices.

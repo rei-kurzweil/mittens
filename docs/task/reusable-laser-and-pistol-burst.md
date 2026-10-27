@@ -110,10 +110,12 @@ are proposed separately; there is no controller motor output in this slice.
 ## Provisional targets and impact policy
 
 `assets/components/targets/metal-can.mms` exports `metal_can(options)`, returning
-`{ root, state, handle_hit }`. `handle_hit(hit)` returns true only for its own
-body/lid renderables. It increments `state.hits`, stores `state.last_hit`, plays
+its root component with `on_hit(hit)` and `hit_count()` function fields. The same
+`on_hit` function is assigned to the body and both lid renderables. It returns
+true only for this can's surfaces, increments private `state.hits`, stores
+`state.last_hit`, plays
 a short wobble/color animation, spawns a floating hit number and optionally calls
-`on_hit(hit, state)`. Cans have no permanent text labels. `hit-number.mms` creates
+the factory option `on_hit(hit, state)`. Cans have no permanent text labels. `hit-number.mms` creates
 an independent world-root "1" at the impact point facing the launch origin. A
 Transition lifts/shrinks it over 0.6 seconds, then its Animation removes the
 entire subtree. Each hit creates a separate effect. "1" currently means one hit;
@@ -121,8 +123,9 @@ damage amounts and health are not defined yet.
 This is an MMS experiment, not a new Damageable engine component.
 
 In `examples/sakura-drone-conversion.mms`, `handle_laser_hit` spawns an independent
-mini explosion at the world hit point and routes the report to the six cans.
-Only a matching can reacts. Its callback updates the panel's total hit count.
+mini explosion at the world hit point and calls the hit renderable's optional
+`on_hit` function field. There is no target-list search or implicit inheritance.
+The matching can's callback updates the panel's total hit count.
 The report preserves shooter/tool attribution for future damage policy. No holes,
 fragments, health system, physics knockback or destruction are added. See the
 [deferred damage/CSG proposal](damageable-surfaces-csg-and-fragments.md).
