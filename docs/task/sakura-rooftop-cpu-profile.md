@@ -474,6 +474,9 @@ and an audit of profiling instrumentation overhead outside captures.
 
 ## 2026-10-27: first optimization, reuse the immutable morph arena
 
+For a concise explanation of the data flow and cache relationship, see
+[morph buffer reuse and the skinning cache](../analysis/morph-buffer-reuse-and-skinning-cache.md).
+
 ### Change and lifetime behavior
 
 `record_dirty_deformations` now binds the immutable `deformation_morph_buffer`
