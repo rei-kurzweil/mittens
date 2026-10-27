@@ -484,9 +484,18 @@ impl RxWorld {
         dispatch_global_kind(self, world, &mut emitter, kind, env);
 
         let scope_chain = compute_scope_chain(world, env.scope);
-        for scope in scope_chain {
+        for &scope in &scope_chain {
             dispatch_scoped_kind(self, world, &mut emitter, SignalKind::Any, scope, env);
             dispatch_scoped_kind(self, world, &mut emitter, kind, scope, env);
+        }
+        // A projectile can subscribe to its own caster without receiving every
+        // hand-pointer hit through a global MMS callback. Preserve the surface
+        // ancestry route and deliver global handlers only once.
+        if let EventSignal::RayIntersected { raycaster, .. } = event
+            && !scope_chain.contains(raycaster)
+        {
+            dispatch_scoped_kind(self, world, &mut emitter, SignalKind::Any, *raycaster, env);
+            dispatch_scoped_kind(self, world, &mut emitter, kind, *raycaster, env);
         }
     }
 }
@@ -528,6 +537,49 @@ mod tests {
 
     fn cid(ffi: u64) -> ComponentId {
         KeyData::from_ffi(ffi).into()
+    }
+
+    #[test]
+    fn ray_hits_reach_surface_ancestors_and_own_caster_once() {
+        use crate::engine::ecs::component::TransformComponent;
+        use std::sync::{Arc, Mutex};
+        let mut world = World::default();
+        let root = world.add_component(TransformComponent::new());
+        let surface = world.add_component(TransformComponent::new());
+        let caster = world.add_component(TransformComponent::new());
+        let other_caster = world.add_component(TransformComponent::new());
+        world.set_parent(surface, Some(root)).unwrap();
+        world.set_parent(caster, Some(root)).unwrap();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let mut rx = RxWorld::default();
+        for scope in [root, surface, caster, other_caster] {
+            let calls = calls.clone();
+            rx.add_handler_closure(SignalKind::RayIntersected, scope, move |_, _, _| {
+                calls.lock().unwrap().push(scope)
+            });
+        }
+        let global_calls = calls.clone();
+        rx.add_global_handler_closure(SignalKind::RayIntersected, move |_, _, _| {
+            global_calls.lock().unwrap().push(ComponentId::default())
+        });
+        let hit = EventSignal::RayIntersected {
+            raycaster: caster,
+            renderable: surface,
+            t: 1.,
+            origin: [0.; 3],
+            dir: [0., 0., -1.],
+        };
+        rx.dispatch_event_handlers(&mut world, &Signal::event(surface, hit.clone()));
+        assert_eq!(
+            *calls.lock().unwrap(),
+            [ComponentId::default(), surface, root, caster]
+        );
+        calls.lock().unwrap().clear();
+        rx.dispatch_event_handlers(&mut world, &Signal::event(caster, hit));
+        assert_eq!(
+            *calls.lock().unwrap(),
+            [ComponentId::default(), caster, root]
+        );
     }
 
     #[test]

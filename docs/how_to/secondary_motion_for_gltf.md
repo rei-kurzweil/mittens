@@ -65,3 +65,29 @@ SpringBone.from_root("[name='head_bow.001']")
 ```
 
 `motion_threshold` measures the spring anchor's motion relative to the avatar transform above its GLTF, in metres per second equivalent. Rotation contributes as motion at a 10 cm radius. `still_for` is seconds below that threshold. The chain blends toward imported rest rotations and parks while settled, then wakes when motion rises. Rei(mu)'s two ribbon chains use this in [`rei-mu-bow.mms`](../../assets/components/secondary_motion/rei-mu-bow.mms). Test the XR scene with `cargo run --release -- load 'examples/rei(mu).mms'`. Set `CAT_DEBUG_SECONDARY_MOTION=1` to print each chain's measured speed, still time, and rest blend weight while tuning in VR.
+
+## Pause while preserving the settled pose
+
+The shared graphics settings panel now has **Pause (keep pose)** alongside the
+existing enable toggle. The Sakura rooftop includes this panel beside its local
+scene controls. Let hair settle, turn Pause on, and compare frame timing while
+the visible pose stays unchanged. Turn it off to resume from that pose; stale
+spring velocity and accumulated time are discarded on resume. Pausing also skips
+the stillness constraints and spring-driven transform/skin updates. Other primary
+animation and tracking continue to control their own joints.
+
+MMS can use `GraphicsSettings.secondary_motion.pause(true)` and read
+`GraphicsSettings.secondary_motion.paused()`. Paused defaults to false and resets
+with the scene settings. Disable retains its existing behavior of restoring the
+imported rest pose, and takes precedence if both toggles are on.
+
+Ordinary chains currently do not automatically sleep at their gravity-settled
+pose. `ReturnToRestWhenStill` parks integration only after returning to imported
+rest, so it is a different behavior. Automatic sleep would need both low anchor
+motion and low tail motion, with wake-up for anchor/collider movement and pose
+changes; checking only the root could freeze hair before it finishes falling.
+
+The renderer already retains compute-deformed vertices and only updates them
+when skin/morph inputs change. A stationary paused avatar therefore reuses that
+cache without switching shaders or making a separate baked mesh. Confirm the
+remaining bottleneck with profiling before adding another frozen-mesh path.

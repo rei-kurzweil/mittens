@@ -93,7 +93,8 @@ pub enum EventSignal {
         attached: bool,
     },
 
-    /// A raycast intersected a renderable.
+    /// A raycast intersected a renderable. Delivered to the surface ancestry
+    /// and the raycaster itself, without duplicating global/overlapping handlers.
     RayIntersected {
         raycaster: ComponentId,
         renderable: ComponentId,

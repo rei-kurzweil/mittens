@@ -57,7 +57,7 @@ fn repo_path(rel: &str) -> PathBuf {
 
 // Supply initial settings when constructing scene fixtures. Tests that interact
 // with settings retain the services through Universe instead.
-fn start_settings_scene(
+pub(super) fn start_settings_scene(
     source: &str,
     path: &str,
     world: &mut World,

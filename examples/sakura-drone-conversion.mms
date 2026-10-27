@@ -4,6 +4,7 @@
 // Desktop preview: WASD + mouse, without a second avatar or physics capsule.
 let desktop_view_enabled = false
 let xr_view_enabled = true
+let initial_lumae_count = 0 // opt in with the rooftop pedestal; useful for profiling
 let initial_full_buildings = 8 // surrounding buildings, 0..8; player tower stays detailed
 let ground_color = [0.40, 0.31, 0.32]
 
@@ -25,6 +26,8 @@ let pistol_scale = 0.085
 let pistol_hand_offset = 0.05 // metres back toward the wrist, in the held grip frame
 
 import { info_panel } from "../assets/components/ui/info_panel.mms"
+import { ui_unlit_material } from "../assets/components/materials/ui_unlit.mms"
+import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
 import { mini_explosion } from "../assets/components/mini-explosion.mms"
 import { metal_can } from "../assets/components/targets/metal-can.mms"
 import { matcap_metal } from "../assets/components/materials/matcap_metal.mms"
@@ -38,6 +41,9 @@ import { display_car } from "../assets/components/vehicles/display_car.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
 import { rei_mu_bow_secondary_motion } from "../assets/components/secondary_motion/rei-mu-bow.mms"
+import { lumae_secondary_motion } from "../assets/components/secondary_motion/lumae.mms"
+import { lumae_colliders } from "../assets/components/colliders/lumae.mms"
+import { pose as lumae_relaxed_pose } from "../assets/components/poses/lumae/000-relaxed.pose.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
@@ -110,11 +116,6 @@ fn handle_laser_hit(hit) {
     let on_hit = hit.renderable.on_hit
     if on_hit != null { on_hit(hit) }
 }
-let pistol_laser = laser_machine_pistol({
-    name = "sakura_pistol_laser" length = 40.0 flash_size = 0.28 beam_radius = 0.025
-    ray_origin_offset = 0.06 on_hit = handle_laser_hit
-})
-let pistol_held = { active = false hand = "" pointer = null }
 let white = [0.94, 0.96, 0.97]
 let pink = [0.88, 0.65, 0.73]
 let blue = [0.64, 0.78, 0.86]
@@ -127,7 +128,8 @@ fn box(position, size, color) {
 }
 
 // The player tower never belongs to the regenerated neighborhood subtree.
-pool_building("sakura_rooftop_building", [-18.0, 0.0, 0.0], 8, 1.0, true, tiles, pink, true)
+// Only this building gets separate storey/roof chunks for local CSG rebuilds.
+pool_building("sakura_rooftop_building", [-18.0, 0.0, 0.0], 8, 1.0, true, tiles, pink, true, true)
 let neighborhood = T { name = "sakura_neighborhood" }
 neighborhood
 let neighborhood_specs = [
@@ -152,7 +154,7 @@ fn regenerate_buildings(value) {
         name = "sakura_neighbor_generation"
         for index in range(8) {
             let spec = neighborhood_specs[index]
-            pool_building(spec.label, spec.position, spec.floors, spec.side, false, tiles, spec.color, index < count)
+            pool_building(spec.label, spec.position, spec.floors, spec.side, false, tiles, spec.color, index < count, false)
         }
     }
     neighborhood.attach(generation)
@@ -217,6 +219,9 @@ T.position(-21.1, roof_height + 2.2, -3.6) {
     info_panel({ root_name = "sakura_scene_controls" title = "Sakura / scene detail"
         width_gu = 32.0 unit_scale = 0.05 content_factory = scene_controls })
 }
+T.position(-24.2, roof_height + 2.2, -1.3) {
+    graphics_settings_panel({ root_name = "sakura_graphics_settings" })
+}
 
 // Long road, tiled pavements, lane markings and two existing display-car assets.
 box([0.0, -0.12, 0.0], [14.0, 0.24, 112.0], [0.12, 0.14, 0.19])
@@ -243,27 +248,6 @@ T.position(-18.0, roof_height, 0.0) {
         }
         box([side * 1.15, 0.89, -4.15], [0.12, 0.10, 1.12], [0.22, 0.24, 0.31])
     }
-    // Raw GLB: 6.593 m along Z. At 0.085 it is 56 cm long.
-    // Roll onto its side, then turn the barrel along the bench's X axis.
-    // Its -0.25 local-X minimum sets the 2.125 cm tabletop clearance.
-    // The root is the held grip frame. Its bench pose cancels the child's
-    // upright -Z-facing orientation; to_hand eases this root to hand-local identity.
-    // Compensate for the held-model offset so the resting model stays in place.
-    T.position(pistol_hand_offset, 1.045, -3.80).rotation_quat(0.5, -0.5, -0.5, 0.5) {
-        name = "sakura_machine_pistol_placement"
-        Grabbable.to_hand(true).hand_offset([0.0, 0.0, -0.105]) {}
-        // Measured GLB muzzle: +Z=3.342659, Y=1.048425 in model space.
-        // Effects live in metre-scaled grip space, outside the 0.085 model scale.
-        T.position(0.0, 1.048425 * pistol_scale, pistol_hand_offset - 3.342659 * pistol_scale - 0.015) {
-            pistol_laser.root
-        }
-        T.position(0.0, 0.0, pistol_hand_offset).rotation(0.0, 3.14159265, 0.0).scale(pistol_scale, pistol_scale, pistol_scale) {
-            GLTF.new("assets/models/sakura-machine-pistol.glb") {
-                name = "sakura_machine_pistol"
-                pistol_material
-            }
-        }
-    }
     // A small parts tray and a bench lamp leave the centre clear for the model.
     ceramic_box([1.12, 1.035, -4.12], [0.40, 0.045, 0.54], white, tiles)
     box([-1.30, 1.04, -4.46], [0.20, 0.06, 0.22], [0.22, 0.24, 0.31])
@@ -284,6 +268,71 @@ box([-14.2, roof_height + 0.80, -4.2], [2.4, 0.12, 0.70], [0.30, 0.32, 0.40])
 for x in [-15.1, -13.3] {
     box([x, roof_height + 0.37, -4.2], [0.10, 0.74, 0.50], [0.30, 0.32, 0.40])
 }
+
+// Lumae is opt-in. Safe anchors keep arrivals out of the firing lane,
+// stairwell, pistol table and planter; a small deterministic jitter varies each placement.
+let lumae_spawn_state = { count = 0 }
+let lumae_group = T { name = "sakura_lumae_group" }
+lumae_group
+let lumae_count = Text { name = "sakura_lumae_count" "Lumae: 0" }
+let lumae_spawn_anchors = [
+    [-23.6, -4.1], [-22.7, -2.6], [-23.8, -0.1],
+    [-12.0, -4.0], [-12.0, -2.0], [-12.0, 0.0],
+    [-20.0, 4.7], [-18.0, 4.7], [-16.0, 4.7],
+]
+fn spawn_fraction(seed) {
+    let value = Math.sin(seed * 12.9898) * 43758.5453
+    return value - Math.floor(value)
+}
+fn spawn_lumae() {
+    let count = lumae_spawn_state.count
+    let index = count - Math.floor(count / 9.0) * 9.0
+    let anchor = lumae_spawn_anchors[index]
+    let x = anchor[0] + (spawn_fraction(count + 1.0) - 0.5) * 0.4
+    let z = anchor[1] + (spawn_fraction(count + 17.0) - 0.5) * 0.4
+    lumae_spawn_state.count = count + 1
+    let label = "sakura_lumae_" + lumae_spawn_state.count
+    let avatar = T.position(x, roof_height, z) {
+        name = label + "_placement"
+        GLTF.new("assets/models/lumae.glb") {
+            name = label
+            pistol_material
+            lumae_relaxed_pose()
+            lumae_colliders()
+            lumae_secondary_motion()
+        }
+    }
+    lumae_group.attach(avatar)
+    lumae_count.set_text("Lumae: " + lumae_spawn_state.count)
+}
+let add_lumae = T {
+    name = "sakura_add_lumae_button"
+    Grabbable.off()
+    Raycastable.click_only() { interaction_priority(150.0) }
+    Style {
+        display("flex") width(12.0) height(3.5) align_items("center") justify_content("center")
+        font_size(1.0) background_color([1.0, 0.86, 0.90, 1.0]) color([0.0, 0.0, 0.0, 1.0]) background_z(-0.04)
+    }
+    T.position(0.0, 0.0, 0.03) { Text { "Add Lumae" } }
+}
+on(add_lumae, "Click", fn(event) { spawn_lumae() })
+T.position(-17.0, roof_height, 1.2) {
+    name = "sakura_lumae_pedestal"
+    ceramic_box([0.0, 0.425, 0.0], [0.6, 0.85, 0.6], white, tiles)
+    ceramic_box([0.0, 0.89, 0.0], [0.64, 0.08, 0.64], pink, tiles)
+    T.position(-0.24, 0.94, -0.12).rotation(-1.57079633, 0.0, 0.0).scale(0.04, 0.04, 0.04) {
+        ui_unlit_material()
+        LayoutRoot {
+            available_width(12.0)
+            T {
+                Style { display("flex") flex_direction("column") width(12.0) row_gap(0.4) color([0.0, 0.0, 0.0, 1.0]) }
+                add_lumae
+                T { Style { display("block") height(2.0) font_size(0.9) } lumae_count }
+            }
+        }
+    }
+}
+for index in range(initial_lumae_count) { spawn_lumae() }
 
 // The upgraded Rei(mu) tree: one rooftop specimen and two street planters.
 fn sakura_planter(label, position) {
@@ -404,30 +453,65 @@ if xr_view_enabled {
     XR.off()
 }
 
-// Input handling stays dormant until this particular object is held. Release
-// cancels pending shots and the weapon flash; launched projectiles finish independently.
-let pistol_grip = query("[name='sakura_machine_pistol_placement']")
-on(pistol_grip, "GrabStart", fn(event) {
-    if event.target == pistol_grip {
-        pistol_held.active = true
-        pistol_held.pointer = event.pointer
-        pistol_held.hand = "Desktop"
-        if event.pointer == query("[name='sakura_left_hand_pointer']") { pistol_held.hand = "Left" }
-        if event.pointer == query("[name='sakura_right_hand_pointer']") { pistol_held.hand = "Right" }
+// Weapon table near the spawn end of the roof, to the player's left.
+T.position(-20.3, roof_height, 0.2) {
+    name = "sakura_pistol_table"
+    ceramic_box([0.0, 0.90, 0.0], [2.8, 0.12, 1.15], white, tiles)
+    box([0.0, 0.974, 0.0], [2.64, 0.025, 1.0], [0.91, 0.72, 0.78])
+    for x in [-1.18, 1.18] {
+        for z in [-0.43, 0.43] { box([x, 0.42, z], [0.10, 0.84, 0.10], [0.30, 0.32, 0.40]) }
     }
-})
-on(pistol_grip, "GrabEnd", fn(event) {
-    if event.target == pistol_grip && event.pointer == pistol_held.pointer {
-        pistol_held.active = false
-        pistol_held.pointer = null
-        pistol_laser.use_end()
+}
+fn rooftop_pistol(label, effect_label, x) {
+    let tool = laser_machine_pistol({
+        name = effect_label length = 40.0 flash_size = 0.28 beam_radius = 0.025
+        ray_origin_offset = 0.06 on_hit = handle_laser_hit
+    })
+    let held = { active = false hand = "" pointer = null }
+    // Preserve the held grip frame and the original rolled tabletop orientation.
+    let grip = T.position(x + pistol_hand_offset, roof_height + 1.015, 0.2).rotation_quat(0.5, -0.5, -0.5, 0.5) {
+        name = label + "_placement"
+        Grabbable.to_hand(true).hand_offset([0.0, 0.0, -0.105]) {}
+        T.position(0.028, 0.085, 0.0402).rotation(0.0, 1.57079633, 0.0) { tool.mode_selector }
+        T.position(0.0, 1.048425 * pistol_scale, pistol_hand_offset - 3.342659 * pistol_scale - 0.015) { tool.root }
+        T.position(0.0, 0.0, pistol_hand_offset).rotation(0.0, 3.14159265, 0.0).scale(pistol_scale, pistol_scale, pistol_scale) {
+            GLTF.new("assets/models/sakura-machine-pistol.glb") { name = label pistol_material }
+        }
     }
-})
-on_global("XrButtonDown", fn(event) {
-    if pistol_held.active && event.hand == pistol_held.hand {
-        if event.control == "LeftTrigger" || event.control == "RightTrigger" { pistol_laser.use_start({ user = query("[name='sakura_reimu_avatar_control']") }) }
-    }
-})
-on_global("KeyDown", fn(event) {
-    if pistol_held.active && pistol_held.hand == "Desktop" && event.code == "Space" { pistol_laser.use_start({ user = pistol_held.pointer }) }
-})
+    on(grip, "GrabStart", fn(event) {
+        if event.target == grip {
+            held.active = true
+            held.pointer = event.pointer
+            held.hand = "Desktop"
+            if event.pointer == query("[name='sakura_left_hand_pointer']") { held.hand = "Left" }
+            if event.pointer == query("[name='sakura_right_hand_pointer']") { held.hand = "Right" }
+        }
+    })
+    on(grip, "GrabEnd", fn(event) {
+        if event.target == grip && event.pointer == held.pointer {
+            held.active = false
+            held.pointer = null
+            tool.use_end()
+        }
+    })
+    on_global("XrButtonDown", fn(event) {
+        if held.active && event.hand == held.hand {
+            if event.control == "LeftTrigger" || event.control == "RightTrigger" { tool.use_start({ user = query("[name='sakura_reimu_avatar_control']") }) }
+        }
+    })
+    on_global("XrButtonUp", fn(event) {
+        if held.active && event.hand == held.hand {
+            if event.control == "LeftTrigger" || event.control == "RightTrigger" { tool.use_end() }
+        }
+    })
+    on_global("KeyDown", fn(event) {
+        if held.active && held.hand == "Desktop" && event.code == "Space" { tool.use_start({ user = held.pointer }) }
+    })
+    on_global("KeyUp", fn(event) {
+        if held.active && held.hand == "Desktop" && event.code == "Space" { tool.use_end() }
+    })
+    return grip
+}
+rooftop_pistol("sakura_machine_pistol", "sakura_pistol_laser", -21.15)
+rooftop_pistol("sakura_machine_pistol_2", "sakura_pistol_laser_2", -20.30)
+rooftop_pistol("sakura_machine_pistol_3", "sakura_pistol_laser_3", -19.45)

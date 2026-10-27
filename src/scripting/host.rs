@@ -615,6 +615,45 @@ impl mms::Host for MittensHost<'_, '_> {
                         )))
                     }
                     super::runtime_config::MittensBinding::Api(
+                        super::runtime_config::MittensApi::SecondaryMotionPause,
+                    ) => {
+                        let [mms::TransportValue::Bool(paused)] = args.as_slice() else {
+                            return Err(mms::HostError::failure(
+                                "GraphicsSettings.secondary_motion.pause",
+                                "expects one boolean",
+                            ));
+                        };
+                        let settings = self.graphics_settings.as_deref_mut().ok_or_else(|| {
+                            mms::HostError::unavailable(
+                                "GraphicsSettings.secondary_motion.pause",
+                                "graphics settings service is unavailable",
+                            )
+                        })?;
+                        if self.deferred_callback_phase != Some(DeferredCallbackHostPhase::Audio) {
+                            settings.set_secondary_motion_paused(*paused, self.emit);
+                        }
+                        Ok(S::Unit)
+                    }
+                    super::runtime_config::MittensBinding::Api(
+                        super::runtime_config::MittensApi::SecondaryMotionPaused,
+                    ) => {
+                        if !args.is_empty() {
+                            return Err(mms::HostError::failure(
+                                "GraphicsSettings.secondary_motion.paused",
+                                "expects no arguments",
+                            ));
+                        }
+                        let settings = self.graphics_settings.as_deref().ok_or_else(|| {
+                            mms::HostError::unavailable(
+                                "GraphicsSettings.secondary_motion.paused",
+                                "graphics settings service is unavailable",
+                            )
+                        })?;
+                        Ok(S::Transport(mms::TransportValue::Bool(
+                            settings.secondary_motion_paused(),
+                        )))
+                    }
+                    super::runtime_config::MittensBinding::Api(
                         super::runtime_config::MittensApi::EmitData,
                     ) => self.emit_data(args),
                     super::runtime_config::MittensBinding::Api(

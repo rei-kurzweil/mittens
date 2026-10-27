@@ -64,7 +64,7 @@ the older `.world.trs()` syntax is unavailable through the current RuntimeSpec.
 
 `assets/components/laser-machine-pistol.mms` exports
 `laser_machine_pistol(options)`, returning
-`{ root, animation, device_state, use_start, use_end, flash }`.
+`{ root, animation, semi_animation, auto_animation, device_state, use_start, use_end, flash, mode_selector, set_mode }`. `animation` is the finite Burst clip.
 
 ```mms
 let pistol = laser_machine_pistol({
@@ -79,19 +79,27 @@ pistol.use_start({ user = avatar })
 pistol.use_end()
 ```
 
-`use_start` returns false while firing and true when it accepts a burst. The tool
-owns three shots at 0, 33.3 and 66.7 ms (2.5 frames apart at 75 fps), with increasing
-deterministic spread. Each samples its aim frame's current world pose and
-restarts the attached flash. The complete recording
-`assets/audio/tool/laser_machine_pistol_C.0.wav` plays once per accepted burst.
-The firing lock lasts 450 ms, including the 421 ms audio tail. `use_end()`
-cancels pending shots and hides the flash; launched projectiles finish
-independently. Release/regrab cannot bypass the lock.
+`use_start` accepts a fresh trigger press when idle. Semi (the default) fires
+one shot; Burst fires three at 0, 33.3 and 66.7 ms, with increasing deterministic
+spread. Semi plays `laser_machine_pistol_A.0.wav`; Burst plays
+`laser_machine_pistol_C.0.wav`. Both retain the 450 ms firing lock.
+Holding the trigger does not repeat either mode.
+Each shot samples its aim frame's current world pose and restarts the flash.
+`use_end()` cancels pending shots and hides the flash; launched projectiles finish
+independently. Release/regrab cannot bypass a finite clip's lock.
 
-`device_state` holds `firing`, `cancelled`, `bursts_fired`, `shots_fired`,
-`ammunition`, `user` and `tool`. Ammunition starts null; capacity, consumption and
-reloading are not implemented. Without `on_hit`, the tool uses a mini explosion
-as its default impact policy. Sakura supplies its own callback for target routing.
+Auto runs at 70% of Burst's shot rate: 21 shots/s, spaced 47.6 ms apart, instead
+of Burst's unchanged 33.3 ms spacing. Its native three-shot loop lasts 142.9 ms,
+with no pause between cycles. Trigger release/drop pauses it immediately.
+Every visual `AutoCycle` event plays `laser_machine_pistol_B.0.wav`; keeping this
+outside audio lookahead prevents scheduling an extra recording after release.
+Mode changes away from a running Auto loop stop it and require a new press.
+
+`device_state` holds `firing`, `cancelled`, `trigger_held`, `mode`, `burst_mode`,
+`bursts_fired`, `shots_fired`, `ammunition`, `user`, `requested_user` and `tool`.
+Ammunition starts null; capacity, consumption and reloading are not implemented.
+Without `on_hit`, the tool uses a mini explosion as its default impact policy.
+Sakura supplies its own callback for target routing.
 
 The Sakura scene gates use on GrabStart/GrabEnd and the holding hand's trigger;
 desktop holding uses Space. These scene adapters translate input into tool
@@ -151,3 +159,25 @@ The Vulkan scene test verifies all 18 can surfaces have the shared custom metal
 material and matcap texture, casts through the real BVH to an individual can,
 and renders the bench and target stand with the existing stereo views. VR grip
 alignment, flash motion, beam readability and target feedback remain manual.
+
+## Receiver mode selector and automatic firing
+
+The returned `mode_selector` is a Selection with Semi, Burst and Auto stacked
+vertically. Mount it independently of the muzzle effects. Sakura places it on
+the right receiver face, with click-only raycasts and Grabbable.off so the other
+hand can change mode while the holding hand keeps its grip. A `#` marks the active
+mode. All options use pastel pink backgrounds and black text. Their root scale
+is now 0.0018 (another 40% reduction from 0.003); each option is 2.52 cm wide.
+The mount remains at held-local `[0.028, 0.085, 0.0402]` m, including the earlier
+rearward shift. `set_mode("semi" | "burst" | "auto")` exposes the same policy.
+Releasing the other hand's pointer trigger leaves firing alone.
+
+`RayIntersected` retains surface/ancestor and global delivery, and also reaches
+a scoped listener on the casting component itself, once. Projectile slots use
+this route, so idle pistol slots do not enter MMS for unrelated pointer hits.
+The three Sakura pistols each keep independent modes, animations and input state.
+
+Deferred audio work: add reverb and compression audio units before shaping the
+last automatic shot's ring-out. The desired effect is that the final shot's
+reverb/tail becomes audible as the firing stops driving the compressor. Keep
+this separate from the current B/C recording selection; no effects are added yet.

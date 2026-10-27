@@ -1,13 +1,14 @@
 // Importable graphics settings panel; GraphicsSettingsSystem owns applied values.
 import { info_panel, info_panel_body } from "../ui/info_panel.mms"
+import { ui_unlit_material } from "../materials/ui_unlit.mms"
 
 let QUALITY_STEPS = [64, 128, 256, 512, 1024, 1440, 2048]
 let UNIT_SCALE = 0.08
 let ROW_HEIGHT = 3.2
-let TEXT_COLOR = [0.96, 0.93, 0.82, 1.0]
-let BODY_COLOR = [0.055, 0.065, 0.09, 0.98]
-let ROW_COLOR = [0.10, 0.12, 0.16, 1.0]
-let GOLD = [1.0, 0.82, 0.24, 1.0]
+let TEXT_COLOR = [0.0, 0.0, 0.0, 1.0]
+let BODY_COLOR = [0.98, 0.95, 0.84, 1.0]
+let ROW_COLOR = [0.95, 0.91, 0.79, 1.0]
+let ACCENT_COLOR = [0.57, 0.47, 0.31, 1.0]
 let TRACK_WIDTH = 10.5 * UNIT_SCALE
 let THUMB_RADIUS = 0.075
 let SLIDER_WIDTH = TRACK_WIDTH - THUMB_RADIUS * 2.0 - 0.04
@@ -25,6 +26,7 @@ fn setting_toggle(enabled, control_name) {
 fn read_settings(state) {
     state.enabled = GraphicsSettings.mirrors.enabled()
     state.motion_enabled = GraphicsSettings.secondary_motion.enabled()
+    state.motion_paused = GraphicsSettings.secondary_motion.paused()
     state.quality = GraphicsSettings.mirrors.quality_override()
     state.quality_index = 3
     if state.quality != null {
@@ -49,10 +51,10 @@ fn toggle_control(toggle, label, control_name) {
         Style {
             display("flex") width(5.0) height(2.1)
             align_items("center") justify_content("center") font_size(0.65)
-            color(TEXT_COLOR) background_color([0.20, 0.23, 0.29, 1.0])
+            color(TEXT_COLOR) background_color([0.88, 0.81, 0.66, 1.0])
             background_z(0.01)
         }
-        Text { label }
+        T.position(0.0, 0.0, 0.03) { Text { label } }
     }
 }
 
@@ -72,7 +74,7 @@ fn section_heading(text, heading_name) {
         Style {
             display("flex") width(100%) height(2.4)
             align_items("center") padding_xy(0.35, 0.0)
-            font_size(0.75) color(GOLD)
+            font_size(0.75) color(TEXT_COLOR)
         }
         T.position(0.0, 0.0, 0.03) { Text { text } }
     }
@@ -115,13 +117,13 @@ fn settings_content(state) {
     }
     let track = T.scale(TRACK_WIDTH * 0.5, 0.025, 0.10) {
         R.cube() {
-            C.rgba(0.35, 0.30, 0.17, 1.0)
+            C.rgba(0.73, 0.65, 0.50, 1.0)
             Raycastable.enabled() { interaction_priority(120.0) }
         }
     }
     let thumb = T.scale(THUMB_RADIUS, 0.14, 0.14) {
         R.sphere() {
-            C.rgba(GOLD[0], GOLD[1], GOLD[2], GOLD[3])
+            C.rgba(ACCENT_COLOR[0], ACCENT_COLOR[1], ACCENT_COLOR[2], ACCENT_COLOR[3])
             Raycastable.enabled() { interaction_priority(120.0) }
         }
     }
@@ -136,6 +138,12 @@ fn settings_content(state) {
     let motion_readout = Text {
         name = "graphics_secondary_motion_readout"
         enabled_text(state.motion_enabled)
+    }
+    let pause_toggle = setting_toggle(state.motion_paused, "graphics_secondary_motion_pause_toggle")
+    let pause_control = toggle_control(pause_toggle, "Pause", "graphics_secondary_motion_pause_control")
+    let pause_readout = Text {
+        name = "graphics_secondary_motion_pause_readout"
+        enabled_text(state.motion_paused)
     }
 
     on(mirror_toggle, "ToggleChanged", fn(event) {
@@ -153,6 +161,11 @@ fn settings_content(state) {
         state.motion_enabled = GraphicsSettings.secondary_motion.enabled()
         motion_readout.set_text(enabled_text(state.motion_enabled))
     })
+    on(pause_toggle, "ToggleChanged", fn(event) {
+        GraphicsSettings.secondary_motion.pause(event.value)
+        state.motion_paused = GraphicsSettings.secondary_motion.paused()
+        pause_readout.set_text(enabled_text(state.motion_paused))
+    })
 
     return T {
         name = "graphics_settings_content"
@@ -162,6 +175,7 @@ fn settings_content(state) {
         setting_row("Mirror resolution", quality_slider, quality_readout)
         section_heading("Secondary motion", "graphics_secondary_motion_heading")
         setting_row("Toggle secondary motion", motion_control, motion_readout)
+        setting_row("Pause (keep pose)", pause_control, pause_readout)
     }
 }
 
@@ -170,17 +184,17 @@ fn settings_content(state) {
 export fn graphics_settings_panel(options) {
     let title = "Graphics settings"
     if options["title"] != null { title = options.title }
-    let state = { enabled = true motion_enabled = true quality = null quality_index = 3 }
+    let state = { enabled = true motion_enabled = true motion_paused = false quality = null quality_index = 3 }
     let panel = info_panel({
         root_name = options.root_name
         width_gu = 32.0
         unit_scale = UNIT_SCALE
         title = title
-        title_background_color = [0.16, 0.14, 0.09, 0.98]
+        title_background_color = [0.93, 0.87, 0.71, 1.0]
         title_text_color = TEXT_COLOR
-        toggle_background_color = [0.25, 0.20, 0.10, 1.0]
-        toggle_icon_color = GOLD
-        toggle_icon_glow_intensity = 0.3
+        toggle_background_color = [0.88, 0.81, 0.66, 1.0]
+        toggle_icon_color = TEXT_COLOR
+        toggle_icon_glow_intensity = 0.0
         body_background_color = BODY_COLOR
         body_text_color = TEXT_COLOR
         content = settings_content(state)
@@ -188,6 +202,8 @@ export fn graphics_settings_panel(options) {
     // Grip grabbing reparents the inner panel root away from its layout slot.
     // Keep selection exclusion and restore delivery on that moving root.
     let panel_root = panel.query("#" + options.root_name)
+    let panel_material = ui_unlit_material()
+    panel_root.attach(panel_material)
     let selection_guard = Selectable.off()
     panel_root.attach(selection_guard)
     let body_mount = panel.query("#accordion_body_mount")
@@ -219,6 +235,10 @@ export fn graphics_settings_panel(options) {
                 let motion_readout = current_panel.query("#graphics_secondary_motion_readout")
                 if motion_toggle { motion_toggle.sync_value(state.motion_enabled) }
                 if motion_readout { motion_readout.set_text(enabled_text(state.motion_enabled)) }
+                let pause_toggle = current_panel.query("#graphics_secondary_motion_pause_toggle")
+                let pause_readout = current_panel.query("#graphics_secondary_motion_pause_readout")
+                if pause_toggle { pause_toggle.sync_value(state.motion_paused) }
+                if pause_readout { pause_readout.set_text(enabled_text(state.motion_paused)) }
             }
         }
     })

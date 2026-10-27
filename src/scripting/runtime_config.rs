@@ -51,6 +51,8 @@ pub enum MittensApi {
     MirrorsResetQuality,
     SecondaryMotionToggle,
     SecondaryMotionEnabled,
+    SecondaryMotionPause,
+    SecondaryMotionPaused,
     XrFloorCorrectionSet,
     XrFloorCorrectionGet,
     FileReadText,
@@ -1087,7 +1089,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     component
                         .constructor("root", any(1))
                         .builder_call("root", any(1))
-                        .property("root", mms::ValueType::Any);
+                        .property("root", mms::ValueType::Any)
+                        .builder_call(
+                            "visual_feedback",
+                            component_signature([mms::ValueType::Bool]),
+                        )
+                        .property("visual_feedback", mms::ValueType::Bool);
                 }
                 "ObserverRouter" => {
                     for method in ["blacklist", "whitelist"] {
@@ -1809,6 +1816,16 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 "enabled",
                 mms::ValueSignature::new(vec![], mms::ValueType::Bool),
                 MittensBinding::Api(MittensApi::SecondaryMotionEnabled),
+            );
+            motion.api(
+                "pause",
+                mms::ValueSignature::new(vec![mms::ValueType::Bool], mms::ValueType::Null),
+                MittensBinding::Api(MittensApi::SecondaryMotionPause),
+            );
+            motion.api(
+                "paused",
+                mms::ValueSignature::new(vec![], mms::ValueType::Bool),
+                MittensBinding::Api(MittensApi::SecondaryMotionPaused),
             );
         });
     });

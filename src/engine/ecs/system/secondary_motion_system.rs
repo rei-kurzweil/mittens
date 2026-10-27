@@ -87,6 +87,7 @@ struct Profile {
 
 #[derive(Debug, Default)]
 pub struct SecondaryMotionSystem {
+    paused: bool,
     registered: HashSet<ComponentId>,
     roots: HashMap<ComponentId, RootRuntime>,
     chains: HashMap<ComponentId, ChainRuntime>,
@@ -809,6 +810,23 @@ impl SecondaryMotionSystem {
         rest_weights: &HashMap<ComponentId, f32>,
         globally_enabled: bool,
     ) -> Vec<ComponentId> {
+        self.tick_with_playback_settings(world, dt, rest_weights, globally_enabled, false)
+    }
+
+    pub fn tick_with_playback_settings(
+        &mut self,
+        world: &mut World,
+        dt: f32,
+        rest_weights: &HashMap<ComponentId, f32>,
+        globally_enabled: bool,
+        paused: bool,
+    ) -> Vec<ComponentId> {
+        // Disabling still restores rest pose, even when the pause toggle is on.
+        if globally_enabled && paused {
+            self.paused = true;
+            return Vec::new();
+        }
+        let resuming = std::mem::replace(&mut self.paused, false);
         if self.chains.is_empty() {
             return Vec::new();
         }
@@ -873,6 +891,11 @@ impl SecondaryMotionSystem {
                 .copied()
                 .unwrap_or(0.0)
                 .clamp(0.0, 1.0);
+            if resuming {
+                // Rebase tails to the retained live pose after parent motion during
+                // the pause. Discard stale velocity/time without restoring bind rotations.
+                reset_state(world, state);
+            }
             if !state.enabled || !dt.is_finite() || dt > 0.25 {
                 reset_state(world, state);
                 state.enabled = true;

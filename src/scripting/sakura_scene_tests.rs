@@ -56,7 +56,7 @@ fn sakura_scene_has_open_ceramic_towers_typed_sky_rooftop_rig_and_reset() {
         let mut rx = RxWorld::default();
         let mut queue = CommandQueue::new();
         let mut assets = RenderAssets::new();
-        let (mut session, _) = RuntimeSpecSession::start_at_path(
+        let (mut session, _) = super::tests::start_settings_scene(
             &source,
             "examples/sakura-drone-conversion.mms",
             &mut world,
@@ -124,8 +124,17 @@ fn sakura_scene_has_open_ceramic_towers_typed_sky_rooftop_rig_and_reset() {
                 .iter()
                 .filter(|model| model.uri == "assets/models/sakura-machine-pistol.glb")
                 .count(),
-            1
+            3
         );
+        assert_eq!(
+            models
+                .iter()
+                .filter(|model| model.uri == "assets/models/lumae.glb")
+                .count(),
+            0
+        );
+        assert!(authored_position(&world, named("sakura_pistol_table"))[0] < -18.0);
+        assert!(authored_position(&world, named("sakura_lumae_pedestal"))[2] > -1.4);
         let background = world
             .all_components()
             .filter_map(|id| world.get_component_by_id_as::<BackgroundComponent>(id))
@@ -201,8 +210,8 @@ fn sakura_scene_has_open_ceramic_towers_typed_sky_rooftop_rig_and_reset() {
         let pistol = named("sakura_machine_pistol");
         let model = authored_model(&world, pistol);
         assert!(
-            (model[3][2] + 3.8).abs() < 0.001,
-            "pistol should be near the front of the bench"
+            (model[3][2] - 0.2).abs() < 0.001,
+            "pistol should be on the spawn-side weapon table"
         );
         for (column, row) in [(0, 1), (1, 2), (2, 0)] {
             assert!(
@@ -334,7 +343,7 @@ fn rei_mu_garden_uses_the_same_sakura_leaf_prefab() {
     let mut rx = RxWorld::default();
     let mut queue = CommandQueue::new();
     let mut assets = RenderAssets::new();
-    let (_session, _) = RuntimeSpecSession::start_at_path(
+    let (_session, _) = super::tests::start_settings_scene(
         source,
         "examples/rei(mu).mms",
         &mut world,
@@ -374,7 +383,7 @@ fn component_field_example_uses_queries_and_shared_function_values() {
     let mut rx = RxWorld::default();
     let mut queue = CommandQueue::new();
     let mut assets = RenderAssets::new();
-    let (_, output) = RuntimeSpecSession::start_at_path(
+    let (_, output) = super::tests::start_settings_scene(
         &source,
         "examples/proposals/component-instance-methods.mms",
         &mut world,
@@ -420,7 +429,7 @@ fn sakura_pistol_grab_gates_burst_and_release_only_stops_weapon_flash() {
     let mut rx = RxWorld::default();
     let mut queue = CommandQueue::new();
     let mut assets = RenderAssets::new();
-    let (mut session, _) = RuntimeSpecSession::start_at_path(
+    let (mut session, _) = super::tests::start_settings_scene(
         include_str!("../../examples/sakura-drone-conversion.mms"),
         "examples/sakura-drone-conversion.mms",
         &mut world,
@@ -431,6 +440,21 @@ fn sakura_pistol_grab_gates_burst_and_release_only_stops_weapon_flash() {
     .unwrap();
     let grip = named(&world, "sakura_machine_pistol_placement");
     let pointer = named(&world, "sakura_right_hand_pointer");
+    let mode = named(&world, "sakura_pistol_laser_mode_burst");
+    deliver_scene_event(
+        &mut world,
+        &mut rx,
+        &mut session,
+        &mut assets,
+        &mut queue,
+        mode,
+        EventSignal::Click {
+            raycaster: pointer,
+            renderable: mode,
+            hit_point: [0.; 3],
+            screen_pos_px: None,
+        },
+    );
     let burst = named(&world, "sakura_pistol_laser_burst");
     let shots = ["first", "second", "third"]
         .map(|shot| named(&world, &format!("sakura_pistol_laser_{shot}_shot")));
@@ -711,6 +735,20 @@ fn sakura_pistol_grab_gates_burst_and_release_only_stops_weapon_flash() {
     assert!(hit.iter().any(|intent| matches!(intent, IntentValue::SetText {component_id,text} if *component_id == readout && text == "Can hits: 1")));
     let other = named(&world, "sakura_bench_can_2_hit_reaction");
     assert!(!hit.iter().any(|intent| matches!(intent, IntentValue::SetAnimationState {component_id,..} if *component_id == other)));
+    deliver_scene_event(
+        &mut world,
+        &mut rx,
+        &mut session,
+        &mut assets,
+        &mut queue,
+        ComponentId::default(),
+        EventSignal::XrButtonUp {
+            source_component: pointer,
+            hand: ControllerHand::Right,
+            control: XrButtonControl::RightTrigger,
+            value: 0.,
+        },
+    );
     let next = deliver_scene_event(
         &mut world,
         &mut rx,
@@ -798,7 +836,7 @@ fn hit_number_rises_and_retires_its_world_subtree() {
     let mut rx = RxWorld::default();
     let mut queue = CommandQueue::new();
     let mut assets = RenderAssets::new();
-    let (mut session, initial) = RuntimeSpecSession::start_at_path(
+    let (mut session, initial) = super::tests::start_settings_scene(
         r#"import { hit_number } from "../assets/components/hit-number.mms"
         let number = hit_number({hit_point=[2.0,3.0,4.0] origin=[2.0,3.0,6.0]})
         number.root
@@ -892,7 +930,7 @@ fn laser_hit_spawns_world_space_impact_only_for_its_own_ray_and_despawns() {
     let mut rx = RxWorld::default();
     let mut queue = CommandQueue::new();
     let mut assets = RenderAssets::new();
-    let (mut session, initial) = RuntimeSpecSession::start_at_path(
+    let (mut session, initial) = super::tests::start_settings_scene(
         r#"import { laser } from "../assets/components/laser.mms"
         import { mini_explosion } from "../assets/components/mini-explosion.mms"
         let source_tool=T {}
@@ -1050,7 +1088,7 @@ fn fired_laser_copies_world_trs_and_stays_put_when_barrel_moves() {
     let mut rx = RxWorld::default();
     let mut queue = CommandQueue::new();
     let mut assets = RenderAssets::new();
-    let (mut session, _) = RuntimeSpecSession::start_at_path(
+    let (mut session, _) = super::tests::start_settings_scene(
         r#"
         import { laser } from "../assets/components/laser.mms"
         let gun=laser({name="frozen_laser" ray_origin_offset=0.06})
@@ -1126,4 +1164,635 @@ fn fired_laser_copies_world_trs_and_stays_put_when_barrel_moves() {
         frozen,
         "moving the gun must not drag an existing beam"
     );
+}
+
+#[test]
+fn sakura_pistol_modes_have_continuous_auto_and_independent_triggers() {
+    use crate::engine::ecs::component::{
+        AnimationComponent, AnimationState, AudioClipComponent, ControllerHand, KeyframeComponent,
+        SelectionComponent, XrButtonControl,
+    };
+    use crate::engine::ecs::system::AnimationSystem;
+    use crate::engine::ecs::{EventSignal, IntentValue};
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut queue = CommandQueue::new();
+    let mut assets = RenderAssets::new();
+    let (mut session, _) = super::tests::start_settings_scene(
+        include_str!("../../examples/sakura-drone-conversion.mms"),
+        "examples/sakura-drone-conversion.mms",
+        &mut world,
+        &mut rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .unwrap();
+    let grip = named(&world, "sakura_machine_pistol_placement");
+    let right = named(&world, "sakura_right_hand_pointer");
+    let left = named(&world, "sakura_left_hand_pointer");
+    assert!(
+        world
+            .get_component_by_id_as::<SelectionComponent>(named(
+                &world,
+                "sakura_pistol_laser_mode_selection"
+            ))
+            .is_some()
+    );
+    let selector = world
+        .get_component_by_id_as::<TransformComponent>(named(
+            &world,
+            "sakura_pistol_laser_mode_selector",
+        ))
+        .unwrap();
+    assert_eq!(selector.transform.scale, [0.0018; 3]);
+    let grab = |pointer, target| EventSignal::GrabStart {
+        pointer,
+        raycaster: pointer,
+        renderable: target,
+        target,
+        ray_origin_world: [0.; 3],
+        ray_dir_world: [0., 0., -1.],
+    };
+    let click = |renderable| EventSignal::Click {
+        raycaster: left,
+        renderable,
+        hit_point: [0.; 3],
+        screen_pos_px: None,
+    };
+    let down = |hand| EventSignal::XrButtonDown {
+        source_component: right,
+        hand,
+        control: if hand == ControllerHand::Right {
+            XrButtonControl::RightTrigger
+        } else {
+            XrButtonControl::LeftTrigger
+        },
+        value: 1.,
+    };
+    let up = |hand| EventSignal::XrButtonUp {
+        source_component: right,
+        hand,
+        control: if hand == ControllerHand::Right {
+            XrButtonControl::RightTrigger
+        } else {
+            XrButtonControl::LeftTrigger
+        },
+        value: 0.,
+    };
+    deliver_scene_event(
+        &mut world,
+        &mut rx,
+        &mut session,
+        &mut assets,
+        &mut queue,
+        grip,
+        grab(right, grip),
+    );
+    let auto = named(&world, "sakura_pistol_laser_mode_auto");
+    deliver_scene_event(
+        &mut world,
+        &mut rx,
+        &mut session,
+        &mut assets,
+        &mut queue,
+        auto,
+        click(auto),
+    );
+    let mut animation = AnimationSystem::new();
+    for id in world.all_components().collect::<Vec<_>>() {
+        if world
+            .get_component_by_id_as::<AnimationComponent>(id)
+            .is_some()
+        {
+            animation.register_animation(&mut world, id);
+        }
+        if world
+            .get_component_by_id_as::<KeyframeComponent>(id)
+            .is_some()
+        {
+            animation.register_keyframe(&mut world, id);
+        }
+    }
+    let mut sounds = Vec::new();
+    let mut shot_times = Vec::new();
+    let mut consume = |animation: &mut AnimationSystem, intents: Vec<IntentValue>, step: usize| {
+        for intent in intents {
+            match intent {
+                IntentValue::SetAnimationState {
+                    component_id,
+                    state,
+                } => animation.set_animation_state(component_id, state),
+                IntentValue::AudioSchedulePlay { component_id, .. } => {
+                    sounds.push((step, component_id))
+                }
+                IntentValue::RequestRaycast { .. } => shot_times.push(step as f64 * 0.005),
+                _ => {}
+            }
+        }
+    };
+    let start = deliver_scene_event(
+        &mut world,
+        &mut rx,
+        &mut session,
+        &mut assets,
+        &mut queue,
+        ComponentId::default(),
+        down(ControllerHand::Right),
+    );
+    assert!(start.iter().any(|i| matches!(
+        i,
+        IntentValue::SetAnimationState {
+            state: AnimationState::Looping,
+            ..
+        }
+    )));
+    consume(&mut animation, start, 0);
+    for step in 0..400 {
+        // Releasing the other pointer must not interrupt Auto.
+        if step == 40 || step == 100 {
+            let hand = if step == 40 {
+                ControllerHand::Left
+            } else {
+                ControllerHand::Right
+            };
+            let intents = deliver_scene_event(
+                &mut world,
+                &mut rx,
+                &mut session,
+                &mut assets,
+                &mut queue,
+                ComponentId::default(),
+                up(hand),
+            );
+            consume(&mut animation, intents, step);
+        }
+        // Hold Semi for more than its cooldown, then try Burst.
+        if step == 140 || step == 260 {
+            deliver_scene_event(
+                &mut world,
+                &mut rx,
+                &mut session,
+                &mut assets,
+                &mut queue,
+                ComponentId::default(),
+                up(ControllerHand::Right),
+            );
+            let mode = named(
+                &world,
+                if step == 140 {
+                    "sakura_pistol_laser_mode_semi"
+                } else {
+                    "sakura_pistol_laser_mode_burst"
+                },
+            );
+            deliver_scene_event(
+                &mut world,
+                &mut rx,
+                &mut session,
+                &mut assets,
+                &mut queue,
+                mode,
+                click(mode),
+            );
+            let intents = deliver_scene_event(
+                &mut world,
+                &mut rx,
+                &mut session,
+                &mut assets,
+                &mut queue,
+                ComponentId::default(),
+                down(ControllerHand::Right),
+            );
+            consume(&mut animation, intents, step);
+        }
+        let mut executor =
+            crate::engine::ecs::system::animation_keyframe_evaluator::SessionCallbackExecutor {
+                session: &mut session,
+                render_assets: &mut assets,
+                emit: &mut queue,
+            };
+        animation.tick_with_beat_and_executor(
+            &mut world,
+            step as f64 * 0.01,
+            120.,
+            &mut rx,
+            Some(&mut executor),
+        );
+        consume(
+            &mut animation,
+            rx.drain_ready_intents()
+                .into_iter()
+                .filter_map(|s| s.intent.map(|i| i.value))
+                .collect(),
+            step,
+        );
+        queue.drain_into_rx(&mut rx);
+        for event in rx.drain_ready_events() {
+            rx.dispatch_event_handlers(&mut world, &event);
+        }
+        let output = session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
+        assert!(output.errors.is_empty(), "{:?}", output.errors);
+        consume(&mut animation, output.intents, step);
+    }
+    let automatic: Vec<_> = shot_times.iter().copied().filter(|&t| t < 0.5).collect();
+    assert_eq!(
+        automatic.len(),
+        11,
+        "continuous 21 shots/s Auto (30% slower): {shot_times:?}"
+    );
+    for pair in automatic.windows(2) {
+        assert!(
+            (0.04..=0.055001).contains(&(pair[1] - pair[0])),
+            "no gap at a cycle boundary: {automatic:?}"
+        );
+    }
+    assert!(
+        !shot_times.iter().any(|&t| (0.5..0.7).contains(&t)),
+        "release stops future Auto shots"
+    );
+    assert_eq!(
+        shot_times
+            .iter()
+            .filter(|&&t| (0.7..1.3).contains(&t))
+            .count(),
+        1,
+        "Semi must not repeat while held"
+    );
+    assert_eq!(
+        shot_times.iter().filter(|&&t| t >= 1.3).count(),
+        3,
+        "Burst fires three shots"
+    );
+    for (step, id) in sounds {
+        assert!(
+            !(100..140).contains(&step),
+            "release must not queue another automatic recording"
+        );
+        let clip = world
+            .get_component_by_id_as::<AudioClipComponent>(id)
+            .unwrap();
+        assert_eq!(
+            clip.uri,
+            if step < 100 {
+                "assets/audio/tool/laser_machine_pistol_B.0.wav"
+            } else if step < 260 {
+                "assets/audio/tool/laser_machine_pistol_A.0.wav"
+            } else {
+                "assets/audio/tool/laser_machine_pistol_C.0.wav"
+            }
+        );
+    }
+    // All three tools own their mode/trigger state, including two-hand use.
+    deliver_scene_event(
+        &mut world,
+        &mut rx,
+        &mut session,
+        &mut assets,
+        &mut queue,
+        grip,
+        EventSignal::GrabEnd {
+            pointer: right,
+            target: grip,
+        },
+    );
+    let second = named(&world, "sakura_machine_pistol_2_placement");
+    let third = named(&world, "sakura_machine_pistol_3_placement");
+    deliver_scene_event(
+        &mut world,
+        &mut rx,
+        &mut session,
+        &mut assets,
+        &mut queue,
+        second,
+        grab(right, second),
+    );
+    deliver_scene_event(
+        &mut world,
+        &mut rx,
+        &mut session,
+        &mut assets,
+        &mut queue,
+        third,
+        grab(left, third),
+    );
+    for (hand, expected) in [
+        (ControllerHand::Right, "sakura_pistol_laser_2_semi"),
+        (ControllerHand::Left, "sakura_pistol_laser_3_semi"),
+    ] {
+        let result = deliver_scene_event(
+            &mut world,
+            &mut rx,
+            &mut session,
+            &mut assets,
+            &mut queue,
+            ComponentId::default(),
+            down(hand),
+        );
+        let playing: Vec<_> = result
+            .into_iter()
+            .filter_map(|intent| match intent {
+                IntentValue::SetAnimationState {
+                    component_id,
+                    state: AnimationState::Playing,
+                } => Some(component_id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(playing, [named(&world, expected)]);
+    }
+}
+
+#[test]
+fn sakura_pedestal_spawns_lumae_with_pose_and_hair_in_clear_rooftop_positions() {
+    use crate::engine::ecs::{EventSignal, IntentValue};
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut queue = CommandQueue::new();
+    let mut assets = RenderAssets::new();
+    let (mut session, _) = super::tests::start_settings_scene(
+        include_str!("../../examples/sakura-drone-conversion.mms"),
+        "examples/sakura-drone-conversion.mms",
+        &mut world,
+        &mut rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .unwrap();
+    assert!(!world.all_components().any(|id| {
+        world
+            .get_component_by_id_as::<GLTFComponent>(id)
+            .is_some_and(|g| g.uri == "assets/models/lumae.glb")
+    }));
+    let button = named(&world, "sakura_add_lumae_button");
+    let readout = named(&world, "sakura_lumae_count");
+    let mut positions = Vec::new();
+    for count in 1..=12 {
+        let result = deliver_scene_event(
+            &mut world,
+            &mut rx,
+            &mut session,
+            &mut assets,
+            &mut queue,
+            button,
+            EventSignal::Click {
+                raycaster: ComponentId::default(),
+                renderable: button,
+                hit_point: [0.; 3],
+                screen_pos_px: None,
+            },
+        );
+        assert!(result.iter().any(|intent|matches!(intent, IntentValue::SetText {component_id, text} if *component_id == readout && *text == format!("Lumae: {count}"))));
+        let avatar = named(&world, &format!("sakura_lumae_{count}"));
+        assert_eq!(
+            world
+                .get_component_by_id_as::<GLTFComponent>(avatar)
+                .unwrap()
+                .uri,
+            "assets/models/lumae.glb"
+        );
+        assert_eq!(
+            world
+                .find_all_components(avatar, "*")
+                .into_iter()
+                .filter(|&id| world
+                    .get_component_by_id_as::<crate::engine::ecs::component::SpringBoneComponent>(
+                        id
+                    )
+                    .is_some())
+                .count(),
+            19
+        );
+        assert_eq!(
+            world.find_all_components(avatar, "*").into_iter().filter(|&id|world.get_component_by_id_as::<crate::engine::ecs::component::PoseCapturePoseComponent>(id).is_some()).count(),
+            1
+        );
+        // This fixture services MMS directly; apply the structural command that
+        // a Universe update normally consumes after the callback returns.
+        for intent in result {
+            if let IntentValue::Attach { parent, child } = intent {
+                world.add_child(parent, child).unwrap();
+            }
+        }
+        let placement = named(&world, &format!("sakura_lumae_{count}_placement"));
+        assert_eq!(
+            world.parent_of(placement),
+            Some(named(&world, "sakura_lumae_group"))
+        );
+        let [x, y, z] = authored_position(&world, placement);
+        assert_eq!(y, 25.6);
+        assert!((-24.2..-11.5).contains(&x) && (-4.5..5.0).contains(&z));
+        assert!(
+            !(x > -21.2 && x < -13.0 && z < -0.4),
+            "firing lane: {x},{z}"
+        );
+        assert!(!(x > -23.8 && x < -21.4 && z > 1.2), "stairwell: {x},{z}");
+        positions.push([x, z]);
+    }
+    assert_ne!(
+        positions[0], positions[9],
+        "revisiting an anchor should get fresh jitter"
+    );
+}
+
+#[test]
+fn player_building_chunks_confine_geometry_and_rebuild_only_the_edited_floor() {
+    use crate::engine::ecs::component::{CombineMeshComponent, RenderableComponent};
+    use crate::engine::ecs::system::{CombineMeshSystem, MeshBoundsSystem, RenderableSystem};
+    use crate::engine::graphics::{CpuMesh, MeshHandle, MeshUploader, VisualWorld};
+    struct Uploader(u32);
+    impl MeshUploader for Uploader {
+        fn upload_mesh(&mut self, _: &CpuMesh) -> Result<MeshHandle, Box<dyn std::error::Error>> {
+            self.0 += 1;
+            Ok(MeshHandle(1000 + self.0))
+        }
+    }
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut queue = CommandQueue::new();
+    let mut assets = RenderAssets::new();
+    let (_, output) = super::tests::start_settings_scene(r#"
+        import { pool_building } from "../assets/components/buildings/pool_building.mms"
+        import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
+        let tiles = pool_tile_material()
+        pool_building("home", [0.0,0.0,0.0], 8, 1.0, true, tiles, [0.88,0.65,0.73], true, true)
+        pool_building("neighbor", [30.0,0.0,0.0], 8, -1.0, false, tiles, [0.64,0.78,0.86], true, false)
+    "#, "examples/_floor_chunks_test.mms", &mut world, &mut rx, Some(&mut assets), &mut queue).unwrap();
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    let combines: Vec<_> = world
+        .all_components()
+        .filter(|&id| {
+            world
+                .get_component_by_id_as::<CombineMeshComponent>(id)
+                .is_some()
+        })
+        .collect();
+    assert_eq!(combines.len(), 20);
+    for floor in 0..=8 {
+        let label = if floor == 8 {
+            "home_roof".to_owned()
+        } else {
+            format!("home_floor_{floor}")
+        };
+        let section = named(&world, &label);
+        let floor_y = floor as f32 * 3.2;
+        assert!((authored_position(&world, section)[1] - floor_y).abs() < 1e-5);
+        let groups: Vec<_> = world
+            .children_of(section)
+            .iter()
+            .copied()
+            .filter(|&id| {
+                world
+                    .get_component_by_id_as::<CombineMeshComponent>(id)
+                    .is_some()
+            })
+            .collect();
+        assert_eq!(groups.len(), 2);
+        let mut visual_boxes = 0;
+        for group in groups {
+            assert!(
+                world
+                    .get_component_by_id_as::<CombineMeshComponent>(group)
+                    .unwrap()
+                    .keep_transforms
+            );
+            for source in world.find_all_components(group, "Renderable") {
+                assert!(
+                    world
+                        .get_component_by_id_as::<RenderableComponent>(source)
+                        .is_some()
+                );
+                visual_boxes += 1;
+                let model = authored_model(&world, source);
+                // Full-height columns must be split too, and the stairs must
+                // belong to the top storey rather than extending down from the roof.
+                for x in [-0.5, 0.5] {
+                    for y in [-0.5, 0.5] {
+                        for z in [-0.5, 0.5] {
+                            let point = crate::utils::math::mat4_mul_vec4(model, [x, y, z, 1.]);
+                            assert!(
+                                point[1] >= floor_y - 0.2201,
+                                "{label} reaches below its slab: {point:?}"
+                            );
+                            let ceiling = if floor == 8 {
+                                floor_y + 0.6
+                            } else {
+                                floor_y + 3.2
+                            };
+                            assert!(
+                                point[1] <= ceiling + 1e-4,
+                                "{label} reaches into the next storey: {point:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        let collisions = named(&world, &format!("{label}_collisions"));
+        assert_eq!(world.parent_of(collisions), Some(section));
+        assert_eq!(
+            world.find_all_components(collisions, "Zone").len(),
+            visual_boxes
+        );
+    }
+    assert!(
+        world
+            .get_component_by_id_as::<CombineMeshComponent>(named(&world, "neighbor_ceramic_white"))
+            .is_some()
+    );
+    assert!(
+        world
+            .get_component_by_id_as::<CombineMeshComponent>(named(&world, "neighbor_ceramic_trim"))
+            .is_some()
+    );
+    let propagate = |world: &mut World| {
+        for id in world.all_components().collect::<Vec<_>>() {
+            if world
+                .get_component_by_id_as::<TransformComponent>(id)
+                .is_some()
+            {
+                let matrix = authored_model(world, id);
+                world
+                    .get_component_by_id_as_mut::<TransformComponent>(id)
+                    .unwrap()
+                    .transform
+                    .matrix_world = matrix;
+            }
+        }
+    };
+    propagate(&mut world);
+    let mut combine = CombineMeshSystem::default();
+    let mut visuals = VisualWorld::default();
+    let mut uploader = Uploader(0);
+    let mut renderables = RenderableSystem::default();
+    let mut bounds = MeshBoundsSystem::default();
+    combine.reconcile_and_build(
+        &mut world,
+        &mut visuals,
+        &mut assets,
+        &mut uploader,
+        &mut renderables,
+        &mut bounds,
+    );
+    let original: Vec<_> = combines
+        .iter()
+        .map(|&id| (id, visuals.instance_handle_for_component(id).unwrap()))
+        .collect();
+    let changed = named(&world, "home_floor_3_ceramic_white");
+    let source = world.find_all_components(changed, "Renderable")[0];
+    let placement = world.parent_of(source).unwrap();
+    let transform = &mut world
+        .get_component_by_id_as_mut::<TransformComponent>(placement)
+        .unwrap()
+        .transform;
+    transform.scale[0] *= 0.8;
+    transform.recompute_model();
+    propagate(&mut world);
+    let uploads = uploader.0;
+    combine.reconcile_and_build(
+        &mut world,
+        &mut visuals,
+        &mut assets,
+        &mut uploader,
+        &mut renderables,
+        &mut bounds,
+    );
+    assert_eq!(
+        uploader.0,
+        uploads + 1,
+        "editing one floor must upload only that changed mesh"
+    );
+    for (id, handle) in original {
+        if id == changed {
+            assert_ne!(visuals.instance_handle_for_component(id), Some(handle));
+        } else {
+            assert_eq!(
+                visuals.instance_handle_for_component(id),
+                Some(handle),
+                "another floor, tint group, roof or neighbor was rebuilt: {:?}",
+                world.component_label(id)
+            );
+        }
+    }
+    // Custom shader compilation is asynchronous. Finish it before this short
+    // standalone fixture exits, and verify the retained tile material compiles.
+    for (_, instance) in visuals.materials.instances() {
+        if let Some(custom) = visuals
+            .materials
+            .definition(instance.definition)
+            .and_then(|definition| definition.custom.as_ref())
+        {
+            for _ in 0..200 {
+                if custom.compiled.get().is_some() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            custom
+                .compiled
+                .get()
+                .expect("tile shader compiler timed out")
+                .as_ref()
+                .unwrap();
+        }
+    }
 }

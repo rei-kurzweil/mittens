@@ -7,6 +7,7 @@ pub struct GraphicsSettingsSystem {
     mirrors_enabled: bool,
     mirror_quality_override: Option<i32>,
     secondary_motion_enabled: bool,
+    secondary_motion_paused: bool,
 }
 
 impl Default for GraphicsSettingsSystem {
@@ -15,6 +16,7 @@ impl Default for GraphicsSettingsSystem {
             mirrors_enabled: true,
             mirror_quality_override: None,
             secondary_motion_enabled: true,
+            secondary_motion_paused: false,
         }
     }
 }
@@ -63,6 +65,19 @@ impl GraphicsSettingsSystem {
             return;
         }
         self.secondary_motion_enabled = enabled;
+        Self::notify_changed(emit);
+    }
+
+    pub fn secondary_motion_paused(&self) -> bool {
+        self.secondary_motion_paused
+    }
+
+    /// Pause integration while retaining the current deformed pose.
+    pub fn set_secondary_motion_paused(&mut self, paused: bool, emit: &mut dyn SignalEmitter) {
+        if self.secondary_motion_paused == paused {
+            return;
+        }
+        self.secondary_motion_paused = paused;
         Self::notify_changed(emit);
     }
 

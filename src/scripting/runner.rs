@@ -1800,6 +1800,76 @@ mod runtime_spec_session_tests {
     }
 
     #[test]
+    fn graphics_panel_pause_updates_live_settings_and_syncs_external_changes() {
+        use crate::engine::ecs::component::{TextComponent, ToggleComponent};
+        let mut scene = crate::engine::Universe::new(World::default());
+        scene.load_mms_source_at_path(r#"
+            import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
+            GraphicsSettings.secondary_motion.pause(true)
+            graphics_settings_panel({root_name="pause_test_panel"})
+        "#, "examples/_pause_test.mms").unwrap();
+        let named = |world: &World, name| {
+            world
+                .all_components()
+                .find(|&id| world.component_label(id) == Some(name))
+                .unwrap()
+        };
+        let toggle = named(&scene.world, "graphics_secondary_motion_pause_toggle");
+        assert!(scene.systems.graphics_settings.secondary_motion_paused());
+        assert!(
+            scene
+                .world
+                .get_component_by_id_as::<ToggleComponent>(toggle)
+                .unwrap()
+                .value()
+        );
+        scene.systems.rx.push_event(
+            toggle,
+            EventSignal::ToggleChanged {
+                toggle,
+                value: false,
+            },
+        );
+        scene.update(0., &Default::default());
+        scene.update(0., &Default::default());
+        assert!(!scene.systems.graphics_settings.secondary_motion_paused());
+        assert!(scene.systems.graphics_settings.secondary_motion_enabled());
+        let readout = named(&scene.world, "graphics_secondary_motion_pause_readout");
+        assert_eq!(
+            scene
+                .world
+                .get_component_by_id_as::<TextComponent>(readout)
+                .unwrap()
+                .text,
+            "Off"
+        );
+        scene
+            .systems
+            .graphics_settings
+            .set_secondary_motion_paused(true, &mut scene.command_queue);
+        for _ in 0..3 {
+            scene.update(0., &Default::default());
+        }
+        assert!(
+            scene
+                .world
+                .get_component_by_id_as::<ToggleComponent>(toggle)
+                .unwrap()
+                .value()
+        );
+        assert_eq!(
+            scene
+                .world
+                .get_component_by_id_as::<TextComponent>(readout)
+                .unwrap()
+                .text,
+            "On"
+        );
+        scene.systems.graphics_settings.reset();
+        assert!(!scene.systems.graphics_settings.secondary_motion_paused());
+    }
+
+    #[test]
     fn graphics_settings_preview_and_shared_stage_evaluate_with_strict_runtime() {
         use crate::engine::ecs::component::{
             Camera3DComponent, CameraXRComponent, GLTFComponent, MirrorComponent,

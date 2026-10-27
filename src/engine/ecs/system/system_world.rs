@@ -509,6 +509,71 @@ mod tests {
             (second_tip_world_x - first_tip_world_x).abs() > 1e-5,
             "secondary motion must continue advancing while the owning transform is stationary"
         );
+        let frozen_rotation = world
+            .get_component_by_id_as::<TransformComponent>(root)
+            .unwrap()
+            .transform
+            .rotation;
+        let frozen_chains = systems.secondary_motion.bound_snapshot(&world);
+        systems
+            .graphics_settings
+            .set_secondary_motion_paused(true, &mut queue);
+        for _ in 0..3 {
+            systems.tick(
+                &mut world,
+                &mut visuals,
+                &mut render_assets,
+                &Default::default(),
+                &mut queue,
+                1.0 / 60.0,
+            );
+            assert_eq!(
+                world
+                    .get_component_by_id_as::<TransformComponent>(root)
+                    .unwrap()
+                    .transform
+                    .rotation,
+                frozen_rotation,
+                "pause must retain the deformed pose"
+            );
+            assert_eq!(
+                systems.secondary_motion.bound_snapshot(&world),
+                frozen_chains,
+                "pause must not integrate the retained solver state"
+            );
+            assert_eq!(
+                world
+                    .get_component_by_id_as::<TransformComponent>(tip)
+                    .unwrap()
+                    .transform
+                    .matrix_world[3][0],
+                second_tip_world_x
+            );
+        }
+        systems
+            .graphics_settings
+            .set_secondary_motion_paused(false, &mut queue);
+        systems.tick(
+            &mut world,
+            &mut visuals,
+            &mut render_assets,
+            &Default::default(),
+            &mut queue,
+            1.0 / 60.0,
+        );
+        assert!(
+            world
+                .get_component_by_id_as::<TransformComponent>(tip)
+                .unwrap()
+                .transform
+                .matrix_world[3][0]
+                .abs()
+                > 1e-5,
+            "resume must continue from the retained pose instead of restoring rest"
+        );
+        systems
+            .graphics_settings
+            .set_secondary_motion_paused(true, &mut queue);
         systems
             .graphics_settings
             .set_secondary_motion_enabled(false, &mut queue);
@@ -538,6 +603,9 @@ mod tests {
                 .unwrap()
                 .enabled
         );
+        systems
+            .graphics_settings
+            .set_secondary_motion_paused(false, &mut queue);
         systems
             .graphics_settings
             .set_secondary_motion_enabled(true, &mut queue);
@@ -3620,17 +3688,19 @@ impl SystemWorld {
         self.transform.tick(world, visuals, input, dt_sec);
         let vr_stage_started = self.vr_perf_enabled.then(Instant::now);
         let secondary_motion_enabled = self.graphics_settings.secondary_motion_enabled();
-        if secondary_motion_enabled {
+        let secondary_motion_paused = self.graphics_settings.secondary_motion_paused();
+        if secondary_motion_enabled && !secondary_motion_paused {
             self.secondary_motion_constraint
                 .tick(world, &self.secondary_motion, dt_sec);
-        } else {
+        } else if !secondary_motion_enabled {
             self.secondary_motion_constraint.reset_motion_history();
         }
-        let dirty_chain_transform_roots = self.secondary_motion.tick_with_settings(
+        let dirty_chain_transform_roots = self.secondary_motion.tick_with_playback_settings(
             world,
             dt_sec,
             self.secondary_motion_constraint.directives(),
             secondary_motion_enabled,
+            secondary_motion_paused,
         );
         if let Some(started) = vr_stage_started {
             self.vr_perf_pre_xr.secondary_motion = started.elapsed();

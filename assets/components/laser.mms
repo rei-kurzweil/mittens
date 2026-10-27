@@ -52,7 +52,7 @@ export fn laser(options) {
     root
     let flight_state = { pending_hit = false context = null }
 
-    on_global("RayIntersected", fn(event) {
+    on(raycaster, "RayIntersected", fn(event) {
         if event.raycaster == raycaster && flight_state.pending_hit {
             flight_state.pending_hit = false
             let context = flight_state.context

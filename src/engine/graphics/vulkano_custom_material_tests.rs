@@ -1769,6 +1769,15 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
     let mut scene = crate::engine::Universe::new(crate::engine::ecs::World::default());
     scene.systems.clock.set_driver(target_clock.clone());
     scene.load_mms_source_at_path(&source, "examples/sakura-drone-conversion.mms")?;
+    assert!(!scene.world.all_components().any(|id| scene.world.get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(id).is_some_and(|g|g.uri == "assets/models/lumae.glb")));
+    let spawn_button = scene.world.all_components().find(|&id|scene.world.component_label(id) == Some("sakura_add_lumae_button")).unwrap();
+    for _ in 0..3 {
+        scene.systems.rx.push_event(spawn_button, crate::engine::ecs::EventSignal::Click {
+            raycaster: crate::engine::ecs::ComponentId::default(), renderable: spawn_button, hit_point: [0.;3], screen_pos_px: None,
+        });
+        scene.update(0., &Default::default());
+    }
+    assert_eq!(scene.world.all_components().filter(|&id|scene.world.get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(id).is_some_and(|g|g.uri == "assets/models/lumae.glb")).count(),3);
     for _ in 0..3 {
         scene.update(0., &crate::engine::user_input::InputState::default());
     }
@@ -1882,6 +1891,13 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
     assert!(metal_instances.iter().all(|instance|instance.texture.is_some()));
     let can = scene.world.all_components().find(|&id|scene.world.component_label(id)==Some("sakura_bench_can_1_body")).unwrap();
     assert!(scene.systems.bvh.raycast_renderables_candidates([-19.2,26.713,-3.5],[0.,0.,-1.],1.,0).iter().any(|(id,_)|*id==can),"can body must be a real ray target");
+    let button_bounds = scene.world.find_all_components(spawn_button, "Renderable").into_iter()
+        .find_map(|id|scene.systems.bvh.debug_renderable_bounds(id).map(|bounds|(id,bounds)))
+        .expect("pedestal button must have a generated raycast surface");
+    let (button_surface, bounds) = button_bounds;
+    let center = [(bounds.0[0]+bounds.1[0])*0.5, (bounds.0[1]+bounds.1[1])*0.5, (bounds.0[2]+bounds.1[2])*0.5];
+    assert!(center[1] > 26.53, "button must be above the pedestal cap");
+    assert!(scene.systems.bvh.raycast_renderables_candidates([center[0],center[1]+0.3,center[2]], [0.,-1.,0.],0.31,0).iter().any(|(id,_)|*id==button_surface));
     let blossom_count = scene
         .visuals
         .cutout_order()
@@ -1923,8 +1939,8 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
     };
     assert_eq!(
         combined(&scene),
-        18,
-        "two independently colored ceramic groups per building"
+        34,
+        "player has two groups per storey/roof; eight neighbors retain two each"
     );
     let check_building_rays = |scene: &crate::engine::Universe| {
         assert!(scene.systems.bvh.has_index());
@@ -1959,13 +1975,12 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
         .world
         .all_components()
         .filter(|&id| {
-            scene.world.component_label(id).is_some_and(|label| {
-                label == "sakura_rooftop_building_ceramic_white"
-                    || label == "sakura_rooftop_building_ceramic_trim"
-            })
+            scene.world.get_component_by_id_as::<crate::engine::ecs::component::CombineMeshComponent>(id).is_some()
+                && scene.world.component_label(id).is_some_and(|label| label.starts_with("sakura_rooftop_building_"))
         })
         .map(|id| (id, scene.visuals.instance_handle_for_component(id).unwrap()))
         .collect();
+    assert_eq!(player_meshes.len(), 18, "eight storeys and a separate roof retain both tint groups");
     let slider = scene
         .world
         .all_components()
@@ -2002,7 +2017,7 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
         }
         assert_eq!(
             combined(&scene),
-            18,
+            34,
             "old combined outputs must retire on regeneration"
         );
         // Slider callbacks publish after simulation; the following simulation
@@ -2111,7 +2126,17 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
         ("targets", [-14.2, 26.9, -3.1], [-14.2, 26.56, -4.2]),
         ("tree", [-13.0, 27.8, 5.3], [-14.1, 27.7, 2.4]),
         ("sky", [0., 60., 0.], [-7., 66., -17.6]),
+        ("graphics", [-23.0, 27.1, 0.7], [-23.0, 27.1, -1.3]),
+        ("pistol-table", [-18.4, 27.7, 2.4], [-20.3, 26.55, 0.2]),
+        ("lumae-pedestal", [-16.8, 27.6, 1.65], [-17.0, 26.54, 1.2]),
+        ("pistol-modes", [-17.83, 26.96, -3.01], [-18.0, 26.96, -3.01]),
     ] {
+        if label == "pistol-modes" {
+            // Preview the right receiver face in the held, upright orientation.
+            scene.world.get_component_by_id_as_mut::<TransformComponent>(pistol_grip).unwrap().transform =
+                TransformComponent::new().with_position(-18.0, 26.9, -3.0).transform;
+            scene.systems.transform_changed(&mut scene.world, &mut scene.visuals, pistol_grip);
+        }
         if label == "targets" {
             scene.systems.rx.push_event(
                 crate::engine::ecs::ComponentId::default(),
@@ -2258,6 +2283,23 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
             let bottom = &rgb[600 * extent[0] as usize * 4..601 * extent[0] as usize * 4];
             assert_ne!(top, bottom, "two-stop sky must vary with viewing direction");
         }
+    }
+    // Paused stationary avatars must reuse their GPU deformation output as well
+    // as retain the CPU spring pose. Warm the cache, then compare a second frame.
+    scene.systems.graphics_settings.set_secondary_motion_paused(true, &mut scene.command_queue);
+    let mut warmed = None;
+    for _ in 0..2 {
+        scene.update(1.0 / 60.0, &Default::default());
+        for eye in 0..2 {
+            renderer.submit_xr_eye_to_view(&mut scene.visuals, eye, extent, 2, eyes[eye].clone())?;
+        }
+        let counters = renderer.perf_counters();
+        if let Some(previous) = warmed {
+            let delta = counters.saturating_delta(previous);
+            assert_eq!(delta.deformation_jobs, 0, "paused avatars must reuse cached vertices");
+            assert_eq!(delta.deformation_bone_upload_bytes, 0);
+        }
+        warmed = Some(counters);
     }
     assert!(renderer.custom_programs.values().all(Result::is_ok));
     Ok(())
