@@ -1397,12 +1397,12 @@ fn sakura_pistol_modes_have_continuous_auto_and_independent_triggers() {
     let automatic: Vec<_> = shot_times.iter().copied().filter(|&t| t < 0.5).collect();
     assert_eq!(
         automatic.len(),
-        11,
-        "continuous 21 shots/s Auto (30% slower): {shot_times:?}"
+        5,
+        "continuous 10 shots/s Auto: {shot_times:?}"
     );
     for pair in automatic.windows(2) {
         assert!(
-            (0.04..=0.055001).contains(&(pair[1] - pair[0])),
+            (0.095..=0.105001).contains(&(pair[1] - pair[0])),
             "no gap at a cycle boundary: {automatic:?}"
         );
     }

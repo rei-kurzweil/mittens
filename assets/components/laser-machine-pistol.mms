@@ -10,7 +10,7 @@ export fn laser_machine_pistol(options) {
     let beats_per_second = 2.0
     if options["beats_per_second"] != null { beats_per_second = options.beats_per_second }
     let shot_interval = 2.5 / 75.0
-    let auto_shot_interval = shot_interval / 0.7 // 30% fewer shots per second than Burst
+    let auto_shot_interval = 1.0 / 10.0 // 10 shots per second; Burst keeps its faster spacing
     let device_state = { firing = false cancelled = false trigger_held = false mode = "semi" burst_mode = "semi" bursts_fired = 0 shots_fired = 0 ammunition = null user = null requested_user = null tool = null }
     let flash = muzzle_flash({ name = label size = options.flash_size beats_per_second = beats_per_second })
     let single_sound = AudioClip.wav("assets/audio/tool/laser_machine_pistol_A.0.wav") { name = label + "_single_sound" }

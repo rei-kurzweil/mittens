@@ -88,8 +88,8 @@ Each shot samples its aim frame's current world pose and restarts the flash.
 `use_end()` cancels pending shots and hides the flash; launched projectiles finish
 independently. Release/regrab cannot bypass a finite clip's lock.
 
-Auto runs at 70% of Burst's shot rate: 21 shots/s, spaced 47.6 ms apart, instead
-of Burst's unchanged 33.3 ms spacing. Its native three-shot loop lasts 142.9 ms,
+Auto runs at 10 shots/s, spaced 100 ms apart, instead of Burst's unchanged
+33.3 ms spacing. Its native three-shot loop lasts 300 ms,
 with no pause between cycles. Trigger release/drop pauses it immediately.
 Every visual `AutoCycle` event plays `laser_machine_pistol_B.0.wav`; keeping this
 outside audio lookahead prevents scheduling an extra recording after release.
