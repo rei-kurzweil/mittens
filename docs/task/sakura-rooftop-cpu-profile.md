@@ -7,6 +7,9 @@ identifies repeated global morph staging and per-material binding eviction while
 springs are disabled. The earlier CPU-only results below cover running springs
 and explain a separate transform-propagation bottleneck.
 
+The [first optimization follow-up](#2026-10-27-first-optimization-reuse-the-immutable-morph-arena)
+records the retained morph-buffer change and its before/after validation.
+
 Scene snapshot: these measurements precede per-floor building chunks, the
 opt-in Lumae pedestal, three-pistol table and scoped projectile hit callbacks.
 Rerunning the probe measures the current scene, explicitly spawning three Lumae
@@ -468,3 +471,195 @@ and an audit of profiling instrumentation overhead outside captures.
   syntax and whitespace checks pass.
 - No optimization was applied during this study. The existing bone allocator,
   immutable morph upload behavior and material-cache capacities are preserved.
+
+## 2026-10-27: first optimization, reuse the immutable morph arena
+
+### Change and lifetime behavior
+
+`record_dirty_deformations` now binds the immutable `deformation_morph_buffer`
+already uploaded by `upload_mesh`. It no longer clones the CPU morph arena,
+creates a staging/device buffer pair, or records that full-arena transfer for
+each dirty deformation batch. Active morph weights, bones, jobs, workgroups and
+per-instance output ranges keep their existing independent behavior.
+
+Loading a new mesh with morph targets still extends the CPU arena, uploads a new
+immutable GPU arena, waits for that upload, and replaces the renderer's retained
+reference. Previously recorded/submitted descriptors keep the old allocation
+alive through their own references. This does not introduce in-place writes to a
+buffer that older GPU work may still read. Optimizing mesh-load upload growth is
+outside this change.
+
+Skin-only scenes allocate one reusable zero delta entry because Vulkan storage
+descriptors cannot reference empty buffers. Loading the first real morph mesh
+replaces that placeholder. Upload/allocation counters now include morph arena
+creation at mesh loading and the initial placeholder; steady-state comparisons
+start after loading and warmup. Each active deformation batch avoids two buffer
+allocations. The removed per-frame morph-staging timer reports zero because that
+stage is gone, rather than timing loading or the retained-buffer lookup.
+
+The material binding policy, transform propagation, spring solver, instancing,
+shaders and stereo recording strategy are unchanged.
+
+### Correctness checks
+
+The new ignored Vulkan test
+`morph_arena_reuse_preserves_weights_poses_and_recorded_generations` reads back
+actual production compute output. It verifies:
+
+- Skin-only deformation and repeated reuse of its zero placeholder.
+- Zero deformation jobs/allocations on an unchanged warm frame.
+- Two instances sharing one mesh with different poses, multiple target weights,
+  negative weights, and position/normal deltas.
+- Arena growth from an additional mesh with a nonzero target offset.
+- Old and new command recordings returning their own expected results when the
+  arena grows before the older command is submitted.
+- Old arena retention through recorded work, then release after completion.
+
+This GPU test, eighteen native deformation tests, eleven Sakura scene tests,
+three XR perf collector tests and two existing headless stereo/material tests
+pass: **35 focused tests**. The library check, release headset example build,
+formatting and whitespace checks pass. No headset demo is launched by these tests.
+
+### Controlled performance comparison
+
+The final comparison runs the saved old and new release test binaries sequentially
+in pairs for each case. It uses all seven existing cases, 240 warmup frames,
+600 measured frames, three independent repetitions, and reverses case/binary
+order on the middle repetition. Both binaries use the same scene/assets, fixed
+camera/poses, 1440x1600 per eye, 4x MSAA, bloom, springs disabled, timestamps and
+completion policy. No build, native/GPU regression test, or Nsight capture runs
+concurrently with the final timing matrix.
+
+The initial exploratory before-only runs overlapped compilation and are excluded.
+The final artifact root is `/tmp/mittens-sakura-morph-comparison-20261027/`, with
+`before/` and `after/` summaries, per-frame samples, logs, previews and executable
+SHA-256 manifests. `/tmp/mittens-compare-morph.py` records the exact paired schedule;
+`/tmp/mittens-sakura-morph-comparison.log` records its progress. The existing
+`scripts/profile_sakura_lumae.py` provides the individual case runner.
+
+All **42 unprofiled runs** completed. Values below are the median of three
+per-run medians; p95 is likewise the median of the three per-run p95 values.
+These are headless CPU/GPU workload times, not headset FPS.
+
+| Case | Frame median before ms | After ms | Frame p95 before ms | After ms |
+| --- | ---: | ---: | ---: | ---: |
+| 0-static | 8.22 | 8.55 | 8.84 | 9.06 |
+| 0-moving | 12.08 | 8.75 | 12.61 | 9.34 |
+| 1-static | 8.64 | 8.76 | 9.12 | 9.49 |
+| 1-moving | 16.19 | 9.21 | 17.20 | 9.77 |
+| 2-static | 8.58 | 8.67 | 9.29 | 9.19 |
+| 2-moving | 16.71 | 9.38 | 17.37 | 10.01 |
+| 2-moving-hidden | 15.85 | 8.96 | 16.52 | 9.57 |
+
+| Moving case | CPU record/submit before -> after ms | CPU morph staging before -> after ms | GPU transfer/deform before -> after ms | Morph MB/frame before -> after |
+| --- | ---: | ---: | ---: | ---: |
+| 0 Lumae | 6.595 -> 3.794 | 2.686 -> 0 | 0.639 -> 0.047 | 7.606 -> 0 |
+| 1 Lumae | 9.484 -> 3.994 | 5.402 -> 0 | 1.228 -> 0.046 | 15.156 -> 0 |
+| 2 Lumae | 9.357 -> 3.928 | 5.354 -> 0 | 1.232 -> 0.047 | 15.156 -> 0 |
+
+Moving-frame medians improve by approximately 28%, 43% and 44% for 0, 1 and 2
+Lumae respectively. Static controls have no expected benefit and drift upward
+by about 0.09-0.33 ms. There is no claim that this fixes all baseline CPU time.
+Graphics GPU time remains similar; for 2-moving it is 3.444 -> 3.580 ms. The
+large repeatable improvement is removal of CPU staging and GPU transfer work.
+
+All 21 pairs have exactly matching deformation jobs, dirty vertices, bone/weight
+bytes, workgroups, NPC draw batches, submissions and material binding misses and
+evictions. Cache hit counts differ between processes and are not asserted equal.
+Every new case has zero steady-state morph-delta upload bytes. Moving cases
+retain about 16.887 jobs and 153,466 bone bytes per sampled frame, with zero NPC
+dirty jobs and zero bone/output resizes. Buffer allocations fall from nine to
+seven per active batch (8.94 -> 6.953 per sampled frame because four frames have
+no pose change). The 38/42 per-frame material-binding evictions remain unresolved.
+
+Visible/hidden previews retain identical scene pixels outside a handful of
+diagnostic text pixels: 10 changed pixels for 0-static and five each for 2-static
+and 2-moving-hidden, out of 2,304,000 pixels per image. These differences are
+confined to the diagnostic text region. Numeric GPU readback checks separately
+verify nonzero morph deformation, which the stationary-avatar screenshots alone
+cannot establish.
+
+`comparison.json` aggregates the matrix; `pair-invariants.txt` records matching
+workload counters and `preview-comparison.json` records the image differences.
+Nsight follow-up and headset confirmation are recorded separately below.
+
+### Warmed Nsight confirmation
+
+One additional 2-moving capture completed after the timing matrix, using the same
+240/600-frame configuration and Nsight Systems 2025.3.2.474. Its median frame time
+is 10.079 ms versus the unprofiled repetition median of 9.384 ms (about 7.4%
+capture overhead); it is excluded from the performance tables. The trace and
+SQLite export are under the artifact root's `capture-after/` directory.
+
+The warmed trace contains 327,290 Vulkan API events and no graphics/compute
+pipeline creation. There are **zero sampled leaf calls to
+`Buffer::from_iter<GpuMorphDelta, ...>` out of 6,781 leaves**, compared with
+3,393 out of 11,047 in the earlier pre-optimization 2-moving trace. The same query
+matches the old mangled Rust symbol, verifying that the zero is not a demangling
+or name-filter mismatch. This independently confirms removal of the staging
+hotspot. These sample counts come from different-duration captures; use the
+unprofiled matrix for timing comparisons. Vulkano's `AutoSyncState::add_command`
+is now the largest sampled leaf (485 samples), a useful target for the separate
+command-recording investigation rather than a quantified multiview benefit.
+`capture-after/nsight-analysis.json` retains these counts and leading symbols.
+
+### Headset confirmation: completed after ALVR client restart
+
+After the user's explicit ready signal, the first zero-Lumae launch reached only
+`SYNCHRONIZED`, with no active controller profiles or visible/focused session.
+The user reported a black screen, and the application was stopped. No warmup or
+sampling began and no report was produced. Its log is retained as
+`xr-0-attempt1-black.log`; this attempt is excluded from all measurements.
+
+The user restarted the headset's ALVR streaming client and requested a retry.
+Both subsequent runs reached `VISIBLE` and `FOCUSED`, acquired active Oculus Touch
+controller profiles with aim/grip tracking, and completed ten seconds of warmup
+plus fifteen seconds of sampling. Both applications exited normally. Settings
+match the earlier captures: SteamVR/OpenXR 2.16.7, GTX 1080, 1940x1940 per eye,
+4x MSAA, springs and mirror off, with the real tracked player and natural
+head/hand movement. The ALVR connection recovery is not a renderer code change.
+
+| Metric | 0 Lumae before | 0 Lumae after | 2 Lumae before | 2 Lumae after |
+| --- | ---: | ---: | ---: | ---: |
+| Sampled frames | 562 | 556 | 511 | 563 |
+| Mean eye-render CPU ms, both eyes | 6.698 | 3.984 | 9.368 | 4.056 |
+| Mean update before XR ms | 8.323 | 8.927 | 9.143 | 9.316 |
+| Mean GPU completion wait ms | 3.039 | 4.398 | 4.072 | 2.708 |
+| Mean frame submit ms | 7.485 | 8.409 | 5.543 | 9.357 |
+| Mean post-secondary palette CPU ms | 0.036 | 0.039 | 0.039 | 0.038 |
+| Mean headset frame ms | 26.739 | 26.979 | 29.380 | 26.666 |
+| Median headset frame ms | 26.675 | 26.673 | 26.862 | 26.669 |
+| p95 headset frame ms | 27.281 | 27.450 | 40.253 | 27.100 |
+| Arithmetic average app FPS | 37.398 | 37.066 | 34.036 | 37.501 |
+| Morph-delta bytes/frame | 7,657,152 | 0 | 15,257,760 | 0 |
+| Deformation buffer allocations/frame | 9 | 7 | 9 | 7 |
+| Bone bytes/frame | 154,496 | 154,496 | 154,496 | 154,496 |
+| Deformation jobs/frame | 17 | 17 | 17 | 17 |
+| Dirty vertices/frame | 33,779 | 33,779 | 33,779 | 33,779 |
+| Bone/output resizes | 0 | 0 | 0 | 0 |
+
+The headset confirms zero steady-state morph-delta traffic and the expected two
+fewer allocations per active batch. Eye-render CPU time drops by 2.714 ms without
+NPCs and 5.312 ms with two, consistent with the removed staging cost in headless
+tests. The difference between the new 0- and 2-Lumae eye-render means is only
+0.072 ms, compared with 2.670 ms in the earlier captures. That is evidence that
+the large motion-dependent rendering penalty was addressed, not proof that NPC
+rendering or their ECS nodes are free.
+
+Application frame cadence still sits around 26.7 ms / 37.5 FPS. The roughly 9 ms
+CPU update and runtime submission/pacing remain significant. Do not equate the
+eye-render CPU reduction with an equal end-to-end frame reduction: the warm runs
+also differ in GPU completion wait and frame-submit time. The newly reported
+predicted intervals are 22.742 and 22.222 ms; earlier runs reported 22.341 and
+26.701 ms. These are not independent physical refresh measurements. Natural
+movement, view differences, one short capture per condition and runtime pacing
+limit FPS/tail comparisons. Actual compositor dropped/reprojected frame counts
+and live per-eye GPU timestamps remain unavailable.
+
+The successful updated reports are
+`xr-0/20261027-205332Z__avatar_no_spring_no_mirror.md` and
+`xr-2/20261027-205408Z__avatar_no_spring_no_mirror.md` under the final artifact
+root. `xr-comparison.json` records the old/new report values, and the matching
+`xr-0.log` / `xr-2.log` retain session/tracking events. No further headset demo
+is running. Next retain the material binding-cache follow-up and the separate
+transform/IK update investigation; multiview remains a later measured slice.

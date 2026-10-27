@@ -551,10 +551,13 @@ fn profile_sakura_lumae_stereo() -> Result<(), Box<dyn Error>> {
     let counters = renderer
         .perf_counters()
         .saturating_delta(counters_start.unwrap());
+    assert_eq!(
+        counters.deformation_morph_delta_upload_bytes, 0,
+        "immutable morph deltas must remain uploaded after warmup, including moving frames"
+    );
     if motion == "static" {
         assert_eq!(counters.deformation_jobs, 0);
         assert_eq!(counters.deformation_bone_upload_bytes, 0);
-        assert_eq!(counters.deformation_morph_delta_upload_bytes, 0);
     }
     if motion == "moving" {
         assert!(

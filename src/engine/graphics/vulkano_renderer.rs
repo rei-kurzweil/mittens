@@ -4385,55 +4385,44 @@ mod vulkano_backend {
                 .as_ref()
                 .ok_or("missing global skin deformation arena")?
                 .clone();
-            // Vulkan storage buffers cannot be zero-length. The zero record is
-            // never read when every job has an empty active range.
-            #[cfg(test)]
-            let morph_upload_started = self.profile.as_ref().map(|_| std::time::Instant::now());
-            let morph_upload: Vec<_> = if self.deformation_morph_cpu.is_empty() {
-                vec![GpuMorphDelta::default()]
+            // Mesh loading uploads the immutable global morph arena and replaces
+            // it only when a new mesh extends it. Descriptor sets/recorded command
+            // buffers retain the old allocation across replacement.
+            let morph_buffer = if let Some(buffer) = &self.deformation_morph_buffer {
+                buffer.clone()
             } else {
-                self.deformation_morph_cpu.clone()
+                if !self.deformation_morph_cpu.is_empty() {
+                    return Err("missing uploaded global morph deformation arena".into());
+                }
+                // Vulkan descriptors cannot reference an empty buffer. Keep one
+                // zero entry for skin-only scenes; no job reads it without morphs.
+                let buffer = Buffer::from_iter(
+                    memory_allocator.clone(),
+                    BufferCreateInfo {
+                        usage: BufferUsage::STORAGE_BUFFER,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                        ..Default::default()
+                    },
+                    [GpuMorphDelta::default()],
+                )?;
+                self.deformation_stats.morph_delta_upload_bytes +=
+                    size_of::<GpuMorphDelta>() as u64;
+                self.deformation_stats.buffer_allocations += 1;
+                self.deformation_morph_buffer = Some(buffer.clone());
+                buffer
             };
             let active_morph_upload: Vec<_> = if active_morphs.is_empty() {
                 vec![GpuActiveMorph::default()]
             } else {
                 active_morphs
             };
-            let morph_staging = Buffer::from_iter(
-                memory_allocator.clone(),
-                BufferCreateInfo {
-                    usage: BufferUsage::TRANSFER_SRC,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                    ..Default::default()
-                },
-                morph_upload.iter().copied(),
-            )?;
-            let morph_buffer = Buffer::new_slice::<GpuMorphDelta>(
-                memory_allocator.clone(),
-                BufferCreateInfo {
-                    usage: BufferUsage::STORAGE_BUFFER | BufferUsage::TRANSFER_DST,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
-                    ..Default::default()
-                },
-                morph_upload.len() as DeviceSize,
-            )?;
-            cbb.copy_buffer(CopyBufferInfo::buffers(morph_staging, morph_buffer.clone()))?;
-            self.deformation_stats.morph_delta_upload_bytes +=
-                (morph_upload.len() * size_of::<GpuMorphDelta>()) as u64;
-            #[cfg(test)]
-            if let (Some(profile), Some(started)) = (self.profile.as_mut(), morph_upload_started) {
-                profile.morph_upload_cpu_ns += started.elapsed().as_nanos() as u64;
-            }
             self.deformation_stats.weight_upload_bytes +=
                 (active_morph_upload.len() * size_of::<GpuActiveMorph>()) as u64;
-            self.deformation_stats.buffer_allocations += 8;
+            self.deformation_stats.buffer_allocations += 6;
             let active_morph_staging = Buffer::from_iter(
                 memory_allocator.clone(),
                 BufferCreateInfo {
@@ -6490,6 +6479,9 @@ mod vulkano_backend {
                 self.deformation_skin_buffer = Some(skin_dst_global);
             }
             if let Some((_, morph_dst)) = morph_replacement {
+                self.deformation_stats.morph_delta_upload_bytes +=
+                    morph_dst.len() * size_of::<GpuMorphDelta>() as u64;
+                self.deformation_stats.buffer_allocations += 2;
                 self.deformation_morph_buffer = Some(morph_dst);
             }
 
@@ -6509,6 +6501,14 @@ mod vulkano_backend {
             Ok(())
         }
     }
+    #[cfg(test)]
+    mod deformation_tests {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/engine/graphics/vulkano_deformation_tests.rs"
+        ));
+    }
+
     #[cfg(test)]
     mod sakura_profile {
         include!(concat!(
