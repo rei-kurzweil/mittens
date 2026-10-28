@@ -2,10 +2,12 @@
 
 Date: 2026-10-28
 
-Status: reusable MMS motion controller implemented and tested. Untracked NPC walking remains a
-separate native eligibility/calibration gap; Sakura's plain GLTF Lumae have not been changed.
+Status: controller implemented and tested. The subsequent
+[shared AVC setup and untracked walking](shared-avc-setup-and-untracked-walking.md) change enables
+Sakura NPC stepping and starts pacing on spawn. The original findings below describe the gap
+that motivated that change.
 
-## Existing behavior
+## Original behavior before shared AVC setup
 
 Walking defaults on in AvatarControlComponent, not on GLTF or the Lumae model. The gait measures
 actual capsule-center world X/Z displacement after movement and contact resolution. It also handles
@@ -85,10 +87,13 @@ the native fixed-step Velocity integrator:
 No new engine, component, signal, or MMS host API was introduced. The module's start/stop/status
 members are ordinary MMS functions on its returned controller, as with existing script prefabs.
 
-## Next decision: native untracked NPC lower body
+## Resolved direction: native untracked NPC lower body
 
 Supporting actual Lumae walking needs a truthful untracked rig entry point or an explicitly supported
 non-tracked AVC path. That work should preserve tracking-loss behavior for XR, avoid tracked-head
 splices imposing a player camera pose on NPCs, calibrate Lumae soles against its own rest skeleton,
 and let the existing lower-body owner consume the resulting supported root motion. It should be
 verified on the actual Lumae rig before enabling pacing in Sakura.
+
+The selected approach is implemented in the linked shared AVC task: common rig/capsule/lower-body
+setup with head splicing conditional on XR and an attached-head desktop aiming path.

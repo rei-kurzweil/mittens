@@ -42,9 +42,8 @@ import { display_car } from "../assets/components/vehicles/display_car.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
 import { rei_mu_bow_secondary_motion } from "../assets/components/secondary_motion/rei-mu-bow.mms"
-import { lumae_secondary_motion } from "../assets/components/characters/lumae/secondary_motion.mms"
-import { lumae_colliders } from "../assets/components/characters/lumae/colliders.mms"
-import { pose as lumae_relaxed_pose } from "../assets/components/characters/lumae/poses/000-relaxed.pose.mms"
+import { lumae_avatar } from "../assets/components/characters/lumae/avatar.mms"
+import { pacing_and_waiting_around } from "../assets/components/characters/lumae/behavior/pacing_and_waiting_around.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
@@ -279,17 +278,21 @@ fn spawn_lumae() {
     let z = anchor[1] + (spawn_fraction(count + 17.0) - 0.5) * 0.4
     lumae_spawn_state.count = count + 1
     let label = "sakura_lumae_" + lumae_spawn_state.count
-    let avatar = T.position(x, roof_height, z) {
+    let motion_root = T {
+        name = label + "_motion"
+        lumae_avatar(label, pistol_material)
+    }
+    let pacing = pacing_and_waiting_around(motion_root, false)
+    // Face the first walking leg toward the roof interior. The controller's
+    // first half-turn then sends negative-Z spawns toward +Z, and vice versa.
+    let yaw = 0.0
+    if z < 0.0 { yaw = 3.141592653589793 }
+    let avatar = T.position(x, roof_height, z).rotation(0.0, yaw, 0.0) {
         name = label + "_placement"
-        GLTF.new("assets/components/characters/lumae/lumae.glb") {
-            name = label
-            pistol_material
-            lumae_relaxed_pose()
-            lumae_colliders()
-            lumae_secondary_motion()
-        }
+        pacing
     }
     lumae_group.attach(avatar)
+    pacing.start()
     lumae_count.set_text("Lumae: " + lumae_spawn_state.count)
 }
 let add_lumae = T {

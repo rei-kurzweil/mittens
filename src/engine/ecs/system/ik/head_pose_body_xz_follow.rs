@@ -75,7 +75,30 @@ pub(super) fn tick_one(
     // Target = displaced head bone world XZ (skull-base / head-pivot).
     // `displaced_head` lives under driven_t->head_target, so this is a
     // function of HMD pose only — no feedback from writing model_root below.
+    let unspliced = world
+        .get_component_by_id_as::<AvatarControlComponent>(avc_id)
+        .and_then(|avatar| {
+            Some((
+                avatar.head_mount?,
+                avatar.head_neck_body_constraint.as_ref()?.head_rest(),
+            ))
+        })
+        .filter(|(mount, _)| world.parent_of(head_bone_id) != Some(*mount));
     let Some(head_world) = restored_head_world.or_else(|| {
+        if let Some((mount, rest)) = unspliced {
+            let mount = world
+                .get_component_by_id_as::<TransformComponent>(mount)?
+                .transform
+                .matrix_world;
+            let local = crate::engine::transform::TransformTrs::new(
+                [0.0; 3],
+                rest.rotation_quat_xyzw,
+                rest.scale,
+            )
+            .to_matrix()
+            .ok()?;
+            return Some(crate::utils::math::mat4_mul(mount, local));
+        }
         world
             .get_component_by_id_as::<TransformComponent>(head_bone_id)
             .map(|t| t.transform.matrix_world)
@@ -135,6 +158,27 @@ pub(super) fn tick_one(
             component_id: model_root_id,
         },
     );
+
+    if let Some((_, rest)) = unspliced
+        && let Some(parent) = world.parent_of(head_bone_id)
+        && let Some(parent_world) = super::super::TransformSystem::world_model(world, parent)
+    {
+        // Keep mouse look authoritative even when native neck bending is opted
+        // out. The virtual target, not the posed head, drives legacy placement.
+        let rotation = crate::utils::math::quat_mul(
+            quat_conjugate(mat_to_quat(parent_world)),
+            mat_to_quat(head_world),
+        );
+        emit.push_intent_now(
+            head_bone_id,
+            IntentValue::UpdateTransform {
+                component_id: head_bone_id,
+                translation: rest.translation,
+                rotation_quat_xyzw: rotation,
+                scale: rest.scale,
+            },
+        );
+    }
 
     // Phase 2 neck rest-pin.
     if let (Some(neck_id), Some(neck_rest_t)) = (neck_bone_id_opt, neck_rest_t_opt) {

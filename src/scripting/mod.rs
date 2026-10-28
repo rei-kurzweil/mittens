@@ -58,3 +58,6 @@ mod lumae_pacing_tests;
 
 #[cfg(test)]
 mod sakura_desktop_tests;
+
+#[cfg(test)]
+mod untracked_avatar_tests;

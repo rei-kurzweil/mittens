@@ -3,7 +3,7 @@ use super::leg::solve_leg;
 use super::rig::*;
 use super::{FootGoal, FootPhase, FootState, LowerBodyStatus, crouch, support::SupportQuery};
 use super::{WalkingDiagnostics, walking::WalkingState};
-use crate::engine::ecs::component::{AvatarControlComponent, InputXRComponent};
+use crate::engine::ecs::component::{AvatarControlComponent, InputComponent, InputXRComponent};
 use crate::engine::ecs::system::collidable_bvh::CollidableBvh;
 use crate::engine::ecs::system::static_contact_system::StaticContactSystem;
 use crate::engine::ecs::system::{AttachmentSystem, HumanoidBoneMapSystem};
@@ -87,6 +87,10 @@ impl LowerBodyIkSystem {
                 if tracking.is_none() {
                     if let Some(input) = world.get_component_by_id_as::<InputXRComponent>(current) {
                         tracking = Some(input.enabled && input.pose_valid);
+                    } else if let Some(input) =
+                        world.get_component_by_id_as::<InputComponent>(current)
+                    {
+                        tracking = Some(input.enabled);
                     }
                 }
                 node = world.parent_of(current);
@@ -95,7 +99,7 @@ impl LowerBodyIkSystem {
                 Some(LowerBodyStatus::Disabled)
             } else if mounted {
                 Some(LowerBodyStatus::Mounted)
-            } else if !tracking.unwrap_or(false) {
+            } else if !tracking.unwrap_or(true) {
                 Some(LowerBodyStatus::Pending)
             } else {
                 None

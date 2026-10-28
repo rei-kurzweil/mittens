@@ -68,7 +68,12 @@ impl ArmTwoBoneIkConfig {
 /// AVC creates a side's TwoBoneIK chain only when both the complete mapped arm and that usable
 /// tracked target exist. A mapped arm without a controller remains in its FK/rest/animation pose.
 ///
-/// ## Topology (after init)
+/// Without an Input/InputXR ancestor, AVC binds the authored model and shared
+/// capsule/lower-body solver without generating head/body drivers or reparenting
+/// bones. With desktop Input, head aiming retains the imported neck/head path.
+/// Only InputXR uses the displaced-head topology shown below.
+///
+/// ## XR topology (after init)
 ///
 /// ```text
 /// Input  (or  InputXR)                    ← primary driver
@@ -205,7 +210,7 @@ pub struct AvatarControlComponent {
     pub(crate) right_hand_aim_correction: Option<[f32; 4]>,
 
     /// ComponentId of the body operator root (`TransformOperatorComponent`).
-    /// Set by `try_init_splices`.
+    /// Set by pose-driver initialization.
     pub(crate) body_operator_id: Option<ComponentId>,
 
     /// The mapped/generated transform that owns the camera path after initialization.

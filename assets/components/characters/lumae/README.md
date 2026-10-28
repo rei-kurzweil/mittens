@@ -5,6 +5,7 @@ migrated and checked separately.
 
 ```text
 lumae/
+├── avatar.mms
 ├── lumae.glb
 ├── colliders.mms
 ├── secondary_motion.mms
@@ -36,7 +37,9 @@ pacing
 
 The GLB embeds its buffers/textures. Collider and secondary-motion exported names are unchanged.
 The relaxed pose changes only arms, preserving Lumae's leg lengths. The pacing controller starts
-paused; it produces root motion and does not itself add NPC walking IK. See
+paused and produces root motion. Use `lumae_avatar(label, material)` from `avatar.mms` inside the
+motion root to add the shared AVC capsule and calibrated walking IK. Sakura now uses this prefab
+and starts pacing on spawn. See
 [controller and walking eligibility](../../../../docs/task/lumae-pacing-and-npc-walking.md).
 
 The pose-capture editor still saves generated libraries to the shared

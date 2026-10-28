@@ -124,6 +124,14 @@ and swing side/progress. Gait state and diagnostics are not serialized.
 
 ## Current limits and next slices
 
+[Shared AVC setup and untracked walking](shared-avc-setup-and-untracked-walking.md) extends the
+initial XR eligibility to desktop and untracked AVCs without changing how movement admits steps.
+
+Unsupported moving avatars need a separate posture policy. Track trailing legs,
+relaxed hovering, and takeoff/landing transitions in
+[airborne lower-body IK](airborne-lower-body-ik.md). That policy is planned and
+will share the existing lower-body scheduler and leg writer.
+
 This slice does not lower or tilt the pelvis. A fully extended upright leg has
 insufficient length for an offset fixed contact. Targets remain planted, while
 the bounded solution reports positional error and `Limited` status above 1 cm;

@@ -3,9 +3,10 @@ use crate::engine::ecs::component::{
     AvatarControlComponent, BoneRestPoseComponent, Camera3DComponent, CameraXRComponent,
     CollidableComponent, CollisionShape, ControllerHand, ControllerPoseSource,
     ControllerXRComponent, EyeRotationLimits, GLTFComponent, HeadMotionGazePolicy,
-    HeadRotationCompensation, IKChainComponent, IKSolver, InputXRComponent, SerializeComponent,
-    TransformComponent, TransformOperatorComponent, VRChatOSCEyeTrackingComponent,
-    XREyeTrackingComponent, XREyeTrackingHtcComponent, ZoneComponent,
+    HeadRotationCompensation, IKChainComponent, IKSolver, InputComponent, InputXRComponent,
+    SerializeComponent, TransformComponent, TransformOperatorComponent,
+    VRChatOSCEyeTrackingComponent, XREyeTrackingComponent, XREyeTrackingHtcComponent,
+    ZoneComponent,
 };
 use crate::engine::ecs::component::{
     QueryRootMode, is_level_provider, resolve_component_ref, retained_level_sample,
@@ -159,32 +160,36 @@ fn tick_one(
     dt_sec: f32,
     log_alignment: bool,
 ) {
-    // --- Init phase ---
-    let needs_init = {
-        let Some(c) = world.get_component_by_id_as::<AvatarControlComponent>(id) else {
-            return;
-        };
-        c.head_mount.is_none()
-    };
-
-    if needs_init {
-        // Runtime splicing reparents and rewrites avatar bones, so it is itself a
-        // pose-changing operation. An XR-authored avatar must remain in its authored
-        // pose until the headset has supplied a valid pose. Non-XR AVC trees continue
-        // to initialize immediately.
-        if !ancestor_input_xr_is_ready(world, id) {
-            return;
+    // Shared rig binding is independent of tracked head embodiment. An
+    // untracked NPC keeps its authored model transform and bone hierarchy.
+    let has_pose_driver =
+        owning_input_xr(world, id).is_some() || owning_desktop_input(world, id).is_some();
+    if !has_pose_driver {
+        if let Some(gltf) = humanoid_maps.request_for_avc(world, id)
+            && let Some(report) = humanoid_maps.report(gltf)
+            && let Some(root) = model_root(world, id)
+        {
+            bind_shared_rig(world, id, root, report);
         }
-        let Some(gltf) = humanoid_maps.request_for_avc(world, id) else {
-            return;
-        };
-        let Some(report) = humanoid_maps.report(gltf).cloned() else {
-            return;
-        };
-        if !report.head_ready() {
-            return;
+    } else {
+        let needs_init = world
+            .get_component_by_id_as::<AvatarControlComponent>(id)
+            .is_some_and(|avatar| avatar.head_mount.is_none());
+        if needs_init {
+            if !ancestor_input_xr_is_ready(world, id) {
+                return;
+            }
+            let Some(gltf) = humanoid_maps.request_for_avc(world, id) else {
+                return;
+            };
+            let Some(report) = humanoid_maps.report(gltf).cloned() else {
+                return;
+            };
+            if !report.head_ready() {
+                return;
+            }
+            try_init_pose_drivers(id, world, retargeting, &report, emit);
         }
-        try_init_splices(id, world, retargeting, &report, emit);
     }
 
     refresh_map_camera_anchor(id, world, humanoid_maps, emit);
@@ -194,9 +199,11 @@ fn tick_one(
     // Keep the displaced head bone anchored under head_mount. This prevents
     // animation/FK from reintroducing a local head translation that would move
     // the camera wrapper relative to the solved head pivot.
-    let displaced_head_id = world
-        .get_component_by_id_as::<AvatarControlComponent>(id)
-        .and_then(|c| c.displaced_head);
+    let displaced_head_id = owning_input_xr(world, id).and_then(|_| {
+        world
+            .get_component_by_id_as::<AvatarControlComponent>(id)
+            .and_then(|c| c.displaced_head)
+    });
     if let Some(head_bone_id) = displaced_head_id {
         if let Some(head_t) = world.get_component_by_id_as::<TransformComponent>(head_bone_id) {
             if head_t.transform.translation != [0.0, 0.0, 0.0] {
@@ -782,6 +789,47 @@ fn subtree_has_camera(world: &World, root: ComponentId) -> bool {
     false
 }
 
+fn model_root(world: &World, avc: ComponentId) -> Option<ComponentId> {
+    world
+        .get_component_by_id_as::<AvatarControlComponent>(avc)
+        .and_then(|avatar| avatar.model_root_id)
+        .filter(|&root| {
+            world
+                .get_component_by_id_as::<TransformComponent>(root)
+                .is_some()
+        })
+        .or_else(|| {
+            world.children_of(avc).iter().copied().find(|&child| {
+                world
+                    .get_component_by_id_as::<TransformComponent>(child)
+                    .is_some()
+            })
+        })
+}
+
+fn bind_shared_rig(
+    world: &mut World,
+    id: ComponentId,
+    root: ComponentId,
+    report: &HumanoidBoneMapReport,
+) {
+    let avatar = world
+        .get_component_by_id_as_mut::<AvatarControlComponent>(id)
+        .unwrap();
+    avatar.model_root_id = Some(root);
+    avatar.humanoid_map_gltf = Some(report.owning_gltf);
+    avatar.humanoid_map_generation = report.generation;
+}
+
+fn owning_desktop_input(world: &World, mut id: ComponentId) -> Option<ComponentId> {
+    loop {
+        if world.get_component_by_id_as::<InputComponent>(id).is_some() {
+            return Some(id);
+        }
+        id = world.parent_of(id)?;
+    }
+}
+
 fn owning_input_xr(world: &World, mut id: ComponentId) -> Option<ComponentId> {
     loop {
         if world
@@ -923,7 +971,7 @@ fn try_init_or_route_capsule(
     avc_id: ComponentId,
     world: &mut World,
     render_assets: &RenderAssets,
-    _emit: &mut dyn SignalEmitter,
+    emit: &mut dyn SignalEmitter,
 ) {
     let Some(avatar) = world.get_component_by_id_as::<AvatarControlComponent>(avc_id) else {
         return;
@@ -1061,7 +1109,7 @@ fn try_init_or_route_capsule(
             .with_axes(super::super::component::transform_operator::TranslationAxes::Y),
         );
         let _ = world.set_parent(sample, Some(fork));
-        _emit.push_intent_now(
+        emit.push_intent_now(
             sample,
             IntentValue::UpdateTransformWorld {
                 component_id: sample,
@@ -1085,6 +1133,15 @@ fn try_init_or_route_capsule(
         avc.capsule_world_scale = world_scale;
     }
     refresh_capsule_routing(avc_id, world);
+    // Untracked rigs do not emit head/body splice transforms. Publish the new
+    // proxy's world frame explicitly before contact can consume it; otherwise
+    // its identity cache would push a correctly placed NPC up from the floor.
+    emit.push_intent_now(
+        model_root_id,
+        IntentValue::UpdateTransformWorld {
+            component_id: model_root_id,
+        },
+    );
 }
 
 fn publish_capsule_readiness(
@@ -1345,7 +1402,8 @@ fn classify_arm_ik_eligibility(
     })
 }
 
-/// First-time setup: splice bones, create body operator, and (optionally) hand smoothing operators.
+/// Pose-driven embodiment: create body/head targets and optional hand IK.
+/// Only an XR source reparents the head; desktop keeps the imported neck/head path.
 ///
 /// Controllers are discovered by topology: any `ControllerXRComponent` that is a
 /// **direct child** of this `AvatarControlComponent` is treated as a hand driver.
@@ -1353,7 +1411,7 @@ fn classify_arm_ik_eligibility(
 ///
 /// Body operator created here reads `driven_t`'s world matrix, strips pitch/roll via `YawFollow`,
 /// and writes the result to `model_root` (which is re-parented under the operator output).
-fn try_init_splices(
+fn try_init_pose_drivers(
     id: ComponentId,
     world: &mut World,
     retargeting: &mut JointBasisRetargetingSystem,
@@ -1399,14 +1457,10 @@ fn try_init_splices(
         )
     };
 
-    // Find model_root: first TransformComponent child of AvatarControlComponent.
-    let Some(model_root_id) = world.children_of(id).iter().copied().find(|&ch| {
-        world
-            .get_component_by_id_as::<TransformComponent>(ch)
-            .is_some()
-    }) else {
+    let Some(model_root_id) = model_root(world, id) else {
         return;
     };
+    bind_shared_rig(world, id, model_root_id, humanoid_map);
 
     // Discover hand controllers by topology: direct ControllerXRComponent children.
     let left_ctrl = world.children_of(id).iter().copied().find(|&ch| {
@@ -1767,22 +1821,24 @@ fn try_init_splices(
     }
 
     emit_attach(emit, driven_t_id, head_target_id);
-    emit_attach(emit, head_target_id, head_bone_id);
+    if owning_input_xr(world, id).is_some() {
+        emit_attach(emit, head_target_id, head_bone_id);
 
-    // Zero head_bone's local translation — the driven head mount owns its offset.
-    // Preserve the authored head rest rotation/scale so the visible
-    // head mesh and camera anchor share the same convention across desktop and XR.
-    // Emitted *after* the reparent attach so the UpdateTransform lands on
-    // head_bone in its new parent without fighting the attach intent's matrix recompute.
-    emit.push_intent_now(
-        head_bone_id,
-        IntentValue::UpdateTransform {
-            component_id: head_bone_id,
-            translation: [0.0, 0.0, 0.0],
-            rotation_quat_xyzw: head_rest_rot,
-            scale: head_rest_s,
-        },
-    );
+        // Zero head_bone's local translation — the driven head mount owns its offset.
+        // Preserve the authored head rest rotation/scale so the visible
+        // head mesh and camera anchor share the same convention across desktop and XR.
+        // Emitted *after* the reparent attach so the UpdateTransform lands on
+        // head_bone in its new parent without fighting the attach intent's matrix recompute.
+        emit.push_intent_now(
+            head_bone_id,
+            IntentValue::UpdateTransform {
+                component_id: head_bone_id,
+                translation: [0.0, 0.0, 0.0],
+                rotation_quat_xyzw: head_rest_rot,
+                scale: head_rest_s,
+            },
+        );
+    }
 
     // -----------------------------------------------------------------------
     // Arm IK (TwoBoneIK) with explicit joint IDs.
@@ -3233,7 +3289,7 @@ mod hand_pose_correction_tests {
                 );
             }
             let mut queue = CommandQueue::new();
-            try_init_splices(
+            try_init_pose_drivers(
                 avatar,
                 &mut world,
                 &mut Default::default(),
@@ -3315,86 +3371,101 @@ mod hand_pose_correction_tests {
     }
 
     #[test]
-    fn native_head_neck_body_binding_is_captured_before_head_splicing() {
+    fn head_binding_keeps_desktop_head_attached_and_splices_only_xr() {
         use crate::engine::ecs::CommandQueue;
         use crate::engine::ecs::system::{HeadNeckBodyConstraintSystem, SystemWorld};
         use crate::engine::graphics::VisualWorld;
-        let mut world = World::default();
-        let driven = world.add_component(TransformComponent::new().with_position(0.0, 1.42, 0.0));
-        let mut config = AvatarControlComponent::new();
-        config.collision_enabled = false;
-        let avatar = world.add_component(config);
-        let root = world.add_component(TransformComponent::new());
-        let neck = world.add_component(TransformComponent::new().with_position(0.0, 1.3, 0.0));
-        let head = world.add_component(TransformComponent::new().with_position(0.0, 0.12, 0.0));
-        for (p, c) in [(driven, avatar), (avatar, root), (root, neck), (neck, head)] {
-            world.add_child(p, c).unwrap();
-        }
-        let mut report = left_arm_report(head, head, head);
-        report.slots.clear();
-        for (slot, component) in [(HumanoidSlot::Head, head), (HumanoidSlot::Neck, neck)] {
-            report.slots.insert(
-                slot,
-                HumanoidSlotReport {
+        for xr in [false, true] {
+            let mut world = World::default();
+            let driven =
+                world.add_component(TransformComponent::new().with_position(0.0, 1.42, 0.0));
+            let input = if xr {
+                let mut source = InputXRComponent::on();
+                source.pose_valid = true;
+                world.add_component(source)
+            } else {
+                world.add_component(InputComponent::new())
+            };
+            world.add_child(input, driven).unwrap();
+            let mut config = AvatarControlComponent::new();
+            config.collision_enabled = false;
+            let avatar = world.add_component(config);
+            let root = world.add_component(TransformComponent::new());
+            let neck = world.add_component(TransformComponent::new().with_position(0.0, 1.3, 0.0));
+            let head = world.add_component(TransformComponent::new().with_position(0.0, 0.12, 0.0));
+            for (p, c) in [(driven, avatar), (avatar, root), (root, neck), (neck, head)] {
+                world.add_child(p, c).unwrap();
+            }
+            let mut report = left_arm_report(head, head, head);
+            report.slots.clear();
+            for (slot, component) in [(HumanoidSlot::Head, head), (HumanoidSlot::Neck, neck)] {
+                report.slots.insert(
                     slot,
-                    status: HumanoidSlotStatus::Resolved(ResolvedHumanoidTarget {
-                        component,
-                        kind: ResolvedHumanoidTargetKind::SkinJoint,
-                    }),
-                    provenance: HumanoidSlotProvenance::ConventionName,
-                    diagnostic: None,
-                },
+                    HumanoidSlotReport {
+                        slot,
+                        status: HumanoidSlotStatus::Resolved(ResolvedHumanoidTarget {
+                            component,
+                            kind: ResolvedHumanoidTargetKind::SkinJoint,
+                        }),
+                        provenance: HumanoidSlotProvenance::ConventionName,
+                        diagnostic: None,
+                    },
+                );
+            }
+            let mut queue = CommandQueue::new();
+            try_init_pose_drivers(
+                avatar,
+                &mut world,
+                &mut Default::default(),
+                &report,
+                &mut queue,
+            );
+            assert!(
+                world
+                    .get_component_by_id_as::<AvatarControlComponent>(avatar)
+                    .unwrap()
+                    .head_neck_body_constraint
+                    .is_some()
+            );
+            let mut systems = SystemWorld::default();
+            let mut visuals = VisualWorld::default();
+            let mut assets = RenderAssets::new();
+            queue.flush(&mut world, &mut systems, &mut visuals, &mut assets);
+            if xr {
+                assert_ne!(world.parent_of(head), Some(neck));
+            } else {
+                assert_eq!(world.parent_of(head), Some(neck));
+            }
+            let driven_t = world
+                .get_component_by_id_as_mut::<TransformComponent>(driven)
+                .unwrap();
+            driven_t.transform.rotation =
+                crate::utils::math::quat_from_axis_angle([-1.0, 0.0, 0.0], 50_f32.to_radians());
+            driven_t.transform.recompute_model();
+            systems.transform_changed(&mut world, &mut visuals, driven);
+            let mut constraint = HeadNeckBodyConstraintSystem::default();
+            constraint.register(avatar);
+            constraint.tick(&mut world, &mut queue, &systems.attachment);
+            queue.flush(&mut world, &mut systems, &mut visuals, &mut assets);
+            let neck_world = world
+                .get_component_by_id_as::<TransformComponent>(neck)
+                .unwrap()
+                .transform
+                .matrix_world;
+            let endpoint = crate::utils::math::mat4_mul_vec4(neck_world, [0.0, 0.12, 0.0, 1.0]);
+            let head_world = world
+                .get_component_by_id_as::<TransformComponent>(head)
+                .unwrap()
+                .transform
+                .matrix_world;
+            for axis in 0..3 {
+                assert!((endpoint[axis] - head_world[3][axis]).abs() < 0.00003);
+            }
+            assert_eq!(
+                constraint.status(avatar),
+                super::super::ik::head_neck_body_constraint::HeadNeckBodyConstraintStatus::Ready
             );
         }
-        let mut queue = CommandQueue::new();
-        try_init_splices(
-            avatar,
-            &mut world,
-            &mut Default::default(),
-            &report,
-            &mut queue,
-        );
-        assert!(
-            world
-                .get_component_by_id_as::<AvatarControlComponent>(avatar)
-                .unwrap()
-                .head_neck_body_constraint
-                .is_some()
-        );
-        let mut systems = SystemWorld::default();
-        let mut visuals = VisualWorld::default();
-        let mut assets = RenderAssets::new();
-        queue.flush(&mut world, &mut systems, &mut visuals, &mut assets);
-        assert_ne!(world.parent_of(head), Some(neck));
-        let driven_t = world
-            .get_component_by_id_as_mut::<TransformComponent>(driven)
-            .unwrap();
-        driven_t.transform.rotation =
-            crate::utils::math::quat_from_axis_angle([-1.0, 0.0, 0.0], 50_f32.to_radians());
-        driven_t.transform.recompute_model();
-        systems.transform_changed(&mut world, &mut visuals, driven);
-        let mut constraint = HeadNeckBodyConstraintSystem::default();
-        constraint.register(avatar);
-        constraint.tick(&mut world, &mut queue, &systems.attachment);
-        queue.flush(&mut world, &mut systems, &mut visuals, &mut assets);
-        let neck_world = world
-            .get_component_by_id_as::<TransformComponent>(neck)
-            .unwrap()
-            .transform
-            .matrix_world;
-        let endpoint = crate::utils::math::mat4_mul_vec4(neck_world, [0.0, 0.12, 0.0, 1.0]);
-        let head_world = world
-            .get_component_by_id_as::<TransformComponent>(head)
-            .unwrap()
-            .transform
-            .matrix_world;
-        for axis in 0..3 {
-            assert!((endpoint[axis] - head_world[3][axis]).abs() < 0.00003);
-        }
-        assert_eq!(
-            constraint.status(avatar),
-            super::super::ik::head_neck_body_constraint::HeadNeckBodyConstraintStatus::Ready
-        );
     }
 
     #[test]
