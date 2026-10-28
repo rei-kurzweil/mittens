@@ -82,6 +82,11 @@ struct TranslationSampleState {
 #[derive(Debug, Default)]
 pub struct TransformOperatorSystem {
     last_dt_sec: Option<f32>,
+    parent_index_revision: Option<(u64, u64)>,
+    parent_targets: HashMap<ComponentId, ComponentId>,
+    parent_dependents: HashMap<ComponentId, Vec<ComponentId>>,
+    #[cfg(test)]
+    parent_index_rebuilds: usize,
     translation_samples: HashMap<ComponentId, TranslationSampleState>,
     #[cfg(test)]
     pub(crate) sample_evaluation_count: usize,
@@ -174,7 +179,7 @@ impl TransformOperatorSystem {
         root: ComponentId,
         input_world: TransformMatrix,
     ) -> Option<(TransformMatrix, Vec<ComponentId>)> {
-        let rebased_world = Self::apply_transform_parent_basis(world, root, input_world);
+        let rebased_world = self.apply_transform_parent_basis(world, root, input_world);
         if let Some(settings) = world
             .get_component_by_id_as::<TransformOperatorComponent>(root)
             .and_then(|operator| operator.sample_translation_settings())
@@ -524,16 +529,75 @@ impl TransformOperatorSystem {
         false
     }
 
+    /// Rebuild only after topology/selector metadata or operator settings change.
+    /// Index every structural ancestor of the resolved source transform so a
+    /// subtree write can find its external consumers without a scene-wide scan.
+    fn sync_parent_index(&mut self, world: &World) {
+        let revision = world.transform_dependency_revision();
+        if self.parent_index_revision == Some(revision) {
+            return;
+        }
+        self.parent_targets.clear();
+        self.parent_dependents.clear();
+        for operator in world.transform_operator_ids() {
+            let Some(target) = world
+                .get_component_by_id_as::<TransformOperatorComponent>(operator)
+                .and_then(|operator| operator.parent_settings())
+                .and_then(|settings| settings.resolve_target_component(world))
+            else {
+                continue;
+            };
+            self.parent_targets.insert(operator, target);
+            let mut source = Some(target);
+            while let Some(id) = source {
+                if world
+                    .get_component_by_id_as::<TransformComponent>(id)
+                    .is_some()
+                {
+                    break;
+                }
+                source = world.parent_of(id);
+            }
+            while let Some(id) = source {
+                self.parent_dependents.entry(id).or_default().push(operator);
+                source = world.parent_of(id);
+            }
+        }
+        for dependents in self.parent_dependents.values_mut() {
+            dependents.sort_unstable();
+        }
+        self.parent_index_revision = Some(revision);
+        #[cfg(test)]
+        {
+            self.parent_index_rebuilds += 1;
+        }
+    }
+
+    pub(crate) fn transform_parent_dependents(
+        &mut self,
+        world: &World,
+        changed: ComponentId,
+    ) -> Vec<(ComponentId, ComponentId)> {
+        self.sync_parent_index(world);
+        self.parent_dependents
+            .get(&changed)
+            .into_iter()
+            .flatten()
+            .filter(|&&operator| !Self::is_descendant_of(world, operator, changed))
+            .map(|&operator| (operator, self.parent_targets[&operator]))
+            .collect()
+    }
+
     fn apply_transform_parent_basis(
+        &mut self,
         world: &World,
         node: ComponentId,
         current_world: TransformMatrix,
     ) -> TransformMatrix {
-        world
-            .get_component_by_id_as::<TransformOperatorComponent>(node)
-            .and_then(|operator| operator.parent_settings())
-            .and_then(|tp| tp.resolve_target_component(world))
-            .and_then(|target| Self::world_model(world, target))
+        self.sync_parent_index(world);
+        self.parent_targets
+            .get(&node)
+            .and_then(|&target| Self::world_model(world, target))
             .unwrap_or(current_world)
     }
 
@@ -1090,6 +1154,93 @@ mod tests {
 
     fn guid_ref(world: &World, component: ComponentId) -> ComponentRef {
         ComponentRef::Guid(world.get_component_record(component).unwrap().guid)
+    }
+
+    #[test]
+    fn parent_index_tracks_ancestors_retargeting_and_removal_without_pose_rebuilds() {
+        let mut world = World::default();
+        let root = world.add_component(TransformComponent::new());
+        let source = world.add_component(TransformComponent::new());
+        let other = world.add_component(TransformComponent::new());
+        world.add_child(root, source).unwrap();
+        let owner = world.add_component(
+            TransformOperatorComponent::parent().with_source(guid_ref(&world, source)),
+        );
+        let mut system = TransformOperatorSystem::new();
+        assert_eq!(
+            system.transform_parent_dependents(&world, root),
+            vec![(owner, source)]
+        );
+        assert_eq!(
+            system.transform_parent_dependents(&world, source),
+            vec![(owner, source)]
+        );
+        let rebuilds = system.parent_index_rebuilds;
+        for i in 0..100 {
+            world
+                .get_component_by_id_as_mut::<TransformComponent>(source)
+                .unwrap()
+                .transform
+                .matrix_world[3][0] = i as f32;
+            assert_eq!(
+                system.transform_parent_dependents(&world, root),
+                vec![(owner, source)]
+            );
+        }
+        assert_eq!(system.parent_index_rebuilds, rebuilds);
+        let other_ref = guid_ref(&world, other);
+        world
+            .get_component_by_id_as_mut::<TransformOperatorComponent>(owner)
+            .unwrap()
+            .parent_settings_mut()
+            .unwrap()
+            .target_source = Some(other_ref);
+        assert!(system.transform_parent_dependents(&world, root).is_empty());
+        assert_eq!(
+            system.transform_parent_dependents(&world, other),
+            vec![(owner, other)]
+        );
+        world.add_child(root, other).unwrap();
+        assert_eq!(
+            system.transform_parent_dependents(&world, root),
+            vec![(owner, other)]
+        );
+        // Consumers in the changed subtree are already visited by propagation.
+        world.add_child(root, owner).unwrap();
+        assert!(system.transform_parent_dependents(&world, root).is_empty());
+        world.detach_from_parent(owner);
+        world.remove_component_leaf(other).unwrap();
+        assert!(system.transform_parent_dependents(&world, root).is_empty());
+        world.remove_component_leaf(owner).unwrap();
+        assert!(world.transform_operator_ids().next().is_none());
+    }
+
+    #[test]
+    fn parent_index_resolves_late_queries_and_non_transform_targets() {
+        use crate::engine::ecs::component::ZoneComponent;
+        let mut world = World::default();
+        let owner = world.add_component(
+            TransformOperatorComponent::parent().with_source(ComponentRef::Query("#late".into())),
+        );
+        let mut system = TransformOperatorSystem::new();
+        assert!(system.transform_parent_dependents(&world, owner).is_empty());
+        let root = world.add_component(TransformComponent::new());
+        let target = world.add_component(ZoneComponent::sphere(0.1));
+        world.get_component_record_mut(target).unwrap().name = "late".into();
+        world.add_child(root, target).unwrap();
+        assert_eq!(
+            system.transform_parent_dependents(&world, root),
+            vec![(owner, target)]
+        );
+        world.get_component_record_mut(target).unwrap().name = "renamed".into();
+        assert!(system.transform_parent_dependents(&world, root).is_empty());
+        world.get_component_record_mut(target).unwrap().name = "late".into();
+        assert_eq!(
+            system.transform_parent_dependents(&world, root),
+            vec![(owner, target)]
+        );
+        world.detach_from_parent(target);
+        assert!(system.transform_parent_dependents(&world, root).is_empty());
     }
 
     #[test]

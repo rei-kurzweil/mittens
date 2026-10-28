@@ -132,7 +132,8 @@ Projectile hits now also reach a scoped handler on their own raycaster, without
 duplicating surface/ancestor or global delivery. `laser.mms` uses that route;
 idle projectile slots no longer enter MMS for unrelated pointer hits. The
 historical hit-delivery timings above describe the earlier global subscriptions.
-Transform-parent discovery has not been optimized yet.
+The subsequent [transform index and spring-contact slice](spring-world-collision-and-transform-parent-index.md)
+implements retained transform-parent discovery; measurements above remain the earlier baseline.
 
 1. Retain/index transform-parent dependents and batch spring pose propagation;
    avoid whole-world discovery for every hair-chain update.

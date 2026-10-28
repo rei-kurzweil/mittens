@@ -135,16 +135,6 @@ impl TransformSystem {
         Self::mat4_mul(translation, authored_local)
     }
 
-    fn is_descendant_of(world: &World, mut node: ComponentId, ancestor: ComponentId) -> bool {
-        while let Some(parent) = world.parent_of(node) {
-            if parent == ancestor {
-                return true;
-            }
-            node = parent;
-        }
-        false
-    }
-
     fn nearest_transform_self_or_ancestor(world: &World, cid: ComponentId) -> Option<ComponentId> {
         if world
             .get_component_by_id_as::<TransformComponent>(cid)
@@ -405,35 +395,9 @@ impl TransformSystem {
         camera_system: &mut crate::engine::ecs::system::CameraSystem,
         light_system: &mut crate::engine::ecs::system::LightSystem,
     ) {
-        let dependents: Vec<ComponentId> = world
-            .all_components()
-            .filter(|&cid| {
-                world
-                    .get_component_by_id_as::<TransformOperatorComponent>(cid)
-                    .and_then(|operator| operator.parent_settings())
-                    .is_some()
-            })
-            .filter(|&cid| !Self::is_descendant_of(world, cid, changed_component))
-            .filter(|&cid| {
-                let target_transform = world
-                    .get_component_by_id_as::<TransformOperatorComponent>(cid)
-                    .and_then(|operator| operator.parent_settings())
-                    .and_then(|tp| tp.resolve_target_component(world))
-                    .and_then(|target| Self::nearest_transform_self_or_ancestor(world, target));
-                target_transform.is_some_and(|target_transform| {
-                    target_transform == changed_component
-                        || Self::is_descendant_of(world, target_transform, changed_component)
-                })
-            })
-            .collect();
-
-        for dependent in dependents {
-            let Some(inherited_world) = world
-                .get_component_by_id_as::<TransformOperatorComponent>(dependent)
-                .and_then(|operator| operator.parent_settings())
-                .and_then(|tp| tp.resolve_target_component(world))
-                .and_then(|target| Self::world_model(world, target))
-            else {
+        let dependents = transform_operator.transform_parent_dependents(world, changed_component);
+        for (dependent, target) in dependents {
+            let Some(inherited_world) = Self::world_model(world, target) else {
                 continue;
             };
 

@@ -142,8 +142,10 @@ The dominant measured difference is transform propagation, not integration.
 processing changed transforms. This matches the earlier CPU profile's finding
 and identifies the next optimization target: retain/index parent dependents,
 batch dirty roots and deduplicate notifications before considering reduced
-spring frequency or simulation LOD. This task records the investigation; it
-does not change spring simulation/propagation behavior.
+spring frequency or simulation LOD. This task recorded the investigation. The subsequent
+[index and spring-contact slice](spring-world-collision-and-transform-parent-index.md) implements
+the dependency index and adds world/foreign-avatar spring contacts; the timings here remain the
+pre-index baseline.
 
 Raw measurements: `/tmp/sakura-springs-six-running.log` and
 `/tmp/sakura-springs-six-paused.log`. A controlled headset A/B remains useful to

@@ -169,6 +169,8 @@ pub struct SpringBoneComponent {
     pub gravity_dir: [f32; 3],
     pub colliders: Vec<ComponentRef>,
     pub hit_radius: f32,
+    pub world_collision: bool,
+    pub avatar_collision: bool,
     component: Option<ComponentId>,
 }
 impl SpringBoneComponent {
@@ -185,6 +187,8 @@ impl SpringBoneComponent {
             gravity_dir: [0.0, -1.0, 0.0],
             colliders: Vec::new(),
             hit_radius: 0.0,
+            world_collision: true,
+            avatar_collision: true,
             component: None,
         }
     }
@@ -222,6 +226,14 @@ impl SpringBoneComponent {
     }
     pub fn colliders(mut self, colliders: Vec<ComponentRef>) -> Self {
         self.colliders = colliders;
+        self
+    }
+    pub fn world_collision(mut self, enabled: bool) -> Self {
+        self.world_collision = enabled;
+        self
+    }
+    pub fn avatar_collision(mut self, enabled: bool) -> Self {
+        self.avatar_collision = enabled;
         self
     }
     pub fn hit_radius(mut self, radius: f32) -> Self {
@@ -273,6 +285,12 @@ impl Component for SpringBoneComponent {
                 "colliders",
                 vec![array(self.colliders.iter().map(ref_expr).collect())],
             );
+        }
+        if !self.world_collision {
+            out = out.with_call("world_collision", vec![b(false)]);
+        }
+        if !self.avatar_collision {
+            out = out.with_call("avatar_collision", vec![b(false)]);
         }
         if self.hit_radius != 0.0 {
             out = out.with_call("hit_radius", vec![num(self.hit_radius as f64)]);

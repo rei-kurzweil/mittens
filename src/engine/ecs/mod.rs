@@ -82,6 +82,10 @@ impl<'a> WorldContext<'a> {
 pub struct World {
     /// Invalidates retained selector results on topology/label/GUID changes.
     query_revision: u64,
+    transform_operator_ids: std::collections::HashSet<ComponentId>,
+    transform_operator_revision: u64,
+    spring_collider_ids: std::collections::HashSet<ComponentId>,
+    spring_collider_revision: u64,
     /// Typed contact registry: discovery never walks unrelated scene components.
     collidable_ids: std::collections::HashSet<ComponentId>,
     /// Consumed by the simulation's StaticContactSystem after pose propagation.
@@ -181,7 +185,7 @@ impl World {
         let node = crate::engine::ecs::component::ComponentNode::new(c);
         let guid = node.guid;
         let id = self.components.insert(node);
-        self.track_contact_component(id);
+        self.track_component_dependencies(id);
         let _old = self.guid_index.insert(guid, id);
         if let Some(node) = self.get_component_record_mut(id) {
             node.component.set_id(id);
@@ -198,7 +202,7 @@ impl World {
         let node = crate::engine::ecs::component::ComponentNode::new_named(name, c);
         let guid = node.guid;
         let id = self.components.insert(node);
-        self.track_contact_component(id);
+        self.track_component_dependencies(id);
         let _old = self.guid_index.insert(guid, id);
         if let Some(node) = self.get_component_record_mut(id) {
             node.component.set_id(id);
@@ -222,7 +226,7 @@ impl World {
         let node = crate::engine::ecs::component::ComponentNode::new_with_guid_named(guid, name, c);
         let guid = node.guid;
         let id = self.components.insert(node);
-        self.track_contact_component(id);
+        self.track_component_dependencies(id);
         self.guid_index.insert(guid, id);
         if let Some(node) = self.get_component_record_mut(id) {
             node.component.set_id(id);
@@ -257,14 +261,42 @@ impl World {
         self.query_revision
     }
 
-    fn track_contact_component(&mut self, id: ComponentId) {
+    fn track_component_dependencies(&mut self, id: ComponentId) {
         if self
             .get_component_by_id_as::<component::CollidableComponent>(id)
             .is_some()
         {
             self.collidable_ids.insert(id);
         }
+        if self
+            .get_component_by_id_as::<component::TransformOperatorComponent>(id)
+            .is_some()
+        {
+            self.transform_operator_ids.insert(id);
+        }
+        if self
+            .get_component_by_id_as::<component::SpringColliderComponent>(id)
+            .is_some()
+        {
+            self.spring_collider_ids.insert(id);
+        }
         self.contact_changes.get_mut().insert(id);
+    }
+
+    pub(crate) fn transform_operator_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
+        self.transform_operator_ids.iter().copied()
+    }
+
+    pub(crate) fn transform_dependency_revision(&self) -> (u64, u64) {
+        (self.query_revision, self.transform_operator_revision)
+    }
+
+    pub(crate) fn spring_collider_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
+        self.spring_collider_ids.iter().copied()
+    }
+
+    pub(crate) fn spring_collision_revision(&self) -> (u64, u64) {
+        (self.query_revision, self.spring_collider_revision)
     }
 
     pub(crate) fn collidable_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
@@ -422,6 +454,14 @@ impl World {
             || kind == std::any::TypeId::of::<component::CollidableComponent>()
         {
             self.contact_changes.get_mut().insert(c);
+        }
+        if kind == std::any::TypeId::of::<component::TransformOperatorComponent>() {
+            self.transform_operator_revision = self.transform_operator_revision.wrapping_add(1);
+        }
+        if kind == std::any::TypeId::of::<component::SpringColliderComponent>()
+            || kind == std::any::TypeId::of::<component::GLTFComponent>()
+        {
+            self.spring_collider_revision = self.spring_collider_revision.wrapping_add(1);
         }
         Some(typed)
     }
@@ -743,6 +783,8 @@ impl World {
         self.detach_all_parents(c);
         self.components.remove(c);
         self.collidable_ids.remove(&c);
+        self.transform_operator_ids.remove(&c);
+        self.spring_collider_ids.remove(&c);
         self.contact_changes.get_mut().insert(c);
         self.query_revision = self.query_revision.wrapping_add(1);
         Ok(())

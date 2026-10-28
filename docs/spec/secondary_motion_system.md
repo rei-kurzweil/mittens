@@ -200,8 +200,25 @@ The existing fixed-step behavior remains the baseline:
 - local rotation is the shortest-arc correction from rest direction to desired direction, composed
   with the imported rest rotation.
 
-Center-relative inertia, colliders, angular limits, and non-spring secondary-motion child types are
-not yet implemented.
+## Collision
+
+Explicit SpringCollider spheres remain scoped to the owning GLTF for self collision. In addition,
+chains default to contact with nearby spheres from other GLTF instances and regular enabled
+Collidable.static() surfaces. SystemWorld supplies its shared retained CollidableBvh after primary
+pose/IK. Endpoint hit radii and collider radii respect instance/world scale. Contact projection
+preserves segment lengths, with downward sweeps for thin box floors.
+
+Spring collider bindings are retained against world topology/selector and collider-settings
+revisions. World-space collider spheres are sampled once before solving any chains, so solving
+order cannot change the contact input within the pose stage. Foreign spheres are spatially culled.
+The existing self-collider list is unchanged; foreign contact does not enable unselected self spheres.
+
+`.world_collision(false)` and `.avatar_collision(false)` independently opt a SpringBone out of the
+new paths and round-trip through MMS. These are endpoint contacts, without reciprocal rigid-body
+impulses; supported world shapes/frames follow the regular static-contact implementation.
+
+See [the implementation and validation task](../task/spring-world-collision-and-transform-parent-index.md).
+Center-relative inertia, angular limits, and non-spring secondary-motion child types remain unimplemented.
 
 ## Diagnostics and performance expectations
 

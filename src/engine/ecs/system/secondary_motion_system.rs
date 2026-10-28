@@ -1,3 +1,5 @@
+use super::collidable_bvh::CollidableBvh;
+use crate::engine::ecs::component::CollisionShape;
 use crate::engine::ecs::component::{
     BoneRestPoseComponent, ComponentRef, GLTFComponent, QueryRootMode, SecondaryMotionComponent,
     SpringBoneComponent, SpringColliderComponent, SpringJointComponent, TransformComponent,
@@ -47,6 +49,28 @@ struct BoundCollider {
     radius: f32,
 }
 
+/// Immutable primary-pose sample, shared by every chain and fixed substep.
+#[derive(Debug, Clone, Copy)]
+struct WorldSphere {
+    gltf: ComponentId,
+    center: [f32; 3],
+    radius: f32,
+}
+
+#[derive(Default)]
+struct CollisionFrame {
+    by_source: HashMap<(ComponentId, ComponentId), WorldSphere>,
+    by_x: Vec<WorldSphere>,
+    max_radius: f32,
+}
+
+struct ChainContacts<'a> {
+    spheres: Vec<WorldSphere>,
+    surfaces: Option<&'a CollidableBvh>,
+    surface_ids: Vec<usize>,
+    hit_radius: f32,
+}
+
 #[derive(Debug, Clone)]
 enum ChainStatus {
     WaitingForDependencies(String),
@@ -88,6 +112,8 @@ struct Profile {
 #[derive(Debug, Default)]
 pub struct SecondaryMotionSystem {
     paused: bool,
+    collider_pool_revision: Option<(u64, u64)>,
+    collider_pool: Vec<(ComponentId, BoundCollider)>,
     registered: HashSet<ComponentId>,
     roots: HashMap<ComponentId, RootRuntime>,
     chains: HashMap<ComponentId, ChainRuntime>,
@@ -786,6 +812,69 @@ impl SecondaryMotionSystem {
         self.diagnostics.insert(chain, message.clone());
     }
 
+    fn collision_frame(&mut self, world: &World) -> CollisionFrame {
+        let revision = world.spring_collision_revision();
+        if self.collider_pool_revision != Some(revision) {
+            self.collider_pool.clear();
+            let mut configs: Vec<_> = world.spring_collider_ids().collect();
+            configs.sort_unstable();
+            for config in configs {
+                let Some(gltf) = nearest_gltf(world, config) else {
+                    continue;
+                };
+                let settings = world
+                    .get_component_by_id_as::<SpringColliderComponent>(config)
+                    .unwrap();
+                if !settings.radius.is_finite() || settings.radius <= 0.0 {
+                    continue;
+                }
+                let mut seen = HashSet::new();
+                for target in &settings.targets {
+                    if let Ok(target) = resolve_in_gltf(world, gltf, target)
+                        && seen.insert(target)
+                    {
+                        self.collider_pool.push((
+                            gltf,
+                            BoundCollider {
+                                config,
+                                target,
+                                radius: settings.radius,
+                            },
+                        ));
+                    }
+                }
+            }
+            self.collider_pool_revision = Some(revision);
+        }
+        let mut by_source = HashMap::new();
+        let mut by_x = Vec::new();
+        let mut max_radius = 0.0_f32;
+        for (gltf, collider) in &self.collider_pool {
+            let Some(center) = pos(world, collider.target) else {
+                continue;
+            };
+            let radius = collider.radius * world_max_scale(world, collider.target);
+            if !center.iter().all(|x| x.is_finite()) || !radius.is_finite() {
+                continue;
+            }
+            let sphere = WorldSphere {
+                gltf: *gltf,
+                center,
+                radius,
+            };
+            by_source.insert((collider.config, collider.target), sphere);
+            by_x.push(sphere);
+            max_radius = max_radius.max(radius);
+        }
+        // Stable sort preserves config/target order for coincident spheres.
+        by_x.sort_by(|a, b| a.center[0].total_cmp(&b.center[0]));
+        CollisionFrame {
+            by_source,
+            by_x,
+            max_radius,
+        }
+    }
+
     /// Advances only retained bound chains and cached joints.
     pub fn tick(&mut self, world: &mut World, dt: f32) -> Vec<ComponentId> {
         self.tick_with_constraints(world, dt, &HashMap::new())
@@ -821,6 +910,18 @@ impl SecondaryMotionSystem {
         globally_enabled: bool,
         paused: bool,
     ) -> Vec<ComponentId> {
+        self.tick_with_collisions(world, dt, rest_weights, globally_enabled, paused, None)
+    }
+
+    pub(crate) fn tick_with_collisions(
+        &mut self,
+        world: &mut World,
+        dt: f32,
+        rest_weights: &HashMap<ComponentId, f32>,
+        globally_enabled: bool,
+        paused: bool,
+        surfaces: Option<&CollidableBvh>,
+    ) -> Vec<ComponentId> {
         // Disabling still restores rest pose, even when the pause toggle is on.
         if globally_enabled && paused {
             self.paused = true;
@@ -832,6 +933,11 @@ impl SecondaryMotionSystem {
         }
         let started = Instant::now();
         self.debug_frames = self.debug_frames.wrapping_add(1);
+        let collision_frame = if globally_enabled {
+            self.collision_frame(world)
+        } else {
+            CollisionFrame::default()
+        };
         let mut max_correction_radians = 0.0f32;
         let mut dirty_roots = Vec::new();
         let mut dirty_set = HashSet::new();
@@ -908,8 +1014,12 @@ impl SecondaryMotionSystem {
                     reset_state(world, state);
                 }
                 state.accumulator = (state.accumulator + dt.max(0.0)).min(STEP * 4.0);
+                let settings = world
+                    .get_component_by_id_as::<SpringBoneComponent>(chain_id)
+                    .unwrap();
+                let contacts = chain_contacts(world, state, settings, &collision_frame, surfaces);
                 while state.accumulator >= STEP {
-                    simulate_step(world, state);
+                    simulate_step(world, state, &contacts);
                     state.accumulator -= STEP;
                 }
             }
@@ -1512,7 +1622,78 @@ fn reset_state(world: &World, state: &mut BoundChain) {
     state.accumulator = 0.0;
 }
 
-fn simulate_step(world: &World, state: &mut BoundChain) {
+fn chain_contacts<'a>(
+    world: &World,
+    state: &BoundChain,
+    settings: &SpringBoneComponent,
+    frame: &CollisionFrame,
+    surfaces: Option<&'a CollidableBvh>,
+) -> ChainContacts<'a> {
+    let hit_radius = state.hit_radius
+        * world
+            .parent_of(state.gltf)
+            .map(|anchor| world_max_scale(world, anchor))
+            .unwrap_or(1.0);
+    let center = pos(world, state.joints[0].id).unwrap_or(state.current[0]);
+    let reach = state.lengths.iter().sum::<f32>() + hit_radius;
+    let mut spheres: Vec<_> = state
+        .colliders
+        .iter()
+        .filter_map(|collider| {
+            frame
+                .by_source
+                .get(&(collider.config, collider.target))
+                .copied()
+        })
+        .collect();
+    if settings.avatar_collision {
+        let extent = reach + frame.max_radius;
+        let lo = frame
+            .by_x
+            .partition_point(|s| s.center[0] < center[0] - extent);
+        let hi = frame
+            .by_x
+            .partition_point(|s| s.center[0] <= center[0] + extent);
+        spheres.extend(
+            frame.by_x[lo..hi]
+                .iter()
+                .filter(|sphere| {
+                    sphere.gltf != state.gltf
+                        && vec3_len(vec3_sub(sphere.center, center)) <= reach + sphere.radius
+                })
+                .copied(),
+        );
+    }
+    let surfaces = surfaces.filter(|_| settings.world_collision);
+    let mut surface_ids = Vec::new();
+    if let Some(surfaces) = surfaces {
+        // The entire reachable chain, including old tails for downward sweeps.
+        let mut min = center.map(|v| v - reach);
+        let mut max = center.map(|v| v + reach);
+        for point in state.current.iter().chain(&state.previous) {
+            for axis in 0..3 {
+                min[axis] = min[axis].min(point[axis] - hit_radius);
+                max[axis] = max[axis].max(point[axis] + hit_radius);
+            }
+        }
+        surfaces.query(min, max, &mut Vec::new(), &mut surface_ids);
+        surface_ids.retain(|&id| {
+            let surface = surfaces.surface(id);
+            nearest_gltf(world, surface.collidable) != Some(state.gltf)
+                && !world
+                    .get_component_by_id_as::<GLTFComponent>(state.gltf)
+                    .is_some_and(|gltf| gltf.spawned_node_transforms.contains(&surface.frame_id))
+        });
+    }
+    ChainContacts {
+        spheres,
+        surfaces,
+        surface_ids,
+        hit_radius,
+    }
+}
+
+fn simulate_step(world: &World, state: &mut BoundChain, contacts: &ChainContacts<'_>) {
     for index in 0..state.joints.len() {
         let primary_head = pos(world, state.joints[index].id).unwrap_or(state.current[index]);
         let head = if index == 0 {
@@ -1561,48 +1742,116 @@ fn simulate_step(world: &World, state: &mut BoundChain) {
         let direction = vec3_normalize(vec3_sub(next, head));
         state.current[index] = vec3_add(head, vec3_scale(direction, state.lengths[index]));
     }
-    if state.colliders.is_empty() {
+    if contacts.spheres.is_empty() && contacts.surface_ids.is_empty() {
         return;
     }
-    let hit_scale = world
-        .parent_of(state.gltf)
-        .map(|anchor| world_max_scale(world, anchor))
-        .unwrap_or(1.0);
-    let hit_radius = state.hit_radius * hit_scale;
-    for _ in 0..2 {
+    for _ in 0..4 {
         for index in 0..state.joints.len() {
             let head = if index == 0 {
                 pos(world, state.joints[index].id).unwrap_or(state.current[index])
             } else {
                 state.current[index - 1]
             };
-            let mut endpoint = state.current[index];
-            for collider in &state.colliders {
-                let Some(center) = pos(world, collider.target) else {
-                    continue;
-                };
-                let radius = collider.radius * world_max_scale(world, collider.target) + hit_radius;
-                let delta = vec3_sub(endpoint, center);
-                let distance = vec3_len(delta);
-                if distance < radius {
+            // An earlier segment may have moved during this contact pass.
+            // Re-anchor even when this endpoint has no contact of its own.
+            let offset = vec3_sub(state.current[index], head);
+            let direction = if vec3_len(offset) > f32::EPSILON {
+                vec3_normalize(offset)
+            } else {
+                [1.0, 0.0, 0.0]
+            };
+            let mut endpoint = vec3_add(head, vec3_scale(direction, state.lengths[index]));
+            for sphere in &contacts.spheres {
+                let radius = sphere.radius + contacts.hit_radius;
+                if vec3_len(vec3_sub(endpoint, sphere.center)) < radius {
                     endpoint = exclude_sphere_at_length(
                         head,
                         endpoint,
                         state.lengths[index],
-                        center,
+                        sphere.center,
                         radius,
                     );
                 }
             }
-            let delta = vec3_sub(endpoint, head);
-            let direction = if vec3_len(delta) > f32::EPSILON {
-                vec3_normalize(delta)
-            } else {
-                [1.0, 0.0, 0.0]
-            };
-            state.current[index] = vec3_add(head, vec3_scale(direction, state.lengths[index]));
+            if let Some(surfaces) = contacts.surfaces {
+                for &surface_id in &contacts.surface_ids {
+                    let surface = surfaces.surface(surface_id);
+                    // A zero-segment capsule is a sphere; reuse the floor sweep
+                    // so a falling tail cannot jump through a thin platform.
+                    let shape = CollisionShape::CapsuleY {
+                        radius: contacts.hit_radius,
+                        half_segment: 0.0,
+                    };
+                    let swept = surface.floor_sweep(
+                        state.joints[index].id,
+                        endpoint,
+                        shape,
+                        state.previous[index],
+                    );
+                    let delta = if let Some(hit) = swept {
+                        Some([0.0, hit.point[1] + contacts.hit_radius - endpoint[1], 0.0])
+                    } else {
+                        surface.translation(
+                            endpoint,
+                            CollisionShape::Sphere {
+                                radius: contacts.hit_radius,
+                            },
+                        )
+                    };
+                    if let Some(delta) = delta
+                        && vec3_len(delta) > 1e-7
+                    {
+                        endpoint = exclude_plane_at_length(
+                            head,
+                            endpoint,
+                            state.lengths[index],
+                            vec3_add(endpoint, delta),
+                            vec3_normalize(delta),
+                        );
+                    }
+                }
+            }
+            state.current[index] = endpoint;
         }
     }
+}
+
+/// Project onto a contact half-space while keeping the bone length exactly.
+/// A simple push followed by normalization sinks a vertical tail into a floor.
+fn exclude_plane_at_length(
+    head: [f32; 3],
+    endpoint: [f32; 3],
+    length: f32,
+    point: [f32; 3],
+    normal: [f32; 3],
+) -> [f32; 3] {
+    if length <= f32::EPSILON {
+        return head;
+    }
+    let dot = |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).map(|(a, b)| a * b).sum::<f32>();
+    let desired = vec3_normalize(vec3_sub(endpoint, head));
+    let boundary = (dot(vec3_sub(point, head), normal) / length).clamp(-1.0, 1.0);
+    let cosine = dot(desired, normal);
+    if cosine >= boundary {
+        return vec3_add(head, vec3_scale(desired, length));
+    }
+    let mut tangent = vec3_sub(desired, vec3_scale(normal, cosine));
+    if vec3_len(tangent) <= f32::EPSILON {
+        let axis = if normal[0].abs() < 0.9 {
+            [1.0, 0.0, 0.0]
+        } else {
+            [0.0, 0.0, 1.0]
+        };
+        tangent = vec3_sub(axis, vec3_scale(normal, dot(axis, normal)));
+    }
+    let direction = vec3_add(
+        vec3_scale(normal, boundary),
+        vec3_scale(
+            vec3_normalize(tangent),
+            (1.0 - boundary * boundary).max(0.0).sqrt(),
+        ),
+    );
+    vec3_add(head, vec3_scale(direction, length))
 }
 
 fn exclude_sphere_at_length(
@@ -2433,3 +2682,7 @@ mod tests {
         assert_eq!(fixture.system.discovery_counts().0, before + 1);
     }
 }
+
+#[cfg(test)]
+#[path = "secondary_motion_collision_tests.rs"]
+mod collision_tests;

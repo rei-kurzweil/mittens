@@ -1023,6 +1023,8 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         .constructor("from_root", any(1))
                         .builder_call("center", any(1))
                         .builder_call("colliders", any(1))
+                        .builder_call("world_collision", booleans(1))
+                        .builder_call("avatar_collision", booleans(1))
                         .builder_call("enabled", booleans(1));
                     for method in [
                         "virtual_end_length_ratio",

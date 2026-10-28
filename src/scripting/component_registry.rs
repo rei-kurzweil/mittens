@@ -4156,6 +4156,8 @@ fn apply_call(
             }
             "colliders" => chain.colliders = spring_colliders.unwrap_or_default(),
             "hit_radius" => chain.hit_radius = arg_f32(args, 0)?.max(0.0),
+            "world_collision" => chain.world_collision = arg_bool(args, 0)?,
+            "avatar_collision" => chain.avatar_collision = arg_bool(args, 0)?,
             _ => {}
         }
         return Ok(());

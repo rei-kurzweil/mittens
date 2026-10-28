@@ -3703,12 +3703,14 @@ impl SystemWorld {
         } else if !secondary_motion_enabled {
             self.secondary_motion_constraint.reset_motion_history();
         }
-        let dirty_chain_transform_roots = self.secondary_motion.tick_with_playback_settings(
+        let surfaces = self.static_contact.support_index(world);
+        let dirty_chain_transform_roots = self.secondary_motion.tick_with_collisions(
             world,
             dt_sec,
             self.secondary_motion_constraint.directives(),
             secondary_motion_enabled,
             secondary_motion_paused,
+            Some(surfaces),
         );
         if let Some(started) = vr_stage_started {
             self.vr_perf_pre_xr.secondary_motion = started.elapsed();

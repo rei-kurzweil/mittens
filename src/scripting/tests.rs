@@ -8273,13 +8273,17 @@ fn roundtrip_spring_collision_configuration() {
             ComponentRef::Query("[name='torso_colliders']".into()),
             ComponentRef::Query("[name='hips_collider']".into()),
         ])
-        .hit_radius(0.03);
+        .hit_radius(0.03)
+        .world_collision(false)
+        .avatar_collision(false);
     let (world, id) = roundtrip_component(original);
     let chain = world
         .get_component_by_id_as::<SpringBoneComponent>(id)
         .unwrap();
     assert_eq!(chain.hit_radius, 0.03);
     assert_eq!(chain.colliders.len(), 2);
+    assert!(!chain.world_collision);
+    assert!(!chain.avatar_collision);
 }
 
 fn assert_xr_gamepad_locomotion_targets(world: &World, path: &str) {
