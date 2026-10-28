@@ -4446,6 +4446,14 @@ fn apply_call(
             }
             "neck_pin_disabled" => *avc = avc.clone().without_neck_pin(),
             "crouch_enabled" => *avc = avc.clone().with_crouch_enabled(arg_bool(args, 0)?),
+            "walking_enabled" => *avc = avc.clone().with_walking_enabled(arg_bool(args, 0)?),
+            "walking_stride" => *avc = avc.clone().with_walking_stride(arg_f32(args, 0)?)?,
+            "walking_step_duration" => {
+                *avc = avc.clone().with_walking_step_duration(arg_f32(args, 0)?)?
+            }
+            "walking_step_height" => {
+                *avc = avc.clone().with_walking_step_height(arg_f32(args, 0)?)?
+            }
             "crouch_sole_offsets" => {
                 *avc = avc
                     .clone()

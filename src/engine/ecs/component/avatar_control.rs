@@ -258,8 +258,13 @@ pub struct AvatarControlComponent {
     pub crouch_knee_limit: f32,
     /// Support tolerance in model metres, scaled into world units.
     pub crouch_support_margin: f32,
-    pub(crate) crouch_constraint: Option<crate::engine::ecs::system::ik::HumanoidCrouchConstraint>,
-    pub(crate) crouch_bind_error: Option<&'static str>,
+    /// Procedural flat-ground stepping, enabled by default for eligible rigs.
+    pub walking_enabled: bool,
+    /// Maximum horizontal travel of one step, in model metres.
+    pub walking_stride: f32,
+    pub walking_step_duration: f32,
+    /// Swing clearance in model metres.
+    pub walking_step_height: f32,
 
     // Runtime state set by AvatarControlSystem / HeadNeckBodyConstraintSystem:
     /// `model_root` component id, stashed at init so the body-follow system
@@ -295,6 +300,31 @@ pub struct AvatarControlComponent {
 }
 
 impl AvatarControlComponent {
+    pub fn with_walking_enabled(mut self, enabled: bool) -> Self {
+        self.walking_enabled = enabled;
+        self
+    }
+    pub fn with_walking_stride(mut self, metres: f32) -> Result<Self, String> {
+        if !metres.is_finite() || !(0.05..=1.0).contains(&metres) {
+            return Err("walking stride must be model metres in [0.05,1.0]".into());
+        }
+        self.walking_stride = metres;
+        Ok(self)
+    }
+    pub fn with_walking_step_duration(mut self, seconds: f32) -> Result<Self, String> {
+        if !seconds.is_finite() || !(0.08..=1.0).contains(&seconds) {
+            return Err("walking step duration must be seconds in [0.08,1.0]".into());
+        }
+        self.walking_step_duration = seconds;
+        Ok(self)
+    }
+    pub fn with_walking_step_height(mut self, metres: f32) -> Result<Self, String> {
+        if !metres.is_finite() || !(0.0..=0.3).contains(&metres) {
+            return Err("walking step height must be model metres in [0,0.3]".into());
+        }
+        self.walking_step_height = metres;
+        Ok(self)
+    }
     pub fn with_crouch_enabled(mut self, enabled: bool) -> Self {
         self.crouch_enabled = enabled;
         self
@@ -621,8 +651,10 @@ impl Default for AvatarControlComponent {
             crouch_knee_pole: [0.0, 0.0, 1.0],
             crouch_knee_limit: 150.0_f32.to_radians(),
             crouch_support_margin: 0.05,
-            crouch_constraint: None,
-            crouch_bind_error: None,
+            walking_enabled: true,
+            walking_stride: 0.32,
+            walking_step_duration: 0.22,
+            walking_step_height: 0.07,
             capsule_transform_id: None,
             capsule_collidable_id: None,
             capsule_sample_id: None,
@@ -773,6 +805,24 @@ impl Component for AvatarControlComponent {
         }
         if !self.crouch_enabled {
             c = c.with_call("crouch_enabled", vec![b(false)]);
+        }
+        if !self.walking_enabled {
+            c = c.with_call("walking_enabled", vec![b(false)]);
+        }
+        if self.walking_stride != 0.32 {
+            c = c.with_call("walking_stride", vec![num(self.walking_stride as f64)]);
+        }
+        if self.walking_step_duration != 0.22 {
+            c = c.with_call(
+                "walking_step_duration",
+                vec![num(self.walking_step_duration as f64)],
+            );
+        }
+        if self.walking_step_height != 0.07 {
+            c = c.with_call(
+                "walking_step_height",
+                vec![num(self.walking_step_height as f64)],
+            );
         }
         if let Some([left, right]) = self.crouch_sole_offsets {
             c = c.with_call(

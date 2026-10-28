@@ -6,8 +6,8 @@
 
 pub mod head_neck_body_constraint;
 mod head_pose_body_xz_follow;
-pub mod humanoid_crouch;
+pub mod lower_body;
 pub(crate) mod two_bone;
 
 pub use head_neck_body_constraint::{HeadNeckBodyConstraint, HeadNeckBodyConstraintSystem};
-pub use humanoid_crouch::{HumanoidCrouchConstraint, HumanoidCrouchSystem};
+pub use lower_body::LowerBodyIkSystem;

@@ -28,6 +28,7 @@ let pistol_hand_offset = 0.05 // metres back toward the wrist, in the held grip 
 import { info_panel } from "../assets/components/ui/info_panel.mms"
 import { ui_unlit_material } from "../assets/components/materials/ui_unlit.mms"
 import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
+import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
 import { mini_explosion } from "../assets/components/mini-explosion.mms"
 import { metal_can } from "../assets/components/targets/metal-can.mms"
 import { matcap_metal } from "../assets/components/materials/matcap_metal.mms"
@@ -221,6 +222,11 @@ T.position(-21.1, roof_height + 2.2, -3.6) {
 }
 T.position(-24.2, roof_height + 2.2, -1.3) {
     graphics_settings_panel({ root_name = "sakura_graphics_settings" })
+}
+// Beside the spawn-facing workbench, with the roof as a calibration reference.
+T.position(-16.2, roof_height + 2.2, -3.6) {
+    Grabbable {}
+    xr_settings_panel({ root_name = "sakura_xr_settings" })
 }
 
 // Long road, tiled pavements, lane markings and two existing display-car assets.

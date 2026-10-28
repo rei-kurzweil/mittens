@@ -5,8 +5,12 @@
 Native flat-support first slice implemented, 2026-10-21. Initial headset feedback
 on 2026-10-22: crouching seems to work fairly well, provided XR floor height is
 calibrated properly. Broader scenario acceptance and tuning remain open.
-`HumanoidCrouchConstraint` / `HumanoidCrouchSystem` live in
-`src/engine/ecs/system/ik/humanoid_crouch.rs`. AVC binds mapped legs automatically;
+As of 2026-10-28, the implementation lives under
+`src/engine/ecs/system/ik/lower_body/`, with `LowerBodyIkSystem` owning the mapped
+rig bindings and the shared leg solve. Crouch policy is isolated in `crouch.rs`;
+default-on procedural stepping is documented in
+[procedural lower-body walking IK](procedural-lower-body-walking-ik.md).
+AVC registration prepares mapped legs automatically;
 explicit foot-local sole calibration enables solving. Rei(mu), mittens-corp and
 bisket-vr-demo now supply landmarks for their shared shoes.
 
@@ -73,7 +77,7 @@ No valid per-foot support restores that leg's base pose. Tracking loss, mounting
 disabled collision, unsupported bindings/scale, or opt-out release the pose.
 Map changes refresh calibration and release previously owned joints.
 
-Rust diagnostics are available through `SystemWorld.humanoid_crouch.status(id)`
+Rust diagnostics are available through `SystemWorld.lower_body_ik.status(id)`
 and `.feet(id)`: support zone/height, base and solved soles, penetration, knee
 flexion and residual. A dedicated MMS diagnostic panel remains follow-up work.
 
@@ -91,8 +95,9 @@ The MMS readout panel complements these spatial markers.
 Use normal `mittens-corp`, `rei(mu)` or `bisket-vr-demo` for remaining headset
 checks with a calibrated XR floor: standing → crouch → hold → stand, then physical
 rise, look/roll, walking, button jump/fall and car entry/exit. The initial report
-does not establish acceptance of every scenario. Slopes, stair planting, world-locked steps,
-pelvis/torso adjustments and authored crouch blending remain separate work.
+does not establish acceptance of every scenario. World-locked steps are now
+available in the walking slice. Slopes, stair planting, pelvis/torso
+adjustments and authored crouch blending remain separate work.
 
 First leg-solver fixtures are Rei(mu) and Bisket. AVC should
 automatically prepare a bounded lower-body crouch solver for a mapped humanoid

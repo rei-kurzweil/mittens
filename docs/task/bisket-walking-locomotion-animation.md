@@ -2,6 +2,10 @@
 
 ## Status
 
+The procedural lower-body path is now implemented separately in
+[procedural lower-body walking IK](procedural-lower-body-walking-ik.md).
+The authored animation work below remains planned.
+
 Planned after crouch posture.  Bisket already has captured running-pose
 samples and a discrete demonstration loop; this task turns validated assets
 and pose-layer behavior into a locomotion presentation policy.

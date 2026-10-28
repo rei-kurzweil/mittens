@@ -11,6 +11,8 @@ eye closure/idle gaze, secondary motion, collisions and CapsuleReady-gated gravi
 HandTracking.new().source("openxr") on the avatar opts its mapped finger bones
 into OpenXR hand tracking.
 XR B jumps, allowing access over low parapets. Spawn is on the 25.6 m roof.
+The shared XR settings/floor-height panel is to the right of the spawn-facing
+workbench, at `[-16.2, roof_height + 2.2, -3.6]`.
 
 Six eight-storey towers and three lower annexes use the same ceramic shader,
 packed texture and defaults as the youtuber pool. pool_tile_material() now holds

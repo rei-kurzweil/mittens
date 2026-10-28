@@ -1,5 +1,11 @@
+use super::rig::{LowerBodyRig, matrix, point};
 use super::*;
+use crate::engine::ecs::World;
+use crate::engine::ecs::component::{
+    AvatarControlComponent, HumanoidSlot, InputXRComponent, TransformComponent, ZoneComponent,
+};
 use crate::engine::ecs::component::{BoneRestPoseComponent, CollidableComponent, GLTFComponent};
+use crate::engine::ecs::system::HumanoidBoneMapReport;
 use crate::engine::ecs::system::humanoid_bone_map_system::{
     HumanoidSlotStatus, ResolvedHumanoidTarget, ResolvedHumanoidTargetKind,
 };
@@ -9,6 +15,7 @@ use crate::engine::ecs::system::{
 use crate::engine::ecs::{CommandQueue, RxWorld};
 use crate::engine::graphics::{RenderAssets, VisualWorld};
 use crate::utils::math::quat_rotation_y;
+use crate::utils::math::{vec3_len, vec3_sub};
 use std::collections::BTreeMap;
 
 struct Fixture {
@@ -194,7 +201,7 @@ impl Fixture {
                 0.0,
             )
         };
-        let binding = HumanoidCrouchConstraint::bind(&world, root, &report).unwrap();
+        let binding = LowerBodyRig::bind(&world, root, &report).unwrap();
         let joints = binding.legs.each_ref().map(|l| l.joints);
         let capsule = world.add_component(TransformComponent::new().with_position(
             0.0,
@@ -222,12 +229,15 @@ impl Fixture {
         c.model_root_id = Some(root);
         c.humanoid_map_generation = report.generation;
         c.crouch_sole_offsets = Some(offsets);
-        c.crouch_constraint = Some(binding);
+        // These fixtures isolate the original crouch policy. Walking tests
+        // below restore the component's default to exercise automatic stepping.
+        c.walking_enabled = false;
         c.capsule_transform_id = Some(capsule);
         c.capsule_collidable_id = Some(collider);
         c.capsule_ready = true;
         let mut systems = SystemWorld::default();
-        systems.humanoid_crouch.register(avatar);
+        systems.lower_body_ik.register(avatar);
+        systems.lower_body_ik.avatars.get_mut(&avatar).unwrap().rig = Some(binding);
         let mut f = Self {
             world,
             systems,
@@ -266,11 +276,16 @@ impl Fixture {
         self.step();
     }
     fn step(&mut self) {
-        self.systems.humanoid_crouch.tick(
+        self.step_with_dt(1.0 / 60.0);
+    }
+    fn step_with_dt(&mut self, dt: f32) {
+        self.systems.lower_body_ik.tick(
             &mut self.world,
             &mut self.queue,
             &mut self.systems.static_contact,
             &self.systems.attachment,
+            &self.systems.humanoid_bone_map,
+            dt,
         );
         self.queue.flush(
             &mut self.world,
@@ -279,8 +294,8 @@ impl Fixture {
             &mut self.assets,
         );
     }
-    fn feet(&self) -> [FootCrouchState; 2] {
-        *self.systems.humanoid_crouch.feet(self.avatar).unwrap()
+    fn feet(&self) -> [FootState; 2] {
+        *self.systems.lower_body_ik.feet(self.avatar).unwrap()
     }
     fn assert_pose(&self) {
         for (i, joints) in self.joints.iter().enumerate() {
@@ -294,11 +309,8 @@ impl Fixture {
                     .unwrap();
                 assert!(t.transform.rotation.into_iter().all(f32::is_finite));
             }
-            let binding = self
-                .world
-                .get_component_by_id_as::<AvatarControlComponent>(self.avatar)
-                .unwrap()
-                .crouch_constraint
+            let binding = self.systems.lower_body_ik.avatars[&self.avatar]
+                .rig
                 .as_ref()
                 .unwrap();
             for j in 0..3 {
@@ -314,6 +326,8 @@ impl Fixture {
     }
 }
 
+mod walking;
+
 #[test]
 fn crouch_holds_soles_and_restores_standing_without_accumulation() {
     let mut f = Fixture::new(None);
@@ -323,8 +337,8 @@ fn crouch_holds_soles_and_restores_standing_without_accumulation() {
         f.drop_body(drop);
         f.assert_pose();
         assert_eq!(
-            f.systems.humanoid_crouch.status(f.avatar),
-            CrouchStatus::Ready
+            f.systems.lower_body_ik.status(f.avatar),
+            LowerBodyStatus::Ready
         );
         for foot in f.feet() {
             assert!(foot.solved_sole[1].abs() < 0.0001);
@@ -367,11 +381,8 @@ fn crouch_holds_soles_and_restores_standing_without_accumulation() {
         rebuilds
     );
     f.drop_body(0.0);
-    let binding = f
-        .world
-        .get_component_by_id_as::<AvatarControlComponent>(f.avatar)
-        .unwrap()
-        .crouch_constraint
+    let binding = f.systems.lower_body_ik.avatars[&f.avatar]
+        .rig
         .as_ref()
         .unwrap();
     for leg in &binding.legs {
@@ -396,8 +407,8 @@ fn crouch_real_reimu_and_bisket_maps_solve_with_nonidentity_bind_frames() {
             f.drop_body(drop);
             f.assert_pose();
             assert_eq!(
-                f.systems.humanoid_crouch.status(f.avatar),
-                CrouchStatus::Ready,
+                f.systems.lower_body_ik.status(f.avatar),
+                LowerBodyStatus::Ready,
                 "{asset} at {drop}"
             );
             for foot in f.feet() {
@@ -411,8 +422,8 @@ fn crouch_real_reimu_and_bisket_maps_solve_with_nonidentity_bind_frames() {
         f.drop_body(0.85);
         f.assert_pose();
         assert_eq!(
-            f.systems.humanoid_crouch.status(f.avatar),
-            CrouchStatus::Limited
+            f.systems.lower_body_ik.status(f.avatar),
+            LowerBodyStatus::Limited
         );
         for foot in f.feet() {
             assert!((foot.base_sole[0] - foot.solved_sole[0]).abs() < 0.0001);
@@ -429,8 +440,8 @@ fn crouch_depth_limits_report_residual_instead_of_moving_tracking() {
     f.drop_body(0.85);
     f.assert_pose();
     assert_eq!(
-        f.systems.humanoid_crouch.status(f.avatar),
-        CrouchStatus::Limited
+        f.systems.lower_body_ik.status(f.avatar),
+        LowerBodyStatus::Limited
     );
     for foot in f.feet() {
         assert!(foot.residual > 0.1);
@@ -472,8 +483,8 @@ fn crouch_support_is_per_foot_bounded_and_updates_when_floor_changes() {
     f.step();
     f.assert_pose();
     assert_eq!(
-        f.systems.humanoid_crouch.status(f.avatar),
-        CrouchStatus::NoSupport
+        f.systems.lower_body_ik.status(f.avatar),
+        LowerBodyStatus::NoSupport
     );
     f.world
         .get_component_by_id_as_mut::<CollidableComponent>(f.floor_collider)
@@ -493,8 +504,8 @@ fn crouch_support_is_per_foot_bounded_and_updates_when_floor_changes() {
     f.propagate();
     f.step();
     assert_eq!(
-        f.systems.humanoid_crouch.status(f.avatar),
-        CrouchStatus::NoSupport
+        f.systems.lower_body_ik.status(f.avatar),
+        LowerBodyStatus::NoSupport
     );
     let t = &mut f
         .world
@@ -506,14 +517,14 @@ fn crouch_support_is_per_foot_bounded_and_updates_when_floor_changes() {
     f.propagate();
     f.step();
     assert_eq!(
-        f.systems.humanoid_crouch.status(f.avatar),
-        CrouchStatus::Ready
+        f.systems.lower_body_ik.status(f.avatar),
+        LowerBodyStatus::Ready
     );
     f.world.remove_component_subtree(f.floor_collider).unwrap();
     f.step();
     assert_eq!(
-        f.systems.humanoid_crouch.status(f.avatar),
-        CrouchStatus::NoSupport
+        f.systems.lower_body_ik.status(f.avatar),
+        LowerBodyStatus::NoSupport
     );
 }
 
@@ -527,8 +538,8 @@ fn crouch_gates_tracking_opt_out_calibration_and_invalid_scale_then_recovers() {
         .crouch_enabled = false;
     f.step();
     assert_eq!(
-        f.systems.humanoid_crouch.status(f.avatar),
-        CrouchStatus::Disabled
+        f.systems.lower_body_ik.status(f.avatar),
+        LowerBodyStatus::Disabled
     );
     close(
         point(matrix(&f.world, f.joints[0][2]).unwrap(), f.offsets[0]),
@@ -544,8 +555,8 @@ fn crouch_gates_tracking_opt_out_calibration_and_invalid_scale_then_recovers() {
         .pose_valid = false;
     f.step();
     assert_eq!(
-        f.systems.humanoid_crouch.status(f.avatar),
-        CrouchStatus::Pending
+        f.systems.lower_body_ik.status(f.avatar),
+        LowerBodyStatus::Pending
     );
     f.world
         .get_component_by_id_as_mut::<InputXRComponent>(f.input)
@@ -561,8 +572,8 @@ fn crouch_gates_tracking_opt_out_calibration_and_invalid_scale_then_recovers() {
         .take();
     f.step();
     assert_eq!(
-        f.systems.humanoid_crouch.status(f.avatar),
-        CrouchStatus::NeedsSoleCalibration
+        f.systems.lower_body_ik.status(f.avatar),
+        LowerBodyStatus::NeedsSoleCalibration
     );
     f.world
         .get_component_by_id_as_mut::<AvatarControlComponent>(f.avatar)
@@ -578,8 +589,8 @@ fn crouch_gates_tracking_opt_out_calibration_and_invalid_scale_then_recovers() {
     f.propagate();
     f.step();
     assert!(matches!(
-        f.systems.humanoid_crouch.status(f.avatar),
-        CrouchStatus::UnsupportedRig(_)
+        f.systems.lower_body_ik.status(f.avatar),
+        LowerBodyStatus::UnsupportedRig(_)
     ));
     let root = &mut f
         .world
@@ -604,8 +615,8 @@ fn crouch_gates_tracking_opt_out_calibration_and_invalid_scale_then_recovers() {
     f.propagate();
     f.step();
     assert!(matches!(
-        f.systems.humanoid_crouch.status(f.avatar),
-        CrouchStatus::UnsupportedRig(_)
+        f.systems.lower_body_ik.status(f.avatar),
+        LowerBodyStatus::UnsupportedRig(_)
     ));
     assert_eq!(
         f.world
@@ -626,11 +637,11 @@ fn crouch_gates_tracking_opt_out_calibration_and_invalid_scale_then_recovers() {
         .humanoid_map_generation += 1;
     f.step();
     assert!(matches!(
-        f.systems.humanoid_crouch.status(f.avatar),
-        CrouchStatus::UnsupportedRig(_)
+        f.systems.lower_body_ik.status(f.avatar),
+        LowerBodyStatus::UnsupportedRig(_)
     ));
-    f.systems.humanoid_crouch.remove(f.avatar);
-    assert!(f.systems.humanoid_crouch.feet(f.avatar).is_none());
+    f.systems.lower_body_ik.remove(f.avatar);
+    assert!(f.systems.lower_body_ik.feet(f.avatar).is_none());
 }
 
 #[test]
@@ -659,8 +670,8 @@ fn crouch_rejects_nearby_tables_and_self_colliders_and_respects_yawed_bounds() {
         .enabled = false;
     f.step();
     assert_eq!(
-        f.systems.humanoid_crouch.status(f.avatar),
-        CrouchStatus::NoSupport
+        f.systems.lower_body_ik.status(f.avatar),
+        LowerBodyStatus::NoSupport
     );
     // Thin yawed surface's AABB overlaps a sole; its actual footprint doesn't.
     f.world
@@ -682,8 +693,8 @@ fn crouch_rejects_nearby_tables_and_self_colliders_and_respects_yawed_bounds() {
     f.propagate();
     f.step();
     assert_eq!(
-        f.systems.humanoid_crouch.status(f.avatar),
-        CrouchStatus::NoSupport
+        f.systems.lower_body_ik.status(f.avatar),
+        LowerBodyStatus::NoSupport
     );
 }
 
@@ -769,10 +780,12 @@ fn crouch_mms_configuration_and_validation() {
 fn crouch_full_avatar_stage_initializes_and_propagates_current_leg_pose() {
     let mut f = Fixture::new(Some("assets/models/rei(mu).glb"));
     f.systems.register_avatar_control(f.avatar);
-    f.world
-        .get_component_by_id_as_mut::<AvatarControlComponent>(f.avatar)
+    f.systems
+        .lower_body_ik
+        .avatars
+        .get_mut(&f.avatar)
         .unwrap()
-        .crouch_constraint = None;
+        .rig = None;
     let driven = &mut f
         .world
         .get_component_by_id_as_mut::<TransformComponent>(f.driven)
@@ -799,8 +812,8 @@ fn crouch_full_avatar_stage_initializes_and_propagates_current_leg_pose() {
             .is_some()
     );
     assert_eq!(
-        f.systems.humanoid_crouch.status(f.avatar),
-        CrouchStatus::Ready
+        f.systems.lower_body_ik.status(f.avatar),
+        LowerBodyStatus::Ready
     );
     f.assert_pose();
     for foot in f.feet() {
@@ -831,6 +844,12 @@ fn crouch_mount_suspends_and_dismount_rechecks_support() {
     };
     let mut f = Fixture::new(None);
     f.drop_body(0.3);
+    f.world
+        .get_component_by_id_as_mut::<AvatarControlComponent>(f.avatar)
+        .unwrap()
+        .walking_enabled = true;
+    f.step();
+    assert!(f.feet().iter().all(|f| f.phase == FootPhase::Planted));
     let reference =
         |world: &World, id| ComponentRef::Guid(world.get_component_record(id).unwrap().guid);
     let gamepad = f.world.add_component(InputXRGamepadComponent::new());
@@ -871,10 +890,18 @@ fn crouch_mount_suspends_and_dismount_rechecks_support() {
     );
     f.step();
     assert_eq!(
-        f.systems.humanoid_crouch.status(f.avatar),
-        CrouchStatus::Mounted
+        f.systems.lower_body_ik.status(f.avatar),
+        LowerBodyStatus::Mounted
     );
-    assert!(f.systems.humanoid_crouch.feet(f.avatar).is_none());
+    assert!(f.systems.lower_body_ik.feet(f.avatar).is_none());
+    assert!(
+        f.systems
+            .lower_body_ik
+            .walking(f.avatar)
+            .unwrap()
+            .swing_side
+            .is_none()
+    );
     f.systems.attachment.begin_frame();
     assert!(
         f.systems
@@ -885,8 +912,8 @@ fn crouch_mount_suspends_and_dismount_rechecks_support() {
     f.step();
     f.assert_pose();
     assert_eq!(
-        f.systems.humanoid_crouch.status(f.avatar),
-        CrouchStatus::Ready
+        f.systems.lower_body_ik.status(f.avatar),
+        LowerBodyStatus::Ready
     );
 }
 
@@ -894,11 +921,8 @@ fn crouch_mount_suspends_and_dismount_rechecks_support() {
 fn crouch_two_avatars_share_the_index_and_keep_independent_poses() {
     let mut f = Fixture::new(None);
     f.drop_body(0.4);
-    let prototype = f
-        .world
-        .get_component_by_id_as::<AvatarControlComponent>(f.avatar)
-        .unwrap()
-        .crouch_constraint
+    let prototype = f.systems.lower_body_ik.avatars[&f.avatar]
+        .rig
         .as_ref()
         .unwrap()
         .clone();
@@ -972,7 +996,7 @@ fn crouch_two_avatars_share_the_index_and_keep_independent_poses() {
         diagnostics: Vec::new(),
         slots,
     };
-    let binding = HumanoidCrouchConstraint::bind(&f.world, root, &report).unwrap();
+    let binding = LowerBodyRig::bind(&f.world, root, &report).unwrap();
     let capsule = f
         .world
         .add_component(TransformComponent::new().with_position(1.0, 1.0, 0.0));
@@ -988,16 +1012,22 @@ fn crouch_two_avatars_share_the_index_and_keep_independent_poses() {
     config.model_root_id = Some(root);
     config.humanoid_map_generation = 1;
     config.crouch_sole_offsets = Some([[0.0, -0.1, 0.0]; 2]);
-    config.crouch_constraint = Some(binding);
+    config.walking_enabled = false;
     config.capsule_transform_id = Some(capsule);
     config.capsule_collidable_id = Some(collider);
     config.capsule_ready = true;
-    f.systems.humanoid_crouch.register(avatar);
+    f.systems.lower_body_ik.register(avatar);
+    f.systems
+        .lower_body_ik
+        .avatars
+        .get_mut(&avatar)
+        .unwrap()
+        .rig = Some(binding);
     f.propagate();
     f.step();
     f.assert_pose();
     let first = f.feet();
-    let second = *f.systems.humanoid_crouch.feet(avatar).unwrap();
+    let second = *f.systems.lower_body_ik.feet(avatar).unwrap();
     for (a, b) in first.into_iter().zip(second) {
         assert!((a.penetration - 0.4).abs() < 0.0001);
         assert!((b.penetration - 0.15).abs() < 0.0001);
@@ -1010,6 +1040,57 @@ fn crouch_two_avatars_share_the_index_and_keep_independent_poses() {
         .crouch_enabled = false;
     f.step();
     for (a, b) in f.feet().into_iter().zip(first) {
+        close(a.solved_sole, b.solved_sole);
+    }
+    // Both gait instances live in this same system. Moving one avatar must not
+    // advance the other's swing state or move its retained contacts.
+    for id in [f.avatar, avatar] {
+        let config = f
+            .world
+            .get_component_by_id_as_mut::<AvatarControlComponent>(id)
+            .unwrap();
+        config.crouch_enabled = true;
+        config.walking_enabled = true;
+    }
+    f.step();
+    let second = *f.systems.lower_body_ik.feet(avatar).unwrap();
+    for id in [f.root, f.capsule] {
+        let t = &mut f
+            .world
+            .get_component_by_id_as_mut::<TransformComponent>(id)
+            .unwrap()
+            .transform;
+        t.translation[2] += 0.12;
+        t.recompute_model();
+    }
+    f.propagate();
+    f.step();
+    assert_eq!(
+        f.systems
+            .lower_body_ik
+            .walking(f.avatar)
+            .unwrap()
+            .steps_started
+            .iter()
+            .sum::<u64>(),
+        1
+    );
+    assert_eq!(
+        f.systems
+            .lower_body_ik
+            .walking(avatar)
+            .unwrap()
+            .steps_started,
+        [0, 0]
+    );
+    for (a, b) in f
+        .systems
+        .lower_body_ik
+        .feet(avatar)
+        .unwrap()
+        .iter()
+        .zip(second)
+    {
         close(a.solved_sole, b.solved_sole);
     }
 }
@@ -1042,7 +1123,11 @@ fn crouch_map_edits_release_old_joints_and_rebind_without_accumulating_pose() {
         .get_component_by_id_as::<AvatarControlComponent>(f.avatar)
         .unwrap();
     let gltf = avc.humanoid_map_gltf.unwrap();
-    let old_binding = avc.crouch_constraint.as_ref().unwrap().clone();
+    let old_binding = f.systems.lower_body_ik.avatars[&f.avatar]
+        .rig
+        .as_ref()
+        .unwrap()
+        .clone();
     let map = f
         .world
         .add_component(HumanoidBoneMapComponent::new().with_absent(HumanoidSlot::LeftFoot));
@@ -1059,8 +1144,8 @@ fn crouch_map_edits_release_old_joints_and_rebind_without_accumulating_pose() {
         1.0 / 60.0,
     );
     assert!(matches!(
-        f.systems.humanoid_crouch.status(f.avatar),
-        CrouchStatus::UnsupportedRig(_)
+        f.systems.lower_body_ik.status(f.avatar),
+        LowerBodyStatus::UnsupportedRig(_)
     ));
     for leg in old_binding.legs {
         for (id, rest) in leg.joints.into_iter().zip(leg.rest) {
@@ -1087,11 +1172,92 @@ fn crouch_map_edits_release_old_joints_and_rebind_without_accumulating_pose() {
         1.0 / 60.0,
     );
     assert_eq!(
-        f.systems.humanoid_crouch.status(f.avatar),
-        CrouchStatus::Ready
+        f.systems.lower_body_ik.status(f.avatar),
+        LowerBodyStatus::Ready
     );
     f.assert_pose();
     for (a, b) in f.feet().into_iter().zip(first) {
         close(a.solved_sole, b.solved_sole);
+    }
+}
+
+#[test]
+fn leg_world_target_survives_body_translation_and_yaw_on_actual_rigs() {
+    use super::leg::solve_leg;
+    use super::rig::{emit_pose, uniform};
+    use crate::utils::math::{mat4_mul, quat_rotate_vec3};
+    for asset in [
+        None,
+        Some("assets/models/rei(mu).glb"),
+        Some("assets/models/bisket.glb"),
+    ] {
+        let mut f = Fixture::new(asset);
+        f.drop_body(0.2);
+        let goal = FootGoal {
+            sole: f.feet()[0].solved_sole,
+            rotation: uniform(matrix(&f.world, f.joints[0][2]).unwrap())
+                .unwrap()
+                .rotation_quat_xyzw,
+        };
+        let root = &mut f
+            .world
+            .get_component_by_id_as_mut::<TransformComponent>(f.root)
+            .unwrap()
+            .transform;
+        root.translation[0] += 0.06;
+        root.translation[2] += 0.10;
+        root.rotation = quat_rotation_y(0.35);
+        root.recompute_model();
+        f.propagate();
+        let rig = f.systems.lower_body_ik.avatars[&f.avatar]
+            .rig
+            .as_ref()
+            .unwrap();
+        let leg = &rig.legs[0];
+        let upper = mat4_mul(
+            matrix(&f.world, leg.parent).unwrap(),
+            leg.rest[0].to_matrix().unwrap(),
+        );
+        let pole = quat_rotate_vec3(quat_rotation_y(0.35), [0.0, 0.0, 1.0]);
+        let solution =
+            solve_leg(leg, upper, f.offsets[0], goal, pole, 150_f32.to_radians()).unwrap();
+        close(solution.sole, goal.sole);
+        for (id, local) in leg.joints.into_iter().zip(solution.local) {
+            emit_pose(&mut f.queue, id, local);
+        }
+        f.queue
+            .flush(&mut f.world, &mut f.systems, &mut f.visuals, &mut f.assets);
+        close(
+            point(matrix(&f.world, f.joints[0][2]).unwrap(), f.offsets[0]),
+            goal.sole,
+        );
+        let actual = uniform(matrix(&f.world, f.joints[0][2]).unwrap())
+            .unwrap()
+            .rotation_quat_xyzw;
+        let dot = actual
+            .iter()
+            .zip(goal.rotation)
+            .map(|(a, b)| a * b)
+            .sum::<f32>()
+            .abs();
+        assert!(
+            dot > 0.99999,
+            "planted orientation rotated with body: {asset:?}"
+        );
+        for j in 0..3 {
+            let actual = &f
+                .world
+                .get_component_by_id_as::<TransformComponent>(f.joints[0][j])
+                .unwrap()
+                .transform;
+            let rest = f.systems.lower_body_ik.avatars[&f.avatar]
+                .rig
+                .as_ref()
+                .unwrap()
+                .legs[0]
+                .rest[j];
+            close(actual.translation, rest.translation);
+            close(actual.scale, rest.scale);
+        }
     }
 }

@@ -143,6 +143,10 @@ name = "bisket-vr-only-example"
 required-features = ["desktop"]
 
 [[example]]
+name = "lower-body-walking-vr"
+required-features = ["desktop"]
+
+[[example]]
 name = "bloom"
 required-features = ["desktop"]
 

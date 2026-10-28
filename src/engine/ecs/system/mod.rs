@@ -143,7 +143,7 @@ pub use humanoid_bone_map_system::{
     HumanoidSlotStatus, ResolvedHumanoidTarget, ResolvedHumanoidTargetKind,
 };
 pub use ik::HeadNeckBodyConstraintSystem;
-pub use ik::HumanoidCrouchSystem;
+pub use ik::LowerBodyIkSystem;
 pub use ik_system::IKSystem;
 pub use implicit_surface_system::ImplicitSurfaceSystem;
 pub use input_system::InputSystem;

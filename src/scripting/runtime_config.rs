@@ -1678,6 +1678,10 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     constructor_and_builder(component, "neck_pitch", floats(3));
                     constructor_and_builder(component, "neck_roll", floats(2));
                     constructor_and_builder(component, "crouch_enabled", booleans(1));
+                    constructor_and_builder(component, "walking_enabled", booleans(1));
+                    constructor_and_builder(component, "walking_stride", floats(1));
+                    constructor_and_builder(component, "walking_step_duration", floats(1));
+                    constructor_and_builder(component, "walking_step_height", floats(1));
                     constructor_and_builder(
                         component,
                         "crouch_sole_offsets",

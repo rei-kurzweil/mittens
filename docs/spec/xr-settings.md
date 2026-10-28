@@ -50,6 +50,11 @@ Restored content reads backend state, and multiple panels silently synchronize.
 Removing or minimizing a panel preserves calibration. Scene/session replacement
 or closing the MMS session resets it to zero; persistent profiles are not included.
 
+All five `mittens-corp*.mms` scenes include this panel beside their graphics
+settings. Sakura places it to the right of the spawn-facing rooftop workbench;
+the lower-body walking test scene places it beside the full-height mirror. Both
+scenes use the same live XR floor-correction backend.
+
 ## InputXR and rendered poses
 
 OpenXR frame preparation locates one sample before the engine's XR pose and

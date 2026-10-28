@@ -747,40 +747,7 @@ fn refresh_map_camera_anchor(
             }
         }
     }
-    let crouch_rebind_root = world
-        .get_component_by_id_as::<AvatarControlComponent>(avc_id)
-        .filter(|avc| {
-            avc.crouch_constraint
-                .as_ref()
-                .is_none_or(|binding| !binding.matches_map(report))
-        })
-        .and_then(|avc| avc.model_root_id);
-    let crouch_binding = crouch_rebind_root.map(|root| {
-        let previous = world
-            .get_component_by_id_as_mut::<AvatarControlComponent>(avc_id)
-            .and_then(|avc| avc.crouch_constraint.take());
-        if let Some(mut previous) = previous {
-            previous.restore(world, emit);
-        }
-        super::ik::HumanoidCrouchConstraint::bind(world, root, report)
-    });
     if let Some(avc) = world.get_component_by_id_as_mut::<AvatarControlComponent>(avc_id) {
-        if let Some(binding) = crouch_binding {
-            match binding {
-                Ok(binding) => {
-                    avc.crouch_constraint = Some(binding);
-                    avc.crouch_bind_error = None;
-                }
-                Err(reason) => {
-                    avc.crouch_bind_error = Some(reason);
-                }
-            }
-        }
-        if let Some(binding) = &mut avc.crouch_constraint {
-            if binding.matches_map(report) {
-                binding.generation = report.generation;
-            }
-        }
         if let Some(constraint) = &mut avc.head_neck_body_constraint {
             if constraint.matches_map(
                 map_target(report, HumanoidSlot::Head),
@@ -1780,20 +1747,6 @@ fn try_init_splices(
                 avc.head_neck_body_bind_error = None;
             }
             Err(reason) => avc.head_neck_body_bind_error = Some(reason),
-        }
-    }
-
-    let crouch_binding =
-        super::ik::HumanoidCrouchConstraint::bind(world, model_root_id, humanoid_map);
-    if let Some(avc) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
-        match crouch_binding {
-            Ok(binding) => {
-                avc.crouch_constraint = Some(binding);
-                avc.crouch_bind_error = None;
-            }
-            Err(reason) => {
-                avc.crouch_bind_error = Some(reason);
-            }
         }
     }
 
