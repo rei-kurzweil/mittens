@@ -14,11 +14,16 @@ The supported declarative form is therefore the same for desktop and XR:
 AVC {
     T { avatar_gltf }
     T.position(0.0, 0.08, 0.06) {
-        C3D { Pointer {} } // desktop
+        C3D { near(0.01) Pointer {} } // desktop
         // CXR { Pointer {} } // XR, in the equivalent scene
     }
 }
 ```
+
+For a close first-person view, explicitly author `near(0.01)` on C3D. Its general default is
+10 cm, which can clip away shirt/chest surfaces only 5–8 cm from the camera. The Sakura desktop
+scene now uses this near distance and the one-wrapper contract above; see the
+[real-scene surface regression](../bugs/sakura-desktop-first-person-neck-bend-regression.md).
 
 `C3D` looks down local `-Z`. During AVC splice initialization, a desktop camera
 path receives the required half-turn so its forward direction matches the
@@ -27,7 +32,7 @@ valid and makes the authored first-person orientation clear.
 
 ## Evidence
 
-- `AvatarControlSystem::try_init_splices` checks every AVC direct child for
+- `AvatarControlSystem::try_init_pose_drivers` checks every AVC direct child for
   `Camera3DComponent` and `CameraXRComponent`, including one-transform
   wrappers, before resolving eye offset and camera anchoring.
 - Its camera reparenting branch handles both component types; only the desktop

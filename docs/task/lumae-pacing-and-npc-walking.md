@@ -96,4 +96,5 @@ and let the existing lower-body owner consume the resulting supported root motio
 verified on the actual Lumae rig before enabling pacing in Sakura.
 
 The selected approach is implemented in the linked shared AVC task: common rig/capsule/lower-body
-setup with head splicing conditional on XR and an attached-head desktop aiming path.
+setup with head splicing for both Input and InputXR. Untracked NPCs have no head driver and keep
+their authored skeleton; desktop and XR players share the head-driven embodiment path.

@@ -199,11 +199,9 @@ fn tick_one(
     // Keep the displaced head bone anchored under head_mount. This prevents
     // animation/FK from reintroducing a local head translation that would move
     // the camera wrapper relative to the solved head pivot.
-    let displaced_head_id = owning_input_xr(world, id).and_then(|_| {
-        world
-            .get_component_by_id_as::<AvatarControlComponent>(id)
-            .and_then(|c| c.displaced_head)
-    });
+    let displaced_head_id = world
+        .get_component_by_id_as::<AvatarControlComponent>(id)
+        .and_then(|c| c.displaced_head);
     if let Some(head_bone_id) = displaced_head_id {
         if let Some(head_t) = world.get_component_by_id_as::<TransformComponent>(head_bone_id) {
             if head_t.transform.translation != [0.0, 0.0, 0.0] {
@@ -1403,7 +1401,7 @@ fn classify_arm_ik_eligibility(
 }
 
 /// Pose-driven embodiment: create body/head targets and optional hand IK.
-/// Only an XR source reparents the head; desktop keeps the imported neck/head path.
+/// Both Input and InputXR supply the authoritative spliced head target.
 ///
 /// Controllers are discovered by topology: any `ControllerXRComponent` that is a
 /// **direct child** of this `AvatarControlComponent` is treated as a hand driver.
@@ -1821,24 +1819,22 @@ fn try_init_pose_drivers(
     }
 
     emit_attach(emit, driven_t_id, head_target_id);
-    if owning_input_xr(world, id).is_some() {
-        emit_attach(emit, head_target_id, head_bone_id);
+    emit_attach(emit, head_target_id, head_bone_id);
 
-        // Zero head_bone's local translation — the driven head mount owns its offset.
-        // Preserve the authored head rest rotation/scale so the visible
-        // head mesh and camera anchor share the same convention across desktop and XR.
-        // Emitted *after* the reparent attach so the UpdateTransform lands on
-        // head_bone in its new parent without fighting the attach intent's matrix recompute.
-        emit.push_intent_now(
-            head_bone_id,
-            IntentValue::UpdateTransform {
-                component_id: head_bone_id,
-                translation: [0.0, 0.0, 0.0],
-                rotation_quat_xyzw: head_rest_rot,
-                scale: head_rest_s,
-            },
-        );
-    }
+    // Zero head_bone's local translation — the driven head mount owns its offset.
+    // Preserve the authored head rest rotation/scale so the visible
+    // head mesh and camera anchor share the same convention across desktop and XR.
+    // Emitted *after* the reparent attach so the UpdateTransform lands on
+    // head_bone in its new parent without fighting the attach intent's matrix recompute.
+    emit.push_intent_now(
+        head_bone_id,
+        IntentValue::UpdateTransform {
+            component_id: head_bone_id,
+            translation: [0.0, 0.0, 0.0],
+            rotation_quat_xyzw: head_rest_rot,
+            scale: head_rest_s,
+        },
+    );
 
     // -----------------------------------------------------------------------
     // Arm IK (TwoBoneIK) with explicit joint IDs.
@@ -3126,90 +3122,7 @@ mod hand_pose_correction_tests {
 
         // Check actual skinned body surfaces, not only joint endpoints. A ray
         // exiting a back face first is the first-person "inside torso" failure.
-        fn body_hit(
-            document: &gltf::Gltf,
-            world: &World,
-            nodes: &[ComponentId],
-            view: [[f32; 4]; 4],
-            ray: [f32; 3],
-        ) -> Option<(f32, f32)> {
-            use crate::utils::math::{vec3_cross, vec3_dot, vec3_sub};
-            let origin = view[3][..3].try_into().unwrap();
-            let direction4 = mat4_mul_vec4(view, [ray[0], ray[1], ray[2], 0.0]);
-            let direction: [f32; 3] = direction4[..3].try_into().unwrap();
-            let mut nearest: Option<(f32, f32)> = None;
-            for node in document.nodes() {
-                let Some(mesh) = node
-                    .mesh()
-                    .filter(|m| m.name().is_some_and(|n| n.starts_with("Body")))
-                else {
-                    continue;
-                };
-                let skin = node.skin().unwrap();
-                let inverse: Vec<_> = skin
-                    .reader(|_| document.blob.as_deref())
-                    .read_inverse_bind_matrices()
-                    .unwrap()
-                    .collect();
-                let joints: Vec<_> = skin
-                    .joints()
-                    .enumerate()
-                    .map(|(i, joint)| {
-                        mat4_mul(
-                            world
-                                .get_component_by_id_as::<TransformComponent>(nodes[joint.index()])
-                                .unwrap()
-                                .transform
-                                .matrix_world,
-                            inverse[i],
-                        )
-                    })
-                    .collect();
-                for primitive in mesh.primitives() {
-                    let reader = primitive.reader(|_| document.blob.as_deref());
-                    let positions = reader.read_positions().unwrap();
-                    let joint_ids = reader.read_joints(0).unwrap().into_u16();
-                    let weights = reader.read_weights(0).unwrap().into_f32();
-                    let vertices: Vec<[f32; 3]> = positions
-                        .zip(joint_ids)
-                        .zip(weights)
-                        .map(|((p, ids), weights)| {
-                            let mut skinned = [0.0; 3];
-                            for i in 0..4 {
-                                let p =
-                                    mat4_mul_vec4(joints[ids[i] as usize], [p[0], p[1], p[2], 1.0]);
-                                for axis in 0..3 {
-                                    skinned[axis] += weights[i] * p[axis];
-                                }
-                            }
-                            skinned
-                        })
-                        .collect();
-                    let indices: Vec<_> = reader.read_indices().unwrap().into_u32().collect();
-                    for triangle in indices.chunks_exact(3) {
-                        let a = vertices[triangle[0] as usize];
-                        let e1 = vec3_sub(vertices[triangle[1] as usize], a);
-                        let e2 = vec3_sub(vertices[triangle[2] as usize], a);
-                        let cross = vec3_cross(direction, e2);
-                        let det = vec3_dot(e1, cross);
-                        if det.abs() < 1e-9 {
-                            continue;
-                        }
-                        let offset = vec3_sub(origin, a);
-                        let u = vec3_dot(offset, cross) / det;
-                        let v = vec3_dot(direction, vec3_cross(offset, e1)) / det;
-                        if u < 0.0 || v < 0.0 || u + v > 1.0 {
-                            continue;
-                        }
-                        let distance = vec3_dot(e2, vec3_cross(offset, e1)) / det;
-                        if distance > 0.0001 && nearest.is_none_or(|hit| distance < hit.0) {
-                            nearest = Some((distance, vec3_dot(vec3_cross(e1, e2), direction)));
-                        }
-                    }
-                }
-            }
-            nearest
-        }
+        use super::first_person_test_support::body_hit;
 
         for asset in ["assets/models/bisket.glb", "assets/models/rei(mu).glb"] {
             let document = gltf::Gltf::open(asset).unwrap();
@@ -3371,7 +3284,7 @@ mod hand_pose_correction_tests {
     }
 
     #[test]
-    fn head_binding_keeps_desktop_head_attached_and_splices_only_xr() {
+    fn head_binding_splices_both_desktop_and_xr_before_shared_body_solving() {
         use crate::engine::ecs::CommandQueue;
         use crate::engine::ecs::system::{HeadNeckBodyConstraintSystem, SystemWorld};
         use crate::engine::graphics::VisualWorld;
@@ -3431,11 +3344,14 @@ mod hand_pose_correction_tests {
             let mut visuals = VisualWorld::default();
             let mut assets = RenderAssets::new();
             queue.flush(&mut world, &mut systems, &mut visuals, &mut assets);
-            if xr {
-                assert_ne!(world.parent_of(head), Some(neck));
-            } else {
-                assert_eq!(world.parent_of(head), Some(neck));
-            }
+            assert_ne!(world.parent_of(head), Some(neck));
+            assert_eq!(
+                world.parent_of(head),
+                world
+                    .get_component_by_id_as::<AvatarControlComponent>(avatar)
+                    .unwrap()
+                    .head_mount
+            );
             let driven_t = world
                 .get_component_by_id_as_mut::<TransformComponent>(driven)
                 .unwrap();
@@ -4494,3 +4410,6 @@ mod capsule_tests {
         assert_eq!(automatic_avc_movement_target(&world, avc), Some(outer));
     }
 }
+
+#[cfg(test)]
+pub(crate) mod first_person_test_support;

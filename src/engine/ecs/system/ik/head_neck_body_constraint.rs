@@ -36,7 +36,6 @@ pub enum HeadNeckBodyConstraintStatus {
 pub struct HeadNeckBodyConstraint {
     neck: ComponentId,
     head: ComponentId,
-    head_rest: TransformTrs,
     root: ComponentId,
     driven: ComponentId,
     neck_parent: ComponentId,
@@ -138,12 +137,7 @@ impl HeadNeckBodyConstraint {
             mount_rest_translation,
             quat_rotate_vec3(body_rotation_in_driver_parent, head_rest_position),
         );
-        let (head_t, head_r, head_s) = read_bone_rest_pose(world, head);
-        let head_rest = TransformTrs::new(head_t, head_r, head_s)
-            .normalized()
-            .map_err(|_| "invalid head rest pose")?;
         Ok(Self {
-            head_rest,
             neck,
             head,
             root,
@@ -158,10 +152,6 @@ impl HeadNeckBodyConstraint {
             map_generation,
             active: false,
         })
-    }
-
-    pub(super) fn head_rest(&self) -> TransformTrs {
-        self.head_rest
     }
 
     pub(crate) fn matches_map(&self, head: Option<ComponentId>, neck: Option<ComponentId>) -> bool {
@@ -241,7 +231,7 @@ impl HeadNeckBodyConstraint {
         .map_err(|_| InvalidPose)?;
         uniform(driven_world).map_err(UnsupportedRig)?;
         let desktop = desktop_source(world, self.driven)?;
-        let (body_position, mount_local) = if desktop {
+        let (head_position, mount_local) = if desktop {
             // Input translation/its outer frame own locomotion. Looking changes
             // only the head arc, never feeds a derived camera pose back to Input.
             let driver_parent = mat4_mul(
@@ -261,7 +251,7 @@ impl HeadNeckBodyConstraint {
                 .get_component_by_id_as::<TransformComponent>(mount)
                 .ok_or(InvalidPose)?;
             (
-                anchor,
+                desired_head,
                 Some((
                     mount,
                     TransformTrs::new(
@@ -297,8 +287,11 @@ impl HeadNeckBodyConstraint {
             let head_position = head_world[3][..3].try_into().unwrap();
             let restore_mount = (mount_t.transform.translation != self.mount_rest_translation)
                 .then_some((mount, raw_mount));
-            (vec3_sub(head_position, displacement), restore_mount)
+            (head_position, restore_mount)
         };
+        // Both input adapters produce a desired head pose. The same geometric
+        // closure places the body beneath that target, regardless of its source.
+        let body_position = vec3_sub(head_position, displacement);
         let root = world
             .get_component_by_id_as::<TransformComponent>(self.root)
             .ok_or(InvalidPose)?;
@@ -320,46 +313,6 @@ impl HeadNeckBodyConstraint {
         {
             return Err(InvalidPose);
         }
-        // Desktop retains the head under its imported neck. Solve its local
-        // orientation against the virtual mouse-look mount instead of relying
-        // on reparenting to inherit the driver rotation as XR does.
-        let head_local = if world.parent_of(self.head) != Some(mount) {
-            rest_model_relative_to(world, self.neck, self.head)
-                .ok_or(UnsupportedRig("untracked head left neck hierarchy"))?;
-            let head_parent = world.parent_of(self.head).ok_or(InvalidPose)?;
-            let old_neck =
-                uniform(matrix(world, self.neck).ok_or(InvalidPose)?).map_err(UnsupportedRig)?;
-            let old_parent =
-                uniform(matrix(world, head_parent).ok_or(InvalidPose)?).map_err(UnsupportedRig)?;
-            let neck_parent = uniform(parent_world).map_err(UnsupportedRig)?;
-            let new_neck_rotation = quat_mul(
-                neck_parent.rotation_quat_xyzw,
-                neck_local.rotation_quat_xyzw,
-            );
-            let new_parent_rotation = quat_mul(
-                quat_mul(
-                    new_neck_rotation,
-                    quat_conjugate(old_neck.rotation_quat_xyzw),
-                ),
-                old_parent.rotation_quat_xyzw,
-            );
-            let TransformTrs {
-                translation,
-                rotation_quat_xyzw: rotation,
-                scale,
-            } = self.head_rest;
-            let desired = quat_mul(mount_world.rotation_quat_xyzw, rotation);
-            Some((
-                self.head,
-                TransformTrs::new(
-                    translation,
-                    quat_mul(quat_conjugate(new_parent_rotation), desired),
-                    scale,
-                ),
-            ))
-        } else {
-            None
-        };
         Ok(Candidate {
             root: self.root,
             root_local,
@@ -367,7 +320,6 @@ impl HeadNeckBodyConstraint {
             neck: self.neck,
             neck_local,
             mount_local,
-            head_local,
         })
     }
 
@@ -403,17 +355,7 @@ impl HeadNeckBodyConstraint {
             {
                 raw_head_world = Some(mat4_mul(
                     mat4_mul(driven_world, raw_mount_matrix),
-                    if world.parent_of(self.head) == Some(mount) {
-                        head.transform.model
-                    } else {
-                        TransformTrs::new(
-                            [0.0; 3],
-                            self.head_rest.rotation_quat_xyzw,
-                            self.head_rest.scale,
-                        )
-                        .to_matrix()
-                        .ok()?
-                    },
+                    head.transform.model,
                 ));
             }
             emit_local(emit, mount, raw_mount);
@@ -504,7 +446,6 @@ struct Candidate {
     neck: ComponentId,
     neck_local: TransformTrs,
     mount_local: Option<(ComponentId, TransformTrs)>,
-    head_local: Option<(ComponentId, TransformTrs)>,
 }
 
 fn emit_local(emit: &mut dyn SignalEmitter, id: ComponentId, trs: TransformTrs) {
@@ -536,9 +477,6 @@ impl Candidate {
             },
         );
         emit_local(emit, self.neck, self.neck_local);
-        if let Some((head, local)) = self.head_local {
-            emit_local(emit, head, local);
-        }
         if let Some((mount, local)) = self.mount_local {
             emit_local(emit, mount, local);
         }

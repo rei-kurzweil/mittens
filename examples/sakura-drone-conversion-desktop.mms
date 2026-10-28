@@ -342,12 +342,14 @@ sakura_planter("sakura_street_tree_east", [8.7, 0.08, 7.0])
 teleport_pit("sakura_roof_reset", [0.0, 12.0, 0.0], [150.0, 4.0, 160.0], reset_position, "none")
 
 if desktop_view_enabled {
-    let camera_rig = T {
-        name = "sakura_desktop_camera"
-        C3D { fov(74.0) Pointer { name = "sakura_desktop_pointer" Raycast.event_driven().min_distance(0.75) {} } }
+    // One wrapper is the AVC camera contract: expose the eye offset at init.
+    let camera_rig = C3D {
+        name = "sakura_desktop_c3d"
+        fov(74.0) near(0.01)
+        Pointer { name = "sakura_desktop_pointer" Raycast.event_driven().min_distance(0.75) {} }
     }
     let camera_slot = T.position(0.0, 0.08, 0.12).rotation(0.0, 3.14159265, 0.0) {
-        name = "sakura_desktop_camera_slot"
+        name = "sakura_desktop_camera"
         camera_rig
     }
     let player_motion = Velocity {
@@ -372,12 +374,12 @@ if desktop_view_enabled {
                         initial_yaw(3.14159265)
                         crouch_sole_offsets([0.0, 0.0530325, 0.0874534], [0.0, 0.0530325, 0.0874534])
                         T { name = "sakura_desktop_model_root" model }
+                        // AVC discovers this camera path before splicing, includes
+                        // its eye offset in calibration, and mounts it at the mapped
+                        // camera anchor. C3D uses the same contract as CXR.
+                        camera_slot
                     }
                     avatar
-                    on(model, "GLTFInitialized", fn(event) {
-                        let head = event.gltf.query("[name='J_Bip_C_Head']")
-                        if head { head.attach(camera_slot) }
-                    })
                 }
             }
         }

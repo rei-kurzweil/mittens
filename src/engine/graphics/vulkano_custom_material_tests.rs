@@ -2372,3 +2372,158 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
     assert!(renderer.custom_programs.values().all(Result::is_ok));
     Ok(())
 }
+
+#[test]
+#[ignore = "requires Vulkan; renders the actual desktop C3D while looking at the avatar body"]
+fn sakura_desktop_first_person_body_surfaces_render() -> Result<(), Box<dyn std::error::Error>> {
+    use crate::engine::ecs::component::TransformComponent;
+    use crate::utils::math::{mat4_inverse, quat_from_axis_angle, quat_mul};
+    let context = RendererContext::new(None, None, None)?;
+    let extent = [640, 640];
+    let format = Format::B8G8R8A8_UNORM;
+    let mut renderer = VulkanoState::new(
+        context.clone(),
+        RendererOutput::Xr(format),
+        MsaaMode::Msaa4x,
+    )?;
+    let mut scene = crate::engine::Universe::new(crate::engine::ecs::World::default());
+    scene.load_mms_source_at_path(
+        include_str!("../../../examples/sakura-drone-conversion-desktop.mms"),
+        "examples/sakura-drone-conversion-desktop.mms",
+    )?;
+    let mut next_mesh = 1000;
+    let mut next_texture = 1000;
+    for _ in 0..12 {
+        scene.update(1.0 / 60.0, &Default::default());
+        scene.systems.prepare_render(
+            &mut scene.world,
+            &mut scene.visuals,
+            &mut scene.render_assets,
+            &mut SceneUploader {
+                renderer: &mut renderer,
+                next_mesh: &mut next_mesh,
+                next_texture: &mut next_texture,
+            },
+            &mut scene.command_queue,
+        );
+    }
+    let find = |scene: &crate::engine::Universe, name| {
+        scene
+            .world
+            .all_components()
+            .find(|&id| scene.world.component_label(id) == Some(name))
+            .unwrap()
+    };
+    let driver = find(&scene, "sakura_desktop_driver");
+    let camera = find(&scene, "sakura_desktop_camera");
+    let output = Image::new(
+        context.memory_allocator().clone(),
+        ImageCreateInfo {
+            image_type: ImageType::Dim2d,
+            format,
+            extent: [extent[0], extent[1], 1],
+            usage: ImageUsage::COLOR_ATTACHMENT | ImageUsage::TRANSFER_SRC,
+            ..Default::default()
+        },
+        Default::default(),
+    )?;
+    let view = ImageView::new_default(output.clone())?;
+    for (label, pitch, roll) in [
+        ("down", 85.9_f32, 0.0_f32),
+        ("down-roll-left", 85.9, -35.0),
+        ("down-roll-right", 85.9, 35.0),
+    ] {
+        let t = &mut scene
+            .world
+            .get_component_by_id_as_mut::<TransformComponent>(driver)
+            .unwrap()
+            .transform;
+        t.rotation = quat_mul(
+            quat_from_axis_angle([1.0, 0.0, 0.0], -pitch.to_radians()),
+            quat_from_axis_angle([0.0, 0.0, -1.0], roll.to_radians()),
+        );
+        t.recompute_model();
+        scene
+            .systems
+            .transform_changed(&mut scene.world, &mut scene.visuals, driver);
+        scene.update(1.0 / 60.0, &Default::default());
+        scene.systems.prepare_render(
+            &mut scene.world,
+            &mut scene.visuals,
+            &mut scene.render_assets,
+            &mut SceneUploader {
+                renderer: &mut renderer,
+                next_mesh: &mut next_mesh,
+                next_texture: &mut next_texture,
+            },
+            &mut scene.command_queue,
+        );
+        scene.visuals.prepare_draw_cache();
+        let model = scene
+            .world
+            .get_component_by_id_as::<TransformComponent>(camera)
+            .unwrap()
+            .transform
+            .matrix_world;
+        // Use the actual authored C3D projection and world transform. Offscreen
+        // targets are a GPU test transport, not an XR pose driver for this avatar.
+        let projection = scene.visuals.camera_proj_for(CameraTarget::Window);
+        scene.visuals.set_camera_for_target(
+            CameraTarget::Xr,
+            vec![crate::engine::graphics::CameraData {
+                view: mat4_inverse(model).unwrap(),
+                proj: projection,
+                transform: Default::default(),
+            }],
+        );
+        renderer.submit_xr_eye_to_view(&mut scene.visuals, 0, extent, 1, view.clone())?;
+        let size = (extent[0] * extent[1] * 4) as u64;
+        let readback = Buffer::new_slice::<u8>(
+            context.memory_allocator().clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::TRANSFER_DST,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                    | MemoryTypeFilter::HOST_RANDOM_ACCESS,
+                ..Default::default()
+            },
+            size,
+        )?;
+        let mut commands = AutoCommandBufferBuilder::primary(
+            renderer.command_buffer_allocator.clone(),
+            context.graphics_queue().queue_family_index(),
+            CommandBufferUsage::OneTimeSubmit,
+        )?;
+        commands.copy_image_to_buffer(CopyImageToBufferInfo::image_buffer(
+            output.clone(),
+            readback.clone(),
+        ))?;
+        let done = renderer
+            .submission_future
+            .take()
+            .unwrap()
+            .then_execute(context.graphics_queue().clone(), commands.build()?)?
+            .then_signal_fence_and_flush()?;
+        done.wait(None)?;
+        renderer.submission_future = Some(done.boxed());
+        let pixels = readback.read()?;
+        let rgba: Vec<u8> = pixels
+            .chunks_exact(4)
+            .flat_map(|p| [p[2], p[1], p[0], p[3]])
+            .collect();
+        image::save_buffer(
+            format!("/tmp/sakura-desktop-{label}.png"),
+            &rgba,
+            extent[0],
+            extent[1],
+            image::ColorType::Rgba8,
+        )?;
+        assert!(
+            rgba.chunks_exact(4)
+                .any(|p| p[0] > 10 || p[1] > 10 || p[2] > 10)
+        );
+    }
+    Ok(())
+}

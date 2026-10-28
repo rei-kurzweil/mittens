@@ -70,10 +70,10 @@ impl ArmTwoBoneIkConfig {
 ///
 /// Without an Input/InputXR ancestor, AVC binds the authored model and shared
 /// capsule/lower-body solver without generating head/body drivers or reparenting
-/// bones. With desktop Input, head aiming retains the imported neck/head path.
-/// Only InputXR uses the displaced-head topology shown below.
+/// bones. Desktop Input and InputXR both drive an authoritative spliced head;
+/// body placement is calculated from that head target through the shared solver.
 ///
-/// ## XR topology (after init)
+/// ## Pose-driven topology (after init)
 ///
 /// ```text
 /// Input  (or  InputXR)                    ← primary driver

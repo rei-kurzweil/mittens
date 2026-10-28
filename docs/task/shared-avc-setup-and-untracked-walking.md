@@ -3,7 +3,9 @@
 Date: 2026-10-28
 
 Status: implemented with open desktop follow-ups from user smoke testing.
-Automated checks below pass, but do not close the reported head/neck issue.
+Both Input and InputXR now use the shared head splice and body solve. Automated look-down
+geometry and body-surface checks pass; user desktop retest reports improved visibility after
+the camera-mount and near-plane correction. Desktop holding/idle-pose work remains open.
 
 ## Desktop smoke-test findings
 
@@ -13,8 +15,8 @@ User feedback on 2026-10-28: the change generally seems to work, with two issues
   a machine pistol leaves arms in their idle pose. Investigate proper holding
   targets/poses; a relaxed A-pose should also be the default idle posture.
 - [First-person look-down head/neck regression](../bugs/sakura-desktop-first-person-neck-bend-regression.md):
-  the expected solver response is not visible. Investigate the recent desktop/XR
-  split; the cause is not confirmed by the passing camera-rotation tests.
+  the original camera-rotation checks missed body-surface clipping. Shared head splicing,
+  the calibrated camera mount and a 1 cm near plane are now in place; the user reports improvement.
 
 ## Baseline and implementation order
 
@@ -24,20 +26,21 @@ has a first-person C3D on Rei(mu)'s mapped head, mouse/WASD input, capsule-gated
 reset, mirror, NPC pedestal and existing gun fixtures. XR is off. The committed baseline passed
 headless avatar/camera/capsule initialization before changing AVC.
 
-The subsequent working-tree change separates shared rig setup from tracked embodiment without
-adding a public component, signal, or host API.
+Commit `1c3ef331` introduced shared NPC setup with an XR-only head splice. The subsequent revision
+restores the same head splice for Input and InputXR, removing the attached-head desktop path while
+retaining independent NPC setup. No new public component, signal, or host API is added.
 
 ## Avatar modes and ownership
 
 - Every initialized AVC can share humanoid/model bindings, the generated capsule and lower-body
   rig/solver. Walking remains opt-out and observes actual supported capsule movement after contact.
-- An InputXR ancestor keeps tracking-readiness gating and the existing displaced-head splice.
-  Invalid/disabled tracking still releases walking. XR head/camera placement remains authoritative.
-- A desktop Input ancestor keeps the body-yaw and head/neck target machinery, but the imported head
-  remains attached to its neck. The native constraint solves head-local orientation from a virtual
-  look target and immutable head-rest calibration, so C3D follows mouse/arrow look without reparenting
-  the head. The legacy opt-out path also reads the virtual target rather than feeding posed-head
-  motion back into body placement.
+- An Input or InputXR ancestor supplies the authoritative head target. Both initialize the same
+  displaced-head splice and use the same geometric closure to calculate body placement from the
+  head target and calibrated neck displacement.
+- InputXR retains measured-pose authority and tracking-readiness gating. Invalid/disabled tracking
+  still releases walking. Desktop Input derives a connected head target from look orientation,
+  locomotion and calibrated geometry; that input adaptation does not require another head topology
+  or a second head-local orientation writer.
 - With no Input/InputXR ancestor, AVC binds an untracked rig. It does not generate a head mount,
   move the model to a head-height anchor, create a body-follow operator, or splice bones. Root
   transforms remain authored. Shared capsule creation explicitly propagates its world frame before
@@ -74,15 +77,22 @@ Sakura scene callbacks, and the following new behavior:
 - Two independent avatars alternate steps under Velocity and scripted ancestor movement; opting
   one out does not reset the other's gait.
 - The real MMS pacing controller and Lumae prefab drive the shared walking solver together.
-- The desktop Sakura player initializes C3D without InputXR/CXR, retains the head attachment, and
-  responds to desktop movement/look while lower-body stepping remains active.
-- A synthetic pose-driver test checks both desktop attachment preservation and XR head splicing.
+- The desktop Sakura player initializes C3D without InputXR/CXR, splices the head to its driver, and
+  responds to desktop movement/look while lower-body stepping remains active. The real scene
+  additionally checks bounded neck flexion on look-down, neck/head geometric closure, a stable
+  planar body anchor and return to neutral.
+- A synthetic pose-driver test checks the same head splice and body closure for both input modes.
 
 All 98 targeted checks pass: 23 lower-body, 14 head/neck, 33 AVC, 10 hand-tracking,
 11 Sakura scene, four pacing, two untracked Lumae and one desktop integration test.
 `cargo check --lib` and whitespace checks also pass. The desktop integration check additionally
 verifies that opting out of native neck bending preserves look and does not accumulate body drift.
-No window/headset render was run for these automated checks.
+Those initial checks were CPU-only. A later clipping repro found the desktop scene's 10 cm near
+plane discarding an outer shirt surface about 8 cm away. The first-person C3D now explicitly uses
+`near(0.01)` and a single declared AVC camera wrapper, with its eye offset included in calibration.
+Additional CPU-skinned surface checks cover downward pitch/roll, and inspected headless Vulkan
+captures show the outer shirt/chest. The user reports improved desktop visibility; see the linked
+bug for evidence and remaining visibility/tuning limits.
 
 ## Smoke commands
 

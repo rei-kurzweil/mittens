@@ -1,6 +1,7 @@
 # AvatarControl — Spec
 
 Date: 2026-03-23
+Updated: 2026-10-28
 
 ## Goal
 
@@ -8,11 +9,13 @@ Native first slice (2026-10-17): [HeadNeckBodyConstraint](../task/xr-head-neck-b
 automatically replaces legacy body follow for supported mapped humanoids under
 either `Input` or `InputXR`, independently of the proposed
 [VMN facility](../draft/declarative-vector-operator-components.md).
-XR preserves measured head pose and derives body placement from the bent neck;
-desktop look derives a connected head arc while intentional locomotion owns body
-translation. This slice follows positional input immediately, with no lean
-allowance. The calibrated common threshold and bounded follow remain planned.
-Manual/headset acceptance and tuning are pending.
+Both Input and InputXR drive the same spliced head. InputXR supplies a measured pose;
+desktop Input derives a connected head target from look orientation, locomotion and calibrated
+geometry. The shared solver calculates body placement from that head target and the bent neck.
+Input adaptation differs; skeleton topology and body closure do not. This slice follows positional
+input immediately, with no lean allowance. The calibrated common threshold and bounded follow
+remain planned. Desktop user feedback reports improved first-person body visibility after the
+camera-mount/near-plane correction; broader headset acceptance and tuning remain pending.
 
 AVC builders: `head_neck_body_enabled(bool)` selects native geometry versus the
 legacy fallback. `neck_pitch(share, extension_radians, flexion_radians)` and
@@ -91,55 +94,30 @@ InputXR
 
 ## Runtime topology (after AvatarControlSystem init)
 
-All `[sys]` nodes are created programmatically by `AvatarControlSystem::try_init_splices`.
+For Input and InputXR, `AvatarControlSystem::try_init_pose_drivers` creates the runtime
+head/body targets and optional arm chains. The head is displaced; the neck stays in the skeleton.
 
+```text
+Input or InputXR
+  driven_t                         authoritative head driver
+    head_mount [sys]               calibrated offset / desktop-derived head arc
+      J_Bip_C_Head                  spliced, local translation zero
+        mapped camera anchor
+          authored camera wrapper
+            C3D or CXR
+    AVC
+      body_operator [sys]           retained YawFollow, when enabled
+        model_root
+          GLTF / imported skeleton
+            hips / spine / neck     head no longer inherits this hierarchy
+            upper arm / forearm / hand
+      ControllerXR (optional per hand)
+        tracked target T
+      TwoBoneIK chains [sys]        only for validated, present hand drivers
 ```
-InputXR
-  └── driven_t
-        └── AvatarControlComponent
-              │
-              ├── [sys] body_operator  (TransformOperatorComponent)
-              │         └── ForkTRS
-              │               ├── MapRotation
-              │               │     └── QuatYawFollow { threshold, rate, initial_yaw }
-              │               └── MergeTRS
-              │         PipelineOutput
-              │               └── model_root  (TC, y = -camera_anchor_height)
-              │                     └── GLTFComponent
-              │                           └── [armature]
-              │                                 │
-              │                                 ├── neck_parent
-              │                                 │     └── [sys] head_mount  (TC)
-              │                                 │           ├── [sys] IKChain { AimConstraint }
-              │                                 │           │         target:        driven_t
-              │                                 │           │         end_effector:  head_mount
-              │                                 │           │         offset_yaw:    π (VR) / 0 (desktop)
-              │                                 │           └── J_Bip_C_Neck  (displaced here)
-              │                                 │
-              │                                 ├── J_Bip_L_UpperArm
-              │                                 │     ├── [sys] IKChain { TwoBoneIK }
-              │                                 │     │         target:        left_ctrl driven_t
-              │                                 │     │         end_effector:  J_Bip_L_Hand
-              │                                 │     │         pole:          [0, -1, 0]
-              │                                 │     │         copy_end_rot:  true
-              │                                 │     └── J_Bip_L_LowerArm
-              │                                 │           └── J_Bip_L_Hand
-              │                                 │
-              │                                 └── J_Bip_R_UpperArm
-              │                                       ├── [sys] IKChain { TwoBoneIK }
-              │                                       │         target:        right_ctrl driven_t
-              │                                       │         end_effector:  J_Bip_R_Hand
-              │                                       │         pole:          [0, -1, 0]
-              │                                       │         copy_end_rot:  true
-              │                                       └── J_Bip_R_LowerArm
-              │                                             └── J_Bip_R_Hand
-              │
-              ├── ControllerXR (Left,  Grip)   ← stays under AVC in arm IK mode
-              │     └── left_ctrl driven_t      ← world pos set by OpenXRSystem each tick
-              │
-              └── ControllerXR (Right, Grip)
-                    └── right_ctrl driven_t
-```
+
+The camera wrapper is discovered from AVC before being attached to the mapped anchor. XR's
+rendered view still uses the measured InputXR/OpenXR eye pose, not an extra wrapper offset.
 
 ### Body operator detail
 
@@ -154,9 +132,10 @@ TOP.fork_trs().yaw_follow(body_yaw_threshold, body_yaw_rate)
 Stripping pitch and roll before `model_root` means the model Y offset (the negative camera-anchor height)
 is only ever rotated by a pure-Y quaternion — feet cannot arc when looking up.
 
-**No transform pipeline or AimConstraint for the head.** AVC creates a fixed
-`head_mount` beneath `driven_t` and reparents the head bone beneath that mount.
-It therefore inherits the input/HMD pose directly.
+**No separate AimConstraint for the head.** Both desktop and XR create a calibrated
+`head_mount` beneath `driven_t` and reparent the head beneath it. Desktop target generation can
+translate that mount along the connected neck arc; XR preserves measured head/view authority.
+The native head/neck/body constraint coordinates neck bending and body placement.
 
 ### Head IK detail
 
@@ -166,8 +145,9 @@ driven_t  (Input/InputXR-driven TC)
     J_Bip_C_Head  (displaced from the armature)
 ```
 
-The mount inherits `driven_t` directly. `IKSystem` remains responsible for arm
-TwoBoneIK and spine/body solving, but does not drive this head mount.
+The mount inherits `driven_t`. The native head/neck/body constraint owns its desktop arc and
+coordinated body/neck outputs. `IKSystem` solves the optional arm TwoBoneIK chains; it does not
+provide a second head/body pose writer.
 
 ### Arm IK detail
 
@@ -208,13 +188,13 @@ classification runs again.
 
 ## Humanoid map and camera calibration
 
-AVC requests the owning GLTF's retained `HumanoidBoneMapReport`. It waits until the required
-head slot resolves before changing topology. An authored map overrides Auto inference; when no
-map is authored, AVC requests an implicit Auto map. Each arm is enabled independently only when
-its upper arm, lower arm, and hand resolve. Missing neck merely disables the neck rest pin.
+AVC requests the owning GLTF's retained `HumanoidBoneMapReport`. A pose-driven AVC waits until
+the required head slot resolves before creating its head splice. An authored map overrides Auto
+inference; when no map is authored, AVC requests an implicit Auto map. Each arm is enabled
+independently only when its map and actual hand driver validate.
 
 For the resolved camera anchor:
-1. On init, `model_root.y` is set from the anchor's rest/world height so the anchor sits at
+1. On init, `model_root.y` is set from the anchor's immutable model-relative rest height so the anchor sits at
    `driven_t`'s world Y.
 2. Any `Camera3DComponent` or `CameraXRComponent` direct children of AVC are re-parented
    under the anchor so they inherit its world transform each tick.
@@ -226,6 +206,28 @@ For the resolved camera anchor:
 prefers an explicit arbitrary transform, then a validated central eye/camera transform, then a
 generated eye midpoint, and finally the head. A missing explicit selector remains diagnosed even
 when a fallback keeps the camera operational.
+
+Declare a first-person C3D/CXR directly under AVC, optionally inside **one** direct Transform
+wrapper carrying its eye offset. A later manual head attachment, or two nested wrappers, bypasses
+that camera discovery/calibration path. For a close desktop first-person view use `C3D { near(0.01) }`;
+the general C3D near default remains 0.1 m and can discard outer shirt/chest surfaces about 8 cm away.
+See [avatar camera anchoring](avatar-camera.md) and the
+[desktop/XR attachment contract](../task/avc-desktop-xr-camera-attachment-contract.md).
+
+## Untracked avatars and shared lower-body setup
+
+With no Input/InputXR ancestor, AVC binds the authored model and humanoid map, generates its
+capsule, and registers the shared lower-body solver without head splicing, head-height model
+placement or body-follow operators. NPC model transforms and skeleton hierarchy remain authored.
+Capsule initialization explicitly propagates the generated proxy before contact consumes it.
+
+Walking defaults on through `walking_enabled`; `.walking_enabled(false)` opts out. Eligible
+calibrated AVCs observe actual supported capsule X/Z movement from Velocity, scripts, input or
+ancestor transforms after contact resolution. Pose-driven avatars retain their input-readiness
+checks; untracked avatars need no fake XR pose. Sole calibration and usable capsule/support are
+still required. Mounted avatars and lost support release gait; teleport-like discontinuities reset
+history. See [shared setup](../task/shared-avc-setup-and-untracked-walking.md) and
+[procedural walking](../task/procedural-lower-body-walking-ik.md).
 
 ---
 
