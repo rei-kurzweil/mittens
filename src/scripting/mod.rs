@@ -52,3 +52,9 @@ mod tests;
 
 #[cfg(test)]
 mod sakura_scene_tests;
+
+#[cfg(test)]
+mod lumae_pacing_tests;
+
+#[cfg(test)]
+mod sakura_desktop_tests;

@@ -145,7 +145,7 @@ implements retained transform-parent discovery; measurements above remain the ea
 
 The headset still slows after adding one or two Lumae with spring bones off.
 The CPU-only paused comparison above does not measure that rendering workload.
-Inspection of the current `assets/models/lumae.glb` finds two meshes, two
+Inspection of the current `assets/components/characters/lumae/lumae.glb` finds two meshes, two
 primitives, two materials, six textures, 30,200 vertices summed across primitives,
 44,169 triangles and one skin with 146 joints. One primitive has 57 morph
 targets; the other has none. These are asset counts, not measured per-frame work.

@@ -235,12 +235,12 @@ fn bisket_reimu_and_lumae_bind_both_enlarged_hand_colliders() {
     let mut scene = Universe::new(World::default());
     scene.load_mms_source_at_path(r#"
         import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
-        import { lumae_colliders } from "../assets/components/colliders/lumae.mms"
+        import { lumae_colliders } from "../assets/components/characters/lumae/colliders.mms"
         import { bisket_secondary_motion } from "../assets/components/secondary_motion/bisket.mms"
-        import { lumae_secondary_motion } from "../assets/components/secondary_motion/lumae.mms"
+        import { lumae_secondary_motion } from "../assets/components/characters/lumae/secondary_motion.mms"
         T.position(-2, 2, 0) { GLTF("assets/models/bisket.glb") { bisket_colliders() bisket_secondary_motion(false) } }
         T.position(0, 2, 0) { GLTF("assets/models/rei(mu).glb") { bisket_colliders() bisket_secondary_motion(false) } }
-        T.position(2, 2, 0) { GLTF("assets/models/lumae.glb") { lumae_colliders() lumae_secondary_motion() } }
+        T.position(2, 2, 0) { GLTF("assets/components/characters/lumae/lumae.glb") { lumae_colliders() lumae_secondary_motion() } }
     "#, "examples/_spring-collision-test.mms").unwrap();
     for _ in 0..4 {
         scene.update(STEP, &Default::default());

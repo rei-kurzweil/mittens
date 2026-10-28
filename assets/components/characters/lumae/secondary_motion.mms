@@ -1,4 +1,4 @@
-// Inspected assets/models/lumae.glb: 19 independent, unbranched hair chains
+// Inspected assets/components/characters/lumae/lumae.glb: 19 independent, unbranched hair chains
 // under J_Bip_C_Head (87 skin joints total). Chain lengths by suffix:
 // 01..08: 3; 09: 7; 10..14: 6; 15..16: 5; 17..18: 6; 19: 4.
 // Discover the full skin chains instead of truncating them to Bisket's tips.

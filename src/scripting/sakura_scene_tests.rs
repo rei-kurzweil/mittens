@@ -142,7 +142,7 @@ fn sakura_scene_has_open_ceramic_towers_typed_sky_rooftop_rig_and_reset() {
         assert_eq!(
             models
                 .iter()
-                .filter(|model| model.uri == "assets/models/lumae.glb")
+                .filter(|model| model.uri == "assets/components/characters/lumae/lumae.glb")
                 .count(),
             0
         );
@@ -1595,7 +1595,7 @@ fn sakura_pedestal_spawns_lumae_with_pose_and_hair_in_clear_rooftop_positions() 
     assert!(!world.all_components().any(|id| {
         world
             .get_component_by_id_as::<GLTFComponent>(id)
-            .is_some_and(|g| g.uri == "assets/models/lumae.glb")
+            .is_some_and(|g| g.uri == "assets/components/characters/lumae/lumae.glb")
     }));
     let button = named(&world, "sakura_add_lumae_button");
     let readout = named(&world, "sakura_lumae_count");
@@ -1622,7 +1622,7 @@ fn sakura_pedestal_spawns_lumae_with_pose_and_hair_in_clear_rooftop_positions() 
                 .get_component_by_id_as::<GLTFComponent>(avatar)
                 .unwrap()
                 .uri,
-            "assets/models/lumae.glb"
+            "assets/components/characters/lumae/lumae.glb"
         );
         assert_eq!(
             world

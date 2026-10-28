@@ -42,9 +42,9 @@ import { display_car } from "../assets/components/vehicles/display_car.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
 import { rei_mu_bow_secondary_motion } from "../assets/components/secondary_motion/rei-mu-bow.mms"
-import { lumae_secondary_motion } from "../assets/components/secondary_motion/lumae.mms"
-import { lumae_colliders } from "../assets/components/colliders/lumae.mms"
-import { pose as lumae_relaxed_pose } from "../assets/components/poses/lumae/000-relaxed.pose.mms"
+import { lumae_secondary_motion } from "../assets/components/characters/lumae/secondary_motion.mms"
+import { lumae_colliders } from "../assets/components/characters/lumae/colliders.mms"
+import { pose as lumae_relaxed_pose } from "../assets/components/characters/lumae/poses/000-relaxed.pose.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
@@ -281,7 +281,7 @@ fn spawn_lumae() {
     let label = "sakura_lumae_" + lumae_spawn_state.count
     let avatar = T.position(x, roof_height, z) {
         name = label + "_placement"
-        GLTF.new("assets/models/lumae.glb") {
+        GLTF.new("assets/components/characters/lumae/lumae.glb") {
             name = label
             pistol_material
             lumae_relaxed_pose()

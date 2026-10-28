@@ -213,7 +213,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             scene
                 .world
                 .get_component_by_id_as::<GLTFComponent>(id)
-                .is_some_and(|g| g.uri == "assets/models/lumae.glb")
+                .is_some_and(|g| g.uri == "assets/components/characters/lumae/lumae.glb")
         })
         .count();
     let (statics, movers) = scene

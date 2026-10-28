@@ -1769,7 +1769,7 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
     let mut scene = crate::engine::Universe::new(crate::engine::ecs::World::default());
     scene.systems.clock.set_driver(target_clock.clone());
     scene.load_mms_source_at_path(&source, "examples/sakura-drone-conversion.mms")?;
-    assert!(!scene.world.all_components().any(|id| scene.world.get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(id).is_some_and(|g|g.uri == "assets/models/lumae.glb")));
+    assert!(!scene.world.all_components().any(|id| scene.world.get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(id).is_some_and(|g|g.uri == "assets/components/characters/lumae/lumae.glb")));
     let spawn_button = scene.world.all_components().find(|&id|scene.world.component_label(id) == Some("sakura_add_lumae_button")).unwrap();
     for _ in 0..3 {
         scene.systems.rx.push_event(spawn_button, crate::engine::ecs::EventSignal::Click {
@@ -1777,7 +1777,7 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
         });
         scene.update(0., &Default::default());
     }
-    assert_eq!(scene.world.all_components().filter(|&id|scene.world.get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(id).is_some_and(|g|g.uri == "assets/models/lumae.glb")).count(),3);
+    assert_eq!(scene.world.all_components().filter(|&id|scene.world.get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(id).is_some_and(|g|g.uri == "assets/components/characters/lumae/lumae.glb")).count(),3);
     for _ in 0..3 {
         scene.update(0., &crate::engine::user_input::InputState::default());
     }
