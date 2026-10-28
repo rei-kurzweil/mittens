@@ -197,7 +197,7 @@ impl CombineMeshSystem {
                 color,
                 1.0,
                 false,
-                false,
+                world.children_of(root).iter().any(|&id| world.get_component_by_id_as::<crate::engine::ecs::component::TransparentCutoutComponent>(id).is_some_and(|c| c.enabled)),
                 false,
                 false,
                 false,
@@ -222,7 +222,8 @@ impl CombineMeshSystem {
                         .copied()
                         .filter(|child| Some(*child) != material_source
                             && world.get_component_by_id_as::<crate::engine::ecs::component::TextureComponent>(*child).is_none()
-                            && world.get_component_by_id_as::<crate::engine::ecs::component::TextureFilteringComponent>(*child).is_none()),
+                            && world.get_component_by_id_as::<crate::engine::ecs::component::TextureFilteringComponent>(*child).is_none()
+                            && world.get_component_by_id_as::<crate::engine::ecs::component::TransparentCutoutComponent>(*child).is_none()),
                 );
             }
         }

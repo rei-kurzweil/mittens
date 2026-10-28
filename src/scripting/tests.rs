@@ -10686,9 +10686,9 @@ fn roundtrip_pointer_click_thresholds() {
 fn pointer_click_threshold_defaults() {
     use crate::engine::ecs::component::PointerComponent;
     let pointer = PointerComponent::default();
-    assert_eq!(pointer.click_max_screen_distance_px, 8.0);
-    assert_eq!(pointer.click_max_ray_angle_deg, 2.0);
-    assert_eq!(pointer.click_max_origin_distance, 0.03);
+    assert_eq!(pointer.click_max_screen_distance_px, 20.0);
+    assert_eq!(pointer.click_max_ray_angle_deg, 5.0);
+    assert_eq!(pointer.click_max_origin_distance, 0.075);
     assert!(!pointer.debug_enabled);
 }
 

@@ -480,6 +480,11 @@ pub enum IntentValue {
     VelocityReset {
         component_id: ComponentId,
     },
+    VelocityRotate {
+        component_id: ComponentId,
+        delta_radps: [f32; 3],
+        world_space: bool,
+    },
     VelocityTranslate {
         component_id: ComponentId,
         delta_mps: [f32; 3],
@@ -1014,6 +1019,7 @@ impl IntentValue {
             IntentValue::SetPosition { .. } => "set_position",
             IntentValue::VelocityReset { .. } => "velocity_reset",
             IntentValue::VelocityTranslate { .. } => "velocity_translate",
+            IntentValue::VelocityRotate { .. } => "velocity_rotate",
             IntentValue::LookAt { .. } => "look_at",
             IntentValue::SetLayoutAvailableWidth { .. } => "set_layout_available_width",
             IntentValue::SetLayoutAvailableHeight { .. } => "set_layout_available_height",

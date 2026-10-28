@@ -56,6 +56,7 @@ impl SignalPipelineProcessor {
             | IntentValue::SetPosition { component_id, .. }
             | IntentValue::VelocityReset { component_id }
             | IntentValue::VelocityTranslate { component_id, .. }
+            | IntentValue::VelocityRotate { component_id, .. }
             | IntentValue::LookAt { component_id, .. }
             | IntentValue::GLTFArmatureVisible { component_id, .. }
             | IntentValue::SetLayoutAvailableWidth { component_id, .. }
@@ -210,6 +211,7 @@ impl SignalPipelineProcessor {
             | IntentValue::SetPosition { component_id, .. }
             | IntentValue::VelocityReset { component_id }
             | IntentValue::VelocityTranslate { component_id, .. }
+            | IntentValue::VelocityRotate { component_id, .. }
             | IntentValue::LookAt { component_id, .. }
             | IntentValue::GLTFArmatureVisible { component_id, .. }
             | IntentValue::SetLayoutAvailableWidth { component_id, .. }

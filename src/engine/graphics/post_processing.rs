@@ -72,6 +72,8 @@ impl Default for BlurPassConfig {
 #[derive(Debug, Clone)]
 pub struct BloomConfig {
     pub intensity: f32,
+    /// Active images in the multiscale pyramid, including the base image.
+    pub layers: u32,
     pub radius_ndc: f32,
     pub emissive_scale: f32,
     pub half_res: bool,
@@ -83,6 +85,7 @@ impl Default for BloomConfig {
     fn default() -> Self {
         Self {
             intensity: 1.0,
+            layers: 1,
             radius_ndc: 0.05,
             emissive_scale: 1.0,
             half_res: true,
@@ -169,6 +172,25 @@ pub struct PostProcessFrameTargets {
     pub bloom_a: Option<Arc<ImageView>>,
     pub bloom_b: Option<Arc<ImageView>>,
     pub bloom_extent: [u32; 2],
+    pub bloom_pyramid: Vec<BloomPyramidLevel>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BloomPyramidLevel {
+    pub a: Arc<ImageView>,
+    pub b: Arc<ImageView>,
+    pub extent: [u32; 2],
+}
+
+/// At most six levels, stopping at 1x1. For ordinary 2D viewports the extra
+/// pairs cost less than a third of the base pair's pixels. Retaining them keeps
+/// layer changes allocation-free, including narrow and tiny viewports.
+pub fn bloom_pyramid_extents(base: [u32; 2]) -> Vec<[u32; 2]> {
+    let mut result = vec![base.map(|x| x.max(1))];
+    while result.len() < 6 && result.last() != Some(&[1, 1]) {
+        result.push(result.last().unwrap().map(|x| (x / 2).max(1)));
+    }
+    result
 }
 
 #[derive(Debug, Clone)]
@@ -177,6 +199,8 @@ struct PostProcessTargetSet {
     color_format: Format,
     msaa_samples: SampleCount,
     frames: Vec<PostProcessFrameTargets>,
+    has_bloom: bool,
+    blur_half_res: bool,
 }
 
 #[derive(BufferContents, Clone, Copy)]
@@ -214,6 +238,9 @@ mod composite_fs {
         path: "assets/shaders/post-process-bloom-composite.frag",
     }
 }
+mod merge_fs {
+    vulkano_shaders::shader! { ty: "fragment", path: "assets/shaders/post-process-bloom-merge.frag", }
+}
 
 pub struct PostProcessingRenderer {
     device: Arc<Device>,
@@ -224,6 +251,7 @@ pub struct PostProcessingRenderer {
     blit_pipelines: HashMap<(Format, SampleCount), Arc<GraphicsPipeline>>,
     blur_pipelines: HashMap<Format, Arc<GraphicsPipeline>>,
     composite_pipelines: HashMap<Format, Arc<GraphicsPipeline>>,
+    merge_pipelines: HashMap<Format, Arc<GraphicsPipeline>>,
     window_targets: Option<PostProcessTargetSet>,
     xr_targets: Option<PostProcessTargetSet>,
 }
@@ -275,6 +303,7 @@ impl PostProcessingRenderer {
             blit_pipelines: HashMap::new(),
             blur_pipelines: HashMap::new(),
             composite_pipelines: HashMap::new(),
+            merge_pipelines: HashMap::new(),
             window_targets: None,
             xr_targets: None,
         })
@@ -294,7 +323,9 @@ impl PostProcessingRenderer {
         }
 
         let needs_recreate = self.window_targets.as_ref().is_none_or(|targets| {
-            targets.extent != extent
+            targets.has_bloom != config.bloom.is_some()
+                || targets.blur_half_res != config.effective_blur_half_res()
+                || targets.extent != extent
                 || targets.color_format != color_format
                 || targets.msaa_samples != msaa_samples
                 || targets.frames.len() != frame_count
@@ -327,7 +358,9 @@ impl PostProcessingRenderer {
         }
 
         let needs_recreate = self.xr_targets.as_ref().is_none_or(|targets| {
-            targets.extent != extent
+            targets.has_bloom != config.bloom.is_some()
+                || targets.blur_half_res != config.effective_blur_half_res()
+                || targets.extent != extent
                 || targets.color_format != color_format
                 || targets.msaa_samples != msaa_samples
                 || targets.frames.len() != view_count
@@ -415,6 +448,32 @@ impl PostProcessingRenderer {
                     .as_ref()
                     .map(|b| b.intensity.max(0.0))
                     .unwrap_or(0.0),
+                radius_pixels: 0.0,
+            },
+        )
+    }
+
+    pub fn record_bloom_merge(
+        &mut self,
+        cbb: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        color_format: Format,
+        output: Arc<ImageView>,
+        extent: [u32; 2],
+        fine: Arc<ImageView>,
+        coarse: Arc<ImageView>,
+        coarse_weight: f32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let pipeline = self.merge_pipeline(color_format)?;
+        let set = self.sampled_set(fine, coarse)?;
+        self.record_fullscreen_pass(
+            cbb,
+            output,
+            extent,
+            pipeline,
+            set,
+            PostProcessPushConstants {
+                direction: [0.0; 2],
+                bloom_intensity: coarse_weight,
                 radius_pixels: 0.0,
             },
         )
@@ -581,6 +640,27 @@ impl PostProcessingRenderer {
                 (None, None, None, None)
             };
 
+            let mut bloom_pyramid = Vec::new();
+            if config.bloom.is_some() {
+                for extent in bloom_pyramid_extents(bloom_extent).into_iter().skip(1) {
+                    let image = || {
+                        Self::create_color_view(
+                            self.memory_allocator.clone(),
+                            color_format,
+                            extent,
+                            SampleCount::Sample1,
+                            ImageUsage::COLOR_ATTACHMENT
+                                | ImageUsage::SAMPLED
+                                | ImageUsage::TRANSFER_SRC,
+                        )
+                    };
+                    bloom_pyramid.push(BloomPyramidLevel {
+                        a: image()?,
+                        b: image()?,
+                        extent,
+                    });
+                }
+            }
             frames.push(PostProcessFrameTargets {
                 main_color,
                 main_msaa_color,
@@ -590,6 +670,7 @@ impl PostProcessingRenderer {
                 bloom_a,
                 bloom_b,
                 bloom_extent,
+                bloom_pyramid,
             });
         }
 
@@ -598,6 +679,8 @@ impl PostProcessingRenderer {
             color_format,
             msaa_samples,
             frames,
+            has_bloom: config.bloom.is_some(),
+            blur_half_res: config.effective_blur_half_res(),
         })
     }
 
@@ -731,6 +814,25 @@ impl PostProcessingRenderer {
         )?;
         self.composite_pipelines
             .insert(color_format, pipeline.clone());
+        Ok(pipeline)
+    }
+
+    fn merge_pipeline(
+        &mut self,
+        color_format: Format,
+    ) -> Result<Arc<GraphicsPipeline>, Box<dyn std::error::Error>> {
+        if let Some(existing) = self.merge_pipelines.get(&color_format) {
+            return Ok(existing.clone());
+        }
+
+        let pipeline = self.build_pipeline(
+            color_format,
+            SampleCount::Sample1,
+            merge_fs::load(self.device.clone())?
+                .entry_point("main")
+                .ok_or("missing post-process-bloom-merge.frag entry point")?,
+        )?;
+        self.merge_pipelines.insert(color_format, pipeline.clone());
         Ok(pipeline)
     }
 

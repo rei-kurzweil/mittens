@@ -28,11 +28,11 @@
 import { accordion, accordion_body } from "../internal/ui/accordion.mms"
 
 let INFO_PANEL_TITLE_HEIGHT_GU = 3.5
-let INFO_PANEL_TITLE_BACKGROUND = [0.12, 0.12, 0.14, 0.98]
-let INFO_PANEL_TOGGLE_BACKGROUND = [0.24, 0.24, 0.27, 1.0]
-let INFO_PANEL_BODY_BACKGROUND = [0.075, 0.075, 0.09, 0.96]
-let INFO_PANEL_TITLE_TEXT = [0.96, 0.96, 0.98, 1.0]
-let INFO_PANEL_BODY_TEXT = [0.96, 0.96, 0.98, 1.0]
+let INFO_PANEL_TITLE_BACKGROUND = [0.93, 0.87, 0.71, 1.0]
+let INFO_PANEL_TOGGLE_BACKGROUND = [0.88, 0.81, 0.66, 1.0]
+let INFO_PANEL_BODY_BACKGROUND = [0.98, 0.95, 0.84, 1.0]
+let INFO_PANEL_TITLE_TEXT = [0.0, 0.0, 0.0, 1.0]
+let INFO_PANEL_BODY_TEXT = [0.0, 0.0, 0.0, 1.0]
 
 fn info_panel_title(title, text_color) {
     return T {
@@ -145,11 +145,11 @@ export fn info_panel(options) {
     let authored_toggle_background_color = options["toggle_background_color"]
     if authored_toggle_background_color { toggle_background = authored_toggle_background_color }
 
-    let toggle_icon_color = [0.72, 0.90, 1.0, 1.0]
+    let toggle_icon_color = [0.0, 0.0, 0.0, 1.0]
     let authored_toggle_icon_color = options["toggle_icon_color"]
     if authored_toggle_icon_color { toggle_icon_color = authored_toggle_icon_color }
 
-    let toggle_icon_glow = 1.8
+    let toggle_icon_glow = 0.0
     let authored_toggle_icon_glow = options["toggle_icon_glow_intensity"]
     if authored_toggle_icon_glow != null { toggle_icon_glow = authored_toggle_icon_glow }
 

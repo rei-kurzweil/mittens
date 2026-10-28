@@ -4,7 +4,7 @@ import { ui_unlit_material } from "../materials/ui_unlit.mms"
 
 let QUALITY_STEPS = [64, 128, 256, 512, 1024, 1440, 2048]
 let UNIT_SCALE = 0.08
-let ROW_HEIGHT = 3.2
+let ROW_HEIGHT = 2.4
 let TEXT_COLOR = [0.0, 0.0, 0.0, 1.0]
 let BODY_COLOR = [0.98, 0.95, 0.84, 1.0]
 let ROW_COLOR = [0.95, 0.91, 0.79, 1.0]
@@ -24,6 +24,8 @@ fn setting_toggle(enabled, control_name) {
 }
 
 fn read_settings(state) {
+    state.bloom = GraphicsSettings.bloom.enabled()
+    state.bloom_layers = GraphicsSettings.bloom.layer_count()
     state.enabled = GraphicsSettings.mirrors.enabled()
     state.motion_enabled = GraphicsSettings.secondary_motion.enabled()
     state.motion_paused = GraphicsSettings.secondary_motion.paused()
@@ -72,7 +74,7 @@ fn section_heading(text, heading_name) {
     return T {
         name = heading_name
         Style {
-            display("flex") width(100%) height(2.4)
+            display("flex") width(100%) height(2.0)
             align_items("center") padding_xy(0.35, 0.0)
             font_size(0.75) color(TEXT_COLOR)
         }
@@ -109,6 +111,28 @@ fn setting_row(label, control, readout) {
 
 fn settings_content(state) {
     read_settings(state)
+    let bloom_toggle = setting_toggle(state.bloom, "graphics_bloom_toggle")
+    let bloom_control = toggle_control(bloom_toggle, "Toggle", "graphics_bloom_toggle_control")
+    let bloom_readout = Text { name = "graphics_bloom_readout" enabled_text(state.bloom) }
+    let bloom_track = T.scale(TRACK_WIDTH * 0.5, 0.025, 0.10) {
+        R.cube() { C.rgba(0.73, 0.65, 0.50, 1.0) Raycastable.enabled() { interaction_priority(120.0) } }
+    }
+    let bloom_thumb = T.scale(THUMB_RADIUS, 0.14, 0.14) {
+        R.sphere() { C.rgba(ACCENT_COLOR[0], ACCENT_COLOR[1], ACCENT_COLOR[2], ACCENT_COLOR[3]) Raycastable.enabled() { interaction_priority(120.0) } }
+    }
+    let bloom_layers = Slider.range(1.0, 6.0).step(1.0).value(state.bloom_layers).width(SLIDER_WIDTH)
+        .track(bloom_track).thumb(bloom_thumb) { name = "graphics_bloom_layers_slider" }
+    let bloom_layers_readout = Text { name = "graphics_bloom_layers_readout" "" + state.bloom_layers }
+    on(bloom_toggle, "ToggleChanged", fn(event) {
+        GraphicsSettings.bloom.toggle(event.value)
+        state.bloom = GraphicsSettings.bloom.enabled()
+        bloom_readout.set_text(enabled_text(state.bloom))
+    })
+    on(bloom_layers, "SliderChanged", fn(event) {
+        GraphicsSettings.bloom.layers(event.value)
+        state.bloom_layers = GraphicsSettings.bloom.layer_count()
+        bloom_layers_readout.set_text("" + state.bloom_layers)
+    })
     let mirror_toggle = setting_toggle(state.enabled, "graphics_mirrors_toggle")
     let mirror_control = toggle_control(mirror_toggle, "Toggle", "graphics_mirrors_toggle_control")
     let toggle_readout = Text {
@@ -169,7 +193,10 @@ fn settings_content(state) {
 
     return T {
         name = "graphics_settings_content"
-        Style { display("flex") flex_direction("column") width(100%) row_gap(0.35) }
+        Style { display("flex") flex_direction("column") width(100%) row_gap(0.25) }
+        section_heading("Bloom", "graphics_bloom_heading")
+        setting_row("Toggle bloom", bloom_control, bloom_readout)
+        setting_row("Pyramid levels", bloom_layers, bloom_layers_readout)
         section_heading("Mirrors", "graphics_mirrors_heading")
         setting_row("Toggle mirrors", mirror_control, toggle_readout)
         setting_row("Mirror resolution", quality_slider, quality_readout)
@@ -184,7 +211,7 @@ fn settings_content(state) {
 export fn graphics_settings_panel(options) {
     let title = "Graphics settings"
     if options["title"] != null { title = options.title }
-    let state = { enabled = true motion_enabled = true motion_paused = false quality = null quality_index = 3 }
+    let state = { bloom = true bloom_layers = 1 enabled = true motion_enabled = true motion_paused = false quality = null quality_index = 3 }
     let panel = info_panel({
         root_name = options.root_name
         width_gu = 32.0
@@ -223,6 +250,14 @@ export fn graphics_settings_panel(options) {
             read_settings(state)
             let current_panel = query("#" + options.root_name)
             if current_panel {
+                let bloom_toggle = current_panel.query("#graphics_bloom_toggle")
+                let bloom_readout = current_panel.query("#graphics_bloom_readout")
+                let bloom_layers = current_panel.query("#graphics_bloom_layers_slider")
+                let bloom_layers_readout = current_panel.query("#graphics_bloom_layers_readout")
+                if bloom_toggle { bloom_toggle.sync_value(state.bloom) }
+                if bloom_readout { bloom_readout.set_text(enabled_text(state.bloom)) }
+                if bloom_layers { bloom_layers.sync_value(state.bloom_layers) }
+                if bloom_layers_readout { bloom_layers_readout.set_text("" + state.bloom_layers) }
                 let toggle = current_panel.query("#graphics_mirrors_toggle")
                 let readout = current_panel.query("#graphics_mirrors_enabled_readout")
                 if toggle { toggle.sync_value(state.enabled) }

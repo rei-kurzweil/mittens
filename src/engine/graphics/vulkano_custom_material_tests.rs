@@ -1816,6 +1816,19 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
         &mut scene.command_queue,
     );
     scene.visuals.prepare_draw_cache();
+    let blossoms: Vec<_> = scene
+        .visuals
+        .instances()
+        .iter()
+        .filter(|i| scene.world.component_label(i.component) == Some("sakura_tree_blossoms"))
+        .collect();
+    assert_eq!(blossoms.len(), 3);
+    assert!(
+        blossoms
+            .iter()
+            .all(|i| i.transparent_cutout && i.texture.is_some()),
+        "combined blossoms must retain cutout texture bindings"
+    );
     let pistol_grip = scene
         .world
         .all_components()
@@ -1921,13 +1934,22 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
                 })
         })
         .count();
-    assert_eq!(blossom_count, 3 * 27 * 3);
+    assert_eq!(
+        blossom_count, 3,
+        "one combined cutout blossom instance per tree"
+    );
     let combined = |scene: &crate::engine::Universe| {
         scene
             .visuals
             .instances()
             .iter()
             .filter(|instance| {
+                if matches!(
+                    scene.world.component_label(instance.component),
+                    Some("sakura_tree_blossoms" | "sakura_tree_branches")
+                ) {
+                    return false;
+                }
                 scene
                     .world
                     .get_component_by_id_as::<crate::engine::ecs::component::CombineMeshComponent>(
@@ -1955,7 +1977,16 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
             assert!(primitive.get_handle().is_none(),"ray targets must use retained source boxes while only combined meshes draw");
         }
         for id in scene.world.all_components() {
-            if let Some(combine)=scene.world.get_component_by_id_as::<crate::engine::ecs::component::CombineMeshComponent>(id) {
+            if matches!(
+                scene.world.component_label(id),
+                Some("sakura_tree_blossoms" | "sakura_tree_branches")
+            ) {
+                continue;
+            }
+            if let Some(combine) = scene
+                .world
+                .get_component_by_id_as::<crate::engine::ecs::component::CombineMeshComponent>(id)
+            {
                 assert!(combine.keep_transforms);
                 let sources=scene.world.find_all_components(id,"Renderable");
                 assert!(!sources.is_empty());
@@ -2057,6 +2088,9 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
             );
         }
         for instance in scene.visuals.instances().iter().filter(|instance| {
+            if scene.world.component_label(instance.component) == Some("sakura_tree_branches") {
+                return false;
+            }
             scene
                 .world
                 .get_component_by_id_as::<crate::engine::ecs::component::CombineMeshComponent>(
@@ -2073,7 +2107,7 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
     let toggle = scene
         .world
         .all_components()
-        .find(|&id| scene.world.component_label(id) == Some("sakura_scene_bloom_toggle"))
+        .find(|&id| scene.world.component_label(id) == Some("graphics_bloom_toggle"))
         .unwrap();
     for enabled in [false, true] {
         scene.systems.rx.push_event(
@@ -2085,7 +2119,12 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
         );
         scene.update(0., &crate::engine::user_input::InputState::default());
         assert_eq!(
-            scene.visuals.post_processing().enabled,
+            scene
+                .visuals
+                .effective_post_processing()
+                .bloom
+                .as_ref()
+                .is_some_and(|b| b.intensity > 0.0),
             enabled,
             "scene bloom control must update the actual renderer graph"
         );
@@ -2119,6 +2158,7 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
         })
         .collect::<Result<Vec<_>, _>>()?;
     let projection = scene.visuals.camera_proj_for(CameraTarget::Window);
+    let mut retained_bloom = None;
     for (label, position, target) in [
         ("rooftop", [-12.8, 28.4, 4.2], [-18., 26.5, -3.3]),
         ("city", [0., 35., 52.0], [0., 13., 0.]),
@@ -2131,6 +2171,19 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
         ("lumae-pedestal", [-16.8, 27.6, 1.65], [-17.0, 26.54, 1.2]),
         ("pistol-modes", [-17.83, 26.96, -3.01], [-18.0, 26.96, -3.01]),
     ] {
+        let layers = match label {
+            "city" => 2,
+            "bench" => 3,
+            "targets" => 4,
+            "tree" => 5,
+            "sky" => 6,
+            _ => 1,
+        };
+        scene
+            .systems
+            .graphics_settings
+            .set_bloom_layers(layers, &mut scene.command_queue)?;
+        scene.systems.graphics_settings.publish(&mut scene.visuals);
         if label == "pistol-modes" {
             // Preview the right receiver face in the held, upright orientation.
             scene.world.get_component_by_id_as_mut::<TransformComponent>(pistol_grip).unwrap().transform =
@@ -2198,6 +2251,21 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
                 eyes[eye].clone(),
             )?;
         }
+        let base = renderer
+            .post_processing_renderer
+            .xr_frame_targets(0)
+            .unwrap()
+            .bloom_a
+            .as_ref()
+            .unwrap()
+            .clone();
+        if let Some(previous) = &retained_bloom {
+            assert!(
+                Arc::ptr_eq(previous, &base),
+                "layer changes must retain the base image"
+            );
+        }
+        retained_bloom = Some(base);
         let size = (extent[0] * extent[1] * 4) as u64;
         let readback = Buffer::new_slice::<u8>(
             context.memory_allocator().clone(),

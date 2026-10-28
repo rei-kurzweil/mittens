@@ -7,6 +7,8 @@ use crate::engine::ecs::ComponentId;
 pub struct VelocityComponent {
     pub enabled: bool,
     pub linear_local_mps: [f32; 3],
+    /// Parent-frame axis-angle angular velocity in radians per second.
+    pub angular_local_radps: [f32; 3],
     /// Runtime support contact from the latest fixed substep; not serialized.
     pub grounded: bool,
     pub rotation_basis: Option<ComponentRef>,

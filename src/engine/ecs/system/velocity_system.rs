@@ -26,6 +26,28 @@ mod tests {
     use crate::engine::ecs::system::{CameraSystem, LightSystem, TransformOperatorSystem};
 
     #[test]
+    fn angular_velocity_advances_without_linear_motion() {
+        let mut world = World::default();
+        let mut velocity = VelocityComponent::new();
+        velocity.angular_local_radps = [0.0, std::f32::consts::PI, 0.0];
+        let owner = world.add_component(velocity);
+        let target = world.add_component(TransformComponent::new());
+        world.add_child(owner, target).unwrap();
+        let mut system = VelocitySystem::default();
+        let mut emit = RxWorld::default();
+        for _ in 0..60 {
+            system.step(&mut world, &mut emit);
+        }
+        let transform = &world
+            .get_component_by_id_as::<TransformComponent>(target)
+            .unwrap()
+            .transform;
+        let forward = math::quat_rotate_vec3(transform.rotation, [0.0, 0.0, 1.0]);
+        assert!((forward[0] - 1.0).abs() < 1e-4 && forward[2].abs() < 1e-4);
+        assert_eq!(transform.translation, [0.0; 3]);
+    }
+
+    #[test]
     fn gravity_provider_respects_branches_overrides_and_velocity_boundaries() {
         let mut world = World::default();
         let gravity = world.add_component(GravityComponent::new());
@@ -787,6 +809,10 @@ impl VelocitySystem {
                 continue;
             }
             let mut linear = velocity.linear_local_mps;
+            let angular = velocity.angular_local_radps;
+            if !angular.iter().all(|x| x.is_finite()) {
+                continue;
+            }
             world
                 .get_component_by_id_as_mut::<VelocityComponent>(id)
                 .unwrap()
@@ -825,7 +851,7 @@ impl VelocitySystem {
                     continue;
                 }
             }
-            if linear == [0.0; 3] {
+            if linear == [0.0; 3] && angular == [0.0; 3] {
                 world
                     .get_component_by_id_as_mut::<VelocityComponent>(id)
                     .unwrap()
@@ -870,6 +896,14 @@ impl VelocitySystem {
             };
             for (position, delta) in transform.transform.translation.iter_mut().zip(delta_local) {
                 *position += delta;
+            }
+            let speed = math::vec3_len(angular);
+            if speed > 1e-6 && speed.is_finite() {
+                let delta = math::quat_from_axis_angle(
+                    math::vec3_scale(angular, 1.0 / speed),
+                    speed * elapsed,
+                );
+                transform.transform.rotation = math::quat_mul(delta, transform.transform.rotation);
             }
             transform.transform.recompute_model();
             let current = transform.transform;

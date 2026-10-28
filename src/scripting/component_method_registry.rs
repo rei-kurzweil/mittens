@@ -74,7 +74,14 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
         || (matches!(component_type, "Velocity" | "velocity")
             && matches!(
                 method,
-                "reset" | "translate" | "translate_world" | "linear" | "grounded"
+                "reset"
+                    | "translate"
+                    | "translate_world"
+                    | "linear"
+                    | "grounded"
+                    | "rotate"
+                    | "rotate_world"
+                    | "angular"
             ))
         || (matches!(
             component_type,
@@ -172,6 +179,36 @@ pub(crate) fn invoke_component_method(
                 .get_component_by_id_as::<VelocityComponent>(id)
                 .ok_or("grounded(): not a Velocity component")?;
             Ok(Value::Bool(velocity.enabled && velocity.grounded))
+        }
+        ("Velocity" | "velocity", "angular") => {
+            let velocity = world
+                .get_component_by_id_as::<VelocityComponent>(id)
+                .ok_or("angular(): not a Velocity component")?;
+            Ok(Value::Array(
+                velocity
+                    .angular_local_radps
+                    .into_iter()
+                    .map(|x| Value::Number(x as f64))
+                    .collect(),
+            ))
+        }
+        ("Velocity" | "velocity", "rotate" | "rotate_world") => {
+            let [delta] = args else {
+                return Err(format!("{method}(): expected one vec3 delta"));
+            };
+            let delta_radps = value_as_f32_array::<3>(delta)?;
+            if !delta_radps.iter().all(|x| x.is_finite()) {
+                return Err("angular velocity delta must be finite".into());
+            }
+            world
+                .get_component_by_id_as::<VelocityComponent>(id)
+                .ok_or("not a Velocity component")?;
+            emit_intent(IntentValue::VelocityRotate {
+                component_id: id,
+                delta_radps,
+                world_space: method == "rotate_world",
+            });
+            Ok(Value::Null)
         }
         ("Velocity" | "velocity", "linear") => {
             if !args.is_empty() {

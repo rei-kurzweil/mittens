@@ -11,32 +11,31 @@ fn blossom_cluster(material, seed) {
             T.rotation(pitch, yaw, plane * 0.31).scale(0.42, 0.42, 0.42) {
                 R.square() {
                     material
-                    Texture.with_uri("assets/textures/cherry-blossoms/sakura-blossom-256.png")
-                    TextureFiltering.linear()
-                    TransparentCutout {}
                 }
             }
         }
     }
 }
 
-fn branch(depth, length, width, wood, blossoms, seed) {
+fn branch(depth, length, width, wood, blossoms, seed, flowers) {
     return T {
-        R.cylinder(width / 2.0, length, 10) {
-            wood
-            C.rgba(0.34, 0.21, 0.12, 1.0)
+        if !flowers {
+            R.cylinder(width / 2.0, length, 10) {
+                wood
+                C.rgba(0.34, 0.21, 0.12, 1.0)
+            }
         }
         if depth > 0 {
             T.position(0.0, length, 0.0).rotation(0.48, 0.0, 0.43) {
-                branch(depth - 1, length * 0.68, width * 0.70, wood, blossoms, seed * 3 + 1)
+                branch(depth - 1, length * 0.68, width * 0.70, wood, blossoms, seed * 3 + 1, flowers)
             }
             T.position(0.0, length, 0.0).rotation(-0.40, 2.10, -0.46) {
-                branch(depth - 1, length * 0.68, width * 0.70, wood, blossoms, seed * 3 + 2)
+                branch(depth - 1, length * 0.68, width * 0.70, wood, blossoms, seed * 3 + 2, flowers)
             }
             T.position(0.0, length, 0.0).rotation(0.38, -2.10, 0.34) {
-                branch(depth - 1, length * 0.68, width * 0.70, wood, blossoms, seed * 3 + 3)
+                branch(depth - 1, length * 0.68, width * 0.70, wood, blossoms, seed * 3 + 3, flowers)
             }
-        } else {
+        } else if flowers {
             T.position(0.0, length, 0.0) { blossom_cluster(blossoms, seed) }
         }
     }
@@ -59,7 +58,17 @@ export fn sakura_tree(depth, length, width) {
     if depth < 0 { depth = 0 }
     if depth > 4 { depth = 4 }
     return T {
-        branch(depth, length, width, wood, blossoms, 1)
+        CombineMesh {
+            name = "sakura_tree_branches"
+            branch(depth, length, width, wood, blossoms, 1, false)
+        }
+        CombineMesh {
+            name = "sakura_tree_blossoms"
+            Texture.with_uri("assets/textures/cherry-blossoms/sakura-blossom-256.png")
+            TextureFiltering.linear()
+            TransparentCutout {}
+            branch(depth, length, width, wood, blossoms, 1, true)
+        }
         T.position(0.0, length / 2.0, 0.0) {
             Zone.capsule_y(width / 2.0, length / 2.0 - width / 2.0) {
                 Collidable.static().friction(0.6) {}

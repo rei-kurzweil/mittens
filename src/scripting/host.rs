@@ -576,6 +576,73 @@ impl mms::Host for MittensHost<'_, '_> {
                         }
                     }
                     super::runtime_config::MittensBinding::Api(
+                        api @ (super::runtime_config::MittensApi::BloomToggle
+                        | super::runtime_config::MittensApi::BloomEnabled
+                        | super::runtime_config::MittensApi::BloomLayers
+                        | super::runtime_config::MittensApi::BloomLayerCount),
+                    ) => {
+                        use super::runtime_config::MittensApi;
+                        let settings = self.graphics_settings.as_deref_mut().ok_or_else(|| {
+                            mms::HostError::unavailable(
+                                "GraphicsSettings.bloom",
+                                "graphics settings service is unavailable",
+                            )
+                        })?;
+                        match api {
+                            MittensApi::BloomEnabled => Ok(S::Transport(
+                                mms::TransportValue::Bool(settings.bloom_enabled()),
+                            )),
+                            MittensApi::BloomLayerCount => Ok(S::Transport(
+                                mms::TransportValue::Number(settings.bloom_layers() as f64),
+                            )),
+                            MittensApi::BloomToggle => {
+                                let [mms::TransportValue::Bool(value)] = args.as_slice() else {
+                                    return Err(mms::HostError::failure(
+                                        "GraphicsSettings.bloom.toggle",
+                                        "expects one boolean",
+                                    ));
+                                };
+                                if self.deferred_callback_phase
+                                    != Some(DeferredCallbackHostPhase::Audio)
+                                {
+                                    settings.set_bloom_enabled(*value, self.emit);
+                                }
+                                Ok(S::Unit)
+                            }
+                            MittensApi::BloomLayers => {
+                                let [mms::TransportValue::Number(value)] = args.as_slice() else {
+                                    return Err(mms::HostError::failure(
+                                        "GraphicsSettings.bloom.layers",
+                                        "expects an integer in [1,6]",
+                                    ));
+                                };
+                                if !value.is_finite()
+                                    || value.fract() != 0.0
+                                    || !(1.0..=6.0).contains(value)
+                                {
+                                    return Err(mms::HostError::failure(
+                                        "GraphicsSettings.bloom.layers",
+                                        "expects an integer in [1,6]",
+                                    ));
+                                }
+                                if self.deferred_callback_phase
+                                    != Some(DeferredCallbackHostPhase::Audio)
+                                {
+                                    settings
+                                        .set_bloom_layers(*value as u32, self.emit)
+                                        .map_err(|e| {
+                                            mms::HostError::failure(
+                                                "GraphicsSettings.bloom.layers",
+                                                e,
+                                            )
+                                        })?;
+                                }
+                                Ok(S::Unit)
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    super::runtime_config::MittensBinding::Api(
                         super::runtime_config::MittensApi::SecondaryMotionToggle,
                     ) => {
                         let [mms::TransportValue::Bool(enabled)] = args.as_slice() else {

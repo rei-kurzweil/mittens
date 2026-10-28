@@ -817,19 +817,25 @@ mod tests {
                     .is_some()
             })
             .collect();
-        assert_eq!(rows.len(), 5);
+        assert_eq!(rows.len(), 9);
         assert_eq!(
             universe.world.component_label(rows[0]),
-            Some("graphics_mirrors_heading")
+            Some("graphics_bloom_heading")
         );
         assert_eq!(
             universe.world.component_label(rows[3]),
+            Some("graphics_mirrors_heading")
+        );
+        assert_eq!(
+            universe.world.component_label(rows[6]),
             Some("graphics_secondary_motion_heading")
         );
         for (row, label) in [
-            (rows[1], "Toggle mirrors"),
-            (rows[2], "Mirror resolution"),
-            (rows[4], "Toggle secondary motion"),
+            (rows[1], "Toggle bloom"),
+            (rows[2], "Pyramid levels"),
+            (rows[4], "Toggle mirrors"),
+            (rows[5], "Mirror resolution"),
+            (rows[7], "Toggle secondary motion"),
         ] {
             assert!(
                 universe
@@ -1501,6 +1507,89 @@ mod tests {
                 .get_component_by_id_as::<GLTFComponent>(id)
                 .is_some_and(|gltf| gltf.uri == "assets/models/rei(mu).glb")
         }));
+    }
+
+    #[test]
+    fn graphics_bloom_panel_controls_live_layers_without_discarding_authored_graph() {
+        use ecs::component::SliderComponent;
+        let mut universe = Universe::new(ecs::World::default());
+        universe.load_mms_source_at_path(r#"
+            import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
+            RenderGraph { EmissivePass {} Bloom { intensity(0.7) } }
+            graphics_settings_panel({ root_name = "bloom_settings" })
+        "#, "examples/_bloom_settings_test.mms").unwrap();
+        let toggle = labelled(&universe, "graphics_bloom_toggle");
+        universe.command_queue.push_event(
+            toggle,
+            EventSignal::ToggleChanged {
+                toggle,
+                value: false,
+            },
+        );
+        pump_settings_callbacks(&mut universe);
+        assert!(!universe.systems.graphics_settings.bloom_enabled());
+        assert_eq!(
+            universe
+                .visuals
+                .effective_post_processing()
+                .bloom
+                .unwrap()
+                .intensity,
+            0.0
+        );
+        let slider = labelled(&universe, "graphics_bloom_layers_slider");
+        universe.command_queue.push_intent_now(
+            slider,
+            ecs::IntentValue::SliderSet {
+                component_id: slider,
+                value: 4.0,
+                emit_changed: true,
+            },
+        );
+        pump_settings_callbacks(&mut universe);
+        assert_eq!(universe.systems.graphics_settings.bloom_layers(), 4);
+        assert_eq!(
+            universe
+                .visuals
+                .effective_post_processing()
+                .bloom
+                .unwrap()
+                .layers,
+            4
+        );
+        assert_eq!(
+            universe
+                .world
+                .get_component_by_id_as::<SliderComponent>(slider)
+                .unwrap()
+                .value(),
+            4.0
+        );
+        universe.command_queue.push_event(
+            toggle,
+            EventSignal::ToggleChanged {
+                toggle,
+                value: true,
+            },
+        );
+        pump_settings_callbacks(&mut universe);
+        assert_eq!(
+            universe
+                .visuals
+                .effective_post_processing()
+                .bloom
+                .unwrap()
+                .intensity,
+            0.7
+        );
+        assert!(
+            universe
+                .systems
+                .graphics_settings
+                .set_bloom_layers(0, &mut universe.command_queue)
+                .is_err()
+        );
+        assert_eq!(universe.systems.graphics_settings.bloom_layers(), 4);
     }
 
     #[test]

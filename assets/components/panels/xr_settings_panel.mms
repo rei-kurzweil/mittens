@@ -1,11 +1,12 @@
 // Importable live XR settings. XrSettingsSystem owns calibration independently
 // of panel lifetime; the caller owns world placement and optional title bar.
 import { info_panel, info_panel_body } from "../ui/info_panel.mms"
+import { ui_unlit_material } from "../materials/ui_unlit.mms"
 
 let UNIT_SCALE = 0.08
-let TEXT_COLOR = [0.96, 0.93, 0.82, 1.0]
-let BODY_COLOR = [0.055, 0.065, 0.09, 0.98]
-let GOLD = [1.0, 0.82, 0.24, 1.0]
+let TEXT_COLOR = [0.0, 0.0, 0.0, 1.0]
+let BODY_COLOR = [0.98, 0.95, 0.84, 1.0]
+let GOLD = [0.57, 0.47, 0.31, 1.0]
 let TRACK_WIDTH = 10.5 * UNIT_SCALE
 let THUMB_RADIUS = 0.075
 
@@ -43,7 +44,7 @@ fn settings_content() {
         Style {
             display("flex") width(9.0) height(2.1)
             align_items("center") justify_content("center") font_size(0.62)
-            background_color([0.25, 0.20, 0.10, 1.0]) background_z(0.01)
+            background_color([0.88, 0.81, 0.66, 1.0]) background_z(0.01)
         }
         Text { "Reset to zero" }
     }
@@ -63,7 +64,7 @@ fn settings_content() {
             Style {
                 display("flex") flex_direction("row") width(100%) height(3.2)
                 align_items("center") gap(0.35)
-                background_color([0.10, 0.12, 0.16, 1.0]) background_z(-0.02)
+                background_color([0.95, 0.91, 0.79, 1.0]) background_z(-0.02)
             }
             T {
                 Style {
@@ -112,16 +113,17 @@ export fn xr_settings_panel(options) {
         width_gu = 32.0
         unit_scale = UNIT_SCALE
         title = title
-        title_background_color = [0.16, 0.14, 0.09, 0.98]
+        title_background_color = [0.93, 0.87, 0.71, 1.0]
         title_text_color = TEXT_COLOR
-        toggle_background_color = [0.25, 0.20, 0.10, 1.0]
+        toggle_background_color = [0.88, 0.81, 0.66, 1.0]
         toggle_icon_color = GOLD
-        toggle_icon_glow_intensity = 0.3
+        toggle_icon_glow_intensity = 0.0
         body_background_color = BODY_COLOR
         body_text_color = TEXT_COLOR
         content = settings_content()
     })
     let panel_root = panel.query("#" + options.root_name)
+    panel_root.attach(ui_unlit_material())
     let selection_guard = Selectable.off()
     panel_root.attach(selection_guard)
     let body_mount = panel.query("#accordion_body_mount")

@@ -5,6 +5,8 @@ use crate::engine::graphics::VisualWorld;
 #[derive(Debug, Clone)]
 pub struct GraphicsSettingsSystem {
     mirrors_enabled: bool,
+    bloom_enabled: bool,
+    bloom_layers: u32,
     mirror_quality_override: Option<i32>,
     secondary_motion_enabled: bool,
     secondary_motion_paused: bool,
@@ -14,6 +16,8 @@ impl Default for GraphicsSettingsSystem {
     fn default() -> Self {
         Self {
             mirrors_enabled: true,
+            bloom_enabled: true,
+            bloom_layers: 1,
             mirror_quality_override: None,
             secondary_motion_enabled: true,
             secondary_motion_paused: false,
@@ -22,6 +26,33 @@ impl Default for GraphicsSettingsSystem {
 }
 
 impl GraphicsSettingsSystem {
+    pub fn bloom_enabled(&self) -> bool {
+        self.bloom_enabled
+    }
+    pub fn bloom_layers(&self) -> u32 {
+        self.bloom_layers
+    }
+    pub fn set_bloom_enabled(&mut self, value: bool, emit: &mut dyn SignalEmitter) {
+        if self.bloom_enabled != value {
+            self.bloom_enabled = value;
+            Self::notify_changed(emit);
+        }
+    }
+    pub fn set_bloom_layers(
+        &mut self,
+        value: u32,
+        emit: &mut dyn SignalEmitter,
+    ) -> Result<(), &'static str> {
+        if !(1..=6).contains(&value) {
+            return Err("bloom layer count must be in [1,6]");
+        }
+        if self.bloom_layers != value {
+            self.bloom_layers = value;
+            Self::notify_changed(emit);
+        }
+        Ok(())
+    }
+
     pub fn mirrors_enabled(&self) -> bool {
         self.mirrors_enabled
     }
@@ -92,6 +123,7 @@ impl GraphicsSettingsSystem {
     }
 
     pub fn publish(&self, visuals: &mut VisualWorld) {
+        visuals.set_bloom_settings(self.bloom_enabled, self.bloom_layers);
         visuals.set_mirror_captures_enabled(self.mirrors_enabled);
         visuals.set_mirror_quality_override(self.mirror_quality_override);
     }

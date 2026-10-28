@@ -44,6 +44,10 @@ pub enum ComponentInitializerKind {
 pub enum MittensApi {
     Smoke,
     EmitData,
+    BloomToggle,
+    BloomEnabled,
+    BloomLayers,
+    BloomLayerCount,
     MirrorsToggle,
     MirrorsEnabled,
     MirrorsQuality,
@@ -775,7 +779,13 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         "linear",
                         method(vec![], mms::ValueType::Array),
                     );
-                    for method_name in ["translate", "translate_world"] {
+                    host_method(
+                        component,
+                        canonical,
+                        "angular",
+                        method(vec![], mms::ValueType::Array),
+                    );
+                    for method_name in ["translate", "translate_world", "rotate", "rotate_world"] {
                         host_method(
                             component,
                             canonical,
@@ -1783,6 +1793,28 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
     });
 
     builder.namespace("GraphicsSettings", |namespace| {
+        namespace.namespace("bloom", |bloom| {
+            bloom.api(
+                "toggle",
+                mms::ValueSignature::new(vec![mms::ValueType::Bool], mms::ValueType::Null),
+                MittensBinding::Api(MittensApi::BloomToggle),
+            );
+            bloom.api(
+                "enabled",
+                mms::ValueSignature::new(vec![], mms::ValueType::Bool),
+                MittensBinding::Api(MittensApi::BloomEnabled),
+            );
+            bloom.api(
+                "layers",
+                mms::ValueSignature::new(vec![mms::ValueType::I32], mms::ValueType::Null),
+                MittensBinding::Api(MittensApi::BloomLayers),
+            );
+            bloom.api(
+                "layer_count",
+                mms::ValueSignature::new(vec![], mms::ValueType::I32),
+                MittensBinding::Api(MittensApi::BloomLayerCount),
+            );
+        });
         namespace.namespace("mirrors", |mirrors| {
             mirrors.api(
                 "toggle",

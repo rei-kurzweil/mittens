@@ -219,6 +219,8 @@ pub struct VisualWorld {
     preferred_window_size: Option<[u32; 2]>,
     transmission_depth_compare: bool,
     post_processing: PostProcessingConfig,
+    bloom_runtime_enabled: bool,
+    bloom_runtime_layers: u32,
 
     mirrors: Vec<VisualMirror>,
     mirror_captures_enabled: bool,
@@ -513,6 +515,8 @@ impl Default for VisualWorld {
             preferred_window_size: None,
             transmission_depth_compare: true,
             post_processing: PostProcessingConfig::default(),
+            bloom_runtime_enabled: true,
+            bloom_runtime_layers: 1,
             mirrors: Vec::new(),
             mirror_captures_enabled: true,
             mirror_quality_override: None,
@@ -3970,6 +3974,23 @@ impl VisualWorld {
         } else {
             false
         }
+    }
+
+    pub fn set_bloom_settings(&mut self, enabled: bool, layers: u32) {
+        self.bloom_runtime_enabled = enabled;
+        self.bloom_runtime_layers = layers.clamp(1, 6);
+    }
+
+    /// Runtime settings overlay the authored graph without discarding its values.
+    pub fn effective_post_processing(&self) -> PostProcessingConfig {
+        let mut config = self.post_processing.clone();
+        if let Some(bloom) = &mut config.bloom {
+            if !self.bloom_runtime_enabled {
+                bloom.intensity = 0.0;
+            }
+            bloom.layers = self.bloom_runtime_layers;
+        }
+        config
     }
 
     pub fn post_processing(&self) -> &PostProcessingConfig {

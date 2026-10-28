@@ -28,9 +28,9 @@ pub struct PointerComponent {
 }
 
 impl PointerComponent {
-    pub const DEFAULT_CLICK_MAX_SCREEN_DISTANCE_PX: f32 = 8.0;
-    pub const DEFAULT_CLICK_MAX_RAY_ANGLE_DEG: f32 = 2.0;
-    pub const DEFAULT_CLICK_MAX_ORIGIN_DISTANCE: f32 = 0.03;
+    pub const DEFAULT_CLICK_MAX_SCREEN_DISTANCE_PX: f32 = 20.0;
+    pub const DEFAULT_CLICK_MAX_RAY_ANGLE_DEG: f32 = 5.0;
+    pub const DEFAULT_CLICK_MAX_ORIGIN_DISTANCE: f32 = 0.075;
 
     pub fn new() -> Self {
         Self {

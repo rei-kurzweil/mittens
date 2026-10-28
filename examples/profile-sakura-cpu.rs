@@ -71,6 +71,10 @@ fn ms(duration: Duration) -> f64 {
 fn main() -> Result<(), Box<dyn Error>> {
     let case = std::env::args().nth(1).unwrap_or("full".into());
     let frames: usize = std::env::args().nth(2).unwrap_or("480".into()).parse()?;
+    let avatars: usize = std::env::args().nth(3).unwrap_or("3".into()).parse()?;
+    if avatars > 12 {
+        return Err("avatar count must be at most 12".into());
+    }
     if !matches!(
         case.as_str(),
         "baseline"
@@ -96,7 +100,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         )
         .replace("let xr_view_enabled = true", "let xr_view_enabled = false");
     if !matches!(case.as_str(), "baseline" | "baseline_rays" | "simple_city") {
-        source = source.replace("let initial_lumae_count = 0", "let initial_lumae_count = 3");
+        source = source.replace(
+            "let initial_lumae_count = 0",
+            &format!("let initial_lumae_count = {avatars}"),
+        );
     }
     if case == "simple_city" {
         source = source.replace(

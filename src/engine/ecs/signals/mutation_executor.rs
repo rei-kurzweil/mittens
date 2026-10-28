@@ -144,6 +144,7 @@ impl RxMutationExecutor {
                     )
                 {
                     v.linear_local_mps = [0.0; 3];
+                    v.angular_local_radps = [0.0; 3];
                     v.grounded = false;
                     if let Some(target) = target {
                         systems.static_contact.forget_target(world, target);
@@ -156,6 +157,33 @@ impl RxMutationExecutor {
                             payload: Some(*component_id),
                         },
                     );
+                }
+            }
+            IntentValue::VelocityRotate {
+                component_id,
+                delta_radps,
+                world_space,
+            } => {
+                let delta = if *world_space {
+                    crate::engine::ecs::system::VelocitySystem::parent_rotation(
+                        world,
+                        *component_id,
+                    )
+                    .ok()
+                    .map(|q| {
+                        crate::utils::math::quat_rotate_vec3(
+                            crate::utils::math::quat_conjugate(q),
+                            *delta_radps,
+                        )
+                    })
+                } else {
+                    Some(*delta_radps)
+                };
+                if let Some(delta) = delta {
+                    if let Some(velocity) = world.get_component_by_id_as_mut::<crate::engine::ecs::component::VelocityComponent>(*component_id) {
+                        let next = crate::utils::math::vec3_add(velocity.angular_local_radps, delta);
+                        if next.iter().all(|x| x.is_finite()) { velocity.angular_local_radps = next; }
+                    }
                 }
             }
             IntentValue::VelocityTranslate {

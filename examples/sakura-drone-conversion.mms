@@ -53,19 +53,11 @@ RendererSettings { window_size(1440, 960) }
 Clock.bpm(120.0)
 BGC.rgba(0.23, 0.32, 0.62, 1.0)
 AL.rgb(0.16, 0.17, 0.23)
-fn scene_bloom_graph(enabled) {
-    if enabled {
-        return RenderGraph {
-            EmissivePass { BlurPass { radius_ndc(0.035) half_res(true) } }
-            Bloom { intensity(0.65) radius_ndc(0.05) emissive_scale(1.0) half_res(true) }
-        }
-    }
-    return RenderGraph.off()
+RenderGraph {
+    EmissivePass {}
+    Bloom { intensity(0.65) radius_ndc(0.035) emissive_scale(1.0) half_res(true) }
 }
-let initial_bloom_graph = scene_bloom_graph(true)
-initial_bloom_graph
-let scene_settings = { bloom = true graph = initial_bloom_graph }
-// Wider, softer configurable bloom pyramids are recorded as follow-up work.
+// Shared Graphics settings controls bloom and the runtime pyramid image count.
 gradient_skybox(sky_low_color, sky_high_color, sky_low_point, sky_high_point)
 background_sun(sun_direction, sun_angular_radius, sun_color, sun_intensity)
 T.position(sun_direction[0], sun_direction[1], sun_direction[2]) {
@@ -116,6 +108,7 @@ fn handle_laser_hit(hit) {
     impact.animation.play()
     let on_hit = hit.renderable.on_hit
     if on_hit != null { on_hit(hit) }
+    for can in shooting_cans { can.on_blast(hit) }
 }
 let white = [0.94, 0.96, 0.97]
 let pink = [0.88, 0.65, 0.73]
@@ -166,8 +159,7 @@ regenerate_buildings(initial_full_buildings)
 // Muted, greyish pink-brown ground fills the spaces around the road and towers.
 T { name = "sakura_ground" box([0.0, -0.48, 0.0], [120.0, 0.5, 140.0], ground_color) }
 
-// This panel is local to this example. The general graphics panel currently
-// controls mirrors/secondary motion; this bloom toggle replaces this scene's graph.
+// Scene-specific detail and hit readout; rendering controls live in Graphics settings.
 fn scene_controls() {
     let track = T.scale(0.75, 0.025, 0.08) {
         R.cube() { C.rgba(0.50, 0.32, 0.41, 1.0) Raycastable.enabled() { interaction_priority(120.0) } }
@@ -178,21 +170,10 @@ fn scene_controls() {
     let slider = Slider.range(0.0, 8.0).step(1.0).value(neighborhood_state.full_count).width(0.75)
         .track(track).thumb(thumb) { name = "sakura_building_detail_slider" }
     let readout = Text { name = "sakura_building_detail_readout" "" + neighborhood_state.full_count + " / 8 fully generated" }
-    let bloom = Toggle.on() { name = "sakura_scene_bloom_toggle" }
-    if !scene_settings.bloom { bloom = Toggle.off() { name = "sakura_scene_bloom_toggle" } }
     let can_readout = Text { name = "sakura_can_hit_readout" "Can hits: " + range_state.hits }
-    let bloom_readout = Text { name = "sakura_scene_bloom_readout" "Bloom: " + scene_settings.bloom }
     on(slider, "SliderChanged", fn(event) {
         regenerate_buildings(event.value)
         readout.set_text("" + neighborhood_state.full_count + " / 8 fully generated")
-    })
-    on(bloom, "ToggleChanged", fn(event) {
-        scene_settings.bloom = event.value
-        scene_settings.graph.remove_subtree()
-        let graph = scene_bloom_graph(event.value)
-        graph
-        scene_settings.graph = graph
-        bloom_readout.set_text("Bloom: " + scene_settings.bloom)
     })
     return T {
         Unlit {}
@@ -207,13 +188,6 @@ fn scene_controls() {
             Style { display("flex") width(100%) height(3.0) align_items("center") justify_content("center") }
             slider
         }
-        T {
-            Grabbable.off()
-            Raycastable.click_only() { interaction_priority(120.0) }
-            Style { display("flex") flex_direction("row") width(100%) height(2.4) gap(0.7) align_items("center") }
-            bloom
-            bloom_readout
-        }
     }
 }
 T.position(-21.1, roof_height + 2.2, -3.6) {
@@ -227,6 +201,13 @@ T.position(-24.2, roof_height + 2.2, -1.3) {
 T.position(-16.2, roof_height + 2.2, -3.6) {
     Grabbable {}
     xr_settings_panel({ root_name = "sakura_xr_settings" })
+}
+
+// Full-height reflection facing the rooftop spawn; grip to reposition.
+T.position(-14.8, roof_height + 1.35, -1.0).rotation(0.0, -1.57079633, 0.0).scale(2.6, 2.6, 0.06) {
+    name = "sakura_mirror"
+    Grabbable {}
+    R.cube() { Mirror.quality(1440) {} Raycastable.enabled() }
 }
 
 // Long road, tiled pavements, lane markings and two existing display-car assets.

@@ -1,7 +1,11 @@
 # Opt-in broad bloom pyramid
 
 Date: 2026-10-26
-Status: follow-up request recorded; not implemented.
+Status: the first runtime-configurable pyramid is implemented, 2026-10-28.
+See [Sakura scene polish and bloom controls](sakura-scene-polish-bloom-and-can-physics.md)
+for its 1–6 level control, normalized merge, retained-storage tradeoff and tests.
+The design notes below describe the original request; the implemented slice
+retains bounded coarse targets to make runtime level changes allocation-free.
 
 The Sakura rooftop scene needs an optional broader, softer sun glow. Retain the
 current bloom path and defaults. Add an explicit opt-in mode that downsamples the

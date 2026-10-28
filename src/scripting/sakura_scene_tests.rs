@@ -71,6 +71,16 @@ fn sakura_scene_has_open_ceramic_towers_typed_sky_rooftop_rig_and_reset() {
                 .find(|&id| world.component_label(id) == Some(name))
                 .unwrap()
         };
+        let mirror = world
+            .all_components()
+            .find_map(|id| {
+                world.get_component_by_id_as::<crate::engine::ecs::component::MirrorComponent>(id)
+            })
+            .unwrap();
+        assert_eq!(mirror.quality, 1440);
+        named("sakura_mirror");
+        named("graphics_bloom_toggle");
+        named("graphics_bloom_layers_slider");
         let tower_names = [
             "sakura_rooftop_building",
             "sakura_west_tower_-1",
@@ -106,7 +116,10 @@ fn sakura_scene_has_open_ceramic_towers_typed_sky_rooftop_rig_and_reset() {
                     })
             })
             .count();
-        assert_eq!(blossom_cards, 3 * 27 * 3);
+        assert_eq!(
+            blossom_cards, 3,
+            "one retained texture per combined blossom mesh"
+        );
 
         let models: Vec<_> = world
             .all_components()
@@ -890,10 +903,14 @@ fn can_hit_callback_spawns_feedback_through_the_live_world() {
         import { metal_can } from "../assets/components/targets/metal-can.mms"
         let can = metal_can({name="live_can" material=Material(MaterialDefinition.toon()) position=[0.0,0.0,0.0]})
         can
+        let nearby = metal_can({name="nearby_can" material=Material(MaterialDefinition.toon()) position=[0.3,0.0,0.0]})
+        nearby
         on_global("DataEvent", fn(event) {
             if event == "Hit" {
                 let target = query("[name='live_can_body']")
-                target.on_hit({renderable=target hit_point=[0.0,0.1,0.045] origin=[0.0,0.1,2.0]})
+                let hit = {renderable=target hit_point=[0.0,0.1,0.045] origin=[0.0,0.1,2.0]}
+                target.on_hit(hit)
+                nearby.on_blast(hit)
             }
         })
     "#, "examples/_live_can_test.mms").unwrap();
@@ -916,6 +933,63 @@ fn can_hit_callback_spawns_feedback_through_the_live_world() {
             .all_components()
             .any(|id| scene.world.component_label(id) == Some("hit_number_text"))
     );
+    use crate::engine::ecs::component::VelocityComponent;
+    let velocity = named(&scene.world, "live_can_velocity");
+    let state = scene
+        .world
+        .get_component_by_id_as::<VelocityComponent>(velocity)
+        .unwrap();
+    assert!(state.linear_local_mps[2] < -2.0);
+    assert!(state.angular_local_radps.iter().any(|v| v.abs() > 0.1));
+    let near = named(&scene.world, "nearby_can_velocity");
+    assert!(
+        scene
+            .world
+            .get_component_by_id_as::<VelocityComponent>(near)
+            .unwrap()
+            .linear_local_mps[0]
+            > 0.0
+    );
+    for _ in 0..50 {
+        scene.update(0.05, &Default::default());
+    }
+    scene.systems.rx.push_event(
+        ComponentId::default(),
+        crate::engine::ecs::EventSignal::DataEvent {
+            name: "Hit".into(),
+            payload: None,
+        },
+    );
+    scene.update(0.0, &Default::default());
+    for _ in 0..60 {
+        scene.update(0.05, &Default::default());
+    }
+    assert!(
+        scene
+            .world
+            .get_component_by_id_as::<VelocityComponent>(velocity)
+            .unwrap()
+            .linear_local_mps
+            .iter()
+            .any(|v| *v != 0.0),
+        "latest hit must restart the respawn timer"
+    );
+    for _ in 0..42 {
+        scene.update(0.05, &Default::default());
+    }
+    let state = scene
+        .world
+        .get_component_by_id_as::<VelocityComponent>(velocity)
+        .unwrap();
+    assert_eq!(state.linear_local_mps, [0.0; 3]);
+    assert_eq!(state.angular_local_radps, [0.0; 3]);
+    let pose = &scene
+        .world
+        .get_component_by_id_as::<TransformComponent>(named(&scene.world, "live_can_motion_pose"))
+        .unwrap()
+        .transform;
+    assert_eq!(pose.translation, [0.0, 0.09, 0.0]);
+    assert_eq!(pose.rotation, [0.0, 0.0, 0.0, 1.0]);
 }
 
 #[test]

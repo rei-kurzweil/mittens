@@ -2694,7 +2694,7 @@ mod vulkano_backend {
                 return Err("XR color format does not match the scene pipelines".into());
             }
 
-            let post_process_config = visual_world.post_processing().clone();
+            let post_process_config = visual_world.effective_post_processing();
             let post_process = if post_process_config.is_active() {
                 self.post_processing_renderer.ensure_xr_targets(
                     view_count,
@@ -3616,6 +3616,9 @@ mod vulkano_backend {
                 return Ok(None);
             };
 
+            if bloom_cfg.intensity <= 0.0 {
+                return Ok(None);
+            }
             let has_foreground_emissive_content =
                 emissive_instance_count > 0 || emissive_cutout_instance_count > 0;
             let has_background_emissive_content = background_emissive_instance_count > 0;
@@ -3803,6 +3806,74 @@ mod vulkano_backend {
                 blur_v_dir,
                 radius_pixels,
             )?;
+
+            let count = (bloom_cfg.layers.clamp(1, 6) as usize - 1)
+                .min(post_process.targets.bloom_pyramid.len());
+            let mut filtered = bloom_a.clone();
+            for level in post_process.targets.bloom_pyramid.iter().take(count) {
+                self.post_processing_renderer.record_copy_pass(
+                    cbb,
+                    bloom_format,
+                    level.a.clone(),
+                    level.extent,
+                    filtered,
+                    SampleCount::Sample1,
+                )?;
+                self.post_processing_renderer.record_blur_pass(
+                    cbb,
+                    bloom_format,
+                    level.a.clone(),
+                    level.b.clone(),
+                    level.extent,
+                    [1.0 / level.extent[0] as f32, 0.0],
+                    radius_pixels,
+                )?;
+                self.post_processing_renderer.record_blur_pass(
+                    cbb,
+                    bloom_format,
+                    level.b.clone(),
+                    level.a.clone(),
+                    level.extent,
+                    [0.0, 1.0 / level.extent[1] as f32],
+                    radius_pixels,
+                )?;
+                filtered = level.a.clone();
+            }
+            // Uniform contribution per scale: changing layer count changes spread,
+            // not the total DC gain of a constant emission image.
+            for i in (0..count).rev() {
+                let (fine, output, size) = if i == 0 {
+                    (
+                        bloom_a.clone(),
+                        post_process.targets.bloom_b.clone().unwrap(),
+                        post_process.targets.bloom_extent,
+                    )
+                } else {
+                    let level = &post_process.targets.bloom_pyramid[i - 1];
+                    (level.a.clone(), level.b.clone(), level.extent)
+                };
+                let accumulated = (count - i) as f32;
+                self.post_processing_renderer.record_bloom_merge(
+                    cbb,
+                    bloom_format,
+                    output.clone(),
+                    size,
+                    fine,
+                    filtered,
+                    accumulated / (accumulated + 1.0),
+                )?;
+                filtered = output;
+            }
+            if count > 0 {
+                self.post_processing_renderer.record_copy_pass(
+                    cbb,
+                    bloom_format,
+                    bloom_a.clone(),
+                    post_process.targets.bloom_extent,
+                    filtered,
+                    SampleCount::Sample1,
+                )?;
+            }
 
             Ok((bloom_cfg.intensity > 0.0).then_some(bloom_a))
         }
@@ -5865,7 +5936,7 @@ mod vulkano_backend {
             // build aspect-correct projection matrices.
             visual_world.set_viewport([extent[0] as f32, extent[1] as f32]);
 
-            let post_process_config = visual_world.post_processing().clone();
+            let post_process_config = visual_world.effective_post_processing();
             let post_process_active = post_process_config.is_active();
 
             if post_process_active {
