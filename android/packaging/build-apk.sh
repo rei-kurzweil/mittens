@@ -9,6 +9,9 @@ repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 export ANDROID_NDK_HOME CMAKE
 # shaderc's CMake build also needs this name to locate the same NDK.
 export ANDROID_NDK="$ANDROID_NDK_HOME"
+# The engine's debug information otherwise makes this tiny probe APK hundreds
+# of MB. Keep runtime diagnostics, but strip debug sections from the native .so.
+export CARGO_PROFILE_DEV_STRIP="${CARGO_PROFILE_DEV_STRIP:-debuginfo}"
 
 if [[ ! -d "$ANDROID_NDK_HOME" ]]; then
     printf 'Android NDK not found: %s\nSet ANDROID_NDK_HOME to the installed NDK.\n' "$ANDROID_NDK_HOME" >&2
@@ -20,4 +23,5 @@ if ! command -v "$CMAKE" >/dev/null; then
 fi
 
 cd -- "$repo_root"
+python3 android/packaging/prepare-openxr-loader.py
 exec cargo apk build --manifest-path android/Cargo.toml -p mitten-droid --lib "$@"

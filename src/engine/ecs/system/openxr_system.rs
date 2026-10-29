@@ -3104,10 +3104,22 @@ impl OpenXRSystem {
         }
     }
 
-    fn try_init_openxr() -> Result<OpenXRState, String> {
+    /// Load OpenXR, initializing the Android loader before any enumeration.
+    /// Android hosts must first initialize their activity/JVM context (for
+    /// example through android-activity) and keep it alive while using OpenXR.
+    pub fn load_entry() -> Result<openxr::Entry, String> {
         // Prefer dynamically loading the OpenXR loader. This keeps us from requiring
         // special linker setup and matches typical Linux setups.
         let entry = unsafe { openxr::Entry::load().map_err(|e| format!("Entry::load: {e:?}"))? };
+        #[cfg(target_os = "android")]
+        entry
+            .initialize_android_loader()
+            .map_err(|e| format!("xrInitializeLoaderKHR(Android): {e:?}"))?;
+        Ok(entry)
+    }
+
+    fn try_init_openxr() -> Result<OpenXRState, String> {
+        let entry = Self::load_entry()?;
 
         let available_extensions = entry
             .enumerate_extensions()
@@ -3122,6 +3134,13 @@ impl OpenXRSystem {
         };
 
         let mut extensions = openxr::ExtensionSet::default();
+        #[cfg(target_os = "android")]
+        {
+            if !available_extensions.khr_android_create_instance {
+                return Err("runtime lacks XR_KHR_android_create_instance".into());
+            }
+            extensions.khr_android_create_instance = true;
+        }
         // Use the legacy Vulkan binding path for now (reuse an already-created VkInstance/VkDevice).
         // SteamVR can be stricter with XR_KHR_vulkan_enable2 unless you create Vulkan objects
         // via xrCreateVulkanInstanceKHR/xrCreateVulkanDeviceKHR.

@@ -1,0 +1,10 @@
+GPU=NVIDIA GeForce GTX 1080 dynamic=true
+PASS dynamic=true triangle=false left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+PASS dynamic=true triangle=true left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+PASS dynamic=true triangle=true left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+PASS dynamic=true triangle=false left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+GPU=NVIDIA GeForce GTX 1080 dynamic=false
+PASS dynamic=false triangle=false left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+PASS dynamic=false triangle=true left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+PASS dynamic=false triangle=true left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+PASS dynamic=false triangle=false left=[18, 4, 6, 255] right=[4, 8, 23, 255]

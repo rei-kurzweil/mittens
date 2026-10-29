@@ -1,10 +1,10 @@
 # Mittens on standalone Android OpenXR headsets
 
-Status: initial investigation 2026-09-28; portable Android library check/build passed 2026-10-21. APK build and NativeActivity lifecycle passed on Focus 3 on 2026-10-29. Android OpenXR/Vulkan runtime tests remain outstanding.
+Status: portable Android library check/build passed 2026-10-21. NativeActivity lifecycle, Android OpenXR initialization, and a Vulkan enable2 stereo clear/triangle passed on Focus 3 on 2026-10-29, with user confirmation. The installed driver lacks dynamic rendering, so the full engine needs a classic render-pass path. Graphics lifecycle and full engine scenes remain outstanding.
 
 The Android port now has a home in [`android/`](../../../../android/README.md), with a [current source audit](../../../../android/docs/focus-3-port-audit.md) and [Focus 3 capability-probe specification](../../../../android/docs/focus-3-probe.md). This epic preserves the earlier integration investigation. Dynamic rendering can use tile-based GPUs; whether a classic render-pass implementation is needed depends first on the headset's driver capabilities, then measured rendering costs.
 
-Implementation work is broken into [five focused slices](implementation-slices.md). Slices 1 and 2 (host APK and headset activity lifecycle) are verified at `android/`; Android OpenXR initialization is next. See the [host bootstrap](../../../../android/docs/host-bootstrap.md) and [device results](../../../../android/docs/focus-3-lifecycle.md).
+Implementation work is broken into [five focused slices](implementation-slices.md). The host, OpenXR diagnostic, and basic Vulkan stereo probe are verified at `android/`. See [measured Vulkan results](../../../../android/docs/focus-3-vulkan-results.md), the [graphics bring-up](../../../../android/docs/xr-vulkan-bringup.md), and [lifecycle baseline](../../../../android/docs/focus-3-lifecycle.md).
 
 ## Desired end state
 
@@ -50,7 +50,7 @@ Build a tiny Android probe using the known ALVR packaging/loader recipe to log: 
 - [x] Validate desktop stereo presentation: SteamVR/OpenXR 2.16.7, 4x MSAA, bounded run exited successfully; user confirmed headset presentation.
 - [ ] Explicitly exercise session stop/restart with the desktop XR-only example.
 - [x] Build the NativeActivity host APK and verify startup, background/resume, repeated launch, and clean activity destruction on Focus 3.
-- [ ] Capture Focus 3 Vulkan extension/session capability with a tiny Android probe.
+- [x] Capture Focus 3 Vulkan extension/session capability with a tiny Android probe; confirm the stereo triangle visually.
 - [ ] Prove Vulkan stereo clear plus HTC passthrough on the headset.
 - [ ] Run an embedded Mittens scene, then wire HMD/controller/hand/eye inputs.
 - [ ] Probe CPAL output, then microphone input and audio clock behavior.

@@ -7,6 +7,11 @@ closing of the blank activity panel directly in the headset OS. This does not
 establish engine execution, OpenXR runtime initialization, Vulkan support, or
 stereo graphics presentation.
 
+This tested build corresponds to the current `--no-default-features` host
+mode. The default OpenXR/Vulkan probe was added afterward and is not covered
+by these device results. Its builds overwrite the same APK output filename;
+the hash below identifies the lifecycle artifact at the time of this test.
+
 ## Environment and artifact
 
 | Item | Recorded value |

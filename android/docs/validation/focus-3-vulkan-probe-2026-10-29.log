@@ -1,0 +1,191 @@
+--------- beginning of main
+12-08 12:52:06.787  9066  9093 I mitten-droid: mitten_droid::activity: host_start version=0.1.0 pid=9066 thread=ThreadId(2)
+12-08 12:52:06.787  9066  9093 I mitten-droid: mitten_droid::activity: android_context ready; activity and JVM match NativeActivity
+12-08 12:52:06.787  9066  9093 I mitten-droid: mitten_droid::activity: lifecycle Start
+12-08 12:52:06.792  9066  9093 I mitten-droid: mitten_droid::activity: lifecycle Resume
+12-08 12:52:06.793  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe_report path=/data/user/0/org.mittens.engine.dev/files/xr-vulkan-probe.txt
+12-08 12:52:06.794  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe loader=Khronos-1.1.36 api_request=OpenXR-1.0.34
+12-08 12:52:06.794  9066  9095 V OpenXR-Loader: Verbose [GENERAL | xrInitializeLoaderKHR | OpenXR-Loader] : Entering loader trampoline
+12-08 12:52:06.795  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe xrInitializeLoaderKHR(Android) SUCCESS
+12-08 12:52:06.795  9066  9095 V OpenXR-Loader: Verbose [GENERAL | xrEnumerateInstanceExtensionProperties | OpenXR-Loader] : Entering loader trampoline
+12-08 12:52:06.795  9066  9095 I OpenXR-Loader: getActiveRuntimeCursor: Querying URI: content://org.khronos.openxr.runtime_broker/openxr/1/abi/arm64-v8a/runtimes/active
+--------- beginning of system
+12-08 12:52:06.796  9066  9095 W OpenXR-Loader: Null cursor when querying installable content resolver.
+12-08 12:52:06.796  9066  9095 I OpenXR-Loader: getActiveRuntimeCursor: Querying URI: content://org.khronos.openxr.system_runtime_broker/openxr/1/abi/arm64-v8a/runtimes/active
+12-08 12:52:06.799  9066  9095 I OpenXR-Loader: Got runtime: package: com.htc.openxr.runtime, so filename: libopenxr_wave.so, native lib dir: /vendor/lib64, has functions: no
+12-08 12:52:06.802  9066  9095 I OpenXR-Loader: Info [GENERAL | xrEnumerateInstanceExtensionProperties | OpenXR-Loader] : RuntimeInterface::LoadRuntime succeeded loading runtime defined in manifest file  using interface version 1 and OpenXR API version 1.0
+12-08 12:52:06.803  9066  9095 V OpenXR-Loader: Verbose [GENERAL | xrEnumerateInstanceExtensionProperties | OpenXR-Loader] : Completed loader trampoline
+12-08 12:52:06.803  9066  9095 V OpenXR-Loader: Verbose [GENERAL | xrEnumerateInstanceExtensionProperties | OpenXR-Loader] : Entering loader trampoline
+12-08 12:52:06.806  9066  9095 V OpenXR-Loader: Verbose [GENERAL | xrEnumerateInstanceExtensionProperties | OpenXR-Loader] : Completed loader trampoline
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_HTC_composition_layer_extra_settings version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_MSFT_first_person_observer version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_MSFT_secondary_view_configuration version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_KHR_composition_layer_color_scale_bias version=5
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_HTC_eye_tracker version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_EXT_future version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_HTC_frame_synchronization version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_KHR_composition_layer_equirect2 version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_EXT_hand_tracking version=4
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_HTC_anchor_persistence version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_FB_keyboard_tracking version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_EXT_user_presence version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_HTC_passthrough version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_EXT_hand_interaction version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_HTC_path_enumeration version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_HTC_facial_tracking version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_EXT_eye_gaze_interaction version=2
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_HTC_vive_wrist_tracker_interaction version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_HTC_foveation version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_HTC_hand_interaction version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_HTC_anchor version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_KHR_composition_layer_cylinder version=4
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_KHR_vulkan_enable2 version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_EXT_plane_detection version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_HTC_vive_xr_tracker_interaction version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_HTC_passthrough_configuration version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_KHR_composition_layer_equirect version=3
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_KHR_opengl_es_enable version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_KHR_vulkan_enable version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_KHR_convert_timespec_time version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_KHR_android_surface_swapchain version=4
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_KHR_visibility_mask version=2
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_EXT_performance_settings version=3
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_KHR_android_create_instance version=3
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_HTC_vive_focus3_controller_interaction version=2
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_EXT_palm_pose version=2
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_FB_display_refresh_rate version=1
+12-08 12:52:06.806  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR extension=XR_EXT_debug_utils version=5
+12-08 12:52:06.806  9066  9095 V OpenXR-Loader: Verbose [GENERAL | xrEnumerateInstanceExtensionProperties | OpenXR-Loader] : Entering loader trampoline
+12-08 12:52:06.806  9066  9093 I mitten-droid: mitten_droid::activity: lifecycle InitWindow
+12-08 12:52:06.807  9066  9095 V OpenXR-Loader: Verbose [GENERAL | xrEnumerateInstanceExtensionProperties | OpenXR-Loader] : Completed loader trampoline
+12-08 12:52:06.807  9066  9095 V OpenXR-Loader: Verbose [GENERAL | xrEnumerateInstanceExtensionProperties | OpenXR-Loader] : Entering loader trampoline
+12-08 12:52:06.807  9066  9095 V OpenXR-Loader: Verbose [GENERAL | xrEnumerateInstanceExtensionProperties | OpenXR-Loader] : Completed loader trampoline
+12-08 12:52:06.807  9066  9095 V OpenXR-Loader: Verbose [GENERAL | xrCreateInstance | OpenXR-Loader] : Entering loader trampoline
+12-08 12:52:06.807  9066  9093 I mitten-droid: mitten_droid::activity: lifecycle WindowResized
+12-08 12:52:06.807  9066  9095 V OpenXR-Loader: Verbose [GENERAL | xrCreateInstance | OpenXR-Loader] : Entering LoaderInstance::CreateInstance
+12-08 12:52:06.807  9066  9095 V OpenXR-Loader: Verbose [GENERAL | xrCreateInstance | OpenXR-Loader] : Entering loader terminator
+12-08 12:52:06.807  9066  9093 I mitten-droid: mitten_droid::activity: lifecycle ContentRectChanged
+12-08 12:52:06.807  9066  9093 I mitten-droid: mitten_droid::activity: lifecycle RedrawNeeded
+12-08 12:52:06.808  9066  9093 I mitten-droid: mitten_droid::activity: lifecycle GainedFocus
+12-08 12:52:06.873  9066  9095 V OpenXR-Loader: Verbose [GENERAL | xrCreateInstance | OpenXR-Loader] : Completed loader terminator
+12-08 12:52:06.873  9066  9095 I OpenXR-Loader: Info [GENERAL | xrCreateInstance | OpenXR-Loader] : LoaderInstance::CreateInstance succeeded with 0 layers enabled and runtime interface - created instance = 0x0000000000000001
+12-08 12:52:06.873  9066  9095 V OpenXR-Loader: Verbose [GENERAL | xrCreateInstance | OpenXR-Loader] : Completed loader trampoline
+12-08 12:52:06.873  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe runtime=VIVE WAVE version=0.0.1 binding=XR_KHR_vulkan_enable2
+12-08 12:52:06.874  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe system=SystemId(4369) properties=SystemProperties { system_id: SystemId(4369), vendor_id: 2996, system_name: "WAVE:SUE", graphics_properties: SystemGraphicsProperties { max_swapchain_image_height: 1712, max_swapchain_image_width: 1712, max_layer_count: 16 }, tracking_properties: SystemTrackingProperties { orientation_tracking: true, position_tracking: true } }
+12-08 12:52:06.885  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe view_configuration=PRIMARY_STEREO views=[ViewConfigurationView { recommended_image_rect_width: 1712, max_image_rect_width: 3440, recommended_image_rect_height: 1712, max_image_rect_height: 3440, recommended_swapchain_sample_count: 1, max_swapchain_sample_count: 1 }, ViewConfigurationView { recommended_image_rect_width: 1712, max_image_rect_width: 3440, recommended_image_rect_height: 1712, max_image_rect_height: 3440, recommended_swapchain_sample_count: 1, max_swapchain_sample_count: 1 }] blend_modes=[OPAQUE]
+12-08 12:52:06.886  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan API min=1.0.0 max=1.2.203
+12-08 12:52:06.886  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe OpenXR instance/HMD capability stage SUCCESS
+12-08 12:52:06.886  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe enable2: runtime supplies required Vulkan extensions through xrCreateVulkanInstanceKHR/xrCreateVulkanDeviceKHR
+12-08 12:52:06.910  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan loader=1.1.0 requested_api=1.1.0
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe GPU=Adreno (TM) 650 physical=0x73715a9570 API=1.1.128 driver=2149855232 vendor=0x5143 device=0x6050002
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_incremental_present
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_hdr_metadata
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_shared_presentable_image
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_GOOGLE_display_timing
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_subgroup_size_control
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_external_memory
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_pipeline_creation_feedback
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_shader_float16_int8
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_get_memory_requirements2
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_spirv_1_4
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_fragment_density_map
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_external_semaphore_fd
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_QCOM_render_pass_store_ops
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_astc_decode_mode
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_external_memory_fd
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_QCOM_render_pass_shader_resolve
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_maintenance1
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_maintenance2
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_maintenance3
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_separate_depth_stencil_layouts
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_image_robustness
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_extended_dynamic_state
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_queue_family_foreign
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_bind_memory2
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_external_semaphore
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_scalar_block_layout
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_sampler_ycbcr_conversion
+12-08 12:52:06.946  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_vertex_attribute_divisor
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_variable_pointers
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_push_descriptor
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_device_memory_report
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_imageless_framebuffer
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_device_group
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_relaxed_block_layout
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_external_fence
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_custom_border_color
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_host_query_reset
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_index_type_uint8
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_multiview
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_storage_buffer_storage_class
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_fragment_density_map2
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_private_data
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_pipeline_creation_cache_control
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_separate_stencil_usage
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_IMG_filter_cubic
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_filter_cubic
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_image_format_list
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_sampler_filter_minmax
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_16bit_storage
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_shader_demote_to_helper_invocation
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_QCOM_render_pass_transform
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_create_renderpass2
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_transform_feedback
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_blend_operation_advanced
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_provoking_vertex
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_depth_stencil_resolve
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_shader_float_controls
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_texture_compression_astc_hdr
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_global_priority
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_shader_draw_parameters
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_vulkan_memory_model
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_descriptor_indexing
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_line_rasterization
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_descriptor_update_template
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_draw_indirect_count
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_driver_properties
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_ANDROID_external_memory_android_hardware_buffer
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_dedicated_allocation
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_EXT_sample_locations
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_swapchain
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_sampler_mirror_clamp_to_edge
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan device extension=VK_KHR_external_fence_fd
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe dynamicRendering=0 usable=false multiview=1 dynamic_rendering_local_read_extension=false
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe dynamicRenderingLocalRead=0
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe maxMultiviewViewCount=6
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe depth_resolve_modes=SAMPLE_ZERO stencil_resolve_modes=SAMPLE_ZERO independent_resolve=0 independent_resolve_none=0
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe compute workgroup_invocations=1024 size=[1024, 1024, 64] count=[65535, 65535, 65535] storage_buffers_per_stage=524288 stage_resources=1572864 storage_range=536870912 uniform_range=65536 sampled_images=524288
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe texture ASTC_LDR=1 ETC2=1 BC=0 color_samples=TYPE_1 | TYPE_2 | TYPE_4 depth_samples=TYPE_1 | TYPE_2 | TYPE_4
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe queue_family=0 flags=GRAPHICS | COMPUTE | PROTECTED count=3
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe engine_deformation_basic_limits_ok=true (probe does not require deformation)
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe memory_heap=0 bytes=8047419392 flags=DEVICE_LOCAL
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe memory_heap=1 bytes=268435456 flags=DEVICE_LOCAL
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe memory_type=0 heap=0 flags=DEVICE_LOCAL
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe memory_type=1 heap=0 flags=DEVICE_LOCAL
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe memory_type=2 heap=0 flags=DEVICE_LOCAL | HOST_VISIBLE | HOST_CACHED
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe memory_type=3 heap=0 flags=DEVICE_LOCAL | HOST_VISIBLE | HOST_COHERENT
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe memory_type=4 heap=0 flags=DEVICE_LOCAL | HOST_VISIBLE | HOST_COHERENT | HOST_CACHED
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe memory_type=5 heap=1 flags=DEVICE_LOCAL | PROTECTED
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe memory_type=6 heap=0 flags=DEVICE_LOCAL | LAZILY_ALLOCATED
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe format=R8G8B8A8_SRGB usage=COLOR_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 16384, height: 16384, depth: 1 }, max_mip_levels: 15, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4, max_resource_size: 562949953421312 })
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe format=B8G8R8A8_SRGB usage=COLOR_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 16384, height: 16384, depth: 1 }, max_mip_levels: 15, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4, max_resource_size: 562949953421312 })
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe format=R8G8B8A8_UNORM usage=COLOR_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 16384, height: 16384, depth: 1 }, max_mip_levels: 15, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4, max_resource_size: 562949953421312 })
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe format=B8G8R8A8_UNORM usage=COLOR_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 16384, height: 16384, depth: 1 }, max_mip_levels: 15, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4, max_resource_size: 562949953421312 })
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe format=D32_SFLOAT_S8_UINT usage=DEPTH_STENCIL_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 16384, height: 16384, depth: 1 }, max_mip_levels: 15, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4, max_resource_size: 562949953421312 })
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe format=D24_UNORM_S8_UINT usage=DEPTH_STENCIL_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 16384, height: 16384, depth: 1 }, max_mip_levels: 15, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4, max_resource_size: 562949953421312 })
+12-08 12:52:06.947  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe application Vulkan device extensions=[] graphics_queue=0 renderer=classic render pass
+12-08 12:52:06.950  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe Vulkan instance/runtime-selected GPU/device SUCCESS
+12-08 12:52:07.178  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe xrCreateSession(Vulkan) SUCCESS
+12-08 12:52:07.178  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe reference_spaces=[VIEW, LOCAL, STAGE]
+12-08 12:52:07.179  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR swapchain formats=[37, 43, 9, 16, 23, 10, 17, 38, 29, 76, 83, 97, 100, 103, 109, 124, 125, 126]
+12-08 12:52:07.182  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe XR swapchain format=R8G8B8A8_SRGB extent=1024x1024 samples=1 layers=2 images=3
+12-08 12:52:07.190  9066  9093 I mitten-droid: mitten_droid::activity: lifecycle WindowResized
+12-08 12:52:07.202  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe graphics resources SUCCESS; blend=OPAQUE; left=dim red, right=dim blue; first 90 rendered frames clear-only, then RGB triangle
+12-08 12:52:07.203  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe session_state=IDLE
+12-08 12:52:07.203  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe session_state=READY
+12-08 12:52:07.210  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe session_state=SYNCHRONIZED
+12-08 12:52:07.217  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe session_state=VISIBLE
+12-08 12:52:07.217  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe session_state=FOCUSED
+12-08 12:52:08.321  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe rendered_frame=0 mode=stereo_clear GPU_complete_before_release=true
+12-08 12:52:09.425  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe rendered_frame=90 mode=stereo_triangle GPU_complete_before_release=true
+12-08 12:53:09.129  9066  9095 I mitten-droid: mitten_droid::xr_probe: probe rendered_frame=900 mode=stereo_triangle GPU_complete_before_release=true

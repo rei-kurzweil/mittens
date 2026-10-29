@@ -45,8 +45,9 @@ dependency. No rendering is required for this slice.
 - [x] Document ADB install, launch, log capture, and stop commands with the
   actual package/activity names from slice 1.
 - [x] Log startup and activity events on the application thread. No host workers
-  are created yet; XR frame/queue ownership and worker stop/join coordination
-  must be added when those workers are introduced.
+  are created in the verified lifecycle-only mode. The new graphics probe has
+  a worker with XR/queue ownership and stop/join coordination; its device
+  lifecycle tests remain outstanding.
 - [x] Install and launch on the headset; exercise background/foreground,
   repeated launch, and clean shutdown without creating graphics resources.
 
@@ -58,32 +59,45 @@ device/firmware identity and separate successful build checks from device tests.
 
 ## Slice 3: Initialize Android OpenXR through the engine
 
-- [ ] Add the engine startup interface needed by the Android host to supply
+- [x] Add the engine startup interface needed by the Android host to supply
   platform context/loader setup while preserving existing desktop startup.
-- [ ] Initialize the Android OpenXR loader before enumerating extensions;
+- [x] Initialize the Android OpenXR loader before enumerating extensions;
   enable Android instance creation with the activity/JVM information.
-- [ ] Create an instance and obtain the HMD system. Report runtime identity,
+- [x] Create an instance and obtain the HMD system. Report runtime identity,
   available Vulkan bindings, view configuration, and blend modes.
-- [ ] Keep host and engine OpenXR types compatible. Mittens currently uses
+- [x] Keep host and engine OpenXR types compatible. Mittens currently uses
   `openxr 0.19`; the local ALVR reference uses `0.21`.
 
 **Done when:** headset logs identify a working OpenXR instance and HMD system,
 with exact API/result diagnostics on failure. Desktop XR-only startup still
 works. A Vulkan device/session is the next slice.
 
+Implementation/build status: `OpenXRSystem::load_entry` supplies the shared
+Android loader hook; engine and host enable Android instance creation. The
+instance/HMD diagnostic passed on Focus 3 with VIVE WAVE and both Vulkan
+bindings advertised. See [device results](../../../../android/docs/focus-3-vulkan-results.md)
+and the [graphics bring-up](../../../../android/docs/xr-vulkan-bringup.md).
+
 ## Slice 4: Prove Vulkan stereo output and record capabilities
 
-- [ ] Use the runtime-selected physical device and satisfy its Vulkan API and
+The basic device gate passed: Vulkan enable2, capability capture, and classic
+render-pass stereo clear/triangle succeeded on Focus 3. The user confirmed
+the eye outputs. Desktop pixel readback also passed for both renderer paths.
+Graphics lifecycle remains a separate, unfinished acceptance check.
+
+- [x] Use the runtime-selected physical device and satisfy its Vulkan API and
   extension requirements. Select a supported Vulkan binding; use its required
   creation procedure, including runtime Vulkan creation calls for `enable2`.
-- [ ] Record the [capability report](../../../../android/docs/focus-3-probe.md):
+- [x] Record the [capability report](../../../../android/docs/focus-3-probe.md):
   dynamic rendering, image formats/sample counts, depth/stencil support,
   compute/storage-buffer limits, queues, and optional multiview.
-- [ ] Create one Vulkan device shared with the XR session and a supported
+- [x] Create one Vulkan device shared with the XR session and a supported
   single-sample stereo swapchain. Clear the eyes to distinct colors, honoring
   acquire/wait/release, GPU completion, image layouts, and session/frame state.
-- [ ] Draw a triangle with the supported rendering API. Keep this probe small
+- [x] Draw a triangle with the supported rendering API. Keep this probe small
   enough to work independently of Mittens' full scene pipeline requirements.
+- [ ] Validate graphics-active background/resume, session stop/start, headset
+  removal, and clean destruction/relaunch.
 
 **Done when:** the user confirms both eye outputs on the headset, a triangle
 renders, and the capability report is saved. Exercise session stop/start and
@@ -94,7 +108,18 @@ unavailable, define a focused classic render-pass implementation before full
 scene bring-up. Handle other failed requirements explicitly; Vulkan session
 success alone does not prove that the complete Mittens renderer can run.
 
+**Measured decision:** the installed Adreno 650 driver exposes Vulkan 1.1.128
+without `VK_KHR_dynamic_rendering`. Add classic render-pass/framebuffer and
+compatible pipeline recording to the full engine; the probe's Ash fallback
+does not supply that engine backend. [Evidence](../../../../android/docs/focus-3-vulkan-results.md).
+
 ## Slice 5: Run an embedded Mittens scene, then connect input
+
+The [renderer boundary audit](../../../../android/docs/renderer-boundary.md)
+recommends implementing the first mobile renderer under `android/`, consuming
+the engine's public upload/visual-stream API. The external consumer test passes
+without desktop features. Full engine XR input still needs an external frame
+source; the current `Universe::render`/XR convenience path is Vulkano-specific.
 
 - [ ] Connect the Android bootstrap to the existing window-free engine/XR
   rendering path, sharing the Vulkan device and runtime-owned output images.
@@ -118,5 +143,6 @@ optional tracking extensions, mobile rendering quality, and sustained thermal
 performance follow the basic scene. A separate renderer is not assumed in
 advance; compatibility changes follow the headset results from slice 4.
 
-Slices 1 and 2 are complete. Start slice 3 with Android OpenXR initialization;
-keep exact runtime diagnostics and the lifecycle test available during bring-up.
+Slices 1–3 and the basic slice 4 stereo/capability gate are verified. Graphics
+lifecycle checks and a full-engine classic render-pass implementation precede
+the embedded scene. Keep exact diagnostics and the lifecycle-only build available.

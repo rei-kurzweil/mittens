@@ -22,10 +22,13 @@ pub(super) fn run(app: AndroidApp) {
     assert_eq!(context.vm(), app.vm_as_ptr());
     assert_eq!(context.context(), app.activity_as_ptr());
     log::info!("android_context ready; activity and JVM match NativeActivity");
+    #[cfg(feature = "xr-probe")]
+    let mut worker = crate::xr_probe::Worker::new(app.internal_data_path());
+    #[cfg(not(feature = "xr-probe"))]
     log::info!("lifecycle-only host; engine and OpenXR/Vulkan are not started");
 
-    // This thread owns activity polling. The later XR driver must coordinate
-    // with it; there are no host worker threads to stop or join in this stage.
+    // This thread owns activity polling; the optional worker owns all XR and
+    // Vulkan calls. It is joined before Android releases its JVM/context.
     let mut destroy_requested = false;
     while !destroy_requested {
         // Wait for an event instead of running a frame loop while idle/paused.
@@ -46,7 +49,16 @@ pub(super) fn run(app: AndroidApp) {
                     }
                     // Their Debug output includes the complete activity state;
                     // keep lifecycle diagnostics readable instead.
-                    MainEvent::Resume { .. } => log::info!("lifecycle Resume"),
+                    MainEvent::Resume { .. } => {
+                        log::info!("lifecycle Resume");
+                        #[cfg(feature = "xr-probe")]
+                        worker.resume();
+                    }
+                    MainEvent::Pause => {
+                        log::info!("lifecycle Pause");
+                        #[cfg(feature = "xr-probe")]
+                        worker.pause();
+                    }
                     MainEvent::SaveState { .. } => log::info!("lifecycle SaveState"),
                     event => log::info!("lifecycle {event:?}"),
                 }
@@ -54,5 +66,7 @@ pub(super) fn run(app: AndroidApp) {
         });
     }
 
+    #[cfg(feature = "xr-probe")]
+    drop(worker);
     log::info!("host_exit clean; returning from android_main");
 }

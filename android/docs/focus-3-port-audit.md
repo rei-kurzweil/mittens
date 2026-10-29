@@ -26,6 +26,16 @@ remove Winit from the build.
 
 ## What ALVR provides
 
+2026-10-29 graphics follow-up: the Android OpenXR diagnostic and Vulkan
+clear/triangle probe now build, with the same generic Khronos loader as ALVR.
+The engine supplies an Android-aware `OpenXRSystem::load_entry` hook and
+Android instance extension setup. The probe prefers enable2 and provides a
+classic render-pass fallback below its small Ash renderer. Desktop pixel
+readback passed on both rendering paths. The subsequent Focus 3 run succeeded
+with enable2, classic render passes, and user-confirmed stereo output. The
+installed driver lacks dynamic rendering: [device results](focus-3-vulkan-results.md).
+This does not yet run a full Mittens scene; graphics lifecycle remains to test.
+
 The local reference at `/home/rei/_/ALVR/ALVR` supplies an Android activity entry point, packaging metadata, loader initialization, and HTC integrations. Its `alvr/client_openxr/src/lib.rs` enables `XR_KHR_opengl_es_enable`, uses `Session<OpenGlEs>`, and explicitly has a Vulkan migration TODO. `alvr/client_openxr/src/graphics.rs` binds an EGL context to the XR session. It does **not** demonstrate Vulkan dynamic rendering on the Focus 3.
 
 Reuse the lifecycle and device-integration patterns. Replace GL context/session/swapchain construction with Vulkan equivalents. Preserve tracker and passthrough behavior only after checking their extension, graphics binding, and lifetime requirements. ALVR's video decoder and streaming transport are unnecessary for local Mittens scenes.
@@ -38,10 +48,10 @@ Paths below are relative to the repository root. Function names identify the aud
 | --- | --- | --- |
 | App and packaging | The root manifest declares the engine's desktop binary and ordinary library. `android/Cargo.toml` declares the `mitten-droid` host `cdylib`, NativeActivity dependency, and APK metadata. The APK and lifecycle passed on Focus 3; the engine dependency disables desktop support. | Package the OpenXR loader/runtime discovery and later app assets; connect engine startup/input. The host currently runs only lifecycle/context diagnostics. |
 | Window-free initialization | `Universe::init_renderer_for_xr` uses a shared `RendererContext`, an optional window output, and independent XR format/eye slots. | Desktop extraction and optional Winit APIs are implemented. Integrate Android loader/context and lifecycle through the host crate. |
-| Android OpenXR initialization | `OpenXRSystem::try_init_openxr` loads the loader and immediately enumerates extensions. It omits Android loader initialization and `khr_android_create_instance`. | Initialize Android context, call the loader's Android initialization before enumeration/instance creation, and enable Android instance creation. Locked `openxr 0.19.0` already exposes the needed helper and instance chain. |
-| Vulkan binding | `try_init_openxr` still enables legacy `khr_vulkan_enable` and disables `enable2`. XR-only `RendererContext` selects the runtime-required GPU before device creation; session creation retains its consistency check. Windowed startup retains ordinary GPU selection. | Negotiate an advertised Vulkan binding and follow its creation requirements on Android, including the enable2 creation path if selected. |
+| Android OpenXR initialization | Shared loader initialization, Android instance creation, and HMD discovery passed on Focus 3 using OpenXR 0.19. | Retain the working hook and validate graphics lifecycle during engine integration. |
+| Vulkan binding | The engine still uses legacy `khr_vulkan_enable`. The Android probe successfully used enable2 runtime creation calls and the selected Adreno 650 GPU on Focus 3. | Adapt the engine's Vulkano bootstrap to the verified enable2 route. Legacy is advertised but was not exercised by the device probe. |
 | Vulkan version/extensions | `RendererContext` translates the full extension list known to Vulkano and rejects unknown required names. XR-only startup caps the API at the runtime maximum and the current engine maximum of 1.2, and checks runtime minimums. | Validate the actual Android runtime requirements. If the selected binding/API range needs another bootstrap path, add it explicitly. |
-| Dynamic rendering | `RendererContext` requires `khr_dynamic_rendering` and its feature; graphics pipelines use `PipelineRenderingCreateInfo`. | Probe the installed driver. Vulkan support alone does not establish dynamic-rendering support. If absent, add classic render-pass/framebuffer and compatible pipeline creation paths. |
+| Dynamic rendering | `RendererContext` requires `khr_dynamic_rendering`; the Focus 3 driver exposes Vulkan 1.1.128 without that extension. The standalone Ash probe's classic path displayed the triangle in both eyes. | Add classic render-pass/framebuffer and compatible pipeline creation/recording to the full engine. Share scene/material/draw preparation. This is a measured compatibility requirement for this driver. |
 | Compute | Initialization rejects graphics queues without compute, workgroups below 64 invocations, and fewer than eight per-stage storage-buffer descriptors. Deformation resources/pipelines are initialized eagerly. | Probe these limits. Make the deformation path and its resource/pipeline creation optional or provide a lower-requirement fallback, so a static triangle can run without the full deformation feature set. |
 | Depth/stencil | `graphics::DEPTH_STENCIL_FORMAT` fixes `D32_SFLOAT_S8_UINT` for window, XR, and effect targets. | Query format/usage/sample-count support. Consider `D24_UNORM_S8_UINT` where supported and suitable; retain stencil for clipped UI. Select format before creating dependent pipelines. |
 | XR image path | `begin_xr_frame` imports the acquired image; `submit_xr_eye` renders/resolves into its eye layers. The final composite uses the same runtime output. A completion-only submission/fence follows the draws. | Implemented for the current renderer on 2026-10-20. Validate on the actual Focus 3 runtime and retain ownership/completion rules. |
@@ -53,6 +63,12 @@ Paths below are relative to the repository root. Function names identify the aud
 Android loader requirements are documented in the [OpenXR loader specification](https://registry.khronos.org/OpenXR/specs/1.1/loader.html) and [Android instance extension](https://registry.khronos.org/OpenXR/specs/1.0/man/html/XR_KHR_android_create_instance.html). HTC's [current Unreal setup guide](https://developer.vive.com/resources/openxr/unreal/unreal-tutorials/viveppenxrplugininstallation/) includes Android Vulkan setup; that supports pursuing a native Vulkan probe, but does not certify this engine's features on a particular firmware.
 
 ## Do we need a tiled renderer or classic render passes?
+
+Device answer as of 2026-10-29: this Focus 3 driver needs the classic Vulkan
+path because dynamic rendering is unavailable. This does not mean the XR2's
+tiled architecture inherently requires classic `VkRenderPass` objects. See
+the [measured results](focus-3-vulkan-results.md) and
+[Khronos tiler guidance](https://docs.vulkan.org/guide/latest/tile_based_rendering_best_practices.html).
 
 The mobile GPU handles tiling; applications control attachment lifetime, data dependencies, and work. Dynamic rendering still describes a rendering scope with attachment load/store operations. The base Mittens path already draws its ordered phases inside one such scope, discards depth/stencil afterward, and can resolve transient MSAA color within the scope. Those are useful starting properties.
 
@@ -86,4 +102,4 @@ Do not assume foveation can cover an otherwise over-budget renderer. HTC's curre
 
 ## Validation boundary
 
-Inspected engine source and locked dependency implementations (`vulkano 0.35.2`, `vulkano-util 0.35.0`, `openxr 0.19.0`, `winit 0.30.12`), and rechecked ALVR's GL session and Android initialization. The Android Rust target is installed in this environment. On 2026-10-20 the desktop [XR-only example](../../docs/desktop/xr-only.md) reached FOCUSED on SteamVR/OpenXR 2.16.7 with 4x MSAA and exited successfully; the user confirmed headset presentation. A full scene GPU test passed without surface/presentation extensions, with stereo pixel readback and MSAA off/4x. On 2026-10-21 the base library checked and built for arm64 Android with desktop support disabled. On 2026-10-29 the NativeActivity host APK built, installed, and passed the [Focus 3 lifecycle tests](focus-3-lifecycle.md). No Android OpenXR/Vulkan capability probe or thermal/frame-time measurement has been performed. Explicit desktop session stop/restart remains to test; Android bring-up proceeds with OpenXR initialization and the [Focus 3 probe](focus-3-probe.md).
+Inspected engine source and locked dependency implementations (`vulkano 0.35.2`, `vulkano-util 0.35.0`, `openxr 0.19.0`, `winit 0.30.12`), and rechecked ALVR's GL session and Android initialization. The Android Rust target is installed in this environment. On 2026-10-20 the desktop [XR-only example](../../docs/desktop/xr-only.md) reached FOCUSED on SteamVR/OpenXR 2.16.7 with 4x MSAA and exited successfully; the user confirmed headset presentation. A full scene GPU test passed without surface/presentation extensions, with stereo pixel readback and MSAA off/4x. On 2026-10-21 the base library checked and built for arm64 Android with desktop support disabled. On 2026-10-29 the NativeActivity host APK built, installed, and passed the [Focus 3 lifecycle tests](focus-3-lifecycle.md). Later on 2026-10-29, Android OpenXR initialization and a Vulkan enable2 stereo triangle passed on Focus 3 with user confirmation; the measured driver lacks dynamic rendering and requires the classic pass path. Graphics lifecycle and thermal/frame-time measurements remain outstanding. Explicit desktop session stop/restart remains to test; Android bring-up proceeds with OpenXR initialization and the [Focus 3 probe](focus-3-probe.md).

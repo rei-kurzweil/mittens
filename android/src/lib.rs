@@ -1,13 +1,18 @@
 //! Android application host for Mittens Engine.
 //!
-//! The current host handles NativeActivity lifecycle and input delivery, with
-//! logcat diagnostics. Engine startup, OpenXR, and Vulkan rendering come next.
-//! See `android/docs/host-bootstrap.md` for build and device-test commands.
+//! NativeActivity lifecycle and an optional OpenXR/Vulkan capability/triangle
+//! probe. Default features enable the probe; disabling defaults retains the
+//! lifecycle-only host. See `android/docs/xr-vulkan-bringup.md`.
 //!
 //! Portable engine work belongs in `mittens-engine`.
 
 #[cfg(target_os = "android")]
 mod activity;
+
+#[cfg(all(target_os = "android", feature = "vulkan-probe"))]
+mod vulkan_probe;
+#[cfg(all(target_os = "android", feature = "xr-probe"))]
+mod xr_probe;
 
 /// Called by android-activity on its native application thread.
 #[cfg(target_os = "android")]

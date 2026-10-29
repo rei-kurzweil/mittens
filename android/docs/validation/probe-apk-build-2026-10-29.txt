@@ -1,0 +1,4 @@
+ARM64 Android builds; min API 28; development signing verified.
+Focus 3 execution pending USB connection.
+mitten-droid-openxr-instance.apk bytes=9228882 sha256=05a984651c71bac45974327438f7d0d1176adda8836cd06b1914903d1b1429ff
+mitten-droid-vulkan-probe.apk bytes=10121810 sha256=3d593bc124ab6d0ea4ce84389b209442d4ea3dcb789c661be41b02e6b00d73a8

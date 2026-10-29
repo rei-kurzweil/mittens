@@ -16,7 +16,8 @@ mittens aims to provide a similar -although more opinionated- developer experien
 - [`mittens-query`](crates/mittens-query/README.md) 0.6.0: CSS/MMQ parsing and
   host-neutral query-tree evaluation.
 - [`mitten-droid`](android/README.md) 0.1.0 at `android/`: Android NativeActivity
-  host, with APK/lifecycle verified on Focus 3; engine/XR startup comes next.
+  host, with lifecycle and OpenXR/Vulkan stereo triangle verified on Focus 3.
+  Full engine scene startup needs a classic render-pass compatibility path.
 
 The dependency graph is acyclic: `mittens-engine` depends on both standalone
 crates; neither standalone crate depends on the engine. The Android host

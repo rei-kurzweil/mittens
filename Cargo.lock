@@ -1472,9 +1472,13 @@ version = "0.1.0"
 dependencies = [
  "android-activity",
  "android_logger",
+ "ash",
+ "jni",
  "log",
  "mittens-engine",
  "ndk-context",
+ "openxr",
+ "shaderc",
 ]
 
 [[package]]

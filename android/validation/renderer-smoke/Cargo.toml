@@ -1,0 +1,16 @@
+[package]
+name = "mitten-droid-renderer-smoke"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Standalone GPU check; keep its host-only dependencies out of the Android app.
+[workspace]
+
+[dependencies]
+ash = "=0.38.0"
+openxr = "=0.19.0"
+log = "0.4"
+
+[build-dependencies]
+shaderc = "=0.8.3"

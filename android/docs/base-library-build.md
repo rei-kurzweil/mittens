@@ -77,9 +77,8 @@ input routing or Vulkan feature support on Android.
 The host crate, `mitten-droid`, lives under `android/`. Its APK and
 NativeActivity lifecycle were [verified on Focus 3](focus-3-lifecycle.md) on
 2026-10-29. See the [host bootstrap](host-bootstrap.md) for build and device
-commands. Engine startup, OpenXR loader initialization, and engine input
-adaptation remain to implement.
-ALVR provides the reference for that platform integration. Shared XR startup
-still needs an entry/context initialization hook and Android instance creation;
-the selected legacy/enable2 Vulkan binding must be checked on the headset.
-See the [capability probe](focus-3-probe.md).
+commands. The shared Android loader hook and instance setup are now implemented,
+and the [OpenXR/Vulkan probe](xr-vulkan-bringup.md) passed on Focus 3, with
+user-confirmed stereo output. [Measured capabilities](focus-3-vulkan-results.md)
+require a classic render-pass path for the full engine on this driver. Engine
+scene startup and input adaptation follow; ALVR remains the platform reference.

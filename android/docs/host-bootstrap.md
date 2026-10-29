@@ -4,6 +4,10 @@
 `mittens-engine`; `crates/` contains the engine's standalone dependencies.
 Android application code, packaging, and platform diagnostics belong here.
 
+The default APK now includes the [OpenXR/Vulkan probe](xr-vulkan-bringup.md),
+whose Focus 3 validation is pending. This page describes the previously
+verified lifecycle-only build; use `--no-default-features` to select it.
+
 ## Current host
 
 - Native `cdylib` crate with an Android-only dependency on `mittens-engine`,
@@ -67,7 +71,7 @@ From the repository root:
 
 ```sh
 export ANDROID_HOME="$HOME/Android/Sdk"
-android/packaging/build-apk.sh
+android/packaging/build-apk.sh --no-default-features
 ```
 
 The helper defaults to NDK `28.1.13356709` and SDK CMake `3.30.3`. Set
@@ -78,8 +82,10 @@ this is a development sideload, not a store submission.
 
 Output: `target/debug/apk/mitten-droid.apk`. Cargo APK metadata in
 `android/Cargo.toml` generates the manifest and packages `libmitten_droid.so`
-and its native dependencies. No GL requirement, OpenXR loader, tracking/audio
-permissions, or streaming dependencies are added for this lifecycle test.
+and its native dependencies. The common packaging now also includes the
+Khronos OpenXR loader and discovery permissions, but this lifecycle-only mode
+does not initialize it. No GL requirement, tracking/audio permissions, or
+streaming dependencies are added.
 
 ## Install and exercise lifecycle
 

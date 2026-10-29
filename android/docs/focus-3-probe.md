@@ -1,6 +1,6 @@
 # Focus 3 Vulkan/OpenXR probe
 
-This specifies the OpenXR/Vulkan stage of the Android host. The [APK/activity lifecycle](focus-3-lifecycle.md) has been verified, but the graphics probe below is not a completed test or a claim about installed headset capabilities.
+This specifies the OpenXR/Vulkan stage of the Android host. The [APK/activity lifecycle](focus-3-lifecycle.md), OpenXR initialization, and Vulkan stereo clear/triangle have now been verified. See [measured Focus 3 capabilities and user confirmation](focus-3-vulkan-results.md). Graphics lifecycle and later integration checks below remain outstanding.
 
 First verify the portable renderer extraction with the desktop
 [`openxr-only` example](../../docs/desktop/xr-only.md). Extend the existing

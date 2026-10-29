@@ -1,0 +1,7 @@
+OpenXR Loader for Android 1.1.36
+Published by KhronosGroup/OpenXR-SDK-Source:
+https://github.com/KhronosGroup/OpenXR-SDK-Source/releases/tag/release-1.1.36
+
+The arm64-v8a library is extracted unchanged from the official Android AAR.
+Library SHA-256: 6b9aeb6ea2e429bae91328cc85b0e19947cc77ca2f4948a763a4a41c23511dd6
+The accompanying OpenXR-Loader-LICENSE is the AAR's META-INF/LICENSE (Apache 2.0).
