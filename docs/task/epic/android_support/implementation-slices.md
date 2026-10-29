@@ -1,7 +1,8 @@
 # Android host implementation slices
 
 Plan recorded 2026-10-21. Target: Mittens running locally on a Vive Focus 3,
-hosted by `crates/mitten-droid/` in this repository.
+hosted by the `mitten-droid` crate at `android/` in this repository. Scaffold
+added 2026-10-29; activity and APK implementation remain outstanding.
 
 ## Starting point
 
@@ -9,8 +10,9 @@ hosted by `crates/mitten-droid/` in this repository.
   `default-features = false`; this does not establish Android runtime support.
 - Desktop XR-only startup already exists without Winit, a window, or a Vulkan
   surface. Rendering writes/resolves directly into OpenXR swapchain images.
-- There is no Mittens Android host or APK yet. Focus 3 Vulkan session creation
-  and compatibility with the current renderer remain untested.
+- The Android host crate is scaffolded at `android/Cargo.toml`, with an
+  Android-only engine dependency and no activity entry point or APK yet.
+  Focus 3 Vulkan session creation and renderer compatibility remain untested.
 
 Use ALVR's working Android client as the reference for activity/lifecycle,
 loader initialization, and packaging. Its client renderer uses OpenGL ES;
@@ -23,12 +25,13 @@ Supporting details: [base-library build](../../../../android/docs/base-library-b
 
 ## Slice 1: Build the Android host APK
 
-- [ ] Add `crates/mitten-droid/` as an Android native `cdylib` crate, depending
+- [x] Add `android/` as the `mitten-droid` native `cdylib` crate, depending
   on `mittens-engine` with default features disabled.
-- [ ] Keep Android dependencies/entry points target-specific and preserve the
-  ordinary desktop build/test workflow when adding the workspace member.
-- [ ] Put the host's Android manifest, resources, and packaging configuration
-  alongside the crate. Choose one reproducible packaging command, using the
+- [x] Add the workspace member with an Android-only engine dependency, keeping
+  desktop support disabled for that dependency. Keep future Android activity
+  dependencies and entry points target-specific as well.
+- [ ] Put manifest metadata in `android/Cargo.toml` and resources/build helpers
+  under `android/packaging/`. Choose one reproducible packaging command, using the
   local ALVR setup as the starting reference.
 - [ ] Add the activity entry point, Android context setup, and logcat logging.
   Give the app its own package identity; preserve notices for copied code.

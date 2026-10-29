@@ -4,11 +4,12 @@ The base `mittens-engine` library can build independently of desktop windowing.
 The default `desktop` feature retains existing desktop behavior. Disable default
 features for an Android host or a desktop XR-only build without Winit.
 
-From a future `android/host/Cargo.toml`, the dependency would be:
+The `mitten-droid` host scaffold at `android/Cargo.toml` declares its engine
+dependency only for Android:
 
 ```toml
-[dependencies]
-mittens-engine = { path = "../..", default-features = false }
+[target.'cfg(target_os = "android")'.dependencies]
+mittens-engine = { path = "..", default-features = false }
 ```
 
 `Windowing`, desktop CLI/executable, Winit event conversion, and window Vulkan
@@ -28,7 +29,21 @@ cargo run --release --example openxr-only --no-default-features
 ```
 
 For Android, install the `aarch64-linux-android` Rust target, Android NDK, and
-`cargo-ndk`. Set `ANDROID_NDK_HOME` to the installed NDK directory, then run:
+`cargo-ndk`. Set `ANDROID_NDK_HOME` to the installed NDK directory and
+`ANDROID_NDK` to the same directory so CMake can find it too.
+
+The locked `shaderc-sys 0.8.3` can build native code during cross-compilation.
+Its bundled project fails to configure with the system CMake 4.4's default
+policy compatibility. Use CMake 3.x for this build. With the versions installed
+in the local SDK, the setup is:
+
+```sh
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.1.13356709"
+export ANDROID_NDK="$ANDROID_NDK_HOME"
+export CMAKE="$ANDROID_HOME/cmake/3.30.3/bin/cmake"
+```
+
+Then run:
 
 ```sh
 cargo ndk -t arm64-v8a -p 28 check --lib --no-default-features --locked
@@ -59,8 +74,10 @@ The default-feature windowed cube/bloom example reached the present loop and
 completed window rendering. These desktop checks do not establish headset
 input routing or Vulkan feature support on Android.
 
-The next host crate, `mitten-droid`, should own activity/lifecycle, Android
-context and OpenXR loader initialization, input adaptation, and packaging.
+The host crate, `mitten-droid`, is scaffolded under `android/`. It will own
+activity/lifecycle, Android context and OpenXR loader initialization, input
+adaptation, and packaging. See the [host bootstrap](host-bootstrap.md) for
+scaffold checks and the next implementation steps.
 ALVR provides the reference for that platform integration. Shared XR startup
 still needs an entry/context initialization hook and Android instance creation;
 the selected legacy/enable2 Vulkan binding must be checked on the headset.

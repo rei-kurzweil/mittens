@@ -1,6 +1,6 @@
 # Mittens on Android
 
-Status: portable base-library Android check and build passed on 2026-10-21. This directory does not yet contain a buildable Android app. No Mittens APK or Focus 3 Vulkan session has been tested.
+Status: `mitten-droid` is now a workspace crate rooted in this directory. It is a host scaffold with no activity entry point or APK packaging yet. The portable base-library Android check and build passed on 2026-10-21. No Mittens APK or Focus 3 Vulkan session has been tested.
 
 The target is **Mittens running locally on a Vive Focus 3**: the engine runs its ECS, MMS scripts, simulation, audio, and Vulkan renderer on the headset.
 
@@ -16,19 +16,21 @@ ALVR's current client uses **OpenGL ES + EGL**, including `Session<OpenGlEs>` an
 
 Keep Android entry points, packaging, lifecycle adapters, and platform diagnostics here. Keep portable renderer, ECS, scripting, asset, and audio changes in the engine's existing source directories.
 
-Suggested layout as implementation lands:
+Current layout:
 
 ```text
 android/
+  Cargo.toml                 # mitten-droid cdylib; consumes mittens-engine
+  src/lib.rs                 # host scaffold; activity entry point comes next
   README.md
   docs/
+    host-bootstrap.md
+    base-library-build.md
     focus-3-port-audit.md
     focus-3-probe.md
-  host/                      # future Rust cdylib: android_main + engine integration
-  packaging/                 # future manifest/build configuration + app resources
 ```
 
-Only the documentation exists today. Start with the ALVR packaging recipe; choose and commit a single packaging workflow when the probe is implemented. Do not copy ALVR's unrelated device requirements or package identity into the Mittens manifest.
+Start with the [host bootstrap](docs/host-bootstrap.md): add the activity event loop and APK packaging, then verify lifecycle on the headset. Future resources/build helpers belong under `android/packaging/`, with Cargo APK metadata in `android/Cargo.toml`. Do not copy ALVR's unrelated device requirements or package identity into the Mittens manifest.
 
 ## Rendering direction
 

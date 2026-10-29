@@ -15,9 +15,12 @@ mittens aims to provide a similar -although more opinionated- developer experien
   component/API catalogs, and the generic host protocol.
 - [`mittens-query`](crates/mittens-query/README.md) 0.6.0: CSS/MMQ parsing and
   host-neutral query-tree evaluation.
+- [`mitten-droid`](android/README.md) 0.1.0 at `android/`: Android application
+  host scaffold, consuming the engine with desktop support disabled.
 
 The dependency graph is acyclic: `mittens-engine` depends on both standalone
-crates; neither standalone crate depends on the engine.
+crates; neither standalone crate depends on the engine. The Android host
+depends on `mittens-engine` only when targeting Android.
 
 `mittens-engine` 0.8 removes the deprecated `ActionComponent`, `ActionSystem`,
 and `Action.*` MMS constructors. Deferred animation now uses executable

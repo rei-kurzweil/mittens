@@ -1,0 +1,16 @@
+[package]
+name = "mitten-droid"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+readme = "README.md"
+description = "Android application host for Mittens Engine"
+
+[lib]
+crate-type = ["cdylib"]
+
+[target.'cfg(target_os = "android")'.dependencies]
+mittens-engine = { path = "..", default-features = false }

@@ -1441,6 +1441,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mitten-droid"
+version = "0.1.0"
+dependencies = [
+ "mittens-engine",
+]
+
+[[package]]
 name = "mittens-engine"
 version = "0.9.0"
 dependencies = [

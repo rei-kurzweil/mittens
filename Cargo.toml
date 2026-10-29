@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/meow-meow-script", "crates/mittens-query"]
+members = ["crates/meow-meow-script", "crates/mittens-query", "android"]
 resolver = "3"
 
 [workspace.package]

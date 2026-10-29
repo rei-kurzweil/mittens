@@ -4,7 +4,7 @@ Status: initial investigation 2026-09-28; renderer/platform audit updated 2026-1
 
 The Android port now has a home in [`android/`](../../../../android/README.md), with a [current source audit](../../../../android/docs/focus-3-port-audit.md) and [Focus 3 capability-probe specification](../../../../android/docs/focus-3-probe.md). This epic preserves the earlier integration investigation. Dynamic rendering can use tile-based GPUs; whether a classic render-pass implementation is needed depends first on the headset's driver capabilities, then measured rendering costs.
 
-Next implementation work is broken into [five focused slices](implementation-slices.md), starting with the `crates/mitten-droid/` host APK and activity lifecycle before OpenXR/Vulkan bring-up.
+Next implementation work is broken into [five focused slices](implementation-slices.md). The `mitten-droid` host crate is scaffolded at `android/`; activity handling and APK packaging come next, followed by headset lifecycle verification before OpenXR/Vulkan bring-up. See the [host bootstrap](../../../../android/docs/host-bootstrap.md).
 
 ## Desired end state
 
