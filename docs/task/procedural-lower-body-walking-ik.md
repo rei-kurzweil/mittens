@@ -17,8 +17,21 @@ and tuning remain pending. Authored whole-armature animation remains separate.
    Rei(mu) and Bisket without changing bone lengths.
 3. Add retained contacts, one timed swing at a time, alternating steps, a brief
    double-support transfer, bounded prediction from actual capsule X/Z motion,
-   and bounded step length/lateral prediction. A displacement deadband admits
-   steps; elapsed time finishes an airborne step even after movement stops.
+   and bounded step length/lateral prediction. Displacement and predicted
+   trailing-foot lag admit steps; elapsed time finishes an airborne step even
+   after movement stops.
+
+The planner anticipates actual capsule motion to lift the first foot earlier.
+The lifted foot advances earlier along its swing arc as speed increases.
+Landing prediction includes recovery of feet trailing in the travel direction,
+with forward lead bounded to 80% of stride and total travel bounded to stride.
+Speed and directional foot lag shorten swing duration (to a minimum of 80 ms)
+and the following support-transfer interval. An active swing can accelerate
+without rewinding its phase; its landing remains fixed and support-checked.
+Landing and support transfer consume only their remaining time, carrying the
+unused frame time into the next phase. Cadence therefore avoids rounding every
+phase up to a whole render frame. Idle time is never accumulated toward a future
+step.
 
 Stopping holds the resulting supported stance. Further corrective steps occur
 only when stance error exceeds the deadband. Exact return to authored standing
@@ -93,9 +106,12 @@ AVC
 
 The sole offsets above are specific to the checked-in Rei(mu)/Bisket shoes.
 Stride is maximum horizontal foot travel in model metres, valid in `[0.05, 1.0]`.
-Duration is seconds, valid in `[0.08, 1.0]`. Height is model metres, valid in
-`[0, 0.3]`. Defaults are shown above; model distances scale with the avatar.
-The displacement trigger is 32% of stride; the heading trigger is 25 degrees.
+Duration is the relaxed swing time in seconds, valid in `[0.08, 1.0]`; speed and
+trailing-foot recovery can shorten it automatically. Height is model metres,
+valid in `[0, 0.3]`. Defaults are shown above; model distances scale with the avatar.
+The idle displacement trigger is 32% of stride; motion adds half a swing's
+predicted travel to directional lag to start steps sooner. The heading trigger
+is 25 degrees.
 
 ```sh
 cargo run --release -- load examples/lower-body-walking-vr.mms
@@ -145,17 +161,23 @@ validation and swept swing-obstacle avoidance remain later work. A swing uses a
 fixed landing destination; reversal affects subsequent steps. High speeds and
 abrupt direction changes may exceed reach. Running is not an accepted gait.
 
-The displacement threshold is currently stride-based; predicting support-leg
-reach through the whole swing, adaptive cadence and richer recovery are later
-planner improvements. The first headset test focuses on ownership, contact
-retention, swing/landing and crouch composition.
+The displacement threshold is stride-based, with motion anticipation and
+adaptive cadence. Predicting support-leg reach through the whole swing and
+richer recovery remain later planner improvements. Headset testing covers
+ownership, contact retention, swing/landing and crouch composition.
 
 ## Automated checks
 
 Run `cargo test --lib lower_body`. The group covers original crouch scenarios,
 both real GLBs, sole orientation through body movement, multi-avatar isolation,
-alternation at 30/60/120 Hz, backward/sideways/diagonal motion, stop-mid-swing and
-idle stability, scale/yaw/reversal, contact release/recovery, bad frame times,
+alternation at 30/60/120 Hz, earlier motion onset, increasing step length/cadence
+and bounded foot lag at 0.25–1.2 m/s, acceleration during swing, and the Sakura
+gamepad pace of 1.4 m/s on both real rigs at 30/45/60/90/120 Hz and uneven frame
+times. Those pace checks cover upright and crouched posture, forward/backward,
+diagonal and sideways travel, with comparable cadence and lag across rates.
+The group also covers
+backward/sideways/diagonal motion, stop-mid-swing and idle stability,
+scale/yaw/reversal, contact release/recovery, bad frame times,
 bounded unreachable targets, MMS validation/save-load, and the complete avatar
 update stage with unchanged tracking/capsule transforms.
 

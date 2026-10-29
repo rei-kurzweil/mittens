@@ -150,6 +150,208 @@ fn step_lifts_lands_and_finishes_after_stopping_without_idle_chatter() {
 }
 
 #[test]
+fn walking_anticipates_start_and_swings_forward_while_stance_holds() {
+    for direction in [1.0, -1.0] {
+        let mut f = Fixture::walking(None, 0.2);
+        let planted = f.feet();
+        let mut distance = 0.0;
+        let side = loop {
+            f.travel(0.0, direction * 0.01, 1.0 / 60.0);
+            distance += 0.01;
+            let gait = f.systems.lower_body_ik.walking(f.avatar).unwrap();
+            if let Some(side) = gait.swing_side {
+                break side;
+            }
+            assert!(distance < 0.1, "first step waited for feet to trail");
+        };
+        assert!(distance < 0.32 * 0.32);
+        // Releasing movement during lift still carries the airborne foot
+        // forward, while the other foot remains at its original contact.
+        f.step_with_dt(0.06);
+        f.assert_contacts();
+        assert_eq!(f.feet()[side].phase, FootPhase::Swing);
+        assert!(f.feet()[side].target_sole[1] > 0.01);
+        assert!(direction * (f.feet()[side].target_sole[2] - planted[side].target_sole[2]) > 0.025);
+        close(
+            f.feet()[1 - side].target_sole,
+            planted[1 - side].target_sole,
+        );
+    }
+}
+
+#[test]
+fn walking_acceleration_advances_an_existing_swing_without_moving_stance() {
+    let mut steady = Fixture::walking(None, 0.2);
+    let mut accelerating = Fixture::walking(None, 0.2);
+    let side = loop {
+        for f in [&mut steady, &mut accelerating] {
+            f.travel(0.0, 0.4 / 60.0, 1.0 / 60.0);
+        }
+        if let Some(side) = steady
+            .systems
+            .lower_body_ik
+            .walking(steady.avatar)
+            .unwrap()
+            .swing_side
+        {
+            break side;
+        }
+    };
+    let stance = accelerating.feet()[1 - side].target_sole;
+    for _ in 0..3 {
+        steady.travel(0.0, 0.4 / 60.0, 1.0 / 60.0);
+        accelerating.travel(0.0, 1.8 / 60.0, 1.0 / 60.0);
+        close(accelerating.feet()[1 - side].target_sole, stance);
+    }
+    let steady_gait = steady.systems.lower_body_ik.walking(steady.avatar).unwrap();
+    let faster_gait = accelerating
+        .systems
+        .lower_body_ik
+        .walking(accelerating.avatar)
+        .unwrap();
+    assert_eq!(faster_gait.swing_side, Some(side));
+    assert_eq!(faster_gait.steps_started, steady_gait.steps_started);
+    assert!(faster_gait.swing_progress.unwrap() > steady_gait.swing_progress.unwrap() + 0.05);
+    assert!(accelerating.feet()[side].target_sole[2] > steady.feet()[side].target_sole[2]);
+}
+
+#[test]
+fn walking_speed_increases_step_length_and_cadence_without_accumulating_lag() {
+    for dt in [1.0 / 30.0, 1.0 / 60.0, 1.0 / 120.0] {
+        for direction in [[0.0, 1.0], [0.0, -1.0], [0.6, 0.8]] {
+            let mut samples = Vec::new();
+            for speed in [0.25, 0.65, 1.2] {
+                let mut f = Fixture::walking(None, 0.25);
+                let mut contacts = f.feet();
+                let mut counts = [0, 0];
+                let mut landed = 0;
+                let mut travel = 0.0;
+                for _ in 0..(1.8 / dt) as usize {
+                    f.travel(direction[0] * speed * dt, direction[1] * speed * dt, dt);
+                    let feet = f.feet();
+                    let gait = f.systems.lower_body_ik.walking(f.avatar).unwrap();
+                    for side in 0..2 {
+                        assert!(
+                            gait.steps_started[side] >= counts[side],
+                            "gait reset at {speed}"
+                        );
+                        let foot = feet[side];
+                        let lag = (foot.base_sole[0] - foot.target_sole[0]) * direction[0]
+                            + (foot.base_sole[2] - foot.target_sole[2]) * direction[1];
+                        assert!(lag < 0.4, "feet trailed by {lag} at {speed}, dt={dt}");
+                        if foot.phase == FootPhase::Planted {
+                            let delta = vec3_sub(foot.target_sole, contacts[side].target_sole);
+                            let length = (delta[0] * delta[0] + delta[2] * delta[2]).sqrt();
+                            assert!(length <= 0.3201, "step exceeded configured stride");
+                            if length > 0.001 {
+                                travel += length;
+                                landed += 1;
+                                contacts[side] = foot;
+                            }
+                        }
+                    }
+                    counts = gait.steps_started;
+                }
+                assert!(landed >= 2);
+                samples.push((counts.iter().sum::<u64>(), travel / landed as f32));
+            }
+            assert!(
+                samples[1].0 > samples[0].0 && samples[2].0 > samples[1].0,
+                "{samples:?}"
+            );
+            assert!(
+                samples[1].1 > samples[0].1 && samples[2].1 > samples[1].1,
+                "{samples:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn walking_gamepad_pace_keeps_up_across_headset_frame_rates_and_uneven_frames() {
+    let schedules: &[&[f32]] = &[
+        &[1.0 / 30.0],
+        &[1.0 / 45.0],
+        &[1.0 / 60.0],
+        &[1.0 / 90.0],
+        &[1.0 / 120.0],
+        &[
+            1.0 / 45.0,
+            1.0 / 90.0,
+            1.0 / 30.0,
+            1.0 / 120.0,
+            1.0 / 60.0,
+            0.05,
+        ],
+    ];
+    for asset in ["assets/models/rei(mu).glb", "assets/models/bisket.glb"] {
+        for drop in [0.0, 0.2] {
+            for direction in [[0.0, 1.0], [0.0, -1.0], [0.6, 0.8], [1.0, 0.0]] {
+                let mut samples = Vec::new();
+                for &schedule in schedules {
+                    let mut f = Fixture::walking(Some(asset), drop);
+                    f.world
+                        .get_component_by_id_as_mut::<ZoneComponent>(f.floor_zone)
+                        .unwrap()
+                        .shape =
+                        crate::engine::ecs::component::CollisionShape::cube_half_extents([
+                            10.0, 0.05, 10.0,
+                        ]);
+                    let mut elapsed = 0.0_f32;
+                    let mut frame = 0;
+                    let mut counts = [0, 0];
+                    let mut lag_sum = 0.0;
+                    while elapsed < 3.0 {
+                        let dt = schedule[frame % schedule.len()].min(3.0 - elapsed);
+                        f.travel(direction[0] * 1.4 * dt, direction[1] * 1.4 * dt, dt);
+                        f.assert_pose();
+                        let gait = f.systems.lower_body_ik.walking(f.avatar).unwrap();
+                        assert!(
+                            gait.steps_started
+                                .iter()
+                                .zip(counts)
+                                .all(|(n, old)| *n >= old),
+                            "gait reset: {asset} drop={drop} direction={direction:?} schedule={schedule:?}"
+                        );
+                        counts = gait.steps_started;
+                        let lag = f
+                            .feet()
+                            .iter()
+                            .map(|foot| {
+                                (foot.base_sole[0] - foot.target_sole[0]) * direction[0]
+                                    + (foot.base_sole[2] - foot.target_sole[2]) * direction[1]
+                            })
+                            .fold(0.0_f32, f32::max);
+                        assert!(
+                            lag < 0.35,
+                            "feet trailed by {lag}: {asset} drop={drop} direction={direction:?} schedule={schedule:?}"
+                        );
+                        if elapsed >= 1.0 {
+                            lag_sum += lag * dt;
+                        }
+                        elapsed += dt;
+                        frame += 1;
+                    }
+                    samples.push((counts.iter().sum::<u64>(), lag_sum / 2.0));
+                }
+                let min_steps = samples.iter().map(|s| s.0).min().unwrap();
+                let max_steps = samples.iter().map(|s| s.0).max().unwrap();
+                let min_lag = samples.iter().map(|s| s.1).fold(f32::INFINITY, f32::min);
+                let max_lag = samples.iter().map(|s| s.1).fold(0.0_f32, f32::max);
+                assert!(
+                    max_steps - min_steps <= 2,
+                    "cadence varies with frame rate: {samples:?}"
+                );
+                assert!(
+                    max_lag - min_lag < 0.04,
+                    "foot lag varies with frame rate: {samples:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn walking_turn_in_place_steps_then_holds_the_new_heading() {
     let mut f = Fixture::walking(None, 0.2);
     let t = &mut f

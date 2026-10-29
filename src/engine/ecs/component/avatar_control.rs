@@ -267,6 +267,8 @@ pub struct AvatarControlComponent {
     pub walking_enabled: bool,
     /// Maximum horizontal travel of one step, in model metres.
     pub walking_stride: f32,
+    /// Relaxed swing duration in seconds; locomotion speed and trailing feet
+    /// shorten it automatically, down to 80 ms.
     pub walking_step_duration: f32,
     /// Swing clearance in model metres.
     pub walking_step_height: f32,
