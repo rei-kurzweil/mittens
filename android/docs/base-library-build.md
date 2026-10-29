@@ -4,7 +4,7 @@ The base `mittens-engine` library can build independently of desktop windowing.
 The default `desktop` feature retains existing desktop behavior. Disable default
 features for an Android host or a desktop XR-only build without Winit.
 
-The `mitten-droid` host scaffold at `android/Cargo.toml` declares its engine
+The `mitten-droid` host at `android/Cargo.toml` declares its engine
 dependency only for Android:
 
 ```toml
@@ -74,10 +74,11 @@ The default-feature windowed cube/bloom example reached the present loop and
 completed window rendering. These desktop checks do not establish headset
 input routing or Vulkan feature support on Android.
 
-The host crate, `mitten-droid`, is scaffolded under `android/`. It will own
-activity/lifecycle, Android context and OpenXR loader initialization, input
-adaptation, and packaging. See the [host bootstrap](host-bootstrap.md) for
-scaffold checks and the next implementation steps.
+The host crate, `mitten-droid`, lives under `android/`. Its APK and
+NativeActivity lifecycle were [verified on Focus 3](focus-3-lifecycle.md) on
+2026-10-29. See the [host bootstrap](host-bootstrap.md) for build and device
+commands. Engine startup, OpenXR loader initialization, and engine input
+adaptation remain to implement.
 ALVR provides the reference for that platform integration. Shared XR startup
 still needs an entry/context initialization hook and Android instance creation;
 the selected legacy/enable2 Vulkan binding must be checked on the headset.

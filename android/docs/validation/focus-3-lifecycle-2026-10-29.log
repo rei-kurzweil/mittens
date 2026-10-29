@@ -1,0 +1,47 @@
+--------- beginning of main
+12-08 11:47:47.472  6115  6200 I mitten-droid: mitten_droid::activity: host_start version=0.1.0 pid=6115 thread=ThreadId(2)
+12-08 11:47:47.472  6115  6200 I mitten-droid: mitten_droid::activity: android_context ready; activity and JVM match NativeActivity
+12-08 11:47:47.472  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle-only host; engine and OpenXR/Vulkan are not started
+12-08 11:47:47.473  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle Start
+12-08 11:47:47.475  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle Resume
+12-08 11:47:47.507  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle InitWindow
+12-08 11:47:47.507  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle WindowResized
+12-08 11:47:47.508  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle ContentRectChanged
+12-08 11:47:47.509  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle RedrawNeeded
+12-08 11:47:47.509  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle GainedFocus
+12-08 11:50:03.232  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle Pause
+12-08 11:50:03.233  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle Resume
+12-08 11:50:03.248  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle WindowResized
+12-08 11:50:48.174  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle Pause
+12-08 11:50:48.195  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle LostFocus
+12-08 11:50:48.225  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle TerminateWindow
+12-08 11:50:48.226  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle Stop
+12-08 11:50:48.228  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle SaveState
+12-08 11:50:53.115  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle Start
+12-08 11:50:53.116  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle Resume
+12-08 11:50:53.132  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle InitWindow
+12-08 11:50:53.134  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle WindowResized
+12-08 11:50:53.134  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle RedrawNeeded
+12-08 11:50:53.137  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle GainedFocus
+12-08 11:51:15.725  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle Pause
+12-08 11:51:15.750  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle TerminateWindow
+12-08 11:51:15.751  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle LostFocus
+12-08 11:51:15.751  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle Stop
+12-08 11:51:15.752  6115  6200 I mitten-droid: mitten_droid::activity: lifecycle Destroy
+12-08 11:51:15.752  6115  6200 I mitten-droid: mitten_droid::activity: host_exit clean; returning from android_main
+12-08 11:51:26.906  6115  6826 I mitten-droid: mitten_droid::activity: host_start version=0.1.0 pid=6115 thread=ThreadId(4)
+12-08 11:51:26.906  6115  6826 I mitten-droid: mitten_droid::activity: android_context ready; activity and JVM match NativeActivity
+12-08 11:51:26.906  6115  6826 I mitten-droid: mitten_droid::activity: lifecycle-only host; engine and OpenXR/Vulkan are not started
+12-08 11:51:26.911  6115  6826 I mitten-droid: mitten_droid::activity: lifecycle Start
+12-08 11:51:26.911  6115  6826 I mitten-droid: mitten_droid::activity: lifecycle Resume
+12-08 11:51:26.932  6115  6826 I mitten-droid: mitten_droid::activity: lifecycle InitWindow
+12-08 11:51:26.934  6115  6826 I mitten-droid: mitten_droid::activity: lifecycle WindowResized
+12-08 11:51:26.934  6115  6826 I mitten-droid: mitten_droid::activity: lifecycle ContentRectChanged
+12-08 11:51:26.934  6115  6826 I mitten-droid: mitten_droid::activity: lifecycle RedrawNeeded
+12-08 11:51:26.934  6115  6826 I mitten-droid: mitten_droid::activity: lifecycle GainedFocus
+12-08 11:51:50.303  6115  6826 I mitten-droid: mitten_droid::activity: lifecycle Pause
+12-08 11:51:50.325  6115  6826 I mitten-droid: mitten_droid::activity: lifecycle LostFocus
+12-08 11:51:50.334  6115  6826 I mitten-droid: mitten_droid::activity: lifecycle TerminateWindow
+12-08 11:51:50.334  6115  6826 I mitten-droid: mitten_droid::activity: lifecycle Stop
+12-08 11:51:50.337  6115  6826 I mitten-droid: mitten_droid::activity: lifecycle Destroy
+12-08 11:51:50.337  6115  6826 I mitten-droid: mitten_droid::activity: host_exit clean; returning from android_main

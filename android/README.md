@@ -1,6 +1,6 @@
 # Mittens on Android
 
-Status: `mitten-droid` is now a workspace crate rooted in this directory. It is a host scaffold with no activity entry point or APK packaging yet. The portable base-library Android check and build passed on 2026-10-21. No Mittens APK or Focus 3 Vulkan session has been tested.
+Status: `mitten-droid` builds an APK and its NativeActivity lifecycle was verified on the Focus 3 over USB/ADB on 2026-10-29. See [device results](docs/focus-3-lifecycle.md). The host does not start the engine, OpenXR, Vulkan, or audio yet. The portable base-library Android check and build passed on 2026-10-21; Focus 3 Vulkan session compatibility remains untested.
 
 The target is **Mittens running locally on a Vive Focus 3**: the engine runs its ECS, MMS scripts, simulation, audio, and Vulkan renderer on the headset.
 
@@ -21,16 +21,20 @@ Current layout:
 ```text
 android/
   Cargo.toml                 # mitten-droid cdylib; consumes mittens-engine
-  src/lib.rs                 # host scaffold; activity entry point comes next
+  src/lib.rs                 # Android-only android_main entry point
+  src/activity.rs            # context checks, lifecycle/input polling, logcat
+  packaging/build-apk.sh     # debug APK build helper
   README.md
   docs/
     host-bootstrap.md
     base-library-build.md
     focus-3-port-audit.md
     focus-3-probe.md
+    focus-3-lifecycle.md
+    validation/              # captured host lifecycle logs
 ```
 
-Start with the [host bootstrap](docs/host-bootstrap.md): add the activity event loop and APK packaging, then verify lifecycle on the headset. Future resources/build helpers belong under `android/packaging/`, with Cargo APK metadata in `android/Cargo.toml`. Do not copy ALVR's unrelated device requirements or package identity into the Mittens manifest.
+Use the [host bootstrap](docs/host-bootstrap.md) to build, install, launch, and capture logs. Cargo APK metadata lives in `android/Cargo.toml`, and resources/build helpers belong under `android/packaging/`. Next, add Android OpenXR loader/instance initialization, followed by the Vulkan capability probe. Do not copy ALVR's unrelated device requirements or package identity into the Mittens manifest.
 
 ## Rendering direction
 
@@ -40,7 +44,7 @@ The GPU and driver perform hardware tiling. **Vulkan dynamic rendering can use t
 
 ## Milestones
 
-1. **Verify window-free startup on desktop first.** Run `cargo run --release --example openxr-only`. Check stereo rendering and session stop/restart using the existing desktop runtime before introducing Android packaging. This is independent of Focus 3 capability validation.
+1. **Retain the desktop XR baseline.** The window-free `openxr-only` example has presented stereo through SteamVR. Explicit session stop/restart remains to test independently of Focus 3 capability validation. Android APK/activity lifecycle has now been verified separately.
 2. **Probe the headset.** Package a small Android/OpenXR Vulkan application and record the [capability report](docs/focus-3-probe.md). Clear both eyes, then draw a triangle. Test passthrough composition separately if required.
 3. **Choose the renderer compatibility path.** Confirm dynamic rendering, supported formats, compute limits, and multiview on the actual firmware. Add a classic render-pass path if dynamic rendering is unavailable.
 4. **Run an embedded Mittens scene on Android.** Adapt the window-free bootstrap to Android loader/lifecycle and the selected Vulkan binding. Drive update/render work from OpenXR frame timing and connect controller input.

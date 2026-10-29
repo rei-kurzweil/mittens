@@ -2,7 +2,7 @@
 
 Plan recorded 2026-10-21. Target: Mittens running locally on a Vive Focus 3,
 hosted by the `mitten-droid` crate at `android/` in this repository. Scaffold
-added 2026-10-29; activity and APK implementation remain outstanding.
+added 2026-10-29; APK/activity lifecycle also verified on Focus 3 that day.
 
 ## Starting point
 
@@ -10,9 +10,9 @@ added 2026-10-29; activity and APK implementation remain outstanding.
   `default-features = false`; this does not establish Android runtime support.
 - Desktop XR-only startup already exists without Winit, a window, or a Vulkan
   surface. Rendering writes/resolves directly into OpenXR swapchain images.
-- The Android host crate is scaffolded at `android/Cargo.toml`, with an
-  Android-only engine dependency and no activity entry point or APK yet.
-  Focus 3 Vulkan session creation and renderer compatibility remain untested.
+- The Android host crate at `android/Cargo.toml` builds an APK and runs its
+  NativeActivity lifecycle on Focus 3. It has an Android-only engine dependency
+  but does not start the engine. OpenXR/Vulkan compatibility remains untested.
 
 Use ALVR's working Android client as the reference for activity/lifecycle,
 loader initialization, and packaging. Its client renderer uses OpenGL ES;
@@ -30,10 +30,10 @@ Supporting details: [base-library build](../../../../android/docs/base-library-b
 - [x] Add the workspace member with an Android-only engine dependency, keeping
   desktop support disabled for that dependency. Keep future Android activity
   dependencies and entry points target-specific as well.
-- [ ] Put manifest metadata in `android/Cargo.toml` and resources/build helpers
+- [x] Put manifest metadata in `android/Cargo.toml` and resources/build helpers
   under `android/packaging/`. Choose one reproducible packaging command, using the
   local ALVR setup as the starting reference.
-- [ ] Add the activity entry point, Android context setup, and logcat logging.
+- [x] Add the activity entry point, Android context setup, and logcat logging.
   Give the app its own package identity; preserve notices for copied code.
 
 **Done when:** a documented command produces an arm64 APK with the native
@@ -42,16 +42,19 @@ dependency. No rendering is required for this slice.
 
 ## Slice 2: Verify startup and activity lifecycle on the Focus 3
 
-- [ ] Document ADB install, launch, log capture, and stop commands with the
+- [x] Document ADB install, launch, log capture, and stop commands with the
   actual package/activity names from slice 1.
-- [ ] Log startup and activity events. Establish which thread owns future XR
-  work and how shutdown stops and joins any workers.
-- [ ] Install and launch on the headset; exercise background/foreground,
+- [x] Log startup and activity events on the application thread. No host workers
+  are created yet; XR frame/queue ownership and worker stop/join coordination
+  must be added when those workers are introduced.
+- [x] Install and launch on the headset; exercise background/foreground,
   repeated launch, and clean shutdown without creating graphics resources.
 
 **Done when:** the APK starts on the Focus 3 and captured logs demonstrate
 that lifecycle handling completes without crashes or hanging workers. Record
 device/firmware identity and separate successful build checks from device tests.
+
+**Verified 2026-10-29:** [build/device results and captured logs](../../../../android/docs/focus-3-lifecycle.md).
 
 ## Slice 3: Initialize Android OpenXR through the engine
 
@@ -115,5 +118,5 @@ optional tracking extensions, mobile rendering quality, and sustained thermal
 performance follow the basic scene. A separate renderer is not assumed in
 advance; compatibility changes follow the headset results from slice 4.
 
-Start with slice 1, then complete slice 2 before introducing OpenXR or Vulkan
-startup failures into the activity/lifecycle test.
+Slices 1 and 2 are complete. Start slice 3 with Android OpenXR initialization;
+keep exact runtime diagnostics and the lifecycle test available during bring-up.

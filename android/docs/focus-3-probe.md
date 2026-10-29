@@ -1,10 +1,10 @@
 # Focus 3 Vulkan/OpenXR probe
 
-This specifies the first Android executable to implement. It is not a completed test or a claim about installed headset capabilities.
+This specifies the OpenXR/Vulkan stage of the Android host. The [APK/activity lifecycle](focus-3-lifecycle.md) has been verified, but the graphics probe below is not a completed test or a claim about installed headset capabilities.
 
 First verify the portable renderer extraction with the desktop
-[`openxr-only` example](../../docs/desktop/xr-only.md). Android packaging and the
-capability checks below follow that desktop milestone.
+[`openxr-only` example](../../docs/desktop/xr-only.md). Extend the existing
+`mitten-droid` packaging with loader integration and the capability checks below.
 
 ## Build and launch
 

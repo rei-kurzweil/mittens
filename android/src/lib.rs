@@ -1,9 +1,17 @@
 //! Android application host for Mittens Engine.
 //!
-//! This crate is the host scaffold: activity/lifecycle handling, Android context
-//! and OpenXR loader initialization, and the XR frame loop will live here.
-//! Portable engine work belongs in `mittens-engine`.
+//! The current host handles NativeActivity lifecycle and input delivery, with
+//! logcat diagnostics. Engine startup, OpenXR, and Vulkan rendering come next.
+//! See `android/docs/host-bootstrap.md` for build and device-test commands.
 //!
-//! There is no `android_main` entry point or APK packaging yet. The next step is
-//! a NativeActivity event loop with logcat diagnostics, before creating any XR
-//! or Vulkan resources. See `android/docs/host-bootstrap.md`.
+//! Portable engine work belongs in `mittens-engine`.
+
+#[cfg(target_os = "android")]
+mod activity;
+
+/// Called by android-activity on its native application thread.
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+fn android_main(app: android_activity::AndroidApp) {
+    activity::run(app);
+}

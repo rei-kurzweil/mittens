@@ -1,10 +1,10 @@
 # Mittens on standalone Android OpenXR headsets
 
-Status: initial investigation 2026-09-28; renderer/platform audit updated 2026-10-19. The portable library checks and builds for Android as of 2026-10-21; APK and Focus 3 Vulkan runtime tests remain outstanding.
+Status: initial investigation 2026-09-28; portable Android library check/build passed 2026-10-21. APK build and NativeActivity lifecycle passed on Focus 3 on 2026-10-29. Android OpenXR/Vulkan runtime tests remain outstanding.
 
 The Android port now has a home in [`android/`](../../../../android/README.md), with a [current source audit](../../../../android/docs/focus-3-port-audit.md) and [Focus 3 capability-probe specification](../../../../android/docs/focus-3-probe.md). This epic preserves the earlier integration investigation. Dynamic rendering can use tile-based GPUs; whether a classic render-pass implementation is needed depends first on the headset's driver capabilities, then measured rendering costs.
 
-Next implementation work is broken into [five focused slices](implementation-slices.md). The `mitten-droid` host crate is scaffolded at `android/`; activity handling and APK packaging come next, followed by headset lifecycle verification before OpenXR/Vulkan bring-up. See the [host bootstrap](../../../../android/docs/host-bootstrap.md).
+Implementation work is broken into [five focused slices](implementation-slices.md). Slices 1 and 2 (host APK and headset activity lifecycle) are verified at `android/`; Android OpenXR initialization is next. See the [host bootstrap](../../../../android/docs/host-bootstrap.md) and [device results](../../../../android/docs/focus-3-lifecycle.md).
 
 ## Desired end state
 
@@ -14,7 +14,7 @@ Next implementation work is broken into [five focused slices](implementation-sli
 
 - The verified Focus 3 ALVR client (`/home/rei/_/ALVR/ALVR`) uses **OpenGL ES**, EGL, `XR_KHR_opengl_es_enable`, and an OpenXR `Session<OpenGlEs>` (`alvr/client_openxr/src/lib.rs`, `graphics.rs`). Its waiting lobby combines an HTC passthrough layer with an alpha blended projection layer. It also probes `XR_HTC_eye_tracker` locally without a stream. This is useful for lifecycle, passthrough, tracker ABI, and Android manifest knowledge, but supplies **no Vulkan context** to reuse.
 - Mittens already has a desktop **Vulkan OpenXR** path. `Universe::init_renderer_for_window` queries OpenXR's Vulkan extension requirements, creates a Vulkano renderer, and passes its raw instance/physical device/device/queue handles back to `OpenXRSystem` (`src/engine/universe.rs:424`, `src/engine/graphics/vulkano_renderer.rs:6608`). `OpenXRSystem` creates `Session<Vulkan>` and its own XR swapchain (`src/engine/ecs/system/openxr_system.rs:2300`, `src/engine/graphics/xr_swapchain.rs`). As of 2026-10-20, the renderer writes/resolves/composites directly into runtime-owned XR image layers, with a completion-only fence submission (`src/engine/graphics/xr_renderer.rs`).
-- The engine now also has `Universe::init_renderer_for_xr` and a [desktop XR-only example](../../../desktop/xr-only.md). This path creates no Winit event loop, window, Vulkan surface, or desktop swapchain. It selects the runtime-required GPU before device creation and uses the actual XR format for scene pipelines. Engine-owned input types and the optional `desktop` feature now permit builds without Winit; Android packaging and runtime validation remain outstanding.
+- The engine now also has `Universe::init_renderer_for_xr` and a [desktop XR-only example](../../../desktop/xr-only.md). This path creates no Winit event loop, window, Vulkan surface, or desktop swapchain. It selects the runtime-required GPU before device creation and uses the actual XR format for scene pipelines. Engine-owned input types and the optional `desktop` feature now permit builds without Winit. Android host packaging/lifecycle is verified; engine/XR runtime validation remains outstanding.
 - Mittens currently pins `openxr 0.19`, `vulkano 0.35`, and `cpal 0.15` (`Cargo.toml`); the ALVR reference uses `openxr 0.21`. Directly sharing their OpenXR types is therefore not a simple copy. Prefer porting the HTC ABI/extension calls into Mittens' selected OpenXR version or deliberately aligning versions after a compatibility check.
 
 ## Vulkan/OpenXR ownership proposal
@@ -49,6 +49,7 @@ Build a tiny Android probe using the known ALVR packaging/loader recipe to log: 
 - [x] Extract window-free Vulkan resources, XR format/pipeline selection, and eye slots; add the desktop `openxr-only` example.
 - [x] Validate desktop stereo presentation: SteamVR/OpenXR 2.16.7, 4x MSAA, bounded run exited successfully; user confirmed headset presentation.
 - [ ] Explicitly exercise session stop/restart with the desktop XR-only example.
+- [x] Build the NativeActivity host APK and verify startup, background/resume, repeated launch, and clean activity destruction on Focus 3.
 - [ ] Capture Focus 3 Vulkan extension/session capability with a tiny Android probe.
 - [ ] Prove Vulkan stereo clear plus HTC passthrough on the headset.
 - [ ] Run an embedded Mittens scene, then wire HMD/controller/hand/eye inputs.
