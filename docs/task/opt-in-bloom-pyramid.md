@@ -7,6 +7,11 @@ for its 1–6 level control, normalized merge, retained-storage tradeoff and tes
 The design notes below describe the original request; the implemented slice
 retains bounded coarse targets to make runtime level changes allocation-free.
 
+Follow-up research: [fast bloom for desktop and XR2-class GPUs](bloom-performance-desktop-and-mobile.md)
+tracks paired bilinear filtering, alternative blur/pyramid paths, HDR versus
+separate emissive-source precision, and measured configuration trade-offs. It
+does not reopen this completed control slice or claim new performance results.
+
 The Sakura rooftop scene needs an optional broader, softer sun glow. Retain the
 current bloom path and defaults. Add an explicit opt-in mode that downsamples the
 emission source repeatedly, filters at smaller resolutions, then upsamples and

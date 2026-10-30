@@ -87,6 +87,11 @@ Mirrors are the planned high-end reflection feature; arbitrary reflective or
 transmissive material bases are not prerequisites for the first renderer.
 90Hz is a performance target, not a result already demonstrated by this scene.
 
+Optional later bloom work is tracked separately in
+[fast bloom research for desktop and XR2-class GPUs](../../docs/task/bloom-performance-desktop-and-mobile.md).
+It does not expand the current opaque slice or make bloom a prerequisite for
+the animated/anime/mirror feature set.
+
 Build toward it in measured slices: validate this opaque scene first, add
 skinning/morph deformation and representative animated geometry, add the light
 and normal inputs needed by an anime-complexity **custom** shader, then mirror
