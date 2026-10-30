@@ -140,6 +140,11 @@ fn run(
     extensions.khr_android_create_instance = true;
     extensions.khr_vulkan_enable2 = enable2;
     extensions.khr_vulkan_enable = !enable2;
+    #[cfg(feature = "mobile-renderer")]
+    {
+        extensions.htc_vive_focus3_controller_interaction =
+            available.htc_vive_focus3_controller_interaction;
+    }
     let instance = entry
         .create_instance(
             &xr::ApplicationInfo {

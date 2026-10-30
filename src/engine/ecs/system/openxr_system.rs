@@ -1,3 +1,6 @@
+#[path = "openxr_tracked_frame.rs"]
+mod tracked_frame;
+
 use super::hand_tracking::{
     HandCoordinateSpace, HandDataSource, HandJoint, HandJointLocation, HandOrientationProvenance,
     HandSampleTime, HandTrackingFrame, HandTrackingProvider, TrackedHand,
@@ -1018,6 +1021,7 @@ pub struct OpenXRSystem {
     controller_components: HashSet<ComponentId>,
     controller_pose_source_last_logged: HashMap<ComponentId, ControllerPoseSource>,
 
+    external_frame: Option<super::external_xr_frame::ExternalXrFrame>,
     xr_input_state: XrInputState,
     xr_gamepad_state: XrGamepadState,
     xr_gamepad_state_last_logged: XrGamepadState,
@@ -1623,6 +1627,7 @@ impl Default for OpenXRSystem {
             controller_components: HashSet::new(),
             controller_pose_source_last_logged: HashMap::new(),
 
+            external_frame: None,
             xr_input_state: XrInputState::default(),
             xr_gamepad_state: XrGamepadState::default(),
             xr_gamepad_state_last_logged: XrGamepadState::default(),
@@ -2062,6 +2067,17 @@ impl OpenXRSystem {
 
     /// Refresh eyes after ancestor/contact changes using this frame's raw eye offsets.
     pub fn publish_eye_cameras(&self, world: &World, visuals: &mut VisualWorld) -> bool {
+        if let Some(frame) = self.external_frame {
+            let eyes = frame.views.as_ref().and_then(|views| {
+                Self::eye_cameras(world, visuals, Self::derive_head_pose(views)?, views)
+            });
+            if let Some(eyes) = eyes {
+                visuals.set_xr_camera(eyes);
+                return true;
+            }
+            visuals.set_xr_camera(Vec::new());
+            return false;
+        }
         let Some(sess) = self.state.as_ref().and_then(|state| state.session.as_ref()) else {
             return false;
         };
@@ -2308,7 +2324,7 @@ impl OpenXRSystem {
             return;
         }
 
-        if self.state.is_some() {
+        if self.state.is_some() || self.external_frame.is_some() {
             return;
         }
 
@@ -2436,153 +2452,6 @@ impl OpenXRSystem {
                     // Too noisy to print everything by default.
                 }
             }
-        }
-    }
-
-    /// Like `tick`, but also queues transform updates for registered ControllerXRComponents.
-    ///
-    /// Head and controller poses share the sample located by `prepare_frame`.
-    pub fn tick_with_queue(
-        &mut self,
-        world: &mut World,
-        visuals: &mut VisualWorld,
-        _input: &InputState,
-        emit: &mut dyn SignalEmitter,
-        _dt_sec: f32,
-    ) {
-        // Validity is frame-local. Consumers must not solve against stale/default XR transforms.
-        for component in self.input_xr_components.iter().copied().collect::<Vec<_>>() {
-            if let Some(input) = world.get_component_by_id_as_mut::<InputXRComponent>(component) {
-                input.pose_valid = false;
-            }
-        }
-        for component in self
-            .controller_components
-            .iter()
-            .copied()
-            .collect::<Vec<_>>()
-        {
-            if let Some(controller) = world.get_component_by_id_as_mut::<XRHandComponent>(component)
-            {
-                controller.pose_valid = false;
-                controller.active_pose_source = ControllerPoseSource::None;
-                controller.raw_aim_rotation = None;
-                controller.raw_grip_rotation = None;
-            }
-        }
-
-        let Some(state) = self.state.as_ref() else {
-            return;
-        };
-        let Some(sess) = state.session.as_ref() else {
-            return;
-        };
-        if !sess.running {
-            return;
-        }
-        if !matches!(
-            sess.current_state,
-            openxr::SessionState::VISIBLE | openxr::SessionState::FOCUSED
-        ) {
-            return;
-        }
-
-        let input_xr_ids: Vec<ComponentId> = self.input_xr_components.iter().copied().collect();
-        for input_xr_cid in input_xr_ids {
-            let Some(cfg) = world.get_component_by_id_as::<InputXRComponent>(input_xr_cid) else {
-                self.input_xr_components.remove(&input_xr_cid);
-                continue;
-            };
-
-            if !cfg.enabled {
-                continue;
-            }
-
-            let Some(head_pose) = sess.head_pose_cache else {
-                continue;
-            };
-
-            Self::drive_head_pose(
-                world,
-                input_xr_cid,
-                head_pose,
-                self.floor_correction_meters,
-                emit,
-            );
-        }
-
-        let Some(raw_head) = sess.head_pose_cache else {
-            return;
-        };
-        let Some(rig_world) = Self::tracking_world_frame(world, visuals, raw_head) else {
-            return;
-        };
-
-        let controller_ids: Vec<ComponentId> = self.controller_components.iter().copied().collect();
-        for controller_cid in controller_ids {
-            let Some(cfg) = world.get_component_by_id_as::<XRHandComponent>(controller_cid) else {
-                self.controller_components.remove(&controller_cid);
-                continue;
-            };
-
-            if !cfg.enabled {
-                continue;
-            }
-
-            let (pose, pose_source) = Self::preferred_pose(
-                &sess.controller_pose_cache,
-                &sess.hand_root_pose_cache,
-                cfg.hand,
-                cfg.pose,
-            );
-            let (raw_aim, raw_grip) = match cfg.hand {
-                ControllerHand::Left => (
-                    sess.controller_pose_cache
-                        .left_aim
-                        .map(|sample| sample.pose),
-                    sess.controller_pose_cache
-                        .left_grip
-                        .map(|sample| sample.pose),
-                ),
-                ControllerHand::Right => (
-                    sess.controller_pose_cache
-                        .right_aim
-                        .map(|sample| sample.pose),
-                    sess.controller_pose_cache
-                        .right_grip
-                        .map(|sample| sample.pose),
-                ),
-            };
-            let last_pose_source = self
-                .controller_pose_source_last_logged
-                .get(&controller_cid)
-                .copied();
-            if openxr_debug_enabled() && last_pose_source != Some(pose_source) {
-                let hand_data_source = match cfg.hand {
-                    ControllerHand::Left => sess.hand_root_pose_cache.left_data_source,
-                    ControllerHand::Right => sess.hand_root_pose_cache.right_data_source,
-                };
-                eprintln!(
-                    "[OpenXR][ctlxr] component={controller_cid:?} hand={:?} pose={:?} source={pose_source:?} hand_data_source={hand_data_source:?}",
-                    cfg.hand, cfg.pose
-                );
-                self.controller_pose_source_last_logged
-                    .insert(controller_cid, pose_source);
-            }
-
-            if let Some(controller) =
-                world.get_component_by_id_as_mut::<XRHandComponent>(controller_cid)
-            {
-                controller.active_pose_source = pose_source;
-                controller.raw_aim_rotation = raw_aim.map(Self::quat_from_posef);
-                controller.raw_grip_rotation = raw_grip.map(Self::quat_from_posef);
-            }
-
-            let Some(pose) = pose else {
-                continue;
-            };
-
-            Self::drive_controller_pose(world, controller_cid, pose, rig_world, emit);
         }
     }
 
@@ -3882,6 +3751,13 @@ impl OpenXRSystem {
         visuals: &mut VisualWorld,
         floor_correction_meters: f32,
     ) {
+        if let Some(frame) = self.external_frame {
+            self.floor_correction_meters = floor_correction_meters;
+            self.xr_input_state = frame.input;
+            self.xr_gamepad_state = frame.gamepad;
+            self.hand_tracking_frame = None;
+            return;
+        }
         let profile = Self::profile_systems_enabled();
         let perf_enabled = self.vr_perf.is_some();
         let started = Instant::now();

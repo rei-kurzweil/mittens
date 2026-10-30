@@ -15,6 +15,10 @@ void main() {
     vec3 gradient = mix(sky.low_color, sky.high_color, t);
     float radius = max(sky.sun_angular_radius, 0.0001);
     float alignment = dot(direction, normalize(sky.sun_direction));
-    float disc = smoothstep(cos(radius * 1.15), cos(radius * 0.85), alignment);
-    f_color = vec4(mix(gradient, sky.sun_color, clamp(disc * sky.sun_strength, 0.0, 1.0)), 1.0);
+    float glow = smoothstep(cos(radius * 2.0), cos(radius), alignment);
+    vec3 background = mix(gradient, sky.sun_color, clamp(glow * sky.sun_strength, 0.0, 1.0));
+    float edge = alignment - cos(radius);
+    float aa = max(fwidth(edge), 0.000001);
+    float disc = smoothstep(-aa, aa, edge);
+    f_color = vec4(mix(background, vec3(1.0), disc), 1.0);
 }

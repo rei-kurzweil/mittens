@@ -335,7 +335,15 @@ impl TextSystem {
                     .get_component_by_id_as::<TextureComponent>(ch)
                     .and_then(|t| t.uri().map(|s| s.to_string()))
             })
-            .unwrap_or_else(|| "assets/textures/font_system.dds".to_string());
+            .unwrap_or_else(|| {
+                if crate::engine::runtime_assets::configured() {
+                    crate::engine::runtime_assets::path("assets/textures/font_system.png")
+                        .to_string_lossy()
+                        .into_owned()
+                } else {
+                    "assets/textures/font_system.dds".into()
+                }
+            });
         // If the TextComponent has an immediate TextureFilteringComponent child,
         // propagate it to all glyph renderables we spawn.
         let inherited_filtering = world.children_of(component).iter().find_map(|&ch| {

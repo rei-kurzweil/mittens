@@ -1,5 +1,6 @@
 //! Application-owned, classic-pass opaque surface renderer for mobile Vulkan.
 //! The engine supplies retained materials, transforms and the ordered draw stream.
+mod gpu_timing;
 mod materials;
 mod pass;
 mod pipeline;
@@ -42,6 +43,10 @@ pub(crate) struct Stats {
     pub textures: usize,
     pub instance_capacity: usize,
     pub lights: usize,
+    pub cpu_prepare_ms: f64,
+    pub cpu_record_ms: f64,
+    pub gpu_wait_ms: f64,
+    pub gpu_ms: Option<f64>,
 }
 pub(crate) struct SceneRenderer {
     gpu: Arc<Gpu>,
@@ -54,6 +59,7 @@ pub(crate) struct SceneRenderer {
     textures: Vec<Image>,
     instance_buffer: Buffer,
     instances: Vec<Draw>,
+    gpu_timing: Option<gpu_timing::GpuTiming>,
 }
 impl Drop for SceneRenderer {
     fn drop(&mut self) {
@@ -89,6 +95,7 @@ impl SceneRenderer {
             64 * std::mem::size_of::<Draw>(),
             vk::BufferUsageFlags::VERTEX_BUFFER,
         )?;
+        let gpu_timing = gpu_timing::GpuTiming::new(gpu.clone())?;
         let mut renderer = Self {
             gpu,
             pass,
@@ -97,6 +104,7 @@ impl SceneRenderer {
             textures: Vec::new(),
             instance_buffer,
             instances: Vec::with_capacity(64),
+            gpu_timing,
             pool: vk::CommandPool::null(),
             command: vk::CommandBuffer::null(),
             fence: vk::Fence::null(),
@@ -159,6 +167,7 @@ impl SceneRenderer {
         visuals: &VisualWorld,
         cameras: &[EyeCamera; 2],
     ) -> Result<Stats> {
+        let prepare_start = std::time::Instant::now();
         if index >= self.pass.target_count() {
             return Err("eye target index out of range".into());
         }
@@ -171,12 +180,12 @@ impl SceneRenderer {
         // or selecting a legacy program. Every retained instance is checked,
         // including ones placed in phases other than the opaque stream.
         for instance in visuals.instances() {
-            if instance.opacity != 1.0
-                || instance.color[3] != 1.0
-                || instance.transparent_cutout
+            if instance.transparent_cutout
                 || instance.overlay
                 || instance.background_occluded_lit
                 || instance.emissive != 0.0
+                || (instance.multiple_layers
+                    && (instance.opacity < 0.999 || instance.color[3] < 0.999))
                 || instance.toon_outline.is_some()
                 || instance.bones_count != 0
                 || instance.deformed_count != 0
@@ -210,12 +219,17 @@ impl SceneRenderer {
         self.materials.collect(&visuals.materials)?;
         self.materials.update_lights(visuals.lights())?;
         let (ops, indices) = visuals.opaque_stream();
-        if ops.iter().any(|op| !matches!(op, RenderOp::DrawBatch(_))) {
+        let (transparent_ops, transparent_indices) = visuals.transparent_single_stream();
+        if ops
+            .iter()
+            .chain(transparent_ops)
+            .any(|op| !matches!(op, RenderOp::DrawBatch(_)))
+        {
             return Err("stencil clips are unsupported by the mobile opaque pass".into());
         }
         // Upload/compile work happens before recording the pass. Resources and
         // descriptors are retained between frames, and shared by both eyes.
-        for (background, batch, _) in batches(visuals) {
+        for (background, transparent, batch, _) in batches(visuals) {
             if batch.stencil_ref != 0 {
                 return Err("stencil clips are unsupported".into());
             }
@@ -236,6 +250,7 @@ impl SceneRenderer {
                 self.pass.samples,
                 texture,
                 background,
+                transparent,
             )?;
         }
         for (eye, camera) in cameras.iter().enumerate() {
@@ -252,11 +267,14 @@ impl SceneRenderer {
                 .background_order()
                 .iter()
                 .chain(indices)
+                .chain(transparent_indices)
                 .map(|&index| {
                     let instance = &visuals.instances()[index as usize];
+                    let mut color = instance.color;
+                    color[3] *= instance.opacity;
                     Draw {
                         model: instance.transform.matrix_world,
-                        color: instance.color,
+                        color,
                     }
                 }),
         );
@@ -271,6 +289,8 @@ impl SceneRenderer {
         self.instance_buffer
             .write(unsafe { bytes(&self.instances) })?;
         let mut stats = Stats::default();
+        stats.cpu_prepare_ms = prepare_start.elapsed().as_secs_f64() * 1000.0;
+        let record_start = std::time::Instant::now();
         unsafe {
             let device = &self.gpu.device;
             device
@@ -283,10 +303,13 @@ impl SceneRenderer {
                         .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
                 )
                 .api("begin scene commands")?;
+            if let Some(timing) = &self.gpu_timing {
+                timing.start(self.command);
+            }
             for eye in 0..2 {
                 self.pass
                     .begin(self.command, index, eye, visuals.clear_color());
-                for (background, batch, base) in batches(visuals) {
+                for (background, transparent, batch, base) in batches(visuals) {
                     let key = (
                         batch.material_instance.unwrap(),
                         batch.texture,
@@ -295,7 +318,8 @@ impl SceneRenderer {
                     // Asynchronous custom compilation may still be pending on
                     // the first frames. Show the clear until it is ready.
                     let Some((pipeline, set)) =
-                        self.materials.binding(&visuals.materials, key, background)
+                        self.materials
+                            .binding(&visuals.materials, key, background, transparent)
                     else {
                         continue;
                     };
@@ -341,12 +365,17 @@ impl SceneRenderer {
                 }
                 device.cmd_end_render_pass(self.command);
             }
+            if let Some(timing) = &self.gpu_timing {
+                timing.end(self.command);
+            }
             device
                 .end_command_buffer(self.command)
                 .api("end scene commands")?;
             device
                 .reset_fences(&[self.fence])
                 .api("reset scene fence")?;
+            stats.cpu_record_ms = record_start.elapsed().as_secs_f64() * 1000.0;
+            let wait_start = std::time::Instant::now();
             device
                 .queue_submit(
                     self.gpu.queue,
@@ -359,7 +388,12 @@ impl SceneRenderer {
             device
                 .wait_for_fences(&[self.fence], true, u64::MAX)
                 .api("complete scene before XR release")?;
+            stats.gpu_wait_ms = wait_start.elapsed().as_secs_f64() * 1000.0;
         }
+        stats.gpu_ms = self
+            .gpu_timing
+            .as_ref()
+            .and_then(gpu_timing::GpuTiming::elapsed_ms);
         (stats.pipelines, stats.bindings) = self.materials.counts();
         stats.meshes = self.meshes.len();
         stats.textures = self.textures.len();
@@ -432,19 +466,30 @@ impl TextureUploader for SceneRenderer {
     }
 }
 
-fn batches(visuals: &VisualWorld) -> impl Iterator<Item = (bool, &DrawBatch, usize)> {
+fn batches(visuals: &VisualWorld) -> impl Iterator<Item = (bool, bool, &DrawBatch, usize)> {
     let base = visuals.background_order().len();
+    let transparent_base = base + visuals.opaque_stream().1.len();
     visuals
         .background_batches()
         .iter()
-        .map(|batch| (true, batch, 0))
+        .map(|batch| (true, false, batch, 0))
         .chain(
             visuals
                 .opaque_stream()
                 .0
                 .iter()
                 .filter_map(move |op| match op {
-                    RenderOp::DrawBatch(batch) => Some((false, batch, base)),
+                    RenderOp::DrawBatch(batch) => Some((false, false, batch, base)),
+                    _ => None,
+                }),
+        )
+        .chain(
+            visuals
+                .transparent_single_stream()
+                .0
+                .iter()
+                .filter_map(move |op| match op {
+                    RenderOp::DrawBatch(batch) => Some((false, true, batch, transparent_base)),
                     _ => None,
                 }),
         )

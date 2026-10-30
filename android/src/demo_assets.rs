@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 pub(crate) enum DemoScene {
     Cubes,
     SakuraStage,
+    SakuraLean,
+    SakuraCollision,
 }
 pub(crate) struct SceneSource {
     pub source: String,
@@ -19,6 +21,8 @@ macro_rules! bundle {
 }
 const STAGE_FILES: &[(&str, &[u8])] = bundle![
     "android/examples/sakura-stage.mms",
+    "android/examples/sakura-stage-lean.mms",
+    "android/examples/sakura-stage-collision.mms",
     "android/shaders/sakura-sky.frag",
     "assets/components/studio_stage.mms",
     "assets/components/truss.mms",
@@ -31,6 +35,15 @@ const STAGE_FILES: &[(&str, &[u8])] = bundle![
     "assets/shaders/anime-surface.frag",
     "assets/textures/pool/white-tiles-surface.png",
     "assets/textures/pool/chrome-matcap.png",
+    "assets/models/sakura-machine-pistol.glb",
+    "assets/components/internal/panels.mms",
+    "assets/components/internal/panel_items.mms",
+    "assets/components/internal/assets_content.mms",
+    "assets/components/internal/asset_item.mms",
+    "assets/components/internal/ui/accordion.mms",
+    "assets/components/icons.mms",
+    "assets/components/materials/ui_unlit.mms",
+    "assets/shaders/ui-unlit.frag",
 ];
 pub(crate) fn install(directory: &Path, scene: DemoScene) -> Result<SceneSource> {
     let root = directory.join("mittens-demo");
@@ -54,7 +67,7 @@ pub(crate) fn install(directory: &Path, scene: DemoScene) -> Result<SceneSource>
                 label: "two MMS cubes",
             })
         }
-        DemoScene::SakuraStage => {
+        DemoScene::SakuraStage | DemoScene::SakuraLean | DemoScene::SakuraCollision => {
             for &(relative, bytes) in STAGE_FILES {
                 let target = root.join(relative);
                 std::fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
@@ -71,12 +84,31 @@ pub(crate) fn install(directory: &Path, scene: DemoScene) -> Result<SceneSource>
                     std::fs::write(target, bytes).map_err(|e| e.to_string())?;
                 }
             }
-            let path = root.join("android/examples/sakura-stage.mms");
+            let font = root.join("assets/textures/font_system.png");
+            std::fs::create_dir_all(font.parent().unwrap()).map_err(|e| e.to_string())?;
+            std::fs::write(font, include_bytes!("../assets/font_system.png"))
+                .map_err(|e| e.to_string())?;
+            let (relative, label) = match scene {
+                DemoScene::SakuraStage => (
+                    "android/examples/sakura-stage.mms",
+                    "Sakura rooftop stage: UI and collision",
+                ),
+                DemoScene::SakuraLean => (
+                    "android/examples/sakura-stage-lean.mms",
+                    "Sakura rooftop stage: no UI, no collision",
+                ),
+                DemoScene::SakuraCollision => (
+                    "android/examples/sakura-stage-collision.mms",
+                    "Sakura rooftop stage: collision, no UI",
+                ),
+                DemoScene::Cubes => unreachable!(),
+            };
+            let path = root.join(relative);
             let source = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
             Ok(SceneSource {
                 source,
                 path,
-                label: "Sakura rooftop sound stage",
+                label,
             })
         }
     }

@@ -679,70 +679,34 @@ pub fn build_placeholder_panel_component_expr(title_name: &str, title: &str) -> 
 }
 
 pub fn world_panel_asset_path() -> &'static str {
-    concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/assets/components/internal/panels.mms"
-    )
+    super::editor_asset_paths::panels()
 }
-
 pub fn icons_asset_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/components/icons.mms")
+    super::editor_asset_paths::icons()
 }
-
 pub fn world_panel_status_asset_path() -> &'static str {
-    concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/assets/components/internal/panel_items.mms"
-    )
+    super::editor_asset_paths::items()
 }
-
 pub fn inspector_panel_asset_path() -> &'static str {
-    concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/assets/components/internal/panels.mms"
-    )
+    super::editor_asset_paths::panels()
 }
-
 pub fn inspector_details_asset_path() -> &'static str {
-    concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/assets/components/internal/inspector_details.mms"
-    )
+    super::editor_asset_paths::details()
 }
-
 pub fn asset_panel_asset_path() -> &'static str {
-    concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/assets/components/internal/panels.mms"
-    )
+    super::editor_asset_paths::panels()
 }
-
 pub fn paint_panel_asset_path() -> &'static str {
-    concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/assets/components/internal/panels.mms"
-    )
+    super::editor_asset_paths::panels()
 }
-
 pub fn grid_panel_asset_path() -> &'static str {
-    concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/assets/components/internal/panels.mms"
-    )
+    super::editor_asset_paths::panels()
 }
-
 pub fn editor_settings_panel_asset_path() -> &'static str {
-    concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/assets/components/internal/panels.mms"
-    )
+    super::editor_asset_paths::panels()
 }
-
 pub fn pose_panel_asset_path() -> &'static str {
-    concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/assets/components/internal/panels.mms"
-    )
+    super::editor_asset_paths::panels()
 }
 
 /// Default restoration metadata for the eight built-in editor panel bodies.

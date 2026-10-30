@@ -46,6 +46,7 @@ impl Pipeline {
         fragment: &[u32],
         sample_count: vk::SampleCountFlags,
         background: bool,
+        transparent: bool,
     ) -> Result<Self> {
         let words = ash::util::read_spv(&mut Cursor::new(include_bytes!(concat!(
             env!("OUT_DIR"),
@@ -133,10 +134,17 @@ impl Pipeline {
             vk::PipelineMultisampleStateCreateInfo::default().rasterization_samples(sample_count);
         let depth = vk::PipelineDepthStencilStateCreateInfo::default()
             .depth_test_enable(true)
-            .depth_write_enable(!background)
+            .depth_write_enable(!background && !transparent)
             .depth_compare_op(vk::CompareOp::LESS_OR_EQUAL);
         let colors = [vk::PipelineColorBlendAttachmentState::default()
-            .color_write_mask(vk::ColorComponentFlags::RGBA)];
+            .color_write_mask(vk::ColorComponentFlags::RGBA)
+            .blend_enable(transparent)
+            .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+            .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+            .color_blend_op(vk::BlendOp::ADD)
+            .src_alpha_blend_factor(vk::BlendFactor::ONE)
+            .dst_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+            .alpha_blend_op(vk::BlendOp::ADD)];
         let blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&colors);
         let states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
         let dynamic = vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&states);

@@ -11,3 +11,4 @@ docs/.debug/*.log
 # so the default `io_working_dir` resolves without manual setup.
 /data/*
 !/data/.gitkeep
+assets/models/tmp

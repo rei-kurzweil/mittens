@@ -19,6 +19,8 @@ pub(super) struct XrSession {
     // Declaration order is destruction order: views/framebuffers before the XR
     // images, all XR session references before the shared Vulkan device.
     renderer: FrameRenderer,
+    #[cfg(feature = "mobile-renderer")]
+    controllers: crate::xr_controllers::Controllers,
     swapchain: xr::Swapchain<xr::Vulkan>,
     space: xr::Space,
     frames: xr::FrameStream<xr::Vulkan>,
@@ -56,6 +58,8 @@ impl XrSession {
         }
         .api("xrCreateSession(Vulkan)")?;
         report.line("xrCreateSession(Vulkan) SUCCESS");
+        #[cfg(feature = "mobile-renderer")]
+        let controllers = crate::xr_controllers::Controllers::new(instance, &session, report)?;
         report.line(format!(
             "reference_spaces={:?}",
             session
@@ -169,6 +173,8 @@ impl XrSession {
         report.line(format!("graphics resources SUCCESS; blend={blend:?}"));
         Ok(Self {
             renderer,
+            #[cfg(feature = "mobile-renderer")]
+            controllers,
             swapchain,
             space,
             frames,
@@ -324,6 +330,13 @@ impl XrSession {
         if views.len() != 2 {
             return Err("xrLocateViews returned an unexpected view count".into());
         }
+        #[cfg(feature = "mobile-renderer")]
+        self.renderer.set_external_frame(self.controllers.sample(
+            &self.session,
+            &self.space,
+            time,
+            [views[0], views[1]],
+        ));
         let index = self
             .swapchain
             .acquire_image()

@@ -431,6 +431,10 @@ pub(crate) fn handle_editor_settings_panel_click(
             .iter()
             .copied()
             .find(|&child| world.component_label(child) == Some(EDITOR_SETTINGS_PAYLOAD_NAME))
+            .or_else(|| world.children_of(component_id).iter().copied().filter(|&child| {
+                world.get_component_by_id_as::<crate::engine::ecs::component::OptionComponent>(child).is_some()
+            }).find_map(|option| world.children_of(option).iter().copied()
+                .find(|&child| world.component_label(child) == Some(EDITOR_SETTINGS_PAYLOAD_NAME))))
         else {
             current = world.parent_of(component_id);
             continue;

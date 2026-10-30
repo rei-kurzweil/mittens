@@ -1,0 +1,17 @@
+Focus 3 collision-only scene profile, captured while worn, 2026-10-30.
+Debug APK; runtime-recommended resolution; 4x MSAA; editor UI absent.
+Times are rolling-window averages in milliseconds. GPU timestamps span both eye passes.
+XR eye resolution requested=None recommended=1712x1712 selected=1712x1712
+XR swapchain format=R8G8B8A8_SRGB extent=1712x1712 samples=1 layers=2 images=3
+mobile scene loaded: Sakura rooftop stage: collision, no UI; custom opaque materials, ambient/directional/point/spot lights, plain sky; no legacy pipelines
+session_state=FOCUSED
+FRAME_PROFILE samples=120 predicted_interval_ms=23.95 update_cpu_ms=6.41 assets_cpu_ms=1.99 renderer_prepare_cpu_ms=0.10 record_cpu_ms=0.30 submit_and_fence_wait_ms=13.12 gpu_eye_pass_ms=Some(12.722786147718427) gpu_samples=120 max_update_cpu_ms=9.52 max_gpu_eye_pass_ms=18.05 draws=20 instances=62
+FRAME_PROFILE samples=120 predicted_interval_ms=27.10 update_cpu_ms=6.99 assets_cpu_ms=2.10 renderer_prepare_cpu_ms=0.09 record_cpu_ms=0.30 submit_and_fence_wait_ms=15.64 gpu_eye_pass_ms=Some(15.192397198536298) gpu_samples=120 max_update_cpu_ms=9.58 max_gpu_eye_pass_ms=18.72 draws=20 instances=62
+FRAME_PROFILE samples=120 predicted_interval_ms=25.99 update_cpu_ms=6.73 assets_cpu_ms=2.12 renderer_prepare_cpu_ms=0.09 record_cpu_ms=0.33 submit_and_fence_wait_ms=14.82 gpu_eye_pass_ms=Some(14.392863797917272) gpu_samples=120 max_update_cpu_ms=8.92 max_gpu_eye_pass_ms=16.17 draws=20 instances=62
+FRAME_PROFILE samples=120 predicted_interval_ms=26.08 update_cpu_ms=6.73 assets_cpu_ms=2.11 renderer_prepare_cpu_ms=0.09 record_cpu_ms=0.31 submit_and_fence_wait_ms=15.02 gpu_eye_pass_ms=Some(14.54839808231449) gpu_samples=120 max_update_cpu_ms=9.75 max_gpu_eye_pass_ms=15.79 draws=20 instances=62
+FRAME_PROFILE samples=120 predicted_interval_ms=24.60 update_cpu_ms=6.71 assets_cpu_ms=2.08 renderer_prepare_cpu_ms=0.09 record_cpu_ms=0.30 submit_and_fence_wait_ms=13.56 gpu_eye_pass_ms=Some(13.125808707323454) gpu_samples=120 max_update_cpu_ms=9.76 max_gpu_eye_pass_ms=15.00 draws=20 instances=62
+FRAME_PROFILE samples=120 predicted_interval_ms=19.86 update_cpu_ms=5.69 assets_cpu_ms=1.97 renderer_prepare_cpu_ms=0.10 record_cpu_ms=0.32 submit_and_fence_wait_ms=10.20 gpu_eye_pass_ms=Some(9.735291428988644) gpu_samples=120 max_update_cpu_ms=8.53 max_gpu_eye_pass_ms=14.94 draws=20 instances=62
+FRAME_PROFILE samples=120 predicted_interval_ms=26.64 update_cpu_ms=6.99 assets_cpu_ms=2.07 renderer_prepare_cpu_ms=0.09 record_cpu_ms=0.31 submit_and_fence_wait_ms=15.41 gpu_eye_pass_ms=Some(14.963328627739902) gpu_samples=120 max_update_cpu_ms=10.15 max_gpu_eye_pass_ms=18.27 draws=20 instances=62
+FRAME_PROFILE samples=120 predicted_interval_ms=25.06 update_cpu_ms=6.70 assets_cpu_ms=2.09 renderer_prepare_cpu_ms=0.09 record_cpu_ms=0.30 submit_and_fence_wait_ms=14.09 gpu_eye_pass_ms=Some(13.64774619458084) gpu_samples=120 max_update_cpu_ms=8.87 max_gpu_eye_pass_ms=16.46 draws=20 instances=62
+FRAME_PROFILE samples=120 predicted_interval_ms=22.46 update_cpu_ms=6.33 assets_cpu_ms=2.09 renderer_prepare_cpu_ms=0.09 record_cpu_ms=0.32 submit_and_fence_wait_ms=11.91 gpu_eye_pass_ms=Some(11.467385136701202) gpu_samples=120 max_update_cpu_ms=9.43 max_gpu_eye_pass_ms=13.84 draws=20 instances=62
+FRAME_PROFILE samples=120 predicted_interval_ms=22.18 update_cpu_ms=6.32 assets_cpu_ms=2.08 renderer_prepare_cpu_ms=0.09 record_cpu_ms=0.33 submit_and_fence_wait_ms=11.65 gpu_eye_pass_ms=Some(11.202830889687823) gpu_samples=120 max_update_cpu_ms=8.46 max_gpu_eye_pass_ms=13.96 draws=20 instances=62

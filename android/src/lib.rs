@@ -11,6 +11,8 @@ mod activity;
 
 #[cfg(all(target_os = "android", feature = "mobile-renderer"))]
 mod demo_assets;
+#[cfg(all(target_os = "android", feature = "mobile-renderer"))]
+mod frame_profile;
 #[cfg(all(target_os = "android", feature = "vulkan-probe"))]
 mod frame_renderer;
 #[cfg(all(target_os = "android", feature = "vulkan-probe"))]
@@ -25,6 +27,8 @@ mod scene_runtime;
     not(feature = "mobile-renderer")
 ))]
 mod triangle_probe;
+#[cfg(all(target_os = "android", feature = "mobile-renderer"))]
+mod xr_controllers;
 #[cfg(all(target_os = "android", feature = "xr-probe"))]
 mod xr_host;
 #[cfg(all(target_os = "android", feature = "vulkan-probe"))]

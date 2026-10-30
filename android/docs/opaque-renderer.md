@@ -9,19 +9,19 @@ The follow-up default adds 4x MSAA; see the device validation record for its
 separate install/visual status. Controlled graphics lifecycle tests remain open.
 See the [Focus 3 scene record](focus-3-opaque-results.md).
 
-The default APK now loads the bundled [Sakura rooftop scene](../examples/sakura-stage.mms),
-with the studio stage, plain Sakura gradient sky, tiled tower and eight simple
-neighboring building cubes. It uses custom tile, matcap and anime-style surface
+The default APK now loads the [lean Sakura rooftop scene](../examples/sakura-stage-lean.mms),
+with the studio stage, Sakura sky and sun, tiled tower, pistol table, three
+static pistol models, and eight simple neighboring building cubes. It uses custom tile, matcap and anime-style surface
 definitions with ambient, directional and point lights. The old two-cube scene
 remains available with `--no-default-features --features cube-demo`.
 
 The sky uses the Sakura scene's gradient stops and sun direction/radius in a
-single custom background shader. Its sun is a visible opaque disc; bloom and
+single custom background shader. Its white, antialiased sun disc has a warm halo; bloom and
 emission extraction are not implemented. Background culling is disabled for
 the inside of the sky sphere; the cube's -Z face winding has been corrected.
 GPU readback checks the gradient, sun and cube faces from opposite directions.
 
-`MaterialBase()` supplies an opaque/albedo surface. The backend accepts custom
+`MaterialBase()` supplies an albedo surface. The backend accepts custom
 definition metadata rather than switching on built-in/legacy material handles.
 The custom anime-style surface follows the existing shade/rim idea and adds
 colored lighting; the built-in `MaterialDefinition.anime()` remains unsupported.
@@ -44,9 +44,23 @@ new `SceneRuntime`. There is exactly one XR session and one graphics device.
 `scene_runtime.rs` owns a `Universe` and the new renderer. It loads embedded MMS
 with an app-private fragment source file, updates the engine, calls public
 `SystemWorld::prepare_render` with the application uploader, and prepares the
-shared draw cache. The scene omits `XR`/`InputXR` components. Host-located poses
-become renderer eye cameras after update; full engine tracking/input integration
-still needs the external XR frame-input boundary in [the audit](renderer-boundary.md).
+shared draw cache. The host passes one predicted-time snapshot of views,
+controller aim/grip poses and action state to the engine's XR update phase.
+The engine's `InputXR`, `XRHand`, pointer and gamepad systems consume that frame;
+they do not create another XR session. The current host binds the Focus 3
+controller profile. Articulated hand tracking remains unimplemented.
+
+The lean profiling scene uses left-stick movement without gravity, the player
+capsule, editor UI, or active static colliders. `--features profile-collision`
+enables the avatar-free capsule and static collision without the editor UI; the
+preserved UI-and-collision variant can be built with `--features profile-ui`.
+The latter two variants have an avatar-free
+fixed-height slide capsule, gravity and velocity; B jumps when grounded. A synthetic
+engine test covers standing, stick movement, a wall, jumping, landing and tracking
+loss. The capsule follows the locomotion root, not physical room-scale head
+translation or crouching. Its settings-only `EditorUI` and empty `Editor` root
+are separate from scene geometry. The pistol models are static and not yet
+grabbable or functional in either variant.
 
 `renderer/` separates allocations/transfers, eye attachments/pass, pipeline
 state, retained material resources, view conversion, and frame recording. Every
@@ -93,8 +107,9 @@ at set 0 binding 1 supplies up to 64 engine lights using the desktop shader ABI;
 ambient light is in the camera block. Plain sky backgrounds render first inside
 the same eye pass, with translation removed and depth writes disabled.
 
-The renderer rejects legacy materials, other bases, non-opaque geometry,
-cutouts, skin/morph data, clips, outlines, extra phases, post-processing,
+The renderer supports single-layer alpha-blended custom surfaces in the same
+render pass, used by the settings UI. It rejects legacy materials, other bases,
+multilayer transparency, cutouts, skin/morph data, clips, outlines, extra phases, post-processing,
 mirrors and BC7 uploads. Standard transmission values alone do not activate
 transmission; material capabilities define that behavior. Directional, point
 and spot light records are passed to custom shaders, which decide how to shade;
@@ -194,10 +209,31 @@ animated-mesh slice, not functionality already enabled in its opaque APK.
 
 ## Verification and next device run
 
+The instrumented scene reports `FRAME_PROFILE` after 90 warmup frames, then
+every 120 rendered frames. It records the predicted presentation interval,
+CPU scene update, asset preparation, renderer preparation and command recording,
+CPU submit/fence-wait time, and GPU timestamps spanning the two eye passes.
+GPU timestamps can be unavailable if the queue lacks timestamp support. Fence
+wait includes queue scheduling and submission; it is not itself a GPU timer.
+These are debug builds unless `--release` is passed to the build script.
+
+On 2026-10-30, while the user wore Focus 3 at 1712×1712 per eye and 4x MSAA,
+the [lean variant](validation/focus-3-lean-profile-2026-10-30.txt) measured
+approximately 3.4–4.0 ms in engine update and 9–15 ms on the GPU for both eyes.
+The [UI-and-collision variant](validation/focus-3-ui-collision-profile-2026-10-30.txt)
+measured approximately 9.6–10.9 ms in engine update and 11–15 ms on the GPU.
+The [collision-only variant](validation/focus-3-collision-profile-debug-2026-10-30.txt)
+measured approximately 5.7–7.0 ms in engine update and 9.7–15 ms on the GPU.
+These runs used debug builds and were not view- or motion-matched, so the
+differences are suggestive rather than controlled attribution. The current host waits for
+GPU completion before releasing the image, so CPU work and GPU completion are
+largely serialized. Predicted intervals do not establish displayed frame rate
+or compositor reprojection behavior.
+
 The desktop GPU smoke harness compiles the **production** backend and app scene
 code. On NVIDIA GTX 1080 it checks stereo parallax, near/far depth occlusion,
 named uniform revision updates, RGBA sampling, batched instances, stable retained
-resource counts across repeated frames, unsupported transparency/legacy rejection,
+resource counts across repeated frames, single-layer blending and legacy rejection,
 and actual embedded MMS startup. It also retains classic/dynamic triangle checks.
 It now exercises both 1x and 4x with single-sample output readback: the flat-color
 test found 0 partially covered pixels at 1x and 281 at 4x. These are coverage
@@ -240,5 +276,5 @@ Build the Sakura stage with `android/packaging/build-apk.sh`. For the preserved
 triangle use `--no-default-features --features vulkan-probe`; for lifecycle-only
 use `--no-default-features`. Install on the Focus 3, confirm the stage and
 world-anchored parallax, inspect attachment and `custom scene GPU complete`
-logs, and explicitly test background/resume/stop/relaunch. Do not enable engine
-controller/HMD drivers until the external tracking integration is implemented.
+logs, and explicitly test background/resume/stop/relaunch. The current controller,
+settings-panel and capsule prototype still needs headset interaction validation.

@@ -22,8 +22,12 @@ impl FrameSetup {
         {
             let scene = if cfg!(feature = "cube-demo") {
                 crate::demo_assets::DemoScene::Cubes
-            } else {
+            } else if cfg!(feature = "profile-ui") {
                 crate::demo_assets::DemoScene::SakuraStage
+            } else if cfg!(feature = "profile-collision") {
+                crate::demo_assets::DemoScene::SakuraCollision
+            } else {
+                crate::demo_assets::DemoScene::SakuraLean
             };
             Ok(Self {
                 scene: crate::scene_runtime::PreparedScene::load(
@@ -50,6 +54,15 @@ impl FrameSetup {
     }
 }
 impl FrameRenderer {
+    #[cfg(feature = "mobile-renderer")]
+    pub fn set_external_frame(
+        &mut self,
+        frame: mittens_engine::engine::ecs::system::external_xr_frame::ExternalXrFrame,
+    ) {
+        match self {
+            Self::Scene(scene) => scene.set_external_frame(frame),
+        }
+    }
     pub fn new(
         gpu: Arc<Gpu>,
         format: vk::Format,

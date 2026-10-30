@@ -1,14 +1,17 @@
 #![allow(dead_code)]
 #[path = "../../../src/demo_assets.rs"]
 mod demo_assets;
+mod editor_click;
+#[path = "../../../src/frame_profile.rs"]
+mod frame_profile;
 #[path = "../../../src/renderer/mod.rs"]
 mod renderer;
 mod scene;
 #[path = "../../../src/scene_runtime.rs"]
 mod scene_runtime;
+mod target;
 #[path = "../../../src/xr_resolution.rs"]
 mod xr_resolution;
-mod target;
 mod xr_host {
     pub type Result<T> = std::result::Result<T, String>;
     pub trait ApiResult<T> {

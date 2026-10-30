@@ -62,6 +62,8 @@ pub fn run(samples: vk::SampleCountFlags) {
     let directory =
         std::env::temp_dir().join(format!("mittens-mobile-scene-{}", std::process::id()));
     std::fs::create_dir_all(&directory).unwrap();
+    crate::demo_assets::install(&directory, crate::demo_assets::DemoScene::SakuraStage).unwrap();
+    mittens_engine::engine::runtime_assets::set_root(&directory.join("mittens-demo")).unwrap();
     let fragment = directory.join("albedo.frag");
     std::fs::write(&fragment, include_str!("../../../assets/albedo.frag")).unwrap();
     let mut universe = Universe::new(World::default());
@@ -310,12 +312,15 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
     println!("PASS GPU minification samples averaged mip levels");
     assert!(universe.visuals.update_opacity(handle, 0.5));
     universe.visuals.prepare_draw_cache();
-    assert!(
-        renderer
-            .draw(0, &universe.visuals, &cameras)
-            .unwrap_err()
-            .contains("opacity=0.5")
-    );
+    renderer.draw(0, &universe.visuals, &cameras).unwrap();
+    let blended = target.pixels();
+    for eye in 0..2 {
+        let center = pixel(&blended, eye, 48, 48);
+        assert!(
+            center[0] > 20 && center[2] > 20 && center[2] < 110,
+            "expected blended near and far surfaces: {center:?}"
+        );
+    }
     assert!(universe.visuals.update_opacity(handle, 1.0));
     universe.visuals.prepare_draw_cache();
     // Legacy geometry cannot silently select a fallback custom pipeline.
@@ -331,7 +336,7 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
     assert!(error.contains("custom"), "{error}");
     renderer.draw(0, &VisualWorld::new(), &cameras).unwrap();
     println!(
-        "PASS custom scene: stereo pixels, depth occlusion, retained uniforms, RGBA texture, batched instancing, stable caches, transparency/legacy rejection; {stats:?}"
+        "PASS custom scene: stereo pixels, depth occlusion, retained uniforms, RGBA texture, batched instancing, blending, stable caches, legacy rejection; {stats:?}"
     );
     // Also load the actual embedded app scene through the production wrapper.
     let mut app = crate::scene_runtime::SceneRuntime::new(
@@ -339,7 +344,8 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
         vk::Format::R8G8B8A8_UNORM,
         target.extent,
         vec![target.handle()],
-        crate::scene_runtime::PreparedScene::load(&directory, crate::demo_assets::DemoScene::Cubes).unwrap(),
+        crate::scene_runtime::PreparedScene::load(&directory, crate::demo_assets::DemoScene::Cubes)
+            .unwrap(),
         &mut crate::xr_host::Report,
     )
     .unwrap();
@@ -372,8 +378,52 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
     assert!(ready, "embedded app scene did not render");
     println!("PASS embedded app MMS scene rendered by production SceneRuntime");
     drop(app);
-    let configured_stage = crate::scene_runtime::PreparedScene::load(&directory, crate::demo_assets::DemoScene::SakuraStage).unwrap();
+    let configured_stage = crate::scene_runtime::PreparedScene::load(
+        &directory,
+        crate::demo_assets::DemoScene::SakuraStage,
+    )
+    .unwrap();
     assert_eq!(configured_stage.desired_xr_resolution(), None);
+    let lean =
+        crate::demo_assets::install(&directory, crate::demo_assets::DemoScene::SakuraLean).unwrap();
+    assert!(lean.source.contains("hand(\"left\")"));
+    assert!(
+        !lean.source.contains("EditorUI")
+            && !lean.source.contains("Zone.capsule_y")
+            && !lean.source.contains("Gravity {")
+    );
+    let prepared_lean = crate::scene_runtime::PreparedScene::load(
+        &directory,
+        crate::demo_assets::DemoScene::SakuraLean,
+    )
+    .unwrap();
+    assert_eq!(prepared_lean.desired_xr_resolution(), None);
+    let mut lean_app = crate::scene_runtime::SceneRuntime::new(
+        gpu.clone(),
+        vk::Format::R8G8B8A8_UNORM,
+        target.extent,
+        vec![target.handle()],
+        prepared_lean,
+        &mut crate::xr_host::Report,
+    )
+    .unwrap();
+    let mut lean_ready = false;
+    for frame in 0..120 {
+        if lean_app
+            .draw(
+                0,
+                &views,
+                openxr::Time::from_nanos(frame * 11_111_111),
+                &mut crate::xr_host::Report,
+            )
+            .unwrap()
+            == "custom_opaque_scene"
+        {
+            lean_ready = true;
+        }
+    }
+    assert!(lean_ready, "lean scene did not render");
+    drop(lean_app);
     let source =
         crate::demo_assets::install(&directory, crate::demo_assets::DemoScene::SakuraStage)
             .unwrap();
@@ -408,9 +458,19 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
                 Some(Err(e)) => panic!("stage shader: {e}"),
             }
         });
+        let pistols: Vec<_> = stage
+            .world
+            .all_components()
+            .filter_map(|id| {
+                stage.world
+            .get_component_by_id_as::<mittens_engine::engine::ecs::component::GLTFComponent>(id)
+            })
+            .collect();
         if !compiling
             && !stage.visuals.background_batches().is_empty()
             && stage.visuals.lights().len() == 3
+            && pistols.len() == 3
+            && pistols.iter().all(|pistol| pistol.spawned)
         {
             complete = true;
             break;
@@ -421,7 +481,15 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
         complete,
         "stage did not prepare its sky, materials and lights"
     );
-    let stats = stage_renderer.draw(0, &stage.visuals, &cameras).unwrap();
+    let stats = stage_renderer.draw(0, &stage.visuals, &cameras).unwrap_or_else(|e| {
+        for instance in stage.visuals.instances().iter().filter(|v| v.emissive != 0.0 || v.material_instance.is_none() || v.stencil_ref != 0 || v.is_stencil_clip || v.transparent_cutout) {
+            let mut current = Some(instance.component);
+            let mut ancestry = Vec::new();
+            while let Some(id) = current { ancestry.push(format!("{:?}:{:?}", id, stage.world.component_label(id))); current = stage.world.parent_of(id); }
+            eprintln!("unsupported candidate emissive={} custom={} clip={} cutout={} ancestry={ancestry:?}", instance.emissive, instance.material_instance.is_some(), instance.stencil_ref, instance.transparent_cutout);
+        }
+        panic!("stage draw: {e}");
+    });
     assert!(
         stats.pipelines >= 4 && stats.textures >= 3 && stats.lights == 3,
         "stage resources missing: {stats:?}"
@@ -440,8 +508,8 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
     );
     let sun = pixel(&pixels, 0, 20, 24);
     assert!(
-        sun[0] > 220 && sun[1] > 160 && sun[2] > 110,
-        "expected warm sun, got {sun:?}"
+        sun[0] > 220 && sun[1] > 200 && sun[2] > 190,
+        "expected white sun disc, got {sun:?}"
     );
     assert!(distinct.len() > 10, "stage render is unexpectedly uniform");
     // Update retained lights directly after engine preparation. Both ambient
@@ -474,4 +542,16 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
         "PASS Sakura stage materials, sky, lights and textures, {stats:?}, colors={}",
         distinct.len()
     );
+    crate::editor_click::click_cursor_mode(&mut stage);
+    stage.systems.prepare_render(
+        &mut stage.world,
+        &mut stage.visuals,
+        &mut stage.render_assets,
+        &mut stage_renderer,
+        &mut stage.command_queue,
+    );
+    stage.visuals.prepare_draw_cache();
+    stage_renderer
+        .draw(0, &stage.visuals, &cameras)
+        .expect("draw after clicking editor settings");
 }
