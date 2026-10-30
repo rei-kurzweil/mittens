@@ -1,0 +1,279 @@
+runtime=InstanceProperties { runtime_version: 2.17.10, runtime_name: "SteamVR/OpenXR" }
+enable2: runtime supplies required Vulkan extensions through xrCreateVulkanInstanceKHR/xrCreateVulkanDeviceKHR
+Vulkan loader=1.4.350 requested_api=1.2.0
+GPU=NVIDIA GeForce GTX 1080 physical=0x55c913cd59d0 API=1.4.312 driver=2435301632 vendor=0x10de device=0x1b80
+Vulkan device extension=VK_KHR_16bit_storage
+Vulkan device extension=VK_KHR_8bit_storage
+Vulkan device extension=VK_KHR_acceleration_structure
+Vulkan device extension=VK_KHR_bind_memory2
+Vulkan device extension=VK_KHR_buffer_device_address
+Vulkan device extension=VK_KHR_calibrated_timestamps
+Vulkan device extension=VK_KHR_copy_commands2
+Vulkan device extension=VK_KHR_create_renderpass2
+Vulkan device extension=VK_KHR_dedicated_allocation
+Vulkan device extension=VK_KHR_deferred_host_operations
+Vulkan device extension=VK_KHR_depth_clamp_zero_one
+Vulkan device extension=VK_KHR_depth_stencil_resolve
+Vulkan device extension=VK_KHR_descriptor_update_template
+Vulkan device extension=VK_KHR_device_group
+Vulkan device extension=VK_KHR_draw_indirect_count
+Vulkan device extension=VK_KHR_driver_properties
+Vulkan device extension=VK_KHR_dynamic_rendering
+Vulkan device extension=VK_KHR_dynamic_rendering_local_read
+Vulkan device extension=VK_KHR_external_fence
+Vulkan device extension=VK_KHR_external_fence_fd
+Vulkan device extension=VK_KHR_external_memory
+Vulkan device extension=VK_KHR_external_memory_fd
+Vulkan device extension=VK_KHR_external_semaphore
+Vulkan device extension=VK_KHR_external_semaphore_fd
+Vulkan device extension=VK_KHR_format_feature_flags2
+Vulkan device extension=VK_KHR_get_memory_requirements2
+Vulkan device extension=VK_KHR_global_priority
+Vulkan device extension=VK_KHR_image_format_list
+Vulkan device extension=VK_KHR_imageless_framebuffer
+Vulkan device extension=VK_KHR_incremental_present
+Vulkan device extension=VK_KHR_index_type_uint8
+Vulkan device extension=VK_KHR_line_rasterization
+Vulkan device extension=VK_KHR_load_store_op_none
+Vulkan device extension=VK_KHR_maintenance1
+Vulkan device extension=VK_KHR_maintenance2
+Vulkan device extension=VK_KHR_maintenance3
+Vulkan device extension=VK_KHR_maintenance4
+Vulkan device extension=VK_KHR_maintenance5
+Vulkan device extension=VK_KHR_maintenance6
+Vulkan device extension=VK_KHR_maintenance7
+Vulkan device extension=VK_KHR_maintenance8
+Vulkan device extension=VK_KHR_map_memory2
+Vulkan device extension=VK_KHR_multiview
+Vulkan device extension=VK_KHR_pipeline_binary
+Vulkan device extension=VK_KHR_pipeline_executable_properties
+Vulkan device extension=VK_KHR_pipeline_library
+Vulkan device extension=VK_KHR_present_id
+Vulkan device extension=VK_KHR_present_wait
+Vulkan device extension=VK_KHR_push_descriptor
+Vulkan device extension=VK_KHR_ray_tracing_maintenance1
+Vulkan device extension=VK_KHR_ray_tracing_pipeline
+Vulkan device extension=VK_KHR_relaxed_block_layout
+Vulkan device extension=VK_KHR_sampler_mirror_clamp_to_edge
+Vulkan device extension=VK_KHR_sampler_ycbcr_conversion
+Vulkan device extension=VK_KHR_separate_depth_stencil_layouts
+Vulkan device extension=VK_KHR_shader_atomic_int64
+Vulkan device extension=VK_KHR_shader_clock
+Vulkan device extension=VK_KHR_shader_draw_parameters
+Vulkan device extension=VK_KHR_shader_expect_assume
+Vulkan device extension=VK_KHR_shader_float16_int8
+Vulkan device extension=VK_KHR_shader_float_controls
+Vulkan device extension=VK_KHR_shader_float_controls2
+Vulkan device extension=VK_KHR_shader_integer_dot_product
+Vulkan device extension=VK_KHR_shader_non_semantic_info
+Vulkan device extension=VK_KHR_shader_relaxed_extended_instruction
+Vulkan device extension=VK_KHR_shader_subgroup_extended_types
+Vulkan device extension=VK_KHR_shader_subgroup_rotate
+Vulkan device extension=VK_KHR_shader_terminate_invocation
+Vulkan device extension=VK_KHR_shared_presentable_image
+Vulkan device extension=VK_KHR_spirv_1_4
+Vulkan device extension=VK_KHR_storage_buffer_storage_class
+Vulkan device extension=VK_KHR_swapchain
+Vulkan device extension=VK_KHR_swapchain_mutable_format
+Vulkan device extension=VK_KHR_synchronization2
+Vulkan device extension=VK_KHR_timeline_semaphore
+Vulkan device extension=VK_KHR_uniform_buffer_standard_layout
+Vulkan device extension=VK_KHR_variable_pointers
+Vulkan device extension=VK_KHR_vertex_attribute_divisor
+Vulkan device extension=VK_KHR_video_decode_h264
+Vulkan device extension=VK_KHR_video_decode_h265
+Vulkan device extension=VK_KHR_video_decode_queue
+Vulkan device extension=VK_KHR_video_encode_h264
+Vulkan device extension=VK_KHR_video_encode_h265
+Vulkan device extension=VK_KHR_video_encode_quantization_map
+Vulkan device extension=VK_KHR_video_encode_queue
+Vulkan device extension=VK_KHR_video_maintenance1
+Vulkan device extension=VK_KHR_video_maintenance2
+Vulkan device extension=VK_KHR_video_queue
+Vulkan device extension=VK_KHR_vulkan_memory_model
+Vulkan device extension=VK_KHR_workgroup_memory_explicit_layout
+Vulkan device extension=VK_KHR_zero_initialize_workgroup_memory
+Vulkan device extension=VK_EXT_4444_formats
+Vulkan device extension=VK_EXT_attachment_feedback_loop_dynamic_state
+Vulkan device extension=VK_EXT_attachment_feedback_loop_layout
+Vulkan device extension=VK_EXT_blend_operation_advanced
+Vulkan device extension=VK_EXT_border_color_swizzle
+Vulkan device extension=VK_EXT_buffer_device_address
+Vulkan device extension=VK_EXT_calibrated_timestamps
+Vulkan device extension=VK_EXT_color_write_enable
+Vulkan device extension=VK_EXT_conditional_rendering
+Vulkan device extension=VK_EXT_conservative_rasterization
+Vulkan device extension=VK_EXT_custom_border_color
+Vulkan device extension=VK_EXT_depth_bias_control
+Vulkan device extension=VK_EXT_depth_clamp_control
+Vulkan device extension=VK_EXT_depth_clamp_zero_one
+Vulkan device extension=VK_EXT_depth_clip_control
+Vulkan device extension=VK_EXT_depth_clip_enable
+Vulkan device extension=VK_EXT_depth_range_unrestricted
+Vulkan device extension=VK_EXT_descriptor_buffer
+Vulkan device extension=VK_EXT_descriptor_indexing
+Vulkan device extension=VK_EXT_device_address_binding_report
+Vulkan device extension=VK_EXT_device_fault
+Vulkan device extension=VK_EXT_discard_rectangles
+Vulkan device extension=VK_EXT_display_control
+Vulkan device extension=VK_EXT_dynamic_rendering_unused_attachments
+Vulkan device extension=VK_EXT_extended_dynamic_state
+Vulkan device extension=VK_EXT_extended_dynamic_state2
+Vulkan device extension=VK_EXT_extended_dynamic_state3
+Vulkan device extension=VK_EXT_external_memory_dma_buf
+Vulkan device extension=VK_EXT_external_memory_host
+Vulkan device extension=VK_EXT_fragment_shader_interlock
+Vulkan device extension=VK_EXT_global_priority
+Vulkan device extension=VK_EXT_global_priority_query
+Vulkan device extension=VK_EXT_graphics_pipeline_library
+Vulkan device extension=VK_EXT_host_image_copy
+Vulkan device extension=VK_EXT_host_query_reset
+Vulkan device extension=VK_EXT_image_2d_view_of_3d
+Vulkan device extension=VK_EXT_image_drm_format_modifier
+Vulkan device extension=VK_EXT_image_robustness
+Vulkan device extension=VK_EXT_image_sliced_view_of_3d
+Vulkan device extension=VK_EXT_image_view_min_lod
+Vulkan device extension=VK_EXT_index_type_uint8
+Vulkan device extension=VK_EXT_inline_uniform_block
+Vulkan device extension=VK_EXT_legacy_vertex_attributes
+Vulkan device extension=VK_EXT_line_rasterization
+Vulkan device extension=VK_EXT_load_store_op_none
+Vulkan device extension=VK_EXT_map_memory_placed
+Vulkan device extension=VK_EXT_memory_budget
+Vulkan device extension=VK_EXT_multi_draw
+Vulkan device extension=VK_EXT_nested_command_buffer
+Vulkan device extension=VK_EXT_non_seamless_cube_map
+Vulkan device extension=VK_EXT_pci_bus_info
+Vulkan device extension=VK_EXT_physical_device_drm
+Vulkan device extension=VK_EXT_pipeline_creation_cache_control
+Vulkan device extension=VK_EXT_pipeline_creation_feedback
+Vulkan device extension=VK_EXT_pipeline_library_group_handles
+Vulkan device extension=VK_EXT_pipeline_robustness
+Vulkan device extension=VK_EXT_post_depth_coverage
+Vulkan device extension=VK_EXT_present_mode_fifo_latest_ready
+Vulkan device extension=VK_EXT_primitive_topology_list_restart
+Vulkan device extension=VK_EXT_primitives_generated_query
+Vulkan device extension=VK_EXT_private_data
+Vulkan device extension=VK_EXT_provoking_vertex
+Vulkan device extension=VK_EXT_queue_family_foreign
+Vulkan device extension=VK_EXT_robustness2
+Vulkan device extension=VK_EXT_sample_locations
+Vulkan device extension=VK_EXT_sampler_filter_minmax
+Vulkan device extension=VK_EXT_scalar_block_layout
+Vulkan device extension=VK_EXT_separate_stencil_usage
+Vulkan device extension=VK_EXT_shader_atomic_float
+Vulkan device extension=VK_EXT_shader_demote_to_helper_invocation
+Vulkan device extension=VK_EXT_shader_image_atomic_int64
+Vulkan device extension=VK_EXT_shader_module_identifier
+Vulkan device extension=VK_EXT_shader_object
+Vulkan device extension=VK_EXT_shader_replicated_composites
+Vulkan device extension=VK_EXT_shader_subgroup_ballot
+Vulkan device extension=VK_EXT_shader_subgroup_vote
+Vulkan device extension=VK_EXT_shader_viewport_index_layer
+Vulkan device extension=VK_EXT_subgroup_size_control
+Vulkan device extension=VK_EXT_swapchain_maintenance1
+Vulkan device extension=VK_EXT_texel_buffer_alignment
+Vulkan device extension=VK_EXT_tooling_info
+Vulkan device extension=VK_EXT_transform_feedback
+Vulkan device extension=VK_EXT_vertex_attribute_divisor
+Vulkan device extension=VK_EXT_vertex_attribute_robustness
+Vulkan device extension=VK_EXT_vertex_input_dynamic_state
+Vulkan device extension=VK_EXT_ycbcr_2plane_444_formats
+Vulkan device extension=VK_EXT_ycbcr_image_arrays
+Vulkan device extension=VK_NV_clip_space_w_scaling
+Vulkan device extension=VK_NV_copy_memory_indirect
+Vulkan device extension=VK_NV_coverage_reduction_mode
+Vulkan device extension=VK_NV_dedicated_allocation
+Vulkan device extension=VK_NV_dedicated_allocation_image_aliasing
+Vulkan device extension=VK_NV_descriptor_pool_overallocation
+Vulkan device extension=VK_NV_device_diagnostic_checkpoints
+Vulkan device extension=VK_NV_device_diagnostics_config
+Vulkan device extension=VK_NV_device_generated_commands
+Vulkan device extension=VK_NV_device_generated_commands_compute
+Vulkan device extension=VK_NV_disk_cache_utils
+Vulkan device extension=VK_NV_fill_rectangle
+Vulkan device extension=VK_NV_fragment_coverage_to_color
+Vulkan device extension=VK_NV_framebuffer_mixed_samples
+Vulkan device extension=VK_NV_geometry_shader_passthrough
+Vulkan device extension=VK_NV_inherited_viewport_scissor
+Vulkan device extension=VK_NV_internal_nvpresent
+Vulkan device extension=VK_NV_linear_color_attachment
+Vulkan device extension=VK_NV_low_latency
+Vulkan device extension=VK_NV_low_latency2
+Vulkan device extension=VK_NV_memory_decompression
+Vulkan device extension=VK_NV_present_metering
+Vulkan device extension=VK_NV_raw_access_chains
+Vulkan device extension=VK_NV_ray_tracing
+Vulkan device extension=VK_NV_ray_tracing_invocation_reorder
+Vulkan device extension=VK_NV_sample_mask_override_coverage
+Vulkan device extension=VK_NV_shader_atomic_float16_vector
+Vulkan device extension=VK_NV_shader_sm_builtins
+Vulkan device extension=VK_NV_shader_subgroup_partitioned
+Vulkan device extension=VK_NV_viewport_array2
+Vulkan device extension=VK_NV_viewport_swizzle
+Vulkan device extension=VK_NVX_multiview_per_view_attributes
+Vulkan device extension=VK_AMD_buffer_marker
+Vulkan device extension=VK_GOOGLE_hlsl_functionality1
+Vulkan device extension=VK_GOOGLE_user_type
+dynamicRendering=1 usable=true multiview=1 dynamic_rendering_local_read_extension=true
+dynamicRenderingLocalRead=1
+maxMultiviewViewCount=32
+depth_resolve_modes=SAMPLE_ZERO | AVERAGE | MIN | MAX stencil_resolve_modes=SAMPLE_ZERO | MIN | MAX independent_resolve=1 independent_resolve_none=1
+compute workgroup_invocations=1536 size=[1536, 1024, 64] count=[2147483647, 65535, 65535] storage_buffers_per_stage=1048576 stage_resources=4294967295 storage_range=4294967295 uniform_range=65536 sampled_images=1048576
+texture ASTC_LDR=0 ETC2=0 BC=1 color_samples=TYPE_1 | TYPE_2 | TYPE_4 | TYPE_8 depth_samples=TYPE_1 | TYPE_2 | TYPE_4 | TYPE_8
+queue_family=0 flags=GRAPHICS | COMPUTE | TRANSFER | SPARSE_BINDING count=16
+queue_family=1 flags=TRANSFER | SPARSE_BINDING count=2
+queue_family=2 flags=COMPUTE | TRANSFER | SPARSE_BINDING count=8
+queue_family=3 flags=TRANSFER | SPARSE_BINDING | VIDEO_DECODE_KHR count=1
+queue_family=4 flags=TRANSFER | SPARSE_BINDING | VIDEO_ENCODE_KHR count=2
+engine_deformation_basic_limits_ok=true (probe does not require deformation)
+memory_heap=0 bytes=8589934592 flags=DEVICE_LOCAL
+memory_heap=1 bytes=25174582272 flags=
+memory_heap=2 bytes=257949696 flags=DEVICE_LOCAL
+memory_type=0 heap=1 flags=
+memory_type=1 heap=1 flags=
+memory_type=2 heap=1 flags=
+memory_type=3 heap=1 flags=
+memory_type=4 heap=1 flags=
+memory_type=5 heap=1 flags=
+memory_type=6 heap=1 flags=
+memory_type=7 heap=0 flags=DEVICE_LOCAL
+memory_type=8 heap=1 flags=HOST_VISIBLE | HOST_COHERENT
+memory_type=9 heap=1 flags=HOST_VISIBLE | HOST_COHERENT | HOST_CACHED
+memory_type=10 heap=2 flags=DEVICE_LOCAL | HOST_VISIBLE | HOST_COHERENT
+format=R8G8B8A8_SRGB usage=COLOR_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 32768, height: 32768, depth: 1 }, max_mip_levels: 16, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4 | TYPE_8, max_resource_size: 1099511627776 })
+format=B8G8R8A8_SRGB usage=COLOR_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 32768, height: 32768, depth: 1 }, max_mip_levels: 16, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4 | TYPE_8, max_resource_size: 1099511627776 })
+format=R8G8B8A8_UNORM usage=COLOR_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 32768, height: 32768, depth: 1 }, max_mip_levels: 16, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4 | TYPE_8, max_resource_size: 1099511627776 })
+format=B8G8R8A8_UNORM usage=COLOR_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 32768, height: 32768, depth: 1 }, max_mip_levels: 16, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4 | TYPE_8, max_resource_size: 1099511627776 })
+format=D32_SFLOAT_S8_UINT usage=DEPTH_STENCIL_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 32768, height: 32768, depth: 1 }, max_mip_levels: 16, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4 | TYPE_8, max_resource_size: 1099511627776 })
+format=D24_UNORM_S8_UINT usage=DEPTH_STENCIL_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 32768, height: 32768, depth: 1 }, max_mip_levels: 16, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4 | TYPE_8, max_resource_size: 1099511627776 })
+application Vulkan device extensions=["VK_KHR_dynamic_rendering"] graphics_queue=0 renderer=dynamic rendering
+Vulkan instance/runtime-selected GPU/device SUCCESS
+[AssetSystem][debug] scanning asset module: "assets/components/mini-explosion.mms"
+[AssetSystem][debug]   found export function: mini_explosion (params: ["position", "beats_per_second"])
+[AssetSystem][debug] scanning asset module: "assets/components/laser.mms"
+[AssetSystem][debug]   found export function: laser (params: ["options"])
+[AssetSystem][debug] scanning asset module: "assets/components/muzzle-flash.mms"
+[AssetSystem][debug]   found export function: muzzle_flash (params: ["options"])
+[AssetSystem][debug] scanning asset module: "assets/components/tripod_light.mms"
+[AssetSystem][debug]   found export function: tripod_light (params: ["light_name", "position", "look_target", "mounted_light"])
+[AssetSystem][debug] scanning asset module: "assets/components/colored_box_pile.mms"
+[AssetSystem][debug]   found export function: colored_box_pile (params: ["pile_name", "position"])
+[AssetSystem][debug] scanning asset module: "assets/components/traffic_light.mms"
+[AssetSystem][debug]   found export function: traffic_light (params: [])
+[AssetSystem][debug] scanning asset module: "assets/components/studio_stage.mms"
+[AssetSystem][debug]   found export function: studio_stage (params: ["stage_name"])
+[AssetSystem][debug]   found export function: studio_floor (params: [])
+[AssetSystem][debug] scanning asset module: "assets/components/truss.mms"
+[AssetSystem][debug]   found export function: truss (params: ["segment_count"])
+[AssetSystem][debug] scanning asset module: "assets/components/laser-machine-pistol.mms"
+[SystemWorld] failed to scan assets dir: import error: cannot read 'types': No such file or directory (os error 2)
+classic opaque eye pass; color=CLEAR/STORE depth=CLEAR/DONT_CARE transient=true lazy=false format=D16_UNORM samples=1
+renderer=lean extent=Extent2Di { width: 1892, height: 1892 } layers=2 format=43 samples=1 cubes=144 build=release budget_hz=90 (runtime refresh is unchanged)
+session=IDLE
+session=READY
+[startup] [█████░░░] 5/8 first update completed
+session=SYNCHRONIZED
+startup timeout: no visible rendered scene; requesting clean session stop without performance samples
+session=STOPPING
+Error: "no rendered samples recorded"

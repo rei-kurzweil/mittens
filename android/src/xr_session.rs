@@ -1,12 +1,10 @@
-//! Small standalone OpenXR renderer; no engine compute/material requirements.
-mod gpu;
-mod renderer;
+//! OpenXR session/frame ownership, independent of scene or diagnostic rendering.
 
-use crate::xr_probe::{ApiResult, Report, Result};
+use crate::frame_renderer::FrameRenderer;
+use crate::graphics_device::Gpu;
+use crate::xr_host::{ApiResult, Report, Result};
 use ash::{vk, vk::Handle};
-use gpu::Gpu;
 use openxr as xr;
-use renderer::Renderer;
 use std::{
     sync::{
         Arc,
@@ -17,10 +15,10 @@ use std::{
 
 const VIEW: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_STEREO;
 
-pub(super) struct Probe {
+pub(super) struct XrSession {
     // Declaration order is destruction order: views/framebuffers before the XR
     // images, all XR session references before the shared Vulkan device.
-    renderer: Renderer,
+    renderer: FrameRenderer,
     swapchain: xr::Swapchain<xr::Vulkan>,
     space: xr::Space,
     frames: xr::FrameStream<xr::Vulkan>,
@@ -33,13 +31,14 @@ pub(super) struct Probe {
     rendered: u64,
 }
 
-impl Probe {
+impl XrSession {
     pub(super) fn new(
         instance: &xr::Instance,
         system: xr::SystemId,
         enable2: bool,
         requirements: xr::vulkan::Requirements,
         report: &mut Report,
+        directory: Option<&std::path::Path>,
     ) -> Result<Self> {
         let gpu = Gpu::new(instance, system, enable2, requirements, report)?;
         // Exactly these handles were created for the runtime-selected GPU.
@@ -130,8 +129,15 @@ impl Probe {
         } else {
             *blend_modes.first().ok_or("no environment blend modes")?
         };
-        let renderer = Renderer::new(gpu.clone(), format, vk::Extent2D { width, height }, images)?;
-        report.line(format!("graphics resources SUCCESS; blend={blend:?}; left=dim red, right=dim blue; first 90 rendered frames clear-only, then RGB triangle"));
+        let renderer = FrameRenderer::new(
+            gpu.clone(),
+            format,
+            vk::Extent2D { width, height },
+            images,
+            directory,
+            report,
+        )?;
+        report.line(format!("graphics resources SUCCESS; blend={blend:?}"));
         Ok(Self {
             renderer,
             swapchain,
@@ -299,19 +305,16 @@ impl Probe {
         let triangle = self.rendered >= 90;
         // Only release after successful fence completion. On failure teardown
         // waits for the device before destroying the still-acquired XR image.
-        self.renderer.draw(index as usize, triangle)?;
+        let mode = self
+            .renderer
+            .draw(index as usize, &views, time, triangle, report)?;
         self.swapchain
             .release_image()
             .api("xrReleaseSwapchainImage")?;
         if self.rendered == 0 || self.rendered == 90 || self.rendered % 900 == 0 {
             report.line(format!(
                 "rendered_frame={} mode={} GPU_complete_before_release=true",
-                self.rendered,
-                if triangle {
-                    "stereo_triangle"
-                } else {
-                    "stereo_clear"
-                }
+                self.rendered, mode
             ));
         }
         self.rendered += 1;

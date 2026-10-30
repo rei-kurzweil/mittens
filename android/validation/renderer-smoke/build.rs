@@ -8,6 +8,7 @@ fn main() {
     for (name, kind) in [
         ("triangle.vert", shaderc::ShaderKind::Vertex),
         ("triangle.frag", shaderc::ShaderKind::Fragment),
+        ("surface.vert", shaderc::ShaderKind::Vertex),
     ] {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../shaders")

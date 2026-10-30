@@ -1,5 +1,11 @@
 #![allow(dead_code)]
-mod xr_probe {
+#[path = "../../../src/renderer/mod.rs"]
+mod renderer;
+mod scene;
+#[path = "../../../src/scene_runtime.rs"]
+mod scene_runtime;
+mod target;
+mod xr_host {
     pub type Result<T> = std::result::Result<T, String>;
     pub trait ApiResult<T> {
         fn api(self, op: &str) -> Result<T>;
@@ -14,13 +20,14 @@ mod xr_probe {
         pub fn line(&mut self, _: impl std::fmt::Display) {}
     }
 }
+use vulkan_probe::gpu as graphics_device;
 mod vulkan_probe {
     pub mod gpu {
         include!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../src/vulkan_probe/gpu.rs"
+            "/../../src/graphics_device.rs"
         ));
-        pub(super) fn headless(dynamic: bool) -> Arc<Gpu> {
+        pub(crate) fn headless(dynamic: bool) -> Arc<Gpu> {
             unsafe {
                 let entry = ash::Entry::load().unwrap();
                 let app = vk::ApplicationInfo::default().api_version(vk::API_VERSION_1_2);
@@ -74,7 +81,7 @@ mod vulkan_probe {
     pub mod renderer {
         include!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../src/vulkan_probe/renderer.rs"
+            "/../../src/triangle_probe.rs"
         ));
     }
     pub fn run(dynamic: bool) {
@@ -330,4 +337,5 @@ mod vulkan_probe {
 fn main() {
     vulkan_probe::run(true);
     vulkan_probe::run(false);
+    scene::run();
 }

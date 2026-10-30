@@ -98,7 +98,7 @@ pub(super) fn spawn(
     thread::Builder::new()
         .name("mittens-xr".into())
         .spawn(move || {
-            let mut report = Report::new(directory);
+            let mut report = Report::new(directory.clone());
             let result = (|| {
                 // The Activity/context outlives this worker; android_main joins it
                 // before returning. Attach the graphics thread for runtime JNI calls.
@@ -106,7 +106,7 @@ pub(super) fn spawn(
                 let vm = unsafe { jni::JavaVM::from_raw(context.vm().cast()) }
                     .api("JavaVM::from_raw")?;
                 let _attachment = vm.attach_current_thread().api("attach XR thread to JVM")?;
-                run(&mut report, &stop, &resumed)
+                run(&mut report, &stop, &resumed, directory.as_deref())
             })();
             match result {
                 Ok(()) => report.line("worker_exit clean"),
@@ -115,7 +115,12 @@ pub(super) fn spawn(
         })
 }
 
-fn run(report: &mut Report, stop: &AtomicBool, resumed: &AtomicBool) -> Result<()> {
+fn run(
+    report: &mut Report,
+    stop: &AtomicBool,
+    resumed: &AtomicBool,
+    directory: Option<&std::path::Path>,
+) -> Result<()> {
     report.line("loader=Khronos-1.1.36 api_request=OpenXR-1.0.34");
     // Shared engine hook performs Android loader initialization before enumeration.
     let entry = OpenXRSystem::load_entry()?;
@@ -138,7 +143,7 @@ fn run(report: &mut Report, stop: &AtomicBool, resumed: &AtomicBool) -> Result<(
     let instance = entry
         .create_instance(
             &xr::ApplicationInfo {
-                application_name: "Mittens Vulkan Probe",
+                application_name: "Mittens Host",
                 application_version: 1,
                 engine_name: "Mittens",
                 engine_version: 1,
@@ -192,13 +197,19 @@ fn run(report: &mut Report, stop: &AtomicBool, resumed: &AtomicBool) -> Result<(
     report.line("OpenXR instance/HMD capability stage SUCCESS");
     #[cfg(feature = "vulkan-probe")]
     {
-        let mut probe =
-            crate::vulkan_probe::Probe::new(&instance, system, enable2, requirements, report)?;
+        let mut probe = crate::xr_session::XrSession::new(
+            &instance,
+            system,
+            enable2,
+            requirements,
+            report,
+            directory,
+        )?;
         probe.run(&instance, stop, resumed, report)?;
     }
     #[cfg(not(feature = "vulkan-probe"))]
     {
-        let _ = (stop, resumed);
+        let _ = (stop, resumed, directory);
         report.line("instance-only probe complete; Vulkan session not requested");
     }
     Ok(())

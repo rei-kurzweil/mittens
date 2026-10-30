@@ -20,6 +20,8 @@ pub struct CompiledMaterial {
     pub words: Vec<u32>,
     pub offsets: Vec<usize>,
     pub byte_size: usize,
+    /// Reflected descriptor interfaces, for renderer capability validation.
+    pub descriptor_bindings: Vec<(u32, u32)>,
 }
 
 impl CustomMaterialDefinition {
@@ -277,6 +279,15 @@ pub fn reflect(words: Vec<u32>, fields: &[MaterialInputField]) -> Result<Compile
         words,
         offsets,
         byte_size: (byte_size + 15) & !15,
+        descriptor_bindings: {
+            let mut descriptors = sets
+                .iter()
+                .filter_map(|(id, set)| bindings.get(id).map(|binding| (*set, *binding)))
+                .collect::<Vec<_>>();
+            descriptors.sort_unstable();
+            descriptors.dedup();
+            descriptors
+        },
     })
 }
 
@@ -523,6 +534,13 @@ mod tests {
         ] {
             let names: Vec<_> = names.into_iter().map(MaterialInputField::from).collect();
             let compiled = compile(path, &names).unwrap();
+            assert!(compiled.descriptor_bindings.contains(&(1, 0)));
+            assert!(
+                compiled
+                    .descriptor_bindings
+                    .iter()
+                    .all(|binding| matches!(binding, (0, 0) | (0, 1) | (1, 0) | (1, 1)))
+            );
             assert_eq!(
                 compiled.pack(&vec![0.5; names.len()]).unwrap().len(),
                 compiled.byte_size

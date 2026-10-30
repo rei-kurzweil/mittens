@@ -1,0 +1,31 @@
+runtime=InstanceProperties { runtime_version: 2.17.10, runtime_name: "SteamVR/OpenXR" }
+[AssetSystem][debug] scanning asset module: "assets/components/mini-explosion.mms"
+[AssetSystem][debug]   found export function: mini_explosion (params: ["position", "beats_per_second"])
+[AssetSystem][debug] scanning asset module: "assets/components/laser.mms"
+[AssetSystem][debug]   found export function: laser (params: ["options"])
+[AssetSystem][debug] scanning asset module: "assets/components/muzzle-flash.mms"
+[AssetSystem][debug]   found export function: muzzle_flash (params: ["options"])
+[AssetSystem][debug] scanning asset module: "assets/components/tripod_light.mms"
+[AssetSystem][debug]   found export function: tripod_light (params: ["light_name", "position", "look_target", "mounted_light"])
+[AssetSystem][debug] scanning asset module: "assets/components/colored_box_pile.mms"
+[AssetSystem][debug]   found export function: colored_box_pile (params: ["pile_name", "position"])
+[AssetSystem][debug] scanning asset module: "assets/components/traffic_light.mms"
+[AssetSystem][debug]   found export function: traffic_light (params: [])
+[AssetSystem][debug] scanning asset module: "assets/components/studio_stage.mms"
+[AssetSystem][debug]   found export function: studio_stage (params: ["stage_name"])
+[AssetSystem][debug]   found export function: studio_floor (params: [])
+[AssetSystem][debug] scanning asset module: "assets/components/truss.mms"
+[AssetSystem][debug]   found export function: truss (params: ["segment_count"])
+[AssetSystem][debug] scanning asset module: "assets/components/laser-machine-pistol.mms"
+[SystemWorld] failed to scan assets dir: import error: cannot read 'types': No such file or directory (os error 2)
+[VulkanoRenderer] MSAA disabled
+[VulkanoRenderer] XR-only renderer initialized (no window or surface)
+desktop GPU=Some("NVIDIA GeForce GTX 1080") MSAA=Some("off")
+renderer=desktop extent=Extent2Di { width: 1892, height: 1892 } layers=2 format=43 samples=1 cubes=144 build=release budget_hz=90 (runtime refresh is unchanged)
+session=IDLE
+session=READY
+[startup] [█████░░░] 5/8 first update completed
+session=SYNCHRONIZED
+startup timeout: no visible rendered scene; requesting clean session stop without performance samples
+session=STOPPING
+Error: "no rendered samples recorded"

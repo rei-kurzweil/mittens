@@ -13,9 +13,10 @@ description = "Android application host for Mittens Engine"
 crate-type = ["cdylib"]
 
 [features]
-default = ["vulkan-probe"]
+default = ["mobile-renderer"]
 xr-probe = ["dep:openxr", "dep:jni"]
 vulkan-probe = ["xr-probe", "dep:ash"]
+mobile-renderer = ["vulkan-probe"]
 
 [build-dependencies]
 shaderc = "0.8.3"

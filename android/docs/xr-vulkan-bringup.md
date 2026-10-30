@@ -15,7 +15,8 @@ mode replaces that app's library; no ALVR app is changed.
 | --- | --- | --- |
 | Lifecycle | `--no-default-features` | Previously verified blank native panel; no XR worker. |
 | OpenXR diagnostic | `--no-default-features --features xr-probe` | Loader/instance/HMD, extensions and Vulkan API requirements; no graphics session. |
-| Vulkan probe (default) | None | Adds Vulkan device/session, capability report, stereo clear and triangle. |
+| Vulkan probe | `--no-default-features --features vulkan-probe` | Vulkan session, capability report, stereo clear and triangle. |
+| Custom opaque scene (default) | None | Embedded MMS cubes through the new custom-material renderer; Focus 3 scene verification pending. |
 
 Build and test the diagnostic first, from the repository root:
 
@@ -32,10 +33,10 @@ runtime/HMD details, and `OpenXR instance/HMD capability stage SUCCESS`.
 The diagnostic still has a blank Android panel. Failures include the API name
 and exact result; they are not reported as a successful graphics test.
 
-Then build the default Vulkan probe and install/launch with the same commands:
+Then build the preserved Vulkan probe and install/launch with the same commands:
 
 ```sh
-android/packaging/build-apk.sh
+android/packaging/build-apk.sh --no-default-features --features vulkan-probe
 ```
 
 Wear the headset for graphics testing. Once visible with valid tracking, expect
@@ -43,6 +44,11 @@ a dim reddish left-eye background and dim blue right-eye background. After
 90 rendered clear-only frames, an RGB triangle appears in each eye. It is fixed
 in the eye images, not a world-anchored engine scene. The probe uses 1x samples,
 at most 1024x1024 per eye, no depth, and no multiview.
+
+For the new engine scene, build with no helper arguments. Expect two
+world-anchored cyan/orange cubes using generic custom opaque materials and a
+depth attachment. This scene is implemented and desktop GPU checked; it has
+not yet been visually verified on Focus 3. See [renderer scope](opaque-renderer.md).
 
 ## Capture results
 
@@ -113,5 +119,6 @@ CARGO_TARGET_DIR=target cargo run --manifest-path android/validation/renderer-sm
 See the saved [pixel-readback results](validation/probe-renderer-headless-2026-10-29.log).
 
 Focus 3 instance creation, Vulkan session support, and stereo triangle
-presentation are now verified. Graphics lifecycle, full engine scenes,
+presentation are now verified. The default scene APK is built and desktop GPU
+checked; see [implementation scope](opaque-renderer.md). Focus 3 graphics lifecycle, engine scenes,
 controller input, passthrough, audio, and sustained performance remain to test.

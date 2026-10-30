@@ -23,7 +23,7 @@ pub(super) fn run(app: AndroidApp) {
     assert_eq!(context.context(), app.activity_as_ptr());
     log::info!("android_context ready; activity and JVM match NativeActivity");
     #[cfg(feature = "xr-probe")]
-    let mut worker = crate::xr_probe::Worker::new(app.internal_data_path());
+    let mut worker = crate::xr_host::Worker::new(app.internal_data_path());
     #[cfg(not(feature = "xr-probe"))]
     log::info!("lifecycle-only host; engine and OpenXR/Vulkan are not started");
 

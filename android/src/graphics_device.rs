@@ -1,4 +1,4 @@
-use crate::xr_probe::{ApiResult, Report, Result};
+use crate::xr_host::{ApiResult, Report, Result};
 use ash::{vk, vk::Handle};
 use openxr as xr;
 use std::{
@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-pub(super) struct InstanceOwner {
+pub(crate) struct InstanceOwner {
     pub raw: ash::Instance,
     _entry: ash::Entry,
 }
@@ -18,13 +18,15 @@ impl Drop for InstanceOwner {
     }
 }
 
-pub(super) struct Gpu {
+pub(crate) struct Gpu {
     pub device: ash::Device,
     pub instance: Arc<InstanceOwner>,
     pub physical: vk::PhysicalDevice,
     pub queue: vk::Queue,
     pub family: u32,
+    #[allow(dead_code)] // Used by the optional triangle diagnostic.
     pub dynamic: bool,
+    #[allow(dead_code)] // The scene renderer deliberately uses classic passes.
     pub dynamic_api: Option<ash::khr::dynamic_rendering::Device>,
 }
 impl Drop for Gpu {

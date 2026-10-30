@@ -1,5 +1,5 @@
-use super::gpu::Gpu;
-use crate::xr_probe::{ApiResult, Result};
+use crate::graphics_device::Gpu;
+use crate::xr_host::{ApiResult, Result};
 use ash::{vk, vk::Handle};
 use std::{io::Cursor, sync::Arc};
 

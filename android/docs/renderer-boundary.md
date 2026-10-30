@@ -1,7 +1,9 @@
 # Application-owned Android renderer
 
 Source audit and public-API consumer check on 2026-10-29. This describes the
-recommended next implementation, not an already implemented scene renderer.
+ownership boundary. The first custom opaque scene renderer is now implemented;
+see [its scope and validation](opaque-renderer.md). The installed Focus 3
+triangle evidence below predates the new scene APK.
 
 ## What is installed
 

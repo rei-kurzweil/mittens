@@ -1,0 +1,72 @@
+GPU=NVIDIA GeForce GTX 1080 dynamic=true
+PASS dynamic=true triangle=false left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+PASS dynamic=true triangle=true left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+PASS dynamic=true triangle=true left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+PASS dynamic=true triangle=false left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+GPU=NVIDIA GeForce GTX 1080 dynamic=false
+PASS dynamic=false triangle=false left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+PASS dynamic=false triangle=true left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+PASS dynamic=false triangle=true left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+PASS dynamic=false triangle=false left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+GPU=NVIDIA GeForce GTX 1080 dynamic=false
+classic opaque eye pass; color=CLEAR/STORE depth=CLEAR/DONT_CARE transient=true lazy=false format=D16_UNORM samples=1
+[AssetSystem][debug] scanning asset module: "assets/components/mini-explosion.mms"
+[AssetSystem][debug]   found export function: mini_explosion (params: ["position", "beats_per_second"])
+[AssetSystem][debug] scanning asset module: "assets/components/laser.mms"
+[AssetSystem][debug]   found export function: laser (params: ["options"])
+[AssetSystem][debug] scanning asset module: "assets/components/muzzle-flash.mms"
+[AssetSystem][debug]   found export function: muzzle_flash (params: ["options"])
+[AssetSystem][debug] scanning asset module: "assets/components/tripod_light.mms"
+[AssetSystem][debug]   found export function: tripod_light (params: ["light_name", "position", "look_target", "mounted_light"])
+[AssetSystem][debug] scanning asset module: "assets/components/colored_box_pile.mms"
+[AssetSystem][debug]   found export function: colored_box_pile (params: ["pile_name", "position"])
+[AssetSystem][debug] scanning asset module: "assets/components/traffic_light.mms"
+[AssetSystem][debug]   found export function: traffic_light (params: [])
+[AssetSystem][debug] scanning asset module: "assets/components/studio_stage.mms"
+[AssetSystem][debug]   found export function: studio_stage (params: ["stage_name"])
+[AssetSystem][debug]   found export function: studio_floor (params: [])
+[AssetSystem][debug] scanning asset module: "assets/components/truss.mms"
+[AssetSystem][debug]   found export function: truss (params: ["segment_count"])
+[AssetSystem][debug] scanning asset module: "assets/components/laser-machine-pistol.mms"
+[SystemWorld] failed to scan assets dir: import error: cannot read 'types': No such file or directory (os error 2)
+[startup] [█████░░░] 5/8 first update completed
+[AssetSystem][debug] scanning asset module: "assets/components/mini-explosion.mms"
+[AssetSystem][debug]   found export function: mini_explosion (params: ["position", "beats_per_second"])
+[AssetSystem][debug] scanning asset module: "assets/components/laser.mms"
+[AssetSystem][debug]   found export function: laser (params: ["options"])
+[AssetSystem][debug] scanning asset module: "assets/components/muzzle-flash.mms"
+[AssetSystem][debug]   found export function: muzzle_flash (params: ["options"])
+[AssetSystem][debug] scanning asset module: "assets/components/tripod_light.mms"
+[AssetSystem][debug]   found export function: tripod_light (params: ["light_name", "position", "look_target", "mounted_light"])
+[AssetSystem][debug] scanning asset module: "assets/components/colored_box_pile.mms"
+[AssetSystem][debug]   found export function: colored_box_pile (params: ["pile_name", "position"])
+[AssetSystem][debug] scanning asset module: "assets/components/traffic_light.mms"
+[AssetSystem][debug]   found export function: traffic_light (params: [])
+[AssetSystem][debug] scanning asset module: "assets/components/studio_stage.mms"
+[AssetSystem][debug]   found export function: studio_floor (params: [])
+[AssetSystem][debug]   found export function: studio_stage (params: ["stage_name"])
+[AssetSystem][debug] scanning asset module: "assets/components/truss.mms"
+[AssetSystem][debug]   found export function: truss (params: ["segment_count"])
+[AssetSystem][debug] scanning asset module: "assets/components/laser-machine-pistol.mms"
+[SystemWorld] failed to scan assets dir: import error: cannot read 'types': No such file or directory (os error 2)
+PASS custom scene: stereo pixels, depth occlusion, retained uniforms, RGBA texture, batched instancing, stable caches, transparency/legacy rejection; Stats { draws: 4, instances: 6, pipelines: 1, bindings: 2, meshes: 1, textures: 1, instance_capacity: 5120 }
+[AssetSystem][debug] scanning asset module: "assets/components/mini-explosion.mms"
+[AssetSystem][debug]   found export function: mini_explosion (params: ["position", "beats_per_second"])
+[AssetSystem][debug] scanning asset module: "assets/components/laser.mms"
+[AssetSystem][debug]   found export function: laser (params: ["options"])
+[AssetSystem][debug] scanning asset module: "assets/components/muzzle-flash.mms"
+[AssetSystem][debug]   found export function: muzzle_flash (params: ["options"])
+[AssetSystem][debug] scanning asset module: "assets/components/tripod_light.mms"
+[AssetSystem][debug]   found export function: tripod_light (params: ["light_name", "position", "look_target", "mounted_light"])
+[AssetSystem][debug] scanning asset module: "assets/components/colored_box_pile.mms"
+[AssetSystem][debug]   found export function: colored_box_pile (params: ["pile_name", "position"])
+[AssetSystem][debug] scanning asset module: "assets/components/traffic_light.mms"
+[AssetSystem][debug]   found export function: traffic_light (params: [])
+[AssetSystem][debug] scanning asset module: "assets/components/studio_stage.mms"
+[AssetSystem][debug]   found export function: studio_stage (params: ["stage_name"])
+[AssetSystem][debug]   found export function: studio_floor (params: [])
+[AssetSystem][debug] scanning asset module: "assets/components/truss.mms"
+[AssetSystem][debug]   found export function: truss (params: ["segment_count"])
+[AssetSystem][debug] scanning asset module: "assets/components/laser-machine-pistol.mms"
+[SystemWorld] failed to scan assets dir: import error: cannot read 'types': No such file or directory (os error 2)
+PASS embedded app MMS scene rendered by production SceneRuntime

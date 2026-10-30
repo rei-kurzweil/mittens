@@ -6684,7 +6684,7 @@ impl VulkanoRenderer {
     /// Initialize Vulkan without Winit, a surface, or a presentation swapchain.
     /// The caller creates its XR session with `xr_vulkan_graphics`, then calls
     /// `init_xr_scene` with the runtime's actual swapchain format.
-    pub(crate) fn init_xr_graphics(
+    pub fn init_xr_graphics(
         &mut self,
         instance: &openxr::Instance,
         system: openxr::SystemId,
@@ -6708,7 +6708,7 @@ impl VulkanoRenderer {
         Ok(())
     }
 
-    pub(crate) fn init_xr_scene(&mut self, format: u32) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn init_xr_scene(&mut self, format: u32) -> Result<(), Box<dyn std::error::Error>> {
         if self.vulkano.is_some() {
             return Err("renderer scene already initialized".into());
         }

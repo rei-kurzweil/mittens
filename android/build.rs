@@ -1,5 +1,5 @@
 fn main() {
-    for shader in ["triangle.vert", "triangle.frag"] {
+    for shader in ["triangle.vert", "triangle.frag", "surface.vert"] {
         println!("cargo:rerun-if-changed=shaders/{shader}");
     }
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("android")
@@ -16,6 +16,7 @@ fn main() {
     for (name, kind) in [
         ("triangle.vert", shaderc::ShaderKind::Vertex),
         ("triangle.frag", shaderc::ShaderKind::Fragment),
+        ("surface.vert", shaderc::ShaderKind::Vertex),
     ] {
         let source = std::fs::read_to_string(format!("shaders/{name}")).expect("read shader");
         let compiled = compiler

@@ -1,0 +1,53 @@
+Development validation, 2026-10-29
+
+Checkpoint: 09f833c0 (Focus 3 diagnostic and triangle evidence).
+The following implementation work is after that checkpoint.
+
+PASS: cargo test --lib --no-default-features --locked --offline custom_material
+5 passed, 0 failed, 6 ignored GPU/scene tests. Reflection descriptor metadata,
+typed parameter packing, MMS material validation, and combine-mesh identity.
+
+PASS: desktop production-backend GPU smoke on NVIDIA GeForce GTX 1080:
+CARGO_TARGET_DIR=target cargo run --manifest-path android/validation/renderer-smoke/Cargo.toml --locked --offline
+Requires GPU access outside the workspace sandbox. Stereo pixels, depth,
+retained uniform revisions, RGBA texture sampling, batched instancing, stable
+resource counts, unsupported transparency/legacy rejection, embedded app MMS
+startup; preserved classic/dynamic triangle checks.
+Depth format D16_UNORM. No lazy device memory on this desktop GPU.
+Raw output: opaque-renderer-headless-2026-10-29.log
+
+PASS: release desktop OpenXR comparison build:
+CARGO_TARGET_DIR=target cargo build --release --manifest-path examples/xr-renderer-compare/Cargo.toml --locked --offline
+Existing engine emits 73 warnings. Demo compiles the production new renderer
+directly; no duplicate renderer or Android lifecycle/JNI code.
+
+PARTIAL: desktop OpenXR startup/shutdown, both --renderer desktop and lean.
+SteamVR/OpenXR 2.17.10, NVIDIA GTX 1080, 1892x1892 per-eye, layers=2,
+R8G8B8A8_SRGB (43), samples=1, same 144-cube custom-material scene.
+IDLE -> READY -> SYNCHRONIZED; no VISIBLE/FOCUSED or performance samples.
+--startup-timeout 5 requested exit; STOPPING observed; clean xrEndSession.
+Exit code 1: no rendered samples recorded. No 75/90Hz or relative speed claim.
+See desktop-xr-compare-{desktop,lean}-startup-2026-10-29.log.
+The initial debug probe was externally timed out before the clean startup
+timeout was added; it is not counted as a successful lifecycle/performance run.
+
+PASS: default Android custom opaque scene APK build/alignment/signature v3:
+ANDROID_HOME=/home/rei/Android/Sdk CARGO_NET_OFFLINE=true android/packaging/build-apk.sh
+target/debug/apk/mitten-droid-custom-opaque.apk
+SHA256 433ab08dbc7df5cb9df5cdf056ef7835b04a2dc60266436caca2855f2e5b3b78
+About 72 MiB: linking Universe and the engine's existing subsystems/shader
+compiler increases the native library compared with the triangle-only probe.
+target/debug/apk/mitten-droid.apk restored to this scene APK after checking
+the diagnostic build. Not installed or visually verified on Focus 3 yet.
+
+PASS: preserved diagnostic Android APK build/alignment:
+android/packaging/build-apk.sh --no-default-features --features vulkan-probe
+target/debug/apk/mitten-droid-triangle-diagnostic.apk
+SHA256 a910467d32f97ec543982f61e74571d8703b09b5ee1ae01c04e87108ed053d1c
+This newly rebuilt diagnostic has not been reinstalled. Prior on-device
+triangle evidence remains in focus-3-vulkan-probe-2026-10-29.{txt,log}.
+
+Source organization: all new/refactored source files under 1,400 lines.
+New scene renderer still rejects skinning and morphs; shared compute-cache
+contracts/shader reuse is the next animated-mesh slice. Anime-complexity custom
+shading and mirrors at >=90Hz are targets, not current measured functionality.

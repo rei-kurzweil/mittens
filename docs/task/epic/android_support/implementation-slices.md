@@ -121,6 +121,14 @@ the engine's public upload/visual-stream API. The external consumer test passes
 without desktop features. Full engine XR input still needs an external frame
 source; the current `Universe::render`/XR convenience path is Vulkano-specific.
 
+The [custom opaque implementation](../../../../android/docs/opaque-renderer.md)
+now loads the embedded MMS scene, implements mesh/RGBA upload, retains generic
+custom material inputs and batched instances, and renders through classic eye
+passes with transient depth. Its Android APK builds and desktop GPU pixel checks
+pass. The boxes below remain open for the Focus 3 presentation/lifecycle/input
+gate. The new [desktop XR comparison](../../../../examples/xr-renderer-compare/README.md)
+selects the same backend or the existing Vulkano renderer for a matched scene.
+
 - [ ] Connect the Android bootstrap to the existing window-free engine/XR
   rendering path, sharing the Vulkan device and runtime-owned output images.
 - [ ] Load a tiny embedded MMS scene with simple geometry and no external
@@ -140,9 +148,9 @@ keyboard/touchpad validation separately if hardware is unavailable.
 
 Packaged asset access, audio output then microphone support, passthrough,
 optional tracking extensions, mobile rendering quality, and sustained thermal
-performance follow the basic scene. A separate renderer is not assumed in
-advance; compatibility changes follow the headset results from slice 4.
+performance follow the basic scene. The chosen first backend is custom-material
+opaque/albedo only; expand capabilities deliberately after the first scene.
 
 Slices 1–3 and the basic slice 4 stereo/capability gate are verified. Graphics
-lifecycle checks and a full-engine classic render-pass implementation precede
-the embedded scene. Keep exact diagnostics and the lifecycle-only build available.
+lifecycle and the new embedded scene remain to verify on Focus 3. Keep exact
+diagnostics and the lifecycle-only build available.
