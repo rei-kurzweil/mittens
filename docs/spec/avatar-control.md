@@ -52,6 +52,16 @@ the calibrated pose and collision support without correcting the tracking origin
 See [crouch IK](../task/avc-foot-penetration-crouch-ik.md) for rig calibration,
 diagnostics, test coverage and remaining headset checks.
 
+Procedural walking tuning uses an optional direct child, `AVC { WalkingIK {
+stride(0.32) step_duration(0.22) step_height(0.07) step_scale(1.3) } }`.
+The scale multiplies forward prediction, maximum foot travel and swing lift;
+1.3 is the default even without an authored component, and 1.0 restores the prior
+distance tuning. Knee/thigh angles follow the reachable foot goal. The child
+replaces AVC's walking distance/duration settings; existing `walking_*` calls
+still work without a child, and `walking_enabled(false)` remains a master opt-out.
+See [procedural walking](../task/procedural-lower-body-walking-ik.md) for ranges,
+ownership and frame-rate checks.
+
 IK visualization uses AVC's shared `ik_debug` switch. Existing arm-chain visuals
 are implemented; extending that switch to native crouch markers is planned.
 Those markers will show predicted soles, desired support targets, solved soles

@@ -664,6 +664,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     component.builder_call("enabled", booleans(1));
                 }
                 "RendererSettings" => renderer_settings_binding::register(component, canonical),
+                "WalkingIK" => walking_ik_binding::register(component),
                 "Grid" => {
                     constructor_and_builder(component, "spacing", floats(1));
                     for method in ["size_x", "size_z"] {
@@ -1680,10 +1681,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     constructor_and_builder(component, "neck_pitch", floats(3));
                     constructor_and_builder(component, "neck_roll", floats(2));
                     constructor_and_builder(component, "crouch_enabled", booleans(1));
-                    constructor_and_builder(component, "walking_enabled", booleans(1));
-                    constructor_and_builder(component, "walking_stride", floats(1));
-                    constructor_and_builder(component, "walking_step_duration", floats(1));
-                    constructor_and_builder(component, "walking_step_height", floats(1));
+                    walking_ik_binding::register_legacy(component);
                     constructor_and_builder(
                         component,
                         "crouch_sole_offsets",
@@ -2166,3 +2164,5 @@ mod tests {
 }
 #[path = "renderer_settings_binding.rs"]
 mod renderer_settings_binding;
+#[path = "walking_ik_binding.rs"]
+mod walking_ik_binding;

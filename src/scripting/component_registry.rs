@@ -65,6 +65,8 @@ use crate::scripting::token::expand_component_shortform;
 use std::cell::RefCell;
 #[path = "renderer_settings_legacy.rs"]
 mod renderer_settings_legacy;
+#[path = "walking_ik_registry.rs"]
+mod walking_ik_registry;
 
 thread_local! {
     static LIVE_RENDER_ASSETS: RefCell<Option<*mut RenderAssets>> = const { RefCell::new(None) };
@@ -100,6 +102,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "AudioOutput",
     "AvatarBodyYaw",
     "AvatarControl",
+    "WalkingIK",
     "Background",
     "BackgroundColor",
     "Bloom",
@@ -1754,6 +1757,7 @@ fn create_component(
     }
 
     match type_name {
+        "WalkingIK" => walking_ik_registry::create(world, ctor, args),
         "Transform" => {
             let mut c = TransformComponent::new();
             if let Some(method) = ctor {
@@ -4272,6 +4276,11 @@ fn apply_call(
         renderer_settings_legacy::apply(s, method, args)?;
         return Ok(());
     }
+    if let Some(config) =
+        world.get_component_by_id_as_mut::<crate::engine::ecs::component::WalkingIkComponent>(id)
+    {
+        return walking_ik_registry::apply(config, method, args);
+    }
     if let Some(ts) = world.get_component_by_id_as_mut::<TextShadowComponent>(id) {
         match method {
             "offset_xy" => {
@@ -4351,6 +4360,9 @@ fn apply_call(
         return Ok(());
     }
     if let Some(avc) = world.get_component_by_id_as_mut::<AvatarControlComponent>(id) {
+        if walking_ik_registry::apply_legacy(avc, method, args)? {
+            return Ok(());
+        }
         match method {
             "arm_ik" => {
                 let fields = match arg(args, 0)? {
@@ -4438,14 +4450,6 @@ fn apply_call(
             }
             "neck_pin_disabled" => *avc = avc.clone().without_neck_pin(),
             "crouch_enabled" => *avc = avc.clone().with_crouch_enabled(arg_bool(args, 0)?),
-            "walking_enabled" => *avc = avc.clone().with_walking_enabled(arg_bool(args, 0)?),
-            "walking_stride" => *avc = avc.clone().with_walking_stride(arg_f32(args, 0)?)?,
-            "walking_step_duration" => {
-                *avc = avc.clone().with_walking_step_duration(arg_f32(args, 0)?)?
-            }
-            "walking_step_height" => {
-                *avc = avc.clone().with_walking_step_height(arg_f32(args, 0)?)?
-            }
             "crouch_sole_offsets" => {
                 *avc = avc
                     .clone()

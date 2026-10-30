@@ -1,6 +1,9 @@
 use super::super::rig::uniform;
 use super::*;
 
+#[path = "walking_config.rs"]
+mod config;
+
 impl Fixture {
     fn walking(asset: Option<&str>, drop: f32) -> Self {
         let mut f = Self::new(asset);
@@ -198,7 +201,7 @@ fn walking_acceleration_advances_an_existing_swing_without_moving_stance() {
         }
     };
     let stance = accelerating.feet()[1 - side].target_sole;
-    for _ in 0..3 {
+    for _ in 0..5 {
         steady.travel(0.0, 0.4 / 60.0, 1.0 / 60.0);
         accelerating.travel(0.0, 1.8 / 60.0, 1.0 / 60.0);
         close(accelerating.feet()[1 - side].target_sole, stance);
@@ -242,7 +245,10 @@ fn walking_speed_increases_step_length_and_cadence_without_accumulating_lag() {
                         if foot.phase == FootPhase::Planted {
                             let delta = vec3_sub(foot.target_sole, contacts[side].target_sole);
                             let length = (delta[0] * delta[0] + delta[2] * delta[2]).sqrt();
-                            assert!(length <= 0.3201, "step exceeded configured stride");
+                            let limit = 0.32
+                                * crate::engine::ecs::component::WalkingIkComponent::default()
+                                    .step_scale;
+                            assert!(length <= limit + 0.0001, "step exceeded configured stride");
                             if length > 0.001 {
                                 travel += length;
                                 landed += 1;

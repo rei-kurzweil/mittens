@@ -94,22 +94,42 @@ state or shared Hips bone.
 Walking defaults on for eligible calibrated XR AVCs, including existing scenes.
 Use `.walking_enabled(false)` to opt out. Sole calibration is still required;
 missing mappings, invalid tracking or missing support retain the existing gates.
-The remaining controls can be tuned on a calibrated AVC:
+Walking tuning belongs in an optional `WalkingIK` direct child of a calibrated
+AVC. Existing `walking_*` AVC calls remain supported when no child is present.
 
 ```mms
 AVC
-    .crouch_sole_offsets([0.0, 0.0530325, 0.0874534], [0.0, 0.0530325, 0.0874534])
-    .walking_stride(0.32)
-    .walking_step_duration(0.22)
-    .walking_step_height(0.07)
+    .crouch_sole_offsets([0.0, 0.0530325, 0.0874534], [0.0, 0.0530325, 0.0874534]) {
+    WalkingIK {
+        enabled(true)
+        stride(0.32)
+        step_duration(0.22)
+        step_height(0.07)
+        step_scale(1.3)
+    }
+}
 ```
 
 The sole offsets above are specific to the checked-in Rei(mu)/Bisket shoes.
-Stride is maximum horizontal foot travel in model metres, valid in `[0.05, 1.0]`.
+Stride is base maximum horizontal foot travel in model metres, valid in `[0.05, 1.0]`.
 Duration is the relaxed swing time in seconds, valid in `[0.08, 1.0]`; speed and
 trailing-foot recovery can shorten it automatically. Height is model metres,
-valid in `[0, 0.3]`. Defaults are shown above; model distances scale with the avatar.
-The idle displacement trigger is 32% of stride; motion adds half a swing's
+valid in `[0, 0.3]`. `step_scale` is a multiplier in `[0.1, 2.0]` applied to
+forward landing prediction, maximum step travel and swing clearance. Its default
+is 1.3, including when no component is authored: 30% more reach and lift than the
+previous gait (0.416 m maximum travel and 0.091 m clearance at unit avatar scale).
+Use `step_scale(1.0)` for the previous distance tuning. This changes foot goals;
+the two-bone solve determines thigh and knee angles from reachable geometry. It
+does not multiply joint angles or change the calibrated knee bend direction.
+
+The child's settings replace the AVC's walking distances and duration. The
+existing `AVC.walking_enabled(false)` remains a master opt-out, and the child can
+also disable walking with `enabled(false)`. Crouch calibration stays on AVC.
+Only one direct child is allowed; nested model/hand components do not configure
+the owning avatar. Settings are read each frame without caching pose state in
+the component. Changing tuning affects subsequent steps; active swing endpoints
+remain fixed. Defaults are shown above; model distances scale with the avatar.
+The idle displacement trigger is 32% of base stride; motion adds half a swing's
 predicted travel to directional lag to start steps sooner. The heading trigger
 is 25 degrees.
 
@@ -175,7 +195,8 @@ and bounded foot lag at 0.25–1.2 m/s, acceleration during swing, and the Sakur
 gamepad pace of 1.4 m/s on both real rigs at 30/45/60/90/120 Hz and uneven frame
 times. Those pace checks cover upright and crouched posture, forward/backward,
 diagonal and sideways travel, with comparable cadence and lag across rates.
-The group also covers
+The group also covers scaled swing clearance/reach and forward thigh movement on
+both real rigs, WalkingIK MMS validation/save-load and avatar scoping,
 backward/sideways/diagonal motion, stop-mid-swing and idle stability,
 scale/yaw/reversal, contact release/recovery, bad frame times,
 bounded unreachable targets, MMS validation/save-load, and the complete avatar

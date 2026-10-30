@@ -381,6 +381,7 @@ if xr_view_enabled {
                         name = "sakura_reimu_avatar_control"
                         crouch_enabled(true)
                         crouch_sole_offsets([0.0, 0.0530325, 0.0874534], [0.0, 0.0530325, 0.0874534])
+                        WalkingIK { step_scale(1.3) }
                         mouth_open_from_amplitude(voice_level)
                         mouth_open_rms_center_range(0.0475, 0.085)
                         mouth_open_amount(1.0)

@@ -3,7 +3,9 @@ use super::leg::solve_leg;
 use super::rig::*;
 use super::{FootGoal, FootPhase, FootState, LowerBodyStatus, crouch, support::SupportQuery};
 use super::{WalkingDiagnostics, walking::WalkingState};
-use crate::engine::ecs::component::{AvatarControlComponent, InputComponent, InputXRComponent};
+use crate::engine::ecs::component::{
+    AvatarControlComponent, InputComponent, InputXRComponent, WalkingIkComponent,
+};
 use crate::engine::ecs::system::collidable_bvh::CollidableBvh;
 use crate::engine::ecs::system::static_contact_system::StaticContactSystem;
 use crate::engine::ecs::system::{AttachmentSystem, HumanoidBoneMapSystem};
@@ -95,7 +97,9 @@ impl LowerBodyIkSystem {
                 }
                 node = world.parent_of(current);
             }
-            let gate = if !avatar.crouch_enabled && !avatar.walking_enabled {
+            let walking_config = walking_settings(world, avatar, id);
+            let walking_enabled = walking_config.as_ref().is_ok_and(|config| config.enabled);
+            let gate = if !avatar.crouch_enabled && !walking_enabled {
                 Some(LowerBodyStatus::Disabled)
             } else if mounted {
                 Some(LowerBodyStatus::Mounted)
@@ -104,13 +108,15 @@ impl LowerBodyIkSystem {
             } else {
                 None
             };
-            let result = match (&mut instance.rig, gate) {
-                (_, Some(status)) => Err(status),
-                (Some(rig), None) => solve_frame(
+            let result = match (&mut instance.rig, gate, walking_config) {
+                (_, _, Err(status)) => Err(status),
+                (_, Some(status), _) => Err(status),
+                (Some(rig), None, Ok(config)) => solve_frame(
                     rig,
                     &mut instance.walking,
                     world,
                     avatar,
+                    &config,
                     id,
                     index,
                     &mut self.traversal,
@@ -118,7 +124,7 @@ impl LowerBodyIkSystem {
                     emit,
                     dt_sec,
                 ),
-                (None, None) => Err(instance
+                (None, None, _) => Err(instance
                     .bind_error
                     .map(LowerBodyStatus::UnsupportedRig)
                     .unwrap_or_default()),
@@ -188,11 +194,35 @@ impl LowerBodyInstance {
     }
 }
 
+fn walking_settings(
+    world: &World,
+    avatar: &AvatarControlComponent,
+    id: ComponentId,
+) -> Result<WalkingIkComponent, LowerBodyStatus> {
+    let mut children = world
+        .children_of(id)
+        .iter()
+        .filter_map(|&child| world.get_component_by_id_as::<WalkingIkComponent>(child));
+    let mut config = children
+        .next()
+        .copied()
+        .unwrap_or_else(|| WalkingIkComponent::from_avatar(avatar));
+    if children.next().is_some() {
+        return Err(LowerBodyStatus::UnsupportedRig(
+            "multiple WalkingIK components on one AVC",
+        ));
+    }
+    // The existing AVC opt-out remains a master switch for existing scenes.
+    config.enabled &= avatar.walking_enabled;
+    Ok(config)
+}
+
 fn solve_frame(
     rig: &mut LowerBodyRig,
     walking: &mut WalkingState,
     world: &World,
     avatar: &AvatarControlComponent,
+    walking_config: &WalkingIkComponent,
     id: ComponentId,
     index: &CollidableBvh,
     stack: &mut Vec<usize>,
@@ -227,14 +257,7 @@ fn solve_frame(
     {
         return Err(UnsupportedRig("invalid crouch calibration"));
     }
-    if avatar.walking_enabled
-        && (!avatar.walking_stride.is_finite()
-            || !(0.05..=1.0).contains(&avatar.walking_stride)
-            || !avatar.walking_step_duration.is_finite()
-            || !(0.08..=1.0).contains(&avatar.walking_step_duration)
-            || !avatar.walking_step_height.is_finite()
-            || !(0.0..=0.3).contains(&avatar.walking_step_height))
-    {
+    if walking_config.enabled && walking_config.validate().is_err() {
         return Err(UnsupportedRig("invalid walking configuration"));
     }
     let body = uniform(matrix(world, rig.root).map_err(UnsupportedRig)?).map_err(UnsupportedRig)?;
@@ -261,8 +284,8 @@ fn solve_frame(
             return Err(UnsupportedRig("nonfinite sole landmark"));
         }
     }
-    let padding = if avatar.walking_enabled {
-        avatar.walking_stride * 3.0 * body.scale[0]
+    let padding = if walking_config.enabled {
+        walking_config.stride * walking_config.step_scale * 3.0 * body.scale[0]
     } else {
         0.0
     };
@@ -287,12 +310,12 @@ fn solve_frame(
             avatar.crouch_enabled,
         )
     });
-    let gait = if avatar.walking_enabled {
+    let gait = if walking_config.enabled {
         walking.advance(
             rest,
             ground.center(),
             body.scale[0],
-            avatar,
+            walking_config,
             dt_sec,
             &ground,
         )

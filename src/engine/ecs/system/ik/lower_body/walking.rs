@@ -4,7 +4,7 @@ use super::{
     crouch::RestGoal,
     support::{Support, SupportQuery},
 };
-use crate::engine::ecs::component::AvatarControlComponent;
+use crate::engine::ecs::component::WalkingIkComponent;
 use crate::utils::math::{quat_nlerp, vec3_add, vec3_dot, vec3_len, vec3_scale, vec3_sub};
 
 #[derive(Debug, Clone, Copy)]
@@ -87,7 +87,7 @@ impl WalkingState {
         rest: [RestGoal; 2],
         position: [f32; 3],
         scale: f32,
-        config: &AvatarControlComponent,
+        config: &WalkingIkComponent,
         dt: f32,
         ground: &SupportQuery<'_>,
     ) -> Option<[WalkingGoal; 2]> {
@@ -95,7 +95,8 @@ impl WalkingState {
             self.reset();
             return None;
         }
-        let stride = config.walking_stride * scale;
+        let base_stride = config.stride * scale;
+        let stride = base_stride * config.step_scale;
         let displacement = self
             .previous_position
             .map(|p| horizontal(vec3_sub(position, p)));
@@ -191,12 +192,9 @@ impl WalkingState {
             // Each leg needs to recover two steps' worth of body travel. Increase
             // cadence when that consumes the stride budget, and again when feet
             // already trail the body. The authored duration is the relaxed pace.
-            let demand =
-                (2.0 * speed * config.walking_step_duration / stride).max(1.0) + lag / stride;
-            let duration = (config.walking_step_duration / demand).clamp(
-                config.walking_step_duration.min(0.08),
-                config.walking_step_duration,
-            );
+            let demand = (2.0 * speed * config.step_duration / stride).max(1.0) + lag / stride;
+            let duration = (config.step_duration / demand)
+                .clamp(config.step_duration.min(0.08), config.step_duration);
 
             // Spend only the time needed by each phase, carrying the remainder
             // through landing, support transfer and the next swing. Rounding each
@@ -212,7 +210,7 @@ impl WalkingState {
                 self.contacts.as_mut().unwrap()[swing.side] = swing.to;
                 self.next_side = Some(1 - swing.side);
                 self.swing = None;
-                self.transfer_seconds = 0.035 * duration / config.walking_step_duration;
+                self.transfer_seconds = 0.035 * duration / config.step_duration;
                 continue;
             }
             let transfer = remaining.min(self.transfer_seconds);
@@ -242,7 +240,7 @@ impl WalkingState {
             // Anticipate continued motion so the first foot lifts before the body
             // has dragged both contacts behind it. Keep the displacement deadband
             // for idle tracking noise and corrective steps after stopping.
-            let threshold = stride * 0.32;
+            let threshold = base_stride * 0.32;
             let anticipated_lag = lag + (speed * duration * 0.5).min(threshold);
             if errors.iter().all(|e| *e <= threshold)
                 && anticipated_lag <= threshold
@@ -253,9 +251,12 @@ impl WalkingState {
             let side = self
                 .next_side
                 .unwrap_or(if errors[1] > errors[0] { 1 } else { 0 });
-            let lead = vec3_add(
-                vec3_scale(self.velocity, duration * 1.5),
-                vec3_scale(direction, lag * 0.5),
+            let lead = vec3_scale(
+                vec3_add(
+                    vec3_scale(self.velocity, duration * 1.5),
+                    vec3_scale(direction, lag * 0.5),
+                ),
+                config.step_scale,
             );
             let lead_length = vec3_len(lead);
             let mut lead = vec3_scale(
@@ -304,7 +305,7 @@ impl WalkingState {
                 },
                 elapsed: 0.0,
                 duration,
-                height: config.walking_step_height * scale,
+                height: config.step_height * config.step_scale * scale,
                 forward_bias: (speed * duration / stride).clamp(0.0, 1.0),
             });
             self.steps[side] += 1;

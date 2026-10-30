@@ -34,9 +34,12 @@ T {
             AVC {
                 initial_yaw(3.14159)
                 crouch_sole_offsets([0.0, 0.0530325, 0.0874534], [0.0, 0.0530325, 0.0874534])
-                walking_stride(0.32)
-                walking_step_duration(0.22)
-                walking_step_height(0.07)
+                WalkingIK {
+                    stride(0.32)
+                    step_duration(0.22)
+                    step_height(0.07)
+                    step_scale(1.3)
+                }
                 T {
                     GLTF.new("assets/models/bisket.glb") {
                         bisket_humanoid_bone_map()
