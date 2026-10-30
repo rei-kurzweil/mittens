@@ -16,7 +16,7 @@ mode replaces that app's library; no ALVR app is changed.
 | Lifecycle | `--no-default-features` | Previously verified blank native panel; no XR worker. |
 | OpenXR diagnostic | `--no-default-features --features xr-probe` | Loader/instance/HMD, extensions and Vulkan API requirements; no graphics session. |
 | Vulkan probe | `--no-default-features --features vulkan-probe` | Vulkan session, capability report, stereo clear and triangle. |
-| Custom opaque scene (default) | None | Embedded MMS cubes through the new custom-material renderer; Focus 3 scene verification pending. |
+| Custom opaque scene (default) | None | Embedded MMS cubes through the new custom-material renderer, now with 4x MSAA. First 1x scene confirmed on Focus 3. |
 
 Build and test the diagnostic first, from the repository root:
 
@@ -47,8 +47,9 @@ at most 1024x1024 per eye, no depth, and no multiview.
 
 For the new engine scene, build with no helper arguments. Expect two
 world-anchored cyan/orange cubes using generic custom opaque materials and a
-depth attachment. This scene is implemented and desktop GPU checked; it has
-not yet been visually verified on Focus 3. See [renderer scope](opaque-renderer.md).
+depth attachment. The first 1x scene and head-driven views were confirmed on
+Focus 3. The default now uses 4x transient color/depth and an in-pass resolve
+into single-sample XR output. See [renderer scope and separate validation](opaque-renderer.md).
 
 ## Capture results
 

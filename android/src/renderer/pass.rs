@@ -12,7 +12,9 @@ pub(super) struct EyePass {
     pub handle: vk::RenderPass,
     pub extent: vk::Extent2D,
     pub depth_format: vk::Format,
+    pub samples: vk::SampleCountFlags,
     depth: Vec<Image>,
+    color_msaa: Vec<Image>,
     views: Vec<[vk::ImageView; 2]>,
     framebuffers: Vec<[vk::Framebuffer; 2]>,
 }
@@ -39,44 +41,82 @@ impl EyePass {
         format: vk::Format,
         extent: vk::Extent2D,
         images: &[u64],
+        samples: vk::SampleCountFlags,
     ) -> Result<Self> {
         if images.is_empty() || extent.width == 0 || extent.height == 0 {
             return Err("empty eye target".into());
         }
+        if !matches!(
+            samples,
+            vk::SampleCountFlags::TYPE_1 | vk::SampleCountFlags::TYPE_4
+        ) {
+            return Err("opaque eye pass supports 1x or 4x MSAA".into());
+        }
+        let multisampled = samples != vk::SampleCountFlags::TYPE_1;
+        let supports = |format, usage| unsafe {
+            gpu.instance
+                .raw
+                .get_physical_device_image_format_properties(
+                    gpu.physical,
+                    format,
+                    vk::ImageType::TYPE_2D,
+                    vk::ImageTiling::OPTIMAL,
+                    usage,
+                    vk::ImageCreateFlags::empty(),
+                )
+                .is_ok_and(|p| {
+                    p.sample_counts.contains(samples)
+                        && p.max_extent.width >= extent.width
+                        && p.max_extent.height >= extent.height
+                })
+        };
+        let color_usage =
+            vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT;
+        let depth_usage = vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
+            | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT;
+        if multisampled && !supports(format, color_usage) {
+            return Err(format!(
+                "requested {samples:?} transient color is unsupported for {format:?}"
+            ));
+        }
         let depth_format = [vk::Format::D16_UNORM, vk::Format::D32_SFLOAT]
             .into_iter()
-            .find(|&format| unsafe {
-                gpu.instance
-                    .raw
-                    .get_physical_device_format_properties(gpu.physical, format)
-                    .optimal_tiling_features
-                    .contains(vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT)
-            })
-            .ok_or("no supported depth format")?;
+            .find(|&format| supports(format, depth_usage))
+            .ok_or("no depth format supports the requested sample count and transient usage")?;
         let mut pass = Self {
             gpu,
             handle: vk::RenderPass::null(),
             extent,
             depth_format,
+            samples,
             depth: Vec::new(),
+            color_msaa: Vec::new(),
             views: Vec::new(),
             framebuffers: Vec::new(),
         };
         unsafe {
             let device = &pass.gpu.device;
-            let attachments = [
+            let mut attachments = vec![
                 vk::AttachmentDescription::default()
                     .format(format)
-                    .samples(vk::SampleCountFlags::TYPE_1)
+                    .samples(samples)
                     .load_op(vk::AttachmentLoadOp::CLEAR)
-                    .store_op(vk::AttachmentStoreOp::STORE)
+                    .store_op(if multisampled {
+                        vk::AttachmentStoreOp::DONT_CARE
+                    } else {
+                        vk::AttachmentStoreOp::STORE
+                    })
                     .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
                     .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-                    .initial_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .initial_layout(if multisampled {
+                        vk::ImageLayout::UNDEFINED
+                    } else {
+                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+                    })
                     .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL),
                 vk::AttachmentDescription::default()
                     .format(depth_format)
-                    .samples(vk::SampleCountFlags::TYPE_1)
+                    .samples(samples)
                     .load_op(vk::AttachmentLoadOp::CLEAR)
                     .store_op(vk::AttachmentStoreOp::DONT_CARE)
                     .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
@@ -84,6 +124,19 @@ impl EyePass {
                     .initial_layout(vk::ImageLayout::UNDEFINED)
                     .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL),
             ];
+            if multisampled {
+                attachments.push(
+                    vk::AttachmentDescription::default()
+                        .format(format)
+                        .samples(vk::SampleCountFlags::TYPE_1)
+                        .load_op(vk::AttachmentLoadOp::DONT_CARE)
+                        .store_op(vk::AttachmentStoreOp::STORE)
+                        .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+                        .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+                        .initial_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                        .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL),
+                );
+            }
             let colors = [vk::AttachmentReference {
                 attachment: 0,
                 layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
@@ -92,10 +145,18 @@ impl EyePass {
                 attachment: 1,
                 layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
             };
-            let subpasses = [vk::SubpassDescription::default()
+            let resolves = [vk::AttachmentReference {
+                attachment: 2,
+                layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            }];
+            let mut subpass = vk::SubpassDescription::default()
                 .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
                 .color_attachments(&colors)
-                .depth_stencil_attachment(&depth)];
+                .depth_stencil_attachment(&depth);
+            if multisampled {
+                subpass = subpass.resolve_attachments(&resolves);
+            }
+            let subpasses = [subpass];
             // Synchronize the runtime's prior use and the previous frame's depth
             // writes. BY_REGION permits attachment work to stay tile-local.
             let dependencies = [vk::SubpassDependency::default()
@@ -127,10 +188,20 @@ impl EyePass {
                     pass.gpu.clone(),
                     depth_format,
                     extent,
-                    vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
-                        | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT,
+                    depth_usage,
                     vk::ImageAspectFlags::DEPTH,
+                    samples,
                 )?);
+                if multisampled {
+                    pass.color_msaa.push(Image::new(
+                        pass.gpu.clone(),
+                        format,
+                        extent,
+                        color_usage,
+                        vk::ImageAspectFlags::COLOR,
+                        samples,
+                    )?);
+                }
             }
             for &image in images {
                 pass.views.push([vk::ImageView::null(); 2]);
@@ -153,11 +224,20 @@ impl EyePass {
                             None,
                         )
                         .api("vkCreateImageView(scene eye)")?;
+                    let attachments = if multisampled {
+                        vec![
+                            pass.color_msaa[eye].view,
+                            pass.depth[eye].view,
+                            pass.views[index][eye],
+                        ]
+                    } else {
+                        vec![pass.views[index][eye], pass.depth[eye].view]
+                    };
                     pass.framebuffers[index][eye] = device
                         .create_framebuffer(
                             &vk::FramebufferCreateInfo::default()
                                 .render_pass(pass.handle)
-                                .attachments(&[pass.views[index][eye], pass.depth[eye].view])
+                                .attachments(&attachments)
                                 .width(extent.width)
                                 .height(extent.height)
                                 .layers(1),
@@ -171,6 +251,9 @@ impl EyePass {
     }
     pub fn lazy_depth(&self) -> bool {
         self.depth.iter().all(|image| image.lazy)
+    }
+    pub fn lazy_msaa_color(&self) -> bool {
+        !self.color_msaa.is_empty() && self.color_msaa.iter().all(|image| image.lazy)
     }
     pub fn target_count(&self) -> usize {
         self.framebuffers.len()

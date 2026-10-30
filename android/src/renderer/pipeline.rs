@@ -44,6 +44,7 @@ impl Pipeline {
         pass: vk::RenderPass,
         layout: vk::PipelineLayout,
         fragment: &[u32],
+        sample_count: vk::SampleCountFlags,
     ) -> Result<Self> {
         let words = ash::util::read_spv(&mut Cursor::new(include_bytes!(concat!(
             env!("OUT_DIR"),
@@ -123,8 +124,8 @@ impl Pipeline {
             .cull_mode(vk::CullModeFlags::BACK)
             .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
             .line_width(1.0);
-        let samples = vk::PipelineMultisampleStateCreateInfo::default()
-            .rasterization_samples(vk::SampleCountFlags::TYPE_1);
+        let samples =
+            vk::PipelineMultisampleStateCreateInfo::default().rasterization_samples(sample_count);
         let depth = vk::PipelineDepthStencilStateCreateInfo::default()
             .depth_test_enable(true)
             .depth_write_enable(true)

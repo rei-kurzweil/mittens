@@ -42,7 +42,8 @@ impl SceneRuntime {
                 &directory.join("mobile-scene.mms").to_string_lossy(),
             )
             .map_err(|e| format!("load mobile MMS scene: {e}"))?;
-        let renderer = SceneRenderer::new(gpu, format, extent, images)?;
+        let renderer =
+            SceneRenderer::with_samples(gpu, format, extent, images, vk::SampleCountFlags::TYPE_4)?;
         report.line(renderer.attachment_policy());
         report.line("mobile scene loaded: two MMS cubes; generic custom opaque/albedo material; no legacy pipelines");
         Ok(Self {

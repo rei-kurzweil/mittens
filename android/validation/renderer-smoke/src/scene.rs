@@ -47,14 +47,15 @@ fn cameras() -> [EyeCamera; 2] {
 fn pixel(pixels: &[u8], eye: usize, x: usize, y: usize) -> &[u8] {
     &pixels[(eye * 96 * 96 + y * 96 + x) * 4..][..4]
 }
-pub fn run() {
+pub fn run(samples: vk::SampleCountFlags) {
     let gpu = graphics_device::headless(false);
     let target = Target::new(gpu.clone());
-    let mut renderer = SceneRenderer::new(
+    let mut renderer = SceneRenderer::with_samples(
         gpu.clone(),
         vk::Format::R8G8B8A8_UNORM,
         target.extent,
         vec![target.handle()],
+        samples,
     )
     .unwrap();
     println!("{}", renderer.attachment_policy());
@@ -116,6 +117,37 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
     );
     assert_eq!(stats.instances, 6);
     let pixels = target.pixels();
+    let solid = [
+        pixel(&pixels, 0, 0, 0),
+        pixel(&pixels, 0, 48, 48),
+        &[229, 25, 25, 255],
+    ];
+    let partial = pixels
+        .chunks_exact(4)
+        .filter(|pixel| {
+            !solid.iter().any(|color| {
+                pixel
+                    .iter()
+                    .zip(color.iter())
+                    .all(|(&a, &b)| a.abs_diff(b) <= 2)
+            })
+        })
+        .count();
+    if samples == vk::SampleCountFlags::TYPE_4 {
+        assert!(
+            partial > 0,
+            "4x resolve should produce partially covered edge pixels"
+        );
+    } else {
+        assert_eq!(
+            partial, 0,
+            "1x flat colors should have hard geometric edges"
+        );
+    }
+    println!(
+        "PASS sample_count={} partial_coverage_pixels={partial}",
+        samples.as_raw()
+    );
     for eye in 0..2 {
         let center = pixel(&pixels, eye, 48, 48);
         assert!(

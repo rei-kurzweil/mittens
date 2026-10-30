@@ -2,8 +2,12 @@
 
 Implementation work after checkpoint `09f833c0` on 2026-10-29. The checkpoint
 preserves the Focus 3 Vulkan triangle, its device evidence, and the public
-engine/consumer boundary test. The **new scene APK is not yet verified on the
-Focus 3**. The previously installed/visually verified app is the triangle probe.
+engine/consumer boundary test. The first **1x MMS scene passed on Focus 3** on
+2026-10-29: the user confirmed the cubes and physical headset translation and
+orientation. The report records completed custom scene draws in both eyes.
+The follow-up default adds 4x MSAA; see the device validation record for its
+separate install/visual status. Controlled graphics lifecycle tests remain open.
+See the [Focus 3 scene record](focus-3-opaque-results.md).
 
 The default APK now loads two embedded MMS cubes and a generic custom fragment
 definition with named `vec3 tint` / `f32 gain` inputs. `MaterialBase()` supplies
@@ -34,12 +38,22 @@ Vulkano with desktop features disabled; this work does not remove that dependenc
 ## Tile-oriented attachment policy
 
 - One classic render pass per eye, all supported opaque batches inside it.
-- Direct rendering into the acquired runtime-owned color layer: `CLEAR/STORE`.
+- The Android scene defaults to 4x MSAA. Its color and depth attachments are
+  transient and `CLEAR/DONT_CARE`, with lazy device-local memory preferred.
+- An in-subpass color resolve writes directly into the acquired single-sample
+  OpenXR color layer: `DONT_CARE/STORE`. No separate resolve command or copy.
+- The 1x path draws directly into that layer with `CLEAR/STORE`; the desktop
+  comparison retains this explicit 1x baseline for both renderers.
 - Reusable per-eye depth images: `CLEAR/DONT_CARE`, transient attachment usage,
   preferred lazily allocated device-local memory, ordinary device-local fallback.
-- One sample; no intermediate color image, post-process copy, or sampled depth.
+- No sampled depth, post-process copy, or persistent multisample color image.
 - Depth uses supported `D16_UNORM`, falling back to `D32_SFLOAT`.
 - Full eye render area and attachment clears; no explicit per-pixel clear draw.
+
+Sample counts are checked against the actual color/depth format and transient
+usage before allocation. The pipeline uses the same sample count as the pass.
+Depth is discarded without a depth resolve. This follows the
+[Khronos MSAA guidance](https://docs.vulkan.org/samples/latest/samples/performance/msaa/README.html).
 
 Hardware/driver choose tiles. These policies allow tile-local work; they do not
 guarantee that the driver uses a particular path or prove bandwidth savings.
@@ -142,7 +156,10 @@ code. On NVIDIA GTX 1080 it checks stereo parallax, near/far depth occlusion,
 named uniform revision updates, RGBA sampling, batched instances, stable retained
 resource counts across repeated frames, unsupported transparency/legacy rejection,
 and actual embedded MMS startup. It also retains classic/dynamic triangle checks.
-The host lacks lazy device memory, so lazy allocation is not verified there.
+It now exercises both 1x and 4x with single-sample output readback: the flat-color
+test found 0 partially covered pixels at 1x and 281 at 4x. These are coverage
+checks, not timing measurements. The desktop lacks lazy device memory; the
+Focus 3 1x run selected lazy depth successfully.
 
 See the [development validation record](validation/opaque-renderer-development-2026-10-29.txt)
 and [raw GPU output](validation/opaque-renderer-headless-2026-10-29.log).

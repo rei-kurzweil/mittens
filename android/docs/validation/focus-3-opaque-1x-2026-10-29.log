@@ -1,0 +1,169 @@
+--------- beginning of main
+--------- beginning of system
+12-08 13:36:46.633  5728  5755 I mitten-droid: mitten_droid::xr_host: probe runtime=VIVE WAVE version=0.0.1 binding=XR_KHR_vulkan_enable2
+12-08 13:36:46.635  5728  5755 I mitten-droid: mitten_droid::xr_host: probe system=SystemId(4369) properties=SystemProperties { system_id: SystemId(4369), vendor_id: 2996, system_name: "WAVE:SUE", graphics_properties: SystemGraphicsProperties { max_swapchain_image_height: 1712, max_swapchain_image_width: 1712, max_layer_count: 16 }, tracking_properties: SystemTrackingProperties { orientation_tracking: true, position_tracking: true } }
+12-08 13:36:46.637  5728  5755 I mitten-droid: mitten_droid::xr_host: probe view_configuration=PRIMARY_STEREO views=[ViewConfigurationView { recommended_image_rect_width: 1712, max_image_rect_width: 3440, recommended_image_rect_height: 1712, max_image_rect_height: 3440, recommended_swapchain_sample_count: 1, max_swapchain_sample_count: 1 }, ViewConfigurationView { recommended_image_rect_width: 1712, max_image_rect_width: 3440, recommended_image_rect_height: 1712, max_image_rect_height: 3440, recommended_swapchain_sample_count: 1, max_swapchain_sample_count: 1 }] blend_modes=[OPAQUE]
+12-08 13:36:46.638  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan API min=1.0.0 max=1.2.203
+12-08 13:36:46.638  5728  5755 I mitten-droid: mitten_droid::xr_host: probe OpenXR instance/HMD capability stage SUCCESS
+12-08 13:36:46.640  5728  5755 I mitten-droid: mitten_droid::xr_host: probe enable2: runtime supplies required Vulkan extensions through xrCreateVulkanInstanceKHR/xrCreateVulkanDeviceKHR
+12-08 13:36:46.649  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan loader=1.1.0 requested_api=1.1.0
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe GPU=Adreno (TM) 650 physical=0x76b9b01660 API=1.1.128 driver=2149855232 vendor=0x5143 device=0x6050002
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_incremental_present
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_hdr_metadata
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_shared_presentable_image
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_GOOGLE_display_timing
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_subgroup_size_control
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_external_memory
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_pipeline_creation_feedback
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_shader_float16_int8
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_get_memory_requirements2
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_spirv_1_4
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_fragment_density_map
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_external_semaphore_fd
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_QCOM_render_pass_store_ops
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_astc_decode_mode
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_external_memory_fd
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_QCOM_render_pass_shader_resolve
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_maintenance1
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_maintenance2
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_maintenance3
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_separate_depth_stencil_layouts
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_image_robustness
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_extended_dynamic_state
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_queue_family_foreign
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_bind_memory2
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_external_semaphore
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_scalar_block_layout
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_sampler_ycbcr_conversion
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_vertex_attribute_divisor
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_variable_pointers
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_push_descriptor
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_device_memory_report
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_imageless_framebuffer
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_device_group
+12-08 13:36:46.660  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_relaxed_block_layout
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_external_fence
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_custom_border_color
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_host_query_reset
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_index_type_uint8
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_multiview
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_storage_buffer_storage_class
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_fragment_density_map2
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_private_data
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_pipeline_creation_cache_control
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_separate_stencil_usage
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_IMG_filter_cubic
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_filter_cubic
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_image_format_list
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_sampler_filter_minmax
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_16bit_storage
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_shader_demote_to_helper_invocation
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_QCOM_render_pass_transform
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_create_renderpass2
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_transform_feedback
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_blend_operation_advanced
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_provoking_vertex
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_depth_stencil_resolve
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_shader_float_controls
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_texture_compression_astc_hdr
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_global_priority
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_shader_draw_parameters
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_vulkan_memory_model
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_descriptor_indexing
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_line_rasterization
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_descriptor_update_template
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_draw_indirect_count
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_driver_properties
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_ANDROID_external_memory_android_hardware_buffer
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_dedicated_allocation
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_EXT_sample_locations
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_swapchain
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_sampler_mirror_clamp_to_edge
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan device extension=VK_KHR_external_fence_fd
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe dynamicRendering=0 usable=false multiview=1 dynamic_rendering_local_read_extension=false
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe dynamicRenderingLocalRead=0
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe maxMultiviewViewCount=6
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe depth_resolve_modes=SAMPLE_ZERO stencil_resolve_modes=SAMPLE_ZERO independent_resolve=0 independent_resolve_none=0
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe compute workgroup_invocations=1024 size=[1024, 1024, 64] count=[65535, 65535, 65535] storage_buffers_per_stage=524288 stage_resources=1572864 storage_range=536870912 uniform_range=65536 sampled_images=524288
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe texture ASTC_LDR=1 ETC2=1 BC=0 color_samples=TYPE_1 | TYPE_2 | TYPE_4 depth_samples=TYPE_1 | TYPE_2 | TYPE_4
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe queue_family=0 flags=GRAPHICS | COMPUTE | PROTECTED count=3
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe engine_deformation_basic_limits_ok=true (probe does not require deformation)
+12-08 13:36:46.661  5728  5755 I mitten-droid: mitten_droid::xr_host: probe memory_heap=0 bytes=8047419392 flags=DEVICE_LOCAL
+12-08 13:36:46.662  5728  5755 I mitten-droid: mitten_droid::xr_host: probe memory_heap=1 bytes=268435456 flags=DEVICE_LOCAL
+12-08 13:36:46.662  5728  5755 I mitten-droid: mitten_droid::xr_host: probe memory_type=0 heap=0 flags=DEVICE_LOCAL
+12-08 13:36:46.662  5728  5755 I mitten-droid: mitten_droid::xr_host: probe memory_type=1 heap=0 flags=DEVICE_LOCAL
+12-08 13:36:46.662  5728  5755 I mitten-droid: mitten_droid::xr_host: probe memory_type=2 heap=0 flags=DEVICE_LOCAL | HOST_VISIBLE | HOST_CACHED
+12-08 13:36:46.662  5728  5755 I mitten-droid: mitten_droid::xr_host: probe memory_type=3 heap=0 flags=DEVICE_LOCAL | HOST_VISIBLE | HOST_COHERENT
+12-08 13:36:46.662  5728  5755 I mitten-droid: mitten_droid::xr_host: probe memory_type=4 heap=0 flags=DEVICE_LOCAL | HOST_VISIBLE | HOST_COHERENT | HOST_CACHED
+12-08 13:36:46.662  5728  5755 I mitten-droid: mitten_droid::xr_host: probe memory_type=5 heap=1 flags=DEVICE_LOCAL | PROTECTED
+12-08 13:36:46.662  5728  5755 I mitten-droid: mitten_droid::xr_host: probe memory_type=6 heap=0 flags=DEVICE_LOCAL | LAZILY_ALLOCATED
+12-08 13:36:46.662  5728  5755 I mitten-droid: mitten_droid::xr_host: probe format=R8G8B8A8_SRGB usage=COLOR_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 16384, height: 16384, depth: 1 }, max_mip_levels: 15, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4, max_resource_size: 562949953421312 })
+12-08 13:36:46.662  5728  5755 I mitten-droid: mitten_droid::xr_host: probe format=B8G8R8A8_SRGB usage=COLOR_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 16384, height: 16384, depth: 1 }, max_mip_levels: 15, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4, max_resource_size: 562949953421312 })
+12-08 13:36:46.662  5728  5755 I mitten-droid: mitten_droid::xr_host: probe format=R8G8B8A8_UNORM usage=COLOR_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 16384, height: 16384, depth: 1 }, max_mip_levels: 15, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4, max_resource_size: 562949953421312 })
+12-08 13:36:46.662  5728  5755 I mitten-droid: mitten_droid::xr_host: probe format=B8G8R8A8_UNORM usage=COLOR_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 16384, height: 16384, depth: 1 }, max_mip_levels: 15, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4, max_resource_size: 562949953421312 })
+12-08 13:36:46.662  5728  5755 I mitten-droid: mitten_droid::xr_host: probe format=D32_SFLOAT_S8_UINT usage=DEPTH_STENCIL_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 16384, height: 16384, depth: 1 }, max_mip_levels: 15, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4, max_resource_size: 562949953421312 })
+12-08 13:36:46.662  5728  5755 I mitten-droid: mitten_droid::xr_host: probe format=D24_UNORM_S8_UINT usage=DEPTH_STENCIL_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 16384, height: 16384, depth: 1 }, max_mip_levels: 15, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4, max_resource_size: 562949953421312 })
+12-08 13:36:46.662  5728  5755 I mitten-droid: mitten_droid::xr_host: probe application Vulkan device extensions=[] graphics_queue=0 renderer=classic render pass
+12-08 13:36:46.664  5728  5755 I mitten-droid: mitten_droid::xr_host: probe Vulkan instance/runtime-selected GPU/device SUCCESS
+12-08 13:36:46.872  5728  5755 I mitten-droid: mitten_droid::xr_host: probe xrCreateSession(Vulkan) SUCCESS
+12-08 13:36:46.872  5728  5754 I mitten-droid: mitten_droid::activity: lifecycle WindowResized
+12-08 13:36:46.872  5728  5755 I mitten-droid: mitten_droid::xr_host: probe reference_spaces=[VIEW, LOCAL, STAGE]
+12-08 13:36:46.873  5728  5755 I mitten-droid: mitten_droid::xr_host: probe XR swapchain formats=[37, 43, 9, 16, 23, 10, 17, 38, 29, 76, 83, 97, 100, 103, 109, 124, 125, 126]
+12-08 13:36:46.880  5728  5755 I mitten-droid: mitten_droid::xr_host: probe XR swapchain format=R8G8B8A8_SRGB extent=1024x1024 samples=1 layers=2 images=3
+12-08 13:36:46.881  5728  5753 I RustStdoutStderr: [SystemWorld] failed to scan assets dir: cannot read assets dir 'assets/components/': No such file or directory (os error 2)
+12-08 13:36:46.911  5728  5755 I mitten-droid: mitten_droid::xr_host: probe classic opaque eye pass; color=CLEAR/STORE depth=CLEAR/DONT_CARE transient=true lazy=true format=D16_UNORM samples=1
+12-08 13:36:46.911  5728  5755 I mitten-droid: mitten_droid::xr_host: probe mobile scene loaded: two MMS cubes; generic custom opaque/albedo material; no legacy pipelines
+12-08 13:36:46.911  5728  5755 I mitten-droid: mitten_droid::xr_host: probe graphics resources SUCCESS; blend=OPAQUE
+12-08 13:36:46.912  5728  5755 I mitten-droid: mitten_droid::xr_host: probe session_state=IDLE
+12-08 13:36:46.912  5728  5755 I mitten-droid: mitten_droid::xr_host: probe session_state=READY
+12-08 13:36:46.920  5728  5753 I RustStdoutStderr: INFO: wave_set_native_window 0x76238ff010
+12-08 13:36:46.921  5728  5755 I mitten-droid: mitten_droid::xr_host: probe session_state=SYNCHRONIZED
+12-08 13:36:46.921  5728  5755 I mitten-droid: mitten_droid::xr_host: probe session_state=VISIBLE
+12-08 13:36:46.921  5728  5755 I mitten-droid: mitten_droid::xr_host: probe session_state=FOCUSED
+12-08 13:36:47.024  5728  5753 I RustStdoutStderr: INFO: VR_SetDisplayConfig set RM_DIRECTMODE and value is: 1, _this->rm_displayconfig.directMode is:true
+12-08 13:36:47.024  5728  5753 I RustStdoutStderr: INFO: VR_SetDisplayConfig set RM_MALIPLATFORM and value is: 0, _this->rm_displayconfig.isMaliPlatform is:false
+12-08 13:36:47.024  5728  5753 I RustStdoutStderr: INFO: VR_SetVideoData set render context = 0x7623816600
+12-08 13:36:47.024  5728  5753 I RustStdoutStderr: INFO: in Android_CreateWindow, customContextSurfaceType:0
+12-08 13:36:47.024  5728  5753 I RustStdoutStderr: INFO: data->native_window get from Android_JNI
+12-08 13:36:47.024  5728  5753 I RustStdoutStderr: INFO: CreateSurface: egl_config:0x0
+12-08 13:36:47.024  5728  5753 I RustStdoutStderr: INFO: CreateSurface: bypass get EGLConfig from EGLContext and EGLSurface
+12-08 13:36:47.025  5728  5753 I RustStdoutStderr: INFO: CreateSurface: after ChooseConfig, egl_config:0x76238376a0
+12-08 13:36:47.025  5728  5753 I RustStdoutStderr: INFO: CreateSurface: set need_resync_egl_surface to 1
+12-08 13:36:47.025  5728  5753 I RustStdoutStderr: INFO: eglSurfaceAttrib set EGL_SWAP_BUFFER to EGL_BUFFER_PRESERVED
+12-08 13:36:47.025  5728  5753 I RustStdoutStderr: INFO: enter _this->GL_CreateContext
+12-08 13:36:47.025  5728  5753 I RustStdoutStderr: INFO: CreateContext: egl_config:0x76238376a0
+12-08 13:36:47.025  5728  5753 I RustStdoutStderr: INFO: CreateContext: bypass get EGLConfig from EGLContext and EGLSurface
+12-08 13:36:47.025  5728  5753 I RustStdoutStderr: INFO: share_context == EGL_NO_CONTEXT
+12-08 13:36:47.025  5728  5753 I RustStdoutStderr: INFO: [ATW] Create high priority context
+12-08 13:36:47.025  5728  5753 I RustStdoutStderr: INFO: Original context(RM)   [0x7623816600]
+12-08 13:36:47.025  5728  5753 I RustStdoutStderr: INFO: Shared context by RM   [0x7627c56800]
+12-08 13:36:47.025  5728  5753 I RustStdoutStderr: INFO: RENDER_EGL make current context  [0x7627c56800]
+12-08 13:36:47.025  5728  5753 I RustStdoutStderr: INFO: exit _this->GL_CreateContext
+12-08 13:36:47.026  5728  5753 I RustStdoutStderr: INFO: CheckAndSyncSurface: start sync. setting with current egl context and surface!
+12-08 13:36:47.026  5728  5753 I RustStdoutStderr: INFO: hasMutableRenderBuffer:true eglSurf:0x7627c56600
+12-08 13:36:47.026  5728  5753 I RustStdoutStderr: INFO: directMode:true
+12-08 13:36:47.026  5728  5753 I RustStdoutStderr: INFO: eglSurfaceAttrib set EGL_RENDER_BUFFER to EGL_SINGLE_BUFFER (true)
+12-08 13:36:47.026  5728  5753 I RustStdoutStderr: INFO: eglSurfaceAttrib set EGL_SWAP_BUFFER to EGL_BUFFER_PRESERVED
+12-08 13:36:47.026  5728  5753 I RustStdoutStderr: INFO: !!!force to call eglSwapBuffers to meet EGL_KHR_mutable_render_buffer spec!!!
+12-08 13:36:47.037  5728  5753 I RustStdoutStderr: INFO: set need_resync_egl_surface to 0 and resync done!
+12-08 13:36:47.037  5728  5753 I RustStdoutStderr: INFO: CheckAndSyncSurface: end sync. setting with current egl context and surface!
+12-08 13:36:48.067  5728  5753 I RustStdoutStderr: INFO: RENDER_EGL make current context  [0x0]
+12-08 13:36:48.079  5728  5753 I RustStdoutStderr: INFO: RENDER_EGL make current context  [0x7627c56800]
+12-08 13:37:33.466  5728  5753 I RustStdoutStderr: [startup] [█████░░░] 5/8 first update completed
+12-08 13:37:33.491  5728  5755 I mitten-droid: mitten_droid::xr_host: probe custom scene GPU complete: Stats { draws: 4, instances: 4, pipelines: 1, bindings: 2, meshes: 1, textures: 1, instance_capacity: 5120 }; draws include both eyes
+12-08 13:37:33.491  5728  5755 I mitten-droid: mitten_droid::xr_host: probe rendered_frame=0 mode=custom_opaque_scene GPU_complete_before_release=true
+12-08 13:37:34.605  5728  5755 I mitten-droid: mitten_droid::xr_host: probe rendered_frame=90 mode=custom_opaque_scene GPU_complete_before_release=true
+12-08 13:37:43.626  5728  5755 I mitten-droid: mitten_droid::xr_host: probe rendered_frame=900 mode=custom_opaque_scene GPU_complete_before_release=true
+12-08 13:40:43.707  5728  5754 I mitten-droid: mitten_droid::activity: lifecycle Pause
+12-08 13:40:43.717  5728  5755 I mitten-droid: mitten_droid::xr_host: probe session_state=VISIBLE
+12-08 13:40:43.717  5728  5755 I mitten-droid: mitten_droid::xr_host: probe session_state=SYNCHRONIZED
+12-08 13:40:43.717  5728  5755 I mitten-droid: mitten_droid::xr_host: probe session_state=STOPPING
+12-08 13:40:43.723  5728  5753 I RustStdoutStderr: INFO: wave_set_native_window 0x0
+12-08 13:40:43.729  5728  5753 I RustStdoutStderr: INFO: RENDER_EGL make current context  [0x0]
+12-08 13:40:43.729  5728  5753 I RustStdoutStderr: INFO: destroyEGLSurface+
+12-08 13:40:43.729  5728  5753 I RustStdoutStderr: INFO: destroyEGLSurface: egl_surface:0x7627c56600
+12-08 13:40:43.729  5728  5753 I RustStdoutStderr: INFO: destroyEGLSurface-
+12-08 13:40:43.732  5728  5754 I mitten-droid: mitten_droid::activity: lifecycle TerminateWindow
+12-08 13:40:43.732  5728  5755 I mitten-droid: mitten_droid::xr_host: probe session_state=IDLE
+12-08 13:40:43.734  5728  5754 I mitten-droid: mitten_droid::activity: lifecycle Stop
+12-08 13:40:43.735  5728  5754 I mitten-droid: mitten_droid::activity: lifecycle SaveState

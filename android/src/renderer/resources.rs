@@ -162,6 +162,7 @@ impl Image {
         extent: vk::Extent2D,
         usage: vk::ImageUsageFlags,
         aspect: vk::ImageAspectFlags,
+        samples: vk::SampleCountFlags,
     ) -> Result<Self> {
         let mut image = Self {
             gpu,
@@ -185,7 +186,7 @@ impl Image {
                         })
                         .mip_levels(1)
                         .array_layers(1)
-                        .samples(vk::SampleCountFlags::TYPE_1)
+                        .samples(samples)
                         .tiling(vk::ImageTiling::OPTIMAL)
                         .usage(usage),
                     None,
@@ -271,6 +272,7 @@ pub(super) fn upload_rgba(
         vk::Extent2D { width, height },
         vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
         vk::ImageAspectFlags::COLOR,
+        vk::SampleCountFlags::TYPE_1,
     )?;
     let transfer = Transfer::new(gpu.clone())?;
     unsafe {

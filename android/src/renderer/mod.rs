@@ -65,13 +65,23 @@ impl Drop for SceneRenderer {
     }
 }
 impl SceneRenderer {
+    #[allow(dead_code)] // 1x entry point for the matched desktop comparison.
     pub fn new(
         gpu: Arc<Gpu>,
         format: vk::Format,
         extent: vk::Extent2D,
         images: Vec<u64>,
     ) -> Result<Self> {
-        let pass = EyePass::new(gpu.clone(), format, extent, &images)?;
+        Self::with_samples(gpu, format, extent, images, vk::SampleCountFlags::TYPE_1)
+    }
+    pub fn with_samples(
+        gpu: Arc<Gpu>,
+        format: vk::Format,
+        extent: vk::Extent2D,
+        images: Vec<u64>,
+        samples: vk::SampleCountFlags,
+    ) -> Result<Self> {
+        let pass = EyePass::new(gpu.clone(), format, extent, &images, samples)?;
         let materials = Materials::new(gpu.clone())?;
         let instance_buffer = Buffer::new(
             gpu.clone(),
@@ -128,10 +138,18 @@ impl SceneRenderer {
         Ok(renderer)
     }
     pub fn attachment_policy(&self) -> String {
+        let color = if self.pass.samples == vk::SampleCountFlags::TYPE_1 {
+            "color=CLEAR/STORE"
+        } else {
+            "msaa_color=CLEAR/DONT_CARE resolve=DONT_CARE/STORE"
+        };
         format!(
-            "classic opaque eye pass; color=CLEAR/STORE depth=CLEAR/DONT_CARE transient=true lazy={} format={:?} samples=1",
+            "classic opaque eye pass; {color} depth=CLEAR/DONT_CARE transient=true depth_lazy={} format={:?} samples={} msaa_lazy={} in_pass_resolve={}",
             self.pass.lazy_depth(),
-            self.pass.depth_format
+            self.pass.depth_format,
+            self.pass.samples.as_raw(),
+            self.pass.lazy_msaa_color(),
+            self.pass.samples != vk::SampleCountFlags::TYPE_1,
         )
     }
     pub fn draw(
@@ -214,6 +232,7 @@ impl SceneRenderer {
                 &visuals.materials,
                 (id, batch.texture, batch.texture_filtering),
                 self.pass.handle,
+                self.pass.samples,
                 texture,
             )?;
         }

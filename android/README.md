@@ -1,11 +1,20 @@
 # Mittens on Android
 
-Status: NativeActivity lifecycle and the OpenXR/Vulkan clear/triangle probe were verified on Focus 3 on 2026-10-29. The user confirmed the stereo output. The installed Adreno 650 driver exposes Vulkan 1.1.128 without dynamic rendering, so the successful probe uses classic render passes. See [Vulkan results](docs/focus-3-vulkan-results.md), [lifecycle results](docs/focus-3-lifecycle.md), and [build/run instructions](docs/xr-vulkan-bringup.md). Full engine scenes and graphics lifecycle validation remain outstanding.
+Status: NativeActivity lifecycle, Vulkan stereo triangles, and the first custom
+opaque MMS cube scene were verified on Focus 3 on 2026-10-29. The user confirmed
+the scene and head-driven translation/orientation. The Adreno 650 driver exposes
+Vulkan 1.1.128 without dynamic rendering, so this backend uses classic passes.
+The default scene now adds 4x MSAA. See [renderer validation](docs/opaque-renderer.md),
+[Vulkan results](docs/focus-3-vulkan-results.md), [lifecycle results](docs/focus-3-lifecycle.md),
+and [build/run instructions](docs/xr-vulkan-bringup.md). Controlled graphics
+lifecycle, full engine tracking/input and animated scenes remain outstanding.
 
 The target is **Mittens running locally on a Vive Focus 3**: the engine runs its ECS, MMS scripts, simulation, audio, and Vulkan renderer on the headset.
 
 The new custom opaque renderer and default scene APK are implemented and have
-desktop GPU checks; their Focus 3 scene validation remains pending. See the
+desktop GPU checks; the first 1x MMS scene and head-driven views were confirmed
+on Focus 3. The follow-up default adds 4x MSAA; graphics lifecycle and input
+integration remain separate validation work. See the
 [implementation and limits](docs/opaque-renderer.md), the
 [desktop OpenXR comparison demo](../examples/xr-renderer-compare/README.md), and
 the [crate/API boundary audit](docs/renderer-boundary.md):

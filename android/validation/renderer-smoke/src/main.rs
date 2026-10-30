@@ -337,5 +337,6 @@ mod vulkan_probe {
 fn main() {
     vulkan_probe::run(true);
     vulkan_probe::run(false);
-    scene::run();
+    scene::run(ash::vk::SampleCountFlags::TYPE_1);
+    scene::run(ash::vk::SampleCountFlags::TYPE_4);
 }

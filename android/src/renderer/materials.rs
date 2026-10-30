@@ -207,6 +207,7 @@ impl Materials {
         registry: &MaterialRegistry,
         key: BindingKey,
         pass: vk::RenderPass,
+        samples: vk::SampleCountFlags,
         texture: &Image,
     ) -> Result<bool> {
         let record = registry
@@ -244,7 +245,13 @@ impl Materials {
             }
             self.pipelines.insert(
                 record.definition,
-                Pipeline::new(self.gpu.clone(), pass, self.layout, &compiled.words)?,
+                Pipeline::new(
+                    self.gpu.clone(),
+                    pass,
+                    self.layout,
+                    &compiled.words,
+                    samples,
+                )?,
             );
         }
         if self
