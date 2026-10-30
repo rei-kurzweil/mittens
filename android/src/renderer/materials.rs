@@ -10,11 +10,12 @@ use crate::{
 use ash::vk;
 use mittens_engine::engine::graphics::{
     TextureHandle,
+    light_data::{LightsSSBO, MAX_LIGHTS},
     materials::{
         MaterialDefinitionId, MaterialEmission, MaterialInstanceId, MaterialRegistry,
         MaterialTransmission,
     },
-    visual_world::TextureFiltering,
+    visual_world::{TextureFiltering, VisualLight},
 };
 use std::{collections::HashMap, sync::Arc};
 
@@ -32,8 +33,9 @@ pub(super) struct Materials {
     pool: vk::DescriptorPool,
     samplers: Vec<vk::Sampler>,
     cameras: Vec<Buffer>,
-    pub camera_sets: [vk::DescriptorSet; 2],
-    pipelines: HashMap<MaterialDefinitionId, Pipeline>,
+    lights: Option<Buffer>,
+    pub camera_sets: [[vk::DescriptorSet; 2]; 2],
+    pipelines: HashMap<(MaterialDefinitionId, bool), Pipeline>,
     bindings: HashMap<BindingKey, Binding>,
 }
 impl Drop for Materials {
@@ -63,7 +65,8 @@ impl Materials {
             pool: vk::DescriptorPool::null(),
             samplers: Vec::new(),
             cameras: Vec::new(),
-            camera_sets: [vk::DescriptorSet::null(); 2],
+            lights: None,
+            camera_sets: [[vk::DescriptorSet::null(); 2]; 2],
             pipelines: HashMap::new(),
             bindings: HashMap::new(),
         };
@@ -74,9 +77,14 @@ impl Materials {
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
                 .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT);
+            let lights = vk::DescriptorSetLayoutBinding::default()
+                .binding(1)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT);
             materials.layouts[0] = device
                 .create_descriptor_set_layout(
-                    &vk::DescriptorSetLayoutCreateInfo::default().bindings(&[uniform]),
+                    &vk::DescriptorSetLayoutCreateInfo::default().bindings(&[uniform, lights]),
                     None,
                 )
                 .api("camera descriptor layout")?;
@@ -100,18 +108,22 @@ impl Materials {
             let sizes = [
                 vk::DescriptorPoolSize {
                     ty: vk::DescriptorType::UNIFORM_BUFFER,
-                    descriptor_count: Self::LIMIT as u32 + 2,
+                    descriptor_count: Self::LIMIT as u32 + 4,
                 },
                 vk::DescriptorPoolSize {
                     ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
                     descriptor_count: Self::LIMIT as u32,
+                },
+                vk::DescriptorPoolSize {
+                    ty: vk::DescriptorType::STORAGE_BUFFER,
+                    descriptor_count: 4,
                 },
             ];
             materials.pool = device
                 .create_descriptor_pool(
                     &vk::DescriptorPoolCreateInfo::default()
                         .flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET)
-                        .max_sets(Self::LIMIT as u32 + 2)
+                        .max_sets(Self::LIMIT as u32 + 4)
                         .pool_sizes(&sizes),
                     None,
                 )
@@ -137,16 +149,34 @@ impl Materials {
                         .api("surface sampler")?,
                 );
             }
+            materials.lights = Some(Buffer::new(
+                materials.gpu.clone(),
+                std::mem::size_of::<LightsSSBO>(),
+                vk::BufferUsageFlags::STORAGE_BUFFER,
+            )?);
             for eye in 0..2 {
-                let buffer = Buffer::new(
-                    materials.gpu.clone(),
-                    208,
-                    vk::BufferUsageFlags::UNIFORM_BUFFER,
-                )?;
-                let set = materials.allocate(materials.layouts[0])?;
-                materials.write_uniform(set, &buffer);
-                materials.cameras.push(buffer);
-                materials.camera_sets[eye] = set;
+                for background in 0..2 {
+                    let buffer = Buffer::new(
+                        materials.gpu.clone(),
+                        208,
+                        vk::BufferUsageFlags::UNIFORM_BUFFER,
+                    )?;
+                    let set = materials.allocate(materials.layouts[0])?;
+                    materials.write_uniform(set, &buffer);
+                    let info = [vk::DescriptorBufferInfo::default()
+                        .buffer(materials.lights.as_ref().unwrap().handle)
+                        .range(std::mem::size_of::<LightsSSBO>() as u64)];
+                    device.update_descriptor_sets(
+                        &[vk::WriteDescriptorSet::default()
+                            .dst_set(set)
+                            .dst_binding(1)
+                            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                            .buffer_info(&info)],
+                        &[],
+                    );
+                    materials.cameras.push(buffer);
+                    materials.camera_sets[eye][background] = set;
+                }
             }
         }
         Ok(materials)
@@ -178,8 +208,18 @@ impl Materials {
             );
         }
     }
-    pub fn update_camera(&mut self, eye: usize, data: &[u8]) -> Result<()> {
-        self.cameras[eye].write(data)
+    pub fn update_camera(&mut self, eye: usize, background: bool, data: &[u8]) -> Result<()> {
+        self.cameras[eye * 2 + usize::from(background)].write(data)
+    }
+    pub fn update_lights(&mut self, lights: &[VisualLight]) -> Result<()> {
+        if lights.len() > MAX_LIGHTS {
+            return Err("mobile light capacity (64) exceeded".into());
+        }
+        let data = LightsSSBO::from_lights(lights);
+        self.lights
+            .as_mut()
+            .unwrap()
+            .write(unsafe { super::resources::bytes(std::slice::from_ref(&data)) })
     }
     pub fn collect(&mut self, registry: &MaterialRegistry) -> Result<()> {
         let device = &self.gpu.device;
@@ -199,7 +239,7 @@ impl Materials {
             return Err(format!("free retired material descriptors: {error:?}"));
         }
         self.pipelines
-            .retain(|id, _| registry.definition(*id).is_some());
+            .retain(|(id, _), _| registry.definition(*id).is_some());
         Ok(())
     }
     pub fn prepare(
@@ -209,6 +249,7 @@ impl Materials {
         pass: vk::RenderPass,
         samples: vk::SampleCountFlags,
         texture: &Image,
+        background: bool,
     ) -> Result<bool> {
         let record = registry
             .instance(key.0)
@@ -235,22 +276,24 @@ impl Materials {
         if compiled
             .descriptor_bindings
             .iter()
-            .any(|binding| !matches!(binding, (0, 0) | (1, 0) | (1, 1)))
+            .any(|binding| !matches!(binding, (0, 0) | (0, 1) | (1, 0) | (1, 1)))
         {
-            return Err("opaque/albedo material may use camera, numeric inputs and base texture; lights are not supported yet".into());
+            return Err("unsupported custom surface descriptor interface".into());
         }
-        if !self.pipelines.contains_key(&record.definition) {
+        let pipeline_key = (record.definition, background);
+        if !self.pipelines.contains_key(&pipeline_key) {
             if self.pipelines.len() >= Self::LIMIT {
                 return Err("mobile custom pipeline capacity (256) exceeded".into());
             }
             self.pipelines.insert(
-                record.definition,
+                pipeline_key,
                 Pipeline::new(
                     self.gpu.clone(),
                     pass,
                     self.layout,
                     &compiled.words,
                     samples,
+                    background,
                 )?,
             );
         }
@@ -320,12 +363,18 @@ impl Materials {
         &self,
         registry: &MaterialRegistry,
         key: BindingKey,
+        background: bool,
     ) -> Option<(vk::Pipeline, vk::DescriptorSet)> {
         let binding = self.bindings.get(&key)?;
         if binding.definition != registry.instance(key.0)?.definition {
             return None;
         }
-        Some((self.pipelines[&binding.definition].handle, binding.set))
+        Some((
+            self.pipelines
+                .get(&(binding.definition, background))?
+                .handle,
+            binding.set,
+        ))
     }
     pub fn counts(&self) -> (usize, usize) {
         (self.pipelines.len(), self.bindings.len())

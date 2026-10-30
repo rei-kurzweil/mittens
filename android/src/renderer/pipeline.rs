@@ -45,6 +45,7 @@ impl Pipeline {
         layout: vk::PipelineLayout,
         fragment: &[u32],
         sample_count: vk::SampleCountFlags,
+        background: bool,
     ) -> Result<Self> {
         let words = ash::util::read_spv(&mut Cursor::new(include_bytes!(concat!(
             env!("OUT_DIR"),
@@ -121,14 +122,18 @@ impl Pipeline {
             .scissor_count(1);
         let raster = vk::PipelineRasterizationStateCreateInfo::default()
             .polygon_mode(vk::PolygonMode::FILL)
-            .cull_mode(vk::CullModeFlags::BACK)
+            .cull_mode(if background {
+                vk::CullModeFlags::NONE
+            } else {
+                vk::CullModeFlags::BACK
+            })
             .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
             .line_width(1.0);
         let samples =
             vk::PipelineMultisampleStateCreateInfo::default().rasterization_samples(sample_count);
         let depth = vk::PipelineDepthStencilStateCreateInfo::default()
             .depth_test_enable(true)
-            .depth_write_enable(true)
+            .depth_write_enable(!background)
             .depth_compare_op(vk::CompareOp::LESS_OR_EQUAL);
         let colors = [vk::PipelineColorBlendAttachmentState::default()
             .color_write_mask(vk::ColorComponentFlags::RGBA)];

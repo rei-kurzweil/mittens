@@ -9,11 +9,30 @@ The follow-up default adds 4x MSAA; see the device validation record for its
 separate install/visual status. Controlled graphics lifecycle tests remain open.
 See the [Focus 3 scene record](focus-3-opaque-results.md).
 
-The default APK now loads two embedded MMS cubes and a generic custom fragment
-definition with named `vec3 tint` / `f32 gain` inputs. `MaterialBase()` supplies
-an opaque/albedo surface. The backend accepts custom definition metadata rather
-than switching on built-in/legacy material handles. The demo fragment is an
-example material, not a hardcoded renderer pipeline.
+The default APK now loads the bundled [Sakura rooftop scene](../examples/sakura-stage.mms),
+with the studio stage, plain Sakura gradient sky, tiled tower and eight simple
+neighboring building cubes. It uses custom tile, matcap and anime-style surface
+definitions with ambient, directional and point lights. The old two-cube scene
+remains available with `--no-default-features --features cube-demo`.
+
+The sky uses the Sakura scene's gradient stops and sun direction/radius in a
+single custom background shader. Its sun is a visible opaque disc; bloom and
+emission extraction are not implemented. Background culling is disabled for
+the inside of the sky sphere; the cube's -Z face winding has been corrected.
+GPU readback checks the gradient, sun and cube faces from opposite directions.
+
+`MaterialBase()` supplies an opaque/albedo surface. The backend accepts custom
+definition metadata rather than switching on built-in/legacy material handles.
+The custom anime-style surface follows the existing shade/rim idea and adds
+colored lighting; the built-in `MaterialDefinition.anime()` remains unsupported.
+
+The stage APK was installed and launched on Focus 3 on 2026-10-29. Its
+[startup report](validation/focus-3-sakura-startup-2026-10-29.txt) shows
+OpenXR focused and 4x lazy attachments created. The first captured report did
+not yet include a completed scene frame; headset visual confirmation remains
+pending. [Desktop GPU checks](validation/sakura-stage-headless-2026-10-29.txt)
+rendered the scene at 1x and 4x and verified sky pixels and visible changes when
+ambient and direct lights change. These checks are not a performance benchmark.
 
 ## Data and ownership
 
@@ -66,17 +85,21 @@ rendering, not by the fact that its GPU is a tiler.
 
 Static indexed triangle meshes, model transforms, per-instance colors,
 per-eye view/projection, retained generic scalar/vector material parameters,
-and RGBA8 sRGB textures with linear/nearest/nearest-magnification filtering.
+and linear RGBA8 textures with linear/nearest/nearest-magnification filtering.
 An untextured material uses a persistent white texture. Pipeline descriptors
 preserve the engine custom fragment interface: camera at set 0 binding 0,
 numeric inputs at set 1 binding 0, base texture at set 1 binding 1. Reflected
-descriptor metadata makes requests for unsupported light resources explicit.
+descriptor metadata validates the supported interface. A shared retained buffer
+at set 0 binding 1 supplies up to 64 engine lights using the desktop shader ABI;
+ambient light is in the camera block. Plain sky backgrounds render first inside
+the same eye pass, with translation removed and depth writes disabled.
 
 The renderer rejects legacy materials, other bases, non-opaque geometry,
 cutouts, skin/morph data, clips, outlines, extra phases, post-processing,
 mirrors and BC7 uploads. Standard transmission values alone do not activate
-transmission; material capabilities define that behavior. Light resources are
-not bound by this albedo-only renderer. Features must be added deliberately.
+transmission; material capabilities define that behavior. Directional, point
+and spot light records are passed to custom shaders, which decide how to shade;
+shadow maps are not implemented. Features must be added deliberately.
 
 Mesh/texture handles and pipelines persist for the renderer's lifetime. Material
 UBOs/descriptors persist by retained instance and texture/filter variant; only
@@ -177,9 +200,9 @@ startup timeout. Neither became VISIBLE/FOCUSED, so no rendered performance
 samples or 75/90Hz result were obtained. This is initialization/stop evidence,
 not presentation or a benchmark.
 
-Build the new scene with `android/packaging/build-apk.sh`. For the preserved
+Build the Sakura stage with `android/packaging/build-apk.sh`. For the preserved
 triangle use `--no-default-features --features vulkan-probe`; for lifecycle-only
-use `--no-default-features`. Then install on the Focus 3, confirm both cubes and
+use `--no-default-features`. Install on the Focus 3, confirm the stage and
 world-anchored parallax, inspect attachment and `custom scene GPU complete`
 logs, and explicitly test background/resume/stop/relaunch. Do not enable engine
 controller/HMD drivers until the external tracking integration is implemented.

@@ -1,0 +1,157 @@
+loader=Khronos-1.1.36 api_request=OpenXR-1.0.34
+xrInitializeLoaderKHR(Android) SUCCESS
+XR extension=XR_HTC_composition_layer_extra_settings version=1
+XR extension=XR_MSFT_first_person_observer version=1
+XR extension=XR_MSFT_secondary_view_configuration version=1
+XR extension=XR_KHR_composition_layer_color_scale_bias version=5
+XR extension=XR_HTC_eye_tracker version=1
+XR extension=XR_EXT_future version=1
+XR extension=XR_HTC_frame_synchronization version=1
+XR extension=XR_KHR_composition_layer_equirect2 version=1
+XR extension=XR_EXT_hand_tracking version=4
+XR extension=XR_HTC_anchor_persistence version=1
+XR extension=XR_FB_keyboard_tracking version=1
+XR extension=XR_EXT_user_presence version=1
+XR extension=XR_HTC_passthrough version=1
+XR extension=XR_EXT_hand_interaction version=1
+XR extension=XR_HTC_path_enumeration version=1
+XR extension=XR_HTC_facial_tracking version=1
+XR extension=XR_EXT_eye_gaze_interaction version=2
+XR extension=XR_HTC_vive_wrist_tracker_interaction version=1
+XR extension=XR_HTC_foveation version=1
+XR extension=XR_HTC_hand_interaction version=1
+XR extension=XR_HTC_anchor version=1
+XR extension=XR_KHR_composition_layer_cylinder version=4
+XR extension=XR_KHR_vulkan_enable2 version=1
+XR extension=XR_EXT_plane_detection version=1
+XR extension=XR_HTC_vive_xr_tracker_interaction version=1
+XR extension=XR_HTC_passthrough_configuration version=1
+XR extension=XR_KHR_composition_layer_equirect version=3
+XR extension=XR_KHR_opengl_es_enable version=1
+XR extension=XR_KHR_vulkan_enable version=1
+XR extension=XR_KHR_convert_timespec_time version=1
+XR extension=XR_KHR_android_surface_swapchain version=4
+XR extension=XR_KHR_visibility_mask version=2
+XR extension=XR_EXT_performance_settings version=3
+XR extension=XR_KHR_android_create_instance version=3
+XR extension=XR_HTC_vive_focus3_controller_interaction version=2
+XR extension=XR_EXT_palm_pose version=2
+XR extension=XR_FB_display_refresh_rate version=1
+XR extension=XR_EXT_debug_utils version=5
+runtime=VIVE WAVE version=0.0.1 binding=XR_KHR_vulkan_enable2
+system=SystemId(4369) properties=SystemProperties { system_id: SystemId(4369), vendor_id: 2996, system_name: "WAVE:SUE", graphics_properties: SystemGraphicsProperties { max_swapchain_image_height: 1712, max_swapchain_image_width: 1712, max_layer_count: 16 }, tracking_properties: SystemTrackingProperties { orientation_tracking: true, position_tracking: true } }
+view_configuration=PRIMARY_STEREO views=[ViewConfigurationView { recommended_image_rect_width: 1712, max_image_rect_width: 3440, recommended_image_rect_height: 1712, max_image_rect_height: 3440, recommended_swapchain_sample_count: 1, max_swapchain_sample_count: 1 }, ViewConfigurationView { recommended_image_rect_width: 1712, max_image_rect_width: 3440, recommended_image_rect_height: 1712, max_image_rect_height: 3440, recommended_swapchain_sample_count: 1, max_swapchain_sample_count: 1 }] blend_modes=[OPAQUE]
+Vulkan API min=1.0.0 max=1.2.203
+OpenXR instance/HMD capability stage SUCCESS
+enable2: runtime supplies required Vulkan extensions through xrCreateVulkanInstanceKHR/xrCreateVulkanDeviceKHR
+Vulkan loader=1.1.0 requested_api=1.1.0
+GPU=Adreno (TM) 650 physical=0x7627c5e2c0 API=1.1.128 driver=2149855232 vendor=0x5143 device=0x6050002
+Vulkan device extension=VK_KHR_incremental_present
+Vulkan device extension=VK_EXT_hdr_metadata
+Vulkan device extension=VK_KHR_shared_presentable_image
+Vulkan device extension=VK_GOOGLE_display_timing
+Vulkan device extension=VK_EXT_subgroup_size_control
+Vulkan device extension=VK_KHR_external_memory
+Vulkan device extension=VK_EXT_pipeline_creation_feedback
+Vulkan device extension=VK_KHR_shader_float16_int8
+Vulkan device extension=VK_KHR_get_memory_requirements2
+Vulkan device extension=VK_KHR_spirv_1_4
+Vulkan device extension=VK_EXT_fragment_density_map
+Vulkan device extension=VK_KHR_external_semaphore_fd
+Vulkan device extension=VK_QCOM_render_pass_store_ops
+Vulkan device extension=VK_EXT_astc_decode_mode
+Vulkan device extension=VK_KHR_external_memory_fd
+Vulkan device extension=VK_QCOM_render_pass_shader_resolve
+Vulkan device extension=VK_KHR_maintenance1
+Vulkan device extension=VK_KHR_maintenance2
+Vulkan device extension=VK_KHR_maintenance3
+Vulkan device extension=VK_KHR_separate_depth_stencil_layouts
+Vulkan device extension=VK_EXT_image_robustness
+Vulkan device extension=VK_EXT_extended_dynamic_state
+Vulkan device extension=VK_EXT_queue_family_foreign
+Vulkan device extension=VK_KHR_bind_memory2
+Vulkan device extension=VK_KHR_external_semaphore
+Vulkan device extension=VK_EXT_scalar_block_layout
+Vulkan device extension=VK_KHR_sampler_ycbcr_conversion
+Vulkan device extension=VK_EXT_vertex_attribute_divisor
+Vulkan device extension=VK_KHR_variable_pointers
+Vulkan device extension=VK_KHR_push_descriptor
+Vulkan device extension=VK_EXT_device_memory_report
+Vulkan device extension=VK_KHR_imageless_framebuffer
+Vulkan device extension=VK_KHR_device_group
+Vulkan device extension=VK_KHR_relaxed_block_layout
+Vulkan device extension=VK_KHR_external_fence
+Vulkan device extension=VK_EXT_custom_border_color
+Vulkan device extension=VK_EXT_host_query_reset
+Vulkan device extension=VK_EXT_index_type_uint8
+Vulkan device extension=VK_KHR_multiview
+Vulkan device extension=VK_KHR_storage_buffer_storage_class
+Vulkan device extension=VK_EXT_fragment_density_map2
+Vulkan device extension=VK_EXT_private_data
+Vulkan device extension=VK_EXT_pipeline_creation_cache_control
+Vulkan device extension=VK_EXT_separate_stencil_usage
+Vulkan device extension=VK_IMG_filter_cubic
+Vulkan device extension=VK_EXT_filter_cubic
+Vulkan device extension=VK_KHR_image_format_list
+Vulkan device extension=VK_EXT_sampler_filter_minmax
+Vulkan device extension=VK_KHR_16bit_storage
+Vulkan device extension=VK_EXT_shader_demote_to_helper_invocation
+Vulkan device extension=VK_QCOM_render_pass_transform
+Vulkan device extension=VK_KHR_create_renderpass2
+Vulkan device extension=VK_EXT_transform_feedback
+Vulkan device extension=VK_EXT_blend_operation_advanced
+Vulkan device extension=VK_EXT_provoking_vertex
+Vulkan device extension=VK_KHR_depth_stencil_resolve
+Vulkan device extension=VK_KHR_shader_float_controls
+Vulkan device extension=VK_EXT_texture_compression_astc_hdr
+Vulkan device extension=VK_EXT_global_priority
+Vulkan device extension=VK_KHR_shader_draw_parameters
+Vulkan device extension=VK_KHR_vulkan_memory_model
+Vulkan device extension=VK_EXT_descriptor_indexing
+Vulkan device extension=VK_EXT_line_rasterization
+Vulkan device extension=VK_KHR_descriptor_update_template
+Vulkan device extension=VK_KHR_draw_indirect_count
+Vulkan device extension=VK_KHR_driver_properties
+Vulkan device extension=VK_ANDROID_external_memory_android_hardware_buffer
+Vulkan device extension=VK_KHR_dedicated_allocation
+Vulkan device extension=VK_EXT_sample_locations
+Vulkan device extension=VK_KHR_swapchain
+Vulkan device extension=VK_KHR_sampler_mirror_clamp_to_edge
+Vulkan device extension=VK_KHR_external_fence_fd
+dynamicRendering=0 usable=false multiview=1 dynamic_rendering_local_read_extension=false
+dynamicRenderingLocalRead=0
+maxMultiviewViewCount=6
+depth_resolve_modes=SAMPLE_ZERO stencil_resolve_modes=SAMPLE_ZERO independent_resolve=0 independent_resolve_none=0
+compute workgroup_invocations=1024 size=[1024, 1024, 64] count=[65535, 65535, 65535] storage_buffers_per_stage=524288 stage_resources=1572864 storage_range=536870912 uniform_range=65536 sampled_images=524288
+texture ASTC_LDR=1 ETC2=1 BC=0 color_samples=TYPE_1 | TYPE_2 | TYPE_4 depth_samples=TYPE_1 | TYPE_2 | TYPE_4
+queue_family=0 flags=GRAPHICS | COMPUTE | PROTECTED count=3
+engine_deformation_basic_limits_ok=true (probe does not require deformation)
+memory_heap=0 bytes=8047419392 flags=DEVICE_LOCAL
+memory_heap=1 bytes=268435456 flags=DEVICE_LOCAL
+memory_type=0 heap=0 flags=DEVICE_LOCAL
+memory_type=1 heap=0 flags=DEVICE_LOCAL
+memory_type=2 heap=0 flags=DEVICE_LOCAL | HOST_VISIBLE | HOST_CACHED
+memory_type=3 heap=0 flags=DEVICE_LOCAL | HOST_VISIBLE | HOST_COHERENT
+memory_type=4 heap=0 flags=DEVICE_LOCAL | HOST_VISIBLE | HOST_COHERENT | HOST_CACHED
+memory_type=5 heap=1 flags=DEVICE_LOCAL | PROTECTED
+memory_type=6 heap=0 flags=DEVICE_LOCAL | LAZILY_ALLOCATED
+format=R8G8B8A8_SRGB usage=COLOR_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 16384, height: 16384, depth: 1 }, max_mip_levels: 15, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4, max_resource_size: 562949953421312 })
+format=B8G8R8A8_SRGB usage=COLOR_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 16384, height: 16384, depth: 1 }, max_mip_levels: 15, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4, max_resource_size: 562949953421312 })
+format=R8G8B8A8_UNORM usage=COLOR_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 16384, height: 16384, depth: 1 }, max_mip_levels: 15, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4, max_resource_size: 562949953421312 })
+format=B8G8R8A8_UNORM usage=COLOR_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 16384, height: 16384, depth: 1 }, max_mip_levels: 15, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4, max_resource_size: 562949953421312 })
+format=D32_SFLOAT_S8_UINT usage=DEPTH_STENCIL_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 16384, height: 16384, depth: 1 }, max_mip_levels: 15, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4, max_resource_size: 562949953421312 })
+format=D24_UNORM_S8_UINT usage=DEPTH_STENCIL_ATTACHMENT image_support=Ok(ImageFormatProperties { max_extent: Extent3D { width: 16384, height: 16384, depth: 1 }, max_mip_levels: 15, max_array_layers: 2048, sample_counts: TYPE_1 | TYPE_2 | TYPE_4, max_resource_size: 562949953421312 })
+application Vulkan device extensions=[] graphics_queue=0 renderer=classic render pass
+Vulkan instance/runtime-selected GPU/device SUCCESS
+xrCreateSession(Vulkan) SUCCESS
+reference_spaces=[VIEW, LOCAL, STAGE]
+XR swapchain formats=[37, 43, 9, 16, 23, 10, 17, 38, 29, 76, 83, 97, 100, 103, 109, 124, 125, 126]
+XR swapchain format=R8G8B8A8_SRGB extent=1024x1024 samples=1 layers=2 images=3
+classic opaque eye pass; msaa_color=CLEAR/DONT_CARE resolve=DONT_CARE/STORE depth=CLEAR/DONT_CARE transient=true depth_lazy=true format=D16_UNORM samples=4 msaa_lazy=true in_pass_resolve=true
+mobile scene loaded: Sakura rooftop sound stage; custom opaque materials, ambient/directional/point/spot lights, plain sky; no legacy pipelines
+graphics resources SUCCESS; blend=OPAQUE
+session_state=IDLE
+session_state=READY
+session_state=SYNCHRONIZED
+session_state=VISIBLE
+session_state=FOCUSED

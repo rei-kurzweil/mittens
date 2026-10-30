@@ -4,6 +4,7 @@ pub mod deformation;
 #[cfg(test)]
 pub(crate) mod deformation_reference;
 pub(crate) mod implicit_mesh;
+pub mod light_data;
 mod material_cache;
 pub mod materials;
 pub mod mesh;

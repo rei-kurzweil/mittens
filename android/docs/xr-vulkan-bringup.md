@@ -16,7 +16,8 @@ mode replaces that app's library; no ALVR app is changed.
 | Lifecycle | `--no-default-features` | Previously verified blank native panel; no XR worker. |
 | OpenXR diagnostic | `--no-default-features --features xr-probe` | Loader/instance/HMD, extensions and Vulkan API requirements; no graphics session. |
 | Vulkan probe | `--no-default-features --features vulkan-probe` | Vulkan session, capability report, stereo clear and triangle. |
-| Custom opaque scene (default) | None | Embedded MMS cubes through the new custom-material renderer, now with 4x MSAA. First 1x scene confirmed on Focus 3. |
+| Sakura rooftop (default) | None | Bundled MMS stage, sky and custom lit materials with 4x MSAA; device validation pending. |
+| Cube scene | `--no-default-features --features cube-demo` | Preserved two-cube custom-material scene, with 4x MSAA. |
 
 Build and test the diagnostic first, from the repository root:
 
@@ -45,11 +46,11 @@ a dim reddish left-eye background and dim blue right-eye background. After
 in the eye images, not a world-anchored engine scene. The probe uses 1x samples,
 at most 1024x1024 per eye, no depth, and no multiview.
 
-For the new engine scene, build with no helper arguments. Expect two
-world-anchored cyan/orange cubes using generic custom opaque materials and a
-depth attachment. The first 1x scene and head-driven views were confirmed on
-Focus 3. The default now uses 4x transient color/depth and an in-pass resolve
-into single-sample XR output. See [renderer scope and separate validation](opaque-renderer.md).
+For the new engine scene, build with no helper arguments. Expect a sound stage
+on a tiled rooftop, Sakura gradient sky and simplified neighboring buildings.
+The cube scene and head-driven views were confirmed on Focus 3; the stage is
+desktop GPU checked but needs headset validation. Both use 4x transient color /
+depth and an in-pass resolve. See [renderer scope](opaque-renderer.md).
 
 ## Capture results
 

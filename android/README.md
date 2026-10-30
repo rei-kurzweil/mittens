@@ -45,9 +45,11 @@ android/
   src/graphics_device.rs     # runtime-selected GPU creation/query
   src/triangle_probe.rs      # retained diagnostic renderer
   src/scene_runtime.rs       # embedded MMS Universe + app renderer
+  src/demo_assets.rs         # explicit packaged stage asset bundle
   src/renderer/             # custom opaque classic-pass backend
   shaders/                   # triangle and surface vertex shaders
-  assets/                    # embedded scene and custom albedo fragment
+  assets/                    # preserved cube scene and albedo fragment
+  examples/sakura-stage.mms  # default rooftop scene
   packaging/build-apk.sh     # debug APK build helper
   README.md
   docs/

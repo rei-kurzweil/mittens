@@ -736,9 +736,9 @@ impl MeshFactory {
         push_face(
             [0.0, 0.0, -1.0],
             [-p, -p, -p],
-            [p, -p, -p],
-            [p, p, -p],
             [-p, p, -p],
+            [p, p, -p],
+            [p, -p, -p],
         );
         // +Z
         push_face(

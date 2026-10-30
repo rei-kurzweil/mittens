@@ -62,16 +62,25 @@ pub(super) struct CameraUniform {
     flags: u32,
 }
 impl CameraUniform {
-    pub fn new(camera: &EyeCamera, visuals: &VisualWorld, extent: vk::Extent2D) -> Self {
-        Self {
+    pub fn new(
+        camera: &EyeCamera,
+        visuals: &VisualWorld,
+        extent: vk::Extent2D,
+        background: bool,
+    ) -> Self {
+        let mut data = Self {
             view: camera.view,
             proj: camera.proj,
             camera2d: visuals.camera_2d(),
             viewport: [extent.width as f32, extent.height as f32],
             pad: [0.0; 2],
             ambient: visuals.ambient_light(),
-            flags: 0,
+            flags: if background { 256 } else { 0 },
+        };
+        if background {
+            data.view[3][0..3].fill(0.0);
         }
+        data
     }
 }
 const _: () = assert!(std::mem::size_of::<CameraUniform>() == 208);

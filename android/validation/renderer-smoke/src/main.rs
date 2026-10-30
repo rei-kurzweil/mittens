@@ -1,4 +1,6 @@
 #![allow(dead_code)]
+#[path = "../../../src/demo_assets.rs"]
+mod demo_assets;
 #[path = "../../../src/renderer/mod.rs"]
 mod renderer;
 mod scene;

@@ -18,6 +18,8 @@ layout(location = 6) flat out float v_roughness;
 void main() {
     vec4 world = model * vec4(position, 1.0);
     gl_Position = camera.proj * camera.view * world;
+    // Plain sky backgrounds follow rotation and occupy the far depth plane.
+    if ((camera.renderer_flags & 256u) != 0u) { gl_Position.z = gl_Position.w; }
     v_world_pos = world.xyz;
     v_normal = normalize(transpose(inverse(mat3(model))) * normal);
     v_uv = uv; v_color = color;

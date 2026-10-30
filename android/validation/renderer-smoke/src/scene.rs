@@ -160,6 +160,35 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
         &pixels[96 * 96 * 4..],
         "per-eye views must produce stereo parallax"
     );
+    let back_cameras = [-0.032, 0.032].map(|x| {
+        EyeCamera::from_xr(&openxr::View {
+            pose: openxr::Posef {
+                position: openxr::Vector3f { x, y: 0.0, z: -4.0 },
+                orientation: openxr::Quaternionf {
+                    x: 0.0,
+                    y: 1.0,
+                    z: 0.0,
+                    w: 0.0,
+                },
+            },
+            fov: openxr::Fovf {
+                angle_left: -0.6,
+                angle_right: 0.6,
+                angle_down: -0.6,
+                angle_up: 0.6,
+            },
+        })
+        .unwrap()
+    });
+    renderer.draw(0, &universe.visuals, &back_cameras).unwrap();
+    let back_pixels = target.pixels();
+    for eye in 0..2 {
+        let center = pixel(&back_pixels, eye, 48, 48);
+        assert!(
+            center[0] > 200 && center[1] < 40,
+            "cube back face missing or depth wrong: {center:?}"
+        );
+    }
     // Change retained numeric values without rebuilding the definition/pipeline.
     let (id, record) = universe
         .visuals
@@ -241,7 +270,7 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
         .get_handle()
         .unwrap();
     let texture = renderer
-        .upload_texture_rgba8(&[255, 0, 255, 255], 1, 1)
+        .upload_texture_rgba8(&[128, 0, 255, 255], 1, 1)
         .unwrap();
     assert!(universe.visuals.update_texture(handle, Some(texture)));
     universe.visuals.prepare_draw_cache();
@@ -250,7 +279,7 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
     for eye in 0..2 {
         let center = pixel(&pixels, eye, 48, 48);
         assert!(
-            center[2] > 210 && center[1] == 0,
+            center[2] > 210 && center[1] == 0 && (11..=15).contains(&center[0]),
             "RGBA texture binding was not sampled: {center:?}"
         );
     }
@@ -281,12 +310,13 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
     );
     // Also load the actual embedded app scene through the production wrapper.
     let mut app = crate::scene_runtime::SceneRuntime::new(
-        gpu,
+        gpu.clone(),
         vk::Format::R8G8B8A8_UNORM,
         target.extent,
         vec![target.handle()],
         &directory,
         &mut crate::xr_host::Report,
+        crate::demo_assets::DemoScene::Cubes,
     )
     .unwrap();
     let views = [openxr::View {
@@ -317,4 +347,105 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
     }
     assert!(ready, "embedded app scene did not render");
     println!("PASS embedded app MMS scene rendered by production SceneRuntime");
+    drop(app);
+    let source =
+        crate::demo_assets::install(&directory, crate::demo_assets::DemoScene::SakuraStage)
+            .unwrap();
+    let mut stage = Universe::new(World::default());
+    stage
+        .load_mms_source_at_path(&source.source, &source.path.to_string_lossy())
+        .unwrap();
+    let mut stage_renderer = SceneRenderer::with_samples(
+        gpu,
+        vk::Format::R8G8B8A8_UNORM,
+        target.extent,
+        vec![target.handle()],
+        samples,
+    )
+    .unwrap();
+    let mut complete = false;
+    for _ in 0..300 {
+        prepare(&mut stage, &mut stage_renderer);
+        let compiling = stage.visuals.materials.instances().any(|(_, record)| {
+            let definition = stage
+                .visuals
+                .materials
+                .definition(record.definition)
+                .unwrap();
+            let custom = definition
+                .custom
+                .as_ref()
+                .expect("stage must only use custom materials");
+            match custom.compiled.get() {
+                None => true,
+                Some(Ok(_)) => false,
+                Some(Err(e)) => panic!("stage shader: {e}"),
+            }
+        });
+        if !compiling
+            && !stage.visuals.background_batches().is_empty()
+            && stage.visuals.lights().len() == 3
+        {
+            complete = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(
+        complete,
+        "stage did not prepare its sky, materials and lights"
+    );
+    let stats = stage_renderer.draw(0, &stage.visuals, &cameras).unwrap();
+    assert!(
+        stats.pipelines >= 4 && stats.textures >= 3 && stats.lights == 3,
+        "stage resources missing: {stats:?}"
+    );
+    let pixels = target.pixels();
+    let distinct: std::collections::HashSet<_> =
+        pixels.chunks_exact(4).map(|p| [p[0], p[1], p[2]]).collect();
+    let sky = pixel(&pixels, 0, 0, 0);
+    assert!(
+        sky[2] > sky[0] && sky[2] > 50,
+        "expected blue upper sky, got {sky:?}"
+    );
+    assert!(
+        sky[0].abs_diff(59) > 5 || sky[1].abs_diff(82) > 5 || sky[2].abs_diff(158) > 5,
+        "sky should show its gradient rather than the flat background clear: {sky:?}"
+    );
+    let sun = pixel(&pixels, 0, 20, 24);
+    assert!(
+        sun[0] > 220 && sun[1] > 160 && sun[2] > 110,
+        "expected warm sun, got {sun:?}"
+    );
+    assert!(distinct.len() > 10, "stage render is unexpectedly uniform");
+    // Update retained lights directly after engine preparation. Both ambient
+    // and direct-light data must visibly affect the actual custom pipelines.
+    stage.visuals.set_ambient_light([0.8, 0.0, 0.0]);
+    stage_renderer.draw(0, &stage.visuals, &cameras).unwrap();
+    let ambient_pixels = target.pixels();
+    assert_ne!(
+        pixels, ambient_pixels,
+        "ambient color did not affect the scene"
+    );
+    let ids: Vec<_> = stage.world.all_components().filter(|&id| {
+        stage.world.get_component_by_id_as::<mittens_engine::engine::ecs::component::DirectionalLightComponent>(id).is_some()
+            || stage.world.get_component_by_id_as::<mittens_engine::engine::ecs::component::PointLightComponent>(id).is_some()
+    }).collect();
+    assert_eq!(ids.len(), 3);
+    for id in ids {
+        stage.visuals.upsert_light(
+            id,
+            mittens_engine::engine::graphics::visual_world::VisualLight::default(),
+        );
+    }
+    stage_renderer.draw(0, &stage.visuals, &cameras).unwrap();
+    assert_ne!(
+        ambient_pixels,
+        target.pixels(),
+        "direct lights did not affect the scene"
+    );
+    println!(
+        "PASS Sakura stage materials, sky, lights and textures, {stats:?}, colors={}",
+        distinct.len()
+    );
 }

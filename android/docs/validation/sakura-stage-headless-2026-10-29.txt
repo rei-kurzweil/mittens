@@ -1,0 +1,24 @@
+Selected output: production renderer and bundled stage.
+Cube back-face, actual gradient and sun pixels, ambient/direct-light changes, 1x/4x coverage passed.
+Not a performance benchmark.
+
+GPU=NVIDIA GeForce GTX 1080 dynamic=true
+PASS dynamic=true triangle=false left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+PASS dynamic=true triangle=true left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+PASS dynamic=true triangle=true left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+PASS dynamic=true triangle=false left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+GPU=NVIDIA GeForce GTX 1080 dynamic=false
+PASS dynamic=false triangle=false left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+PASS dynamic=false triangle=true left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+PASS dynamic=false triangle=true left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+PASS dynamic=false triangle=false left=[18, 4, 6, 255] right=[4, 8, 23, 255]
+GPU=NVIDIA GeForce GTX 1080 dynamic=false
+PASS sample_count=1 partial_coverage_pixels=0
+PASS custom scene: stereo pixels, depth occlusion, retained uniforms, RGBA texture, batched instancing, stable caches, transparency/legacy rejection; Stats { draws: 4, instances: 6, pipelines: 1, bindings: 2, meshes: 1, textures: 1, instance_capacity: 5120, lights: 0 }
+PASS embedded app MMS scene rendered by production SceneRuntime
+PASS Sakura stage materials, sky, lights and textures, Stats { draws: 14, instances: 34, pipelines: 4, bindings: 4, meshes: 5, textures: 3, instance_capacity: 5120, lights: 3 }, colors=404
+GPU=NVIDIA GeForce GTX 1080 dynamic=false
+PASS sample_count=4 partial_coverage_pixels=281
+PASS custom scene: stereo pixels, depth occlusion, retained uniforms, RGBA texture, batched instancing, stable caches, transparency/legacy rejection; Stats { draws: 4, instances: 6, pipelines: 1, bindings: 2, meshes: 1, textures: 1, instance_capacity: 5120, lights: 0 }
+PASS embedded app MMS scene rendered by production SceneRuntime
+PASS Sakura stage materials, sky, lights and textures, Stats { draws: 14, instances: 34, pipelines: 4, bindings: 4, meshes: 5, textures: 3, instance_capacity: 5120, lights: 3 }, colors=612

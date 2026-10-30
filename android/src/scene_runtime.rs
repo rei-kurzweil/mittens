@@ -1,5 +1,6 @@
 //! The app's engine scene. The host owns XR; this scene creates no XR system.
 use crate::{
+    demo_assets::{self, DemoScene},
     graphics_device::Gpu,
     renderer::{SceneRenderer, Stats, view::EyeCamera},
     xr_host::{Report, Result},
@@ -22,30 +23,17 @@ impl SceneRuntime {
         images: Vec<u64>,
         directory: &Path,
         report: &mut Report,
+        scene: DemoScene,
     ) -> Result<Self> {
-        std::fs::create_dir_all(directory).map_err(|e| format!("scene files directory: {e}"))?;
-        let fragment = directory.join("mobile-albedo.frag");
-        std::fs::write(&fragment, include_str!("../assets/albedo.frag"))
-            .map_err(|e| format!("demo fragment: {e}"))?;
-        // Use an escaped absolute URI because the engine compiler reads source
-        // files asynchronously. The app owns this private file for its lifetime.
-        let uri = fragment
-            .to_str()
-            .ok_or("non-UTF8 scene path")?
-            .replace('\\', "\\\\")
-            .replace('"', "\\\"");
-        let source = include_str!("../assets/scene.mms").replace("__FRAGMENT_PATH__", &uri);
+        let source = demo_assets::install(directory, scene)?;
         let mut universe = Universe::new(World::default());
         universe
-            .load_mms_source_at_path(
-                &source,
-                &directory.join("mobile-scene.mms").to_string_lossy(),
-            )
+            .load_mms_source_at_path(&source.source, &source.path.to_string_lossy())
             .map_err(|e| format!("load mobile MMS scene: {e}"))?;
         let renderer =
             SceneRenderer::with_samples(gpu, format, extent, images, vk::SampleCountFlags::TYPE_4)?;
         report.line(renderer.attachment_policy());
-        report.line("mobile scene loaded: two MMS cubes; generic custom opaque/albedo material; no legacy pipelines");
+        report.line(format!("mobile scene loaded: {}; custom opaque materials, ambient/directional/point/spot lights, plain sky; no legacy pipelines", source.label));
         Ok(Self {
             universe,
             renderer,

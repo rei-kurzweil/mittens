@@ -30,6 +30,11 @@ impl FrameRenderer {
                 images,
                 directory.ok_or("Android files directory is required for the mobile scene")?,
                 report,
+                if cfg!(feature = "cube-demo") {
+                    crate::demo_assets::DemoScene::Cubes
+                } else {
+                    crate::demo_assets::DemoScene::SakuraStage
+                },
             )?))
         }
         #[cfg(not(feature = "mobile-renderer"))]

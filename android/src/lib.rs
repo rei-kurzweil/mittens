@@ -9,6 +9,8 @@
 #[cfg(target_os = "android")]
 mod activity;
 
+#[cfg(all(target_os = "android", feature = "mobile-renderer"))]
+mod demo_assets;
 #[cfg(all(target_os = "android", feature = "vulkan-probe"))]
 mod frame_renderer;
 #[cfg(all(target_os = "android", feature = "vulkan-probe"))]

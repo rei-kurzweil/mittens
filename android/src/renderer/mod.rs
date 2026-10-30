@@ -14,7 +14,7 @@ use ash::vk;
 use materials::Materials;
 use mittens_engine::engine::graphics::{
     CpuMesh, MeshHandle, MeshUploader, TextureHandle, TextureUploader,
-    visual_world::{RenderOp, VisualWorld},
+    visual_world::{DrawBatch, RenderOp, VisualWorld},
 };
 use pass::EyePass;
 use resources::{Buffer, Image, bytes};
@@ -41,6 +41,7 @@ pub(crate) struct Stats {
     pub meshes: usize,
     pub textures: usize,
     pub instance_capacity: usize,
+    pub lights: usize,
 }
 pub(crate) struct SceneRenderer {
     gpu: Arc<Gpu>,
@@ -173,7 +174,6 @@ impl SceneRenderer {
             if instance.opacity != 1.0
                 || instance.color[3] != 1.0
                 || instance.transparent_cutout
-                || instance.background
                 || instance.overlay
                 || instance.background_occluded_lit
                 || instance.emissive != 0.0
@@ -208,13 +208,14 @@ impl SceneRenderer {
             }
         }
         self.materials.collect(&visuals.materials)?;
+        self.materials.update_lights(visuals.lights())?;
         let (ops, indices) = visuals.opaque_stream();
+        if ops.iter().any(|op| !matches!(op, RenderOp::DrawBatch(_))) {
+            return Err("stencil clips are unsupported by the mobile opaque pass".into());
+        }
         // Upload/compile work happens before recording the pass. Resources and
         // descriptors are retained between frames, and shared by both eyes.
-        for op in ops {
-            let RenderOp::DrawBatch(batch) = op else {
-                return Err("stencil clips are unsupported by the mobile opaque pass".into());
-            };
+        for (background, batch, _) in batches(visuals) {
             if batch.stencil_ref != 0 {
                 return Err("stencil clips are unsupported".into());
             }
@@ -234,21 +235,31 @@ impl SceneRenderer {
                 self.pass.handle,
                 self.pass.samples,
                 texture,
+                background,
             )?;
         }
         for (eye, camera) in cameras.iter().enumerate() {
-            let uniform = CameraUniform::new(camera, visuals, self.pass.extent);
-            self.materials
-                .update_camera(eye, unsafe { bytes(std::slice::from_ref(&uniform)) })?;
+            for background in [false, true] {
+                let uniform = CameraUniform::new(camera, visuals, self.pass.extent, background);
+                self.materials.update_camera(eye, background, unsafe {
+                    bytes(std::slice::from_ref(&uniform))
+                })?;
+            }
         }
         self.instances.clear();
-        self.instances.extend(indices.iter().map(|&index| {
-            let instance = &visuals.instances()[index as usize];
-            Draw {
-                model: instance.transform.matrix_world,
-                color: instance.color,
-            }
-        }));
+        self.instances.extend(
+            visuals
+                .background_order()
+                .iter()
+                .chain(indices)
+                .map(|&index| {
+                    let instance = &visuals.instances()[index as usize];
+                    Draw {
+                        model: instance.transform.matrix_world,
+                        color: instance.color,
+                    }
+                }),
+        );
         let size = std::mem::size_of_val(self.instances.as_slice());
         if size > self.instance_buffer.capacity {
             self.instance_buffer = Buffer::new(
@@ -275,18 +286,7 @@ impl SceneRenderer {
             for eye in 0..2 {
                 self.pass
                     .begin(self.command, index, eye, visuals.clear_color());
-                device.cmd_bind_descriptor_sets(
-                    self.command,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    self.materials.layout,
-                    0,
-                    &[self.materials.camera_sets[eye]],
-                    &[],
-                );
-                for op in ops {
-                    let RenderOp::DrawBatch(batch) = op else {
-                        unreachable!()
-                    };
+                for (background, batch, base) in batches(visuals) {
                     let key = (
                         batch.material_instance.unwrap(),
                         batch.texture,
@@ -294,7 +294,8 @@ impl SceneRenderer {
                     );
                     // Asynchronous custom compilation may still be pending on
                     // the first frames. Show the clear until it is ready.
-                    let Some((pipeline, set)) = self.materials.binding(&visuals.materials, key)
+                    let Some((pipeline, set)) =
+                        self.materials.binding(&visuals.materials, key, background)
                     else {
                         continue;
                     };
@@ -308,8 +309,11 @@ impl SceneRenderer {
                         self.command,
                         vk::PipelineBindPoint::GRAPHICS,
                         self.materials.layout,
-                        1,
-                        &[set],
+                        0,
+                        &[
+                            self.materials.camera_sets[eye][usize::from(background)],
+                            set,
+                        ],
                         &[],
                     );
                     device.cmd_bind_vertex_buffers(
@@ -330,7 +334,7 @@ impl SceneRenderer {
                         batch.count as u32,
                         0,
                         0,
-                        batch.start as u32,
+                        (base + batch.start) as u32,
                     );
                     stats.draws += 1;
                     stats.instances += batch.count;
@@ -360,6 +364,7 @@ impl SceneRenderer {
         stats.meshes = self.meshes.len();
         stats.textures = self.textures.len();
         stats.instance_capacity = self.instance_buffer.capacity;
+        stats.lights = visuals.lights().len();
         Ok(stats)
     }
 }
@@ -409,7 +414,9 @@ impl TextureUploader for SceneRenderer {
         width: u32,
         height: u32,
     ) -> std::result::Result<TextureHandle, Box<dyn std::error::Error>> {
-        let image = resources::upload_rgba(self.gpu.clone(), rgba, width, height, true)?;
+        // Match the engine uploader's linear RGBA8 contract, including packed
+        // normal/material data such as pool tiles. Do not sRGB-decode data maps.
+        let image = resources::upload_rgba(self.gpu.clone(), rgba, width, height, false)?;
         let handle = TextureHandle(u32::try_from(self.textures.len())?);
         self.textures.push(image);
         Ok(handle)
@@ -423,4 +430,22 @@ impl TextureUploader for SceneRenderer {
     ) -> std::result::Result<TextureHandle, Box<dyn std::error::Error>> {
         Err("BC7 is unsupported on the Focus 3; supply RGBA8 textures for this renderer".into())
     }
+}
+
+fn batches(visuals: &VisualWorld) -> impl Iterator<Item = (bool, &DrawBatch, usize)> {
+    let base = visuals.background_order().len();
+    visuals
+        .background_batches()
+        .iter()
+        .map(|batch| (true, batch, 0))
+        .chain(
+            visuals
+                .opaque_stream()
+                .0
+                .iter()
+                .filter_map(move |op| match op {
+                    RenderOp::DrawBatch(batch) => Some((false, batch, base)),
+                    _ => None,
+                }),
+        )
 }
