@@ -28,7 +28,11 @@ mod triangle_probe;
 #[cfg(all(target_os = "android", feature = "xr-probe"))]
 mod xr_host;
 #[cfg(all(target_os = "android", feature = "vulkan-probe"))]
+mod xr_resolution;
+#[cfg(all(target_os = "android", feature = "vulkan-probe"))]
 mod xr_session;
+#[cfg(all(target_os = "android", feature = "resolution-probe"))]
+mod xr_swapchain_probe;
 
 /// Called by android-activity on its native application thread.
 #[cfg(target_os = "android")]

@@ -663,17 +663,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     host_constructor(component, canonical, "off", no_args());
                     component.builder_call("enabled", booleans(1));
                 }
-                "RendererSettings" => {
-                    host_constructor(component, canonical, "msaa_off", no_args());
-                    host_constructor(component, canonical, "window_size", unsigned(2));
-                    host_builder_call(component, canonical, "window_size", unsigned(2));
-                    host_constructor_and_builder(
-                        component,
-                        canonical,
-                        "transmission_depth_compare",
-                        booleans(1),
-                    );
-                }
+                "RendererSettings" => renderer_settings_binding::register(component, canonical),
                 "Grid" => {
                     constructor_and_builder(component, "spacing", floats(1));
                     for method in ["size_x", "size_z"] {
@@ -2174,3 +2164,5 @@ mod tests {
         }
     }
 }
+#[path = "renderer_settings_binding.rs"]
+mod renderer_settings_binding;

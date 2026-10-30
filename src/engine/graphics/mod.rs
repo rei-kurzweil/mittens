@@ -8,6 +8,7 @@ pub mod light_data;
 mod material_cache;
 pub mod materials;
 pub mod mesh;
+pub mod mipmaps;
 pub mod pipeline_descriptor_set_layouts;
 pub mod planar_transparency_optimizer;
 pub mod post_processing;
@@ -16,6 +17,7 @@ pub mod render_assets;
 pub mod render_info;
 pub(crate) mod renderer_context;
 pub mod skin;
+pub(crate) mod surface_samplers;
 pub mod visual_world;
 pub mod vulkano_renderer;
 #[cfg(feature = "desktop")]

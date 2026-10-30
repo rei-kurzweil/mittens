@@ -4,7 +4,7 @@ use super::renderer_context::RendererContext;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
 use vulkano::command_buffer::PrimaryCommandBufferAbstract;
 use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferToImageInfo,
+    AutoCommandBufferBuilder, BufferImageCopy, CommandBufferUsage, CopyBufferToImageInfo,
     allocator::StandardCommandBufferAllocator,
 };
 use vulkano::format::Format;
@@ -20,20 +20,7 @@ pub(crate) fn upload_texture_rgba8(
     width: u32,
     height: u32,
 ) -> Result<Arc<ImageView>, Box<dyn std::error::Error>> {
-    if width == 0 || height == 0 {
-        return Err("texture has zero size".into());
-    }
-
-    let expected_len = width as usize * height as usize * 4;
-    if rgba.len() != expected_len {
-        return Err(format!(
-            "texture rgba length mismatch: got={}, expected={}",
-            rgba.len(),
-            expected_len
-        )
-        .into());
-    }
-
+    let (mip_data, levels) = super::mipmaps::generate(rgba, width, height, false)?;
     let memory_allocator = context.memory_allocator().clone();
     let queue = context.graphics_queue().clone();
 
@@ -48,7 +35,7 @@ pub(crate) fn upload_texture_rgba8(
                 | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
             ..Default::default()
         },
-        rgba.iter().copied(),
+        mip_data.into_iter(),
     )?;
 
     let image = Image::new(
@@ -57,6 +44,7 @@ pub(crate) fn upload_texture_rgba8(
             image_type: ImageType::Dim2d,
             format: Format::R8G8B8A8_UNORM,
             extent: [width, height, 1],
+            mip_levels: levels.len() as u32,
             usage: ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
             ..Default::default()
         },
@@ -72,7 +60,22 @@ pub(crate) fn upload_texture_rgba8(
         CommandBufferUsage::OneTimeSubmit,
     )?;
 
-    cbb.copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(staging, image.clone()))?;
+    let mut copy = CopyBufferToImageInfo::buffer_image(staging, image.clone());
+    copy.regions = levels
+        .iter()
+        .enumerate()
+        .map(|(index, level)| BufferImageCopy {
+            buffer_offset: level.offset as u64,
+            image_subresource: vulkano::image::ImageSubresourceLayers {
+                aspects: vulkano::image::ImageAspects::COLOR,
+                mip_level: index as u32,
+                array_layers: 0..1,
+            },
+            image_extent: [level.width, level.height, 1],
+            ..Default::default()
+        })
+        .collect();
+    cbb.copy_buffer_to_image(copy)?;
 
     let cb = cbb.build()?;
 
@@ -84,6 +87,26 @@ pub(crate) fn upload_texture_rgba8(
         .map_err(|e| -> Box<dyn std::error::Error> { format!("{e:?}").into() })?;
 
     Ok(view)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires a Vulkan GPU"]
+    fn rgba_upload_creates_a_view_over_the_complete_mip_chain()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let context = RendererContext::new(None, None, None)?;
+        let allocator = Arc::new(StandardCommandBufferAllocator::new(
+            context.device().clone(),
+            Default::default(),
+        ));
+        let view = upload_texture_rgba8(&context, &allocator, &[255; 4 * 8 * 4], 4, 8)?;
+        assert_eq!(view.image().mip_levels(), 4);
+        assert_eq!(view.subresource_range().mip_levels, 0..4);
+        Ok(())
+    }
 }
 
 pub(crate) fn upload_texture_bc7(

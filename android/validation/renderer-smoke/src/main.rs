@@ -6,6 +6,8 @@ mod renderer;
 mod scene;
 #[path = "../../../src/scene_runtime.rs"]
 mod scene_runtime;
+#[path = "../../../src/xr_resolution.rs"]
+mod xr_resolution;
 mod target;
 mod xr_host {
     pub type Result<T> = std::result::Result<T, String>;

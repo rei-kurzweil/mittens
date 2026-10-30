@@ -696,6 +696,25 @@ fn apply_call(
                 .get_component_by_id_as_mut::<RendererSettingsComponent>(id)
                 .ok_or("missing RendererSettings after construction")? = updated;
         }
+        "RendererSettings" if method == "desired_xr_resolution" => {
+            let Some(mms::Value::Array(values)) = args.first() else {
+                return Err("desired_xr_resolution requires a two-element array".into());
+            };
+            if values.len() != 2 {
+                return Err("desired_xr_resolution requires a two-element array".into());
+            }
+            let resolution = RendererSettingsComponent::validate_xr_resolution([
+                f64_arg(values, 0)?,
+                f64_arg(values, 1)?,
+            ])?;
+            let settings = world
+                .get_component_by_id_as::<RendererSettingsComponent>(id)
+                .ok_or("missing RendererSettings after construction")?;
+            *world
+                .get_component_by_id_as_mut::<RendererSettingsComponent>(id)
+                .ok_or("missing RendererSettings after construction")? =
+                settings.with_desired_xr_resolution(resolution);
+        }
         "RendererSettings" if method == "transmission_depth_compare" => {
             let settings = world
                 .get_component_by_id_as::<RendererSettingsComponent>(id)

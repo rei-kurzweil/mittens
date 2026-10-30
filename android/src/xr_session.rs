@@ -1,6 +1,6 @@
 //! OpenXR session/frame ownership, independent of scene or diagnostic rendering.
 
-use crate::frame_renderer::FrameRenderer;
+use crate::frame_renderer::{FrameRenderer, FrameSetup};
 use crate::graphics_device::Gpu;
 use crate::xr_host::{ApiResult, Report, Result};
 use ash::{vk, vk::Handle};
@@ -78,28 +78,57 @@ impl XrSession {
         .into_iter()
         .find(|format| formats.contains(&(format.as_raw() as _)))
         .ok_or("no supported RGBA/BGRA color swapchain format")?;
+        #[cfg(feature = "resolution-probe")]
+        crate::xr_swapchain_probe::test_2448(&session, format, report);
         let views = instance
             .enumerate_view_configuration_views(system, VIEW)
             .api("xrEnumerateViewConfigurationViews(stereo)")?;
         if views.len() != 2 {
             return Err(format!("expected 2 stereo views, found {}", views.len()));
         }
-        // Deliberately keep the graphics probe cheap; this is not the engine's
-        // eventual render resolution or mobile quality policy.
-        let width = views
+        let setup = FrameSetup::new(directory)?;
+        let requested = setup.desired_xr_resolution();
+        let recommended_width = views
             .iter()
             .map(|v| v.recommended_image_rect_width)
             .max()
-            .unwrap()
-            .min(1024)
-            .min(views.iter().map(|v| v.max_image_rect_width).min().unwrap());
-        let height = views
+            .unwrap();
+        let recommended_height = views
             .iter()
             .map(|v| v.recommended_image_rect_height)
             .max()
-            .unwrap()
-            .min(1024)
-            .min(views.iter().map(|v| v.max_image_rect_height).min().unwrap());
+            .unwrap();
+        let system_limits = instance
+            .system_properties(system)
+            .api("xrGetSystemProperties")?
+            .graphics_properties;
+        let [width, height] = crate::xr_resolution::select(
+            requested,
+            [recommended_width, recommended_height],
+            [
+                views
+                    .iter()
+                    .map(|v| v.max_image_rect_width)
+                    .min()
+                    .unwrap()
+                    .min(system_limits.max_swapchain_image_width),
+                views
+                    .iter()
+                    .map(|v| v.max_image_rect_height)
+                    .min()
+                    .unwrap()
+                    .min(system_limits.max_swapchain_image_height),
+            ],
+        )?;
+        #[cfg(feature = "resolution-render-probe")]
+        let [width, height] = {
+            let _ = (width, height);
+            report.line(
+                "EXPERIMENT rendering at 2448x2448 per eye despite the reported system limit",
+            );
+            [2448, 2448]
+        };
+        report.line(format!("XR eye resolution requested={requested:?} recommended={recommended_width}x{recommended_height} selected={width}x{height}"));
         let swapchain = session
             .create_swapchain(&xr::SwapchainCreateInfo {
                 create_flags: xr::SwapchainCreateFlags::EMPTY,
@@ -134,7 +163,7 @@ impl XrSession {
             format,
             vk::Extent2D { width, height },
             images,
-            directory,
+            setup,
             report,
         )?;
         report.line(format!("graphics resources SUCCESS; blend={blend:?}"));

@@ -18,6 +18,8 @@ xr-probe = ["dep:openxr", "dep:jni"]
 vulkan-probe = ["xr-probe", "dep:ash"]
 mobile-renderer = ["vulkan-probe"]
 cube-demo = ["mobile-renderer"]
+resolution-probe = ["mobile-renderer"]
+resolution-render-probe = ["mobile-renderer"]
 
 [build-dependencies]
 shaderc = "0.8.3"

@@ -2142,8 +2142,8 @@ mod vulkano_backend {
                 descriptor_set_allocator.clone(),
             )?;
 
-            let sampler_linear =
-                Sampler::new(device.clone(), SamplerCreateInfo::simple_repeat_linear())?;
+            let (sampler_linear, sampler_nearest, sampler_nearest_mag) =
+                crate::engine::graphics::surface_samplers::create(device.clone())?;
 
             let sampler_scene_color = Sampler::new(
                 device.clone(),
@@ -2162,28 +2162,6 @@ mod vulkano_backend {
                     min_filter: Filter::Nearest,
                     mipmap_mode: SamplerMipmapMode::Nearest,
                     address_mode: [SamplerAddressMode::ClampToEdge; 3],
-                    ..Default::default()
-                },
-            )?;
-
-            let sampler_nearest = Sampler::new(
-                device.clone(),
-                SamplerCreateInfo {
-                    mag_filter: Filter::Nearest,
-                    min_filter: Filter::Nearest,
-                    mipmap_mode: SamplerMipmapMode::Nearest,
-                    address_mode: [SamplerAddressMode::Repeat; 3],
-                    ..Default::default()
-                },
-            )?;
-
-            let sampler_nearest_mag = Sampler::new(
-                device.clone(),
-                SamplerCreateInfo {
-                    mag_filter: Filter::Nearest,
-                    min_filter: Filter::Linear,
-                    mipmap_mode: SamplerMipmapMode::Nearest,
-                    address_mode: [SamplerAddressMode::Repeat; 3],
                     ..Default::default()
                 },
             )?;

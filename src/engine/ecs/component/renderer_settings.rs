@@ -9,6 +9,8 @@ use crate::engine::graphics::MsaaMode;
 pub struct RendererSettingsComponent {
     pub msaa4x: bool,
     pub window_size: Option<[u32; 2]>,
+    /// Desired render size in pixels for each XR eye, selected at session creation.
+    pub desired_xr_resolution: Option<[u32; 2]>,
     pub transmission_depth_compare: bool,
 }
 
@@ -17,6 +19,7 @@ impl RendererSettingsComponent {
         Self {
             msaa4x: true,
             window_size: None,
+            desired_xr_resolution: None,
             transmission_depth_compare: true,
         }
     }
@@ -25,6 +28,7 @@ impl RendererSettingsComponent {
         Self {
             msaa4x: false,
             window_size: None,
+            desired_xr_resolution: None,
             transmission_depth_compare: true,
         }
     }
@@ -39,6 +43,25 @@ impl RendererSettingsComponent {
     pub fn with_transmission_depth_compare(mut self, enabled: bool) -> Self {
         self.transmission_depth_compare = enabled;
         self
+    }
+
+    pub fn with_desired_xr_resolution(mut self, resolution: [u32; 2]) -> Self {
+        if resolution[0] > 0 && resolution[1] > 0 {
+            self.desired_xr_resolution = Some(resolution);
+        }
+        self
+    }
+
+    pub fn validate_xr_resolution(value: [f64; 2]) -> Result<[u32; 2], String> {
+        if value
+            .iter()
+            .any(|v| !v.is_finite() || *v < 1.0 || *v > u32::MAX as f64 || v.fract() != 0.0)
+        {
+            return Err(
+                "desired_xr_resolution requires two positive integer pixel dimensions".into(),
+            );
+        }
+        Ok(value.map(|v| v as u32))
     }
 
     pub fn msaa_mode(&self) -> MsaaMode {
@@ -90,6 +113,12 @@ impl Component for RendererSettingsComponent {
         };
         if let Some([w, h]) = self.window_size {
             ce = ce.with_call("window_size", vec![num(w as f64), num(h as f64)]);
+        }
+        if let Some([w, h]) = self.desired_xr_resolution {
+            ce = ce.with_call(
+                "desired_xr_resolution",
+                vec![array(vec![num(w as f64), num(h as f64)])],
+            );
         }
         if !self.transmission_depth_compare {
             ce = ce.with_call("transmission_depth_compare", vec![b(false)]);

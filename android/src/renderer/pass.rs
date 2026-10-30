@@ -191,6 +191,7 @@ impl EyePass {
                     depth_usage,
                     vk::ImageAspectFlags::DEPTH,
                     samples,
+                    1,
                 )?);
                 if multisampled {
                     pass.color_msaa.push(Image::new(
@@ -200,6 +201,7 @@ impl EyePass {
                         color_usage,
                         vk::ImageAspectFlags::COLOR,
                         samples,
+                        1,
                     )?);
                 }
             }

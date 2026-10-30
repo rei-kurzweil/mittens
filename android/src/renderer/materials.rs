@@ -139,11 +139,15 @@ impl Materials {
                             &vk::SamplerCreateInfo::default()
                                 .min_filter(min)
                                 .mag_filter(mag)
-                                .mipmap_mode(vk::SamplerMipmapMode::NEAREST)
+                                .mipmap_mode(if min == vk::Filter::LINEAR {
+                                    vk::SamplerMipmapMode::LINEAR
+                                } else {
+                                    vk::SamplerMipmapMode::NEAREST
+                                })
                                 .address_mode_u(vk::SamplerAddressMode::REPEAT)
                                 .address_mode_v(vk::SamplerAddressMode::REPEAT)
                                 .address_mode_w(vk::SamplerAddressMode::REPEAT)
-                                .max_lod(0.0),
+                                .max_lod(vk::LOD_CLAMP_NONE),
                             None,
                         )
                         .api("surface sampler")?,

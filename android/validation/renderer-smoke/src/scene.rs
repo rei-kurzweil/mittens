@@ -283,6 +283,31 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
             "RGBA texture binding was not sampled: {center:?}"
         );
     }
+    let checker: Vec<u8> = (0..64)
+        .flat_map(|y| {
+            (0..64).flat_map(move |x| {
+                let v = if (x + y) % 2 == 0 { 0 } else { 255 };
+                [v, v, v, 255]
+            })
+        })
+        .collect();
+    let checker_texture = renderer.upload_texture_rgba8(&checker, 64, 64).unwrap();
+    assert!(
+        universe
+            .visuals
+            .update_texture(handle, Some(checker_texture))
+    );
+    universe.visuals.prepare_draw_cache();
+    renderer.draw(0, &universe.visuals, &cameras).unwrap();
+    let pixels = target.pixels();
+    for eye in 0..2 {
+        let center = pixel(&pixels, eye, 48, 48);
+        assert!(
+            (105..=125).contains(&center[2]),
+            "minified checkerboard should sample averaged mip levels: {center:?}"
+        );
+    }
+    println!("PASS GPU minification samples averaged mip levels");
     assert!(universe.visuals.update_opacity(handle, 0.5));
     universe.visuals.prepare_draw_cache();
     assert!(
@@ -314,9 +339,8 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
         vk::Format::R8G8B8A8_UNORM,
         target.extent,
         vec![target.handle()],
-        &directory,
+        crate::scene_runtime::PreparedScene::load(&directory, crate::demo_assets::DemoScene::Cubes).unwrap(),
         &mut crate::xr_host::Report,
-        crate::demo_assets::DemoScene::Cubes,
     )
     .unwrap();
     let views = [openxr::View {
@@ -348,6 +372,8 @@ T.position(0.0, 0.0, -3.0).scale(0.65, 0.65, 0.65) {{ R.cube() {{ Material(defin
     assert!(ready, "embedded app scene did not render");
     println!("PASS embedded app MMS scene rendered by production SceneRuntime");
     drop(app);
+    let configured_stage = crate::scene_runtime::PreparedScene::load(&directory, crate::demo_assets::DemoScene::SakuraStage).unwrap();
+    assert_eq!(configured_stage.desired_xr_resolution(), None);
     let source =
         crate::demo_assets::install(&directory, crate::demo_assets::DemoScene::SakuraStage)
             .unwrap();

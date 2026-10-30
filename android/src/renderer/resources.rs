@@ -163,6 +163,7 @@ impl Image {
         usage: vk::ImageUsageFlags,
         aspect: vk::ImageAspectFlags,
         samples: vk::SampleCountFlags,
+        mip_levels: u32,
     ) -> Result<Self> {
         let mut image = Self {
             gpu,
@@ -184,7 +185,7 @@ impl Image {
                             height: extent.height,
                             depth: 1,
                         })
-                        .mip_levels(1)
+                        .mip_levels(mip_levels)
                         .array_layers(1)
                         .samples(samples)
                         .tiling(vk::ImageTiling::OPTIMAL)
@@ -231,7 +232,7 @@ impl Image {
                         .subresource_range(
                             vk::ImageSubresourceRange::default()
                                 .aspect_mask(aspect)
-                                .level_count(1)
+                                .level_count(mip_levels)
                                 .layer_count(1),
                         ),
                     None,
@@ -260,8 +261,14 @@ pub(super) fn upload_rgba(
     {
         return Err("invalid RGBA8 texture dimensions/data".into());
     }
-    let mut staging = Buffer::new(gpu.clone(), rgba.len(), vk::BufferUsageFlags::TRANSFER_SRC)?;
-    staging.write(rgba)?;
+    let (mip_data, levels) =
+        mittens_engine::engine::graphics::mipmaps::generate(rgba, width, height, srgb)?;
+    let mut staging = Buffer::new(
+        gpu.clone(),
+        mip_data.len(),
+        vk::BufferUsageFlags::TRANSFER_SRC,
+    )?;
+    staging.write(&mip_data)?;
     let image = Image::new(
         gpu.clone(),
         if srgb {
@@ -273,6 +280,7 @@ pub(super) fn upload_rgba(
         vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
         vk::ImageAspectFlags::COLOR,
         vk::SampleCountFlags::TYPE_1,
+        levels.len() as u32,
     )?;
     let transfer = Transfer::new(gpu.clone())?;
     unsafe {
@@ -294,7 +302,7 @@ pub(super) fn upload_rgba(
             .subresource_range(
                 vk::ImageSubresourceRange::default()
                     .aspect_mask(vk::ImageAspectFlags::COLOR)
-                    .level_count(1)
+                    .level_count(levels.len() as u32)
                     .layer_count(1),
             );
         device.cmd_pipeline_barrier(
@@ -306,22 +314,31 @@ pub(super) fn upload_rgba(
             &[],
             &[barrier],
         );
+        let copies = levels
+            .iter()
+            .enumerate()
+            .map(|(level, mip)| {
+                vk::BufferImageCopy::default()
+                    .buffer_offset(mip.offset as u64)
+                    .image_subresource(
+                        vk::ImageSubresourceLayers::default()
+                            .aspect_mask(vk::ImageAspectFlags::COLOR)
+                            .mip_level(level as u32)
+                            .layer_count(1),
+                    )
+                    .image_extent(vk::Extent3D {
+                        width: mip.width,
+                        height: mip.height,
+                        depth: 1,
+                    })
+            })
+            .collect::<Vec<_>>();
         device.cmd_copy_buffer_to_image(
             transfer.command,
             staging.handle,
             image.handle,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            &[vk::BufferImageCopy::default()
-                .image_subresource(
-                    vk::ImageSubresourceLayers::default()
-                        .aspect_mask(vk::ImageAspectFlags::COLOR)
-                        .layer_count(1),
-                )
-                .image_extent(vk::Extent3D {
-                    width,
-                    height,
-                    depth: 1,
-                })],
+            &copies,
         );
         device.cmd_pipeline_barrier(
             transfer.command,

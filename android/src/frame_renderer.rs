@@ -12,13 +12,50 @@ pub(crate) enum FrameRenderer {
     #[cfg(feature = "mobile-renderer")]
     Scene(crate::scene_runtime::SceneRuntime),
 }
+pub(crate) struct FrameSetup {
+    #[cfg(feature = "mobile-renderer")]
+    scene: crate::scene_runtime::PreparedScene,
+}
+impl FrameSetup {
+    pub fn new(directory: Option<&Path>) -> Result<Self> {
+        #[cfg(feature = "mobile-renderer")]
+        {
+            let scene = if cfg!(feature = "cube-demo") {
+                crate::demo_assets::DemoScene::Cubes
+            } else {
+                crate::demo_assets::DemoScene::SakuraStage
+            };
+            Ok(Self {
+                scene: crate::scene_runtime::PreparedScene::load(
+                    directory.ok_or("Android files directory is required for the mobile scene")?,
+                    scene,
+                )?,
+            })
+        }
+        #[cfg(not(feature = "mobile-renderer"))]
+        {
+            let _ = directory;
+            Ok(Self {})
+        }
+    }
+    pub fn desired_xr_resolution(&self) -> Option<[u32; 2]> {
+        #[cfg(feature = "mobile-renderer")]
+        {
+            self.scene.desired_xr_resolution()
+        }
+        #[cfg(not(feature = "mobile-renderer"))]
+        {
+            Some([1024, 1024])
+        }
+    }
+}
 impl FrameRenderer {
     pub fn new(
         gpu: Arc<Gpu>,
         format: vk::Format,
         extent: vk::Extent2D,
         images: Vec<u64>,
-        directory: Option<&Path>,
+        setup: FrameSetup,
         report: &mut Report,
     ) -> Result<Self> {
         #[cfg(feature = "mobile-renderer")]
@@ -28,18 +65,13 @@ impl FrameRenderer {
                 format,
                 extent,
                 images,
-                directory.ok_or("Android files directory is required for the mobile scene")?,
+                setup.scene,
                 report,
-                if cfg!(feature = "cube-demo") {
-                    crate::demo_assets::DemoScene::Cubes
-                } else {
-                    crate::demo_assets::DemoScene::SakuraStage
-                },
             )?))
         }
         #[cfg(not(feature = "mobile-renderer"))]
         {
-            let _ = (directory, report);
+            let _ = (setup, report);
             Ok(Self::Triangle(crate::triangle_probe::Renderer::new(
                 gpu, format, extent, images,
             )?))

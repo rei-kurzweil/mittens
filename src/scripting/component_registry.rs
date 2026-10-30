@@ -63,6 +63,8 @@ use crate::scripting::ast::{
 use crate::scripting::object::{CeChild, MaterializedCE, Value};
 use crate::scripting::token::expand_component_shortform;
 use std::cell::RefCell;
+#[path = "renderer_settings_legacy.rs"]
+mod renderer_settings_legacy;
 
 thread_local! {
     static LIVE_RENDER_ASSETS: RefCell<Option<*mut RenderAssets>> = const { RefCell::new(None) };
@@ -4267,19 +4269,7 @@ fn apply_call(
         return Ok(());
     }
     if let Some(s) = world.get_component_by_id_as_mut::<RendererSettingsComponent>(id) {
-        match method {
-            "window_size" => {
-                *s = s
-                    .clone()
-                    .with_window_size(arg_f32(args, 0)? as u32, arg_f32(args, 1)? as u32);
-            }
-            "transmission_depth_compare" => {
-                *s = s
-                    .clone()
-                    .with_transmission_depth_compare(arg_bool(args, 0)?);
-            }
-            _ => {}
-        }
+        renderer_settings_legacy::apply(s, method, args)?;
         return Ok(());
     }
     if let Some(ts) = world.get_component_by_id_as_mut::<TextShadowComponent>(id) {

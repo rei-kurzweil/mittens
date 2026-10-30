@@ -28,9 +28,8 @@ colored lighting; the built-in `MaterialDefinition.anime()` remains unsupported.
 
 The stage APK was installed and launched on Focus 3 on 2026-10-29. Its
 [startup report](validation/focus-3-sakura-startup-2026-10-29.txt) shows
-OpenXR focused and 4x lazy attachments created. The first captured report did
-not yet include a completed scene frame; headset visual confirmation remains
-pending. [Desktop GPU checks](validation/sakura-stage-headless-2026-10-29.txt)
+OpenXR focused and 4x lazy attachments created. The user subsequently confirmed
+the stage, sky, sun and corrected cube faces in the headset. [Desktop GPU checks](validation/sakura-stage-headless-2026-10-29.txt)
 rendered the scene at 1x and 4x and verified sky pixels and visible changes when
 ambient and direct lights change. These checks are not a performance benchmark.
 
@@ -115,6 +114,27 @@ It is intentionally conservative. Textures use a one-time staging transfer;
 mesh and uniform allocations require host-visible memory. Memory placement and
 frame pipelining are later performance work, especially on discrete desktop GPUs.
 
+## Texture mipmaps
+
+The Android renderer and the existing Vulkano desktop/XR renderer generate a
+full mip chain for uploaded RGBA8 material textures, including the rooftop tile.
+The shared CPU filter includes odd-sized edges and averages sRGB color in linear
+light when a texture is marked sRGB. Both current engine RGBA8 upload paths use
+linear UNORM, preserving their existing interpretation. Linear filtering blends
+between mip levels; nearest filtering selects one level. The nearest-magnification
+mode keeps sharp magnification and blends levels when minifying.
+
+Generation and upload happen once per texture, with temporary CPU/staging memory
+and load-time cost. A full chain for a square texture uses approximately one
+third more texture memory than its base level. Mips can reduce distant shimmer
+and improve texture locality, but extra filtering and memory mean a performance
+gain is not guaranteed. Filtered normal maps are normalized by shaders that use
+them; alpha-coverage preservation is not implemented. Desktop BC7 compressed
+uploads still contain only the base level because that upload interface does not
+yet supply a compressed mip chain. At 1024×1024 per eye the user reported much
+less texture flicker in the headset. Headset performance measurements remain
+outstanding.
+
 ## Intended useful headset feature set
 
 The agreed target is custom opaque materials with roughly the complexity of
@@ -190,9 +210,25 @@ and [raw GPU output](validation/opaque-renderer-headless-2026-10-29.log).
 The [desktop OpenXR A/B demo](../../examples/xr-renderer-compare/README.md)
 selects this backend or the current Vulkano renderer through one shared frame
 loop. It uses the same custom scene, recommended eye size and 1x sampling.
-The Android demo remains capped at 1024px per eye. Performance comparisons must
-use release builds and verify native cadence in the runtime, not infer it from
-application timing alone.
+The Sakura demo uses the runtime's recommended per-eye resolution (1712×1712
+on the tested Focus 3). An explicit request can be made through
+`RendererSettings { desired_xr_resolution([1712, 1712]) }`. Android reads this
+once before creating the XR swapchain and clamps the request to the runtime's
+reported limits. With no request, the mobile scene uses the runtime recommendation;
+changing it after session creation does not resize the existing swapchain.
+The desktop OpenXR path does not yet use this setting. Performance comparisons
+must use release builds and verify native cadence in the runtime, not infer it
+from application timing alone.
+
+On the tested Focus 3, the runtime reported a 1712×1712 system swapchain maximum
+and a 3440×3440 maximum view rectangle. An opt-in diagnostic
+(`android/packaging/build-apk.sh --features resolution-probe`) nevertheless
+created a 2448×2448 two-layer, single-sample RGBA8 sRGB swapchain and enumerated
+three images. A separate `resolution-render-probe` build rendered the Sakura
+stage at 2448×2448 with 4x MSAA; the user confirmed it appeared but could not
+tell whether it looked sharper. This experiment exceeds the reported system
+limit and does not establish performance or portable behavior. The default
+scene remains at the runtime recommendation.
 
 Both release backends created 1892x1892 stereo sessions through SteamVR/OpenXR
 2.17.10 on the GTX 1080, reached SYNCHRONIZED and stopped cleanly after a short
