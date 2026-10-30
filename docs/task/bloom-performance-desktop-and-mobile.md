@@ -42,6 +42,13 @@ creation. Keep source/style decisions separate from algorithm and precision.
 - Compare a small separable Gaussian with paired taps against a downsample /
   upsample dual-filter or tent pyramid. Match halo size and intensity when
   judging cost; allow an approximate kernel if it looks good in motion.
+- Include a **downsample/upsample-only** experiment: retain source generation,
+  pyramid reduction/reconstruction and composition, but bypass the explicit
+  Gaussian or other multi-tap blur kernel. Specify the sampling filter used at
+  each resize; "kernel off" does not mean that sampling itself has no filtering.
+  Start with ordinary bilinear resizing, without adding a custom multi-tap
+  downsample/upsample filter that would obscure the experiment. Compare the
+  resulting appearance and cost before deciding whether it is a useful mode.
 - Establish whether larger radii are cheaper and more stable through coarser
   levels than widely spaced full-resolution samples. Investigate sampling
   artifacts on thin LEDs, bright points, text and moving emissive edges.
@@ -128,6 +135,14 @@ Source audit at `731a54ac`; these are code observations, not measured timings:
   establish incremental CPU and GPU cost, allocations and retained image memory.
 - [ ] Prototype a small shortlist from the questions above in focused modules.
   Compare one variable at a time before selecting combined desktop/mobile presets.
+- [ ] Provide a live visual A/B between today's blur, a candidate optimized blur,
+  and downsample/upsample-only bloom, plus bloom disabled as the cost reference.
+  Hold the scene, source selection, precision, base resolution, pyramid depth,
+  intensity and merge weights fixed when isolating kernel cost; separately tune
+  each mode for a similar approximate halo and report remaining shape differences.
+  Save side-by-side images and motion/headset video. Inspect blockiness, grid or
+  diamond-shaped halos, level transitions, thin-source loss and shimmer without
+  assuming the unblurred pyramid will look worse or be acceptable before viewing it.
 - [ ] Collect GPU timestamps where supported with the queue's timestamp limits
   and period validated. Also record CPU preparation/recording, wall time through
   GPU completion and total active XR frame time. Label combined wall time clearly;
@@ -168,6 +183,12 @@ graphics settings owner/MMS controls. Keep artistic intensity/radius/source
 selection separate from quality/cost. Candidate choices include a quality
 preset, base resolution, pyramid depth/kernel family, and precision/HDR policy;
 do not expose every implementation knob without a demonstrated authoring need.
+
+The research prototype needs an explicit blur-kernel bypass independent of
+bloom enable/disable and pyramid depth. This should genuinely skip blur draws /
+dispatches, while leaving downsampling, reconstruction and composition active.
+Keep it labeled experimental until visual review and timing establish whether
+to retain it as a user-facing mode. Preserve existing defaults during comparison.
 
 Specify defaults per backend/capability, effective-setting queries, unsupported
 choices/fallback reporting, and whether each change is live, allocates/resizes
