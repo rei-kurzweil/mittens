@@ -47,6 +47,17 @@ const STAGE_FILES: &[(&str, &[u8])] = bundle![
     "assets/shaders/ui-unlit.frag",
 ];
 const SHELL_FILES: &[(&str, &[u8])] = bundle![
+    "assets/components/backgrounds/sakura_sky.mms",
+    "assets/components/mitten_droid/garden.mms",
+    "assets/components/plants/sakura_tree.mms",
+    "assets/components/materials/pool_tiles.mms",
+    "assets/components/materials/anime_surface.mms",
+    "assets/shaders/pool-tiles.frag",
+    "assets/shaders/anime-surface.frag",
+    "assets/shaders/sakura-blossom.frag",
+    "assets/textures/pool/white-tiles-surface.png",
+    "assets/textures/cherry-blossoms/sakura-blossom-256.png",
+    "android/shaders/sakura-sky.frag",
     "android/examples/shell-server.mms",
     "assets/components/mitten_droid/ui.mms",
     "assets/components/mitten_droid/protocol.mms",

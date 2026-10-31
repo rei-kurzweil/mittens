@@ -20,5 +20,5 @@ void main() {
     float edge = alignment - cos(radius);
     float aa = max(fwidth(edge), 0.000001);
     float disc = smoothstep(-aa, aa, edge);
-    f_color = vec4(mix(background, vec3(1.0), disc), 1.0);
+    f_color = vec4(mix(background, vec3(1.0), disc * clamp(sky.sun_strength, 0.0, 1.0)), 1.0);
 }

@@ -52,14 +52,14 @@ export fn shell(title, subtitle, connection, browser, terminal, footer) {
         available_width(126) available_height(66)
         material
         Style { width(126) font_size(1.05) color([1.0, 0.75, 0.25, 1.0]) }
-        T { Style { margin_bottom(0.5) font_size(1.3) color([1.0, 0.75, 0.25, 1]) } Text { title } }
-        T { Style { margin_bottom(1) font_size(0.9) color([1.0, 0.75, 0.25, 1]) } Text { subtitle } }
-        T { Style { margin_bottom(1) color([1.0, 0.75, 0.25, 1]) } connection }
+        T { Style { margin_bottom(0.5) font_size(1.3) color([0.20, 0.09, 0.16, 1]) } Text { title } }
+        T { Style { margin_bottom(1) font_size(0.9) color([0.20, 0.09, 0.16, 1]) } Text { subtitle } }
+        T { Style { margin_bottom(1) color([0.20, 0.09, 0.16, 1]) } connection }
         T {
             Style { display("flex") flex_direction("row") column_gap(2.0) }
             window("TERMINAL", terminal, 63, true, definition)
             window("FILES", browser, 61, false, definition)
         }
-        T { Style { margin_top(1) font_size(0.9) color([1.0, 0.75, 0.25, 1]) } footer }
+        T { Style { margin_top(1) font_size(0.9) color([0.20, 0.09, 0.16, 1]) } footer }
     }
 }

@@ -5,7 +5,19 @@ cream file browser on the right. Both windows have gold title bars, dark title
 text, and gold side rails around inset content. The title finish is a small
 custom shader with a highlight and sparse flecks. Terminal text uses the custom
 unlit material, so it stays bright without lights. There is no bloom pass or
-legacy emissive material.
+legacy emissive material. Both environments use a pink Sakura sky: the desktop
+keeps the shader's sun, while the headset uses an unlit crescent authored with
+`R.polygon`. The desktop has gold `-` / `+` buttons at the bottom right. They
+move the camera outward/inward in 0.5 m steps, bounded to 2–12 m from the UI;
+the controls travel with the camera so they remain reachable while zoomed in.
+
+A floating ceramic terrace covers the spawn area and UI frontage. One raised
+flower bed sits to the right and 0.8 m closer than the UI, with tiled edges,
+soil, small blossoms, and the shared branching Sakura tree. A 0.62 m railing
+surrounds the perimeter. Floor, planter, railings, branches, and blossoms use
+retained combined meshes and explicit custom materials. The tree's mobile
+variant samples/discards the flower mask in its fragment shader; it does not
+select a legacy material or the unsupported TransparentCutout pipeline.
 
 The file browser has a path bar, Up, twenty visible folded-page icons in five columns
 and four rows, wrapped filenames, and row scroll buttons. Use a controller trigger to select dummy entries, or use Up to inspect the virtual `examples` directory. Dummy

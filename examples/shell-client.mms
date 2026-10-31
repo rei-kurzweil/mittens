@@ -1,10 +1,43 @@
+import { shell_garden } from "../assets/components/mitten_droid/garden.mms"
 // PC shell in MMS; directory enumeration and the 5 x 4 browser grid use Rust.
 import { shell, caption, action } from "../assets/components/mitten_droid/ui.mms"
+import { sakura_sky } from "../assets/components/backgrounds/sakura_sky.mms"
+import { ui_unlit_material } from "../assets/components/materials/ui_unlit.mms"
 import { envelope, decode } from "../assets/components/mitten_droid/protocol.mms"
 
 RendererSettings { window_size(1440, 960) }
-BGC.rgba(0.015, 0.025, 0.045, 1.0)
-T.position(0, 1.4, 4.8) { C3D { Pointer {} } }
+BGC.rgba(1.0, 0.80, 0.86, 1.0)
+sakura_sky(false)
+shell_garden(3.465,-0.2,0,4.8)
+AL.rgb(0.38,0.31,0.39)
+T.position(-0.5,1.0,0.7) { DL.color(1.0,0.88,0.80).intensity(1.4) }
+let zoom = { distance = 4.8 }
+let zoom_in = action("+", "shell_zoom_in")
+let zoom_out = action("-", "shell_zoom_out")
+let camera = T.position(0,1.4,4.8) {
+    name = "shell_camera_rig"
+    C3D { Pointer {} }
+    // Camera-relative controls remain reachable when the main UI is enlarged.
+    T.position(0.30,-0.235,-0.5).scale(0.014,0.014,0.014) {
+        name = "shell_zoom_controls"
+        ui_unlit_material()
+        LayoutRoot {
+            available_width(9) available_height(4)
+            T { Style { display("flex") flex_direction("row") column_gap(0.4) } zoom_out zoom_in }
+        }
+    }
+}
+camera
+on(zoom_in,"Click",fn(event) {
+    zoom.distance = zoom.distance-0.5
+    if zoom.distance < 2.0 { zoom.distance = 2.0 }
+    camera.update_transform([0,1.4,zoom.distance])
+})
+on(zoom_out,"Click",fn(event) {
+    zoom.distance = zoom.distance+0.5
+    if zoom.distance > 12.0 { zoom.distance = 12.0 }
+    camera.update_transform([0,1.4,zoom.distance])
+})
 // Up can reach examples/. The root bounds native filesystem access.
 let browser = FileBrowser.local("examples", "mitten-droid")
 let state = {
@@ -22,10 +55,10 @@ let connect = action("Connect", "shell_connect")
 let disconnect = action("Disconnect", "shell_disconnect")
 let refresh = action("Refresh", "shell_refresh")
 
-T.position(-3.465, 3.15, 0).scale(0.055, 0.055, 0.055) {
+T.position(-3.465, 3.65, 0).scale(0.055, 0.055, 0.055) {
     shell("mitten-droid / desktop", "Browse PC scripts, open from the headset, prepare terminal commands", T {
         T {
-            Style { display("inline-block") width(40) padding(0.5) background_color([0.035, 0.029, 0.018, 1]) }
+            Style { display("inline-block") width(40) padding(0.5) color([1.0,0.75,0.25,1]) background_color([0.035, 0.029, 0.018, 1]) }
             address
         }
         connect disconnect refresh

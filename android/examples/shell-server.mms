@@ -1,9 +1,15 @@
+import { shell_garden } from "../../assets/components/mitten_droid/garden.mms"
 // Headset shell in MMS, with a native grid backed by the PC's directory listing.
+import { sakura_sky } from "../../assets/components/backgrounds/sakura_sky.mms"
 import { shell, caption } from "../../assets/components/mitten_droid/ui.mms"
 import { ui_unlit_material } from "../../assets/components/materials/ui_unlit.mms"
 import { envelope, decode } from "../../assets/components/mitten_droid/protocol.mms"
 
-BGC.rgba(0.015, 0.025, 0.045, 1.0)
+BGC.rgba(1.0, 0.80, 0.86, 1.0)
+sakura_sky(true)
+shell_garden(1.89,-1.6,-2.6,0)
+AL.rgb(0.38,0.31,0.39)
+T.position(-0.5,1.0,0.7) { DL.color(1.0,0.88,0.80).intensity(1.4) }
 let pointer_material = ui_unlit_material()
 fn controller_pointer(label) {
     // Stay out of view until the host supplies a valid controller Aim pose.

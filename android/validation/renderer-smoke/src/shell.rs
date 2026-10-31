@@ -61,15 +61,20 @@ pub fn render(output: &str) {
         }
         std::thread::sleep(Duration::from_millis(10));
     }
+    let yaw = std::env::args()
+        .nth(3)
+        .and_then(|value| value.parse::<f32>().ok())
+        .unwrap_or(0.0)
+        .to_radians();
     let cameras = [-0.032, 0.032].map(|x| {
         EyeCamera::from_xr(&openxr::View {
             pose: openxr::Posef {
                 position: openxr::Vector3f { x, y: 0.0, z: 0.0 },
                 orientation: openxr::Quaternionf {
                     x: 0.0,
-                    y: 0.0,
+                    y: (yaw * 0.5).sin(),
                     z: 0.0,
-                    w: 1.0,
+                    w: (yaw * 0.5).cos(),
                 },
             },
             fov: openxr::Fovf {
@@ -97,8 +102,10 @@ pub fn render(output: &str) {
             x > 120 && x < 710 && y > 260 && y < 700 && p[0] > 180 && p[1] > 100 && p[2] < 100
         })
         .count();
-    assert!(cream > 100_000, "file-browser content must be visible");
-    assert!(amber_text > 500, "terminal content must be visible");
+    if yaw == 0.0 {
+        assert!(cream > 100_000, "file-browser content must be visible");
+        assert!(amber_text > 500, "terminal content must be visible");
+    }
     let mut file = std::fs::File::create(output).unwrap();
     write!(file, "P6\n1440 960\n255\n").unwrap();
     for pixel in pixels[..1440 * 960 * 4].chunks_exact(4) {

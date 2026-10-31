@@ -76,3 +76,24 @@ export fn sakura_tree(depth, length, width) {
         }
     }
 }
+
+// Explicit custom-material variant for the native Android renderer. The caller
+// supplies an opaque wood shader and a blossom shader that discards its texture
+// mask; no legacy material or TransparentCutout component is introduced.
+export fn sakura_tree_custom(depth, length, width, wood, blossoms) {
+    depth = Math.clamp(depth, 0, 4)
+    return T {
+        CombineMesh {
+            name = "sakura_tree_branches"
+            wood
+            branch(depth, length, width, wood, blossoms, 1, false)
+        }
+        CombineMesh {
+            name = "sakura_tree_blossoms"
+            blossoms
+            Texture.with_uri("assets/textures/cherry-blossoms/sakura-blossom-256.png")
+            TextureFiltering.linear()
+            branch(depth, length, width, wood, blossoms, 1, true)
+        }
+    }
+}
