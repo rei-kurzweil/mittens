@@ -63,6 +63,8 @@ use crate::scripting::ast::{
 use crate::scripting::object::{CeChild, MaterializedCE, Value};
 use crate::scripting::token::expand_component_shortform;
 use std::cell::RefCell;
+#[path = "geometry_registry.rs"]
+mod geometry_registry;
 #[path = "interaction_registry.rs"]
 mod interaction_registry;
 #[path = "renderer_settings_legacy.rs"]
@@ -146,6 +148,8 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "IKChain",
     "ImplicitSphere",
     "ImplicitSurface",
+    "Destroyable",
+    "Damage",
     "Input",
     "InputTransformMode",
     "InputXR",
@@ -2017,20 +2021,7 @@ fn create_component(
             None => add!(CombineMeshComponent::default()),
             Some(method) => return Err(format!("CombineMesh: unknown constructor '{method}'")),
         },
-        "ImplicitSurface" => {
-            let id = world.add_component(ImplicitSurfaceComponent::default());
-            if let Some(method) = ctor {
-                apply_call(world, id, method, args)?;
-            }
-            Ok(id)
-        }
-        "ImplicitSphere" => {
-            let id = world.add_component(ImplicitSphereComponent::default());
-            if let Some(method) = ctor {
-                apply_call(world, id, method, args)?;
-            }
-            Ok(id)
-        }
+        "ImplicitSurface" | "ImplicitSphere" | "Destroyable" | "Damage" => geometry_registry::create(world, type_name, ctor, args),
         "Background" => {
             let id = world.add_component(BackgroundComponent::new());
             if let Some(method) = ctor {
@@ -3183,25 +3174,20 @@ fn apply_call(
         component.apply_builder(method, arg_f32(args, 0)?)?;
         return Ok(());
     }
-    if let Some(surface) = world.get_component_by_id_as_mut::<ImplicitSurfaceComponent>(id) {
-        match method {
-            "bounds" => {
-                surface.bounds_min = [arg_f32(args, 0)?, arg_f32(args, 1)?, arg_f32(args, 2)?];
-                surface.bounds_max = [arg_f32(args, 3)?, arg_f32(args, 4)?, arg_f32(args, 5)?];
-            }
-            "voxel_size" => surface.voxel_size = arg_f32(args, 0)?,
-            "iso_level" => surface.iso_level = arg_f32(args, 0)?,
-            "smooth_min_radius" => surface.smooth_min_radius = arg_f32(args, 0)?,
-            _ => return Err(format!("ImplicitSurface: unknown builder '{method}'")),
-        }
-        return Ok(());
-    }
-    if let Some(sphere) = world.get_component_by_id_as_mut::<ImplicitSphereComponent>(id) {
-        match method {
-            "radius" => sphere.radius = arg_f32(args, 0)?,
-            _ => return Err(format!("ImplicitSphere: unknown builder '{method}'")),
-        }
-        return Ok(());
+    if world
+        .get_component_by_id_as::<ImplicitSurfaceComponent>(id)
+        .is_some()
+        || world
+            .get_component_by_id_as::<ImplicitSphereComponent>(id)
+            .is_some()
+        || world
+            .get_component_by_id_as::<crate::engine::ecs::component::DestroyableComponent>(id)
+            .is_some()
+        || world
+            .get_component_by_id_as::<crate::engine::ecs::component::DamageComponent>(id)
+            .is_some()
+    {
+        return geometry_registry::apply(world, id, method, args);
     }
     if let Some(tracker) = world.get_component_by_id_as_mut::<XREyeTrackingComponent>(id) {
         match method {

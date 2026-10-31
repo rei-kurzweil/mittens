@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 #[path = "../../../src/demo_assets.rs"]
 mod demo_assets;
+mod destruction;
 mod editor_click;
 #[path = "../../../src/frame_profile.rs"]
 mod frame_profile;
@@ -343,6 +344,10 @@ mod vulkan_probe {
     }
 }
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--destruction") {
+        destruction::run();
+        return;
+    }
     if std::env::args().nth(1).as_deref() == Some("--shell-preview") {
         shell::render(
             &std::env::args()

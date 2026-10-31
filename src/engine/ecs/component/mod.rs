@@ -1,3 +1,5 @@
+pub mod destroyable;
+pub use destroyable::{CutGeometryComponent, DamageComponent, DestroyableComponent};
 pub mod ambient_light;
 pub mod amplitude;
 pub mod animation;

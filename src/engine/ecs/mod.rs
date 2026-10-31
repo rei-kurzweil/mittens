@@ -88,6 +88,8 @@ pub struct World {
     spring_collider_revision: u64,
     /// Typed contact registry: discovery never walks unrelated scene components.
     collidable_ids: std::collections::HashSet<ComponentId>,
+    damage_ids: std::collections::HashSet<ComponentId>,
+    destroyable_ids: std::collections::HashSet<ComponentId>,
     /// Consumed by the simulation's StaticContactSystem after pose propagation.
     contact_changes: RefCell<std::collections::HashSet<ComponentId>>,
     components: SlotMap<ComponentId, crate::engine::ecs::component::ComponentNode>,
@@ -261,7 +263,26 @@ impl World {
         self.query_revision
     }
 
+    pub(crate) fn damage_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
+        self.damage_ids.iter().copied()
+    }
+    pub(crate) fn destroyable_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
+        self.destroyable_ids.iter().copied()
+    }
+
     fn track_component_dependencies(&mut self, id: ComponentId) {
+        if self
+            .get_component_by_id_as::<component::DamageComponent>(id)
+            .is_some()
+        {
+            self.damage_ids.insert(id);
+        }
+        if self
+            .get_component_by_id_as::<component::DestroyableComponent>(id)
+            .is_some()
+        {
+            self.destroyable_ids.insert(id);
+        }
         if self
             .get_component_by_id_as::<component::CollidableComponent>(id)
             .is_some()
@@ -797,6 +818,8 @@ impl World {
         self.detach_all_parents(c);
         self.components.remove(c);
         self.collidable_ids.remove(&c);
+        self.damage_ids.remove(&c);
+        self.destroyable_ids.remove(&c);
         self.transform_operator_ids.remove(&c);
         self.spring_collider_ids.remove(&c);
         self.contact_changes.get_mut().insert(c);

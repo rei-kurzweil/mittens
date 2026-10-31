@@ -36,7 +36,7 @@ import { laser_machine_pistol } from "../assets/components/laser-machine-pistol.
 import { gradient_skybox, background_sun } from "../assets/components/backgrounds/gradient_skybox.mms"
 import { sakura_tree } from "../assets/components/plants/sakura_tree.mms"
 import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
-import { pool_building, ceramic_box } from "../assets/components/buildings/pool_building.mms"
+import { pool_building, ceramic_box, destroyable_ceramic_box } from "../assets/components/buildings/pool_building.mms"
 import { teleport_pit } from "../assets/components/teleport_pit.mms"
 import { display_car } from "../assets/components/vehicles/display_car.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
@@ -102,6 +102,7 @@ let shooting_cans = [
 ]
 for can in shooting_cans { can }
 fn handle_laser_hit(hit) {
+    Damage.at(hit.hit_point[0], hit.hit_point[1], hit.hit_point[2], 0.28, 1.0)
     let impact = mini_explosion(hit.hit_point, 2.0)
     impact.root
     impact.animation.play()
@@ -116,6 +117,14 @@ let blue = [0.64, 0.78, 0.86]
 fn box(position, size, color) {
     return T.position(position[0], position[1], position[2]).scale(size[0], size[1], size[2]) {
         R.cube() { hardware C.rgba(color[0], color[1], color[2], 1.0) }
+        Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.85) {} }
+    }
+}
+
+fn destroyable_box(position, size, color) {
+    return T.position(position[0], position[1], position[2]).scale(size[0], size[1], size[2]) {
+        Destroyable.threshold(3.0)
+        R.cube() { hardware C.rgba(color[0], color[1], color[2], 1.0) Raycastable.enabled() }
         Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.85) {} }
     }
 }
@@ -224,9 +233,9 @@ display_car("sakura_road_car_south", [3.4, -0.04, 19.0], 3.14159265, "sakura_car
 // Rooftop workbench bolted to a ceramic backing wall, with two cantilever brackets.
 T.position(-18.0, roof_height, 0.0) {
     name = "sakura_workbench"
-    ceramic_box([0.0, 1.35, -4.85], [6.4, 2.7, 0.24], white, tiles)
-    box([0.0, 0.94, -4.12], [3.2, 0.10, 1.15], [0.30, 0.32, 0.40])
-    box([0.0, 1.004, -4.05], [2.85, 0.025, 0.90], [0.82, 0.56, 0.67])
+    destroyable_ceramic_box([0.0, 1.35, -4.85], [6.4, 2.7, 0.24], white, tiles)
+    destroyable_box([0.0, 0.94, -4.12], [3.2, 0.10, 1.15], [0.30, 0.32, 0.40])
+    destroyable_box([0.0, 1.004, -4.05], [2.85, 0.025, 0.90], [0.82, 0.56, 0.67])
     for side in [-1.0, 1.0] {
         box([side * 1.15, 0.57, -4.60], [0.10, 0.68, 0.12], [0.22, 0.24, 0.31])
         T.position(side * 1.15, 0.62, -4.24).rotation(0.65, 0.0, 0.0) {
@@ -250,7 +259,7 @@ T.position(-18.0, roof_height, 0.0) {
 }
 
 // Small rooftop target stand, with three more cans beyond the workbench.
-box([-14.2, roof_height + 0.80, -4.2], [2.4, 0.12, 0.70], [0.30, 0.32, 0.40])
+destroyable_box([-14.2, roof_height + 0.80, -4.2], [2.4, 0.12, 0.70], [0.30, 0.32, 0.40])
 for x in [-15.1, -13.3] {
     box([x, roof_height + 0.37, -4.2], [0.10, 0.74, 0.50], [0.30, 0.32, 0.40])
 }
@@ -447,8 +456,8 @@ if xr_view_enabled {
 // Weapon table near the spawn end of the roof, to the player's left.
 T.position(-20.3, roof_height, 0.2) {
     name = "sakura_pistol_table"
-    ceramic_box([0.0, 0.90, 0.0], [2.8, 0.12, 1.15], white, tiles)
-    box([0.0, 0.974, 0.0], [2.64, 0.025, 1.0], [0.91, 0.72, 0.78])
+    destroyable_ceramic_box([0.0, 0.90, 0.0], [2.8, 0.12, 1.15], white, tiles)
+    destroyable_box([0.0, 0.974, 0.0], [2.64, 0.025, 1.0], [0.91, 0.72, 0.78])
     for x in [-1.18, 1.18] {
         for z in [-0.43, 0.43] { box([x, 0.42, z], [0.10, 0.84, 0.10], [0.30, 0.32, 0.40]) }
     }

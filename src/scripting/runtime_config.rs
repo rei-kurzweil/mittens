@@ -581,18 +581,8 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         );
                 }
                 "CombineMesh" => no_arg_constructors(component, &["keep_transforms"]),
-                "ImplicitSurface" => {
-                    for (name, signature) in [
-                        ("bounds", floats(6)),
-                        ("voxel_size", floats(1)),
-                        ("iso_level", floats(1)),
-                        ("smooth_min_radius", floats(1)),
-                    ] {
-                        host_constructor_and_builder(component, canonical, name, signature);
-                    }
-                }
-                "ImplicitSphere" => {
-                    host_constructor_and_builder(component, canonical, "radius", floats(1));
+                "ImplicitSurface" | "ImplicitSphere" | "Destroyable" | "Damage" => {
+                    geometry_binding::register(component, canonical)
                 }
                 "Color" => {
                     host_constructor(component, canonical, "rgba", floats(4));
@@ -2161,3 +2151,6 @@ mod tests {
 mod renderer_settings_binding;
 #[path = "walking_ik_binding.rs"]
 mod walking_ik_binding;
+
+#[path = "geometry_binding.rs"]
+mod geometry_binding;

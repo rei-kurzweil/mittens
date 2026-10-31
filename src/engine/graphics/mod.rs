@@ -1,4 +1,5 @@
 pub mod bounds;
+pub mod csg_mesh;
 pub mod custom_material;
 pub mod deformation;
 #[cfg(test)]
@@ -75,6 +76,8 @@ pub use render_info::RenderInfo;
 /// This abstraction allows different renderer implementations
 /// to provide mesh uploading functionality without exposing renderer-specific details.
 pub trait MeshUploader {
+    /// Release exclusively owned runtime geometry after removing its instances.
+    fn release_mesh(&mut self, _handle: MeshHandle) {}
     fn upload_mesh(&mut self, mesh: &CpuMesh) -> Result<MeshHandle, Box<dyn std::error::Error>>;
 }
 

@@ -20,6 +20,8 @@ pub(crate) struct Surface {
     pub zone: ComponentId,
     pub frame_id: ComponentId,
     pub friction: f32,
+    mesh: Option<std::sync::Arc<super::triangle_collision::TriangleMesh>>,
+    local_mesh: Option<std::sync::Arc<super::triangle_collision::TriangleMesh>>,
     shape: CollisionShape,
     frame: Frame,
     axis_shape: Option<AxisShape>,
@@ -50,6 +52,13 @@ impl Surface {
         bottom: f32,
         margin: f32,
     ) -> Option<f32> {
+        if let Some(mesh) = &self.mesh {
+            let origin = [sole[0], bottom + margin, sole[2]];
+            let distance = mesh.ray(origin, [0., -1., 0.])?;
+            let height = origin[1] - distance;
+            return ((height - bottom).abs() <= margin && height < capsule_center[1])
+                .then_some(height);
+        }
         let (center, extents, axes) = self.yaw_box?;
         let height = center[1] + extents[1];
         if center[1] >= capsule_center[1] || (height - bottom).abs() > margin {
@@ -66,6 +75,9 @@ impl Surface {
     }
 
     pub fn translation(&self, center: [f32; 3], shape: CollisionShape) -> Option<[f32; 3]> {
+        if let Some(mesh) = &self.mesh {
+            return mesh.translation(center, shape);
+        }
         if let Some((position, surface_shape)) = self.axis_shape {
             return collision_geometry::minimum_translation(
                 center,
@@ -102,6 +114,9 @@ impl Surface {
         shape: CollisionShape,
         previous: [f32; 3],
     ) -> Option<zone_query::ZoneSweepHit> {
+        if let Some(mesh) = &self.mesh {
+            return mesh.sweep(moving, self.zone, end, shape, previous);
+        }
         zone_query::sweep_capsule_floor_geometry(
             moving, self.zone, end, shape, self.shape, self.frame, previous,
         )
@@ -179,7 +194,12 @@ impl CollidableBvh {
                     if let Some(frame) = frame_id {
                         dependencies.push(frame);
                     }
-                    if !c.enabled || !z.enabled {
+                    if !c.enabled
+                        || !z.enabled
+                        || crate::engine::ecs::component::destroyable::zone_suppressed(
+                            world, zone_id,
+                        )
+                    {
                         return None;
                     }
                     if c.mode == CollidableMode::Slide {
@@ -213,6 +233,7 @@ impl CollidableBvh {
                 }
                 continue;
             };
+            let local_mesh = super::triangle_collision::on(world, zone);
             let existing = self.indices.get(&id).copied();
             if existing.is_some_and(|i| {
                 let s = &self.surfaces[i];
@@ -221,6 +242,11 @@ impl CollidableBvh {
                     && s.shape == shape
                     && s.frame == frame
                     && s.friction == friction
+                    && match (&s.local_mesh, &local_mesh) {
+                        (Some(a), Some(b)) => std::sync::Arc::ptr_eq(a, b),
+                        (None, None) => true,
+                        _ => false,
+                    }
             }) {
                 continue;
             }
@@ -242,6 +268,8 @@ impl CollidableBvh {
                 shape,
                 frame,
                 friction,
+                mesh: local_mesh.as_ref().map(|mesh| mesh.world(frame)),
+                local_mesh,
                 axis_shape: collision_geometry::axis_aligned_world_shape(shape, frame),
                 yaw_box: collision_geometry::yaw_box(shape, frame),
                 bounds: bounds(min, max),

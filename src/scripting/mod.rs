@@ -74,3 +74,6 @@ mod ui_lighting_tests;
 
 #[cfg(test)]
 mod pool_viewer_tests;
+
+#[cfg(test)]
+mod destroyable_scene_tests;

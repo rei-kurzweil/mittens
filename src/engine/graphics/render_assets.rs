@@ -27,6 +27,8 @@ pub enum BuiltinMeshType {
 #[derive(Debug, Default)]
 pub struct RenderAssets {
     cpu_meshes: Vec<CpuMesh>,
+    transient_free: Vec<CpuMeshHandle>,
+    transient_live: std::collections::HashSet<CpuMeshHandle>,
     gpu_meshes: HashMap<CpuMeshHandle, MeshHandle>,
     combined_meshes: HashMap<u64, Vec<CpuMeshHandle>>,
 
@@ -109,6 +111,33 @@ impl RenderAssets {
         let h = CpuMeshHandle(self.cpu_meshes.len() as u32);
         self.cpu_meshes.push(mesh);
         h
+    }
+
+    /// Exclusive runtime meshes may recycle CPU slots; shared authored assets cannot.
+    pub fn register_transient_mesh(&mut self, mesh: CpuMesh) -> CpuMeshHandle {
+        let handle = if let Some(handle) = self.transient_free.pop() {
+            self.cpu_meshes[handle.0 as usize] = mesh;
+            handle
+        } else {
+            self.register_mesh(mesh)
+        };
+        self.transient_live.insert(handle);
+        handle
+    }
+
+    pub fn release_transient_mesh(
+        &mut self,
+        uploader: &mut dyn MeshUploader,
+        handle: CpuMeshHandle,
+    ) {
+        if !self.transient_live.remove(&handle) {
+            return;
+        }
+        if let Some(gpu) = self.gpu_meshes.remove(&handle) {
+            uploader.release_mesh(gpu);
+        }
+        self.cpu_meshes[handle.0 as usize] = CpuMesh::new(Vec::new(), Vec::new());
+        self.transient_free.push(handle);
     }
 
     /// Reuse immutable static geometry when a scene regenerates the same building.

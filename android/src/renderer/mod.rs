@@ -55,7 +55,7 @@ pub(crate) struct SceneRenderer {
     fence: vk::Fence,
     materials: Materials,
     pass: EyePass,
-    meshes: Vec<Mesh>,
+    meshes: Vec<Option<Mesh>>,
     textures: Vec<Image>,
     instance_buffer: Buffer,
     instances: Vec<Draw>,
@@ -235,6 +235,7 @@ impl SceneRenderer {
             }
             self.meshes
                 .get(batch.mesh.0 as usize)
+                .and_then(Option::as_ref)
                 .ok_or("unknown mobile mesh handle")?;
             let texture = self
                 .textures
@@ -323,7 +324,9 @@ impl SceneRenderer {
                     else {
                         continue;
                     };
-                    let mesh = &self.meshes[batch.mesh.0 as usize];
+                    let mesh = self.meshes[batch.mesh.0 as usize]
+                        .as_ref()
+                        .ok_or("retired mesh")?;
                     device.cmd_bind_pipeline(
                         self.command,
                         vk::PipelineBindPoint::GRAPHICS,
@@ -403,6 +406,13 @@ impl SceneRenderer {
     }
 }
 impl MeshUploader for SceneRenderer {
+    fn release_mesh(&mut self, handle: MeshHandle) {
+        // render() waits for submission completion before returning. Uploads
+        // and retirement only happen between those synchronous frames.
+        if let Some(slot) = self.meshes.get_mut(handle.0 as usize) {
+            *slot = None;
+        }
+    }
     fn upload_mesh(
         &mut self,
         mesh: &CpuMesh,
@@ -432,12 +442,22 @@ impl MeshUploader for SceneRenderer {
             vk::BufferUsageFlags::INDEX_BUFFER,
         )?;
         indices.write(unsafe { bytes(&mesh.indices_u32) })?;
-        let handle = MeshHandle(u32::try_from(self.meshes.len())?);
-        self.meshes.push(Mesh {
+        let mesh = Mesh {
             vertices,
             indices,
             count: u32::try_from(mesh.indices_u32.len())?,
-        });
+        };
+        let index = self
+            .meshes
+            .iter()
+            .position(Option::is_none)
+            .unwrap_or(self.meshes.len());
+        let handle = MeshHandle(u32::try_from(index)?);
+        if index == self.meshes.len() {
+            self.meshes.push(Some(mesh));
+        } else {
+            self.meshes[index] = Some(mesh);
+        }
         Ok(handle)
     }
 }

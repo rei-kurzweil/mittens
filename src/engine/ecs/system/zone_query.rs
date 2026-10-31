@@ -76,6 +76,41 @@ pub fn contact_zones(
             separation: None,
         });
     }
+    if super::triangle_collision::on(world, a).is_some() {
+        if super::triangle_collision::on(world, b).is_some() {
+            return Err(ZoneQueryError::UnsupportedContactFrame(a));
+        }
+        let swapped = contact_zones(world, b, a)?;
+        let separation = swapped.separation.map(|s| ZoneSeparation {
+            displacement: s.displacement.map(|v| -v),
+            normal: s.normal.map(|v| -v),
+            depth: s.depth,
+        });
+        return Ok(ZoneContact {
+            overlap,
+            separation,
+        });
+    }
+    if let Some(mesh) = super::triangle_collision::on(world, b) {
+        let (center, shape) =
+            collision_geometry::axis_aligned_world_shape(overlap.a_shape, overlap.a_frame)
+                .ok_or(ZoneQueryError::UnsupportedContactFrame(a))?;
+        let separation =
+            mesh.world(overlap.b_frame)
+                .translation(center, shape)
+                .map(|displacement| {
+                    let depth = displacement.iter().map(|v| v * v).sum::<f32>().sqrt();
+                    ZoneSeparation {
+                        displacement,
+                        normal: displacement.map(|v| v / depth),
+                        depth,
+                    }
+                });
+        return Ok(ZoneContact {
+            overlap,
+            separation,
+        });
+    }
     let (a_center, a_shape) =
         collision_geometry::axis_aligned_world_shape(overlap.a_shape, overlap.a_frame)
             .ok_or(ZoneQueryError::UnsupportedContactFrame(a))?;
@@ -132,6 +167,15 @@ pub fn sweep_capsule_floor(
     let (end, moving_shape) =
         collision_geometry::axis_aligned_world_shape(moving_shape, moving_frame)
             .ok_or(ZoneQueryError::UnsupportedContactFrame(moving))?;
+    if let Some(mesh) = super::triangle_collision::on(world, surface) {
+        return Ok(mesh.world(floor_frame).sweep(
+            moving,
+            surface,
+            end,
+            moving_shape,
+            previous_center,
+        ));
+    }
     sweep_capsule_floor_geometry(
         moving,
         surface,
@@ -205,15 +249,25 @@ pub fn overlap_zones(
     let (b_min, b_max) = collision_geometry::transformed_aabb(b_shape, b_frame);
     let candidate = (0..3).all(|axis| a_min[axis] <= b_max[axis] && b_min[axis] <= a_max[axis]);
     let intersects = if candidate {
-        match (
-            collision_geometry::axis_aligned_world_shape(a_shape, a_frame),
-            collision_geometry::axis_aligned_world_shape(b_shape, b_frame),
-        ) {
-            (Some((a_center, a_world_shape)), Some((b_center, b_world_shape))) => {
-                collision_geometry::intersects(a_center, a_world_shape, b_center, b_world_shape)
+        if let Some(mesh) = super::triangle_collision::on(world, b) {
+            let (center, shape) = collision_geometry::axis_aligned_world_shape(a_shape, a_frame)
+                .ok_or(ZoneQueryError::UnsupportedContactFrame(a))?;
+            mesh.world(b_frame).translation(center, shape).is_some()
+        } else if let Some(mesh) = super::triangle_collision::on(world, a) {
+            let (center, shape) = collision_geometry::axis_aligned_world_shape(b_shape, b_frame)
+                .ok_or(ZoneQueryError::UnsupportedContactFrame(b))?;
+            mesh.world(a_frame).translation(center, shape).is_some()
+        } else {
+            match (
+                collision_geometry::axis_aligned_world_shape(a_shape, a_frame),
+                collision_geometry::axis_aligned_world_shape(b_shape, b_frame),
+            ) {
+                (Some((a_center, a_world_shape)), Some((b_center, b_world_shape))) => {
+                    collision_geometry::intersects(a_center, a_world_shape, b_center, b_world_shape)
+                }
+                _ => collision_geometry::intersects_transformed(a_shape, a_frame, b_shape, b_frame)
+                    .ok_or(ZoneQueryError::NonConverged { a, b })?,
             }
-            _ => collision_geometry::intersects_transformed(a_shape, a_frame, b_shape, b_frame)
-                .ok_or(ZoneQueryError::NonConverged { a, b })?,
         }
     } else {
         false
@@ -236,7 +290,7 @@ fn zone_shape_frame(
     let zone = world
         .get_component_by_id_as::<ZoneComponent>(id)
         .ok_or(ZoneQueryError::NotZone(id))?;
-    if !zone.enabled {
+    if !zone.enabled || crate::engine::ecs::component::destroyable::zone_suppressed(world, id) {
         return Err(ZoneQueryError::Disabled(id));
     }
     let frame_id = resolve_zone_frame(world, id, zone)?;
@@ -257,7 +311,8 @@ pub fn classify_point(
     let zone = world
         .get_component_by_id_as::<ZoneComponent>(zone_id)
         .ok_or(ZoneQueryError::NotZone(zone_id))?;
-    if !zone.enabled {
+    if !zone.enabled || crate::engine::ecs::component::destroyable::zone_suppressed(world, zone_id)
+    {
         return Err(ZoneQueryError::Disabled(zone_id));
     }
     let frame = resolve_zone_frame(world, zone_id, zone)?;
@@ -266,6 +321,13 @@ pub fn classify_point(
             zone: zone_id,
             resolved: frame,
         })?;
+    if let Some(mesh) = super::triangle_collision::on(world, zone_id) {
+        return Ok(if mesh.world(world_matrix).contains(point_world) {
+            ZoneRelation::Inside
+        } else {
+            ZoneRelation::Outside
+        });
+    }
     let inverse = mat4_inverse(world_matrix).ok_or(ZoneQueryError::SingularFrame(zone_id))?;
     let local = mat4_mul_vec4(
         inverse,

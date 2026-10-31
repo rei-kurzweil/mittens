@@ -147,18 +147,11 @@ impl StaticContactSystem {
                         None
                     };
                     let displacement = if let Some(hit) = sweep {
-                        let half_height = match shape {
-                            crate::engine::ecs::component::CollisionShape::CapsuleY {
-                                radius,
-                                half_segment,
-                            } => radius + half_segment,
-                            _ => 0.0,
-                        };
-                        [
-                            0.0,
-                            (hit.point[1] + half_height - desired_center[1]).max(0.0),
-                            0.0,
-                        ]
+                        let motion: [f32; 3] =
+                            std::array::from_fn(|i| desired_center[i] - previous[i]);
+                        let remaining: [f32; 3] = motion.map(|v| v * (1.0 - hit.fraction));
+                        let inward: f32 = (0..3).map(|i| remaining[i] * hit.normal[i]).sum();
+                        hit.normal.map(|v| v * (-inward).max(0.0))
                     } else {
                         surface
                             .translation(desired_center, shape)

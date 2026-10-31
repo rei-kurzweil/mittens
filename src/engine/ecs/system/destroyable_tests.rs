@@ -1,0 +1,287 @@
+use super::*;
+use crate::engine::graphics::{MeshHandle, MeshUploader, TextureHandle, TextureUploader};
+#[derive(Default)]
+struct Uploader {
+    next: u32,
+    released: usize,
+    fail: bool,
+}
+impl MeshUploader for Uploader {
+    fn upload_mesh(&mut self, _: &CpuMesh) -> Result<MeshHandle, Box<dyn std::error::Error>> {
+        if self.fail {
+            return Err("injected upload failure".into());
+        }
+        self.next += 1;
+        Ok(MeshHandle(self.next))
+    }
+    fn release_mesh(&mut self, _: MeshHandle) {
+        self.released += 1;
+    }
+}
+impl TextureUploader for Uploader {
+    fn upload_texture_bc7(
+        &mut self,
+        _: &[u8],
+        _: u32,
+        _: u32,
+        _: bool,
+    ) -> Result<TextureHandle, Box<dyn std::error::Error>> {
+        Ok(TextureHandle(0))
+    }
+    fn upload_texture_rgba8(
+        &mut self,
+        _: &[u8],
+        _: u32,
+        _: u32,
+    ) -> Result<TextureHandle, Box<dyn std::error::Error>> {
+        Ok(TextureHandle(0))
+    }
+}
+fn surface(
+    world: &mut World,
+    visuals: &mut VisualWorld,
+    assets: &mut RenderAssets,
+    uploader: &mut Uploader,
+    x: f32,
+) -> (ComponentId, ComponentId) {
+    let mut t = TransformComponent::new()
+        .with_position(x, 0., 0.)
+        .with_scale(2., 0.10, 2.);
+    t.transform.matrix_world = t.transform.model;
+    let model = t.transform.model;
+    let frame = world.add_component(t);
+    let marker = attach(world, frame, DestroyableComponent::default());
+    let r = attach(world, frame, RenderableComponent::cube());
+    attach(world, r, RaycastableComponent::enabled());
+    let zone = attach(world, frame, ZoneComponent::cube([0.5; 3]));
+    attach(world, zone, CollidableComponent::static_());
+    let gpu = assets
+        .gpu_mesh_handle(uploader, CpuMeshHandle::CUBE)
+        .unwrap();
+    let handle = visuals.register(
+        r,
+        GpuRenderable::new(gpu, crate::engine::graphics::MaterialHandle::TOON_MESH),
+        crate::engine::graphics::primitives::Transform {
+            model,
+            matrix_world: model,
+            ..Default::default()
+        },
+        [1.; 4],
+        1.,
+        false,
+        false,
+        false,
+        false,
+        false,
+        0.,
+        None,
+        3.,
+    );
+    world
+        .get_component_by_id_as_mut::<RenderableComponent>(r)
+        .unwrap()
+        .handle = Some(handle);
+    (marker, r)
+}
+fn event(world: &mut World, position: [f32; 3], amount: f32) {
+    world.add_component(DamageComponent {
+        position,
+        radius: 0.28,
+        amount,
+    });
+}
+fn pump(
+    d: &mut DestroyableSystem,
+    s: &mut SystemWorld,
+    w: &mut World,
+    v: &mut VisualWorld,
+    a: &mut RenderAssets,
+    u: &mut Uploader,
+) {
+    d.prepare(s, w, v, a, u);
+}
+fn finish(
+    d: &mut DestroyableSystem,
+    s: &mut SystemWorld,
+    w: &mut World,
+    v: &mut VisualWorld,
+    a: &mut RenderAssets,
+    u: &mut Uploader,
+) {
+    let deadline = Instant::now() + std::time::Duration::from_secs(10);
+    while d.surfaces.values().any(|s| s.busy) {
+        assert!(Instant::now() < deadline, "worker did not finish");
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        pump(d, s, w, v, a, u);
+    }
+}
+#[test]
+fn sparse_damage_local_chunks_debris_and_owner_cleanup() {
+    let (mut w, mut v, mut a, mut u, mut s, mut d) = (
+        World::default(),
+        VisualWorld::default(),
+        RenderAssets::new(),
+        Uploader::default(),
+        SystemWorld::default(),
+        DestroyableSystem::default(),
+    );
+    let (owner, _) = surface(&mut w, &mut v, &mut a, &mut u, 0.);
+    let (_, other) = surface(&mut w, &mut v, &mut a, &mut u, 4.);
+    let authored_frame = w.parent_of(owner).unwrap();
+    let authored_before =
+        crate::scripting::component_registry::filtered_roots_to_ce_ast(&w, &[authored_frame])
+            .unwrap()
+            .iter()
+            .map(crate::scripting::unparser::unparse_component)
+            .collect::<Vec<_>>();
+    assert!(d.surfaces.is_empty());
+    for _ in 0..2 {
+        event(&mut w, [0., 0.05, 0.], 1.);
+        pump(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    }
+    assert!(d.surfaces[&owner].cells.is_empty());
+    assert!(!d.surfaces[&owner].damage.is_empty());
+    assert!(d.debris.is_empty());
+    event(&mut w, [0., 0.05, 0.], 1.);
+    pump(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    finish(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    assert_eq!(d.cuts, 1);
+    assert_eq!(d.surfaces[&owner].cells.len(), 4);
+    assert!(!d.debris.is_empty());
+    assert_eq!(d.debris.len(), 3);
+    assert!(d.surfaces[&owner].damage.is_empty());
+    let mut hit = false;
+    for cell in &d.surfaces[&owner].cells {
+        if let Some(mesh) = crate::engine::ecs::system::triangle_collision::on(&w, cell.zone) {
+            hit |= mesh
+                .world(TransformSystem::world_model(&w, cell.frame).unwrap())
+                .ray([0., 1., 0.], [0., -1., 0.])
+                .is_some();
+        }
+    }
+    assert!(
+        !hit,
+        "ray must pass through all chunks touched by a cross-boundary cut"
+    );
+    assert_eq!(
+        w.get_component_by_id_as::<RenderableComponent>(other)
+            .unwrap()
+            .renderable
+            .base_mesh,
+        CpuMeshHandle::CUBE
+    );
+    assert!(
+        w.get_component_by_id_as::<RenderableComponent>(other)
+            .unwrap()
+            .handle
+            .is_some()
+    );
+    s.bvh.flush_pending(&w);
+    assert!(
+        s.raycast
+            .cast_against_renderables_bvh(&w, &s.bvh, [0., 1., 0.], [0., -1., 0.], 0., 5.)
+            .is_empty()
+    );
+    assert!(
+        s.raycast
+            .cast_against_renderables(&w, [0., 1., 0.], [0., -1., 0.], 0., 5.)
+            .is_empty()
+    );
+    assert!(
+        !s.raycast
+            .cast_against_renderables_bvh(&w, &s.bvh, [0.8, 1., 0.], [0., -1., 0.], 0., 5.)
+            .is_empty()
+    );
+    let capsule_frame = w.add_component(TransformComponent::new());
+    let capsule = attach(&mut w, capsule_frame, ZoneComponent::capsule_y(0.1, 0.3));
+    for cell in &d.surfaces[&owner].cells {
+        assert!(
+            !crate::engine::ecs::system::zone_query::overlap_zones(&w, capsule, cell.zone)
+                .unwrap()
+                .intersects
+        );
+    }
+    let authored_after =
+        crate::scripting::component_registry::filtered_roots_to_ce_ast(&w, &[authored_frame])
+            .unwrap()
+            .iter()
+            .map(crate::scripting::unparser::unparse_component)
+            .collect::<Vec<_>>();
+    assert_eq!(
+        authored_before, authored_after,
+        "runtime geometry and suppression must not leak into filtered saves"
+    );
+    let frame = w.parent_of(owner).unwrap();
+    s.remove_subtree_immediate(&mut w, &mut v, frame);
+    pump(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    assert!(d.surfaces.is_empty());
+    assert!(u.released > 0);
+    for debris in &mut d.debris {
+        debris.expires = Instant::now();
+    }
+    pump(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    assert!(d.debris.is_empty());
+    assert_eq!(v.instance_count(), 1);
+}
+#[test]
+fn failed_upload_keeps_previous_geometry_and_can_retry() {
+    let (mut w, mut v, mut a, mut u, mut s, mut d) = (
+        World::default(),
+        VisualWorld::default(),
+        RenderAssets::new(),
+        Uploader::default(),
+        SystemWorld::default(),
+        DestroyableSystem::default(),
+    );
+    let (owner, _) = surface(&mut w, &mut v, &mut a, &mut u, 0.);
+    event(&mut w, [0., 0.05, 0.], 3.);
+    pump(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    u.fail = true;
+    finish(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    assert_eq!(d.cuts, 0);
+    assert!(d.debris.is_empty());
+    assert!(d.surfaces[&owner].cells.iter().all(|c| c.mesh.is_none()));
+    u.fail = false;
+    event(&mut w, [0., 0.05, 0.], 1.);
+    pump(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    finish(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    assert_eq!(d.cuts, 1);
+}
+
+#[test]
+fn fully_consumed_surface_releases_state_and_cannot_resurrect() {
+    let (mut w, mut v, mut a, mut u, mut s, mut d) = (
+        World::default(),
+        VisualWorld::default(),
+        RenderAssets::new(),
+        Uploader::default(),
+        SystemWorld::default(),
+        DestroyableSystem::default(),
+    );
+    let (owner, _) = surface(&mut w, &mut v, &mut a, &mut u, 0.);
+    w.add_component(DamageComponent {
+        position: [0.; 3],
+        radius: 2.,
+        amount: 3.,
+    });
+    pump(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    finish(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    pump(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    assert!(d.surfaces.is_empty());
+    assert!(
+        w.get_component_by_id_as::<DestroyableComponent>(owner)
+            .unwrap()
+            .exhausted
+    );
+    assert_eq!(d.debris.len(), 3);
+    event(&mut w, [0.; 3], 3.);
+    pump(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    assert!(d.surfaces.is_empty());
+    assert_eq!(d.cuts, 1);
+    s.bvh.flush_pending(&w);
+    assert!(
+        s.raycast
+            .cast_against_renderables(&w, [0., 1., 0.], [0., -1., 0.], 0., 5.)
+            .is_empty()
+    );
+}

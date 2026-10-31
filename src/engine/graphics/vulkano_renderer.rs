@@ -1,3 +1,4 @@
+mod dynamic_mesh;
 use crate::engine::graphics::MeshUploader;
 use crate::engine::graphics::MsaaMode;
 use crate::engine::graphics::TextureUploader;
@@ -6807,12 +6808,6 @@ impl VulkanoRenderer {
     /// Note: OpenXR expects these as opaque pointers; we cast from `ash` raw handles.
     pub fn xr_vulkan_graphics(&self) -> Option<crate::engine::graphics::XrVulkanGraphics> {
         Some(self.context.as_ref()?.xr_graphics())
-    }
-}
-
-impl MeshUploader for VulkanoRenderer {
-    fn upload_mesh(&mut self, mesh: &CpuMesh) -> Result<MeshHandle, Box<dyn std::error::Error>> {
-        self.upload_mesh(mesh)
     }
 }
 

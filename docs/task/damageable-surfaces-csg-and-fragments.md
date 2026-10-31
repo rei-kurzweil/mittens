@@ -1,7 +1,9 @@
 # Task: Damageable surfaces, CSG cuts and fragments
 
 Date: 2026-10-26
-Status: proposed; documentation only. Do not start implementation yet.
+Status: original proposal; static-box runtime slice implemented 2026-10-31.
+See [current behavior, limits and validation](sakura-runtime-destruction.md).
+The remaining sections preserve the broader proposal and its original context.
 
 ## Goal
 

@@ -242,6 +242,14 @@ impl RayCastSystem {
         dir: [f32; 3],
         t_aabb: f32,
     ) -> Option<f32> {
+        if let Some(mesh) = super::triangle_collision::on(world, renderable) {
+            let inverse =
+                crate::utils::math::mat4_inverse(TransformSystem::world_model(world, renderable)?)?;
+            let o =
+                crate::utils::math::mat4_mul_vec4(inverse, [origin[0], origin[1], origin[2], 1.]);
+            let d = crate::utils::math::mat4_mul_vec4(inverse, [dir[0], dir[1], dir[2], 0.]);
+            return mesh.ray([o[0], o[1], o[2]], [d[0], d[1], d[2]]);
+        }
         let shape = Self::resolved_shape_for_renderable(world, renderable);
 
         // If we can't compute a stable local-space transform, fall back to AABB-only.
@@ -849,7 +857,7 @@ impl RayCastSystem {
     }
 
     /// Brute-force all-hits: returns every eligible renderable hit, sorted front-to-back by t.
-    fn cast_against_renderables(
+    pub(crate) fn cast_against_renderables(
         &self,
         world: &World,
         origin: [f32; 3],
@@ -869,7 +877,19 @@ impl RayCastSystem {
                 continue;
             };
 
-            let Some((min, max)) = Self::aabb_from_world_matrix_for_mesh(mesh, model) else {
+            let cached = world
+                .children_of(cid)
+                .iter()
+                .find_map(|&child| {
+                    world.get_component_by_id_as::<crate::engine::ecs::component::BoundsComponent>(
+                        child,
+                    )
+                })
+                .map(|b| b.local.transformed(model));
+            let bounds = cached
+                .map(|b| (b.min, b.max))
+                .or_else(|| Self::aabb_from_world_matrix_for_mesh(mesh, model));
+            let Some((min, max)) = bounds else {
                 continue;
             };
 
@@ -899,7 +919,7 @@ impl RayCastSystem {
 
     /// BVH-accelerated all-hits: returns every BVH candidate that passes narrow phase, sorted
     /// front-to-back by t.
-    fn cast_against_renderables_bvh(
+    pub(crate) fn cast_against_renderables_bvh(
         &self,
         world: &World,
         bvh: &BvhSystem,
