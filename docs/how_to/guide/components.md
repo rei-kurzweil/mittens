@@ -572,8 +572,12 @@ Mountable
 `Climbable`, `Climbable.on()`, and `Climbable.off()` mark a transform's renderable
 subtree for XR pointer climbing. An enabled marker automatically makes the owner
 raycastable unless it already has a raycast policy. An XR grip (or OpenXR hand
-interaction grasp, when provided by the runtime) captures a pointer ray hit;
-while held, moving the hand shifts the XR locomotion root in the opposite
+interaction grasp, when provided by the runtime) captures a pointer ray hit.
+Climbing acquisition starts 9 cm behind the normal pointer origin along the
+same direction, allowing a grip when the fingertip has just passed a rung.
+The visible laser and trigger/UI rays retain their original origin. This is
+a fixed world-space backoff, rather than a sampled avatar wrist position.
+While held, moving the hand shifts the XR locomotion root in the opposite
 direction. Static contact constrains that movement. The most recently gripping
 hand controls locomotion, and releasing it transfers control to the other hand
 without a jump. Grip release restores ordinary gravity. Desktop pointers do not

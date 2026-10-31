@@ -384,20 +384,7 @@ impl GestureSystem {
         attachment_system: &mut AttachmentSystem,
         rx: &mut RxWorld,
     ) {
-        let hits: Vec<(
-            u8,
-            f32,
-            ComponentId,
-            ComponentId,
-            [f32; 3],
-            [f32; 3],
-            PointerEvents,
-        )> = self
-            .ray_hits_sorted
-            .lock()
-            .ok()
-            .map(|g| g.clone())
-            .unwrap_or_default();
+        let hits = self.snapshot_pointer_hits();
 
         let desktop_grab_consumed = self.process_grips(
             world,
@@ -406,6 +393,7 @@ impl GestureSystem {
             attachment_system,
             rx,
             &hits,
+            raycast_system,
         );
 
         // --- Trigger press: start a new drag per activated pointer ---

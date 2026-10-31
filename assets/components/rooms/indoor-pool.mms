@@ -29,7 +29,9 @@ fn metal_cylinder(position, radius, height, material) {
     }
 }
 
-export fn indoor_pool(origin, width, length, basin_width, basin_length, water_enabled) {
+// Left/right are viewed from the entrance looking down the pool toward local +Z.
+// These colors affect the spotlights only; the luminous window panels stay white.
+export fn indoor_pool_with_window_lights(origin, width, length, basin_width, basin_length, water_enabled, left_light_color, right_light_color) {
     let tiles = pool_tile_material()
     let chrome = matcap_metal()
     let water_definition = MaterialDefinition(MaterialBase.planar_reflective()).fragment("assets/shaders/pool-water.frag").inputs({
@@ -109,6 +111,8 @@ export fn indoor_pool(origin, width, length, basin_width, basin_length, water_en
 
         // Each side wall is built around three actual rectangular holes.
         for side in [-1.0, 1.0] {
+            let window_light_color = right_light_color
+            if side > 0.0 { window_light_color = left_light_color }
             tile_box([center_x + side * (half_width + 0.08), cut_bottom / 2.0, length / 2.0],
                 [0.16, cut_bottom, length], tiles)
             tile_box([center_x + side * (half_width + 0.08), (hall_height + cut_top) / 2.0, length / 2.0],
@@ -138,7 +142,8 @@ export fn indoor_pool(origin, width, length, basin_width, basin_length, water_en
                 T.position(center_x + side * (half_width - 0.03), (cut_bottom + cut_top) / 2.0, z)
                     .looking_at([origin[0] + center_x - side * half_width,
                         origin[1] + (cut_bottom + cut_top) / 2.0 - width * 0.25, origin[2] + z]) {
-                    SL.color(1.0, 1.0, 1.0).intensity(1.8).distance(light_range).angle(0.85).penumbra(0.35)
+                    SL.color(window_light_color[0], window_light_color[1], window_light_color[2])
+                        .intensity(1.8).distance(light_range).angle(0.85).penumbra(0.35)
                 }
             }
         }
@@ -344,4 +349,9 @@ export fn indoor_pool(origin, width, length, basin_width, basin_length, water_en
             }
         }
     }
+}
+
+export fn indoor_pool(origin, width, length, basin_width, basin_length, water_enabled) {
+    return indoor_pool_with_window_lights(origin, width, length, basin_width, basin_length,
+        water_enabled, [1.0, 1.0, 1.0], [1.0, 1.0, 1.0])
 }

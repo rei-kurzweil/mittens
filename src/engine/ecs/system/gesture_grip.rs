@@ -10,7 +10,23 @@ fn grip_owner(world: &World, hit: ComponentId, desktop: bool) -> Option<(Compone
     grabbable_owner_for_hit(world, hit).map(|owner| (owner, false))
 }
 
+type PointerHit = (
+    u8,
+    f32,
+    ComponentId,
+    ComponentId,
+    [f32; 3],
+    [f32; 3],
+    PointerEvents,
+);
+
 impl GestureSystem {
+    pub(super) fn snapshot_pointer_hits(&self) -> Vec<PointerHit> {
+        self.ray_hits_sorted
+            .lock()
+            .map(|hits| hits.clone())
+            .unwrap_or_default()
+    }
     pub(super) fn process_grips(
         &mut self,
         world: &mut World,
@@ -18,15 +34,8 @@ impl GestureSystem {
         pointer_system: &PointerSystem,
         attachment_system: &mut AttachmentSystem,
         rx: &mut RxWorld,
-        hits: &[(
-            u8,
-            f32,
-            ComponentId,
-            ComponentId,
-            [f32; 3],
-            [f32; 3],
-            PointerEvents,
-        )],
+        hits: &[PointerHit],
+        raycasts: &RayCastSystem,
     ) -> HashSet<ComponentId> {
         // --- Grip (XR) and left mouse (desktop): capture Grabbable targets. ---
         let mut grab_presses: Vec<(ComponentId, bool)> = activations
@@ -72,14 +81,43 @@ impl GestureSystem {
                 }
                 continue;
             }
-            let Some(hit) = hits.iter().find(|h| {
-                h.2 == raycaster
-                    && h.6.captures_drag()
-                    && grip_owner(world, h.3, desktop).is_some_and(|(owner, climbing)| {
-                        climbing || !self.grabbed_owners.contains(&owner)
-                    })
-            }) else {
-                continue;
+            let ordinary_hit = hits
+                .iter()
+                .find(|h| {
+                    h.2 == raycaster
+                        && h.6.captures_drag()
+                        && grip_owner(world, h.3, desktop).is_some_and(|(owner, climbing)| {
+                            climbing || !self.grabbed_owners.contains(&owner)
+                        })
+                })
+                .copied();
+            let climbing_hit = (!desktop)
+                .then(|| raycasts.climbing_hit(raycaster))
+                .flatten()
+                .map(|hit| {
+                    (
+                        hit.priority,
+                        hit.distance_from_pointer,
+                        raycaster,
+                        hit.renderable,
+                        hit.ray.origin_world,
+                        hit.ray.direction_world,
+                        hit.pointer_events,
+                    )
+                });
+            let hit = match (ordinary_hit, climbing_hit) {
+                (Some(ordinary), Some(climbing)) => {
+                    if climbing.0 > ordinary.0
+                        || (climbing.0 == ordinary.0 && climbing.1 <= ordinary.1)
+                        || climbing.3 == ordinary.3
+                    {
+                        climbing
+                    } else {
+                        ordinary
+                    }
+                }
+                (Some(hit), None) | (None, Some(hit)) => hit,
+                (None, None) => continue,
             };
             let Some((owner, climbing)) = grip_owner(world, hit.3, desktop) else {
                 continue;
@@ -190,6 +228,7 @@ mod tests {
             &mut attachment,
             &mut rx,
             &hits,
+            &RayCastSystem::default(),
         );
         assert_eq!(gestures.grip_states.len(), 2);
         assert_eq!(
@@ -209,6 +248,7 @@ mod tests {
             &mut attachment,
             &mut rx,
             &[],
+            &RayCastSystem::default(),
         );
         assert!(gestures.grip_states.is_empty());
         gestures.process_grips(
@@ -221,6 +261,7 @@ mod tests {
             &mut attachment,
             &mut rx,
             &[],
+            &RayCastSystem::default(),
         );
         assert!(
             gestures.grip_states.is_empty(),
