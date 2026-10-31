@@ -24,7 +24,7 @@ fn head_neck_pose_driver(source_kind, bounded_follow) {
             .input("body_anchor_world")
             .type("vec3")
 
-        // Synthetic fixture, not Bisket/Rei(mu) dimensions or shipping defaults.
+        // Synthetic fixture, not Bisket/mitten dimensions or shipping defaults.
         // Metres, radians, quaternion xyzw; +Y up, -Z forward, identity rest
         // rotations. Uniform scale has already been applied exactly once.
         let root_to_neck_rest = ValueSource.constant([0.02, 1.30, 0.03])

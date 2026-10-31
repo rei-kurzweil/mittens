@@ -42,7 +42,7 @@ export fn vroid_arm_ik(pole_y, pole_z) {
 }
 ```
 
-These are the current inspection example's left intervals, not a measured general preset for Reimu or bisket.
+These are the current inspection example's left intervals, not a measured general preset for mitten or bisket.
 
 ## Final semantics
 
@@ -74,7 +74,7 @@ During this short transition, if an AVC mixes old and new settings for the **sam
 - Phase 1 preserves old-only scenes while rejecting old/new mixes on the same side. Phase 2 migrates all repository scenes and tests to tables.
 - An explicit empty range list means no exclusions; an omitted range field uses the default empty list. Duplicate table calls and bad fields fail with useful errors.
 - Scene save/reload and AVC reinitialization preserve the effective policy, including explicit empty lists and `copy_end_rotation = false` or `weight = 0.0`.
-- The VR inspection scene runs with Reimu and bisket, maintains hand/controller tracking, and its clipping readout reflects the effective restrictions. AVC still creates no more than one two-bone chain per eligible arm.
+- The VR inspection scene runs with mitten and bisket, maintains hand/controller tracking, and its clipping readout reflects the effective restrictions. AVC still creates no more than one two-bone chain per eligible arm.
 - Phase 2 removes the four builder methods and dedicated AVC fields, and a repository search finds no live callers.
 
 ## Code to change

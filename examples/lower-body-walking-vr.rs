@@ -13,8 +13,8 @@ fn main() {
         .unwrap_or("bisket");
     let asset = match model {
         "bisket" => "assets/models/bisket.glb",
-        "rei" => "assets/models/rei(mu).glb",
-        _ => panic!("--model expects bisket or rei"),
+        "mitten" => "assets/models/mitten.glb",
+        _ => panic!("--model expects bisket or mitten"),
     };
     let mut scene =
         include_str!("lower-body-walking-vr.mms").replace("assets/models/bisket.glb", asset);

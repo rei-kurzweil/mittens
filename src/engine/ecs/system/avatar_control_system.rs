@@ -3124,7 +3124,7 @@ mod hand_pose_correction_tests {
         // exiting a back face first is the first-person "inside torso" failure.
         use super::first_person_test_support::body_hit;
 
-        for asset in ["assets/models/bisket.glb", "assets/models/rei(mu).glb"] {
+        for asset in ["assets/models/bisket.glb", "assets/models/mitten.glb"] {
             let document = gltf::Gltf::open(asset).unwrap();
             let mut world = World::default();
             let mut xr = InputXRComponent::on();
@@ -3175,7 +3175,7 @@ mod hand_pose_correction_tests {
             let anchor = world
                 .add_component(TransformComponent::new().with_position(eye[0], eye[1], eye[2]));
             world.add_child(head, anchor).unwrap();
-            // Same authored wrapper as rei(mu).mms / mittens-corp.mms.
+            // Same authored wrapper as mitten.mms / mittens-corp.mms.
             let wrapper =
                 world.add_component(TransformComponent::new().with_position(0.0, 0.08, 0.12));
             let camera = world.add_component(CameraXRComponent::on());

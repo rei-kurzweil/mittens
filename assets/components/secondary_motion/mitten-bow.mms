@@ -1,6 +1,6 @@
-// Rei(mu)'s two ribbon halves are separate eight-joint chains under head_bow.
+// mitten's two ribbon halves are separate eight-joint chains under head_bow.
 // The ribbon mesh in the updated GLB has weights on both chains.
-export fn rei_mu_bow_secondary_motion() {
+export fn mitten_bow_secondary_motion() {
     return SecondaryMotion {
         SpringBone.from_root("[name='head_bow.001']")
             .virtual_end_length_ratio(1.0)

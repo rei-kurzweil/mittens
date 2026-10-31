@@ -66,7 +66,7 @@ impl Fixture {
 fn planted_feet_hold_world_pose_while_body_translates_turns_and_crouches() {
     for asset in [
         None,
-        Some("assets/models/rei(mu).glb"),
+        Some("assets/models/mitten.glb"),
         Some("assets/models/bisket.glb"),
     ] {
         let mut f = Fixture::walking(asset, 0.2);
@@ -290,7 +290,7 @@ fn walking_gamepad_pace_keeps_up_across_headset_frame_rates_and_uneven_frames() 
             0.05,
         ],
     ];
-    for asset in ["assets/models/rei(mu).glb", "assets/models/bisket.glb"] {
+    for asset in ["assets/models/mitten.glb", "assets/models/bisket.glb"] {
         for drop in [0.0, 0.2] {
             for direction in [[0.0, 1.0], [0.0, -1.0], [0.6, 0.8], [1.0, 0.0]] {
                 let mut samples = Vec::new();
@@ -481,7 +481,7 @@ fn walking_alternates_and_preserves_stance_at_multiple_frame_rates_and_direction
 
 #[test]
 fn walking_real_rigs_support_scale_yaw_and_reversal() {
-    for asset in ["assets/models/rei(mu).glb", "assets/models/bisket.glb"] {
+    for asset in ["assets/models/mitten.glb", "assets/models/bisket.glb"] {
         let mut f = Fixture::new(Some(asset));
         let scene = &mut f
             .world
@@ -676,7 +676,7 @@ fn walking_mms_configuration_and_validation() {
 
 #[test]
 fn walking_full_avatar_stage_keeps_contacts_through_map_refresh_and_head_follow() {
-    for asset in ["assets/models/rei(mu).glb", "assets/models/bisket.glb"] {
+    for asset in ["assets/models/mitten.glb", "assets/models/bisket.glb"] {
         let mut f = Fixture::new(Some(asset));
         f.systems.register_avatar_control(f.avatar);
         f.world

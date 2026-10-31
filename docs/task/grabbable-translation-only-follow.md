@@ -1,6 +1,6 @@
 # Task: translation-only following while grabbed
 
-Status: design only. No new `Grabbable` mode is implemented by the Rei(mu)
+Status: design only. No new `Grabbable` mode is implemented by the mitten
 box-grabbing change.
 
 ## Interaction

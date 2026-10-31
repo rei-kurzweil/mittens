@@ -92,7 +92,7 @@ or manufacture physical pupil-diameter measurements.
 Expose lower-face coefficients as named semantic jaw, lip, mouth, and cheek channels. Keep
 unsupported coefficients absent and distinguish expression strength from detection confidence.
 `LowerFaceTracking` routes them through avatar-specific morph/bone mapping; the provider never
-contains Reimu/Bisket morph names. Eye expressions belong to the eye owner, not the lower-face
+contains mitten/Bisket morph names. Eye expressions belong to the eye owner, not the lower-face
 mask. Brows/upper-face expressions remain a separate future scope.
 
 Webcam visibility determines capability. A camera that cannot see the eyes, including ordinary
@@ -190,7 +190,7 @@ AVC {
     FullBodyTracking.new().source("mediapipe")
 
     T {
-        GLTF.new("assets/models/rei(mu).glb") {
+        GLTF.new("assets/models/mitten.glb") {
             vroid_humanoid_bone_map()
             HandTracking.new().source("mediapipe")
         }

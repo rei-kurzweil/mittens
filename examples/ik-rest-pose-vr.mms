@@ -2,16 +2,16 @@ import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/v
 
 // VR arm IK rest-pose comparison. The Rust launcher substitutes the model path
 // and panel labels. Right controller B records each of the four hand positions.
-// Run with --model bisket|rei --rest-pose t|a.
+// Run with --model bisket|mitten --rest-pose t|a.
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { rei_mu_bow_secondary_motion } from "../assets/components/secondary_motion/rei-mu-bow.mms"
+import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 
 // The microphone stays neutral if no input device is available. These are
-// the same mouth response settings used by the Rei(mu) XR scene.
+// the same mouth response settings used by the mitten XR scene.
 let microphone = AudioInput {}
 let voice_level = Amplitude.rolling_window(0.080)
     .highpass(120.0).highpass_resonance(0.707).from(microphone) {}
@@ -52,7 +52,7 @@ T.position(0.0, 1.5, -2.36).scale(1.07, 1.35, 0.03) {
     R.cube() { Mirror.quality(512) {} Raycastable.enabled() }
 }
 
-// Bisket and Rei(mu) use the same VRoid arm bone names.
+// Bisket and mitten use the same VRoid arm bone names.
 T {
     InputXR.on() {
         InputXRGamepad { locomotion() speed(1.2) }
@@ -67,9 +67,9 @@ T {
                 EM.on()
                 bisket_colliders()
                 bisket_shirt_physics(false)
-                if MODEL_IS_REI {
+                if MODEL_IS_MITTEN {
                     // Includes ReturnToRestWhenStill on both bow ribbons.
-                    rei_mu_bow_secondary_motion()
+                    mitten_bow_secondary_motion()
                 }
             }
             let inspection_avatar_control = AVC {

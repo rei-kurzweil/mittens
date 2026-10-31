@@ -23,7 +23,7 @@ second, and exact pre/post-filter comparison when those backend taps exist.
 The first coarse bucket view proves the data path; it does not yet resolve
 a low high-pass cutoff across the full microphone frequency range.
 
-This is a reusable diagnostic view for a spectrum observer, not a Reimu-only
+This is a reusable diagnostic view for a spectrum observer, not a mitten-only
 panel. The existing shared voice-response panel may host or open it, but the
 spectrum view should also work without an avatar. Treat the probe's tap choice
 as analysis configuration; hiding a graph should not imply that a still-active

@@ -9045,7 +9045,7 @@ fn pc_rei_xr_examples_evaluate_with_secondary_motion_and_hand_pointers() {
 }
 
 #[test]
-fn rei_mu_scene_authors_lighting_background_and_bow_rest_constraints() {
+fn mitten_scene_authors_lighting_background_and_bow_rest_constraints() {
     use crate::engine::ecs::component::{
         AmbientLightComponent, AmplitudeComponent, AvatarControlComponent, BackgroundComponent,
         EditorComponent, GLTFComponent, GrabbableComponent, RenderableComponent,
@@ -9057,14 +9057,14 @@ fn rei_mu_scene_authors_lighting_background_and_bow_rest_constraints() {
     let mut emit = CommandQueue::new();
     let mut render_assets = RenderAssets::new();
     let (mut session, output) = RuntimeSpecSession::start_at_path(
-        include_str!("../../examples/rei(mu).mms"),
-        "examples/rei(mu).mms",
+        include_str!("../../examples/mitten.mms"),
+        "examples/mitten.mms",
         &mut world,
         &mut rx,
         Some(&mut render_assets),
         &mut emit,
     )
-    .expect("Rei(mu) must load through the production MMS runtime");
+    .expect("mitten must load through the production MMS runtime");
     assert!(output.errors.is_empty(), "{:?}", output.errors);
     let count_components = |matches: fn(&World, crate::engine::ecs::ComponentId) -> bool| {
         world
@@ -9074,8 +9074,8 @@ fn rei_mu_scene_authors_lighting_background_and_bow_rest_constraints() {
     };
     let panel = world
         .all_components()
-        .find(|&id| world.component_label(id) == Some("rei_mu_mouth_response_panel"))
-        .expect("Rei(mu) should have a mouth-response panel");
+        .find(|&id| world.component_label(id) == Some("mitten_mouth_response_panel"))
+        .expect("mitten should have a mouth-response panel");
     for label in [
         "mouth_rms_center_slider",
         "mouth_rms_range_slider",
@@ -9088,7 +9088,7 @@ fn rei_mu_scene_authors_lighting_background_and_bow_rest_constraints() {
             .expect("mouth-response slider in panel");
         let config = world
             .get_component_by_id_as::<SliderComponent>(slider)
-            .expect("Rei(mu) slider component");
+            .expect("mitten slider component");
         assert!(
             (config.width() - 0.84).abs() < 0.0001,
             "{label} thumb travel should fit inside the visible track"
@@ -9097,7 +9097,7 @@ fn rei_mu_scene_authors_lighting_background_and_bow_rest_constraints() {
     let avc = world
         .all_components()
         .find_map(|id| world.get_component_by_id_as::<AvatarControlComponent>(id))
-        .expect("Rei(mu) AVC");
+        .expect("mitten AVC");
     assert!((avc.mouth_open_rms_floor - 0.005).abs() < 1e-6);
     assert!((avc.mouth_open_rms_ceiling - 0.09).abs() < 1e-6);
     assert_eq!(avc.mouth_open_amount, 1.0);
@@ -9118,7 +9118,7 @@ fn rei_mu_scene_authors_lighting_background_and_bow_rest_constraints() {
             .get_component_by_id_as::<AmbientLightComponent>(id)
             .is_some()),
         1,
-        "the Rei(mu) scene needs its ambient light",
+        "the mitten scene needs its ambient light",
     );
     assert_eq!(
         count_components(|world, id| world
@@ -9247,7 +9247,7 @@ fn rei_mu_scene_authors_lighting_background_and_bow_rest_constraints() {
     let avc = world
         .get_component_by_id_as::<AvatarControlComponent>(avc_id)
         .unwrap();
-    assert_eq!(world.component_label(avc_id), Some("rei_mu_avatar_control"));
+    assert_eq!(world.component_label(avc_id), Some("mitten_avatar_control"));
     assert!(
         (avc.mouth_open_rms_floor - 0.0075).abs() < 1e-6,
         "floor: {}",
@@ -11541,7 +11541,7 @@ fn studio_stage_examples_apply_combined_arm_ik_preset() {
         "mittens-corp-desktop.mms",
         "mittens-corp-agc.mms",
         "mittens-corp-agc-desktop.mms",
-        "rei(mu).mms",
+        "mitten.mms",
         "toon-outline-bisket.mms",
         "capsule-stick-figure.mms",
     ] {
@@ -12048,9 +12048,9 @@ fn mittens_corp_desktop_evaluates_with_a_desktop_camera_and_no_xr_player_compone
         .find(|&id| {
             world
                 .get_component_by_id_as::<GLTFComponent>(id)
-                .is_some_and(|gltf| gltf.uri == "assets/models/rei(mu).glb")
+                .is_some_and(|gltf| gltf.uri == "assets/models/mitten.glb")
         })
-        .expect("desktop scene should load Rei(mu)");
+        .expect("desktop scene should load mitten");
     assert!(world.children_of(bisket).iter().any(|id| {
         world
             .get_component_by_id_as::<HumanoidBoneMapComponent>(*id)
@@ -12440,7 +12440,7 @@ fn mittens_corp_desktop_routes_mounted_wasd_to_the_car() {
 }
 
 #[test]
-fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
+fn mittens_corp_evaluates_with_mitten_player_bow_and_car_mount_fixture() {
     use crate::engine::ecs::component::{
         AmplitudeComponent, AudioInputComponent, AvatarControlComponent, CameraXRComponent,
         CollidableComponent, CollidableMode, CollisionShape, ComponentRef, ControllerXRComponent,
@@ -12492,8 +12492,8 @@ fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
 
     let driver = world
         .all_components()
-        .find(|&id| world.component_label(id) == Some("rei_mu_xr_driver"))
-        .expect("mittens-corp should name its Rei(mu) XR driver");
+        .find(|&id| world.component_label(id) == Some("mitten_xr_driver"))
+        .expect("mittens-corp should name its mitten XR driver");
     let input_xr = world
         .all_components()
         .find(|&id| {
@@ -12509,20 +12509,20 @@ fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
         .expect("InputXRGamepad should resolve the outer locomotion transform");
     assert_eq!(
         world.component_label(locomotion_root),
-        Some("rei_mu_locomotion_root")
+        Some("mitten_locomotion_root")
     );
     let rider = world
         .all_components()
         .find_map(|id| world.get_component_by_id_as::<RiderComponent>(id))
-        .expect("mittens-corp should declare its Rei(mu) Rider");
+        .expect("mittens-corp should declare its mitten Rider");
     assert!(rider.anchor.is_some());
     assert!(rider.movement_root.is_some());
     assert!(rider.input.is_some());
 
     let rider_anchor = world
         .all_components()
-        .find(|&id| world.component_label(id) == Some("rei_mu_rider_cxr_anchor"))
-        .expect("Rei(mu) should expose a rider-side CXR anchor");
+        .find(|&id| world.component_label(id) == Some("mitten_rider_cxr_anchor"))
+        .expect("mitten should expose a rider-side CXR anchor");
     let mut rider_ancestor = world.parent_of(rider_anchor);
     while rider_ancestor.is_some() && rider_ancestor != Some(driver) {
         rider_ancestor = rider_ancestor.and_then(|id| world.parent_of(id));
@@ -12619,7 +12619,7 @@ fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
                 .get_component_by_id_as::<InputXRGamepadComponent>(id)
                 .is_some_and(|gamepad| gamepad.locomotion && gamepad.speed == 1.5)
         })
-        .expect("Rei(mu) should expose canonical vehicle controls");
+        .expect("mitten should expose canonical vehicle controls");
 
     let hands: Vec<_> = world
         .all_components()
@@ -12632,7 +12632,7 @@ fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
     assert_eq!(
         hands.len(),
         2,
-        "the Rei(mu) player should retain both tracked laser hands"
+        "the mitten player should retain both tracked laser hands"
     );
     for hand in hands {
         let mut pending = vec![hand];
@@ -12661,24 +12661,24 @@ fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
                 .is_some_and(|editor| editor.active)
         })
         .expect("mittens-corp should author an active editor");
-    let rei_mu = world
+    let mitten = world
         .all_components()
         .find(|id| {
             world
                 .get_component_by_id_as::<GLTFComponent>(*id)
-                .is_some_and(|gltf| gltf.uri == "assets/models/rei(mu).glb")
+                .is_some_and(|gltf| gltf.uri == "assets/models/mitten.glb")
         })
-        .expect("mittens-corp should load Rei(mu)");
+        .expect("mittens-corp should load mitten");
     assert!(
-        world.children_of(rei_mu).iter().any(|id| {
+        world.children_of(mitten).iter().any(|id| {
             world
                 .get_component_by_id_as::<crate::engine::ecs::component::HandTrackingComponent>(*id)
                 .is_some()
         }),
-        "Reimu should opt in to full finger tracking under its owning GLTF"
+        "mitten should opt in to full finger tracking under its owning GLTF"
     );
     let finger_map = world
-        .children_of(rei_mu)
+        .children_of(mitten)
         .iter()
         .find_map(|id| world.get_component_by_id_as::<HumanoidBoneMapComponent>(*id))
         .unwrap();
@@ -12696,11 +12696,11 @@ fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
         30,
         "the shared VRoid map must declare every rotating finger bone"
     );
-    let mut rei_mu_ancestor = world.parent_of(rei_mu);
-    while rei_mu_ancestor.is_some() && rei_mu_ancestor != Some(editor) {
-        rei_mu_ancestor = rei_mu_ancestor.and_then(|id| world.parent_of(id));
+    let mut mitten_ancestor = world.parent_of(mitten);
+    while mitten_ancestor.is_some() && mitten_ancestor != Some(editor) {
+        mitten_ancestor = mitten_ancestor.and_then(|id| world.parent_of(id));
     }
-    assert_eq!(rei_mu_ancestor, Some(editor));
+    assert_eq!(mitten_ancestor, Some(editor));
     assert!(world.all_components().any(|id| {
         world
             .get_component_by_id_as::<AvatarControlComponent>(id)
@@ -12716,9 +12716,9 @@ fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
         .expect("mittens-corp should accept HTC or VRChat OSC eye tracking for blink closure");
     assert!(
         !eye_tracker.1.enable_pupil_direction_tracking,
-        "the ambient animation, not live gaze, should own Rei(mu) eye direction"
+        "the ambient animation, not live gaze, should own mitten eye direction"
     );
-    assert!(world.children_of(rei_mu).iter().any(|id| {
+    assert!(world.children_of(mitten).iter().any(|id| {
         world
             .get_component_by_id_as::<HumanoidBoneMapComponent>(*id)
             .is_some()
@@ -12773,10 +12773,10 @@ fn mittens_corp_evaluates_with_rei_mu_player_bow_and_car_mount_fixture() {
             .get_component_by_id_as::<ShadingComponent>(id)
             .is_some_and(|shading| shading.model == ShadingModel::Anime)
     }));
-    assert!(world.children_of(rei_mu).iter().any(|id| {
+    assert!(world.children_of(mitten).iter().any(|id| {
         world
             .get_component_by_id_as::<PoseCaptureComponent>(*id)
-            .is_some_and(|capture| capture.asset_name.as_deref() == Some("rei_mu"))
+            .is_some_and(|capture| capture.asset_name.as_deref() == Some("mitten"))
     }));
 
     let editor_panels = world
@@ -14307,7 +14307,7 @@ fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
         "examples/mittens-corp-linear-velocity.mms",
         "examples/mittens-corp-agc.mms",
         "examples/mittens-corp-agc-desktop.mms",
-        "examples/rei(mu).mms",
+        "examples/mitten.mms",
     ] {
         let source = std::fs::read_to_string(path).unwrap();
         let mut world = World::default();
@@ -14412,18 +14412,14 @@ fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
         }
         assert_eq!(
             ground_surfaces,
-            if path == "examples/rei(mu).mms" {
-                12
-            } else {
-                8
-            },
+            if path == "examples/mitten.mms" { 12 } else { 8 },
             "{path}"
         );
 
         assert!(
             world.all_components().any(|id| world
                 .get_component_by_id_as::<GLTFComponent>(id)
-                .is_some_and(|gltf| gltf.uri == "assets/models/rei(mu).glb")),
+                .is_some_and(|gltf| gltf.uri == "assets/models/mitten.glb")),
             "{path}"
         );
         assert!(
@@ -14484,7 +14480,7 @@ fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
             .find(|id| {
                 world
                     .get_component_by_id_as::<GLTFComponent>(*id)
-                    .is_some_and(|gltf| gltf.uri == "assets/models/rei(mu).glb")
+                    .is_some_and(|gltf| gltf.uri == "assets/models/mitten.glb")
             })
             .unwrap();
         // Supply the mapped targets for this synthetic import event; no real
@@ -14500,7 +14496,7 @@ fn corp_derivatives_evaluate_with_shared_stage_and_teleport_sensor() {
                 player,
                 EventSignal::GltfInitialized {
                     gltf: player,
-                    uri: "assets/models/rei(mu).glb".into(),
+                    uri: "assets/models/mitten.glb".into(),
                 },
             ),
         );

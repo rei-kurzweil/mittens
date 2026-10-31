@@ -61,12 +61,12 @@ intervening sensors.
 
 ## Demo integration
 
-Mittens Corp, desktop, AGC, AGC desktop, linear velocity and `rei(mu)` now use
+Mittens Corp, desktop, AGC, AGC desktop, linear velocity and `mitten` now use
 shared stage geometry with deck/step/wall contact zones. Studio floors and
 suspended walkways also have static contact zones. Players explicitly route their
 AVC capsule response to the outer Velocity movement root and receive Gravity.
 Desktop Space and XR ButtonB jump when grounded. Corp pits return capsule centers
-to the stage. The Reimu derivative uses an invisible pit below its lower stage.
+to the stage. The mitten derivative uses an invisible pit below its lower stage.
 
 Attachment transactions suspend the movement root's directly owning Velocity,
 clear stale speed, and restore its prior enabled state on dismount. Mounted roots

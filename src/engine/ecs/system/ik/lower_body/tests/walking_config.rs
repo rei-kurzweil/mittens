@@ -44,7 +44,7 @@ fn profile(asset: Option<&str>, step_scale: Option<f32>) -> (f32, f32, f32) {
 fn walking_step_scale_increases_reach_clearance_and_forward_knee_swing() {
     for asset in [
         None,
-        Some("assets/models/rei(mu).glb"),
+        Some("assets/models/mitten.glb"),
         Some("assets/models/bisket.glb"),
     ] {
         let base = profile(asset, Some(1.0));

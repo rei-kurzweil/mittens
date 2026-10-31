@@ -10,8 +10,8 @@ use crate::engine::ecs::system::{
 use crate::engine::graphics::RenderAssets;
 
 #[test]
-fn rei_mu_palm_down_and_roll_survive_retargeting_and_arm_ik() {
-    let document = gltf::Gltf::open("assets/models/rei(mu).glb").unwrap();
+fn mitten_palm_down_and_roll_survive_retargeting_and_arm_ik() {
+    let document = gltf::Gltf::open("assets/models/mitten.glb").unwrap();
     let mut world = World::default();
     let tracking_rotation = math::quat_from_axis_angle([0.0, 1.0, 0.0], 0.7);
     let scene = world.add_component(
@@ -23,7 +23,7 @@ fn rei_mu_palm_down_and_roll_survive_retargeting_and_arm_ik() {
     let model = world.add_component(
         TransformComponent::new().with_rotation_quat(math::quat_rotation_y(std::f32::consts::PI)),
     );
-    let gltf = world.add_component(GLTFComponent::new("assets/models/rei(mu).glb"));
+    let gltf = world.add_component(GLTFComponent::new("assets/models/mitten.glb"));
     world.add_child(scene, avatar).unwrap();
     world.add_child(avatar, model).unwrap();
     world.add_child(model, gltf).unwrap();

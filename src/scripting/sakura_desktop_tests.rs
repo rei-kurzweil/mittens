@@ -236,7 +236,7 @@ fn sakura_desktop_first_person_avatar_initializes_without_xr() {
     use crate::engine::ecs::system::avatar_control_system::first_person_test_support::body_hit;
     let gltf = scene
         .world
-        .get_component_by_id_as::<GLTFComponent>(named(&scene, "sakura_desktop_reimu"))
+        .get_component_by_id_as::<GLTFComponent>(named(&scene, "sakura_desktop_mitten"))
         .unwrap();
     let document = gltf::Gltf::open(&gltf.uri).unwrap();
     let nodes: Vec<_> = document

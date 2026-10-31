@@ -64,7 +64,7 @@ SpringBone.from_root("[name='head_bow.001']")
     }
 ```
 
-`motion_threshold` measures the spring anchor's motion relative to the avatar transform above its GLTF, in metres per second equivalent. Rotation contributes as motion at a 10 cm radius. `still_for` is seconds below that threshold. The chain blends toward imported rest rotations and parks while settled, then wakes when motion rises. Rei(mu)'s two ribbon chains use this in [`rei-mu-bow.mms`](../../assets/components/secondary_motion/rei-mu-bow.mms). Test the XR scene with `cargo run --release -- load 'examples/rei(mu).mms'`. Set `CAT_DEBUG_SECONDARY_MOTION=1` to print each chain's measured speed, still time, and rest blend weight while tuning in VR.
+`motion_threshold` measures the spring anchor's motion relative to the avatar transform above its GLTF, in metres per second equivalent. Rotation contributes as motion at a 10 cm radius. `still_for` is seconds below that threshold. The chain blends toward imported rest rotations and parks while settled, then wakes when motion rises. mitten's two ribbon chains use this in [`mitten-bow.mms`](../../assets/components/secondary_motion/mitten-bow.mms). Test the XR scene with `cargo run --release -- load 'examples/mitten.mms'`. Set `CAT_DEBUG_SECONDARY_MOTION=1` to print each chain's measured speed, still time, and rest blend weight while tuning in VR.
 
 ## Pause while preserving the settled pose
 

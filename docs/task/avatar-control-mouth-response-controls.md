@@ -37,7 +37,7 @@ AVC {
   It does not reopen audio input, rebuild AGC, or recreate the avatar.
 
 `assets/components/ui/mouth_response_panel.mms` now supplies the same three
-controls to the desktop and XR AGC examples and to `examples/rei(mu).mms`.
+controls to the desktop and XR AGC examples and to `examples/mitten.mms`.
 The scene supplies its own AVC handle, response values, title, and description.
 The panel remains compact for now:
 

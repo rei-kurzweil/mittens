@@ -31,14 +31,14 @@ is still needed. The checked-in Bisket rest finger and wrist-to-knuckle directio
 about 6.8 degrees, which does not establish a 45-degree rest-basis error.
 
 The scene/model are now identified: `examples/mittens-corp.mms`, using
-`assets/models/rei(mu).glb`. With arms extended, palms down, and fingers forward, both hands
+`assets/models/mitten.glb`. With arms extended, palms down, and fingers forward, both hands
 appear tilted inward by about 45 degrees, mirrored left/right. This clarifies the current
-symptom as a roll discrepancy. Reimu and Bisket have matching imported hand rest geometry;
-Reimu's hand/finger rest skin matrices reconstruct identity, so inspection does not reveal a
+symptom as a roll discrepancy. mitten and Bisket have matching imported hand rest geometry;
+mitten's hand/finger rest skin matrices reconstruct identity, so inspection does not reveal a
 45-degree bind/rest discrepancy. The runtime pose source and palm-frame measurements in that
 posture remain necessary to locate the first incorrect frame.
 
-The Reimu regression imports its real node/rest transforms, applies the same retained hand
+The mitten regression imports its real node/rest transforms, applies the same retained hand
 landmarks as the scene's humanoid map, and runs the arm IK with the scene's elbow policy.
 Palm-down and mirrored roll poses retain the expected evaluated finger direction and palm
 normal under rotated tracking/model roots. This checks retargeting and IK with known input;

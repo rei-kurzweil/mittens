@@ -11,7 +11,7 @@ renderer adapter; custom physical offsets still come from reflection. The
 registry uses MaterialBase/MaterialBaseId terminology. CombineMesh resolves and
 retains either kind of source, including through source collapse and model changes.
 The temporary lighting debug input/API and the room's comparison menu are removed.
-The room retains rim lighting, LEDs, bloom, seated Rei(mu), and XR controllers.
+The room retains rim lighting, LEDs, bloom, seated mitten, and XR controllers.
 
 Parent: [custom materials epic](epic/custom-materials.md).
 Consumer: [Material component/resolution](material-component-and-resolved-contract.md).

@@ -14,7 +14,7 @@ and tuning remain pending. Authored whole-armature animation remains separate.
    pass before and after extraction.
 2. Generalize the leg solver to arbitrary world-space sole position and
    orientation. An actual-rig test locks a foot through translation/yaw on both
-   Rei(mu) and Bisket without changing bone lengths.
+   mitten and Bisket without changing bone lengths.
 3. Add retained contacts, one timed swing at a time, alternating steps, a brief
    double-support transfer, bounded prediction from actual capsule X/Z motion,
    and bounded step length/lateral prediction. Displacement and predicted
@@ -110,7 +110,7 @@ AVC
 }
 ```
 
-The sole offsets above are specific to the checked-in Rei(mu)/Bisket shoes.
+The sole offsets above are specific to the checked-in mitten/Bisket shoes.
 Stride is base maximum horizontal foot travel in model metres, valid in `[0.05, 1.0]`.
 Duration is the relaxed swing time in seconds, valid in `[0.08, 1.0]`; speed and
 trailing-foot recovery can shorten it automatically. Height is model metres,
@@ -136,7 +136,7 @@ is 25 degrees.
 ```sh
 cargo run --release -- load examples/lower-body-walking-vr.mms
 cargo run --release --example lower-body-walking-vr
-cargo run --release --example lower-body-walking-vr -- --model rei
+cargo run --release --example lower-body-walking-vr -- --model mitten
 ```
 
 The MMS scene is directly loadable with Bisket; the optional Rust launcher selects
@@ -204,7 +204,7 @@ update stage with unchanged tracking/capsule transforms.
 
 Headset appearance, motion comfort and tuning remain to verify.
 
-Validation on 2026-10-28: all 23 lower-body tests pass; the Bisket and Rei(mu)
+Validation on 2026-10-28: all 23 lower-body tests pass; the Bisket and mitten
 smoke scenes both pass `--validate`. Targeted Rust formatting and whitespace
 checks pass. The broader library run has 55 failures, all reproduced on an
 untouched HEAD checkout, with no additional failures from this change. Two

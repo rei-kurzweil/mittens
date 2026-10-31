@@ -1946,7 +1946,7 @@ mod runtime_spec_session_tests {
                     world
                         .all_components()
                         .filter_map(|id| world.get_component_by_id_as::<GLTFComponent>(id))
-                        .any(|gltf| gltf.uri == "assets/models/rei(mu).glb")
+                        .any(|gltf| gltf.uri == "assets/models/mitten.glb")
                 );
             }
         }

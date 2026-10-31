@@ -277,7 +277,7 @@ fn profile_sakura_lumae_stereo() -> Result<(), Box<dyn Error>> {
         + r#"
         T.position(-18.0, 25.6, 6.5) {
             name = "profile_driver_placement"
-            GLTF.new("assets/models/rei(mu).glb") {name = "profile_driver" pistol_material}
+            GLTF.new("assets/models/mitten.glb") {name = "profile_driver" pistol_material}
         }
         GraphicsSettings.secondary_motion.toggle(false)
     "#;

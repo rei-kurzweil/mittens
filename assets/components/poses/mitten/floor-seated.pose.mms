@@ -1,4 +1,4 @@
-// Floor-seated Rei(mu): 110-degree hip flexion, a low/wide leg silhouette,
+// Floor-seated mitten: 110-degree hip flexion, a low/wide leg silhouette,
 // eight-degree backward lean, tucked elbows, and forearms opening outward.
 // Arms swing back 30 degrees at the shoulders; ankles ease 40% toward bind-local rest.
 // Limb bind translations/scales are preserved; the pelvis is lowered to sit.

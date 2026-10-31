@@ -54,7 +54,7 @@ descriptive label in diagrams, not a second MMS API to introduce and retire.
 
 ```mms
 TOP.sample_translation().source(locomotion_frame).axes("y") {}
-TOP.sample_translation().source("[name='rei_mu_locomotion_root']").axes("y") {}
+TOP.sample_translation().source("[name='mitten_locomotion_root']").axes("y") {}
 ```
 
 - `source(...)` is required and uses existing ComponentRef semantics: a live

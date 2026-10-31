@@ -36,7 +36,7 @@ to investigate before relying on repositionable stacks.
   `player_motion.translate_world([0.0, 4.5, 0.0])` when grounded.
 - The desktop example uses Space with the same launch velocity. Keep Space
   and make the height increase consistent between XR and desktop.
-- `examples/rei(mu).mms::pile_box` supplies the visual reference: pastel red,
+- `examples/mitten.mms::pile_box` supplies the visual reference: pastel red,
   green, and blue cubes in small piles. Those boxes currently have renderables
   and Grabbable components, but no contact zones; copy the appearance and add
   the required collision behavior.

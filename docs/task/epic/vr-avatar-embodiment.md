@@ -15,7 +15,7 @@ with body-follow policy.
 ## Current checkpoint
 
 - Native flat-support crouch IK is implemented (2026-10-21), with explicit sole
-  landmarks configured in Rei(mu), mittens-corp and bisket-vr-demo. It shares the
+  landmarks configured in mitten, mittens-corp and bisket-vr-demo. It shares the
   retained collidable BVH, preserves tracking/locomotion ownership and suspends
   while mounted. Initial headset feedback (2026-10-22) reports that it works
   fairly well with correctly calibrated XR floor height; broader scenario checks
@@ -105,7 +105,7 @@ the posture work below.
 
 1. [AVC crouch IK from predicted foot penetration](../avc-foot-penetration-crouch-ik.md)
    — separate tracking from grounding, then automatically solve mapped legs
-   for Rei(mu), Bisket, and supported humanoids without constraining HMD Y.
+   for mitten, Bisket, and supported humanoids without constraining HMD Y.
 2. [Transitionable avatar pose layers](../avatar-pose-transition-layers.md)
    — bind a pose to one GLTF instance and transition its blend weight while
    respecting tracked-bone ownership.

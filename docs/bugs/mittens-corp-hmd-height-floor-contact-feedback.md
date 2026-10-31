@@ -35,7 +35,7 @@ The more relevant difference is static-contact correction:
    places the avatar capsule under a translation fork of that model root.
    Rotation and scale are dropped, but all three translation axes pass through.
 3. The capsule's collision response targets the authored outer locomotion root,
-   `rei_mu_locomotion_root`. That root also supplies the XR tracking origin.
+   `mitten_locomotion_root`. That root also supplies the XR tracking origin.
 4. `src/engine/ecs/system/static_contact_system.rs` raises that root to resolve
    penetration of the floor. A head-driven capsule moving down can therefore
    cause an equal upward movement of the camera's parent, cancelling the HMD's
@@ -105,7 +105,7 @@ that resolved locomotion frame. Ordinary contact must not translate the frame
 to cancel a change in the tracked pose.
 
 The current rig already has the two transform layers: the outer
-`rei_mu_locomotion_root` and its descendant `rei_mu_xr_driver`. The coupling is
+`mitten_locomotion_root` and its descendant `mitten_xr_driver`. The coupling is
 in the proxy: its pose follows the head-driven avatar body while its response
 targets the outer root. Merely adding another parent transform or changing the
 response target would leave that dependency intact.

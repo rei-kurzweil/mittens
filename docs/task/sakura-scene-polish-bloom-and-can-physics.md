@@ -31,7 +31,7 @@ crossed cutout cards per blossom cluster without CombineMesh. It now emits two
 combined outputs per tree: opaque wood and textured cutout blossoms. The three
 Sakura trees produce three blossom draws rather than 243 card draws. Root texture,
 filtering, material and cutout state survive source collapse; trunk collision
-remains separate. This also updates the tree shared with Rei(mu)'s garden.
+remains separate. This also updates the tree shared with mitten's garden.
 
 The shared info-panel defaults and explicit XR settings palette now match the
 pastel graphics panel, with dark text and no default glowing header icon. The

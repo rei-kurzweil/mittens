@@ -41,7 +41,7 @@ import { teleport_pit } from "../assets/components/teleport_pit.mms"
 import { display_car } from "../assets/components/vehicles/display_car.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { rei_mu_bow_secondary_motion } from "../assets/components/secondary_motion/rei-mu-bow.mms"
+import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 import { lumae_avatar } from "../assets/components/characters/lumae/avatar.mms"
 import { pacing_and_waiting_around } from "../assets/components/characters/lumae/behavior/pacing_and_waiting_around.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
@@ -324,7 +324,7 @@ T.position(-17.0, roof_height, 1.2) {
 }
 for index in range(initial_lumae_count) { spawn_lumae() }
 
-// The upgraded Rei(mu) tree: one rooftop specimen and two street planters.
+// The upgraded mitten tree: one rooftop specimen and two street planters.
 fn sakura_planter(label, position) {
     return T.position(position[0], position[1], position[2]) {
         name = label
@@ -352,20 +352,20 @@ if desktop_view_enabled {
 }
 
 if xr_view_enabled {
-    let microphone = AudioInput { name = "sakura_reimu_microphone" }
+    let microphone = AudioInput { name = "sakura_mitten_microphone" }
     let voice_level = Amplitude.rolling_window(0.080).highpass(120.0).highpass_resonance(0.707).from(microphone) {
-        name = "sakura_reimu_voice_level"
+        name = "sakura_mitten_voice_level"
     }
     let player_motion = Velocity {
-        name = "sakura_reimu_velocity"
+        name = "sakura_mitten_velocity"
         T.position(spawn_position[0], spawn_position[1], spawn_position[2]) {
-            name = "sakura_reimu_locomotion_root"
+            name = "sakura_mitten_locomotion_root"
             InputXR.on() {
                 InputXRGamepad { locomotion() speed(1.4) }
                 T {
-                    name = "sakura_reimu_xr_driver"
-                    let xr_reimu = GLTF.new("assets/models/rei(mu).glb") {
-                        name = "sakura_xr_reimu"
+                    name = "sakura_mitten_xr_driver"
+                    let xr_mitten = GLTF.new("assets/models/mitten.glb") {
+                        name = "sakura_xr_mitten"
                         HandTracking.new().source("openxr")
                         pistol_material
                         bisket_humanoid_bone_map()
@@ -375,10 +375,10 @@ if xr_view_enabled {
                             .slot("viseme_aa", "Fcl_MTH_A")
                         bisket_colliders()
                         bisket_shirt_physics(false)
-                        rei_mu_bow_secondary_motion()
+                        mitten_bow_secondary_motion()
                     }
-                    let xr_avatar_control = AVC.movement_target("[name='sakura_reimu_locomotion_root']") {
-                        name = "sakura_reimu_avatar_control"
+                    let xr_avatar_control = AVC.movement_target("[name='sakura_mitten_locomotion_root']") {
+                        name = "sakura_mitten_avatar_control"
                         crouch_enabled(true)
                         crouch_sole_offsets([0.0, 0.0530325, 0.0874534], [0.0, 0.0530325, 0.0874534])
                         WalkingIK { step_scale(1.3) }
@@ -390,13 +390,13 @@ if xr_view_enabled {
                         initial_yaw(3.14159)
                         arm_ik(vroid_arm_ik_bend_plane_prototype())
                         hand_rotation_smoothing(220.0)
-                        T { xr_reimu }
+                        T { xr_mitten }
                         T.position(0.0, 0.08, 0.12) {
-                            name = "sakura_reimu_xr_camera"
+                            name = "sakura_mitten_xr_camera"
                             CXR { Pointer {} }
                         }
                         // Live tracking supplies eyelid closure; idle animation
-                        // owns pupil direction, as in the main Rei(mu) example.
+                        // owns pupil direction, as in the main mitten example.
                         XREyeTracking.on().priority(["htc", "vrchat_osc"]).enable_pupil_direction_tracking(false)
                         XRHand.new(true, "Left", "GripAim").laser() {
                             T {
@@ -410,28 +410,28 @@ if xr_view_enabled {
                         }
                     }
                     xr_avatar_control
-                    on(xr_reimu, "GLTFInitialized", fn(event) {
+                    on(xr_mitten, "GLTFInitialized", fn(event) {
                         let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
                         let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
                         if left_eye && right_eye {
                             xr_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
                         } else {
-                            print("XR Rei(mu): eye joints were not found for idle gaze")
+                            print("XR mitten: eye joints were not found for idle gaze")
                         }
                     })
                 }
             }
         }
     }
-    Gravity.enabled(false) { name = "sakura_reimu_gravity" player_motion }
-    let gravity_avatar = query("[name='sakura_reimu_avatar_control']")
+    Gravity.enabled(false) { name = "sakura_mitten_gravity" player_motion }
+    let gravity_avatar = query("[name='sakura_mitten_avatar_control']")
     on(gravity_avatar, "DataEvent", fn(event) {
         if event == "CapsuleReady" {
-            query("[name='sakura_reimu_gravity']").set_enabled(true)
+            query("[name='sakura_mitten_gravity']").set_enabled(true)
         }
     })
     if gravity_avatar.capsule_ready() {
-        query("[name='sakura_reimu_gravity']").set_enabled(true)
+        query("[name='sakura_mitten_gravity']").set_enabled(true)
     }
 
     on_global("XrButtonDown", fn(event) {
@@ -487,7 +487,7 @@ fn rooftop_pistol(label, effect_label, x) {
     })
     on_global("XrButtonDown", fn(event) {
         if held.active && event.hand == held.hand {
-            if event.control == "LeftTrigger" || event.control == "RightTrigger" { tool.use_start({ user = query("[name='sakura_reimu_avatar_control']") }) }
+            if event.control == "LeftTrigger" || event.control == "RightTrigger" { tool.use_start({ user = query("[name='sakura_mitten_avatar_control']") }) }
         }
     })
     on_global("XrButtonUp", fn(event) {

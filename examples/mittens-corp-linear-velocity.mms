@@ -15,7 +15,7 @@ import { tripod_light } from "../assets/components/tripod_light.mms"
 import { suspended_platform } from "../assets/components/platforms/suspended_platform.mms"
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { rei_mu_bow_secondary_motion } from "../assets/components/secondary_motion/rei-mu-bow.mms"
+import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
@@ -79,7 +79,7 @@ let xr_input = InputXR.on() {
     InputXRGamepad { locomotion() speed(1.5) }
     T {
         name = "bisket_xr_driver"
-        let bisket_avatar = GLTF.new("assets/models/rei(mu).glb") {
+        let bisket_avatar = GLTF.new("assets/models/mitten.glb") {
             HandTracking.new().source("openxr")
             bisket_anime_shading()
             bisket_humanoid_bone_map()
@@ -88,10 +88,10 @@ let xr_input = InputXR.on() {
                 .slot("right_eye_blink", "Fcl_EYE_Close_R")
                 .slot("viseme_aa", "Fcl_MTH_A")
             EM.on()
-            PoseCapture { label("Rei(mu) XR source") asset_name("rei_mu") }
+            PoseCapture { label("mitten XR source") asset_name("mitten") }
             bisket_colliders()
             bisket_shirt_physics(false)
-            rei_mu_bow_secondary_motion()
+            mitten_bow_secondary_motion()
         }
         let bisket_avatar_control = AVC.movement_target("[name='bisket_grounding_root']") {
             name = "bisket_avatar_control"

@@ -58,13 +58,13 @@ fn local_pool_viewer_uses_xr_settings_and_keeps_grip_input_after_avatar_init() {
         !scene
             .world
             .all_components()
-            .any(|id| scene.world.component_label(id) == Some("rei_mu_mouth_response_panel"))
+            .any(|id| scene.world.component_label(id) == Some("mitten_mouth_response_panel"))
     );
     assert!(
         scene
             .world
             .all_components()
-            .any(|id| scene.world.component_label(id) == Some("rei_mu_xr_settings"))
+            .any(|id| scene.world.component_label(id) == Some("mitten_xr_settings"))
     );
     assert!(scene.world.all_components().any(|id| {
         scene.world.component_label(id) == Some("xr_floor_correction_slider")

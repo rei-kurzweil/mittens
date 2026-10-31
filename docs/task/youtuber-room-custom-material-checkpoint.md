@@ -25,7 +25,7 @@ emission strengths so the entire screen is not uniformly luminous.
 The scene keeps one monitor point light and white rim lighting
 (strength 0.18, power 4). The temporary Distance/Diffuse/Anime menu and its debug
 shader input/API have been removed. Facing-gated Anime shading still applies to
-both room geometry and the seated Rei(mu) NPC at the middle of the left wall.
+both room geometry and the seated mitten NPC at the middle of the left wall.
 LED emission and Bloom remain enabled through led_effects_enabled. The resized
 straw model is unscaled; its old 28 m recenter offset is corrected to 0.429 m.
 

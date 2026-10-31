@@ -216,11 +216,11 @@ transform, so a zone on that transform uses local half extents `[0.5, 0.5,
 the desktop avatar downward into the floor, while `WASD` checks that corrected
 movement along the floor remains free.
 
-`examples/mittens-corp.mms` is the first XR candidate. Its player is Rei(mu),
+`examples/mittens-corp.mms` is the first XR candidate. Its player is mitten,
 with the two bow spring chains and their `ReturnToRestWhenStill` constraints.
-The AVC uses `rei_mu_locomotion_root`; the car's Rider and mounted controls
+The AVC uses `mitten_locomotion_root`; the car's Rider and mounted controls
 retain that movement root. The shared `studio_stage` deck has top y=0.12 and
-lies under Rei(mu)'s initial x/z. Make the deck a static zone/collidable first.
+lies under mitten's initial x/z. Make the deck a static zone/collidable first.
 Its lower `studio_floor` is a fallback surface, not the initial standing
 surface. Verify that the generated capsule constrains the locomotion root
 rather than the visual model or HMD tracking transform, and that entering or

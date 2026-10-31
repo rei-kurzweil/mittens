@@ -8,7 +8,7 @@ export fn lumae_avatar(label, material) {
         name = label + "_avc"
         // Rest ankle projected vertically onto this GLB's shoe-floor plane (Y=0).
         // Inverse foot-rest transforms give these local sole landmarks; they
-        // are Lumae calibration, not the Rei(mu)/Bisket shoe offsets.
+        // are Lumae calibration, not the mitten/Bisket shoe offsets.
         crouch_sole_offsets([0.0, 0.0687271, 0.1129329], [0.0, 0.0687271, 0.1129329])
         T {
             GLTF("assets/components/characters/lumae/lumae.glb") {

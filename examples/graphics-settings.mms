@@ -9,7 +9,7 @@ import { bisket_anime_shading } from "../assets/components/materials/bisket_anim
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { rei_mu_bow_secondary_motion } from "../assets/components/secondary_motion/rei-mu-bow.mms"
+import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 
 RendererSettings { window_size(1280, 720) }
@@ -78,25 +78,25 @@ T.position(-4.5, 2.8, -1.0) {
     }
 }
 
-// Match mittens-corp's microphone response and Rei(mu) player features.
+// Match mittens-corp's microphone response and mitten player features.
 let microphone = AudioInput {}
 let voice_level = Amplitude.rolling_window(0.080).highpass(120.0).highpass_resonance(0.707).from(microphone) {}
 let mouth_tuning = { center_rms = 0.0475 range_rms = 0.085 amount = 1.0 }
 
 ED.active() {
     let player_motion = Velocity {
-        name = "rei_mu_locomotion_root_velocity"
+        name = "mitten_locomotion_root_velocity"
         T.position(0.0, 1.0, 1.0) {
-            name = "rei_mu_locomotion_root"
+            name = "mitten_locomotion_root"
             InputXR.on() {
                 InputXRGamepad {
-                    name = "rei_mu_pedestrian_locomotion"
+                    name = "mitten_pedestrian_locomotion"
                     locomotion()
                     speed(1.5)
                 }
                 T {
-                    name = "rei_mu_xr_driver"
-                    let rei_mu_avatar = GLTF.new("assets/models/rei(mu).glb") {
+                    name = "mitten_xr_driver"
+                    let mitten_avatar = GLTF.new("assets/models/mitten.glb") {
                         HandTracking.new().source("openxr")
                         bisket_anime_shading()
                         bisket_humanoid_bone_map()
@@ -105,13 +105,13 @@ ED.active() {
                             .slot("right_eye_blink", "Fcl_EYE_Close_R")
                             .slot("viseme_aa", "Fcl_MTH_A")
                         EM.on()
-                        PoseCapture { label("Rei(mu)") asset_name("rei_mu") }
+                        PoseCapture { label("mitten") asset_name("mitten") }
                         bisket_colliders()
                         bisket_shirt_physics(false)
-                        rei_mu_bow_secondary_motion()
+                        mitten_bow_secondary_motion()
                     }
-                    let rei_mu_avatar_control = AVC.movement_target("[name='rei_mu_locomotion_root']") {
-                        name = "rei_mu_avatar_control"
+                    let mitten_avatar_control = AVC.movement_target("[name='mitten_locomotion_root']") {
+                        name = "mitten_avatar_control"
                         mouth_open_from_amplitude(voice_level)
                         mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
                         mouth_open_amount(mouth_tuning.amount)
@@ -120,10 +120,10 @@ ED.active() {
                         initial_yaw(3.14159)
                         arm_ik(vroid_arm_ik_bend_plane_prototype())
                         hand_rotation_smoothing(220.0)
-                        T { rei_mu_avatar }
+                        T { mitten_avatar }
 
                         T.position(0.0, 0.08, 0.12) {
-                            name = "rei_mu_head_camera_anchor"
+                            name = "mitten_head_camera_anchor"
                             CXR { Pointer {} }
                         }
                         // Keep independent eyelid samples from XR/ALVR or OSC;
@@ -144,14 +144,14 @@ ED.active() {
                             }
                         }
                     }
-                    rei_mu_avatar_control
-                    on(rei_mu_avatar, "GLTFInitialized", fn(event) {
+                    mitten_avatar_control
+                    on(mitten_avatar, "GLTFInitialized", fn(event) {
                         let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
                         let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
                         if left_eye && right_eye {
-                            rei_mu_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
+                            mitten_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
                         } else {
-                            print("GLTFInitialized: Rei(mu) mapped eye bones were not found; ambient eye animation was not attached")
+                            print("GLTFInitialized: mitten mapped eye bones were not found; ambient eye animation was not attached")
                         }
                     })
                 }
@@ -167,7 +167,7 @@ ED.active() {
 }
 
 // Enable falling only when AVC's generated slide capsule is ready.
-let gravity_avatar = query("[name='rei_mu_avatar_control']")
+let gravity_avatar = query("[name='mitten_avatar_control']")
 on(gravity_avatar, "DataEvent", fn(event) {
     if event == "CapsuleReady" { query("[name='player_gravity']").set_enabled(true) }
 })

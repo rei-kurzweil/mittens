@@ -17,17 +17,17 @@ struct Fixture {
     sequence: u64,
 }
 
-fn append_reimu(
+fn append_mitten(
     world: &mut World,
     rebase_axes: bool,
 ) -> (ComponentId, ComponentId, ComponentId, ComponentId) {
-    let document = gltf::Gltf::open("assets/models/rei(mu).glb").unwrap();
+    let document = gltf::Gltf::open("assets/models/mitten.glb").unwrap();
     let root = world.add_component(
         TransformComponent::new()
             .with_position(2.0, 0.3, -1.0)
             .with_rotation_quat(quat_rotation_y(0.7)),
     );
-    let gltf = world.add_component(GLTFComponent::new("assets/models/rei(mu).glb"));
+    let gltf = world.add_component(GLTFComponent::new("assets/models/mitten.glb"));
     world.add_child(root, gltf).unwrap();
     let mut parents = vec![None; document.nodes().len()];
     for node in document.nodes() {
@@ -117,9 +117,9 @@ fn append_reimu(
 }
 
 impl Fixture {
-    fn reimu(rebase_axes: bool) -> Self {
+    fn mitten(rebase_axes: bool) -> Self {
         let mut world = World::default();
-        let (root, gltf, config, map) = append_reimu(&mut world, rebase_axes);
+        let (root, gltf, config, map) = append_mitten(&mut world, rebase_axes);
         let mut systems = SystemWorld::default();
         let mut visuals = VisualWorld::default();
         systems.transform_changed(&mut world, &mut visuals, root);
@@ -349,9 +349,9 @@ impl Fixture {
 }
 
 #[test]
-fn reimu_five_fingers_rest_curl_splay_opposition_and_controller_wrist() {
+fn mitten_five_fingers_rest_curl_splay_opposition_and_controller_wrist() {
     for rebased in [false, true] {
-        let mut fixture = Fixture::reimu(rebased);
+        let mut fixture = Fixture::mitten(rebased);
         let rest = fixture.frame([[0.0; 5]; 2], 0.0);
         fixture.tracking.publish(rest.clone());
         fixture.step(1.0 / 90.0);
@@ -392,7 +392,7 @@ fn reimu_five_fingers_rest_curl_splay_opposition_and_controller_wrist() {
 
 #[test]
 fn partial_nan_degenerate_and_stale_hands_release_without_freezing() {
-    let mut fixture = Fixture::reimu(false);
+    let mut fixture = Fixture::mitten(false);
     let mut frame = fixture.frame([[0.8; 5]; 2], 0.0);
     fixture.tracking.publish(frame.clone());
     fixture.step(0.01);
@@ -446,7 +446,7 @@ fn release_tracks_new_authored_animation_and_stops_writing() {
 
 #[test]
 fn per_hand_selection_rejects_reordered_future_mirrored_or_wrong_provider_samples() {
-    let mut fixture = Fixture::reimu(false);
+    let mut fixture = Fixture::mitten(false);
     let mut openxr = fixture.frame([[0.0; 5]; 2], 0.0);
     Arc::make_mut(&mut openxr).hands[1] = None;
     let mut mediapipe = (*fixture.frame([[0.0; 5]; 2], 0.0)).clone();
@@ -530,7 +530,7 @@ fn per_hand_selection_rejects_reordered_future_mirrored_or_wrong_provider_sample
 
 #[test]
 fn map_generation_rebind_and_component_removal_restore_surviving_bones() {
-    let mut fixture = Fixture::reimu(false);
+    let mut fixture = Fixture::mitten(false);
     let frame = fixture.frame([[0.7; 5]; 2], 0.0);
     fixture.tracking.publish(frame);
     fixture.step(0.01);
@@ -569,7 +569,7 @@ fn map_generation_rebind_and_component_removal_restore_surviving_bones() {
 
 #[test]
 fn helper_parent_uses_current_evaluated_rotation_and_new_driven_parent() {
-    let mut fixture = Fixture::reimu(true);
+    let mut fixture = Fixture::mitten(true);
     let binding = fixture.tracking.rigs[&fixture.config].hands[0]
         .as_ref()
         .unwrap();
@@ -648,8 +648,8 @@ fn helper_parent_uses_current_evaluated_rotation_and_new_driven_parent() {
 
 #[test]
 fn identical_names_in_two_avatars_bind_locally_and_retire_independently() {
-    let mut fixture = Fixture::reimu(false);
-    let (root, second_gltf, second_config, map) = append_reimu(&mut fixture.world, true);
+    let mut fixture = Fixture::mitten(false);
+    let (root, second_gltf, second_config, map) = append_mitten(&mut fixture.world, true);
     fixture
         .world
         .get_component_by_id_as_mut::<TransformComponent>(root)
@@ -709,7 +709,7 @@ fn identical_names_in_two_avatars_bind_locally_and_retire_independently() {
 
 #[test]
 fn epoch_space_and_data_source_changes_use_only_the_new_coherent_hand() {
-    let mut fixture = Fixture::reimu(false);
+    let mut fixture = Fixture::mitten(false);
     let first = fixture.frame([[0.9; 5]; 2], 0.0);
     fixture.tracking.publish(first.clone());
     fixture.step(0.01);
@@ -752,7 +752,7 @@ fn epoch_space_and_data_source_changes_use_only_the_new_coherent_hand() {
 
 #[test]
 fn empty_armature_releases_owned_rotations_and_rebinds_after_respawn() {
-    let mut fixture = Fixture::reimu(false);
+    let mut fixture = Fixture::mitten(false);
     let frame = fixture.frame([[0.8; 5]; 2], 0.0);
     fixture.tracking.publish(frame);
     fixture.step(0.01);
@@ -777,7 +777,7 @@ fn empty_armature_releases_owned_rotations_and_rebinds_after_respawn() {
 
 #[test]
 fn component_lifecycle_intents_register_and_unregister_the_hand_system() {
-    let mut fixture = Fixture::reimu(false);
+    let mut fixture = Fixture::mitten(false);
     fixture
         .world
         .init_component_tree(fixture.config, &mut fixture.queue);

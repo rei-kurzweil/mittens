@@ -400,8 +400,8 @@ fn crouch_holds_soles_and_restores_standing_without_accumulation() {
 }
 
 #[test]
-fn crouch_real_reimu_and_bisket_maps_solve_with_nonidentity_bind_frames() {
-    for asset in ["assets/models/rei(mu).glb", "assets/models/bisket.glb"] {
+fn crouch_real_mitten_and_bisket_maps_solve_with_nonidentity_bind_frames() {
+    for asset in ["assets/models/mitten.glb", "assets/models/bisket.glb"] {
         let mut f = Fixture::new(Some(asset));
         for drop in [0.0, 0.2, 0.4, 0.55, 0.2, 0.0] {
             f.drop_body(drop);
@@ -700,7 +700,7 @@ fn crouch_rejects_nearby_tables_and_self_colliders_and_respects_yawed_bounds() {
 
 #[test]
 fn crouch_uniform_scale_and_body_yaw_preserve_geometry() {
-    let mut f = Fixture::new(Some("assets/models/rei(mu).glb"));
+    let mut f = Fixture::new(Some("assets/models/mitten.glb"));
     let root = &mut f
         .world
         .get_component_by_id_as_mut::<TransformComponent>(f.root)
@@ -778,7 +778,7 @@ fn crouch_mms_configuration_and_validation() {
 
 #[test]
 fn crouch_full_avatar_stage_initializes_and_propagates_current_leg_pose() {
-    let mut f = Fixture::new(Some("assets/models/rei(mu).glb"));
+    let mut f = Fixture::new(Some("assets/models/mitten.glb"));
     f.systems.register_avatar_control(f.avatar);
     f.systems
         .lower_body_ik
@@ -1098,7 +1098,7 @@ fn crouch_two_avatars_share_the_index_and_keep_independent_poses() {
 #[test]
 fn crouch_map_edits_release_old_joints_and_rebind_without_accumulating_pose() {
     use crate::engine::ecs::component::HumanoidBoneMapComponent;
-    let mut f = Fixture::new(Some("assets/models/rei(mu).glb"));
+    let mut f = Fixture::new(Some("assets/models/mitten.glb"));
     f.systems.register_avatar_control(f.avatar);
     let driven = &mut f
         .world
@@ -1188,7 +1188,7 @@ fn leg_world_target_survives_body_translation_and_yaw_on_actual_rigs() {
     use crate::utils::math::{mat4_mul, quat_rotate_vec3};
     for asset in [
         None,
-        Some("assets/models/rei(mu).glb"),
+        Some("assets/models/mitten.glb"),
         Some("assets/models/bisket.glb"),
     ] {
         let mut f = Fixture::new(asset);

@@ -5,7 +5,7 @@ import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/v
 import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
 import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
 
-// mittens-corp-agc — XR car/controller regression scene and Rei(mu) pose-authoring tool.
+// mittens-corp-agc — XR car/controller regression scene and mitten pose-authoring tool.
 //
 // Run with:
 //   cargo run --release -- load examples/mittens-corp-agc.mms
@@ -16,7 +16,7 @@ import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel
 import { tripod_light } from "../assets/components/tripod_light.mms"
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { rei_mu_bow_secondary_motion } from "../assets/components/secondary_motion/rei-mu-bow.mms"
+import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { rei_2026_9 } from "../assets/components/mouth_response/rei_2026.9.mms"
@@ -639,7 +639,7 @@ T.position(3.8, 0.15, 3.2).rotation(0.0, 3.63, 0.0).scale(0.45, 0.45, 0.45) {
     GLTF.new("assets/models/color-cat.2.glb") {}
 }
 
-// Rei(mu) is the player rig. InputXR continues to own tracked head translation
+// mitten is the player rig. InputXR continues to own tracked head translation
 // and rotation; only the gamepad's built-in locomotion mapping is handed off
 // when a vehicle layer takes movement authority.
 ED.active() {
@@ -662,7 +662,7 @@ ED.active() {
 
                 T {
                     name = "bisket_xr_driver"
-                    let bisket_avatar = GLTF.new("assets/models/rei(mu).glb") {
+                    let bisket_avatar = GLTF.new("assets/models/mitten.glb") {
                         HandTracking.new().source("openxr")
                         bisket_anime_shading()
                         bisket_humanoid_bone_map()
@@ -671,10 +671,10 @@ ED.active() {
                             .slot("right_eye_blink", "Fcl_EYE_Close_R")
                             .slot("viseme_aa", "Fcl_MTH_A")
                         EM.on()
-                        PoseCapture { label("Rei(mu)") asset_name("rei_mu") }
+                        PoseCapture { label("mitten") asset_name("mitten") }
                         bisket_colliders()
                         bisket_shirt_physics(false)
-                        rei_mu_bow_secondary_motion()
+                        mitten_bow_secondary_motion()
                     }
                     let bisket_avatar_control = AVC.movement_target("[name='bisket_locomotion_root']") {
                         name = "bisket_avatar_control"
@@ -738,7 +738,7 @@ ED.active() {
                         }
                     })
 
-                    // The explicit Rei(mu) humanoid map above declares these two
+                    // The explicit mitten humanoid map above declares these two
                     // skin-joint targets. Query only this GLTF instance after it
                     // finishes importing, so another avatar cannot be animated.
                     on(bisket_avatar, "GLTFInitialized", fn(event) {
@@ -748,7 +748,7 @@ ED.active() {
                         if left_eye && right_eye {
                             bisket_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
                         } else {
-                            print("GLTFInitialized: Rei(mu) mapped eye bones were not found; ambient eye animation was not attached")
+                            print("GLTFInitialized: mitten mapped eye bones were not found; ambient eye animation was not attached")
                         }
                     })
                 }

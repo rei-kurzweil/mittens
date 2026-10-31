@@ -36,7 +36,7 @@ motion), this response supplies no friction impulse.
 The secondary-motion desktop floor and movable crate surfaces explicitly author
 `friction(0.8)`. The shared Corp studio deck, steps, back wall, studio floor, and suspended
 walkway decks also author `friction(0.8)` as of 2026-10-06. This covers all
-five Corp variants and the three shared stages in `rei(mu).mms`.
+five Corp variants and the three shared stages in `mitten.mms`.
 Other surfaces remain frictionless unless configured; no global
 friction default was changed. Input remains a separate pose driver: friction
 changes owned physical Velocity, not keyboard movement speed.
@@ -68,10 +68,10 @@ validation/roundtrip. Existing tangent-preservation and floor-sweep tests remain
 Ground surface coverage is checked by the derivative scene-load regression:
 all deck, step, wall, studio-floor and walkway transforms must own a static
 collidable zone with friction 0.8. Corp variants each have eight such surfaces;
-`rei(mu).mms` has twelve across three stages and no separate studio floor.
+`mitten.mms` has twelve across three stages and no separate studio floor.
 
 Collision coverage is not complete for every visible environment object.
-Truss rails/braces remain visual-only. Reimu garden soil/borders, tree branches,
+Truss rails/braces remain visual-only. mitten garden soil/borders, tree branches,
 and grabbable box piles also have no collidable zones. Suspended walkway cables
 are visual-only (there are no authored walkway rails). Mirrors, lights, UI,
 backgrounds and teleport decorations do not currently participate in physical

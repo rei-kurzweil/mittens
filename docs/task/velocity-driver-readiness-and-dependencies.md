@@ -217,7 +217,7 @@ than introducing both public APIs in the first slice.
 2. Add readiness publication and cached dependency invalidation outside substeps,
    or add provider activation plus contact-ready event/current-state APIs for
    the scene-event option.
-3. Migrate the five Corp scenes and `rei(mu).mms` where explicit authoring is
+3. Migrate the five Corp scenes and `mitten.mms` where explicit authoring is
    required. Preserve desktop and XR initialization behavior.
 4. Remove `avatar_contact_pending()` and make AVC's movement-target helper
    private again if no other consumer needs it.
@@ -244,7 +244,7 @@ than introducing both public APIs in the first slice.
 
 `Gravity.set_enabled(bool)` is implemented. Eight avatar MMS examples start
 the player provider disabled and enable it from the owning AVC's `CapsuleReady`
-data event: the five `mittens-corp*` variants, `rei(mu).mms`,
+data event: the five `mittens-corp*` variants, `mitten.mms`,
 `secondary-motion-desktop.mms`, and `vtuber-secondary-motion.mms`.
 
 ```mms

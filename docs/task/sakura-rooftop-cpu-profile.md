@@ -201,7 +201,7 @@ resource lifetime, cache capacity, batching, or deformation behavior.
 Base revision: `afa0e172`, plus this diagnostic instrumentation. The ignored
 `profile_sakura_lumae_stereo` fixture loads the actual Sakura scene with 0, 1 or 2
 Lumae, disables secondary motion, and renders both eyes at 1440×1600 with 4× MSAA
-and the scene's bloom. A separate Rei(mu) model stands behind the camera. Static
+and the scene's bloom. A separate mitten model stands behind the camera. Static
 cases leave its pose unchanged; moving cases rotate its head joint by a small
 sine wave through the normal transform/palette path. The same simulated 75 Hz
 sequence is used for every run. NPCs stay in the same relaxed pose at fixed,

@@ -22,7 +22,7 @@ User feedback on 2026-10-28: the change generally seems to work, with two issues
 
 Commit `db0ce631` adds `examples/sakura-drone-conversion-desktop.mms` before the engine change,
 including the pending Lumae asset migration and pacing controller dependencies. The desktop scene
-has a first-person C3D on Rei(mu)'s mapped head, mouse/WASD input, capsule-gated gravity, rooftop
+has a first-person C3D on mitten's mapped head, mouse/WASD input, capsule-gated gravity, rooftop
 reset, mirror, NPC pedestal and existing gun fixtures. XR is off. The committed baseline passed
 headless avatar/camera/capsule initialization before changing AVC.
 
@@ -56,7 +56,7 @@ existing release/reset behavior. Missing calibration is not treated as airborne 
 `assets/components/characters/lumae/avatar.mms` exports `lumae_avatar(label, material)` using the
 shared AVC path, relaxed arms, collider preset and hair simulation. Its own GLB rest ankle frames
 project vertically to the shoe-floor plane at model Y=0, giving local sole offsets
-`[0, 0.0687271, 0.1129329]` for both feet; these are not the Rei(mu)/Bisket shoe offsets.
+`[0, 0.0687271, 0.1129329]` for both feet; these are not the mitten/Bisket shoe offsets.
 
 Both Sakura scenes now wrap spawned Lumae in the existing pacing controller and start it after
 attachment. The named placement remains directly under the Lumae group; an inner motion root

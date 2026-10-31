@@ -22,7 +22,7 @@ AVC {
 A future model-specific preset could return plain data:
 
 ```mms
-export fn reimu_arm_ik() {
+export fn mitten_arm_ik() {
     return {
         left = {
             pole_direction = [1, -1.5, 1]
@@ -40,7 +40,7 @@ export fn reimu_arm_ik() {
 }
 ```
 
-The angles above reproduce the current **inspection-scene prototype**, not a validated Reimu preset. Name and ship model-specific presets only after measuring them. Bisket need not inherit Reimu's left exclusions.
+The angles above reproduce the current **inspection-scene prototype**, not a validated mitten preset. Name and ship model-specific presets only after measuring them. Bisket need not inherit mitten's left exclusions.
 
 For a small scene, inline tables are enough:
 
@@ -97,7 +97,7 @@ The inspector or startup diagnostic should show the effective left and right set
 1. Add the two builder methods to the MMS runtime schema and component registry, with strict table parsing and side-specific errors.
 2. Add typed per-side policies to AVC and serialize them back as table-valued builder calls.
 3. Resolve effective policies when AVC creates its arm chains. Move exclusion-range ownership to the chain policy while keeping current behavior when no table is provided.
-4. In phase 2, move all repository callers of the four old arm builders to the table calls, including the inspection scene, then remove those builders and their dedicated AVC fields. Add Reimu and bisket factory files only after measuring appropriate values for each model.
+4. In phase 2, move all repository callers of the four old arm builders to the table calls, including the inspection scene, then remove those builders and their dedicated AVC fields. Add mitten and bisket factory files only after measuring appropriate values for each model.
 5. Check partial tables, explicit empty exclusions, malformed/unknown fields, duplicate side calls, save/reload, AVC reinitialization, and that only one chain drives each arm. In VR, confirm both models still track hands and the red clipping readout reflects the actual solved result.
 
 Refactor task: [Consolidate AVC arm IK builders](consolidate-avc-arm-ik-builders.md). Related work: [AVC arm IK inventory](avc-arm-ik-control-inventory-and-mms-semantics.md) and [body-local bend-plane limits](avc-arm-ik-body-local-bend-plane-limits.md).

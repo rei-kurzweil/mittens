@@ -2,7 +2,7 @@
 
 Status: code correction applied; XR visual verification pending.
 
-## Observation in Rei(mu)
+## Observation in mitten
 
 The two high-pass rows render with oversized, overlapping text. Across all
 five controls, the visible tracks appear wider than the panel, and the thumbs
@@ -25,7 +25,7 @@ changes; the generic `Slider` component retains its world-unit contract.
 
 ## Acceptance on headset
 
-1. In `examples/rei(mu).mms`, all five tracks fit their row slots and align
+1. In `examples/mitten.mms`, all five tracks fit their row slots and align
    consistently within the panel. Neither filter row overlaps its neighbors.
 2. Every thumb remains fully over its visible track at minimum and maximum.
    Clicking or dragging to either end reaches the corresponding value.

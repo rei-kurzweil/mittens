@@ -15,22 +15,22 @@ there is no solid floor covering the water. Toggle pool_water_enabled to inspect
 the empty basin. Desktop/XR flags and the original room are preserved.
 
 XR-only mode (desktop_view_enabled=false, xr_view_enabled=true) replaces the
-seated wall NPC with the tracked Rei(mu) player rig. Desktop-only and both-view
+seated wall NPC with the tracked mitten player rig. Desktop-only and both-view
 modes retain the NPC; both-view XR retains its avatar-free controllers. The
 tracked rig uses the same shared room shading plus the canonical humanoid map,
 AVC arm IK/hand smoothing, crouch sole offsets, head-mounted CXR, tracked hand
 lasers and bone-relative pointers. Microphone RMS (80 ms, 120 Hz high-pass) drives
-the mapped mouth via AVC with the main Rei(mu) example's calibration; XR/OSC eye
+the mapped mouth via AVC with the main mitten example's calibration; XR/OSC eye
 closure drives blink while the idle animation owns gaze direction. Hair, tail,
 shirt and bow secondary motion and collider presets are retained. XR-only
 locomotion now has Velocity and gravity, gated on AVC's CapsuleReady event (with
 a late-subscriber readiness check). Crouch IK is explicitly enabled with the
-Rei(mu) sole offsets. Static collision zones cover room/furniture boxes, hallway,
+mitten sole offsets. Static collision zones cover room/furniture boxes, hallway,
 tile shell, basin, landing and metal supports. The slide has 64 x 12 short
 oriented wall-panel zones forming a hollow proxy, with low friction; it is not
 blocked by a solid central tube collider. Water remains non-solid and there is
 no swimming/buoyancy model. The 12 existing crouch checks, including actual
-Rei(mu)/Bisket bind frames and full avatar-stage knee solving, pass.
+mitten/Bisket bind frames and full avatar-stage knee solving, pass.
 The view-switch check covers avatar/NPC ownership, microphone setup, mouth/blink
 mapping and camera counts for all three modes. Headset acceptance is pending.
 

@@ -33,7 +33,7 @@ this slice does not introduce validation or multiple output material groups.
 
 At the user's request, the temporary lighting debug input, shader branches,
 builder/live methods and youtuber-room mode-selection panel are removed. Anime
-keeps facing-gated distance lighting and its rim. The room keeps Rei(mu), her
+keeps facing-gated distance lighting and its rim. The room keeps mitten, her
 pose/secondary motion/ambient eyes, LEDs/Bloom, furniture and avatar-free XR.
 The resized straw remains unscaled; its obsolete 28 m recenter offset is replaced
 with 0.429 m based on the current asset. The user is checking perceived size in VR.

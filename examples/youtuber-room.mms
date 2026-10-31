@@ -1,7 +1,7 @@
 // Built-in material definitions and named custom-material inputs.
 // cargo run --release -- load examples/youtuber-room.mms
-// Desktop: WASD + mouse. XR-only: tracked Rei(mu); both views: avatar-free XR.
-// Facing-gated Anime lighting with rim light on the scene and Rei(mu).
+// Desktop: WASD + mouse. XR-only: tracked mitten; both views: avatar-free XR.
+// Facing-gated Anime lighting with rim light on the scene and mitten.
 // Four CombineMesh outputs share one retained material. LED cubes are baked
 // once; only time_seconds changes per frame for their hue and brightness wave.
 
@@ -25,10 +25,10 @@ let pool_room_origin_z = pool_hallway_start_z + pool_hallway_length + 0.16
 
 import { indoor_pool } from "../assets/components/rooms/indoor-pool.mms"
 import { f32 } from "types"
-import { pose as floor_seated_pose } from "../assets/components/poses/rei-mu/floor-seated.pose.mms"
+import { pose as floor_seated_pose } from "../assets/components/poses/mitten/floor-seated.pose.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { rei_mu_bow_secondary_motion } from "../assets/components/secondary_motion/rei-mu-bow.mms"
+import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
@@ -366,25 +366,25 @@ if !xr_player_avatar_enabled {
     // A separate NPC, with no avatar-control, XR camera or tracked-hand ownership.
     // Her back leans toward the left wall; low, open legs and bent elbows keep the
     // wrists above the lap. The authored pose is applied once after GLTF import.
-    let room_reimu = GLTF.new("assets/models/rei(mu).glb") {
-        name = "room_reimu"
+    let room_mitten = GLTF.new("assets/models/mitten.glb") {
+        name = "room_mitten"
         room_shading
         floor_seated_pose()
         bisket_colliders()
         bisket_shirt_physics(false)
-        rei_mu_bow_secondary_motion()
+        mitten_bow_secondary_motion()
     }
     T.position(-2.22, 0.0, 0.0).rotation_euler(0.0, 1.15, 0.0) {
-        name = "room_reimu_anchor"
-        room_reimu
+        name = "room_mitten_anchor"
+        room_mitten
     }
-    on(room_reimu, "GLTFInitialized", fn(event) {
+    on(room_mitten, "GLTFInitialized", fn(event) {
         let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
         let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
         if left_eye && right_eye {
-            room_reimu.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
+            room_mitten.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
         } else {
-            print("Room Rei(mu): eye joints were not found for idle gaze")
+            print("Room mitten: eye joints were not found for idle gaze")
         }
     })
 }
@@ -463,23 +463,23 @@ if desktop_view_enabled {
 }
 if xr_view_enabled {
     if xr_player_avatar_enabled {
-        // Same tracked character setup as rei(mu).mms, with this scene's shared
+        // Same tracked character setup as mitten.mms, with this scene's shared
         // Anime material. Gravity starts only after the tracked capsule is ready.
-        let microphone = AudioInput { name = "room_reimu_microphone" }
+        let microphone = AudioInput { name = "room_mitten_microphone" }
         let voice_level = Amplitude.rolling_window(0.080).highpass(120.0).highpass_resonance(0.707).from(microphone) {
-            name = "room_reimu_voice_level"
+            name = "room_mitten_voice_level"
         }
         let player_motion = Velocity {
-            name = "room_reimu_velocity"
+            name = "room_mitten_velocity"
             T.position(0.0, 0.0, 1.0) {
-                name = "room_reimu_locomotion_root"
+                name = "room_mitten_locomotion_root"
                 InputXR.on() {
                     InputXRGamepad { locomotion() speed(1.4) }
                     T {
-                        name = "room_reimu_xr_driver"
-                        let xr_reimu = GLTF.new("assets/models/rei(mu).glb") {
+                        name = "room_mitten_xr_driver"
+                        let xr_mitten = GLTF.new("assets/models/mitten.glb") {
                             HandTracking.new().source("openxr")
-                            name = "xr_reimu"
+                            name = "xr_mitten"
                             room_shading
                             bisket_humanoid_bone_map()
                             MorphTargetMap.new()
@@ -488,10 +488,10 @@ if xr_view_enabled {
                                 .slot("viseme_aa", "Fcl_MTH_A")
                             bisket_colliders()
                             bisket_shirt_physics(false)
-                            rei_mu_bow_secondary_motion()
+                            mitten_bow_secondary_motion()
                         }
-                        let xr_avatar_control = AVC.movement_target("[name='room_reimu_locomotion_root']") {
-                            name = "room_reimu_avatar_control"
+                        let xr_avatar_control = AVC.movement_target("[name='room_mitten_locomotion_root']") {
+                            name = "room_mitten_avatar_control"
                             crouch_enabled(true)
                             crouch_sole_offsets([0.0, 0.0530325, 0.0874534], [0.0, 0.0530325, 0.0874534])
                             mouth_open_from_amplitude(voice_level)
@@ -502,13 +502,13 @@ if xr_view_enabled {
                             initial_yaw(3.14159)
                             arm_ik(vroid_arm_ik_bend_plane_prototype())
                             hand_rotation_smoothing(220.0)
-                            T { xr_reimu }
+                            T { xr_mitten }
                             T.position(0.0, 0.08, 0.12) {
-                                name = "room_reimu_xr_camera"
+                                name = "room_mitten_xr_camera"
                                 CXR { Pointer {} }
                             }
                             // Live tracking supplies eyelid closure; idle animation
-                            // owns pupil direction, as in the main Rei(mu) example.
+                            // owns pupil direction, as in the main mitten example.
                             XREyeTracking.on().priority(["htc", "vrchat_osc"]).enable_pupil_direction_tracking(false)
                             XRHand.new(true, "Left", "GripAim").laser() {
                                 T {
@@ -522,28 +522,28 @@ if xr_view_enabled {
                             }
                         }
                         xr_avatar_control
-                        on(xr_reimu, "GLTFInitialized", fn(event) {
+                        on(xr_mitten, "GLTFInitialized", fn(event) {
                             let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
                             let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
                             if left_eye && right_eye {
                                 xr_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
                             } else {
-                                print("XR Rei(mu): eye joints were not found for idle gaze")
+                                print("XR mitten: eye joints were not found for idle gaze")
                             }
                         })
                     }
                 }
             }
         }
-        Gravity.enabled(false) { name = "room_reimu_gravity" player_motion }
-        let gravity_avatar = query("[name='room_reimu_avatar_control']")
+        Gravity.enabled(false) { name = "room_mitten_gravity" player_motion }
+        let gravity_avatar = query("[name='room_mitten_avatar_control']")
         on(gravity_avatar, "DataEvent", fn(event) {
             if event == "CapsuleReady" {
-                query("[name='room_reimu_gravity']").set_enabled(true)
+                query("[name='room_mitten_gravity']").set_enabled(true)
             }
         })
         if gravity_avatar.capsule_ready() {
-            query("[name='room_reimu_gravity']").set_enabled(true)
+            query("[name='room_mitten_gravity']").set_enabled(true)
         }
     } else {
         T {

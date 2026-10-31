@@ -279,7 +279,7 @@ Existing smoke-test anchors, to extend as each slice lands:
 cargo test --release --lib headless_tests -- --ignored --test-threads=1
 cargo test --release --lib borrowed_stereo_outputs_render_resolve_composite_and_reuse -- --ignored --test-threads=1
 cargo test --release --lib youtuber_room_renders_custom_wave_in_stereo -- --ignored --test-threads=1
-cargo test --release --lib youtuber_room_shared_anime_shading_and_seated_reimu -- --ignored --test-threads=1
+cargo test --release --lib youtuber_room_shared_anime_shading_and_seated_mitten -- --ignored --test-threads=1
 cargo test --release --lib sakura_rooftop_scene_renders_typed_sky_and_background_sun -- --ignored --test-threads=1
 ```
 

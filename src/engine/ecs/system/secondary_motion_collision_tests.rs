@@ -230,7 +230,7 @@ fn foreign_hand_contacts_are_live_scoped_scaled_and_removable() {
 }
 
 #[test]
-fn bisket_reimu_and_lumae_bind_both_enlarged_hand_colliders() {
+fn bisket_mitten_and_lumae_bind_both_enlarged_hand_colliders() {
     use crate::engine::Universe;
     let mut scene = Universe::new(World::default());
     scene.load_mms_source_at_path(r#"
@@ -239,7 +239,7 @@ fn bisket_reimu_and_lumae_bind_both_enlarged_hand_colliders() {
         import { bisket_secondary_motion } from "../assets/components/secondary_motion/bisket.mms"
         import { lumae_secondary_motion } from "../assets/components/characters/lumae/secondary_motion.mms"
         T.position(-2, 2, 0) { GLTF("assets/models/bisket.glb") { bisket_colliders() bisket_secondary_motion(false) } }
-        T.position(0, 2, 0) { GLTF("assets/models/rei(mu).glb") { bisket_colliders() bisket_secondary_motion(false) } }
+        T.position(0, 2, 0) { GLTF("assets/models/mitten.glb") { bisket_colliders() bisket_secondary_motion(false) } }
         T.position(2, 2, 0) { GLTF("assets/components/characters/lumae/lumae.glb") { lumae_colliders() lumae_secondary_motion() } }
     "#, "examples/_spring-collision-test.mms").unwrap();
     for _ in 0..4 {

@@ -6,7 +6,7 @@ import { star_kawaii_background } from "../assets/components/backgrounds/star_ka
 import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
 import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
 
-// mittens-corp — XR car/controller regression scene and Rei(mu) pose-authoring tool.
+// mittens-corp — XR car/controller regression scene and mitten pose-authoring tool.
 //
 // Run with:
 //   cargo run --release -- load examples/mittens-corp.mms
@@ -19,7 +19,7 @@ import { bisket_anime_shading } from "../assets/components/materials/bisket_anim
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
-import { rei_mu_bow_secondary_motion } from "../assets/components/secondary_motion/rei-mu-bow.mms"
+import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { suspended_platform } from "../assets/components/platforms/suspended_platform.mms"
 import { display_car_xr } from "../assets/components/vehicles/display_car.mms"
@@ -109,30 +109,30 @@ tripod_light(
     SL.color(1.0, 0.78, 0.68).intensity(8.0).distance(20.0).angle(0.62).penumbra(0.38),
 )
 
-// Rei(mu) is the player rig. InputXR continues to own tracked head translation
+// mitten is the player rig. InputXR continues to own tracked head translation
 // and rotation; only the gamepad's built-in locomotion mapping is handed off
 // when a vehicle layer takes movement authority.
 ED.active() {
     let vehicle_controls = InputXRGamepad {
-        name = "rei_mu_pedestrian_locomotion"
+        name = "mitten_pedestrian_locomotion"
         locomotion()
         speed(1.5)
     }
 
     let player_motion = Velocity {
-        name = "rei_mu_locomotion_root_velocity"
+        name = "mitten_locomotion_root_velocity"
         T.position(-5.0, 1.0, 0.0) {
-            name = "rei_mu_locomotion_root"
+            name = "mitten_locomotion_root"
             Rider
-                .anchor("[name='rei_mu_rider_cxr_anchor']")
-                .movement_root("[name='rei_mu_locomotion_root']")
-                .input("[name='rei_mu_pedestrian_locomotion']") {}
+                .anchor("[name='mitten_rider_cxr_anchor']")
+                .movement_root("[name='mitten_locomotion_root']")
+                .input("[name='mitten_pedestrian_locomotion']") {}
             InputXR.on() {
                 vehicle_controls
 
                 T {
-                    name = "rei_mu_xr_driver"
-                    let rei_mu_avatar = GLTF.new("assets/models/rei(mu).glb") {
+                    name = "mitten_xr_driver"
+                    let mitten_avatar = GLTF.new("assets/models/mitten.glb") {
                         bisket_anime_shading()
                         bisket_humanoid_bone_map()
                         HandTracking.new()
@@ -141,15 +141,15 @@ ED.active() {
                             .slot("right_eye_blink", "Fcl_EYE_Close_R")
                             .slot("viseme_aa", "Fcl_MTH_A")
                         EM.on()
-                        PoseCapture { label("Rei(mu)") asset_name("rei_mu") }
+                        PoseCapture { label("mitten") asset_name("mitten") }
                         bisket_colliders()
                         bisket_shirt_physics(false)
                         // Includes ReturnToRestWhenStill on both bow ribbons.
-                        rei_mu_bow_secondary_motion()
+                        mitten_bow_secondary_motion()
                     }
-                    let rei_mu_avatar_control = AVC.movement_target("[name='rei_mu_locomotion_root']") {
-                        name = "rei_mu_avatar_control"
-                        // Foot-local sole landmarks for the shared Rei(mu)/Bisket shoes.
+                    let mitten_avatar_control = AVC.movement_target("[name='mitten_locomotion_root']") {
+                        name = "mitten_avatar_control"
+                        // Foot-local sole landmarks for the shared mitten/Bisket shoes.
                         crouch_sole_offsets([0.0, 0.0530325, 0.0874534], [0.0, 0.0530325, 0.0874534])
                         mouth_open_from_amplitude(voice_level)
                         mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
@@ -162,13 +162,13 @@ ED.active() {
                         hand_rotation_smoothing(220.0)
 
                         T {
-                            rei_mu_avatar
+                            mitten_avatar
                         }
 
                         // Rider-side anchor. AVC reparents this wrapper beneath the
                         // head; mounting aligns it with the car's cockpit target.
                         T.position(0.0, 0.08, 0.12) {
-                            name = "rei_mu_rider_cxr_anchor"
+                            name = "mitten_rider_cxr_anchor"
                             CXR { Pointer {} }
                         }
                         // HTC or VRChat OSC supplies closure samples for blink morphs,
@@ -190,19 +190,19 @@ ED.active() {
                             }
                         }
                     }
-                    rei_mu_avatar_control
+                    mitten_avatar_control
 
                     // The shared VRoid humanoid map above declares these two
                     // skin-joint targets. Query only this GLTF instance after it
                     // finishes importing, so another avatar cannot be animated.
-                    on(rei_mu_avatar, "GLTFInitialized", fn(event) {
+                    on(mitten_avatar, "GLTFInitialized", fn(event) {
 
                         let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
                         let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
                         if left_eye && right_eye {
-                            rei_mu_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
+                            mitten_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
                         } else {
-                            print("GLTFInitialized: Rei(mu) mapped eye bones were not found; ambient eye animation was not attached")
+                            print("GLTFInitialized: mitten mapped eye bones were not found; ambient eye animation was not attached")
                         }
                     })
                 }
@@ -237,7 +237,7 @@ T.position(1.25, 2.8, -1.5) {
 }
 
 // Falling starts only after AVC's generated slide capsule is usable.
-let gravity_avatar = query("[name='rei_mu_avatar_control']")
+let gravity_avatar = query("[name='mitten_avatar_control']")
 on(gravity_avatar, "DataEvent", fn(event) {
     if event == "CapsuleReady" {
         query("[name='player_gravity']").set_enabled(true)

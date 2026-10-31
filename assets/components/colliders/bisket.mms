@@ -3,7 +3,7 @@
 // ignored by SecondaryMotionSystem.
 export fn bisket_colliders() {
     return SpringColliders {
-        // Shared by Rei(mu) and Bisket: smaller head clearance, larger hand contact.
+        // Shared by mitten and Bisket: smaller head clearance, larger hand contact.
         SpringCollider.sphere("[name='J_Bip_C_Head']", 0.103125) { name = "bisket_collider_head" }
         SpringCollider.sphere("[name='J_Bip_C_Neck']", 0.055) { name = "bisket_collider_neck" }
         SpringCollider.sphere("[name='J_Bip_C_UpperChest']", 0.065) { name = "bisket_collider_upper_chest" }

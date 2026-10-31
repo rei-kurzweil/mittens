@@ -88,7 +88,7 @@ view switches. Imported pool components can still use legacy Shading.
 - GLTF shared bindings, preserved imported texture/color values, local overrides,
   detach/restoration and legacy compatibility on a skinned model.
 - Four Vulkan checks, including mixed vector uniform buffers, bounded snapshots,
-  stereo room/Reimu rendering and existing planar water/capture lifetime checks.
+  stereo room/mitten rendering and existing planar water/capture lifetime checks.
 
 Remaining work includes reference-preserving serialization, migration/removal of
 legacy Shading authoring, matrices/nested records and custom deformation shaders.

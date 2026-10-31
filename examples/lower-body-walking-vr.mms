@@ -3,7 +3,7 @@ import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_map
 import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
 
 // Flat-ground lower-body IK smoke scene. Load directly for Bisket; the optional
-// Rust example launcher also accepts --model bisket|rei.
+// Rust example launcher also accepts --model bisket|mitten.
 RendererSettings.msaa_off() { window_size(800, 600) }
 XR.on()
 BGC.rgba(0.22, 0.27, 0.33, 1.0)

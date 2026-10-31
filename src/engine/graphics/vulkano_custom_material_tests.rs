@@ -628,7 +628,8 @@ fn custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates(
 
 #[test]
 #[ignore = "requires Vulkan; renders shared static/skinned Anime shading and the seated NPC in stereo"]
-fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn std::error::Error>> {
+fn youtuber_room_shared_anime_shading_and_seated_mitten() -> Result<(), Box<dyn std::error::Error>>
+{
     use crate::engine::ecs::component::material::MaterialComponent;
     let context = RendererContext::new(None, None, None)?;
     let extent = [960, 640];
@@ -673,14 +674,14 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
                 .map_err(Clone::clone)?;
         }
     }
-    let reimu = room
+    let mitten = room
         .world
         .all_components()
-        .find(|&id| room.world.component_label(id) == Some("room_reimu"))
+        .find(|&id| room.world.component_label(id) == Some("room_mitten"))
         .unwrap();
     let gltf = room
         .world
-        .get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(reimu)
+        .get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(mitten)
         .unwrap();
     assert!(gltf.spawned);
     let joints = gltf.armature_joint_transforms.clone();
@@ -708,7 +709,7 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
             .secondary_motion
             .bound_snapshot(&room.world)
             .iter()
-            .filter(|chain| chain.gltf == reimu)
+            .filter(|chain| chain.gltf == mitten)
             .count()
             >= 10,
         "hair, clothing, tail and bow chains must bind on the NPC"
@@ -766,7 +767,7 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
         );
     }
     assert!(
-        room.world.children_of(reimu).iter().any(|&id| room
+        room.world.children_of(mitten).iter().any(|&id| room
             .world
             .get_component_by_id_as::<crate::engine::ecs::component::AnimationComponent>(id)
             .is_some()),
@@ -777,7 +778,7 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
             .world
             .get_component_by_id_as::<crate::engine::ecs::component::AvatarControlComponent>(id)
             .is_some()),
-        "Reimu must not own the player or XR tracking"
+        "mitten must not own the player or XR tracking"
     );
     let probe = room
         .world
@@ -816,7 +817,7 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
     let mut retained = None;
     for preview in [
         "room",
-        "reimu",
+        "mitten",
         "monitor",
         "pool",
         "ladder",
@@ -927,7 +928,7 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
                         == crate::engine::graphics::MaterialHandle::SKINNED_ANIME_MESH)
                 .count()
                 >= 5,
-            "one retained material must shade both room and Reimu's skinned meshes"
+            "one retained material must shade both room and mitten's skinned meshes"
         );
         assert_eq!(
             *retained.get_or_insert(binding),
@@ -1113,7 +1114,7 @@ fn youtuber_room_shared_anime_shading_and_seated_reimu() -> Result<(), Box<dyn s
                 "slide_inside" => "/tmp/youtuber-plastic-slide-inside.png",
                 "ladder" => "/tmp/youtuber-pool-ladder.png",
                 "monitor" => "/tmp/youtuber-monitor-terminal.png",
-                "reimu" => "/tmp/youtuber-reimu-seated.png",
+                "mitten" => "/tmp/youtuber-mitten-seated.png",
                 _ => "/tmp/youtuber-room-anime.png",
             },
             &rgba,
@@ -1744,7 +1745,8 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
         "let desktop_view_enabled = true",
     )
     .replace("let xr_view_enabled = true", "let xr_view_enabled = false");
-    let source = source + r#"
+    let source = source
+        + r#"
         on_global("DataEvent", fn(event) {
             if event == "PreviewCanHit" {
                 let target = query("[name='sakura_range_can_2_body']")
@@ -1760,7 +1762,9 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
     // animation clock until the hit preview explicitly advances it.
     struct TargetClock(std::sync::atomic::AtomicU64);
     impl crate::engine::ecs::system::ClockDriver for TargetClock {
-        fn name(&self) -> &'static str { "target-preview" }
+        fn name(&self) -> &'static str {
+            "target-preview"
+        }
         fn time_now_sec(&self) -> f64 {
             self.0.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1000.0
         }
@@ -1769,15 +1773,40 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
     let mut scene = crate::engine::Universe::new(crate::engine::ecs::World::default());
     scene.systems.clock.set_driver(target_clock.clone());
     scene.load_mms_source_at_path(&source, "examples/sakura-drone-conversion.mms")?;
-    assert!(!scene.world.all_components().any(|id| scene.world.get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(id).is_some_and(|g|g.uri == "assets/components/characters/lumae/lumae.glb")));
-    let spawn_button = scene.world.all_components().find(|&id|scene.world.component_label(id) == Some("sakura_add_lumae_button")).unwrap();
+    assert!(!scene.world.all_components().any(|id| {
+        scene
+            .world
+            .get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(id)
+            .is_some_and(|g| g.uri == "assets/components/characters/lumae/lumae.glb")
+    }));
+    let spawn_button = scene
+        .world
+        .all_components()
+        .find(|&id| scene.world.component_label(id) == Some("sakura_add_lumae_button"))
+        .unwrap();
     for _ in 0..3 {
-        scene.systems.rx.push_event(spawn_button, crate::engine::ecs::EventSignal::Click {
-            raycaster: crate::engine::ecs::ComponentId::default(), renderable: spawn_button, hit_point: [0.;3], screen_pos_px: None,
-        });
+        scene.systems.rx.push_event(
+            spawn_button,
+            crate::engine::ecs::EventSignal::Click {
+                raycaster: crate::engine::ecs::ComponentId::default(),
+                renderable: spawn_button,
+                hit_point: [0.; 3],
+                screen_pos_px: None,
+            },
+        );
         scene.update(0., &Default::default());
     }
-    assert_eq!(scene.world.all_components().filter(|&id|scene.world.get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(id).is_some_and(|g|g.uri == "assets/components/characters/lumae/lumae.glb")).count(),3);
+    assert_eq!(
+        scene
+            .world
+            .all_components()
+            .filter(|&id| scene
+                .world
+                .get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(id)
+                .is_some_and(|g| g.uri == "assets/components/characters/lumae/lumae.glb"))
+            .count(),
+        3
+    );
     for _ in 0..3 {
         scene.update(0., &crate::engine::user_input::InputState::default());
     }
@@ -1894,23 +1923,77 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
             .all(|instance| instance.texture.is_some()),
         "ceramics retain their packed tile image"
     );
-    let metal_instances: Vec<_> = scene.visuals.instances().iter().filter(|instance| {
-        instance.material_instance.and_then(|id|scene.visuals.materials.instance(id))
-            .and_then(|instance|scene.visuals.materials.definition(instance.definition))
-            .and_then(|definition|definition.custom.as_ref())
-            .is_some_and(|shader|shader.fragment_uri=="assets/shaders/pool-metal-matcap.frag")
-    }).collect();
-    assert_eq!(metal_instances.len(),18,"six cans each have a colored body and two metal lids");
-    assert!(metal_instances.iter().all(|instance|instance.texture.is_some()));
-    let can = scene.world.all_components().find(|&id|scene.world.component_label(id)==Some("sakura_bench_can_1_body")).unwrap();
-    assert!(scene.systems.bvh.raycast_renderables_candidates([-19.2,26.713,-3.5],[0.,0.,-1.],1.,0).iter().any(|(id,_)|*id==can),"can body must be a real ray target");
-    let button_bounds = scene.world.find_all_components(spawn_button, "Renderable").into_iter()
-        .find_map(|id|scene.systems.bvh.debug_renderable_bounds(id).map(|bounds|(id,bounds)))
+    let metal_instances: Vec<_> = scene
+        .visuals
+        .instances()
+        .iter()
+        .filter(|instance| {
+            instance
+                .material_instance
+                .and_then(|id| scene.visuals.materials.instance(id))
+                .and_then(|instance| scene.visuals.materials.definition(instance.definition))
+                .and_then(|definition| definition.custom.as_ref())
+                .is_some_and(|shader| {
+                    shader.fragment_uri == "assets/shaders/pool-metal-matcap.frag"
+                })
+        })
+        .collect();
+    assert_eq!(
+        metal_instances.len(),
+        18,
+        "six cans each have a colored body and two metal lids"
+    );
+    assert!(
+        metal_instances
+            .iter()
+            .all(|instance| instance.texture.is_some())
+    );
+    let can = scene
+        .world
+        .all_components()
+        .find(|&id| scene.world.component_label(id) == Some("sakura_bench_can_1_body"))
+        .unwrap();
+    assert!(
+        scene
+            .systems
+            .bvh
+            .raycast_renderables_candidates([-19.2, 26.713, -3.5], [0., 0., -1.], 1., 0)
+            .iter()
+            .any(|(id, _)| *id == can),
+        "can body must be a real ray target"
+    );
+    let button_bounds = scene
+        .world
+        .find_all_components(spawn_button, "Renderable")
+        .into_iter()
+        .find_map(|id| {
+            scene
+                .systems
+                .bvh
+                .debug_renderable_bounds(id)
+                .map(|bounds| (id, bounds))
+        })
         .expect("pedestal button must have a generated raycast surface");
     let (button_surface, bounds) = button_bounds;
-    let center = [(bounds.0[0]+bounds.1[0])*0.5, (bounds.0[1]+bounds.1[1])*0.5, (bounds.0[2]+bounds.1[2])*0.5];
+    let center = [
+        (bounds.0[0] + bounds.1[0]) * 0.5,
+        (bounds.0[1] + bounds.1[1]) * 0.5,
+        (bounds.0[2] + bounds.1[2]) * 0.5,
+    ];
     assert!(center[1] > 26.53, "button must be above the pedestal cap");
-    assert!(scene.systems.bvh.raycast_renderables_candidates([center[0],center[1]+0.3,center[2]], [0.,-1.,0.],0.31,0).iter().any(|(id,_)|*id==button_surface));
+    assert!(
+        scene
+            .systems
+            .bvh
+            .raycast_renderables_candidates(
+                [center[0], center[1] + 0.3, center[2]],
+                [0., -1., 0.],
+                0.31,
+                0
+            )
+            .iter()
+            .any(|(id, _)| *id == button_surface)
+    );
     let blossom_count = scene
         .visuals
         .cutout_order()
@@ -1966,15 +2049,33 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
     );
     let check_building_rays = |scene: &crate::engine::Universe| {
         assert!(scene.systems.bvh.has_index());
-        assert!(scene.systems.bvh.raycast_renderables_candidates(
-            [-10.5,11.4,0.],[-1.,0.,0.],1.,0).is_empty(),
-            "window openings must remain clear after visual combination");
-        let hits=scene.systems.bvh.raycast_renderables_candidates(
-            [-10.5,10.05,0.],[-1.,0.,0.],1.,0);
-        assert!(!hits.is_empty(),"the solid ceramic wall beneath the window must be a BVH ray target");
+        assert!(
+            scene
+                .systems
+                .bvh
+                .raycast_renderables_candidates([-10.5, 11.4, 0.], [-1., 0., 0.], 1., 0)
+                .is_empty(),
+            "window openings must remain clear after visual combination"
+        );
+        let hits = scene.systems.bvh.raycast_renderables_candidates(
+            [-10.5, 10.05, 0.],
+            [-1., 0., 0.],
+            1.,
+            0,
+        );
+        assert!(
+            !hits.is_empty(),
+            "the solid ceramic wall beneath the window must be a BVH ray target"
+        );
         for (id, _) in hits {
-            let primitive=scene.world.get_component_by_id_as::<crate::engine::ecs::component::RenderableComponent>(id).unwrap();
-            assert!(primitive.get_handle().is_none(),"ray targets must use retained source boxes while only combined meshes draw");
+            let primitive = scene
+                .world
+                .get_component_by_id_as::<crate::engine::ecs::component::RenderableComponent>(id)
+                .unwrap();
+            assert!(
+                primitive.get_handle().is_none(),
+                "ray targets must use retained source boxes while only combined meshes draw"
+            );
         }
         for id in scene.world.all_components() {
             if matches!(
@@ -1988,7 +2089,7 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
                 .get_component_by_id_as::<crate::engine::ecs::component::CombineMeshComponent>(id)
             {
                 assert!(combine.keep_transforms);
-                let sources=scene.world.find_all_components(id,"Renderable");
+                let sources = scene.world.find_all_components(id, "Renderable");
                 assert!(!sources.is_empty());
                 for source in sources {
                     assert!(scene.systems.bvh.debug_renderable_bounds(source).is_some(),"retained source {source:?} in {:?} must enter BVH (eligible={})", scene.world.component_label(id), crate::engine::ecs::system::bvh_system::BvhSystem::renderable_is_raycastable(&scene.world,source));
@@ -2006,12 +2107,22 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
         .world
         .all_components()
         .filter(|&id| {
-            scene.world.get_component_by_id_as::<crate::engine::ecs::component::CombineMeshComponent>(id).is_some()
-                && scene.world.component_label(id).is_some_and(|label| label.starts_with("sakura_rooftop_building_"))
+            scene
+                .world
+                .get_component_by_id_as::<crate::engine::ecs::component::CombineMeshComponent>(id)
+                .is_some()
+                && scene
+                    .world
+                    .component_label(id)
+                    .is_some_and(|label| label.starts_with("sakura_rooftop_building_"))
         })
         .map(|id| (id, scene.visuals.instance_handle_for_component(id).unwrap()))
         .collect();
-    assert_eq!(player_meshes.len(), 18, "eight storeys and a separate roof retain both tint groups");
+    assert_eq!(
+        player_meshes.len(),
+        18,
+        "eight storeys and a separate roof retain both tint groups"
+    );
     let slider = scene
         .world
         .all_components()
@@ -2169,7 +2280,11 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
         ("graphics", [-23.0, 27.1, 0.7], [-23.0, 27.1, -1.3]),
         ("pistol-table", [-18.4, 27.7, 2.4], [-20.3, 26.55, 0.2]),
         ("lumae-pedestal", [-16.8, 27.6, 1.65], [-17.0, 26.54, 1.2]),
-        ("pistol-modes", [-17.83, 26.96, -3.01], [-18.0, 26.96, -3.01]),
+        (
+            "pistol-modes",
+            [-17.83, 26.96, -3.01],
+            [-18.0, 26.96, -3.01],
+        ),
     ] {
         let layers = match label {
             "city" => 2,
@@ -2186,36 +2301,63 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
         scene.systems.graphics_settings.publish(&mut scene.visuals);
         if label == "pistol-modes" {
             // Preview the right receiver face in the held, upright orientation.
-            scene.world.get_component_by_id_as_mut::<TransformComponent>(pistol_grip).unwrap().transform =
-                TransformComponent::new().with_position(-18.0, 26.9, -3.0).transform;
-            scene.systems.transform_changed(&mut scene.world, &mut scene.visuals, pistol_grip);
+            scene
+                .world
+                .get_component_by_id_as_mut::<TransformComponent>(pistol_grip)
+                .unwrap()
+                .transform = TransformComponent::new()
+                .with_position(-18.0, 26.9, -3.0)
+                .transform;
+            scene
+                .systems
+                .transform_changed(&mut scene.world, &mut scene.visuals, pistol_grip);
         }
         if label == "targets" {
             scene.systems.rx.push_event(
                 crate::engine::ecs::ComponentId::default(),
                 crate::engine::ecs::EventSignal::DataEvent {
-                    name: "PreviewCanHit".into(), payload: None,
+                    name: "PreviewCanHit".into(),
+                    payload: None,
                 },
             );
             for millis in [0, 0, 150] {
-                target_clock.0.store(millis, std::sync::atomic::Ordering::Relaxed);
+                target_clock
+                    .0
+                    .store(millis, std::sync::atomic::Ordering::Relaxed);
                 scene.update(0., &crate::engine::user_input::InputState::default());
             }
-            assert!(scene.world.all_components().any(|id| scene.world.component_label(id) == Some("hit_number_text")));
+            assert!(
+                scene
+                    .world
+                    .all_components()
+                    .any(|id| scene.world.component_label(id) == Some("hit_number_text"))
+            );
             scene.systems.prepare_render(
-                &mut scene.world, &mut scene.visuals, &mut scene.render_assets,
+                &mut scene.world,
+                &mut scene.visuals,
+                &mut scene.render_assets,
                 &mut SceneUploader {
-                    renderer: &mut renderer, next_mesh: &mut next_mesh, next_texture: &mut next_texture,
+                    renderer: &mut renderer,
+                    next_mesh: &mut next_mesh,
+                    next_texture: &mut next_texture,
                 },
                 &mut scene.command_queue,
             );
             for instance in scene.visuals.instances() {
                 let mut node = Some(instance.component);
                 while let Some(id) = node {
-                    if matches!(scene.world.component_label(id), Some("hit_number_text" | "sakura_can_hit_readout")) {
+                    if matches!(
+                        scene.world.component_label(id),
+                        Some("hit_number_text" | "sakura_can_hit_readout")
+                    ) {
                         let column = instance.transform.matrix_world[0];
-                        let width = (column[0]*column[0]+column[1]*column[1]+column[2]*column[2]).sqrt();
-                        assert!(width < 0.1, "hit feedback glyphs must remain small in world space: {width}");
+                        let width =
+                            (column[0] * column[0] + column[1] * column[1] + column[2] * column[2])
+                                .sqrt();
+                        assert!(
+                            width < 0.1,
+                            "hit feedback glyphs must remain small in world space: {width}"
+                        );
                         break;
                     }
                     node = scene.world.parent_of(id);
@@ -2354,17 +2496,29 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
     }
     // Paused stationary avatars must reuse their GPU deformation output as well
     // as retain the CPU spring pose. Warm the cache, then compare a second frame.
-    scene.systems.graphics_settings.set_secondary_motion_paused(true, &mut scene.command_queue);
+    scene
+        .systems
+        .graphics_settings
+        .set_secondary_motion_paused(true, &mut scene.command_queue);
     let mut warmed = None;
     for _ in 0..2 {
         scene.update(1.0 / 60.0, &Default::default());
         for eye in 0..2 {
-            renderer.submit_xr_eye_to_view(&mut scene.visuals, eye, extent, 2, eyes[eye].clone())?;
+            renderer.submit_xr_eye_to_view(
+                &mut scene.visuals,
+                eye,
+                extent,
+                2,
+                eyes[eye].clone(),
+            )?;
         }
         let counters = renderer.perf_counters();
         if let Some(previous) = warmed {
             let delta = counters.saturating_delta(previous);
-            assert_eq!(delta.deformation_jobs, 0, "paused avatars must reuse cached vertices");
+            assert_eq!(
+                delta.deformation_jobs, 0,
+                "paused avatars must reuse cached vertices"
+            );
             assert_eq!(delta.deformation_bone_upload_bytes, 0);
         }
         warmed = Some(counters);

@@ -11,7 +11,7 @@ rig bindings and the shared leg solve. Crouch policy is isolated in `crouch.rs`;
 default-on procedural stepping is documented in
 [procedural lower-body walking IK](procedural-lower-body-walking-ik.md).
 AVC registration prepares mapped legs automatically;
-explicit foot-local sole calibration enables solving. Rei(mu), mittens-corp and
+explicit foot-local sole calibration enables solving. mitten, mittens-corp and
 bisket-vr-demo now supply landmarks for their shared shoes.
 
 XR floor-height calibration belongs to the XR runtime's room setup and the
@@ -64,7 +64,7 @@ AVC
 the cached rest pose if solving was active. Sole offsets default unset and are
 in each foot's local bind frame; unset calibration yields `NeedsSoleCalibration`,
 never an ankle-as-sole guess. The example values are specific to the checked-in
-Rei(mu)/Bisket shoes: original ankle height about 0.131308 m and shoe-bottom height
+mitten/Bisket shoes: original ankle height about 0.131308 m and shoe-bottom height
 about 0.029031 m, converted through each foot's nonidentity bind basis. They are
 not a universal VRoid measurement. No live standing-height/HMD calibration is
 needed to bind these immutable landmarks, including at crouched startup.
@@ -92,14 +92,14 @@ IK debug drawing helpers without requiring generated IKChain objects. Keep the
 visuals runtime-only and release them when disabled or their avatar is removed.
 The MMS readout panel complements these spatial markers.
 
-Use normal `mittens-corp`, `rei(mu)` or `bisket-vr-demo` for remaining headset
+Use normal `mittens-corp`, `mitten` or `bisket-vr-demo` for remaining headset
 checks with a calibrated XR floor: standing → crouch → hold → stand, then physical
 rise, look/roll, walking, button jump/fall and car entry/exit. The initial report
 does not establish acceptance of every scenario. World-locked steps are now
 available in the walking slice. Slopes, stair planting, pelvis/torso
 adjustments and authored crouch blending remain separate work.
 
-First leg-solver fixtures are Rei(mu) and Bisket. AVC should
+First leg-solver fixtures are mitten and Bisket. AVC should
 automatically prepare a bounded lower-body crouch solver for a mapped humanoid
 with valid XR tracking and a usable ground reference. Lowering the physical
 head lowers the body; the solver bends the legs to keep the feet above the
@@ -279,7 +279,7 @@ ordering boundary.
    tracker loss/recovery, removal, and mount/dismount lifecycle work. A real
    frame-order test verifies generated targets and solved bones reach the
    skin palette without a stale frame or pose accumulation.
-5. **Rei(mu)/Bisket smoke:** use `mittens-corp` and a controlled Bisket fixture
+5. **mitten/Bisket smoke:** use `mittens-corp` and a controlled Bisket fixture
    with foot/target markers and a small diagnostic panel. Show raw head Y,
    movement-root Y, support height, base/solved sole heights, penetration,
    knee flexion, validity, and residual error. Test standing → crouch → hold →

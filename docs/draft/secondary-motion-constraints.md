@@ -7,7 +7,7 @@ considered alternative.
 
 ## Visual goal
 
-Rei(mu)'s `head_bow_ribbon` is a skinned mesh influenced by two bow chains rooted at `head_bow.001` and `head_bow.009`. Spring motion gives the ribbon life during head movement. After the head has been still enough for long enough, the ribbon should settle into an intentional silhouette rather than keep sagging or trembling indefinitely. The first slice returns each chain to its imported rest pose. A later slice can select among several authored still poses according to head orientation relative to gravity: pitched down or back, rolled left or right, and perhaps yawed. Pose changes should read as deliberately stylized, rather than as a coarse approximation of continuous physics.
+mitten's `head_bow_ribbon` is a skinned mesh influenced by two bow chains rooted at `head_bow.001` and `head_bow.009`. Spring motion gives the ribbon life during head movement. After the head has been still enough for long enough, the ribbon should settle into an intentional silhouette rather than keep sagging or trembling indefinitely. The first slice returns each chain to its imported rest pose. A later slice can select among several authored still poses according to head orientation relative to gravity: pitched down or back, rolled left or right, and perhaps yawed. Pose changes should read as deliberately stylized, rather than as a coarse approximation of continuous physics.
 
 The stillness test and the resulting pose are separate concerns. A useful test needs at least a motion threshold and a dwell time. It should observe the driving head or chain anchor in a stable parent local basis, so locomotion alone does not count as head motion. Pose selection needs a gravity relative orientation basis, which may be different from the stillness basis. Exactly which motion channels matter (translation, rotation, or both) and which anchor supplies them remain authoring choices to settle.
 
@@ -53,15 +53,15 @@ The constraint is a child of the simulation it controls. Its state and parameter
 
 Use a child constraint under each affected `SpringBone`. Two ribbon halves can each carry the policy; an eventual shared stillness source could avoid duplicate measurements.
 
-### Rei(mu) prefab placement
+### mitten prefab placement
 
-Author this in a Rei(mu)-specific secondary motion component prefab, following the tree shape of
+Author this in a mitten-specific secondary motion component prefab, following the tree shape of
 [`bisket.mms`](../../assets/components/secondary_motion/bisket.mms). The repo currently has a
-bow-only [`rei-mu-bow.mms`](../../assets/components/secondary_motion/rei-mu-bow.mms) with the two
-`SpringBone.from_root(...)` chains, and [`examples/rei(mu).mms`](../../examples/rei(mu).mms)
+bow-only [`mitten-bow.mms`](../../assets/components/secondary_motion/mitten-bow.mms) with the two
+`SpringBone.from_root(...)` chains, and [`examples/mitten.mms`](../../examples/mitten.mms)
 imports it. For the VR test, each ribbon `SpringBone` in that prefab now owns a
-`ReturnToRestWhenStill` child. A future broader Rei(mu) prefab can collect her other spring bones
-in one place, following Bisket's organization while retaining Rei(mu)'s own selectors and tuning.
+`ReturnToRestWhenStill` child. A future broader mitten prefab can collect her other spring bones
+in one place, following Bisket's organization while retaining mitten's own selectors and tuning.
 
 The one-chain snippet above shows placement. The real ribbon has two chains, rooted at
 `head_bow.001` and `head_bow.009`; apply the constraint to both when both ribbon halves need the
@@ -90,7 +90,7 @@ For the first slice, allow one active pose constraint per chain. Reject a second
 
 ## Slices and open decisions
 
-1. **Return to rest (implemented).** The first joint's parent is sampled relative to the nearest Transform above the owning GLTF. Motion is linear speed plus angular speed at a 0.1 m radius, smoothed over about 0.1 s. The authored `motion_threshold` is in m/s equivalent; `still_for` is seconds. After the dwell, the chain blends to imported rest rotations over 0.25 s and parks. Motion above 1.5 times the threshold wakes it, blends out over 0.12 s, and reseeds simulated tails. The Rei(mu) ribbon prefab uses `0.028` and `0.4` for its two chains; VR inspection should guide tuning.
+1. **Return to rest (implemented).** The first joint's parent is sampled relative to the nearest Transform above the owning GLTF. Motion is linear speed plus angular speed at a 0.1 m radius, smoothed over about 0.1 s. The authored `motion_threshold` is in m/s equivalent; `still_for` is seconds. After the dwell, the chain blends to imported rest rotations over 0.25 s and parks. Motion above 1.5 times the threshold wakes it, blends out over 0.12 s, and reseeds simulated tails. The mitten ribbon prefab uses `0.028` and `0.4` for its two chains; VR inspection should guide tuning.
 2. **Gravity relative still poses.** Author several targets for the same chain and select or blend them using the head's orientation relative to gravity. Give angular regions margins or hysteresis so small tracking noise does not rapidly swap silhouettes. Define how each authored pose is stored and retargeted to the imported skeleton.
 
 Before the second slice, decide how authored still poses are stored and combined, how to handle tracking loss and seek, and how multiple constraints on one chain should compose. The first slice accepts one pose constraint per chain and diagnoses duplicates.

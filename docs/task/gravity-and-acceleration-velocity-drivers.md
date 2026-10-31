@@ -447,7 +447,7 @@ intersection/event infrastructure remains for a separate audit and cleanup.
 
 ### Corp stages and fall recovery
 
-Corp variants and the standalone Reimu stage scene now share stage contact
+Corp variants and the standalone mitten stage scene now share stage contact
 prefabs, Gravity/Velocity player motion, grounded Space/ButtonY jump bindings,
 and a reusable teleport pit. Opt-in Zone observation, ordinary pose updates and `Velocity.reset()`
 for respawning are described in

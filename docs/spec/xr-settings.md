@@ -28,7 +28,7 @@ Run the calibration scene:
 cargo run --release -- load examples/xr-settings.mms
 ```
 
-It uses the same stage, boxes, teleport pit, Rei(mu) avatar, mirror, microphone,
+It uses the same stage, boxes, teleport pit, mitten avatar, mirror, microphone,
 and editor panels as `graphics-settings.mms`, replacing the graphics panel with
 XR settings. Use the mirror and nearby floor as visual references while adjusting.
 Its title bar supports the same drag/grab interaction as the graphics example.

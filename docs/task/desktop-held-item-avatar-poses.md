@@ -35,12 +35,12 @@ the appropriate holding targets or pose.
   arm alone must not reactivate the old synthetic-world-origin target behavior.
 - The pistol has a Grabbable grip/hand offset and grab callbacks for weapon use.
   Those item-placement and firing callbacks do not establish an avatar arm pose.
-- The desktop Rei(mu) GLTF does not currently import an authored relaxed pose.
+- The desktop mitten GLTF does not currently import an authored relaxed pose.
   Its actual idle pose and the appropriate compatible A-pose asset need checking.
 
 ## Investigation tracker
 
-- [ ] Verify a suitable Rei(mu)-compatible relaxed A-pose and how the desktop
+- [ ] Verify a suitable mitten-compatible relaxed A-pose and how the desktop
   player should select it by default without changing bind translations/scales.
 - [ ] Trace desktop pointer grabbing, held-item placement and AVC arm-target
   ownership. Identify where desktop holding targets should enter the shared rig.

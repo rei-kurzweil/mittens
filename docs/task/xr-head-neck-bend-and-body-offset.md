@@ -5,7 +5,7 @@
 Native slice 1 implemented, 2026-10-17; headset/manual acceptance pending.
 Slice 2 (retained planar allowance and feasibility-limited follow) remains planned.
 
-First headset feedback: looking down with Rei(mu) still exposed the torso/legs
+First headset feedback: looking down with mitten still exposed the torso/legs
 interior. Follow-up corrects the omitted mapped-eye-anchor displacement in
 head/HMD calibration and includes roll alongside pitch. Joint closure alone is
 insufficient acceptance: also verify eye/view alignment and visible body surfaces.
@@ -59,7 +59,7 @@ Automated checks cover fixed-head pitch/roll geometry, yaw-only exclusion,
 combined tilt and quaternion sign equivalence, repeated-update stability,
 immediate translation, desktop look/locomotion separation, forward conventions,
 uniform scale, imported rest rotations, tracking reacquisition, mode switching,
-fallback, AVC pre-splice binding, arm ordering, and both checked-in Bisket/Rei(mu)
+fallback, AVC pre-splice binding, arm ordering, and both checked-in Bisket/mitten
 rest paths and mapped-eye/view alignment with the examples' authored wrapper.
 CPU-skinned mesh ray checks verify sampled first body hits are front faces and
 survive the XR near plane, including looking straight down. The OpenXR eye
@@ -115,7 +115,7 @@ This is feasible as a small bounded kinematic constraint. It does not require
 motion classification, pose history, or a full-body IK solver for the initial
 rotation-derived placement. The 2026-10-16 follow-up below adds thresholded X/Z
 following with a retained body anchor and a position-driven neck constraint.
-The exact bend share and limits need headset evaluation on Bisket and Rei(mu).
+The exact bend share and limits need headset evaluation on Bisket and mitten.
 
 ## Default AVC behavior and shared follow policy
 
@@ -509,7 +509,7 @@ expression branches with incompatible targets do not enforce a constraint.
 
 1. **Inspect calibration and reproduce.** On
    [Bisket VR](../../examples/bisket-vr-demo.mms) and
-   [Rei(mu)](../../examples/rei(mu).mms), visualize/log HMD origin, calibrated
+   [mitten](../../examples/mitten.mms), visualize/log HMD origin, calibrated
    head pivot, neck base, virtual neck endpoint, body root, relative head pitch,
    chosen neck pitch, and endpoint residual. Verify eye/head offset and forward
    axes before comparing constraint enabled/disabled.
@@ -599,7 +599,7 @@ workaround into a second writer.
 ## Implementation readiness
 
 The native immediate-placement slice is ready for manual desktop/XR validation
-with the source-authority contract above. Check Bisket and Rei(mu) pitch up/down,
+with the source-authority contract above. Check Bisket and mitten pitch up/down,
 look-only desktop root stability, connected neck placement, raw XR view, capsule
 grounding and mounted fallback. Tune geometry/configuration from those results
 before adding bounded positional follow and more general geometric closure.

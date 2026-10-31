@@ -10,7 +10,7 @@ Status: implemented; automated validation recorded below. Headset smoke test pen
 - [x] Inspect other transform operators for the same pattern.
 - [x] Let spring tails contact regular static collidables, including the floor.
 - [x] Let one avatar's spring colliders affect another avatar's spring chains.
-- [x] Verify and enlarge Bisket, Rei(mu), and Lumae hand colliders.
+- [x] Verify and enlarge Bisket, mitten, and Lumae hand colliders.
 - [x] Keep collision configuration serializable and provide per-chain opt-outs.
 
 ## Transform dependencies
@@ -68,7 +68,7 @@ contact frames are not a general rigid-body/continuous mesh collision solution.
 
 ## Avatar hands
 
-Bisket and Rei(mu) already shared bisket_colliders(), with 0.09 m hand spheres. Lumae already had
+Bisket and mitten already shared bisket_colliders(), with 0.09 m hand spheres. Lumae already had
 0.075 m spheres. Both presets now use 0.11 m radii, before world scaling. Actual-model tests verify
 that left/right J_Bip hand targets bind for all three assets. The larger radius is a first headset
 tuning value; other body collider sizes are unchanged.
@@ -80,7 +80,7 @@ tuning value; other body collider sizes are unchanged.
   across repeated ordinary pose writes. Existing parent/inverse/sampling propagation tests pass.
 - Spring tests cover stable floor rest with preserved length, disabled surface release, a thin-floor
   crossing, world/foreign collision opt-outs, live foreign hand motion/scaling, collider edits/removal,
-  unchanged self-collider selection, and real Bisket/Rei(mu)/Lumae hand bindings.
+  unchanged self-collider selection, and real Bisket/mitten/Lumae hand bindings.
 - MMS round-trip checks preserve both collision opt-outs.
 
 All 84 targeted tests passed: 26 secondary-motion (including five new collision/asset checks),

@@ -17,7 +17,7 @@ fn xr_avatar_examples_have_hand_tracking_and_finger_maps() {
         "mittens-corp-agc.mms",
         "mittens-corp-linear-velocity.mms",
         "mittens-corp.mms",
-        "rei(mu).mms",
+        "mitten.mms",
         "sakura-drone-conversion.mms",
         "toon-outline-bisket.mms",
         "vtuber-editor-example.mms",
@@ -66,7 +66,7 @@ fn xr_avatar_examples_have_hand_tracking_and_finger_maps() {
             let model = world
                 .get_component_by_id_as::<GLTFComponent>(id)
                 .is_some_and(|g| {
-                    g.uri == "assets/models/bisket.glb" || g.uri == "assets/models/rei(mu).glb"
+                    g.uri == "assets/models/bisket.glb" || g.uri == "assets/models/mitten.glb"
                 });
             model
                 && world.children_of(id).iter().any(|id| {

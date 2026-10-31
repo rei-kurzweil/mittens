@@ -1,6 +1,6 @@
 //! VR comparison of imported T-pose arms with simulated A-pose arms.
 //! Run: cargo run --release --example ik-rest-pose-vr
-//! Defaults to Rei(mu) with simulated A-pose arms. Use --model bisket or
+//! Defaults to mitten with simulated A-pose arms. Use --model bisket or
 //! --rest-pose t for the original imported rest pose.
 //! Press right-controller B at each prompted hand position. Samples are JSONL.
 
@@ -566,13 +566,13 @@ fn make_a_pose(source: &Path, destination: &Path) -> Result<(), Box<dyn std::err
 fn main() {
     mittens_engine::example_support::ensure_model_assets();
     utils::logger::init();
-    let mut model = "rei".to_string();
+    let mut model = "mitten".to_string();
     let mut pose = "a".to_string();
     let mut validate = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--model" => model = args.next().expect("--model needs bisket or rei"),
+            "--model" => model = args.next().expect("--model needs bisket or mitten"),
             "--rest-pose" => pose = args.next().expect("--rest-pose needs t or a"),
             "--validate" => validate = true,
             _ => panic!("unknown option: {arg}"),
@@ -580,8 +580,8 @@ fn main() {
     }
     let source = match model.as_str() {
         "bisket" => PathBuf::from("assets/models/bisket.glb"),
-        "rei" => PathBuf::from("assets/models/rei(mu).glb"),
-        _ => panic!("--model must be bisket or rei"),
+        "mitten" => PathBuf::from("assets/models/mitten.glb"),
+        _ => panic!("--model must be bisket or mitten"),
     };
     let scene_model = match pose.as_str() {
         "t" => source.clone(),
@@ -608,12 +608,16 @@ fn main() {
     let scene = include_str!("ik-rest-pose-vr.mms")
         .replace("MODEL_PATH", &scene_model.to_string_lossy())
         .replace(
-            "MODEL_IS_REI",
-            if model == "rei" { "true" } else { "false" },
+            "MODEL_IS_MITTEN",
+            if model == "mitten" { "true" } else { "false" },
         )
         .replace(
             "MODEL_LABEL",
-            if model == "rei" { "Rei(mu)" } else { "Bisket" },
+            if model == "mitten" {
+                "mitten"
+            } else {
+                "Bisket"
+            },
         )
         .replace(
             "REST_POSE_LABEL",
@@ -692,11 +696,11 @@ fn main() {
                     .is_some()
             })
             .count();
-        let is_rei = STATE.get().unwrap().lock().unwrap().model == "rei";
+        let is_mitten = STATE.get().unwrap().lock().unwrap().model == "mitten";
         assert_eq!(
             bow_rest_constraints,
-            if is_rei { 2 } else { 0 },
-            "Rei(mu) must have two bow ribbon return-to-rest constraints"
+            if is_mitten { 2 } else { 0 },
+            "mitten must have two bow ribbon return-to-rest constraints"
         );
         assert!(
             universe.world.all_components().any(|id| universe
@@ -782,11 +786,11 @@ fn main() {
             &mut universe.render_assets,
             &mut universe.command_queue,
         );
-        if is_rei {
+        if is_mitten {
             for root in ["head_bow.001", "head_bow.009"] {
                 assert!(
                     named(&universe.world, root).is_some(),
-                    "Rei(mu) bow ribbon root {root} did not import"
+                    "mitten bow ribbon root {root} did not import"
                 );
             }
         }

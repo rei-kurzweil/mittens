@@ -534,8 +534,8 @@ fn default_negative_z_source_and_pi_body_yaw_bend_in_the_correct_direction() {
 }
 
 #[test]
-fn checked_in_bisket_and_reimu_rest_paths_bind_and_close() {
-    for asset in ["assets/models/bisket.glb", "assets/models/rei(mu).glb"] {
+fn checked_in_bisket_and_mitten_rest_paths_bind_and_close() {
+    for asset in ["assets/models/bisket.glb", "assets/models/mitten.glb"] {
         let document = gltf::Gltf::open(asset).unwrap();
         let mut f = Fixture::new(false);
         let mut nodes = Vec::new();

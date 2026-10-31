@@ -109,7 +109,7 @@ Ownership filtering operates at renderable granularity. A runtime beam is a
 separate renderable, but an imported hand can be part of the same skinned
 primitive as the torso. A hand bone does not imply a separate hand renderable;
 excluding that primitive would exclude its other body regions too. First
-inventory the Rei(mu) primitives. Any finer hand-only exclusion needs geometry
+inventory the mitten primitives. Any finer hand-only exclusion needs geometry
 or intersection metadata beyond this initial owner-preference slice.
 
 ## Diagnosis and acceptance

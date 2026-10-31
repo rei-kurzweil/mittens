@@ -41,7 +41,7 @@ is historical context, not a confirmed diagnosis of the new elbow symptom.
   a three-joint upper-arm/lower-arm/hand chain from the humanoid map. This path
   does not distribute roll across additional deformation joints. The IK
   `weight` blends the whole solve; it is not a forearm twist falloff control.
-- Read-only inspection of `assets/models/bisket.glb` and `assets/models/rei(mu).glb`
+- Read-only inspection of `assets/models/bisket.glb` and `assets/models/mitten.glb`
   found direct `J_Bip_*_UpperArm -> J_Bip_*_LowerArm -> J_Bip_*_Hand` chains
   on both sides, no nodes named twist/roll, and `JOINTS_0`/`WEIGHTS_0` skin data.
   This establishes those assets' topology, not which model produced the report
@@ -106,7 +106,7 @@ Reuse the existing diagnostics when implementation starts:
 
 - [ik-rest-pose-vr.mms](../../examples/ik-rest-pose-vr.mms) and its
   [launcher](../../examples/ik-rest-pose-vr.rs) already provide a rendered mirror,
-  Bisket/Rei(mu) model selection, arm debug geometry, and four-pose capture.
+  Bisket/mitten model selection, arm debug geometry, and four-pose capture.
 - [bisket-vr-debug.rs](../../examples/bisket-vr-debug.rs) already scripts neutral
   and mirrored palm-up/down arm probes, with target/bone samples and comparisons
   of authored hand offsets and end-rotation copying. Its numeric output alone

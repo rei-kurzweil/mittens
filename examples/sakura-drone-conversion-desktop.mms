@@ -1,6 +1,6 @@
 // Rooftop ceramic city / Sakura drone conversion workbench.
 // cargo run --release -- load examples/sakura-drone-conversion-desktop.mms
-// Desktop first person: WASD + mouse, C3D attached to Rei(mu)'s mapped head.
+// Desktop first person: WASD + mouse, C3D attached to mitten's mapped head.
 // Shares the rooftop, mirror, NPC pedestal and guns with the XR example.
 let desktop_view_enabled = true
 let xr_view_enabled = false
@@ -41,7 +41,7 @@ import { teleport_pit } from "../assets/components/teleport_pit.mms"
 import { display_car } from "../assets/components/vehicles/display_car.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { rei_mu_bow_secondary_motion } from "../assets/components/secondary_motion/rei-mu-bow.mms"
+import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 import { lumae_avatar } from "../assets/components/characters/lumae/avatar.mms"
 import { pacing_and_waiting_around } from "../assets/components/characters/lumae/behavior/pacing_and_waiting_around.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
@@ -324,7 +324,7 @@ T.position(-17.0, roof_height, 1.2) {
 }
 for index in range(initial_lumae_count) { spawn_lumae() }
 
-// The upgraded Rei(mu) tree: one rooftop specimen and two street planters.
+// The upgraded mitten tree: one rooftop specimen and two street planters.
 fn sakura_planter(label, position) {
     return T.position(position[0], position[1], position[2]) {
         name = label
@@ -361,13 +361,13 @@ if desktop_view_enabled {
                 InputTransformMode.forward_z() { fps_rotation() roll_axis_y() }
                 T.position(0.0, 1.65, 0.0) {
                     name = "sakura_desktop_driver"
-                    let model = GLTF.new("assets/models/rei(mu).glb") {
-                        name = "sakura_desktop_reimu"
+                    let model = GLTF.new("assets/models/mitten.glb") {
+                        name = "sakura_desktop_mitten"
                         pistol_material
                         bisket_humanoid_bone_map()
                         bisket_colliders()
                         bisket_shirt_physics(false)
-                        rei_mu_bow_secondary_motion()
+                        mitten_bow_secondary_motion()
                     }
                     let avatar = AVC.movement_target("[name='sakura_desktop_locomotion_root']") {
                         name = "sakura_desktop_avatar_control"
@@ -437,7 +437,7 @@ fn rooftop_pistol(label, effect_label, x) {
     })
     on_global("XrButtonDown", fn(event) {
         if held.active && event.hand == held.hand {
-            if event.control == "LeftTrigger" || event.control == "RightTrigger" { tool.use_start({ user = query("[name='sakura_reimu_avatar_control']") }) }
+            if event.control == "LeftTrigger" || event.control == "RightTrigger" { tool.use_start({ user = query("[name='sakura_mitten_avatar_control']") }) }
         }
     })
     on_global("XrButtonUp", fn(event) {

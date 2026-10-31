@@ -17,12 +17,12 @@ Resampling uses premultiplied channels, then restores straight alpha. Edge RGB i
 bled into nearby transparent texels to avoid dark bilinear-filter fringes.
 The local NotoColorEmoji.ttf remains external; no font binary is bundled.
 
-`assets/components/plants/sakura_tree.mms` reuses the original Rei(mu) tree's
+`assets/components/plants/sakura_tree.mms` reuses the original mitten tree's
 branch angles and three-way recursion, with cylindrical branches and crossed
 textured planes at every leaf endpoint. At depth=3 there are 27 endpoints and
 81 double-sided blossom planes. TransparentCutout uses the existing alpha
 coverage path, so transparent corners don't create opaque squares or require
-per-frame sorting/billboarding. Both the Sakura rooftop scene and Rei(mu) garden
+per-frame sorting/billboarding. Both the Sakura rooftop scene and mitten garden
 use the same factory:
 
 ```mms

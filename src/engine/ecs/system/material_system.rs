@@ -501,15 +501,15 @@ mod tests {
                     .all_components()
                     .find(|&id| world.component_label(id) == Some(name))
             };
-            assert_eq!(named("room_reimu").is_some(), !xr_only);
-            assert_eq!(named("room_reimu_anchor").is_some(), !xr_only);
-            assert_eq!(named("xr_reimu").is_some(), xr_only);
+            assert_eq!(named("room_mitten").is_some(), !xr_only);
+            assert_eq!(named("room_mitten_anchor").is_some(), !xr_only);
+            assert_eq!(named("xr_mitten").is_some(), xr_only);
             let avatars: Vec<_> = world
                 .all_components()
                 .filter_map(|id| world.get_component_by_id_as::<AvatarControlComponent>(id))
                 .collect();
             assert_eq!(avatars.len(), usize::from(xr_only));
-            assert_eq!(named("room_reimu_microphone").is_some(), xr_only);
+            assert_eq!(named("room_mitten_microphone").is_some(), xr_only);
             assert_eq!(
                 world
                     .all_components()
@@ -525,14 +525,14 @@ mod tests {
                     .count()
                     > 768
             );
-            assert_eq!(named("room_reimu_gravity").is_some(), xr_only);
+            assert_eq!(named("room_mitten_gravity").is_some(), xr_only);
             if xr_only {
                 let avatar = avatars[0];
                 assert!(avatar.collision_enabled && avatar.movement_target.is_some());
                 assert!(
                     !world
                         .get_component_by_id_as::<GravityComponent>(
-                            named("room_reimu_gravity").unwrap()
+                            named("room_mitten_gravity").unwrap()
                         )
                         .unwrap()
                         .enabled,
@@ -541,7 +541,7 @@ mod tests {
                 assert!(
                     world
                         .get_component_by_id_as::<VelocityComponent>(
-                            named("room_reimu_velocity").unwrap()
+                            named("room_mitten_velocity").unwrap()
                         )
                         .is_some()
                 );
@@ -552,12 +552,12 @@ mod tests {
                 assert!(avatar.crouch_enabled && avatar.crouch_sole_offsets.is_some());
                 let amplitude = world
                     .get_component_by_id_as::<AmplitudeComponent>(
-                        named("room_reimu_voice_level").unwrap(),
+                        named("room_mitten_voice_level").unwrap(),
                     )
                     .unwrap();
                 assert!(amplitude.source.is_some());
                 assert_eq!(amplitude.highpass_hz, Some(120.0));
-                let gltf = named("xr_reimu").unwrap();
+                let gltf = named("xr_mitten").unwrap();
                 let morphs = world
                     .children_of(gltf)
                     .iter()

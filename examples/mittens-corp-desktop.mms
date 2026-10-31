@@ -6,7 +6,7 @@ import { star_kawaii_background } from "../assets/components/backgrounds/star_ka
 import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
 import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
 
-// mittens-corp-desktop — desktop Rei(mu) camera and pose-authoring scene.
+// mittens-corp-desktop — desktop mitten camera and pose-authoring scene.
 //
 // Run with:
 //   cargo run --release -- load examples/mittens-corp-desktop.mms
@@ -14,7 +14,7 @@ import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel
 import { tripod_light } from "../assets/components/tripod_light.mms"
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
-import { rei_mu_bow_secondary_motion } from "../assets/components/secondary_motion/rei-mu-bow.mms"
+import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
@@ -107,12 +107,12 @@ tripod_light(
 )
 
 // Keep the camera outside AVC's direct children. It is attached to this slot
-// after Rei(mu) imports, while the direct child of Input remains its desktop
+// after mitten imports, while the direct child of Input remains its desktop
 // movement driver.
 let desktop_camera_rig = T {
     name = "bisket_desktop_camera_rig"
     C3D {
-        // This camera is mounted at Rei(mu)'s head, so its pointer must skip
+        // This camera is mounted at mitten's head, so its pointer must skip
         // the local face/hair before searching the scene behind it.
         Pointer { Raycast.event_driven().min_distance(0.75) {} }
     }
@@ -121,10 +121,10 @@ let bisket_first_person_camera_slot = T.position(0.0, 0.08, 0.12).rotation(0.0, 
     name = "bisket_first_person_camera_slot"
 }
 
-// Desktop mouse/WASD moves the direct Input child. The camera follows Rei(mu)'s
+// Desktop mouse/WASD moves the direct Input child. The camera follows mitten's
 // mapped head through the GLTFInitialized attachment above.
 ED.active() {
-    // The attachment system suspends desktop translation while Rei(mu) is
+    // The attachment system suspends desktop translation while mitten is
     // mounted, but deliberately leaves mouse/arrow look live. The car wrapper
     // below consumes mounted W/A/S/D and Space input.
 
@@ -145,7 +145,7 @@ ED.active() {
 
                 T.position(-5.0, 1.65, 4.2) {
                     name = "bisket_desktop_driver"
-                    let bisket_avatar = GLTF.new("assets/models/rei(mu).glb") {
+                    let bisket_avatar = GLTF.new("assets/models/mitten.glb") {
                     bisket_anime_shading()
                     bisket_humanoid_bone_map()
                     relaxed_pose_factory()
@@ -154,10 +154,10 @@ ED.active() {
                         .slot("right_eye_blink", "Fcl_EYE_Close_R")
                         .slot("viseme_aa", "Fcl_MTH_A")
                     EM.on()
-                    PoseCapture { label("Rei(mu)") asset_name("rei_mu") }
+                    PoseCapture { label("mitten") asset_name("mitten") }
                     bisket_colliders()
                     bisket_shirt_physics(false)
-                    rei_mu_bow_secondary_motion()
+                    mitten_bow_secondary_motion()
                     }
                     let bisket_avatar_control = AVC.movement_target("[name='bisket_desktop_locomotion_root']") {
                     name = "bisket_avatar_control"
@@ -172,7 +172,7 @@ ED.active() {
                     }
                     bisket_avatar_control
 
-                    // These are the two targets declared by Rei(mu)'s explicit
+                    // These are the two targets declared by mitten's explicit
                     // humanoid map, queried only in this imported avatar instance.
                     on(bisket_avatar, "GLTFInitialized", fn(event) {
 
@@ -181,14 +181,14 @@ ED.active() {
                         head.attach(bisket_first_person_camera_slot)
                         bisket_first_person_camera_slot.attach(desktop_camera_rig)
                     } else {
-                        print("GLTFInitialized: Rei(mu) mapped head bone was not found; desktop camera was not attached")
+                        print("GLTFInitialized: mitten mapped head bone was not found; desktop camera was not attached")
                     }
                     let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
                     let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
                     if left_eye && right_eye {
                         bisket_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
                     } else {
-                        print("GLTFInitialized: Rei(mu) mapped eye bones were not found; ambient eye animation was not attached")
+                        print("GLTFInitialized: mitten mapped eye bones were not found; ambient eye animation was not attached")
                     }
                     })
                 }

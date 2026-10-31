@@ -1,4 +1,4 @@
-// The Rei(mu) example's three-way branching tree, with Noto 🌸 at every leaf.
+// The mitten example's three-way branching tree, with Noto 🌸 at every leaf.
 // Crossed, double-sided cutout cards keep blossoms visible from XR viewpoints
 // without per-frame billboarding or sorted transparent layers.
 fn blossom_cluster(material, seed) {

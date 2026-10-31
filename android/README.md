@@ -33,6 +33,10 @@ ALVR's current client uses **OpenGL ES + EGL**, including `Session<OpenGlEs>` an
 
 Keep Android entry points, packaging, lifecycle adapters, and platform diagnostics here. Keep portable renderer, ECS, scripting, asset, and audio changes in the engine's existing source directories.
 
+The [MMS LAN development proposal](docs/mms-lan-development.md) sketches live
+code submission from a PC example and a portable UDP component. It is a design
+draft; the host does not yet expose a remote evaluation listener.
+
 Current layout:
 
 ```text

@@ -86,8 +86,8 @@ remains [the valence/unification task](attachment-valence-and-grabbable-unificat
 
 Use [examples/mittens-corp.mms](../../examples/mittens-corp.mms) and
 [display_car.mms](../../assets/components/vehicles/display_car.mms). The player
-Rider selects `rei_mu_locomotion_root`, `rei_mu_rider_cxr_anchor`, and
-`rei_mu_pedestrian_locomotion`; `left_display_car` supplies a Mountable with
+Rider selects `mitten_locomotion_root`, `mitten_rider_cxr_anchor`, and
+`mitten_pedestrian_locomotion`; `left_display_car` supplies a Mountable with
 entry, mount, and dismount frames. Preserve those managed role/slot selections.
 The existing example is the end-to-end fixture, not proof obtained solely from
 private AttachmentSystem maps.

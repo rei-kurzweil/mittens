@@ -46,7 +46,7 @@ proximal/intermediate/distal. New slots require explicit declarations in this sl
 Opt in under the owning GLTF alongside its humanoid map:
 
 ```mms
-GLTF.new("assets/models/rei(mu).glb") {
+GLTF.new("assets/models/mitten.glb") {
     bisket_humanoid_bone_map()
     HandTracking.new()
         .source("auto")
@@ -55,7 +55,7 @@ GLTF.new("assets/models/rei(mu).glb") {
 }
 ```
 
-`examples/mittens-corp.mms` enables this for Reimu. Source accepts `auto`, `openxr`, or
+`examples/mittens-corp.mms` enables this for mitten. Source accepts `auto`, `openxr`, or
 `mediapipe`; auto prefers OpenXR independently on each side. Selecting MediaPipe alone produces
 no articulation until its adapter is implemented. The 150 ms timeout/release defaults are
 provisional and configurable, awaiting live headset tuning. There is no additional tracking
@@ -88,7 +88,7 @@ Set `CAT_DEBUG_HAND_TRACKING=1` to log source/epoch/data-source and tracked-fing
 Binding diagnostics identify unresolved chains and unusable rest bases. The existing laser still
 uses its immutable `RestAttachment`; it does not automatically follow a curled fingertip.
 
-Automated tests import the actual Reimu skeleton without GPU assets and cover rest reconstruction,
+Automated tests import the actual mitten skeleton without GPU assets and cover rest reconstruction,
 five independent fingers on both sides, fists/splay/opposition, changed bone axes, helper twists,
 current parent ordering, partial/NaN/degenerate/stale data, animation release, provider selection,
 map rebinding, component removal, and two identically named avatar instances. OpenXR adapter tests
@@ -97,7 +97,7 @@ place. Live skinning, thumb appearance, source handover, and timeout tuning stil
 Vive Focus 3 run.
 
 Validation for this slice: 43 hand-related tests, 11 humanoid-map tests, 6 generic retarget-basis
-tests, 3 runtime-schema tests, and the retained `mittens-corp` Reimu scene test pass. Broader
+tests, 3 runtime-schema tests, and the retained `mittens-corp` mitten scene test pass. Broader
 scene checks also encounter two unrelated legacy linear-velocity scene failures
 (`undefined: 'is_string'`) and an old humanoid-example count assertion expecting 29 while 31
 qualifying examples exist. The latter 31-example set already exists in HEAD; this slice adds
@@ -239,7 +239,7 @@ avatar-hand aim, and fingertip position as explicit choices.
 The checked items have deterministic coverage. Live headset/model verification remains below.
 
 - [x] All 26 OpenXR joints reach a coherent retained sample with flags, time, and source space.
-- [x] An explicit mapping animates five fingers independently on both sides of the imported Reimu rig.
+- [x] An explicit mapping animates five fingers independently on both sides of the imported mitten rig.
 - [x] Flexion, extension, splay, thumb opposition, and fist gestures preserve avatar bone lengths.
 - [x] Wrist frame remains stable when only fingers curl, and controller behavior remains correct.
 - [x] Missing joints, partial hands, degenerate geometry, stale data, and provider loss release

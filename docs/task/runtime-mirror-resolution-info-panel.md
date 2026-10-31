@@ -44,7 +44,7 @@ are separate from the control rows.
   says `Authored`; its initial thumb at 512 is a preference placeholder, not
   a claim that every authored mirror uses that quality. For a non-preset host
   value, the thumb uses the nearest preset while the readout shows the exact value.
-- `examples/graphics-settings.mms` imports the panel in an XR-only Rei(mu) scene,
+- `examples/graphics-settings.mms` imports the panel in an XR-only mitten scene,
   with microphone mouth animation, independent eye closure tracking, ambient
   eye direction animation, and the corp rig's shirt/bow secondary motion.
   A grabbable full-body mirror starts beside the standalone panel at quality 512.
@@ -92,7 +92,7 @@ settings; the importable panel remains independent of the editor.
    continue. Resume resets tails/velocity from the live pose and accumulated
    time; constraint motion history/rest weights are cleared during pause.
    Changes affect the next post-pose stage. Automated checks cover newly bound
-   chains while off and authored disabled chains; verify the Rei(mu) shirt/bow
+   chains while off and authored disabled chains; verify the mitten shirt/bow
    while moving and during repeated off/on changes in the headset.
 3. Review [material lighting, emission, and extraction](material-lighting-emission-and-extraction-policy.md)
    before implementing a global extraction toggle. In particular, intensity

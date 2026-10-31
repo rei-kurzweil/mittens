@@ -53,7 +53,7 @@ path, 0.1 world unit corresponds to 10 cm.
 
 ## Current mittens-corp setup and asset measurements
 
-[mittens-corp.mms](../../examples/mittens-corp.mms) uses `rei(mu).glb`, the
+[mittens-corp.mms](../../examples/mittens-corp.mms) uses `mitten.glb`, the
 shared VRoid humanoid map, no `avatar_height` override, and an authored CXR/rider
 wrapper at `[0, 0.08, 0.12]`. AVC consumes that wrapper as an eye/head offset.
 
@@ -64,7 +64,7 @@ then falls back to the head. Record the actual report/provenance in the live
 scene; do not assume a head fallback when both eyes resolve.
 
 Read-only GLB inspection, composing node rest TRS and transforming POSITION
-accessor bounds, gave the following for the checked-in Rei(mu) asset:
+accessor bounds, gave the following for the checked-in mitten asset:
 
 | Landmark | Asset rest Y, metres |
 | --- | ---: |
@@ -103,7 +103,7 @@ standing_gap   = h - d - a + s - b   (when capsule_bottom rests on support)
 ```
 
 Contact fixes `f + b`; it does not force `standing_gap` to zero. If sole and
-capsule bottom coincide, the current Rei(mu) eye-midpoint path with an 8 cm
+capsule bottom coincide, the current mitten eye-midpoint path with an 8 cm
 offset would require approximately `h = 1.655187 m` for zero standing gap.
 For illustration, `h = 1.80 m` would yield about 14.5 cm clearance under these
 assumptions. This demonstrates a plausible mechanism, not a diagnosis of the
@@ -146,7 +146,7 @@ down: that can cancel physical crouching through movement-root correction.
    anchor/provenance, cached calibration, model-root Y, effective scales,
    capsule bottom, per-foot sole Y, nearby support top, grounded state, and
    each movement-root correction. Separate standing clearance from crouch/knee
-   errors. Compare Rei(mu) and Bisket under the same scene setup.
+   errors. Compare mitten and Bisket under the same scene setup.
 2. **Unify landmark conventions.** Define the model's sole-to-head and
    head-to-eye relationships explicitly. Correct the camera-anchor/head-pivot
    offset composition and supported world-scale handling. Preserve the final
@@ -178,7 +178,7 @@ down: that can cancel physical crouching through movement-root correction.
 - Crouched startup remains uncalibrated until explicit valid standing capture.
 - Head pitch/yaw, jump/fall, gamepad movement, runtime floor changes, and car
   mount/dismount have distinct diagnostics and do not silently change baseline.
-- Use renamed synthetic rigs plus real Rei(mu)/Bisket fixtures for landmark,
+- Use renamed synthetic rigs plus real mitten/Bisket fixtures for landmark,
   scale, and offset-composition checks. Measure sole and head errors together.
 - Real headset validation remains required for the reported 10–20 cm gap and
   physical knee/floor observation.

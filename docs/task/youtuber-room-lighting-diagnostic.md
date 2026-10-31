@@ -22,7 +22,7 @@ LED wave, extraction/Bloom and avatar-free XR controllers/lasers. Ambient,
 directional fill and the monitor spotlight remain disabled from the experiment.
 The led_effects_enabled flag can disable LED emission/Bloom independently.
 
-Rei(mu) remains a separate NPC at the centre of the left wall, with the authored
+mitten remains a separate NPC at the centre of the left wall, with the authored
 floor-seated pose, body colliders, secondary motion and ambient eye movement.
 Her skinned meshes and static room geometry share one room_shading source.
 The resized straw is used at its authored scale with its recentering offset
@@ -32,7 +32,7 @@ Regression coverage retains stereo rendering, shared static/skinned material
 identity through scalar updates, the NPC pose/secondary motion/eye animation,
 and a GPU receiver test comparing equally distant head-on/grazing/back-facing
 lights. LED extraction and bounded-update checks remain separate tests. The
-preview paths are /tmp/youtuber-room-anime.png and /tmp/youtuber-reimu-seated.png.
+preview paths are /tmp/youtuber-room-anime.png and /tmp/youtuber-mitten-seated.png.
 
 Run:
 

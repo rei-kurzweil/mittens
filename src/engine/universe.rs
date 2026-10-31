@@ -1478,7 +1478,7 @@ mod tests {
             "xr_settings_title_bar",
             "xr_settings_mirror",
             "studio_floor",
-            "rei_mu_xr_driver",
+            "mitten_xr_driver",
             "xr_floor_correction_slider",
         ] {
             labelled(&universe, name);
@@ -1505,7 +1505,7 @@ mod tests {
             universe
                 .world
                 .get_component_by_id_as::<GLTFComponent>(id)
-                .is_some_and(|gltf| gltf.uri == "assets/models/rei(mu).glb")
+                .is_some_and(|gltf| gltf.uri == "assets/models/mitten.glb")
         }));
     }
 

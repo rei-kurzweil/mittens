@@ -13,7 +13,7 @@ The user checked forearm roll separately and found that it is not causing this b
 
 ## Repro and existing capture
 
-- Scene: [examples/ik-rest-pose-vr.mms](../../examples/ik-rest-pose-vr.mms), launched with `cargo run --release --example ik-rest-pose-vr -- --model rei --rest-pose a`.
+- Scene: [examples/ik-rest-pose-vr.mms](../../examples/ik-rest-pose-vr.mms), launched with `cargo run --release --example ik-rest-pose-vr -- --model mitten --rest-pose a`.
 - Use the mirror and IK debug lines while moving a hand through the troublesome region. The magenta line is the bend-plane normal, cyan is the pole direction, green is the solved elbow direction, and white is the solved elbow point.
 - Press right-controller B for the four prompted poses. The launcher writes JSONL captures under `data/ik-rest-pose/` (ignored by Git).
 - Initial capture: `data/ik-rest-pose/rei-a-1790787315675.jsonl`, four poses, created before the scene's pole Y values changed from `-0.35` to `-1.5`. The capture is a set of still poses, not a trace of the reported spin.

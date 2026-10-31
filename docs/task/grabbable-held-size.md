@@ -1,6 +1,6 @@
 # Task: size a Grabbable for comfortable holding
 
-Status: planned. Design only; no grab scale behavior is implemented by the Rei(mu) panel work.
+Status: planned. Design only; no grab scale behavior is implemented by the mitten panel work.
 
 ## Performer workflow
 
@@ -8,7 +8,7 @@ During an XR recording, a large world-space control panel should approach the
 hand and become a readable, tablet-sized object. It must stop obscuring the
 performer and the mirror while held. On an ordinary release, it should smoothly
 return to its authored world size. The first fixture is the three-slider
-Rei(mu) mouth-response panel in `examples/rei(mu).mms`.
+mitten mouth-response panel in `examples/mitten.mms`.
 
 ## Proposed authoring surface
 

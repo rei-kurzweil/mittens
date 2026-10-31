@@ -29,7 +29,7 @@ before arm IK. Capsule grounding and rendered XR eye pose remain separately owne
 Head/HMD offset calibration includes the mapped head-to-eye-anchor rest path,
 the authored camera wrapper, and the displaced head's retained rest rotation/scale.
 Headset feedback exposed the missing anchor term in the initial implementation;
-eye/view alignment now has an integration check on Rei(mu) and Bisket.
+eye/view alignment now has an integration check on mitten and Bisket.
 
 A single coordination point that rigs a humanoid avatar for first-person control from a
 primary body/head driver (`InputComponent` or `InputXRComponent`) plus any number of

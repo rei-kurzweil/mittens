@@ -3,8 +3,8 @@ import { colored_box_pile } from "../assets/components/colored_box_pile.mms"
 import { teleport_pit } from "../assets/components/teleport_pit.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 
-// Rei(mu) XR scene with skinned bow-ribbon secondary motion.
-// Run: cargo run --release -- load 'examples/rei(mu).mms'
+// mitten XR scene with skinned bow-ribbon secondary motion.
+// Run: cargo run --release -- load 'examples/mitten.mms'
 import { studio_stage } from "../assets/components/studio_stage.mms"
 import { tripod_light } from "../assets/components/tripod_light.mms"
 import { star_kawaii_background } from "../assets/components/backgrounds/star_kawaii_background.mms"
@@ -12,7 +12,7 @@ import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisk
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
-import { rei_mu_bow_secondary_motion } from "../assets/components/secondary_motion/rei-mu-bow.mms"
+import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { mouth_response_panel } from "../assets/components/ui/mouth_response_panel.mms"
 
@@ -78,20 +78,20 @@ BG.occlusion_and_lighting() {
 }
 
 lit_stage(
-    "rei_mu_first_stage", "rei_mu_first_left_light", "rei_mu_first_right_light",
+    "mitten_first_stage", "mitten_first_left_light", "mitten_first_right_light",
     [0.0, 1.75, -1.5],
 )
 // The near edge of this stage meets the spawn stage's right edge.
 T.position(28.0, 0.0, -8.0).rotation(0.0, 0.7853982, 0.0) {
     lit_stage(
-        "rei_mu_second_stage", "rei_mu_second_left_light", "rei_mu_second_right_light",
+        "mitten_second_stage", "mitten_second_left_light", "mitten_second_right_light",
         [28.0, 1.75, -8.0],
     )
 }
 // A lower stage mirrors the bend on the opposite side of the spawn stage.
 T.position(-28.0, -10.0, -8.0).rotation(0.0, -0.7853982, 0.0) {
     lit_stage(
-        "rei_mu_lower_stage", "rei_mu_lower_left_light", "rei_mu_lower_right_light",
+        "mitten_lower_stage", "mitten_lower_left_light", "mitten_lower_right_light",
         [-28.0, -8.25, -8.0],
     )
 }
@@ -100,8 +100,8 @@ tree_garden()
 
 // A world-space performer control beside the stage. The title remains
 // draggable; physical grab-to-shrink is tracked separately.
-let rei_mu_mouth_panel = mouth_response_panel({
-    root_name = "rei_mu_mouth_response_panel"
+let mitten_mouth_panel = mouth_response_panel({
+    root_name = "mitten_mouth_response_panel"
     title = "Voice response"
     avatar_slot = mouth_panel_target
     filter_slot = { amplitude = voice_level cutoff_hz = 120.0 resonance = 0.707 }
@@ -109,12 +109,12 @@ let rei_mu_mouth_panel = mouth_response_panel({
     description = "Map raw microphone amplitude to mouth movement. These controls do not change audio input or volume."
 })
 T.position(-1.30, 2.05, 1.35) {
-    name = "rei_mu_mouth_panel_anchor"
-    rei_mu_mouth_panel
+    name = "mitten_mouth_panel_anchor"
+    mitten_mouth_panel
 }
 
 T.position(-5.0, 2.55, 4.9).scale(1.5, 1.5, 0.08).rotation(0.0, 3.1416, 0.0) {
-    name = "rei_mu_mirror"
+    name = "mitten_mirror"
     Grabbable {}
     R.cube() {
         Mirror.quality(1440) {}
@@ -123,13 +123,13 @@ T.position(-5.0, 2.55, 4.9).scale(1.5, 1.5, 0.08).rotation(0.0, 3.1416, 0.0) {
 }
 
 let player_motion = Velocity {
-    name = "rei_mu_velocity"
+    name = "mitten_velocity"
     T.position(-5.0, 1.0, 0.0) {
-        name = "rei_mu_locomotion_root"
+        name = "mitten_locomotion_root"
         InputXR.on() {
             InputXRGamepad { locomotion() speed(1.5) }
             T {
-                let rei_mu_avatar = GLTF.new("assets/models/rei(mu).glb") {
+                let mitten_avatar = GLTF.new("assets/models/mitten.glb") {
                     HandTracking.new().source("openxr")
                     bisket_anime_shading()
                     bisket_humanoid_bone_map()
@@ -140,11 +140,11 @@ let player_motion = Velocity {
                     EM.on()
                     bisket_colliders()
                     bisket_shirt_physics(false)
-                    rei_mu_bow_secondary_motion()
+                    mitten_bow_secondary_motion()
                 }
-                let rei_mu_avatar_control = AVC.movement_target("[name='rei_mu_locomotion_root']") {
-                    name = "rei_mu_avatar_control"
-                    // Foot-local sole landmarks for the shared Rei(mu)/Bisket shoes.
+                let mitten_avatar_control = AVC.movement_target("[name='mitten_locomotion_root']") {
+                    name = "mitten_avatar_control"
+                    // Foot-local sole landmarks for the shared mitten/Bisket shoes.
                     crouch_sole_offsets([0.0, 0.0530325, 0.0874534], [0.0, 0.0530325, 0.0874534])
                     mouth_open_from_amplitude(voice_level)
                     mouth_open_rms_center_range(mouth_tuning.center_rms, mouth_tuning.range_rms)
@@ -157,11 +157,11 @@ let player_motion = Velocity {
                     hand_rotation_smoothing(220.0)
 
                     T {
-                        rei_mu_avatar
+                        mitten_avatar
                     }
 
                     T.position(0.0, 0.08, 0.12) {
-                        name = "rei_mu_xr_camera"
+                        name = "mitten_xr_camera"
                         CXR { Pointer {} }
                     }
                     // HTC or VRChat OSC closure drives blink; the idle animation
@@ -183,17 +183,17 @@ let player_motion = Velocity {
                         }
                     }
                 }
-                mouth_panel_target.avatar = rei_mu_avatar_control
-                rei_mu_avatar_control
+                mouth_panel_target.avatar = mitten_avatar_control
+                mitten_avatar_control
 
-                on(rei_mu_avatar, "GLTFInitialized", fn(event) {
+                on(mitten_avatar, "GLTFInitialized", fn(event) {
 
                     let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
                     let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
                     if left_eye && right_eye {
-                        rei_mu_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
+                        mitten_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
                     } else {
-                        print("GLTFInitialized: Rei(mu) eye bones were not found; idle pupil animation was not attached")
+                        print("GLTFInitialized: mitten eye bones were not found; idle pupil animation was not attached")
                     }
                 })
             }
@@ -204,7 +204,7 @@ Gravity.enabled(false) { name = "player_gravity" player_motion }
 on_global("XrButtonDown", fn(event) {
     if event.control == "ButtonB" && player_motion.grounded() { player_motion.translate_world([0.0, 4.5, 0.0]) }
 })
-teleport_pit("rei_mu_teleport_pit", [0.0, -24.0, 0.0], [180.0, 12.0, 180.0], [-5.0, 1.2, 0.0], "none")
+teleport_pit("mitten_teleport_pit", [0.0, -24.0, 0.0], [180.0, 12.0, 180.0], [-5.0, 1.2, 0.0], "none")
 
 // Only the two small box piles are part of the editable scene.
 ED {
@@ -215,12 +215,12 @@ ED {
 // Explicit panel selection suppresses the default world/assets/inspector UI.
 // Keep settings off to the player's left so it does not cover the mirror.
 T.position(-7.75, 2.8, -1.5) {
-    name = "rei_mu_editor_ui"
+    name = "mitten_editor_ui"
     EditorUI { panels([{ panel = "settings" }]) }
 }
 
 // Falling starts only after AVC's generated slide capsule is usable.
-let gravity_avatar = query("[name='rei_mu_avatar_control']")
+let gravity_avatar = query("[name='mitten_avatar_control']")
 on(gravity_avatar, "DataEvent", fn(event) {
     if event == "CapsuleReady" {
         query("[name='player_gravity']").set_enabled(true)

@@ -260,17 +260,17 @@ fn sakura_scene_has_open_ceramic_towers_typed_sky_rooftop_rig_and_reset() {
             assert!(
                 world
                     .get_component_by_id_as::<AvatarControlComponent>(named(
-                        "sakura_reimu_avatar_control"
+                        "sakura_mitten_avatar_control"
                     ))
                     .is_some()
             );
             assert!(
                 !world
-                    .get_component_by_id_as::<GravityComponent>(named("sakura_reimu_gravity"))
+                    .get_component_by_id_as::<GravityComponent>(named("sakura_mitten_gravity"))
                     .unwrap()
                     .enabled
             );
-            let position = authored_position(&world, named("sakura_reimu_locomotion_root"));
+            let position = authored_position(&world, named("sakura_mitten_locomotion_root"));
             assert!((position[1] - 25.63).abs() < 0.001);
         }
         // Check actual authored static collision geometry, not just decorative bays.
@@ -302,7 +302,7 @@ fn sakura_scene_has_open_ceramic_towers_typed_sky_rooftop_rig_and_reset() {
             "stairwell roof opening remains clear"
         );
         if xr {
-            let movement_target = named("sakura_reimu_locomotion_root");
+            let movement_target = named("sakura_mitten_locomotion_root");
             let offset = [0.12, -0.9, 0.0];
             rx.dispatch_event_handlers(
                 &mut world,
@@ -350,15 +350,15 @@ fn sakura_scene_has_open_ceramic_towers_typed_sky_rooftop_rig_and_reset() {
 }
 
 #[test]
-fn rei_mu_garden_uses_the_same_sakura_leaf_prefab() {
-    let source = include_str!("../../examples/rei(mu).mms");
+fn mitten_garden_uses_the_same_sakura_leaf_prefab() {
+    let source = include_str!("../../examples/mitten.mms");
     let mut world = World::default();
     let mut rx = RxWorld::default();
     let mut queue = CommandQueue::new();
     let mut assets = RenderAssets::new();
     let (_session, _) = super::tests::start_settings_scene(
         source,
-        "examples/rei(mu).mms",
+        "examples/mitten.mms",
         &mut world,
         &mut rx,
         Some(&mut assets),

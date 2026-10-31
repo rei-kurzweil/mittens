@@ -85,7 +85,7 @@ sampling arrangement, but is not required for this first slice. It would add
 external-helper ownership obligations without changing the desired vector.
 Do not add an unnecessary motion layer or move AVC out of its tracking branch.
 
-In `mittens-corp`, physics and gamepad share `rei_mu_locomotion_root`; that root
+In `mittens-corp`, physics and gamepad share `mitten_locomotion_root`; that root
 supplies sampled Y. If the two are nested separately, sample the combined
 simulated frame immediately before InputXR applies tracking. Referencing that
 transform is a data dependency, not a new parent attachment.
@@ -191,7 +191,7 @@ vertical contact, changing raw XR poses, or adding another floor responder.
    with gamepad motion, button jump, gravity/fall, and floor/wall contact. Verify
    genuine contact still corrects the response target, updates its Velocity,
    and reaches the final rendered camera without stale-frame publication.
-4. **Real scenes:** verify Rei(mu) in `mittens-corp` and Bisket in
+4. **Real scenes:** verify mitten in `mittens-corp` and Bisket in
    `capsule-stick-figure`. Exercise physical crouch/stand and lateral movement,
    simulated locomotion, jump/landing, stage-edge behavior, teleport/recenter,
    and mount/drive/dismount/remount. Preserve desktop contact behavior. Record
@@ -235,7 +235,7 @@ uniform scale, invalid scale, source loss/recovery, collision opt-out, two-avata
 isolation, and removal returning component counts to baseline. These fixtures
 do not simulate a headset, imported avatar initialization, or GPU eye publication.
 
-Pending acceptance: Rei(mu) in `mittens-corp` and Bisket in `capsule-stick-figure`,
+Pending acceptance: mitten in `mittens-corp` and Bisket in `capsule-stick-figure`,
 rendered eye motion, real stage/stair/edge behavior, teleport/recenter, rig/GLTF
 replacement and explicit recalibration policies, and runtime cost profiling.
 Do not mark the hardware bug resolved or begin crouch IK before the smoke test.
