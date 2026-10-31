@@ -1,3 +1,4 @@
+import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { vroid_arm_ik } from "../assets/components/arm_ik/vroid.mms"
 
 let arm_ik = vroid_arm_ik(-0.35, 1)
@@ -245,6 +246,8 @@ ED {
                 // mirrored pitch branch in the post-yaw local frame.
                 T {
                     GLTF.new("assets/models/bisket.glb") {
+                        HandTracking.new().source("openxr")
+                        bisket_humanoid_bone_map()
                         bisket_anime_shading()
                         MorphTargetMap.new()
                             .slot("left_eye_blink", "Fcl_EYE_Close_L")

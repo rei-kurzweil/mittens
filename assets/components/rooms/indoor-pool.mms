@@ -159,9 +159,10 @@ export fn indoor_pool(origin, width, length, basin_width, basin_length, water_en
 
         // Chrome ladder: ordinary cylinders with semicircular handle tops.
         for side in [-1.0, 1.0] {
-            metal_cylinder([side * 0.28, 0.0, end_deck - 0.24], 0.025, 0.55, chrome)
-            metal_cylinder([side * 0.28, -1.20, end_deck + 0.20], 0.025, 1.75, chrome)
+            T { Climbable {} metal_cylinder([side * 0.28, 0.0, end_deck - 0.24], 0.025, 0.55, chrome) }
+            T { Climbable {} metal_cylinder([side * 0.28, -1.20, end_deck + 0.20], 0.025, 1.75, chrome) }
             T.position(side * 0.28, 0.55, end_deck - 0.02).rotation_euler(0.0, 0.0, Math.pi / 2.0) {
+                Climbable {}
                 R.helix_tube(0.22, 0.025, 0.0, -Math.pi / 2.0, Math.pi, 24, 16) {
                     chrome
                     Texture.with_uri("assets/textures/pool/chrome-matcap.png")
@@ -170,6 +171,7 @@ export fn indoor_pool(origin, width, length, basin_width, basin_length, water_en
         }
         for step in range(4) {
             T.position(0.28, 0.18 - step * 0.34, end_deck + 0.20).rotation_euler(0.0, 0.0, Math.pi / 2.0) {
+                Climbable {}
                 R.cylinder(0.022, 0.56, 16) {
                     chrome
                     Texture.with_uri("assets/textures/pool/chrome-matcap.png")
@@ -304,8 +306,8 @@ export fn indoor_pool(origin, width, length, basin_width, basin_length, water_en
             }
             for side in [-1.0, 1.0] {
                 // Metal ladder rises from the extended rear deck to the landing.
-                metal_cylinder([slide_radius + side * 0.28, 0.0, 2.28],
-                    0.025, landing_top + 0.65, chrome)
+                T { Climbable {} metal_cylinder([slide_radius + side * 0.28, 0.0, 2.28],
+                    0.025, landing_top + 0.65, chrome) }
                 // The near support stays in the helix's central opening;
                 // the far support stands on the deck outside the coil.
                 let support_z = 2.10
@@ -332,6 +334,7 @@ export fn indoor_pool(origin, width, length, basin_width, basin_length, water_en
             for rung in range(rung_count) {
                 T.position(slide_radius + 0.28, 0.20 + rung * 0.25, 2.28)
                     .rotation_euler(0.0, 0.0, Math.pi / 2.0) {
+                    Climbable {}
                     R.cylinder(0.022, 0.56, 16) {
                         name = "slide_ladder_rung"
                         chrome

@@ -1,6 +1,5 @@
 // Importable graphics settings panel; GraphicsSettingsSystem owns applied values.
 import { info_panel, info_panel_body } from "../ui/info_panel.mms"
-import { ui_unlit_material } from "../materials/ui_unlit.mms"
 
 let QUALITY_STEPS = [64, 128, 256, 512, 1024, 1440, 2048]
 let UNIT_SCALE = 0.08
@@ -229,8 +228,6 @@ export fn graphics_settings_panel(options) {
     // Grip grabbing reparents the inner panel root away from its layout slot.
     // Keep selection exclusion and restore delivery on that moving root.
     let panel_root = panel.query("#" + options.root_name)
-    let panel_material = ui_unlit_material()
-    panel_root.attach(panel_material)
     let selection_guard = Selectable.off()
     panel_root.attach(selection_guard)
     let body_mount = panel.query("#accordion_body_mount")

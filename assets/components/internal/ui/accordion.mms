@@ -14,6 +14,7 @@ import { accordion_down_arrow_icon } from "../../icons.mms"
 //   title_bar        optional component replacing the standard title bar;
 //                    owns its layout/markers, receives the minimize control last
 //   body             one component rooted at #accordion_body
+//   unlit            use a shared, non-blooming UI material
 //
 // The returned object is the layout-owned outer slot. The default minimize
 // toggle is always inserted before caller children. Accordion events originate
@@ -120,6 +121,7 @@ export fn accordion(options) {
     }
     let panel_root = T {
         name = root_name
+        if options["unlit"] { Unlit {} }
         Option {}
         Raycastable.enabled() { interaction_priority(100.0) }
 

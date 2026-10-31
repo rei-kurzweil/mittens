@@ -648,8 +648,15 @@ impl World {
             }
         }
 
-        if shared_declaration {
+        if shared_declaration
+            || self
+                .get_component_by_id_as::<component::UnlitComponent>(child)
+                .is_some()
+        {
             self.shading_topology_changes.insert(parent);
+        }
+        if self.is_initialized(child) {
+            self.shading_topology_changes.insert(child);
         }
 
         Ok(())
@@ -746,8 +753,15 @@ impl World {
         if let Some(node) = self.get_component_record_mut(parent) {
             node.children.retain(|&c| c != child);
         }
-        if self.is_shading_declaration(child) {
+        if self.is_shading_declaration(child)
+            || self
+                .get_component_by_id_as::<component::UnlitComponent>(child)
+                .is_some()
+        {
             self.shading_topology_changes.insert(parent);
+        }
+        if self.is_initialized(child) {
+            self.shading_topology_changes.insert(child);
         }
         true
     }

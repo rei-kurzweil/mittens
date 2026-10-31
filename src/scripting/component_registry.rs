@@ -63,6 +63,8 @@ use crate::scripting::ast::{
 use crate::scripting::object::{CeChild, MaterializedCE, Value};
 use crate::scripting::token::expand_component_shortform;
 use std::cell::RefCell;
+#[path = "interaction_registry.rs"]
+mod interaction_registry;
 #[path = "renderer_settings_legacy.rs"]
 mod renderer_settings_legacy;
 #[path = "walking_ik_registry.rs"]
@@ -116,6 +118,7 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "Color",
     "Data",
     "DirectionalLight",
+    "Climbable",
     "Draggable",
     "Editor",
     "EditorUI",
@@ -1758,6 +1761,7 @@ fn create_component(
 
     match type_name {
         "WalkingIK" => walking_ik_registry::create(world, ctor, args),
+        "Climbable" => add!(crate::engine::ecs::component::ClimbableComponent { enabled: ctor != Some("off") }),
         "Transform" => {
             let mut c = TransformComponent::new();
             if let Some(method) = ctor {
@@ -2446,17 +2450,7 @@ fn create_component(
             }
             add!(layout)
         }
-        "Grabbable" => match ctor {
-            Some("to_hand") => {
-                let mut grabbable = GrabbableComponent::new();
-                grabbable.to_hand = arg_bool(args, 0)?;
-                add!(grabbable)
-            }
-            Some("parent") => add!(GrabbableComponent::parent()),
-            Some("off") => add!(GrabbableComponent::off()),
-            Some("on") => add!(GrabbableComponent::on()),
-            _ => add!(GrabbableComponent::new()),
-        },
+        "Grabbable" => interaction_registry::create_grabbable(world, ctor, args),
         "Rider" => match ctor {
             Some("anchor") => add!(RiderComponent::new().anchor(arg_component_ref(
                 world, args, 0

@@ -263,6 +263,7 @@ export fn editor_settings_panel_body(config) {
 
 export fn editor_settings_panel(title, title_color, panel_background_color, config) {
     return accordion({
+        unlit = true
         root_name = "editor_settings_panel_root"
         width_gu = SETTINGS_PANEL_WIDTH_GU
         unit_scale = EDITOR_PANEL_UNIT_SCALE
@@ -376,6 +377,7 @@ export fn paint_panel_body(item_background_color, title_color) {
 
 export fn paint_panel(title, title_color, panel_background_color, item_background_color) {
     return accordion({
+        unlit = true
         root_name = "paint_panel_root"
         width_gu = PAINT_PANEL_WIDTH_GU
         unit_scale = EDITOR_PANEL_UNIT_SCALE
@@ -472,6 +474,7 @@ export fn color_panel_body() {
 
 export fn color_panel(title, title_color, panel_background_color) {
     return accordion({
+        unlit = true
         root_name = "color_panel_root"
         width_gu = COLOR_PANEL_WIDTH_GU
         unit_scale = EDITOR_PANEL_UNIT_SCALE
@@ -538,6 +541,7 @@ export fn pose_capture_panel_body() {
 
 export fn pose_capture_panel(title, title_color, panel_background_color) {
     return accordion({
+        unlit = true
         root_name = "pose_capture_panel_root"
         width_gu = POSE_PANEL_WIDTH_GU
         unit_scale = EDITOR_PANEL_UNIT_SCALE
@@ -659,6 +663,7 @@ export fn world_panel(title, items, title_color, panel_background_color, item_ba
     let _unused_items = items
     let _unused_item_background_color = item_background_color
     return accordion({
+        unlit = true
         root_name = "world_panel_root"
         width_gu = WORLD_PANEL_WIDTH_GU
         unit_scale = EDITOR_PANEL_UNIT_SCALE
@@ -750,6 +755,7 @@ export fn inspector_panel(title, items, title_color, panel_background_color, ite
     let _unused_items = items
     let _unused_item_background_color = item_background_color
     return accordion({
+        unlit = true
         root_name = "inspector_panel_root"
         width_gu = INSPECTOR_PANEL_WIDTH_GU
         unit_scale = EDITOR_PANEL_UNIT_SCALE
@@ -796,6 +802,7 @@ export fn asset_panel_body(items, item_background_color) {
 
 export fn asset_panel(title, items, title_color, panel_background_color, item_background_color) {
     return accordion({
+        unlit = true
         root_name = "assets_root"
         width_gu = ASSET_PANEL_WIDTH_GU
         unit_scale = EDITOR_PANEL_UNIT_SCALE
@@ -885,6 +892,7 @@ export fn grid_panel(title, items, title_color, panel_background_color, item_bac
         T.scale(0.25 * EDITOR_PANEL_UNIT_SCALE, 0.25 * EDITOR_PANEL_UNIT_SCALE, 1.0) { grid_visibility_icon() }
     }
     return accordion({
+        unlit = true
         root_name = "grid_panel_root"
         width_gu = GRID_PANEL_WIDTH_GU
         unit_scale = EDITOR_PANEL_UNIT_SCALE

@@ -42,6 +42,7 @@ T {
                 }
                 T {
                     GLTF.new("assets/models/bisket.glb") {
+                        HandTracking.new().source("openxr")
                         bisket_humanoid_bone_map()
                         bisket_anime_shading()
                     }

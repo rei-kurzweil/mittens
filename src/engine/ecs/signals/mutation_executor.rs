@@ -218,7 +218,12 @@ impl RxMutationExecutor {
             }
             IntentValue::RegisterRenderable { component_id } => {
                 let component = *component_id;
-                systems.register_renderable(world, visuals, component);
+                systems.register_renderable_with_assets(
+                    world,
+                    visuals,
+                    component,
+                    Some(render_assets),
+                );
             }
             IntentValue::RemoveRenderable { component_id } => {
                 let component = *component_id;

@@ -61,3 +61,12 @@ mod sakura_desktop_tests;
 
 #[cfg(test)]
 mod untracked_avatar_tests;
+
+#[cfg(test)]
+mod climbing_scene_tests;
+
+#[cfg(test)]
+mod ui_lighting_tests;
+
+#[cfg(test)]
+mod pool_viewer_tests;

@@ -15,6 +15,8 @@
 //   transparent_background: omit the body background geometry (default false).
 //     The retained title/toggle keep their independently configurable colors.
 //   body_padding: body inset in layout units (default 0.65).
+// Panels use lighting-independent colors without bloom; a nearer authored
+// material can override that choice.
 //   content_factory: zero-argument function returning a fresh content subtree.
 //     Called initially and on restore; minimizing deletes that subtree.
 //
@@ -94,6 +96,7 @@ export fn info_panel_body(options) {
 fn panel_with_title_children(options, title_children, custom_title_bar, title_bar_background, toggle_background, toggle_icon_color, toggle_icon_glow, body_background, body_text_color) {
     let panel = accordion({
         root_name = options.root_name
+        unlit = true
         width_gu = options.width_gu
         unit_scale = options.unit_scale
         background_color = title_bar_background

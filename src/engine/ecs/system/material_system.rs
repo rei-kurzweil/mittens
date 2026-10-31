@@ -14,6 +14,12 @@ use crate::engine::graphics::{
     materials::{MaterialDefinitionId, MaterialInstanceId},
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SurfaceSource {
+    Material(ComponentId),
+    Unlit,
+}
+
 #[derive(Debug, Default)]
 pub struct MaterialSystem;
 
@@ -66,22 +72,32 @@ impl MaterialSystem {
     /// Select the nearest complete material declaration for every consumer.
     /// Authored local declarations precede generated Shading projections.
     pub(crate) fn resolve_source(world: &World, consumer: ComponentId) -> Option<ComponentId> {
+        match Self::resolve_surface(world, consumer) {
+            Some(SurfaceSource::Material(source)) => Some(source),
+            Some(SurfaceSource::Unlit) | None => None,
+        }
+    }
+
+    pub(crate) fn resolve_surface(world: &World, consumer: ComponentId) -> Option<SurfaceSource> {
         let mut current = Some(consumer);
         while let Some(node) = current {
             if world
                 .get_component_by_id_as::<MaterialComponent>(node)
                 .is_some()
             {
-                return Some(node);
+                return Some(SurfaceSource::Material(node));
             }
             if let Some(source) = Self::shading_source(world, node) {
-                return Some(source);
+                return Some(SurfaceSource::Material(source));
             }
             if world.children_of(node).iter().any(|&child| {
                 world
                     .get_component_by_id_as::<UnlitComponent>(child)
                     .is_some()
-            }) || resolve_transmissive_model(world, node)
+            }) {
+                return Some(SurfaceSource::Unlit);
+            }
+            if resolve_transmissive_model(world, node)
                 .ok()
                 .flatten()
                 .is_some()
@@ -93,7 +109,7 @@ impl MaterialSystem {
                     .get_component_by_id_as::<MaterialComponent>(child)
                     .is_some()
             }) {
-                return Some(source);
+                return Some(SurfaceSource::Material(source));
             }
             let shading = world
                 .children_of(node)
@@ -107,17 +123,17 @@ impl MaterialSystem {
                 })
                 .min_by_key(|(projected, _)| *projected);
             if let Some((false, source)) = shading {
-                return Some(source);
+                return Some(SurfaceSource::Material(source));
             }
             if let Some(source) = world
                 .get_component_by_id_as::<crate::engine::ecs::component::RenderableComponent>(node)
                 .and_then(|renderable| renderable.material_scope)
-                .and_then(|scope| Self::resolve_source(world, scope))
+                .and_then(|scope| Self::resolve_surface(world, scope))
             {
                 return Some(source);
             }
             if let Some((_, source)) = shading {
-                return Some(source);
+                return Some(SurfaceSource::Material(source));
             }
             current = world.parent_of(node);
         }
@@ -685,3 +701,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "material_unlit_tests.rs"]
+mod unlit_tests;

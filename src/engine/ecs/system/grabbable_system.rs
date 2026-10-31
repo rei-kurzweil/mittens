@@ -42,6 +42,7 @@ struct ActiveGrab {
 
 #[derive(Debug, Default)]
 pub struct GrabbableSystem {
+    climbing: super::climbing_system::ClimbingSystem,
     handlers_installed: bool,
     commands: Arc<Mutex<Vec<GrabCommand>>>,
     active: HashMap<ComponentId, ActiveGrab>,
@@ -53,6 +54,7 @@ impl GrabbableSystem {
         if self.handlers_installed {
             return;
         }
+        self.climbing.install_handlers(rx);
         let starts = self.commands.clone();
         rx.add_global_handler_closure(SignalKind::GrabStart, move |_world, _emit, env| {
             let Some(EventSignal::GrabStart {
@@ -95,6 +97,12 @@ impl GrabbableSystem {
         emit: &mut dyn SignalEmitter,
     ) {
         if world
+            .get_component_by_id_as::<crate::engine::ecs::component::ClimbableComponent>(grabbable)
+            .is_some_and(|c| !c.enabled)
+        {
+            return;
+        }
+        if world
             .get_component_by_id_as::<GrabbableComponent>(grabbable)
             .is_some_and(|c| !c.enabled)
         {
@@ -110,6 +118,14 @@ impl GrabbableSystem {
         ensure_generated_raycastable(world, owner, "grabbable_generated_raycastable", emit);
     }
 
+    pub(crate) fn climbing_moved(&self) -> bool {
+        self.climbing.moved
+    }
+
+    pub(crate) fn prepare_climbing_velocity(&self, world: &mut World) {
+        self.climbing.prepare_velocity(world);
+    }
+
     pub fn tick(
         &mut self,
         world: &mut World,
@@ -117,6 +133,7 @@ impl GrabbableSystem {
         emit: &mut dyn SignalEmitter,
         dt: f32,
     ) {
+        self.climbing.tick(world, emit);
         let commands = self
             .commands
             .lock()
@@ -210,6 +227,11 @@ impl GrabbableSystem {
         ray_origin: [f32; 3],
         ray_dir: [f32; 3],
     ) {
+        if super::climbing_system::climbable_owner_for_hit(world, renderable).is_some()
+            && super::pointer_system::pointer_topology_context(world, pointer).has_controller_driver
+        {
+            return;
+        }
         if self.active.contains_key(&pointer) || self.owned.contains(&target) {
             return;
         }

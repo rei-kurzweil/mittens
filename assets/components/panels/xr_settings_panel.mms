@@ -1,7 +1,6 @@
 // Importable live XR settings. XrSettingsSystem owns calibration independently
 // of panel lifetime; the caller owns world placement and optional title bar.
 import { info_panel, info_panel_body } from "../ui/info_panel.mms"
-import { ui_unlit_material } from "../materials/ui_unlit.mms"
 
 let UNIT_SCALE = 0.08
 let TEXT_COLOR = [0.0, 0.0, 0.0, 1.0]
@@ -123,7 +122,6 @@ export fn xr_settings_panel(options) {
         content = settings_content()
     })
     let panel_root = panel.query("#" + options.root_name)
-    panel_root.attach(ui_unlit_material())
     let selection_guard = Selectable.off()
     panel_root.attach(selection_guard)
     let body_mount = panel.query("#accordion_body_mount")

@@ -6,8 +6,7 @@ use crate::engine::ecs::component::{
     BackgroundComponent, BoundsComponent, ColorComponent, EmissiveComponent,
     LayoutVisualPlacementComponent, LightQuantizationComponent, MeshComponent, OpacityComponent,
     RenderableComponent, RendererSettingsComponent, ToonOutlineComponent, TransformComponent,
-    TransmissiveModel, TransparentCutoutComponent, UVComponent, UnlitComponent,
-    resolve_transmissive_model,
+    TransmissiveModel, TransparentCutoutComponent, UVComponent, resolve_transmissive_model,
 };
 use crate::engine::ecs::component::{GLTFComponent, MorphTargetBindingComponent};
 
@@ -282,11 +281,15 @@ impl RenderableSystem {
                     MaterialHandle::ROUGH_TRANSMISSION_MESH
                 }
             }
-            _ if Self::has_immediate_unlit_child(world, renderable) => MaterialHandle::UNLIT_MESH,
-            _ => MaterialSystem::resolve_source(world, renderable)
-                .and_then(|source| visuals.materials.source_instance(source))
-                .and_then(|instance| MaterialSystem::program(visuals, instance, base))
-                .unwrap_or(base),
+            _ => match MaterialSystem::resolve_surface(world, renderable) {
+                Some(super::material_system::SurfaceSource::Unlit) => MaterialHandle::UNLIT_MESH,
+                Some(super::material_system::SurfaceSource::Material(source)) => visuals
+                    .materials
+                    .source_instance(source)
+                    .and_then(|instance| MaterialSystem::program(visuals, instance, base))
+                    .unwrap_or(base),
+                None => base,
+            },
         }
     }
 
@@ -332,14 +335,6 @@ impl RenderableSystem {
             world
                 .get_component_by_id_as::<EmissiveComponent>(ch)
                 .map(|e| e.intensity.max(0.0))
-        })
-    }
-
-    fn has_immediate_unlit_child(world: &World, node: ComponentId) -> bool {
-        world.children_of(node).iter().any(|&child| {
-            world
-                .get_component_by_id_as::<UnlitComponent>(child)
-                .is_some()
         })
     }
 

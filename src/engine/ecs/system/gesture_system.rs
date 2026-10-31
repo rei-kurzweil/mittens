@@ -1,3 +1,6 @@
+#[path = "gesture_grip.rs"]
+mod gesture_grip;
+
 use crate::engine::ecs::component::{
     DragContinuationPolicy, DragMappingPolicy, PointerComponent, PointerEvents,
 };
@@ -113,6 +116,7 @@ struct GripGestureState {
     renderable: ComponentId,
     owner: ComponentId,
     desktop: bool,
+    climbing: bool,
 }
 
 impl GestureSystem {
@@ -395,106 +399,14 @@ impl GestureSystem {
             .map(|g| g.clone())
             .unwrap_or_default();
 
-        // --- Grip (XR) and left mouse (desktop): capture Grabbable targets. ---
-        let mut grab_presses: Vec<(ComponentId, bool)> = activations
-            .grip_pressed
-            .iter()
-            .copied()
-            .map(|p| (p, false))
-            .collect();
-        grab_presses.extend(
-            activations
-                .pressed
-                .iter()
-                .copied()
-                .filter(|p| {
-                    let topology = pointer_topology_context(world, *p);
-                    !topology.has_controller_driver
-                        && !topology.has_xr_camera_anchor
-                        && !topology.has_xr_input_driver
-                })
-                .map(|p| (p, true)),
+        let desktop_grab_consumed = self.process_grips(
+            world,
+            activations,
+            pointer_system,
+            attachment_system,
+            rx,
+            &hits,
         );
-        let mut desktop_grab_consumed = HashSet::new();
-        for (pointer_cid, desktop) in grab_presses {
-            if self.grip_states.contains_key(&pointer_cid) {
-                continue;
-            }
-            if attachment_system.try_dismount_for_pointer(world, pointer_cid, rx) {
-                if desktop {
-                    desktop_grab_consumed.insert(pointer_cid);
-                }
-                continue;
-            }
-            let Some(raycaster) = pointer_system.raycast_for_pointer(pointer_cid) else {
-                continue;
-            };
-            let mounted = hits
-                .iter()
-                .filter(|hit| hit.2 == raycaster && hit.6.captures_drag())
-                .any(|hit| attachment_system.try_mount_from_hit(world, pointer_cid, hit.3, rx));
-            if mounted {
-                if desktop {
-                    desktop_grab_consumed.insert(pointer_cid);
-                }
-                continue;
-            }
-            let Some(hit) = hits.iter().find(|h| {
-                h.2 == raycaster
-                    && h.6.captures_drag()
-                    && grabbable_owner_for_hit(world, h.3)
-                        .is_some_and(|owner| !self.grabbed_owners.contains(&owner))
-            }) else {
-                continue;
-            };
-            let Some(owner) = grabbable_owner_for_hit(world, hit.3) else {
-                continue;
-            };
-            self.grabbed_owners.insert(owner);
-            self.grip_states.insert(
-                pointer_cid,
-                GripGestureState {
-                    renderable: hit.3,
-                    owner,
-                    desktop,
-                },
-            );
-            if desktop {
-                desktop_grab_consumed.insert(pointer_cid);
-            }
-            rx.push_event(
-                hit.3,
-                EventSignal::GrabStart {
-                    pointer: pointer_cid,
-                    raycaster,
-                    renderable: hit.3,
-                    target: owner,
-                    ray_origin_world: hit.4,
-                    ray_dir_world: hit.5,
-                },
-            );
-        }
-
-        let mut grab_releases = activations.grip_released.clone();
-        grab_releases.extend(
-            activations
-                .released
-                .iter()
-                .copied()
-                .filter(|p| self.grip_states.get(p).is_some_and(|s| s.desktop)),
-        );
-        for pointer_cid in grab_releases {
-            if let Some(state) = self.grip_states.remove(&pointer_cid) {
-                self.grabbed_owners.remove(&state.owner);
-                rx.push_event(
-                    state.renderable,
-                    EventSignal::GrabEnd {
-                        pointer: pointer_cid,
-                        target: state.owner,
-                    },
-                );
-            }
-        }
 
         // --- Trigger press: start a new drag per activated pointer ---
         for &pointer_cid in &activations.pressed {

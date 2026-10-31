@@ -663,6 +663,7 @@ ED.active() {
                 T {
                     name = "bisket_xr_driver"
                     let bisket_avatar = GLTF.new("assets/models/rei(mu).glb") {
+                        HandTracking.new().source("openxr")
                         bisket_anime_shading()
                         bisket_humanoid_bone_map()
                         MorphTargetMap.new()

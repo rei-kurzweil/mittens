@@ -1294,7 +1294,6 @@ const PROFILE_HTC_VIVE: &str = "/interaction_profiles/htc/vive_controller";
 const PROFILE_HTC_VIVE_FOCUS3: &str = "/interaction_profiles/htc/vive_focus3_controller";
 const PROFILE_VALVE_INDEX: &str = "/interaction_profiles/valve/index_controller";
 const PROFILE_MICROSOFT_MOTION: &str = "/interaction_profiles/microsoft/motion_controller";
-const PROFILE_EXT_HAND_INTERACTION: &str = "/interaction_profiles/ext/hand_interaction_ext";
 
 const SIMPLE_CONTROLLER_LEFT_SPECS: &[BindingSpec] = &[];
 const SIMPLE_CONTROLLER_RIGHT_SPECS: &[BindingSpec] = &[];
@@ -1550,8 +1549,11 @@ const HTC_VIVE_FOCUS3_RIGHT_SPECS: &[BindingSpec] = &[
     },
 ];
 
-const EXT_HAND_INTERACTION_LEFT_SPECS: &[BindingSpec] = &[];
-const EXT_HAND_INTERACTION_RIGHT_SPECS: &[BindingSpec] = &[];
+#[path = "openxr_hand_bindings.rs"]
+mod hand_bindings;
+use hand_bindings::{
+    EXT_HAND_INTERACTION_LEFT_SPECS, EXT_HAND_INTERACTION_RIGHT_SPECS, PROFILE_EXT_HAND_INTERACTION,
+};
 
 const PROFILE_BINDING_SPECS: &[ProfileBindingSpec] = &[
     ProfileBindingSpec {

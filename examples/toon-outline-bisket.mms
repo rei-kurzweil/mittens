@@ -117,6 +117,7 @@ ED.active() {
             T {
                 name = "bisket_xr_driver"
                 let bisket_avatar = GLTF.new("assets/models/bisket.glb") {
+                    HandTracking.new().source("openxr")
                     bisket_anime_shading()
                     ToonOutline
                         .width(0.012)

@@ -5,6 +5,8 @@
 //! while its declarations move into this specification.
 
 use meow_meow_script as mms;
+#[path = "interaction_runtime_config.rs"]
+mod interaction_runtime_config;
 
 /// Engine implementations attached to host-effectful runtime declarations.
 ///
@@ -1177,11 +1179,8 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         .builder_call("z_index", component_signature([mms::ValueType::I32]))
                         .builder_call("word_wrap_tokens", any(1));
                 }
-                "Grabbable" => {
-                    no_arg_constructors(component, &["parent", "off", "on"]);
-                    constructor_and_builder(component, "to_hand", booleans(1));
-                    component
-                        .builder_call("hand_offset", component_signature([mms::ValueType::Array]));
+                "Grabbable" | "Climbable" => {
+                    interaction_runtime_config::configure(canonical, component);
                 }
                 "Rider" => {
                     component

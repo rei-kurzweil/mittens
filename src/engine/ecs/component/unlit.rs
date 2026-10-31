@@ -1,9 +1,9 @@
 use crate::engine::ecs::component::Component;
 use crate::engine::ecs::component::ce_helpers::ce;
 
-/// Selects the non-emissive, lighting-independent solid-color material for a
-/// standard renderable. The renderer uses the normal color/opacity/texture
-/// inputs but skips the toon light accumulation and emissive/Bloom paths.
+/// Selects a non-emissive, lighting-independent material for standard
+/// renderables in the owning scope. Nearer material declarations can override
+/// it. Color, opacity and texture inputs remain active; lighting and bloom do not.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct UnlitComponent;
 

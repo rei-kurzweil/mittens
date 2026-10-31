@@ -97,6 +97,7 @@ ED.active() {
                 T {
                     name = "rei_mu_xr_driver"
                     let rei_mu_avatar = GLTF.new("assets/models/rei(mu).glb") {
+                        HandTracking.new().source("openxr")
                         bisket_anime_shading()
                         bisket_humanoid_bone_map()
                         MorphTargetMap.new()

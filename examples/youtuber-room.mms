@@ -478,6 +478,7 @@ if xr_view_enabled {
                     T {
                         name = "room_reimu_xr_driver"
                         let xr_reimu = GLTF.new("assets/models/rei(mu).glb") {
+                            HandTracking.new().source("openxr")
                             name = "xr_reimu"
                             room_shading
                             bisket_humanoid_bone_map()

@@ -566,6 +566,26 @@ Mountable
     .on_grip() {}
 ```
 
+### `ClimbableComponent`
+<!-- catalog:component source="ClimbableComponent" mms="direct" names="Climbable" -->
+
+`Climbable`, `Climbable.on()`, and `Climbable.off()` mark a transform's renderable
+subtree for XR pointer climbing. An enabled marker automatically makes the owner
+raycastable unless it already has a raycast policy. An XR grip (or OpenXR hand
+interaction grasp, when provided by the runtime) captures a pointer ray hit;
+while held, moving the hand shifts the XR locomotion root in the opposite
+direction. Static contact constrains that movement. The most recently gripping
+hand controls locomotion, and releasing it transfers control to the other hand
+without a jump. Grip release restores ordinary gravity. Desktop pointers do not
+climb. Ray misses do not fall back to proximity zones.
+
+```mms
+T {
+    Climbable {}
+    R.cylinder(0.03, 1.0, 20) {}
+}
+```
+
 ### `DraggableComponent`
 <!-- catalog:component source="DraggableComponent" mms="direct" names="Draggable" -->
 

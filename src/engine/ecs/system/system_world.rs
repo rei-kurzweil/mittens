@@ -182,9 +182,9 @@ mod tests {
     use crate::engine::ecs::World;
     use crate::engine::ecs::component::{
         AvatarControlComponent, BoneRestPoseComponent, ColorComponent, ComponentRef, GLTFComponent,
-        MirrorComponent, PoseCapturePoseComponent, PoseTargetRef, RaycastableComponent,
-        RenderableComponent, SecondaryMotionComponent, SpringBoneComponent, SpringJointComponent,
-        StencilClipComponent, TextureComponent, TransformComponent,
+        MirrorComponent, PoseCapturePoseComponent, PoseTargetRef, RenderableComponent,
+        SecondaryMotionComponent, SpringBoneComponent, SpringJointComponent, StencilClipComponent,
+        TextureComponent, TransformComponent,
     };
     use crate::engine::ecs::system::System;
     use crate::engine::ecs::{IntentValue, PoseApplyMode, SignalEmitter};
@@ -1403,45 +1403,6 @@ mod tests {
             );
         }
     }
-
-    #[test]
-    fn late_raycastable_init_refreshes_descendant_renderables() {
-        let mut world = World::default();
-        let mut visuals = VisualWorld::default();
-        let mut systems = SystemWorld::default();
-        let mut queue = CommandQueue::new();
-        let mut render_assets = RenderAssets::new();
-
-        let raycastable_root = world.add_component(RaycastableComponent::enabled());
-        let terrain_root =
-            world.add_component_boxed_named("terrain_root", Box::new(TransformComponent::new()));
-        let terrain_renderable = world.add_component(RenderableComponent::cube());
-
-        let _ = world.add_child(raycastable_root, terrain_root);
-        let _ = world.add_child(terrain_root, terrain_renderable);
-
-        world.init_component_tree(terrain_root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
-
-        assert!(
-            !crate::engine::ecs::system::BvhSystem::renderable_is_raycastable(
-                &world,
-                terrain_renderable
-            ),
-            "renderable should not become raycastable before the ancestor Raycastable is initialized"
-        );
-
-        world.init_component_tree(raycastable_root, &mut queue);
-        systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut queue);
-
-        assert!(
-            crate::engine::ecs::system::BvhSystem::renderable_is_raycastable(
-                &world,
-                terrain_renderable
-            ),
-            "initializing an ancestor Raycastable should refresh descendant renderable bindings"
-        );
-    }
 }
 
 impl SystemWorld {
@@ -1914,7 +1875,12 @@ impl SystemWorld {
 
         match &intent.value {
             IntentValue::RegisterRenderable { component } => {
-                self.register_renderable(world, visuals, *component);
+                self.register_renderable_with_assets(
+                    world,
+                    visuals,
+                    *component,
+                    Some(render_assets),
+                );
             }
             IntentValue::RemoveRenderable { component } => {
                 self.remove_renderable(world, visuals, *component);
@@ -2350,94 +2316,6 @@ impl SystemWorld {
     ) {
         self.router
             .register_router(&mut self.rx, world, emit, component);
-    }
-
-    /// Register a RenderableComponent instance with the RenderableSystem.
-    pub fn register_renderable(
-        &mut self,
-        world: &mut World,
-        visuals: &mut VisualWorld,
-        component: ComponentId,
-    ) {
-        let combined_owner = self.combine_mesh.owner_of(world, component);
-        if let Some(owner) = combined_owner {
-            let keep_sources = world
-                .get_component_by_id_as::<crate::engine::ecs::component::CombineMeshComponent>(
-                    owner,
-                )
-                .is_some_and(|combine| combine.keep_transforms);
-            if !keep_sources || !BvhSystem::renderable_is_raycastable(world, component) {
-                return;
-            }
-        } else {
-            self.renderable
-                .register_renderable(world, visuals, component);
-        }
-
-        // Cache the renderable's local-space AABB as a child BoundsComponent
-        // so layout (and future CPU culling) can read mesh extents without
-        // touching the BVH or recomputing from mesh handles each time.
-        attach_bounds_for_renderable(world, component);
-
-        // Keep BVH in sync (defer actual build/refit to CommandQueue flush).
-        if BvhSystem::renderable_is_raycastable(world, component) {
-            self.bvh.queue_renderable_added(component);
-        }
-
-        // Keep RayCastSystem's eligibility index in sync for brute-force fallback.
-        self.raycast.notify_renderable_added(&*world, component);
-
-        if combined_owner.is_none() {
-            self.clipping.register_renderable(world, visuals, component);
-        }
-    }
-
-    fn refresh_raycastable_bindings(&mut self, world: &World, component: ComponentId) {
-        use crate::engine::ecs::component::RenderableComponent;
-        use std::collections::HashSet;
-
-        let mut renderables = HashSet::new();
-
-        let mut current = world.parent_of(component);
-        while let Some(node) = current {
-            if world
-                .get_component_by_id_as::<RenderableComponent>(node)
-                .is_some()
-            {
-                renderables.insert(node);
-                break;
-            }
-            current = world.parent_of(node);
-        }
-
-        let mut stack = vec![component];
-        while let Some(node) = stack.pop() {
-            if world
-                .get_component_by_id_as::<RenderableComponent>(node)
-                .is_some()
-            {
-                renderables.insert(node);
-            }
-            for &child in world.children_of(node) {
-                stack.push(child);
-            }
-        }
-
-        for renderable in renderables {
-            if BvhSystem::debug_grid_raycast_enabled() {
-                eprintln!(
-                    "grid_raycast_trace phase=registration_applied marker={component:?} renderable={renderable:?} eligible={}",
-                    BvhSystem::renderable_is_raycastable(world, renderable)
-                );
-            }
-            if BvhSystem::renderable_is_raycastable(world, renderable) {
-                self.bvh.queue_renderable_added(renderable);
-                self.raycast.notify_renderable_added(world, renderable);
-            } else {
-                self.bvh.queue_renderable_removed(renderable);
-                self.raycast.notify_renderable_removed(renderable);
-            }
-        }
     }
 
     /// Register a StencilClipComponent: find the sibling RenderableComponent in the same
@@ -3519,12 +3397,12 @@ impl SystemWorld {
         // Integrate outer motion before camera/OpenXR publish this frame's eye
         // poses. Click commands capture the previous published eye at dispatch
         // and become motion on the next fixed substep.
-        // Seed sweep history from the current pose, including input movement,
-        // before the first proposed fixed-step pose.
+        // Seed sweep history before the first proposed fixed-step pose.
         self.prepare_avatar_capsule_contact(world, visuals);
         for target in self.static_contact.tick_excluding(world, &self.attachment) {
             self.transform_changed(world, visuals, target);
         }
+        self.grabbable.prepare_climbing_velocity(world);
         let velocity_steps = self.velocity.take_steps(dt_sec);
         for _ in 0..velocity_steps {
             self.velocity.step(world, queue);
@@ -3611,11 +3489,7 @@ impl SystemWorld {
         // Execute/dispatch gesture-produced signals immediately (e.g. DragStart/DragMove/DragEnd).
         let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);
 
-        // Apply grab attachment/release and clearance easing after grab lifecycle events land.
-        self.grabbable
-            .tick(world, render_assets, &mut self.rx, dt_sec);
-        self.attachment.tick(world, &mut self.rx);
-        let _ = self.process_signals(world, visuals, render_assets, queue, 100_000);
+        self.tick_grip_motion(world, visuals, render_assets, queue, dt_sec);
 
         // Gizmos consume drag events and apply transform changes.
         self.transform_gizmo
@@ -3792,23 +3666,6 @@ impl SystemWorld {
         }
     }
 
-    /// Process commands from the command queue.
-    fn prepare_avatar_capsule_contact(&mut self, world: &mut World, visuals: &mut VisualWorld) {
-        // Binding/configuration edits need one evaluation before contact. Source
-        // pose changes already reach ancestor samplers through normal propagation.
-        let pending = self
-            .avatar_control
-            .pending_capsule_samples(world, &self.transform_operator);
-        for sample in pending {
-            self.transform_changed(world, visuals, sample);
-        }
-        self.avatar_control.gate_capsule_contact(
-            world,
-            &self.transform_operator,
-            &mut self.static_contact,
-        );
-    }
-
     pub fn process_commands(
         &mut self,
         world: &mut World,
@@ -3850,31 +3707,4 @@ impl SystemWorld {
             }
         }
     }
-}
-
-/// Attach a `BoundsComponent` child to a renderable, caching its mesh's local
-/// AABB. Skips when the mesh has no tabulated AABB (e.g. GLTF-loaded) or when
-/// a `BoundsComponent` child already exists.
-fn attach_bounds_for_renderable(world: &mut World, renderable_id: ComponentId) {
-    use crate::engine::ecs::component::{BoundsComponent, RenderableComponent};
-    use crate::engine::graphics::bounds::mesh_local_aabb;
-
-    let mesh = match world.get_component_by_id_as::<RenderableComponent>(renderable_id) {
-        Some(r) => r.renderable.base_mesh,
-        None => return,
-    };
-    let Some(local) = mesh_local_aabb(mesh) else {
-        return;
-    };
-
-    let already = world
-        .children_of(renderable_id)
-        .iter()
-        .any(|&c| world.get_component_by_id_as::<BoundsComponent>(c).is_some());
-    if already {
-        return;
-    }
-
-    let bounds_id = world.add_component(BoundsComponent::new(local));
-    let _ = world.add_child(renderable_id, bounds_id);
 }
