@@ -2,7 +2,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::engine::startup_trace::{StartupCheckpoint, log_startup_progress};
-use crate::engine::user_input::{UserInput, WinitHidProvider};
+use crate::engine::user_input::{InputState, UserInput, WinitHidProvider};
+type InputHook = Box<dyn FnMut(&mut crate::engine::Universe, &mut InputState)>;
 use crate::engine::{EngineError, EngineResult};
 
 use winit::application::ApplicationHandler;
@@ -25,13 +26,13 @@ impl Windowing {
         universe: crate::engine::Universe,
         user_input: UserInput,
     ) -> EngineResult<()> {
-        Self::run_app_with_input_and_frame_hook(universe, Some(user_input), None)
+        Self::run_app_with_input_and_frame_hook(universe, Some(user_input), None, None)
     }
 
     /// Run using only the HID providers configured on the Universe, including
     /// an empty collection. Window lifecycle events remain handled by the host.
     pub fn run_app_with_providers(universe: crate::engine::Universe) -> EngineResult<()> {
-        Self::run_app_with_input_and_frame_hook(universe, None, None)
+        Self::run_app_with_input_and_frame_hook(universe, None, None, None)
     }
 
     /// Run a Universe and invoke `frame_hook` after each update and before
@@ -45,6 +46,20 @@ impl Windowing {
             universe,
             Some(UserInput::new()),
             Some(Box::new(frame_hook)),
+            None,
+        )
+    }
+
+    /// Inspect or route normalized input before ECS focus/gameplay consumers run.
+    pub fn run_app_with_input_hook(
+        universe: crate::engine::Universe,
+        hook: impl FnMut(&mut crate::engine::Universe, &mut InputState) + 'static,
+    ) -> EngineResult<()> {
+        Self::run_app_with_input_and_frame_hook(
+            universe,
+            Some(UserInput::new()),
+            None,
+            Some(Box::new(hook)),
         )
     }
 
@@ -52,6 +67,7 @@ impl Windowing {
         mut universe: crate::engine::Universe,
         user_input: Option<UserInput>,
         frame_hook: Option<Box<dyn FnMut(&mut crate::engine::Universe)>>,
+        input_hook: Option<InputHook>,
     ) -> EngineResult<()> {
         let event_loop = EventLoop::new()
             .map_err(|error| EngineError::Windowing(format!("event loop init failed: {error}")))?;
@@ -68,6 +84,7 @@ impl Windowing {
             last_frame: None,
             user_input,
             frame_hook,
+            input_hook,
             startup_error: None,
         };
 
@@ -89,6 +106,7 @@ struct App {
     last_frame: Option<Instant>,
     user_input: Option<WinitHidProvider>,
     frame_hook: Option<Box<dyn FnMut(&mut crate::engine::Universe)>>,
+    input_hook: Option<InputHook>,
     startup_error: Option<EngineError>,
 }
 
@@ -187,7 +205,11 @@ impl ApplicationHandler for App {
 
                 let universe = self.universe.as_mut().expect("universe missing");
 
-                universe.update_with_input_providers(dt);
+                let mut input = universe.input_providers.poll();
+                if let Some(hook) = self.input_hook.as_mut() {
+                    hook(universe, &mut input);
+                }
+                universe.update(dt, &input);
 
                 if let Some(frame_hook) = self.frame_hook.as_mut() {
                     frame_hook(universe);

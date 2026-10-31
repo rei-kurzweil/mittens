@@ -15,6 +15,9 @@ pub struct Target {
 }
 impl Target {
     pub fn new(gpu: Arc<Gpu>) -> Self {
+        Self::with_extent(gpu, 96, 96)
+    }
+    pub fn with_extent(gpu: Arc<Gpu>, width: u32, height: u32) -> Self {
         unsafe {
             let d = &gpu.device;
             let props = gpu
@@ -31,18 +34,15 @@ impl Target {
                     })
                     .unwrap()
             };
-            let extent = vk::Extent2D {
-                width: 96,
-                height: 96,
-            };
+            let extent = vk::Extent2D { width, height };
             let image = d
                 .create_image(
                     &vk::ImageCreateInfo::default()
                         .image_type(vk::ImageType::TYPE_2D)
                         .format(vk::Format::R8G8B8A8_UNORM)
                         .extent(vk::Extent3D {
-                            width: 96,
-                            height: 96,
+                            width,
+                            height,
                             depth: 1,
                         })
                         .mip_levels(1)
@@ -72,7 +72,7 @@ impl Target {
             let buffer = d
                 .create_buffer(
                     &vk::BufferCreateInfo::default()
-                        .size(96 * 96 * 2 * 4)
+                        .size(u64::from(width) * u64::from(height) * 2 * 4)
                         .usage(vk::BufferUsageFlags::TRANSFER_DST),
                     None,
                 )
@@ -212,8 +212,8 @@ impl Target {
                             .layer_count(2),
                     )
                     .image_extent(vk::Extent3D {
-                        width: 96,
-                        height: 96,
+                        width: self.extent.width,
+                        height: self.extent.height,
                         depth: 1,
                     })],
             );
@@ -240,7 +240,7 @@ impl Target {
                 vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
             );
             self.submit();
-            let bytes = 96 * 96 * 2 * 4;
+            let bytes = u64::from(self.extent.width) * u64::from(self.extent.height) * 2 * 4;
             let ptr = d
                 .map_memory(self.buffer_memory, 0, bytes, vk::MemoryMapFlags::empty())
                 .unwrap();

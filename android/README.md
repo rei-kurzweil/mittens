@@ -44,7 +44,14 @@ starts a LAN listener by default. The PC also supplies directory listings for
 an interactive headset browser; selecting a script from either device transfers
 its imports/assets and starts a fresh scene, while terminal commands modify the
 active session. Remote keyboard input is a separate mode. This remains a design
-draft: the client, browser, listener, and transfer protocol are not implemented.
+draft for scene launch, RPC, and project transfer. A runnable
+[MMS shell prototype](../docs/how_to/mitten-droid-shell.md) now provides the
+terminal/browser UI, native pointer selection and row scrolling, directory
+listings, and UDP terminal text/edit input. Build with `--features shell-demo`
+to select it on the headset.
+The [UDP and LAN keyboard proposal](docs/udp-lan-keyboard.md) details the portable
+Rust/MMS socket and keyboard relay components, signals, systems, and initial
+echo/typing examples.
 
 Current layout:
 

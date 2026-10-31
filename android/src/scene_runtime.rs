@@ -9,7 +9,7 @@ use ash::vk;
 use mittens_engine::engine::{
     Universe,
     ecs::{World, component::RendererSettingsComponent},
-    user_input::InputState,
+    user_input::udp_text::UdpTerminalHost,
 };
 use std::{path::Path, sync::Arc};
 
@@ -19,10 +19,12 @@ pub(crate) struct SceneRuntime {
     last_time: Option<i64>,
     announced: bool,
     profile: crate::frame_profile::FrameProfile,
+    terminal: Option<UdpTerminalHost>,
 }
 pub(crate) struct PreparedScene {
     universe: Universe,
     label: &'static str,
+    terminal: Option<UdpTerminalHost>,
 }
 impl PreparedScene {
     pub fn load(directory: &Path, scene: DemoScene) -> Result<Self> {
@@ -44,7 +46,20 @@ impl PreparedScene {
                 universe.world.get_component_by_id_as_mut::<mittens_engine::engine::ecs::component::CollidableComponent>(id).unwrap().enabled = false;
             }
         }
+        let terminal = if matches!(scene, DemoScene::Shell) {
+            Some(
+                UdpTerminalHost::install(
+                    &mut universe,
+                    "0.0.0.0:7001".parse().unwrap(),
+                    "shell_terminal_input",
+                )
+                .map_err(|error| format!("UDP terminal: {error}"))?,
+            )
+        } else {
+            None
+        };
         Ok(Self {
+            terminal,
             universe,
             label: source.label,
         })
@@ -84,6 +99,7 @@ impl SceneRuntime {
         report.line(format!("mobile scene loaded: {}; custom opaque materials, ambient/directional/point/spot lights, plain sky; no legacy pipelines", scene.label));
         Ok(Self {
             universe: scene.universe,
+            terminal: scene.terminal,
             renderer,
             last_time: None,
             announced: false,
@@ -104,7 +120,11 @@ impl SceneRuntime {
         });
         self.last_time = Some(now);
         let start = std::time::Instant::now();
-        self.universe.update(dt, &InputState::default());
+        let input = self.universe.input_providers.poll();
+        if let Some(terminal) = &self.terminal {
+            terminal.prepare(&mut self.universe, &input);
+        }
+        self.universe.update(dt, &input);
         let update_ms = start.elapsed().as_secs_f64() * 1000.0;
         let start = std::time::Instant::now();
         self.universe.systems.prepare_render(
@@ -208,5 +228,4 @@ mod tests {
                 .any(|gamepad| gamepad.locomotion && gamepad.hand == XrHandPreference::Left)
         );
     }
-
 }

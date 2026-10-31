@@ -1,8 +1,10 @@
 # MMS development over the Focus 3 LAN
 
-Status: design proposal, revised 2026-10-31. The desktop client, headset browser,
-listener, remote input, project transfer, and incremental Universe API below are
-proposed. This document does not enable a listener or implement these examples.
+Status: workflow design, revised 2026-10-31. The
+[runnable MMS shell prototype](../../docs/how_to/mitten-droid-shell.md) implements
+the paired UI, native browser selection/scrolling, directory listing exchange,
+and UDP terminal text/edit input. Scene launch, project transfer, gameplay key
+relay, and incremental Universe/evaluation APIs below remain proposed.
 The workflow and lifetime requirements below define the intended scope; message
 fields, API names, and transport mechanics remain proposed implementation details.
 
@@ -156,10 +158,13 @@ forwarded unintentionally.
 
 ## Separate the socket from remote evaluation
 
-Keep transport separate from browsing, input, scene launch, and evaluation. A
-portable `UdpSocket` component alongside `HttpClient` and `HttpServer` remains
-an optional later slice. Receiving a datagram produces an MMS event;
-interpreting it as code is an explicit application decision.
+Keep transport separate from browsing, input, scene launch, and evaluation. The
+[UDP and LAN keyboard proposal](udp-lan-keyboard.md) specifies a portable
+`UdpSocket` component alongside `HttpClient` and `HttpServer`, plus a
+`KeyboardRelay` component and reusable Rust/MMS examples. Build those examples
+early to establish real LAN typing before completing the dashboard. Receiving
+a general datagram produces an MMS event; interpreting it as code is an explicit
+application decision.
 
 Use HTTP for the first remote evaluation endpoint. The PC already has
 `HttpClient.post(url, body_text)` and `HttpResponse`/`HttpError` events. UDP is
@@ -173,15 +178,18 @@ Both transports can eventually feed the same evaluation queue. UDP is also
 useful independently for telemetry and frequently updated state where a newer
 sample supersedes a lost one, including the live editor draft described below.
 
-The first version uses HTTP for listings, launch/control, terminal submissions,
-and ordered input batches. Headset browser actions need a return path even
-though the PC initiates the connection: let the PC poll a bounded host action
-queue and post listing updates or launch requests back. Actions have IDs and
-remain available until acknowledged or explicitly expired; duplicate delivery
-must not launch a script twice. Acknowledge after accepting the action, and
-correlate any later transfer/launch failure to it. Expire actions on disconnect
-or project-generation change. Do not open a second inbound server on the PC as
-an implicit requirement. A persistent bidirectional transport can replace this
+Use HTTP for listings, launch/control, terminal submissions, and relay setup.
+Use the proposed UDP keyboard relay for remote input once its ordering,
+acknowledgments, bounded retries, and release behavior are implemented. HTTP
+input remains useful as an initial comparison; raw UDP alone does not satisfy
+the input contract. Headset browser actions need a return path even though the
+PC initiates the connection: let the PC poll a bounded host action queue and
+post listing updates or launch requests back. Actions have IDs and remain
+available until acknowledged or explicitly expired; duplicate delivery must not
+launch a script twice. Acknowledge after accepting the action, and correlate
+any later transfer/launch failure to it. Expire actions on disconnect or
+project-generation change. Do not open a second inbound server on the PC as an
+implicit requirement. A persistent bidirectional transport can replace this
 polling if measured interaction latency or traffic warrants it.
 
 ## Example composition and optional live draft preview
@@ -193,7 +201,9 @@ The proposed example names follow the network roles:
 | `examples/shell-client.mms` | Desktop Mittens UI: connection screen, local project browser, headset terminal, launch controls, and remote-input mode. A host adapter/launcher supplies filesystem services as needed. |
 | `android/examples/shell-server.mms` | Headset waiting/browser UI, listing display and selection actions, status, and optional draft preview. The app-owned listener and scene management survive replacement of a launched script. |
 
-These files do not exist yet. The headset file browser is interactive. A
+The initial UI examples now exist, with a native browser and UDP text/edit
+input. They do not yet implement scene launch, transfer, or remote evaluation.
+The full workflow below remains the intended contract. A
 mirrored terminal/editor draft can separately be read-only, with the PC owning
 that editing buffer. Draft mirroring is an optional extension; the browser and
 terminal workflow does not depend on it. Preserve the desktop draft while a
@@ -277,54 +287,18 @@ it is not a synchronous `eval()` inside that callback. Keep these responsibiliti
 reusable rather than hiding the whole workflow inside an Android-only shell
 implementation.
 
-## Optional first-class UDP surface
+## Portable UDP and keyboard relay
 
-UDP uses one bidirectional socket, so start with one component rather than
-separate client/server types. The following names and signatures are proposed:
+The [focused proposal](udp-lan-keyboard.md) is the source of truth for UDP
+component configuration, Rust intents/events, MMS bindings, socket lifecycle,
+and keyboard relay messages. It separates generic datagrams from reliable
+ordered keyboard/text operations and defines capture, focus ownership, ACKs,
+timeout releases, queue/traffic limits, and the remote HID provider boundary.
 
-| Surface | Contract |
-| --- | --- |
-| `UdpSocket.bind(address) {}` | Own one socket until component removal; port `0` asks the OS for a port. |
-| `socket.send_text(remote_addr, text)` | Queue one UTF-8 datagram. |
-| `socket.send_to(remote_addr, payload)` | Queue one binary datagram; `payload` is an array of byte values. |
-| `UdpReady` | `{ local_addr }`, emitted after binding succeeds. |
-| `UdpDatagram` | `{ remote_addr, payload, body_text, size_bytes }`; `body_text` is null for invalid UTF-8. |
-| `UdpError` | `{ phase, message, remote_addr }`; phases include bind, receive, send, and size validation. |
-
-Example headset echo service, using the proposed component:
-
-```mms
-let socket = UdpSocket.bind("0.0.0.0:7001") {}
-socket
-
-on(socket, "UdpDatagram", fn(packet) {
-    socket.send_to(packet.remote_addr, packet.payload)
-})
-```
-
-The PC binds `0.0.0.0:0`, waits for `UdpReady`, and sends to the headset's
-LAN address. Replies return to `packet.remote_addr`, including the PC's actual
-source port. `0.0.0.0` is a local bind address, not a destination address.
-
-Implementation belongs in the portable engine, matching the HTTP flow:
-
-```text
-UdpSocket component -> registration/send intents -> UdpSystem
-OS socket -> bounded incoming queue -> UdpDatagram -> MMS callback
-```
-
-Keep socket I/O and name resolution off the XR thread, reuse the socket and
-receive storage, and bound queue size and events serviced per update. Do not
-create a thread per datagram. Reject outgoing packets above the configured
-limit and receive into enough storage to detect oversized packets before
-discarding them; never deliver a truncated packet as valid data. A conservative
-initial application payload limit is 1,200 bytes, without claiming that every
-network path will avoid fragmentation at that size. No automatic retries,
-ordering, or evaluation belongs in this component.
-
-Start with unicast and numeric socket addresses. Broadcast, multicast, discovery,
-and hostname resolution can be deliberate additions. Expose queue drops through
-bounded counters/diagnostics, not an unlimited stream of error events.
+Its first acceptance slices build Rust and MMS UDP echo examples, then desktop
+keyboard sender/headset receiver examples. The generic socket has no automatic
+retry or evaluation behavior; the relay supplies the keyboard-specific protocol.
+Live draft snapshots remain an optional use of UDP after the typing path works.
 
 ## PC-authored remote MMS
 
@@ -515,9 +489,10 @@ encryption for other networks.
 2. Add the default Android development listener and desktop connection/terminal
    UI. Verify connection by IP, authentication, actual headset evaluation,
    correlated results, duplicate requests, stale generations, reconnect, and
-   suspend/resume/shutdown. Add a session output sink for script output. Verify
-   remote text, paste, editing keys, modifiers, ordering, duplicate/gap handling,
-   and held-key release through the normal input path.
+   suspend/resume/shutdown. Add a session output sink for script output. Build
+   the [portable UDP and keyboard relay examples](udp-lan-keyboard.md) alongside
+   this slice. Verify remote text, paste, editing keys, modifiers, ordering,
+   duplicate/gap handling, and held-key release through the normal input path.
 3. Add the desktop file browser, selected project root, and reusable listing
    model/host adapter. Verify folders, script search, double-click selection,
    bounded/paged listings, changed/deleted entries, and root/path containment.
@@ -535,10 +510,8 @@ encryption for other networks.
    headset selection/input and readable changing text with custom UI materials.
 6. Optionally add live draft preview, checking rapid edits/coalescing, paste and
    deletion, exact submitted source/revision, and independent completion display.
-   Add portable `UdpSocket` bindings only as a separate later slice; validate
-   loopback/binary/UTF-8 behavior, limits/drops, removal, and PC-to-headset traffic.
-   If measurements justify UDP preview, add revision checks and final-edit
-   recovery. Keep execution and larger drafts on HTTP.
+   If measurements justify using the UDP API for preview too, add draft revision
+   checks and final-edit recovery. Keep execution and larger drafts on HTTP.
 
 No new rendering features are part of this proposal. Build the browser/terminal
 UI with the supported generic custom-material path; do not introduce legacy

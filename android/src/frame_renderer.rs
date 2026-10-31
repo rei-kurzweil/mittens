@@ -20,7 +20,9 @@ impl FrameSetup {
     pub fn new(directory: Option<&Path>) -> Result<Self> {
         #[cfg(feature = "mobile-renderer")]
         {
-            let scene = if cfg!(feature = "cube-demo") {
+            let scene = if cfg!(feature = "shell-demo") {
+                crate::demo_assets::DemoScene::Shell
+            } else if cfg!(feature = "cube-demo") {
                 crate::demo_assets::DemoScene::Cubes
             } else if cfg!(feature = "profile-ui") {
                 crate::demo_assets::DemoScene::SakuraStage

@@ -323,6 +323,14 @@ name = "runtime-spec-emissive-cubes"
 required-features = ["desktop"]
 
 [[example]]
+name = "shell-client"
+required-features = ["desktop"]
+
+[[example]]
+name = "shell-server-preview"
+required-features = ["desktop"]
+
+[[example]]
 name = "scrolling"
 required-features = ["desktop"]
 

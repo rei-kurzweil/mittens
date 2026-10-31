@@ -725,19 +725,30 @@ impl mms::Host for MittensHost<'_, '_> {
                     ) => self.emit_data(args),
                     super::runtime_config::MittensBinding::Api(
                         super::runtime_config::MittensApi::FileReadText,
-                    ) => file_read_text(args),
+                    ) => super::file_api::read_text(args),
+                    super::runtime_config::MittensBinding::Api(
+                        super::runtime_config::MittensApi::FileListDir,
+                    ) => super::file_api::list_dir(args),
+                    super::runtime_config::MittensBinding::Api(
+                        super::runtime_config::MittensApi::JsonTryParseObject,
+                    ) => super::json_api::try_parse_object(args),
                     super::runtime_config::MittensBinding::Api(
                         super::runtime_config::MittensApi::JsonParse,
-                    ) => json_parse(args),
+                    ) => super::json_api::parse(args),
                     super::runtime_config::MittensBinding::Api(
                         super::runtime_config::MittensApi::JsonStringify,
-                    ) => json_stringify(args),
+                    ) => super::json_api::stringify(args),
                     super::runtime_config::MittensBinding::Api(
                         super::runtime_config::MittensApi::AudioInputDevices,
                     ) => audio_input_devices(args),
                     super::runtime_config::MittensBinding::Api(
                         super::runtime_config::MittensApi::AudioOutputDevices,
                     ) => audio_output_devices(args),
+                    super::runtime_config::MittensBinding::Api(api)
+                        if super::file_browser::supports(*api) =>
+                    {
+                        super::file_browser::invoke(self, *api, args)
+                    }
                     binding => Err(mms::HostError {
                         kind: mms::HostErrorKind::InvalidRequest,
                         operation: format!("{operation_id:?}"),
@@ -1210,21 +1221,6 @@ fn reject_animation_legacy_fallback(
     Ok(())
 }
 
-fn file_read_text(args: Vec<mms::TransportValue>) -> Result<mms::HostResponse, mms::HostError> {
-    let [mms::TransportValue::String(path)] = args.as_slice() else {
-        return Err(mms::HostError::failure(
-            "File.read_text",
-            "expected one string path argument",
-        ));
-    };
-    let text = std::fs::read_to_string(path).map_err(|error| {
-        mms::HostError::failure("File.read_text", format!("cannot read '{path}': {error}"))
-    })?;
-    Ok(mms::HostResponse::Transport(mms::TransportValue::String(
-        text,
-    )))
-}
-
 fn audio_input_devices(
     args: Vec<mms::TransportValue>,
 ) -> Result<mms::HostResponse, mms::HostError> {
@@ -1277,98 +1273,6 @@ fn audio_output_devices(
     Ok(mms::HostResponse::Transport(mms::TransportValue::Array(
         names,
     )))
-}
-
-fn json_parse(args: Vec<mms::TransportValue>) -> Result<mms::HostResponse, mms::HostError> {
-    let [mms::TransportValue::String(text)] = args.as_slice() else {
-        return Err(mms::HostError::failure(
-            "JSON.parse",
-            "expected one string argument",
-        ));
-    };
-    let value = serde_json::from_str(text)
-        .map_err(|error| mms::HostError::failure("JSON.parse", error.to_string()))?;
-    Ok(mms::HostResponse::Transport(json_to_transport(value)?))
-}
-
-fn json_stringify(args: Vec<mms::TransportValue>) -> Result<mms::HostResponse, mms::HostError> {
-    let [value] = args.as_slice() else {
-        return Err(mms::HostError::failure(
-            "JSON.stringify",
-            "expected one argument",
-        ));
-    };
-    let text = serde_json::to_string(&transport_to_json(value)?)
-        .map_err(|error| mms::HostError::failure("JSON.stringify", error.to_string()))?;
-    Ok(mms::HostResponse::Transport(mms::TransportValue::String(
-        text,
-    )))
-}
-
-fn json_to_transport(value: serde_json::Value) -> Result<mms::TransportValue, mms::HostError> {
-    Ok(match value {
-        serde_json::Value::Null => mms::TransportValue::Null,
-        serde_json::Value::Bool(value) => mms::TransportValue::Bool(value),
-        serde_json::Value::Number(value) => {
-            mms::TransportValue::Number(value.as_f64().ok_or_else(|| {
-                mms::HostError::failure("JSON.parse", "number cannot be represented by MMS")
-            })?)
-        }
-        serde_json::Value::String(value) => mms::TransportValue::String(value),
-        serde_json::Value::Array(values) => mms::TransportValue::Array(
-            values
-                .into_iter()
-                .map(json_to_transport)
-                .collect::<Result<_, _>>()?,
-        ),
-        serde_json::Value::Object(values) => mms::TransportValue::Table(
-            values
-                .into_iter()
-                .map(|(key, value)| Ok((key, json_to_transport(value)?)))
-                .collect::<Result<_, mms::HostError>>()?,
-        ),
-    })
-}
-
-fn transport_to_json(value: &mms::TransportValue) -> Result<serde_json::Value, mms::HostError> {
-    Ok(match value {
-        mms::TransportValue::Null => serde_json::Value::Null,
-        mms::TransportValue::Bool(value) => serde_json::Value::Bool(*value),
-        mms::TransportValue::Number(value) => serde_json::Number::from_f64(*value)
-            .map(serde_json::Value::Number)
-            .ok_or_else(|| mms::HostError::failure("JSON.stringify", "numbers must be finite"))?,
-        mms::TransportValue::String(value) => serde_json::Value::String(value.clone()),
-        mms::TransportValue::TypeTag(_) | mms::TransportValue::RecordType(_) => {
-            return Err(mms::HostError::failure(
-                "JSON.stringify",
-                "type tags are not JSON values",
-            ));
-        }
-        mms::TransportValue::Array(values) => serde_json::Value::Array(
-            values
-                .iter()
-                .map(transport_to_json)
-                .collect::<Result<_, _>>()?,
-        ),
-        mms::TransportValue::Table(values) => serde_json::Value::Object(
-            values
-                .iter()
-                .map(|(key, value)| Ok((key.clone(), transport_to_json(value)?)))
-                .collect::<Result<_, mms::HostError>>()?,
-        ),
-        mms::TransportValue::Component(_) | mms::TransportValue::TypedComponent { .. } => {
-            return Err(mms::HostError::failure(
-                "JSON.stringify",
-                "component handles are not JSON values",
-            ));
-        }
-        mms::TransportValue::Callback(_) => {
-            return Err(mms::HostError::failure(
-                "JSON.stringify",
-                "functions are not JSON values",
-            ));
-        }
-    })
 }
 
 fn signal_kind(name: &str) -> Option<SignalKind> {

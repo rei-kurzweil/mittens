@@ -9,6 +9,7 @@ mod renderer;
 mod scene;
 #[path = "../../../src/scene_runtime.rs"]
 mod scene_runtime;
+mod shell;
 mod target;
 #[path = "../../../src/xr_resolution.rs"]
 mod xr_resolution;
@@ -342,6 +343,14 @@ mod vulkan_probe {
     }
 }
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--shell-preview") {
+        shell::render(
+            &std::env::args()
+                .nth(2)
+                .unwrap_or("/tmp/mitten-droid-shell.ppm".into()),
+        );
+        return;
+    }
     vulkan_probe::run(true);
     vulkan_probe::run(false);
     scene::run(ash::vk::SampleCountFlags::TYPE_1);

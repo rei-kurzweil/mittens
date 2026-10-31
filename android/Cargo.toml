@@ -18,6 +18,7 @@ xr-probe = ["dep:openxr", "dep:jni"]
 vulkan-probe = ["xr-probe", "dep:ash"]
 mobile-renderer = ["vulkan-probe"]
 cube-demo = ["mobile-renderer"]
+shell-demo = ["mobile-renderer"]
 resolution-probe = ["mobile-renderer"]
 resolution-render-probe = ["mobile-renderer"]
 profile-ui = ["mobile-renderer"]
@@ -70,6 +71,8 @@ name = "android.hardware.vr.headtracking"
 required = true
 version = 1
 
+[[package.metadata.android.uses_permission]]
+name = "android.permission.INTERNET"
 [[package.metadata.android.uses_permission]]
 name = "org.khronos.openxr.permission.OPENXR"
 [[package.metadata.android.uses_permission]]

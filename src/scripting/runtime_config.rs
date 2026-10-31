@@ -62,7 +62,20 @@ pub enum MittensApi {
     XrFloorCorrectionSet,
     XrFloorCorrectionGet,
     FileReadText,
+    FileListDir,
+    BrowserLocal,
+    BrowserRemote,
+    BrowserDemo,
+    BrowserSnapshot,
+    BrowserSelection,
+    BrowserAction,
+    BrowserSetListing,
+    BrowserActivate,
+    BrowserRefresh,
+    BrowserClear,
+    BrowserScroll,
     JsonParse,
+    JsonTryParseObject,
     JsonStringify,
     AudioInputDevices,
     AudioOutputDevices,
@@ -1855,26 +1868,9 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         });
     });
 
-    builder.namespace("File", |namespace| {
-        namespace.api(
-            "read_text",
-            mms::ValueSignature::new(vec![mms::ValueType::String], mms::ValueType::String),
-            MittensBinding::Api(MittensApi::FileReadText),
-        );
-    });
-
-    builder.namespace("JSON", |namespace| {
-        namespace.api(
-            "parse",
-            mms::ValueSignature::new(vec![mms::ValueType::String], mms::ValueType::Any),
-            MittensBinding::Api(MittensApi::JsonParse),
-        );
-        namespace.api(
-            "stringify",
-            mms::ValueSignature::new(vec![mms::ValueType::Any], mms::ValueType::String),
-            MittensBinding::Api(MittensApi::JsonStringify),
-        );
-    });
+    super::file_api::register(&mut builder);
+    super::file_browser::register(&mut builder);
+    super::json_api::register(&mut builder);
 
     builder.namespace("AudioInput", |namespace| {
         namespace.api(

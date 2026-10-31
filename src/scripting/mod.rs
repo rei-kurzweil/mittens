@@ -7,7 +7,11 @@ pub mod block_effect_analyzer {
 pub mod component_method_registry;
 pub mod component_registry;
 mod configured_registry;
+mod file_api;
+mod file_browser;
+pub use file_browser::interaction::scroll as scroll_file_browser;
 pub mod host;
+mod json_api;
 pub mod world_evaluator;
 pub mod lowering {
     pub use meow_meow_script::lowering::*;

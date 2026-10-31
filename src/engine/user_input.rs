@@ -1,6 +1,7 @@
 //! Shared input snapshots, engine-owned key/button types, and host HID providers.
 
 mod providers;
+pub mod udp_text;
 pub use providers::{HidProvider, HidProviders, InputProviderId};
 mod keyboard;
 pub use keyboard::{

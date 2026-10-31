@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 #[derive(Clone, Copy)]
 pub(crate) enum DemoScene {
     Cubes,
+    Shell,
     SakuraStage,
     SakuraLean,
     SakuraCollision,
@@ -45,6 +46,15 @@ const STAGE_FILES: &[(&str, &[u8])] = bundle![
     "assets/components/materials/ui_unlit.mms",
     "assets/shaders/ui-unlit.frag",
 ];
+const SHELL_FILES: &[(&str, &[u8])] = bundle![
+    "android/examples/shell-server.mms",
+    "assets/components/mitten_droid/ui.mms",
+    "assets/components/mitten_droid/protocol.mms",
+    "assets/shaders/mitten-droid-gold.frag",
+    "assets/shaders/mitten-droid-ui.frag",
+    "assets/components/materials/ui_unlit.mms",
+    "assets/shaders/ui-unlit.frag",
+];
 pub(crate) fn install(directory: &Path, scene: DemoScene) -> Result<SceneSource> {
     let root = directory.join("mittens-demo");
     std::fs::create_dir_all(&root).map_err(|e| format!("demo directory: {e}"))?;
@@ -67,8 +77,16 @@ pub(crate) fn install(directory: &Path, scene: DemoScene) -> Result<SceneSource>
                 label: "two MMS cubes",
             })
         }
-        DemoScene::SakuraStage | DemoScene::SakuraLean | DemoScene::SakuraCollision => {
-            for &(relative, bytes) in STAGE_FILES {
+        DemoScene::Shell
+        | DemoScene::SakuraStage
+        | DemoScene::SakuraLean
+        | DemoScene::SakuraCollision => {
+            let files = if matches!(scene, DemoScene::Shell) {
+                SHELL_FILES
+            } else {
+                STAGE_FILES
+            };
+            for &(relative, bytes) in files {
                 let target = root.join(relative);
                 std::fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
                 if relative.ends_with(".mms") {
@@ -89,6 +107,10 @@ pub(crate) fn install(directory: &Path, scene: DemoScene) -> Result<SceneSource>
             std::fs::write(font, include_bytes!("../assets/font_system.png"))
                 .map_err(|e| e.to_string())?;
             let (relative, label) = match scene {
+                DemoScene::Shell => (
+                    "android/examples/shell-server.mms",
+                    "mitten-droid shell browser",
+                ),
                 DemoScene::SakuraStage => (
                     "android/examples/sakura-stage.mms",
                     "Sakura rooftop stage: UI and collision",
