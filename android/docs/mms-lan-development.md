@@ -1,28 +1,165 @@
 # MMS development over the Focus 3 LAN
 
-Status: design proposal, 2026-10-31. The endpoint, UDP component, and incremental
-Universe API below are proposed; this document does not enable a listener.
+Status: design proposal, revised 2026-10-31. The desktop client, headset browser,
+listener, remote input, project transfer, and incremental Universe API below are
+proposed. This document does not enable a listener or implement these examples.
+The workflow and lifetime requirements below define the intended scope; message
+fields, API names, and transport mechanics remain proposed implementation details.
 
 The intended workflow is:
 
 ```text
-Mittens example on Arch PC
+Mittens desktop client on Arch PC
   -> Ethernet -> travel router -> Wi-Fi 6
   -> Android Mittens host on Focus 3
-  -> evaluate MMS against the running headset scene
-  -> return result or error to the PC example
+  -> launch scripts, evaluate terminal commands, or deliver keyboard input
+  -> return status, results, errors, and headset browser actions to the PC
 ```
 
-Once a host APK with this facility is installed, launching it from the headset
-should be enough to reconnect. ADB is independent of this connection. This
-provides live MMS editing while the app runs; installing a new native build or
-recovering a crashed host still needs a separate mechanism.
+Once a host APK with this facility is installed, launching Mittens Host on the
+headset starts the LAN listener by default in the Android development build.
+The PC connects to its address; no headset menu or per-launch listener toggle
+is required. ADB is independent of this connection. MMS and transferred asset
+changes do not require reinstalling the APK; native engine changes and recovery
+from a crashed host still need a separate mechanism.
+
+## Desktop client and headset workflow
+
+The desktop client runs inside Mittens using its desktop runtime. It provides:
+
+- A connection screen with headset IP address, port, Connect, and remembered
+  addresses. After connecting, show connection state, running script, and
+  Disconnect. Start with a manually entered address; discovery is deferred.
+- A file browser rooted at a local project folder selected on the PC. Navigate
+  folders, search script entries, and double-click an MMS script to launch it on
+  the headset, with the familiar interaction of a desktop file explorer.
+- A terminal attached to the headset's active MMS session. Edit commands on the
+  PC, explicitly submit them, and display correlated results and errors. Script
+  output belongs in this terminal once a session output sink is implemented.
+- Restart and Stop actions for the active script, plus a separate mode for
+  forwarding keyboard input to focused headset UI or scene handlers.
+
+After connection, use a file browser beside the terminal, with headset and
+running-script status above them:
+
+```text
+Headset: 192.168.8.50  Connected       Running: sakura-stage.mms
++----------------------+-----------------------------------------+
+| Project files        | Headset terminal                        |
+| examples/            | > let speed = 0.5                       |
+|   sakura-stage.mms   | > speed * 2                             |
+|   cubes.mms          | 1                                       |
+|   text-input.mms     | >                                       |
++----------------------+-----------------------------------------+
+                         Restart / Stop / Disconnect
+```
+
+The PC also sends project directory listings to the headset. The headset
+displays an interactive file browser backed by the same listing and launch
+operations as the desktop browser. The user can open folders and select a
+script while wearing the headset. These actions travel back to the PC, which
+resolves the selection, transfers the required files, and requests the launch.
+The headset can initially show a waiting scene; its project browser becomes
+available when the PC supplies a project. Disconnecting leaves an explicit
+offline state rather than making cached entries appear launchable.
+
+### Launching scripts and evaluating terminal commands
+
+These are distinct operations with different lifetimes:
+
+| Operation | Behavior |
+| --- | --- |
+| Launch | Send an immutable script/project snapshot and start a fresh scene and MMS session. End the previous script's callbacks and release its scene-owned systems/resources. |
+| Restart | Start the active launch snapshot again in a fresh scene/session. Launch again from the browser to use changed PC files. |
+| Stop | Close the active script and return to the host's waiting/browser state. |
+| Terminal submission | Evaluate the submitted source in the active scene's retained session; preserve bindings, functions, tables, and scene references between submissions. |
+| Remote input | Deliver ordered keyboard/text events through the normal engine input path. It does not submit terminal source. |
+| Draft preview | Optionally mirror unsubmitted editor text on the headset without evaluating it. |
+
+Launching a script must not accumulate several examples in one scene. The host
+listener, connection, and browser belong to the application and survive Launch,
+Restart, and Stop. The script scene has separate ownership: merely replacing
+the retained evaluator does not establish that the old ECS scene, audio,
+network components, and callback routes were removed. A fresh content Universe
+or equivalent complete teardown needs an explicit implementation contract.
+
+Terminal submissions target the active scene generation. Launch, Restart, and
+Stop invalidate the previous generation and any pending commands/input for it.
+The terminal preserves PC-side history but marks the session change; old
+responses cannot become results for the new scene. If no script is running,
+return a clear no-active-scene response. The host/browser remains available
+after a load failure; an atomic rollback to the previous scene is not promised.
+Stop and Restart run at engine boundaries; they cannot interrupt a stalled
+evaluation with the current interpreter's cancellation limitations below.
+
+### Directory listings and project transfer
+
+The PC owns project filesystem access. A listing contains project identity, a
+project/browser generation, request ID, directory ID, listing revision, and
+entries with opaque IDs, display names, and file/folder kinds. Include a parent
+directory ID for navigation within the selected project. MMS file entries can
+be launched; ordinary assets remain browseable. File type alone does not
+establish compatibility with the Android renderer.
+
+Select a project root containing the script's dependencies: for repository
+examples importing `../assets`, use the repository root rather than just its
+`examples` folder. Relative parent paths are valid when they stay within that
+project root.
+
+Headset navigation and launch actions carry the displayed project generation,
+listing revision, and entry ID. The PC rejects obsolete selections and sends a
+fresh listing if the folder changed or the entry disappeared. Opening a new
+project or reconnecting rotates browser identity so delayed listings and actions
+cannot apply to the wrong project. Scene replacement does not invalidate the
+project browser; project and scene generations have different lifetimes.
+
+Both views use the same data model and operations; they can keep independent
+current folders. Bound listing size and paginate large directories. Bound and
+correlate navigation requests so late responses cannot overwrite a more recent
+folder selection. Refresh/resynchronize on reconnect. Resolve IDs on the PC
+within the selected project root, including symlink handling; a headset action
+does not grant arbitrary access to PC paths. A portable directory-listing host
+API or a narrow PC host adapter is needed; the proposed MMS file browser is not
+already implemented by the existing `File.read_text` API.
+
+Launch transfers an entry script together with its required imports and assets.
+Use a versioned project manifest, relative paths, file sizes, and content
+digests, then send missing content into an app-private headset cache. Preserve
+project-relative layout for imports and asset references. Check transfer limits,
+digests, and path containment before activating the snapshot; never resolve a
+PC absolute path as a headset file. Retain the launch snapshot for Restart and
+bound cache storage, retaining files referenced by the active snapshot.
+
+Dependency collection must cover imported MMS, shader files, textures, fonts,
+models, and other referenced files. Dynamically constructed paths need explicit
+manifest entries or a project include list; static import scanning alone cannot
+promise a complete bundle. An early packaged-assets prototype may be useful,
+but general file-browser launch is complete only when a script with transferred
+imports/assets runs without those files having been packaged into the APK.
+
+### Remote keyboard and text input
+
+Keep terminal editing, draft mirroring, and remote input separate. Typing in the
+terminal changes its PC buffer until explicit submission. A visible forwarding
+mode sends committed text and key presses/releases, including modifiers,
+Backspace, arrows, and Enter, to the headset's normal keyboard/TextInput path.
+Text commits support paste and input methods; define the event format so a key
+and its committed text cannot insert the same character twice.
+
+Use bounded, ordered input batches with a controller identity, scene generation,
+and increasing sequence. Suppress duplicate batches, detect gaps, and release
+held keys when ordering cannot be recovered. Release held state on disconnect,
+controller timeout, forwarding-mode exit, suspend, and scene replacement; a
+reconnection starts neutral. Reject or expire input while suspended instead of
+replaying it on resume. Desktop browser/terminal shortcuts must not also be
+forwarded unintentionally.
 
 ## Separate the socket from remote evaluation
 
-Add a general `UdpSocket` component alongside `HttpClient` and `HttpServer`.
-Receiving a datagram produces an MMS event; interpreting it as code is an
-explicit application decision.
+Keep transport separate from browsing, input, scene launch, and evaluation. A
+portable `UdpSocket` component alongside `HttpClient` and `HttpServer` remains
+an optional later slice. Receiving a datagram produces an MMS event;
+interpreting it as code is an explicit application decision.
 
 Use HTTP for the first remote evaluation endpoint. The PC already has
 `HttpClient.post(url, body_text)` and `HttpResponse`/`HttpError` events. UDP is
@@ -36,18 +173,31 @@ Both transports can eventually feed the same evaluation queue. UDP is also
 useful independently for telemetry and frequently updated state where a newer
 sample supersedes a lost one, including the live editor draft described below.
 
-## Desktop editor and live headset preview
+The first version uses HTTP for listings, launch/control, terminal submissions,
+and ordered input batches. Headset browser actions need a return path even
+though the PC initiates the connection: let the PC poll a bounded host action
+queue and post listing updates or launch requests back. Actions have IDs and
+remain available until acknowledged or explicitly expired; duplicate delivery
+must not launch a script twice. Acknowledge after accepting the action, and
+correlate any later transfer/launch failure to it. Expire actions on disconnect
+or project-generation change. Do not open a second inbound server on the PC as
+an implicit requirement. A persistent bidirectional transport can replace this
+polling if measured interaction latency or traffic warrants it.
+
+## Example composition and optional live draft preview
 
 The proposed example names follow the network roles:
 
 | File | Responsibility |
 | --- | --- |
-| `examples/shell-client.mms` | Winit-hosted desktop editor: connection settings, multiline input, Run button, result/error display. |
-| `android/examples/shell-server.mms` | Headset endpoint and scene: display the incoming draft without evaluating it, and execute an explicitly submitted snippet. |
+| `examples/shell-client.mms` | Desktop Mittens UI: connection screen, local project browser, headset terminal, launch controls, and remote-input mode. A host adapter/launcher supplies filesystem services as needed. |
+| `android/examples/shell-server.mms` | Headset waiting/browser UI, listing display and selection actions, status, and optional draft preview. The app-owned listener and scene management survive replacement of a launched script. |
 
-These files do not exist yet. The headset has a read-only draft/result display;
-the PC owns editing. Preserve the desktop draft while a previous submission
-executes, so the user can keep typing.
+These files do not exist yet. The headset file browser is interactive. A
+mirrored terminal/editor draft can separately be read-only, with the PC owning
+that editing buffer. Draft mirroring is an optional extension; the browser and
+terminal workflow does not depend on it. Preserve the desktop draft while a
+previous submission executes, so the user can keep typing.
 
 Treat preview and execution as separate operations:
 
@@ -56,10 +206,11 @@ desktop TextInputChanged -> latest draft snapshot -> headset Text.set_text
 desktop Run              -> exact source snapshot -> MMS evaluation -> result
 ```
 
-Send the edited text rather than replaying individual physical key events. This
-handles insertion, deletion, paste, and committed input-method text consistently,
-and a later snapshot repairs a missed update. The transport message can include
-the caret too. `TextInputChanged` currently includes text and caret after an edit;
+For draft mirroring, send the edited text as a snapshot. This handles insertion,
+deletion, paste, and committed input-method text consistently, and a later
+snapshot repairs a missed update. Remote input to headset UI remains the
+separate event stream described above. The draft message can include the caret
+too. `TextInputChanged` currently includes text and caret after an edit;
 mirroring cursor-only movement would need its own notification.
 
 A draft request to `POST /mms/draft` would add these fields to the authenticated,
@@ -118,13 +269,15 @@ The repository already provides useful implementation pieces:
   introducing legacy text materials, bloom/emission, or stencil clipping for
   this example. Validate changing text on the headset before calling it complete.
 
-The Android example should compose an ordinary `HttpServer` with a queued MMS
-evaluation facility. The missing evaluation facility must submit work after the
-current callback returns; it is not a synchronous `eval()` inside that callback.
-Keep these transport, draft-display, and evaluation responsibilities reusable
-rather than hiding the whole workflow inside an Android-only shell implementation.
+The examples should consume reusable transport, project-browser, input, and
+queued execution facilities. An ordinary `HttpServer` can serve authored routes,
+but the default Android listener must outlive launched script scenes. The
+missing evaluation facility must submit work after the current callback returns;
+it is not a synchronous `eval()` inside that callback. Keep these responsibilities
+reusable rather than hiding the whole workflow inside an Android-only shell
+implementation.
 
-## First-class UDP surface
+## Optional first-class UDP surface
 
 UDP uses one bidirectional socket, so start with one component rather than
 separate client/server types. The following names and signatures are proposed:
@@ -221,12 +374,24 @@ compatibility.
 
 ## Endpoint and result contract
 
-An authenticated `GET /mms/info` handshake supplies protocol version, a fresh
-scene/session generation, and advertised limits. Until MMS supports HTTP request
-headers, a `POST /mms/info` variant can accept the token in a JSON body; the
-current two-argument `HttpClient.post` cannot set an Authorization header.
-Never place the token in the URL. A stale generation must be rejected, so a
-retry cannot accidentally execute in a replacement scene or restarted app.
+An authenticated `GET /mms/info` handshake supplies protocol version, host
+identity/generation, active scene/session generation (or no active scene),
+running-script and suspended state, and advertised limits. Until MMS supports
+HTTP request headers, a `POST /mms/info` variant can accept the token in a JSON
+body; the current two-argument `HttpClient.post` cannot set an Authorization
+header. Never place the token in the URL. A stale generation must be rejected,
+so a retry cannot accidentally execute in a replacement scene or restarted app.
+
+Host/controller identity, project/browser identity, and scene identity are
+separate. Bind the selected project and its browser actions to the authenticated
+PC controller. The host protocol also needs operations for publishing listings,
+polling/acknowledging browser actions, transferring manifests/files, Launch,
+Restart, Stop, and input batches. Their exact route names are not settled here.
+Scene-changing operations include the expected current scene state and return
+the new generation. Deduplicate launch/control requests in the host/controller
+scope, retaining their completion across scene changes: retrying a successful
+Launch must not restart the script merely because Launch changed the scene
+generation. Reject a competing operation based on obsolete scene state.
 
 The evaluation request is the JSON envelope shown above. `id` is a caller-created
 string unique within that scene generation. Successful HTTP delivery is separate
@@ -287,12 +452,14 @@ applying the resulting intents. It should use the retained RuntimeSpec session:
   is the path for later `ls`/`cd`/`cat` support. The first endpoint accepts MMS
   source, without promising those navigation commands.
 
-The Android listener is an explicit development host facility. A socket worker
-validates the transport envelope and enqueues an owned request; the engine
-services it at a defined update boundary, lends the active session a host,
-processes immediate intents, then sends a response. If authored HTTP/UDP
-handlers later submit evaluations, queue them until the current callback has
-returned; do not recursively enter a borrowed session.
+The Android listener is a development host facility, enabled by default in the
+Android development build. A socket worker validates the transport envelope and
+enqueues an owned request; the engine services it at a defined update boundary,
+lends the active session a host, processes immediate intents, then sends a
+response. If authored HTTP/UDP handlers later submit evaluations, queue them
+until the current callback has returned; do not recursively enter a borrowed
+session. Keep directory scanning, file transfer, and hashing off the XR thread;
+queue only validated launch metadata and bounded input/evaluation work for it.
 
 There is currently no execution budget/cancellation facility in the crate
 evaluator. Bounding queue drains does not bound an individual evaluation:
@@ -302,10 +469,14 @@ code needs interpreter fuel/cooperative cancellation in `meow-meow-script` and
 limits on expensive host calls, or a separately designed evaluator worker with
 host calls serviced at update boundaries. A socket timeout cannot solve this.
 
-Keep the listener lifetime at the app/Universe boundary so graphics recreation
-does not create competing sockets. Invalidate pending jobs and the generation
-when the scene closes; release sockets on shutdown. Define suspended behavior
-explicitly rather than relying on an XR draw to service requests.
+Keep the listener and project browser at the application boundary so graphics
+recreation or script scene replacement does not create competing sockets or
+disconnect the PC. Closing a script invalidates its pending jobs, held input,
+and scene generation while preserving host/controller and project state.
+App shutdown releases sockets and invalidates all generations. Reject or expire
+scene work while suspended, report that state to the PC, and resynchronize
+browser and neutral input state on resume. Do not rely on an XR draw to service
+network status or expire requests.
 
 Several integration files are already oversized, including `universe.rs`,
 `runner.rs`, the runtime/component registries, `host.rs`, and `system_world.rs`.
@@ -328,29 +499,52 @@ It currently targets SDK 32. Revisit
 when changing Android/target SDK levels, since those restrictions also apply
 to native TCP and UDP sockets.
 
-Expose evaluation only when the development facility is explicitly enabled,
-with a per-install pairing token or equivalent. A token on plaintext HTTP/UDP
-does not protect traffic from LAN observers; this initial mode assumes a trusted
-private development LAN. Use authenticated encryption for other networks.
+Enable the listener by default in the Android development build, with a
+per-install pairing token or equivalent and a way to disable it in build/config.
+Selecting that development build enables the facility; it must not require a
+headset menu action each launch. Production distribution policy is separate.
+A token on plaintext HTTP/UDP does not protect traffic from LAN observers; this
+initial mode assumes a trusted private development LAN. Use authenticated
+encryption for other networks.
 
 ## Implementation slices and evidence
 
 1. Extract the retained-session driver and add incremental evaluation with
    structured completion. Verify shared bindings, errors followed by recovery,
    preserved scene callbacks/settings, and the stated partial-effect behavior.
-2. Add the desktop `shell-client.mms` editor and Android `shell-server.mms` scene
-   with bounded HTTP draft and execution endpoints. Verify preview changes before
-   Run, rapid edits/coalescing, paste/deletion, exact submitted revision, actual
-   headset execution, result correlation, duplicate requests, stale generations,
-   and suspend/resume/shutdown behavior.
-3. Add portable `UdpSocket` component/system/runtime bindings. Verify loopback
-   echo, binary/UTF-8 behavior, port `0`, limits/drops, and component removal;
-   then test PC-to-headset traffic through the travel router.
-4. If UDP preview is useful after measuring the HTTP version, adapt the draft
-   envelope with sequence checking, final-edit recovery, and packet size limits.
-   Keep execution and larger drafts on HTTP rather than inventing a fragment/
-   reassembly protocol.
+2. Add the default Android development listener and desktop connection/terminal
+   UI. Verify connection by IP, authentication, actual headset evaluation,
+   correlated results, duplicate requests, stale generations, reconnect, and
+   suspend/resume/shutdown. Add a session output sink for script output. Verify
+   remote text, paste, editing keys, modifiers, ordering, duplicate/gap handling,
+   and held-key release through the normal input path.
+3. Add the desktop file browser, selected project root, and reusable listing
+   model/host adapter. Verify folders, script search, double-click selection,
+   bounded/paged listings, changed/deleted entries, and root/path containment.
+4. Implement manifest/cache transfer and Launch/Restart/Stop with explicit
+   script scene ownership. Launch a script with imports and assets absent from
+   the APK; verify missing/corrupt files, immutable launch snapshots, restart,
+   callback/resource cleanup, settings reset, duplicate launch suppression, and
+   failure recovery while the listener/browser remains available. Confirm each
+   double-click starts one fresh scene and terminal commands target that scene.
+5. Add the headset `shell-server.mms` browser panel using PC-supplied listings,
+   with navigation/launch actions returned through the host queue. Verify folder
+   selection and script launch while wearing the headset, out-of-order listing
+   responses, action retries/expiry, stale entries, separate browser/scene
+   generations, offline display, and reconnect resynchronization. Verify actual
+   headset selection/input and readable changing text with custom UI materials.
+6. Optionally add live draft preview, checking rapid edits/coalescing, paste and
+   deletion, exact submitted source/revision, and independent completion display.
+   Add portable `UdpSocket` bindings only as a separate later slice; validate
+   loopback/binary/UTF-8 behavior, limits/drops, removal, and PC-to-headset traffic.
+   If measurements justify UDP preview, add revision checks and final-edit
+   recovery. Keep execution and larger drafts on HTTP.
 
-No renderer changes are required by this proposal. Measure frame/update costs
-with the listener idle and under bounded request load on Focus 3; PC loopback
-tests cannot establish Wi-Fi reachability or sustained XR behavior.
+No new rendering features are part of this proposal. Build the browser/terminal
+UI with the supported generic custom-material path; do not introduce legacy
+pipelines or assume desktop examples are all Android-compatible. Retain direct
+XR rendering and the current attachment lifetime/load/store policy without
+extra intermediate targets for the launcher. Validate UI and controller
+interaction on Focus 3. Measure frame/update costs with the listener idle and
+under bounded request and transfer load; PC loopback tests cannot establish
+Wi-Fi reachability or sustained XR behavior.

@@ -29,13 +29,22 @@ Use the local ALVR client's working Android integration as a reference:
 - `android_main`, Android activity events, thread startup, and shutdown.
 - HTC controller, hand/eye tracking, and passthrough integration where needed.
 
-ALVR's current client uses **OpenGL ES + EGL**, including `Session<OpenGlEs>` and GL swapchains. Its Vulkan streaming/server code is not an Android Vulkan scene renderer. A Mittens host must create a Vulkan-backed OpenXR session and swapchains, with one Vulkan device shared by OpenXR and Mittens. Streaming, network transport, and video decoding are outside this host's purpose.
+ALVR's current client uses **OpenGL ES + EGL**, including `Session<OpenGlEs>` and
+GL swapchains. Its Vulkan streaming/server code is not an Android Vulkan scene
+renderer. A Mittens host must create a Vulkan-backed OpenXR session and
+swapchains, with one Vulkan device shared by OpenXR and Mittens. ALVR streaming
+transport and video decoding are outside this host's purpose.
 
 Keep Android entry points, packaging, lifecycle adapters, and platform diagnostics here. Keep portable renderer, ECS, scripting, asset, and audio changes in the engine's existing source directories.
 
-The [MMS LAN development proposal](docs/mms-lan-development.md) sketches live
-code submission from a PC example and a portable UDP component. It is a design
-draft; the host does not yet expose a remote evaluation listener.
+The [MMS LAN development proposal](docs/mms-lan-development.md) describes a
+desktop Mittens client with connection-by-IP, a local project file browser, and
+a terminal for the headset's MMS session. The intended Android development build
+starts a LAN listener by default. The PC also supplies directory listings for
+an interactive headset browser; selecting a script from either device transfers
+its imports/assets and starts a fresh scene, while terminal commands modify the
+active session. Remote keyboard input is a separate mode. This remains a design
+draft: the client, browser, listener, and transfer protocol are not implemented.
 
 Current layout:
 
