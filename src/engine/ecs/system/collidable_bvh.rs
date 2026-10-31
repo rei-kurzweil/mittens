@@ -140,6 +140,33 @@ pub(crate) struct CollidableBvh {
     pub refreshed: u64,
 }
 impl CollidableBvh {
+    pub(crate) fn snapshot(
+        &self,
+        world: &World,
+        roots: &[ComponentId],
+        out: &mut super::bvh_snapshot_mesh::SnapshotBoxes,
+    ) {
+        // Detail first: these are the local splits the destruction diagnostic needs.
+        for surface in &self.surfaces {
+            if super::bvh_snapshot_mesh::in_scope(world, surface.zone, roots) {
+                if let Some(mesh) = &surface.mesh {
+                    mesh.snapshot(out);
+                }
+            }
+            if out.full() {
+                out.truncated = true;
+                return;
+            }
+        }
+        if let Some(bvh) = &self.bvh {
+            super::bvh_snapshot_mesh::collect(
+                bvh,
+                &self.surfaces,
+                |i| super::bvh_snapshot_mesh::in_scope(world, self.surfaces[i].zone, roots),
+                out,
+            );
+        }
+    }
     pub fn len(&self) -> usize {
         self.surfaces.len()
     }

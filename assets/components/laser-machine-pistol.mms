@@ -148,6 +148,7 @@ export fn laser_machine_pistol(options) {
     }
     let mode_selector = T.scale(0.0018, 0.0018, 0.0018) {
         name = label + "_mode_selector"
+        Selectable.off()
         ui_unlit_material()
         Grabbable.off()
         LayoutRoot {

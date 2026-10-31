@@ -99,6 +99,22 @@ impl BvhSystem {
         ))
     }
 
+    pub(crate) fn snapshot(
+        &self,
+        world: &World,
+        roots: &[ComponentId],
+        out: &mut super::bvh_snapshot_mesh::SnapshotBoxes,
+    ) {
+        if let Some(bvh) = &self.bvh {
+            super::bvh_snapshot_mesh::collect(
+                bvh,
+                &self.shapes,
+                |i| super::bvh_snapshot_mesh::in_scope(world, self.shapes[i].component, roots),
+                out,
+            );
+        }
+    }
+
     pub fn has_index(&self) -> bool {
         self.bvh.is_some()
     }
@@ -726,7 +742,10 @@ mod tests {
     #[test]
     fn imported_renderable_uses_cached_local_bounds() {
         let mut world = World::default();
-        let transform = world.add_component(TransformComponent::new().with_position(2.0, 3.0, 4.0));
+        let mut pose = TransformComponent::new().with_position(2.0, 3.0, 4.0);
+        // This fixture bypasses normal propagation; BVH reads the cached world pose.
+        pose.transform.matrix_world = pose.transform.model;
+        let transform = world.add_component(pose);
         let renderable = world.add_component(RenderableComponent::new(Renderable::new(
             CpuMeshHandle(999),
             MaterialHandle::TOON_MESH,

@@ -90,6 +90,7 @@ pub struct World {
     collidable_ids: std::collections::HashSet<ComponentId>,
     damage_ids: std::collections::HashSet<ComponentId>,
     destroyable_ids: std::collections::HashSet<ComponentId>,
+    editor_ui_ids: std::collections::HashSet<ComponentId>,
     /// Consumed by the simulation's StaticContactSystem after pose propagation.
     contact_changes: RefCell<std::collections::HashSet<ComponentId>>,
     components: SlotMap<ComponentId, crate::engine::ecs::component::ComponentNode>,
@@ -270,7 +271,16 @@ impl World {
         self.destroyable_ids.iter().copied()
     }
 
+    pub(crate) fn editor_ui_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
+        self.editor_ui_ids.iter().copied()
+    }
     fn track_component_dependencies(&mut self, id: ComponentId) {
+        if self
+            .get_component_by_id_as::<component::EditorUIComponent>(id)
+            .is_some()
+        {
+            self.editor_ui_ids.insert(id);
+        }
         if self
             .get_component_by_id_as::<component::DamageComponent>(id)
             .is_some()
@@ -820,6 +830,7 @@ impl World {
         self.collidable_ids.remove(&c);
         self.damage_ids.remove(&c);
         self.destroyable_ids.remove(&c);
+        self.editor_ui_ids.remove(&c);
         self.transform_operator_ids.remove(&c);
         self.spring_collider_ids.remove(&c);
         self.contact_changes.get_mut().insert(c);

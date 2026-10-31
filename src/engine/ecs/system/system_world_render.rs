@@ -71,6 +71,15 @@ impl SystemWorld {
             }
         }
 
+        self.bounds_visualization.bvh.prepare(
+            world,
+            visuals,
+            render_assets,
+            uploader,
+            &mut self.bvh,
+            &mut self.static_contact,
+        );
+
         self.render_to_texture.reconcile_consumers(world);
         self.render_to_texture.flush_pending(visuals, uploader);
 

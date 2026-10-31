@@ -25,7 +25,6 @@ let reset_position = [spawn_position[0], roof_height + 1.2, spawn_position[2]]
 let pistol_scale = 0.085
 let pistol_hand_offset = 0.05 // metres back toward the wrist, in the held grip frame
 
-import { info_panel } from "../assets/components/ui/info_panel.mms"
 import { ui_unlit_material } from "../assets/components/materials/ui_unlit.mms"
 import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
 import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
@@ -48,6 +47,10 @@ import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_map
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 
+// Scope scene geometry for editor diagnostics without adding other editor panels.
+Editor.active() {
+name = "sakura_scene_editor"
+
 RendererSettings { window_size(1440, 960) }
 Clock.bpm(120.0)
 BGC.rgba(0.23, 0.32, 0.62, 1.0)
@@ -57,8 +60,11 @@ RenderGraph {
     Bloom { intensity(0.65) radius_ndc(0.035) emissive_scale(1.0) half_res(true) }
 }
 // Shared Graphics settings controls bloom and the runtime pyramid image count.
-gradient_skybox(sky_low_color, sky_high_color, sky_low_point, sky_high_point)
-background_sun(sun_direction, sun_angular_radius, sun_color, sun_intensity)
+Raycastable.disabled() {
+    Selectable.off()
+    gradient_skybox(sky_low_color, sky_high_color, sky_low_point, sky_high_point)
+    background_sun(sun_direction, sun_angular_radius, sun_color, sun_intensity)
+}
 T.position(sun_direction[0], sun_direction[1], sun_direction[2]) {
     DL.color(1.0, 0.84, 0.72).intensity(1.5)
 }
@@ -82,23 +88,14 @@ let pistol_material = Material(anime).inputs({
     rim_color = [1.0, 0.86, 0.94]
     rim_strength = 0.24
 })
-// Target response is ordinary MMS for now. This is the place to experiment
-// with hit policy before committing to Damageable or a general damage API.
-let range_state = { hits = 0 last_hit = null }
-fn can_hit(hit, target_state) {
-    range_state.hits = range_state.hits + 1
-    range_state.last_hit = hit
-    let readout = query("[name='sakura_can_hit_readout']")
-    if readout != null { readout.set_text("Can hits: " + range_state.hits) }
-}
 let can_metal = matcap_metal()
 let shooting_cans = [
-    metal_can({ name = "sakura_bench_can_1" position = [-19.2, roof_height + 1.023, -4.28] material = can_metal on_hit = can_hit }),
-    metal_can({ name = "sakura_bench_can_2" position = [-18.75, roof_height + 1.023, -4.28] material = can_metal on_hit = can_hit }),
-    metal_can({ name = "sakura_bench_can_3" position = [-16.7, roof_height + 1.023, -4.28] material = can_metal on_hit = can_hit }),
-    metal_can({ name = "sakura_range_can_1" position = [-15.0, roof_height + 0.866, -4.2] material = can_metal on_hit = can_hit }),
-    metal_can({ name = "sakura_range_can_2" position = [-14.2, roof_height + 0.866, -4.2] material = can_metal on_hit = can_hit }),
-    metal_can({ name = "sakura_range_can_3" position = [-13.4, roof_height + 0.866, -4.2] material = can_metal on_hit = can_hit }),
+    metal_can({ name = "sakura_bench_can_1" position = [-19.2, roof_height + 1.023, -4.28] material = can_metal }),
+    metal_can({ name = "sakura_bench_can_2" position = [-18.75, roof_height + 1.023, -4.28] material = can_metal }),
+    metal_can({ name = "sakura_bench_can_3" position = [-16.7, roof_height + 1.023, -4.28] material = can_metal }),
+    metal_can({ name = "sakura_range_can_1" position = [-15.0, roof_height + 0.866, -4.2] material = can_metal }),
+    metal_can({ name = "sakura_range_can_2" position = [-14.2, roof_height + 0.866, -4.2] material = can_metal }),
+    metal_can({ name = "sakura_range_can_3" position = [-13.4, roof_height + 0.866, -4.2] material = can_metal }),
 ]
 for can in shooting_cans { can }
 fn handle_laser_hit(hit) {
@@ -167,40 +164,10 @@ regenerate_buildings(initial_full_buildings)
 // Muted, greyish pink-brown ground fills the spaces around the road and towers.
 T { name = "sakura_ground" box([0.0, -0.48, 0.0], [120.0, 0.5, 140.0], ground_color) }
 
-// Scene-specific detail and hit readout; rendering controls live in Graphics settings.
-fn scene_controls() {
-    let track = T.scale(0.75, 0.025, 0.08) {
-        R.cube() { C.rgba(0.50, 0.32, 0.41, 1.0) Raycastable.enabled() { interaction_priority(120.0) } }
-    }
-    let thumb = T.scale(0.06, 0.10, 0.10) {
-        R.sphere() { C.rgba(1.0, 0.73, 0.85, 1.0) Raycastable.enabled() { interaction_priority(120.0) } }
-    }
-    let slider = Slider.range(0.0, 8.0).step(1.0).value(neighborhood_state.full_count).width(0.75)
-        .track(track).thumb(thumb) { name = "sakura_building_detail_slider" }
-    let readout = Text { name = "sakura_building_detail_readout" "" + neighborhood_state.full_count + " / 8 fully generated" }
-    let can_readout = Text { name = "sakura_can_hit_readout" "Can hits: " + range_state.hits }
-    on(slider, "SliderChanged", fn(event) {
-        regenerate_buildings(event.value)
-        readout.set_text("" + neighborhood_state.full_count + " / 8 fully generated")
-    })
-    return T {
-        Unlit {}
-        Style { display("flex") flex_direction("column") width(100%) row_gap(0.5) font_size(0.75) }
-        readout
-        T {
-            Style { display("block") width(100%) font_size(0.75) }
-            can_readout
-        }
-        T {
-            Grabbable.off()
-            Style { display("flex") width(100%) height(3.0) align_items("center") justify_content("center") }
-            slider
-        }
-    }
-}
-T.position(-21.1, roof_height + 2.2, -3.6) {
-    info_panel({ root_name = "sakura_scene_controls" title = "Sakura / scene detail"
-        width_gu = 32.0 unit_scale = 0.05 content_factory = scene_controls })
+// Only the editor settings panel is materialized, including BVH snapshots.
+T.position(-20.4, roof_height + 3.2, -3.8) {
+    name = "sakura_editor_settings_mount"
+    EditorUI { panels([{ panel = "settings" }]) }
 }
 T.position(-24.2, roof_height + 2.2, -1.3) {
     graphics_settings_panel({ root_name = "sakura_graphics_settings" })
@@ -306,6 +273,7 @@ fn spawn_lumae() {
 }
 let add_lumae = T {
     name = "sakura_add_lumae_button"
+    Selectable.off()
     Grabbable.off()
     Raycastable.click_only() { interaction_priority(150.0) }
     Style {
@@ -375,6 +343,8 @@ if xr_view_enabled {
                     name = "sakura_mitten_xr_driver"
                     let xr_mitten = GLTF.new("assets/models/mitten.glb") {
                         name = "sakura_xr_mitten"
+                        Raycastable.disabled()
+                        Selectable.off()
                         HandTracking.new().source("openxr")
                         pistol_material
                         bisket_humanoid_bone_map()
@@ -399,7 +369,7 @@ if xr_view_enabled {
                         initial_yaw(3.14159)
                         arm_ik(vroid_arm_ik_bend_plane_prototype())
                         hand_rotation_smoothing(220.0)
-                        T { xr_mitten }
+                        T { name = "sakura_xr_model_root" Raycastable.disabled() Selectable.off() xr_mitten }
                         T.position(0.0, 0.08, 0.12) {
                             name = "sakura_mitten_xr_camera"
                             CXR { Pointer {} }
@@ -465,12 +435,13 @@ T.position(-20.3, roof_height, 0.2) {
 fn rooftop_pistol(label, effect_label, x) {
     let tool = laser_machine_pistol({
         name = effect_label length = 40.0 flash_size = 0.28 beam_radius = 0.025
-        ray_origin_offset = 0.06 on_hit = handle_laser_hit
+        ray_origin_offset = 0.18 on_hit = handle_laser_hit
     })
     let held = { active = false hand = "" pointer = null }
     // Preserve the held grip frame and the original rolled tabletop orientation.
     let grip = T.position(x + pistol_hand_offset, roof_height + 1.015, 0.2).rotation_quat(0.5, -0.5, -0.5, 0.5) {
         name = label + "_placement"
+        Selectable.off()
         Grabbable.to_hand(true).hand_offset([0.0, 0.0, -0.105]) {}
         T.position(0.028, 0.085, 0.0402).rotation(0.0, 1.57079633, 0.0) { tool.mode_selector }
         T.position(0.0, 1.048425 * pistol_scale, pistol_hand_offset - 3.342659 * pistol_scale - 0.015) { tool.root }
@@ -515,3 +486,5 @@ fn rooftop_pistol(label, effect_label, x) {
 rooftop_pistol("sakura_machine_pistol", "sakura_pistol_laser", -21.15)
 rooftop_pistol("sakura_machine_pistol_2", "sakura_pistol_laser_2", -20.30)
 rooftop_pistol("sakura_machine_pistol_3", "sakura_pistol_laser_3", -19.45)
+
+}

@@ -114,12 +114,52 @@ T.position(0,0,-3).scale(2,2,0.1) {{R.cube() {{Material(definition).inputs({{tin
             "surviving rim must retain green custom material"
         );
     }
-    for (name, pixels) in [("before", before), ("after", after)] {
+    for (name, pixels) in [("before", before), ("after", after.clone())] {
         let mut ppm = b"P6\n96 96\n255\n".to_vec();
         for p in pixels[..96 * 96 * 4].chunks_exact(4) {
             ppm.extend_from_slice(&p[..3]);
         }
         std::fs::write(format!("/tmp/mittens-destruction-{name}.ppm"), ppm).unwrap();
+    }
+    if std::env::args().nth(1).as_deref() == Some("--bvh-snapshot") {
+        use mittens_engine::engine::ecs::component::EditorUIComponent;
+        let scopes = scene
+            .world
+            .all_components()
+            .filter(|&id| scene.world.parent_of(id).is_none())
+            .collect();
+        let mut ui = EditorUIComponent::new().with_panels([]);
+        ui.set_bvh_snapshot_visible(true, scopes);
+        let owner = scene.world.add_component(ui);
+        for _ in 0..100 {
+            prepare(&mut scene, &mut renderer);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        renderer.draw(0, &scene.visuals, &cameras).unwrap();
+        let snapshot = target.pixels();
+        let orange = snapshot
+            .chunks_exact(4)
+            .filter(|p| p[0] > 140 && p[1] > 40 && p[1] < 140 && p[2] < 50)
+            .count();
+        assert!(orange > 0, "snapshot should show orange wire bounds");
+        let mut ppm = b"P6\n96 96\n255\n".to_vec();
+        for p in snapshot[..96 * 96 * 4].chunks_exact(4) {
+            ppm.extend_from_slice(&p[..3]);
+        }
+        std::fs::write("/tmp/mittens-bvh-snapshot.ppm", ppm).unwrap();
+        scene
+            .world
+            .get_component_by_id_as_mut::<EditorUIComponent>(owner)
+            .unwrap()
+            .set_bvh_snapshot_visible(false, vec![]);
+        prepare(&mut scene, &mut renderer);
+        renderer.draw(0, &scene.visuals, &cameras).unwrap();
+        assert_eq!(
+            target.pixels(),
+            after,
+            "disabling snapshot must restore the previous render"
+        );
+        println!("PASS BVH snapshot: orange_pixels={orange}, off restores scene");
     }
     println!(
         "PASS destruction: physical mesh cut exposes rear surface, rim material retained; worker_ms={:.3}",

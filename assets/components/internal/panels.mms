@@ -227,6 +227,20 @@ fn editor_settings_camera_row() {
     }
 }
 
+fn editor_settings_bvh_refresh_row() {
+    return T {
+        name = "editor_settings_bvh_refresh"
+        Data { name = "editor_settings_payload" row_kind = "BvhRefresh" interactive = true }
+        Raycastable.click_only()
+        Style {
+            display("block") width(100%) margin_xy(0.25, 0.20) padding_xy(0.55, 0.45)
+            color([0.15, 0.06, 0.01, 1.0]) background_color([1.0, 0.66, 0.28, 1.0])
+            background_z(-0.01) text_align("left") vertical_align("middle")
+        }
+        Text { "Refresh BVH snapshot" }
+    }
+}
+
 export fn editor_settings_panel_body(config) {
     return accordion_body(T {
             name = "content_slot"
@@ -256,6 +270,11 @@ export fn editor_settings_panel_body(config) {
             if config.show_zones {
                 editor_settings_visibility_row("editor_settings_zones_visibility", "show zones", "ZonesVisibility", "zones_toggle_slot")
             }
+
+            if config.show_bvh {
+                editor_settings_visibility_row("editor_settings_bvh_visibility", "Show BVH snapshot", "BvhVisibility", "bvh_toggle_slot")
+            }
+            if config.show_bvh_refresh { editor_settings_bvh_refresh_row() }
 
             Selection.root("#editor_settings_mode_rows") { name = "editor_settings_selection" }
     })

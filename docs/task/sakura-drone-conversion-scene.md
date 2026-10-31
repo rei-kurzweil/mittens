@@ -79,12 +79,21 @@ draw. Rays hit individual slabs, walls, columns and rails; windows and stairwell
 openings do not become a solid building-sized bounding box. Simplified neighbors
 retain the intentional solid lower block and detailed top floors.
 
-The example-local info panel has a 0–8 slider for fully generated neighboring
-buildings. Other neighbors have a solid lower block and two detailed top floors.
-The player's tower is outside the regenerated subtree and stays unchanged. The
-same panel has a scene bloom toggle; the general graphics panel does not yet
-expose bloom. Slider regeneration preserves ceramic textures and retires old
-visual outputs; revisiting warmed detail configurations reuses mesh assets.
+Neighbor detail is authored with `initial_full_buildings` (0–8). Other neighbors
+have a solid lower block and two detailed top floors. The player's tower remains
+outside the regenerated neighborhood subtree. The Sakura detail panel and its
+aggregate can-hit readout have been removed. Both desktop and XR examples expose
+only the Settings panel from EditorUI, including BVH snapshot and refresh
+controls; rendering controls remain in the shared Graphics panel. Editor panel
+title bars support both dragging and grip grabbing of the complete panel. The settings
+mount keeps the full panel above the roof and in the spawn-facing view. Panels
+with private LayoutRoots retain their own frame placement instead of being
+aligned using incidental minimize-icon geometry.
+
+Gun bodies and firing-mode controls opt out of editor selection. Player model
+anchors and the sky opt out of raycasts, so enabling the editor does not make
+them weapon targets. Sakura uses 0.18 m of muzzle clearance for both its shot
+queries and visible beams; the muzzle flash stays at the barrel tip.
 
 The invisible teleport_pit has visual="none". Its existing -10 m internal sensor
 offset is accounted for: the trigger spans y=0..4 m across the block, returning

@@ -13,6 +13,7 @@ use crate::engine::graphics::{RenderAssets, VisualWorld};
 /// future generic outputs are discovered through `MeshBoundsSystem` here.
 #[derive(Debug, Default)]
 pub struct BoundsVisualizationSystem {
+    pub(crate) bvh: super::bvh_visualization_system::BvhVisualizationSystem,
     mesh_output_markers: HashMap<ComponentId, ComponentId>,
 }
 

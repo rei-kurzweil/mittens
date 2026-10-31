@@ -114,8 +114,38 @@ fn sakura_pool_scene_panels_are_unlit() {
     for _ in 0..3 {
         scene.update(1.0 / 60.0, &Default::default());
     }
-    for name in [
+    let editor_ui = scene
+        .world
+        .all_components()
+        .find_map(|id| {
+            scene
+                .world
+                .get_component_by_id_as::<crate::engine::ecs::component::EditorUIComponent>(id)
+        })
+        .unwrap();
+    assert_eq!(
+        editor_ui.panels(),
+        vec![crate::engine::ecs::component::EditorPanel::Settings]
+    );
+    for removed in [
         "sakura_scene_controls",
+        "sakura_building_detail_slider",
+        "sakura_can_hit_readout",
+        "world_panel_root",
+        "inspector_panel_root",
+        "paint_panel_root",
+        "assets_root",
+    ] {
+        assert!(
+            !scene
+                .world
+                .all_components()
+                .any(|id| scene.world.component_label(id) == Some(removed)),
+            "unexpected panel/control {removed}"
+        );
+    }
+    for name in [
+        "editor_settings_panel_root",
         "sakura_graphics_settings",
         "sakura_xr_settings",
     ] {

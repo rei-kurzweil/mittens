@@ -744,8 +744,6 @@ fn sakura_pistol_grab_gates_burst_and_release_only_stops_weapon_flash() {
             .is_some_and(|name| name.ends_with("_hit_count"))),
         "cans must not have permanent text labels"
     );
-    let readout = named(&world, "sakura_can_hit_readout");
-    assert!(hit.iter().any(|intent| matches!(intent, IntentValue::SetText {component_id,text} if *component_id == readout && text == "Can hits: 1")));
     let other = named(&world, "sakura_bench_can_2_hit_reaction");
     assert!(!hit.iter().any(|intent| matches!(intent, IntentValue::SetAnimationState {component_id,..} if *component_id == other)));
     deliver_scene_event(

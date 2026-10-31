@@ -45,6 +45,7 @@ const STAGE_FILES: &[(&str, &[u8])] = bundle![
     "assets/components/icons.mms",
     "assets/components/materials/ui_unlit.mms",
     "assets/shaders/ui-unlit.frag",
+    "assets/shaders/bvh-snapshot.frag",
 ];
 const SHELL_FILES: &[(&str, &[u8])] = bundle![
     "assets/components/backgrounds/sakura_sky.mms",
@@ -65,6 +66,7 @@ const SHELL_FILES: &[(&str, &[u8])] = bundle![
     "assets/shaders/mitten-droid-ui.frag",
     "assets/components/materials/ui_unlit.mms",
     "assets/shaders/ui-unlit.frag",
+    "assets/shaders/bvh-snapshot.frag",
 ];
 pub(crate) fn install(directory: &Path, scene: DemoScene) -> Result<SceneSource> {
     let root = directory.join("mittens-demo");

@@ -3,6 +3,7 @@ pub mod box_model_viz;
 pub mod flex;
 pub mod inline;
 pub mod measure;
+mod visual_measure;
 
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::EventSignal;

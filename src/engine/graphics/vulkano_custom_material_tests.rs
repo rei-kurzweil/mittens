@@ -1,3 +1,5 @@
+#[path = "vulkano_sakura_test_source.rs"]
+mod sakura_test_source;
 use super::*;
 use crate::engine::graphics::{CameraTarget, CpuMesh, MeshHandle, MeshUploader, TextureUploader};
 use vulkano::command_buffer::CopyImageToBufferInfo;
@@ -1736,15 +1738,7 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
         RendererOutput::Xr(format),
         MsaaMode::Msaa4x,
     )?;
-    let source = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/examples/sakura-drone-conversion.mms"
-    ))
-    .replace(
-        "let desktop_view_enabled = false",
-        "let desktop_view_enabled = true",
-    )
-    .replace("let xr_view_enabled = true", "let xr_view_enabled = false");
+    let source = sakura_test_source::desktop_with_detail_control();
     let source = source
         + r#"
         on_global("DataEvent", fn(event) {

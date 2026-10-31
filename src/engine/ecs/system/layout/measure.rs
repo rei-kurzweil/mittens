@@ -1,3 +1,6 @@
+pub(crate) use super::visual_measure::{
+    find_visual_content_measurement, find_visual_intrinsic_bounds,
+};
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::style::{Display, SizeDimension, WordWrapMode};
@@ -5,7 +8,6 @@ use crate::engine::ecs::component::{
     ColorComponent, HtmlElementComponent, LayoutComponent, StyleComponent, TextComponent,
     TextInputComponent, TransformComponent,
 };
-use crate::engine::ecs::system::bounds_system::BoundsSystem;
 use crate::engine::ecs::system::text_system::TextSystem;
 use crate::engine::graphics::bounds::{Aabb, mat4_identity, mat4_mul};
 use crate::engine::graphics::primitives::TransformMatrix;
@@ -46,12 +48,6 @@ pub(crate) struct MeasuredItem {
     /// Resolved `display` (style override → HtmlElement UA default → `None`).
     /// `None` is treated as `Block` by the block formatting context.
     pub display: Option<Display>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct VisualContentMeasurement {
-    pub bounds_parent_local: Aabb,
-    pub content_root: ComponentId,
 }
 
 fn len3(column: [f32; 4]) -> f32 {
@@ -972,62 +968,6 @@ fn read_text_wrap_style(
         }
     }
     (None, None)
-}
-
-/// Measure eligible renderables in `root` local space. Plain transforms are
-/// presentational and contribute their transformed cached bounds; nested styled
-/// transforms and nested layout roots own independent layout boxes and are
-/// therefore excluded.
-pub(crate) fn find_visual_intrinsic_bounds(world: &World, root: ComponentId) -> Option<Aabb> {
-    BoundsSystem::measure_cached_renderable_subtree_bounds(world, root, |node| {
-        world
-            .component_label(node)
-            .is_some_and(|label| label.starts_with("__"))
-            || world
-                .get_component_by_id_as::<LayoutComponent>(node)
-                .is_some()
-            || (world
-                .get_component_by_id_as::<TransformComponent>(node)
-                .is_some()
-                && is_layout_item(world, node))
-    })
-}
-
-/// Return the complete pre-placement visual bounds and their one unambiguous
-/// direct authored transform root. V1 deliberately declines multiple direct
-/// visual branches; a future version can place a measured union of roots.
-pub(crate) fn find_visual_content_measurement(
-    world: &World,
-    root: ComponentId,
-) -> Option<VisualContentMeasurement> {
-    let candidates: Vec<ComponentId> = world
-        .children_of(root)
-        .iter()
-        .copied()
-        .filter(|&child| {
-            world
-                .get_component_by_id_as::<TransformComponent>(child)
-                .is_some()
-                && !is_layout_item(world, child)
-                && !world
-                    .component_label(child)
-                    .is_some_and(|label| label.starts_with("__"))
-                && find_visual_intrinsic_bounds(world, child).is_some()
-        })
-        .collect();
-    let [content_root] = candidates.as_slice() else {
-        return None;
-    };
-    let authored_local = world
-        .get_component_by_id_as::<TransformComponent>(*content_root)?
-        .transform
-        .model;
-    let bounds_parent_local =
-        find_visual_intrinsic_bounds(world, *content_root)?.transformed(authored_local);
-    Some(VisualContentMeasurement {
-        bounds_parent_local,
-        content_root: *content_root,
-    })
 }
 
 fn intrinsic_text_bounds(
@@ -2131,8 +2071,8 @@ mod tests {
             "auto-height flex row should include its nested text height"
         );
         assert_eq!(
-            measured.box_height_gu, 2.4,
-            "box height should be content height plus vertical padding"
+            measured.box_height_gu, 2.8,
+            "box height should be content height plus 0.9 padding on each vertical side"
         );
     }
 

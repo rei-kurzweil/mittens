@@ -24,6 +24,28 @@ struct Node {
     children: Option<[usize; 2]>,
 }
 impl TriangleMesh {
+    pub(crate) fn snapshot(&self, out: &mut super::bvh_snapshot_mesh::SnapshotBoxes) {
+        fn visit(
+            mesh: &TriangleMesh,
+            index: usize,
+            depth: u32,
+            out: &mut super::bvh_snapshot_mesh::SnapshotBoxes,
+        ) {
+            if out.full() {
+                out.truncated = true;
+                return;
+            }
+            let node = &mesh.nodes[index];
+            out.push(node.bounds, depth);
+            if let Some([a, b]) = node.children {
+                visit(mesh, a, depth + 1, out);
+                visit(mesh, b, depth + 1, out);
+            }
+        }
+        if !self.nodes.is_empty() {
+            visit(self, 0, 0, out);
+        }
+    }
     pub fn new(mesh: &CpuMesh) -> Self {
         let triangles: Vec<_> = mesh
             .indices_u32

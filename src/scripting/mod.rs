@@ -77,3 +77,12 @@ mod pool_viewer_tests;
 
 #[cfg(test)]
 mod destroyable_scene_tests;
+
+#[cfg(test)]
+mod editor_ui_snapshot_tests;
+
+#[cfg(test)]
+mod editor_panel_title_tests;
+
+#[cfg(test)]
+mod sakura_editor_regression_tests;

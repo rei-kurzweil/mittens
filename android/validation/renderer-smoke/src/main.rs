@@ -344,6 +344,10 @@ mod vulkan_probe {
     }
 }
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--bvh-snapshot") {
+        destruction::run();
+        return;
+    }
     if std::env::args().nth(1).as_deref() == Some("--destruction") {
         destruction::run();
         return;

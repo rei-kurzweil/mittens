@@ -387,6 +387,20 @@ pub(crate) fn sync_editor_settings_panel_selection(
         "zones_toggle",
         editor_context.zones_visible,
     );
+    let bvh_visible = owning_editor_ui(world, panel_root)
+        .and_then(|owner| {
+            world.get_component_by_id_as::<crate::engine::ecs::component::EditorUIComponent>(owner)
+        })
+        .is_some_and(|ui| ui.bvh_visible);
+    sync_boolean_toggle(
+        world,
+        emit,
+        panel_query_root,
+        "editor_settings_bvh_visibility",
+        "bvh_toggle_slot",
+        "bvh_toggle",
+        bvh_visible,
+    );
 }
 
 fn owning_editor_ui(world: &World, start: ComponentId) -> Option<ComponentId> {
@@ -444,6 +458,28 @@ pub(crate) fn handle_editor_settings_panel_click(
             return true;
         };
         let row_kind = data_text(payload, "row_kind").unwrap_or_default();
+        if row_kind == "BvhVisibility" || row_kind == "BvhRefresh" {
+            let roots = effective_editor_roots(world, installed_editor_roots);
+            if let Some(owner) = owning_editor_ui(world, settings_panel_root) {
+                if let Some(ui) = world
+                    .get_component_by_id_as_mut::<crate::engine::ecs::component::EditorUIComponent>(
+                        owner,
+                    )
+                {
+                    if row_kind == "BvhVisibility" {
+                        ui.set_bvh_snapshot_visible(!ui.bvh_visible, roots);
+                    } else {
+                        ui.refresh_bvh_snapshot();
+                    }
+                }
+            }
+            let context = editor_context_state
+                .lock()
+                .expect("editor context state mutex poisoned")
+                .clone();
+            sync_editor_settings_panel_selection(world, emit, panel_query_root, &context);
+            return true;
+        }
         if row_kind == "EditorMode" {
             let Some(option) = data_text(payload, "mode_value")
                 .as_deref()
@@ -854,5 +890,83 @@ mod tests {
         systems.process_commands(&mut world, &mut visuals, &mut render_assets, &mut emit);
         assert!(!context.lock().unwrap().zones_visible);
         assert!(systems.zone_visualization.requests().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod bvh_tests {
+    use super::*;
+    use crate::engine::ecs::CommandQueue;
+    use crate::engine::ecs::component::{
+        DataValue, EditorComponent, EditorUIComponent, TransformComponent,
+    };
+    #[test]
+    fn bvh_toggle_and_refresh_are_distinct_owner_scoped_actions() {
+        let mut world = World::default();
+        let mut emit = CommandQueue::new();
+        let owner = world.add_component(EditorUIComponent::new());
+        let other = world.add_component(EditorUIComponent::new());
+        let panel = world.add_component_boxed_named(
+            "editor_settings_panel_root",
+            Box::new(TransformComponent::new()),
+        );
+        world.add_child(owner, panel).unwrap();
+        let toggle = world.add_component(TransformComponent::new());
+        let refresh = world.add_component(TransformComponent::new());
+        for (row, kind) in [(toggle, "BvhVisibility"), (refresh, "BvhRefresh")] {
+            world.add_child(panel, row).unwrap();
+            let data = world.add_component_boxed_named(
+                EDITOR_SETTINGS_PAYLOAD_NAME,
+                Box::new(DataComponent::new().with_entry("row_kind", DataValue::Text(kind.into()))),
+            );
+            world.add_child(row, data).unwrap();
+        }
+        let editor = world.add_component(EditorComponent::new());
+        let roots = Arc::new(Mutex::new(vec![editor]));
+        let context = Arc::new(Mutex::new(EditorContextState::default()));
+        assert!(handle_editor_settings_panel_click(
+            &mut world, &mut emit, owner, refresh, &context, &roots
+        ));
+        assert_eq!(
+            world
+                .get_component_by_id_as::<EditorUIComponent>(owner)
+                .unwrap()
+                .bvh_revision,
+            0
+        );
+        assert!(handle_editor_settings_panel_click(
+            &mut world, &mut emit, owner, toggle, &context, &roots
+        ));
+        let ui = world
+            .get_component_by_id_as::<EditorUIComponent>(owner)
+            .unwrap();
+        assert!(ui.bvh_visible);
+        assert_eq!(ui.bvh_revision, 1);
+        assert_eq!(ui.bvh_scope_roots, vec![editor]);
+        assert!(handle_editor_settings_panel_click(
+            &mut world, &mut emit, owner, refresh, &context, &roots
+        ));
+        assert_eq!(
+            world
+                .get_component_by_id_as::<EditorUIComponent>(owner)
+                .unwrap()
+                .bvh_revision,
+            2
+        );
+        assert!(
+            !world
+                .get_component_by_id_as::<EditorUIComponent>(other)
+                .unwrap()
+                .bvh_visible
+        );
+        assert!(handle_editor_settings_panel_click(
+            &mut world, &mut emit, owner, toggle, &context, &roots
+        ));
+        assert!(
+            !world
+                .get_component_by_id_as::<EditorUIComponent>(owner)
+                .unwrap()
+                .bvh_visible
+        );
     }
 }

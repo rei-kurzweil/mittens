@@ -19,7 +19,7 @@ export fn laser(options) {
         name = label + "_raycaster"
     }
 
-    let beam = T.position(0.0, 0.0, -length / 2.0).scale(0.0, 0.0, 0.0) {
+    let beam = T.position(0.0, 0.0, -origin_offset - length / 2.0).scale(0.0, 0.0, 0.0) {
         name = beam_name
         T.position(0.0, 0.0, length / 2.0).rotation(-1.57079633, 0.0, 0.0) {
             R.cylinder(radius, length, 8) {
@@ -33,11 +33,11 @@ export fn laser(options) {
     let animation = Animation.paused().length(0.04 * beats_per_second) {
         name = label + "_shot"
         Keyframe.at(0.0) {
-            beam.update_transform([0.0, 0.0, -length / 2.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+            beam.update_transform([0.0, 0.0, -origin_offset - length / 2.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
             emission.set_intensity(12.0)
         }
         Keyframe.at(0.04 * beats_per_second) {
-            beam.update_transform([0.0, 0.0, -length / 2.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+            beam.update_transform([0.0, 0.0, -origin_offset - length / 2.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
             emission.off()
         }
     }

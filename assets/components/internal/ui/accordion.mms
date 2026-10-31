@@ -1,4 +1,4 @@
-// accordion.mms — retained-title, removable-body panel shell (=^･ω･^=)
+// accordion.mms — draggable/grabbable title, removable-body panel shell (=^･ω･^=)
 
 import { accordion_down_arrow_icon } from "../../icons.mms"
 
@@ -105,6 +105,7 @@ export fn accordion(options) {
         title_bar = T {
             name = "title_bar"
             Draggable.target(drag_target)
+            Grabbable.parent()
             Raycastable.enabled()
             Style {
                 display("flex")

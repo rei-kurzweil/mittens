@@ -54,6 +54,8 @@ pub struct SettingsPanelConfig {
     pub show_cameras: bool,
     pub show_spring_bones: bool,
     pub show_zones: bool,
+    pub show_bvh: bool,
+    pub show_bvh_refresh: bool,
 }
 
 impl Default for SettingsPanelConfig {
@@ -64,6 +66,8 @@ impl Default for SettingsPanelConfig {
             show_cameras: true,
             show_spring_bones: true,
             show_zones: true,
+            show_bvh: true,
+            show_bvh_refresh: true,
         }
     }
 }
@@ -86,6 +90,14 @@ impl SettingsPanelConfig {
     }
     pub fn with_show_spring_bones(mut self, value: bool) -> Self {
         self.show_spring_bones = value;
+        self
+    }
+    pub fn with_show_bvh(mut self, value: bool) -> Self {
+        self.show_bvh = value;
+        self
+    }
+    pub fn with_show_bvh_refresh(mut self, value: bool) -> Self {
+        self.show_bvh_refresh = value;
         self
     }
     pub fn with_show_zones(mut self, value: bool) -> Self {
@@ -151,6 +163,12 @@ impl EditorUIPanelSpec {
     pub fn with_show_spring_bones(self, value: bool) -> Self {
         self.map_settings(|c| c.with_show_spring_bones(value))
     }
+    pub fn with_show_bvh(self, value: bool) -> Self {
+        self.map_settings(|c| c.with_show_bvh(value))
+    }
+    pub fn with_show_bvh_refresh(self, value: bool) -> Self {
+        self.map_settings(|c| c.with_show_bvh_refresh(value))
+    }
     pub fn with_show_zones(self, value: bool) -> Self {
         self.map_settings(|c| c.with_show_zones(value))
     }
@@ -160,6 +178,10 @@ impl EditorUIPanelSpec {
 #[derive(Debug, Clone)]
 pub struct EditorUIComponent {
     panel_specs: Vec<EditorUIPanelSpec>,
+    /// Runtime snapshot request, never authored or serialized.
+    pub(crate) bvh_visible: bool,
+    pub(crate) bvh_revision: u64,
+    pub(crate) bvh_scope_roots: Vec<ComponentId>,
     component: Option<ComponentId>,
 }
 
@@ -171,6 +193,9 @@ impl Default for EditorUIComponent {
                 .map(EditorUIPanelSpec::new)
                 .collect(),
             component: None,
+            bvh_visible: false,
+            bvh_revision: 0,
+            bvh_scope_roots: Vec::new(),
         }
     }
 }
@@ -178,6 +203,21 @@ impl Default for EditorUIComponent {
 impl EditorUIComponent {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Capture a frozen world-space diagnostic on the next render preparation.
+    /// Turning it off releases the snapshot; it does not affect live BVHs.
+    pub fn set_bvh_snapshot_visible(&mut self, visible: bool, scope_roots: Vec<ComponentId>) {
+        self.bvh_visible = visible;
+        if visible {
+            self.bvh_scope_roots = scope_roots;
+            self.bvh_revision = self.bvh_revision.wrapping_add(1);
+        }
+    }
+    pub fn refresh_bvh_snapshot(&mut self) {
+        if self.bvh_visible {
+            self.bvh_revision = self.bvh_revision.wrapping_add(1);
+        }
     }
 
     pub fn with_panel_specs(mut self, specs: impl IntoIterator<Item = EditorUIPanelSpec>) -> Self {
@@ -274,6 +314,8 @@ impl Component for EditorUIComponent {
                         ("show_cameras", b(c.show_cameras)),
                         ("show_spring_bones", b(c.show_spring_bones)),
                         ("show_zones", b(c.show_zones)),
+                        ("show_bvh", b(c.show_bvh)),
+                        ("show_bvh_refresh", b(c.show_bvh_refresh)),
                     ]),
                     EditorUIPanelConfig::Empty => table(vec![]),
                 };
