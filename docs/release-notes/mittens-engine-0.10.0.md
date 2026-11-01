@@ -5,6 +5,10 @@ This release pairs `mittens-engine 0.10.0` with `meow-meow-script 0.10.0`.
 `0.1.0` package version. The desktop window title follows the engine package
 version and now displays `mittens 0.10.0`.
 
+Documentation media and design sources are excluded from the crates.io archive
+to meet its 10 MiB upload limit. Bundled runtime component assets, textures,
+audio, and shaders remain included; the repository retains documentation media.
+
 These highlights cover changes since the `v0.9.0` tag.
 
 ## Avatars and locomotion

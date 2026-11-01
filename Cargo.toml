@@ -20,6 +20,11 @@ description = "A Vulkan and OpenXR scene engine with ECS, reactive signals, and 
 exclude = [
     "assets/models/*.glb",
     "assets/models/blender/**",
+    "assets/images/**",
+    "!assets/images/flash_red_0.png",
+    "!assets/images/flash_red_1.png",
+    "!assets/images/expanding-brain.png",
+    "assets/videos/**",
     "examples/video/**",
     "docs/.debug/**",
     "docs/analysis/**",
@@ -27,6 +32,8 @@ exclude = [
     "docs/draft/**",
     "docs/review/**",
     "docs/task/**",
+    "docs/spec/**",
+    "docs/meow_meow/**",
 ]
 
 [[bin]]

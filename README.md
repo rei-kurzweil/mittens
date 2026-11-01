@@ -52,7 +52,8 @@ and [generic REPL migration](docs/task/mms-repl-navigation-and-cat-unification.m
 - Avoid debug example runs unless you specifically need debug-only diagnostics or faster compile iteration.
 - For XR without a desktop window, run `cargo run --release --example openxr-only`.
   See [XR-only desktop startup](docs/desktop/xr-only.md) for bounded runs and validation.
-- Large `.glb` model assets and Blender source assets are omitted from the crates.io package. Every example
+- Documentation media/design sources, large model downloads, and Blender source assets are omitted
+  from the crates.io package. Bundled runtime textures, audio, and component assets remain included. Every example
   that needs downloaded models calls `mittens_engine::example_support::ensure_model_assets()` before scene
   setup; if `assets/models` contains no `.glb` files, it runs
   `examples/scripts/download-model-assets.sh` to fetch the example model bundle from
