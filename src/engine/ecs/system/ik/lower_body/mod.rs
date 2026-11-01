@@ -1,4 +1,5 @@
 //! Shared lower-body ownership. Policies produce goals; one system writes legs.
+mod airborne;
 mod crouch;
 mod leg;
 mod rig;
@@ -42,6 +43,7 @@ pub struct FootState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FootPhase {
     Rest,
+    Airborne,
     Planted,
     Swing,
 }

@@ -10,7 +10,10 @@ XR uses mitten's tracked rig, hand lasers/pointers, arm/crouch IK, mouth amplitu
 eye closure/idle gaze, secondary motion, collisions and CapsuleReady-gated gravity.
 HandTracking.new().source("openxr") on the avatar opts its mapped finger bones
 into OpenXR hand tracking.
-XR B jumps, allowing access over low parapets. Spawn is on the 25.6 m roof.
+XR B jumps. Double-tap B within 250 ms to toggle flight at twice walking
+speed; hold B/A to rise/descend. Flight retains solid collision and uses the
+unsupported lower-body pose. See [XR flight](xr-flight-and-airborne-legs.md).
+Spawn is on the 25.6 m roof.
 The shared XR settings/floor-height panel is to the right of the spawn-facing
 workbench, at `[-16.2, roof_height + 2.2, -3.6]`.
 

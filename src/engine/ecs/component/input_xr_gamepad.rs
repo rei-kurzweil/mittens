@@ -43,6 +43,9 @@ pub struct InputXRGamepadComponent {
     pub hand: XrHandPreference,
     pub locomotion: bool,
     pub speed: f32,
+    /// Opt-in B double-tap flight. Runtime flight state is never serialized.
+    pub enable_flying: bool,
+    pub(crate) flying: bool,
     pub deadzone: f32,
     pub component_id: Option<ComponentId>,
 }
@@ -54,6 +57,8 @@ impl InputXRGamepadComponent {
             hand: XrHandPreference::Default,
             locomotion: true,
             speed: 3.0,
+            enable_flying: false,
+            flying: false,
             deadzone: 0.2,
             component_id: None,
         }
@@ -76,6 +81,11 @@ impl InputXRGamepadComponent {
 
     pub fn locomotion_enabled(mut self, enabled: bool) -> Self {
         self.locomotion = enabled;
+        self
+    }
+
+    pub fn enable_flying(mut self, enable: bool) -> Self {
+        self.enable_flying = enable;
         self
     }
 
@@ -154,6 +164,9 @@ impl Component for InputXRGamepadComponent {
             .with_call("hand", vec![s(hand)]);
         if !self.locomotion {
             ce = ce.with_call("locomotion", vec![b(false)]);
+        }
+        if self.enable_flying {
+            ce = ce.with_call("enable_flying", vec![b(true)]);
         }
         if (self.speed - 3.0).abs() > f32::EPSILON {
             ce = ce.with_call("speed", vec![num(self.speed as f64)]);

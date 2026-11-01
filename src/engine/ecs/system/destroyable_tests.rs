@@ -428,13 +428,19 @@ fn floor_batches_unpack_only_after_success_and_leave_other_floors_combined() {
     assert!(
         d.surfaces
             .values()
-            .filter(|surface| !surface.cells.is_empty())
+            .filter(|surface| surface.cells.iter().any(|c| !c.solid.empty()))
+            .all(|surface| surface.view.is_some())
+    );
+    assert!(
+        d.surfaces
+            .values()
             .flat_map(|surface| &surface.cells)
             .all(|cell| cell.solid.empty()
                 || w.get_component_by_id_as::<RenderableComponent>(cell.render)
                     .unwrap()
                     .handle
-                    .is_some())
+                    .is_none()),
+        "spatial chunks must not add individual draw instances"
     );
     // Intact pieces remain independently damageable after the floor activates.
     event(&mut w, [3., 0.05, 0.], 3.);
@@ -455,5 +461,46 @@ fn floor_batches_unpack_only_after_success_and_leave_other_floors_combined() {
         v.instance_count(),
         2,
         "only the untouched floor's batches remain"
+    );
+}
+
+#[test]
+fn empty_cells_retire_immediately_and_sources_cannot_reenter_the_bvh() {
+    let (mut w, mut v, mut a, mut u, mut s, mut d) = (
+        World::default(),
+        VisualWorld::default(),
+        RenderAssets::new(),
+        Uploader::default(),
+        SystemWorld::default(),
+        DestroyableSystem::default(),
+    );
+    let (owner, source) = surface(&mut w, &mut v, &mut a, &mut u, 0.);
+    w.add_component(DamageComponent {
+        position: [-0.5, 0., -0.5],
+        radius: 0.8,
+        amount: 3.,
+    });
+    pump(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    finish(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    let cells = &d.surfaces[&owner].cells;
+    assert!(cells.iter().any(|c| c.solid.empty()));
+    assert!(cells.iter().any(|c| !c.solid.empty()));
+    for cell in cells.iter().filter(|c| c.solid.empty()) {
+        assert!(w.get_component_record(cell.frame).is_none());
+        assert!(w.get_component_record(cell.zone).is_none());
+        assert!(w.get_component_record(cell.render).is_none());
+    }
+    s.bvh.queue_renderable_added(source);
+    s.bvh.flush_pending(&w);
+    assert!(
+        s.bvh.debug_renderable_bounds(source).is_none(),
+        "suppressed original must stay out of the index even if registration is retried"
+    );
+    event(&mut w, [0.7, 0.05, 0.7], 3.);
+    pump(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    finish(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    assert_eq!(
+        d.cuts, 2,
+        "empty stable slots must not invalidate later cuts"
     );
 }

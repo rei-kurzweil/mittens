@@ -275,6 +275,9 @@ export fn editor_settings_panel_body(config) {
                 editor_settings_visibility_row("editor_settings_bvh_visibility", "Show BVH snapshot", "BvhVisibility", "bvh_toggle_slot")
             }
             if config.show_bvh_refresh { editor_settings_bvh_refresh_row() }
+            if config.show_bvh_animation {
+                editor_settings_visibility_row("editor_settings_bvh_animation", "Animate BVH", "BvhAnimation", "bvh_animation_toggle_slot")
+            }
 
             Selection.root("#editor_settings_mode_rows") { name = "editor_settings_selection" }
     })

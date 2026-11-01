@@ -9,9 +9,14 @@ use crate::engine::graphics::{
     RenderAssets, RenderUploader, VisualWorld,
     custom_material::CustomMaterialDefinition,
     materials::{MaterialBaseKind, MaterialFieldType, MaterialInputField},
-    primitives::{CpuMeshHandle, GpuRenderable, InstanceHandle, MaterialHandle, Transform},
+    primitives::{CpuMeshHandle, GpuRenderable, InstanceHandle, Transform},
 };
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+const STEP: Duration = Duration::from_millis(250);
 #[derive(Debug, Default)]
 struct Snapshot {
     revision: u64,
@@ -19,6 +24,55 @@ struct Snapshot {
     output: Option<(InstanceHandle, CpuMeshHandle)>,
     boxes: usize,
     truncated: bool,
+    max_depth: u32,
+    animation_step: Option<Instant>,
+    active_depth: Option<u32>,
+    // Cached at capture time: animation performs no per-frame allocations.
+    parameters: Vec<Arc<[f32]>>,
+}
+impl Snapshot {
+    fn animate(
+        &mut self,
+        owner: ComponentId,
+        enabled: bool,
+        now: Instant,
+        visuals: &mut VisualWorld,
+    ) {
+        let depth = if enabled && self.output.is_some() {
+            match (self.active_depth, self.animation_step) {
+                (Some(depth), Some(previous)) if now.duration_since(previous) < STEP => Some(depth),
+                (Some(depth), Some(_)) => {
+                    // Advance only one level even after a slow frame: every
+                    // level must be displayed before the traversal can restart.
+                    self.animation_step = Some(now);
+                    Some(if depth == self.max_depth {
+                        0
+                    } else {
+                        depth + 1
+                    })
+                }
+                _ => {
+                    self.animation_step = Some(now);
+                    Some(0)
+                }
+            }
+        } else {
+            self.animation_step = None;
+            None
+        };
+        if self.active_depth == depth {
+            return;
+        }
+        self.active_depth = depth;
+        if let Some(definition) = visuals.materials.source_definition(owner) {
+            let index = depth.map_or(0, |d| d as usize + 1);
+            if let Some(parameters) = self.parameters.get(index) {
+                visuals
+                    .materials
+                    .upsert_source(owner, definition, parameters.clone());
+            }
+        }
+    }
 }
 #[derive(Debug, Default)]
 pub struct BvhVisualizationSystem {
@@ -41,6 +95,7 @@ impl BvhVisualizationSystem {
         bvh: &mut BvhSystem,
         contacts: &mut StaticContactSystem,
     ) {
+        let now = Instant::now();
         self.snapshots.retain(|&owner, state| {
             if world
                 .get_component_by_id_as::<EditorUIComponent>(owner)
@@ -66,6 +121,7 @@ impl BvhVisualizationSystem {
                 continue;
             }
             let state = self.snapshots.entry(owner).or_default();
+            state.animate(owner, ui.bvh_animating, now, visuals);
             if state.enabled && state.revision == ui.bvh_revision {
                 continue;
             }
@@ -77,6 +133,7 @@ impl BvhVisualizationSystem {
                 .snapshot(world, &ui.bvh_scope_roots, &mut boxes);
             bvh.flush_pending(world);
             bvh.snapshot(world, &ui.bvh_scope_roots, &mut boxes);
+            boxes.limit();
             let mesh = boxes.mesh();
             let new_output = if mesh.vertices.is_empty() {
                 None
@@ -86,10 +143,12 @@ impl BvhVisualizationSystem {
                 } else {
                     let custom = match CustomMaterialDefinition::prepare(
                         "assets/shaders/bvh-snapshot.frag".into(),
-                        vec![MaterialInputField {
-                            name: "intensity".into(),
-                            ty: MaterialFieldType::F32,
-                        }],
+                        ["intensity", "active_depth"]
+                            .map(|name| MaterialInputField {
+                                name: name.into(),
+                                ty: MaterialFieldType::F32,
+                            })
+                            .to_vec(),
                         MaterialBaseKind::Surface,
                     ) {
                         Ok(c) => c,
@@ -102,7 +161,7 @@ impl BvhVisualizationSystem {
                 };
                 let material = visuals
                     .materials
-                    .upsert_source(owner, definition, vec![1.4]);
+                    .upsert_source(owner, definition, vec![1.4, -1.0]);
                 let cpu = assets.register_transient_mesh(mesh);
                 let gpu = match assets.gpu_mesh_handle(uploader, cpu) {
                     Ok(g) => g,
@@ -114,7 +173,14 @@ impl BvhVisualizationSystem {
                 };
                 let handle = visuals.register(
                     owner,
-                    GpuRenderable::new(gpu, MaterialHandle::TOON_MESH),
+                    GpuRenderable::new(
+                        gpu,
+                        visuals
+                            .materials
+                            .definition(definition)
+                            .unwrap()
+                            .static_program,
+                    ),
                     Transform::default(),
                     [1.; 4],
                     1.,
@@ -136,6 +202,16 @@ impl BvhVisualizationSystem {
             state.revision = ui.bvh_revision;
             state.boxes = boxes.boxes.len();
             state.truncated = boxes.truncated;
+            state.max_depth = boxes
+                .boxes
+                .iter()
+                .map(|(_, depth)| *depth)
+                .max()
+                .unwrap_or(0);
+            state.parameters = std::iter::once(Arc::from([1.4, -1.0]))
+                .chain((0..=state.max_depth).map(|depth| Arc::from([1.4, depth as f32])))
+                .collect();
+            state.animate(owner, ui.bvh_animating, now, visuals);
             self.captures += 1;
             eprintln!(
                 "[BVH snapshot] {} boxes{}",
@@ -155,6 +231,9 @@ fn retire(
     assets: &mut RenderAssets,
     uploader: &mut dyn RenderUploader,
 ) {
+    state.animation_step = None;
+    state.active_depth = None;
+    state.parameters.clear();
     if let Some((handle, cpu)) = state.output.take() {
         visuals.remove(handle);
         assets.release_transient_mesh(uploader, cpu);

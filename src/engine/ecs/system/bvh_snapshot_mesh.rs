@@ -4,7 +4,7 @@ use crate::engine::ecs::component::EditorUIComponent;
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::{
     bounds::Aabb,
-    mesh::{CpuMesh, CpuVertex, MeshFactory},
+    mesh::{CpuMesh, CpuVertex},
 };
 use bvh::{
     bounding_hierarchy::BHShape,
@@ -12,10 +12,14 @@ use bvh::{
 };
 use std::collections::HashSet;
 pub const MAX_BOXES: usize = 4096;
+// Capture metadata separately from the draw budget so a full early subtree
+// cannot hide all later regions. Fine detail is coarsened after collection.
+const MAX_CAPTURE_NODES: usize = 131_072;
 #[derive(Debug, Default)]
 pub(crate) struct SnapshotBoxes {
     pub boxes: Vec<(Aabb, u32)>,
-    seen: HashSet<[u32; 6]>,
+    seen: HashSet<[u32; 7]>,
+    important: HashSet<[u32; 7]>,
     pub truncated: bool,
 }
 impl SnapshotBoxes {
@@ -23,17 +27,11 @@ impl SnapshotBoxes {
         if !bounds.min.into_iter().chain(bounds.max).all(f32::is_finite) {
             return;
         }
-        let key = std::array::from_fn(|i| {
-            if i < 3 {
-                bounds.min[i].to_bits()
-            } else {
-                bounds.max[i - 3].to_bits()
-            }
-        });
+        let key = box_key(bounds, depth);
         if self.seen.contains(&key) {
             return;
         }
-        if self.boxes.len() >= MAX_BOXES {
+        if self.boxes.len() >= MAX_CAPTURE_NODES {
             self.truncated = true;
             return;
         }
@@ -41,13 +39,28 @@ impl SnapshotBoxes {
         self.boxes.push((bounds, depth));
     }
     pub fn full(&self) -> bool {
-        self.boxes.len() >= MAX_BOXES
+        self.boxes.len() >= MAX_CAPTURE_NODES
+    }
+    pub fn push_important(&mut self, bounds: Aabb, depth: u32) {
+        self.important.insert(box_key(bounds, depth));
+        self.push(bounds, depth);
+    }
+    pub fn limit(&mut self) {
+        if self.boxes.len() <= MAX_BOXES {
+            return;
+        }
+        self.truncated = true;
+        // Keep outer roots and every damaged cell's mesh root first, then
+        // spend the remaining budget on shallow levels across the whole scene.
+        self.boxes.sort_by_key(|(bounds, depth)| {
+            (!self.important.contains(&box_key(*bounds, *depth)), *depth)
+        });
+        self.boxes.truncate(MAX_BOXES);
     }
     pub fn mesh(&self) -> CpuMesh {
-        let cube = MeshFactory::cube();
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
-        let mut edges = HashSet::<[u32; 6]>::new();
+        let mut edges = HashSet::<[u32; 7]>::new();
         for (bounds, depth) in &self.boxes {
             let corners: [[f32; 3]; 8] = std::array::from_fn(|i| {
                 std::array::from_fn(|axis| {
@@ -76,26 +89,42 @@ impl SnapshotBoxes {
                         b[0].to_bits(),
                         b[1].to_bits(),
                         b[2].to_bits(),
+                        *depth,
                     ];
                     if !edges.insert(key) {
                         continue;
                     }
                     let thickness = 0.004 / (1. + *depth as f32 * 0.08);
-                    let center: [f32; 3] = std::array::from_fn(|j| (a[j] + b[j]) * 0.5);
-                    let mut size = [thickness; 3];
-                    size[axis] = length + thickness;
-                    let base = vertices.len() as u32;
-                    vertices.extend(cube.vertices.iter().map(|v| CpuVertex {
-                        pos: std::array::from_fn(|j| center[j] + v.pos[j] * size[j]),
-                        normal: v.normal,
-                        uv: v.uv,
-                    }));
-                    indices.extend(cube.indices_u32.iter().map(|i| base + i));
+                    // Two crossed, double-sided quads replace each 24-vertex
+                    // cube rail. This cuts upload vertices by 3x and triangles
+                    // by one third while keeping world-space wire thickness.
+                    for transverse in [(axis + 1) % 3, (axis + 2) % 3] {
+                        let base = vertices.len() as u32;
+                        for (end, sign) in [(a, -1.), (a, 1.), (b, 1.), (b, -1.)] {
+                            let mut pos = end;
+                            pos[transverse] += sign * thickness * 0.5;
+                            let mut normal = [0.; 3];
+                            normal[3 - axis - transverse] = 1.;
+                            vertices.push(CpuVertex {
+                                pos,
+                                normal,
+                                uv: [(sign + 1.) * 0.5, *depth as f32],
+                            });
+                        }
+                        indices.extend([0, 1, 2, 0, 2, 3, 2, 1, 0, 3, 2, 0].map(|i| base + i));
+                    }
                 }
             }
         }
         CpuMesh::new(vertices, indices)
     }
+}
+fn box_key(bounds: Aabb, depth: u32) -> [u32; 7] {
+    std::array::from_fn(|i| match i {
+        0..=2 => bounds.min[i].to_bits(),
+        3..=5 => bounds.max[i - 3].to_bits(),
+        _ => depth,
+    })
 }
 pub(crate) fn in_scope(world: &World, id: ComponentId, roots: &[ComponentId]) -> bool {
     let mut current = Some(id);
@@ -112,49 +141,71 @@ pub(crate) fn in_scope(world: &World, id: ComponentId, roots: &[ComponentId]) ->
     }
     included
 }
+/// Preserve ancestor depth and visit parents before children. Detail trees are
+/// attached by the leaf callback rather than animated as independent roots.
 pub(crate) fn collect<Shape: BHShape>(
     bvh: &BVH,
     shapes: &[Shape],
     wanted: impl Fn(usize) -> bool,
+    mut leaf: impl FnMut(usize, u32, &mut SnapshotBoxes),
     out: &mut SnapshotBoxes,
 ) {
-    fn visit<S: BHShape>(
+    fn mark(
         bvh: &BVH,
-        shapes: &[S],
         index: usize,
         wanted: &impl Fn(usize) -> bool,
-        out: &mut SnapshotBoxes,
+        included: &mut [bool],
     ) -> bool {
-        if out.full() {
-            out.truncated = true;
-            return false;
-        }
-        let node = &bvh.nodes[index];
-        let include = match *node {
+        let keep = match bvh.nodes[index] {
             BVHNode::Leaf { shape_index, .. } => wanted(shape_index),
             BVHNode::Node {
                 child_l_index,
                 child_r_index,
                 ..
             } => {
-                let a = visit(bvh, shapes, child_l_index, wanted, out);
-                let b = visit(bvh, shapes, child_r_index, wanted, out);
+                let a = mark(bvh, child_l_index, wanted, included);
+                let b = mark(bvh, child_r_index, wanted, included);
                 a || b
             }
         };
-        if include {
-            let a = node.get_node_aabb(shapes);
-            out.push(
-                Aabb {
-                    min: [a.min.x, a.min.y, a.min.z],
-                    max: [a.max.x, a.max.y, a.max.z],
-                },
-                node.depth(),
-            );
-        }
-        include
+        included[index] = keep;
+        keep
     }
-    if !bvh.nodes.is_empty() {
-        visit(bvh, shapes, 0, &wanted, out);
+    if bvh.nodes.is_empty() {
+        return;
+    }
+    let mut included = vec![false; bvh.nodes.len()];
+    mark(bvh, 0, &wanted, &mut included);
+    let mut stack = vec![0];
+    while let Some(index) = stack.pop() {
+        if !included[index] {
+            continue;
+        }
+        if out.full() {
+            out.truncated = true;
+            break;
+        }
+        let node = &bvh.nodes[index];
+        let a = node.get_node_aabb(shapes);
+        let bounds = Aabb {
+            min: [a.min.x, a.min.y, a.min.z],
+            max: [a.max.x, a.max.y, a.max.z],
+        };
+        if index == 0 {
+            out.push_important(bounds, node.depth());
+        } else {
+            out.push(bounds, node.depth());
+        }
+        match *node {
+            BVHNode::Leaf { shape_index, .. } => leaf(shape_index, node.depth(), out),
+            BVHNode::Node {
+                child_l_index,
+                child_r_index,
+                ..
+            } => {
+                stack.push(child_r_index);
+                stack.push(child_l_index);
+            }
+        }
     }
 }

@@ -59,7 +59,7 @@ pub(super) fn parse_editor_ui_panel_specs(
                 };
                 match panel {
                     EditorPanel::Settings => {
-                        const KEYS: [&str; 7] = [
+                        const KEYS: [&str; 8] = [
                             "show_armature",
                             "show_bounds",
                             "show_cameras",
@@ -67,6 +67,7 @@ pub(super) fn parse_editor_ui_panel_specs(
                             "show_zones",
                             "show_bvh",
                             "show_bvh_refresh",
+                            "show_bvh_animation",
                         ];
                         if let Some(key) = config.keys().find(|key| !KEYS.contains(&key.as_str())) {
                             return Err(format!("unknown EditorUI settings config key '{key}'"));
@@ -79,6 +80,11 @@ pub(super) fn parse_editor_ui_panel_specs(
                             show_zones: editor_ui_bool(&config, "show_zones", true)?,
                             show_bvh: editor_ui_bool(&config, "show_bvh", true)?,
                             show_bvh_refresh: editor_ui_bool(&config, "show_bvh_refresh", true)?,
+                            show_bvh_animation: editor_ui_bool(
+                                &config,
+                                "show_bvh_animation",
+                                true,
+                            )?,
                         })
                     }
                     _ if config.is_empty() => EditorUIPanelConfig::Empty,

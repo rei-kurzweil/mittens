@@ -110,6 +110,7 @@ impl BvhSystem {
                 bvh,
                 &self.shapes,
                 |i| super::bvh_snapshot_mesh::in_scope(world, self.shapes[i].component, roots),
+                |_, _, _| {},
                 out,
             );
         }
@@ -144,6 +145,9 @@ impl BvhSystem {
         world: &World,
         renderable_cid: ComponentId,
     ) -> Option<RaycastableComponent> {
+        if crate::engine::ecs::component::destroyable::zone_suppressed(world, renderable_cid) {
+            return None;
+        }
         // Raycastable is commonly authored as a sidecar of a transform/layout node rather
         // than as a structural ancestor of the renderable generated for that node's Style.
         // Treat an immediate child marker as belonging to its owner at every ancestry level.

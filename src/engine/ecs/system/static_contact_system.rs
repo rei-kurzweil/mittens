@@ -342,6 +342,7 @@ fn resolve_contact_velocity(
         return;
     }
     let linear = velocity.linear_local_mps;
+    let flying = velocity.flying;
     let Ok(rotation) = VelocitySystem::parent_rotation(world, owner) else {
         return;
     };
@@ -354,7 +355,7 @@ fn resolve_contact_velocity(
         world
             .get_component_by_id_as_mut::<VelocityComponent>(owner)
             .unwrap()
-            .grounded = true;
+            .grounded = !flying;
     }
     let mut speed = crate::utils::math::quat_rotate_vec3(rotation, linear);
     let inward = speed

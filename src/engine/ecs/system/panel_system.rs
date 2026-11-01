@@ -738,6 +738,7 @@ pub fn editor_panel_body_spec(kind: PanelKind) -> PanelBodySpec {
             ("show_zones".to_string(), Value::Bool(true)),
             ("show_bvh".to_string(), Value::Bool(true)),
             ("show_bvh_refresh".to_string(), Value::Bool(true)),
+            ("show_bvh_animation".to_string(), Value::Bool(true)),
         ]))],
         PanelKind::World => vec![Value::String(String::new())],
         PanelKind::Paint => vec![rgba(), rgba()],
@@ -936,6 +937,10 @@ pub fn spawn_editor_panel_layout_tree(
                     ),
                     ("show_zones".into(), Value::Bool(config.show_zones)),
                     ("show_bvh".into(), Value::Bool(config.show_bvh)),
+                    (
+                        "show_bvh_animation".into(),
+                        Value::Bool(config.show_bvh_animation),
+                    ),
                     (
                         "show_bvh_refresh".into(),
                         Value::Bool(config.show_bvh_refresh),

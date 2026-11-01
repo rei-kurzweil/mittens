@@ -159,7 +159,7 @@ regenerate_buildings()
 T { name = "sakura_ground" box([0.0, -0.48, 0.0], [120.0, 0.5, 140.0], ground_color) }
 
 // Only the editor settings panel is materialized, including BVH snapshots.
-T.position(-20.4, roof_height + 3.2, -3.8) {
+T.position(-20.4, roof_height + 3.3, -3.8) {
     name = "sakura_editor_settings_mount"
     EditorUI { panels([{ panel = "settings" }]) }
 }

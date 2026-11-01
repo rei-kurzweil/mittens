@@ -791,27 +791,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     }
                 }
                 "XR" => no_arg_constructors(component, &["on", "off", "auto", "openxr"]),
-                "InputXRGamepad" => {
-                    component.constructor("new", no_args());
-                    constructor_and_builder(component, "enabled", booleans(1));
-                    constructor_and_builder(component, "hand", strings(1));
-                    constructor_and_builder(
-                        component,
-                        "locomotion",
-                        optional_component_signature([mms::ValueType::Bool], 0),
-                    );
-                    for method in ["speed", "deadzone"] {
-                        constructor_and_builder(component, method, floats(1));
-                    }
-                    for method_name in ["enable", "disable"] {
-                        host_method(
-                            component,
-                            canonical,
-                            method_name,
-                            method(vec![], mms::ValueType::Null),
-                        );
-                    }
-                }
+                "InputXRGamepad" => xr_gamepad_binding::register(component, canonical),
                 "InputTransformMode" => {
                     no_arg_constructors(component, &["forward_y", "forward_z"]);
                     no_arg_builders(
@@ -2154,3 +2134,6 @@ mod walking_ik_binding;
 
 #[path = "geometry_binding.rs"]
 mod geometry_binding;
+
+#[path = "xr_gamepad_binding.rs"]
+mod xr_gamepad_binding;

@@ -401,6 +401,20 @@ pub(crate) fn sync_editor_settings_panel_selection(
         "bvh_toggle",
         bvh_visible,
     );
+    let bvh_animating = owning_editor_ui(world, panel_root)
+        .and_then(|owner| {
+            world.get_component_by_id_as::<crate::engine::ecs::component::EditorUIComponent>(owner)
+        })
+        .is_some_and(|ui| ui.bvh_animating);
+    sync_boolean_toggle(
+        world,
+        emit,
+        panel_query_root,
+        "editor_settings_bvh_animation",
+        "bvh_animation_toggle_slot",
+        "bvh_animation_toggle",
+        bvh_animating,
+    );
 }
 
 fn owning_editor_ui(world: &World, start: ComponentId) -> Option<ComponentId> {
@@ -458,7 +472,10 @@ pub(crate) fn handle_editor_settings_panel_click(
             return true;
         };
         let row_kind = data_text(payload, "row_kind").unwrap_or_default();
-        if row_kind == "BvhVisibility" || row_kind == "BvhRefresh" {
+        if matches!(
+            row_kind.as_str(),
+            "BvhVisibility" | "BvhRefresh" | "BvhAnimation"
+        ) {
             let roots = effective_editor_roots(world, installed_editor_roots);
             if let Some(owner) = owning_editor_ui(world, settings_panel_root) {
                 if let Some(ui) = world
@@ -468,6 +485,8 @@ pub(crate) fn handle_editor_settings_panel_click(
                 {
                     if row_kind == "BvhVisibility" {
                         ui.set_bvh_snapshot_visible(!ui.bvh_visible, roots);
+                    } else if row_kind == "BvhAnimation" {
+                        ui.set_bvh_animation_enabled(!ui.bvh_animating);
                     } else {
                         ui.refresh_bvh_snapshot();
                     }
@@ -913,7 +932,12 @@ mod bvh_tests {
         world.add_child(owner, panel).unwrap();
         let toggle = world.add_component(TransformComponent::new());
         let refresh = world.add_component(TransformComponent::new());
-        for (row, kind) in [(toggle, "BvhVisibility"), (refresh, "BvhRefresh")] {
+        let animation = world.add_component(TransformComponent::new());
+        for (row, kind) in [
+            (toggle, "BvhVisibility"),
+            (refresh, "BvhRefresh"),
+            (animation, "BvhAnimation"),
+        ] {
             world.add_child(panel, row).unwrap();
             let data = world.add_component_boxed_named(
                 EDITOR_SETTINGS_PAYLOAD_NAME,
@@ -944,6 +968,24 @@ mod bvh_tests {
         assert_eq!(ui.bvh_revision, 1);
         assert_eq!(ui.bvh_scope_roots, vec![editor]);
         assert!(handle_editor_settings_panel_click(
+            &mut world, &mut emit, owner, animation, &context, &roots
+        ));
+        let ui = world
+            .get_component_by_id_as::<EditorUIComponent>(owner)
+            .unwrap();
+        assert!(ui.bvh_animating);
+        assert_eq!(
+            ui.bvh_revision, 1,
+            "animation does not request another snapshot"
+        );
+        assert!(
+            !world
+                .get_component_by_id_as::<EditorUIComponent>(other)
+                .unwrap()
+                .bvh_animating
+        );
+
+        assert!(handle_editor_settings_panel_click(
             &mut world, &mut emit, owner, refresh, &context, &roots
         ));
         assert_eq!(
@@ -967,6 +1009,22 @@ mod bvh_tests {
                 .get_component_by_id_as::<EditorUIComponent>(owner)
                 .unwrap()
                 .bvh_visible
+        );
+        assert!(
+            !world
+                .get_component_by_id_as::<EditorUIComponent>(owner)
+                .unwrap()
+                .bvh_animating
+        );
+        assert!(handle_editor_settings_panel_click(
+            &mut world, &mut emit, owner, animation, &context, &roots
+        ));
+        assert!(
+            !world
+                .get_component_by_id_as::<EditorUIComponent>(owner)
+                .unwrap()
+                .bvh_animating,
+            "hidden snapshots cannot animate"
         );
     }
 }

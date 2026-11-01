@@ -51,7 +51,7 @@ use crate::engine::ecs::component::{
     TransitionEasing, TransitionReplacePolicy, TransparentCutoutComponent, UVComponent,
     UnlitComponent, VRChatOSCEyeTrackingComponent, VelocityComponent, VolumeNormalizationComponent,
     WordWrapMode, XREyeTrackingComponent, XREyeTrackingHtcComponent, XRHandComponent, XrComponent,
-    XrHandPreference, ZoneComponent,
+    ZoneComponent,
 };
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::CameraTarget;
@@ -65,6 +65,8 @@ use crate::scripting::token::expand_component_shortform;
 use std::cell::RefCell;
 #[path = "editor_ui_registry.rs"]
 mod editor_ui_registry;
+#[path = "xr_gamepad_registry.rs"]
+mod xr_gamepad_registry;
 #[path = "geometry_registry.rs"]
 mod geometry_registry;
 use editor_ui_registry::parse_editor_ui_panel_specs;
@@ -4108,29 +4110,7 @@ fn apply_call(
         return Ok(());
     }
     if let Some(inp) = world.get_component_by_id_as_mut::<InputXRGamepadComponent>(id) {
-        match method {
-            "enabled" => inp.enabled = arg_bool(args, 0)?,
-            "hand" => {
-                inp.hand = match arg_str(args, 0)?.to_ascii_lowercase().as_str() {
-                    "default" => XrHandPreference::Default,
-                    "left" => XrHandPreference::Left,
-                    "right" => XrHandPreference::Right,
-                    "either" => XrHandPreference::Either,
-                    s => return Err(format!("unknown XrHandPreference: {s}")),
-                }
-            }
-            "locomotion" => {
-                inp.locomotion = if args.is_empty() {
-                    true
-                } else {
-                    arg_bool(args, 0)?
-                };
-            }
-            "speed" => inp.speed = arg_f32(args, 0)?,
-            "deadzone" => inp.deadzone = arg_f32(args, 0)?,
-            _ => {}
-        }
-        return Ok(());
+        return xr_gamepad_registry::apply(inp, method, args);
     }
     if world
         .get_component_by_id_as::<InputTransformModeComponent>(id)

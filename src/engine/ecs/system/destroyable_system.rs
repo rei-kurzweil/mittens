@@ -51,7 +51,13 @@ struct Surface {
     clear: Vec<[i32; 3]>,
     suppression: Option<ComponentId>,
     zone_suppression: Option<ComponentId>,
-    hidden_by_batch: bool,
+    view: Option<SurfaceView>,
+}
+#[derive(Debug)]
+struct SurfaceView {
+    frame: ComponentId,
+    render: ComponentId,
+    mesh: CpuMeshHandle,
 }
 #[derive(Debug)]
 struct Debris {
@@ -99,6 +105,18 @@ impl DestroyableSystem {
             .collect();
         for id in removed {
             if let Some(surface) = self.surfaces.remove(&id) {
+                if let Some(view) = surface.view {
+                    retire(
+                        systems,
+                        world,
+                        visuals,
+                        assets,
+                        uploader,
+                        view.frame,
+                        view.render,
+                        Some(view.mesh),
+                    );
+                }
                 for cell in surface.cells {
                     retire(
                         systems,
@@ -141,6 +159,18 @@ impl DestroyableSystem {
             .collect();
         for id in exhausted {
             let surface = self.surfaces.remove(&id).unwrap();
+            if let Some(view) = surface.view {
+                retire(
+                    systems,
+                    world,
+                    visuals,
+                    assets,
+                    uploader,
+                    view.frame,
+                    view.render,
+                    Some(view.mesh),
+                );
+            }
             if let Some(config) = world.get_component_by_id_as_mut::<DestroyableComponent>(id) {
                 config.exhausted = true;
             }
@@ -175,7 +205,7 @@ impl DestroyableSystem {
             if world
                 .get_component_by_id_as::<TransformComponent>(surface.frame)
                 .is_none()
-                || surface.cells.iter().any(|c| {
+                || surface.cells.iter().filter(|c| !c.solid.empty()).any(|c| {
                     world
                         .get_component_by_id_as::<RenderableComponent>(c.render)
                         .is_none()
@@ -210,43 +240,50 @@ impl DestroyableSystem {
                 );
                 continue;
             }
-            // Upload all outputs before making any geometry changes visible.
-            let mut prepared = Vec::new();
-            let mut failed = false;
+            // Upload one batched visual before publishing any cell changes.
             let changed = !changes.cells.is_empty();
-            for change in changes.cells {
-                let upload = if change.mesh.vertices.is_empty() {
-                    None
-                } else {
-                    let cpu = assets.register_transient_mesh(change.mesh.clone());
-                    match assets.gpu_mesh_handle(uploader, cpu) {
-                        Ok(gpu) => Some((cpu, gpu)),
-                        Err(e) => {
-                            assets.release_transient_mesh(uploader, cpu);
-                            eprintln!("[Destroyable] upload failed: {e}");
-                            failed = true;
-                            None
-                        }
-                    }
-                };
-                prepared.push((change, upload));
-            }
-            if changed && !failed {
-                if let Some(group) = self.groups.pending_group(result.owner) {
-                    failed = !self
-                        .groups
-                        .activate(group, systems, world, visuals, assets, uploader);
-                }
-            }
-            if failed {
-                for (_, upload) in prepared {
-                    if let Some((cpu, _)) = upload {
-                        assets.release_transient_mesh(uploader, cpu);
-                    }
-                }
+            if !changed {
                 surface.clear.clear();
                 continue;
             }
+            let render_mesh = changes
+                .render_mesh
+                .expect("changed cells have a batched visual");
+            let render_upload = if render_mesh.vertices.is_empty() {
+                None
+            } else {
+                let cpu = assets.register_transient_mesh(render_mesh);
+                match assets.gpu_mesh_handle(uploader, cpu) {
+                    Ok(gpu) => Some((cpu, gpu)),
+                    Err(e) => {
+                        assets.release_transient_mesh(uploader, cpu);
+                        surface.clear.clear();
+                        eprintln!("[Destroyable] upload failed: {e}");
+                        continue;
+                    }
+                }
+            };
+            if let Some(group) = self.groups.pending_group(result.owner) {
+                if !self
+                    .groups
+                    .activate(group, systems, world, visuals, assets, uploader)
+                {
+                    if let Some((cpu, _)) = render_upload {
+                        assets.release_transient_mesh(uploader, cpu);
+                    }
+                    surface.clear.clear();
+                    continue;
+                }
+            }
+            let prepared: Vec<_> = changes
+                .cells
+                .into_iter()
+                .map(|change| {
+                    let cpu = (!change.mesh.vertices.is_empty())
+                        .then(|| assets.register_transient_mesh(change.mesh.clone()));
+                    (change, cpu)
+                })
+                .collect();
             for (change, upload) in prepared {
                 let cell = &mut surface.cells[change.index];
                 let old_mesh = cell.mesh.take();
@@ -269,7 +306,7 @@ impl DestroyableSystem {
                 for id in geometry_ids {
                     let _ = world.remove_component_subtree(id);
                 }
-                if let Some((cpu, gpu)) = upload {
+                if let Some(cpu) = upload {
                     let geometry = Arc::new(TriangleMesh::new(&change.mesh));
                     let bounds = world
                         .children_of(cell.render)
@@ -299,27 +336,75 @@ impl DestroyableSystem {
                         .unwrap();
                     r.renderable.mesh = cpu;
                     r.renderable.base_mesh = cpu;
-                    let model = TransformSystem::world_model(world, cell.frame).unwrap();
-                    let handle = register_visual(visuals, cell.render, gpu, model, surface.style);
-                    world
-                        .get_component_by_id_as_mut::<RenderableComponent>(cell.render)
-                        .unwrap()
-                        .handle = Some(handle);
                     cell.mesh = Some(cpu);
                     systems.bvh.queue_renderable_added(cell.render);
                     systems.raycast.notify_renderable_added(world, cell.render);
                 } else {
-                    world
-                        .get_component_by_id_as_mut::<ZoneComponent>(cell.zone)
-                        .unwrap()
-                        .enabled = false;
+                    // Keep the stable worker slot, but retire all empty-cell
+                    // scene resources immediately instead of retaining dead ECS
+                    // subtrees until the entire authored primitive disappears.
+                    retire(
+                        systems,
+                        world,
+                        visuals,
+                        assets,
+                        uploader,
+                        cell.frame,
+                        cell.render,
+                        None,
+                    );
                 }
                 cell.solid = change.solid;
                 if let Some(old) = old_mesh {
                     assets.release_transient_mesh(uploader, old);
                 }
             }
+            systems
+                .renderable
+                .suppress_renderable(world, visuals, surface.source);
+            if let Some(view) = surface.view.take() {
+                retire(
+                    systems,
+                    world,
+                    visuals,
+                    assets,
+                    uploader,
+                    view.frame,
+                    view.render,
+                    Some(view.mesh),
+                );
+            }
             let model = TransformSystem::world_model(world, surface.frame).unwrap();
+            if let Some((cpu, gpu)) = render_upload {
+                let mut transform = TransformComponent::new();
+                transform.transform.matrix_world = model;
+                let frame = attach(world, surface.frame, transform);
+                attach(world, frame, SerializeComponent::off());
+                attach(
+                    world,
+                    frame,
+                    crate::engine::ecs::component::destroyable::DestructionCellComponent,
+                );
+                let render = attach(
+                    world,
+                    frame,
+                    RenderableComponent::from_cpu_mesh_handle(
+                        cpu,
+                        surface.style.renderable.material,
+                    ),
+                );
+                attach(world, render, RaycastableComponent::disabled());
+                let handle = register_visual(visuals, render, gpu, model, surface.style);
+                world
+                    .get_component_by_id_as_mut::<RenderableComponent>(render)
+                    .unwrap()
+                    .handle = Some(handle);
+                surface.view = Some(SurfaceView {
+                    frame,
+                    render,
+                    mesh: cpu,
+                });
+            }
             for mesh in changes.debris {
                 while self.debris.len() >= MAX_DEBRIS {
                     let d = self.debris.pop_front().unwrap();
@@ -353,37 +438,6 @@ impl DestroyableSystem {
             if changed {
                 self.cuts += 1;
             }
-        }
-        // A successful cut unpacks the entire floor, including intact cells
-        // prepared by other in-flight cuts in that same floor.
-        for (&owner, surface) in &mut self.surfaces {
-            if !surface.hidden_by_batch || self.groups.pending_group(owner).is_some() {
-                continue;
-            }
-            let mut ready = true;
-            for cell in &surface.cells {
-                if cell.solid.empty()
-                    || world
-                        .get_component_by_id_as::<RenderableComponent>(cell.render)
-                        .is_none_or(|r| r.handle.is_some())
-                {
-                    continue;
-                }
-                let cpu = cell.mesh.unwrap_or(CpuMeshHandle::CUBE);
-                if let Ok(gpu) = assets.gpu_mesh_handle(uploader, cpu) {
-                    let Some(model) = TransformSystem::world_model(world, cell.frame) else {
-                        continue;
-                    };
-                    let handle = register_visual(visuals, cell.render, gpu, model, surface.style);
-                    world
-                        .get_component_by_id_as_mut::<RenderableComponent>(cell.render)
-                        .unwrap()
-                        .handle = Some(handle);
-                } else {
-                    ready = false;
-                }
-            }
-            surface.hidden_by_batch = !ready;
         }
         for _ in 0..self.debris.len() {
             let mut d = self.debris.pop_front().unwrap();
@@ -473,8 +527,12 @@ impl DestroyableSystem {
                 }
             }
         }
-        let mut chunk_budget =
-            MAX_SCENE_CHUNKS.saturating_sub(self.surfaces.values().map(|s| s.cells.len()).sum());
+        let mut chunk_budget = MAX_SCENE_CHUNKS.saturating_sub(
+            self.surfaces
+                .values()
+                .map(|s| s.cells.iter().filter(|c| !c.solid.empty()).count())
+                .sum(),
+        );
         for (&owner, surface) in &mut self.surfaces {
             if surface.busy {
                 continue;
@@ -551,17 +609,7 @@ impl DestroyableSystem {
                 continue;
             }
             if surface.cells.is_empty() {
-                if let Err(e) = partition(
-                    surface,
-                    config,
-                    chunk_budget,
-                    self.groups.pending_group(owner).is_some(),
-                    systems,
-                    world,
-                    visuals,
-                    assets,
-                    uploader,
-                ) {
+                if let Err(e) = partition(surface, config, chunk_budget, systems, world) {
                     eprintln!("[Destroyable] {e}");
                     continue;
                 }
@@ -601,6 +649,23 @@ impl DestroyableSystem {
                 owner,
                 revision: surface.revision,
                 cells,
+                render_cells: surface
+                    .cells
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, c)| !c.solid.empty())
+                    .map(|(i, c)| {
+                        (
+                            i,
+                            c.solid.clone(),
+                            world
+                                .get_component_by_id_as::<TransformComponent>(c.frame)
+                                .unwrap()
+                                .transform
+                                .model,
+                        )
+                    })
+                    .collect(),
             };
             if self
                 .csg
@@ -707,19 +772,15 @@ fn discover(
         clear: vec![],
         suppression: None,
         zone_suppression: None,
-        hidden_by_batch: false,
+        view: None,
     })
 }
 fn partition(
     surface: &mut Surface,
     config: DestroyableComponent,
     budget: usize,
-    combined: bool,
     systems: &mut SystemWorld,
     world: &mut World,
-    visuals: &mut VisualWorld,
-    assets: &mut RenderAssets,
-    uploader: &mut dyn RenderUploader,
 ) -> Result<(), String> {
     let model = TransformSystem::world_model(world, surface.frame).unwrap();
     let counts: [usize; 3] = std::array::from_fn(|i| {
@@ -734,10 +795,6 @@ fn partition(
     {
         return Err("surface exceeds 512 chunks; increase chunk_size".into());
     }
-    let gpu = assets
-        .gpu_mesh_handle(uploader, CpuMeshHandle::CUBE)
-        .map_err(|e| e.to_string())?;
-    surface.hidden_by_batch = combined;
     let intact = Solid::box_between([-0.5; 3], [0.5; 3]);
     for x in 0..counts[0] {
         for y in 0..counts[1] {
@@ -750,7 +807,6 @@ fn partition(
                     .with_position(center[0], center[1], center[2])
                     .with_scale(size[0], size[1], size[2]);
                 t.transform.matrix_world = mat4_mul(model, t.transform.model);
-                let cell_model = t.transform.matrix_world;
                 let frame = attach(world, surface.frame, t);
                 attach(world, frame, SerializeComponent::off());
                 attach(
@@ -768,13 +824,6 @@ fn partition(
                         max: [0.5; 3],
                     }),
                 );
-                if !combined {
-                    let handle = register_visual(visuals, render, gpu, cell_model, surface.style);
-                    world
-                        .get_component_by_id_as_mut::<RenderableComponent>(render)
-                        .unwrap()
-                        .handle = Some(handle);
-                }
                 systems.bvh.queue_renderable_added(render);
                 systems.raycast.notify_renderable_added(world, render);
                 let zone = attach(world, frame, ZoneComponent::cube([0.5; 3]));
@@ -793,12 +842,13 @@ fn partition(
             }
         }
     }
-    systems
-        .renderable
-        .suppress_renderable(world, visuals, surface.source);
     systems.bvh.queue_renderable_removed(surface.source);
     systems.raycast.notify_renderable_removed(surface.source);
-    let suppression = attach(world, surface.source, RaycastableComponent::disabled());
+    let suppression = attach(
+        world,
+        surface.source,
+        crate::engine::ecs::component::destroyable::DestroyedSourceComponent,
+    );
     attach(world, suppression, SerializeComponent::off());
     surface.suppression = Some(suppression);
     let suppression = attach(

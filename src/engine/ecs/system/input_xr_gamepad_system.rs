@@ -31,6 +31,7 @@ struct ComponentEventState {
 
 #[derive(Debug, Default)]
 pub struct InputXRGamepadSystem {
+    flying: super::input_xr_flying::XrFlying,
     components: HashSet<ComponentId>,
     previous: HashMap<ComponentId, ComponentEventState>,
     xr_active_last_frame: bool,
@@ -43,7 +44,8 @@ impl InputXRGamepadSystem {
         self.components.insert(component);
     }
 
-    pub fn remove_input_xr_gamepad(&mut self, component: ComponentId) {
+    pub fn remove_input_xr_gamepad(&mut self, world: &mut World, component: ComponentId) {
+        self.flying.stop(world, component);
         self.components.remove(&component);
         self.previous.remove(&component);
         self.logged_missing_owner.remove(&component);
@@ -58,8 +60,19 @@ impl InputXRGamepadSystem {
         emit: &mut dyn SignalEmitter,
         dt_sec: f32,
     ) {
-        let xr_state = *xr.xr_gamepad_state();
+        self.tick_with_state(world, visuals, *xr.xr_gamepad_state(), emit, dt_sec);
+    }
+    fn tick_with_state(
+        &mut self,
+        world: &mut World,
+        visuals: &mut VisualWorld,
+        xr_state: XrGamepadState,
+        emit: &mut dyn SignalEmitter,
+        dt_sec: f32,
+    ) {
+        self.flying.advance(dt_sec);
         if !xr_state.active {
+            self.flying.suspend(world);
             if self.xr_active_last_frame {
                 eprintln!("[input_xr_gamepad_system] XR gamepad input inactive");
             }
@@ -73,19 +86,21 @@ impl InputXRGamepadSystem {
 
         let components: Vec<_> = self.components.iter().copied().collect();
         for cid in components {
-            let Some(cfg) = world
+            let Some(mut cfg) = world
                 .get_component_by_id_as::<InputXRGamepadComponent>(cid)
                 .cloned()
             else {
-                self.remove_input_xr_gamepad(cid);
+                self.remove_input_xr_gamepad(world, cid);
                 continue;
             };
             if !cfg.enabled {
+                self.flying.stop(world, cid);
                 continue;
             }
 
             let Some(input_xr_owner) = nearest_ancestor_component::<InputXRComponent>(world, cid)
             else {
+                self.flying.stop(world, cid);
                 if self.logged_missing_owner.insert(cid) {
                     eprintln!(
                         "[input_xr_gamepad_system] component {:?} has no owning InputXR ancestor; skipping XR input",
@@ -96,6 +111,11 @@ impl InputXRGamepadSystem {
             };
             self.logged_missing_owner.remove(&cid);
 
+            if let Some(target) = xr_locomotion_target_transform(world, input_xr_owner) {
+                cfg.flying = self.flying.update(world, cid, target, &xr_state);
+            } else {
+                self.flying.stop(world, cid);
+            }
             let prev = self.previous.get(&cid).cloned().unwrap_or_default();
             let mut next = ComponentEventState::default();
             emit_axis_events(cid, cfg.hand, &xr_state, &prev, &mut next, emit);
@@ -316,19 +336,35 @@ fn apply_locomotion(
     emit: &mut dyn SignalEmitter,
     dt_sec: f32,
 ) -> bool {
-    let Some((_, stick)) = resolve_locomotion_stick(cfg.hand, xr) else {
+    if !dt_sec.is_finite() || dt_sec <= 0. {
         return false;
-    };
-
+    }
+    let stick = resolve_locomotion_stick(cfg.hand, xr)
+        .map(|(_, stick)| stick)
+        .unwrap_or([0.; 2]);
     let mut dx = stick[0];
     let mut dz = -stick[1];
     let len = (dx * dx + dz * dz).sqrt();
-    if len <= cfg.deadzone || len <= f32::EPSILON {
+    if !len.is_finite() {
         return false;
     }
-    let scaled = ((len - cfg.deadzone) / (1.0 - cfg.deadzone)).clamp(0.0, 1.0);
-    dx = dx / len * scaled;
-    dz = dz / len * scaled;
+    if len <= cfg.deadzone || len <= f32::EPSILON {
+        dx = 0.;
+        dz = 0.;
+    } else {
+        let scaled = ((len - cfg.deadzone) / (1.0 - cfg.deadzone)).clamp(0.0, 1.0);
+        dx = dx / len * scaled;
+        dz = dz / len * scaled;
+    }
+    let vertical = if cfg.flying {
+        (xr.hands[1].button_b.is_some_and(|b| b.0) as u8 as f32)
+            - (xr.hands[1].button_a.is_some_and(|b| b.0) as u8 as f32)
+    } else {
+        0.
+    };
+    if dx == 0. && dz == 0. && vertical == 0. {
+        return false;
+    }
 
     let Some(target_tcid) = xr_locomotion_target_transform(world, input_xr_owner) else {
         return false;
@@ -342,14 +378,25 @@ fn apply_locomotion(
         .and_then(|camera| camera.eyes.first())
         .map(|eye| eye.transform.matrix_world)
         .or_else(|| TransformSystem::world_model(world, target_tcid));
-    let (right, back) = camera_world
-        .and_then(horizontal_camera_basis)
-        .unwrap_or(([1.0, 0.0, 0.0], [0.0, 0.0, 1.0]));
-    let move_world = [
-        right[0] * dx + back[0] * dz,
-        0.0,
-        right[2] * dx + back[2] * dz,
-    ];
+    let (right, back) = if cfg.flying {
+        let rotation = camera_world
+            .map(math::mat_to_quat)
+            .unwrap_or([0., 0., 0., 1.]);
+        (
+            math::quat_rotate_vec3(rotation, [1., 0., 0.]),
+            math::quat_rotate_vec3(rotation, [0., 0., 1.]),
+        )
+    } else {
+        camera_world
+            .and_then(horizontal_camera_basis)
+            .unwrap_or(([1., 0., 0.], [0., 0., 1.]))
+    };
+    let mut move_world =
+        std::array::from_fn(|i| right[i] * dx + back[i] * dz + if i == 1 { vertical } else { 0. });
+    let length = math::vec3_len(move_world);
+    if length > 1. {
+        move_world = move_world.map(|v| v / length);
+    }
 
     // The locomotion target stores a local translation. Convert the world-space
     // direction back through its parent so rotated parent rigs don't skew it.
@@ -366,8 +413,10 @@ fn apply_locomotion(
     let Some(t) = world.get_component_by_id_as_mut::<TransformComponent>(target_tcid) else {
         return false;
     };
-    t.transform.translation[0] += move_local[0] * cfg.speed * dt_sec;
-    t.transform.translation[2] += move_local[2] * cfg.speed * dt_sec;
+    let speed = cfg.speed * if cfg.flying { 2.0 } else { 1.0 };
+    for axis in 0..3 {
+        t.transform.translation[axis] += move_local[axis] * speed * dt_sec;
+    }
     t.transform.recompute_model();
 
     let transform = t.transform;
@@ -447,3 +496,7 @@ fn horizontal_camera_basis(matrix_world: [[f32; 4]; 4]) -> Option<([f32; 3], [f3
     let back = normalize_xz([matrix_world[2][0], 0.0, matrix_world[2][2]])?;
     Some((right, back))
 }
+
+#[cfg(test)]
+#[path = "input_xr_gamepad_tests.rs"]
+mod tests;

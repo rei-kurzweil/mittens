@@ -61,6 +61,7 @@ pub mod ik;
 pub mod ik_system;
 pub mod implicit_surface_system;
 pub mod input_system;
+mod input_xr_flying;
 pub mod input_xr_gamepad_system;
 pub mod joint_basis_retargeting_system;
 pub mod keyboard_input_system;

@@ -810,6 +810,7 @@ impl VelocitySystem {
             }
             let mut linear = velocity.linear_local_mps;
             let angular = velocity.angular_local_radps;
+            let flying = velocity.flying;
             if !angular.iter().all(|x| x.is_finite()) {
                 continue;
             }
@@ -837,7 +838,7 @@ impl VelocitySystem {
             };
             if let Some(gravity) = Self::gravity_provider(world, id)
                 .and_then(|provider| world.get_component_by_id_as::<GravityComponent>(provider))
-                .filter(|gravity| gravity.enabled)
+                .filter(|gravity| gravity.enabled && !flying)
             {
                 let acceleration_world = [0.0, -9.81 * gravity.coefficient, 0.0];
                 let acceleration_local = math::quat_rotate_vec3(

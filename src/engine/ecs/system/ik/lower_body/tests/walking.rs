@@ -3,6 +3,8 @@ use super::*;
 
 #[path = "walking_config.rs"]
 mod config;
+#[path = "airborne.rs"]
+mod airborne;
 
 impl Fixture {
     fn walking(asset: Option<&str>, drop: f32) -> Self {
@@ -525,7 +527,7 @@ fn walking_releases_contacts_on_support_tracking_opt_out_and_teleport() {
         f.systems.lower_body_ik.status(f.avatar),
         LowerBodyStatus::NoSupport
     );
-    assert!(f.feet().iter().all(|f| f.phase == FootPhase::Rest));
+    assert!(f.feet().iter().all(|f| f.phase == FootPhase::Airborne));
     assert_eq!(
         f.systems
             .lower_body_ik

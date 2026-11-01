@@ -221,6 +221,89 @@ T.position(0,0,-3).scale(2,2,0.1) {{R.cube() {{Material(definition).inputs({{tin
             ppm.extend_from_slice(&p[..3]);
         }
         std::fs::write("/tmp/mittens-bvh-snapshot.ppm", ppm).unwrap();
+        // Exercise actual rendered animation over a complete traversal. The
+        // diagnostic keeps its mesh and only changes material parameters.
+        let wire = scene
+            .visuals
+            .instances()
+            .iter()
+            .find(|v| v.component == owner)
+            .unwrap()
+            .renderable
+            .mesh;
+        scene
+            .world
+            .get_component_by_id_as_mut::<EditorUIComponent>(owner)
+            .unwrap()
+            .set_bvh_animation_enabled(true);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        let mut levels = Vec::new();
+        let mut bright_pixels = 0;
+        loop {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "BVH traversal failed to loop"
+            );
+            prepare(&mut scene, &mut renderer);
+            let material = scene.visuals.materials.source_instance(owner).unwrap();
+            let depth = scene.visuals.materials.instance(material).unwrap().values[1] as u32;
+            if levels.last().copied() != Some(depth) {
+                if !levels.is_empty() && depth == 0 {
+                    break;
+                }
+                assert_eq!(
+                    depth as usize,
+                    levels.len(),
+                    "all levels must be visited in order"
+                );
+                levels.push(depth);
+                renderer.draw(0, &scene.visuals, &cameras).unwrap();
+                let pixels = target.pixels();
+                bright_pixels += pixels
+                    .chunks_exact(4)
+                    .filter(|p| p[0] > 200 && p[1] > 150 && p[2] < 110)
+                    .count();
+                assert_eq!(
+                    scene
+                        .visuals
+                        .instances()
+                        .iter()
+                        .find(|v| v.component == owner)
+                        .unwrap()
+                        .renderable
+                        .mesh,
+                    wire
+                );
+                if depth == 1 {
+                    let mut ppm = b"P6\n96 96\n255\n".to_vec();
+                    for p in pixels[..96 * 96 * 4].chunks_exact(4) {
+                        ppm.extend_from_slice(&p[..3]);
+                    }
+                    std::fs::write("/tmp/mittens-bvh-animation.ppm", ppm).unwrap();
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(
+            levels.len() > 1 && bright_pixels > 0,
+            "animation must brighten visible wire boxes"
+        );
+        scene
+            .world
+            .get_component_by_id_as_mut::<EditorUIComponent>(owner)
+            .unwrap()
+            .set_bvh_animation_enabled(false);
+        prepare(&mut scene, &mut renderer);
+        renderer.draw(0, &scene.visuals, &cameras).unwrap();
+        assert_eq!(
+            target.pixels(),
+            snapshot,
+            "stopping animation restores every original wire box"
+        );
+        println!(
+            "PASS BVH animation: levels={}, bright_pixels={bright_pixels}, mesh reused",
+            levels.len()
+        );
         scene
             .world
             .get_component_by_id_as_mut::<EditorUIComponent>(owner)

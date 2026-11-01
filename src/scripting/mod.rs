@@ -86,3 +86,6 @@ mod editor_panel_title_tests;
 
 #[cfg(test)]
 mod sakura_editor_regression_tests;
+
+#[cfg(test)]
+mod xr_flying_tests;

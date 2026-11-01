@@ -24,7 +24,11 @@ struct Node {
     children: Option<[usize; 2]>,
 }
 impl TriangleMesh {
-    pub(crate) fn snapshot(&self, out: &mut super::bvh_snapshot_mesh::SnapshotBoxes) {
+    pub(crate) fn snapshot(
+        &self,
+        out: &mut super::bvh_snapshot_mesh::SnapshotBoxes,
+        base_depth: u32,
+    ) {
         fn visit(
             mesh: &TriangleMesh,
             index: usize,
@@ -43,7 +47,8 @@ impl TriangleMesh {
             }
         }
         if !self.nodes.is_empty() {
-            visit(self, 0, 0, out);
+            out.push_important(self.nodes[0].bounds, base_depth);
+            visit(self, 0, base_depth, out);
         }
     }
     pub fn new(mesh: &CpuMesh) -> Self {

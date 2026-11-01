@@ -203,12 +203,7 @@ mod vulkano_backend {
         ));
     }
     #[cfg(test)]
-    mod custom_material_tests {
-        include!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/src/engine/graphics/vulkano_custom_material_tests.rs"
-        ));
-    }
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/graphics/vulkano_scene_test_modules.rs"));
 
     mod toon_mesh_vs {
         vulkano_shaders::shader! {

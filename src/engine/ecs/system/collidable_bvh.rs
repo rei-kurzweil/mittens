@@ -146,23 +146,16 @@ impl CollidableBvh {
         roots: &[ComponentId],
         out: &mut super::bvh_snapshot_mesh::SnapshotBoxes,
     ) {
-        // Detail first: these are the local splits the destruction diagnostic needs.
-        for surface in &self.surfaces {
-            if super::bvh_snapshot_mesh::in_scope(world, surface.zone, roots) {
-                if let Some(mesh) = &surface.mesh {
-                    mesh.snapshot(out);
-                }
-            }
-            if out.full() {
-                out.truncated = true;
-                return;
-            }
-        }
         if let Some(bvh) = &self.bvh {
             super::bvh_snapshot_mesh::collect(
                 bvh,
                 &self.surfaces,
                 |i| super::bvh_snapshot_mesh::in_scope(world, self.surfaces[i].zone, roots),
+                |i, depth, out| {
+                    if let Some(mesh) = &self.surfaces[i].mesh {
+                        mesh.snapshot(out, depth + 1);
+                    }
+                },
                 out,
             );
         }
@@ -277,7 +270,11 @@ impl CollidableBvh {
             }) {
                 continue;
             }
-            let (min, max) = collision_geometry::transformed_aabb(shape, frame);
+            let world_mesh = local_mesh.as_ref().map(|mesh| mesh.world(frame));
+            let (min, max) = world_mesh
+                .as_ref()
+                .map(|mesh| (mesh.bounds.min, mesh.bounds.max))
+                .unwrap_or_else(|| collision_geometry::transformed_aabb(shape, frame));
             if !min.into_iter().chain(max).all(f32::is_finite) {
                 if let Some(index) = self.indices.remove(&id) {
                     self.surfaces.swap_remove(index);
@@ -295,7 +292,7 @@ impl CollidableBvh {
                 shape,
                 frame,
                 friction,
-                mesh: local_mesh.as_ref().map(|mesh| mesh.world(frame)),
+                mesh: world_mesh,
                 local_mesh,
                 axis_shape: collision_geometry::axis_aligned_world_shape(shape, frame),
                 yaw_box: collision_geometry::yaw_box(shape, frame),

@@ -8,6 +8,7 @@ pub struct CutJob {
     pub owner: ComponentId,
     pub revision: u64,
     pub cells: Vec<(usize, Solid, Solid, [[f32; 4]; 4])>,
+    pub render_cells: Vec<(usize, Solid, [[f32; 4]; 4])>,
 }
 #[derive(Debug)]
 pub struct CutCell {
@@ -19,6 +20,7 @@ pub struct CutCell {
 pub struct CutBatch {
     pub cells: Vec<CutCell>,
     pub debris: Vec<CpuMesh>,
+    pub render_mesh: Option<CpuMesh>,
 }
 #[derive(Debug)]
 pub struct CutResult {
@@ -63,7 +65,13 @@ impl Default for CsgSystem {
                             Some(solid) => solid.fragments()?.iter().map(Solid::mesh).collect(),
                             None => Vec::new(),
                         };
-                        Ok(CutBatch { cells, debris })
+                        let render_mesh = (!cells.is_empty())
+                            .then(|| batch_render_mesh(job.render_cells, &cells));
+                        Ok(CutBatch {
+                            cells,
+                            debris,
+                            render_mesh,
+                        })
                     }))
                     .unwrap_or_else(|_| {
                         Err("CSG backend panicked; previous geometry retained".into())
@@ -84,6 +92,33 @@ impl Default for CsgSystem {
             .expect("start CSG worker");
         Self { sender, receiver }
     }
+}
+/// Batch the surviving chunks for drawing without performing a whole-source
+/// boolean. Spatial queries keep their individual precise cell meshes.
+fn batch_render_mesh(sources: Vec<(usize, Solid, [[f32; 4]; 4])>, changes: &[CutCell]) -> CpuMesh {
+    use crate::utils::math::{mat4_inverse, mat4_mul_vec4, vec3_normalize};
+    let changes: std::collections::HashMap<_, _> = changes.iter().map(|c| (c.index, c)).collect();
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+    for (index, old, model) in sources {
+        let solid = changes.get(&index).map_or(&old, |c| &c.solid);
+        if solid.empty() {
+            continue;
+        }
+        let mesh = solid.mesh();
+        let inverse = mat4_inverse(model).expect("valid retained grid frame");
+        let base = vertices.len() as u32;
+        vertices.extend(mesh.vertices.into_iter().map(|mut v| {
+            let p = mat4_mul_vec4(model, [v.pos[0], v.pos[1], v.pos[2], 1.]);
+            v.pos = [p[0], p[1], p[2]];
+            v.normal = vec3_normalize(std::array::from_fn(|i| {
+                (0..3).map(|j| inverse[i][j] * v.normal[j]).sum()
+            }));
+            v
+        }));
+        indices.extend(mesh.indices_u32.into_iter().map(|i| base + i));
+    }
+    CpuMesh::new(vertices, indices)
 }
 impl CsgSystem {
     pub fn submit(&self, job: CutJob) -> Result<(), CutJob> {

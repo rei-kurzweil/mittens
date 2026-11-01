@@ -27,6 +27,7 @@ pub(super) struct LowerBodyInstance {
     status: LowerBodyStatus,
     feet: Option<[FootState; 2]>,
     walking: WalkingState,
+    airborne: super::airborne::AirborneState,
     sole_offsets: Option<[[f32; 3]; 2]>,
 }
 impl LowerBodyIkSystem {
@@ -114,6 +115,7 @@ impl LowerBodyIkSystem {
                 (Some(rig), None, Ok(config)) => solve_frame(
                     rig,
                     &mut instance.walking,
+                    &mut instance.airborne,
                     world,
                     avatar,
                     &config,
@@ -149,6 +151,7 @@ impl LowerBodyIkSystem {
                         rig.restore(world, emit);
                     }
                     instance.walking.reset();
+                    instance.airborne.reset();
                     instance.feet = None;
                     status
                 }
@@ -184,6 +187,7 @@ impl LowerBodyInstance {
         }
         self.rig = None;
         self.walking.reset();
+        self.airborne.reset();
         match LowerBodyRig::bind(world, root, report) {
             Ok(rig) => {
                 self.rig = Some(rig);
@@ -220,6 +224,7 @@ fn walking_settings(
 fn solve_frame(
     rig: &mut LowerBodyRig,
     walking: &mut WalkingState,
+    airborne: &mut super::airborne::AirborneState,
     world: &World,
     avatar: &AvatarControlComponent,
     walking_config: &WalkingIkComponent,
@@ -300,17 +305,20 @@ fn solve_frame(
         stack,
         candidates,
     )?;
+    let flying = crate::engine::ecs::system::input_xr_flying::is_flying(world, id);
     let rest = std::array::from_fn::<_, 2, _>(|i| {
         crouch::evaluate(
             FootGoal {
                 sole: soles[i],
                 rotation: rotations[i],
             },
-            ground.at(soles[i]),
+            if flying { None } else { ground.at(soles[i]) },
             avatar.crouch_enabled,
         )
     });
-    let gait = if walking_config.enabled {
+    let supported = rest.iter().any(|r| r.support.is_some());
+    airborne.advance(ground.center(), supported, body.scale[0], dt_sec);
+    let gait = if walking_config.enabled && !flying {
         walking.advance(
             rest,
             ground.center(),
@@ -323,7 +331,15 @@ fn solve_frame(
         walking.reset();
         None
     };
-    let goals = std::array::from_fn::<_, 2, _>(|i| gait.map(|g| g[i].foot).unwrap_or(rest[i].foot));
+    let goals = std::array::from_fn::<_, 2, _>(|i| {
+        gait.map(|g| g[i].foot).unwrap_or_else(|| {
+            if walking_config.enabled && !supported {
+                airborne.goal(rest[i].foot, body.scale[0])
+            } else {
+                rest[i].foot
+            }
+        })
+    });
     let supports = std::array::from_fn::<_, 2, _>(|i| {
         gait.map(|g| Some(g[i].support)).unwrap_or(rest[i].support)
     });
@@ -381,7 +397,13 @@ fn solve_frame(
             target_sole: goals[i].sole,
             target_rotation: goals[i].rotation,
             target_error: vec3_len(vec3_sub(goals[i].sole, solved_sole)),
-            phase: gait.map(|g| g[i].phase).unwrap_or(FootPhase::Rest),
+            phase: gait
+                .map(|g| g[i].phase)
+                .unwrap_or(if !supported && walking_config.enabled {
+                    FootPhase::Airborne
+                } else {
+                    FootPhase::Rest
+                }),
             residual: support
                 .map(|s| (s.height - solved_sole[1]).max(0.0))
                 .unwrap_or(0.0),

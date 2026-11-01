@@ -56,6 +56,7 @@ pub struct SettingsPanelConfig {
     pub show_zones: bool,
     pub show_bvh: bool,
     pub show_bvh_refresh: bool,
+    pub show_bvh_animation: bool,
 }
 
 impl Default for SettingsPanelConfig {
@@ -68,6 +69,7 @@ impl Default for SettingsPanelConfig {
             show_zones: true,
             show_bvh: true,
             show_bvh_refresh: true,
+            show_bvh_animation: true,
         }
     }
 }
@@ -94,6 +96,10 @@ impl SettingsPanelConfig {
     }
     pub fn with_show_bvh(mut self, value: bool) -> Self {
         self.show_bvh = value;
+        self
+    }
+    pub fn with_show_bvh_animation(mut self, value: bool) -> Self {
+        self.show_bvh_animation = value;
         self
     }
     pub fn with_show_bvh_refresh(mut self, value: bool) -> Self {
@@ -166,6 +172,9 @@ impl EditorUIPanelSpec {
     pub fn with_show_bvh(self, value: bool) -> Self {
         self.map_settings(|c| c.with_show_bvh(value))
     }
+    pub fn with_show_bvh_animation(self, value: bool) -> Self {
+        self.map_settings(|c| c.with_show_bvh_animation(value))
+    }
     pub fn with_show_bvh_refresh(self, value: bool) -> Self {
         self.map_settings(|c| c.with_show_bvh_refresh(value))
     }
@@ -180,6 +189,7 @@ pub struct EditorUIComponent {
     panel_specs: Vec<EditorUIPanelSpec>,
     /// Runtime snapshot request, never authored or serialized.
     pub(crate) bvh_visible: bool,
+    pub(crate) bvh_animating: bool,
     pub(crate) bvh_revision: u64,
     pub(crate) bvh_scope_roots: Vec<ComponentId>,
     component: Option<ComponentId>,
@@ -194,6 +204,7 @@ impl Default for EditorUIComponent {
                 .collect(),
             component: None,
             bvh_visible: false,
+            bvh_animating: false,
             bvh_revision: 0,
             bvh_scope_roots: Vec::new(),
         }
@@ -209,10 +220,18 @@ impl EditorUIComponent {
     /// Turning it off releases the snapshot; it does not affect live BVHs.
     pub fn set_bvh_snapshot_visible(&mut self, visible: bool, scope_roots: Vec<ComponentId>) {
         self.bvh_visible = visible;
+        if !visible {
+            self.bvh_animating = false;
+        }
         if visible {
             self.bvh_scope_roots = scope_roots;
             self.bvh_revision = self.bvh_revision.wrapping_add(1);
         }
+    }
+    /// Animate the captured hierarchy without recapturing live BVHs.
+    /// Enabling while the snapshot is hidden does nothing.
+    pub fn set_bvh_animation_enabled(&mut self, enabled: bool) {
+        self.bvh_animating = enabled && self.bvh_visible;
     }
     pub fn refresh_bvh_snapshot(&mut self) {
         if self.bvh_visible {
@@ -316,6 +335,7 @@ impl Component for EditorUIComponent {
                         ("show_zones", b(c.show_zones)),
                         ("show_bvh", b(c.show_bvh)),
                         ("show_bvh_refresh", b(c.show_bvh_refresh)),
+                        ("show_bvh_animation", b(c.show_bvh_animation)),
                     ]),
                     EditorUIPanelConfig::Empty => table(vec![]),
                 };

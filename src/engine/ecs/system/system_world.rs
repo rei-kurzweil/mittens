@@ -2692,11 +2692,11 @@ impl SystemWorld {
 
     pub fn remove_input_xr_gamepad(
         &mut self,
-        _world: &mut World,
+        world: &mut World,
         _visuals: &mut VisualWorld,
         component: ComponentId,
     ) {
-        self.input_xr_gamepad.remove_input_xr_gamepad(component);
+        self.input_xr_gamepad.remove_input_xr_gamepad(world, component);
     }
 
     /// Register a PointLightComponent instance with the LightSystem.

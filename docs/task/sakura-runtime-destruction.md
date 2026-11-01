@@ -27,11 +27,17 @@ entries. Each affected source uses its own state even when sharing a cube asset.
 The surviving mesh records holes; clearing damage cells cannot heal geometry.
 
 At threshold, the source is lazily partitioned into a stable local grid of roughly
-one-metre cells. Intact cells share the existing cube GPU mesh and primitive
-collision path. Only touched cells enter the boolean kernel. Cuts crossing cell
-boundaries update all affected cells together. Detailed cells share a local
-triangle BVH between rendering/ray queries and their collision zone; world
-collision BVHs are retained until the transform changes.
+one-metre cells. Intact cells keep primitive collision; only touched cells enter
+the boolean kernel. Cuts crossing cell boundaries update all affected cells
+together. Each damaged cell shares its precise triangle BVH between rays and
+collision; world collision BVHs are retained until the transform changes.
+The worker also batches all surviving cells into one render mesh per authored
+primitive, avoiding one visual/draw per cell. Cell meshes remain CPU spatial
+resources. The aggregate render mesh is replaced only after upload succeeds.
+Empty cells immediately retire their ECS subtrees and return their active-chunk
+budget; lightweight empty slots retain stable worker indices. Collision bounds
+shrink to surviving geometry, and suppressed authored sources cannot re-enter
+the ray BVH through later registration.
 
 The backend is `manifold-rust = 0.19.1`, defaults disabled, behind `csg_mesh`.
 It supplies union, subtraction and intersection without the earlier csgrs
@@ -61,7 +67,8 @@ promised: generated mesh faces use flat normals and planar UVs.
 ## Resource policy
 
 - Maximum 512 affected surfaces, 4,096 sparse damage cells per surface.
-- Maximum 512 grid chunks per surface and 4,096 chunks across the scene.
+- Maximum 512 stable grid slots per surface and 4,096 live chunks across the scene.
+  Empty slots no longer consume the scene's live-chunk budget.
 - Maximum 16,384 triangles per boolean solid and 262,144 detailed surviving
   triangles across the scene. Budget failures preserve existing geometry.
 - Eight queued worker jobs and eight completed results; 32 pending impacts per
@@ -98,3 +105,16 @@ and mesh export; it excludes engine scheduling, upload, collision and drawing.
 On the development host: whole-solid p50/p95 6.06/8.51 ms, chunked 1.16/1.26 ms;
 final maximum target complexity 8,204 versus 140 triangles. Benchmark the complete
 three-fragment pipeline and frame time on XR2 before claiming a device budget.
+
+## Demolition maintenance profile
+
+`cargo run --example profile-destruction --no-default-features` measures CPU-only
+scene update/render preparation for twelve 8x8 m slabs before and after large
+cuts, after debris expiry. It uses an in-memory uploader, not GPU/device timings.
+On the development host's debug build, the original damaged scene had 6,948 ECS
+components, 384 visual instances and about 9.76 ms/frame of maintenance. Empty
+cell retirement reduced this to 3,876 components and about 5.34 ms. Batched
+survivor rendering uses 12 visuals (one per slab), 3,936 components and about
+5.34 ms on the same workload. Intact-scene maintenance was about 0.23 ms.
+Detailed collision/triangle state still costs CPU and memory; this is not a
+claim that damaged scenes have intact-scene cost or a headset FPS measurement.

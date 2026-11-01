@@ -11,6 +11,8 @@ pub struct VelocityComponent {
     pub angular_local_radps: [f32; 3],
     /// Runtime support contact from the latest fixed substep; not serialized.
     pub grounded: bool,
+    /// Runtime gravity suspension owned by an opted-in XR gamepad.
+    pub(crate) flying: bool,
     pub rotation_basis: Option<ComponentRef>,
     pub horizontal: bool,
     pub component_id: Option<ComponentId>,

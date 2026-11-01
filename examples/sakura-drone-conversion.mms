@@ -1,6 +1,6 @@
 // Rooftop ceramic city / Sakura drone conversion workbench.
 // cargo run --release -- load examples/sakura-drone-conversion.mms
-// XR: sticks move, B jumps, falling to street level returns you to this roof.
+// XR: sticks move, B jumps; double-tap B to fly (2x speed), hold B/A to rise/descend.
 // Desktop preview: WASD + mouse, without a second avatar or physics capsule.
 let desktop_view_enabled = false
 let xr_view_enabled = true
@@ -159,7 +159,7 @@ regenerate_buildings()
 T { name = "sakura_ground" box([0.0, -0.48, 0.0], [120.0, 0.5, 140.0], ground_color) }
 
 // Only the editor settings panel is materialized, including BVH snapshots.
-T.position(-20.4, roof_height + 3.2, -3.8) {
+T.position(-20.4, roof_height + 3.3, -3.8) {
     name = "sakura_editor_settings_mount"
     EditorUI { panels([{ panel = "settings" }]) }
 }
@@ -332,7 +332,7 @@ if xr_view_enabled {
         T.position(spawn_position[0], spawn_position[1], spawn_position[2]) {
             name = "sakura_mitten_locomotion_root"
             InputXR.on() {
-                InputXRGamepad { locomotion() speed(1.4) }
+                InputXRGamepad { locomotion() speed(1.4) enable_flying(true) }
                 T {
                     name = "sakura_mitten_xr_driver"
                     let xr_mitten = GLTF.new("assets/models/mitten.glb") {
@@ -407,11 +407,6 @@ if xr_view_enabled {
         query("[name='sakura_mitten_gravity']").set_enabled(true)
     }
 
-    on_global("XrButtonDown", fn(event) {
-        if event.control == "ButtonB" && player_motion.grounded() {
-            player_motion.translate_world([0.0, 4.5, 0.0])
-        }
-    })
     XR.on()
 } else {
     XR.off()
