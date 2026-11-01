@@ -649,8 +649,8 @@ This is not inherently non-breaking for every direct Rust consumer.
 capability, callback, and worker APIs to `RuntimeSpec` and the persistent
 host-independent session protocol. That is a breaking public API release.
 
-The current release pairs `meow-meow-script 0.9.0` with
-`mittens-engine 0.9.0`. Under Cargo's pre-1.0 compatibility convention,
+The current release pairs `meow-meow-script 0.10.0` with
+`mittens-engine 0.10.0`. Under Cargo's pre-1.0 compatibility convention,
 the minor version marks a breaking compatibility boundary. A jump to `1.0.0`
 is warranted only if the project is also ready to promise a stable 1.x API;
 it is not required merely to signal this break.

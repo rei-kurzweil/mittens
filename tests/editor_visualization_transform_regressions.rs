@@ -1,7 +1,7 @@
 use mittens_engine::engine::ecs::component::{
     Camera3DComponent, CameraXRComponent, ComponentRef, EditorComponent, GLTFComponent,
     PointerComponent, RenderableComponent, TransformComponent, TransformGizmoComponent,
-    TransformParentComponent,
+    TransformOperatorComponent,
 };
 use mittens_engine::engine::ecs::system::editor_scene_hit::resolve_world_scene_hit;
 use mittens_engine::engine::ecs::system::{EditorContextSystem, PointerSystem, XrInputState};
@@ -183,7 +183,7 @@ fn attaching_gizmo_does_not_move_target_or_unrelated_follower() {
 
     let target_guid = world.get_component_record(mesh).unwrap().guid;
     let follower = world.add_component(
-        TransformParentComponent::new().with_target_source(ComponentRef::Guid(target_guid)),
+        TransformOperatorComponent::parent().with_source(ComponentRef::Guid(target_guid)),
     );
     let follower_local = world.add_component(TransformComponent::new());
     world.add_child(follower, follower_local).unwrap();
@@ -226,7 +226,7 @@ fn follower_updates_when_an_ancestor_of_its_target_moves() {
 
     let target_guid = world.get_component_record(mesh).unwrap().guid;
     let follower = world.add_component(
-        TransformParentComponent::new().with_target_source(ComponentRef::Guid(target_guid)),
+        TransformOperatorComponent::parent().with_source(ComponentRef::Guid(target_guid)),
     );
     let follower_local = world.add_component(TransformComponent::new());
     world.add_child(follower, follower_local).unwrap();
