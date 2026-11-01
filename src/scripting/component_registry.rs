@@ -67,6 +67,8 @@ use std::cell::RefCell;
 mod editor_ui_registry;
 #[path = "xr_gamepad_registry.rs"]
 mod xr_gamepad_registry;
+#[path = "gravity_registry.rs"]
+pub(super) mod gravity_registry;
 #[path = "geometry_registry.rs"]
 mod geometry_registry;
 use editor_ui_registry::parse_editor_ui_panel_specs;
@@ -3553,14 +3555,7 @@ fn apply_call(
         return Ok(());
     }
     if let Some(g) = world.get_component_by_id_as_mut::<GravityComponent>(id) {
-        match method {
-            "enabled" => g.enabled = arg_bool(args, 0)?,
-            "coefficient" => g
-                .set_coefficient(arg_f32(args, 0)?)
-                .map_err(str::to_string)?,
-            _ => {}
-        }
-        return Ok(());
+        return gravity_registry::apply(g, method, args);
     }
     if let Some(aby) = world.get_component_by_id_as_mut::<AvatarBodyYawComponent>(id) {
         match method {

@@ -100,11 +100,11 @@ mod tests {
     }
 
     #[test]
-    fn gravity_provider_tracks_reparenting_removal_and_rejects_child_providers() {
+    fn gravity_provider_tracks_reparenting_removal_and_body_local_overrides() {
         let mut world = World::default();
         let gravity = world.add_component(GravityComponent::new());
         let velocity = world.add_component(VelocityComponent::new());
-        let child = world.add_component(GravityComponent::new());
+        let child = world.add_component(GravityComponent::auto());
         world.add_child(velocity, child).unwrap();
         assert_eq!(VelocitySystem::gravity_provider(&world, velocity), None);
         assert_eq!(VelocitySystem::gravity_provider(&world, child), None);
@@ -113,6 +113,18 @@ mod tests {
             VelocitySystem::gravity_provider(&world, velocity),
             Some(gravity)
         );
+        world
+            .get_component_by_id_as_mut::<GravityComponent>(child)
+            .unwrap()
+            .set_mode(crate::engine::ecs::component::GravityMode::Off);
+        assert_eq!(
+            VelocitySystem::gravity_provider(&world, velocity),
+            Some(child)
+        );
+        world
+            .get_component_by_id_as_mut::<GravityComponent>(child)
+            .unwrap()
+            .set_mode(crate::engine::ecs::component::GravityMode::Auto);
         world.detach_from_parent(velocity);
         world.remove_component_leaf(gravity).unwrap();
         assert_eq!(VelocitySystem::gravity_provider(&world, velocity), None);
@@ -555,29 +567,12 @@ mod tests {
 }
 
 impl VelocitySystem {
-    /// Discover the nearest Gravity in this Velocity's provider scope.
-    /// Disabled Gravity still wins, allowing an off wrapper to block inheritance.
+    /// Resolve body-local overrides, then the nearest explicit ancestor Gravity.
+    /// Auto providers defer; Off providers block inherited acceleration.
     /// Every Velocity ancestor is a boundary, including disabled motion layers.
     /// Read the live tree each time so reparenting and removal cannot leave stale owners.
     pub fn gravity_provider(world: &World, velocity_id: ComponentId) -> Option<ComponentId> {
-        world.get_component_by_id_as::<VelocityComponent>(velocity_id)?;
-        let mut current = world.parent_of(velocity_id);
-        while let Some(id) = current {
-            if world
-                .get_component_by_id_as::<VelocityComponent>(id)
-                .is_some()
-            {
-                break;
-            }
-            if world
-                .get_component_by_id_as::<GravityComponent>(id)
-                .is_some()
-            {
-                return Some(id);
-            }
-            current = world.parent_of(id);
-        }
-        None
+        super::gravity_scope::provider(world, velocity_id)
     }
 
     pub(crate) fn driven_transform(
@@ -810,7 +805,6 @@ impl VelocitySystem {
             }
             let mut linear = velocity.linear_local_mps;
             let angular = velocity.angular_local_radps;
-            let flying = velocity.flying;
             if !angular.iter().all(|x| x.is_finite()) {
                 continue;
             }
@@ -838,7 +832,7 @@ impl VelocitySystem {
             };
             if let Some(gravity) = Self::gravity_provider(world, id)
                 .and_then(|provider| world.get_component_by_id_as::<GravityComponent>(provider))
-                .filter(|gravity| gravity.enabled && !flying)
+                .filter(|gravity| gravity.enabled)
             {
                 let acceleration_world = [0.0, -9.81 * gravity.coefficient, 0.0];
                 let acceleration_local = math::quat_rotate_vec3(

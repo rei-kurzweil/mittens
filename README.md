@@ -61,6 +61,8 @@ and [generic REPL migration](docs/task/mms-repl-navigation-and-cat-unification.m
 Offline texture generators: [cherry blossom emoji backgrounds](assets/textures/cherry-blossoms/README.md)
 and `cargo run --release --example generate-pool-tiles`.
 
+![Screenshot_20261005_233245](assets/images/Screenshot_20261005_233245.png)
+
 ## Windowing
 
 + uses winit to make a window and passes the RawDisplayHandle to renderer to render into the window

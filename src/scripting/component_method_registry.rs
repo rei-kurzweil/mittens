@@ -1,7 +1,7 @@
 use crate::engine::ecs::component::{
     AmplitudeComponent, AnimationComponent, AnimationState, AnimationStepDirection,
     AudioBandPassFilterComponent, AudioInputComponent, AvatarControlComponent,
-    BoneRestPoseComponent, EmissiveComponent, GravityComponent, InputComponent,
+    BoneRestPoseComponent, EmissiveComponent, InputComponent,
     InputXRGamepadComponent, RayCastComponent, ShadingComponent, ShadingModel, SliderComponent,
     TextComponent, ToggleComponent, TransformComponent, TransitionComponent, VelocityComponent,
     VolumeNormalizationComponent,
@@ -70,7 +70,7 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
             ))
         || (matches!(component_type, "Amplitude" | "amplitude")
             && matches!(method, "value" | "set_highpass" | "set_highpass_resonance"))
-        || (matches!(component_type, "Gravity" | "gravity") && method == "set_enabled")
+        || (matches!(component_type, "Gravity" | "gravity") && matches!(method, "set_enabled" | "on" | "off" | "auto"))
         || (matches!(component_type, "Velocity" | "velocity")
             && matches!(
                 method,
@@ -151,16 +151,8 @@ pub(crate) fn invoke_component_method(
                 avatar.collision_enabled && avatar.capsule_ready,
             ))
         }
-        ("Gravity" | "gravity", "set_enabled") => {
-            let [Value::Bool(enabled)] = args else {
-                return Err("set_enabled(): expected one boolean argument".into());
-            };
-            world
-                .get_component_by_id_as_mut::<GravityComponent>(id)
-                .ok_or("set_enabled(): not a Gravity component")?
-                .enabled = *enabled;
-            Ok(Value::Null)
-        }
+        ("Gravity" | "gravity", "set_enabled" | "on" | "off" | "auto") =>
+            super::component_registry::gravity_registry::call(world, id, method, args),
         ("Velocity" | "velocity", "reset") => {
             if !args.is_empty() {
                 return Err("reset(): expected no arguments".into());

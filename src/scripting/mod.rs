@@ -89,3 +89,6 @@ mod sakura_editor_regression_tests;
 
 #[cfg(test)]
 mod xr_flying_tests;
+
+#[cfg(test)]
+mod gravity_mode_tests;

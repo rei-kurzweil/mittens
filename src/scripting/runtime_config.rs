@@ -1344,16 +1344,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         ],
                     );
                 }
-                "Gravity" => {
-                    host_method(
-                        component,
-                        canonical,
-                        "set_enabled",
-                        method(vec![mms::ValueType::Bool], mms::ValueType::Null),
-                    );
-                    constructor_and_builder(component, "enabled", booleans(1));
-                    constructor_and_builder(component, "coefficient", floats(1));
-                }
+                "Gravity" => gravity_binding::register(component, canonical),
                 "SkinnedMesh" => {
                     component.constructor("new", unsigned(1));
                 }
@@ -2137,3 +2128,6 @@ mod geometry_binding;
 
 #[path = "xr_gamepad_binding.rs"]
 mod xr_gamepad_binding;
+
+#[path = "gravity_binding.rs"]
+mod gravity_binding;

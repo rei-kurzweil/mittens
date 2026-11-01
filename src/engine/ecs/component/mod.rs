@@ -280,7 +280,7 @@ pub use gizmo::{
     TransformGizmoTranslateComponent, TransformGizmoTranslatePlaneComponent,
 };
 pub use grabbable::GrabbableComponent;
-pub use gravity::GravityComponent;
+pub use gravity::{GravityComponent, GravityMode};
 pub use grid::{GridComponent, GridVisualSpace};
 pub use grid_binding::GridBindingComponent;
 pub use hand_tracking::HandTrackingComponent;

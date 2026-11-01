@@ -1,6 +1,8 @@
 //! Opt-in XR flight mode. Physics remains responsible for solid contacts.
 use super::{VelocitySystem, XrGamepadState};
-use crate::engine::ecs::component::{InputXRGamepadComponent, VelocityComponent};
+use crate::engine::ecs::component::{
+    GravityComponent, GravityMode, InputXRGamepadComponent, SerializeComponent, VelocityComponent,
+};
 use crate::engine::ecs::{ComponentId, World};
 use std::collections::HashMap;
 
@@ -9,6 +11,7 @@ struct FlightState {
     down: bool,
     last_tap: Option<f64>,
     velocity: Option<ComponentId>,
+    gravity: Option<ComponentId>,
 }
 #[derive(Debug, Default)]
 pub(super) struct XrFlying {
@@ -23,15 +26,7 @@ impl XrFlying {
     }
     pub fn stop(&mut self, world: &mut World, id: ComponentId) {
         if let Some(state) = self.states.remove(&id) {
-            if let Some(velocity) = state
-                .velocity
-                .and_then(|v| world.get_component_by_id_as_mut::<VelocityComponent>(v))
-            {
-                if velocity.flying {
-                    velocity.zero_linear();
-                }
-                velocity.flying = false;
-            }
+            release_override(world, &state);
         }
         if let Some(input) = world.get_component_by_id_as_mut::<InputXRGamepadComponent>(id) {
             input.flying = false;
@@ -39,20 +34,20 @@ impl XrFlying {
     }
     pub fn suspend(&mut self, world: &mut World) {
         self.states.retain(|&id, state| {
-            let valid = world
+            let (valid, flying) = world
                 .get_component_by_id_as::<InputXRGamepadComponent>(id)
-                .is_some_and(|c| c.enabled && c.locomotion && c.enable_flying);
+                .map(|c| (c.enabled && c.locomotion && c.enable_flying, c.flying))
+                .unwrap_or((false, false));
             state.down = false;
             state.last_tap = None;
-            if let Some(v) = state
+            if !valid {
+                release_override(world, state);
+            } else if let Some(v) = state
                 .velocity
                 .and_then(|v| world.get_component_by_id_as_mut::<VelocityComponent>(v))
             {
-                if v.flying {
+                if flying {
                     v.zero_linear();
-                }
-                if !valid {
-                    v.flying = false;
                 }
             }
             if !valid {
@@ -97,12 +92,9 @@ impl XrFlying {
         }
         let state = self.states.entry(id).or_default();
         if state.velocity != velocity {
-            if let Some(old) = state
-                .velocity
-                .and_then(|old| world.get_component_by_id_as_mut::<VelocityComponent>(old))
-            {
-                old.flying = false;
-            }
+            release_override(world, state);
+            state.gravity = None;
+            flying = false;
             state.velocity = velocity;
             state.last_tap = None;
         }
@@ -149,15 +141,61 @@ impl XrFlying {
             .get_component_by_id_as_mut::<InputXRGamepadComponent>(id)
             .unwrap()
             .flying = flying;
-        if let Some(v) =
-            velocity.and_then(|v| world.get_component_by_id_as_mut::<VelocityComponent>(v))
-        {
-            v.flying = flying;
+        if let Some(velocity) = velocity {
+            if flying
+                && state
+                    .gravity
+                    .and_then(|id| world.get_component_by_id_as::<GravityComponent>(id))
+                    .is_none()
+            {
+                let gravity = world.add_component(GravityComponent::auto());
+                world
+                    .add_child(velocity, gravity)
+                    .expect("live flight velocity");
+                let transient = world.add_component(SerializeComponent::off());
+                world.add_child(gravity, transient).unwrap();
+                state.gravity = Some(gravity);
+            }
+            if let Some(gravity) = state
+                .gravity
+                .and_then(|id| world.get_component_by_id_as_mut::<GravityComponent>(id))
+            {
+                gravity.set_mode(if flying {
+                    GravityMode::Off
+                } else {
+                    GravityMode::Auto
+                });
+            }
             if flying {
-                v.grounded = false;
+                world
+                    .get_component_by_id_as_mut::<VelocityComponent>(velocity)
+                    .unwrap()
+                    .grounded = false;
             }
         }
         flying
+    }
+}
+
+// Release only this controller's body-local provider. Authored providers and
+// independently owned Off overrides are left untouched.
+fn release_override(world: &mut World, state: &FlightState) {
+    if let Some(gravity) = state.gravity {
+        let was_off = world
+            .get_component_by_id_as::<GravityComponent>(gravity)
+            .is_some_and(|g| g.mode() == GravityMode::Off);
+        if let Some(g) = world.get_component_by_id_as_mut::<GravityComponent>(gravity) {
+            g.set_mode(GravityMode::Auto);
+        }
+        if was_off {
+            if let Some(v) = state
+                .velocity
+                .and_then(|id| world.get_component_by_id_as_mut::<VelocityComponent>(id))
+            {
+                v.zero_linear();
+            }
+        }
+        let _ = world.remove_component_subtree(gravity);
     }
 }
 
@@ -165,12 +203,6 @@ impl XrFlying {
 pub(crate) fn is_flying(world: &World, start: ComponentId) -> bool {
     let mut node = Some(start);
     while let Some(id) = node {
-        if world
-            .get_component_by_id_as::<VelocityComponent>(id)
-            .is_some_and(|v| v.flying)
-        {
-            return true;
-        }
         if world.children_of(id).iter().any(|&child| {
             world
                 .get_component_by_id_as::<InputXRGamepadComponent>(child)

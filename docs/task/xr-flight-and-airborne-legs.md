@@ -15,11 +15,14 @@ follows the rendered headset orientation, including pitch. Flight speed is
 exactly twice configured walking speed; combined stick/vertical input is bounded
 to that speed. Another double tap leaves flight and restores gravity.
 
-Flight suspends gravity on the Velocity driving the locomotion transform; it
-does not disable collidable zones. The existing swept avatar contact path still
+Flight owns a body-local `Gravity` override on the Velocity driving the
+locomotion transform. It sets this instance to Off while flying and Auto while
+walking, inheriting the current authored provider again. Disabling/removing the
+controller removes only its own override. See [Gravity modes](gravity-modes.md).
+Velocity carries no flight-specific gravity flag. Collidable zones stay active. The existing swept avatar contact path still
 constrains movement against walls and floors. Disabling/removing the controller
 restores gravity. Temporary loss of XR input clears tap history and leaves an
-already-flying avatar hovering. Flight mode and tap history are runtime state,
+already-flying avatar hovering. Flight mode, tap history and the temporary Gravity override are runtime state,
 not saved scene configuration. Mounting/input authority rules remain unchanged.
 
 The existing lower-body system remains the sole leg writer. Without support,

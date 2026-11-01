@@ -180,12 +180,18 @@ fn single_tap_jumps_and_controller_removal_restores_gravity() {
     f.tick(0.05, true);
     assert!(f.flying());
     f.system.remove_input_xr_gamepad(&mut f.world, f.input);
+    let provider = VelocitySystem::gravity_provider(&f.world, f.velocity).unwrap();
     assert!(
-        !f.world
-            .get_component_by_id_as::<VelocityComponent>(f.velocity)
+        f.world
+            .get_component_by_id_as::<GravityComponent>(provider)
             .unwrap()
-            .flying
+            .enabled
     );
+    assert!(f.world.children_of(f.velocity).iter().all(|&id| {
+        f.world
+            .get_component_by_id_as::<GravityComponent>(id)
+            .is_none()
+    }));
 }
 
 #[test]
@@ -252,10 +258,119 @@ fn flight_handles_exact_window_and_disabling_during_input_loss() {
         .enabled = false;
     f.tick(0.05, false);
     assert!(!f.flying());
+    let provider = VelocitySystem::gravity_provider(&f.world, f.velocity).unwrap();
     assert!(
-        !f.world
+        f.world
+            .get_component_by_id_as::<GravityComponent>(provider)
+            .unwrap()
+            .enabled
+    );
+    assert!(f.world.children_of(f.velocity).iter().all(|&id| {
+        f.world
+            .get_component_by_id_as::<GravityComponent>(id)
+            .is_none()
+    }));
+}
+
+#[test]
+fn flight_owns_a_transient_gravity_override_and_releases_to_inheritance() {
+    use crate::engine::ecs::component::GravityMode;
+    let mut f = Fixture::new(true);
+    let authored = VelocitySystem::gravity_provider(&f.world, f.velocity).unwrap();
+    f.world
+        .get_component_by_id_as_mut::<GravityComponent>(authored)
+        .unwrap()
+        .set_coefficient(0.35)
+        .unwrap();
+    let sibling = attach(&mut f.world, authored, VelocityComponent::new());
+    attach(&mut f.world, sibling, TransformComponent::new());
+    f.double_tap();
+    assert!(f.flying());
+    let local = VelocitySystem::gravity_provider(&f.world, f.velocity).unwrap();
+    assert_ne!(local, authored);
+    assert_eq!(f.world.parent_of(local), Some(f.velocity));
+    assert_eq!(
+        f.world
+            .get_component_by_id_as::<GravityComponent>(local)
+            .unwrap()
+            .mode(),
+        GravityMode::Off
+    );
+    assert_eq!(
+        VelocitySystem::gravity_provider(&f.world, sibling),
+        Some(authored)
+    );
+    let saved =
+        crate::scripting::component_registry::filtered_roots_to_ce_ast(&f.world, &[authored])
+            .unwrap()
+            .iter()
+            .map(crate::scripting::unparser::unparse_component)
+            .collect::<Vec<_>>()
+            .join("\n");
+    assert_eq!(
+        saved.matches("Gravity").count(),
+        1,
+        "the controller's override must not leak into saves"
+    );
+    f.world
+        .get_component_by_id_as_mut::<GravityComponent>(authored)
+        .unwrap()
+        .set_coefficient(-0.2)
+        .unwrap();
+    f.tick(0.4, false);
+    f.double_tap();
+    assert!(!f.flying());
+    assert_eq!(
+        f.world
+            .get_component_by_id_as::<GravityComponent>(local)
+            .unwrap()
+            .mode(),
+        GravityMode::Auto
+    );
+    assert_eq!(
+        VelocitySystem::gravity_provider(&f.world, f.velocity),
+        Some(authored)
+    );
+    assert_eq!(
+        f.world
+            .get_component_by_id_as::<GravityComponent>(authored)
+            .unwrap()
+            .coefficient,
+        -0.2
+    );
+    f.world
+        .get_component_by_id_as_mut::<VelocityComponent>(f.velocity)
+        .unwrap()
+        .zero_linear();
+    VelocitySystem::default().step(&mut f.world, &mut RxWorld::default());
+    assert!(
+        f.world
             .get_component_by_id_as::<VelocityComponent>(f.velocity)
             .unwrap()
-            .flying
+            .linear_local_mps[1]
+            > 0.,
+        "returning to Auto must inherit the modified inverted gravity"
+    );
+}
+
+#[test]
+fn auto_override_does_not_clear_walking_momentum_when_xr_input_is_lost() {
+    let mut f = Fixture::new(true);
+    f.double_tap();
+    f.tick(0.4, false);
+    f.double_tap();
+    assert!(!f.flying());
+    f.world
+        .get_component_by_id_as_mut::<VelocityComponent>(f.velocity)
+        .unwrap()
+        .linear_local_mps = [0., 2., 0.];
+    f.xr.active = false;
+    f.tick(0.1, false);
+    assert_eq!(
+        f.world
+            .get_component_by_id_as::<VelocityComponent>(f.velocity)
+            .unwrap()
+            .linear_local_mps,
+        [0., 2., 0.]
     );
 }
