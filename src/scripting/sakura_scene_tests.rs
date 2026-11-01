@@ -1759,12 +1759,7 @@ fn player_building_chunks_confine_geometry_and_rebuild_only_the_edited_floor() {
                 }
             }
         }
-        let collisions = named(&world, &format!("{label}_collisions"));
-        assert_eq!(world.parent_of(collisions), Some(section));
-        assert_eq!(
-            world.find_all_components(collisions, "Zone").len(),
-            visual_boxes
-        );
+        assert_eq!(world.find_all_components(section, "Zone").len(), visual_boxes);
     }
     assert!(
         world

@@ -2038,8 +2038,8 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
     };
     assert_eq!(
         combined(&scene),
-        34,
-        "player has two groups per storey/roof; eight neighbors retain two each"
+        128,
+        "all nine buildings have two groups per storey/roof"
     );
     let check_building_rays = |scene: &crate::engine::Universe| {
         assert!(scene.systems.bvh.has_index());
@@ -2153,7 +2153,7 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
         }
         assert_eq!(
             combined(&scene),
-            34,
+            128,
             "old combined outputs must retire on regeneration"
         );
         // Slider callbacks publish after simulation; the following simulation
@@ -2169,7 +2169,7 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
                     .component_label(id)
                     .is_some_and(|label| label.ends_with("_full_detail")))
                 .count(),
-            count + 1
+            9
         );
         assert_eq!(
             scene
@@ -2180,7 +2180,7 @@ fn sakura_rooftop_scene_renders_typed_sky_and_background_sun()
                     .component_label(id)
                     .is_some_and(|label| label.ends_with("_top_two_only")))
                 .count(),
-            8 - count
+            0
         );
         if iteration == 2 {
             warm_meshes = Some(scene.render_assets.combined_mesh_count());

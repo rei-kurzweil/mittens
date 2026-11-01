@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
 use crate::engine::ecs::ComponentId;
@@ -21,6 +21,8 @@ use crate::utils::math::{mat4_inverse, mat4_mul, mat4_mul_vec4, vec3_normalize};
 #[derive(Debug, Default)]
 pub struct CombineMeshSystem {
     outputs: HashMap<ComponentId, CombinedOutput>,
+    // Runtime only: damage unpacks retained sources without editing authored state.
+    unpacked: HashSet<ComponentId>,
 }
 
 #[derive(Debug)]
@@ -50,7 +52,7 @@ impl CombineMeshSystem {
                 .get_component_by_id_as::<CombineMeshComponent>(node)
                 .is_some()
             {
-                return Some(node);
+                return (!self.unpacked.contains(&node)).then_some(node);
             }
             current = world.parent_of(node);
         }
@@ -66,6 +68,11 @@ impl CombineMeshSystem {
         renderables: &mut RenderableSystem,
         mesh_bounds: &mut MeshBoundsSystem,
     ) -> Vec<ComponentId> {
+        self.unpacked.retain(|&id| {
+            world
+                .get_component_by_id_as::<CombineMeshComponent>(id)
+                .is_some()
+        });
         let mut collapse_roots = Vec::new();
         let roots: Vec<_> = world
             .all_components()
@@ -89,6 +96,9 @@ impl CombineMeshSystem {
         }
 
         for root in roots {
+            if self.unpacked.contains(&root) {
+                continue;
+            }
             let sources = self.sources_for_root(world, root);
             let keep_transforms = world
                 .get_component_by_id_as::<CombineMeshComponent>(root)
@@ -230,6 +240,19 @@ impl CombineMeshSystem {
         collapse_roots
     }
 
+    pub(crate) fn unpack(
+        &mut self,
+        root: ComponentId,
+        visuals: &mut VisualWorld,
+        mesh_bounds: &mut MeshBoundsSystem,
+    ) {
+        self.unpacked.insert(root);
+        if let Some(output) = self.outputs.remove(&root) {
+            visuals.remove(output.handle);
+        }
+        mesh_bounds.remove(root);
+    }
+
     fn bind_material(
         visuals: &mut VisualWorld,
         output: &CombinedOutput,
@@ -250,10 +273,18 @@ impl CombineMeshSystem {
         visuals.bind_material_instance(output.handle, binding);
     }
 
-    fn sources_for_root(&self, world: &World, root: ComponentId) -> Vec<ComponentId> {
+    pub(crate) fn sources_for_root(&self, world: &World, root: ComponentId) -> Vec<ComponentId> {
         let mut out = Vec::new();
         let mut stack: Vec<_> = world.children_of(root).iter().rev().copied().collect();
         while let Some(node) = stack.pop() {
+            // Derived destruction cells must never be baked alongside their
+            // intact authored source while the first boolean is still pending.
+            if world.children_of(node).iter().any(|&id| {
+                world.get_component_by_id_as::<crate::engine::ecs::component::destroyable::DestructionCellComponent>(id)
+                    .is_some()
+            }) {
+                continue;
+            }
             if world
                 .get_component_by_id_as::<TransformGizmoComponent>(node)
                 .is_some()

@@ -5,7 +5,6 @@
 let desktop_view_enabled = false
 let xr_view_enabled = true
 let initial_lumae_count = 0 // opt in with the rooftop pedestal; useful for profiling
-let initial_full_buildings = 8 // surrounding buildings, 0..8; player tower stays detailed
 let ground_color = [0.40, 0.31, 0.32]
 
 // Editable sky stops: direction Y is -1 at the nadir, 0 at the horizon, +1 overhead.
@@ -127,7 +126,7 @@ fn destroyable_box(position, size, color) {
 }
 
 // The player tower never belongs to the regenerated neighborhood subtree.
-// Only this building gets separate storey/roof chunks for local CSG rebuilds.
+// Every tower uses separate destroyable storey/roof batches for local CSG cuts.
 pool_building("sakura_rooftop_building", [-18.0, 0.0, 0.0], 8, 1.0, true, tiles, pink, true, true)
 let neighborhood = T { name = "sakura_neighborhood" }
 neighborhood
@@ -141,25 +140,20 @@ let neighborhood_specs = [
     { label = "sakura_low_annex_east" position = [39.0, 0.0, 13.0] floors = 3 side = -1.0 color = pink },
     { label = "sakura_low_annex_south" position = [-18.0, 0.0, 47.0] floors = 2 side = 1.0 color = white },
 ]
-let neighborhood_state = { full_count = initial_full_buildings generation = null }
-fn regenerate_buildings(value) {
-    let count = Math.round(value)
-    if count < 0 { count = 0 }
-    if count > 8 { count = 8 }
-    if count == neighborhood_state.full_count && neighborhood_state.generation != null { return }
+let neighborhood_state = { generation = null }
+fn regenerate_buildings() {
     if neighborhood_state.generation != null { neighborhood_state.generation.remove_subtree() }
-    neighborhood_state.full_count = count
     let generation = T {
         name = "sakura_neighbor_generation"
         for index in range(8) {
             let spec = neighborhood_specs[index]
-            pool_building(spec.label, spec.position, spec.floors, spec.side, false, tiles, spec.color, index < count, false)
+            pool_building(spec.label, spec.position, spec.floors, spec.side, false, tiles, spec.color, true, true)
         }
     }
     neighborhood.attach(generation)
     neighborhood_state.generation = generation
 }
-regenerate_buildings(initial_full_buildings)
+regenerate_buildings()
 
 // Muted, greyish pink-brown ground fills the spaces around the road and towers.
 T { name = "sakura_ground" box([0.0, -0.48, 0.0], [120.0, 0.5, 140.0], ground_color) }

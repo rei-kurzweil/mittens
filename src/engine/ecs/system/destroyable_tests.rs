@@ -285,3 +285,175 @@ fn fully_consumed_surface_releases_state_and_cannot_resurrect() {
             .is_empty()
     );
 }
+
+#[test]
+fn floor_batches_unpack_only_after_success_and_leave_other_floors_combined() {
+    let (mut w, mut v, mut a, mut u, mut s, mut d) = (
+        World::default(),
+        VisualWorld::default(),
+        RenderAssets::new(),
+        Uploader::default(),
+        SystemWorld::default(),
+        DestroyableSystem::default(),
+    );
+    let mut floors = Vec::new();
+    let mut batches = Vec::new();
+    let mut sources = Vec::new();
+    for floor in 0..2 {
+        let root = w.add_component(TransformComponent::new());
+        let group = attach(&mut w, root, DestroyableComponent::default());
+        floors.push(group);
+        for material in 0..2 {
+            let combine = attach(&mut w, root, CombineMeshComponent::keep_transforms());
+            batches.push(combine);
+            let (marker, source) = surface(
+                &mut w,
+                &mut v,
+                &mut a,
+                &mut u,
+                floor as f32 * 8. + material as f32 * 3.,
+            );
+            let frame = w.parent_of(marker).unwrap();
+            if floor != 0 || material != 0 {
+                w.remove_component_subtree(marker).unwrap();
+            }
+            w.set_parent(frame, Some(combine)).unwrap();
+            attach(
+                &mut w,
+                source,
+                ColorComponent::rgba(1., material as f32, 0., 1.),
+            );
+            sources.push(source);
+        }
+    }
+    s.combine_mesh.reconcile_and_build(
+        &mut w,
+        &mut v,
+        &mut a,
+        &mut u,
+        &mut s.renderable,
+        &mut s.mesh_bounds,
+    );
+    assert_eq!(v.instance_count(), 4);
+    let authored = |w: &World| {
+        crate::scripting::component_registry::filtered_roots_to_ce_ast(
+            w,
+            &[w.parent_of(floors[0]).unwrap()],
+        )
+        .unwrap()
+        .iter()
+        .map(crate::scripting::unparser::unparse_component)
+        .collect::<Vec<_>>()
+    };
+    let before = authored(&w);
+    event(&mut w, [0., 0.05, 0.], 1.);
+    pump(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    assert_eq!(v.instance_count(), 4, "sub-threshold hits keep every batch");
+    event(&mut w, [0., 0.05, 0.], 2.);
+    pump(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    assert_eq!(
+        v.instance_count(),
+        4,
+        "pending cuts must not draw duplicate cells"
+    );
+    s.combine_mesh.reconcile_and_build(
+        &mut w,
+        &mut v,
+        &mut a,
+        &mut u,
+        &mut s.renderable,
+        &mut s.mesh_bounds,
+    );
+    u.fail = true;
+    finish(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    assert_eq!(d.cuts, 0);
+    assert_eq!(
+        v.instance_count(),
+        4,
+        "failed upload retains combined floor"
+    );
+    assert_eq!(
+        before,
+        authored(&w),
+        "inherited piece markers are runtime only"
+    );
+    u.fail = false;
+    event(&mut w, [0., 0.05, 0.], 1.);
+    pump(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    finish(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    assert_eq!(d.cuts, 1);
+    for (i, &batch) in batches.iter().enumerate() {
+        assert_eq!(v.instance_handle_for_component(batch).is_some(), i >= 2);
+    }
+    assert!(
+        w.get_component_by_id_as::<RenderableComponent>(sources[0])
+            .unwrap()
+            .handle
+            .is_none(),
+        "cut source remains suppressed"
+    );
+    let intact = w
+        .get_component_by_id_as::<RenderableComponent>(sources[1])
+        .unwrap()
+        .handle
+        .unwrap();
+    assert_eq!(v.instance(intact).unwrap().color, [1., 1., 0., 1.]);
+    assert!(
+        w.get_component_by_id_as::<RenderableComponent>(sources[2])
+            .unwrap()
+            .handle
+            .is_none()
+    );
+    assert_eq!(before, authored(&w));
+    let count = v.instance_count();
+    s.combine_mesh.reconcile_and_build(
+        &mut w,
+        &mut v,
+        &mut a,
+        &mut u,
+        &mut s.renderable,
+        &mut s.mesh_bounds,
+    );
+    assert_eq!(
+        v.instance_count(),
+        count,
+        "unpacked floor must never recombine"
+    );
+    s.bvh.flush_pending(&w);
+    assert!(
+        s.raycast
+            .cast_against_renderables_bvh(&w, &s.bvh, [0., 1., 0.], [0., -1., 0.], 0., 5.)
+            .is_empty()
+    );
+    assert!(
+        d.surfaces
+            .values()
+            .filter(|surface| !surface.cells.is_empty())
+            .flat_map(|surface| &surface.cells)
+            .all(|cell| cell.solid.empty()
+                || w.get_component_by_id_as::<RenderableComponent>(cell.render)
+                    .unwrap()
+                    .handle
+                    .is_some())
+    );
+    // Intact pieces remain independently damageable after the floor activates.
+    event(&mut w, [3., 0.05, 0.], 3.);
+    pump(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    finish(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    assert_eq!(d.cuts, 2);
+    let root = w.parent_of(floors[0]).unwrap();
+    s.remove_subtree_immediate(&mut w, &mut v, root);
+    for debris in &mut d.debris {
+        debris.expires = Instant::now();
+    }
+    pump(&mut d, &mut s, &mut w, &mut v, &mut a, &mut u);
+    assert!(
+        d.surfaces.is_empty(),
+        "removing a floor retires its inherited surfaces"
+    );
+    assert_eq!(
+        v.instance_count(),
+        2,
+        "only the untouched floor's batches remain"
+    );
+}

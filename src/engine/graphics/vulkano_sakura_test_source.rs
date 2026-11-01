@@ -7,12 +7,12 @@ pub(super) fn desktop_with_detail_control() -> String {
         )
         .replace("let xr_view_enabled = true", "let xr_view_enabled = false")
         .replace(
-            "regenerate_buildings(initial_full_buildings)",
+            "\nregenerate_buildings()\n",
             r#"
-regenerate_buildings(initial_full_buildings)
+regenerate_buildings()
 let detail_test_slider=Slider.range(0,8).step(1) {name="sakura_building_detail_slider"}
 detail_test_slider
-on(detail_test_slider,"SliderChanged",fn(event){regenerate_buildings(event.value)})
+on(detail_test_slider,"SliderChanged",fn(event){regenerate_buildings()})
 "#,
         )
 }

@@ -63,25 +63,24 @@ The ground is a muted pinkish grey-brown. The player building has separate
 `sakura_rooftop_building_roof`. Each section has a local transform, white ceramic
 and trim CombineMesh outputs, and its own collision boxes. Columns are split at
 storey boundaries; the stairs belong to floor 7, while the roof slab/opening and
-parapets belong to the roof section. This bounds future CSG edits/rebuilds to the
-affected floor and tint group. A regression edits one floor's source geometry
+parapets belong to the roof section. Each section has a Destroyable that
+inherits its settings to retained cube/collider pairs. Its first successful CSG
+cut retires both combined outputs and reveals the surviving individual pieces.
+Pending cuts and failed uploads preserve the combined rendering. Other floors
+remain combined, and activated floors stay unpacked. Structural collapse is not
+simulated. This bounds edits to the affected section. A regression edits one floor's source geometry
 and verifies that every other output retains its render handle.
 
-Only the player building passes `per_floor = true` to `pool_building`; the eight
-neighbors retain two CombineMesh outputs each, regardless of detail level. There
-are 18 player-building outputs and 16 neighbor outputs. Tile textures and
-filtering are attached to the combined outputs. The
-engine retains those bindings when a combined mesh is published again and reuses
-identical immutable combined geometry across regenerations. Building CombineMesh
-roots now use keep_transforms and Raycastable.enabled: individual source boxes
-remain registered in the BVH as spatial targets while only the combined meshes
-draw. Rays hit individual slabs, walls, columns and rails; windows and stairwell
-openings do not become a solid building-sized bounding box. Simplified neighbors
-retain the intentional solid lower block and detailed top floors.
-
-Neighbor detail is authored with `initial_full_buildings` (0–8). Other neighbors
-have a solid lower block and two detailed top floors. The player's tower remains
-outside the regenerated neighborhood subtree. The Sakura detail panel and its
+All nine buildings pass `per_floor = true` to `pool_building`, with full
+geometry on every floor. Each floor and roof has an aggregate Destroyable and
+two retained CombineMesh material batches. Initially there are 18 player-building
+outputs and 110 neighbor outputs (128 total). The prior solid lower-block LOD is
+not used in these two demos; it would prevent floor-local destruction. Static
+Android stage examples retain their existing non-per-floor configuration.
+Tile textures and filtering remain attached to the combined outputs, and intact
+source boxes remain individual ray targets. Unchanged sections stay combined;
+activating one section does not unpack the rest of its building.
+The player's tower remains outside the regenerated neighborhood subtree. The Sakura detail panel and its
 aggregate can-hit readout have been removed. Both desktop and XR examples expose
 only the Settings panel from EditorUI, including BVH snapshot and refresh
 controls; rendering controls remain in the shared Graphics panel. Editor panel

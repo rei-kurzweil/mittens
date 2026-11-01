@@ -39,15 +39,52 @@ pub fn run() {
     mittens_engine::engine::runtime_assets::set_root(&directory.join("mittens-demo")).unwrap();
     let fragment = directory.join("albedo.frag");
     std::fs::write(&fragment, include_str!("../../../assets/albedo.frag")).unwrap();
+    let grouped = std::env::args().nth(1).as_deref() == Some("--destruction-groups");
+    let front = if grouped {
+        r#"
+T {
+    name="test_floor"
+    Destroyable.threshold(3).chunk_size(1)
+    CombineMesh.keep_transforms() {
+        name="test_floor_white"
+        T.position(0,0,-2).scale(2,2,0.12) {
+            R.cube() { Raycastable.enabled() Material(definition).inputs({tint=[0.1,0.8,0.2],gain=1}) }
+            Zone.cube([0.5,0.5,0.5]) { Collidable.static() }
+        }
+    }
+    CombineMesh.keep_transforms() {
+        name="test_floor_trim"
+        T.position(0.65,0.65,-1.85).scale(0.3,0.3,0.12) {
+            R.cube() { Raycastable.enabled() Material(definition).inputs({tint=[0.8,0.7,0.1],gain=1}) }
+            Zone.cube([0.5,0.5,0.5]) { Collidable.static() }
+        }
+    }
+}
+T.position(0,4,0) {
+    Destroyable.threshold(3)
+    CombineMesh.keep_transforms() {
+        name="test_other_floor"
+        T.position(0,0,-2).scale(2,2,0.12) {
+            R.cube() { Raycastable.enabled() Material(definition).inputs({tint=[0.1,0.8,0.2],gain=1}) }
+            Zone.cube([0.5,0.5,0.5]) { Collidable.static() }
+        }
+    }
+}
+"#
+    } else {
+        r#"
+T.position(0,0,-2).scale(2,2,0.12) {
+    Destroyable.threshold(3).chunk_size(1)
+    R.cube() { Raycastable.enabled() Material(definition).inputs({tint=[0.1,0.8,0.2],gain=1}) }
+    Zone.cube([0.5,0.5,0.5]) { Collidable.static() }
+}
+"#
+    };
     let source = format!(
         r#"
 import {{ f32,vec3 }} from "types"
 let definition=MaterialDefinition(MaterialBase()).fragment("{}").inputs({{tint:vec3,gain:f32}})
-T.position(0,0,-2).scale(2,2,0.12) {{
-    Destroyable.threshold(3).chunk_size(1)
-    R.cube() {{ Raycastable.enabled() Material(definition).inputs({{tint=[0.1,0.8,0.2],gain=1}}) }}
-    Zone.cube([0.5,0.5,0.5]) {{ Collidable.static() }}
-}}
+{front}
 T.position(0,0,-3).scale(2,2,0.1) {{R.cube() {{Material(definition).inputs({{tint=[0.9,0.1,0.1],gain=1}})}}}}
 "#,
         fragment.display()
@@ -113,6 +150,43 @@ T.position(0,0,-3).scale(2,2,0.1) {{R.cube() {{Material(definition).inputs({{tin
             after[rim + 1] > 180 && after[rim] < 40,
             "surviving rim must retain green custom material"
         );
+    }
+    if grouped {
+        for eye in 0..2 {
+            let trim = (eye * 96 * 96 + 23 * 96 + 73) * 4;
+            assert!(
+                before[trim] > 180 && before[trim + 1] > 150 && before[trim + 2] < 60,
+                "intact trim batch must render yellow: {:?}",
+                &before[trim..trim + 4]
+            );
+            assert_eq!(
+                &before[trim..trim + 4],
+                &after[trim..trim + 4],
+                "unpacking preserves trim material"
+            );
+        }
+        for (name, combined) in [
+            ("test_floor_white", false),
+            ("test_floor_trim", false),
+            ("test_other_floor", true),
+        ] {
+            let id = scene
+                .world
+                .all_components()
+                .find(|&id| {
+                    scene
+                        .world
+                        .get_component_record(id)
+                        .is_some_and(|r| r.name == name)
+                })
+                .unwrap();
+            assert_eq!(
+                scene.visuals.instances().iter().any(|v| v.component == id),
+                combined,
+                "{name}"
+            );
+        }
+        println!("PASS floor activation: both material groups unpack; other floor stays combined");
     }
     for (name, pixels) in [("before", before), ("after", after.clone())] {
         let mut ppm = b"P6\n96 96\n255\n".to_vec();

@@ -90,25 +90,22 @@ fn building_collisions(label, data) {
     }
 }
 
-// Each section has a local editing frame and owns its visual sources/colliders.
-// Separate tint groups retain the ceramic material while keeping rebuilds local.
-fn building_section(label, data, white, trim_color, tiles) {
+// Destroyable manages retained primitives as one floor. Both material batches
+// stay combined until a successful cut activates this section.
+fn destroyable_section(label, data, white, trim_color, tiles) {
     return T.position(0.0, data.base_y, 0.0) {
         name = label
-        combined_ceramic(label + "_ceramic_white", data.white, data.white_count, white, tiles)
-        combined_ceramic(label + "_ceramic_trim", data.trim, data.trim_count, trim_color, tiles)
-        building_collisions(label, data)
-    }
-}
-
-// Player roof opts in per box; neighboring buildings retain combined draws.
-fn destroyable_roof(label, data, white, trim_color, tiles) {
-    return T.position(0.0, data.base_y, 0.0) {
-        name = label
-        for group in [{ parts = data.white count = data.white_count color = white }, { parts = data.trim count = data.trim_count color = trim_color }] {
-            for index in range(group.count) {
-                let part = group.parts["" + index]
-                destroyable_ceramic_box(part.position, part.size, group.color, tiles)
+        Destroyable.threshold(3.0)
+        for group in [{ parts = data.white count = data.white_count color = white suffix = "_ceramic_white" }, { parts = data.trim count = data.trim_count color = trim_color suffix = "_ceramic_trim" }] {
+            CombineMesh.keep_transforms() {
+                name = label + group.suffix
+                tiles
+                Texture.with_uri("assets/textures/pool/white-tiles-surface.png")
+                TextureFiltering.linear()
+                for index in range(group.count) {
+                    let part = group.parts["" + index]
+                    ceramic_box(part.position, part.size, group.color, tiles)
+                }
             }
         }
     }
@@ -207,10 +204,9 @@ export fn pool_building(label, origin, floors, street_side, roof_access, tiles, 
             name = label + detail_label
             if per_floor {
                 for floor in range(floors) {
-                    building_section(label + "_floor_" + floor, sections["" + floor], white, trim_color, tiles)
+                    destroyable_section(label + "_floor_" + floor, sections["" + floor], white, trim_color, tiles)
                 }
-                if roof_access { destroyable_roof(label + "_roof", roof_data, white, trim_color, tiles) }
-                else { building_section(label + "_roof", roof_data, white, trim_color, tiles) }
+                destroyable_section(label + "_roof", roof_data, white, trim_color, tiles)
             } else {
                 combined_ceramic(label + "_ceramic_white", data.white, data.white_count, white, tiles)
                 combined_ceramic(label + "_ceramic_trim", data.trim, data.trim_count, trim_color, tiles)

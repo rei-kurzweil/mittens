@@ -9,7 +9,10 @@ Implemented 2026-10-31. This is the static-box runtime slice of
 Place `Destroyable.threshold(3.0).cell_size(0.12).chunk_size(1.0)` directly under a
 transform with one sibling `R.cube()` and one sibling static `Zone.cube([0.5,
 0.5, 0.5])`. Use a constructor call for independent markers in repeated prefabs.
-The first version does not select arbitrary subtrees or imported/skinned meshes.
+For a whole section, put the marker on its parent transform instead. Descendant
+cube/box pairs inherit its settings; a piece-local marker overrides them. Any
+CombineMesh batches must use keep_transforms so their sources remain available.
+Imported/skinned meshes are not cut.
 
 `Damage.at(x, y, z, radius, amount)` is a one-shot CPU impact volume. Sakura emits
 one radius-0.28, amount-1 event from each accepted pistol impact callback; the
@@ -42,8 +45,14 @@ lifetime. This slice uses visual falling debris: spin, bouncing and debris conta
 response remain future work. Bodies and shots can pass through the static holes;
 contact and downward support use the surviving triangles, including hole rims.
 
-The player roof uses independently authored destroyable boxes in place of its
-combined roof output. Other storeys/buildings retain their combined meshes. Both
+Each storey and roof of all nine Sakura buildings owns an aggregate Destroyable.
+Its white/trim CombineMesh.keep_transforms batches initially draw the intact
+floor. Derived, unsaved piece markers inherit the floor's settings; each source
+cube shares its transform with its own box collider. The first successful cut
+unpacks both batches in that section, revealing the intact pieces and generated
+cut cells together. Sub-threshold hits, pending cuts and failed uploads leave
+the intact batches visible. Untouched sections in every building stay combined.
+Activated sections remain unpacked; structural support/collapse is not simulated. Both
 Sakura desktop and XR scripts opt in the backing wall and layered tabletops.
 Existing custom materials are reused; no renderer/material pipeline is added.
 Pool tiles use world-space projection. General attribute/UV preservation is not
@@ -51,7 +60,7 @@ promised: generated mesh faces use flat normals and planar UVs.
 
 ## Resource policy
 
-- Maximum 128 affected surfaces, 4,096 sparse damage cells per surface.
+- Maximum 512 affected surfaces, 4,096 sparse damage cells per surface.
 - Maximum 512 grid chunks per surface and 4,096 chunks across the scene.
 - Maximum 16,384 triangles per boolean solid and 262,144 detailed surviving
   triangles across the scene. Budget failures preserve existing geometry.
@@ -78,7 +87,9 @@ Existing static contact, zone, raycast and Sakura weapon tests are also exercise
 `cargo run --manifest-path android/validation/renderer-smoke/Cargo.toml -- --destruction`
 checks an actual GPU render through the Android renderer. A green wall must expose
 a red object through its hole while retaining the green rim. It writes before/after
-images to `/tmp/mittens-destruction-{before,after}.ppm`. This host GPU check is not
+images to `/tmp/mittens-destruction-{before,after}.ppm`. Use
+`--destruction-groups` to check section activation, two retained material batches,
+and an untouched floor that stays combined. This host GPU check is not
 an XR2 device performance result.
 
 `cargo run --release --example profile-csg` compares 128 cuts in an 8×8 slab with

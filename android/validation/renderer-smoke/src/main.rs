@@ -348,7 +348,7 @@ fn main() {
         destruction::run();
         return;
     }
-    if std::env::args().nth(1).as_deref() == Some("--destruction") {
+    if matches!(std::env::args().nth(1).as_deref(), Some("--destruction" | "--destruction-groups")) {
         destruction::run();
         return;
     }

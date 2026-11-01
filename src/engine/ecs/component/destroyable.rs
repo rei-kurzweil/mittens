@@ -2,8 +2,9 @@ use super::Component;
 use crate::engine::ecs::system::triangle_collision::TriangleMesh;
 use std::sync::Arc;
 
-/// Opts exactly one sibling cube renderable and its sibling static box zone
-/// into runtime destruction. Runtime damage never enters authored serialization.
+/// Opts a sibling cube/box zone, or descendant cube/box pairs in a section,
+/// into runtime destruction. Retained CombineMesh batches unpack together on
+/// the first successful cut. Runtime damage never enters authored serialization.
 #[derive(Debug, Clone, Copy)]
 pub struct DestroyableComponent {
     pub threshold: f32,
@@ -100,3 +101,12 @@ pub(crate) fn zone_suppressed(
             .is_some()
     })
 }
+
+/// Identifies derived grid frames so retained batches only bake authored sources.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct DestructionCellComponent;
+component!(
+    DestructionCellComponent,
+    "destruction_cell",
+    |_: &DestructionCellComponent| { super::ce_helpers::ce("RuntimeDestructionCell") }
+);

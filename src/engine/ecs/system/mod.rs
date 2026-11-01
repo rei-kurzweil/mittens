@@ -31,6 +31,7 @@ pub mod combine_mesh_system;
 pub mod csg_system;
 pub mod cursor_3d;
 pub mod data_renderer_system;
+mod destroyable_group;
 pub mod destroyable_system;
 pub mod draggable_system;
 pub mod editor;
