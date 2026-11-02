@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use crate::engine::ecs::component::{
-    ColorComponent, EmissiveComponent, ImplicitSphereComponent, ImplicitSurfaceComponent,
-    TransmissiveModel, UnlitComponent, resolve_immediate_transmissive_model,
+    BackgroundComponent, ColorComponent, EmissiveComponent, ImplicitSphereComponent,
+    ImplicitSurfaceComponent, TransmissiveModel, UnlitComponent, resolve_immediate_transmissive_model,
 };
 use crate::engine::ecs::system::{MeshBoundsSystem, MeshOutputKind, TransformSystem};
 use crate::engine::ecs::{ComponentId, World};
@@ -71,15 +71,27 @@ impl ImplicitSurfaceSystem {
         }
 
         for root in roots {
+            let source = super::material_system::MaterialSystem::resolve_source(world, root);
+            let binding = source.and_then(|source| {
+                visuals.materials.source_instance(source).or_else(|| {
+                    super::material_system::MaterialSystem::ensure_source(world, visuals, source).ok()
+                })
+            });
             let fingerprint = authored_fingerprint(world, root);
             match self.build_input(world, root) {
                 Ok((spec, spheres, root_model, color, material, emissive, transmission)) => {
+                    let material = binding
+                        .and_then(|id| super::material_system::MaterialSystem::program(visuals, id, material))
+                        .unwrap_or(material);
                     if self
                         .outputs
                         .get(&root)
                         .is_some_and(|output| output.fingerprint == fingerprint)
                     {
                         let output = self.outputs.get_mut(&root).expect("checked above");
+                        if let Some(handle) = output.handle {
+                            visuals.bind_material_instance(handle, binding);
+                        }
                         if output.root_model != root_model {
                             if let Some(handle) = output.handle {
                                 visuals.update_model(handle, root_model);
@@ -154,6 +166,15 @@ impl ImplicitSurfaceSystem {
                                     );
                                     continue;
                                 };
+                                let mut parent = world.parent_of(root);
+                                let mut background = None;
+                                while let Some(id) = parent {
+                                    if let Some(bg) = world.get_component_by_id_as::<BackgroundComponent>(id) {
+                                        background = Some(bg.occlusion_and_lighting);
+                                        break;
+                                    }
+                                    parent = world.parent_of(id);
+                                }
                                 let handle = visuals.register(
                                     root,
                                     GpuRenderable::new(gpu_mesh, material),
@@ -166,13 +187,14 @@ impl ImplicitSurfaceSystem {
                                     1.0,
                                     false,
                                     false,
-                                    false,
-                                    false,
+                                    background.is_some(),
+                                    background.unwrap_or(false),
                                     false,
                                     emissive,
                                     None,
                                     3.0,
                                 );
+                                visuals.bind_material_instance(handle, binding);
                                 if let Some(options) = transmission {
                                     visuals.update_transmission(handle, options);
                                 }

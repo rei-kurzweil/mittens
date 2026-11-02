@@ -207,16 +207,22 @@ The desktop shell uses FPS camera controls and grabbable terminal and file
 browser title bars. Keyboard movement is not yet suppressed while a text
 input has focus, so typing can also move the camera.
 
-The next connection slice mirrors the PC-owned terminal draft through the
-existing HTTP UI snapshot, on the existing roughly 300 ms interval. The headset
-listens on port 7000; enter its LAN address and port on the PC. Show the latest
-draft, including deletions and clearing, and replace stale text on reconnect.
-Reject drafts beyond 16 KiB explicitly. Disable UDP forwarding while connected
-over HTTP, while retaining independent UDP typing when disconnected. Validate
-the actual MMS pair headlessly and on the Vive. Enter inserts a newline;
+The PC-owned terminal draft is mirrored through the existing HTTP UI snapshot
+on the roughly 300 ms interval. The headset listens on port 7000; enter its LAN
+address and port on the PC. Snapshots include deletions and clearing and replace
+stale text on reconnect. Drafts beyond 16 KiB are rejected explicitly. The PC
+disables UDP forwarding while connected over HTTP; independent UDP typing remains
+available when disconnected. The MMS pair has a headless round-trip test; the
+user confirmed draft mirroring on the Vive and reported noticeable latency.
+Enter inserts a newline;
 evaluation and command output follow in a separate slice. Unicode rendering is
-deferred because the current font atlas supports ASCII. Headset locomotion and
-title-bar grabbing are also later work.
+deferred because the current font atlas supports ASCII. Left-stick headset
+locomotion works; headset title-bar grabbing remains later work.
+
+To prefill the desktop address, run `cargo run --example shell-client -- 192.168.1.42`
+with the headset's current IP. Port 7000 is the default; a numeric `IP:port`
+can be supplied instead. Supplying an address starts the connection automatically;
+without one, enter an address and click Connect in the desktop UI.
 
 The full workflow below remains the intended contract. A
 mirrored terminal/editor draft can separately be read-only, with the PC owning

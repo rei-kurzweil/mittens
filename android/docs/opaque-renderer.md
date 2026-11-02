@@ -207,6 +207,33 @@ earlier probe checked basic limits, not this kernel's execution.
 The current new renderer still rejects skin/morph meshes. This is the planned
 animated-mesh slice, not functionality already enabled in its opaque APK.
 
+### Packed skinning inputs
+
+Evaluate packing each vertex's four joint indices and four weights into 16-bit
+values for the mobile deformation path. The engine's CPU mesh already stores
+indices as `u16` but stores weights as `f32`; the current desktop compute
+record expands these to four `u32` indices and four `f32` weights (32 bytes per
+vertex). Four `u16` indices and four normalized `u16` weights would occupy 16
+bytes per vertex in a tightly packed GPU record. This reduces the input size,
+but actual bandwidth and frame-time improvements on XR2 must be measured.
+
+Quantization can happen once during asset preparation or once when a mesh is
+loaded/uploaded; it does not require an offline asset conversion step. An
+ahead-of-time conversion may still reduce asset storage and load-time work.
+glTF can already carry unsigned-short joint indices and normalized
+unsigned-short weights, so preserve or convert those values as appropriate.
+Normalize weights, handle zero or invalid totals explicitly, and ensure the
+quantized weights sum to 65535; validate joint indices against the skin palette.
+Decode to floats for blending and initially retain 32-bit bone matrices and
+arithmetic. Keep morph-target support compatible with the packed input format.
+
+This changes the compute shader's existing `GpuDeformationSkinVertex` contract:
+update the CPU packing, GPU buffer layout and shader decoding together rather
+than assuming that a 16-bit source asset automatically produces packed GPU
+data. Compare representative poses and morphs against the current 32-bit path,
+then measure upload size, deformation GPU time, bandwidth and frame time on
+the Focus 3 before making the packed format the default.
+
 ## Verification and next device run
 
 The instrumented scene reports `FRAME_PROFILE` after 90 warmup frames, then

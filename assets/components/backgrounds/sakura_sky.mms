@@ -2,7 +2,21 @@
 import { f32, vec3 } from "types"
 import { ui_unlit_material } from "../materials/ui_unlit.mms"
 
+fn sky_cloud(x, y, z, size, material) {
+    return T.position(x,y,z).scale(size,size,size) {
+        ImplicitSurface.bounds(-2.4,-1.5,-1.2,2.4,1.8,1.2)
+            .voxel_size(0.16).iso_level(0.0).smooth_min_radius(0.4) {
+            material
+            C.rgba(1.0,0.91,0.91,1.0)
+            T.position(-1.0,-0.25,0) { ImplicitSphere.radius(0.85) {} }
+            T.position(0,-0.18,0) { ImplicitSphere.radius(1.0) {} }
+            T.position(0.95,-0.25,0) { ImplicitSphere.radius(0.82) {} }
+            T.position(0,0.55,0) { ImplicitSphere.radius(0.85) {} }
+        }
+    }
+}
 export fn sakura_sky(with_moon) {
+    let decoration_material = ui_unlit_material()
     let definition = MaterialDefinition(MaterialBase()).fragment("android/shaders/sakura-sky.frag")
         .inputs({ low_color: vec3, low_point: f32, high_color: vec3, high_point: f32,
             sun_direction: vec3, sun_angular_radius: f32, sun_color: vec3, sun_strength: f32 })
@@ -18,6 +32,9 @@ export fn sakura_sky(with_moon) {
                 sun_color = [1.0, 0.92, 0.76], sun_strength = sun_strength
             }) }
         }
+        sky_cloud(39,17,-50,3.1,decoration_material)
+        sky_cloud(50,25,-55,2.5,decoration_material)
+        sky_cloud(46,32,-60,2.1,decoration_material)
         if with_moon {
             // A real concave crescent polygon, sharing the rotation-only sky.
             // Its custom unlit material needs no scene lights or bloom pass.
@@ -73,7 +90,7 @@ export fn sakura_sky(with_moon) {
                     [0.303916, 0.807915],
                     [0.400262, 0.842693]
                 ]) {
-                    ui_unlit_material()
+                    decoration_material
                     C.rgba(1.0,0.96,0.86,1.0)
                 }
             }

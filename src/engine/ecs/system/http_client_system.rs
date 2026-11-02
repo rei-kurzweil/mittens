@@ -196,7 +196,7 @@ impl HttpClientSystem {
                         component_id,
                         request_id,
                         phase: "request".to_string(),
-                        message: error.to_string(),
+                        message: format!("{error:#}"),
                         url,
                     });
                 }

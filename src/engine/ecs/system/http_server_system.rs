@@ -157,7 +157,9 @@ impl HttpServerSystem {
                                 return;
                             }
 
-                            let Ok(reply) = reply_rx.recv() else {
+                            // A paused scene may not drain requests. Do not leave
+                            // a worker waiting forever after the client times out.
+                            let Ok(reply) = reply_rx.recv_timeout(Duration::from_secs(10)) else {
                                 return;
                             };
                             let mut response = Response::from_string(reply.body_text)

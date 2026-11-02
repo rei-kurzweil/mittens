@@ -796,6 +796,12 @@ impl<'a, H: Host> Evaluator<'a, H> {
                     };
                     return Ok(Value::Bool(matches!(value, Value::String(_))));
                 }
+                "byte_len" => {
+                    let [Value::String(value)] = args.as_slice() else {
+                        return Err(EvalError::Runtime("byte_len expects one string".into()));
+                    };
+                    return Ok(Value::Number(value.len() as f64));
+                }
                 "len" => {
                     return Ok(Value::Number(match args.first() {
                         Some(Value::Array(v)) => v.len(),
@@ -1518,7 +1524,9 @@ impl<'a, H: Host> Evaluator<'a, H> {
     }
 
     fn is_component_body_builder_call(&self, name: &str) -> bool {
-        if self.lookup(name).is_some() || matches!(name, "range" | "len" | "query" | "query_all") {
+        if self.lookup(name).is_some()
+            || matches!(name, "range" | "len" | "byte_len" | "query" | "query_all")
+        {
             return false;
         }
         !self.catalog.as_ref().is_some_and(|catalog| {

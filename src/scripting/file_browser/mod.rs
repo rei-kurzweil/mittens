@@ -3,6 +3,8 @@ pub(super) mod interaction;
 mod model;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod draft_tests;
 mod view;
 use super::{
     host::MittensHost,

@@ -104,7 +104,7 @@ fn mms_shells_load_and_native_grid_reuses_twenty_cells() {
                     ),
                     Some(crate::engine::ecs::system::material_system::SurfaceSource::Material(_))
                 ),
-                "shell geometry must inherit a generic custom material"
+                "{path}: shell geometry {id:?} must inherit a generic custom material"
             );
         }
         let before = scene.render_assets.cpu_mesh_count();
@@ -246,7 +246,8 @@ fn pointer_selection_uses_selection_component_and_scroll_reuses_the_grid() {
     scene
         .load_mms_source_at_path(
             &include_str!("../../../android/examples/shell-server.mms")
-                .replace("0.0.0.0:7000", "127.0.0.1:0"),
+                .replace("0.0.0.0:7000", "127.0.0.1:0")
+                .replace("FileBrowser.remote()", "FileBrowser.demo()"),
             "android/examples/shell-server.mms",
         )
         .unwrap();

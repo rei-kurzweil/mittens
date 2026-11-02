@@ -347,6 +347,11 @@ impl UserInput {
                             self.state.keys_pressed.insert(key);
                         }
                         match logical {
+                            Key::Named(NamedKey::Enter) => {
+                                self.state
+                                    .text_input_events
+                                    .push(TextInputFrameEvent::InsertText("\n".into()));
+                            }
                             Key::Named(NamedKey::Backspace) => {
                                 self.state
                                     .text_input_events
@@ -521,6 +526,22 @@ mod tests {
                 TextInputFrameEvent::InsertText("W".into()),
                 TextInputFrameEvent::InsertText("W".into()),
             ]
+        );
+    }
+
+    #[test]
+    fn physical_enter_inserts_one_newline() {
+        let mut input = UserInput::new();
+        input.handle_event(&keyboard(
+            KeyCode::Enter,
+            Key::Named(NamedKey::Enter),
+            ButtonState::Pressed,
+            false,
+            Some("\r"),
+        ));
+        assert_eq!(
+            input.state().text_input_events(),
+            &[TextInputFrameEvent::InsertText("\n".into())]
         );
     }
 

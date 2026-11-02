@@ -110,7 +110,27 @@ pub(super) fn spawn(
             })();
             match result {
                 Ok(()) => report.line("worker_exit clean"),
-                Err(error) => report.line(format!("FAILED {error}")),
+                Err(error) => {
+                    report.line(format!("FAILED {error}"));
+                    // Do not leave a fullscreen black activity after the XR
+                    // worker has stopped. The activity remains alive until
+                    // Android delivers Destroy, at which point it joins us.
+                    let finish = || -> Result<()> {
+                        let context = ndk_context::android_context();
+                        let vm = unsafe { jni::JavaVM::from_raw(context.vm().cast()) }
+                            .api("JavaVM::from_raw for finish")?;
+                        let mut env = vm.attach_current_thread().api("attach to finish activity")?;
+                        let activity = unsafe {
+                            jni::objects::JObject::from_raw(context.context().cast())
+                        };
+                        env.call_method(&activity, "finish", "()V", &[])
+                            .api("finish failed XR activity")?;
+                        Ok(())
+                    };
+                    if let Err(error) = finish() {
+                        report.line(format!("activity finish failed: {error}"));
+                    }
+                }
             }
         })
 }

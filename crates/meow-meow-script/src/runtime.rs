@@ -501,6 +501,7 @@ impl<I> RuntimeSpecBuilder<I> {
             "null",
             "range",
             "len",
+            "byte_len",
             "query",
             "query_all",
             "on",

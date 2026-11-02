@@ -1,7 +1,7 @@
 import { shell_garden } from "../../assets/components/mitten_droid/garden.mms"
 // Headset shell in MMS, with a native grid backed by the PC's directory listing.
 import { sakura_sky } from "../../assets/components/backgrounds/sakura_sky.mms"
-import { shell, caption } from "../../assets/components/mitten_droid/ui.mms"
+import { shell, caption, action } from "../../assets/components/mitten_droid/ui.mms"
 import { ui_unlit_material } from "../../assets/components/materials/ui_unlit.mms"
 import { envelope, decode } from "../../assets/components/mitten_droid/protocol.mms"
 
@@ -9,7 +9,7 @@ BGC.rgba(1.0, 0.80, 0.86, 1.0)
 sakura_sky(true)
 shell_garden(1.89,-1.6,-2.6,0)
 AL.rgb(0.38,0.31,0.39)
-T.position(-0.5,1.0,0.7) { DL.color(1.0,0.88,0.80).intensity(1.4) }
+T.position(23,24,-50) { DL.color(1.0,0.88,0.80).intensity(1.4) }
 let pointer_material = ui_unlit_material()
 fn controller_pointer(label) {
     // Stay out of view until the host supplies a valid controller Aim pose.
@@ -19,45 +19,60 @@ fn controller_pointer(label) {
         T.position(0,0,-2.6).scale(0.012,0.012,0.012) { R.cube() { pointer_material C.rgba(1.0,0.88,0.52,1.0) } }
     }
 }
-InputXR.on() {
-    T { CXR {} }
-    XRHand.new(true, "Left", "Aim") { controller_pointer("shell_left_pointer") }
-    XRHand.new(true, "Right", "Aim") { controller_pointer("shell_right_pointer") }
+T {
+    name = "shell_xr_locomotion_root"
+    InputXR.on() {
+        InputXRGamepad { hand("left") locomotion() speed(1.4) }
+        T { CXR {} }
+        XRHand.new(true, "Left", "Aim") { controller_pointer("shell_left_pointer") }
+        XRHand.new(true, "Right", "Aim") { controller_pointer("shell_right_pointer") }
+    }
 }
-let browser = FileBrowser.demo()
+let browser = FileBrowser.remote()
 let state = {
-    scroll_left = 0, scroll_right = 0, scroll_time = 0, demo = true, session = "", selected = "", source = "", draft = "", idle = 10,
-    action_id = "", entry_id = "", action_kind = "", revision = ""
+    scroll_right = 0, scroll_time = 0, session = "", selected = "", source = "", draft = "", idle = 10,
+    action_id = "", entry_id = "", action_kind = "", revision = "", last_request = "", info_open = false
 }
-let status = Text { name = "shell_status" "DESIGN PREVIEW / dummy data / desktop connection optional" }
+let status = Text { name = "shell_status" "WAITING FOR PC / port 7000" }
+let info = action("Info", "shell_connection_info")
+let info_text = Text { name = "shell_connection_details" "" }
 let selection = Text { name = "shell_selection" "mitten-droid / MMS console" }
-let source = Text { name = "shell_source" "Mittens / remote console\n\nHeadset     Focus 3\nWorkspace   examples/mitten-droid\nMode        UI preview\n\n> let greeting = \"hello, headset\"\nhello, headset\n\n> 6 * 7\n42\n\nReady for your next idea.\n_" }
-let draft = TextInput { name = "shell_terminal_input" "" }
+let source = Text { name = "shell_source" "No script selected." }
+let draft_input = TextInput { name = "shell_terminal_input" "" }
+let draft = Text { name = "shell_terminal_draft" "" }
+// UDP remains an independent editing mode; its input is displayed through draft.
+T.position(0,-100,0) { ui_unlit_material() draft_input }
 // The Android host uses eye-level LOCAL space, with no floor-height offset.
 T.position(-1.89, 1.0, -2.6).scale(0.030, 0.030, 0.030) {
-    shell("mitten-droid / headset", "Browse your PC scripts from here", T { status }, browser, T {
+    shell("mitten-droid / headset", "Browse your PC scripts from here", T {
+        info status
+        T { Style { height(1.5) font_size(0.85) } info_text }
+    }, browser, T {
         Style { display("block") width(100%) }
-        T { Style { height(2) } selection }
+        T { Style { margin_bottom(0.5) } caption("PC TERMINAL DRAFT") }
         T {
-            Style { height(23) margin_top(0.8) padding(0.8) font_size(1.0) background_color([0.018, 0.016, 0.012, 1]) }
-            source
-        }
-        T { Style { margin_top(1.1) margin_bottom(0.5) } caption("UDP TERMINAL / PORT 7001") }
-        T {
-            Style { height(9) padding(0.7) background_color([0.035, 0.029, 0.018, 1]) }
+            Style { height(12) padding(0.7) background_color([0.08, 0.06, 0.035, 1]) }
             draft
         }
-        T { Style { margin_top(0.6) font_size(0.9) } caption("PC keyboard edits arrive over UDP. Enter inserts a newline; code is not executed.") }
-    }, caption("Trigger selects. Thumbstick or pointer drag scrolls. No downloads or script execution."), false)
+        T { Style { margin_top(0.6) font_size(0.9) } caption("Enter inserts a newline; code is not executed.") }
+        T { Style { height(2) margin_top(1) } selection }
+        T {
+            Style { height(20) margin_top(0.8) padding(0.8) font_size(1.0) background_color([0.018, 0.016, 0.012, 1]) }
+            source
+        }
+    }, caption("Left stick moves. Right stick or pointer drag scrolls."), false)
 }
 let server = HttpServer.bind("0.0.0.0:7000") {}
 server
+on(info, "Click", fn(event) {
+    state.info_open = !state.info_open
+    if state.info_open { info_text.set_text("Last PC snapshot: " + state.last_request + " / port 7000") }
+    else { info_text.set_text("") }
+})
+on(draft_input, "TextInputChanged", fn(event) {
+    if state.idle >= 3 { state.draft = event.text draft.set_text(event.text) }
+})
 on(browser, "DataEvent", fn(event) {
-    if state.demo {
-        let selected = FileBrowser.selection(browser)
-        if selected.name != "" { selection.set_text("Selected: " + selected.name) }
-        return
-    }
     let action = FileBrowser.action(browser)
     if state.idle < 3 && action != null {
         state.action_id = action.action_id
@@ -74,7 +89,7 @@ on(server, "HttpRequest", fn(request) {
     if !is_string(packet.source) || !is_string(packet.draft) || !is_string(packet.selected) {
         server.reply_text(request, 400, "Invalid snapshot fields") return
     }
-    if len(packet.source) > 1200 || len(packet.draft) > 320 {
+    if len(packet.source) > 1200 || byte_len(packet.draft) > 16384 {
         server.reply_text(request, 413, "Preview limit exceeded") return
     }
     if packet.session != state.session {
@@ -84,17 +99,19 @@ on(server, "HttpRequest", fn(request) {
     if !FileBrowser.set_listing(browser, packet.listing) {
         server.reply_text(request, 400, "Invalid directory listing") return
     }
-    state.demo = false
+    let was_online = state.idle < 3
     state.session = packet.session
     state.idle = 0
+    state.last_request = packet.request_id
     if packet.action_ack == state.action_id { state.action_id = "" }
     if state.selected != packet.selected {
         state.selected = packet.selected
         selection.set_text(packet.selected + " / source preview")
     }
     if state.source != packet.source { state.source = packet.source source.set_text(packet.source) }
+    if state.draft != packet.draft { state.draft = packet.draft draft.set_text(packet.draft) }
 
-    status.set_text("Desktop connected / choose a folder or script")
+    if !was_online { status.set_text("CONNECTED / PC") }
     let reply = envelope("ui.reply", state.session, packet.request_id)
     reply.revision = state.revision
     reply.action_id = state.action_id
@@ -104,15 +121,13 @@ on(server, "HttpRequest", fn(request) {
 })
 on(server, "HttpError", fn(error) { status.set_text("Listener error / " + error.message) })
 on_global("XrAxisChanged", fn(event) {
-    if event.control == "LeftStick" { state.scroll_left = event.value[1] }
     if event.control == "RightStick" { state.scroll_right = event.value[1] }
 })
 on_global("FrameTick", fn(event) {
     state.scroll_time = state.scroll_time + event.dt_sec
     if state.scroll_time >= 0.16 {
         state.scroll_time = 0
-        let scroll_y = state.scroll_left
-        if Math.abs(state.scroll_right) > Math.abs(scroll_y) { scroll_y = state.scroll_right }
+        let scroll_y = state.scroll_right
         if scroll_y < -0.55 { FileBrowser.scroll(browser,1) }
         if scroll_y > 0.55 { FileBrowser.scroll(browser,-1) }
     }
@@ -121,6 +136,6 @@ on_global("FrameTick", fn(event) {
     if was_online && state.idle >= 3 {
         state.action_id = ""
         FileBrowser.clear(browser)
-        status.set_text("Desktop offline / waiting for connection")
+        status.set_text("PC OFFLINE / waiting on port 7000")
     }
 })
