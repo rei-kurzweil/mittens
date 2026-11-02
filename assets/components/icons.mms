@@ -219,6 +219,17 @@ export fn accordion_down_arrow_icon(icon_color, glow_intensity) {
     }
 }
 
+// Circular disclosure button; geometry remains independent of font support.
+export fn minimize_circle_icon(icon_color, glow_intensity) {
+    return T {
+        R.annulus_2d() {
+            C.rgba(icon_color[0], icon_color[1], icon_color[2], icon_color[3])
+            EM.on() { intensity(glow_intensity) }
+        }
+        T.scale(0.53, 0.53, 1.0) { accordion_down_arrow_icon(icon_color, glow_intensity) }
+    }
+}
+
 // Three emissive bars for compact overflow/navigation menu buttons.
 export fn menu_icon(icon_color, glow_intensity) {
     if icon_color == null { icon_color = [0.72, 0.90, 1.0, 1.0] }

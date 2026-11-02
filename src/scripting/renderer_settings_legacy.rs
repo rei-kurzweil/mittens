@@ -6,6 +6,9 @@ pub(super) fn apply(
     args: &[Value],
 ) -> Result<(), String> {
     match method {
+        "preferred_xr_refresh_rate" => {
+            *settings = settings.with_preferred_xr_refresh_rate(arg_f32(args, 0)?)?;
+        }
         "window_size" => {
             *settings =
                 settings.with_window_size(arg_f32(args, 0)? as u32, arg_f32(args, 1)? as u32)

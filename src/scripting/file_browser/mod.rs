@@ -1,10 +1,10 @@
 //! Native file-browser widget, composed from MMS through opaque APIs.
+#[cfg(test)]
+mod draft_tests;
 pub(super) mod interaction;
 mod model;
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod draft_tests;
 mod view;
 use super::{
     host::MittensHost,
@@ -58,6 +58,12 @@ pub(super) fn register(builder: &mut mms::RuntimeSpecBuilder<MittensBinding>) {
             ),
             ("remote", Api::BrowserRemote, vec![], T::Component),
             ("demo", Api::BrowserDemo, vec![], T::Component),
+            (
+                "validate_listing",
+                Api::BrowserValidateListing,
+                vec![T::Any],
+                T::Bool,
+            ),
             ("snapshot", Api::BrowserSnapshot, vec![T::Component], T::Any),
             (
                 "selection",
@@ -105,6 +111,7 @@ pub(super) fn supports(api: Api) -> bool {
             | Api::BrowserSelection
             | Api::BrowserAction
             | Api::BrowserSetListing
+            | Api::BrowserValidateListing
             | Api::BrowserActivate
             | Api::BrowserRefresh
             | Api::BrowserClear
@@ -195,6 +202,12 @@ pub(super) fn invoke(
 ) -> Result<mms::HostResponse, mms::HostError> {
     use mms::{HostResponse as R, TransportValue as V};
     let fail = |error: String| mms::HostError::failure("FileBrowser", error);
+    if api == Api::BrowserValidateListing {
+        let valid = args
+            .first()
+            .is_some_and(|listing| Model::default().set_listing(listing).is_ok());
+        return Ok(R::Transport(V::Bool(valid)));
+    }
     if matches!(
         api,
         Api::BrowserLocal | Api::BrowserRemote | Api::BrowserDemo

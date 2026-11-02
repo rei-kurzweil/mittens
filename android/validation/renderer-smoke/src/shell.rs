@@ -11,6 +11,8 @@ use std::{
     time::{Duration, Instant},
 };
 pub fn render(output: &str) {
+    let mode = std::env::args().nth(4).unwrap_or_default();
+    let title_preview = mode == "title-bar";
     let gpu = graphics_device::headless(false);
     let target = Target::with_extent(gpu.clone(), 1440, 960);
     let mut renderer = SceneRenderer::with_samples(
@@ -31,12 +33,24 @@ pub fn render(output: &str) {
         .systems
         .xr
         .set_external_frame(Some(Default::default()));
-    universe
-        .load_mms_source_at_path(
-            &source.source.replace("0.0.0.0:7000", "127.0.0.1:0"),
-            &source.path.to_string_lossy(),
-        )
-        .unwrap();
+    if title_preview {
+        universe
+            .load_mms_source_at_path(
+                include_str!("../../../../assets/components/ui/title_bar.preview.mms"),
+                concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../../assets/components/ui/title_bar.preview.mms"
+                ),
+            )
+            .unwrap();
+    } else {
+        universe
+            .load_mms_source_at_path(
+                &source.source.replace("0.0.0.0:7000", "127.0.0.1:0"),
+                &source.path.to_string_lossy(),
+            )
+            .unwrap();
+    }
     let start = Instant::now();
     for frame in 0..100 {
         universe.update(1.0 / 90.0, &Default::default());
@@ -60,6 +74,89 @@ pub fn render(output: &str) {
             break;
         }
         std::thread::sleep(Duration::from_millis(10));
+    }
+    let minimized = mode == "minimized";
+    if mode == "grabbed" {
+        use mittens_engine::engine::ecs::EventSignal;
+        let named = |name: &str| {
+            universe
+                .world
+                .all_components()
+                .find(|&id| universe.world.component_label(id) == Some(name))
+                .unwrap()
+        };
+        let grabs = [
+            (
+                named("shell_TERMINAL_title"),
+                named("shell_TERMINAL_window"),
+                named("shell_left_pointer"),
+            ),
+            (
+                named("shell_FILES_title"),
+                named("shell_FILES_window"),
+                named("shell_right_pointer"),
+            ),
+        ];
+        for (title, target, pointer) in grabs {
+            universe.systems.rx.push_event(
+                title,
+                EventSignal::GrabStart {
+                    pointer,
+                    raycaster: pointer,
+                    renderable: title,
+                    target,
+                    ray_origin_world: [0.0; 3],
+                    ray_dir_world: [0.0, 0.0, -1.0],
+                },
+            );
+        }
+        // Reparent without advancing the easing animation; both held windows
+        // remain visible, and must still satisfy the mobile material contract.
+        universe.update(0.0, &Default::default());
+        for (_, target, pointer) in grabs {
+            assert_eq!(
+                universe.world.parent_of(target),
+                universe.world.parent_of(pointer)
+            );
+        }
+        universe.systems.prepare_render(
+            &mut universe.world,
+            &mut universe.visuals,
+            &mut universe.render_assets,
+            &mut renderer,
+            &mut universe.command_queue,
+        );
+        universe.visuals.prepare_draw_cache();
+    }
+    if minimized {
+        let toggles: Vec<_> = universe
+            .world
+            .all_components()
+            .filter(|&id| universe.world.component_label(id) == Some("accordion_toggle"))
+            .collect();
+        assert_eq!(toggles.len(), 2);
+        for toggle in toggles {
+            universe.systems.rx.push_event(
+                toggle,
+                mittens_engine::engine::ecs::EventSignal::Click {
+                    raycaster: toggle,
+                    renderable: toggle,
+                    hit_point: [0.0; 3],
+                    screen_pos_px: None,
+                },
+            );
+        }
+        for _ in 0..40 {
+            universe.update(1.0 / 90.0, &Default::default());
+            universe.systems.prepare_render(
+                &mut universe.world,
+                &mut universe.visuals,
+                &mut universe.render_assets,
+                &mut renderer,
+                &mut universe.command_queue,
+            );
+        }
+        universe.visuals.prepare_draw_cache();
     }
     let yaw = std::env::args()
         .nth(3)
@@ -102,7 +199,7 @@ pub fn render(output: &str) {
             x > 120 && x < 710 && y > 260 && y < 700 && p[0] > 180 && p[1] > 100 && p[2] < 100
         })
         .count();
-    if yaw == 0.0 {
+    if yaw == 0.0 && !minimized && !title_preview {
         assert!(cream > 100_000, "file-browser content must be visible");
         assert!(amber_text > 500, "terminal content must be visible");
     }

@@ -77,6 +77,19 @@ impl PreparedScene {
             .last()
             .and_then(|settings| settings.desired_xr_resolution)
     }
+
+    pub fn preferred_xr_refresh_rate(&self) -> Option<f32> {
+        self.universe
+            .world
+            .all_components()
+            .filter_map(|id| {
+                self.universe
+                    .world
+                    .get_component_by_id_as::<RendererSettingsComponent>(id)
+            })
+            .last()
+            .and_then(|settings| settings.preferred_xr_refresh_rate)
+    }
 }
 impl SceneRuntime {
     pub fn set_external_frame(

@@ -31,9 +31,52 @@ pub(super) struct XrSession {
     blend: xr::EnvironmentBlendMode,
     running: bool,
     rendered: u64,
+    preferred_refresh_rate: Option<f32>,
 }
 
 impl XrSession {
+    fn configure_refresh_rate(&self, instance: &xr::Instance, report: &mut Report) {
+        if instance.exts().fb_display_refresh_rate.is_none() {
+            report.line(format!(
+                "XR refresh preference={:?} Hz; extension unavailable, keeping runtime default",
+                self.preferred_refresh_rate
+            ));
+            return;
+        }
+        let rates = match self.session.enumerate_display_refresh_rates() {
+            Ok(rates) => rates,
+            Err(error) => {
+                report.line(format!(
+                    "XR refresh enumeration failed: {error:?}; keeping runtime default"
+                ));
+                return;
+            }
+        };
+        report.line(format!(
+            "XR refresh supported={rates:?} current={:?} preferred={:?} Hz",
+            self.session.get_display_refresh_rate(),
+            self.preferred_refresh_rate
+        ));
+        let Some(preferred) = self.preferred_refresh_rate else {
+            return;
+        };
+        let Some(&supported) = rates.iter().find(|&&rate| (rate - preferred).abs() < 0.01) else {
+            report.line(format!(
+                "XR refresh {preferred} Hz unsupported; keeping runtime default"
+            ));
+            return;
+        };
+        match self.session.request_display_refresh_rate(supported) {
+            Ok(()) => report.line(format!(
+                "XR refresh requested={supported} Hz current={:?}",
+                self.session.get_display_refresh_rate()
+            )),
+            Err(error) => report.line(format!(
+                "XR refresh request={supported} Hz failed: {error:?}; keeping runtime default"
+            )),
+        }
+    }
+
     pub(super) fn new(
         instance: &xr::Instance,
         system: xr::SystemId,
@@ -91,6 +134,7 @@ impl XrSession {
             return Err(format!("expected 2 stereo views, found {}", views.len()));
         }
         let setup = FrameSetup::new(directory)?;
+        let preferred_refresh_rate = setup.preferred_xr_refresh_rate();
         let requested = setup.desired_xr_resolution();
         let recommended_width = views
             .iter()
@@ -188,6 +232,7 @@ impl XrSession {
             blend,
             running: false,
             rendered: 0,
+            preferred_refresh_rate,
         })
     }
 
@@ -211,6 +256,7 @@ impl XrSession {
                         match event.state() {
                             xr::SessionState::READY if !stop.load(Ordering::Acquire) => {
                                 self.session.begin(VIEW).api("xrBeginSession(stereo)")?;
+                                self.configure_refresh_rate(instance, report);
                                 self.running = true;
                                 exit_requested = false;
                             }
@@ -225,6 +271,13 @@ impl XrSession {
                             }
                             _ => {}
                         }
+                    }
+                    xr::Event::DisplayRefreshRateChangedFB(event) => {
+                        report.line(format!(
+                            "XR display refresh changed {} -> {} Hz",
+                            event.from_display_refresh_rate(),
+                            event.to_display_refresh_rate()
+                        ));
                     }
                     xr::Event::InstanceLossPending(_) => {
                         report.line("instance loss pending");

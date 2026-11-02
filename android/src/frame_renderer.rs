@@ -54,6 +54,16 @@ impl FrameSetup {
             Some([1024, 1024])
         }
     }
+    pub fn preferred_xr_refresh_rate(&self) -> Option<f32> {
+        #[cfg(feature = "mobile-renderer")]
+        {
+            self.scene.preferred_xr_refresh_rate()
+        }
+        #[cfg(not(feature = "mobile-renderer"))]
+        {
+            None
+        }
+    }
 }
 impl FrameRenderer {
     #[cfg(feature = "mobile-renderer")]

@@ -1,5 +1,7 @@
 // MMS owns both window frames; the repeating file grid is native Rust.
 import { f32 } from "types"
+import { accordion, accordion_body } from "../internal/ui/accordion.mms"
+import { minimize_circle_icon } from "../icons.mms"
 
 export fn caption(text) { return Text { text } }
 export fn action(label, id) {
@@ -36,30 +38,61 @@ fn title_bar(title, gold_material, grabbable) {
         Text { title }
     }
 }
-fn window(title, content, window_width, dark, gold_definition, grabbable) {
+fn window_body(content, window_width, background, foreground) {
+    return T {
+        Style { display("flex") flex_direction("row") column_gap(0.65) height(49.5) }
+        T { Style { width(0.45) height(49.5) background_color([0.93, 0.60, 0.12, 1]) } }
+        T {
+            Style { width(window_width - 2.2) margin_top(0.8) padding(0.9) height(48.7) background_color(background) color(foreground) }
+            content
+        }
+        T { Style { width(0.45) height(49.5) background_color([0.93, 0.60, 0.12, 1]) } }
+    }
+}
+fn window(title, content, window_width, dark, gold_definition, ui_definition, grabbable, collapsible) {
     let gold_material = Material(gold_definition).inputs({ brightness = 1.0 })
     let background = [1.0, 0.965, 0.84, 1.0]
     let foreground = [0.12, 0.08, 0.025, 1.0]
     if dark { background = [0.018, 0.016, 0.012, 1.0] foreground = [1.0, 0.72, 0.16, 1.0] }
+    if collapsible {
+        let title_node = T {
+            name = "shell_" + title + "_title"
+            if grabbable { Grabbable.parent() }
+            Raycastable.enabled()
+            gold_material
+            Style { display("flex") flex_direction("row") align_items("center") width(100%) height(4.6)
+                background_color([0.98, 0.70, 0.20, 1.0]) color([0.12, 0.075, 0.012, 1.0]) }
+            T { Style { width(0) flex_grow(1) padding_xy(1.1,0.5) font_size(1.65) } Text { title } }
+        }
+        let panel = accordion({
+            root_name = "shell_" + title + "_window", width_gu = window_width, unit_scale = 1.0,
+            // Grabbing reparents this root outside the shell's material ancestry.
+            material = Material(ui_definition).inputs({ brightness = 1.0 }),
+            background_color = [0.98, 0.70, 0.20, 1.0],
+            toggle_background_color = [0.98, 0.70, 0.20, 1.0],
+            toggle_icon_color = [0.12, 0.075, 0.012, 1.0], toggle_icon_glow_intensity = 0,
+            toggle_icon = minimize_circle_icon([0.12, 0.075, 0.012, 1.0], 0),
+            children = [], title_bar = title_node,
+            body = accordion_body(window_body(content.build(), window_width, background, foreground))
+        })
+        let mount = panel.query("#accordion_body_mount")
+        on(panel, "DataEvent", fn(event) {
+            if event == "AccordionMinimized" { content.close() }
+            if event == "AccordionRestoreRequested" {
+                mount.attach(accordion_body(window_body(content.build(), window_width, background, foreground)))
+            }
+        })
+        return panel
+    }
     return T {
+        Material(ui_definition).inputs({ brightness = 1.0 })
         Style { position("relative") width(window_width) }
         // Solid amber title. The narrow rails continue its two outer edges.
         title_bar(title, gold_material, grabbable)
-        T {
-            Style { display("flex") flex_direction("row") column_gap(0.65) height(49.5) }
-            T { Style { width(0.45) height(49.5) background_color([0.93, 0.60, 0.12, 1]) } }
-            T {
-                Style {
-                    width(window_width - 2.2) margin_top(0.8)
-                    padding(0.9) height(48.7) background_color(background) color(foreground)
-                }
-                content
-            }
-            T { Style { width(0.45) height(49.5) background_color([0.93, 0.60, 0.12, 1]) } }
-        }
+        window_body(content, window_width, background, foreground)
     }
 }
-export fn shell(title, subtitle, connection, browser, terminal, footer, grabbable) {
+export fn shell(title, subtitle, connection, browser, terminal, footer, grabbable, collapsible) {
     let ui_definition = MaterialDefinition(MaterialBase()).fragment("assets/shaders/mitten-droid-ui.frag").inputs({ brightness: f32 })
     let material = Material(ui_definition).inputs({ brightness = 1.0 })
     let definition = MaterialDefinition(MaterialBase()).fragment("assets/shaders/mitten-droid-gold.frag").inputs({ brightness: f32 })
@@ -73,8 +106,8 @@ export fn shell(title, subtitle, connection, browser, terminal, footer, grabbabl
         T { Style { margin_bottom(1) color([0.20, 0.09, 0.16, 1]) } connection }
         T {
             Style { display("flex") flex_direction("row") column_gap(2.0) }
-            window("TERMINAL", terminal, 63, true, definition, grabbable)
-            window("FILES", browser, 61, false, definition, grabbable)
+            window("TERMINAL", terminal, 63, true, definition, ui_definition, grabbable, collapsible)
+            window("FILES", browser, 61, false, definition, ui_definition, grabbable, collapsible)
         }
         T { Style { margin_top(1) font_size(0.9) color([0.20, 0.09, 0.16, 1]) } footer }
     }

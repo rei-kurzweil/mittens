@@ -22,7 +22,7 @@ I.speed(2.0) {
 let browser = FileBrowser.local("examples", "mitten-droid")
 let state = {
     selected = "", source = "", draft = "", address = "127.0.0.1:7000", remote_address = "",
-    connected = false, confirmed = false, auto_connect = false, busy = false, elapsed = 0, connection = 0,
+    connected = false, confirmed = false, auto_connect = false, busy = false, elapsed = 0.5, connection = 0,
     retry = false, retry_elapsed = 0, paused = false, info_open = false,
     session = "", request = 0, sent_request = "", last_reply = "", action_ack = ""
 }
@@ -69,7 +69,7 @@ T.position(-3.465, 3.65, 0).scale(0.055, 0.055, 0.055) {
             Style { height(20) margin_top(0.8) padding(0.8) font_size(1.0) background_color([0.018, 0.016, 0.012, 1]) }
             source
         }
-    }, caption("Up returns to examples/. Grab a title bar to move a panel."), true)
+    }, caption("Up returns to examples/. Grab a title bar to move a panel."), true, false)
 }
 let client = HttpClient.timeout_ms(2000) {}
 client
@@ -82,7 +82,8 @@ fn show_selection() {
     source.set_text(selected.source)
 }
 fn exchange() {
-    if !state.connected || state.busy { return }
+    // Coalesce edits into the latest draft; never queue a catch-up burst.
+    if !state.connected || state.busy || state.elapsed < 0.5 { return }
     let packet = envelope("ui.snapshot", state.session, "" + state.request)
     packet.listing = FileBrowser.snapshot(browser)
     packet.selected = state.selected
@@ -106,6 +107,7 @@ fn exchange() {
     let body = JSON.stringify(packet)
     if len(body) > 1000000 { status.set_text("Directory listing exceeds the UI transfer limit.") return }
     state.busy = true
+    state.elapsed = 0
     if !state.confirmed { status.set_text("CONNECTING / " + state.remote_address + " / waiting for reply") }
     client.post("http://" + state.remote_address + "/mitten-droid/ui", body)
 }
@@ -123,7 +125,6 @@ fn start_connection() {
     state.confirmed = false
     connection_mode.set_text("connecting")
     status.set_text("CONNECTING / " + state.address + " / waiting for reply")
-    exchange()
 }
 on(connect, "Click", fn(event) { start_connection() })
 on(info, "Click", fn(event) {
@@ -148,7 +149,7 @@ on_global("FrameTick", fn(event) {
         if state.retry_elapsed >= 5 { start_connection() }
     }
     state.elapsed = state.elapsed + event.dt_sec
-    if state.elapsed >= 0.3 { state.elapsed = 0 exchange() }
+    if state.elapsed >= 0.5 { exchange() }
 })
 on(client, "HttpResponse", fn(response) {
     state.busy = false

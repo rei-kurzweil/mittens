@@ -10,6 +10,8 @@ import { accordion_down_arrow_icon } from "../../icons.mms"
 //   toggle_background_color optional minimize-button background RGBA
 //   toggle_icon_color optional minimize-arrow RGBA
 //   toggle_icon_glow_intensity optional minimize-arrow emissive strength
+//   toggle_icon      optional component replacing the disclosure glyph
+//   material         optional self-contained panel material, retained on grab
 //   children         ordered retained title-bar component objects
 //   title_bar        optional component replacing the standard title bar;
 //                    owns its layout/markers, receives the minimize control last
@@ -56,6 +58,8 @@ export fn accordion(options) {
     if authored_toggle_icon_glow != null { toggle_icon_glow = authored_toggle_icon_glow }
     let title_children = options.children
 
+    let glyph = options["toggle_icon"]
+    if glyph == null { glyph = accordion_down_arrow_icon(toggle_icon_rgba, toggle_icon_glow) }
     let toggle_icon = T.position(
         ACCORDION_TOGGLE_WIDTH_GU / 2.0 * accordion_unit_scale,
         -ACCORDION_TITLE_HEIGHT_GU / 2.0 * accordion_unit_scale,
@@ -68,11 +72,12 @@ export fn accordion(options) {
             capture_from_current(true)
             replace_same_target()
         }
-        accordion_down_arrow_icon(toggle_icon_rgba, toggle_icon_glow)
+        glyph
     }
 
     let toggle = T {
         name = "accordion_toggle"
+        Grabbable.off()
         Raycastable.enabled() { interaction_priority(110.0) }
         Style {
             display("flex")
@@ -122,6 +127,7 @@ export fn accordion(options) {
     }
     let panel_root = T {
         name = root_name
+        if options["material"] != null { options.material }
         if options["unlit"] { Unlit {} }
         Option {}
         Raycastable.enabled() { interaction_priority(100.0) }

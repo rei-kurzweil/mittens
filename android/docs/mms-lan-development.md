@@ -208,7 +208,9 @@ browser title bars. Keyboard movement is not yet suppressed while a text
 input has focus, so typing can also move the camera.
 
 The PC-owned terminal draft is mirrored through the existing HTTP UI snapshot
-on the roughly 300 ms interval. The headset listens on port 7000; enter its LAN
+at most twice per second, with at least 500 ms between sends. Edits between
+sends replace the pending draft, and a delayed request never produces a catch-up
+burst. The headset listens on port 7000; enter its LAN
 address and port on the PC. Snapshots include deletions and clearing and replace
 stale text on reconnect. Drafts beyond 16 KiB are rejected explicitly. The PC
 disables UDP forwarding while connected over HTTP; independent UDP typing remains
@@ -217,7 +219,44 @@ user confirmed draft mirroring on the Vive and reported noticeable latency.
 Enter inserts a newline;
 evaluation and command output follow in a separate slice. Unicode rendering is
 deferred because the current font atlas supports ASCII. Left-stick headset
-locomotion works; headset title-bar grabbing remains later work.
+locomotion works. Aim at a headset title bar and hold the controller grip to grab
+that window; release the grip to place it.
+
+The shell requests `RendererSettings { preferred_xr_refresh_rate(75) }` on
+Android. This is a session-start preference in Hz, not a simulation frame cap.
+The host enables `XR_FB_display_refresh_rate` when advertised, logs the supported
+and current rates, and requests the preference after starting the session.
+Unsupported rates or a missing extension keep the runtime default and are
+reported explicitly in `files/xr-vulkan-probe.txt`; a successful request does not
+prove that the app meets its frame budget. Build the headset test with
+`CARGO_PROFILE_DEV_OPT_LEVEL=3 android/packaging/build-apk.sh --features shell-demo`
+for optimized frame measurements with the existing development signing key.
+The `--release` variant requires a configured release keystore.
+On the connected Focus 3, the runtime enumerated `[75.0, 90.0]` and accepted
+the 75 Hz request. Its immediate readback remained 90 Hz while the session was
+only `SYNCHRONIZED`; confirm the change event and steady frame profiles while
+wearing the headset before treating this as a measured 75 Hz run.
+
+The Android terminal and file windows each have a circular accordion chevron. Minimizing
+removes that window's body geometry and interactions; the title and chevron stay
+available. Incoming snapshots continue updating retained data. Expanding rebuilds
+the body from the latest draft or listing (the file grid reopens on its first
+page). The desktop windows retain their existing grab interaction. Cloud timing
+comparisons are separate from this UI change.
+
+Each window owns a custom UI material because grabbing reparents it under a
+controller, outside the shell's material ancestry. The earlier inherited-only
+material caused the Android renderer to stop with "requires a custom
+Material(definition) on every surface" on grab. Regression checks cover held
+windows as well as minimized/restored windows.
+The XR rig also carries an explicit custom `anime_surface()` default for grabbed
+objects without an authored material. This is ordinary scene inheritance; the
+renderer still rejects surfaces that have no supported material.
+
+`assets/components/ui/title_bar.mms` is an independent title-bar prototype, not
+yet used by the shell. It accepts caller-supplied buttons and provides a circular
+minimize button that emits `TitleBarMinimizeRequested`. Close/maximize behavior
+and the containing layout's maximize bounds remain deferred.
 
 To prefill the desktop address, run `cargo run --example shell-client -- 192.168.1.42`
 with the headset's current IP. Port 7000 is the default; a numeric `IP:port`

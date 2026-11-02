@@ -61,6 +61,8 @@ const SHELL_FILES: &[(&str, &[u8])] = bundle![
     "android/shaders/sakura-sky.frag",
     "android/examples/shell-server.mms",
     "assets/components/mitten_droid/ui.mms",
+    "assets/components/internal/ui/accordion.mms",
+    "assets/components/icons.mms",
     "assets/components/mitten_droid/protocol.mms",
     "assets/shaders/mitten-droid-gold.frag",
     "assets/shaders/mitten-droid-ui.frag",

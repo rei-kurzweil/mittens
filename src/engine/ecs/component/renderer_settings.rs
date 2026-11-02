@@ -11,6 +11,8 @@ pub struct RendererSettingsComponent {
     pub window_size: Option<[u32; 2]>,
     /// Desired render size in pixels for each XR eye, selected at session creation.
     pub desired_xr_resolution: Option<[u32; 2]>,
+    /// Preferred display rate in Hz; unsupported rates leave the runtime default.
+    pub preferred_xr_refresh_rate: Option<f32>,
     pub transmission_depth_compare: bool,
 }
 
@@ -20,6 +22,7 @@ impl RendererSettingsComponent {
             msaa4x: true,
             window_size: None,
             desired_xr_resolution: None,
+            preferred_xr_refresh_rate: None,
             transmission_depth_compare: true,
         }
     }
@@ -29,6 +32,7 @@ impl RendererSettingsComponent {
             msaa4x: false,
             window_size: None,
             desired_xr_resolution: None,
+            preferred_xr_refresh_rate: None,
             transmission_depth_compare: true,
         }
     }
@@ -62,6 +66,14 @@ impl RendererSettingsComponent {
             );
         }
         Ok(value.map(|v| v as u32))
+    }
+
+    pub fn with_preferred_xr_refresh_rate(mut self, hz: f32) -> Result<Self, String> {
+        if !hz.is_finite() || hz <= 0.0 {
+            return Err("preferred_xr_refresh_rate requires a positive finite rate in Hz".into());
+        }
+        self.preferred_xr_refresh_rate = Some(hz);
+        Ok(self)
     }
 
     pub fn msaa_mode(&self) -> MsaaMode {
@@ -122,6 +134,9 @@ impl Component for RendererSettingsComponent {
         }
         if !self.transmission_depth_compare {
             ce = ce.with_call("transmission_depth_compare", vec![b(false)]);
+        }
+        if let Some(hz) = self.preferred_xr_refresh_rate {
+            ce = ce.with_call("preferred_xr_refresh_rate", vec![num(hz as f64)]);
         }
         ce
     }

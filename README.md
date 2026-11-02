@@ -244,6 +244,7 @@ Scoped handler lifecycle: systems can install handlers rooted at a component sub
 
 See the [MMS signal guide](docs/how_to/guide/signals.md) for the architecture, exhaustive signal catalog, and current scripting support.
 
+![sakura OS](assets/images/Screenshot_20261102_015653.png)
 
 # Building Widgets (Panels & Tools)
 
