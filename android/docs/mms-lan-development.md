@@ -203,10 +203,24 @@ The proposed example names follow the network roles:
 
 The initial UI examples now exist, with a native browser and UDP text/edit
 input. They do not yet implement scene launch, transfer, or remote evaluation.
+The desktop shell uses FPS camera controls and grabbable terminal and file
+browser title bars. Keyboard movement is not yet suppressed while a text
+input has focus, so typing can also move the camera.
+
+The next connection slice mirrors the PC-owned terminal draft through the
+existing HTTP UI snapshot, on the existing roughly 300 ms interval. The headset
+listens on port 7000; enter its LAN address and port on the PC. Show the latest
+draft, including deletions and clearing, and replace stale text on reconnect.
+Reject drafts beyond 16 KiB explicitly. Disable UDP forwarding while connected
+over HTTP, while retaining independent UDP typing when disconnected. Validate
+the actual MMS pair headlessly and on the Vive. Enter inserts a newline;
+evaluation and command output follow in a separate slice. Unicode rendering is
+deferred because the current font atlas supports ASCII. Headset locomotion and
+title-bar grabbing are also later work.
+
 The full workflow below remains the intended contract. A
 mirrored terminal/editor draft can separately be read-only, with the PC owning
-that editing buffer. Draft mirroring is an optional extension; the browser and
-terminal workflow does not depend on it. Preserve the desktop draft while a
+that editing buffer. Preserve the desktop draft while a
 previous submission executes, so the user can keep typing.
 
 Treat preview and execution as separate operations:

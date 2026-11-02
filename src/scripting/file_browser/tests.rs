@@ -64,6 +64,20 @@ fn mms_shells_load_and_native_grid_reuses_twenty_cells() {
         for _ in 0..3 {
             scene.update(1.0 / 60.0, &Default::default());
         }
+        if path == "examples/shell-client.mms" {
+            let terminal = named(&scene, "shell_TERMINAL_title");
+            let files = named(&scene, "shell_FILES_title");
+            let target = |handle| {
+                crate::engine::ecs::system::grabbable_system::grabbable_owner_for_hit(
+                    &scene.world,
+                    handle,
+                )
+                .expect("title bar must grab its panel")
+            };
+            assert_eq!(Some(target(terminal)), scene.world.parent_of(terminal));
+            assert_eq!(Some(target(files)), scene.world.parent_of(files));
+            assert_ne!(target(terminal), target(files));
+        }
         let browser = named(&scene, "file_browser");
         assert_eq!(
             scene

@@ -48,7 +48,7 @@ T.position(-1.89, 1.0, -2.6).scale(0.030, 0.030, 0.030) {
             draft
         }
         T { Style { margin_top(0.6) font_size(0.9) } caption("PC keyboard edits arrive over UDP. Enter inserts a newline; code is not executed.") }
-    }, caption("Trigger selects. Thumbstick or pointer drag scrolls. No downloads or script execution."))
+    }, caption("Trigger selects. Thumbstick or pointer drag scrolls. No downloads or script execution."), false)
 }
 let server = HttpServer.bind("0.0.0.0:7000") {}
 server
