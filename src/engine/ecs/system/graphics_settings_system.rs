@@ -1,6 +1,37 @@
 use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter};
 use crate::engine::graphics::VisualWorld;
 
+/// Requested amount of fixed XR foveation. This does not imply backend support.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum XrFoveationQuality {
+    #[default]
+    Off,
+    Low,
+    Medium,
+    High,
+}
+
+impl XrFoveationQuality {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "off" => Some(Self::Off),
+            "low" => Some(Self::Low),
+            "medium" => Some(Self::Medium),
+            "high" => Some(Self::High),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+}
+
 /// Authoritative runtime graphics settings, independent of scene UI.
 #[derive(Debug, Clone)]
 pub struct GraphicsSettingsSystem {
@@ -10,6 +41,7 @@ pub struct GraphicsSettingsSystem {
     mirror_quality_override: Option<i32>,
     secondary_motion_enabled: bool,
     secondary_motion_paused: bool,
+    foveation_quality: XrFoveationQuality,
 }
 
 impl Default for GraphicsSettingsSystem {
@@ -21,11 +53,27 @@ impl Default for GraphicsSettingsSystem {
             mirror_quality_override: None,
             secondary_motion_enabled: true,
             secondary_motion_paused: false,
+            foveation_quality: XrFoveationQuality::Off,
         }
     }
 }
 
 impl GraphicsSettingsSystem {
+    pub fn foveation_quality(&self) -> XrFoveationQuality {
+        self.foveation_quality
+    }
+
+    pub fn set_foveation_quality(
+        &mut self,
+        value: XrFoveationQuality,
+        emit: &mut dyn SignalEmitter,
+    ) {
+        if self.foveation_quality != value {
+            self.foveation_quality = value;
+            Self::notify_changed(emit);
+        }
+    }
+
     pub fn bloom_enabled(&self) -> bool {
         self.bloom_enabled
     }
