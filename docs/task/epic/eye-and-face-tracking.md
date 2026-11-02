@@ -10,6 +10,12 @@ and the HTC transport adds per-eye face data where the sender provides it.
 
 ## Current checkpoint
 
+The transport-specific checkpoint below is historical. The 2026-11-02
+[source audit and portable native/streamed roadmap](../native-openxr-and-streamed-avatar-tracking.md)
+records the current generic selector, shared gaze/closure normalization, ALVR
+reference implementation, and proposed native OpenXR providers. It also defines
+the ordered headless and headset gates for MediaPipe face/body LAN input.
+
 - `XREyeTracking` accepts ALVR/VRChat Eye OSC on `127.0.0.1:9000` by default.
   It retains normalized gaze and a live combined closure sample.
 - As a direct child of `AVC`, it drives mapped eye bones from retained gaze.

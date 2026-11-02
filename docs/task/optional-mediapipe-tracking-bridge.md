@@ -6,6 +6,13 @@ Status: proposed architecture and protocol outline; no bridge or receiver implem
 Ownership decision (2026-10-19, expanded 2026-10-20): a shared engine-side `MediaPipeSystem`
 owns provider state and publishes independent hand, eye, lower-face, and body channels.
 
+2026-11-02 extension: [mitten-droid face/body LAN streaming](mitten-droid-mediapipe-tracking-stream.md)
+adds opt-in PC-to-headset UDP alongside loopback, with synthetic tests before
+camera/hardware work. The [portable native/streamed roadmap](native-openxr-and-streamed-avatar-tracking.md)
+orders that Android work and native eye providers across OpenXR headsets. Its
+face/body slices are an additional application path; this earlier hand-first
+proposal does not make hands a prerequisite for validating face/body transport.
+
 The [avatar tracking component design](avatar-tracking-components-and-mediapipe.md) defines
 `WebcamEyeTracking` (lowercase `c`) as the webcam counterpart to `XREyeTracking`, plus generic
 `LowerFaceTracking`, `HandTracking`, `FullBodyTracking`, and `LowerBodyTracking` consumers.

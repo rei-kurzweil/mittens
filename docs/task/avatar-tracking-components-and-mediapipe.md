@@ -6,6 +6,11 @@ are proposed. This pass changes no runtime source.
 
 Companion: [Optional MediaPipe process and MediaPipeSystem](optional-mediapipe-tracking-bridge.md).
 
+2026-11-02 follow-up: [portable native XR and streamed tracking](native-openxr-and-streamed-avatar-tracking.md)
+adds capability-selected native eye providers and ordered headless/ADB gates;
+[the LAN companion](mitten-droid-mediapipe-tracking-stream.md) extends the
+loopback transport below to explicitly configured PC-to-Android reception.
+
 ## Public components
 
 Expose the requested tracking capability in MMS, independently of the inference implementation.
