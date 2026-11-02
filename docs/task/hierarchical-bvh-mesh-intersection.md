@@ -149,6 +149,131 @@ Do not treat a bind-pose mesh BVH as exact animated intersection.  If it is
 temporarily used as a broad phase, label the resulting picking approximation
 and provide a conservative/current-pose fallback.
 
+### Proposed default: lazy current-pose triangle snapshots
+
+An alternative that limits detailed work to bone-associated candidate regions is
+specified in [bone-oriented skinned mesh raycasting](../spec/skinned-mesh-raycasting.md).
+It precomputes overlapping triangle lists from all retained skin influences and
+uses conservative moving boxes before on-demand triangle evaluation. Compare
+that approach with the whole-primitive snapshot below before selecting the
+implementation; neither proposal is implemented for GLTF yet.
+
+Discussion checkpoint, 2026-11-01: prefer the second policy for precise GLTF
+ray hits. Joint/armature changes invalidate the detailed snapshot, but do not
+immediately deform every mesh or refit every triangle tree. The first query
+that needs that primitive's detailed geometry brings its snapshot up to date;
+subsequent queries reuse it until a relevant input changes. This is a proposal,
+not an implemented GLTF raycasting feature. The existing triangle BVHs for
+damaged static cells do not automatically provide this behavior for GLTF.
+
+The intended query path is:
+
+```text
+ray -> current conservative scene bounds -> candidate GLTF primitive
+    -> compare deformation revision with cached snapshot revision
+    -> if stale/missing: evaluate posed vertices and build/refit local BVH
+    -> traverse current triangle BVH -> exact hit or miss
+```
+
+An AABB candidate is not yet a confirmed surface hit. If its triangles miss,
+continue to other candidates; preserve nearest-hit ordering, distance limits,
+and existing pointer/editor eligibility rules. A ray rejected by the outer
+bounds must not cause detailed snapshot construction.
+
+#### Invalidation and ownership
+
+Keep immutable mesh topology and initial BVH connectivity shareable by mesh
+asset revision. Own deformed vertices, refitted bounds, and snapshot validity
+per independently posed instance/primitive. Two avatars using the same GLB
+must not accidentally share a mutable posed tree. Identical-pose sharing is a
+possible later optimization, not an initial assumption.
+
+The snapshot's validity depends on:
+
+- source mesh/topology and skin data, including inverse bind matrices;
+- effective mesh-local joint palette, after animation, IK, tracking, spring
+  motion, parenting, and other transform writers;
+- effective morph weights and morph-target data, even if no joint moved;
+- the instance binding identity and any replacement of the imported asset.
+
+Use monotonic dirty/input revisions rather than hashing all vertices or
+comparing every joint for each ray. Multiple writes before a query coalesce
+into one refresh; multiple rays at the same revision reuse one result. The
+existing `SkinnedMeshSystem` reverse indexes and dirty-binding notifications
+are integration seams, not an existing deformation revision API. Invalidation
+must survive renderer dirty flags being consumed. Avoid marking a snapshot
+stale merely because an unchanged pose was submitted again.
+
+Store the detailed geometry in mesh-local space. A rigid transform applied
+equally to mesh and skeleton changes the world-space instance bounds and ray
+transform, but not the local deformed geometry. It should reuse the snapshot.
+Relative mesh/joint motion does invalidate it. Use the final effective palette
+to distinguish those cases; a world-transform notification alone is not proof
+that the local skin shape changed.
+
+#### Conservative bounds must stay current
+
+The broad phase cannot depend solely on the last detailed snapshot's bounds.
+A limb can move outside those bounds before any ray requests an update, which
+would prevent the exact query from ever running.
+
+Choose and validate a cheaper conservative bounds path independently of the
+lazy triangle cache: for example, precomputed per-joint influence bounds
+transformed by the current palette and unioned per primitive. Account for
+morph displacement, normalized skin weights, and the renderer's deformation
+rules. An animation-wide envelope is another option only where a valid
+envelope exists; authored animation bounds alone do not cover arbitrary IK or
+tracking. Conservative bounds may include extra empty space, but must not
+exclude possible current vertices. Unknown bounds require a conservative
+fallback, not silently retaining an obsolete tight box.
+
+Joint changes may therefore still do inexpensive palette/bounds work. The
+expensive per-vertex deformation and triangle-BVH maintenance remain lazy.
+
+#### Query timing, refitting, and cost
+
+Exact means the current committed simulation pose at a defined query barrier,
+not a promise to match a later render pose or XR late update. Consume all pose
+changes up to that barrier before checking snapshot validity. CPU evaluation
+must match renderer morph/skin ordering, weights, and matrix conventions.
+Avoid GPU readback for this initial CPU query path.
+
+With unchanged topology, update posed positions, recompute leaf bounds, and
+refit parents bottom-up. Rebuild connectivity on topology changes, and consider
+a measured quality threshold for badly degraded trees after large pose changes.
+Do not rebuild connectivity on every joint change by default. A straightforward
+full refit still costs work proportional to the primitive's triangles once per
+queried deformation revision; laziness does not remove that cost. A continuous
+pointer over a continuously animated avatar may refresh it every frame.
+
+For an initial exact API, perform a required refresh synchronously when queried
+and measure the first-query latency. A budgeted/deferred API may instead expose
+a pending/approximate result explicitly; never label a stale-pose hit as exact
+or silently report a miss because its refresh budget was exhausted. Introducing
+asynchronous pose jobs is a separate implementation choice, not a requirement
+to reuse the CSG worker.
+
+Bound cache memory with inactive-entry eviction and release it on instance/asset
+removal. An evicted entry rebuilds on its next precise query; dirty but unqueried
+instances must not accumulate a history of pose snapshots. GPU/CPU visibility
+alone cannot decide eligibility, since gameplay rays can target offscreen models.
+
+#### Focused validation before implementation acceptance
+
+- No detailed build/refit for unqueried instances or rays missing their outer
+  bounds; repeated hits and misses at one pose reuse the same snapshot.
+- Joint, ancestor, IK/spring, morph-only, and asset changes refresh the correct
+  instance on its next query; several writes coalesce into one refresh.
+- Rigid whole-avatar movement reuses local geometry; independent avatar poses
+  never overwrite one another's cached geometry.
+- A moved limb outside its old snapshot bounds is still discoverable. Test
+  non-uniform transforms, morph extremes, and multiple skin influences.
+- Compare BVH hits with a brute-force current-pose triangle reference, including
+  holes/misses inside outer bounds and candidates behind a rejected near box.
+- Track cache hits, invalidations, posed vertices, build/refit time, broad-phase
+  bounds cost, memory, and eviction. Benchmark idle avatars, many animated but
+  unqueried avatars, and a continuous pointer on a moving 50k–100k triangle avatar.
+
 ## Work plan
 
 ### A. Define common spatial instance and hit types
@@ -189,6 +314,8 @@ and provide a conservative/current-pose fallback.
 
 ### D. Add skinned snapshot policy and budgets
 
+- Start with the lazy current-pose proposal above: independent conservative
+  broad-phase bounds, deformation invalidation, and query-triggered snapshots.
 - Establish snapshot ownership/lifetime, update cadence, maximum triangles,
   and what happens when a budget is exceeded.
 - Ensure a CombineMesh bake of skinned descendants explicitly consumes a
