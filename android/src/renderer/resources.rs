@@ -370,6 +370,104 @@ pub(super) fn upload_rgba(
     Ok(image)
 }
 
+/// Static density maps must be complete before vkCmdBeginRenderPass: the
+/// implementation may read them on the host when commands are recorded.
+/// This upload runs only on a quality/projection change, never per draw/frame.
+pub(super) fn upload_density(gpu: Arc<Gpu>, extent: vk::Extent2D, data: &[u8]) -> Result<Image> {
+    if data.len() != extent.width as usize * extent.height as usize * 2 {
+        return Err("invalid RG8 density map".into());
+    }
+    let mut staging = Buffer::new(gpu.clone(), data.len(), vk::BufferUsageFlags::TRANSFER_SRC)?;
+    staging.write(data)?;
+    let image = Image::new(
+        gpu.clone(),
+        vk::Format::R8G8_UNORM,
+        extent,
+        vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::FRAGMENT_DENSITY_MAP_EXT,
+        vk::ImageAspectFlags::COLOR,
+        vk::SampleCountFlags::TYPE_1,
+        1,
+    )?;
+    let transfer = Transfer::new(gpu.clone())?;
+    unsafe {
+        let device = &gpu.device;
+        device
+            .begin_command_buffer(
+                transfer.command,
+                &vk::CommandBufferBeginInfo::default()
+                    .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
+            )
+            .api("begin density upload")?;
+        let barrier = vk::ImageMemoryBarrier::default()
+            .image(image.handle)
+            .old_layout(vk::ImageLayout::UNDEFINED)
+            .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+            .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .subresource_range(
+                vk::ImageSubresourceRange::default()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .level_count(1)
+                    .layer_count(1),
+            );
+        device.cmd_pipeline_barrier(
+            transfer.command,
+            vk::PipelineStageFlags::TOP_OF_PIPE,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::DependencyFlags::empty(),
+            &[],
+            &[],
+            &[barrier],
+        );
+        let copy = vk::BufferImageCopy::default()
+            .image_subresource(
+                vk::ImageSubresourceLayers::default()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .layer_count(1),
+            )
+            .image_extent(vk::Extent3D {
+                width: extent.width,
+                height: extent.height,
+                depth: 1,
+            });
+        device.cmd_copy_buffer_to_image(
+            transfer.command,
+            staging.handle,
+            image.handle,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            &[copy],
+        );
+        device.cmd_pipeline_barrier(
+            transfer.command,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::PipelineStageFlags::FRAGMENT_DENSITY_PROCESS_EXT,
+            vk::DependencyFlags::empty(),
+            &[],
+            &[],
+            &[barrier
+                .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                .new_layout(vk::ImageLayout::FRAGMENT_DENSITY_MAP_OPTIMAL_EXT)
+                .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+                .dst_access_mask(vk::AccessFlags::FRAGMENT_DENSITY_MAP_READ_EXT)],
+        );
+        device
+            .end_command_buffer(transfer.command)
+            .api("end density upload")?;
+        device
+            .queue_submit(
+                gpu.queue,
+                &[vk::SubmitInfo::default().command_buffers(&[transfer.command])],
+                transfer.fence,
+            )
+            .api("submit density upload")?;
+        device
+            .wait_for_fences(&[transfer.fence], true, u64::MAX)
+            .api("complete static density upload")?;
+    }
+    Ok(image)
+}
+
 struct Transfer {
     gpu: Arc<Gpu>,
     pool: vk::CommandPool,

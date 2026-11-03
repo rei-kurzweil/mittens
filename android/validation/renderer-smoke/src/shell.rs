@@ -129,12 +129,21 @@ pub fn render(output: &str) {
         universe.visuals.prepare_draw_cache();
     }
     if minimized {
-        let toggles: Vec<_> = universe
-            .world
-            .all_components()
-            .filter(|&id| universe.world.component_label(id) == Some("accordion_toggle"))
-            .collect();
-        assert_eq!(toggles.len(), 2);
+        let toggles = ["shell_TERMINAL_window", "shell_FILES_window"].map(|name| {
+            let root = universe
+                .world
+                .all_components()
+                .find(|&id| universe.world.component_label(id) == Some(name))
+                .unwrap();
+            let mut nodes = vec![root];
+            while let Some(id) = nodes.pop() {
+                if universe.world.component_label(id) == Some("accordion_toggle") {
+                    return id;
+                }
+                nodes.extend(universe.world.children_of(id));
+            }
+            panic!("missing toggle for {name}");
+        });
         for toggle in toggles {
             universe.systems.rx.push_event(
                 toggle,

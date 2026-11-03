@@ -24,6 +24,8 @@ pub(crate) struct Gpu {
     pub physical: vk::PhysicalDevice,
     pub queue: vk::Queue,
     pub family: u32,
+    /// Enabled only when ordinary eye attachments can use a static density map.
+    pub density_texel: Option<vk::Extent2D>,
     #[allow(dead_code)] // Used by the optional triangle diagnostic.
     pub dynamic: bool,
     #[allow(dead_code)] // The scene renderer deliberately uses classic passes.
@@ -178,6 +180,7 @@ impl Gpu {
                 report.line(format!("Vulkan device extension={extension}"));
             }
             let has = |name: &CStr| supported.iter().any(|s| s == &name.to_string_lossy());
+            let mut density_features = vk::PhysicalDeviceFragmentDensityMapFeaturesEXT::default();
             let mut dynamic_features = vk::PhysicalDeviceDynamicRenderingFeatures::default();
             let mut multiview_features = vk::PhysicalDeviceMultiviewFeatures::default();
             let mut local_read_features =
@@ -185,6 +188,9 @@ impl Gpu {
             let features = if effective_api >= vk::API_VERSION_1_1 {
                 let mut query =
                     vk::PhysicalDeviceFeatures2::default().push_next(&mut multiview_features);
+                if has(ash::ext::fragment_density_map::NAME) {
+                    query = query.push_next(&mut density_features);
+                }
                 if has(ash::khr::dynamic_rendering::NAME) {
                     query = query.push_next(&mut dynamic_features);
                 }
@@ -198,6 +204,49 @@ impl Gpu {
             } else {
                 instance.raw.get_physical_device_features(physical)
             };
+            report.line(format!(
+                "fragment_density_map={} dynamic={} non_subsampled={}",
+                density_features.fragment_density_map,
+                density_features.fragment_density_map_dynamic,
+                density_features.fragment_density_map_non_subsampled_images
+            ));
+            let mut density_texel = None;
+            if effective_api >= vk::API_VERSION_1_1 && has(ash::ext::fragment_density_map::NAME) {
+                let mut density = vk::PhysicalDeviceFragmentDensityMapPropertiesEXT::default();
+                let mut query = vk::PhysicalDeviceProperties2::default().push_next(&mut density);
+                instance
+                    .raw
+                    .get_physical_device_properties2(physical, &mut query);
+                let format = instance
+                    .raw
+                    .get_physical_device_format_properties(physical, vk::Format::R8G8_UNORM);
+                let image = instance.raw.get_physical_device_image_format_properties(
+                    physical,
+                    vk::Format::R8G8_UNORM,
+                    vk::ImageType::TYPE_2D,
+                    vk::ImageTiling::OPTIMAL,
+                    vk::ImageUsageFlags::FRAGMENT_DENSITY_MAP_EXT
+                        | vk::ImageUsageFlags::TRANSFER_DST,
+                    vk::ImageCreateFlags::empty(),
+                );
+                if density_features.fragment_density_map == vk::TRUE
+                    && density_features.fragment_density_map_non_subsampled_images == vk::TRUE
+                    && format
+                        .optimal_tiling_features
+                        .contains(vk::FormatFeatureFlags::FRAGMENT_DENSITY_MAP_EXT)
+                    && image.is_ok()
+                    && density.min_fragment_density_texel_size.width > 0
+                    && density.min_fragment_density_texel_size.height > 0
+                {
+                    density_texel = Some(density.min_fragment_density_texel_size);
+                }
+                report.line(format!(
+                    "fragment_density_map min_texel={:?} max_texel={:?} invocations={}",
+                    density.min_fragment_density_texel_size,
+                    density.max_fragment_density_texel_size,
+                    density.fragment_density_invocations
+                ));
+            }
             let dynamic_dependencies = if effective_api < vk::API_VERSION_1_2 {
                 vec![
                     ash::khr::dynamic_rendering::NAME,
@@ -339,6 +388,13 @@ impl Gpu {
                     }
                 }
             }
+            if density_texel.is_some()
+                && !extensions
+                    .iter()
+                    .any(|s| s.as_c_str() == ash::ext::fragment_density_map::NAME)
+            {
+                extensions.push(ash::ext::fragment_density_map::NAME.to_owned());
+            }
             for extension in &extensions {
                 if !has(extension) {
                     return Err(format!(
@@ -354,11 +410,17 @@ impl Gpu {
                 .queue_priorities(&[1.0])];
             let mut dynamic_enable =
                 vk::PhysicalDeviceDynamicRenderingFeatures::default().dynamic_rendering(true);
+            let mut density_enable = vk::PhysicalDeviceFragmentDensityMapFeaturesEXT::default()
+                .fragment_density_map(true)
+                .fragment_density_map_non_subsampled_images(true);
             let mut info = vk::DeviceCreateInfo::default()
                 .queue_create_infos(&queues)
                 .enabled_extension_names(&pointers);
             if dynamic {
                 info = info.push_next(&mut dynamic_enable);
+            }
+            if density_texel.is_some() {
+                info = info.push_next(&mut density_enable);
             }
             let device = if enable2 {
                 let raw = xr_instance
@@ -390,6 +452,7 @@ impl Gpu {
                 family,
                 dynamic,
                 dynamic_api,
+                density_texel,
             }))
         }
     }

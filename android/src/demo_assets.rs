@@ -50,6 +50,9 @@ const STAGE_FILES: &[(&str, &[u8])] = bundle![
 const SHELL_FILES: &[(&str, &[u8])] = bundle![
     "assets/components/backgrounds/sakura_sky.mms",
     "assets/components/mitten_droid/garden.mms",
+    "assets/components/mitten_droid/checkerboard.mms",
+    "assets/shaders/foveation-checkerboard.frag",
+    "assets/components/platforms/terraced_garden.mms",
     "assets/components/plants/sakura_tree.mms",
     "assets/components/materials/pool_tiles.mms",
     "assets/components/materials/anime_surface.mms",
@@ -61,6 +64,8 @@ const SHELL_FILES: &[(&str, &[u8])] = bundle![
     "android/shaders/sakura-sky.frag",
     "android/examples/shell-server.mms",
     "assets/components/mitten_droid/ui.mms",
+    "assets/components/panels/graphics_settings_panel.mms",
+    "assets/components/ui/info_panel.mms",
     "assets/components/internal/ui/accordion.mms",
     "assets/components/icons.mms",
     "assets/components/mitten_droid/protocol.mms",
@@ -104,6 +109,12 @@ pub(crate) fn install(directory: &Path, scene: DemoScene) -> Result<SceneSource>
             for &(relative, bytes) in files {
                 let target = root.join(relative);
                 std::fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
+                #[cfg(all(target_os = "android", feature = "foveation-visualization"))]
+                if relative == "android/shaders/sakura-sky.frag" {
+                    std::fs::write(target, include_str!("../shaders/foveation-sky.frag"))
+                        .map_err(|e| e.to_string())?;
+                    continue;
+                }
                 if relative.ends_with(".mms") {
                     let source = std::str::from_utf8(bytes)
                         .map_err(|e| e.to_string())?

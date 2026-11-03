@@ -13,8 +13,21 @@ pub(crate) struct FrameProfile {
     gpu_samples: u32,
     gpu_sum: f64,
     gpu_max: f64,
+    foveation:
+        Option<mittens_engine::engine::ecs::system::graphics_settings_system::XrFoveationQuality>,
 }
 impl FrameProfile {
+    pub fn reset(
+        &mut self,
+        foveation: Option<
+            mittens_engine::engine::ecs::system::graphics_settings_system::XrFoveationQuality,
+        >,
+    ) {
+        *self = Self {
+            foveation,
+            ..Self::default()
+        };
+    }
     pub fn record(
         &mut self,
         predicted_interval_ms: Option<f64>,
@@ -48,7 +61,7 @@ impl FrameProfile {
         if self.count == WINDOW {
             let avg = self.sums.map(|sum| sum / WINDOW as f64);
             let gpu = (self.gpu_samples > 0).then(|| self.gpu_sum / self.gpu_samples as f64);
-            report.line(format!("FRAME_PROFILE samples={} predicted_interval_ms={:.2} update_cpu_ms={:.2} assets_cpu_ms={:.2} renderer_prepare_cpu_ms={:.2} record_cpu_ms={:.2} submit_and_fence_wait_ms={:.2} gpu_eye_pass_ms={gpu:?} gpu_samples={} max_update_cpu_ms={:.2} max_gpu_eye_pass_ms={:.2} draws={} instances={}", self.count, avg[0], avg[1], avg[2], avg[3], avg[4], avg[5], self.gpu_samples, self.maxima[1], self.gpu_max, stats.draws, stats.instances));
+            report.line(format!("FRAME_PROFILE foveation_applied={} samples={} predicted_interval_ms={:.2} update_cpu_ms={:.2} assets_cpu_ms={:.2} renderer_prepare_cpu_ms={:.2} record_cpu_ms={:.2} submit_and_fence_wait_ms={:.2} gpu_eye_pass_ms={gpu:?} gpu_samples={} max_update_cpu_ms={:.2} max_gpu_eye_pass_ms={:.2} draws={} instances={}", self.foveation.map_or("none", |quality| quality.as_str()), self.count, avg[0], avg[1], avg[2], avg[3], avg[4], avg[5], self.gpu_samples, self.maxima[1], self.gpu_max, stats.draws, stats.instances));
             self.count = 0;
             self.sums = [0.0; 6];
             self.maxima = [0.0; 6];

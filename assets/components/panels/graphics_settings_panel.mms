@@ -19,6 +19,18 @@ fn enabled_text(enabled) {
     return "Off"
 }
 
+fn foveation_status_text() {
+    let status = GraphicsSettings.foveation.status()
+    let applied = GraphicsSettings.foveation.applied_quality()
+    if status == "accepted" { return "Applied: " + applied }
+    if status == "pending" { return "Waiting to apply quality." }
+    if status == "failed" {
+        if applied != null { return "Request failed; last applied: " + applied }
+        return "Foveation request failed."
+    }
+    return "XR foveation backend unavailable."
+}
+
 fn setting_toggle(enabled, control_name) {
     if enabled { return Toggle.on() { name = control_name } }
     return Toggle.off() { name = control_name }
@@ -115,8 +127,7 @@ fn setting_row(label, control, readout) {
     }
 }
 
-fn settings_content(state) {
-    read_settings(state)
+fn foveation_content(state) {
     let foveation_track = T.scale(TRACK_WIDTH * 0.5, 0.025, 0.10) {
         R.cube() { C.rgba(0.73, 0.65, 0.50, 1.0) Raycastable.enabled() { interaction_priority(120.0) } }
     }
@@ -142,6 +153,26 @@ fn settings_content(state) {
         }
         T.position(0, 0, 0.03) { Text { "Off" } }
     }
+    return T {
+        name = "graphics_foveation_content"
+        Style { display("flex") flex_direction("column") width(100%) row_gap(0.25) }
+        section_heading("XR foveation", "graphics_foveation_heading")
+        setting_row("Quality level", foveation_slider, foveation_readout)
+        T {
+            Style { color([0.45, 0.45, 0.43, 1]) }
+            setting_row("Eye tracking", foveation_eye_control, Text { "Coming soon" })
+        }
+        T {
+            Style { width(100%) font_size(0.55) padding_xy(0.35, 0.15) }
+            Text { name = "graphics_foveation_status" foveation_status_text() }
+        }
+    }
+}
+
+fn settings_content(state, foveation_only) {
+    read_settings(state)
+    let foveation = foveation_content(state)
+    if foveation_only { return foveation }
     let bloom_toggle = setting_toggle(state.bloom, "graphics_bloom_toggle")
     let bloom_control = toggle_control(bloom_toggle, "Toggle", "graphics_bloom_toggle_control")
     let bloom_readout = Text { name = "graphics_bloom_readout" enabled_text(state.bloom) }
@@ -225,17 +256,7 @@ fn settings_content(state) {
     return T {
         name = "graphics_settings_content"
         Style { display("flex") flex_direction("column") width(100%) row_gap(0.25) }
-        section_heading("XR foveation", "graphics_foveation_heading")
-        setting_row("Quality level", foveation_slider, foveation_readout)
-        T {
-            Style { color([0.45, 0.45, 0.43, 1]) }
-            setting_row("Eye tracking", foveation_eye_control, Text { "Coming soon" })
-        }
-        T {
-            name = "graphics_foveation_status"
-            Style { width(100%) font_size(0.55) padding_xy(0.35, 0.15) }
-            Text { "Quality is a preference; not applied yet." }
-        }
+        foveation
         section_heading("Bloom", "graphics_bloom_heading")
         setting_row("Toggle bloom", bloom_control, bloom_readout)
         setting_row("Pyramid levels", bloom_layers, bloom_layers_readout)
@@ -249,6 +270,7 @@ fn settings_content(state) {
 }
 
 // Required: root_name. Optional: title (string or complete title-bar component).
+// Optional: foveation_only limits this panel to XR controls; material supplies a custom surface.
 // The caller owns world placement; custom title bars own layout/movement markers.
 export fn graphics_settings_panel(options) {
     let title = "Graphics settings"
@@ -256,6 +278,7 @@ export fn graphics_settings_panel(options) {
     let state = { bloom = true bloom_layers = 1 enabled = true motion_enabled = true motion_paused = false quality = null quality_index = 3 foveation = "off" foveation_index = 0 }
     let panel = info_panel({
         root_name = options.root_name
+        material = options["material"]
         width_gu = 32.0
         unit_scale = UNIT_SCALE
         title = title
@@ -266,7 +289,7 @@ export fn graphics_settings_panel(options) {
         toggle_icon_glow_intensity = 0.0
         body_background_color = BODY_COLOR
         body_text_color = TEXT_COLOR
-        content = settings_content(state)
+        content = settings_content(state, options["foveation_only"] == true)
     })
     // Grip grabbing reparents the inner panel root away from its layout slot.
     // Keep selection exclusion and restore delivery on that moving root.
@@ -277,7 +300,7 @@ export fn graphics_settings_panel(options) {
     on(panel_root, "DataEvent", fn(event) {
         if event == "AccordionRestoreRequested" {
             body_mount.attach(info_panel_body({
-                content = settings_content(state)
+                content = settings_content(state, options["foveation_only"] == true)
                 body_background_color = BODY_COLOR
                 body_text_color = TEXT_COLOR
             }))
@@ -294,6 +317,8 @@ export fn graphics_settings_panel(options) {
                 let foveation_readout = current_panel.query("#graphics_foveation_quality_readout")
                 if foveation_slider { foveation_slider.sync_value(state.foveation_index) }
                 if foveation_readout { foveation_readout.set_text(FOVEATION_LABELS[state.foveation_index]) }
+                let foveation_status = current_panel.query("#graphics_foveation_status")
+                if foveation_status { foveation_status.set_text(foveation_status_text()) }
                 let bloom_toggle = current_panel.query("#graphics_bloom_toggle")
                 let bloom_readout = current_panel.query("#graphics_bloom_readout")
                 let bloom_layers = current_panel.query("#graphics_bloom_layers_slider")

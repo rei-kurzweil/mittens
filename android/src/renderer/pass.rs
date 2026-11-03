@@ -13,6 +13,7 @@ pub(super) struct EyePass {
     pub extent: vk::Extent2D,
     pub depth_format: vk::Format,
     pub samples: vk::SampleCountFlags,
+    density: Option<[Image; 2]>,
     depth: Vec<Image>,
     color_msaa: Vec<Image>,
     views: Vec<[vk::ImageView; 2]>,
@@ -42,6 +43,16 @@ impl EyePass {
         extent: vk::Extent2D,
         images: &[u64],
         samples: vk::SampleCountFlags,
+    ) -> Result<Self> {
+        Self::with_density(gpu, format, extent, images, samples, None)
+    }
+    pub(super) fn with_density(
+        gpu: Arc<Gpu>,
+        format: vk::Format,
+        extent: vk::Extent2D,
+        images: &[u64],
+        samples: vk::SampleCountFlags,
+        density: Option<[Image; 2]>,
     ) -> Result<Self> {
         if images.is_empty() || extent.width == 0 || extent.height == 0 {
             return Err("empty eye target".into());
@@ -89,6 +100,7 @@ impl EyePass {
             extent,
             depth_format,
             samples,
+            density,
             depth: Vec::new(),
             color_msaa: Vec::new(),
             views: Vec::new(),
@@ -137,6 +149,20 @@ impl EyePass {
                         .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL),
                 );
             }
+            let density_index = attachments.len() as u32;
+            if pass.density.is_some() {
+                attachments.push(
+                    vk::AttachmentDescription::default()
+                        .format(vk::Format::R8G8_UNORM)
+                        .samples(vk::SampleCountFlags::TYPE_1)
+                        .load_op(vk::AttachmentLoadOp::LOAD)
+                        .store_op(vk::AttachmentStoreOp::DONT_CARE)
+                        .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+                        .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+                        .initial_layout(vk::ImageLayout::FRAGMENT_DENSITY_MAP_OPTIMAL_EXT)
+                        .final_layout(vk::ImageLayout::FRAGMENT_DENSITY_MAP_OPTIMAL_EXT),
+                );
+            }
             let colors = [vk::AttachmentReference {
                 attachment: 0,
                 layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
@@ -174,14 +200,21 @@ impl EyePass {
                         | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
                 )
                 .dependency_flags(vk::DependencyFlags::BY_REGION)];
+            // Static maps are uploaded and fenced before recording this pass.
+            let mut density_info = vk::RenderPassFragmentDensityMapCreateInfoEXT::default()
+                .fragment_density_map_attachment(vk::AttachmentReference {
+                    attachment: density_index,
+                    layout: vk::ImageLayout::FRAGMENT_DENSITY_MAP_OPTIMAL_EXT,
+                });
+            let mut info = vk::RenderPassCreateInfo::default()
+                .attachments(&attachments)
+                .subpasses(&subpasses)
+                .dependencies(&dependencies);
+            if pass.density.is_some() {
+                info = info.push_next(&mut density_info);
+            }
             pass.handle = device
-                .create_render_pass(
-                    &vk::RenderPassCreateInfo::default()
-                        .attachments(&attachments)
-                        .subpasses(&subpasses)
-                        .dependencies(&dependencies),
-                    None,
-                )
+                .create_render_pass(&info, None)
                 .api("vkCreateRenderPass(opaque eyes)")?;
             for _ in 0..2 {
                 pass.depth.push(Image::new(
@@ -226,7 +259,7 @@ impl EyePass {
                             None,
                         )
                         .api("vkCreateImageView(scene eye)")?;
-                    let attachments = if multisampled {
+                    let mut attachments = if multisampled {
                         vec![
                             pass.color_msaa[eye].view,
                             pass.depth[eye].view,
@@ -235,6 +268,9 @@ impl EyePass {
                     } else {
                         vec![pass.views[index][eye], pass.depth[eye].view]
                     };
+                    if let Some(density) = &pass.density {
+                        attachments.push(density[eye].view);
+                    }
                     pass.framebuffers[index][eye] = device
                         .create_framebuffer(
                             &vk::FramebufferCreateInfo::default()

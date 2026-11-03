@@ -35,7 +35,7 @@ pub(super) struct Materials {
     cameras: Vec<Buffer>,
     lights: Option<Buffer>,
     pub camera_sets: [[vk::DescriptorSet; 2]; 2],
-    pipelines: HashMap<(MaterialDefinitionId, bool, bool), Pipeline>,
+    pipelines: HashMap<(MaterialDefinitionId, bool, bool, bool), Pipeline>,
     bindings: HashMap<BindingKey, Binding>,
 }
 impl Drop for Materials {
@@ -243,7 +243,7 @@ impl Materials {
             return Err(format!("free retired material descriptors: {error:?}"));
         }
         self.pipelines
-            .retain(|(id, _, _), _| registry.definition(*id).is_some());
+            .retain(|(id, _, _, _), _| registry.definition(*id).is_some());
         Ok(())
     }
     pub fn prepare(
@@ -255,6 +255,7 @@ impl Materials {
         texture: &Image,
         background: bool,
         transparent: bool,
+        foveated: bool,
     ) -> Result<bool> {
         let record = registry
             .instance(key.0)
@@ -285,7 +286,7 @@ impl Materials {
         {
             return Err("unsupported custom surface descriptor interface".into());
         }
-        let pipeline_key = (record.definition, background, transparent);
+        let pipeline_key = (record.definition, background, transparent, foveated);
         if !self.pipelines.contains_key(&pipeline_key) {
             if self.pipelines.len() >= Self::LIMIT {
                 return Err("mobile custom pipeline capacity (256) exceeded".into());
@@ -371,6 +372,7 @@ impl Materials {
         key: BindingKey,
         background: bool,
         transparent: bool,
+        foveated: bool,
     ) -> Option<(vk::Pipeline, vk::DescriptorSet)> {
         let binding = self.bindings.get(&key)?;
         if binding.definition != registry.instance(key.0)?.definition {
@@ -378,7 +380,7 @@ impl Materials {
         }
         Some((
             self.pipelines
-                .get(&(binding.definition, background, transparent))?
+                .get(&(binding.definition, background, transparent, foveated))?
                 .handle,
             binding.set,
         ))

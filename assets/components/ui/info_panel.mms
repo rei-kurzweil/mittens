@@ -7,6 +7,7 @@
 //   is appended after their authored children. Put movement markers on that root.
 // Optional options:
 //   icon, background_color (or title_background_color), toggle_background_color,
+//   material: optional custom material retained on the movable root
 //   toggle_icon_color, toggle_icon_glow_intensity, body_background_color,
 //   title_text_color, body_text_color, inherit_body_text_color,
 //   transparent_background, body_padding
@@ -96,7 +97,8 @@ export fn info_panel_body(options) {
 fn panel_with_title_children(options, title_children, custom_title_bar, title_bar_background, toggle_background, toggle_icon_color, toggle_icon_glow, body_background, body_text_color) {
     let panel = accordion({
         root_name = options.root_name
-        unlit = true
+        unlit = options["material"] == null
+        material = options["material"]
         width_gu = options.width_gu
         unit_scale = options.unit_scale
         background_color = title_bar_background

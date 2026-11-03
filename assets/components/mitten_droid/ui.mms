@@ -4,6 +4,11 @@ import { accordion, accordion_body } from "../internal/ui/accordion.mms"
 import { minimize_circle_icon } from "../icons.mms"
 
 export fn caption(text) { return Text { text } }
+fn shell_ui_definition() {
+    return MaterialDefinition(MaterialBase()).fragment("assets/shaders/mitten-droid-ui.frag").inputs({ brightness: f32 })
+}
+// Opaque-pass font coverage, shared by the shell and its movable settings panel.
+export fn shell_ui_material() { return Material(shell_ui_definition()).inputs({ brightness = 1.0 }) }
 export fn action(label, id) {
     return T {
         name = id
@@ -93,7 +98,7 @@ fn window(title, content, window_width, dark, gold_definition, ui_definition, gr
     }
 }
 export fn shell(title, subtitle, connection, browser, terminal, footer, grabbable, collapsible) {
-    let ui_definition = MaterialDefinition(MaterialBase()).fragment("assets/shaders/mitten-droid-ui.frag").inputs({ brightness: f32 })
+    let ui_definition = shell_ui_definition()
     let material = Material(ui_definition).inputs({ brightness = 1.0 })
     let definition = MaterialDefinition(MaterialBase()).fragment("assets/shaders/mitten-droid-gold.frag").inputs({ brightness: f32 })
     return LayoutRoot {

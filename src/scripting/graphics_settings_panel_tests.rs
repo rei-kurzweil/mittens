@@ -1,6 +1,8 @@
 use crate::engine::{
     Universe,
-    ecs::system::graphics_settings_system::XrFoveationQuality,
+    ecs::system::graphics_settings_system::{
+        XrFoveationFeedback, XrFoveationQuality, XrFoveationStatus,
+    },
     ecs::{
         ComponentId, EventSignal, World,
         component::{RaycastableComponent, SliderComponent, TextComponent, ToggleComponent},
@@ -160,4 +162,70 @@ fn foveation_builtin_round_trips_levels_and_rejects_invalid_names() {
             XrFoveationQuality::Off
         );
     }
+}
+
+#[test]
+fn foveation_feedback_distinguishes_requested_accepted_failed_and_unavailable() {
+    let mut scene = Universe::new(World::default());
+    scene.load_mms_source_at_path(r#"
+        import { graphics_settings_panel } from "../assets/components/panels/graphics_settings_panel.mms"
+        GraphicsSettings.foveation.quality("low")
+        graphics_settings_panel({root_name="feedback_panel"})
+    "#, "examples/graphics-settings.mms").unwrap();
+    update(&mut scene);
+    let panel = named(&scene, None, "feedback_panel");
+    let status_text = |scene: &Universe| {
+        scene
+            .world
+            .get_component_by_id_as::<TextComponent>(named(
+                scene,
+                Some(panel),
+                "graphics_foveation_status",
+            ))
+            .unwrap()
+            .text
+            .clone()
+    };
+    assert_eq!(status_text(&scene), "XR foveation backend unavailable.");
+    scene.systems.graphics_settings.set_foveation_feedback(
+        XrFoveationFeedback {
+            status: XrFoveationStatus::Accepted,
+            applied: Some(XrFoveationQuality::Low),
+        },
+        &mut scene.command_queue,
+    );
+    update(&mut scene);
+    assert_eq!(status_text(&scene), "Applied: low");
+    let slider = named(&scene, Some(panel), "graphics_foveation_quality_slider");
+    scene
+        .systems
+        .rx
+        .push_event(slider, EventSignal::SliderChanged { slider, value: 3.0 });
+    update(&mut scene);
+    assert_eq!(readout(&scene, panel), "High");
+    assert_eq!(status_text(&scene), "Waiting to apply quality.");
+    assert_eq!(
+        scene.systems.graphics_settings.foveation_feedback().applied,
+        Some(XrFoveationQuality::Low)
+    );
+    scene.systems.graphics_settings.set_foveation_feedback(
+        XrFoveationFeedback {
+            status: XrFoveationStatus::Failed,
+            applied: Some(XrFoveationQuality::Low),
+        },
+        &mut scene.command_queue,
+    );
+    update(&mut scene);
+    assert_eq!(status_text(&scene), "Request failed; last applied: low");
+    scene
+        .systems
+        .graphics_settings
+        .set_foveation_feedback(XrFoveationFeedback::default(), &mut scene.command_queue);
+    update(&mut scene);
+    assert_eq!(status_text(&scene), "XR foveation backend unavailable.");
+    assert_eq!(
+        readout(&scene, panel),
+        "High",
+        "unavailable backend must not erase preference"
+    );
 }

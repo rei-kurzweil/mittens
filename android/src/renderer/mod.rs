@@ -1,5 +1,6 @@
 //! Application-owned, classic-pass opaque surface renderer for mobile Vulkan.
 //! The engine supplies retained materials, transforms and the ordered draw stream.
+mod foveation;
 mod gpu_timing;
 mod materials;
 mod pass;
@@ -55,6 +56,7 @@ pub(crate) struct SceneRenderer {
     fence: vk::Fence,
     materials: Materials,
     pass: EyePass,
+    foveation: foveation::FixedFoveation,
     meshes: Vec<Option<Mesh>>,
     textures: Vec<Image>,
     instance_buffer: Buffer,
@@ -89,6 +91,8 @@ impl SceneRenderer {
         samples: vk::SampleCountFlags,
     ) -> Result<Self> {
         let pass = EyePass::new(gpu.clone(), format, extent, &images, samples)?;
+        let foveation =
+            foveation::FixedFoveation::new(gpu.clone(), format, extent, images, samples);
         let materials = Materials::new(gpu.clone())?;
         let instance_buffer = Buffer::new(
             gpu.clone(),
@@ -99,6 +103,7 @@ impl SceneRenderer {
         let mut renderer = Self {
             gpu,
             pass,
+            foveation,
             materials,
             meshes: Vec::new(),
             textures: Vec::new(),
@@ -146,6 +151,16 @@ impl SceneRenderer {
         }
         Ok(renderer)
     }
+    pub fn set_foveation(
+        &mut self,
+        quality: mittens_engine::engine::ecs::system::graphics_settings_system::XrFoveationQuality,
+        cameras: &[EyeCamera; 2],
+    ) -> Option<(
+        mittens_engine::engine::ecs::system::graphics_settings_system::XrFoveationFeedback,
+        Option<String>,
+    )> {
+        self.foveation.update(quality, cameras)
+    }
     pub fn attachment_policy(&self) -> String {
         let color = if self.pass.samples == vk::SampleCountFlags::TYPE_1 {
             "color=CLEAR/STORE"
@@ -167,8 +182,10 @@ impl SceneRenderer {
         visuals: &VisualWorld,
         cameras: &[EyeCamera; 2],
     ) -> Result<Stats> {
+        let pass = self.foveation.pass().unwrap_or(&self.pass);
+        let foveated = self.foveation.pass().is_some();
         let prepare_start = std::time::Instant::now();
-        if index >= self.pass.target_count() {
+        if index >= pass.target_count() {
             return Err("eye target index out of range".into());
         }
         if visuals.effective_post_processing().is_active() || !visuals.mirrors().is_empty() {
@@ -247,16 +264,17 @@ impl SceneRenderer {
             self.materials.prepare(
                 &visuals.materials,
                 (id, batch.texture, batch.texture_filtering),
-                self.pass.handle,
-                self.pass.samples,
+                pass.handle,
+                pass.samples,
                 texture,
                 background,
                 transparent,
+                foveated,
             )?;
         }
         for (eye, camera) in cameras.iter().enumerate() {
             for background in [false, true] {
-                let uniform = CameraUniform::new(camera, visuals, self.pass.extent, background);
+                let uniform = CameraUniform::new(camera, visuals, pass.extent, background);
                 self.materials.update_camera(eye, background, unsafe {
                     bytes(std::slice::from_ref(&uniform))
                 })?;
@@ -308,8 +326,7 @@ impl SceneRenderer {
                 timing.start(self.command);
             }
             for eye in 0..2 {
-                self.pass
-                    .begin(self.command, index, eye, visuals.clear_color());
+                pass.begin(self.command, index, eye, visuals.clear_color());
                 for (background, transparent, batch, base) in batches(visuals) {
                     let key = (
                         batch.material_instance.unwrap(),
@@ -318,10 +335,13 @@ impl SceneRenderer {
                     );
                     // Asynchronous custom compilation may still be pending on
                     // the first frames. Show the clear until it is ready.
-                    let Some((pipeline, set)) =
-                        self.materials
-                            .binding(&visuals.materials, key, background, transparent)
-                    else {
+                    let Some((pipeline, set)) = self.materials.binding(
+                        &visuals.materials,
+                        key,
+                        background,
+                        transparent,
+                        foveated,
+                    ) else {
                         continue;
                     };
                     let mesh = self.meshes[batch.mesh.0 as usize]

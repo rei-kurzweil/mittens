@@ -44,6 +44,8 @@ pub enum MittensApi {
     BloomLayerCount,
     FoveationQualitySet,
     FoveationQualityGet,
+    FoveationStatus,
+    FoveationAppliedQuality,
     MirrorsToggle,
     MirrorsEnabled,
     MirrorsQuality,

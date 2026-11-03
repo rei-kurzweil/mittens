@@ -44,3 +44,7 @@ mod xr_swapchain_probe;
 fn android_main(app: android_activity::AndroidApp) {
     activity::run(app);
 }
+
+#[cfg(all(target_os = "android", feature = "foveation-validation"))]
+#[path = "../validation/foveation/probe.rs"]
+mod foveation_probe;

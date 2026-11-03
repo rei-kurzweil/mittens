@@ -3,6 +3,8 @@
 mod demo_assets;
 mod destruction;
 mod editor_click;
+#[path = "../../foveation/probe.rs"]
+mod foveation_probe;
 #[path = "../../../src/frame_profile.rs"]
 mod frame_profile;
 #[path = "../../../src/renderer/mod.rs"]
@@ -83,6 +85,7 @@ mod vulkan_probe {
                     family,
                     dynamic,
                     dynamic_api,
+                    density_texel: None,
                 })
             }
         }
@@ -348,7 +351,10 @@ fn main() {
         destruction::run();
         return;
     }
-    if matches!(std::env::args().nth(1).as_deref(), Some("--destruction" | "--destruction-groups")) {
+    if matches!(
+        std::env::args().nth(1).as_deref(),
+        Some("--destruction" | "--destruction-groups")
+    ) {
         destruction::run();
         return;
     }

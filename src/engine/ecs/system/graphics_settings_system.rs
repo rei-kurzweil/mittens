@@ -32,6 +32,34 @@ impl XrFoveationQuality {
     }
 }
 
+/// Host feedback is separate from the user's requested quality.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum XrFoveationStatus {
+    #[default]
+    Unavailable,
+    Pending,
+    Accepted,
+    Failed,
+}
+
+impl XrFoveationStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unavailable => "unavailable",
+            Self::Pending => "pending",
+            Self::Accepted => "accepted",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct XrFoveationFeedback {
+    pub status: XrFoveationStatus,
+    /// Last configuration applied by the rendering backend; not a measured speedup.
+    pub applied: Option<XrFoveationQuality>,
+}
+
 /// Authoritative runtime graphics settings, independent of scene UI.
 #[derive(Debug, Clone)]
 pub struct GraphicsSettingsSystem {
@@ -42,6 +70,7 @@ pub struct GraphicsSettingsSystem {
     secondary_motion_enabled: bool,
     secondary_motion_paused: bool,
     foveation_quality: XrFoveationQuality,
+    foveation_feedback: XrFoveationFeedback,
 }
 
 impl Default for GraphicsSettingsSystem {
@@ -54,6 +83,7 @@ impl Default for GraphicsSettingsSystem {
             secondary_motion_enabled: true,
             secondary_motion_paused: false,
             foveation_quality: XrFoveationQuality::Off,
+            foveation_feedback: XrFoveationFeedback::default(),
         }
     }
 }
@@ -63,6 +93,21 @@ impl GraphicsSettingsSystem {
         self.foveation_quality
     }
 
+    pub fn foveation_feedback(&self) -> XrFoveationFeedback {
+        self.foveation_feedback
+    }
+
+    pub fn set_foveation_feedback(
+        &mut self,
+        feedback: XrFoveationFeedback,
+        emit: &mut dyn SignalEmitter,
+    ) {
+        if self.foveation_feedback != feedback {
+            self.foveation_feedback = feedback;
+            Self::notify_changed(emit);
+        }
+    }
+
     pub fn set_foveation_quality(
         &mut self,
         value: XrFoveationQuality,
@@ -70,6 +115,9 @@ impl GraphicsSettingsSystem {
     ) {
         if self.foveation_quality != value {
             self.foveation_quality = value;
+            if self.foveation_feedback.status != XrFoveationStatus::Unavailable {
+                self.foveation_feedback.status = XrFoveationStatus::Pending;
+            }
             Self::notify_changed(emit);
         }
     }

@@ -13,6 +13,16 @@ pub(crate) fn register(builder: &mut mms::RuntimeSpecBuilder<MittensBinding>) {
     builder.namespace("GraphicsSettings", |namespace| {
         namespace.namespace("foveation", |foveation| {
             foveation.api(
+                "status",
+                mms::ValueSignature::new(vec![], mms::ValueType::String),
+                MittensBinding::Api(MittensApi::FoveationStatus),
+            );
+            foveation.api(
+                "applied_quality",
+                mms::ValueSignature::new(vec![], mms::ValueType::Any),
+                MittensBinding::Api(MittensApi::FoveationAppliedQuality),
+            );
+            foveation.api(
                 "quality",
                 mms::ValueSignature::new(vec![mms::ValueType::String], mms::ValueType::Null),
                 MittensBinding::Api(MittensApi::FoveationQualitySet),
@@ -115,6 +125,8 @@ pub(crate) fn supports(api: MittensApi) -> bool {
             | MittensApi::SecondaryMotionPaused
             | MittensApi::FoveationQualitySet
             | MittensApi::FoveationQualityGet
+            | MittensApi::FoveationStatus
+            | MittensApi::FoveationAppliedQuality
     )
 }
 
@@ -126,6 +138,30 @@ impl MittensHost<'_, '_> {
     ) -> Result<mms::HostResponse, mms::HostError> {
         use mms::HostResponse as S;
         match &MittensBinding::Api(api) {
+            MittensBinding::Api(
+                api @ (MittensApi::FoveationStatus | MittensApi::FoveationAppliedQuality),
+            ) => {
+                let operation = "GraphicsSettings.foveation";
+                if !args.is_empty() {
+                    return Err(mms::HostError::failure(operation, "expects no arguments"));
+                }
+                let settings = self.graphics_settings.as_deref().ok_or_else(|| {
+                    mms::HostError::unavailable(
+                        operation,
+                        "graphics settings service is unavailable",
+                    )
+                })?;
+                let feedback = settings.foveation_feedback();
+                let value = if *api == MittensApi::FoveationStatus {
+                    mms::TransportValue::String(feedback.status.as_str().into())
+                } else {
+                    feedback
+                        .applied
+                        .map(|quality| mms::TransportValue::String(quality.as_str().into()))
+                        .unwrap_or(mms::TransportValue::Null)
+                };
+                Ok(S::Transport(value))
+            }
             MittensBinding::Api(MittensApi::MirrorsToggle) => {
                 let [mms::TransportValue::Bool(enabled)] = args.as_slice() else {
                     return Err(mms::HostError::failure(

@@ -1,0 +1,41 @@
+Vive Focus 3 / Adreno 650: Vulkan fragment density map GPU readback
+Optimized development build; features=shell-demo,foveation-validation
+Offscreen stereo target: RGBA8_UNORM, 1712x1712 per eye, asymmetric projections.
+Diagnostic custom shader encodes gl_FragSizeEXT in RG; counts are output pixels, not shader invocations.
+Actual shell uses the same eye-pass/map implementation, with runtime RGBA8_SRGB images.
+
+GPU=Adreno (TM) 650 physical=0x7cafc17610 API=1.1.128 driver=2149855232 vendor=0x5143 device=0x6050002
+fragment_density_map=1 dynamic=0 non_subsampled=1
+fragment_density_map min_texel=Extent2D { width: 32, height: 32 } max_texel=Extent2D { width: 256, height: 256 } invocations=0
+FOVEATION_GPU_CHECK samples=1 quality=off eye=0 full_pixels=2930944 coarse_pixels=0 max_fragment_axis=1
+FOVEATION_GPU_CHECK samples=1 quality=off eye=1 full_pixels=2930944 coarse_pixels=0 max_fragment_axis=1
+FOVEATION_GPU_CHECK samples=1 quality=low eye=0 full_pixels=2370560 coarse_pixels=560384 max_fragment_axis=2
+FOVEATION_GPU_CHECK samples=1 quality=low eye=1 full_pixels=2380800 coarse_pixels=550144 max_fragment_axis=2
+FOVEATION_GPU_CHECK samples=1 quality=medium eye=0 full_pixels=2007040 coarse_pixels=923904 max_fragment_axis=4
+FOVEATION_GPU_CHECK samples=1 quality=medium eye=1 full_pixels=1832960 coarse_pixels=1097984 max_fragment_axis=4
+FOVEATION_GPU_CHECK samples=1 quality=high eye=0 full_pixels=1090560 coarse_pixels=1840384 max_fragment_axis=4
+FOVEATION_GPU_CHECK samples=1 quality=high eye=1 full_pixels=1105920 coarse_pixels=1825024 max_fragment_axis=4
+FOVEATION_GPU_CHECK samples=1 quality=off eye=0 full_pixels=2930944 coarse_pixels=0 max_fragment_axis=1
+FOVEATION_GPU_CHECK samples=1 quality=off eye=1 full_pixels=2930944 coarse_pixels=0 max_fragment_axis=1
+FOVEATION_GPU_CHECK samples=1 quality=high eye=0 full_pixels=1090560 coarse_pixels=1840384 max_fragment_axis=4
+FOVEATION_GPU_CHECK samples=1 quality=high eye=1 full_pixels=1105920 coarse_pixels=1825024 max_fragment_axis=4
+FOVEATION_GPU_CHECK samples=4 quality=off eye=0 full_pixels=2930944 coarse_pixels=0 max_fragment_axis=1
+FOVEATION_GPU_CHECK samples=4 quality=off eye=1 full_pixels=2930944 coarse_pixels=0 max_fragment_axis=1
+FOVEATION_GPU_CHECK samples=4 quality=low eye=0 full_pixels=1600000 coarse_pixels=1330944 max_fragment_axis=2
+FOVEATION_GPU_CHECK samples=4 quality=low eye=1 full_pixels=1612800 coarse_pixels=1318144 max_fragment_axis=2
+FOVEATION_GPU_CHECK samples=4 quality=medium eye=0 full_pixels=1282560 coarse_pixels=1648384 max_fragment_axis=4
+FOVEATION_GPU_CHECK samples=4 quality=medium eye=1 full_pixels=1244160 coarse_pixels=1686784 max_fragment_axis=4
+FOVEATION_GPU_CHECK samples=4 quality=high eye=0 full_pixels=645120 coarse_pixels=2285824 max_fragment_axis=4
+FOVEATION_GPU_CHECK samples=4 quality=high eye=1 full_pixels=599040 coarse_pixels=2331904 max_fragment_axis=4
+FOVEATION_GPU_CHECK samples=4 quality=off eye=0 full_pixels=2930944 coarse_pixels=0 max_fragment_axis=1
+FOVEATION_GPU_CHECK samples=4 quality=off eye=1 full_pixels=2930944 coarse_pixels=0 max_fragment_axis=1
+FOVEATION_GPU_CHECK samples=4 quality=high eye=0 full_pixels=645120 coarse_pixels=2285824 max_fragment_axis=4
+FOVEATION_GPU_CHECK samples=4 quality=high eye=1 full_pixels=599040 coarse_pixels=2331904 max_fragment_axis=4
+FOVEATION_GPU_CHECK PASS: both eyes, 1x/4x MSAA, Off/Low/Medium/High, disable/re-enable and unchanged requests
+
+A 512x512 diagnostic target initially remained 1x1 everywhere. At 1712x1712,
+peripheral coarse fragments appear. Adreno tile/filter choices affect the result;
+a tiny target is insufficient to demonstrate these fixed profiles.
+
+This validates actual coarse shading and disable/re-enable, not a scene FPS gain.
+Visual inspection and controlled scene GPU timing remain separate checks.

@@ -1,15 +1,25 @@
+import { foveation_checkerboard } from "../../assets/components/mitten_droid/checkerboard.mms"
+import { terraced_garden } from "../../assets/components/platforms/terraced_garden.mms"
 import { shell_garden } from "../../assets/components/mitten_droid/garden.mms"
 // Headset shell in MMS, with a native grid backed by the PC's directory listing.
 import { sakura_sky } from "../../assets/components/backgrounds/sakura_sky.mms"
-import { shell, caption, action } from "../../assets/components/mitten_droid/ui.mms"
+import { shell, caption, action, shell_ui_material } from "../../assets/components/mitten_droid/ui.mms"
 import { ui_unlit_material } from "../../assets/components/materials/ui_unlit.mms"
 import { anime_surface } from "../../assets/components/materials/anime_surface.mms"
+import { graphics_settings_panel } from "../../assets/components/panels/graphics_settings_panel.mms"
 import { envelope, decode } from "../../assets/components/mitten_droid/protocol.mms"
 
 BGC.rgba(1.0, 0.80, 0.86, 1.0)
 RendererSettings { preferred_xr_refresh_rate(75) }
+// Runtime capability selection applies this preference; start with Off for A/B.
+GraphicsSettings.foveation.quality("off")
+T.position(-3.2, 1.0, -1.8).scale(0.65, 0.65, 0.65) {
+    graphics_settings_panel({ root_name = "headset_graphics_settings" material = shell_ui_material() foveation_only = true })
+}
 sakura_sky(true)
 shell_garden(1.89,-1.6,-2.6,0)
+T.position(-5.5,-1.6,-9) { terraced_garden() }
+T.position(-5.5,-1.6,-10.7) { foveation_checkerboard() }
 AL.rgb(0.38,0.31,0.39)
 T.position(23,24,-50) { DL.color(1.0,0.88,0.80).intensity(1.4) }
 let pointer_material = ui_unlit_material()

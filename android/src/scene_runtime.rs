@@ -92,6 +92,32 @@ impl PreparedScene {
     }
 }
 impl SceneRuntime {
+    pub fn foveation_quality(
+        &self,
+    ) -> mittens_engine::engine::ecs::system::graphics_settings_system::XrFoveationQuality {
+        self.universe.systems.graphics_settings.foveation_quality()
+    }
+
+    pub fn set_foveation_feedback(
+        &mut self,
+        feedback: mittens_engine::engine::ecs::system::graphics_settings_system::XrFoveationFeedback,
+    ) {
+        if self
+            .universe
+            .systems
+            .graphics_settings
+            .foveation_feedback()
+            .applied
+            != feedback.applied
+        {
+            self.profile.reset(feedback.applied);
+        }
+        self.universe
+            .systems
+            .graphics_settings
+            .set_foveation_feedback(feedback, &mut self.universe.command_queue);
+    }
+
     pub fn set_external_frame(
         &mut self,
         frame: mittens_engine::engine::ecs::system::external_xr_frame::ExternalXrFrame,
@@ -171,6 +197,12 @@ impl SceneRuntime {
                 EyeCamera::from_xr(&views[1])?,
             ]
         };
+        let requested = self.foveation_quality();
+        if let Some((feedback, error)) = self.renderer.set_foveation(requested, &cameras) {
+            self.set_foveation_feedback(feedback);
+            report.line(format!("XR_FOVEATION backend=Vulkan_fragment_density_map requested={} status={} applied={:?} eye_tracking=false error={error:?}",
+                requested.as_str(), feedback.status.as_str(), feedback.applied));
+        }
         let stats: Stats = self
             .renderer
             .draw(index, &self.universe.visuals, &cameras)?;

@@ -86,6 +86,16 @@ impl XrSession {
         directory: Option<&std::path::Path>,
     ) -> Result<Self> {
         let gpu = Gpu::new(instance, system, enable2, requirements, report)?;
+        #[cfg(feature = "foveation-visualization")]
+        if gpu.density_texel.is_none() {
+            return Err("foveation visualization requires enabled fragment density maps; use a normal build on this GPU".into());
+        }
+        #[cfg(feature = "foveation-validation")]
+        crate::foveation_probe::run(
+            gpu.clone(),
+            directory.ok_or("validation needs files directory")?,
+            report,
+        )?;
         // Exactly these handles were created for the runtime-selected GPU.
         let (session, waiter, frames) = unsafe {
             instance.create_session::<xr::Vulkan>(
