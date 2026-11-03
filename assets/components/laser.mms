@@ -1,3 +1,5 @@
+import { emissive_surface } from "./materials/emissive_surface.mms"
+
 // Independent hitscan projectile slot. The caller owns muzzle, sound and cadence.
 // launch({ pose, source_tool, source_user, on_hit }) takes copied world TRS.
 // Reuse a slot after its short animation finishes; concurrent shots need separate slots.
@@ -23,7 +25,7 @@ export fn laser(options) {
         name = beam_name
         T.position(0.0, 0.0, length / 2.0).rotation(-1.57079633, 0.0, 0.0) {
             R.cylinder(radius, length, 8) {
-                Material(MaterialDefinition.toon())
+                emissive_surface()
                 C.rgba(1.0, 0.12, 0.06, 1.0)
                 emission
             }

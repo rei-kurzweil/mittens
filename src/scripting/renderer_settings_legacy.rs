@@ -6,6 +6,9 @@ pub(super) fn apply(
     args: &[Value],
 ) -> Result<(), String> {
     match method {
+        "window_visible" => {
+            *settings = settings.with_window_visible(arg_bool(args, 0)?);
+        }
         "preferred_xr_refresh_rate" => {
             *settings = settings.with_preferred_xr_refresh_rate(arg_f32(args, 0)?)?;
         }

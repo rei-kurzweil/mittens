@@ -5,6 +5,8 @@
 //! while its declarations move into this specification.
 
 use meow_meow_script as mms;
+#[path = "builtin_api_config.rs"]
+mod builtin_api_config;
 #[path = "interaction_runtime_config.rs"]
 mod interaction_runtime_config;
 
@@ -1649,63 +1651,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         builder.signal(name, Vec::new(), MittensBinding::Signal { name });
     }
 
-    builder.namespace("mittens", |namespace| {
-        namespace.api(
-            "smoke",
-            mms::ValueSignature::new(Vec::new(), mms::ValueType::Null),
-            MittensBinding::Api(MittensApi::Smoke),
-        );
-    });
-
-    builder.host_api(
-        "emit_data",
-        mms::ValueSignature::with_optional(
-            vec![
-                mms::ValueType::Component,
-                mms::ValueType::String,
-                mms::ValueType::Any,
-            ],
-            2,
-            mms::ValueType::Null,
-        ),
-        MittensBinding::Api(MittensApi::EmitData),
-    );
-
-    builder.namespace("XrSettings", |namespace| {
-        namespace.namespace("floor", |floor| {
-            floor.api(
-                "set_correction_meters",
-                mms::ValueSignature::new(vec![mms::ValueType::F64], mms::ValueType::Null),
-                MittensBinding::Api(MittensApi::XrFloorCorrectionSet),
-            );
-            floor.api(
-                "correction_meters",
-                mms::ValueSignature::new(vec![], mms::ValueType::F64),
-                MittensBinding::Api(MittensApi::XrFloorCorrectionGet),
-            );
-        });
-    });
-
-    super::host::graphics_settings_api::register(&mut builder);
-
-    super::file_api::register(&mut builder);
-    super::file_browser::register(&mut builder);
-    super::json_api::register(&mut builder);
-
-    builder.namespace("AudioInput", |namespace| {
-        namespace.api(
-            "devices",
-            mms::ValueSignature::new(Vec::new(), mms::ValueType::Array),
-            MittensBinding::Api(MittensApi::AudioInputDevices),
-        );
-    });
-    builder.namespace("AudioOutput", |namespace| {
-        namespace.api(
-            "devices",
-            mms::ValueSignature::new(Vec::new(), mms::ValueType::Array),
-            MittensBinding::Api(MittensApi::AudioOutputDevices),
-        );
-    });
+    builtin_api_config::register(&mut builder);
 
     builder.build()
 }

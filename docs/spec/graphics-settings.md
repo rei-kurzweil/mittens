@@ -159,3 +159,5 @@ through the center and then the peripheral portion of the display. Fine checks
 can alias even with Off; compare changes between settings rather than treating
 aliasing by itself as evidence of foveation. The board leaves all other scenery
 and windows present; the normal build restores the pink sky.
+
+Labeled measurement windows are exposed through the [MMS Benchmark API](benchmark.md).

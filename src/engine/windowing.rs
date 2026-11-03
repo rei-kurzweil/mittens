@@ -69,6 +69,12 @@ impl Windowing {
         frame_hook: Option<Box<dyn FnMut(&mut crate::engine::Universe)>>,
         input_hook: Option<InputHook>,
     ) -> EngineResult<()> {
+        let window_visible = universe.world.all_components().filter_map(|id| {
+            universe.world.get_component_by_id_as::<crate::engine::ecs::component::RendererSettingsComponent>(id)
+        }).last().is_none_or(|settings| settings.window_visible);
+        if !window_visible {
+            return no_window::run(universe, frame_hook, input_hook);
+        }
         let event_loop = EventLoop::new()
             .map_err(|error| EngineError::Windowing(format!("event loop init failed: {error}")))?;
         event_loop.set_control_flow(ControlFlow::Poll);
@@ -108,6 +114,42 @@ struct App {
     frame_hook: Option<Box<dyn FnMut(&mut crate::engine::Universe)>>,
     input_hook: Option<InputHook>,
     startup_error: Option<EngineError>,
+}
+
+impl App {
+    fn draw_frame(&mut self, event_loop: &ActiveEventLoop) {
+        log_startup_progress(StartupCheckpoint::FirstRedrawRequested);
+        let now = Instant::now();
+        let dt = self
+            .last_frame
+            .replace(now)
+            .map(|prev| (now - prev).as_secs_f32())
+            .unwrap_or(0.0);
+
+        let universe = self.universe.as_mut().expect("universe missing");
+
+        let mut input = universe.input_providers.poll();
+        if let Some(hook) = self.input_hook.as_mut() {
+            hook(universe, &mut input);
+        }
+        universe.update(dt, &input);
+
+        if let Some(frame_hook) = self.frame_hook.as_mut() {
+            frame_hook(universe);
+        }
+
+        universe.render();
+
+        if universe.exit_requested() {
+            event_loop.exit();
+            return;
+        }
+
+        if let Some(w) = &self.window {
+            // w.pre_present_notify();
+            w.request_redraw();
+        }
+    }
 }
 
 impl ApplicationHandler for App {
@@ -195,40 +237,13 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::RedrawRequested => {
-                log_startup_progress(StartupCheckpoint::FirstRedrawRequested);
-                let now = Instant::now();
-                let dt = self
-                    .last_frame
-                    .replace(now)
-                    .map(|prev| (now - prev).as_secs_f32())
-                    .unwrap_or(0.0);
-
-                let universe = self.universe.as_mut().expect("universe missing");
-
-                let mut input = universe.input_providers.poll();
-                if let Some(hook) = self.input_hook.as_mut() {
-                    hook(universe, &mut input);
-                }
-                universe.update(dt, &input);
-
-                if let Some(frame_hook) = self.frame_hook.as_mut() {
-                    frame_hook(universe);
-                }
-
-                universe.render();
-
-                if universe.exit_requested() {
-                    event_loop.exit();
-                    return;
-                }
-
-                if let Some(w) = &self.window {
-                    // w.pre_present_notify();
-                    w.request_redraw();
-                }
+                self.draw_frame(event_loop);
             }
 
             _ => {}
         }
     }
 }
+
+#[path = "windowing_no_window.rs"]
+mod no_window;

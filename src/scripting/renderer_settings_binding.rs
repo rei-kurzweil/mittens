@@ -11,6 +11,12 @@ pub(super) fn register(
     host_constructor_and_builder(
         component,
         canonical,
+        "window_visible",
+        component_signature([mms::ValueType::Bool]),
+    );
+    host_constructor_and_builder(
+        component,
+        canonical,
         "preferred_xr_refresh_rate",
         component_signature([mms::ValueType::F32]),
     );

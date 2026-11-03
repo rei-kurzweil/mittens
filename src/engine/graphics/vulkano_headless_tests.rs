@@ -3,6 +3,9 @@ use crate::engine::graphics::{CameraData, GpuRenderable, MaterialHandle, MeshFac
 use vulkano::command_buffer::CopyImageToBufferInfo;
 use vulkano::image::view::ImageViewType;
 
+#[path = "vulkano_ship_startup_tests.rs"]
+mod ship_startup;
+
 /// Exercise the full scene pipelines, per-eye slots, and MSAA resolve without
 /// a display server, Winit, or OpenXR runtime. Acquisition/lifecycle remain the
 /// responsibility of the real-runtime openxr-only example.

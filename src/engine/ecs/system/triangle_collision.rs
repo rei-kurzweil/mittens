@@ -1,4 +1,4 @@
-//! Retained BVH for the small damaged portion of a static surface. Primitive
+//! Retained BVH for damaged surfaces and generated implicit terrain. Primitive
 //! zones elsewhere keep their existing narrow phase and allocation behavior.
 use super::zone_query::ZoneSweepHit;
 use crate::engine::ecs::component::{CollisionShape, CutGeometryComponent};

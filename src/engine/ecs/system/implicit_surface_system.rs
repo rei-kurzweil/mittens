@@ -3,7 +3,8 @@ use std::hash::{Hash, Hasher};
 
 use crate::engine::ecs::component::{
     BackgroundComponent, ColorComponent, EmissiveComponent, ImplicitSphereComponent,
-    ImplicitSurfaceComponent, TransmissiveModel, UnlitComponent, resolve_immediate_transmissive_model,
+    ImplicitSurfaceComponent, TransmissiveModel, UnlitComponent,
+    resolve_immediate_transmissive_model,
 };
 use crate::engine::ecs::system::{MeshBoundsSystem, MeshOutputKind, TransformSystem};
 use crate::engine::ecs::{ComponentId, World};
@@ -44,7 +45,7 @@ struct SphereField {
 impl ImplicitSurfaceSystem {
     pub fn reconcile_and_build(
         &mut self,
-        world: &World,
+        world: &mut World,
         visuals: &mut VisualWorld,
         assets: &mut RenderAssets,
         uploader: &mut dyn MeshUploader,
@@ -74,14 +75,17 @@ impl ImplicitSurfaceSystem {
             let source = super::material_system::MaterialSystem::resolve_source(world, root);
             let binding = source.and_then(|source| {
                 visuals.materials.source_instance(source).or_else(|| {
-                    super::material_system::MaterialSystem::ensure_source(world, visuals, source).ok()
+                    super::material_system::MaterialSystem::ensure_source(world, visuals, source)
+                        .ok()
                 })
             });
             let fingerprint = authored_fingerprint(world, root);
             match self.build_input(world, root) {
                 Ok((spec, spheres, root_model, color, material, emissive, transmission)) => {
                     let material = binding
-                        .and_then(|id| super::material_system::MaterialSystem::program(visuals, id, material))
+                        .and_then(|id| {
+                            super::material_system::MaterialSystem::program(visuals, id, material)
+                        })
                         .unwrap_or(material);
                     if self
                         .outputs
@@ -131,9 +135,15 @@ impl ImplicitSurfaceSystem {
                         .get_component_by_id_as::<ImplicitSurfaceComponent>(root)
                         .expect("root remains a surface")
                         .smooth_min_radius;
-                    match sample_and_extract(spec, &spheres, smooth_min_radius) {
+                    let clip_floor = world
+                        .get_component_by_id_as::<ImplicitSurfaceComponent>(root)
+                        .unwrap()
+                        .clip_floor;
+                    match sample_and_extract_clipped(spec, &spheres, smooth_min_radius, clip_floor)
+                    {
                         Ok(mesh) => {
                             let new_output = if mesh.vertices.is_empty() {
+                                publish_collision(world, root, None);
                                 mesh_bounds.remove(root);
                                 ImplicitOutput {
                                     handle: None,
@@ -156,6 +166,9 @@ impl ImplicitSurfaceSystem {
                                     );
                                     continue;
                                 };
+                                let collision_mesh = world.children_of(root).iter().any(|&id|
+                                    world.get_component_by_id_as::<crate::engine::ecs::component::ZoneComponent>(id).is_some())
+                                    .then(|| std::sync::Arc::new(super::triangle_collision::TriangleMesh::new(&mesh)));
                                 let cpu_mesh = assets.register_mesh(mesh);
                                 let Ok(gpu_mesh) = assets.gpu_mesh_handle(uploader, cpu_mesh)
                                 else {
@@ -169,7 +182,9 @@ impl ImplicitSurfaceSystem {
                                 let mut parent = world.parent_of(root);
                                 let mut background = None;
                                 while let Some(id) = parent {
-                                    if let Some(bg) = world.get_component_by_id_as::<BackgroundComponent>(id) {
+                                    if let Some(bg) =
+                                        world.get_component_by_id_as::<BackgroundComponent>(id)
+                                    {
                                         background = Some(bg.occlusion_and_lighting);
                                         break;
                                     }
@@ -198,6 +213,7 @@ impl ImplicitSurfaceSystem {
                                 if let Some(options) = transmission {
                                     visuals.update_transmission(handle, options);
                                 }
+                                publish_collision(world, root, collision_mesh);
                                 mesh_bounds.register_or_update(
                                     root,
                                     local_bounds,
@@ -375,6 +391,45 @@ impl ImplicitSurfaceSystem {
     }
 }
 
+fn publish_collision(
+    world: &mut World,
+    root: ComponentId,
+    mesh: Option<std::sync::Arc<super::triangle_collision::TriangleMesh>>,
+) {
+    use crate::engine::ecs::component::{CutGeometryComponent, SerializeComponent, ZoneComponent};
+    let zones: Vec<_> = world
+        .children_of(root)
+        .iter()
+        .copied()
+        .filter(|&id| world.get_component_by_id_as::<ZoneComponent>(id).is_some())
+        .collect();
+    for zone in zones {
+        let existing = world.children_of(zone).iter().copied().find(|&id| {
+            world
+                .get_component_by_id_as::<CutGeometryComponent>(id)
+                .is_some()
+        });
+        match (&mesh, existing) {
+            (Some(mesh), Some(id)) => {
+                world
+                    .get_component_by_id_as_mut::<CutGeometryComponent>(id)
+                    .unwrap()
+                    .mesh = mesh.clone();
+            }
+            (Some(mesh), None) => {
+                let id = world.add_component(CutGeometryComponent { mesh: mesh.clone() });
+                world.add_child(zone, id).unwrap();
+                let runtime_only = world.add_component(SerializeComponent::off());
+                world.add_child(id, runtime_only).unwrap();
+            }
+            (None, Some(id)) => {
+                let _ = world.remove_component_subtree(id);
+            }
+            _ => {}
+        }
+    }
+}
+
 fn validate_surface(surface: &ImplicitSurfaceComponent) -> Result<(), String> {
     for axis in 0..3 {
         if !surface.bounds_min[axis].is_finite()
@@ -389,6 +444,9 @@ fn validate_surface(surface: &ImplicitSurfaceComponent) -> Result<(), String> {
     }
     if !surface.iso_level.is_finite() {
         return Err("iso_level must be finite".into());
+    }
+    if surface.clip_floor.is_some_and(|floor| !floor.is_finite()) {
+        return Err("clip_floor must be finite".into());
     }
     if !surface.smooth_min_radius.is_finite() || surface.smooth_min_radius < 0.0 {
         return Err("smooth_min_radius must be finite and non-negative".into());
@@ -495,10 +553,20 @@ fn smooth_min(a: f32, b: f32, radius: f32) -> f32 {
     b * (1.0 - h) + a * h - radius * h * (1.0 - h)
 }
 
+#[cfg(test)]
 fn sample_and_extract(
     spec: ImplicitGridSpec,
     spheres: &[SphereField],
     smooth_min_radius: f32,
+) -> Result<crate::engine::graphics::mesh::CpuMesh, String> {
+    sample_and_extract_clipped(spec, spheres, smooth_min_radius, None)
+}
+
+fn sample_and_extract_clipped(
+    spec: ImplicitGridSpec,
+    spheres: &[SphereField],
+    smooth_min_radius: f32,
+    clip_floor: Option<f32>,
 ) -> Result<crate::engine::graphics::mesh::CpuMesh, String> {
     let nodes = [spec.cells[0] + 1, spec.cells[1] + 1, spec.cells[2] + 1];
     let surface = spheres
@@ -524,6 +592,9 @@ fn sample_and_extract(
                 let mut value = sphere_distance(p, spheres[0]);
                 for sphere in &spheres[1..] {
                     value = smooth_min(value, sphere_distance(p, *sphere), smooth_min_radius);
+                }
+                if let Some(floor) = clip_floor {
+                    value = value.max(floor - p[1] + spec.iso_level);
                 }
                 if (x == 0
                     || x + 1 == nodes[0]
@@ -564,6 +635,7 @@ fn authored_fingerprint(world: &World, root: ComponentId) -> u64 {
         surface.voxel_size.to_bits().hash(&mut hasher);
         surface.iso_level.to_bits().hash(&mut hasher);
         surface.smooth_min_radius.to_bits().hash(&mut hasher);
+        surface.clip_floor.map(f32::to_bits).hash(&mut hasher);
     }
     let root_model = TransformSystem::world_model(world, root).unwrap_or_else(mat4_identity);
     let root_inverse = mat4_inverse(root_model);
@@ -658,6 +730,7 @@ mod tests {
             voxel_size: 0.25,
             iso_level: 0.0,
             smooth_min_radius: 0.0,
+            clip_floor: None,
         });
         let sphere = world.add_component(ImplicitSphereComponent::radius(1.0));
         world.add_child(root, sphere).unwrap();
@@ -668,7 +741,7 @@ mod tests {
         let mut uploader = TestUploader::default();
         let mut bounds = MeshBoundsSystem::default();
         system.reconcile_and_build(
-            &world,
+            &mut world,
             &mut visuals,
             &mut assets,
             &mut uploader,
@@ -680,7 +753,7 @@ mod tests {
         assert!(bounds.output(root).is_some());
 
         system.reconcile_and_build(
-            &world,
+            &mut world,
             &mut visuals,
             &mut assets,
             &mut uploader,
@@ -694,7 +767,7 @@ mod tests {
             .unwrap()
             .radius = 0.8;
         system.reconcile_and_build(
-            &world,
+            &mut world,
             &mut visuals,
             &mut assets,
             &mut uploader,
@@ -705,7 +778,7 @@ mod tests {
 
         world.remove_component_subtree(root).unwrap();
         system.reconcile_and_build(
-            &world,
+            &mut world,
             &mut visuals,
             &mut assets,
             &mut uploader,
@@ -724,6 +797,7 @@ mod tests {
             voxel_size: 0.25,
             iso_level: 0.0,
             smooth_min_radius: 0.0,
+            clip_floor: None,
         });
         let sphere = world.add_component(ImplicitSphereComponent::radius(1.0));
         let color = world.add_component(ColorComponent::rgba(0.7, 0.8, 0.9, 1.0));
@@ -738,7 +812,7 @@ mod tests {
         let mut uploader = TestUploader::default();
         let mut bounds = MeshBoundsSystem::default();
         system.reconcile_and_build(
-            &world,
+            &mut world,
             &mut visuals,
             &mut assets,
             &mut uploader,
@@ -763,6 +837,7 @@ mod tests {
             voxel_size: 0.25,
             iso_level: 0.0,
             smooth_min_radius: 0.0,
+            clip_floor: None,
         });
         let sphere = world.add_component(ImplicitSphereComponent::radius(1.0));
         let color = world.add_component(ColorComponent::rgba(0.7, 0.8, 0.9, 1.0));
@@ -777,7 +852,7 @@ mod tests {
         let mut uploader = TestUploader::default();
         let mut bounds = MeshBoundsSystem::default();
         system.reconcile_and_build(
-            &world,
+            &mut world,
             &mut visuals,
             &mut assets,
             &mut uploader,
@@ -799,6 +874,7 @@ mod tests {
             voxel_size: 0.25,
             iso_level: 0.0,
             smooth_min_radius: 0.0,
+            clip_floor: None,
         });
         let sphere = world.add_component(ImplicitSphereComponent::radius(1.0));
         let mut refraction = RefractionComponent::new();
@@ -814,7 +890,7 @@ mod tests {
         let mut uploader = TestUploader::default();
         let mut bounds = MeshBoundsSystem::default();
         system.reconcile_and_build(
-            &world,
+            &mut world,
             &mut visuals,
             &mut assets,
             &mut uploader,
@@ -835,7 +911,7 @@ mod tests {
             .apply_builder("strength", 0.65)
             .unwrap();
         system.reconcile_and_build(
-            &world,
+            &mut world,
             &mut visuals,
             &mut assets,
             &mut uploader,

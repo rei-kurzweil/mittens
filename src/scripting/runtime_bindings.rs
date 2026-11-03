@@ -36,6 +36,8 @@ pub enum ComponentInitializerKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MittensApi {
+    BenchmarkStart,
+    BenchmarkStop,
     Smoke,
     EmitData,
     BloomToggle,

@@ -9,6 +9,8 @@ use crate::engine::graphics::MsaaMode;
 pub struct RendererSettingsComponent {
     pub msaa4x: bool,
     pub window_size: Option<[u32; 2]>,
+    /// Disable the desktop host window/surface while simulation or XR continues.
+    pub window_visible: bool,
     /// Desired render size in pixels for each XR eye, selected at session creation.
     pub desired_xr_resolution: Option<[u32; 2]>,
     /// Preferred display rate in Hz; unsupported rates leave the runtime default.
@@ -21,6 +23,7 @@ impl RendererSettingsComponent {
         Self {
             msaa4x: true,
             window_size: None,
+            window_visible: true,
             desired_xr_resolution: None,
             preferred_xr_refresh_rate: None,
             transmission_depth_compare: true,
@@ -31,6 +34,7 @@ impl RendererSettingsComponent {
         Self {
             msaa4x: false,
             window_size: None,
+            window_visible: true,
             desired_xr_resolution: None,
             preferred_xr_refresh_rate: None,
             transmission_depth_compare: true,
@@ -41,6 +45,11 @@ impl RendererSettingsComponent {
         if width > 0 && height > 0 {
             self.window_size = Some([width, height]);
         }
+        self
+    }
+
+    pub fn with_window_visible(mut self, visible: bool) -> Self {
+        self.window_visible = visible;
         self
     }
 
@@ -125,6 +134,9 @@ impl Component for RendererSettingsComponent {
         };
         if let Some([w, h]) = self.window_size {
             ce = ce.with_call("window_size", vec![num(w as f64), num(h as f64)]);
+        }
+        if !self.window_visible {
+            ce = ce.with_call("window_visible", vec![b(false)]);
         }
         if let Some([w, h]) = self.desired_xr_resolution {
             ce = ce.with_call(

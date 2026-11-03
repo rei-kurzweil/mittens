@@ -1,7 +1,7 @@
 use crate::engine::ecs::component::texture::TextureSource;
 use crate::engine::ecs::component::{
-    CatEngineTextureFormat, CombineMeshComponent, RenderableComponent, TextureComponent,
-    TextureFilteringComponent,
+    CatEngineTextureFormat, CombineMeshComponent, ImplicitSurfaceComponent, RenderableComponent,
+    TextureComponent, TextureFilteringComponent,
 };
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::{TextureFiltering, TextureHandle, TextureUploader, VisualWorld};
@@ -29,13 +29,20 @@ struct CombinedTextureBinding {
     published: Option<crate::engine::graphics::primitives::InstanceHandle>,
 }
 
+fn is_procedural_texture_target(world: &World, component: ComponentId) -> bool {
+    world
+        .get_component_by_id_as::<CombineMeshComponent>(component)
+        .is_some()
+        || world
+            .get_component_by_id_as::<ImplicitSurfaceComponent>(component)
+            .is_some()
+}
+
 fn is_texture_target(world: &World, component: ComponentId) -> bool {
     world
         .get_component_by_id_as::<RenderableComponent>(component)
         .is_some()
-        || world
-            .get_component_by_id_as::<CombineMeshComponent>(component)
-            .is_some()
+        || is_procedural_texture_target(world, component)
 }
 
 #[derive(Debug, Default)]
@@ -93,10 +100,7 @@ impl TextureSystem {
         while let Some(parent) = world.parent_of(cur) {
             if is_texture_target(world, parent) {
                 self.pending_attach.insert(parent, component);
-                if world
-                    .get_component_by_id_as::<CombineMeshComponent>(parent)
-                    .is_some()
-                {
+                if is_procedural_texture_target(world, parent) {
                     let binding = self.combined_targets.entry(parent).or_default();
                     binding.texture = Some(component);
                     binding.published = None;
@@ -130,10 +134,7 @@ impl TextureSystem {
         while let Some(parent) = world.parent_of(cur) {
             if is_texture_target(world, parent) {
                 self.pending_filtering_attach.insert(parent, component);
-                if world
-                    .get_component_by_id_as::<CombineMeshComponent>(parent)
-                    .is_some()
-                {
+                if is_procedural_texture_target(world, parent) {
                     let binding = self.combined_targets.entry(parent).or_default();
                     binding.filtering = Some(component);
                     binding.published = None;
@@ -164,11 +165,8 @@ impl TextureSystem {
                 .get_component_by_id_as::<TextureFilteringComponent>(id)
                 .is_some()
         });
-        self.combined_targets.retain(|&id, _| {
-            world
-                .get_component_by_id_as::<CombineMeshComponent>(id)
-                .is_some()
-        });
+        self.combined_targets
+            .retain(|&id, _| is_procedural_texture_target(world, id));
         for (&target, binding) in &mut self.combined_targets {
             let handle = visuals.instance_handle_for_component(target);
             if handle != binding.published {

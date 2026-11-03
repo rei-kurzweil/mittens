@@ -326,7 +326,7 @@ pub fn extract_implicit_mesh(
             Ok(CpuVertex {
                 pos,
                 normal: [normal[0] / length, normal[1] / length, normal[2] / length],
-                uv: [0.0, 0.0],
+                uv: [pos[0], pos[2]],
             })
         })
         .collect::<Result<Vec<_>, _>>()?;

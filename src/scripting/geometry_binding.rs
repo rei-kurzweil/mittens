@@ -12,6 +12,7 @@ pub(super) fn register(
             ("voxel_size", 1),
             ("iso_level", 1),
             ("smooth_min_radius", 1),
+            ("clip_floor", 1),
         ],
         "ImplicitSphere" => &[("radius", 1)],
         _ => unreachable!(),

@@ -120,7 +120,16 @@ impl CombineMeshSystem {
                 if let Some(source) = material_source {
                     // Preserve the first source's shared material when the source
                     // geometry is discarded. Its retained values keep updating.
-                    if !world.children_of(root).contains(&source) {
+                    let mut ancestor = world.parent_of(source);
+                    let mut source_inside_batch = false;
+                    while let Some(parent) = ancestor {
+                        if parent == root {
+                            source_inside_batch = true;
+                            break;
+                        }
+                        ancestor = world.parent_of(parent);
+                    }
+                    if source_inside_batch && !world.children_of(root).contains(&source) {
                         if let Err(error) = world.add_child(root, source) {
                             eprintln!("[CombineMesh] cannot retain material: {error}");
                             continue;
@@ -424,6 +433,44 @@ mod tests {
             let handle = MeshHandle(self.0);
             self.0 += 1;
             Ok(handle)
+        }
+    }
+
+    #[test]
+    fn sibling_batches_keep_their_ancestor_material_in_place() {
+        use crate::engine::ecs::component::ShadingComponent;
+        let mut world = World::default();
+        let scene = world.add_component(TransformComponent::new());
+        let material = world.add_component(ShadingComponent::new());
+        world.add_child(scene, material).unwrap();
+        let mut batches = Vec::new();
+        for _ in 0..3 {
+            let batch = world.add_component(CombineMeshComponent::default());
+            let cube = world.add_component(RenderableComponent::cube());
+            world.add_child(scene, batch).unwrap();
+            world.add_child(batch, cube).unwrap();
+            batches.push(batch);
+        }
+        let mut visuals = VisualWorld::default();
+        let mut assets = RenderAssets::new();
+        let mut uploader = TestUploader::default();
+        let mut renderables = RenderableSystem::default();
+        let mut bounds = MeshBoundsSystem::default();
+        let mut system = CombineMeshSystem::default();
+        system.reconcile_and_build(
+            &mut world,
+            &mut visuals,
+            &mut assets,
+            &mut uploader,
+            &mut renderables,
+            &mut bounds,
+        );
+        assert_eq!(world.parent_of(material), Some(scene));
+        let binding = visuals.materials.source_instance(material).unwrap();
+        for batch in batches {
+            let instance = visuals.instance(system.outputs[&batch].handle).unwrap();
+            assert_eq!(instance.renderable.material, MaterialHandle::ANIME_MESH);
+            assert_eq!(instance.material_instance, Some(binding));
         }
     }
 

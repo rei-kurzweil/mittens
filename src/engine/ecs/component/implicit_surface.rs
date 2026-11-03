@@ -7,6 +7,8 @@ pub struct ImplicitSurfaceComponent {
     pub voxel_size: f32,
     pub iso_level: f32,
     pub smooth_min_radius: f32,
+    /// Intersect the field with the half-space above this local Y plane.
+    pub clip_floor: Option<f32>,
 }
 
 impl Default for ImplicitSurfaceComponent {
@@ -17,6 +19,7 @@ impl Default for ImplicitSurfaceComponent {
             voxel_size: 0.15,
             iso_level: 0.0,
             smooth_min_radius: 0.0,
+            clip_floor: None,
         }
     }
 }
@@ -40,7 +43,7 @@ impl Component for ImplicitSurfaceComponent {
     ) -> crate::scripting::ast::ComponentExpression {
         use crate::engine::ecs::component::ce_helpers::{CeBuilder, ce, nums};
 
-        ce("ImplicitSurface")
+        let mut result = ce("ImplicitSurface")
             .with_call(
                 "bounds",
                 nums(
@@ -52,7 +55,11 @@ impl Component for ImplicitSurfaceComponent {
             )
             .with_call("voxel_size", nums([self.voxel_size as f64]))
             .with_call("iso_level", nums([self.iso_level as f64]))
-            .with_call("smooth_min_radius", nums([self.smooth_min_radius as f64]))
+            .with_call("smooth_min_radius", nums([self.smooth_min_radius as f64]));
+        if let Some(floor) = self.clip_floor {
+            result = result.with_call("clip_floor", nums([floor as f64]));
+        }
+        result
     }
 }
 
@@ -108,6 +115,7 @@ mod tests {
             voxel_size: 0.2,
             iso_level: 0.1,
             smooth_min_radius: 0.6,
+            clip_floor: Some(-0.5),
         };
         let world = crate::engine::ecs::World::default();
         let text = unparse_component(&surface.to_mms_ast(&world));

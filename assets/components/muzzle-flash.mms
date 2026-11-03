@@ -1,3 +1,5 @@
+import { emissive_surface } from "./materials/emissive_surface.mms"
+
 // Reusable weapon-mounted sprite animation. Attach root beneath a muzzle.
 export fn muzzle_flash(options) {
     let label = "laser"
@@ -17,7 +19,7 @@ export fn muzzle_flash(options) {
     let first = T.scale(0.0, 0.0, 0.0) {
         name = label + "_muzzle_flash_0"
         R.square() {
-            Material(MaterialDefinition.toon())
+            emissive_surface()
             Texture.with_uri(textures[0])
             TextureFiltering.linear()
             TransparentCutout {}
@@ -27,7 +29,7 @@ export fn muzzle_flash(options) {
     let second = T.position(0.0, 0.0, 0.002).scale(0.0, 0.0, 0.0) {
         name = label + "_muzzle_flash_1"
         R.square() {
-            Material(MaterialDefinition.toon())
+            emissive_surface()
             Texture.with_uri(textures[1])
             TextureFiltering.linear()
             TransparentCutout {}

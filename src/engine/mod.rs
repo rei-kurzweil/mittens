@@ -1,3 +1,4 @@
+pub mod benchmark;
 #[cfg(feature = "desktop")]
 pub mod cli;
 pub mod ecs;

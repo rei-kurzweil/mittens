@@ -694,6 +694,12 @@ fn apply_call(
                 .ok_or("missing RendererSettings after construction")?;
             *settings = settings.with_preferred_xr_refresh_rate(hz)?;
         }
+        "RendererSettings" if method == "window_visible" => {
+            let settings = world
+                .get_component_by_id_as_mut::<RendererSettingsComponent>(id)
+                .ok_or("missing RendererSettings after construction")?;
+            *settings = settings.with_window_visible(bool_arg(args, 0)?);
+        }
         "RendererSettings" if method == "window_size" => {
             let settings = world
                 .get_component_by_id_as::<RendererSettingsComponent>(id)

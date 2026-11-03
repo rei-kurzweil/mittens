@@ -7,9 +7,29 @@ use crate::scripting::runner::{DeferredCallbackMode, RuntimeSpecSession};
 pub(crate) struct AnimationKeyframeEvaluator;
 
 pub(crate) struct SessionCallbackExecutor<'a> {
+    pub benchmarks: &'a mut crate::engine::benchmark::Benchmarks,
+    pub graphics_settings: &'a mut crate::engine::ecs::system::GraphicsSettingsSystem,
     pub session: &'a mut RuntimeSpecSession,
     pub render_assets: &'a mut RenderAssets,
     pub emit: &'a mut dyn SignalEmitter,
+}
+
+impl<'a> SessionCallbackExecutor<'a> {
+    pub(crate) fn new(
+        session: &'a mut RuntimeSpecSession,
+        render_assets: &'a mut RenderAssets,
+        emit: &'a mut dyn SignalEmitter,
+        benchmarks: &'a mut crate::engine::benchmark::Benchmarks,
+        graphics_settings: &'a mut crate::engine::ecs::system::GraphicsSettingsSystem,
+    ) -> Self {
+        Self {
+            session,
+            render_assets,
+            emit,
+            benchmarks,
+            graphics_settings,
+        }
+    }
 }
 
 impl AnimationKeyframeEvaluator {
@@ -104,7 +124,9 @@ impl AnimationKeyframeEvaluator {
                         executor.render_assets,
                         executor.emit,
                         &mut intents,
-                    );
+                    )
+                    .with_benchmarks(executor.benchmarks)
+                    .with_graphics_settings(executor.graphics_settings);
                     executor.session.invoke_keyframe_callback_with_host(
                         callback,
                         effect_profile,

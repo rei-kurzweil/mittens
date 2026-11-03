@@ -203,9 +203,14 @@ impl SceneRuntime {
             report.line(format!("XR_FOVEATION backend=Vulkan_fragment_density_map requested={} status={} applied={:?} eye_tracking=false error={error:?}",
                 requested.as_str(), feedback.status.as_str(), feedback.applied));
         }
+        let benchmark_ticket = self.universe.systems.benchmarks.frame_ticket();
         let stats: Stats = self
             .renderer
             .draw(index, &self.universe.visuals, &cameras)?;
+        self.universe
+            .systems
+            .benchmarks
+            .record_frame(benchmark_ticket, stats.gpu_ms);
         self.profile
             .record(interval, update_ms, assets_ms, stats, report);
         if stats.draws > 0 && !self.announced {
