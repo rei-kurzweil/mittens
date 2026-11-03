@@ -14,12 +14,12 @@ export fn anime_surface() {
             rim_power: f32
         })
     return Material(definition).inputs({
-        shade_color = [0.42, 0.43, 0.52]
-        shade_strength = 0.6
-        shade_threshold = 0.1
-        lit_threshold = 1.6
+        shade_color = [0.25,0.26,0.38]
+        shade_strength = 0.75
+        shade_threshold = 0.05
+        lit_threshold = 2.2
         rim_color = [0.85, 0.9, 1.0]
-        rim_strength = 0.10
-        rim_power = 4.0
+        rim_strength = 0.90
+        rim_power = 2.3
     })
 }

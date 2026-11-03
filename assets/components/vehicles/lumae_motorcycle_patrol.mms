@@ -22,7 +22,12 @@ export fn lumae_motorcycle_patrol() {
         return { running = state.running phase = state.phase elapsed = state.elapsed
             x = state.x yaw = state.yaw direction = state.direction }
     }
-    root.set_running = fn(enabled) { state.running = enabled }
+    root.set_running = fn(enabled) {
+        state.running = enabled
+        bike.reset()
+        if enabled && state.phase == "driving" { bike.translate([0,0,-state.speed]) }
+        if enabled && state.phase == "turning" { bike.rotate([0,state.direction*Math.pi/state.turn_seconds,0]) }
+    }
     fn smaller(a, b) { if a < b { return a } return b }
     fn advance(dt) {
         if !state.running || dt <= 0.0 { return }
@@ -36,17 +41,18 @@ export fn lumae_motorcycle_patrol() {
                 if state.elapsed >= state.wait_seconds - 0.000001 {
                     state.elapsed = 0.0
                     state.phase = "driving"
+                    bike.reset() bike.translate([0,0,-state.speed])
                 }
             } else if state.phase == "driving" {
-                let target = state.direction * 3.5
-                let seconds = Math.abs(target - state.x) / state.speed
-                let step = smaller(remaining, seconds)
-                state.x = state.x + state.direction * state.speed * step
+                let seconds = 7.0/state.speed-state.elapsed
+                let step = smaller(remaining,seconds)
+                state.elapsed = state.elapsed + step
                 remaining = remaining - step
                 if seconds <= step + 0.000001 {
-                    state.x = target
+                    state.x = state.direction*3.5
                     state.elapsed = 0.0
                     state.phase = "turning"
+                    bike.reset() bike.rotate([0,state.direction*Math.pi/state.turn_seconds,0])
                 }
             } else {
                 let step = smaller(remaining, state.turn_seconds - state.elapsed)
@@ -62,13 +68,13 @@ export fn lumae_motorcycle_patrol() {
                     state.elapsed = 0.0
                     state.direction = -state.direction
                     state.phase = "waiting"
+                    bike.reset()
                 }
             }
         }
-        root.update_transform([state.x, 0.0, state.z], [0.0, state.yaw, 0.0], [1.0, 1.0, 1.0])
+        // Only phase bookkeeping runs in MMS; native Velocity integrates the bike.
     }
     // Also exposed for deterministic scene checks and manual preview stepping.
     root.advance = advance
-    on_global("FrameTick", fn(event) { advance(event.dt_sec) })
     return root
 }

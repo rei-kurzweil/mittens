@@ -5,7 +5,7 @@ import { ship_light_pool } from "../ship_lighting.mms"
 export fn ship_mall_coffeeshop() {
     return T {
         name = "ship_mall_coffeeshop"
-        ship_deck([0.0, 2.5], 6.0, 5.0)
+        ship_solid([0,3.3,2.5],[6,0.16,5],[0.35,0.39,0.39])
         ship_light_pool([0.0, 2.7, 1.2], [1.0, 0.80, 0.52], 7.0, 5.0)
         ship_light_pool([0.0, 2.4, -0.7], [1.0, 0.79, 0.50], 4.0, 3.0)
         ship_solid([0.0, 1.6, 5.0], [6.0, 3.2, 0.16], [0.34, 0.31, 0.25])

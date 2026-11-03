@@ -79,6 +79,7 @@ fn ship_xr_avatar_camera_stays_inside_the_bridge_after_initialization() {
     let source = format!(
         r#"
         let xr_view_enabled = true
+        let view_far_distance = 1000.0
         let xr_avatar_enabled = true
         import {{ bisket_humanoid_bone_map }} from "../assets/components/humanoid_bone_maps/bisket.mms"
         import {{ bisket_anime_shading }} from "../assets/components/materials/bisket_anime_shading.mms"
@@ -132,6 +133,18 @@ fn ship_xr_avatar_camera_stays_inside_the_bridge_after_initialization() {
         .visual_camera(mittens_engine::engine::graphics::CameraTarget::Xr)
         .unwrap()
         .eyes;
+    let camera_config = scene
+        .world
+        .get_component_by_id_as::<CameraXRComponent>(camera)
+        .unwrap();
+    assert_eq!(camera_config.z_far, 1000.0);
+    for view in views {
+        let far = view.proj[3][2] / (1.0 + view.proj[2][2]);
+        assert!(
+            (far - 1000.0).abs() < 5.0,
+            "XR projection ignores authored far plane: {far}"
+        );
+    }
     assert_eq!(views.len(), 2, "the XR rig must publish both eye views");
     for view in views {
         let y = view.transform.matrix_world[3][1];

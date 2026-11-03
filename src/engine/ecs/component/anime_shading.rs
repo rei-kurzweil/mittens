@@ -35,13 +35,13 @@ pub struct ShadingComponent {
 }
 
 impl ShadingComponent {
-    pub const DEFAULT_SHADE_COLOR: [f32; 3] = [0.72, 0.50, 0.54];
-    pub const DEFAULT_SHADE_STRENGTH: f32 = 0.30;
-    pub const DEFAULT_SHADE_THRESHOLD: f32 = 0.35;
-    pub const DEFAULT_LIT_THRESHOLD: f32 = 0.55;
+    pub const DEFAULT_SHADE_COLOR: [f32; 3] = [0.28, 0.20, 0.38];
+    pub const DEFAULT_SHADE_STRENGTH: f32 = 0.68;
+    pub const DEFAULT_SHADE_THRESHOLD: f32 = 0.15;
+    pub const DEFAULT_LIT_THRESHOLD: f32 = 0.90;
     pub const DEFAULT_RIM_COLOR: [f32; 3] = [1.0, 0.85, 0.92];
-    pub const DEFAULT_RIM_STRENGTH: f32 = 0.18;
-    pub const DEFAULT_RIM_POWER: f32 = 4.0;
+    pub const DEFAULT_RIM_STRENGTH: f32 = 0.90;
+    pub const DEFAULT_RIM_POWER: f32 = 2.4;
 
     pub fn new() -> Self {
         Self {

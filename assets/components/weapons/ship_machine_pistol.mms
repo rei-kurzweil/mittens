@@ -44,23 +44,23 @@ export fn ship_machine_pistol(label) {
             tool.use_end()
         }
     })
-    on_global("XrButtonDown", fn(event) {
-        if held.active && event.hand == held.hand {
-            if event.control == "LeftTrigger" || event.control == "RightTrigger" {
-                tool.use_start({ user = query("[name='ship_avatar_control']") })
+    // Input is forwarded by the ship controller, never globally subscribed here.
+    grip.ship_input=fn(kind,event) {
+        if !held.active {return}
+        if kind=="XrButtonDown" || kind=="XrButtonUp" {
+            if event.hand==held.hand && (event.control=="LeftTrigger" || event.control=="RightTrigger") {
+                if kind=="XrButtonDown" {tool.use_start({user=query("#ship_avatar_control")})}
+                else {tool.use_end()}
             }
         }
-    })
-    on_global("XrButtonUp", fn(event) {
-        if held.active && event.hand == held.hand {
-            if event.control == "LeftTrigger" || event.control == "RightTrigger" { tool.use_end() }
+        if held.hand=="Desktop" && (kind=="KeyDown" || kind=="KeyUp") && event.code=="Space" {
+            if kind=="KeyDown" {tool.use_start({user=held.pointer})}
+            else {tool.use_end()}
         }
-    })
-    on_global("KeyDown", fn(event) {
-        if held.active && held.hand == "Desktop" && event.code == "Space" { tool.use_start({ user = held.pointer }) }
-    })
-    on_global("KeyUp", fn(event) {
-        if held.active && held.hand == "Desktop" && event.code == "Space" { tool.use_end() }
-    })
-    return grip
+    }
+    return T {
+        name = label + "_assembly"
+        grip
+        for projectile in tool.projectiles { projectile }
+    }
 }

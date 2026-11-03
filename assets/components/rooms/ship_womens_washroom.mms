@@ -1,3 +1,4 @@
+import { ship_washroom_sign } from "../ship_washroom_sign.mms"
 import { ship_tile_solid as ship_solid } from "../ship_tile_solid.mms"
 import { ship_window } from "../ship_window.mms"
 import { ship_box, ship_label } from "../ship_parts.mms"
@@ -9,10 +10,13 @@ import { hand_dryer, paper_towel_dispenser, washroom_sink } from "../washroom_fi
 export fn ship_womens_washroom() {
     return T {
         name = "ship_womens_washroom"
-        // Five-metre tiled room, beneath the raised park deck at Y=5.2.
+        // Five-metre tiled room. The ship places this on the upper west deck.
         ship_solid([3,-0.1,3], [6,0.2,6], null)
         ship_solid([3,5.0,3], [6,0.16,6], null)
         ship_light_pool([3.0, 4.5, 3.0], [0.74, 0.83, 0.73], 5.0, 7.0)
+        T.position(1.0,2.45,-0.12).rotation(0,Math.pi,0) {
+            ship_washroom_sign("women","none","WOMEN")
+        }
         // A 1.8 m opening aligned with the 2 m approach corridor.
         ship_solid([0.05, 2.0, 0.0], [0.1, 4.0, 0.16], [0.52, 0.57, 0.52])
         ship_solid([3.95, 2.0, 0.0], [4.1, 4.0, 0.16], [0.52, 0.57, 0.52])
@@ -56,7 +60,9 @@ export fn ship_womens_washroom() {
                 }
             }
         }
-        ship_label([0.3, 2.15, 5.89], "WOMEN'S WASHROOM", 0.20)
+        T.position(3.0,2.15,5.89).rotation(0,Math.pi,0) {
+            ship_label([-1.5,0,0],"WOMEN'S WASHROOM",0.18)
+        }
         // Three west-side stalls face the sinks/dryers across a clear aisle.
         for z in [1.40, 2.90, 4.40, 5.90] {
             ship_solid([1.15, 1.10, z], [2.30, 2.20, 0.06], [0.30, 0.43, 0.39])

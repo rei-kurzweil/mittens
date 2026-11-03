@@ -81,9 +81,11 @@ fn ship_xr_first_view_is_not_black() -> Result<(), Box<dyn std::error::Error>> {
     let mut scene = crate::engine::Universe::new(Default::default());
     let kiosk = std::env::var_os("SHIP_CAPTURE_HOTDOG").is_some();
     let room = std::env::var("SHIP_CAPTURE_ROOM").unwrap_or_default();
-    let yaw: f32 = if room == "biodomes" {
+    let yaw: f32 = if room == "landing" {
+        std::f32::consts::FRAC_PI_2
+    } else if room == "biodomes" {
         -std::f32::consts::FRAC_PI_2
-    } else if kiosk || room == "washroom" {
+    } else if kiosk || room == "truck" {
         std::f32::consts::PI
     } else {
         0.0
@@ -132,8 +134,11 @@ fn ship_xr_first_view_is_not_black() -> Result<(), Box<dyn std::error::Error>> {
         .to_string()
     } else if !room.is_empty() {
         let camera = match room.as_str() {
-            "washroom" => "T.position(18.0,0.0,12.8)",
+            "washroom" => "T.position(-20.0,5.2,11.2)",
+            "landing" => "T.position(-8.0,5.2,15.0)",
             "biodomes" => "T.position(17.0,5.2,15.0)",
+            "truck" => "T.position(125.0,5.2,17.2)",
+            "truck_cab" => "T.position(124.52,5.2,20.8)",
             _ => panic!("unknown SHIP_CAPTURE_ROOM: {room}"),
         };
         source
@@ -151,6 +156,13 @@ fn ship_xr_first_view_is_not_black() -> Result<(), Box<dyn std::error::Error>> {
             .replace("T.position(0.0, 0.0, -3.0)", "T.position(-7.3, 0.0, 13.0)")
     } else {
         source.to_string()
+    };
+    let source = if matches!(room.as_str(), "biodomes" | "truck" | "truck_cab") {
+        format!(
+            "{source}\nfor label in [\"ship_convenience_shop\",\"ship_liquor_shop\",\"ship_motorhomes\",\"ship_driving_vehicles\"] {{ query(\"#\"+label).set_expanded(true) }}"
+        )
+    } else {
+        source
     };
     scene.load_mms_source_at_path(&source, "examples/ship_interior.mms")?;
     let mut mesh = 1000;
@@ -265,10 +277,16 @@ fn ship_xr_first_view_is_not_black() -> Result<(), Box<dyn std::error::Error>> {
         .flat_map(|p| [p[2], p[1], p[0], p[3]])
         .collect();
     image::save_buffer(
-        if room == "washroom" {
+        if room == "landing" {
+            "/tmp/ship-washroom-landing.png"
+        } else if room == "washroom" {
             "/tmp/ship-washroom.png"
         } else if room == "biodomes" {
             "/tmp/ship-biodomes.png"
+        } else if room == "truck" {
+            "/tmp/ship-pickup.png"
+        } else if room == "truck_cab" {
+            "/tmp/ship-pickup-cab.png"
         } else if kiosk {
             "/tmp/ship-hotdog-stand.png"
         } else {

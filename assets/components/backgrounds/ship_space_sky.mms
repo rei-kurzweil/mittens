@@ -12,6 +12,7 @@ export fn ship_space_sky() {
             nebula_strength: f32, halo_strength: f32, moon_strength: f32 })
     return BG.occlusion_and_lighting() {
         name = "ship_space_sky"
+        // Radius 120 m; the ship's cameras use a 1,000 m far plane.
         T.scale(240.0, 240.0, 240.0) {
             R.sphere() {
                 name = "ship_nebula_and_moon"

@@ -541,12 +541,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     constructor_and_builder(component, "target", strings(1));
                 }
                 "Camera2D" => constructor_and_builder(component, "target", strings(1)),
-                "CameraXR" => {
-                    no_arg_constructors(component, &["on", "off"]);
-                    component
-                        .builder_call("enabled", booleans(1))
-                        .builder_call("target", strings(1));
-                }
+                "CameraXR" => super::camera_xr_binding::configure(component),
                 "Emissive" => {
                     host_constructor(component, canonical, "on", no_args());
                     host_constructor(component, canonical, "off", no_args());

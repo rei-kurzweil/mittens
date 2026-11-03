@@ -1,3 +1,4 @@
+import { ship_vehicle_motion } from "./ship_vehicle_motion.mms"
 import { ship_solid } from "../ship_parts.mms"
 import { ship_vehicle_wheel } from "./ship_vehicle_parts.mms"
 
@@ -6,7 +7,7 @@ import { ship_vehicle_wheel } from "./ship_vehicle_parts.mms"
 // system. Wheels are visual trim; frame, tank, seat and forks take damage.
 export fn motorcycle(color, rider) {
     if color == null { color = [0.48, 0.24, 0.13] }
-    return T {
+    let body = T {
         name = "motorcycle"
         Destroyable.threshold(3.0)
         CombineMesh.keep_transforms() {
@@ -38,4 +39,5 @@ export fn motorcycle(color, rider) {
             if rider != null { rider }
         }
     }
+    return ship_vehicle_motion(body,"motorcycle_velocity")
 }

@@ -1,10 +1,12 @@
+import { emissive_surface } from "./materials/emissive_surface.mms"
+
 // Reusable horizontal three-aspect traffic light.
 //
 // The signal faces local +Z. Each lamp has a five-sided shade: black inward
 // faces surround the emissive lens, with matching yellow outward faces. The
 // open front keeps the lens visible.
 
-fn signal_lens(x, color, signal_name) {
+fn signal_lens(x, color, signal_name, glow) {
     return T.position(x, 0.0, 0.34) {
         name = signal_name
 
@@ -12,7 +14,8 @@ fn signal_lens(x, color, signal_name) {
         T.scale(0.38, 0.38, 1.0) {
             R.circle_2d() {
                 C.rgba(color[0], color[1], color[2], 1.0)
-                EM.on() { intensity(2.0) }
+                emissive_surface()
+                glow
             }
         }
 
@@ -60,10 +63,13 @@ fn signal_lens(x, color, signal_name) {
     }
 }
 
-export fn traffic_light() {
-    return T {
+export fn traffic_light(initial_state, fixed) {
+    let red = EM.on().intensity(2.0)
+    let yellow = EM.on().intensity(2.0)
+    let green = EM.on().intensity(2.0)
+    let signal = T {
         name = "traffic_light"
-        Grabbable {}
+        if fixed { Raycastable.disabled() } else { Grabbable {} }
 
         // A yellow enclosure ties the three horizontal lamp shades together.
         T.position(0.0, 0.0, -0.38).scale(2.25, 0.82, 0.12) {
@@ -71,8 +77,17 @@ export fn traffic_light() {
             R.cube() { C.rgba(0.98, 0.72, 0.08, 1.0) }
         }
 
-        signal_lens(-0.72, [1.0, 0.08, 0.04], "traffic_light_red")
-        signal_lens(0.0, [1.0, 0.72, 0.02], "traffic_light_yellow")
-        signal_lens(0.72, [0.08, 1.0, 0.20], "traffic_light_green")
+        signal_lens(-0.72, [1.0, 0.08, 0.04], "traffic_light_red",red)
+        signal_lens(0.0, [1.0, 0.72, 0.02], "traffic_light_yellow",yellow)
+        signal_lens(0.72, [0.08, 1.0, 0.20], "traffic_light_green",green)
     }
+    signal.set_state = fn(value) {
+        let r=0.04 let y=0.04 let g=0.04
+        if value == "red" || value == null { r=2.0 }
+        if value == "yellow" || value == null { y=2.0 }
+        if value == "green" || value == null { g=2.0 }
+        red.set_intensity(r) yellow.set_intensity(y) green.set_intensity(g)
+    }
+    signal.set_state(initial_state)
+    return signal
 }

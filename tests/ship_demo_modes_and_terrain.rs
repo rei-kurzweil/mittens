@@ -73,21 +73,17 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
         // Native renderer initialization and retained GLTF callbacks have process
         // lifetime state. Exercise each startup preset in its own process.
         for case in ["none", "desktop", "xr", "both", "xr_free", "patrol"] {
-            let output = std::process::Command::new(std::env::current_exe().unwrap())
+            eprintln!("ship startup case {case}");
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
                     "ship_view_flags_rider_patrol_and_clipped_park_ground_work_together",
                     "--nocapture",
                 ])
                 .env("SHIP_DEMO_TEST_CASE", case)
-                .output()
+                .status()
                 .unwrap();
-            assert!(
-                output.status.success(),
-                "{case}: {}\n{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
+            assert!(status.success(), "ship startup case {case} failed");
         }
         return;
     }
@@ -136,7 +132,13 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
         assert_eq!(count("ship_desktop_camera"), usize::from(desktop));
         assert_eq!(count("ship_avatar_control"), usize::from(xr && avatar));
         assert_eq!(count("ship_xr_free_camera"), usize::from(xr && !avatar));
-        assert_eq!(count("ship_lumae_motorcycle_rider"), 1);
+        assert_eq!(count("ship_lumae_motorcycle_rider"), 0);
+        assert_eq!(count("recreational_vehicle"), 0);
+        assert_eq!(count("ship_convenience_store"), 0);
+        assert_eq!(count("ship_liquor_store"), 0);
+        assert_eq!(count("ship_mens_washroom_hallway_stub"), 1);
+        assert_eq!(count("ship_park_load_zone"), 1);
+        assert_eq!(count("ship_park_unload_zone"), 1);
         assert_eq!(count("toilet"), 3);
         assert!(!world.all_components().any(|id| {
             world
@@ -180,49 +182,58 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
                         == mittens_engine::engine::graphics::primitives::CpuMeshHandle::QUAD_2D
                 })
         }));
-        for id in world.all_components() {
-            if !world
-                .get_component_by_id_as::<RenderableComponent>(id)
-                .is_some_and(|r| {
-                    r.renderable.base_mesh
-                        == mittens_engine::engine::graphics::primitives::CpuMeshHandle::CUBE
-                })
-            {
-                continue;
+        let mirror_model =
+            mittens_engine::engine::ecs::system::TransformSystem::world_model(world, mirror)
+                .unwrap();
+        for distance in [0.08, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0] {
+            let point = std::array::from_fn::<_, 3, _>(|axis| {
+                mirror_model[3][axis] - mirror_model[2][axis] * distance
+            });
+            for id in world.all_components() {
+                if !world
+                    .get_component_by_id_as::<RenderableComponent>(id)
+                    .is_some_and(|r| {
+                        r.renderable.base_mesh
+                            == mittens_engine::engine::graphics::primitives::CpuMeshHandle::CUBE
+                    })
+                {
+                    continue;
+                }
+                let m =
+                    mittens_engine::engine::ecs::system::TransformSystem::world_model(world, id)
+                        .unwrap();
+                let inside = (0..3).all(|axis| {
+                    (point[axis] - m[3][axis]).abs()
+                        < (0..3).map(|i| m[i][axis].abs() * 0.5).sum::<f32>() - 0.005
+                });
+                assert!(
+                    !inside,
+                    "opaque cube {id:?} blocks the mirror camera at {point:?}"
+                );
             }
-            let Some(matrix) =
-                mittens_engine::engine::ecs::system::TransformSystem::world_model(world, id)
-            else {
-                continue;
-            };
-            // Every authored cube in this area is axis-aligned (90-degree
-            // fixture turns included), so absolute row sums give its bounds.
-            let half = |axis: usize| (0..3).map(|i| matrix[i][axis].abs() * 0.5).sum::<f32>();
-            let center = matrix[3];
-            let overlaps = center[0] + half(0) > 20.87
-                && center[0] - half(0) < 27.0
-                && (center[1] - 1.8).abs() < half(1)
-                && (center[2] - 13.55).abs() < half(2);
-            assert!(!overlaps, "opaque cube {id:?} blocks the mirror camera");
         }
         // Walkable links must be clear at body height, including the turn
         // into the washroom and the serial connection between both biodomes.
         for (y, points) in [
             (
-                1.3,
+                6.5,
                 vec![
-                    [0.0, 6.6],
-                    [10.0, 6.6],
-                    [10.0, 10.0],
-                    [16.0, 10.0],
-                    [16.0, 12.7],
-                    [18.5, 12.7],
-                    [18.5, 15.0],
+                    [8.0, 15.0],
+                    [-18.0, 15.0],
+                    [-18.0, 11.3],
+                    [-20.5, 11.3],
+                    [-20.5, 9.0],
                 ],
             ),
             (
                 6.5,
-                vec![[8.0, 15.0], [19.0, 15.0], [29.0, 15.0], [35.0, 15.0]],
+                vec![
+                    [8.0, 15.0],
+                    [43.0, 15.0],
+                    [76.0, 15.0],
+                    [79.0, 15.0],
+                    [125.0, 15.0],
+                ],
             ),
         ] {
             for pair in points.windows(2) {
@@ -306,6 +317,14 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
             .last()
             .unwrap();
         assert_eq!(settings.window_visible, desktop);
+        for id in world.all_components() {
+            if let Some(camera) = world.get_component_by_id_as::<CameraXRComponent>(id) {
+                assert_eq!(camera.z_far, 1000.0);
+            }
+            if let Some(camera) = world.get_component_by_id_as::<Camera3DComponent>(id) {
+                assert_eq!(camera.z_far, 1000.0);
+            }
+        }
         let xr_setting = world
             .all_components()
             .filter_map(|id| world.get_component_by_id_as::<XrComponent>(id))
@@ -378,7 +397,10 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
                 "terrain stays within the upper deck slab"
             );
             assert!(mesh.mesh.bounds.max[1] > 0.30 && mesh.mesh.bounds.max[1] < 0.8);
-            let hit = mesh.mesh.ray([-3.8, 2.0, -2.8], [0.0, -1.0, 0.0]).unwrap();
+            let hit = mesh
+                .mesh
+                .ray([-24.0, 2.0, -16.0], [0.0, -1.0, 0.0])
+                .unwrap();
             assert!(
                 (2.0 - hit - 0.43).abs() < 0.08,
                 "tree grove has a smooth raised ground surface"

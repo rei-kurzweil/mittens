@@ -5,6 +5,8 @@ use crate::engine::graphics::CameraTarget;
 #[derive(Debug, Clone, Copy)]
 pub struct CameraXRComponent {
     pub enabled: bool,
+    pub z_near: f32,
+    pub z_far: f32,
 
     // Cached ECS id (runtime-only). Filled in during init.
     pub component_id: Option<ComponentId>,
@@ -23,6 +25,8 @@ impl CameraXRComponent {
     pub fn new(enabled: bool) -> Self {
         Self {
             enabled,
+            z_near: Self::DEFAULT_Z_NEAR,
+            z_far: Self::DEFAULT_Z_FAR,
             component_id: None,
             target: CameraTarget::Xr,
         }
@@ -86,6 +90,7 @@ impl Component for CameraXRComponent {
         if !matches!(self.target, CameraTarget::Xr) {
             ce = ce.with_call("target", vec![s(target_str)]);
         }
-        ce
+        ce.with_call("near", vec![num(self.z_near as f64)])
+            .with_call("far", vec![num(self.z_far as f64)])
     }
 }

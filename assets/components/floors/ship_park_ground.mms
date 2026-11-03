@@ -5,14 +5,16 @@ fn smooth_min(a, b) {
     return b * (1.0 - h) + a * h - 0.7 * h * (1.0 - h)
 }
 
-export fn park_ground_height(x, z) {
+export fn park_ground_height(x, z, extent_factor) {
+    let xs = [-3.8,3.8] let zs = [-2.8,2.8]
+    if extent_factor == 4 { xs=[-24,-8,8,24] zs=[-16,-6,6,16] }
     let low = 0.0
     let high = 0.8
     for iteration in range(18) {
         let y = (low + high) / 2.0
         let field = 100.0
-        for cx in [-3.8, 3.8] {
-            for cz in [-2.8, 2.8] {
+        for cx in xs {
+            for cz in zs {
                 let dx = x - cx
                 let dz = z - cz
                 let a = Math.sqrt(dx*dx + (y+2.05)*(y+2.05) + dz*dz) - 2.4
@@ -26,33 +28,48 @@ export fn park_ground_height(x, z) {
     return high
 }
 
-export fn ship_park_ground() {
+export fn ship_park_ground(extent_factor) {
+    if extent_factor == null { extent_factor=1 }
+    let xs = [-3.8,3.8] let zs = [-2.8,2.8] let voxel = 0.12
+    if extent_factor == 4 { xs=[-24,-8,8,24] zs=[-16,-6,6,16] voxel=0.24 }
     let grass = Material(MaterialDefinition.anime())
     return T {
         name = "ship_park_ground"
-        T.position(0.0, 0.004, 0.0).rotation(-Math.pi/2.0, 0.0, 0.0).scale(16.0, 12.0, 1.0) {
+        T.position(0.0, 0.004, 0.0).rotation(-Math.pi/2.0, 0.0, 0.0).scale(16.0*extent_factor,12.0*extent_factor,1.0) {
             R.plane() {
                 grass C.rgba(1.0, 1.0, 1.0, 1.0)
-                UV.uv(-8.0, 6.0).uv(8.0, 6.0).uv(8.0, -6.0).uv(-8.0, -6.0)
+                UV.uv(-8*extent_factor,6*extent_factor).uv(8*extent_factor,6*extent_factor).uv(8*extent_factor,-6*extent_factor).uv(-8*extent_factor,-6*extent_factor)
                 Texture.with_uri("assets/textures/grass/ship-park-grass.png")
                 TextureFiltering.linear()
             }
         }
-        ImplicitSurface.bounds(-6.9, -0.30, -5.5, 6.9, 1.0, 5.5)
-            .voxel_size(0.12).smooth_min_radius(0.7).clip_floor(-0.08) {
-            name = "ship_park_rolling_hills"
+        let chunks = 1
+        if extent_factor == 4 { chunks = 4 }
+        for chunk in range(chunks) {
+            let xlo=-6.9 let xhi=6.9 let zlo=-5.5 let zhi=5.5
+            let label="ship_park_rolling_hills"
+            if extent_factor == 4 {
+                xlo=-27.6 xhi=0 zlo=-22 zhi=0
+                if chunk%2 == 1 { xlo=0 xhi=27.6 }
+                if chunk>=2 { zlo=0 zhi=22 }
+                if chunk>0 { label=label+"_"+chunk }
+            }
+        ImplicitSurface.bounds(xlo,-0.30,zlo,xhi,1.0,zhi)
+            .voxel_size(voxel).smooth_min_radius(0.7).clip_floor(-0.08) {
+            name = label
             grass C.rgba(1.0, 1.0, 1.0, 1.0)
             Texture.with_uri("assets/textures/grass/ship-park-grass.png")
             TextureFiltering.linear()
             // This zone receives the generated triangle mesh, keeping foot
             // contacts on the same smooth surface that is rendered.
-            Zone.cube([6.9, 1.0, 5.5]) { Collidable.static().friction(0.8) {} }
-            for x in [-3.8, 3.8] {
-                for z in [-2.8, 2.8] {
+            Zone.cube([6.9*extent_factor,1.0,5.5*extent_factor]) { Collidable.static().friction(0.8) {} }
+            for x in xs {
+                for z in zs {
                     T.position(x, -2.05, z) { ImplicitSphere.radius(2.4) }
                     T.position(x+0.65, -2.10, z+0.2) { ImplicitSphere.radius(2.3) }
                 }
             }
+        }
         }
     }
 }

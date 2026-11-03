@@ -11,6 +11,8 @@ import { accordion_down_arrow_icon } from "../../icons.mms"
 //   toggle_icon_color optional minimize-arrow RGBA
 //   toggle_icon_glow_intensity optional minimize-arrow emissive strength
 //   toggle_icon      optional component replacing the disclosure glyph
+//   initial_expanded optional boolean, defaults to true
+//   toggle_decoration optional fixed component behind the rotating glyph
 //   material         optional self-contained panel material, retained on grab
 //   children         ordered retained title-bar component objects
 //   title_bar        optional component replacing the standard title bar;
@@ -41,6 +43,7 @@ export fn accordion_body(content) {
 }
 
 export fn accordion(options) {
+    let state = { expanded = options["initial_expanded"] != false }
     let root_name = options.root_name
     let width_gu = options.width_gu
     let accordion_unit_scale = options.unit_scale
@@ -89,6 +92,11 @@ export fn accordion(options) {
             background_z(-0.015)
             color([0.97, 0.99, 1.0, 1.0])
         }
+        T.position(ACCORDION_TOGGLE_WIDTH_GU/2.0*accordion_unit_scale,
+            -ACCORDION_TITLE_HEIGHT_GU/2.0*accordion_unit_scale,-0.035)
+            .scale(1.62*accordion_unit_scale,1.62*accordion_unit_scale,1.62*accordion_unit_scale) {
+            options["toggle_decoration"]
+        }
         toggle_icon
     }
 
@@ -99,7 +107,7 @@ export fn accordion(options) {
             flex_direction("column")
             width(100%)
         }
-        options.body
+        if state.expanded { options.body }
     }
 
     let drag_target = "../../#" + root_name
@@ -146,25 +154,31 @@ export fn accordion(options) {
         panel_root
     }
 
-    on(toggle, "Click", fn(event) {
+    fn set_expanded(value) {
+        if value == state.expanded { return }
+        state.expanded = value
         let current_body = body_mount.query("#accordion_body")
-        if current_body {
-            current_body.remove_subtree()
-            toggle_icon.update_transform(
-                [ACCORDION_TOGGLE_WIDTH_GU / 2.0 * accordion_unit_scale, -ACCORDION_TITLE_HEIGHT_GU / 2.0 * accordion_unit_scale, 0.02],
-                [0.0, 0.0, -1.570796],
-                [1.62 * accordion_unit_scale, 1.62 * accordion_unit_scale, 1.0],
-            )
-            emit_data(panel_root, "AccordionMinimized", body_mount)
-        } else {
-            toggle_icon.update_transform(
-                [ACCORDION_TOGGLE_WIDTH_GU / 2.0 * accordion_unit_scale, -ACCORDION_TITLE_HEIGHT_GU / 2.0 * accordion_unit_scale, 0.02],
-                [0.0, 0.0, 0.0],
-                [1.62 * accordion_unit_scale, 1.62 * accordion_unit_scale, 1.0],
-            )
-            emit_data(panel_root, "AccordionRestoreRequested", body_mount)
+        let angle = 0.0
+        if !value {
+            angle = -1.570796
+            if current_body { current_body.remove_subtree() }
         }
-    })
+        toggle_icon.update_transform(
+            [ACCORDION_TOGGLE_WIDTH_GU/2.0*accordion_unit_scale,-ACCORDION_TITLE_HEIGHT_GU/2.0*accordion_unit_scale,0.02],
+            [0,0,angle],[1.62*accordion_unit_scale,1.62*accordion_unit_scale,1.0])
+        if value { emit_data(panel_root,"AccordionRestoreRequested",body_mount) }
+        else { emit_data(panel_root,"AccordionMinimized",body_mount) }
+    }
+    panel_root.set_expanded = set_expanded
+    panel_root.is_expanded = fn() { return state.expanded }
+    layout_slot.set_expanded = set_expanded
+    layout_slot.is_expanded = fn() { return state.expanded }
+    if !state.expanded {
+        toggle_icon.update_transform(
+            [ACCORDION_TOGGLE_WIDTH_GU/2.0*accordion_unit_scale,-ACCORDION_TITLE_HEIGHT_GU/2.0*accordion_unit_scale,0.02],
+            [0,0,-1.570796],[1.62*accordion_unit_scale,1.62*accordion_unit_scale,1.0])
+    }
+    on(toggle,"Click",fn(event) { set_expanded(!state.expanded) })
 
     return layout_slot
 }

@@ -7,7 +7,7 @@ import { retail_peg_stand } from "../retail_peg_stand.mms"
 export fn ship_retail_store(title, product_color, grocery_stock) {
     return T {
         name = "ship_retail_store"
-        ship_deck([0.0, 3.0], 12.0, 6.0)
+        ship_solid([0,3.3,3],[12,0.16,6],[0.35,0.39,0.39])
         ship_solid([0.0, 1.6, 6.0], [12.0, 3.2, 0.16], [0.36, 0.41, 0.35])
         for side in [-1.0, 1.0] {
             ship_solid([side * 6.0, 1.6, 3.0], [0.16, 3.2, 6.0], [0.36, 0.41, 0.35])

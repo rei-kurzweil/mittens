@@ -4,6 +4,7 @@ pub mod ast {
 pub mod block_effect_analyzer {
     pub use meow_meow_script::block_effect_analyzer::*;
 }
+mod camera_xr_binding;
 pub mod component_method_registry;
 pub mod component_registry;
 mod configured_registry;
@@ -92,3 +93,6 @@ mod xr_flying_tests;
 
 #[cfg(test)]
 mod gravity_mode_tests;
+
+#[cfg(test)]
+mod accordion_tests;

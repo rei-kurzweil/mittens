@@ -2074,11 +2074,7 @@ fn create_component(
             }
             Ok(id)
         }
-        "CameraXR" => match ctor {
-            Some("off") => add!(CameraXRComponent::off()),
-            Some("on") => add!(CameraXRComponent::on()),
-            _ => add!(CameraXRComponent::on()),
-        },
+        "CameraXR" => add!(super::camera_xr_binding::construct(ctor, args)?),
         "Pointer" => match ctor {
             Some("disabled") => add!(PointerComponent::disabled()),
             Some(method @ ("min_grab_distance"
@@ -3896,17 +3892,7 @@ fn apply_call(
         return Ok(());
     }
     if let Some(cxr) = world.get_component_by_id_as_mut::<CameraXRComponent>(id) {
-        match method {
-            "enabled" => cxr.enabled = arg_bool(args, 0)?,
-            "target" => {
-                cxr.target = match arg_str(args, 0)? {
-                    "window" => CameraTarget::Window,
-                    _ => CameraTarget::Xr,
-                };
-            }
-            _ => {}
-        }
-        return Ok(());
+        return super::camera_xr_binding::apply(cxr, method, args);
     }
     if let Some(bg) = world.get_component_by_id_as_mut::<BackgroundComponent>(id) {
         match method {

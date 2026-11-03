@@ -163,5 +163,5 @@ export fn laser_machine_pistol(options) {
             }
         }
     }
-    return { root = root animation = burst semi_animation = semi auto_animation = automatic device_state = device_state use_start = use_start use_end = use_end flash = flash mode_selector = mode_selector set_mode = set_mode }
+    return { root = root projectiles = [first.root, second.root, third.root] animation = burst semi_animation = semi auto_animation = automatic device_state = device_state use_start = use_start use_end = use_end flash = flash mode_selector = mode_selector set_mode = set_mode }
 }

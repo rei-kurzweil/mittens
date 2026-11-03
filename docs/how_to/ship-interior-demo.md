@@ -13,6 +13,7 @@ The flags at the top of that MMS file control startup:
 | `desktop_view_enabled` | Desktop window, renderer output and fly-camera/input rig |
 | `xr_view_enabled` | OpenXR startup and tracked camera/input rig |
 | `xr_avatar_enabled` | Mitten embodiment when XR is enabled; false uses a free XR rig |
+| `view_far_distance` | Shared desktop/XR far plane in metres; defaults to 1,000 |
 | `bloom_enabled` | Initial bloom graph; the cafeteria panel can change graphics settings live |
 
 Desktop only uses true/false for the first two flags, XR only uses false/true,
@@ -26,26 +27,70 @@ wall; graphics controls are on the cafeteria wall. The scene has no editor wrapp
 or editor UI. The washroom has a wide mirror,
 three stalls opposite two sinks, hand dryers, towels, and a recessed waste bin.
 
-The cafeteria is 22 m wide with an 8.5 m ceiling. Its east ground-floor door
-leads through a tiled passage around the corner into the washroom. The bridge
-hall connects only to the cafeteria and side barracks. Pool ceramic tiles cover
-the washroom shell, stalls, vanity, and its approach passage. The washroom has a
-5 m ceiling and six small clerestory windows; ceiling spotlights light the barracks.
+The cafeteria is 22 m wide with an 8.5 m ceiling. Go up its stairs to the
+5.2 m landing: the washrooms are through the west passage, opposite the east
+exit to Cherry Grove. Follow the blue polygon pictogram signs at the stair foot,
+landing, junction and door. The women's corridor turns around the corner into
+the room; the men's branch currently ends at a labelled closed cap. The tiled
+women's washroom retains its 5 m ceiling, six clerestory windows and clear space
+behind the mirror on the west side. The bridge hall serves the side barracks
+and cafeteria only.
 
-The cafeteria stairs reach the 5.2 m upper landing above the washroom. Continue
-into Cherry Grove, then through its east exit and short connector to the larger
-vehicle biodome. The vehicle lot is no longer opposite the park across the
-cafeteria. Both domes retain open frames without alpha pane layers.
+Cherry Grove is a 64 x 48 m rectangular clear enclosure with twenty cherry trees.
+Its east connector leads into the 96 x 144 m vehicle enclosure. Vehicles and
+shops stay clustered near that enclosure's centre, leaving open driving space.
+Both enclosures retain flat roof grids without alpha pane overlays.
+
+Two separated, non-solid doorway zones control outdoor loading. The inner zone
+at the tree-area door collapses the two trailer-park stores and both vehicle
+groups. Entering the grass-side zone expands all four. They start collapsed,
+so their contents aren't constructed at ship startup. The zones have a gap to
+avoid repeated opposing transitions while standing in the doorway. Desktop,
+free XR and embodied XR each have an observed player collision zone.
 
 One motorcycle in the trailer park carries Lumae. Its passenger is attached to
 the seat with an authored pose, and its small state object alternates waiting,
-driving along the central lane, and a smooth half-turn. The demo is kinematic;
+driving along the central lane, and a half-turn. Its MMS state only schedules
+velocity changes at phase boundaries; native Velocity integrates the bike. The demo is kinematic;
 it is not a player riding controller. The second motorcycle remains parked.
 
 The cafeteria also has an open hot-dog stand along its west wall, beside the
 three restaurant bays. Lumae holds a tray behind the grill; a four-flavor drink
 fountain sits on the counter, and a mini-fridge rides in the pickup bed. These
 are visual prototypes, without purchasing or dispensing interactions yet.
+
+Each of the six vendors has an independent accordion title control: coffee,
+noodles, grill, hot dogs, convenience, and liquor. Click the arrow to unload the
+store's content, lights and fixture collisions; click again to construct fresh
+content. The control and storefront floor remain loaded. Motorhomes form one additional
+accordion group; pickups and motorcycles form another. The barracks inventory
+also has its own control, while its shell and ceiling lights remain loaded.
+Traffic lights sit behind the disclosure chevrons: red means collapsed, yellow
+is the load request, and green means expanded. Manual toggles remain available.
+No editor is involved. A single persistent `ship_input_controller` uses the
+existing `on_global` API and forwards input only to live vehicle and weapon
+instances. Streamed assets register no global callbacks. The same controller
+advances the motorcycle patrol when it is loaded.
+
+Pickups have a hollow front cab, two seats, a steering wheel, left-side brake
+and accelerator pedals, a central shifter, three dashboard mounting rails, and
+an empty radio recess. RPM, speed, fuel and odometer faces are static placeholders.
+The opaque body and interior share one retained destroyable combined mesh;
+wheels, transparent glass, labels and emissive tail lamps remain separate.
+
+To drive, stand beside the left door and point at the truck. Use XR grip or a
+desktop left click to enter; use the left grip or another left click to exit.
+W/S drive forward/reverse, A/D steer, and Space brakes. XR uses the left stick.
+Each vehicle factory returns an existing `Velocity.rotation_basis(body)` component
+with one immediate child vehicle transform. Native Velocity integrates translation
+and turning; `reset()` stops it. Input publishes changed velocity commands, and
+only a mounted truck that is driving and steering needs its forward velocity
+refreshed by the controller as its heading changes. No MMS script writes the
+vehicle pose every frame. There are no new Velocity modes or MMS event APIs.
+The Rider system attaches the player to the driver's eye anchor and suspends
+pedestrian movement until exit. This remains a kinematic driving prototype;
+it does not yet solve vehicle-to-vehicle crash physics. RVs are near-white with
+single grey translucent panes over actual wall openings.
 
 All pickups default to beige-brown paint with a custom metallic material:
 scene-light specular highlights, a chrome matcap, and a strong rim. Lighting can
@@ -56,7 +101,9 @@ retained destroyable mesh panels. Finish parameters live in
 
 The regular park's low implicit hills are clipped into the upper deck slab,
 textured in the X/Z plane, and use their generated triangles for collision.
-Unchanged fields retain their visual and collision meshes. Paths remain level.
+The enlarged ground is split into four implicit fields so each grid remains
+within the engine's axis limit. Unchanged fields retain their visual and collision
+meshes. Paths remain level.
 
 For other terrain components, `ImplicitSurface.clip_floor(y)` intersects the
 field with the region above a local Y plane. A direct `Zone` child receives the
@@ -64,13 +111,15 @@ generated contact mesh; add `Collidable.static()` beneath that zone to walk on
 it. Texture coordinates project local X/Z at one repeat per metre, and texture
 bindings follow regenerated surface outputs.
 
-Default ship surfaces inherit `MaterialDefinition.anime()` from the scene root;
+Anime defaults and shared presets now use much stronger, broader rim lighting,
+a longer light/shade ramp and a deeper shadow tint. Default ship surfaces
+inherit `MaterialDefinition.anime()` from the scene root;
 custom metal, sky, emission, and unlit materials keep their authored appearance.
-The window panes and dome panels currently render as clear openings with their
+The building window panes and enclosure panels currently render as clear openings with their
 frames retained, avoiding overlapping alpha layers in front of the space sky.
 Bridge and cafeteria window collision barriers remain in place.
 
-The washroom mirror uses a single plane and an open border. The east wall behind
+The washroom mirror uses a single plane and an open border. The wall behind
 the vanity is visually open, with an invisible collision boundary; keep that
 space empty so the reflected camera can see the player through the wall opening.
 
@@ -86,6 +135,10 @@ cargo run --release --example generate-ship-grass-texture
 cargo run --release --example generate-peanut-butter-texture
 cargo run --release --example generate-ship-nebula-texture
 ```
+
+The sky keeps its original 120 m radius. Its former clipping was caused by the
+XR camera's old 100 m far plane; both ship cameras now use 1,000 m, adjustable
+with `view_far_distance` at the top of the example.
 
 The generators accept an optional output directory after `--`. Palette and seed
 constants live in the Rust source so the artwork can be refined and reproduced.

@@ -1,3 +1,5 @@
+#[path = "xr_camera_projection.rs"]
+mod camera_projection;
 #[path = "openxr_tracked_frame.rs"]
 mod tracked_frame;
 
@@ -2101,25 +2103,7 @@ impl OpenXRSystem {
         raw_head: openxr::Posef,
         views: &[openxr::View],
     ) -> Option<Vec<CameraData>> {
-        let world_from_stage = Self::tracking_world_frame(world, visuals, raw_head)?;
-        Some(
-            views
-                .iter()
-                .map(|v| {
-                    let world_from_eye =
-                        Self::mul_mat4(&world_from_stage, &Self::mat4_from_pose(v.pose));
-                    CameraData {
-                        view: Self::invert_affine_transform(&world_from_eye),
-                        proj: Self::proj_from_fov_rh_zo(
-                            v.fov,
-                            CameraXRComponent::DEFAULT_Z_NEAR,
-                            CameraXRComponent::DEFAULT_Z_FAR,
-                        ),
-                        transform: Self::transform_from_matrix_world(world_from_eye),
-                    }
-                })
-                .collect(),
-        )
+        camera_projection::eye_cameras(world, visuals, raw_head, views)
     }
 
     fn drive_head_pose(
