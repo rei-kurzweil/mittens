@@ -1,3 +1,4 @@
+import { ship_environment_material } from "../materials/ship_anime_materials.mms"
 // Low rolling mounds grown from smoothly fused sphere fields, clipped into the
 // upper deck slab so no hidden sphere geometry protrudes into the washrooms.
 fn smooth_min(a, b) {
@@ -32,7 +33,7 @@ export fn ship_park_ground(extent_factor) {
     if extent_factor == null { extent_factor=1 }
     let xs = [-3.8,3.8] let zs = [-2.8,2.8] let voxel = 0.12
     if extent_factor == 4 { xs=[-24,-8,8,24] zs=[-16,-6,6,16] voxel=0.24 }
-    let grass = Material(MaterialDefinition.anime())
+    let grass = ship_environment_material()
     return T {
         name = "ship_park_ground"
         T.position(0.0, 0.004, 0.0).rotation(-Math.pi/2.0, 0.0, 0.0).scale(16.0*extent_factor,12.0*extent_factor,1.0) {

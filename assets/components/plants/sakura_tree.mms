@@ -44,15 +44,15 @@ fn branch(depth, length, width, wood, blossoms, seed, flowers) {
 export fn sakura_tree(depth, length, width) {
     let definition = MaterialDefinition.anime()
     let wood = Material(definition).inputs({
-        shade_color = [0.25,0.18,0.30]
-        shade_strength = 0.72
-        rim_strength = 0.90
+        shade_color = [0.42, 0.35, 0.43]
+        shade_strength = 0.55
+        rim_strength = 0.15
     })
     let blossoms = Material(definition).inputs({
-        shade_color = [0.43,0.25,0.40]
-        shade_strength = 0.65
+        shade_color = [0.75, 0.58, 0.70]
+        shade_strength = 0.30
         rim_color = [1.0, 0.90, 0.95]
-        rim_strength = 0.90
+        rim_strength = 0.18
     })
     // Four levels / 27 leaf nodes by default at depth=3. Bound recursion for XR.
     if depth < 0 { depth = 0 }

@@ -1,3 +1,4 @@
+import { ship_environment_material } from "../materials/ship_anime_materials.mms"
 import { laser_machine_pistol } from "../laser-machine-pistol.mms"
 import { mini_explosion } from "../mini-explosion.mms"
 
@@ -6,7 +7,7 @@ import { mini_explosion } from "../mini-explosion.mms"
 export fn ship_machine_pistol(label) {
     let scale = 0.085
     let hand_offset = 0.05
-    let material = Material(MaterialDefinition.anime())
+    let material = ship_environment_material()
     fn impact(hit) {
         Damage.at(hit.hit_point[0], hit.hit_point[1], hit.hit_point[2], 0.28, 1.0)
         let effect = mini_explosion(hit.hit_point, 2.0)

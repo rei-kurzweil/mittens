@@ -179,9 +179,9 @@ impl From<AnimeShadingParams> for std::sync::Arc<[f32]> {
 impl Default for AnimeShadingParams {
     fn default() -> Self {
         Self {
-            shade_color_strength: [0.28, 0.20, 0.38, 0.68],
+            shade_color_strength: [0.72, 0.50, 0.54, 0.30],
             rim_color: [1.0, 0.85, 0.92, 0.0],
-            controls: [0.15, 0.90, 0.90, 2.4],
+            controls: [0.35, 0.55, 0.18, 4.0],
         }
     }
 }

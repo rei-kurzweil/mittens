@@ -1,3 +1,4 @@
+import { ship_environment_material } from "./materials/ship_anime_materials.mms"
 import { traffic_light } from "./traffic_light.mms"
 import { accordion_down_arrow_icon } from "./icons.mms"
 import { accordion, accordion_body } from "./internal/ui/accordion.mms"
@@ -6,7 +7,7 @@ import { ship_solid } from "./ship_parts.mms"
 fn content(label, factory) {
     return T {
         name = label + "_content"
-        Material(MaterialDefinition.anime())
+        ship_environment_material()
         factory()
     }
 }

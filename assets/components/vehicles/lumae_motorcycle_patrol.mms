@@ -1,3 +1,4 @@
+import { ship_avatar_material } from "../materials/ship_anime_materials.mms"
 import { motorcycle } from "./motorcycle.mms"
 import { pose as riding_pose } from "../characters/lumae/poses/motorcycle-seated.pose.mms"
 
@@ -10,7 +11,7 @@ export fn lumae_motorcycle_patrol() {
         speed = 0.7 wait_seconds = 2.5 turn_seconds = 2.0 }
     let rider = GLTF("assets/components/characters/lumae/lumae.glb") {
         name = "ship_lumae_motorcycle_rider"
-        Material(MaterialDefinition.anime())
+        ship_avatar_material()
         riding_pose()
     }
     let bike = motorcycle([0.52, 0.24, 0.12], rider)

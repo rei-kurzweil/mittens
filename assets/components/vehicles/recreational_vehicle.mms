@@ -1,3 +1,4 @@
+import { ship_environment_material } from "../materials/ship_anime_materials.mms"
 import { ship_vehicle_motion } from "./ship_vehicle_motion.mms"
 import { vehicle_glass, vehicle_window_wall } from "./vehicle_glass.mms"
 import { ship_solid, ship_lamp } from "../ship_parts.mms"
@@ -16,7 +17,7 @@ export fn recreational_vehicle(slide_extension) {
         name = "recreational_vehicle"
         Destroyable.threshold(3.0)
         CombineMesh.keep_transforms() {
-            Material(MaterialDefinition.anime())
+            ship_environment_material()
             ship_solid([0.0, 0.61, 0.1], [2.8, 0.16, 6.4], [0.31, 0.29, 0.22])
             ship_solid([0.0, 3.02, 0.55], [2.8, 0.14, 5.5], beige)
             vehicle_window_wall([0,1.82,3.3],[2.8,2.4,0.12],[0,2.12,3.3],[1.6,0.65],beige,true)

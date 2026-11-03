@@ -82,7 +82,7 @@ fn ship_xr_avatar_camera_stays_inside_the_bridge_after_initialization() {
         let view_far_distance = 1000.0
         let xr_avatar_enabled = true
         import {{ bisket_humanoid_bone_map }} from "../assets/components/humanoid_bone_maps/bisket.mms"
-        import {{ bisket_anime_shading }} from "../assets/components/materials/bisket_anime_shading.mms"
+        import {{ ship_avatar_material }} from "../assets/components/materials/ship_anime_materials.mms"
         import {{ vroid_arm_ik_bend_plane_prototype }} from "../assets/components/arm_ik/vroid.mms"
         T.position(0,-0.1,-6).scale(12,0.2,12) {{
             Zone.cube([0.5,0.5,0.5]) {{ Collidable.static() }}

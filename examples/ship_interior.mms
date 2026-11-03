@@ -5,8 +5,8 @@
 // Desktop: WASD + mouse. Set either view flag, or both, in this one file.
 // Barracks: grab a machine pistol, then use the XR trigger (desktop: Space).
 // View presets: desktop=true/xr=false; XR=false/true; both=true/true.
-let desktop_view_enabled = false
-let xr_view_enabled = true
+let desktop_view_enabled = true
+let xr_view_enabled = false
 let xr_avatar_enabled = true
 let bloom_enabled = true
 let view_far_distance = 1000.0
@@ -24,7 +24,7 @@ import { ship_trailer_park } from "../assets/components/rooms/ship_trailer_park.
 import { ship_barracks } from "../assets/components/rooms/ship_barracks.mms"
 import { ship_space_sky } from "../assets/components/backgrounds/ship_space_sky.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
-import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
+import { ship_avatar_material, ship_environment_material } from "../assets/components/materials/ship_anime_materials.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 
 BGC.rgba(0.005, 0.009, 0.018, 1.0)
@@ -38,11 +38,11 @@ if bloom_enabled {
     }
 } else { RenderGraph.off() }
 
-// All default surfaces, including UI and separately authored props, inherit anime.
+// Architecture inherits the station environment preset; humanoids select their own.
 // Explicit metal, sky, emission and unlit declarations retain their own contracts.
 T {
     name = "ship_interior"
-    Material(MaterialDefinition.anime())
+    ship_environment_material()
     ship_input_controller()
     ship_space_sky()
 
@@ -78,7 +78,7 @@ T {
                                 T {
                                     GLTF.new("assets/models/mitten.glb") {
                                         bisket_humanoid_bone_map()
-                                        bisket_anime_shading()
+                                        ship_avatar_material()
                                         HandTracking.new().source("openxr")
                                     }
                                 }

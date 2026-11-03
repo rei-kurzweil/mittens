@@ -1,3 +1,4 @@
+import { ship_avatar_material } from "./materials/ship_anime_materials.mms"
 import { ship_solid, ship_box, ship_label } from "./ship_parts.mms"
 import { ship_light_pool, ship_path_markers } from "./ship_lighting.mms"
 import { pickup_truck } from "./vehicles/pickup_truck.mms"
@@ -35,7 +36,7 @@ export fn hot_dog_stand() {
             held_hot_dog
             let vendor = GLTF("assets/components/characters/lumae/lumae.glb") {
                 name = "ship_hot_dog_vendor"
-                Material(MaterialDefinition.anime())
+                ship_avatar_material()
                 vendor_pose()
             }
             vendor

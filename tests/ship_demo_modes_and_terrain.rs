@@ -351,6 +351,40 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
                     &mut scene.command_queue,
                 );
             }
+            // Check rendered architecture and the GLTF vendor material scope use
+            // separate local presets after restoring shared defaults.
+            let materials = &scene.visuals.materials;
+            let preset = |label| {
+                let source = named(&scene.world, label);
+                let record = materials
+                    .instance(materials.source_instance(source).unwrap())
+                    .unwrap();
+                let definition = materials.definition(record.definition).unwrap();
+                mittens_engine::engine::graphics::visual_world::AnimeShadingParams::from_material(
+                    &definition.parameter_schema,
+                    &record.values,
+                )
+            };
+            let environment = preset("ship_environment_anime_material");
+            let avatar = preset("ship_avatar_anime_material");
+            assert!(environment.shade_color_strength[3] > avatar.shade_color_strength[3]);
+            assert!(environment.controls[1] > avatar.controls[1]);
+            let vendor = named(&scene.world, "ship_hot_dog_vendor");
+            // GLTF meshes may still be loading in this short headless fixture;
+            // its explicit material must already override the environment scope.
+            assert!(
+                scene
+                    .world
+                    .find_component(vendor, "#ship_avatar_anime_material")
+                    .is_some()
+            );
+            assert!(
+                scene
+                    .visuals
+                    .instances()
+                    .iter()
+                    .any(|instance| instance.anime_shading(materials) == environment)
+            );
             let legacy_defaults = scene
                 .visuals
                 .instances()

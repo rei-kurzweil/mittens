@@ -111,10 +111,14 @@ generated contact mesh; add `Collidable.static()` beneath that zone to walk on
 it. Texture coordinates project local X/Z at one repeat per metre, and texture
 bindings follow regenerated surface outputs.
 
-Anime defaults and shared presets now use much stronger, broader rim lighting,
-a longer light/shade ramp and a deeper shadow tint. Default ship surfaces
-inherit `MaterialDefinition.anime()` from the scene root;
-custom metal, sky, emission, and unlit materials keep their authored appearance.
+The station uses two local presets in `materials/ship_anime_materials.mms`.
+Walls, architecture and ordinary props inherit `ship_environment_material()`:
+a dark blue-purple shadow, broad light/shade ramp and strong, broad cool rim.
+Mitten and both Lumae characters use `ship_avatar_material()`, with gentler
+shadows and a narrower ramp to preserve face and clothing detail. Both use the
+existing Anime material definition. Shared Anime defaults and presets retain
+their original appearance; custom metal, sky, emission and unlit materials
+keep their authored appearance.
 The building window panes and enclosure panels currently render as clear openings with their
 frames retained, avoiding overlapping alpha layers in front of the space sky.
 Bridge and cafeteria window collision barriers remain in place.

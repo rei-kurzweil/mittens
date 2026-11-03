@@ -1,3 +1,4 @@
+import { ship_environment_material } from "./materials/ship_anime_materials.mms"
 import { ship_box } from "./ship_parts.mms"
 
 // Rectangular greenhouse frame. Clear pressure panels have no alpha overlay;
@@ -7,7 +8,7 @@ export fn ship_biodome(label, width, length, height, door_z, west_door, east_doo
     return T {
         name = label
         CombineMesh {
-            Material(MaterialDefinition.anime())
+            ship_environment_material()
             for x in [-width/2.0,width/2.0] {
                 let door = west_door
                 if x > 0 { door = east_door }
