@@ -164,7 +164,10 @@ fn doorway_streams_real_vehicle_groups_and_barracks_unload_their_subscriptions()
         );
         assert!(lens_intensity(&scene, "ship_motorhomes", "red") > 1.0);
     }
-    assert_eq!(count(&scene.world, "retail_shelf"), 3);
+    assert_eq!(count(&scene.world, "ship_grocery_bananas"), 1);
+    assert_eq!(count(&scene.world, "ship_grocery_oranges"), 1);
+    assert_eq!(count(&scene.world, "ship_grocery_checkout"), 1);
+    assert_eq!(count(&scene.world, "retail_shelf"), 5);
     let flights = |world: &World| {
         world
             .all_components()
@@ -184,7 +187,7 @@ fn doorway_streams_real_vehicle_groups_and_barracks_unload_their_subscriptions()
         "projectile slots belong to the removable barracks assembly"
     );
     command(&mut scene, "LoadBarracks");
-    assert_eq!(count(&scene.world, "retail_shelf"), 3);
+    assert_eq!(count(&scene.world, "retail_shelf"), 5);
     assert_eq!(flights(&scene.world), 9);
     finish_materials(&scene);
 }

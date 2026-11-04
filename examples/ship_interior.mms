@@ -3,13 +3,20 @@
 // Bridge faces -Z. Upstairs: washrooms west, Cherry Grove east.
 // Cafeteria: 22 m wide, 8.5 m high. Stairs reach the Y=5.2 upper landing.
 // Desktop: WASD + mouse. Set either view flag, or both, in this one file.
-// Barracks: grab a machine pistol, then use the XR trigger (desktop: Space).
+// Grocery/security shop: grab a machine pistol, then use the XR trigger (desktop: Space).
 // View presets: desktop=true/xr=false; XR=false/true; both=true/true.
-let desktop_view_enabled = true
-let xr_view_enabled = false
+let desktop_view_enabled = false
+let xr_view_enabled = true
 let xr_avatar_enabled = true
 let bloom_enabled = true
 let view_far_distance = 1000.0
+// Sakura gradient stops, plus independently tintable baked cloud detail.
+let sky_low_color = [1.0, 0.72, 0.66]
+let sky_high_color = [0.23, 0.32, 0.62]
+let sky_low_point = -0.12
+let sky_high_point = 0.82
+let sky_cloud_color = [1.0, 0.95, 0.90]
+let sky_cloud_strength = 0.65
 RendererSettings { window_visible(desktop_view_enabled) window_size(1280, 800) }
 
 import { ship_input_controller } from "../assets/components/ship_input_controller.mms"
@@ -44,7 +51,7 @@ T {
     name = "ship_interior"
     ship_environment_material()
     ship_input_controller()
-    ship_space_sky()
+    ship_space_sky(sky_low_color, sky_high_color, sky_low_point, sky_high_point, sky_cloud_color, sky_cloud_strength)
 
     ship_control_room()
     ship_mall_entrance_hallway()

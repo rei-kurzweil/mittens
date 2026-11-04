@@ -6,6 +6,9 @@ use vulkano::image::view::ImageViewType;
 #[path = "vulkano_ship_startup_tests.rs"]
 mod ship_startup;
 
+#[path = "vulkano_mirror_orientation_tests.rs"]
+mod mirror_orientation;
+
 /// Exercise the full scene pipelines, per-eye slots, and MSAA resolve without
 /// a display server, Winit, or OpenXR runtime. Acquisition/lifecycle remain the
 /// responsibility of the real-runtime openxr-only example.

@@ -16,8 +16,10 @@ layout(set = 1, binding = 0) uniform MaterialUBO {
 layout(set = 1, binding = 1) uniform sampler2D base_tex;
 
 void main() {
-    vec2 sample_uv = vec2(v_uv.x, 1.0 - v_uv.y);
-    vec4 base_rgba = texture(base_tex, sample_uv) * v_color * mat.base_color;
+    // Capture targets and surface UVs both use V=0 at the top. The capture's
+    // negative-height Vulkan viewport already establishes that orientation.
+    // Keep the horizontal reflection in mirror-mesh.vert; do not flip V again.
+    vec4 base_rgba = texture(base_tex, v_uv) * v_color * mat.base_color;
     if (base_rgba.a <= 0.001) {
         discard;
     }

@@ -14,7 +14,7 @@ export fn ship_mall_entrance_hallway() {
         }
         ship_solid([-1.5, 2.9, 3.0], [0.16, 0.6, 2.4], [0.40, 0.46, 0.46])
         T.position(-1.38, 2.65, 3.0).rotation(0.0, Math.pi/2.0, 0.0) {
-            ship_label([-0.6, 0.0, 0.0], "BARRACKS / SUPPLIES", 0.12)
+            ship_label([-0.6, 0.0, 0.0], "GROCERY / SECURITY SUPPLIES", 0.12)
         }
         ship_solid([1.5, 1.6, 3.0], [0.16, 3.2, 6.0], [0.40, 0.46, 0.46])
         T.position(0.0, 2.55, 5.9).rotation(0.0, Math.pi, 0.0) {

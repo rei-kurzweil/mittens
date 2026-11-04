@@ -21,7 +21,7 @@ and both uses true/true. Both false runs simulation without graphics. With the
 desktop flag off, the host creates no desktop window, Vulkan surface, or desktop
 swapchain. XR-only startup requires an available OpenXR runtime.
 
-Desktop controls are WASD and mouse. In the barracks, grab a machine pistol and
+Desktop controls are WASD and mouse. In the grocery/security store off the bridge hall, grab a machine pistol and
 use the XR trigger or desktop Space to fire. XR height controls are on the bridge
 wall; graphics controls are on the cafeteria wall. The scene has no editor wrapper
 or editor UI. The washroom has a wide mirror,
@@ -33,10 +33,13 @@ exit to Cherry Grove. Follow the blue polygon pictogram signs at the stair foot,
 landing, junction and door. The women's corridor turns around the corner into
 the room; the men's branch currently ends at a labelled closed cap. The tiled
 women's washroom retains its 5 m ceiling, six clerestory windows and clear space
-behind the mirror on the west side. The bridge hall serves the side barracks
+behind the mirror on the west side. The bridge hall serves the side grocery/security shop
 and cafeteria only.
 
 Cherry Grove is a 64 x 48 m rectangular clear enclosure with twenty cherry trees.
+Two accordion controls beside its west entrance independently unload/rebuild the
+north and south orchard halves (ten trees each), including trunk collision.
+The hills, paths, benches and enclosure remain loaded.
 Its east connector leads into the 96 x 144 m vehicle enclosure. Vehicles and
 shops stay clustered near that enclosure's centre, leaving open driving space.
 Both enclosures retain flat roof grids without alpha pane overlays.
@@ -63,7 +66,7 @@ Each of the six vendors has an independent accordion title control: coffee,
 noodles, grill, hot dogs, convenience, and liquor. Click the arrow to unload the
 store's content, lights and fixture collisions; click again to construct fresh
 content. The control and storefront floor remain loaded. Motorhomes form one additional
-accordion group; pickups and motorcycles form another. The barracks inventory
+accordion group; pickups and motorcycles form another. The grocery/security inventory
 also has its own control, while its shell and ceiling lights remain loaded.
 Traffic lights sit behind the disclosure chevrons: red means collapsed, yellow
 is the load request, and green means expanded. Manual toggles remain available.
@@ -128,16 +131,25 @@ the vanity is visually open, with an invisible collision boundary; keep that
 space empty so the reflected camera can see the player through the wall opening.
 
 Outside the bridge windscreen, three cafeteria clerestory windows, a dining-level side window and the
-park dome is a shared black/purple nebula sky, a crescent with a purple halo,
-and golden kawaii stars at 60% of their usual size. Nebula clouds are baked into
-one panorama; the sky shader samples it without evaluating noise at runtime.
+park enclosure is a shared Sakura-style peach-to-blue gradient sky with
+independently tinted cloud detail and a glowing crescent. Pale cream-white kawaii stars
+have half their previous radius (30% of the shared default), with the same
+positions and count. The two-stop gradient follows `sky-gradient.frag`, as used
+by `sakura-drone-conversion.mms`. Palette, stop positions, cloud tint and strength
+are editable at the top of `ship_interior.mms`.
+
+The cloud mask is a monochrome spherical panorama generated offline. Its equal
+RGB channels contain no baked palette; the shader samples one channel and blends
+toward `sky_cloud_color`. Longitude edges match and pole rows are uniform. Noise
+is never evaluated in the fragment shader. The old purple nebula generator and
+texture remain available but are no longer used by this example.
 
 Regenerate procedural textures:
 
 ```sh
 cargo run --release --example generate-ship-grass-texture
 cargo run --release --example generate-peanut-butter-texture
-cargo run --release --example generate-ship-nebula-texture
+cargo run --release --example generate-sky-cloud-texture
 ```
 
 The sky keeps its original 120 m radius. Its former clipping was caused by the
@@ -146,3 +158,17 @@ with `view_far_distance` at the top of the example.
 
 The generators accept an optional output directory after `--`. Palette and seed
 constants live in the Rust source so the artwork can be refined and reproduced.
+
+The former barracks is now a grocery/security shop. It reuses the retail shelves
+for banana and orange produce bins, peanut butter, toilet paper and three machine
+pistols on a dedicated shelf. Pegboard stock and a small checkout replace the
+bunks. Its existing inventory accordion still unloads all stock and weapons;
+the room shell and overhead spotlights stay lit. Historical `ship_barracks*`
+asset names remain for compatibility with the existing scene/controller setup.
+
+Each grill sausage and the vendor tray's sausage and bun are separately
+Grabbable. Each part owns its own combined mesh and uses `to_hand(true)` with a
+3.5 cm palm offset, the same solved-hand attachment path used by the gun. The
+mustard follows the sausage, while the vendor keeps holding the tray. Ordinary
+camera-only desktop pointers retain the existing gun-style desktop clearance;
+XR/avatar pointers with a solved hand attachment seat the food at that hand.

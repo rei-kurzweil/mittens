@@ -81,7 +81,7 @@ fn ship_xr_first_view_is_not_black() -> Result<(), Box<dyn std::error::Error>> {
     let mut scene = crate::engine::Universe::new(Default::default());
     let kiosk = std::env::var_os("SHIP_CAPTURE_HOTDOG").is_some();
     let room = std::env::var("SHIP_CAPTURE_ROOM").unwrap_or_default();
-    let yaw: f32 = if room == "landing" {
+    let yaw: f32 = if matches!(room.as_str(), "landing" | "grocery" | "mirror") {
         std::f32::consts::FRAC_PI_2
     } else if room == "biodomes" {
         -std::f32::consts::FRAC_PI_2
@@ -134,6 +134,9 @@ fn ship_xr_first_view_is_not_black() -> Result<(), Box<dyn std::error::Error>> {
         .to_string()
     } else if !room.is_empty() {
         let camera = match room.as_str() {
+            "mirror" => "T.position(-20.8,5.2,10.45)",
+            "grocery" => "T.position(-2.6,0.0,3.0)",
+            "sky" => "T.position(43.0,30.0,15.0)",
             "washroom" => "T.position(-20.0,5.2,11.2)",
             "landing" => "T.position(-8.0,5.2,15.0)",
             "biodomes" => "T.position(17.0,5.2,15.0)",
@@ -164,6 +167,20 @@ fn ship_xr_first_view_is_not_black() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         source
     };
+    // Capture XR explicitly even when the editable example defaults to desktop.
+    let source = source
+        .lines()
+        .map(|line| {
+            if line.starts_with("let desktop_view_enabled = ") {
+                "let desktop_view_enabled = false"
+            } else if line.starts_with("let xr_view_enabled = ") {
+                "let xr_view_enabled = true"
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     scene.load_mms_source_at_path(&source, "examples/ship_interior.mms")?;
     let mut mesh = 1000;
     let mut texture = 1000;
@@ -181,6 +198,9 @@ fn ship_xr_first_view_is_not_black() -> Result<(), Box<dyn std::error::Error>> {
             },
             &mut scene.command_queue,
         );
+        if room == "mirror" {
+            renderer.submit_xr_mirror_captures(&mut scene.visuals)?;
+        }
         for eye in 0..2 {
             renderer.submit_xr_eye_to_view(
                 &mut scene.visuals,
@@ -277,7 +297,13 @@ fn ship_xr_first_view_is_not_black() -> Result<(), Box<dyn std::error::Error>> {
         .flat_map(|p| [p[2], p[1], p[0], p[3]])
         .collect();
     image::save_buffer(
-        if room == "landing" {
+        if room == "mirror" {
+            "/tmp/ship-washroom-mirror.png"
+        } else if room == "grocery" {
+            "/tmp/ship-grocery-security-store.png"
+        } else if room == "sky" {
+            "/tmp/ship-gradient-cloud-sky.png"
+        } else if room == "landing" {
             "/tmp/ship-washroom-landing.png"
         } else if room == "washroom" {
             "/tmp/ship-washroom.png"

@@ -25,7 +25,7 @@ export fn ship_barracks() {
             ship_lamp([x,3.13,-0.6], [0.30,0.06,0.24], [0.76,0.87,1.0])
         }
         ship_path_markers([-7.0, 0.05, 2.7], [1.0, 0.0], 5, 1.5, [0.22, 0.59, 0.55])
-        ship_store_accordion("ship_barracks_inventory","BARRACKS / SUPPLIES",
+        ship_store_accordion("ship_barracks_inventory","GROCERY / SECURITY SUPPLIES",
             ship_barracks_contents,null,null,[-0.15,2.7,1.0],true,Math.pi/2.0,ship_clear_barracks_weapons)
 
     }

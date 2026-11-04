@@ -1,16 +1,20 @@
-# Ship nebula panorama
+# Sky cloud mask
 
 ```sh
-cargo run --release --example generate-ship-nebula-texture
+cargo run --release --example generate-sky-cloud-texture
 ```
 
 The optional directory argument writes a preview elsewhere. The deterministic
-Rust generator bakes spherical cloud noise into a 1024 × 512 black/purple panorama.
+Rust generator bakes spherical cloud noise into `sky-cloud-mask.png`, a
+1024 × 512 monochrome panorama. RGB channels are equal and alpha is opaque.
 Longitude borders match exactly, and both pole rows are uniform.
 
-`ship-space-sky.frag` performs one texture lookup for the nebula. It adds an
-analytic crescent and purple halo; it does not evaluate cloud noise at runtime.
-The background's extracted radiance feeds the scene bloom. The halo also remains
-visible with bloom disabled. Golden kawaii stars are separate geometry at 60%
-of their usual size. All layers use the rotation-only background, so views from
-the bridge windscreen, cafeteria windows, park dome and mirrors share one sky.
+The station shader samples one channel and applies its own cloud tint over the
+same two-stop gradient as Sakura drone conversion. Colors, gradient stops and
+cloud strength live at the top of `examples/ship_interior.mms`. It retains the
+analytic crescent and a halo tinted from the sky palette, with no runtime noise.
+Pale cream-white stars are separate geometry at 30% of the shared default size, half their
+previous station radius. All layers use the rotation-only background.
+
+The older `ship-nebula.png` and `generate-ship-nebula-texture` are retained for
+reference; the station no longer samples their baked purple palette.

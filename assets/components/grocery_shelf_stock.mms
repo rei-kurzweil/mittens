@@ -48,8 +48,8 @@ export fn grocery_shelf_stock(kind, product_color) {
                     } else if kind == "bananas" {
                         for column in range(6) {
                             for bunch in range(3) {
-                                T.position(-0.69 + column * 0.25, y + 0.07 + bunch * 0.022, -0.12)
-                                    .rotation(0.0, bunch * 0.13, 0.0).scale(0.75, 0.75, 0.75) { banana() }
+                                T.position(-0.69 + column * 0.25, y + 0.17 + bunch * 0.026, -0.12)
+                                    .rotation(0.45, bunch * 0.13, -0.18).scale(0.75, 0.75, 0.75) { banana() }
                             }
                         }
                     } else if kind == "toilet_paper" {

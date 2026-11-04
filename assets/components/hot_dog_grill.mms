@@ -1,4 +1,3 @@
-import { ship_environment_material } from "./materials/ship_anime_materials.mms"
 import { ship_solid, ship_box, ship_lamp } from "./ship_parts.mms"
 import { pickup_painted_metal } from "./materials/pickup_painted_metal.mms"
 import { hot_dog_sausage } from "./food/hot_dog.mms"
@@ -20,11 +19,12 @@ export fn hot_dog_grill() {
                 ship_box([x, 0.78, 0.38], [0.10, 0.10, 0.055], [0.13, 0.16, 0.14])
             }
         }
-        CombineMesh {
-            ship_environment_material()
+        // Keep food outside the grill's shared mesh so each sausage can move.
+        T {
+            name="hot_dog_grill_food"
             for x in [-0.36, 0.0, 0.36] {
                 for z in [-0.15, 0.15] {
-                    T.position(x, 0.94, z) { hot_dog_sausage() }
+                    T.position(x, 0.94, z) { hot_dog_sausage(false) }
                 }
             }
         }

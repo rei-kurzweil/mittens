@@ -99,19 +99,23 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
         if case != label {
             continue;
         }
+        // The example's editable defaults may select desktop or XR. Each
+        // fixture explicitly chooses its preset without assuming those defaults.
         let configured = source
-            .replace(
-                "let desktop_view_enabled = false",
-                &format!("let desktop_view_enabled = {desktop}"),
-            )
-            .replace(
-                "let xr_view_enabled = true",
-                &format!("let xr_view_enabled = {xr}"),
-            )
-            .replace(
-                "let xr_avatar_enabled = true",
-                &format!("let xr_avatar_enabled = {avatar}"),
-            );
+            .lines()
+            .map(|line| {
+                if line.starts_with("let desktop_view_enabled = ") {
+                    format!("let desktop_view_enabled = {desktop}")
+                } else if line.starts_with("let xr_view_enabled = ") {
+                    format!("let xr_view_enabled = {xr}")
+                } else if line.starts_with("let xr_avatar_enabled = ") {
+                    format!("let xr_avatar_enabled = {avatar}")
+                } else {
+                    line.to_owned()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
         let mut scene = Universe::new(World::default());
         // Verify XR scene wiring without probing the workstation's runtime.
         scene

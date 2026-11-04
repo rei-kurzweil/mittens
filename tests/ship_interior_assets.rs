@@ -177,7 +177,7 @@ fn assert_barracks_stock_and_weapons(world: &World) {
             .all_components()
             .filter(|&id| world.component_label(id) == Some("retail_shelf"))
             .count(),
-        3
+        5
     );
 }
 
