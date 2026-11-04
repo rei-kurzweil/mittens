@@ -430,13 +430,13 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
                 mesh.mesh.bounds.min[1] >= -0.081,
                 "terrain stays within the upper deck slab"
             );
-            assert!(mesh.mesh.bounds.max[1] > 0.30 && mesh.mesh.bounds.max[1] < 0.8);
+            assert!(mesh.mesh.bounds.max[1] > 2.3 && mesh.mesh.bounds.max[1] < 2.7);
             let hit = mesh
                 .mesh
-                .ray([-24.0, 2.0, -16.0], [0.0, -1.0, 0.0])
+                .ray([-24.0, 4.0, -16.0], [0.0, -1.0, 0.0])
                 .unwrap();
             assert!(
-                (2.0 - hit - 0.43).abs() < 0.08,
+                (4.0 - hit - 2.40).abs() < 0.10,
                 "tree grove has a smooth raised ground surface"
             );
             let retained_collision = mesh.mesh.clone();

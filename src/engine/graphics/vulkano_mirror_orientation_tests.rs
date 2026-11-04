@@ -3,13 +3,13 @@ use crate::engine::graphics::{MeshUploader, TextureHandle, TextureUploader};
 
 struct Upload<'a> {
     renderer: &'a mut VulkanoState,
-    mesh: u32,
-    texture: u32,
+    mesh: &'a mut u32,
+    texture: &'a mut u32,
 }
 impl MeshUploader for Upload<'_> {
     fn upload_mesh(&mut self, mesh: &CpuMesh) -> Result<MeshHandle, Box<dyn std::error::Error>> {
-        self.mesh += 1;
-        let handle = MeshHandle(self.mesh);
+        *self.mesh += 1;
+        let handle = MeshHandle(*self.mesh);
         self.renderer.upload_mesh(handle, mesh)?;
         Ok(handle)
     }
@@ -21,8 +21,8 @@ impl TextureUploader for Upload<'_> {
         width: u32,
         height: u32,
     ) -> Result<TextureHandle, Box<dyn std::error::Error>> {
-        self.texture += 1;
-        let handle = TextureHandle(self.texture);
+        *self.texture += 1;
+        let handle = TextureHandle(*self.texture);
         self.renderer
             .upload_texture_rgba8(handle, pixels, width, height)?;
         Ok(handle)
@@ -34,8 +34,8 @@ impl TextureUploader for Upload<'_> {
         height: u32,
         srgb: bool,
     ) -> Result<TextureHandle, Box<dyn std::error::Error>> {
-        self.texture += 1;
-        let handle = TextureHandle(self.texture);
+        *self.texture += 1;
+        let handle = TextureHandle(*self.texture);
         self.renderer
             .upload_texture_bc7(handle, blocks, width, height, srgb)?;
         Ok(handle)
@@ -43,8 +43,16 @@ impl TextureUploader for Upload<'_> {
 }
 
 #[test]
-#[ignore = "requires Vulkan; checks actual planar mirror image orientation in both eyes"]
+#[ignore = "requires Vulkan; checks mirror orientation in both eyes"]
 fn planar_mirror_keeps_reflected_objects_upright() -> Result<(), Box<dyn std::error::Error>> {
+    mirror_fixture(false)
+}
+#[test]
+#[ignore = "requires Vulkan; verifies per-mirror pause preserves stereo images and other captures"]
+fn individual_mirror_pause_retains_last_images() -> Result<(), Box<dyn std::error::Error>> {
+    mirror_fixture(true)
+}
+fn mirror_fixture(freeze: bool) -> Result<(), Box<dyn std::error::Error>> {
     let context = RendererContext::new(None, None, None)?;
     let extent = [256, 192];
     let format = Format::B8G8R8A8_UNORM;
@@ -116,25 +124,169 @@ fn planar_mirror_keeps_reflected_objects_upright() -> Result<(), Box<dyn std::er
         RendererSettings {window_visible(false)}
         BGC.rgba(0,0,0,1)
         RenderGraph.off()
-        T.position(0,1.6,0).scale(4,3,1) {R.plane() {Mirror.quality(256) {}}}
-        T.position(-0.65,2.35,4).scale(0.8,0.6,0.15) {
+        let mirror=Mirror.quality(256) {name="pause_target"}
+        T.position(0,1.6,0).scale(4,3,1) {R.plane() {mirror}}
+        // A second mirror outside the main view must continue updating.
+        T.position(5,1.6,0).scale(2,2,1) {R.plane() {Mirror.quality(64) {name="other_mirror"}}}
+        let upper=T.position(-0.65,2.35,4).scale(0.8,0.6,0.15) {
             Unlit {}
             R.cube() {C.rgba(1,0,0,1)}
         }
+        upper
         T.position(0.65,0.85,4).scale(0.8,0.6,0.15) {
             Unlit {}
             R.cube() {C.rgba(0,0,1,1)}
         }
+        let controls=T {name="mirror_test_commands"}
+        controls
+        on(controls,"DataEvent",fn(event) {
+            if event=="Freeze" {
+                mirror.set_enabled(false)
+                upper.update_transform([-0.65,3.1,4],[0,0,0],[0.8,0.6,0.15])
+            }
+            if event=="Resume" {mirror.set_enabled(true)}
+        })
         T.position(0,1.6,3) {InputXR.on() {T {CXR {}}}}
     "#,
         "examples/_mirror_orientation_test.mms",
     )?;
+    let mut counts = [1000, 1000];
+    draw_frames(&mut renderer, &mut scene, &eyes, extent, &mut counts, 8)?;
+    let pixels_per_eye = (extent[0] * extent[1]) as usize;
+    let bytes = read_capture(&mut renderer, &context, &output, extent)?;
+    for eye in 0..2 {
+        let image = &bytes[eye * pixels_per_eye * 4..(eye + 1) * pixels_per_eye * 4];
+        let mut red = [0usize; 3];
+        let mut blue = [0usize; 3];
+        for (index, pixel) in image.chunks_exact(4).enumerate() {
+            let target = if pixel[2] > 160 && pixel[0] < 80 && pixel[1] < 80 {
+                &mut red
+            } else if pixel[0] > 160 && pixel[2] < 80 && pixel[1] < 80 {
+                &mut blue
+            } else {
+                continue;
+            };
+            target[0] += 1;
+            target[1] += index % extent[0] as usize;
+            target[2] += index / extent[0] as usize;
+        }
+        assert!(
+            red[0] > 10 && blue[0] > 10,
+            "eye {eye}: mirror must show both markers: {red:?} {blue:?}"
+        );
+        let red_y = red[2] / red[0];
+        let blue_y = blue[2] / blue[0];
+        assert!(
+            red_y < extent[1] as usize / 2 && blue_y > extent[1] as usize / 2,
+            "eye {eye}: upper red marker must remain above lower blue marker, got y={red_y}/{blue_y}"
+        );
+        assert!(
+            red[1] / red[0] < blue[1] / blue[0],
+            "preserve the mirror's horizontal orientation"
+        );
+    }
+
+    if freeze {
+        use crate::engine::ecs::{EventSignal, SignalEmitter};
+        use crate::engine::graphics::visual_world::MirrorViewerFamily;
+        let named = |label| {
+            scene
+                .world
+                .all_components()
+                .find(|&id| scene.world.component_label(id) == Some(label))
+                .unwrap()
+        };
+        let mirror = named("pause_target");
+        let control = named("mirror_test_commands");
+        let targets: Vec<_> = (0..2)
+            .map(|eye| {
+                let key = scene
+                    .visuals
+                    .mirror_texture_key_for_view(mirror, MirrorViewerFamily::Stereoscopic, eye)
+                    .unwrap();
+                let texture = scene.visuals.runtime_texture_handle(key).unwrap();
+                (texture, renderer.textures[&texture].view.clone())
+            })
+            .collect();
+        scene.command_queue.push_event(
+            control,
+            EventSignal::DataEvent {
+                name: "Freeze".into(),
+                payload: None,
+            },
+        );
+        let before = renderer.perf_counters().mirror_captures;
+        draw_frames(&mut renderer, &mut scene, &eyes, extent, &mut counts, 3)?;
+        assert_eq!(
+            renderer.perf_counters().mirror_captures - before,
+            6,
+            "only the second mirror updates, for both eyes"
+        );
+        let frozen = read_capture(&mut renderer, &context, &output, extent)?;
+        assert_eq!(
+            bytes, frozen,
+            "a disabled mirror must keep displaying its last stereo images"
+        );
+        for (eye, (texture, image)) in targets.iter().enumerate() {
+            let key = scene
+                .visuals
+                .mirror_texture_key_for_view(mirror, MirrorViewerFamily::Stereoscopic, eye)
+                .unwrap();
+            assert_eq!(scene.visuals.runtime_texture_handle(key), Some(*texture));
+            assert!(std::sync::Arc::ptr_eq(
+                image,
+                &renderer.textures[texture].view
+            ));
+        }
+        // Global settings still override updating; turning them back on must
+        // respect this mirror's separate disabled state.
+        scene
+            .systems
+            .graphics_settings
+            .set_mirrors_enabled(false, &mut scene.command_queue);
+        let before = renderer.perf_counters().mirror_captures;
+        draw_frames(&mut renderer, &mut scene, &eyes, extent, &mut counts, 1)?;
+        assert_eq!(renderer.perf_counters().mirror_captures, before);
+        scene
+            .systems
+            .graphics_settings
+            .set_mirrors_enabled(true, &mut scene.command_queue);
+        draw_frames(&mut renderer, &mut scene, &eyes, extent, &mut counts, 1)?;
+        assert_eq!(renderer.perf_counters().mirror_captures - before, 2);
+        scene.command_queue.push_event(
+            control,
+            EventSignal::DataEvent {
+                name: "Resume".into(),
+                payload: None,
+            },
+        );
+        let before = renderer.perf_counters().mirror_captures;
+        draw_frames(&mut renderer, &mut scene, &eyes, extent, &mut counts, 3)?;
+        assert_eq!(renderer.perf_counters().mirror_captures - before, 12);
+        assert_ne!(
+            read_capture(&mut renderer, &context, &output, extent)?,
+            bytes,
+            "resuming captures reveals the moved marker"
+        );
+    }
+    Ok(())
+}
+
+fn draw_frames(
+    renderer: &mut VulkanoState,
+    scene: &mut crate::engine::Universe,
+    eyes: &[std::sync::Arc<ImageView>],
+    extent: [u32; 2],
+    counts: &mut [u32; 2],
+    frames: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let [mesh, texture] = counts;
     let mut upload = Upload {
-        renderer: &mut renderer,
-        mesh: 1000,
-        texture: 1000,
+        renderer,
+        mesh,
+        texture,
     };
-    for _ in 0..8 {
+    for _ in 0..frames {
         scene.update(1. / 90., &Default::default());
         // Allow any explicit Unlit custom definitions to finish before drawing.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -175,6 +327,15 @@ fn planar_mirror_keeps_reflected_objects_upright() -> Result<(), Box<dyn std::er
             )?;
         }
     }
+    Ok(())
+}
+
+fn read_capture(
+    renderer: &mut VulkanoState,
+    context: &RendererContext,
+    output: &std::sync::Arc<Image>,
+    extent: [u32; 2],
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let pixels_per_eye = (extent[0] * extent[1]) as usize;
     let readback = Buffer::new_slice::<u8>(
         context.memory_allocator().clone(),
@@ -195,44 +356,13 @@ fn planar_mirror_keeps_reflected_objects_upright() -> Result<(), Box<dyn std::er
         CommandBufferUsage::OneTimeSubmit,
     )?;
     commands.copy_image_to_buffer(CopyImageToBufferInfo::image_buffer(
-        output,
+        output.clone(),
         readback.clone(),
     ))?;
     sync::now(context.device().clone())
         .then_execute(context.graphics_queue().clone(), commands.build()?)?
         .then_signal_fence_and_flush()?
         .wait(None)?;
-    let bytes = readback.read()?;
-    for eye in 0..2 {
-        let image = &bytes[eye * pixels_per_eye * 4..(eye + 1) * pixels_per_eye * 4];
-        let mut red = [0usize; 3];
-        let mut blue = [0usize; 3];
-        for (index, pixel) in image.chunks_exact(4).enumerate() {
-            let target = if pixel[2] > 160 && pixel[0] < 80 && pixel[1] < 80 {
-                &mut red
-            } else if pixel[0] > 160 && pixel[2] < 80 && pixel[1] < 80 {
-                &mut blue
-            } else {
-                continue;
-            };
-            target[0] += 1;
-            target[1] += index % extent[0] as usize;
-            target[2] += index / extent[0] as usize;
-        }
-        assert!(
-            red[0] > 10 && blue[0] > 10,
-            "eye {eye}: mirror must show both markers: {red:?} {blue:?}"
-        );
-        let red_y = red[2] / red[0];
-        let blue_y = blue[2] / blue[0];
-        assert!(
-            red_y < extent[1] as usize / 2 && blue_y > extent[1] as usize / 2,
-            "eye {eye}: upper red marker must remain above lower blue marker, got y={red_y}/{blue_y}"
-        );
-        assert!(
-            red[1] / red[0] < blue[1] / blue[0],
-            "preserve the mirror's horizontal orientation"
-        );
-    }
-    Ok(())
+    let bytes = readback.read()?.to_vec();
+    Ok(bytes)
 }

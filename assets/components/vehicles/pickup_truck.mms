@@ -3,14 +3,21 @@ import { vehicle_glass } from "./vehicle_glass.mms"
 import { pickup_cab_interior } from "./pickup_cab_interior.mms"
 import { pickup_driving } from "./pickup_driving.mms"
 import { ship_solid, ship_lamp, ship_label } from "../ship_parts.mms"
-import { ship_vehicle_wheel } from "./ship_vehicle_parts.mms"
+import { pickup_suspension } from "./pickup_suspension.mms"
 import { pickup_painted_metal } from "../materials/pickup_painted_metal.mms"
 
-// Destroyable retained body panels; wheels remain visual trim.
+// pickup_truck is the chassis transform driven by Velocity and used for mounting.
+// Destroyable retained body panels; suspension/wheels remain separate branches.
 // Parked pickup, front toward -Z. Open cargo bed and a two-seat cab.
-export fn pickup_truck(color, cargo) {
+fn make_pickup(color, cargo, suspension_layout) {
     if color == null { color = [0.59, 0.52, 0.42] }
     let metal = pickup_painted_metal()
+    let suspensions = [
+        pickup_suspension("fl",-0.96,-1.65,0.40,metal,suspension_layout),
+        pickup_suspension("fr", 0.96,-1.65,0.40,metal,suspension_layout),
+        pickup_suspension("rl",-0.96, 1.55,0.40,metal,suspension_layout),
+        pickup_suspension("rr", 0.96, 1.55,0.40,metal,suspension_layout),
+    ]
     let truck = T {
         name = "pickup_truck"
         Destroyable.threshold(3.0)
@@ -44,9 +51,7 @@ export fn pickup_truck(color, cargo) {
         for side in [-1.0, 1.0] {
             ship_lamp([side * 0.85, 1.0, 2.42], [0.15, 0.24, 0.04], [0.60, 0.08, 0.04])
         }
-        for x in [-0.96, 0.96] {
-            for z in [-1.65, 1.55] { ship_vehicle_wheel(x, z, 0.40, metal) }
-        }
+        for suspension in suspensions { suspension }
         T.position(-0.53,1.235,-0.797) { ship_label([0,0,0],"00000.0 km",0.025) }
         T.position(-0.77,1.66,-0.80) { ship_label([0,0,0],"RPM     SPEED    FUEL",0.026) }
         // Bed floor top is 0.8 m; cargo is attached to the vehicle, not the room.
@@ -55,7 +60,24 @@ export fn pickup_truck(color, cargo) {
             if cargo != null { cargo }
         }
     }
+    truck.set_suspension_compression = fn(corner,ratio) {
+        if corner == null {
+            for suspension in suspensions { suspension.set_compression(ratio) }
+        } else {
+            let suspension = truck.query("#suspension_mount_"+corner)
+            if suspension { suspension.set_compression(ratio) }
+        }
+    }
     let motion = ship_vehicle_motion(truck,"pickup_velocity")
     truck.attach(pickup_driving(truck,motion))
     return motion
+}
+
+export fn pickup_truck(color, cargo) {
+    return make_pickup(color,cargo,"fork")
+}
+
+// Same body and controls; only suspension hierarchy/compression handling differs.
+export fn pickup_truck_sibling_suspension(color, cargo) {
+    return make_pickup(color,cargo,"siblings")
 }

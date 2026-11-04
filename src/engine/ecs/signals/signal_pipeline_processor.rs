@@ -54,6 +54,7 @@ impl SignalPipelineProcessor {
             | IntentValue::SetText { component_id, .. }
             | IntentValue::SetEmissiveIntensity { component_id, .. }
             | IntentValue::SetPosition { component_id, .. }
+            | IntentValue::MirrorSetEnabled { component_id, .. }
             | IntentValue::VelocityReset { component_id }
             | IntentValue::VelocityTranslate { component_id, .. }
             | IntentValue::VelocityRotate { component_id, .. }
@@ -209,6 +210,7 @@ impl SignalPipelineProcessor {
             | IntentValue::SetText { component_id, .. }
             | IntentValue::SetEmissiveIntensity { component_id, .. }
             | IntentValue::SetPosition { component_id, .. }
+            | IntentValue::MirrorSetEnabled { component_id, .. }
             | IntentValue::VelocityReset { component_id }
             | IntentValue::VelocityTranslate { component_id, .. }
             | IntentValue::VelocityRotate { component_id, .. }

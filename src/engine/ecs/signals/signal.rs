@@ -477,6 +477,10 @@ pub enum IntentValue {
         component_id: ComponentId,
         position: [f32; 3],
     },
+    MirrorSetEnabled {
+        component_id: ComponentId,
+        enabled: bool,
+    },
     VelocityReset {
         component_id: ComponentId,
     },
@@ -1017,6 +1021,7 @@ impl IntentValue {
             IntentValue::SetText { .. } => "set_text",
             IntentValue::SetEmissiveIntensity { .. } => "set_emissive_intensity",
             IntentValue::SetPosition { .. } => "set_position",
+            IntentValue::MirrorSetEnabled { .. } => "mirror_set_enabled",
             IntentValue::VelocityReset { .. } => "velocity_reset",
             IntentValue::VelocityTranslate { .. } => "velocity_translate",
             IntentValue::VelocityRotate { .. } => "velocity_rotate",

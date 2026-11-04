@@ -88,7 +88,7 @@ fn host_property(
     );
 }
 
-fn host_method(
+pub(super) fn host_method(
     component: &mut mms::ComponentBuilder<'_, MittensBinding>,
     canonical: &'static str,
     name: &'static str,
@@ -1234,9 +1234,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 "Mesh" => {
                     component.constructor("new", strings(1));
                 }
-                "Mirror" => {
-                    component.constructor("quality", component_signature([mms::ValueType::I32]));
-                }
+                "Mirror" => super::mirror_binding::configure(component),
                 "GestureCoordType" => {
                     no_arg_constructors(component, &["screen_space_1d_slider", "world_plane"]);
                 }
@@ -1918,16 +1916,16 @@ mod tests {
         }
     }
 }
-#[path = "renderer_settings_binding.rs"]
+#[path = "component_bindings/renderer_settings.rs"]
 mod renderer_settings_binding;
-#[path = "walking_ik_binding.rs"]
+#[path = "component_bindings/walking_ik.rs"]
 mod walking_ik_binding;
 
-#[path = "geometry_binding.rs"]
+#[path = "component_bindings/geometry.rs"]
 mod geometry_binding;
 
-#[path = "xr_gamepad_binding.rs"]
+#[path = "component_bindings/xr_gamepad.rs"]
 mod xr_gamepad_binding;
 
-#[path = "gravity_binding.rs"]
+#[path = "component_bindings/gravity.rs"]
 mod gravity_binding;

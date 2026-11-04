@@ -70,6 +70,7 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
             ))
         || (matches!(component_type, "Amplitude" | "amplitude")
             && matches!(method, "value" | "set_highpass" | "set_highpass_resonance"))
+        || (matches!(component_type, "Mirror" | "mirror") && method == "set_enabled")
         || (matches!(component_type, "Gravity" | "gravity") && matches!(method, "set_enabled" | "on" | "off" | "auto"))
         || (matches!(component_type, "Velocity" | "velocity")
             && matches!(
@@ -151,6 +152,7 @@ pub(crate) fn invoke_component_method(
                 avatar.collision_enabled && avatar.capsule_ready,
             ))
         }
+        ("Mirror" | "mirror", "set_enabled") => super::mirror_binding::set_enabled(world,id,args,emit_intent),
         ("Gravity" | "gravity", "set_enabled" | "on" | "off" | "auto") =>
             super::component_registry::gravity_registry::call(world, id, method, args),
         ("Velocity" | "velocity", "reset") => {

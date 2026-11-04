@@ -96,7 +96,7 @@ export fn ship_womens_washroom() {
             }
             T.scale(2.40, 0.85, 1.0) {
                 name = "ship_washroom_wide_mirror"
-                R.plane() { Mirror.quality(512) {} Raycastable.enabled() }
+                R.plane() { Mirror.quality(512).enabled(false) { name="ship_womens_washroom_mirror" } Raycastable.enabled() }
             }
         }
     }

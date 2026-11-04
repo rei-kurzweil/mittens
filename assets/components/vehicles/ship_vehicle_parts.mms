@@ -1,10 +1,8 @@
 import { ship_solid } from "../ship_parts.mms"
 
-// Wheels rotate a Y-axis cylinder onto X, axle end faces outward.
-export fn ship_vehicle_wheel(x, z, radius, hub_material) {
-    let roll = -Math.pi / 2.0
-    if x < 0.0 { roll = Math.pi / 2.0 }
-    return T.position(x, radius, z).rotation(0.0, 0.0, roll) {
+// Hub-centred geometry with its cylinder axle along local Y. Callers own pivots.
+export fn ship_vehicle_wheel_mesh(radius, hub_material) {
+    return T {
         R.cylinder(radius, 0.22, 16) { C.rgba(0.035, 0.040, 0.038, 1.0) }
         T.position(0.0, 0.225, 0.0) {
             R.cylinder(radius * 0.50, 0.015, 12) {
@@ -16,6 +14,15 @@ export fn ship_vehicle_wheel(x, z, radius, hub_material) {
                 }
             }
         }
+    }
+}
+
+// Wheels rotate a Y-axis cylinder onto X, axle end faces outward.
+export fn ship_vehicle_wheel(x, z, radius, hub_material) {
+    let roll = -Math.pi / 2.0
+    if x < 0.0 { roll = Math.pi / 2.0 }
+    return T.position(x, radius, z).rotation(0.0, 0.0, roll) {
+        ship_vehicle_wheel_mesh(radius, hub_material)
     }
 }
 

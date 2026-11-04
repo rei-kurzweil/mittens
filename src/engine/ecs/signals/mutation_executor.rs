@@ -1,3 +1,5 @@
+#[path = "mirror_mutation.rs"]
+mod mirror_mutation;
 use crate::engine::ecs::component::{
     AnimationState, LayoutComponent, RenderableComponent, TextComponent, TransformComponent,
 };
@@ -132,6 +134,8 @@ impl RxMutationExecutor {
         };
 
         match &intent.value {
+            IntentValue::MirrorSetEnabled {component_id,enabled} =>
+                mirror_mutation::apply(systems,world,visuals,*component_id,*enabled),
             IntentValue::VelocityReset { component_id } => {
                 let target = crate::engine::ecs::system::VelocitySystem::driven_transform(
                     world,

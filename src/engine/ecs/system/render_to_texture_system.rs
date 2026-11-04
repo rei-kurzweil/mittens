@@ -269,6 +269,7 @@ mod tests {
             mirror_component: owner,
             capture_prefix: "capture.mirror.test.".into(),
             captures: vec![MirrorCaptureRequest {
+                enabled: true,
                 family: MirrorViewerFamily::Stereoscopic,
                 view_index: 0,
                 camera: CameraData {

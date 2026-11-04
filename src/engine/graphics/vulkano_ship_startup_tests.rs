@@ -167,6 +167,12 @@ fn ship_xr_first_view_is_not_black() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         source
     };
+    // This preview teleports past the doorway activation zones.
+    let source = if room == "mirror" {
+        format!("{source}\nquery(\"#ship_womens_washroom_mirror\").set_enabled(true)")
+    } else {
+        source
+    };
     // Capture XR explicitly even when the editable example defaults to desktop.
     let source = source
         .lines()

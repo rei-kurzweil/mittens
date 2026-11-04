@@ -4,7 +4,10 @@ pub mod ast {
 pub mod block_effect_analyzer {
     pub use meow_meow_script::block_effect_analyzer::*;
 }
+#[path = "component_bindings/camera_xr.rs"]
 mod camera_xr_binding;
+#[path = "component_bindings/mirror.rs"]
+mod mirror_binding;
 pub mod component_method_registry;
 pub mod component_registry;
 mod configured_registry;

@@ -2496,13 +2496,7 @@ fn create_component(
             Some("new") => add!(MeshComponent::new(arg_str(args, 0)?)),
             _ => add!(MeshComponent::new("")),
         },
-        "Mirror" => {
-            let mut c = MirrorComponent::default();
-            if let Some("quality") = ctor {
-                c = MirrorComponent::new(arg_f32(args, 0)? as i32);
-            }
-            add!(c)
-        }
+        "Mirror" => add!(super::mirror_binding::construct(ctor,args)?),
         "GestureCoordType" => match ctor {
             Some("screen_space_1d_slider") => {
                 add!(GestureCoordTypeComponent::screen_space_1d_slider())
@@ -3890,6 +3884,9 @@ fn apply_call(
             };
         }
         return Ok(());
+    }
+    if let Some(mirror) = world.get_component_by_id_as_mut::<MirrorComponent>(id) {
+        return super::mirror_binding::apply(mirror,method,args);
     }
     if let Some(cxr) = world.get_component_by_id_as_mut::<CameraXRComponent>(id) {
         return super::camera_xr_binding::apply(cxr, method, args);

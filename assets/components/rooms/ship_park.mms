@@ -1,4 +1,5 @@
-import { pickup_truck } from "../vehicles/pickup_truck.mms"
+import { pickup_truck, pickup_truck_sibling_suspension } from "../vehicles/pickup_truck.mms"
+import { pickup_suspension_comparison } from "../vehicles/pickup_suspension_comparison.mms"
 import { ship_store_accordion } from "../ship_store_accordion.mms"
 import { ship_biodome } from "../ship_biodome.mms"
 import { ship_box, ship_solid, ship_label } from "../ship_parts.mms"
@@ -52,14 +53,21 @@ export fn ship_park() {
                 ship_box([x, 0.21, z], [0.12, 0.42, 0.44], [0.26, 0.35, 0.30])
             }
         }
-        // Keep two drivable pickups in the orchard, clear of the main paths.
-        T.position(-10.0,park_ground_height(-10.0,-3.5,4),-3.5).rotation(0,Math.pi/2.0,0) {
+        // Matching pickups compare forked and sibling suspension near the entrance.
+        let fork_pickup = pickup_truck()
+        let sibling_pickup = pickup_truck_sibling_suspension()
+        T.position(-20.0,park_ground_height(-20.0,-4.5,4),-4.5).rotation(0,Math.pi/2.0,0) {
             name="ship_orchard_pickup_north"
-            pickup_truck()
+            fork_pickup
+            T.position(0,2.65,0) { ship_label([-0.9,0,0],"A / TRANSFORM FORK",0.10) }
         }
-        T.position(10.0,park_ground_height(10.0,3.5,4),3.5).rotation(0,-Math.pi/2.0,0) {
+        T.position(-20.0,park_ground_height(-20.0,4.5,4),4.5).rotation(0,Math.pi/2.0,0) {
             name="ship_orchard_pickup_south"
-            pickup_truck()
+            sibling_pickup
+            T.position(0,2.65,0) { ship_label([-0.9,0,0],"B / SIBLING TRANSFORMS",0.10) }
+        }
+        T.position(-26.0,1.35,2.5).rotation(0,-Math.pi/2.0,0) {
+            pickup_suspension_comparison(fork_pickup,sibling_pickup)
         }
         T.position(-30.2, 2.1, 0.0).rotation(0.0, -Math.pi / 2.0, 0.0) {
             ship_label([-0.8, 0.0, 0.0], "CHERRY GROVE", 0.19)

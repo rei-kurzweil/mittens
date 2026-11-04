@@ -84,6 +84,10 @@ fn ship_xr_avatar_camera_stays_inside_the_bridge_after_initialization() {
         import {{ bisket_humanoid_bone_map }} from "../assets/components/humanoid_bone_maps/bisket.mms"
         import {{ ship_avatar_material }} from "../assets/components/materials/ship_anime_materials.mms"
         import {{ vroid_arm_ik_bend_plane_prototype }} from "../assets/components/arm_ik/vroid.mms"
+        import {{ bisket_colliders }} from "../assets/components/colliders/bisket.mms"
+        import {{ bisket_shirt_physics }} from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
+        import {{ mitten_bow_secondary_motion }} from "../assets/components/secondary_motion/mitten-bow.mms"
+        import {{ ambient_eye_saccades }} from "../assets/components/animations/ambient_eye_saccades.mms"
         T.position(0,-0.1,-6).scale(12,0.2,12) {{
             Zone.cube([0.5,0.5,0.5]) {{ Collidable.static() }}
         }}
@@ -157,6 +161,110 @@ fn ship_xr_avatar_camera_stays_inside_the_bridge_after_initialization() {
     assert!(
         eye[1] > 0.3 && eye[1] < 3.2,
         "XR eye must be above the floor and below the ceiling: {eye:?}"
+    );
+    let avatar = scene
+        .world
+        .all_components()
+        .find_map(|id| {
+            (scene.world.component_label(id) == Some("ship_avatar_control"))
+                .then(|| {
+                    scene
+                        .world
+                        .get_component_by_id_as::<AvatarControlComponent>(id)
+                })
+                .flatten()
+        })
+        .unwrap();
+    assert!(
+        avatar.mouth_open_amplitude.is_some(),
+        "voice must drive the mouth"
+    );
+    let amplitude = scene
+        .world
+        .all_components()
+        .find_map(|id| {
+            (scene.world.component_label(id) == Some("ship_mitten_voice_level"))
+                .then(|| scene.world.get_component_by_id_as::<AmplitudeComponent>(id))
+                .flatten()
+        })
+        .unwrap();
+    assert!(amplitude.source.is_some());
+    assert_eq!(amplitude.highpass_hz, Some(120.0));
+    let tracker = scene
+        .world
+        .all_components()
+        .find_map(|id| {
+            scene
+                .world
+                .get_component_by_id_as::<XREyeTrackingComponent>(id)
+        })
+        .unwrap();
+    assert_eq!(tracker.priority, vec![EyeTrackingSource::Htc]);
+    assert!(
+        !tracker.enable_pupil_direction_tracking,
+        "HTC must leave pupil direction to the idle animation"
+    );
+    assert!(
+        scene.world.all_components().any(|id| {
+            scene
+                .world
+                .get_component_by_id_as::<AnimationComponent>(id)
+                .is_some_and(|animation| animation.length_beats == Some(64.2))
+        }),
+        "the GLTF initialization callback must install the idle gaze loop"
+    );
+    let chains = scene.systems.secondary_motion.bound_snapshot(&scene.world);
+    for name in [
+        "head_bow.001",
+        "head_bow.009",
+        "J_Sec_Hair1_01",
+        "J_Sec_L_TopsUpperLegFront_01",
+        "tail",
+    ] {
+        let chain = scene
+            .world
+            .all_components()
+            .find(|&id| {
+                scene
+                    .world
+                    .get_component_by_id_as::<SpringBoneComponent>(id)
+                    .is_some_and(|bone| {
+                        bone.stable_name.contains(name)
+                            || bone
+                                .root
+                                .as_ref()
+                                .is_some_and(|root| format!("{root:?}").contains(name))
+                    })
+            })
+            .unwrap_or_else(|| panic!("missing spring chain {name}"));
+        assert!(
+            chains
+                .iter()
+                .any(|bound| bound.chain == chain && bound.enabled && !bound.segments.is_empty()),
+            "spring chain {name} must bind to the loaded avatar"
+        );
+    }
+    let left_eye = scene
+        .world
+        .all_components()
+        .find(|&id| scene.world.component_label(id) == Some("J_Adj_L_FaceEye"))
+        .unwrap();
+    let eye_rotation = scene
+        .world
+        .get_component_by_id_as::<TransformComponent>(left_eye)
+        .unwrap()
+        .rotation_quat_xyzw();
+    for _ in 0..90 {
+        scene.update(1.0 / 90.0, &Default::default());
+    }
+    assert_ne!(
+        eye_rotation,
+        scene
+            .world
+            .get_component_by_id_as::<TransformComponent>(left_eye)
+            .unwrap()
+            .rotation_quat_xyzw(),
+        "idle gaze must actually animate the mapped eye joint"
     );
     // Do not exit while native material compilation workers are still active.
     let definitions: Vec<_> = scene

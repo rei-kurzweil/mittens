@@ -19,6 +19,7 @@ pub mod render_info;
 pub(crate) mod renderer_context;
 pub mod skin;
 pub(crate) mod surface_samplers;
+mod visual_mirror;
 pub mod visual_world;
 pub mod vulkano_renderer;
 #[cfg(feature = "desktop")]

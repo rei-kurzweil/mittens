@@ -279,6 +279,9 @@ impl MirrorSystem {
             .collect();
 
         for cid in mirror_cids {
+            let enabled = world
+                .get_component_by_id_as::<MirrorComponent>(cid)
+                .is_none_or(|m| m.enabled);
             let quality = visuals.mirror_quality_override().unwrap_or_else(|| {
                 world
                     .get_component_by_id_as::<MirrorComponent>(cid)
@@ -411,11 +414,12 @@ impl MirrorSystem {
                         family.key_segment(),
                         view_index
                     );
-                    if !visuals.mirror_captures_enabled() {
+                    if !enabled || !visuals.mirror_captures_enabled() {
                         // Keep texture identities available to the surface even
                         // when the current pose cannot form a valid reflection.
                         // The renderer skips these requests while captures pause.
                         captures.push(MirrorCaptureRequest {
+                            enabled: false,
                             family,
                             view_index,
                             camera: *eye_data,
@@ -584,6 +588,7 @@ impl MirrorSystem {
                     }
 
                     captures.push(MirrorCaptureRequest {
+                        enabled: true,
                         family,
                         view_index,
                         camera: CameraData {

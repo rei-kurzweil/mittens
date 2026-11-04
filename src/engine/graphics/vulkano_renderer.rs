@@ -2789,7 +2789,7 @@ mod vulkano_backend {
                 let captures: Vec<_> = mirror
                     .captures
                     .iter()
-                    .filter(|capture| capture.family == family)
+                    .filter(|capture| capture.enabled_for(family))
                     .collect();
                 if captures.is_empty() {
                     continue;

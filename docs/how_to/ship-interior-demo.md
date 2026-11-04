@@ -21,6 +21,13 @@ and both uses true/true. Both false runs simulation without graphics. With the
 desktop flag off, the host creates no desktop window, Vulkan surface, or desktop
 swapchain. XR-only startup requires an available OpenXR runtime.
 
+With `xr_avatar_enabled`, Mitten uses microphone amplitude for mouth opening
+(80 ms window, 120 Hz high-pass), HTC tracking for independent eyelid closure,
+and an idle saccade loop for pupil direction. HTC gaze direction is disabled so
+it does not compete with that loop. Hair, shirt hem, tail and bow use the shared
+secondary-motion presets and avatar colliders. Microphone capture starts only
+when the embodied XR avatar is enabled.
+
 Desktop controls are WASD and mouse. In the grocery/security store off the bridge hall, grab a machine pistol and
 use the XR trigger or desktop Space to fire. XR height controls are on the bridge
 wall; graphics controls are on the cafeteria wall. The scene has no editor wrapper
@@ -46,6 +53,13 @@ instantiated by this example. The orchard's east enclosure wall is closed, and
 the old connector and trailer streaming zones have been removed from the scene.
 Reusable vehicle, shop and trailer-park component files remain available.
 
+The orchard pickups compare two suspension hierarchies near the west entrance:
+A uses transform forks to drop spring scale before the wheels; B uses sibling
+spring/wheel branches and explicitly positions the wheel endpoints. The nearby
+Rest / Compress / Left Bump controls pose both trucks together. These are manual
+comparison poses, without terrain-following or rollover physics. See the
+[pickup model schema](pickup-model-schema.md) for Blender names, pivots and axes.
+
 The cafeteria also has an open hot-dog stand along its west wall, beside the
 three restaurant bays. Lumae holds a tray behind the grill; a four-flavor drink
 fountain sits on the counter, and a mini-fridge rides in the pickup bed. These
@@ -53,7 +67,10 @@ are visual prototypes, without purchasing or dispensing interactions yet.
 
 The four cafeteria vendors (coffee, noodles, grill and hot dogs) each retain an
 independent accordion. The grocery/security inventory and both orchard tree
-halves also have controls. Collapsing a control removes its content; restoring
+halves also have controls. The bridge's `BRIDGE / COMPUTERS & CABINETS` control
+beside its aft doorway unloads both rows of computer, tape and monitor cabinets;
+desks, chairs, room lighting and XR settings remain available for comparison.
+Collapsing a control removes its content; restoring
 constructs fresh content, while paths and room shells remain loaded. Traffic
 lights indicate state: red is collapsed, yellow is loading, green is expanded.
 The persistent `ship_input_controller` forwards input to live mounted pickups
@@ -86,7 +103,8 @@ paint override and a cargo component mounted in the bed; the body still uses
 retained destroyable mesh panels. Finish parameters live in
 `assets/components/materials/pickup_painted_metal.mms`.
 
-The regular park's low implicit hills are clipped into the upper deck slab,
+The regular park's implicit hills rise about 2.4 m above the deck, with bases
+about 8 m across. They are clipped into the upper deck slab,
 textured in the X/Z plane, and use their generated triangles for collision.
 The enlarged ground is split into four implicit fields so each grid remains
 within the engine's axis limit. Unchanged fields retain their visual and collision
@@ -97,6 +115,11 @@ field with the region above a local Y plane. A direct `Zone` child receives the
 generated contact mesh; add `Collidable.static()` beneath that zone to walk on
 it. Texture coordinates project local X/Z at one repeat per metre, and texture
 bindings follow regenerated surface outputs.
+
+Pickups currently have no moving collision response or terrain-following
+suspension. Larger hills do not yet make them flip. The required native chassis,
+wheel contact and rollover work is described in
+[vehicle terrain contact](../draft/vehicle-terrain-contact.md).
 
 The station uses two local presets in `materials/ship_anime_materials.mms`.
 Walls, architecture and ordinary props inherit `ship_environment_material()`:
@@ -163,3 +186,13 @@ to object accents such as writing surfaces, gallery guards, table pedestals and
 the grocery checkout. Three invisible, softly tinted rose/coral/peach spotlights
 sit inside the cafeteria's large window apertures. They shine across the room
 with a shallow downward angle, without adding visible light strips or fixtures.
+
+The women's washroom mirror starts paused. In the approach corridor, the inner
+zone (Z=12.8, before the door) enables its captures; the outer zone closer to
+the cafeteria exit (Z=14.1) freezes them again on the way out. Disabled mirrors
+keep displaying their last captured image(s). The global graphics mirror switch
+still overrides capture updates. Other mirrors stay enabled by default.
+
+MMS authors can use `Mirror.quality(512).enabled(false) { name="my_mirror" }`
+and `query("#my_mirror").set_enabled(true)` / `.set_enabled(false)` at runtime.
+This toggles updates, not the mirror surface or its retained textures.
