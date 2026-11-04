@@ -50,7 +50,7 @@ export fn ship_mall_cafeteria() {
             }
         }
         ship_solid([0.0, 5.9, 12.0], [22.0, 5.2, 0.16], peach_color)
-        // West wall is closed; the vehicle biodome is beyond Cherry Grove.
+        // West wall has the washroom route and a dining-level space window.
         // An eye-level side window gives the dining floor its own view too.
         ship_solid([-11.0, 0.40, 6.0], [0.16, 0.8, 12.0], wall_color)
         ship_solid([-11.0, 3.05, 6.0], [0.16, 0.5, 12.0], wall_color)
@@ -99,7 +99,7 @@ export fn ship_mall_cafeteria() {
         // Near guard stops at the stair mouth, leaving the ascent open.
         ship_solid([9.97, 5.75, 8.16], [2.06, 1.10, 0.08], accent_cyan)
         T.position(7.4, 6.7, 9.95).rotation(0.0, Math.pi, 0.0) {
-            ship_label([-1.45, 0.0, 0.0], "CHERRY GROVE > VEHICLE BIODOME / SHOPS", 0.11)
+            ship_label([-1.45, 0.0, 0.0], "CHERRY GROVE / ORCHARD", 0.11)
         }
         T.position(8.0, 1.9, 1.1).rotation(0.0, 3.1415927, 0.0) {
             ship_label([-0.65, 0.0, 0.0], "PARKS / SHOPS UPSTAIRS", 0.12)

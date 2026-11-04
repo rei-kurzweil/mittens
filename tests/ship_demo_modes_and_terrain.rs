@@ -138,11 +138,16 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
         assert_eq!(count("ship_xr_free_camera"), usize::from(xr && !avatar));
         assert_eq!(count("ship_lumae_motorcycle_rider"), 0);
         assert_eq!(count("recreational_vehicle"), 0);
+        assert_eq!(count("ship_trailer_park"), 0);
+        assert_eq!(count("ship_orchard_pickup_north"), 1);
+        assert_eq!(count("ship_orchard_pickup_south"), 1);
+        assert_eq!(count("pickup_truck"), 3); // two orchard trucks plus the hot-dog stand
+
         assert_eq!(count("ship_convenience_store"), 0);
         assert_eq!(count("ship_liquor_store"), 0);
         assert_eq!(count("ship_mens_washroom_hallway_stub"), 1);
-        assert_eq!(count("ship_park_load_zone"), 1);
-        assert_eq!(count("ship_park_unload_zone"), 1);
+        assert_eq!(count("ship_park_load_zone"), 0);
+        assert_eq!(count("ship_park_unload_zone"), 0);
         assert_eq!(count("toilet"), 3);
         assert!(!world.all_components().any(|id| {
             world
@@ -153,7 +158,7 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
                     .is_some()
         }));
         assert_eq!(count("ship_washroom_passage"), 1);
-        assert_eq!(count("ship_vehicle_biodome"), 1);
+        assert_eq!(count("ship_vehicle_biodome"), 0);
         assert_eq!(count("ship_barracks_ceiling_spot"), 3);
         for z in ["0", "6"] {
             for index in 0..3 {
@@ -217,7 +222,7 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
             }
         }
         // Walkable links must be clear at body height, including the turn
-        // into the washroom and the serial connection between both biodomes.
+        // into the washroom and the cafeteria-to-orchard connection.
         for (y, points) in [
             (
                 6.5,
@@ -229,16 +234,7 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
                     [-20.5, 9.0],
                 ],
             ),
-            (
-                6.5,
-                vec![
-                    [8.0, 15.0],
-                    [43.0, 15.0],
-                    [76.0, 15.0],
-                    [79.0, 15.0],
-                    [125.0, 15.0],
-                ],
-            ),
+            (6.5, vec![[8.0, 15.0], [43.0, 15.0]]),
         ] {
             for pair in points.windows(2) {
                 for step in 0..=30 {

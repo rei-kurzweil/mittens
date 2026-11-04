@@ -1,3 +1,4 @@
+import { pickup_truck } from "../vehicles/pickup_truck.mms"
 import { ship_store_accordion } from "../ship_store_accordion.mms"
 import { ship_biodome } from "../ship_biodome.mms"
 import { ship_box, ship_solid, ship_label } from "../ship_parts.mms"
@@ -27,7 +28,7 @@ export fn ship_park() {
         name = "ship_park"
         ship_solid([0.0, -0.10, 0.0], [64.0, 0.20, 48.0], [0.28, 0.39, 0.24])
         ship_park_ground(4)
-        ship_biodome("ship_park_glass_dome", 64.0, 48.0, 7.0, 0.0, true, true)
+        ship_biodome("ship_park_glass_dome", 64.0, 48.0, 7.0, 0.0, true, false)
         for x in [-18.0,0.0,18.0] {
             ship_light_pool([x, 3.8, 0.0], [0.88, 0.79, 0.66], 4.0, 15.0)
         }
@@ -51,13 +52,14 @@ export fn ship_park() {
                 ship_box([x, 0.21, z], [0.12, 0.42, 0.44], [0.26, 0.35, 0.30])
             }
         }
-        // East exit continues into the larger rectangular vehicle enclosure.
-        T { name = "ship_biodome_connector"
-            ship_solid([33.0,-0.1,0.0], [2.0,0.2,2.4], [0.28,0.39,0.24])
-            for z in [-1.2,1.2] {
-                ship_solid([33.0,0.55,z], [2.0,1.10,0.10], [0.25,0.39,0.35])
-            }
-            ship_path_markers([32.3,0.04,0.85], [1,0], 3, 0.6, [0.38,0.72,0.45])
+        // Keep two drivable pickups in the orchard, clear of the main paths.
+        T.position(-10.0,park_ground_height(-10.0,-3.5,4),-3.5).rotation(0,Math.pi/2.0,0) {
+            name="ship_orchard_pickup_north"
+            pickup_truck()
+        }
+        T.position(10.0,park_ground_height(10.0,3.5,4),3.5).rotation(0,-Math.pi/2.0,0) {
+            name="ship_orchard_pickup_south"
+            pickup_truck()
         }
         T.position(-30.2, 2.1, 0.0).rotation(0.0, -Math.pi / 2.0, 0.0) {
             ship_label([-0.8, 0.0, 0.0], "CHERRY GROVE", 0.19)

@@ -40,40 +40,24 @@ Cherry Grove is a 64 x 48 m rectangular clear enclosure with twenty cherry trees
 Two accordion controls beside its west entrance independently unload/rebuild the
 north and south orchard halves (ten trees each), including trunk collision.
 The hills, paths, benches and enclosure remain loaded.
-Its east connector leads into the 96 x 144 m vehicle enclosure. Vehicles and
-shops stay clustered near that enclosure's centre, leaving open driving space.
-Both enclosures retain flat roof grids without alpha pane overlays.
-
-Two separated, non-solid doorway zones control outdoor loading. The inner zone
-at the tree-area door collapses the two trailer-park stores and both vehicle
-groups. Entering the grass-side zone expands all four. They start collapsed,
-so their contents aren't constructed at ship startup. The zones have a gap to
-avoid repeated opposing transitions while standing in the doorway. Desktop,
-free XR and embodied XR each have an observed player collision zone.
-
-One motorcycle in the trailer park carries Lumae. Its passenger is attached to
-the seat with an authored pose, and its small state object alternates waiting,
-driving along the central lane, and a half-turn. Its MMS state only schedules
-velocity changes at phase boundaries; native Velocity integrates the bike. The demo is kinematic;
-it is not a player riding controller. The second motorcycle remains parked.
+Two drivable pickups now sit off the main paths in the orchard. The former
+trailer park, its second enclosure, RVs, motorcycles and two shops are no longer
+instantiated by this example. The orchard's east enclosure wall is closed, and
+the old connector and trailer streaming zones have been removed from the scene.
+Reusable vehicle, shop and trailer-park component files remain available.
 
 The cafeteria also has an open hot-dog stand along its west wall, beside the
 three restaurant bays. Lumae holds a tray behind the grill; a four-flavor drink
 fountain sits on the counter, and a mini-fridge rides in the pickup bed. These
 are visual prototypes, without purchasing or dispensing interactions yet.
 
-Each of the six vendors has an independent accordion title control: coffee,
-noodles, grill, hot dogs, convenience, and liquor. Click the arrow to unload the
-store's content, lights and fixture collisions; click again to construct fresh
-content. The control and storefront floor remain loaded. Motorhomes form one additional
-accordion group; pickups and motorcycles form another. The grocery/security inventory
-also has its own control, while its shell and ceiling lights remain loaded.
-Traffic lights sit behind the disclosure chevrons: red means collapsed, yellow
-is the load request, and green means expanded. Manual toggles remain available.
-No editor is involved. A single persistent `ship_input_controller` uses the
-existing `on_global` API and forwards input only to live vehicle and weapon
-instances. Streamed assets register no global callbacks. The same controller
-advances the motorcycle patrol when it is loaded.
+The four cafeteria vendors (coffee, noodles, grill and hot dogs) each retain an
+independent accordion. The grocery/security inventory and both orchard tree
+halves also have controls. Collapsing a control removes its content; restoring
+constructs fresh content, while paths and room shells remain loaded. Traffic
+lights indicate state: red is collapsed, yellow is loading, green is expanded.
+The persistent `ship_input_controller` forwards input to live mounted pickups
+and held weapons. No streamed asset registers its own global input callback.
 
 Pickups have a hollow front cab, two seats, a steering wheel, left-side brake
 and accelerator pedals, a central shifter, three dashboard mounting rails, and

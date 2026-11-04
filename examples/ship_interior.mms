@@ -25,9 +25,7 @@ import { ship_mall_entrance_hallway } from "../assets/components/rooms/ship_mall
 import { ship_mall_cafeteria } from "../assets/components/rooms/ship_mall_cafeteria.mms"
 import { ship_washroom_passage } from "../assets/components/rooms/ship_washroom_passage.mms"
 import { ship_womens_washroom } from "../assets/components/rooms/ship_womens_washroom.mms"
-import { ship_park_streaming_gate } from "../assets/components/rooms/ship_park_streaming_gate.mms"
 import { ship_park } from "../assets/components/rooms/ship_park.mms"
-import { ship_trailer_park } from "../assets/components/rooms/ship_trailer_park.mms"
 import { ship_barracks } from "../assets/components/rooms/ship_barracks.mms"
 import { ship_space_sky } from "../assets/components/backgrounds/ship_space_sky.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
@@ -60,9 +58,6 @@ T {
     ship_washroom_passage()
     T.position(-17.0,5.2,12.0).rotation(0,Math.pi,0) { ship_womens_washroom() }
     T.position(43.0, 5.2, 15.0) { ship_park() }
-    // Continue through Cherry Grove into the larger vehicle biodome.
-    T.position(125.0, 5.2, 16.0) { ship_trailer_park() }
-    ship_park_streaming_gate()
     if xr_view_enabled {
         if xr_avatar_enabled {
             let player_motion = Velocity {
