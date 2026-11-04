@@ -27,12 +27,13 @@ export fn ship_lamp(position, size, color) {
 }
 
 // All room floors have their top at Y=0. Doorways have 2.6 m clearance.
-export fn ship_deck(center, width, length, ceiling_height, ceiling_lit) {
+export fn ship_deck(center, width, length, ceiling_height, ceiling_lit, ceiling_color) {
     if ceiling_height == null { ceiling_height = 3.30 }
     if ceiling_lit == null { ceiling_lit = true }
+    if ceiling_color == null { ceiling_color = [0.35,0.39,0.39] }
     return T {
         ship_solid([center[0], -0.10, center[1]], [width, 0.20, length], [0.19, 0.23, 0.25])
-        ship_solid([center[0], ceiling_height, center[1]], [width, 0.16, length], [0.35, 0.39, 0.39])
+        ship_solid([center[0], ceiling_height, center[1]], [width, 0.16, length], ceiling_color)
         if ceiling_lit {
             ship_lamp([center[0], ceiling_height - 0.10, center[1]], [0.24, 0.04, length * 0.7], [0.73, 0.90, 0.88])
         }
@@ -40,11 +41,12 @@ export fn ship_deck(center, width, length, ceiling_height, ceiling_lit) {
 }
 
 // Wall parallel to X, centred doorway; use a Y rotation for a side doorway.
-export fn ship_door_wall(width) {
+export fn ship_door_wall(width, color) {
+    if color == null {color=[0.40,0.46,0.46]}
     return T {
         for side in [-1.0, 1.0] {
-            ship_solid([side * (width / 4.0 + 0.65), 1.6, 0.0], [width / 2.0 - 1.3, 3.2, 0.16], [0.40, 0.46, 0.46])
+            ship_solid([side * (width / 4.0 + 0.65), 1.6, 0.0], [width / 2.0 - 1.3, 3.2, 0.16], color)
         }
-        ship_solid([0.0, 2.9, 0.0], [2.6, 0.6, 0.16], [0.40, 0.46, 0.46])
+        ship_solid([0.0, 2.9, 0.0], [2.6, 0.6, 0.16], color)
     }
 }

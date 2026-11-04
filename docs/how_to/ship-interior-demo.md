@@ -172,3 +172,10 @@ Grabbable. Each part owns its own combined mesh and uses `to_hand(true)` with a
 mustard follows the sausage, while the vendor keeps holding the tray. Ordinary
 camera-only desktop pointers retain the existing gun-style desktop clearance;
 XR/avatar pointers with a solved hand attachment seat the food at that hand.
+
+The bridge, cafeteria and former barracks/grocery shop use warm cream/beige
+walls and ceilings, with soft peach in the cafeteria. Cyan and lilac are limited
+to object accents such as writing surfaces, gallery guards, table pedestals and
+the grocery checkout. Three invisible, softly tinted rose/coral/peach spotlights
+sit inside the cafeteria's large window apertures. They shine across the room
+with a shallow downward angle, without adding visible light strips or fixtures.

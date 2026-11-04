@@ -31,8 +31,8 @@ export fn ship_barracks_contents() {
         }
         // Small checkout leaves the doorway and middle aisle open.
         T {name="ship_grocery_checkout"
-            ship_solid([-1.5,0.50,1.9],[1.85,1.0,0.75],[0.40,0.32,0.20])
-            ship_solid([-1.5,1.04,1.9],[2.0,0.08,0.85],[0.66,0.65,0.48])
+            ship_solid([-1.5,0.50,1.9],[1.85,1.0,0.75],[0.52,0.68,0.68])
+            ship_solid([-1.5,1.04,1.9],[2.0,0.08,0.85],[0.79,0.73,0.63])
             ship_box([-1.15,1.25,1.9],[0.40,0.34,0.32],[0.15,0.23,0.20])
         }
 
