@@ -1,7 +1,27 @@
 //! Bounded worker; no boolean or triangulation executes in the render loop.
 use crate::engine::ecs::ComponentId;
 use crate::engine::graphics::{csg_mesh::Solid, mesh::CpuMesh};
-use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
+use std::sync::{
+    Arc,
+    mpsc::{self, Receiver, SyncSender, TrySendError},
+};
+
+/// Geometry is already resolved by the caller (for example from a GLB mesh).
+/// Mesh and cutter use the same local coordinate frame. Import and validation
+/// run on the CSG worker; the source asset remains immutable and shareable.
+#[derive(Debug)]
+pub struct MeshCutJob {
+    pub owner: ComponentId,
+    pub revision: u64,
+    pub mesh: Arc<CpuMesh>,
+    pub cutter: Solid,
+}
+
+#[derive(Debug)]
+enum WorkerJob {
+    Cells(CutJob),
+    Mesh(MeshCutJob),
+}
 
 #[derive(Debug)]
 pub struct CutJob {
@@ -31,20 +51,37 @@ pub struct CutResult {
 }
 #[derive(Debug)]
 pub struct CsgSystem {
-    sender: SyncSender<CutJob>,
+    sender: SyncSender<WorkerJob>,
     receiver: Receiver<CutResult>,
 }
 impl Default for CsgSystem {
     fn default() -> Self {
-        let (sender, jobs) = mpsc::sync_channel::<CutJob>(8);
+        let (sender, jobs) = mpsc::sync_channel::<WorkerJob>(8);
         let (results, receiver) = mpsc::sync_channel(8);
         std::thread::Builder::new()
             .name("mittens-csg".into())
             .spawn(move || {
                 while let Ok(job) = jobs.recv() {
+                    let (owner, revision) = match &job {
+                        WorkerJob::Cells(job) => (job.owner, job.revision),
+                        WorkerJob::Mesh(job) => (job.owner, job.revision),
+                    };
                     let started = std::time::Instant::now();
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         use crate::engine::graphics::csg_mesh::Operation;
+                        let job = match job {
+                            WorkerJob::Cells(job) => job,
+                            WorkerJob::Mesh(job) => {
+                                let solid = Solid::from_mesh(&job.mesh)?;
+                                let identity = crate::utils::math::mat4_identity();
+                                CutJob {
+                                    owner: job.owner,
+                                    revision: job.revision,
+                                    cells: vec![(0, solid.clone(), job.cutter, identity)],
+                                    render_cells: vec![(0, solid, identity)],
+                                }
+                            }
+                        };
                         let mut cells = Vec::new();
                         let mut removed: Option<Solid> = None;
                         for (index, solid, cutter, to_owner) in job.cells {
@@ -78,8 +115,8 @@ impl Default for CsgSystem {
                     });
                     if results
                         .send(CutResult {
-                            owner: job.owner,
-                            revision: job.revision,
+                            owner,
+                            revision,
                             result,
                             elapsed: started.elapsed(),
                         })
@@ -122,11 +159,32 @@ fn batch_render_mesh(sources: Vec<(usize, Solid, [[f32; 4]; 4])>, changes: &[Cut
 }
 impl CsgSystem {
     pub fn submit(&self, job: CutJob) -> Result<(), CutJob> {
-        self.sender.try_send(job).map_err(|e| match e {
-            TrySendError::Full(job) | TrySendError::Disconnected(job) => job,
-        })
+        self.sender
+            .try_send(WorkerJob::Cells(job))
+            .map_err(|e| match e {
+                TrySendError::Full(WorkerJob::Cells(job))
+                | TrySendError::Disconnected(WorkerJob::Cells(job)) => job,
+                _ => unreachable!("try_send returns the submitted job variant"),
+            })
+    }
+    /// Submit a small rigid mesh/chunk for geometry-only subtraction. The
+    /// returned cell's Solid can be retained for later cuts via `submit`.
+    /// Rejected imports return an error result; no render/collision state is
+    /// changed here. As with cell jobs, the caller owns publication/rollback.
+    pub fn submit_mesh(&self, job: MeshCutJob) -> Result<(), MeshCutJob> {
+        self.sender
+            .try_send(WorkerJob::Mesh(job))
+            .map_err(|e| match e {
+                TrySendError::Full(WorkerJob::Mesh(job))
+                | TrySendError::Disconnected(WorkerJob::Mesh(job)) => job,
+                _ => unreachable!("try_send returns the submitted job variant"),
+            })
     }
     pub fn poll(&self) -> Option<CutResult> {
         self.receiver.try_recv().ok()
     }
 }
+
+#[cfg(test)]
+#[path = "csg_system_tests.rs"]
+mod tests;

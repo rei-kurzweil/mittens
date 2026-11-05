@@ -36,13 +36,7 @@ export fn ship_biodome(label, width, length, height, door_z, west_door, east_doo
                     ship_box([-width/2.0+index*4.0,height/2.0,z], [0.10,height,0.10], frame)
                 }
             }
-            // Orthogonal roof grid makes the rectangular clear roof legible.
-            for index in range(Math.floor(width/8.0)+1) {
-                ship_box([-width/2.0+index*8.0,height,0], [0.10,0.12,length], frame)
-            }
-            for index in range(Math.floor(length/8.0)+1) {
-                ship_box([0,height,-length/2.0+index*8.0], [width,0.12,0.10], frame)
-            }
+            // Leave the roof clear; the wall grids retain the perimeter frame.
         }
         for x in [-width/2.0,width/2.0] {
             let door = west_door

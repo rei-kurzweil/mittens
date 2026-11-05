@@ -4,6 +4,9 @@ Implemented 2026-10-31. This is the static-box runtime slice of
 [the damage proposal](damageable-surfaces-csg-and-fragments.md). Authored general
 `CSG { Subtraction { ... } }` expressions remain a separate, unimplemented API.
 
+Next implementation slices for implicit hills, imported rigid meshes and restoring
+aggregate batching are tracked in [Geometry-aware runtime destruction](geometry-aware-runtime-destruction.md).
+
 ## Behavior and authoring
 
 Place `Destroyable.threshold(3.0).cell_size(0.12).chunk_size(1.0)` directly under a

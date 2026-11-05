@@ -2,10 +2,24 @@
 use super::mesh::{CpuMesh, CpuVertex};
 use manifold_rust::{linalg::Vec3, manifold::Manifold, types::Error};
 
+#[path = "csg_mesh_import.rs"]
+mod import;
+
 #[derive(Clone)]
 pub struct Solid(std::sync::Arc<Manifold>);
 
 impl Solid {
+    /// Import closed, outward-wound rigid geometry. The source stays immutable.
+    /// This first slice is geometry-only: output uses `mesh()`'s generated
+    /// normals/UVs; it does not promise source material or attribute preservation.
+    pub fn from_mesh(mesh: &CpuMesh) -> Result<Self, String> {
+        let solid = checked(import::from_cpu_mesh(mesh)?)?;
+        if solid.empty() || !solid.volume().is_finite() || solid.volume() <= 0.0 {
+            return Err("CSG import requires a positive closed volume with outward winding".into());
+        }
+        Ok(solid)
+    }
+
     pub fn box_between(min: [f32; 3], max: [f32; 3]) -> Self {
         Self(std::sync::Arc::new(
             Manifold::cube(
