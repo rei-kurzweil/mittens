@@ -1,18 +1,23 @@
 # Pickup model and suspension schema
 
-The current pickup loads `assets/models/mitten_pickup.glb`. Its two variants
-share the authored body, materials, wheels, springs and existing vehicle controls:
+All pickups now use one prefab and one suspension implementation:
+`pickup_truck(color, cargo, gravity_enabled)` in
+`assets/components/vehicles/pickup_truck.mms`. Both orchard trucks and the
+hot-dog stand pickup share it. The sibling-suspension factory, alternate code
+paths, and outdoor A/B comparison panel have been removed.
 
-- `pickup_truck(color, cargo)` uses a scale-dropping transform fork per wheel.
-- `pickup_truck_sibling_suspension(color, cargo)` uses sibling spring and wheel
-  branches, with no suspension transform forks.
+## Model and coordinates
 
-The GLB already contains four springs and wheels, so these are bound directly;
-no procedural body, extra wheels or additional spring GLBs are instantiated.
-The prefab turns the authored +Z front to vehicle-local -Z and raises the model
-0.180146 m so its lowest tyre touches ground. Its imported transforms and source
-file remain unchanged. Static body, seats, doors, headlights and steering wheel
-are combined; spring and wheel branches remain independently movable.
+The prefab loads `assets/models/mitten_pickup.glb`, including its body, seats,
+steering wheel, four wheels and four springs. It does not overlay procedural
+truck geometry or load extra spring meshes. The authored +Z front is turned to
+vehicle-local -Z and the model is raised 0.180146 m to place its lowest tyre at
+the ground. Coordinates are metres, +X right, +Y up, -Z forward.
+
+The source file remains unchanged. Static body, seats, doors, headlights and
+steering wheel are combined; suspension branches remain independently movable.
+Imported mesh overrides are resolved before combining, so all 1,589 body
+triangles are included rather than unresolved placeholder geometry.
 
 | Corner | Authored spring node | Authored wheel node |
 |---|---|---|
@@ -21,130 +26,82 @@ are combined; spring and wheel branches remain independently movable.
 | `rl` | `suspension_spring.001` | `front-left-WHEEL.001` |
 | `rr` | `suspension_spring.003` | `front-left-WHEEL.002` |
 
-`pickup_model_suspension.mms` inserts fixed mounts, compression transforms,
-endpoint transforms, steering/spin pivots and the selected scale filter after
-`GLTFInitialized`. Exact name selectors preserve Blender's dotted suffixes.
-Each tyre keeps its authored nonuniform scale. Compression requested before
-loading is retained and applied when binding completes. Driver eye position is
-[-0.33, 1.78, 0.30]; the bed cargo mount is [0, 0.64, 1.50].
-
-The model retains authored colours by default and now uses the pool handrails'
-chrome matcap metal shader. Static contact proxies leave the cab sides open. Existing driving
-and boarding work; cube-based mesh-cut destruction does not cut arbitrary GLB
-geometry, and rollover/terrain following remain unimplemented.
-
-Four spherical sliding contact zones approximate the lower chassis and upper
-cab. They correct the same truck root and work while it yaws. Existing static
-body/dashboard proxies remain available for other actors, while the truck ignores
-its own descendants during contact response. This is a rounded approximation,
-not an oriented-box or rigid-body solver. Rotated static boxes and general overlap
-queries are supported; moving sliding boxes still require axis alignment.
-
-Two warm-white spotlights sit at the front headlight faces, with a 25 m range,
-aimed along vehicle-local -Z so they follow steering and vehicle rotation.
-The original RPM, speed, fuel and odometer instruments are reused in a compact
-dashboard cluster behind the imported steering wheel. Its geometry has one
-combined render instance, with separate labels. Readouts and needles remain
-static placeholders.
-
-## Dashboard ride-height preview
-
-Buttons to the right of the steering wheel select all corners, front/rear axles,
-left/right sides, or FL/FR/RL/RR individually. UP/DOWN changes selected spring
-lengths in 5% steps, clamped to 65–135% of their authored length; REST resets
-all corners. The readout shows the selected group's average percentage.
-
-The four requested extensions fit an average support plane: their mean raises
-or lowers the body, the front/rear difference pitches it, and the left/right
-difference rolls it. The model, instruments, headlights, cargo and driver's
-anchor follow that body frame. Updates occur only on button events, without
-per-truck frame callbacks. The outdoor A/B compression controls still show raw
-spring compression independently and reset the body to its normal pose.
-
-This is a kinematic hydraulic preview. The truck has no simulated sprung mass,
-spring stiffness, damping, gravity-driven sag, or wheel-ground suspension forces.
-Changing a mesh's length does not itself exert resistance. Four arbitrary corner
-requests may not define a single plane, so this preview averages them rather
-than solving independent wheel contacts. Collision volumes remain upright
-approximations of the truck, including while the visible body is tilted.
-
-Both exports live in `assets/components/vehicles/pickup_truck.mms`. The orchard
-parks A (fork) north of the entrance path and B (siblings) south of it. A small
-panel near the entrance controls both: Rest, Compress, and Left Bump. These are
-static comparison poses, not simulated suspension, terrain following or rollover.
-
-## Archived procedural reference
-
-The original factories remain in `pickup_truck_prototype.mms`, including the
-procedural interior and cube-based destruction topology. Their spring geometry
-uses `suspension-spring.glb`, generated by `generate-suspension-spring.py`.
-The dimensions and hierarchy below describe that archived prototype. The new
-model uses its authored dimensions and the name mapping above.
-
-### Coordinates and names
-
-The `pickup_truck` root is the chassis transform. It is the immediate driven
-child of `pickup_velocity`; mounting and damage still address this root.
-Coordinates are metres, +Y up, +X right and -Z forward. The root origin is at
-ground level beneath the chassis. Wheel radius is 0.40 m and suspension rest
-length is 0.50 m. The fixed mounts are at Y=0.90 m:
-
-| Corner suffix | Chassis-local X | Chassis-local Z |
-|---|---:|---:|
-| `fl` | -0.96 | -1.65 |
-| `fr` | 0.96 | -1.65 |
-| `rl` | -0.96 | 1.55 |
-| `rr` | 0.96 | 1.55 |
-
-Each truck has all four suffixes. Names repeat between trucks; resolve them
-within the owning truck, rather than using an unscoped world query.
-
-## A: inherited travel through a transform fork
+`pickup_model_suspension.mms` binds these names after `GLTFInitialized`. Exact
+name selectors preserve Blender's dotted suffixes. Each authored wheel keeps
+its own rotation and nonuniform scale; compression requested before loading
+is retained until binding completes.
 
 ```text
-pickup_truck                         chassis / driven root
-  suspension_mount_fl               fixed mount and future probe reference
-    spring_fl                       scale Y for compression
-      [spring geometry]             spans local Y=0 to Y=-0.50
-      suspension_endpoint_fl        local Y=-0.50
+truck
+  suspension_mount_fl             fixed authored pose
+    spring_fl                     Y scale controls extension
+      [imported spring geometry]
+      suspension_endpoint_fl      authored wheel offset
         TOP.fork_trs().drop("scale")
-          steering_fl               local Y steering pivot
-            wheel_fl                local X spin pivot, origin at hub
-              [wheel geometry]
+          steering_fl
+            wheel_fl              hub-centred spin pivot
+              [imported wheel geometry and intrinsic scale]
 ```
 
-The endpoint receives the spring's scale before the fork strips scale. With
-spring scale Y=0.50, the hub rises from chassis-local Y=0.40 to Y=0.65; the tyre
-keeps its original dimensions. The fork drops all incoming scale, so author
-the truck at real dimensions instead of relying on root scaling to resize it.
+The endpoint receives the spring scale before the fork strips inherited scale
+from the wheel branch. No separate wheel-position update is needed. Resolve
+names within each truck because all instances share the same labels.
 
-## B: explicit travel with sibling branches
+## Lighting, gravity and collision
 
-```text
-pickup_truck
-  suspension_mount_fl
-    spring_fl                       scale affects spring geometry only
-      [spring geometry]
-    suspension_endpoint_fl          explicitly positioned at -0.50 * ratio
-      steering_fl
-        wheel_fl
-          [wheel geometry]
-```
+The current finish uses `pickup_lit_finish` from `pickup_painted_metal.mms`:
+scene-light diffuse/specular response, a strong explicit rim and a restrained
+matcap contribution. The pool's reflection-only matcap shader is no longer used
+on the trucks. Authored colours remain the default; an optional colour overrides
+the static body batch.
 
-The compression function updates spring scale and endpoint translation together.
-The wheel needs no scale filter because it is outside the scaled spring subtree.
-Both variants expose `truck.set_suspension_compression(corner, ratio)`: use a
-corner suffix or `null` for all four, with ratios clamped to 0.35–1.35. Ratio 1
-is the authored rest pose. This API is local MMS prefab behavior.
+Gravity is enabled by default through a direct child of native `Velocity`.
+Changing throttle, steering, braking or rider state preserves vertical velocity.
+Pass `false` as the third factory argument only for an isolated pose fixture
+that deliberately has no ground. Parked trucks fall and settle, and fall again
+if their support is removed.
 
-## Preparing the Blender replacement
+Four spherical sliding zones approximate the lower chassis and upper cab;
+static contact proxies leave cab sides open. Contacts ignore the truck's own
+parts and accumulate corrections for zones sharing its movement root. These
+are rounded upright collision approximations, not oriented moving boxes or
+wheel-ground suspension forces. Cube-based mesh cutting does not cut the GLB.
+Damage to dashboard cubes can unpack the truck's combined batches. That path
+now resolves imported GLB mesh overrides before replacing the combined draw,
+so intact body geometry remains visible instead of becoming placeholder meshes.
 
-Use named objects/empties matching the chosen hierarchy, with wheel origins at
-the hubs and steering/spin axes as above. Keep the body separate from moving
-wheel and spring geometry. A Blender object hierarchy does not need an armature
-for these rigid parts. The MMS transform fork is an engine-side operator, so
-leave space for it between the exported endpoint and steering branch in A;
-it is not a Blender object type or a glTF physics feature.
+## Dashboard and controls
 
-The current GLB binding above implements this insertion for `mitten_pickup.glb`.
-Other models need matching names or an explicit mapping in the binding helper.
+Two warm-white headlight spotlights point along vehicle-local -Z with 25 m range.
+RPM, speed, fuel and odometer instruments remain static placeholders. Their
+geometry is combined; labels remain separate. The driver eye anchor is
+[-0.33, 1.78, 0.30] and the cargo mount is [0, 0.64, 1.50] in the rest pose.
+
+RIDE buttons to the right of the steering wheel select all corners, front/rear
+axles, left/right sides or FL/FR/RL/RR. UP/DOWN changes requested spring lengths
+in 5% steps, clamped to 65–135%; REST resets every corner. The readout shows the
+selected group's average percentage.
+
+The four requested extensions fit an average body support plane: their mean
+raises/lowers the body, front/rear differences pitch it, and left/right
+differences roll it. Model, instruments, headlights, cargo and driver anchor
+follow the body frame. Updates occur only on button events, with no per-truck
+frame callback. The raw `set_suspension_compression` method remains for isolated
+compression tests and resets body tilt; there is no alternate suspension layout.
+
+Native `Transition` components smooth `update_transform` on both
+`pickup_chassis_pose` (translation/rotation) and each `spring_<corner>` (scale).
+They share `pickup_ride_transition()`: 0.6 beats, sine easing in/out and replacement
+of the active target from its current pose. Interpolation runs in the engine,
+without a per-frame MMS callback. At 120 BPM this takes 0.3 seconds. The dashboard
+readout shows the requested height while the mechanism moves toward it.
+
+Gravity now moves the truck as a whole, but there is still no sprung-mass,
+stiffness, damping or independent wheel-contact solver. Four arbitrary corner
+requests need not define a plane, so the ride-height preview averages them.
+Collision volumes remain upright while the visible body tilts. This is not
+rollover physics or automatic weight-induced spring compression.
+
+The archived procedural truck remains in `pickup_truck_prototype.mms` for
+cube-based damage fixtures. It also uses only the transform-fork layout, with
+`suspension-spring.glb` generated by `generate-suspension-spring.py`.

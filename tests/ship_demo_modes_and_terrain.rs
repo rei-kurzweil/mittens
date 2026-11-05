@@ -381,8 +381,7 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
                     &mut scene.command_queue,
                 );
             }
-            // The profiling baseline omits the vendor; rendered architecture
-            // must still use the station's local environment preset.
+            // Rendered architecture must still use the local environment preset.
             let materials = &scene.visuals.materials;
             let preset = |label| {
                 let source = named(&scene.world, label);
@@ -448,13 +447,13 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
                 mesh.mesh.bounds.min[1] >= -0.081,
                 "terrain stays within the upper deck slab"
             );
-            assert!(mesh.mesh.bounds.max[1] > 2.3 && mesh.mesh.bounds.max[1] < 2.7);
+            assert!(mesh.mesh.bounds.max[1] > 1.1 && mesh.mesh.bounds.max[1] < 1.5);
             let hit = mesh
                 .mesh
                 .ray([-24.0, 4.0, -16.0], [0.0, -1.0, 0.0])
                 .unwrap();
             assert!(
-                (4.0 - hit - 2.40).abs() < 0.10,
+                (4.0 - hit - 1.20).abs() < 0.10,
                 "tree grove has a smooth raised ground surface"
             );
             let retained_collision = mesh.mesh.clone();

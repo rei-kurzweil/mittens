@@ -3,14 +3,15 @@ import { ship_environment_material } from "../materials/ship_anime_materials.mms
 // upper deck slab so no hidden sphere geometry protrudes into the washrooms.
 fn ground_profile(extent_factor) {
     if extent_factor == 4 {
-        return { xs=[-24,-8,8,24] zs=[-16,-6,6,16] radius_a=4.4 radius_b=4.2 height_limit=3.0 }
+        // Shallower spherical caps with the same ground-level radii as before.
+        return { xs=[-24,-8,8,24] zs=[-16,-6,6,16] radius_a=7.0375 radius_b=6.825 depth_a=5.8625 depth_b=5.775 blend=0.35 height_limit=1.6 }
     }
-    return { xs=[-3.8,3.8] zs=[-2.8,2.8] radius_a=2.4 radius_b=2.3 height_limit=1.0 }
+    return { xs=[-3.8,3.8] zs=[-2.8,2.8] radius_a=2.4 radius_b=2.3 depth_a=2.05 depth_b=2.1 blend=0.7 height_limit=1.0 }
 }
 
-fn smooth_min(a, b) {
-    let h = Math.clamp(0.5 + 0.5 * (b - a) / 0.7, 0.0, 1.0)
-    return b * (1.0 - h) + a * h - 0.7 * h * (1.0 - h)
+fn smooth_min(a, b, blend) {
+    let h = Math.clamp(0.5 + 0.5 * (b - a) / blend, 0.0, 1.0)
+    return b * (1.0 - h) + a * h - blend * h * (1.0 - h)
 }
 
 export fn park_ground_height(x, z, extent_factor) {
@@ -24,10 +25,10 @@ export fn park_ground_height(x, z, extent_factor) {
             for cz in profile.zs {
                 let dx = x - cx
                 let dz = z - cz
-                let a = Math.sqrt(dx*dx + (y+2.05)*(y+2.05) + dz*dz) - profile.radius_a
-                let b = Math.sqrt((dx-0.65)*(dx-0.65) + (y+2.1)*(y+2.1) + (dz-0.2)*(dz-0.2)) - profile.radius_b
-                field = smooth_min(field, a)
-                field = smooth_min(field, b)
+                let a = Math.sqrt(dx*dx + (y+profile.depth_a)*(y+profile.depth_a) + dz*dz) - profile.radius_a
+                let b = Math.sqrt((dx-0.65)*(dx-0.65) + (y+profile.depth_b)*(y+profile.depth_b) + (dz-0.2)*(dz-0.2)) - profile.radius_b
+                field = smooth_min(field, a, profile.blend)
+                field = smooth_min(field, b, profile.blend)
             }
         }
         if field < 0.0 { low = y } else { high = y }
@@ -63,7 +64,7 @@ export fn ship_park_ground(extent_factor) {
                 if chunk>0 { label=label+"_"+chunk }
             }
         ImplicitSurface.bounds(xlo,-0.30,zlo,xhi,profile.height_limit,zhi)
-            .voxel_size(voxel).smooth_min_radius(0.7).clip_floor(-0.08) {
+            .voxel_size(voxel).smooth_min_radius(profile.blend).clip_floor(-0.08) {
             name = label
             grass C.rgba(1.0, 1.0, 1.0, 1.0)
             Texture.with_uri("assets/textures/grass/ship-park-grass.png")
@@ -73,8 +74,8 @@ export fn ship_park_ground(extent_factor) {
             Zone.cube([7.25*extent_factor,profile.height_limit,5.5*extent_factor]) { Collidable.static().friction(0.8) {} }
             for x in profile.xs {
                 for z in profile.zs {
-                    T.position(x, -2.05, z) { ImplicitSphere.radius(profile.radius_a) }
-                    T.position(x+0.65, -2.10, z+0.2) { ImplicitSphere.radius(profile.radius_b) }
+                    T.position(x, -profile.depth_a, z) { ImplicitSphere.radius(profile.radius_a) }
+                    T.position(x+0.65, -profile.depth_b, z+0.2) { ImplicitSphere.radius(profile.radius_b) }
                 }
             }
         }

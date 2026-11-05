@@ -2,14 +2,14 @@ import { ship_vehicle_motion } from "./ship_vehicle_motion.mms"
 import { pickup_driving } from "./pickup_driving.mms"
 import { pickup_model_suspension_bindings, bind_pickup_model_suspension } from "./pickup_model_suspension.mms"
 import { pickup_model_colliders } from "./pickup_model_colliders.mms"
-import { matcap_metal } from "../materials/matcap_metal.mms"
+import { pickup_lit_finish } from "../materials/pickup_painted_metal.mms"
 import { pickup_dashboard_gauges } from "./pickup_dashboard_gauges.mms"
 import { pickup_sliding_colliders } from "./pickup_sliding_colliders.mms"
-import { pickup_ride_height } from "./pickup_ride_height.mms"
+import { pickup_ride_height, pickup_ride_transition } from "./pickup_ride_height.mms"
 import { pickup_hydraulics_panel } from "./pickup_hydraulics_panel.mms"
 
 // Original procedural geometry remains in pickup_truck_prototype.mms.
-fn make_pickup(color, cargo, suspension_layout) {
+fn make_pickup(color, cargo, gravity_enabled) {
     let bindings=pickup_model_suspension_bindings()
     let batch=CombineMesh.keep_transforms() {
         name="pickup_painted_body"
@@ -17,17 +17,18 @@ fn make_pickup(color, cargo, suspension_layout) {
     }
     let model=GLTF.new("assets/models/mitten_pickup.glb") {
         name="pickup_model"
-        matcap_metal()
+        pickup_lit_finish()
         Texture.with_uri("assets/textures/pool/chrome-matcap.png")
         TextureFiltering.linear()
     }
     on(model,"GLTFInitialized",fn(event) {
-        bind_pickup_model_suspension(event.gltf,bindings,suspension_layout)
+        bind_pickup_model_suspension(event.gltf,bindings)
         let chassis=event.gltf.query("#truck")
         if chassis {
             // Combine only stationary geometry. CombineMesh adds no transform,
             // so reparenting these parts retains their authored local poses.
             chassis.attach(batch)
+            // The first source supplies the combined mesh's shared paint colour.
             for renderable in event.gltf.query_all("#truck > renderable") { batch.attach(renderable) }
             for name in ["car-seat","car-seat.001","door_left","door_right","headlights","Plane.001","steering_wheel"] {
                 let part=event.gltf.query("[name='"+name+"']")
@@ -55,7 +56,7 @@ fn make_pickup(color, cargo, suspension_layout) {
             if cargo!=null { cargo }
         }
     }
-    let pose=T.position(-0.047,0,0.568) {name="pickup_chassis_pose" body}
+    let pose=T.position(-0.047,0,0.568) {name="pickup_chassis_pose" pickup_ride_transition() body}
     let truck=T {
         name="pickup_truck"
         // Group marker retained; mesh-cut damage currently supports cubes only.
@@ -80,15 +81,14 @@ fn make_pickup(color, cargo, suspension_layout) {
     truck.ride_height_status=ride.status
     body.attach(pickup_hydraulics_panel(ride))
     let motion=ship_vehicle_motion(truck,"pickup_velocity")
+    // A direct child is an existing body-local Velocity gravity override.
+    let gravity=Gravity.enabled(gravity_enabled!=false) {name="pickup_gravity"}
+    motion.attach(gravity)
     truck.attach(pickup_sliding_colliders(truck))
     body.attach(pickup_driving(truck,motion,[-0.33,1.78,0.30]))
     return motion
 }
 
-export fn pickup_truck(color, cargo) {
-    return make_pickup(color,cargo,"fork")
-}
-
-export fn pickup_truck_sibling_suspension(color, cargo) {
-    return make_pickup(color,cargo,"siblings")
+export fn pickup_truck(color, cargo, gravity_enabled) {
+    return make_pickup(color,cargo,gravity_enabled)
 }

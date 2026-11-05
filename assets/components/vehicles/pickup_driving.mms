@@ -8,6 +8,13 @@ export fn pickup_driving(truck,motion,driver_eye) {
     let exit=T.position(-1.95,1.65,-0.25) { name="pickup_dismount_anchor" }
     let mountable=Mountable.entry_zone(entry).mount_anchor(seat).dismount_anchor(exit).on_grip() {}
     let state={mounted=false axis=[0,0] w=false a=false s=false d=false brake=false last_throttle=0 last_steering=0 last_brake=false}
+    fn clear_drive_motion() {
+        // The vehicle's motion frame stays upright. Preserve gravity/contact
+        // velocity on Y when changing throttle, steering, brake or rider state.
+        let vertical=motion.linear()[1]
+        motion.reset()
+        motion.translate([0,vertical,0])
+    }
     fn publish(refresh) {
         let throttle=state.axis[1] let steering=state.axis[0]
         if state.w { throttle=1 } if state.s { throttle=-1 }
@@ -16,7 +23,7 @@ export fn pickup_driving(truck,motion,driver_eye) {
         if Math.abs(steering)<0.16 { steering=0 }
         if !refresh && throttle==state.last_throttle && steering==state.last_steering && state.brake==state.last_brake {return}
         state.last_throttle=throttle state.last_steering=steering state.last_brake=state.brake
-        motion.reset()
+        clear_drive_motion()
         if !state.brake {
             motion.translate([0,0,-throttle*5.0])
             motion.rotate([0,-steering*throttle*1.2,0])
@@ -25,7 +32,7 @@ export fn pickup_driving(truck,motion,driver_eye) {
     fn reset() {
         state.axis=[0,0] state.w=false state.a=false state.s=false state.d=false state.brake=false
         state.last_throttle=0 state.last_steering=0 state.last_brake=false
-        motion.reset()
+        clear_drive_motion()
     }
     on(mountable,"MountStarted",fn(event) { state.mounted=true reset() })
     on(mountable,"MountEnded",fn(event) { state.mounted=false reset() })

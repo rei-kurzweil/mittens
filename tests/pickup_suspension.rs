@@ -7,6 +7,21 @@ use mittens_engine::engine::{
     },
     graphics::{CpuMesh, MeshHandle, MeshUploader, TextureHandle, TextureUploader},
 };
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
+
+#[derive(Default)]
+struct TestClock(AtomicU64);
+impl mittens_engine::engine::ecs::system::clock_system::ClockDriver for TestClock {
+    fn name(&self) -> &'static str {
+        "pickup_transition_test"
+    }
+    fn time_now_sec(&self) -> f64 {
+        self.0.load(Ordering::Relaxed) as f64 / 1_000_000.0
+    }
+}
 
 #[derive(Default)]
 struct Upload(u32, std::collections::HashMap<MeshHandle, usize>);
@@ -58,27 +73,36 @@ fn descendants(world: &World, root: ComponentId) -> Vec<ComponentId> {
 }
 
 fn tick(scene: &mut Universe) {
+    let clock = Arc::new(TestClock::default());
+    scene.systems.clock.set_driver(clock.clone());
+    scene.systems.clock.set_bpm(60.0);
     for _ in 0..3 {
+        clock.0.fetch_add(16_667, Ordering::Relaxed);
         scene.update(1.0 / 60.0, &Default::default());
     }
 }
 
+fn settle(scene: &mut Universe) {
+    for _ in 0..14 {
+        tick(scene);
+    }
+}
+
 fn click(scene: &mut Universe, index: usize) {
-    let target = named(&scene.world, &format!("pickup_suspension_compare_{index}"));
+    let target = named(&scene.world, "suspension_test_control");
     scene.command_queue.push_event(
         target,
-        EventSignal::Click {
-            raycaster: ComponentId::default(),
-            renderable: target,
-            hit_point: [0.0; 3],
-            screen_pos_px: None,
+        EventSignal::DataEvent {
+            name: ["Rest", "Compress", "LeftBump"][index].into(),
+            payload: None,
         },
     );
     tick(scene);
+    settle(scene);
 }
 
 fn check_wheels(scene: &Universe, left_ratio: f32, right_ratio: f32) {
-    for root in ["fork_fixture", "sibling_fixture"] {
+    for root in ["first_fixture", "second_fixture"] {
         let scope = named(&scene.world, root);
         for corner in ["fl", "fr", "rl", "rr"] {
             let wheel = scene
@@ -157,10 +181,10 @@ fn check_wheels(scene: &Universe, left_ratio: f32, right_ratio: f32) {
                     "{root}/{corner}: spring scale must not distort the wheel: {length}"
                 );
             }
-            let other = if root == "fork_fixture" {
-                "sibling_fixture"
+            let other = if root == "first_fixture" {
+                "second_fixture"
             } else {
-                "fork_fixture"
+                "first_fixture"
             };
             let other_scope = named(&scene.world, other);
             let other_wheel = scene
@@ -175,7 +199,7 @@ fn check_wheels(scene: &Universe, left_ratio: f32, right_ratio: f32) {
                     - TransformSystem::world_position(&scene.world, other_scope).unwrap()[axis];
                 assert!(
                     (local - other_local).abs() < 1e-4,
-                    "the variants must agree on hub placement"
+                    "independent truck instances must agree on hub placement"
                 );
             }
         }
@@ -195,7 +219,7 @@ fn check_hydraulics(scene: &mut Universe, root: &str) {
     let initial_seat = TransformSystem::world_position(&scene.world, seat).unwrap();
     let wheel = scene.world.find_component(scope, "#wheel_fl").unwrap();
     let initial_hub = TransformSystem::world_position(&scene.world, wheel).unwrap();
-    let click_control = |scene: &mut Universe, name: &str| {
+    let start_control = |scene: &mut Universe, name: &str| {
         let control = scene
             .world
             .find_component(scope, &format!("#pickup_hydraulics_{name}"))
@@ -211,12 +235,42 @@ fn check_hydraulics(scene: &mut Universe, root: &str) {
         );
         tick(scene);
     };
+    let click_control = |scene: &mut Universe, name: &str| {
+        start_control(scene, name);
+        settle(scene);
+    };
     let pose_transform = |scene: &Universe| {
         *scene
             .world
             .get_component_by_id_as::<TransformComponent>(pose)
             .unwrap()
     };
+    // Inspect actual intermediate poses and retarget before the first lift ends.
+    start_control(scene, "raise");
+    let early = pose_transform(scene).translation()[1];
+    assert!(
+        early > 0.0 && early < 0.022764 * 0.25,
+        "lift must start gradually: {early}"
+    );
+    for _ in 0..4 {
+        tick(scene);
+    }
+    let middle = pose_transform(scene).translation()[1];
+    assert!(middle > early && middle < 0.022764);
+    let hub = TransformSystem::world_position(&scene.world, wheel).unwrap();
+    assert!(
+        (hub[1] - initial_hub[1]).abs() < 1e-4,
+        "spring and chassis transitions must retain wheel height mid-lift"
+    );
+    start_control(scene, "raise");
+    let retargeted = pose_transform(scene).translation()[1];
+    assert!(
+        retargeted >= middle && retargeted < 0.045528 * 0.75,
+        "a new press must continue from the current pose"
+    );
+    settle(scene);
+    assert!((pose_transform(scene).translation()[1] - 0.045528).abs() < 1e-4);
+    click_control(scene, "reset");
     click_control(scene, "select_all");
     click_control(scene, "raise");
     assert!(
@@ -234,7 +288,17 @@ fn check_hydraulics(scene: &mut Universe, root: &str) {
         "the driver's anchor must rise with the body"
     );
     click_control(scene, "select_front");
-    click_control(scene, "raise");
+    start_control(scene, "raise");
+    let early_pitch = pose_transform(scene).rotation_quat_xyzw()[0];
+    for _ in 0..4 {
+        tick(scene);
+    }
+    let middle_pitch = pose_transform(scene).rotation_quat_xyzw()[0];
+    assert!(
+        middle_pitch > early_pitch && middle_pitch < 0.00475,
+        "chassis rotation must interpolate before reaching its target"
+    );
+    settle(scene);
     assert!(
         pose_transform(scene).rotation_quat_xyzw()[0] > 0.001,
         "front extension should pitch the nose up"
@@ -279,17 +343,32 @@ fn check_hydraulics(scene: &mut Universe, root: &str) {
 }
 
 #[test]
-fn both_pickup_suspensions_compress_without_scaling_tyres() {
+fn pickup_suspension_compresses_without_scaling_tyres() {
     let mut scene = Universe::new(World::default());
-    scene.load_mms_source_at_path(r#"
-        import { pickup_truck, pickup_truck_sibling_suspension } from "../assets/components/vehicles/pickup_truck.mms"
-        import { pickup_suspension_comparison } from "../assets/components/vehicles/pickup_suspension_comparison.mms"
-        let fork = pickup_truck()
-        let sibling = pickup_truck_sibling_suspension()
-        T.rotation(0,0.6,0) { name="fork_fixture" fork }
-        T.position(8,0,0).rotation(0,0.6,0) { name="sibling_fixture" sibling }
-        pickup_suspension_comparison(fork,sibling)
-    "#, "examples/_pickup_suspension_comparison_test.mms").unwrap();
+    scene
+        .load_mms_source_at_path(
+            r#"
+        import { pickup_truck } from "../assets/components/vehicles/pickup_truck.mms"
+        let first=pickup_truck(null,null,false)
+        let second=pickup_truck(null,null,false)
+        T.rotation(0,0.6,0) {name="first_fixture" first}
+        T.position(8,0,0).rotation(0,0.6,0) {name="second_fixture" second}
+        let control=T {name="suspension_test_control"}
+        on(control,"DataEvent",fn(event) {
+            for vehicle in [first,second] {
+                let truck=vehicle.query("[name='pickup_truck']")
+                truck.set_suspension_compression(null,1.0)
+                if event=="Compress" {truck.set_suspension_compression(null,0.5)}
+                if event=="LeftBump" {
+                    truck.set_suspension_compression("fl",0.5)
+                    truck.set_suspension_compression("rl",0.5)
+                }
+            }
+        })
+    "#,
+            "examples/_pickup_suspension_test.mms",
+        )
+        .unwrap();
     let mut upload = Upload::default();
     for _ in 0..3 {
         tick(&mut scene);
@@ -319,7 +398,7 @@ fn both_pickup_suspensions_compress_without_scaling_tyres() {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     tick(&mut scene);
-    for root in ["fork_fixture", "sibling_fixture"] {
+    for root in ["first_fixture", "second_fixture"] {
         let scope = named(&scene.world, root);
         let model = scene.world.find_component(scope, "#pickup_model").unwrap();
         let gltf = scene
@@ -412,6 +491,16 @@ fn both_pickup_suspensions_compress_without_scaling_tyres() {
             .iter()
             .find(|instance| instance.component == batch)
             .unwrap();
+        for (actual, expected) in combined
+            .color
+            .iter()
+            .zip([0.9537518, 0.4867494, 0.01034647, 1.0])
+        {
+            assert!(
+                (actual - expected).abs() < 1e-5,
+                "the batch should retain the painted body's authored colour"
+            );
+        }
         let material = scene
             .visuals
             .materials
@@ -424,7 +513,7 @@ fn both_pickup_suspensions_compress_without_scaling_tyres() {
             .unwrap();
         assert_eq!(
             definition.custom.as_ref().unwrap().fragment_uri,
-            "assets/shaders/pool-metal-matcap.frag"
+            "assets/shaders/pickup-painted-metal.frag"
         );
         assert_eq!(
             upload.1.get(&combined.renderable.mesh).copied(),
@@ -450,7 +539,7 @@ fn both_pickup_suspensions_compress_without_scaling_tyres() {
         check_wheels(&scene, 1.0, 1.0);
     }
     // The fixed probe mounts must not follow spring compression.
-    for root in ["fork_fixture", "sibling_fixture"] {
+    for root in ["first_fixture", "second_fixture"] {
         let scope = named(&scene.world, root);
         let mount = scene
             .world
@@ -470,7 +559,7 @@ fn both_pickup_suspensions_compress_without_scaling_tyres() {
             [1.0; 3]
         );
     }
-    check_hydraulics(&mut scene, "fork_fixture");
-    check_hydraulics(&mut scene, "sibling_fixture");
+    check_hydraulics(&mut scene, "first_fixture");
+    check_hydraulics(&mut scene, "second_fixture");
     check_wheels(&scene, 1.0, 1.0);
 }

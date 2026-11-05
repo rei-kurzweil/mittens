@@ -338,7 +338,7 @@ fn first_source_appearance(world: &World, source: ComponentId) -> ([f32; 4], f32
 // Combined sources are suppressed before RenderableSystem flushes individual
 // draws. Resolve their imported mesh overrides here instead of baking the
 // placeholder, and defer the batch if any imported source is still pending.
-fn source_mesh(
+pub(super) fn source_mesh(
     world: &World,
     assets: &RenderAssets,
     source: ComponentId,

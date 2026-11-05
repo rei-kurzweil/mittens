@@ -23,3 +23,16 @@ export fn ship_avatar_material() {
         rim_power = 3.5
     }) { name = "ship_avatar_anime_material" }
 }
+
+// Face-only fill: retain the texture's colours under overhead kiosk lighting.
+export fn ship_face_material() {
+    return Material(MaterialDefinition.anime()).inputs({
+        shade_color = [0.72, 0.65, 0.73]
+        shade_strength = 0.28
+        shade_threshold = 0.22
+        lit_threshold = 0.85
+        rim_color = [1.0, 0.94, 1.0]
+        rim_strength = 0.42
+        rim_power = 3.5
+    }) { name = "ship_face_anime_material" }
+}

@@ -86,6 +86,7 @@ fn stores_rebuild_and_pickups_mount_drive_brake_and_dismount() {
         T.position(10,0,0) { ship_store_accordion("test_store","TEST STORE",fixture,5,3,null) }
         T.position(20,0,0) { ship_store_accordion("retail_test","CONVENIENCE",ship_convenience_store,12,6,null) }
         pickup_truck()
+        ship_solid([0,-0.1,0],[60,0.2,60],[0.3,0.3,0.3])
         T.position(-1.5,0,0) {
             name="test_rider_root"
             Rider.anchor("#test_rider_eye").movement_root("#test_rider_root").input("#test_rider_input") {}

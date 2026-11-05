@@ -1,4 +1,4 @@
-import { ship_avatar_material } from "./materials/ship_anime_materials.mms"
+import { ship_avatar_material, ship_face_material } from "./materials/ship_anime_materials.mms"
 import { ship_solid, ship_box, ship_label } from "./ship_parts.mms"
 import { ship_light_pool, ship_path_markers } from "./ship_lighting.mms"
 import { pickup_truck } from "./vehicles/pickup_truck.mms"
@@ -42,6 +42,11 @@ export fn hot_dog_stand() {
             vendor
             // The tray follows her posed wrist and any later avatar animation.
             on(vendor, "GLTFInitialized", fn(event) {
+                // Imported renderables retain a GLTF material scope. Override
+                // the face primitive itself after asynchronous loading finishes.
+                for face in event.gltf.query_all("[name='Face'] > renderable") {
+                    face.attach(ship_face_material())
+                }
                 let hand = event.gltf.query("[name='J_Bip_R_Hand']")
                 if hand {
                     hand.attach(held_hot_dog)

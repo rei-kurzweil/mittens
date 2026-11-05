@@ -287,6 +287,56 @@ fn fully_consumed_surface_releases_state_and_cannot_resurrect() {
 }
 
 #[test]
+fn unpacking_damage_group_preserves_imported_mesh_overrides() {
+    let (mut w, mut v, mut a, mut u, mut s) = (
+        World::default(),
+        VisualWorld::default(),
+        RenderAssets::new(),
+        Uploader::default(),
+        SystemWorld::default(),
+    );
+    let root = w.add_component(TransformComponent::new());
+    let group = attach(&mut w, root, DestroyableComponent::default());
+    let batch = attach(&mut w, root, CombineMeshComponent::keep_transforms());
+    // Match a suppressed imported body: its Renderable has never resolved the
+    // GLTF MeshComponent override and still contains a placeholder CPU handle.
+    let source = attach(
+        &mut w,
+        batch,
+        RenderableComponent::new(crate::engine::graphics::primitives::Renderable::new(
+            CpuMeshHandle(0),
+            crate::engine::graphics::MaterialHandle::TOON_MESH,
+        )),
+    );
+    attach(&mut w, source, MeshComponent::new("imported_body"));
+    let cpu = a.register_imported_mesh(
+        "imported_body",
+        crate::engine::graphics::mesh::MeshFactory::cube(),
+    );
+    let gpu = a.gpu_mesh_handle(&mut u, cpu).unwrap();
+    s.combine_mesh.reconcile_and_build(
+        &mut w,
+        &mut v,
+        &mut a,
+        &mut u,
+        &mut s.renderable,
+        &mut s.mesh_bounds,
+    );
+    assert!(v.instance_handle_for_component(batch).is_some());
+    let mut groups = super::super::destroyable_group::DestroyableGroups::default();
+    groups.reconcile(&mut w);
+    assert!(groups.activate(group, &mut s, &mut w, &mut v, &mut a, &mut u));
+    assert!(v.instance_handle_for_component(batch).is_none());
+    let intact = v
+        .instance(v.instance_handle_for_component(source).unwrap())
+        .unwrap();
+    assert_eq!(
+        intact.renderable.mesh, gpu,
+        "unpacking must publish the imported body, not its placeholder"
+    );
+}
+
+#[test]
 fn floor_batches_unpack_only_after_success_and_leave_other_floors_combined() {
     let (mut w, mut v, mut a, mut u, mut s, mut d) = (
         World::default(),

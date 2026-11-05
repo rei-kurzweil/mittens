@@ -9,14 +9,14 @@ import { pickup_painted_metal } from "../materials/pickup_painted_metal.mms"
 // pickup_truck is the chassis transform driven by Velocity and used for mounting.
 // Destroyable retained body panels; suspension/wheels remain separate branches.
 // Parked pickup, front toward -Z. Open cargo bed and a two-seat cab.
-fn make_pickup(color, cargo, suspension_layout) {
+fn make_pickup(color, cargo) {
     if color == null { color = [0.59, 0.52, 0.42] }
     let metal = pickup_painted_metal()
     let suspensions = [
-        pickup_suspension("fl",-0.96,-1.65,0.40,metal,suspension_layout),
-        pickup_suspension("fr", 0.96,-1.65,0.40,metal,suspension_layout),
-        pickup_suspension("rl",-0.96, 1.55,0.40,metal,suspension_layout),
-        pickup_suspension("rr", 0.96, 1.55,0.40,metal,suspension_layout),
+        pickup_suspension("fl",-0.96,-1.65,0.40,metal),
+        pickup_suspension("fr", 0.96,-1.65,0.40,metal),
+        pickup_suspension("rl",-0.96, 1.55,0.40,metal),
+        pickup_suspension("rr", 0.96, 1.55,0.40,metal),
     ]
     let truck = T {
         name = "pickup_truck"
@@ -74,10 +74,5 @@ fn make_pickup(color, cargo, suspension_layout) {
 }
 
 export fn pickup_truck(color, cargo) {
-    return make_pickup(color,cargo,"fork")
-}
-
-// Same body and controls; only suspension hierarchy/compression handling differs.
-export fn pickup_truck_sibling_suspension(color, cargo) {
-    return make_pickup(color,cargo,"siblings")
+    return make_pickup(color,cargo)
 }

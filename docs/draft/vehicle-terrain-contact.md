@@ -7,7 +7,7 @@ They now have four spherical `Collidable.slide()` contact zones approximating
 the lower chassis and upper cab, plus static body proxies for other actors.
 Contacts ignore the truck's own descendants and accumulate corrections from
 zones sharing its movement root. This provides basic wall/terrain separation
-and sliding, without wheel support, gravity-driven settling or rollover.
+and sliding, with gravity-driven settling, but without independent wheel support or rollover.
 Mounting and driving commands remain separate responsibilities.
 
 ## Limits of the existing slide response

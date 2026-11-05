@@ -1,5 +1,14 @@
 // Event-driven hydraulic preview. Four requested spring lengths determine an
 // average body support plane; no mass, spring forces or wheel-ground solver.
+// The same native policy keeps body movement and spring extension in sync.
+export fn pickup_ride_transition() {
+    return Transition {
+        duration_beats(0.6)
+        ease_in_out_sine()
+        replace_same_target()
+    }
+}
+
 fn matches(selection,corner) {
     return selection=="all" || selection==corner
         || (selection=="front" && (corner=="fl" || corner=="fr"))

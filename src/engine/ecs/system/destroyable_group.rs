@@ -168,11 +168,12 @@ impl DestroyableGroups {
                 let Some(model) = TransformSystem::world_model(world, source) else {
                     return false;
                 };
-                let cpu = world
-                    .get_component_by_id_as::<RenderableComponent>(source)
-                    .unwrap()
-                    .renderable
-                    .mesh;
+                // Suppressed GLTF sources may still carry a placeholder on the
+                // Renderable. Resolve the same imported override used to bake it.
+                let Some(cpu) = super::combine_mesh_system::source_mesh(world, assets, source)
+                else {
+                    return false;
+                };
                 let Ok(gpu) = assets.gpu_mesh_handle(uploader, cpu) else {
                     return false;
                 };

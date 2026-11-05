@@ -1,3 +1,5 @@
+import { pickup_ride_transition } from "./pickup_ride_height.mms"
+
 // Authored GLB names after turning its +Z front toward vehicle-local -Z.
 export fn pickup_model_suspension_bindings() {
     return [
@@ -8,23 +10,22 @@ export fn pickup_model_suspension_bindings() {
     ]
 }
 
-fn bind_wheel(chassis, spring, wheel, corner, layout) {
+fn bind_wheel(chassis, spring, wheel, corner) {
     let hub=wheel.translation()
     let spin=T { name="wheel_"+corner }
     let steering=T { name="steering_"+corner spin }
     let endpoint=T.position(hub[0],hub[1],hub[2]) {
         name="suspension_endpoint_"+corner
-        if layout=="siblings" { steering }
-        else { TOP.fork_trs().drop("scale") { steering } }
+        TOP.fork_trs().drop("scale") { steering }
     }
     let spring_control=T {
         name="spring_"+corner
-        if layout!="siblings" { endpoint }
+        pickup_ride_transition()
+        endpoint
     }
     let mount=T {
         name="suspension_mount_"+corner
         spring_control
-        if layout=="siblings" { endpoint }
     }
     // Put the authored pose on the fixed mount, leaving a clean compression
     // transform without discarding the spring's orientation relative to the body.
@@ -37,19 +38,18 @@ fn bind_wheel(chassis, spring, wheel, corner, layout) {
     mount.set_compression=fn(ratio) {
         let compression=Math.clamp(ratio,0.35,1.35)
         spring_control.update_transform([0,0,0],[0,0,0],[1,compression,1])
-        if layout=="siblings" { endpoint.update_transform([hub[0],hub[1]*compression,hub[2]]) }
     }
     return mount
 }
 
-export fn bind_pickup_model_suspension(model, bindings, layout) {
+export fn bind_pickup_model_suspension(model, bindings) {
     let chassis=model.query("#truck")
     if !chassis { print("Pickup GLB: truck node is missing") return }
     for binding in bindings {
         let spring=model.query("[name='"+binding.spring+"']")
         let wheel=model.query("[name='"+binding.wheel+"']")
         if spring && wheel {
-            binding.actuator=bind_wheel(chassis,spring,wheel,binding.corner,layout)
+            binding.actuator=bind_wheel(chassis,spring,wheel,binding.corner)
             binding.actuator.set_compression(binding.ratio)
         } else { print("Pickup GLB: missing suspension nodes for "+binding.corner) }
     }

@@ -66,12 +66,10 @@ instantiated by this example. The orchard's east enclosure wall is closed, and
 the old connector and trailer streaming zones have been removed from the scene.
 Reusable vehicle, shop and trailer-park component files remain available.
 
-The orchard pickups compare two suspension hierarchies near the west entrance:
-A uses transform forks to drop spring scale before the wheels; B uses sibling
-spring/wheel branches and explicitly positions the wheel endpoints. The nearby
-Rest / Compress / Left Bump controls pose both trucks together. These are manual
-comparison poses, without terrain-following or rollover physics. See the
-[pickup model schema](pickup-model-schema.md) for Blender names, pivots and axes.
+Both orchard pickups now share the same transform-fork suspension prefab and
+its dashboard ride-height controls. The alternate sibling layout and outdoor
+A/B controls are removed. See the [pickup model schema](pickup-model-schema.md)
+for names, pivots and the remaining physics limitations.
 
 The cafeteria also has an open hot-dog stand along its west wall, beside the
 three restaurant bays. Lumae holds a tray behind the grill; a four-flavor drink
@@ -111,19 +109,31 @@ pedestrian movement until exit. This remains a kinematic driving prototype;
 it does not yet solve vehicle-to-vehicle crash physics. RVs are near-white with
 single grey translucent panes over actual wall openings.
 
-Imported pickups retain authored colours with the chrome matcap material used by
-the pool handrails. `pickup_truck(color, cargo)` accepts an optional colour override
-and cargo mounted in the bed. The current finish is in
-`assets/components/materials/matcap_metal.mms`; the procedural truck retains its
-older painted-metal finish.
+Imported pickups use a lit paint/plastic finish with scene-light specular
+highlights, an explicit rim and a small matcap contribution. The reflection-only
+pool matcap finish is no longer used. Gravity is enabled by default; parked
+trucks fall and settle against their sliding collision zones. Drive commands
+preserve vertical velocity when braking, turning or changing riders.
 
 Dashboard RIDE buttons, to the right of the steering wheel, select all corners,
 front/rear axles, left/right sides or individual corners. UP/DOWN adjusts ride
 height and REST resets all four. Their combined extensions raise, lower, pitch
 and roll the visible body and its driver anchor. This is an event-driven
-hydraulic preview, without simulated vehicle weight, stiffness or damping.
+hydraulic preview, without spring stiffness, damping or weight-induced spring sag.
+Body pose and spring extension share a 0.6-beat native transition, with sine
+easing in/out. Further presses retarget from the current pose.
 
-The regular park's implicit hills rise about 2.4 m above the deck, with bases
+At Lumae's vendor head-height position (approximately [-7.3, 1.6, 16.8]), three
+point lights pass the distance checks: the stand light at [-7.3, 2.7, 16.4]
+and two coffee-shop lights at [-5, 2.4, 17.3] and [-5, 2.7, 19.2]. All three
+are above her. The cafeteria window spotlights miss that position by cone or
+range. Actual contribution varies with surface position and normal; the scene
+also has low ambient fill and no dedicated face-height fill light for the vendor.
+Her imported `Face` renderable receives `ship_face_material()` from the existing
+`GLTFInitialized` callback. This face-only anime preset reduces shadow strength
+to 0.28 with a lighter tint; her body retains the regular avatar material.
+
+The regular park's implicit hills rise about 1.2 m above the deck, with bases
 about 8 m across. They are clipped into the upper deck slab,
 textured in the X/Z plane, and use their generated triangles for collision.
 The enlarged ground is split into four implicit fields so each grid remains

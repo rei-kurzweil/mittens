@@ -14,7 +14,7 @@ layout(set=0,binding=1,std430) readonly buffer LightsSSBO {
 } scene;
 layout(set=1,binding=0,std140) uniform PaintedMetal {
     float matcap_strength; float specular_strength; float shininess;
-    float rim_strength; float rim_power;
+    float rim_strength; float rim_power; float exposure;
 } metal;
 layout(set=1,binding=1) uniform sampler2D matcap;
 
@@ -23,6 +23,9 @@ void main() {
     vec3 view_position=(camera.view*vec4(v_world_pos,1.0)).xyz;
     vec3 Vview=normalize(-view_position);
     vec3 V=normalize(transpose(mat3(camera.view))*Vview);
+    // The imported body is made of double-sided panels. Back-facing normals
+    // otherwise produce a full-strength white rim across entire visible faces.
+    if(dot(N,V)<0.0) N=-N;
     vec3 diffuse=max(camera.ambient_light,vec3(0.0));
     vec3 highlights=vec3(0.0);
     for(uint i=0u;i<min(scene.count,64u);i++) {
@@ -58,6 +61,8 @@ void main() {
     vec3 color=paint*diffuse + highlights
         + reflection*mix(vec3(0.55),paint,0.45)*metal.matcap_strength
         + vec3(0.90,0.94,1.0)*rim*metal.rim_strength;
-    // Deliberately uncapped by paint albedo: light and reflections may exceed it.
+    // Preserve highlight detail on the lit imported finish instead of clipping
+    // the entire body white. Zero exposure keeps the older HDR preset unchanged.
+    if(metal.exposure>0.0) color=vec3(1.0)-exp(-max(color,vec3(0.0))*metal.exposure);
     f_color=vec4(max(color,vec3(0.0)),v_color.a);
 }
