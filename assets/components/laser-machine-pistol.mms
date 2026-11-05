@@ -12,6 +12,11 @@ export fn laser_machine_pistol(options) {
     let shot_interval = 2.5 / 75.0
     let auto_shot_interval = 1.0 / 10.0 // 10 shots per second; Burst keeps its faster spacing
     let device_state = { firing = false cancelled = false trigger_held = false mode = "semi" burst_mode = "semi" bursts_fired = 0 shots_fired = 0 ammunition = null user = null requested_user = null tool = null }
+    // A null limit preserves unlimited ammunition for existing callers.
+    if options["ammunition"] != null {
+        device_state.ammunition = Math.floor(options.ammunition)
+        if device_state.ammunition < 0 { device_state.ammunition = 0 }
+    }
     let flash = muzzle_flash({ name = label size = options.flash_size beats_per_second = beats_per_second })
     let single_sound = AudioClip.wav("assets/audio/tool/laser_machine_pistol_A.0.wav") { name = label + "_single_sound" }
     let sound = AudioClip.wav("assets/audio/tool/laser_machine_pistol_C.0.wav") { name = label + "_sound" }
@@ -31,24 +36,32 @@ export fn laser_machine_pistol(options) {
     let on_hit = default_impact
     if options["on_hit"] != null { on_hit = options.on_hit }
     fn emit_shot(projectile, aim) {
-        if !device_state.cancelled {
+        if !device_state.cancelled && (device_state.ammunition == null || device_state.ammunition > 0) {
+            // Spend synchronously at the actual shot, including each burst keyframe.
+            if device_state.ammunition != null { device_state.ammunition = device_state.ammunition - 1 }
             flash.play()
             projectile.launch({ pose = aim.world_trs() source_tool = device_state.tool source_user = device_state.user on_hit = on_hit })
             emit_data(completion, "ShotFired")
         }
     }
+    fn request_shot(projectile, aim, event) {
+        // Audio lookahead evaluates keyframes too. Finite-ammo state changes
+        // belong to ordinary events, which are delivered only at visual time.
+        if device_state.ammunition == null { emit_shot(projectile,aim) }
+        else { emit_data(completion,event) }
+    }
     let semi = Animation.paused().length(0.45 * beats_per_second) {
         name = label + "_semi"
         Keyframe.at(0.0) { single_sound.play() }
-        Keyframe.at(0.0) { emit_shot(first, first_aim) }
+        Keyframe.at(0.0) { request_shot(first, first_aim, "FireFirst") }
         Keyframe.at(0.45 * beats_per_second) { emit_data(completion, "BurstComplete") }
     }
     let burst = Animation.paused().length(0.45 * beats_per_second) {
         name = label + "_burst"
         Keyframe.at(0.0) { sound.play() }
-        Keyframe.at(0.0) { emit_shot(first, first_aim) }
-        Keyframe.at(shot_interval * beats_per_second) { emit_shot(second, second_aim) }
-        Keyframe.at(2.0 * shot_interval * beats_per_second) { emit_shot(third, third_aim) }
+        Keyframe.at(0.0) { request_shot(first, first_aim, "FireFirst") }
+        Keyframe.at(shot_interval * beats_per_second) { request_shot(second, second_aim, "FireSecond") }
+        Keyframe.at(2.0 * shot_interval * beats_per_second) { request_shot(third, third_aim, "FireThird") }
         Keyframe.at(0.45 * beats_per_second) { emit_data(completion, "BurstComplete") }
     }
     let automatic = Animation.paused().length(3.0 * auto_shot_interval * beats_per_second) {
@@ -56,11 +69,12 @@ export fn laser_machine_pistol(options) {
         // Sound is triggered by this visual event, so lookahead cannot queue an
         // extra automatic recording after the user releases the trigger.
         Keyframe.at(0.0) { emit_data(completion, "AutoCycle") }
-        Keyframe.at(0.0) { emit_shot(first, first_aim) }
-        Keyframe.at(auto_shot_interval * beats_per_second) { emit_shot(second, second_aim) }
-        Keyframe.at(2.0 * auto_shot_interval * beats_per_second) { emit_shot(third, third_aim) }
+        Keyframe.at(0.0) { request_shot(first, first_aim, "FireFirst") }
+        Keyframe.at(auto_shot_interval * beats_per_second) { request_shot(second, second_aim, "FireSecond") }
+        Keyframe.at(2.0 * auto_shot_interval * beats_per_second) { request_shot(third, third_aim, "FireThird") }
     }
     fn begin_fire() {
+        if device_state.ammunition != null && device_state.ammunition <= 0 { return }
         device_state.user = device_state.requested_user
         device_state.firing = true
         device_state.cancelled = false
@@ -73,15 +87,25 @@ export fn laser_machine_pistol(options) {
         }
     }
     on(completion, "DataEvent", fn(event) {
+        if event == "FireFirst" { emit_shot(first,first_aim) }
+        if event == "FireSecond" { emit_shot(second,second_aim) }
+        if event == "FireThird" { emit_shot(third,third_aim) }
         if event == "BurstComplete" {
             device_state.firing = false
             if device_state.trigger_held && device_state.mode == "auto" { begin_fire() }
         }
-        if event == "AutoCycle" && device_state.firing && !device_state.cancelled && device_state.burst_mode == "auto" {
+        if event == "AutoCycle" && device_state.firing && !device_state.cancelled && device_state.burst_mode == "auto" && (device_state.ammunition == null || device_state.ammunition > 0) {
             auto_sound.play()
             device_state.bursts_fired = device_state.bursts_fired + 1
         }
-        if event == "ShotFired" { device_state.shots_fired = device_state.shots_fired + 1 }
+        if event == "ShotFired" {
+            device_state.shots_fired = device_state.shots_fired + 1
+            if device_state.ammunition != null && device_state.ammunition <= 0 {
+                automatic.pause()
+                device_state.cancelled = true
+                device_state.firing = false
+            }
+        }
     })
     let root = T {
         name = label + "_root"
@@ -98,6 +122,7 @@ export fn laser_machine_pistol(options) {
     }
     device_state.tool = root
     fn use_start(context) {
+        if device_state.ammunition != null && device_state.ammunition <= 0 { return false }
         if device_state.trigger_held { return false }
         device_state.trigger_held = true
         device_state.requested_user = context.user
@@ -163,5 +188,5 @@ export fn laser_machine_pistol(options) {
             }
         }
     }
-    return { root = root projectiles = [first.root, second.root, third.root] animation = burst semi_animation = semi auto_animation = automatic device_state = device_state use_start = use_start use_end = use_end flash = flash mode_selector = mode_selector set_mode = set_mode }
+    return { root = root completion = completion projectiles = [first.root, second.root, third.root] animation = burst semi_animation = semi auto_animation = automatic device_state = device_state use_start = use_start use_end = use_end flash = flash mode_selector = mode_selector set_mode = set_mode }
 }

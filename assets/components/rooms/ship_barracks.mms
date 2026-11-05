@@ -1,5 +1,6 @@
-import { ship_store_accordion } from "../ship_store_accordion.mms"
-import { ship_barracks_contents, ship_clear_barracks_weapons } from "./ship_barracks_contents.mms"
+// import { ship_store_accordion } from "../ship_store_accordion.mms"
+// import { ship_barracks_contents, ship_clear_barracks_weapons } from "./ship_barracks_contents.mms"
+import { ship_barracks_weapon_table } from "./ship_barracks_weapon_table.mms"
 import { ship_solid, ship_box, ship_deck, ship_label, ship_lamp } from "../ship_parts.mms"
 import { ship_light_pool, ship_path_markers } from "../ship_lighting.mms"
 
@@ -26,8 +27,10 @@ export fn ship_barracks() {
             ship_lamp([x,3.13,-0.6], [0.30,0.06,0.24], [1.0,0.90,0.77])
         }
         ship_path_markers([-7.0, 0.05, 2.7], [1.0, 0.0], 5, 1.5, [0.22, 0.59, 0.55])
-        ship_store_accordion("ship_barracks_inventory","GROCERY / SECURITY SUPPLIES",
-            ship_barracks_contents,null,null,[-0.15,2.7,1.0],true,Math.pi/2.0,ship_clear_barracks_weapons)
+        // PERF ISOLATION: retain only the weapon table, without any accordion.
+        // ship_store_accordion("ship_barracks_inventory","GROCERY / SECURITY SUPPLIES",
+        //     ship_barracks_contents,null,null,[-0.15,2.7,1.0],true,Math.pi/2.0,ship_clear_barracks_weapons)
+        ship_barracks_weapon_table()
 
     }
 }

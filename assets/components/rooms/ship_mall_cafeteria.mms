@@ -1,14 +1,14 @@
 import { ship_washroom_sign } from "../ship_washroom_sign.mms"
-import { ship_store_accordion } from "../ship_store_accordion.mms"
-import { ship_food_counter } from "./ship_food_counter.mms"
+// import { ship_store_accordion } from "../ship_store_accordion.mms"
+// import { ship_food_counter } from "./ship_food_counter.mms"
 import { ship_solid, ship_label, ship_deck, ship_door_wall } from "../ship_parts.mms"
 import { cafeteria_chair } from "../cafeteria_chair.mms"
-import { ship_mall_coffeeshop } from "./ship_mall_coffeeshop.mms"
+// import { ship_mall_coffeeshop } from "./ship_mall_coffeeshop.mms"
 import { ship_stairs } from "../ship_stairs.mms"
 import { ship_path_markers, ship_light_pool } from "../ship_lighting.mms"
 import { graphics_settings_panel } from "../panels/graphics_settings_panel.mms"
 import { ship_window } from "../ship_window.mms"
-import { hot_dog_stand } from "../hot_dog_stand.mms"
+// import { hot_dog_stand } from "../hot_dog_stand.mms"
 
 // Local X=-11..11, Z=0..12. Upper deck Y=5.2, ceiling Y=8.5.
 // Three restaurants along the far wall. Park exit: X=11, Z=9, Y=5.2.
@@ -104,16 +104,17 @@ export fn ship_mall_cafeteria() {
         T.position(8.0, 1.9, 1.1).rotation(0.0, 3.1415927, 0.0) {
             ship_label([-0.65, 0.0, 0.0], "PARKS / SHOPS UPSTAIRS", 0.12)
         }
-        T.position(-5,0,12) { ship_store_accordion("ship_coffee_store","ORBIT COFFEE",ship_mall_coffeeshop,6,5,null) }
-        T.position(0.5,0,12) { ship_store_accordion("ship_noodle_store","SOLAR NOODLES",fn() {
-            return ship_food_counter("SOLAR NOODLES",[0.43,0.24,0.16])
-        },5,3,null) }
-        T.position(5.5,0,12) { ship_store_accordion("ship_grill_store","HYDROPONIC GRILL",fn() {
-            return ship_food_counter("HYDROPONIC GRILL",[0.23,0.37,0.25])
-        },5,3,null) }
-        // A fourth vendor is an open kiosk against the west wall, in front of
-        // the existing storefronts. Keep the central aisle and stair clear.
-        T.position(-7.3,0,10.1) { ship_store_accordion("ship_hot_dog_store","ORBIT HOT DOGS",hot_dog_stand,null,null,[-1,2.85,-0.5]) }
+        // PERF ISOLATION: restore this block to instantiate its accordion and content.
+        // T.position(-5,0,12) { ship_store_accordion("ship_coffee_store","ORBIT COFFEE",ship_mall_coffeeshop,6,5,null) }
+        // T.position(0.5,0,12) { ship_store_accordion("ship_noodle_store","SOLAR NOODLES",fn() {
+        //     return ship_food_counter("SOLAR NOODLES",[0.43,0.24,0.16])
+        // },5,3,null) }
+        // T.position(5.5,0,12) { ship_store_accordion("ship_grill_store","HYDROPONIC GRILL",fn() {
+        //     return ship_food_counter("HYDROPONIC GRILL",[0.23,0.37,0.25])
+        // },5,3,null) }
+        // // A fourth vendor is an open kiosk against the west wall, in front of
+        // // the existing storefronts. Keep the central aisle and stair clear.
+        // T.position(-7.3,0,10.1) { ship_store_accordion("ship_hot_dog_store","ORBIT HOT DOGS",hot_dog_stand,null,null,[-1,2.85,-0.5]) }
         // Tables leave the central walking route clear.
         for x in [-4.3, 4.3] {
             for z in [3.5, 7.5] {

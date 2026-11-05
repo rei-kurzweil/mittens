@@ -85,7 +85,9 @@ fn ship_xr_first_view_is_not_black() -> Result<(), Box<dyn std::error::Error>> {
         std::f32::consts::FRAC_PI_2
     } else if room == "biodomes" {
         -std::f32::consts::FRAC_PI_2
-    } else if kiosk || room == "truck" {
+    } else if room == "truck" {
+        -2.1112158
+    } else if kiosk {
         std::f32::consts::PI
     } else {
         0.0
@@ -140,7 +142,7 @@ fn ship_xr_first_view_is_not_black() -> Result<(), Box<dyn std::error::Error>> {
             "washroom" => "T.position(-20.0,5.2,11.2)",
             "landing" => "T.position(-8.0,5.2,15.0)",
             "biodomes" => "T.position(17.0,5.2,15.0)",
-            "truck" => "T.position(125.0,5.2,17.2)",
+            "truck" => "T.position(18.0,5.2,7.5)",
             "truck_cab" => "T.position(124.52,5.2,20.8)",
             _ => panic!("unknown SHIP_CAPTURE_ROOM: {room}"),
         };
@@ -162,7 +164,7 @@ fn ship_xr_first_view_is_not_black() -> Result<(), Box<dyn std::error::Error>> {
     };
     let source = if matches!(room.as_str(), "biodomes" | "truck" | "truck_cab") {
         format!(
-            "{source}\nfor label in [\"ship_convenience_shop\",\"ship_liquor_shop\",\"ship_motorhomes\",\"ship_driving_vehicles\"] {{ query(\"#\"+label).set_expanded(true) }}"
+            "{source}\nfor label in [\"ship_convenience_shop\",\"ship_liquor_shop\",\"ship_motorhomes\",\"ship_driving_vehicles\"] {{ let control=query(\"#\"+label) if control {{ control.set_expanded(true) }} }}"
         )
     } else {
         source

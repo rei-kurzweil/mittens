@@ -1,5 +1,13 @@
 # Ship interior demo
 
+Temporary performance isolation: all live accordion construction blocks are
+commented out, including bridge equipment, all four cafeteria vendors (and
+Lumae), orchard trees and barracks stock. The barracks instead instantiates only
+a plain table and its three weapons. The commented code and full stock prefabs
+remain available for restoration. Two orchard pickups remain. Mirror controls,
+bloom and graphics settings are unchanged. The layout descriptions below also
+document the content that is currently commented out.
+
 Run one scene file for every view preset:
 
 ```sh
@@ -30,7 +38,11 @@ when the embodied XR avatar is enabled.
 
 Desktop controls are WASD and mouse. In the grocery/security store off the bridge hall, grab a machine pistol and
 use the XR trigger or desktop Space to fire. XR height controls are on the bridge
-wall; graphics controls are on the cafeteria wall. The scene has no editor wrapper
+wall. Each machine pistol starts with 75 rounds and stops firing at zero;
+releasing, dropping or changing fire mode does not refill it. A floating emissive
+number above the scope shows remaining ammunition, refreshed at most once per
+second, including a final refresh after trigger release. Reloading is not yet
+implemented. Graphics controls are on the cafeteria wall. The scene has no editor wrapper
 or editor UI. The washroom has a wide mirror,
 three stalls opposite two sinks, hand dryers, towels, and a recessed waste bin.
 
@@ -76,11 +88,13 @@ lights indicate state: red is collapsed, yellow is loading, green is expanded.
 The persistent `ship_input_controller` forwards input to live mounted pickups
 and held weapons. No streamed asset registers its own global input callback.
 
-Pickups have a hollow front cab, two seats, a steering wheel, left-side brake
-and accelerator pedals, a central shifter, three dashboard mounting rails, and
-an empty radio recess. RPM, speed, fuel and odometer faces are static placeholders.
-The opaque body and interior share one retained destroyable combined mesh;
-wheels, transparent glass, labels and emissive tail lamps remain separate.
+Pickups now use `assets/models/mitten_pickup.glb`, including its body, two seats,
+steering wheel, four wheels and four springs. The prefab normalizes its front
+direction and ground height, inserts the suspension pivots/scale forks, and
+combines stationary body/interior parts while keeping springs and wheels movable.
+The former procedural truck, pedals, dashboard fixtures and gauges remain in
+`pickup_truck_prototype.mms`. Cube-based damage still works on that prototype;
+mesh-cut destruction does not yet support the imported GLB geometry.
 
 To drive, stand beside the left door and point at the truck. Use XR grip or a
 desktop left click to enter; use the left grip or another left click to exit.
@@ -96,11 +110,10 @@ pedestrian movement until exit. This remains a kinematic driving prototype;
 it does not yet solve vehicle-to-vehicle crash physics. RVs are near-white with
 single grey translucent panes over actual wall openings.
 
-All pickups default to beige-brown paint with a custom metallic material:
+Imported pickups retain their authored colours with the custom metallic material:
 scene-light specular highlights, a chrome matcap, and a strong rim. Lighting can
 exceed the authored paint albedo. `pickup_truck(color, cargo)` accepts an optional
-paint override and a cargo component mounted in the bed; the body still uses
-retained destroyable mesh panels. Finish parameters live in
+colour override and a cargo component mounted in the bed. Finish parameters live in
 `assets/components/materials/pickup_painted_metal.mms`.
 
 The regular park's implicit hills rise about 2.4 m above the deck, with bases

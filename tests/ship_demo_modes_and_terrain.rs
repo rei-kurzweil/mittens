@@ -127,7 +127,7 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
             .unwrap();
         finish_materials(&scene);
         let world = &scene.world;
-        let count = |label| {
+        let count = |label: &str| {
             world
                 .all_components()
                 .filter(|&id| world.component_label(id) == Some(label))
@@ -141,7 +141,32 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
         assert_eq!(count("ship_trailer_park"), 0);
         assert_eq!(count("ship_orchard_pickup_north"), 1);
         assert_eq!(count("ship_orchard_pickup_south"), 1);
-        assert_eq!(count("pickup_truck"), 3); // two orchard trucks plus the hot-dog stand
+        assert_eq!(count("pickup_truck"), 2); // hot-dog stand is commented out for profiling
+        for label in [
+            "ship_bridge_computers",
+            "ship_coffee_store",
+            "ship_noodle_store",
+            "ship_grill_store",
+            "ship_hot_dog_store",
+            "ship_hot_dog_vendor",
+            "ship_orchard_north",
+            "ship_orchard_south",
+            "ship_orchard_tree",
+            "ship_barracks_inventory",
+            "ship_grocery_bananas",
+            "ship_grocery_oranges",
+            "ship_grocery_checkout",
+        ] {
+            assert_eq!(
+                count(label),
+                0,
+                "profiling baseline must not instantiate {label}"
+            );
+        }
+        assert_eq!(count("ship_barracks_weapon_table"), 1);
+        for index in 0..3 {
+            assert_eq!(count(&format!("ship_rack_pistol_{index}_grip")), 1);
+        }
 
         assert_eq!(count("ship_convenience_store"), 0);
         assert_eq!(count("ship_liquor_store"), 0);
@@ -351,8 +376,8 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
                     &mut scene.command_queue,
                 );
             }
-            // Check rendered architecture and the GLTF vendor material scope use
-            // separate local presets after restoring shared defaults.
+            // The profiling baseline omits the vendor; rendered architecture
+            // must still use the station's local environment preset.
             let materials = &scene.visuals.materials;
             let preset = |label| {
                 let source = named(&scene.world, label);
@@ -366,18 +391,6 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
                 )
             };
             let environment = preset("ship_environment_anime_material");
-            let avatar = preset("ship_avatar_anime_material");
-            assert!(environment.shade_color_strength[3] > avatar.shade_color_strength[3]);
-            assert!(environment.controls[1] > avatar.controls[1]);
-            let vendor = named(&scene.world, "ship_hot_dog_vendor");
-            // GLTF meshes may still be loading in this short headless fixture;
-            // its explicit material must already override the environment scope.
-            assert!(
-                scene
-                    .world
-                    .find_component(vendor, "#ship_avatar_anime_material")
-                    .is_some()
-            );
             assert!(
                 scene
                     .visuals

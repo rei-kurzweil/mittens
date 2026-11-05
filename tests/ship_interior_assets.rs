@@ -55,14 +55,16 @@ fn ship_vehicles_and_barracks_preserve_damage_and_weapon_topology() {
         import { ship_input_controller } from "../assets/components/ship_input_controller.mms"
         ship_input_controller(false)
         import { recreational_vehicle } from "../assets/components/vehicles/recreational_vehicle.mms"
-        import { pickup_truck } from "../assets/components/vehicles/pickup_truck.mms"
+        import { pickup_truck } from "../assets/components/vehicles/pickup_truck_prototype.mms"
         import { motorcycle } from "../assets/components/vehicles/motorcycle.mms"
         import { hot_dog_stand } from "../assets/components/hot_dog_stand.mms"
-        import { ship_barracks } from "../assets/components/rooms/ship_barracks.mms"
+        import { ship_barracks_contents } from "../assets/components/rooms/ship_barracks_contents.mms"
         recreational_vehicle(0.9)
         T.position(8,0,0) { pickup_truck(null) }
         T.position(12,0,0) { motorcycle(null) }
-        T.position(20,0,0) { ship_barracks() }
+        // Keep testing the retained full stock prefab independently of the
+        // station's temporary weapon-table-only profiling configuration.
+        T.position(20,0,0) { ship_barracks_contents() }
         T.position(30,0,0) { hot_dog_stand() }
     "#, "examples/_ship_assets_test.mms").unwrap();
     // Custom weapon effects start native compiler workers. Let their retained

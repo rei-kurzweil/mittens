@@ -1,9 +1,10 @@
 // Input and heading refreshes publish commands to existing native Velocity.
 // This removable asset registers no global callback or MMS pose integration.
-export fn pickup_driving(truck,motion) {
+export fn pickup_driving(truck,motion,driver_eye) {
+    if driver_eye==null { driver_eye=[-0.48,1.90,-0.20] }
     let entry_frame=T.position(-1.2,1.05,-0.25) { name="pickup_entry_frame" }
     let entry=Zone.cube([0.85,1.05,1.0]).at(entry_frame).role("vehicle_entry") { name="pickup_entry_zone" }
-    let seat=T.position(-0.48,1.90,-0.20) { name="pickup_driver_eye_anchor" }
+    let seat=T.position(driver_eye[0],driver_eye[1],driver_eye[2]) { name="pickup_driver_eye_anchor" }
     let exit=T.position(-1.95,1.65,-0.25) { name="pickup_dismount_anchor" }
     let mountable=Mountable.entry_zone(entry).mount_anchor(seat).dismount_anchor(exit).on_grip() {}
     let state={mounted=false axis=[0,0] w=false a=false s=false d=false brake=false last_throttle=0 last_steering=0 last_brake=false}

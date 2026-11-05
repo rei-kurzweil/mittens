@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::World;
 use crate::engine::ecs::component::{
-    ColorComponent, CombineMeshComponent, EmissiveComponent, RenderableComponent,
+    ColorComponent, CombineMeshComponent, EmissiveComponent, MeshComponent, RenderableComponent,
     TransformGizmoComponent, UVComponent,
 };
 use crate::engine::ecs::system::{
@@ -168,7 +168,7 @@ impl CombineMeshSystem {
             let Some(root_inverse) = mat4_inverse(root_model) else {
                 continue;
             };
-            let fingerprint = fingerprint(world, root, &sources, keep_transforms);
+            let fingerprint = fingerprint(world, assets, root, &sources, keep_transforms);
             if let Some(old) = self.outputs.get_mut(&root)
                 && old.fingerprint == fingerprint
             {
@@ -335,6 +335,29 @@ fn first_source_appearance(world: &World, source: ComponentId) -> ([f32; 4], f32
     (color, emissive)
 }
 
+// Combined sources are suppressed before RenderableSystem flushes individual
+// draws. Resolve their imported mesh overrides here instead of baking the
+// placeholder, and defer the batch if any imported source is still pending.
+fn source_mesh(
+    world: &World,
+    assets: &RenderAssets,
+    source: ComponentId,
+) -> Option<crate::engine::graphics::primitives::CpuMeshHandle> {
+    if let Some(mesh) = world
+        .children_of(source)
+        .iter()
+        .find_map(|&child| world.get_component_by_id_as::<MeshComponent>(child))
+    {
+        return assets.imported_mesh(&mesh.key);
+    }
+    Some(
+        world
+            .get_component_by_id_as::<RenderableComponent>(source)?
+            .renderable
+            .mesh,
+    )
+}
+
 fn bake(
     world: &World,
     assets: &RenderAssets,
@@ -346,8 +369,7 @@ fn bake(
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
     for &source in sources {
-        let r = world.get_component_by_id_as::<RenderableComponent>(source)?;
-        let mesh = assets.cpu_mesh(r.renderable.mesh)?;
+        let mesh = assets.cpu_mesh(source_mesh(world, assets, source)?)?;
         if mesh.joints0.is_some() || mesh.weights0.is_some() {
             continue;
         }
@@ -383,6 +405,7 @@ fn local_bounds(mesh: &CpuMesh) -> Option<Aabb> {
 
 fn fingerprint(
     world: &World,
+    assets: &RenderAssets,
     root: ComponentId,
     sources: &[ComponentId],
     include_source_transforms: bool,
@@ -392,7 +415,7 @@ fn fingerprint(
     for &id in sources {
         id.hash(&mut hasher);
         if let Some(r) = world.get_component_by_id_as::<RenderableComponent>(id) {
-            r.renderable.mesh.hash(&mut hasher);
+            source_mesh(world, assets, id).hash(&mut hasher);
             r.renderable.material.hash(&mut hasher);
         }
         for &child in world.children_of(id) {
@@ -509,6 +532,53 @@ mod tests {
         assert_eq!(
             mesh.vertices.len(),
             assets.cpu_mesh(CpuMeshHandle::CUBE).unwrap().vertices.len() * 2
+        );
+    }
+
+    #[test]
+    fn imported_sources_wait_for_meshes_and_invalidate_cached_placeholders() {
+        let mut world = World::default();
+        let frame = world.add_component(TransformComponent::new());
+        let batch = world.add_component(CombineMeshComponent::keep_transforms());
+        let source = world.add_component(RenderableComponent::cube());
+        let mesh_ref = world.add_component(MeshComponent::new("imported-body"));
+        world.add_child(frame, batch).unwrap();
+        world.add_child(batch, source).unwrap();
+        world.add_child(source, mesh_ref).unwrap();
+        let mut assets = RenderAssets::new();
+        let missing = fingerprint(&world, &assets, batch, &[source], true);
+        assert!(
+            bake(
+                &world,
+                &assets,
+                crate::utils::math::mat4_identity(),
+                &[source]
+            )
+            .is_none(),
+            "never bake the default mesh while an imported override is pending"
+        );
+        let mut imported = assets.cpu_mesh(CpuMeshHandle::CUBE).unwrap().clone();
+        imported.indices_u32.truncate(3);
+        assets.register_imported_mesh("imported-body", imported.clone());
+        let ready = fingerprint(&world, &assets, batch, &[source], true);
+        assert_ne!(missing, ready);
+        let (baked, _) = bake(
+            &world,
+            &assets,
+            crate::utils::math::mat4_identity(),
+            &[source],
+        )
+        .unwrap();
+        assert_eq!(
+            baked.indices_u32.len(),
+            3,
+            "use the imported triangle, not the placeholder cube"
+        );
+        assets.register_imported_mesh("imported-body", imported);
+        assert_ne!(
+            ready,
+            fingerprint(&world, &assets, batch, &[source], true),
+            "replacement imported geometry must invalidate the combined output"
         );
     }
 

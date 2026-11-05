@@ -2,17 +2,19 @@ use mittens_engine::engine::{
     Universe,
     ecs::{
         ComponentId, EventSignal, SignalEmitter, World,
-        component::{GLTFComponent, TransformComponent},
+        component::{GLTFComponent, SpotLightComponent, TransformComponent},
         system::TransformSystem,
     },
     graphics::{CpuMesh, MeshHandle, MeshUploader, TextureHandle, TextureUploader},
 };
 
 #[derive(Default)]
-struct Upload(u32);
+struct Upload(u32, std::collections::HashMap<MeshHandle, usize>);
 impl MeshUploader for Upload {
-    fn upload_mesh(&mut self, _: &CpuMesh) -> Result<MeshHandle, Box<dyn std::error::Error>> {
+    fn upload_mesh(&mut self, mesh: &CpuMesh) -> Result<MeshHandle, Box<dyn std::error::Error>> {
         self.0 += 1;
+        self.1
+            .insert(MeshHandle(self.0), mesh.indices_u32.len() / 3);
         Ok(MeshHandle(self.0))
     }
 }
@@ -45,6 +47,16 @@ fn named(world: &World, label: &str) -> ComponentId {
         .unwrap()
 }
 
+fn descendants(world: &World, root: ComponentId) -> Vec<ComponentId> {
+    let mut result = Vec::new();
+    let mut pending = vec![root];
+    while let Some(id) = pending.pop() {
+        result.push(id);
+        pending.extend_from_slice(world.children_of(id));
+    }
+    result
+}
+
 fn tick(scene: &mut Universe) {
     for _ in 0..3 {
         scene.update(1.0 / 60.0, &Default::default());
@@ -65,7 +77,7 @@ fn click(scene: &mut Universe, index: usize) {
     tick(scene);
 }
 
-fn check_wheels(scene: &Universe, left_y: f32, right_y: f32) {
+fn check_wheels(scene: &Universe, left_ratio: f32, right_ratio: f32) {
     for root in ["fork_fixture", "sibling_fixture"] {
         let scope = named(&scene.world, root);
         for corner in ["fl", "fr", "rl", "rr"] {
@@ -74,11 +86,39 @@ fn check_wheels(scene: &Universe, left_y: f32, right_y: f32) {
                 .find_component(scope, &format!("#wheel_{corner}"))
                 .unwrap();
             let matrix = TransformSystem::world_model(&scene.world, wheel).unwrap();
-            let expected_y = if corner.ends_with('l') {
-                left_y
+            let ratio = if corner.ends_with('l') {
+                left_ratio
             } else {
-                right_y
+                right_ratio
             };
+            // Positions and intrinsic wheel scales are authored in mitten_pickup.glb.
+            let (mount_y, hub_y, spring_name, wheel_name) = match corner {
+                "fl" => (
+                    0.801975,
+                    -0.45528355,
+                    "suspension_spring",
+                    "front-left-WHEEL",
+                ),
+                "fr" => (
+                    0.801975,
+                    -0.45528355,
+                    "suspension_spring.002",
+                    "front-left-WHEEL.003",
+                ),
+                "rl" => (
+                    0.755284,
+                    -0.45528355,
+                    "suspension_spring.001",
+                    "front-left-WHEEL.001",
+                ),
+                _ => (
+                    0.755284,
+                    -0.45525387,
+                    "suspension_spring.003",
+                    "front-left-WHEEL.002",
+                ),
+            };
+            let expected_y = mount_y + hub_y * ratio;
             assert!(
                 (matrix[3][1] - expected_y).abs() < 1e-4,
                 "{root}/{corner}: hub height {}, expected {expected_y}",
@@ -86,28 +126,30 @@ fn check_wheels(scene: &Universe, left_y: f32, right_y: f32) {
             );
             let spring = scene
                 .world
-                .find_component(scope, &format!("#spring_mesh_{corner}"))
+                .find_component(scope, &format!("[name='{spring_name}']"))
                 .unwrap();
-            let spring = scene
-                .world
-                .get_component_by_id_as::<GLTFComponent>(spring)
-                .unwrap();
-            assert!(
-                spring.spawned && spring.spawned_node_transforms.len() == 1,
-                "{root}/{corner}: the spring GLB must actually load"
-            );
-            let spring_matrix =
-                TransformSystem::world_model(&scene.world, spring.spawned_node_transforms[0])
-                    .unwrap();
+            let spring_matrix = TransformSystem::world_model(&scene.world, spring).unwrap();
             let spring_scale_y = spring_matrix[1][..3]
                 .iter()
                 .map(|v| v * v)
                 .sum::<f32>()
                 .sqrt();
             assert!(
-                (spring_scale_y - (0.9 - expected_y) / 0.5).abs() < 1e-4,
-                "{root}/{corner}: the imported coil must compress with suspension travel"
+                (spring_scale_y - ratio).abs() < 1e-4,
+                "the imported coil must compress"
             );
+            let imported_wheel = scene
+                .world
+                .find_component(scope, &format!("[name='{wheel_name}']"))
+                .unwrap();
+            let tyre_matrix = TransformSystem::world_model(&scene.world, imported_wheel).unwrap();
+            for (column, expected) in tyre_matrix[..3].iter().zip([0.30, 0.12, 0.30]) {
+                let length = column[..3].iter().map(|v| v * v).sum::<f32>().sqrt();
+                assert!(
+                    (length - expected).abs() < 1e-4,
+                    "spring travel must preserve authored tyre scale"
+                );
+            }
             for column in &matrix[..3] {
                 let length = column[..3].iter().map(|v| v * v).sum::<f32>().sqrt();
                 assert!(
@@ -181,14 +223,121 @@ fn both_pickup_suspensions_compress_without_scaling_tyres() {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     tick(&mut scene);
-    check_wheels(&scene, 0.4, 0.4);
+    for root in ["fork_fixture", "sibling_fixture"] {
+        let scope = named(&scene.world, root);
+        let model = scene.world.find_component(scope, "#pickup_model").unwrap();
+        let gltf = scene
+            .world
+            .get_component_by_id_as::<GLTFComponent>(model)
+            .unwrap();
+        assert!(gltf.spawned);
+        assert_eq!(gltf.uri, "assets/models/mitten_pickup.glb");
+        let vehicle = scene.world.find_component(scope, "#pickup_truck").unwrap();
+        let vehicle_matrix = TransformSystem::world_model(&scene.world, vehicle).unwrap();
+        let forward = vehicle_matrix[2][..3]
+            .iter()
+            .map(|v| -v)
+            .collect::<Vec<_>>();
+        for side in [-1, 1] {
+            let frame = scene
+                .world
+                .find_component(scope, &format!("#pickup_headlight_{side}"))
+                .unwrap();
+            let spot = scene
+                .world
+                .children_of(frame)
+                .iter()
+                .find_map(|&id| scene.world.get_component_by_id_as::<SpotLightComponent>(id))
+                .expect("each headlight must be an actual spotlight");
+            assert_eq!(spot.distance, 25.0);
+            let position = TransformSystem::world_position(&scene.world, frame).unwrap();
+            let light = scene
+                .visuals
+                .lights()
+                .iter()
+                .find(|light| {
+                    light.light_type == 3
+                        && (0..3).all(|i| (light.position_ws[i] - position[i]).abs() < 1e-4)
+                })
+                .unwrap();
+            let alignment = (0..3)
+                .map(|i| forward[i] * light.direction_ws[i])
+                .sum::<f32>();
+            assert!(
+                alignment > 0.999,
+                "headlights must point forward even with a rotated truck"
+            );
+        }
+        for gauge in ["rpm", "speed", "fuel", "odometer"] {
+            scene
+                .world
+                .find_component(scope, &format!("#pickup_gauge_{gauge}"))
+                .unwrap();
+        }
+        let gauges = scene
+            .world
+            .find_component(scope, "#pickup_dashboard_gauge_mesh")
+            .unwrap();
+        assert!(
+            scene
+                .visuals
+                .instances()
+                .iter()
+                .any(|instance| instance.component == gauges),
+            "the gauge geometry should be combined into one draw instance"
+        );
+        assert!(
+            !descendants(&scene.world, scope).into_iter().any(|id| {
+                scene
+                    .world
+                    .get_component_by_id_as::<GLTFComponent>(id)
+                    .is_some_and(|gltf| gltf.uri.ends_with("suspension-spring.glb"))
+            }),
+            "use the springs already authored into the truck, without duplicate geometry"
+        );
+        let batch = scene
+            .world
+            .find_component(scope, "#pickup_painted_body")
+            .unwrap();
+        assert!(
+            scene
+                .visuals
+                .instances()
+                .iter()
+                .any(|instance| instance.component == batch),
+            "stationary body parts must produce their combined render output"
+        );
+        let body_sources=descendants(&scene.world,batch).into_iter().filter(|&id| {
+            scene.world.get_component_by_id_as::<mittens_engine::engine::ecs::component::RenderableComponent>(id).is_some()
+        }).count();
+        let combined = scene
+            .visuals
+            .instances()
+            .iter()
+            .find(|instance| instance.component == batch)
+            .unwrap();
+        assert_eq!(
+            upload.1.get(&combined.renderable.mesh).copied(),
+            Some(1589),
+            "combine all authored body triangles, not unresolved placeholder meshes"
+        );
+        assert_eq!(
+            body_sources, 8,
+            "combine the body and its seven static child meshes"
+        );
+        assert!(
+            scene.world.find_component(batch, "#wheel_fl").is_none(),
+            "wheel travel must not rebuild the body mesh"
+        );
+    }
+    check_wheels(&scene, 1.0, 1.0);
     for _ in 0..3 {
         click(&mut scene, 1);
-        check_wheels(&scene, 0.65, 0.65);
+        check_wheels(&scene, 0.5, 0.5);
         click(&mut scene, 2);
-        check_wheels(&scene, 0.65, 0.4);
+        check_wheels(&scene, 0.5, 1.0);
         click(&mut scene, 0);
-        check_wheels(&scene, 0.4, 0.4);
+        check_wheels(&scene, 1.0, 1.0);
     }
     // The fixed probe mounts must not follow spring compression.
     for root in ["fork_fixture", "sibling_fixture"] {
@@ -198,7 +347,8 @@ fn both_pickup_suspensions_compress_without_scaling_tyres() {
             .find_component(scope, "#suspension_mount_fl")
             .unwrap();
         assert!(
-            (TransformSystem::world_position(&scene.world, mount).unwrap()[1] - 0.9).abs() < 1e-4
+            (TransformSystem::world_position(&scene.world, mount).unwrap()[1] - 0.801975).abs()
+                < 1e-4
         );
         let wheel = scene.world.find_component(scope, "#wheel_fl").unwrap();
         assert_eq!(

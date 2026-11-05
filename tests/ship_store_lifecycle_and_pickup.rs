@@ -1,7 +1,38 @@
 use mittens_engine::engine::{
     Universe,
     ecs::{ComponentId, EventSignal, SignalEmitter, World, component::*, system::TransformSystem},
+    graphics::{CpuMesh, MeshHandle, MeshUploader, TextureHandle, TextureUploader},
 };
+
+#[derive(Default)]
+struct Upload(u32);
+impl MeshUploader for Upload {
+    fn upload_mesh(&mut self, _: &CpuMesh) -> Result<MeshHandle, Box<dyn std::error::Error>> {
+        self.0 += 1;
+        Ok(MeshHandle(self.0))
+    }
+}
+impl TextureUploader for Upload {
+    fn upload_texture_rgba8(
+        &mut self,
+        _: &[u8],
+        _: u32,
+        _: u32,
+    ) -> Result<TextureHandle, Box<dyn std::error::Error>> {
+        self.0 += 1;
+        Ok(TextureHandle(self.0))
+    }
+    fn upload_texture_bc7(
+        &mut self,
+        _: &[u8],
+        _: u32,
+        _: u32,
+        _: bool,
+    ) -> Result<TextureHandle, Box<dyn std::error::Error>> {
+        self.0 += 1;
+        Ok(TextureHandle(self.0))
+    }
+}
 
 fn named(world: &World, label: &str) -> ComponentId {
     world
@@ -80,6 +111,19 @@ fn stores_rebuild_and_pickups_mount_drive_brake_and_dismount() {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     tick(&mut scene, 2);
+
+    // The replacement GLB has to load before its body can be hit for boarding.
+    let mut upload = Upload::default();
+    for _ in 0..3 {
+        scene.systems.prepare_render(
+            &mut scene.world,
+            &mut scene.visuals,
+            &mut scene.render_assets,
+            &mut upload,
+            &mut scene.command_queue,
+        );
+        tick(&mut scene, 1);
+    }
 
     let store = named(&scene.world, "test_store_accordion");
     let toggle = scene

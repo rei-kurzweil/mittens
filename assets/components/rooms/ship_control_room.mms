@@ -1,11 +1,11 @@
 import { ship_box, ship_solid, ship_label, ship_deck, ship_door_wall } from "../ship_parts.mms"
-import { computer_cabinet } from "../computer_cabinet.mms"
-import { tape_cabinet } from "../tape_cabinet.mms"
-import { monitor_cabinet } from "../monitor_cabinet.mms"
+// import { computer_cabinet } from "../computer_cabinet.mms"
+// import { tape_cabinet } from "../tape_cabinet.mms"
+// import { monitor_cabinet } from "../monitor_cabinet.mms"
 import { chair } from "../chair.mms"
 import { ship_path_markers, ship_light_pool } from "../ship_lighting.mms"
 import { xr_settings_panel } from "../panels/xr_settings_panel.mms"
-import { ship_store_accordion } from "../ship_store_accordion.mms"
+// import { ship_store_accordion } from "../ship_store_accordion.mms"
 
 // Bridge: X=-6..6, Z=-12..0. Rear doorway at [0,0,0]. Forward is -Z.
 export fn ship_control_room() {
@@ -53,18 +53,19 @@ export fn ship_control_room() {
 
         // Unload the equipment independently when investigating bridge cost.
         // The control stays by the aft doorway, facing into the room.
-        ship_store_accordion("ship_bridge_computers","BRIDGE / COMPUTERS & CABINETS",fn() {
-            return T {
-                for row in range(2) {
-                    let z = -9.2 + row * 3.4
-                    for side in [-1.0, 1.0] {
-                        T.position(side * 4.7, 0.0, z) { computer_cabinet() }
-                        T.position(side * 1.5, 0.0, z) { tape_cabinet() }
-                        T.position(side * 3.1, 0.0, z) { monitor_cabinet() }
-                    }
-                }
-            }
-        },null,null,[2.0,2.35,-0.15],true,Math.pi)
+        // PERF ISOLATION: restore this block to instantiate its accordion and content.
+        // ship_store_accordion("ship_bridge_computers","BRIDGE / COMPUTERS & CABINETS",fn() {
+        //     return T {
+        //         for row in range(2) {
+        //             let z = -9.2 + row * 3.4
+        //             for side in [-1.0, 1.0] {
+        //                 T.position(side * 4.7, 0.0, z) { computer_cabinet() }
+        //                 T.position(side * 1.5, 0.0, z) { tape_cabinet() }
+        //                 T.position(side * 3.1, 0.0, z) { monitor_cabinet() }
+        //             }
+        //         }
+        //     }
+        // },null,null,[2.0,2.35,-0.15],true,Math.pi)
 
         // Two rows, with a wide centre aisle and chairs on the aft side.
         for row in range(2) {

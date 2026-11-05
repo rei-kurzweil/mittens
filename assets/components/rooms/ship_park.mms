@@ -1,25 +1,25 @@
 import { pickup_truck, pickup_truck_sibling_suspension } from "../vehicles/pickup_truck.mms"
 import { pickup_suspension_comparison } from "../vehicles/pickup_suspension_comparison.mms"
-import { ship_store_accordion } from "../ship_store_accordion.mms"
+// import { ship_store_accordion } from "../ship_store_accordion.mms"
 import { ship_biodome } from "../ship_biodome.mms"
 import { ship_box, ship_solid, ship_label } from "../ship_parts.mms"
-import { sakura_tree } from "../plants/sakura_tree.mms"
+// import { sakura_tree } from "../plants/sakura_tree.mms"
 import { ship_path_markers, ship_light_pool } from "../ship_lighting.mms"
 import { ship_park_ground, park_ground_height } from "../floors/ship_park_ground.mms"
 
 // Tree geometry and trunk collision live together in removable orchard halves.
-fn orchard_rows(rows) {
-    return T {
-        for x in [-24.0,-12.0,0.0,12.0,24.0] {
-            for z in rows {
-                T.position(x,park_ground_height(x,z,4),z) {
-                    name="ship_orchard_tree"
-                    sakura_tree(2,1.15,0.20)
-                }
-            }
-        }
-    }
-}
+// fn orchard_rows(rows) {
+//     return T {
+//         for x in [-24.0,-12.0,0.0,12.0,24.0] {
+//             for z in rows {
+//                 T.position(x,park_ground_height(x,z,4),z) {
+//                     name="ship_orchard_tree"
+//                     sakura_tree(2,1.15,0.20)
+//                 }
+//             }
+//         }
+//     }
+// }
 
 // 64 x 48 m rectangular park enclosure; floor at local Y=0.
 // Entrance faces -X, lining up with the cafeteria's upper landing.
@@ -41,12 +41,13 @@ export fn ship_park() {
         ship_box([0.0, 0.006, 0.0], [2.0, 0.012, 46.0], [0.63, 0.60, 0.44])
         // Controls beside the west entrance leave the central path clear.
         // Ground, benches and the enclosure stay loaded when trees are hidden.
-        ship_store_accordion("ship_orchard_north","ORCHARD / NORTH TREES",fn() {
-            return orchard_rows([-16.0,-8.0])
-        },null,null,[-29.0,2.35,-3.4],true,-Math.pi/2.0)
-        ship_store_accordion("ship_orchard_south","ORCHARD / SOUTH TREES",fn() {
-            return orchard_rows([8.0,16.0])
-        },null,null,[-29.0,2.35,1.4],true,-Math.pi/2.0)
+        // PERF ISOLATION: restore this block to instantiate its accordion and content.
+        // ship_store_accordion("ship_orchard_north","ORCHARD / NORTH TREES",fn() {
+        //     return orchard_rows([-16.0,-8.0])
+        // },null,null,[-29.0,2.35,-3.4],true,-Math.pi/2.0)
+        // ship_store_accordion("ship_orchard_south","ORCHARD / SOUTH TREES",fn() {
+        //     return orchard_rows([8.0,16.0])
+        // },null,null,[-29.0,2.35,1.4],true,-Math.pi/2.0)
         for z in [-2.0, 2.0] {
             ship_solid([0.0, 0.48, z], [2.2, 0.12, 0.55], [0.45, 0.34, 0.22])
             for x in [-0.85, 0.85] {

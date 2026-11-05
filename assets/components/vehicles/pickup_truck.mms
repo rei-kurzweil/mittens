@@ -1,75 +1,70 @@
 import { ship_vehicle_motion } from "./ship_vehicle_motion.mms"
-import { vehicle_glass } from "./vehicle_glass.mms"
-import { pickup_cab_interior } from "./pickup_cab_interior.mms"
 import { pickup_driving } from "./pickup_driving.mms"
-import { ship_solid, ship_lamp, ship_label } from "../ship_parts.mms"
-import { pickup_suspension } from "./pickup_suspension.mms"
+import { pickup_model_suspension_bindings, bind_pickup_model_suspension } from "./pickup_model_suspension.mms"
+import { pickup_model_colliders } from "./pickup_model_colliders.mms"
 import { pickup_painted_metal } from "../materials/pickup_painted_metal.mms"
+import { pickup_dashboard_gauges } from "./pickup_dashboard_gauges.mms"
 
-// pickup_truck is the chassis transform driven by Velocity and used for mounting.
-// Destroyable retained body panels; suspension/wheels remain separate branches.
-// Parked pickup, front toward -Z. Open cargo bed and a two-seat cab.
+// Original procedural geometry remains in pickup_truck_prototype.mms.
 fn make_pickup(color, cargo, suspension_layout) {
-    if color == null { color = [0.59, 0.52, 0.42] }
-    let metal = pickup_painted_metal()
-    let suspensions = [
-        pickup_suspension("fl",-0.96,-1.65,0.40,metal,suspension_layout),
-        pickup_suspension("fr", 0.96,-1.65,0.40,metal,suspension_layout),
-        pickup_suspension("rl",-0.96, 1.55,0.40,metal,suspension_layout),
-        pickup_suspension("rr", 0.96, 1.55,0.40,metal,suspension_layout),
-    ]
-    let truck = T {
-        name = "pickup_truck"
+    let bindings=pickup_model_suspension_bindings()
+    let batch=CombineMesh.keep_transforms() {
+        name="pickup_painted_body"
+        if color!=null { C.rgba(color[0],color[1],color[2],1) }
+    }
+    let model=GLTF.new("assets/models/mitten_pickup.glb") {
+        name="pickup_model"
+        pickup_painted_metal()
+        Texture.with_uri("assets/textures/pool/chrome-matcap.png")
+        TextureFiltering.linear()
+    }
+    on(model,"GLTFInitialized",fn(event) {
+        bind_pickup_model_suspension(event.gltf,bindings,suspension_layout)
+        let chassis=event.gltf.query("#truck")
+        if chassis {
+            // Combine only stationary geometry. CombineMesh adds no transform,
+            // so reparenting these parts retains their authored local poses.
+            chassis.attach(batch)
+            for renderable in event.gltf.query_all("#truck > renderable") { batch.attach(renderable) }
+            for name in ["car-seat","car-seat.001","door_left","door_right","headlights","Plane.001","steering_wheel"] {
+                let part=event.gltf.query("[name='"+name+"']")
+                if part { batch.attach(part) }
+            }
+        }
+    })
+    let truck=T {
+        name="pickup_truck"
+        // Group marker retained; mesh-cut damage currently supports cubes only.
         Destroyable.threshold(3.0)
-        CombineMesh.keep_transforms() {
-            name = "pickup_painted_body"
-            metal
-            Texture.with_uri("assets/textures/pool/chrome-matcap.png")
-            TextureFiltering.linear()
-            ship_solid([0.0, 0.65, 0.0], [2.0, 0.30, 4.8], color)
-            ship_solid([0.0,1.0,-1.72],[2.0,0.45,1.30],color)
-            // Hollow cabin: no solid cube through the seats or footwell.
-            ship_solid([0,2.30,-0.40],[2.0,0.12,1.8],color)
-            ship_solid([0,1.08,0.40],[1.9,0.56,0.10],color)
-            ship_solid([0,2.16,0.40],[1.9,0.16,0.10],color)
-            for side in [-1,1] {
-                ship_solid([side*0.94,1.73,-1.22],[0.09,1.02,0.09],color)
-                ship_solid([side*0.94,1.70,0.40],[0.09,1.05,0.09],color)
-                // Open doorways allow inspecting and entering the cabin.
-                ship_solid([side*0.94,0.87,-0.40],[0.10,0.14,1.55],color)
-            }
-            pickup_cab_interior()
-            for side in [-1.0, 1.0] {
-                ship_solid([side * 0.95, 1.10, 1.35], [0.10, 0.65, 2.1], color)
-                ship_solid([side * 0.72, 1.12, -2.42], [0.38, 0.20, 0.04], [0.72, 0.67, 0.46])
-            }
-            ship_solid([0.0, 1.10, 2.35], [2.0, 0.65, 0.10], color)
-            ship_solid([0.0, 0.68, -2.48], [2.10, 0.16, 0.12], [0.51, 0.53, 0.48])
+        T.position(0,0.180146,0).rotation(0,Math.pi,0) {
+            name="pickup_model_frame"
+            model
         }
-        vehicle_glass([0,1.75,-1.23],1.80,0.85,Math.pi)
-        vehicle_glass([0,1.75,0.455],1.80,0.80,0)
-        for side in [-1.0, 1.0] {
-            ship_lamp([side * 0.85, 1.0, 2.42], [0.15, 0.24, 0.04], [0.60, 0.08, 0.04])
+        pickup_model_colliders()
+        // Sources sit just ahead of the authored headlight faces, pointing -Z.
+        for side in [-1,1] {
+            T.position(side*0.49,1.09,-1.57).rotation(0,Math.pi,0) {
+                name="pickup_headlight_"+side
+                SL.color(1.0,0.93,0.82).intensity(12.0).distance(25.0).angle(0.50).penumbra(0.40)
+            }
         }
-        for suspension in suspensions { suspension }
-        T.position(-0.53,1.235,-0.797) { ship_label([0,0,0],"00000.0 km",0.025) }
-        T.position(-0.77,1.66,-0.80) { ship_label([0,0,0],"RPM     SPEED    FUEL",0.026) }
-        // Bed floor top is 0.8 m; cargo is attached to the vehicle, not the room.
-        T.position(0.0, 0.82, 1.35) {
-            name = "pickup_bed_cargo_mount"
-            if cargo != null { cargo }
+        // Rough placement behind the steering wheel on the new dashboard.
+        T.position(0.15,0.02,0.30) { pickup_dashboard_gauges() }
+        T.position(0,0.64,1.50) {
+            name="pickup_bed_cargo_mount"
+            if cargo!=null { cargo }
         }
     }
-    truck.set_suspension_compression = fn(corner,ratio) {
-        if corner == null {
-            for suspension in suspensions { suspension.set_compression(ratio) }
-        } else {
-            let suspension = truck.query("#suspension_mount_"+corner)
-            if suspension { suspension.set_compression(ratio) }
+    truck.set_suspension_compression=fn(corner,ratio) {
+        for binding in bindings {
+            if corner==null || corner==binding.corner {
+                binding.ratio=Math.clamp(ratio,0.35,1.35)
+                if binding.actuator { binding.actuator.set_compression(binding.ratio) }
+            }
         }
     }
-    let motion = ship_vehicle_motion(truck,"pickup_velocity")
-    truck.attach(pickup_driving(truck,motion))
+    let motion=ship_vehicle_motion(truck,"pickup_velocity")
+    truck.attach(pickup_driving(truck,motion,[-0.33,1.78,0.30]))
     return motion
 }
 
@@ -77,7 +72,6 @@ export fn pickup_truck(color, cargo) {
     return make_pickup(color,cargo,"fork")
 }
 
-// Same body and controls; only suspension hierarchy/compression handling differs.
 export fn pickup_truck_sibling_suspension(color, cargo) {
     return make_pickup(color,cargo,"siblings")
 }
