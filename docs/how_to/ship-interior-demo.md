@@ -1,10 +1,11 @@
 # Ship interior demo
 
-Temporary performance isolation: all live accordion construction blocks are
-commented out, including bridge equipment, all four cafeteria vendors (and
-Lumae), orchard trees and barracks stock. The barracks instead instantiates only
-a plain table and its three weapons. The commented code and full stock prefabs
-remain available for restoration. Two orchard pickups remain. Mirror controls,
+All four cafeteria vendors are restored with their accordion controls, including
+the hot-dog stand, Lumae, grill, drink fountain and mini-fridge pickup.
+Performance isolation remains active for bridge equipment, orchard trees and barracks stock. Four simple desk
+blocks fill the bridge consoles' former positions beside the existing chairs.
+The barracks instantiates only a plain table and its three weapons. Commented
+code and full stock prefabs remain available for restoration. Two orchard pickups remain. Mirror controls,
 bloom and graphics settings are unchanged. The layout descriptions below also
 document the content that is currently commented out.
 
@@ -110,11 +111,17 @@ pedestrian movement until exit. This remains a kinematic driving prototype;
 it does not yet solve vehicle-to-vehicle crash physics. RVs are near-white with
 single grey translucent panes over actual wall openings.
 
-Imported pickups retain their authored colours with the custom metallic material:
-scene-light specular highlights, a chrome matcap, and a strong rim. Lighting can
-exceed the authored paint albedo. `pickup_truck(color, cargo)` accepts an optional
-colour override and a cargo component mounted in the bed. Finish parameters live in
-`assets/components/materials/pickup_painted_metal.mms`.
+Imported pickups retain authored colours with the chrome matcap material used by
+the pool handrails. `pickup_truck(color, cargo)` accepts an optional colour override
+and cargo mounted in the bed. The current finish is in
+`assets/components/materials/matcap_metal.mms`; the procedural truck retains its
+older painted-metal finish.
+
+Dashboard RIDE buttons, to the right of the steering wheel, select all corners,
+front/rear axles, left/right sides or individual corners. UP/DOWN adjusts ride
+height and REST resets all four. Their combined extensions raise, lower, pitch
+and roll the visible body and its driver anchor. This is an event-driven
+hydraulic preview, without simulated vehicle weight, stiffness or damping.
 
 The regular park's implicit hills rise about 2.4 m above the deck, with bases
 about 8 m across. They are clipped into the upper deck slab,
@@ -129,8 +136,10 @@ generated contact mesh; add `Collidable.static()` beneath that zone to walk on
 it. Texture coordinates project local X/Z at one repeat per metre, and texture
 bindings follow regenerated surface outputs.
 
-Pickups currently have no moving collision response or terrain-following
-suspension. Larger hills do not yet make them flip. The required native chassis,
+Pickups now have four rotation-safe spherical sliding contact zones, correcting
+the chassis root while ignoring its own static panels. They can slide against
+walls and terrain but do not implement terrain-following suspension or rollover.
+Larger hills do not yet make them flip. The required native dynamic chassis,
 wheel contact and rollover work is described in
 [vehicle terrain contact](../draft/vehicle-terrain-contact.md).
 

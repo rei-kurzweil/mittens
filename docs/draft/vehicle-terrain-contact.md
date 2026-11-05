@@ -3,9 +3,12 @@
 Status: proposed native physics work; not implemented by the ship example.
 
 The station pickups currently integrate translation and yaw through `Velocity`.
-Their `ship_solid` body panels have static collision, but the truck has no
-`Collidable.slide()` mover. Driving therefore does not resolve the truck against
-walls or terrain. Mounting and driving commands remain separate responsibilities.
+They now have four spherical `Collidable.slide()` contact zones approximating
+the lower chassis and upper cab, plus static body proxies for other actors.
+Contacts ignore the truck's own descendants and accumulate corrections from
+zones sharing its movement root. This provides basic wall/terrain separation
+and sliding, without wheel support, gravity-driven settling or rollover.
+Mounting and driving commands remain separate responsibilities.
 
 ## Limits of the existing slide response
 

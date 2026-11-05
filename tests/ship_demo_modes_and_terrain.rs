@@ -141,14 +141,9 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
         assert_eq!(count("ship_trailer_park"), 0);
         assert_eq!(count("ship_orchard_pickup_north"), 1);
         assert_eq!(count("ship_orchard_pickup_south"), 1);
-        assert_eq!(count("pickup_truck"), 2); // hot-dog stand is commented out for profiling
+        assert_eq!(count("pickup_truck"), 3); // two orchard pickups and the hot-dog stand
         for label in [
             "ship_bridge_computers",
-            "ship_coffee_store",
-            "ship_noodle_store",
-            "ship_grill_store",
-            "ship_hot_dog_store",
-            "ship_hot_dog_vendor",
             "ship_orchard_north",
             "ship_orchard_south",
             "ship_orchard_tree",
@@ -164,6 +159,16 @@ fn ship_view_flags_rider_patrol_and_clipped_park_ground_work_together() {
             );
         }
         assert_eq!(count("ship_barracks_weapon_table"), 1);
+        for label in [
+            "ship_coffee_store",
+            "ship_noodle_store",
+            "ship_grill_store",
+            "ship_hot_dog_store",
+            "ship_hot_dog_vendor",
+        ] {
+            assert_eq!(count(label), 1, "the cafeteria vendors should be restored");
+        }
+        assert_eq!(count("ship_bridge_placeholder_desk"), 4);
         for index in 0..3 {
             assert_eq!(count(&format!("ship_rack_pistol_{index}_grip")), 1);
         }

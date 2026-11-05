@@ -2,8 +2,11 @@ import { ship_vehicle_motion } from "./ship_vehicle_motion.mms"
 import { pickup_driving } from "./pickup_driving.mms"
 import { pickup_model_suspension_bindings, bind_pickup_model_suspension } from "./pickup_model_suspension.mms"
 import { pickup_model_colliders } from "./pickup_model_colliders.mms"
-import { pickup_painted_metal } from "../materials/pickup_painted_metal.mms"
+import { matcap_metal } from "../materials/matcap_metal.mms"
 import { pickup_dashboard_gauges } from "./pickup_dashboard_gauges.mms"
+import { pickup_sliding_colliders } from "./pickup_sliding_colliders.mms"
+import { pickup_ride_height } from "./pickup_ride_height.mms"
+import { pickup_hydraulics_panel } from "./pickup_hydraulics_panel.mms"
 
 // Original procedural geometry remains in pickup_truck_prototype.mms.
 fn make_pickup(color, cargo, suspension_layout) {
@@ -14,7 +17,7 @@ fn make_pickup(color, cargo, suspension_layout) {
     }
     let model=GLTF.new("assets/models/mitten_pickup.glb") {
         name="pickup_model"
-        pickup_painted_metal()
+        matcap_metal()
         Texture.with_uri("assets/textures/pool/chrome-matcap.png")
         TextureFiltering.linear()
     }
@@ -32,15 +35,12 @@ fn make_pickup(color, cargo, suspension_layout) {
             }
         }
     })
-    let truck=T {
-        name="pickup_truck"
-        // Group marker retained; mesh-cut damage currently supports cubes only.
-        Destroyable.threshold(3.0)
+    let body=T.position(0.047,0,-0.568) {
+        name="pickup_chassis_frame"
         T.position(0,0.180146,0).rotation(0,Math.pi,0) {
             name="pickup_model_frame"
             model
         }
-        pickup_model_colliders()
         // Sources sit just ahead of the authored headlight faces, pointing -Z.
         for side in [-1,1] {
             T.position(side*0.49,1.09,-1.57).rotation(0,Math.pi,0) {
@@ -49,13 +49,23 @@ fn make_pickup(color, cargo, suspension_layout) {
             }
         }
         // Rough placement behind the steering wheel on the new dashboard.
-        T.position(0.15,0.02,0.30) { pickup_dashboard_gauges() }
+        T.position(0.0,0.02,0.30) { pickup_dashboard_gauges() }
         T.position(0,0.64,1.50) {
             name="pickup_bed_cargo_mount"
             if cargo!=null { cargo }
         }
     }
-    truck.set_suspension_compression=fn(corner,ratio) {
+    let pose=T.position(-0.047,0,0.568) {name="pickup_chassis_pose" body}
+    let truck=T {
+        name="pickup_truck"
+        // Group marker retained; mesh-cut damage currently supports cubes only.
+        Destroyable.threshold(3.0)
+        pose
+        // Rounded movement zones and static proxies remain an upright collision
+        // approximation while the visible chassis is raised or tilted.
+        pickup_model_colliders()
+    }
+    fn apply_compression(corner,ratio) {
         for binding in bindings {
             if corner==null || corner==binding.corner {
                 binding.ratio=Math.clamp(ratio,0.35,1.35)
@@ -63,8 +73,15 @@ fn make_pickup(color, cargo, suspension_layout) {
             }
         }
     }
+    let ride=pickup_ride_height(bindings,pose,apply_compression)
+    truck.set_suspension_compression=fn(corner,ratio) {ride.clear_pose() apply_compression(corner,ratio)}
+    truck.adjust_ride_height=ride.adjust
+    truck.reset_ride_height=ride.reset
+    truck.ride_height_status=ride.status
+    body.attach(pickup_hydraulics_panel(ride))
     let motion=ship_vehicle_motion(truck,"pickup_velocity")
-    truck.attach(pickup_driving(truck,motion,[-0.33,1.78,0.30]))
+    truck.attach(pickup_sliding_colliders(truck))
+    body.attach(pickup_driving(truck,motion,[-0.33,1.78,0.30]))
     return motion
 }
 

@@ -28,10 +28,17 @@ Each tyre keeps its authored nonuniform scale. Compression requested before
 loading is retained and applied when binding completes. Driver eye position is
 [-0.33, 1.78, 0.30]; the bed cargo mount is [0, 0.64, 1.50].
 
-The model retains authored colours by default and uses the existing pickup
-metal shader. Static contact proxies leave the cab sides open. Existing driving
+The model retains authored colours by default and now uses the pool handrails'
+chrome matcap metal shader. Static contact proxies leave the cab sides open. Existing driving
 and boarding work; cube-based mesh-cut destruction does not cut arbitrary GLB
 geometry, and rollover/terrain following remain unimplemented.
+
+Four spherical sliding contact zones approximate the lower chassis and upper
+cab. They correct the same truck root and work while it yaws. Existing static
+body/dashboard proxies remain available for other actors, while the truck ignores
+its own descendants during contact response. This is a rounded approximation,
+not an oriented-box or rigid-body solver. Rotated static boxes and general overlap
+queries are supported; moving sliding boxes still require axis alignment.
 
 Two warm-white spotlights sit at the front headlight faces, with a 25 m range,
 aimed along vehicle-local -Z so they follow steering and vehicle rotation.
@@ -39,6 +46,27 @@ The original RPM, speed, fuel and odometer instruments are reused in a compact
 dashboard cluster behind the imported steering wheel. Its geometry has one
 combined render instance, with separate labels. Readouts and needles remain
 static placeholders.
+
+## Dashboard ride-height preview
+
+Buttons to the right of the steering wheel select all corners, front/rear axles,
+left/right sides, or FL/FR/RL/RR individually. UP/DOWN changes selected spring
+lengths in 5% steps, clamped to 65–135% of their authored length; REST resets
+all corners. The readout shows the selected group's average percentage.
+
+The four requested extensions fit an average support plane: their mean raises
+or lowers the body, the front/rear difference pitches it, and the left/right
+difference rolls it. The model, instruments, headlights, cargo and driver's
+anchor follow that body frame. Updates occur only on button events, without
+per-truck frame callbacks. The outdoor A/B compression controls still show raw
+spring compression independently and reset the body to its normal pose.
+
+This is a kinematic hydraulic preview. The truck has no simulated sprung mass,
+spring stiffness, damping, gravity-driven sag, or wheel-ground suspension forces.
+Changing a mesh's length does not itself exert resistance. Four arbitrary corner
+requests may not define a single plane, so this preview averages them rather
+than solving independent wheel contacts. Collision volumes remain upright
+approximations of the truck, including while the visible body is tilted.
 
 Both exports live in `assets/components/vehicles/pickup_truck.mms`. The orchard
 parks A (fork) north of the entrance path and B (siblings) south of it. A small

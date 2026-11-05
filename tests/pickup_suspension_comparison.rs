@@ -2,7 +2,7 @@ use mittens_engine::engine::{
     Universe,
     ecs::{
         ComponentId, EventSignal, SignalEmitter, World,
-        component::{GLTFComponent, SpotLightComponent, TransformComponent},
+        component::{GLTFComponent, SpotLightComponent, TextComponent, TransformComponent},
         system::TransformSystem,
     },
     graphics::{CpuMesh, MeshHandle, MeshUploader, TextureHandle, TextureUploader},
@@ -182,6 +182,102 @@ fn check_wheels(scene: &Universe, left_ratio: f32, right_ratio: f32) {
     }
 }
 
+fn check_hydraulics(scene: &mut Universe, root: &str) {
+    let scope = named(&scene.world, root);
+    let pose = scene
+        .world
+        .find_component(scope, "#pickup_chassis_pose")
+        .unwrap();
+    let seat = scene
+        .world
+        .find_component(scope, "#pickup_driver_eye_anchor")
+        .unwrap();
+    let initial_seat = TransformSystem::world_position(&scene.world, seat).unwrap();
+    let wheel = scene.world.find_component(scope, "#wheel_fl").unwrap();
+    let initial_hub = TransformSystem::world_position(&scene.world, wheel).unwrap();
+    let click_control = |scene: &mut Universe, name: &str| {
+        let control = scene
+            .world
+            .find_component(scope, &format!("#pickup_hydraulics_{name}"))
+            .unwrap();
+        scene.command_queue.push_event(
+            control,
+            EventSignal::Click {
+                raycaster: ComponentId::default(),
+                renderable: control,
+                hit_point: [0.; 3],
+                screen_pos_px: None,
+            },
+        );
+        tick(scene);
+    };
+    let pose_transform = |scene: &Universe| {
+        *scene
+            .world
+            .get_component_by_id_as::<TransformComponent>(pose)
+            .unwrap()
+    };
+    click_control(scene, "select_all");
+    click_control(scene, "raise");
+    assert!(
+        pose_transform(scene).translation()[1] > 0.02,
+        "all four corners must raise the chassis"
+    );
+    let raised_seat = TransformSystem::world_position(&scene.world, seat).unwrap();
+    assert!(
+        (TransformSystem::world_position(&scene.world, wheel).unwrap()[1] - initial_hub[1]).abs()
+            < 1e-4,
+        "equal extension at all four corners must lift the body while retaining wheel height"
+    );
+    assert!(
+        (raised_seat[1] - initial_seat[1] - 0.022764).abs() < 1e-4,
+        "the driver's anchor must rise with the body"
+    );
+    click_control(scene, "select_front");
+    click_control(scene, "raise");
+    assert!(
+        pose_transform(scene).rotation_quat_xyzw()[0] > 0.001,
+        "front extension should pitch the nose up"
+    );
+    click_control(scene, "reset");
+    click_control(scene, "select_left");
+    click_control(scene, "raise");
+    assert!(
+        pose_transform(scene).rotation_quat_xyzw()[2] < -0.001,
+        "left extension must roll the body"
+    );
+    click_control(scene, "reset");
+    click_control(scene, "select_fl");
+    click_control(scene, "raise");
+    let tilted = pose_transform(scene).rotation_quat_xyzw();
+    assert!(
+        tilted[0] > 0.001 && tilted[2] < -0.001,
+        "one corner must contribute to both pitch and roll"
+    );
+    let readout = scene
+        .world
+        .find_component(scope, "#pickup_hydraulics_readout")
+        .unwrap();
+    assert_eq!(
+        scene
+            .world
+            .get_component_by_id_as::<TextComponent>(readout)
+            .unwrap()
+            .text,
+        "RIDE fl 105%"
+    );
+    click_control(scene, "reset");
+    click_control(scene, "select_all");
+    click_control(scene, "lower");
+    assert!(
+        pose_transform(scene).translation()[1] < -0.02,
+        "all four corners must lower the chassis"
+    );
+    click_control(scene, "reset");
+    assert_eq!(pose_transform(scene).rotation_quat_xyzw(), [0., 0., 0., 1.]);
+    assert_eq!(pose_transform(scene).translation()[1], 0.);
+}
+
 #[test]
 fn both_pickup_suspensions_compress_without_scaling_tyres() {
     let mut scene = Universe::new(World::default());
@@ -316,6 +412,20 @@ fn both_pickup_suspensions_compress_without_scaling_tyres() {
             .iter()
             .find(|instance| instance.component == batch)
             .unwrap();
+        let material = scene
+            .visuals
+            .materials
+            .instance(combined.material_instance.unwrap())
+            .unwrap();
+        let definition = scene
+            .visuals
+            .materials
+            .definition(material.definition)
+            .unwrap();
+        assert_eq!(
+            definition.custom.as_ref().unwrap().fragment_uri,
+            "assets/shaders/pool-metal-matcap.frag"
+        );
         assert_eq!(
             upload.1.get(&combined.renderable.mesh).copied(),
             Some(1589),
@@ -360,4 +470,7 @@ fn both_pickup_suspensions_compress_without_scaling_tyres() {
             [1.0; 3]
         );
     }
+    check_hydraulics(&mut scene, "fork_fixture");
+    check_hydraulics(&mut scene, "sibling_fixture");
+    check_wheels(&scene, 1.0, 1.0);
 }

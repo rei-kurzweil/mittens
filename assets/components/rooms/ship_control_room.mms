@@ -74,6 +74,11 @@ export fn ship_control_room() {
                 // Muted object accents contrast with the warm wall palette.
                 let desk_accent=[0.56,0.72,0.72]
                 if side>0 {desk_accent=[0.68,0.62,0.76]}
+                // Simple desk block replaces the disabled centre console.
+                T {
+                    name="ship_bridge_placeholder_desk"
+                    ship_solid([side*3.1,0.42,z+0.25],[1.15,0.84,0.85],desk_accent)
+                }
                 // Writing surface between the equipment; top at 0.84 m.
                 ship_solid([side * 2.3, 0.80, z + 0.25], [0.40, 0.08, 0.85], desk_accent)
                 ship_solid([side * 3.9, 0.80, z + 0.25], [0.40, 0.08, 0.85], desk_accent)

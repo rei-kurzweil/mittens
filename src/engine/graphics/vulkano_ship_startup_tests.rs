@@ -81,7 +81,7 @@ fn ship_xr_first_view_is_not_black() -> Result<(), Box<dyn std::error::Error>> {
     let mut scene = crate::engine::Universe::new(Default::default());
     let kiosk = std::env::var_os("SHIP_CAPTURE_HOTDOG").is_some();
     let room = std::env::var("SHIP_CAPTURE_ROOM").unwrap_or_default();
-    let yaw: f32 = if matches!(room.as_str(), "landing" | "grocery" | "mirror") {
+    let yaw: f32 = if matches!(room.as_str(), "landing" | "grocery" | "mirror" | "truck_cab") {
         std::f32::consts::FRAC_PI_2
     } else if room == "biodomes" {
         -std::f32::consts::FRAC_PI_2
@@ -143,7 +143,7 @@ fn ship_xr_first_view_is_not_black() -> Result<(), Box<dyn std::error::Error>> {
             "landing" => "T.position(-8.0,5.2,15.0)",
             "biodomes" => "T.position(17.0,5.2,15.0)",
             "truck" => "T.position(18.0,5.2,7.5)",
-            "truck_cab" => "T.position(124.52,5.2,20.8)",
+            "truck_cab" => "T.position(23.30,5.33,10.83)",
             _ => panic!("unknown SHIP_CAPTURE_ROOM: {room}"),
         };
         source
@@ -175,6 +175,11 @@ fn ship_xr_first_view_is_not_black() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         source
     };
+    // This fixed cockpit preview is a camera, rather than a standing pedestrian
+    // capsule. Remove its contact zone so the cab floor cannot lift the camera.
+    let source = if room == "truck_cab" {
+        format!("{source}\nquery(\"#ship_xr_free_rig\").query(\"zone\").remove_subtree()")
+    } else { source };
     // Capture XR explicitly even when the editable example defaults to desktop.
     let source = source
         .lines()
@@ -192,7 +197,8 @@ fn ship_xr_first_view_is_not_black() -> Result<(), Box<dyn std::error::Error>> {
     scene.load_mms_source_at_path(&source, "examples/ship_interior.mms")?;
     let mut mesh = 1000;
     let mut texture = 1000;
-    for frame in 0..24 {
+    let capture_frames=if room=="truck_cab" {6} else {24};
+    for frame in 0..capture_frames {
         eprintln!("ship GPU frame {frame}");
         scene.update(1. / 90., &Default::default());
         scene.systems.prepare_render(
@@ -206,6 +212,18 @@ fn ship_xr_first_view_is_not_black() -> Result<(), Box<dyn std::error::Error>> {
             },
             &mut scene.command_queue,
         );
+        if room == "truck_cab" {
+            // Contacts can move the parked truck off its authored spawn point.
+            // Follow the actual seat rather than capturing the hillside beside it.
+            let truck=scene.world.all_components().find(|&id|scene.world.component_label(id)==Some("ship_orchard_pickup_north")).unwrap();
+            let seat=scene.world.find_component(truck,"#pickup_driver_eye_anchor").unwrap();
+            let position=crate::engine::ecs::system::TransformSystem::world_position(&scene.world,seat).unwrap();
+            let rig=scene.world.all_components().find(|&id|scene.world.component_label(id)==Some("ship_xr_free_rig")).unwrap();
+            let transform=scene.world.get_component_by_id_as_mut::<crate::engine::ecs::component::TransformComponent>(rig).unwrap();
+            transform.transform.translation=[position[0],position[1]-1.65,position[2]];
+            transform.transform.recompute_model();
+            scene.systems.transform_changed(&mut scene.world,&mut scene.visuals,rig);
+        }
         if room == "mirror" {
             renderer.submit_xr_mirror_captures(&mut scene.visuals)?;
         }
