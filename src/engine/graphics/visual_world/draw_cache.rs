@@ -97,7 +97,7 @@ impl VisualWorld {
                 r.mesh.0,
                 tex,
                 inst.texture_filtering as u8,
-                sanitize_quant_steps(inst.quant_steps).to_bits(),
+                material_parameter(inst.renderable.material, inst.quant_steps).to_bits(),
                 inst.material_instance.map(|id| id.data().as_ffi()),
             )
         });
@@ -120,7 +120,7 @@ impl VisualWorld {
                 r.mesh.0,
                 tex,
                 inst.texture_filtering as u8,
-                sanitize_quant_steps(inst.quant_steps).to_bits(),
+                material_parameter(inst.renderable.material, inst.quant_steps).to_bits(),
                 inst.material_instance.map(|id| id.data().as_ffi()),
             )
         });
@@ -166,7 +166,7 @@ impl VisualWorld {
                 tex,
                 r.mesh.0,
                 inst.texture_filtering as u8,
-                sanitize_quant_steps(inst.quant_steps).to_bits(),
+                material_parameter(inst.renderable.material, inst.quant_steps).to_bits(),
                 inst.material_instance.map(|id| id.data().as_ffi()),
             )
         });
@@ -205,7 +205,7 @@ impl VisualWorld {
                 r.mesh.0,
                 tex,
                 inst.texture_filtering as u8,
-                sanitize_quant_steps(inst.quant_steps).to_bits(),
+                material_parameter(inst.renderable.material, inst.quant_steps).to_bits(),
                 inst.material_instance.map(|id| id.data().as_ffi()),
             )
         });
@@ -284,7 +284,7 @@ impl VisualWorld {
                 r.mesh.0,
                 tex,
                 inst.texture_filtering as u8,
-                sanitize_quant_steps(inst.quant_steps).to_bits(),
+                material_parameter(inst.renderable.material, inst.quant_steps).to_bits(),
                 inst.material_instance.map(|id| id.data().as_ffi()),
             )
         });
@@ -312,7 +312,7 @@ impl VisualWorld {
                 tex,
                 r.mesh.0,
                 inst.texture_filtering as u8,
-                sanitize_quant_steps(inst.quant_steps).to_bits(),
+                material_parameter(inst.renderable.material, inst.quant_steps).to_bits(),
                 inst.material_instance.map(|id| id.data().as_ffi()),
             )
         });

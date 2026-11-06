@@ -27,6 +27,9 @@ end-to-end measurement.
 - [View-local mirror bindings](view-local-mirror-bindings.md): the first cache
   fix eliminates those per-eye structural rebuilds and reduces instance-buffer
   allocations from 10 to 7 per stereo frame, preserving stereo/frozen reflections.
+- [Material binding variants and retention](material-binding-variants.md): fixed
+  legacy bands, a standard Surface Grid definition and a measured cache-limit
+  fix eliminating 36 recurring material snapshot allocations per frame.
 - [Persistence and command reuse](persistence-and-command-reuse.md): inventory
   what already persists, what changes each frame, and the invalidation and
   lifetime rules needed to switch incrementally.

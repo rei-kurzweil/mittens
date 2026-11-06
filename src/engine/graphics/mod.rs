@@ -7,6 +7,7 @@ pub(crate) mod deformation_reference;
 pub(crate) mod implicit_mesh;
 pub mod light_data;
 mod material_cache;
+mod material_binding_key;
 pub mod materials;
 pub mod mesh;
 pub mod mipmaps;

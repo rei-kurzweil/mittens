@@ -1,3 +1,4 @@
+use super::material_binding_key::material_parameter;
 use super::materials::{MaterialInstanceId, MaterialRegistry};
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::Transform;

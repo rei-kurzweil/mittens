@@ -26,7 +26,7 @@ impl VisualWorld {
                     .planar_reflection)
                 .then_some(inst0.component);
             let texture_filtering = inst0.texture_filtering;
-            let quant_steps = sanitize_quant_steps(inst0.quant_steps);
+            let quant_steps = material_parameter(inst0.renderable.material, inst0.quant_steps);
             let material_instance = inst0.material_instance;
             let stencil_ref = inst0.stencil_ref;
 
@@ -42,7 +42,8 @@ impl VisualWorld {
                     && r.mesh == mesh
                     && inst.texture == texture
                     && inst.texture_filtering == texture_filtering
-                    && sanitize_quant_steps(inst.quant_steps).to_bits() == quant_steps.to_bits()
+                    && material_parameter(inst.renderable.material, inst.quant_steps).to_bits()
+                        == quant_steps.to_bits()
                     && inst.material_instance == material_instance
                     && inst.stencil_ref == stencil_ref
                 {
@@ -455,7 +456,7 @@ impl VisualWorld {
                     .planar_reflection)
                 .then_some(inst0.component);
             let texture_filtering = inst0.texture_filtering;
-            let quant_steps = sanitize_quant_steps(inst0.quant_steps);
+            let quant_steps = material_parameter(inst0.renderable.material, inst0.quant_steps);
             let material_instance = inst0.material_instance;
 
             let start = out_instances.len();
@@ -471,7 +472,8 @@ impl VisualWorld {
                     && r.mesh == mesh
                     && inst.texture == texture
                     && inst.texture_filtering == texture_filtering
-                    && sanitize_quant_steps(inst.quant_steps).to_bits() == quant_steps.to_bits()
+                    && material_parameter(inst.renderable.material, inst.quant_steps).to_bits()
+                        == quant_steps.to_bits()
                     && inst.material_instance == material_instance
                 {
                     out_instances.push(indices[cursor]);
@@ -631,5 +633,27 @@ mod tests {
             }),
             Some(TextureHandle(43))
         );
+    }
+    #[test]
+    fn legacy_band_edits_do_not_invalidate_or_split_surface_batches() {
+        let mut visuals = VisualWorld::new();
+        let a = register(&mut visuals, 1, MaterialHandle::TOON_MESH);
+        let b = register(&mut visuals, 2, MaterialHandle::TOON_MESH);
+        visuals.prepare_draw_cache();
+        assert!(visuals.update_quant_steps(a, 1.));
+        assert!(visuals.update_quant_steps(b, 64.));
+        assert!(!visuals.prepare_draw_cache());
+        let batches: Vec<_> = visuals
+            .opaque_stream()
+            .0
+            .iter()
+            .filter_map(|op| match op {
+                RenderOp::DrawBatch(batch) => Some(batch),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].count, 2);
+        assert_eq!(batches[0].quant_steps, 3.);
     }
 }

@@ -102,10 +102,7 @@ impl VulkanoState {
         pipeline_skinned_emissive: Arc<GraphicsPipeline>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Bind pipeline/descriptor sets per (material, texture).
-        let mut bound_material: Option<crate::engine::graphics::MaterialHandle> = None;
-        let mut bound_texture: Option<TextureHandle> = None;
-        let mut bound_filtering: Option<TextureFiltering> = None;
-        let mut bound_quant: Option<u32> = None;
+        let mut bound_resource: Option<MaterialResourceKey> = None;
         let mut bound_instance = None;
 
         for batch in batches {
@@ -145,13 +142,16 @@ impl VulkanoState {
                 self.default_white_texture,
             );
             let filtering = batch.texture_filtering;
-            let quant_bits = batch.quant_steps.to_bits();
-            let material_instance = batch.material_instance;
 
-            if bound_material != Some(batch.material)
-                || bound_texture != Some(texture_handle)
-                || bound_filtering != Some(filtering)
-                || bound_quant != Some(quant_bits)
+            let material_instance = batch.material_instance;
+            let resource_key = MaterialResourceKey::new(
+                batch.material,
+                texture_handle,
+                filtering,
+                batch.quant_steps,
+            );
+
+            if bound_resource != Some(resource_key)
                 || bound_instance != Some(material_instance)
             {
                 let Some(material_set) = self.get_or_create_material_set(
@@ -173,10 +173,7 @@ impl VulkanoState {
                     (global_set.clone(), material_set, rig_set.clone()),
                 )?;
 
-                bound_material = Some(batch.material);
-                bound_texture = Some(texture_handle);
-                bound_filtering = Some(filtering);
-                bound_quant = Some(quant_bits);
+                bound_resource = Some(resource_key);
                 bound_instance = Some(material_instance);
             }
 
@@ -307,10 +304,7 @@ impl VulkanoState {
 
         let instances = visual_world.instances();
 
-        let mut bound_material: Option<crate::engine::graphics::MaterialHandle> = None;
-        let mut bound_texture: Option<TextureHandle> = None;
-        let mut bound_filtering: Option<TextureFiltering> = None;
-        let mut bound_quant: Option<u32> = None;
+        let mut bound_resource: Option<MaterialResourceKey> = None;
         let mut bound_instance = None;
 
         for op in ops {
@@ -366,7 +360,7 @@ impl VulkanoState {
                     if let Some(profile) = self.profile.as_mut() { profile.draw("stencil", inst.renderable.mesh, 1); }
                     unsafe { cbb.draw_indexed(mesh_index_count, 1, 0, 0, slot as u32)? };
                     // Invalidate bound-state cache so the next DrawBatch rebinds.
-                    bound_material = None;
+                    bound_resource = None;
                 }
 
                 RenderOp::DrawBatch(batch) => {
@@ -409,13 +403,16 @@ impl VulkanoState {
                         self.default_white_texture,
                     );
                     let filtering = batch.texture_filtering;
-                    let quant_bits = batch.quant_steps.to_bits();
-                    let material_instance = batch.material_instance;
 
-                    if bound_material != Some(batch.material)
-                        || bound_texture != Some(texture_handle)
-                        || bound_filtering != Some(filtering)
-                        || bound_quant != Some(quant_bits)
+                    let material_instance = batch.material_instance;
+                    let resource_key = MaterialResourceKey::new(
+                        batch.material,
+                        texture_handle,
+                        filtering,
+                        batch.quant_steps,
+                    );
+
+                    if bound_resource != Some(resource_key)
                         || bound_instance != Some(material_instance)
                     {
                         let Some(material_set) = self.get_or_create_material_set(
@@ -435,10 +432,7 @@ impl VulkanoState {
                             0,
                             (global_set.clone(), material_set, rig_set.clone()),
                         )?;
-                        bound_material = Some(batch.material);
-                        bound_texture = Some(texture_handle);
-                        bound_filtering = Some(filtering);
-                        bound_quant = Some(quant_bits);
+                        bound_resource = Some(resource_key);
                         bound_instance = Some(material_instance);
                     }
 
@@ -523,7 +517,7 @@ impl VulkanoState {
                     #[cfg(test)]
                     if let Some(profile) = self.profile.as_mut() { profile.draw("stencil", inst.renderable.mesh, 1); }
                     unsafe { cbb.draw_indexed(mesh_index_count, 1, 0, 0, slot as u32)? };
-                    bound_material = None;
+                    bound_resource = None;
                 }
             }
         }
@@ -870,10 +864,7 @@ impl VulkanoState {
             self.build_instance_buffer_for_order_or_dummy(&*visual_world, transparent_multi_order)?;
 
         // Bind pipeline/descriptor sets per (material, texture).
-        let mut bound_material: Option<crate::engine::graphics::MaterialHandle> = None;
-        let mut bound_texture: Option<TextureHandle> = None;
-        let mut bound_filtering: Option<TextureFiltering> = None;
-        let mut bound_quant: Option<u32> = None;
+        let mut bound_resource: Option<MaterialResourceKey> = None;
         let mut bound_instance = None;
 
         for batch in transparent_multi_batches {
@@ -885,13 +876,16 @@ impl VulkanoState {
                 self.default_white_texture,
             );
             let filtering = batch.texture_filtering;
-            let quant_bits = batch.quant_steps.to_bits();
-            let material_instance = batch.material_instance;
 
-            if bound_material != Some(batch.material)
-                || bound_texture != Some(texture_handle)
-                || bound_filtering != Some(filtering)
-                || bound_quant != Some(quant_bits)
+            let material_instance = batch.material_instance;
+            let resource_key = MaterialResourceKey::new(
+                batch.material,
+                texture_handle,
+                filtering,
+                batch.quant_steps,
+            );
+
+            if bound_resource != Some(resource_key)
                 || bound_instance != Some(material_instance)
             {
                 let Some(material_set) = self.get_or_create_material_set(
@@ -924,10 +918,7 @@ impl VulkanoState {
                     (global_set.clone(), material_set, rig_set.clone()),
                 )?;
 
-                bound_material = Some(batch.material);
-                bound_texture = Some(texture_handle);
-                bound_filtering = Some(filtering);
-                bound_quant = Some(quant_bits);
+                bound_resource = Some(resource_key);
                 bound_instance = Some(material_instance);
             }
 

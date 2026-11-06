@@ -75,8 +75,12 @@ impl VisualWorld {
                 return true;
             }
             self.instances[idx].quant_steps = q;
-            // Quantization affects material UBO selection => batching.
-            visual_topology_dirty!(self, UpdateQuantSteps);
+            // The old parameter is retained for compatibility; only Grid uses it.
+            if self.instances[idx].renderable.material
+                == crate::engine::graphics::MaterialHandle::GRID_MESH
+            {
+                visual_topology_dirty!(self, UpdateQuantSteps);
+            }
             true
         } else {
             false

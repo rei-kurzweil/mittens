@@ -129,7 +129,10 @@ sample distributions are retained in the summaries.
   focused formatting checks and `git diff --check` passed.
 
 Mutable material snapshot churn remains at 36 allocations/uploads per stereo
-frame. Attribute material/revision/resource identities before changing its
+frame in these historical captures. The later
+[material-binding fix](material-binding-variants.md) eliminates the measured
+churn with a bounded thirty-two-entry cache. Attribute material/revision/resource
+identities before changing its
 retention policy. First-eye instance uploads also remain; retaining stable buffer
 identities and updating safe frame slots is still necessary before broader
 recorded-command reuse. No engine-owned synchronization or parallel recording

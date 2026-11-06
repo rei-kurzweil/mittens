@@ -1,9 +1,10 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
 
-/// Per-renderable light quantization control for the toon shader.
+/// Legacy parameter transport retained for authoring compatibility and native Grid.
 ///
-/// This controls `MaterialUBO.quant_steps` (see `assets/shaders/toon-mesh.frag`).
+/// Legacy compatibility input: Toon lighting now uses a fixed three bands.
+/// Native Grid still transports signed visual spacing through this component.
 /// Intended to be attached as a descendant of a `RenderableComponent`.
 #[derive(Debug, Clone, Copy)]
 pub struct LightQuantizationComponent {

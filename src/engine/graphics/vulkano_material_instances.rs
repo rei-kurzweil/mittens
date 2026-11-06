@@ -8,15 +8,10 @@ fn material_binding_limit() -> usize {
         assert!((1..=512).contains(&limit));
         return limit;
     }
-    16
+    // The ship uses more than sixteen texture bindings on a shared material.
+    // Thirty-two retains that working set while keeping each cache bounded.
+    32
 }
-
-type MaterialResourceKey = (
-    crate::engine::graphics::MaterialHandle,
-    TextureHandle,
-    TextureFiltering,
-    u32,
-);
 
 struct MaterialSnapshot {
     revision: u64,
@@ -110,7 +105,7 @@ impl VulkanoState {
             .material_instances
             .get_mut(id)
             .ok_or("stale or unprepared MaterialInstanceId")?;
-        let key = (material, texture, filtering, quant_steps.to_bits());
+        let key = MaterialResourceKey::new(material, texture, filtering, quant_steps);
         if entry.bindings.get(&key).is_none() {
             entry.bindings.insert(key, Vec::new());
         }
@@ -194,12 +189,7 @@ mod material_instance_gpu_tests {
         let id = materials.upsert_source(source, definition, params);
         visuals.materials = materials;
         let program = crate::engine::graphics::MaterialHandle::ANIME_MESH;
-        let key = (
-            program,
-            TextureHandle(0),
-            TextureFiltering::Linear,
-            3.0f32.to_bits(),
-        );
+        let key = MaterialResourceKey::new(program, TextureHandle(0), TextureFiltering::Linear, 3.0);
         let pipeline = renderer.pipeline_anime_mesh.clone();
         let mut retained = Vec::new();
         for revision in 0..MATERIAL_SNAPSHOT_LIMIT {
