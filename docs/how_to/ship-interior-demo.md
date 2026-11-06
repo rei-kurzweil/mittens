@@ -242,3 +242,8 @@ still overrides capture updates. Other mirrors stay enabled by default.
 MMS authors can use `Mirror.quality(512).enabled(false) { name="my_mirror" }`
 and `query("#my_mirror").set_enabled(true)` / `.set_enabled(false)` at runtime.
 This toggles updates, not the mirror surface or its retained textures.
+
+The shared vehicle input controller uses `on(world, ...)` binding handles. It
+creates driving key/axis/frame bindings on first mount and bypasses them
+natively on exit, leaving proximity sensors active. New mounts resume the same
+bindings. Idle bindings do not cause FrameTick generation or MMS dispatch.

@@ -1,3 +1,6 @@
+#[path = "evaluator_signals.rs"]
+mod signals;
+
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
@@ -865,6 +868,9 @@ impl<'a, H: Host> Evaluator<'a, H> {
             };
             let receiver = self.eval_expr(lhs)?;
             return match receiver {
+                Value::EventBinding(callback) => {
+                    self.event_binding_method(callback, &method, &args)
+                }
                 Value::ComponentObject { id, component_type } => {
                     if let Some(callback) = self.component_field(id, &method) {
                         self.validate_field_receiver(id)?;
@@ -1018,94 +1024,6 @@ impl<'a, H: Host> Evaluator<'a, H> {
             self.dispatch(HostRequest::RegisterComponent { tree: *tree })?,
             component_type,
         )
-    }
-
-    fn register_signal_handler(
-        &mut self,
-        args: &[Value],
-        global: bool,
-    ) -> Result<Value, EvalError> {
-        let (scope, signal_index) = if global {
-            (None, 0)
-        } else {
-            let scope = match args.first() {
-                Some(Value::ComponentObject { id, .. }) => Some(*id),
-                _ => {
-                    return Err(EvalError::Runtime(
-                        "on expects a live component as argument 0".into(),
-                    ));
-                }
-            };
-            (scope, 1)
-        };
-        let signal = match args.get(signal_index) {
-            Some(Value::String(signal)) => signal.clone(),
-            _ => {
-                return Err(EvalError::Runtime(format!(
-                    "{} expects a signal name string as argument {signal_index}",
-                    if global { "on_global" } else { "on" }
-                )));
-            }
-        };
-        let trailing = &args[signal_index + 1..];
-        let (name, function) = match trailing {
-            [function @ Value::Function { .. }] => (None, function.clone()),
-            [Value::String(name), function @ Value::Function { .. }] => {
-                (Some(name.clone()), function.clone())
-            }
-            _ => {
-                return Err(EvalError::Runtime(format!(
-                    "{} expects a callback, optionally preceded by a handler name",
-                    if global { "on_global" } else { "on" }
-                )));
-            }
-        };
-
-        let operation_id = self.catalog.as_ref().and_then(|catalog| {
-            catalog
-                .signals
-                .get(&signal.to_lowercase())
-                .map(SignalDeclaration::operation_id)
-        });
-        if operation_id.is_none()
-            && self
-                .catalog
-                .as_ref()
-                .is_some_and(|catalog| !catalog.signals.is_empty())
-        {
-            let catalog = self.catalog.as_ref().unwrap();
-            return Err(unknown(
-                "signal",
-                &signal,
-                catalog.signals.values().map(SignalDeclaration::name),
-            ));
-        }
-        let context = self
-            .context
-            .as_deref_mut()
-            .ok_or_else(|| EvalError::Runtime("signal callbacks require a session".into()))?;
-        let callback = context.allocate_callback();
-        self.callbacks.insert(callback, function);
-        let request = match operation_id {
-            Some(operation_id) => HostRequest::RegisterSignalHandler {
-                operation_id,
-                scope,
-                name,
-                callback,
-            },
-            None => HostRequest::RegisterSignalHandlerByName {
-                scope,
-                signal,
-                name,
-                callback,
-            },
-        };
-        match self.dispatch(request)? {
-            HostResponse::Unit => Ok(Value::Null),
-            other => Err(EvalError::Runtime(format!(
-                "signal registration returned unexpected response {other:?}"
-            ))),
-        }
     }
 
     pub(crate) fn materialize(

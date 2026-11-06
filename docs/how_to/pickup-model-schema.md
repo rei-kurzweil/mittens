@@ -159,3 +159,10 @@ Opted-in trucks expose `activity_status()`, `set_active(true/false)` for a manua
 override, and `use_proximity_activation()` to resume zone control. Mounting or
 an NPC drive command takes priority over manual off. `drive_command(0,0,true)`
 releases the NPC activity pin. `gravity_enabled=false` remains respected.
+
+The controller now creates `on(world, "FrameTick", ...)` only on first mount.
+Dismount bypasses that retained binding natively; remount resumes it. If a
+mounted truck is removed, the next validation clears its reference and bypasses
+the binding. Proximity observation stays enabled throughout. The shared binding
+belongs to the persistent ship controller, so unloading one truck leaves it
+available for another truck.

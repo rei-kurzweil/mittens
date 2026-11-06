@@ -98,6 +98,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err("usage: profile-ship-cpu <case> <frames >= 120>".into());
     }
     let mut source = std::fs::read_to_string("examples/ship_interior.mms")?;
+    // Optional controller-only override for comparisons against a saved revision.
+    if let Some(path) = std::env::var_os("SHIP_PROFILE_CONTROLLER") {
+        let absolute = std::fs::canonicalize(path)?;
+        source = source.replace(
+            "\"../assets/components/ship_input_controller.mms\"",
+            &serde_json::to_string(&absolute.to_string_lossy())?,
+        );
+    }
     if case == "no_avatar" {
         source = source.replace(
             "let xr_avatar_enabled = true",
@@ -303,7 +311,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         "instances":instances,"models":models,"load_and_warmup_ms":loading_ms,
         "update":stats(&mut updates),"prepare":stats(&mut preparations),"total":stats(&mut totals),
         "spring_stage_mean_ms":spring.map(|ms|ms/frames as f64),
-        "sample_mesh_uploads":uploader.meshes-mesh_start})
+        "sample_mesh_uploads":uploader.meshes-mesh_start,"global_frame_tick":scene.systems.rx.has_global_handlers(mittens_engine::engine::ecs::SignalKind::FrameTick)})
     );
     Ok(())
 }

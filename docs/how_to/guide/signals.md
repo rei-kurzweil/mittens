@@ -9,6 +9,25 @@ The doc is intentionally split into three parts:
 2) Unsettled decisions (what’s still in flux)
 3) Current status (what is implemented today)
 
+## Event bindings in MMS
+
+```mms
+let binding = on(world, "FrameTick", fn(event) {})
+binding.bypass(true)
+binding.bypass(false)
+binding.remove()
+```
+
+`on(component, signal, handler)` retains subtree routing. `on(world, signal,
+handler)` observes events throughout this engine world without introducing a
+universal scene parent. Both return a session-owned event binding.
+
+`bypass(true)` retains the connection and skips native dispatch before argument
+conversion/MMS queueing. Bypassed frame bindings do not request FrameTick
+generation. `remove()` releases the connection and closure permanently; repeated
+removal is harmless, and bypassing a removed binding reports a stale handle.
+The compatibility `on_global` alias returns the same kind of handle.
+
 ## Current design / goal
 
 ### What a signal is
@@ -226,7 +245,7 @@ scope
 <!-- catalog:signal source="KeyDown" kind="event" mms="observable-payload" -->
 <!-- catalog:signal source="KeyPress" kind="event" mms="observable-payload" -->
 <!-- catalog:signal source="KeyUp" kind="event" mms="observable-payload" -->
-**Events.** Gameplay keyboard events are available scene-wide through `on_global` without an
+**Events.** Gameplay keyboard events are available scene-wide through `on(world, ...)` without an
 `Input` component. An initial press emits `KeyDown` followed by `KeyPress`; each OS repeat emits
 only `KeyPress`; release emits only `KeyUp`. `KeyPress` is not committed text input, and movement
 should use held state plus `FrameTick` rather than repeat frequency. These events are suppressed
@@ -239,11 +258,11 @@ The callback receives exactly `{ code, key }`. `code` is the layout-independent 
 `"Enter"`, `"Dead"`, or `"Unidentified"`; it is not guaranteed to be committed text.
 
 ```mms parse-only
-on_global("KeyDown", fn(event) {
+on(world, "KeyDown", fn(event) {
     print("down code=" + event.code + " key=" + event.key)
 })
-on_global("KeyPress", fn(event) { print("press " + event.key) })
-on_global("KeyUp", fn(event) { print("up " + event.key) })
+on(world, "KeyPress", fn(event) { print("press " + event.key) })
+on(world, "KeyUp", fn(event) { print("up " + event.key) })
 ```
 
 #### `DataEvent`

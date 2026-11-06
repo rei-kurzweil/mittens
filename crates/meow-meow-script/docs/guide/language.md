@@ -257,6 +257,31 @@ on(cube, "Click", fn(event) {
 })
 ```
 
+`on` returns an **event binding**. Use the `world` scope to observe scene-wide
+events; a component scope observes that component and its subtree:
+
+```mms
+let frames = on(world, "FrameTick", fn(event) {
+    // Update while this binding is active.
+})
+frames.bypass(true)   // Pause native dispatch; keep the handler.
+frames.bypass(false)  // Resume the same binding.
+frames.remove()       // Permanently release the binding and handler.
+```
+
+`world` is an observation scope, not a transform or universal component parent.
+The engine can keep multiple component-tree roots. Bypassing happens before
+MMS arguments are prepared or callbacks queued. A bypassed binding does not
+request generation of `FrameTick`; other active bindings can still request it.
+Queued callbacks are skipped while bypassed, and removed queued callbacks are
+discarded. The handle becomes stale after removal; repeated `remove()` is
+harmless, while `bypass(...)` on that removed handle reports an error. Bindings
+are session-owned opaque values, not serializable component properties.
+
+The older `on_global(event, fn)` spelling remains a compatibility alias for
+`on(world, event, fn)` and returns the same binding type. New examples should
+use an explicit observation scope.
+
 > TODO: in-body handler sugar (`on(Click) { ... }` inside a CE body) and the
 > `selector -> handler` form are designed but not yet implemented. See
 > [`analysis/event-handlers.md`](../../../../docs/meow_meow/analysis/event-handlers.md).

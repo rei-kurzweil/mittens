@@ -4,7 +4,7 @@ pub(super) mod benchmark_api;
 pub(super) mod graphics_settings_api;
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use meow_meow_script as mms;
@@ -33,6 +33,9 @@ pub enum DeferredCallbackHostPhase {
     Audio,
     Visual,
 }
+
+#[path = "host_signals.rs"]
+mod signals;
 
 #[path = "host_context.rs"]
 mod context;
@@ -66,23 +69,6 @@ impl<'a, 'bindings> MittensHost<'a, 'bindings> {
 
     pub fn legacy_method_fallbacks(&self) -> usize {
         self.legacy_method_fallbacks
-    }
-
-    /// Dispatch one engine event through the configured Rx routes. Script
-    /// handlers enqueue opaque callback invocations; they never re-enter MMS
-    /// from inside Rx dispatch.
-    pub fn dispatch_event_handlers(
-        &mut self,
-        signal: &crate::engine::ecs::Signal,
-    ) -> Result<(), mms::HostError> {
-        let Some(rx) = self.rx.as_deref_mut() else {
-            return Err(mms::HostError::unavailable(
-                "register_signal_handler",
-                "the current Mittens host lease has no signal routing service",
-            ));
-        };
-        rx.dispatch_event_handlers(self.world, signal);
-        Ok(())
     }
 
     pub fn component_handle(id: ComponentId) -> mms::ComponentHandle {
@@ -155,69 +141,6 @@ impl<'a, 'bindings> MittensHost<'a, 'bindings> {
         );
         Ok(mms::HostResponse::Unit)
     }
-
-    fn record_signal_route(
-        &mut self,
-        signal: &str,
-        scope: Option<mms::ComponentHandle>,
-        name: Option<String>,
-        callback: mms::CallbackHandle,
-    ) -> Result<mms::HostResponse, mms::HostError> {
-        let kind = signal_kind(signal).ok_or_else(|| {
-            mms::HostError::failure(
-                "register_signal_handler",
-                format!("unknown signal '{signal}'"),
-            )
-        })?;
-        let scope = scope
-            .map(|scope| self.existing_id(scope, "register_signal_handler"))
-            .transpose()?;
-        if self.signal_routes.is_none()
-            && (self.rx.is_none() || self.callback_invocations.is_none())
-        {
-            return Err(mms::HostError::unavailable(
-                "register_signal_handler",
-                "the current Mittens host lease has no callback queue or Rx service",
-            ));
-        }
-        if let Some(routes) = self.signal_routes.as_deref_mut() {
-            routes.push(SignalCallbackRoute {
-                kind,
-                scope,
-                name: name.clone(),
-                callback,
-            });
-        }
-        if let (Some(rx), Some(invocations)) =
-            (self.rx.as_deref_mut(), self.callback_invocations.as_ref())
-        {
-            let invocations = Arc::clone(invocations);
-            let delivery_enabled = self.callback_delivery_enabled.as_ref().map(Arc::clone);
-            let enqueue = move |_world: &mut World,
-                                _emit: &mut dyn SignalEmitter,
-                                signal: &crate::engine::ecs::Signal| {
-                if delivery_enabled
-                    .as_ref()
-                    .is_some_and(|enabled| !enabled.load(Ordering::Acquire))
-                {
-                    return;
-                }
-                match event_arg_transport(signal) {
-                    Ok(argument) => invocations.lock().unwrap().push(mms::CallbackInvocation {
-                        callback,
-                        args: vec![argument],
-                    }),
-                    Err(error) => eprintln!("[mms] signal payload conversion error: {error}"),
-                }
-            };
-            if let Some(scope) = scope {
-                rx.add_handler_closure_named(kind, scope, name, enqueue);
-            } else {
-                rx.add_global_handler_closure_named(kind, name, enqueue);
-            }
-        }
-        Ok(mms::HostResponse::Unit)
-    }
 }
 
 impl mms::Host for MittensHost<'_, '_> {
@@ -228,7 +151,9 @@ impl mms::Host for MittensHost<'_, '_> {
     ) -> Result<mms::HostResponse, mms::HostError> {
         let callback = match &request {
             mms::HostRequest::RegisterSignalHandler { callback, .. }
-            | mms::HostRequest::RegisterSignalHandlerByName { callback, .. } => Some(*callback),
+            | mms::HostRequest::RegisterSignalHandlerByName { callback, .. }
+            | mms::HostRequest::SetEventBindingBypass { callback, .. }
+            | mms::HostRequest::RemoveEventBinding { callback } => Some(*callback),
             _ => None,
         };
         if let Some(callback) = callback
@@ -797,6 +722,10 @@ impl mms::Host for MittensHost<'_, '_> {
                 name,
                 callback,
             } => self.record_signal_route(&signal, scope, name, callback),
+            R::SetEventBindingBypass { callback, bypassed } => {
+                self.change_event_binding(callback, Some(bypassed))
+            }
+            R::RemoveEventBinding { callback } => self.change_event_binding(callback, None),
             R::LoadSource {
                 importer,
                 specifier,
@@ -1078,6 +1007,12 @@ fn external_tree_to_legacy(
 
 fn external_value_to_legacy(value: mms::Value) -> Result<legacy::Value, mms::HostError> {
     Ok(match value {
+        mms::Value::EventBinding(_) => {
+            return Err(mms::HostError::failure(
+                "value_conversion",
+                "event bindings cannot be passed through the legacy component API",
+            ));
+        }
         mms::Value::Null => legacy::Value::Null,
         mms::Value::Bool(v) => legacy::Value::Bool(v),
         mms::Value::Number(v) => legacy::Value::Number(v),

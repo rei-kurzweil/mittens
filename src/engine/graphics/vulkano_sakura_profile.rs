@@ -33,6 +33,7 @@ pub(super) struct ProfileState {
     pub(super) dirty_components: Vec<ComponentId>,
     pub(super) morph_upload_cpu_ns: u64,
     pub(super) deformation_cpu_ns: u64,
+    pub(super) cpu_stages: CpuStages,
     pub(super) completion: Option<Box<dyn FnOnce() -> Result<(), Box<dyn Error>>>>,
     pool: Option<Arc<QueryPool>>,
     timestamp_period: f64,
@@ -64,6 +65,7 @@ impl ProfileState {
             dirty_components: Vec::new(),
             morph_upload_cpu_ns: 0,
             deformation_cpu_ns: 0,
+            cpu_stages: CpuStages::default(),
             completion: None,
             pool,
             timestamp_period: physical.properties().timestamp_period as f64,
@@ -137,6 +139,7 @@ impl ProfileState {
         self.dirty_components.clear();
         self.morph_upload_cpu_ns = 0;
         self.deformation_cpu_ns = 0;
+        self.cpu_stages.reset();
         self.draws.clear();
         self.npc_draws.clear();
     }

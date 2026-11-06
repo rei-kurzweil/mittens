@@ -1,0 +1,203 @@
+{
+  "baseline_checkpoint": "645885e7",
+  "method": "Same rebuilt engine and scene. Before overrides only the input controller module with its checkpoint source; after uses current bindings. 240 warmup / 480 samples, CPU uploader, synthetic stationary XR head.",
+  "selected_runs": [
+    {
+      "label": "before",
+      "run": 0,
+      "case": "full",
+      "components": 16444,
+      "frames": 480,
+      "global_frame_tick": true,
+      "instances": 2017,
+      "load_and_warmup_ms": 3599.738676,
+      "models": [
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/components/characters/lumae/lumae.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten.glb"
+      ],
+      "prepare": {
+        "max_ms": 0.951224,
+        "mean_ms": 0.5605356583333336,
+        "p50_ms": 0.5542509999999999,
+        "p95_ms": 0.625261
+      },
+      "sample_mesh_uploads": 0,
+      "spring_stage_mean_ms": [
+        0.9809277937500003,
+        0.07552842916666665,
+        0.030912937499999977,
+        0.01209903541666667
+      ],
+      "total": {
+        "max_ms": 8.896595999999999,
+        "mean_ms": 5.245888906249997,
+        "p50_ms": 5.254302,
+        "p95_ms": 5.736802
+      },
+      "update": {
+        "max_ms": 8.334791,
+        "mean_ms": 4.685216952083334,
+        "p50_ms": 4.707198999999999,
+        "p95_ms": 5.151511
+      }
+    },
+    {
+      "label": "before",
+      "run": 3,
+      "case": "full",
+      "components": 16444,
+      "frames": 480,
+      "global_frame_tick": true,
+      "instances": 2017,
+      "load_and_warmup_ms": 3483.619577,
+      "models": [
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/components/characters/lumae/lumae.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten.glb"
+      ],
+      "prepare": {
+        "max_ms": 1.019842,
+        "mean_ms": 0.5654122041666665,
+        "p50_ms": 0.559167,
+        "p95_ms": 0.6223580000000001
+      },
+      "sample_mesh_uploads": 0,
+      "spring_stage_mean_ms": [
+        0.9907442229166671,
+        0.07537775208333339,
+        0.030724854166666687,
+        0.012254991666666666
+      ],
+      "total": {
+        "max_ms": 8.229995,
+        "mean_ms": 5.268800808333333,
+        "p50_ms": 5.279199,
+        "p95_ms": 5.806125
+      },
+      "update": {
+        "max_ms": 7.659784,
+        "mean_ms": 4.703256099999998,
+        "p50_ms": 4.730556,
+        "p95_ms": 5.222033
+      }
+    },
+    {
+      "label": "after",
+      "run": 2,
+      "case": "full",
+      "components": 16444,
+      "frames": 480,
+      "global_frame_tick": false,
+      "instances": 2017,
+      "load_and_warmup_ms": 3418.9813440000003,
+      "models": [
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/components/characters/lumae/lumae.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten.glb"
+      ],
+      "prepare": {
+        "max_ms": 0.8315389999999999,
+        "mean_ms": 0.5147562291666666,
+        "p50_ms": 0.5068860000000001,
+        "p95_ms": 0.5783200000000001
+      },
+      "sample_mesh_uploads": 0,
+      "spring_stage_mean_ms": [
+        1.0113417666666669,
+        0.08053095208333329,
+        0.031028195833333324,
+        0.01206321250000001
+      ],
+      "total": {
+        "max_ms": 5.801286,
+        "mean_ms": 4.484553108333333,
+        "p50_ms": 4.503898,
+        "p95_ms": 5.011288
+      },
+      "update": {
+        "max_ms": 5.270713,
+        "mean_ms": 3.969640404166669,
+        "p50_ms": 3.996375,
+        "p95_ms": 4.457623
+      }
+    },
+    {
+      "label": "after",
+      "run": 4,
+      "case": "full",
+      "components": 16444,
+      "frames": 480,
+      "global_frame_tick": false,
+      "instances": 2017,
+      "load_and_warmup_ms": 3294.480277,
+      "models": [
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/components/characters/lumae/lumae.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten.glb"
+      ],
+      "prepare": {
+        "max_ms": 0.845641,
+        "mean_ms": 0.5013459854166668,
+        "p50_ms": 0.486968,
+        "p95_ms": 0.587471
+      },
+      "sample_mesh_uploads": 0,
+      "spring_stage_mean_ms": [
+        0.9914887270833339,
+        0.07824871875000002,
+        0.030589052083333335,
+        0.01246627916666667
+      ],
+      "total": {
+        "max_ms": 6.853394,
+        "mean_ms": 4.375521833333336,
+        "p50_ms": 4.382707,
+        "p95_ms": 4.880351
+      },
+      "update": {
+        "max_ms": 6.025125,
+        "mean_ms": 3.874062781250005,
+        "p50_ms": 3.8937109999999997,
+        "p95_ms": 4.3393
+      }
+    }
+  ],
+  "averages_ms": {
+    "before": {
+      "update": 4.694236526041666,
+      "prepare": 0.5629739312500001,
+      "total": 5.257344857291665
+    },
+    "after": {
+      "update": 3.921851592708337,
+      "prepare": 0.5080511072916667,
+      "total": 4.4300374708333345
+    }
+  },
+  "excluded_run": {
+    "run": 1,
+    "reason": "229-second startup/warmup stall. Blocked process observed; diagnostic attach lacked a reliable symbolized stack. It cleared without a code change and did not recur in subsequent clean loads or the Vulkan render smoke check. Excluded from comparison.",
+    "load_and_warmup_ms": 229484.87950500002
+  }
+}

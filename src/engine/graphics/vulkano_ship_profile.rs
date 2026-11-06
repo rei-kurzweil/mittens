@@ -272,6 +272,7 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
             rows.push(serde_json::json!({"frame":frame,"bloom_enabled":bloom_on,"block":block,"update_ms":update_ms,"prepare_ms":prepare_ms,
                 "record_submit_ms":record_ms,"wait_ms":wait_ms,"total_ms":start.elapsed().as_secs_f64()*1000.,
                 "gpu_deform_ms":gpu.map(|g|g[0]),"gpu_graphics_ms":gpu.map(|g|g[1]),"draws":p.draws,
+                "cpu_record_stages_ms":p.cpu_stages.milliseconds(),
                 "dirty_jobs":p.dirty_components.len(),"deformation_cpu_ms":p.deformation_cpu_ns as f64/1e6}));
         }
     }
@@ -290,6 +291,14 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
         if !values.is_empty() {
             timing.insert(key.into(), summary(&values));
         }
+    }
+    let mut cpu_record_stages = serde_json::Map::new();
+    for name in rows[0]["cpu_record_stages_ms"].as_object().unwrap().keys() {
+        let values: Vec<_> = rows
+            .iter()
+            .filter_map(|row| row["cpu_record_stages_ms"][name].as_f64())
+            .collect();
+        cpu_record_stages.insert(name.clone(), summary(&values));
     }
     let paired_gpu = if paired {
         let summarize = |enabled: bool| {
@@ -318,7 +327,7 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     };
     let result = serde_json::json!({"paired_gpu":paired_gpu,"case":case,"room":room,"frames":frames,"warmup":warmup,"extent":extent,"msaa":4,
         "gpu":uploader.renderer.gpu_device_name(),"components":scene.world.all_components().count(),
-        "instances":scene.visuals.instances().len(),"timing":timing,"sample_draws":rows.last().unwrap()["draws"],
+        "instances":scene.visuals.instances().len(),"timing":timing,"cpu_record_stages_ms":cpu_record_stages,"sample_draws":rows.last().unwrap()["draws"],
         "counters":uploader.renderer.perf_counters().saturating_delta(counters_start.unwrap())});
     println!("SHIP_PROFILE_RESULT {result}");
     if let Some(path) = std::env::var_os("SHIP_PROFILE_OUTPUT") {

@@ -138,6 +138,11 @@ pub struct LoadedSource {
     pub source: String,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct EventBindingState {
+    pub bypassed: bool,
+}
+
 /// Allocator and ownership checker supplied to host dispatch.
 ///
 /// Component handles identify host-owned resources, so effectful hosts may
@@ -150,7 +155,7 @@ pub struct HostContext {
     next_component: u32,
     next_callback: u32,
     components: HashSet<ComponentHandle>,
-    callbacks: HashSet<CallbackHandle>,
+    pub(crate) event_bindings: HashMap<CallbackHandle, EventBindingState>,
     /// Language values stay in the session, never in host property/JSON storage.
     pub(crate) component_fields: HashMap<ComponentHandle, HashMap<String, Value>>,
 }
@@ -162,7 +167,7 @@ impl HostContext {
             next_component: 1,
             next_callback: 1,
             components: HashSet::new(),
-            callbacks: HashSet::new(),
+            event_bindings: HashMap::new(),
             component_fields: HashMap::new(),
         }
     }
@@ -187,14 +192,15 @@ impl HostContext {
             .next_callback
             .checked_add(1)
             .expect("callback handle space exhausted");
-        self.callbacks.insert(handle);
         handle
     }
     pub fn owns_component(&self, handle: ComponentHandle) -> bool {
         self.components.contains(&handle)
     }
     pub fn owns_callback(&self, handle: CallbackHandle) -> bool {
-        self.callbacks.contains(&handle)
+        (handle.into_raw() >> 32) == self.session_tag as u64
+            && (handle.into_raw() as u32) != 0
+            && (handle.into_raw() as u32) < self.next_callback
     }
     pub fn session_handle(&self) -> SessionHandle {
         SessionHandle::from_raw(self.session_tag)
@@ -255,6 +261,15 @@ pub enum HostRequest {
         name: Option<String>,
         callback: CallbackHandle,
     },
+    /// Pause or resume one binding without releasing its callback.
+    SetEventBindingBypass {
+        callback: CallbackHandle,
+        bypassed: bool,
+    },
+    /// Permanently retire one binding and its pending event deliveries.
+    RemoveEventBinding {
+        callback: CallbackHandle,
+    },
     /// Invoke a configured method on a checked live component receiver. The
     /// RuntimeSpec has already validated the method and arguments; the host
     /// selects its implementation exclusively through `operation_id`.
@@ -298,6 +313,8 @@ impl HostRequest {
             Self::Query { .. } => "query",
             Self::RegisterSignalHandler { .. } => "register_signal_handler",
             Self::RegisterSignalHandlerByName { .. } => "register_signal_handler_by_name",
+            Self::SetEventBindingBypass { .. } => "set_event_binding_bypass",
+            Self::RemoveEventBinding { .. } => "remove_event_binding",
             Self::InvokeComponentMethod { .. } => "invoke_component_method",
             Self::InvokeComponentMethodByName { .. } => "invoke_component_method_by_name",
             Self::CallApi { api_id, .. } => api_id,

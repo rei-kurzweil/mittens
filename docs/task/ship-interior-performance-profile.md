@@ -386,13 +386,10 @@ Native headset/controller sampling remains needed for walking, hands and tools.
 Vehicle-specific driving updates should run only for a mounted player or active
 NPC driver, independently of cheap proximity wake/sleep observation.
 
-MMS `on_global` currently registers a callback and returns null; there is no
-MMS global unsubscribe operation. A guard in its callback is not removal. The
-current controller consequently retains its FrameTick subscription while idle.
-A component-owned input/driver subscription that is created on mount and
-removed on dismount would give the requested lifecycle. That needs native host
-lifetime support; this audit does not add a language/API feature or replace
-frame-driven steering with a clock-dependent animation timer. Mounting remains
+At this audit checkpoint, MMS `on_global` registered a callback and returned
+null, with no removal operation. A callback guard was not removal. This motivated
+the event-binding refactor below, which implements native bypass/removal without
+replacing frame-driven steering with a clock-dependent timer. Mounting remains
 a separate responsibility from vehicle control.
 
 Even without the entire input controller, CPU update remains about **3.9 ms**
@@ -403,6 +400,85 @@ remain active while trucks are parked.
 
 [Raw summaries](../analysis/ship-interior-idle-controller-2026-11-06.json).
 The CPU probe now accepts `no_vehicle_sensors` for this diagnostic.
+
+## Rendering optimization follow-up
+
+The [Vulkan rendering optimization epic](epic/vulkan-rendering-optimization/README.md)
+now tracks incremental resource, draw-stream and command reuse. Its
+[post-refactor cafeteria capture](epic/vulkan-rendering-optimization/measurements.md)
+measures the recording/submission bucket by stage: 7.362 ms total, including
+3.462 ms in final `cbb.build()` and 1.508 ms recording opaque draws. At 1920 x
+1920 per eye with bloom and MSAA 4x, that capture measures 12.473 ms active CPU,
+13.903 ms GPU graphics and 23.908 ms elapsed per stereo frame. These replace
+estimates for this capture; cross-process GPU variation remains unresolved.
+
+## Event binding lifecycle refactor
+
+The ship/profiling checkpoint was committed as `645885e7` before this refactor.
+The unfinished `off_global` experiment was excluded and discarded. The retained
+MMS runtime now supports:
+
+```mms
+let binding = on(world, "FrameTick", fn(event) {})
+binding.bypass(true)
+binding.bypass(false)
+binding.remove()
+```
+
+`on(component, ...)` and `on(world, ...)` return opaque event-binding handles.
+The world scope reuses global dispatch; no component-tree reparenting or world
+node is introduced. `on_global` remains a compatibility alias. Bypass gates
+native dispatch before payload conversion/MMS queueing, and inactive bindings
+do not request FrameTick generation. Removal deletes the native route and
+retained closure; repeated removal is harmless, but bypass on a removed handle
+reports a stale resource. Cancelled queued delivery is skipped.
+
+The ship controller creates vehicle key/axis/frame bindings on first mount,
+bypasses them on exit, and reuses them on re-entry. A streamed-out truck is
+validated without dereferencing its removed handle, then its driver reference
+is cleared and its bindings bypassed. Weapon input stays separate. Native
+tracking/input collection remains active for walking and hands. Proximity
+sensors remain enabled. Frame-driven steering has not been replaced with a
+clock-dependent timer.
+
+### Measured CPU result
+
+The before controller is the exact file from `645885e7`, imported through
+`SHIP_PROFILE_CONTROLLER`; all measurements use the **same rebuilt engine**.
+Both scenes retain 16,444 components, 2,017 visual instances and zero steady-state
+mesh uploads. Each row averages two clean 480-frame runs after 240 warmup frames.
+
+| Controller | CPU update | CPU preparation | Combined CPU | Active global FrameTick request |
+| --- | ---: | ---: | ---: | --- |
+| before | 4.694 | 0.563 | 5.257 | yes |
+| after | 3.922 | 0.508 | 4.430 | no |
+
+This saves about **0.77 ms/frame of idle CPU update**, with no visual reduction.
+These remain CPU-only measurements; previous GPU/frame-rate tables have not
+been recaptured for this change.
+
+One comparison attempt stalled for approximately 229 seconds during startup/
+warmup. A CPU sample found no active samples; a namespace-limited debugger
+attach did not provide a reliable symbolized stack. It completed without a
+code change. The next clean loads completed in about 3.3–3.5 seconds, and a
+Vulkan ship startup render passed. The anomalous attempt is excluded from the
+comparison, with its limitation retained in the
+[raw measurement record](../analysis/ship-event-binding-lifecycle-2026-11-06.json).
+
+Validation includes the full MMS crate tests, engine RuntimeSpec tests, world/
+component routing, repeated bypass/resume/remove, queued cancellation, foreign
+handles, released-closure retention, session close, mounting/driving/braking/XR
+input/dismount, mounted-truck removal, and the Vulkan startup capture.
+
+Reproduce the controller comparison sequentially:
+
+```bash
+git show 645885e7:assets/components/ship_input_controller.mms > /tmp/ship-controller-before.mms
+cargo build --release --example profile-ship-cpu
+SHIP_PROFILE_CONTROLLER=/tmp/ship-controller-before.mms \
+  target/release/examples/profile-ship-cpu full 480
+target/release/examples/profile-ship-cpu full 480
+```
 
 ## Next slices
 

@@ -1,4 +1,8 @@
 use std::collections::HashMap;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use crate::engine::ecs::{ComponentId, World};
 
@@ -18,13 +22,36 @@ enum Handler {
             Box<dyn FnMut(&mut World, &mut dyn SignalEmitter, &Signal) + Send + Sync + 'static>,
         name: Option<String>,
     },
+    EventBinding {
+        id: u64,
+        bypassed: bool,
+        delivery_enabled: Option<Arc<AtomicBool>>,
+        handler:
+            Box<dyn FnMut(&mut World, &mut dyn SignalEmitter, &Signal) + Send + Sync + 'static>,
+        name: Option<String>,
+    },
 }
 
 impl Handler {
+    fn active(&self) -> bool {
+        match self {
+            Self::EventBinding {
+                bypassed,
+                delivery_enabled,
+                ..
+            } => {
+                !*bypassed
+                    && delivery_enabled
+                        .as_ref()
+                        .is_none_or(|enabled| enabled.load(Ordering::Acquire))
+            }
+            _ => true,
+        }
+    }
     fn name(&self) -> Option<&str> {
         match self {
             Handler::Fn { name, .. } => name.as_deref(),
-            Handler::Closure { name, .. } => name.as_deref(),
+            Handler::Closure { name, .. } | Handler::EventBinding { name, .. } => name.as_deref(),
         }
     }
 }
@@ -246,7 +273,7 @@ impl RxWorld {
     pub fn has_global_handlers(&self, kind: SignalKind) -> bool {
         self.global_handlers
             .get(&kind)
-            .is_some_and(|handlers| !handlers.is_empty())
+            .is_some_and(|handlers| handlers.iter().any(Handler::active))
     }
 
     pub fn requeue_ready_events(&mut self, mut events: Vec<Signal>) {
@@ -393,6 +420,75 @@ impl RxWorld {
             });
     }
 
+    /// Script resources use opaque session identities, with no per-event lookup.
+    pub fn add_event_binding(
+        &mut self,
+        kind: SignalKind,
+        scope: Option<ComponentId>,
+        id: u64,
+        name: Option<String>,
+        delivery_enabled: Option<Arc<AtomicBool>>,
+        handler: impl FnMut(&mut World, &mut dyn SignalEmitter, &Signal) + Send + Sync + 'static,
+    ) {
+        let binding = Handler::EventBinding {
+            id,
+            name,
+            delivery_enabled,
+            bypassed: false,
+            handler: Box::new(handler),
+        };
+        if let Some(scope) = scope {
+            self.scoped_handlers
+                .entry(kind)
+                .or_default()
+                .entry(scope)
+                .or_default()
+                .push(binding);
+        } else {
+            self.global_handlers.entry(kind).or_default().push(binding);
+        }
+    }
+    /// Cold lifecycle operation; dispatch and FrameTick generation read the gate directly.
+    pub fn bypass_event_binding(&mut self, id: u64, value: bool) -> bool {
+        for handlers in self.global_handlers.values_mut().chain(
+            self.scoped_handlers
+                .values_mut()
+                .flat_map(|scopes| scopes.values_mut()),
+        ) {
+            for handler in handlers {
+                if let Handler::EventBinding {
+                    id: candidate,
+                    bypassed,
+                    ..
+                } = handler
+                {
+                    if *candidate == id {
+                        *bypassed = value;
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+    pub fn remove_event_binding(&mut self, id: u64) -> usize {
+        let mut removed = 0;
+        let mut remove = |handlers: &mut Vec<Handler>| {
+            let before = handlers.len();
+            handlers.retain(
+                |h| !matches!(h, Handler::EventBinding { id: candidate, .. } if *candidate == id),
+            );
+            removed += before - handlers.len();
+            !handlers.is_empty()
+        };
+        self.global_handlers.retain(|_, handlers| remove(handlers));
+        self.scoped_handlers.retain(|_, scopes| {
+            scopes.retain(|_, handlers| remove(handlers));
+            !scopes.is_empty()
+        });
+        removed
+    }
+
     pub fn remove_handler(
         &mut self,
         kind: SignalKind,
@@ -412,7 +508,7 @@ impl RxWorld {
                 handler: fp,
                 name: _,
             } => *fp as usize != handler as usize,
-            Handler::Closure { .. } => true,
+            Handler::Closure { .. } | Handler::EventBinding { .. } => true,
         });
         let removed = list.len() != before;
 
@@ -512,9 +608,14 @@ fn dispatch_global_kind(
     };
 
     for handler in list {
+        if !handler.active() {
+            continue;
+        }
         match handler {
             Handler::Fn { handler: fp, .. } => fp(world, emit, env),
-            Handler::Closure { handler: c, .. } => c(world, emit, env),
+            Handler::Closure { handler: c, .. } | Handler::EventBinding { handler: c, .. } => {
+                c(world, emit, env)
+            }
         }
     }
 }
@@ -659,6 +760,9 @@ fn dispatch_scoped_kind(
     for idx in 0..handlers.len() {
         let handler_ptr: *mut Handler = &mut handlers[idx];
         unsafe {
+            if !(*handler_ptr).active() {
+                continue;
+            }
             if let Some(name) = (*handler_ptr).name() {
                 if let Some(blacklist) = blacklist.as_ref()
                     && blacklist.iter().any(|b| b == name)
@@ -675,7 +779,9 @@ fn dispatch_scoped_kind(
 
             match &mut *handler_ptr {
                 Handler::Fn { handler: fp, .. } => fp(world, emitter, env),
-                Handler::Closure { handler: f, .. } => f(world, emitter, env),
+                Handler::Closure { handler: f, .. } | Handler::EventBinding { handler: f, .. } => {
+                    f(world, emitter, env)
+                }
             }
         }
     }

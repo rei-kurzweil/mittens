@@ -1,5 +1,10 @@
 //! Configurable MMS runtime and persistent sessions.
 
+#[path = "runtime_builtins.rs"]
+mod builtins;
+#[path = "runtime_callbacks.rs"]
+mod callbacks;
+
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
@@ -494,27 +499,6 @@ impl<I> RuntimeSpecBuilder<I> {
     }
     pub fn component_name_policy(&mut self, policy: ComponentNamePolicy) -> &mut Self {
         self.component_name_policy = policy;
-        self
-    }
-    pub fn with_standard_builtins(&mut self) -> &mut Self {
-        for name in [
-            "null",
-            "range",
-            "len",
-            "byte_len",
-            "query",
-            "query_all",
-            "on",
-            "on_global",
-            "Math",
-            "MusicNote",
-        ] {
-            self.pure_builtin(name, ValueSignature::any());
-        }
-        self.pure_builtin(
-            "is_string",
-            ValueSignature::new(vec![ValueType::Any], ValueType::Bool),
-        );
         self
     }
     pub fn pure_builtin(
@@ -1551,76 +1535,6 @@ impl<H: Host> Session<H> {
         self.callbacks = callbacks;
         self.module_cache = module_cache;
         result
-    }
-    pub fn invoke_callback(
-        &mut self,
-        handle: CallbackHandle,
-        args: Vec<Value>,
-    ) -> Result<Value, EvalError> {
-        self.prune_component_fields()?;
-        if !self.context.owns_callback(handle) {
-            return Err(crate::HostError {
-                kind: crate::HostErrorKind::ForeignHandle,
-                operation: "invoke_callback".into(),
-                message: format!("callback handle {handle:?} belongs to another session"),
-            }
-            .into());
-        }
-        let callback = self
-            .callbacks
-            .get(&handle)
-            .cloned()
-            .ok_or_else(|| crate::HostError {
-                kind: crate::HostErrorKind::StaleHandle,
-                operation: "invoke_callback".into(),
-                message: format!(
-                    "callback handle {handle:?} is no longer retained by this session"
-                ),
-            })?;
-        let scopes = std::mem::take(&mut self.scopes);
-        let callbacks = std::mem::take(&mut self.callbacks);
-        let module_cache = std::mem::take(&mut self.module_cache);
-        let mut evaluator = Evaluator::for_session(
-            &mut self.host,
-            scopes,
-            self.heap.clone(),
-            callbacks,
-            self.runtime.catalog.clone(),
-            &mut self.context,
-            None,
-            module_cache,
-        );
-        let result = evaluator.invoke_value(callback, args);
-        let (scopes, callbacks, module_cache) = evaluator.into_session_state();
-        self.scopes = scopes;
-        self.callbacks = callbacks;
-        self.module_cache = module_cache;
-        result
-    }
-    pub fn invoke_callback_invocation(
-        &mut self,
-        invocation: crate::CallbackInvocation,
-    ) -> Result<Value, EvalError> {
-        if !self.context.owns_callback(invocation.callback) {
-            return Err(crate::HostError {
-                kind: crate::HostErrorKind::ForeignHandle,
-                operation: "invoke_callback".into(),
-                message: format!(
-                    "callback handle {:?} belongs to another session",
-                    invocation.callback
-                ),
-            }
-            .into());
-        }
-        for argument in &invocation.args {
-            adopt_transport_components(&mut self.context, argument);
-        }
-        let args = invocation
-            .args
-            .into_iter()
-            .map(crate::evaluator::transport_to_value)
-            .collect::<Result<Vec<_>, _>>()?;
-        self.invoke_callback(invocation.callback, args)
     }
     pub fn host(&self) -> &H {
         &self.host

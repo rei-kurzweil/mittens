@@ -44,6 +44,13 @@ pub enum HostEvent {
         name: Option<String>,
         callback: CallbackHandle,
     },
+    BindingBypass {
+        callback: CallbackHandle,
+        bypassed: bool,
+    },
+    BindingRemove {
+        callback: CallbackHandle,
+    },
     Api {
         id: String,
         args: Vec<TransportValue>,
@@ -171,6 +178,14 @@ impl Host for EventStreamHost {
                     name,
                     callback,
                 }
+            }
+            HostRequest::SetEventBindingBypass { callback, bypassed } => {
+                require_callback(context, callback, "event_binding")?;
+                HostEvent::BindingBypass { callback, bypassed }
+            }
+            HostRequest::RemoveEventBinding { callback } => {
+                require_callback(context, callback, "event_binding")?;
+                HostEvent::BindingRemove { callback }
             }
             HostRequest::CallApi { api_id, args } => HostEvent::Api { id: api_id, args },
             HostRequest::CallApiById { operation_id, args } => {
@@ -323,6 +338,14 @@ fn event_json(event: &HostEvent) -> String {
             *scope,
             format!("signal={signal};callback={callback:?}"),
         ),
+        HostEvent::BindingBypass { callback, bypassed } => (
+            "binding_bypass",
+            None,
+            format!("callback={callback:?};bypassed={bypassed}"),
+        ),
+        HostEvent::BindingRemove { callback } => {
+            ("binding_remove", None, format!("callback={callback:?}"))
+        }
         HostEvent::Api { id, .. } => ("api", None, format!("id={id}")),
         HostEvent::ApiById { operation_id, .. } => {
             ("api", None, format!("operation_id={operation_id:?}"))

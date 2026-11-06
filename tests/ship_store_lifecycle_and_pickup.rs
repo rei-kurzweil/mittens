@@ -184,6 +184,20 @@ fn stores_rebuild_and_pickups_mount_drive_brake_and_dismount() {
     assert_eq!(shelves(&scene), 0);
     click(&mut scene, retail_toggle);
     assert_eq!(shelves(&scene), 5);
+    assert!(
+        !scene
+            .systems
+            .rx
+            .has_global_handlers(mittens_engine::engine::ecs::SignalKind::FrameTick),
+        "idle controller must not request frames"
+    );
+    assert!(
+        !scene
+            .systems
+            .rx
+            .has_global_handlers(mittens_engine::engine::ecs::SignalKind::XrAxisChanged),
+        "idle vehicle axes should have no binding"
+    );
     let truck = named(&scene.world, "pickup_truck");
     let mount = named(&scene.world, "pickup_entry_zone");
     assert!(
@@ -216,6 +230,18 @@ fn stores_rebuild_and_pickups_mount_drive_brake_and_dismount() {
         "truck must be enterable through its driver-side zone"
     );
     tick(&mut scene, 3);
+    assert!(
+        scene
+            .systems
+            .rx
+            .has_global_handlers(mittens_engine::engine::ecs::SignalKind::FrameTick)
+    );
+    assert!(
+        scene
+            .systems
+            .rx
+            .has_global_handlers(mittens_engine::engine::ecs::SignalKind::XrAxisChanged)
+    );
     let root = named(&scene.world, "test_rider_root");
     assert!(
         !scene
@@ -273,6 +299,20 @@ fn stores_rebuild_and_pickups_mount_drive_brake_and_dismount() {
         .get_component_by_id_as::<InputComponent>(named(&scene.world, "test_rider_input"))
         .unwrap();
     assert!(restored.enabled && restored.translation_enabled);
+    assert!(
+        !scene
+            .systems
+            .rx
+            .has_global_handlers(mittens_engine::engine::ecs::SignalKind::FrameTick),
+        "dismount must bypass frames"
+    );
+    assert!(
+        !scene
+            .systems
+            .rx
+            .has_global_handlers(mittens_engine::engine::ecs::SignalKind::XrAxisChanged),
+        "dismount bypasses vehicle axis input"
+    );
     // Streaming out the mounted truck must retire the controller's cached
     // driver instead of continuing to invoke a removed vehicle every frame.
     assert!(scene.systems.attachment.try_mount_from_hit(
@@ -291,6 +331,19 @@ fn stores_rebuild_and_pickups_mount_drive_brake_and_dismount() {
     );
     tick(&mut scene, 8);
     assert!(scene.world.get_component_record(truck).is_none());
+    assert!(
+        !scene
+            .systems
+            .rx
+            .has_global_handlers(mittens_engine::engine::ecs::SignalKind::FrameTick),
+        "removed truck must leave frame delivery bypassed"
+    );
+    assert!(
+        !scene
+            .systems
+            .rx
+            .has_global_handlers(mittens_engine::engine::ecs::SignalKind::XrAxisChanged)
+    );
     let input = scene
         .world
         .get_component_by_id_as::<InputComponent>(named(&scene.world, "test_rider_input"))
