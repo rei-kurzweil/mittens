@@ -4,6 +4,8 @@ use manifold_rust::{linalg::Vec3, manifold::Manifold, types::Error};
 
 #[path = "csg_mesh_import.rs"]
 mod import;
+#[path = "csg_mesh_output.rs"]
+mod output;
 
 #[derive(Clone)]
 pub struct Solid(std::sync::Arc<Manifold>);
@@ -13,7 +15,13 @@ impl Solid {
     /// This first slice is geometry-only: output uses `mesh()`'s generated
     /// normals/UVs; it does not promise source material or attribute preservation.
     pub fn from_mesh(mesh: &CpuMesh) -> Result<Self, String> {
-        let solid = checked(import::from_cpu_mesh(mesh)?)?;
+        let mut source = import::from_cpu_mesh(mesh)?;
+        // Solidify can produce closed but intersecting folds. Resolve their
+        // material region before booleans; the shared render asset is untouched.
+        if source.has_self_intersections() {
+            source = source.rebuild_solid(manifold_rust::types::WindingRule::Positive);
+        }
+        let solid = checked(source)?;
         if solid.empty() || !solid.volume().is_finite() || solid.volume() <= 0.0 {
             return Err("CSG import requires a positive closed volume with outward winding".into());
         }
@@ -107,11 +115,46 @@ impl Solid {
         Ok(pieces)
     }
     pub fn mesh(&self) -> CpuMesh {
-        let mesh = self.0.get_mesh_gl64(-1);
+        let mut mesh = self.0.get_mesh_gl64(-1);
+        // Kernel volume() is absolute; plane splitting can return an inward
+        // standalone fragment. Export outward faces for that new object.
+        let origin = mesh
+            .vert_properties
+            .get(..3)
+            .map(|p| [p[0], p[1], p[2]])
+            .unwrap_or([0.0; 3]);
+        let signed: f64 = mesh
+            .tri_verts
+            .chunks_exact(3)
+            .map(|face| {
+                let p: [[f64; 3]; 3] = std::array::from_fn(|i| mesh.get_vert_pos(face[i] as usize));
+                let a: [f64; 3] = std::array::from_fn(|i| p[1][i] - p[0][i]);
+                let b: [f64; 3] = std::array::from_fn(|i| p[2][i] - p[0][i]);
+                let cross = [
+                    a[1] * b[2] - a[2] * b[1],
+                    a[2] * b[0] - a[0] * b[2],
+                    a[0] * b[1] - a[1] * b[0],
+                ];
+                (0..3)
+                    .map(|i| (p[0][i] - origin[i]) * cross[i])
+                    .sum::<f64>()
+                    / 6.0
+            })
+            .sum();
+        if signed < 0.0 {
+            for face in mesh.tri_verts.chunks_exact_mut(3) {
+                face.swap(0, 1);
+            }
+        }
         let mut vertices = Vec::with_capacity(mesh.tri_verts.len());
-        for face in mesh.tri_verts.chunks_exact(3) {
-            let p: [[f32; 3]; 3] =
-                std::array::from_fn(|i| mesh.get_vert_pos(face[i] as usize).map(|v| v as f32));
+        let faces = mesh
+            .tri_verts
+            .chunks_exact(3)
+            .map(|face| {
+                std::array::from_fn(|i| mesh.get_vert_pos(face[i] as usize).map(|v| v as f32))
+            })
+            .collect();
+        for p in output::conforming_faces(faces) {
             let normal = crate::utils::math::vec3_normalize(crate::utils::math::vec3_cross(
                 crate::utils::math::vec3_sub(p[1], p[0]),
                 crate::utils::math::vec3_sub(p[2], p[0]),

@@ -116,33 +116,27 @@ fn check_wheels(scene: &Universe, left_ratio: f32, right_ratio: f32) {
                 right_ratio
             };
             // Positions and intrinsic wheel scales are authored in mitten_pickup.glb.
-            let (mount_y, hub_y, spring_name, wheel_name) = match corner {
-                "fl" => (
-                    0.801975,
-                    -0.45528355,
-                    "suspension_spring",
-                    "front-left-WHEEL",
-                ),
-                "fr" => (
-                    0.801975,
-                    -0.45528355,
-                    "suspension_spring.002",
-                    "front-left-WHEEL.003",
-                ),
-                "rl" => (
-                    0.755284,
-                    -0.45528355,
-                    "suspension_spring.001",
-                    "front-left-WHEEL.001",
-                ),
-                _ => (
-                    0.755284,
-                    -0.45525387,
-                    "suspension_spring.003",
-                    "front-left-WHEEL.002",
-                ),
+            let (spring_name, wheel_name) = match corner {
+                "fl" => ("suspension_spring", "front-left-WHEEL"),
+                "fr" => ("suspension_spring.002", "front-left-WHEEL.003"),
+                "rl" => ("suspension_spring.001", "front-left-WHEEL.001"),
+                _ => ("suspension_spring.003", "front-left-WHEEL.002"),
             };
-            let expected_y = mount_y + hub_y * ratio;
+            let imported_wheel = scene
+                .world
+                .find_component(scope, &format!("[name='{wheel_name}']"))
+                .unwrap();
+            let rest=scene.world.children_of(imported_wheel).iter().find_map(|&id|
+                scene.world.get_component_by_id_as::<mittens_engine::engine::ecs::component::BoneRestPoseComponent>(id)).unwrap();
+            let mount = scene
+                .world
+                .find_component(scope, &format!("#suspension_mount_{corner}"))
+                .unwrap();
+            let m = TransformSystem::world_model(&scene.world, mount).unwrap();
+            let expected_y = m[3][1]
+                + m[0][1] * rest.translation[0]
+                + m[1][1] * rest.translation[1] * ratio
+                + m[2][1] * rest.translation[2];
             assert!(
                 (matrix[3][1] - expected_y).abs() < 1e-4,
                 "{root}/{corner}: hub height {}, expected {expected_y}",
@@ -517,12 +511,12 @@ fn pickup_suspension_compresses_without_scaling_tyres() {
         );
         assert_eq!(
             upload.1.get(&combined.renderable.mesh).copied(),
-            Some(1589),
+            Some(2287),
             "combine all authored body triangles, not unresolved placeholder meshes"
         );
         assert_eq!(
-            body_sources, 8,
-            "combine the body and its seven static child meshes"
+            body_sources, 11,
+            "combine the body and its ten static child meshes"
         );
         assert!(
             scene.world.find_component(batch, "#wheel_fl").is_none(),
@@ -546,7 +540,7 @@ fn pickup_suspension_compresses_without_scaling_tyres() {
             .find_component(scope, "#suspension_mount_fl")
             .unwrap();
         assert!(
-            (TransformSystem::world_position(&scene.world, mount).unwrap()[1] - 0.801975).abs()
+            (TransformSystem::world_position(&scene.world, mount).unwrap()[1] - 0.9005404).abs()
                 < 1e-4
         );
         let wheel = scene.world.find_component(scope, "#wheel_fl").unwrap();

@@ -30,14 +30,22 @@ export fn pickup_gauge_geometry() {
 
 // Standalone cluster for the imported truck, without the old cab or steering wheel.
 export fn pickup_dashboard_gauges() {
-    return T {
+    let root=T.position(-0.45,1.54,-0.55) {
         name="pickup_dashboard_gauges"
-        CombineMesh.keep_transforms() {
-            name="pickup_dashboard_gauge_mesh"
-            ship_environment_material()
-            pickup_gauge_geometry()
+        T.position(0.45,-1.52,0.85) {
+            Selectable.off()
+            CombineMesh.keep_transforms() {
+                name="pickup_dashboard_gauge_mesh"
+                ship_environment_material()
+                pickup_gauge_geometry()
+            }
+            ship_label([-0.53,1.235,-0.797],"00000.0 km",0.025)
+            ship_label([-0.77,1.66,-0.80],"RPM     SPEED    FUEL",0.026)
         }
-        ship_label([-0.53,1.235,-0.797],"00000.0 km",0.025)
-        ship_label([-0.77,1.66,-0.80],"RPM     SPEED    FUEL",0.026)
     }
+    // Retain the placement authored with the temporary layout gizmos.
+    root.trs({translation=[-0.44999998807907104,1.336553692817688,-0.5249140858650208]
+        rotation_quat_xyzw=[0.002408880740404129,0.000028632610337808728,0.0010148161090910435,0.9999964833259583]
+        scale=[1,1,1]})
+    return root
 }

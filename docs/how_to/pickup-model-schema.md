@@ -14,9 +14,12 @@ truck geometry or load extra spring meshes. The authored +Z front is turned to
 vehicle-local -Z and the model is raised 0.180146 m to place its lowest tyre at
 the ground. Coordinates are metres, +X right, +Y up, -Z forward.
 
-The source file remains unchanged. Static body, seats, doors, headlights and
+Static body, truck bed, seats, doors, headlights, hood, roof, wheel wells and
 steering wheel are combined; suspension branches remain independently movable.
-Imported mesh overrides are resolved before combining, so all 1,589 body
+The `.10.blend` export supplies these named parts, including `car_seat`,
+`car_seat.passenger_seat` and `truck_bed`; imported whitespace becomes underscores, so
+Blender's `wheel wells` is queried as `wheel_wells` at runtime.
+Imported mesh overrides are resolved before combining, so all 2,287 body
 triangles are included rather than unresolved placeholder geometry.
 
 | Corner | Authored spring node | Authored wheel node |
@@ -65,10 +68,21 @@ Four spherical sliding zones approximate the lower chassis and upper cab;
 static contact proxies leave cab sides open. Contacts ignore the truck's own
 parts and accumulate corrections for zones sharing its movement root. These
 are rounded upright collision approximations, not oriented moving boxes or
-wheel-ground suspension forces. Cube-based mesh cutting does not cut the GLB.
-Damage to dashboard cubes can unpack the truck's combined batches. That path
-now resolves imported GLB mesh overrides before replacing the combined draw,
-so intact body geometry remains visible instead of becoming placeholder meshes.
+wheel-ground suspension forces. Every closed imported primitive has its own
+Destroyable marker; only the open `truck` lower cabin is excluded. All three
+ship pickups use the same prefab and the current `assets/models/mitten_pickup.glb`.
+Three nearby unit-damage impacts reach the default local threshold. The first
+successful hit on combined body geometry unpacks that truck's batches; intact
+parts and the excluded cabin stay visible. Other instances keep their own damage
+state and share only immutable source geometry and local query BVHs.
+
+Imported cuts run on the bounded CSG worker. Visuals, precise ray geometry and
+opted-in panel collision publish after successful upload; failures retain the
+previous output. Source geometry is never replaced with a box for subtraction.
+Doors, roof, bed and wheel wells opt into triangle contact; decorative tires and
+coils remain ray-queryable/cuttable without continuously rebuilding contact BVHs.
+The lower cabin keeps its structural contact proxies. New cut surfaces retain the
+lit material, but general imported UV/material-island preservation is still pending.
 
 ## Dashboard and controls
 
@@ -81,6 +95,16 @@ RIDE buttons to the right of the steering wheel select all corners, front/rear
 axles, left/right sides or FL/FR/RL/RR. UP/DOWN changes requested spring lengths
 in 5% steps, clamped to 65–135%; REST resets every corner. The readout shows the
 selected group's average percentage.
+
+Hydraulic travel retains a 0.45528 m reference; each model binding converts that
+travel to its authored spring/hub offset, so Blender origin revisions do not
+make uniform lift pull the wheels through the deck. The raw compression method
+still directly scales the springs for model checks.
+
+The temporary layout editor, selection tabs and save panel have been removed.
+The authored gauge placement is embedded in its component; the hydraulic panel
+is at chassis-local [0.04, 1.80, -0.70], 20 cm above its previous position.
+Both widgets follow `pickup_chassis_frame`. The ship has no Editor/ED wrapper.
 
 The four requested extensions fit an average body support plane: their mean
 raises/lowers the body, front/rear differences pitch it, and left/right

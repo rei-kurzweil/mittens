@@ -39,6 +39,15 @@ fn bind_wheel(chassis, spring, wheel, corner) {
         let compression=Math.clamp(ratio,0.35,1.35)
         spring_control.update_transform([0,0,0],[0,0,0],[1,compression,1])
     }
+    // Hydraulic UI travel is normalized to a 0.45528 m reference. Convert it
+    // to this model's authored spring length so equal lift keeps wheels planted
+    // even when a Blender revision moves the spring origins or hub offsets.
+    mount.set_ride_compression=fn(ratio) {
+        let length=Math.abs(hub[1])
+        if length<0.001 {length=0.001}
+        let scale=1.0+(ratio-1.0)*0.45528/length
+        mount.set_compression(scale)
+    }
     return mount
 }
 
@@ -50,7 +59,8 @@ export fn bind_pickup_model_suspension(model, bindings) {
         let wheel=model.query("[name='"+binding.wheel+"']")
         if spring && wheel {
             binding.actuator=bind_wheel(chassis,spring,wheel,binding.corner)
-            binding.actuator.set_compression(binding.ratio)
+            if binding.raw==false {binding.actuator.set_ride_compression(binding.ratio)}
+            else {binding.actuator.set_compression(binding.ratio)}
         } else { print("Pickup GLB: missing suspension nodes for "+binding.corner) }
     }
 }

@@ -122,7 +122,8 @@ Following the user's priority clarification, start at the CSG geometry boundary 
 than implementing Destroyable dispatch first. `Solid::from_mesh` accepts rigid CPU
 geometry, canonicalizes exact coincident positions at render seams, checks boundary
 edges/winding/degeneracy and imports through the strict solid kernel. It does not
-approximately weld gaps, repair self-intersections or turn panels into bounding boxes.
+approximately weld gaps or turn panels into bounding boxes. Closed self-intersecting
+folds are normalized to their positive material region on the CSG worker.
 Open/non-manifold/inverted inputs, skinning and morph data are rejected explicitly.
 Closed disconnected shells are supported. Source imports are limited to 16,384 triangles
 and 49,152 vertices; larger sources must be partitioned before this entry point.
@@ -141,6 +142,52 @@ cargo test --lib csg_ -- --nocapture
 cargo test --lib destroyable
 cargo test --test csg_pickup_glb -- --nocapture
 ```
+
+To audit a temporary Blender export without replacing the checked-in ship model:
+
+```sh
+MITTENS_CSG_AUDIT_GLB=/tmp/mitten_pickup_truck-v7-audit.glb cargo test --test csg_pickup_glb -- --nocapture
+```
+
+The 2026-11-05 `.7.blend` inspection confirmed closed, positive-volume roof and
+wheel-well shells, parented to `truck`; each wheel is parented to its spring.
+The temporary GLB's roof and wheel wells pass actual worker cuts. In that export,
+11 primitives pass and 9 are rejected: the doors, hood, headlights and main body
+have open boundaries, and the four tire primitives have inward winding. The
+front-wheel hub primitives pass separately. The main body has three disconnected
+pieces, including one isolated triangle. This newer file has not replaced the
+checked-in model; its new `hood`, `roof` and `wheel wells` object names need to
+be considered when updating the prefab's static batch list.
+
+The subsequent `.8.blend` export replaced the checked-in GLB. Its doors and
+four tire primitives now pass actual CSG cuts: 17 of 20 primitives pass. The
+three rejected sources are the hood (14 inconsistent winding edges), headlights
+(16 open boundary edges) and main body (191 open boundary edges). Parenting is
+retained. The prefab now batches the renamed hood plus roof and `wheel_wells`
+(the runtime-sanitized name), for 10 sources / 2,074 triangles; the suspension
+and hydraulic regression passes against this export.
+
+A disposable in-memory hood trial (recalculate consistent normals, then flip
+the resulting inward shell) fixes its source topology. However, cutting that
+trial produces a degenerate triangle in a generated debris mesh when checked
+through the strict re-import validator. Track generated-output numerical cleanup
+in the CSG path separately from the saved hood's source-winding failure; do not
+claim the repaired hood is fully validated or require extra thickness solely
+to hide that output issue. The user's blend was not modified by the trial.
+
+The `.9.blend` / subsequent checked-in GLB inspection reports 20 of 23 primitives
+passing actual cuts. Headlights are now closed and pass. Remaining rejections:
+`hood` still has 14 inconsistent winding edges; the separated `truck_bed` has
+three open boundary edges; lower-cabin `truck` has 130 open boundary edges.
+Seats are now named `car_seat` and `car_seat.passenger_seat`. The prefab batches
+these names and the separate bed, for 11 sources / 2,286 triangles. This remains
+a geometry audit, not automatic live imported-mesh destruction.
+
+The `.9` compatibility run passes the updated body-batch checks, then fails the
+existing suspension fixture's authored hub-height expectation: FL is 0.3407216 m
+versus the previous 0.34669146 m at rest. The export changes root/spring/hub
+coordinates. Do not report full suspension validation as passing; refresh the
+model calibration and check hydraulic wheel support against the final asset.
 
 Fixtures cover an irregular L-shaped volume (including a cutter inside its empty
 bounding-box region), rigid rotation/nonuniform scale, disconnected shells, repeated
@@ -225,3 +272,23 @@ tracker. Use small deterministic fixtures before the full ship scene. Keep nativ
 modules focused and within repository size guidelines; avoid per-draw allocations,
 resource recreation or unbounded main-thread remeshing. Do not enable an editor or
 add a rendering feature as part of these slices.
+
+## Current pickup checkpoint (2026-11-06)
+
+The repaired `.10.blend` export is now checked in. Its 22 closed primitives pass
+the real mesh-cut audit, including closed output and volume conservation; the
+open lower cabin remains excluded. Initial solid import normalizes intersecting
+closed folds on the worker. Float output stitches collapsed collinear faces and
+exports standalone fragments with outward winding. Authored positions are unchanged.
+
+All three ship pickups opt their supported parts into native imported-mesh
+destruction. Panel colliders follow replacement triangle geometry, precise hit
+queries include the excluded cabin, and the first cut unpacks only the affected
+body batch. The immutable imported geometry is shared between truck instances.
+Material scope is retained; exterior UV preservation and aggregate rebatching
+remain future work.
+
+Focused tests cover cutting a door and wheel, moving damaged replacements,
+keeping the second truck and excluded cabin intact, and suspension/hydraulic
+transitions with the updated spring origins. Temporary layout/editor controls
+are removed and the hydraulics panel is raised 20 cm.

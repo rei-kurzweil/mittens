@@ -43,8 +43,15 @@ wall. Each machine pistol starts with 75 rounds and stops firing at zero;
 releasing, dropping or changing fire mode does not refill it. A floating emissive
 number above the scope shows remaining ammunition, refreshed at most once per
 second, including a final refresh after trigger release. Reloading is not yet
-implemented. Graphics controls are on the cafeteria wall. The scene has no editor wrapper
-or editor UI. The washroom has a wide mirror,
+implemented. Graphics controls are on the cafeteria wall. There are no Editor/ED
+wrappers or calibration controls in the ship. The authored gauge placement is
+retained; hydraulic controls are 20 cm higher, at chassis-local Y=1.80.
+All three pickups load `assets/models/mitten_pickup.glb`. Their closed imported
+parts are individually destroyable; the open lower cabin stays intact. Three
+nearby unit impacts trigger a local cut. Damage is independent per truck, with
+precise panel holes for rays and opted-in collision; the overall sliding hull
+remains an approximation. Tires and springs remain separate moving parts.
+The washroom has a wide mirror,
 three stalls opposite two sinks, hand dryers, towels, and a recessed waste bin.
 
 The cafeteria is 22 m wide with an 8.5 m ceiling. Go up its stairs to the

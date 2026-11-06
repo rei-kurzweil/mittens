@@ -10,8 +10,7 @@ export fn pickup_model_colliders() {
         name="pickup_model_colliders"
         box([0,0.49,0.52],[1.72,0.18,4.10])
         box([0,0.85,-1.02],[1.72,0.48,1.0])
-        box([0,2.07,0.08],[1.72,0.08,1.08])
-        box([0,0.96,2.53],[1.72,0.74,0.10])
-        for side in [-1,1] { box([side*0.84,0.96,1.51],[0.08,0.74,1.96]) }
+        // Closed imported parts receive their own triangle collision. Keep
+        // proxies only for the excluded lower cabin, so cut panels leave holes.
     }
 }

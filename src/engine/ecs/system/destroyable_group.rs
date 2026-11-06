@@ -113,6 +113,26 @@ impl DestroyableGroups {
         (!self.groups.get(&group)?.active).then_some(group)
     }
 
+    pub(super) fn pending_source_group(
+        &self,
+        world: &World,
+        source: ComponentId,
+    ) -> Option<ComponentId> {
+        let mut ancestor = world.parent_of(source);
+        while let Some(frame) = ancestor {
+            if let Some(owner) = world
+                .children_of(frame)
+                .iter()
+                .copied()
+                .find(|id| self.groups.get(id).is_some_and(|group| !group.active))
+            {
+                return Some(owner);
+            }
+            ancestor = world.parent_of(frame);
+        }
+        None
+    }
+
     /// Prepare every source before retiring combined outputs. Most reuse the
     /// uploaded cube; additional non-destroyable meshes are preserved too.
     pub fn activate(

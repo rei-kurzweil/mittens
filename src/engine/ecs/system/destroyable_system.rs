@@ -1,18 +1,21 @@
 //! Sparse CPU damage, stable per-surface grid, and transactional local mesh cuts.
 use super::{
     SystemWorld, TransformSystem,
-    csg_system::{CsgSystem, CutJob},
+    csg_system::{CsgSystem, CutJob, MeshCutJob},
     triangle_collision::TriangleMesh,
 };
 use crate::engine::ecs::component::*;
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::{
     RenderAssets, RenderUploader, VisualWorld,
+    bounds::Aabb,
     csg_mesh::Solid,
     mesh::CpuMesh,
     primitives::{CpuMeshHandle, GpuRenderable, InstanceHandle, TransformMatrix},
     visual_world::VisualInstance,
 };
+#[path = "destroyable_imported.rs"]
+mod imported;
 use crate::utils::math::{mat4_inverse, mat4_mul, mat4_mul_vec4};
 use std::{
     collections::{HashMap, VecDeque},
@@ -43,6 +46,9 @@ struct Surface {
     frame: ComponentId,
     style: VisualInstance,
     damage_step: [f32; 3],
+    local_bounds: Aabb,
+    initial_mesh: Option<Arc<CpuMesh>>,
+    imported: bool,
     cells: Vec<Cell>,
     damage: HashMap<[i32; 3], f32>,
     pending: VecDeque<DamageComponent>,
@@ -69,6 +75,7 @@ struct Debris {
 }
 #[derive(Debug, Default)]
 pub struct DestroyableSystem {
+    imported: imported::ImportedSources,
     groups: super::destroyable_group::DestroyableGroups,
     csg: Option<CsgSystem>,
     surfaces: HashMap<ComponentId, Surface>,
@@ -87,6 +94,7 @@ impl DestroyableSystem {
         uploader: &mut dyn RenderUploader,
     ) {
         self.groups.reconcile(world);
+        self.imported.prepare(systems, world, assets);
         let now = Instant::now();
         let dt = self
             .last_tick
@@ -263,7 +271,13 @@ impl DestroyableSystem {
                     }
                 }
             };
-            if let Some(group) = self.groups.pending_group(result.owner) {
+            let pending_group = self.groups.pending_group(result.owner).or_else(|| {
+                systems
+                    .combine_mesh
+                    .owner_of(world, surface.source)
+                    .and_then(|_| self.groups.pending_source_group(world, surface.source))
+            });
+            if let Some(group) = pending_group {
                 if !self
                     .groups
                     .activate(group, systems, world, visuals, assets, uploader)
@@ -284,6 +298,7 @@ impl DestroyableSystem {
                     (change, cpu)
                 })
                 .collect();
+            surface.initial_mesh = None;
             for (change, upload) in prepared {
                 let cell = &mut surface.cells[change.index];
                 let old_mesh = cell.mesh.take();
@@ -393,6 +408,9 @@ impl DestroyableSystem {
                         surface.style.renderable.material,
                     ),
                 );
+                if surface.imported {
+                    imported::inherit_material_scope(world, surface.source, render);
+                }
                 attach(world, render, RaycastableComponent::disabled());
                 let handle = register_visual(visuals, render, gpu, model, surface.style);
                 world
@@ -510,7 +528,11 @@ impl DestroyableSystem {
                     if self.surfaces.len() >= MAX_SURFACES {
                         continue;
                     }
-                    if let Some(surface) = discover(world, visuals, owner, event) {
+                    if let Some(surface) = self
+                        .imported
+                        .discover(world, visuals, owner, event)
+                        .or_else(|| discover(world, visuals, owner, event))
+                    {
                         self.surfaces.insert(owner, surface);
                     }
                 }
@@ -518,11 +540,18 @@ impl DestroyableSystem {
                     let Some(model) = TransformSystem::world_model(world, surface.frame) else {
                         continue;
                     };
-                    if !blast_overlaps(event, model) {
+                    if !blast_overlaps_bounds(event, model, surface.local_bounds) {
                         continue;
                     }
                     if surface.pending.len() < 32 {
-                        surface.pending.push_back(event);
+                        let mut queued = event;
+                        if surface.imported {
+                            let Some(inverse) = mat4_inverse(model) else {
+                                continue;
+                            };
+                            queued.position = point(inverse, event.position);
+                        }
+                        surface.pending.push_back(queued);
                     }
                 }
             }
@@ -543,10 +572,14 @@ impl DestroyableSystem {
             else {
                 continue;
             };
-            let Some(event) = surface.pending.pop_front() else {
+            let Some(queued_event) = surface.pending.pop_front() else {
                 continue;
             };
             let model = TransformSystem::world_model(world, surface.frame).unwrap();
+            let mut event = queued_event;
+            if surface.imported {
+                event.position = point(model, queued_event.position);
+            }
             let Some(inverse) = mat4_inverse(model) else {
                 continue;
             };
@@ -557,12 +590,15 @@ impl DestroyableSystem {
                 continue;
             }
             let step = surface.damage_step;
+            let bounds = surface.local_bounds;
+            let extent: [f32; 3] = std::array::from_fn(|i| bounds.max[i] - bounds.min[i]);
             let lo: [i32; 3] = std::array::from_fn(|i| {
-                (((local[i] + 0.5 - event.radius / scale[i]) / step[i]).floor() as i32).max(0)
+                (((local[i] - bounds.min[i] - event.radius / scale[i]) / step[i]).floor() as i32)
+                    .max(0)
             });
             let hi: [i32; 3] = std::array::from_fn(|i| {
-                (((local[i] + 0.5 + event.radius / scale[i]) / step[i]).floor() as i32)
-                    .min((1.0 / step[i]).ceil() as i32 - 1)
+                (((local[i] - bounds.min[i] + event.radius / scale[i]) / step[i]).floor() as i32)
+                    .min((extent[i] / step[i]).ceil() as i32 - 1)
             });
             if (0..3)
                 .map(|i| (hi[i] as i64 - lo[i] as i64 + 1).max(0) as u64)
@@ -578,11 +614,12 @@ impl DestroyableSystem {
                     for z in lo[2]..=hi[2] {
                         let key = [x, y, z];
                         let p = std::array::from_fn(|i| {
-                            -0.5 + (key[i] as f32 * step[i]
-                                + ((key[i] + 1) as f32 * step[i]).min(1.))
-                                * 0.5
+                            bounds.min[i]
+                                + (key[i] as f32 * step[i]
+                                    + ((key[i] + 1) as f32 * step[i]).min(extent[i]))
+                                    * 0.5
                         });
-                        if p.into_iter().any(|v: f32| v < -0.5 || v > 0.5) {
+                        if (0..3).any(|i| p[i] < bounds.min[i] || p[i] > bounds.max[i]) {
                             continue;
                         }
                         let wp = point(model, p);
@@ -609,7 +646,16 @@ impl DestroyableSystem {
                 continue;
             }
             if surface.cells.is_empty() {
-                if let Err(e) = partition(surface, config, chunk_budget, systems, world) {
+                let partitioned = if surface.imported {
+                    if chunk_budget == 0 {
+                        Err("scene chunk budget reached".into())
+                    } else {
+                        self.imported.partition(surface, systems, world)
+                    }
+                } else {
+                    partition(surface, config, chunk_budget, systems, world)
+                };
+                if let Err(e) = partitioned {
                     eprintln!("[Destroyable] {e}");
                     continue;
                 }
@@ -621,7 +667,11 @@ impl DestroyableSystem {
                     continue;
                 }
                 let model = TransformSystem::world_model(world, cell.frame).unwrap();
-                if !blast_overlaps(event, model) {
+                if !if surface.imported {
+                    blast_overlaps_bounds(event, model, surface.local_bounds)
+                } else {
+                    blast_overlaps(event, model)
+                } {
                     continue;
                 }
                 let Some(inverse) = mat4_inverse(model) else {
@@ -667,12 +717,21 @@ impl DestroyableSystem {
                     })
                     .collect(),
             };
-            if self
-                .csg
-                .get_or_insert_with(CsgSystem::default)
-                .submit(job)
-                .is_ok()
-            {
+            let worker = self.csg.get_or_insert_with(CsgSystem::default);
+            let submitted = if let Some(mesh) = &surface.initial_mesh {
+                let inverse = mat4_inverse(model).unwrap();
+                worker
+                    .submit_mesh(MeshCutJob {
+                        owner,
+                        revision: surface.revision,
+                        mesh: mesh.clone(),
+                        cutter: Solid::world_blast(event.position, event.radius, inverse),
+                    })
+                    .is_ok()
+            } else {
+                worker.submit(job).is_ok()
+            };
+            if submitted {
                 surface.busy = true;
                 surface.clear = covered;
             } else {
@@ -683,7 +742,7 @@ impl DestroyableSystem {
                     }
                 }
                 surface.damage.retain(|_, value| *value > 0.);
-                surface.pending.push_front(event);
+                surface.pending.push_front(queued_event);
             }
         }
     }
@@ -705,11 +764,17 @@ pub(super) fn attach<T: Component>(
     id
 }
 fn blast_overlaps(event: DamageComponent, model: TransformMatrix) -> bool {
-    let bounds = crate::engine::graphics::bounds::Aabb {
-        min: [-0.5; 3],
-        max: [0.5; 3],
-    }
-    .transformed(model);
+    blast_overlaps_bounds(
+        event,
+        model,
+        Aabb {
+            min: [-0.5; 3],
+            max: [0.5; 3],
+        },
+    )
+}
+fn blast_overlaps_bounds(event: DamageComponent, model: TransformMatrix, bounds: Aabb) -> bool {
+    let bounds = bounds.transformed(model);
     (0..3)
         .map(|i| {
             (event.position[i] - event.position[i].clamp(bounds.min[i], bounds.max[i])).powi(2)
@@ -764,6 +829,12 @@ fn discover(
         frame,
         style,
         damage_step,
+        local_bounds: Aabb {
+            min: [-0.5; 3],
+            max: [0.5; 3],
+        },
+        initial_mesh: None,
+        imported: false,
         cells: vec![],
         damage: HashMap::new(),
         pending: VecDeque::new(),

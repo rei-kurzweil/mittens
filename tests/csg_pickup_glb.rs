@@ -17,8 +17,12 @@ use std::{
 
 #[test]
 fn pickup_glb_closed_parts_can_be_submitted_without_box_substitution() {
-    let gltf =
-        gltf::Gltf::from_slice(include_bytes!("../assets/models/mitten_pickup.glb")).unwrap();
+    // Allow the same audit to inspect a temporary Blender export without
+    // replacing the checked-in model used by the running ship example.
+    let bytes = std::env::var_os("MITTENS_CSG_AUDIT_GLB")
+        .map(|path| std::fs::read(path).unwrap())
+        .unwrap_or_else(|| include_bytes!("../assets/models/mitten_pickup.glb").to_vec());
+    let gltf = gltf::Gltf::from_slice(&bytes).unwrap();
     let blob = gltf.blob.as_deref().unwrap();
     let system = CsgSystem::default();
     let mut accepted = 0;
@@ -93,12 +97,18 @@ fn pickup_glb_closed_parts_can_be_submitted_without_box_substitution() {
                     let removed: f64 = batch
                         .debris
                         .iter()
-                        .map(|mesh| Solid::from_mesh(mesh).unwrap().volume())
+                        .map(|mesh| {
+                            Solid::from_mesh(mesh)
+                                .unwrap_or_else(|error| panic!("{name}: invalid debris: {error}"))
+                                .volume()
+                        })
                         .sum();
                     assert!(
                         (remaining.volume() + removed - original.volume()).abs()
                             < original.volume() * 1e-5 + 1e-8,
-                        "{name}: cut must conserve volume"
+                        "{name}: cut must conserve volume: original={} remaining={} debris={removed}",
+                        original.volume(),
+                        remaining.volume()
                     );
                     eprintln!(
                         "{name}: accepted, {} triangles, worker {:?}",

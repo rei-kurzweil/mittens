@@ -26,27 +26,32 @@ export fn pickup_hydraulics_panel(ride) {
         let status=ride.status(selected.corner)
         readout.set_text("RIDE "+selected.corner+" "+Math.round(status.ratio*100)+"%")
     }
-    return T.position(0.04,1.60,-0.70) {
+    let panel=T.position(0.04,1.80,-0.70) {
         name="pickup_hydraulics_panel"
         ui_unlit_material()
         Grabbable.off()
-        T.position(-0.04,0.12,0.02).scale(0.022,0.022,0.022) {readout}
-        let index=0
-        for corner in ["all","front","rear","left","right"] {
-            button("select_"+corner,corner,index*0.095,0.03,0.085,fn() {
-                selected.corner=corner refresh()
-            })
-            index=index+1
+        T {
+            name="pickup_hydraulics_content"
+            Selectable.off()
+            T.position(-0.04,0.12,0.02).scale(0.022,0.022,0.022) {readout}
+            let index=0
+            for corner in ["all","front","rear","left","right"] {
+                button("select_"+corner,corner,index*0.095,0.03,0.085,fn() {
+                    selected.corner=corner refresh()
+                })
+                index=index+1
+            }
+            index=0
+            for corner in ["fl","fr","rl","rr"] {
+                button("select_"+corner,corner,0.0475+index*0.095,-0.045,0.085,fn() {
+                    selected.corner=corner refresh()
+                })
+                index=index+1
+            }
+            button("raise","UP",0.04,-0.135,0.13,fn() {ride.adjust(selected.corner,0.05) refresh()})
+            button("lower","DOWN",0.19,-0.135,0.13,fn() {ride.adjust(selected.corner,-0.05) refresh()})
+            button("reset","REST",0.34,-0.135,0.13,fn() {ride.reset() refresh()})
         }
-        index=0
-        for corner in ["fl","fr","rl","rr"] {
-            button("select_"+corner,corner,0.0475+index*0.095,-0.045,0.085,fn() {
-                selected.corner=corner refresh()
-            })
-            index=index+1
-        }
-        button("raise","UP",0.04,-0.135,0.13,fn() {ride.adjust(selected.corner,0.05) refresh()})
-        button("lower","DOWN",0.19,-0.135,0.13,fn() {ride.adjust(selected.corner,-0.05) refresh()})
-        button("reset","REST",0.34,-0.135,0.13,fn() {ride.reset() refresh()})
     }
+    return panel
 }

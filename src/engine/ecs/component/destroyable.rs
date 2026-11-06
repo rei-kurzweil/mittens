@@ -2,9 +2,10 @@ use super::Component;
 use crate::engine::ecs::system::triangle_collision::TriangleMesh;
 use std::sync::Arc;
 
-/// Opts a sibling cube/box zone, or descendant cube/box pairs in a section,
-/// into runtime destruction. Retained CombineMesh batches unpack together on
-/// the first successful cut. Runtime damage never enters authored serialization.
+/// Opts sibling cube/box pairs, descendant section pieces, or a parent imported
+/// rigid Renderable into runtime destruction. Retained CombineMesh batches
+/// unpack on the first successful cut. Damage state is per instance and never
+/// enters authored serialization. Imported collision is a separate opt-in.
 #[derive(Debug, Clone, Copy)]
 pub struct DestroyableComponent {
     pub threshold: f32,
