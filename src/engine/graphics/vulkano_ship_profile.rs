@@ -8,6 +8,8 @@ use crate::engine::ecs::system::external_xr_frame::ExternalXrFrame;
 fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     let case = std::env::var("SHIP_PROFILE_CASE").unwrap_or("full".into());
     let room = std::env::var("SHIP_PROFILE_ROOM").unwrap_or("bridge".into());
+    let motion = std::env::var("SHIP_PROFILE_MOTION").unwrap_or("stationary".into());
+    assert!(matches!(motion.as_str(), "stationary" | "head"));
     let frames: usize = std::env::var("SHIP_PROFILE_FRAMES")
         .unwrap_or("120".into())
         .parse()?;
@@ -48,6 +50,7 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     )?;
     let mut scene = Universe::new(Default::default());
     scene.systems.set_vr_perf_enabled(true);
+    scene.visuals.enable_draw_cache_profile();
     let clock = Arc::new(ProfileClock(std::sync::atomic::AtomicU64::new(
         0f64.to_bits(),
     )));
@@ -228,6 +231,16 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
             std::sync::atomic::Ordering::Relaxed,
         );
         uploader.renderer.profile.as_mut().unwrap().reset_frame();
+        scene.visuals.reset_draw_cache_profile();
+        let material_before = material_cache_totals(uploader.renderer);
+        if motion == "head" {
+            let mut moving = view;
+            moving.pose.position.x = (frame as f32 / 75.).sin() * 0.35;
+            scene.systems.xr.set_external_frame(Some(ExternalXrFrame {
+                views: Some([moving, moving]),
+                ..Default::default()
+            }));
+        }
         let start = Instant::now();
         scene.update(1. / 75., &Default::default());
         let update_ms = start.elapsed().as_secs_f64() * 1000.;
@@ -269,12 +282,38 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
         let p = uploader.renderer.profile.as_ref().unwrap();
         let gpu = p.gpu_ms()?;
         if sampling {
+            let material_after = material_cache_totals(uploader.renderer);
+            let material_delta: std::collections::BTreeMap<_, _> = [
+                "immutable_hits",
+                "immutable_misses",
+                "mutable_allocations",
+                "mutable_uploads",
+                "mutable_snapshot_reuses",
+                "mutable_binding_misses",
+                "mutable_binding_evictions",
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(i, name)| (name, material_after[i].saturating_sub(material_before[i])))
+            .collect();
             rows.push(serde_json::json!({"frame":frame,"bloom_enabled":bloom_on,"block":block,"update_ms":update_ms,"prepare_ms":prepare_ms,
                 "record_submit_ms":record_ms,"wait_ms":wait_ms,"total_ms":start.elapsed().as_secs_f64()*1000.,
                 "gpu_deform_ms":gpu.map(|g|g[0]),"gpu_graphics_ms":gpu.map(|g|g[1]),"draws":p.draws,
                 "cpu_record_stages_ms":p.cpu_stages.milliseconds(),
+                "visual_cache_counts":scene.visuals.draw_cache_profile_snapshot(),
+                "view_cache_decisions":p.view_cache_decisions,
+                "eye0_view":scene.visuals.visual_camera(crate::engine::graphics::CameraTarget::Xr).unwrap().eyes[0].view,
+                "instance_buffer_uploads":p.instance_buffer_uploads.get(),
+                "material_cache_counts":material_delta,
                 "dirty_jobs":p.dirty_components.len(),"deformation_cpu_ms":p.deformation_cpu_ns as f64/1e6}));
         }
+    }
+    if motion == "head" {
+        assert_ne!(
+            rows.first().unwrap()["eye0_view"],
+            rows.last().unwrap()["eye0_view"],
+            "moving-head fixture must change the rendered camera, not only its input pose"
+        );
     }
     let mut timing = serde_json::Map::new();
     for key in [
@@ -300,6 +339,44 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
             .collect();
         cpu_record_stages.insert(name.clone(), summary(&values));
     }
+    let summarize_counts = |values: &[f64]| {
+        let timing = summary(values);
+        serde_json::json!({"mean":timing["mean_ms"], "median":timing["median_ms"], "p95":timing["p95_ms"]})
+    };
+    let mut cache_counts = serde_json::Map::new();
+    for field in ["visual_cache_counts", "material_cache_counts"] {
+        let names: std::collections::BTreeSet<_> = rows
+            .iter()
+            .flat_map(|row| row[field].as_object().unwrap().keys().cloned())
+            .collect();
+        let values: serde_json::Map<_, _> = names
+            .into_iter()
+            .map(|name| {
+                let counts: Vec<_> = rows
+                    .iter()
+                    .map(|row| row[field][&name].as_f64().unwrap_or(0.))
+                    .collect();
+                (name, summarize_counts(&counts))
+            })
+            .collect();
+        cache_counts.insert(field.into(), values.into());
+    }
+    let allocations: Vec<_> = rows
+        .iter()
+        .map(|r| r["instance_buffer_uploads"][0].as_f64().unwrap())
+        .collect();
+    let writes: Vec<_> = rows
+        .iter()
+        .map(|r| r["instance_buffer_uploads"][1].as_f64().unwrap())
+        .collect();
+    cache_counts.insert(
+        "instance_buffer_allocations".into(),
+        summarize_counts(&allocations),
+    );
+    cache_counts.insert(
+        "instance_buffer_instances_written".into(),
+        summarize_counts(&writes),
+    );
     let paired_gpu = if paired {
         let summarize = |enabled: bool| {
             let values: Vec<_> = rows
@@ -325,7 +402,7 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     } else {
         serde_json::Value::Null
     };
-    let result = serde_json::json!({"paired_gpu":paired_gpu,"case":case,"room":room,"frames":frames,"warmup":warmup,"extent":extent,"msaa":4,
+    let result = serde_json::json!({"paired_gpu":paired_gpu,"case":case,"room":room,"motion":motion,"cache_counts":cache_counts,"material_binding_limit":material_binding_limit(),"frames":frames,"warmup":warmup,"extent":extent,"msaa":4,
         "gpu":uploader.renderer.gpu_device_name(),"components":scene.world.all_components().count(),
         "instances":scene.visuals.instances().len(),"timing":timing,"cpu_record_stages_ms":cpu_record_stages,"sample_draws":rows.last().unwrap()["draws"],
         "counters":uploader.renderer.perf_counters().saturating_delta(counters_start.unwrap())});
@@ -339,4 +416,23 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
         std::fs::write(path, serde_json::to_vec_pretty(&result)?)?;
     }
     Ok(())
+}
+
+// Test-only aggregation happens outside the timed recording path.
+fn material_cache_totals(renderer: &VulkanoState) -> [u64; 7] {
+    let (misses, evictions) = renderer
+        .material_instances
+        .values()
+        .fold((0, 0), |(m, e), entry| {
+            (m + entry.bindings.misses, e + entry.bindings.evictions)
+        });
+    [
+        renderer.cached_material_sets.hits,
+        renderer.cached_material_sets.misses,
+        renderer.material_upload_stats.allocations,
+        renderer.material_upload_stats.uploads,
+        renderer.material_upload_stats.snapshot_reuses,
+        misses,
+        evictions,
+    ]
 }

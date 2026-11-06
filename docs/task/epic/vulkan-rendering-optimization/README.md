@@ -21,6 +21,12 @@ end-to-end measurement.
 - [Inside Vulkano build](build-internals.md): synchronization analysis accounts
   for 1.990 ms and resource-usage finalization for 0.385 ms; native command
   emission takes 0.748 ms across both eyes. Includes the temporary probe and control.
+- [Cache invalidation baseline](cache-invalidation-baseline.md): first counter
+  slice finds two texture-driven rebuilds per stereo frame, second-eye buffer
+  refreshes and recurring mutable material snapshot allocations.
+- [View-local mirror bindings](view-local-mirror-bindings.md): the first cache
+  fix eliminates those per-eye structural rebuilds and reduces instance-buffer
+  allocations from 10 to 7 per stereo frame, preserving stereo/frozen reflections.
 - [Persistence and command reuse](persistence-and-command-reuse.md): inventory
   what already persists, what changes each frame, and the invalidation and
   lifetime rules needed to switch incrementally.
@@ -33,6 +39,9 @@ end-to-end measurement.
   stencil operations while compiling direct slots and reusable operation ranges.
 - [Existing ship profiling report](../../ship-interior-performance-profile.md):
   previous CPU, resolution, bloom and truck/event-binding experiments.
+- [Truck script power and continuous physics](../../pickup-script-power-and-continuous-physics.md):
+  separate vehicle MMS activity from native motion and investigate post-visit CPU
+  cost. Current parking freezes physics; keep that limitation visible in comparisons.
 
 ## Intended outcome
 

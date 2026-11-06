@@ -200,6 +200,10 @@ mod vulkano_backend {
     include!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/graphics/vulkano_frame_commands.rs"));
     include!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/graphics/vulkano_xr_submit.rs"));
 
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/graphics/vulkano_instance_buffers.rs"));
+
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/graphics/vulkano_view_bindings.rs"));
+
     mod vulkano_cbb {
         include!(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -609,6 +613,7 @@ mod vulkano_backend {
             GpuMaterialInstance,
         >,
         material_upload_stats: MaterialUploadStats,
+        view_mirror_bindings: ViewMirrorBindings,
         custom_pipeline_template: vulkano::pipeline::graphics::GraphicsPipelineCreateInfo,
         custom_programs:
             HashMap<crate::engine::graphics::MaterialHandle, Result<CustomGpuProgram, String>>,
@@ -2284,6 +2289,7 @@ mod vulkano_backend {
                 cached_overlay_instance_count: 0,
                 material_instances: slotmap::SecondaryMap::new(),
                 material_upload_stats: MaterialUploadStats::default(),
+                view_mirror_bindings: ViewMirrorBindings::default(),
                 cached_material_sets: crate::engine::graphics::material_cache::MaterialCache::new(
                     512,
                 ),
@@ -3161,67 +3167,6 @@ mod vulkano_backend {
             Ok(())
         }
 
-        fn build_stencil_clip_debug_batches(
-            visual_world: &VisualWorld,
-        ) -> Vec<crate::engine::graphics::visual_world::DrawBatch> {
-            visual_world
-                .stencil_clip_order()
-                .iter()
-                .enumerate()
-                .filter_map(|(slot, &instance_index)| {
-                    let instance = visual_world.instances().get(instance_index as usize)?;
-                    Some(crate::engine::graphics::visual_world::DrawBatch {
-                        material: crate::engine::graphics::MaterialHandle::UNLIT_MESH,
-                        mesh: instance.renderable.mesh,
-                        texture: None,
-                        texture_filtering: TextureFiltering::Nearest,
-                        quant_steps: 1.0,
-                        material_instance: None,
-                        stencil_ref: 0,
-                        start: slot,
-                        count: 1,
-                    })
-                })
-                .collect()
-        }
-
-        fn retarget_mirror_surface_textures_for_render_view(
-            visual_world: &mut VisualWorld,
-            kind: &RenderViewKind,
-        ) {
-            let (family, view_index) = match *kind {
-                RenderViewKind::Window => (
-                    crate::engine::graphics::visual_world::MirrorViewerFamily::Monoscopic,
-                    0,
-                ),
-                RenderViewKind::XrEye { eye } => (
-                    crate::engine::graphics::visual_world::MirrorViewerFamily::Stereoscopic,
-                    eye,
-                ),
-                RenderViewKind::Mirror {
-                    family, view_index, ..
-                } => (family, view_index),
-            };
-
-            let updates: Vec<_> = visual_world
-                .mirrors()
-                .iter()
-                .filter_map(|mirror| {
-                    let key = visual_world.mirror_texture_key_for_view(
-                        mirror.mirror_component,
-                        family,
-                        view_index,
-                    )?;
-                    let handle = visual_world.runtime_texture_handle(key)?;
-                    Some((mirror.source_instance, handle))
-                })
-                .collect();
-
-            for (instance, handle) in updates {
-                let _ = visual_world.update_texture(instance, Some(handle));
-            }
-        }
-
         fn hsv_debug_color_for_stencil_ref(stencil_ref: u8) -> [f32; 4] {
             if stencil_ref == 0 {
                 return [0.08, 0.08, 0.08, 1.0];
@@ -3830,154 +3775,6 @@ mod vulkano_backend {
 
             self.window_resized = false;
             Ok(())
-        }
-
-        fn build_instance_buffer_for_order_or_dummy(
-            &self,
-            visual_world: &VisualWorld,
-            order: &[u32],
-        ) -> Result<Subbuffer<[InstanceData]>, Box<dyn std::error::Error>> {
-            static DID_LOG_SKIN_INSTANCE_RANGES: AtomicBool = AtomicBool::new(false);
-
-            if !order.is_empty() && env_flag("CAT_DEBUG_SKIN_INSTANCE_RANGES") {
-                let instances_ref = visual_world.instances();
-                let skinned_count = order
-                    .iter()
-                    .filter(|&&idx| instances_ref[idx as usize].bones_count > 0)
-                    .count();
-
-                if skinned_count > 0 && !DID_LOG_SKIN_INSTANCE_RANGES.swap(true, Ordering::Relaxed)
-                {
-                    let mut skinned = Vec::new();
-                    for &idx in order.iter() {
-                        let inst = instances_ref[idx as usize];
-                        if inst.bones_count > 0 {
-                            skinned.push((idx, inst.renderable, inst.bones_base, inst.bones_count));
-                            if skinned.len() >= 24 {
-                                break;
-                            }
-                        }
-                    }
-
-                    let total = order.len();
-                    println!(
-                        "[VulkanoRenderer] instances: total={} with_bones={} (showing up to {})",
-                        total,
-                        skinned_count,
-                        skinned.len()
-                    );
-                    for (i, (idx, renderable, base, count)) in skinned.iter().enumerate() {
-                        println!(
-                            "  skinned[{i:02}] instance_index={idx} renderable={renderable:?} bones_base={base} bones_count={count}"
-                        );
-                    }
-                }
-            }
-
-            // `Buffer::from_iter` with an empty iterator can panic inside Vulkano.
-            let buf: Subbuffer<[InstanceData]> = if order.is_empty() {
-                Buffer::from_iter(
-                    self.context.memory_allocator().clone(),
-                    BufferCreateInfo {
-                        usage: BufferUsage::VERTEX_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                        ..Default::default()
-                    },
-                    std::iter::once(InstanceData::default()),
-                )?
-            } else {
-                let instances_ref = visual_world.instances();
-                let instance_data_iter = order.iter().map(|&idx| {
-                    let inst = instances_ref[idx as usize];
-                    let m = inst.transform.model;
-                    InstanceData {
-                        i_model_c0: m[0],
-                        i_model_c1: m[1],
-                        i_model_c2: m[2],
-                        i_model_c3: m[3],
-                        i_color: inst.color,
-                        i_emissive: inst.emissive,
-                        i_opacity: inst.opacity,
-                        i_deformed_base: inst.deformed_base,
-                        i_deformed_count: inst.deformed_count,
-                        i_transmission: inst.transmission,
-                        i_transmission_roughness: inst.transmission_roughness,
-                        i_outline_width: inst.toon_outline.map_or(0.0, |outline| outline.width),
-                        i_outline_color: inst
-                            .toon_outline
-                            .map_or([0.0, 0.0, 0.0, 0.0], |outline| outline.color),
-                    }
-                });
-
-                Buffer::from_iter(
-                    self.context.memory_allocator().clone(),
-                    BufferCreateInfo {
-                        usage: BufferUsage::VERTEX_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                        ..Default::default()
-                    },
-                    instance_data_iter,
-                )?
-            };
-
-            Ok(buf)
-        }
-
-        fn build_instance_buffer_for_order_opt(
-            &self,
-            visual_world: &VisualWorld,
-            order: &[u32],
-        ) -> Result<Option<Subbuffer<[InstanceData]>>, Box<dyn std::error::Error>> {
-            if order.is_empty() {
-                return Ok(None);
-            }
-
-            let instances_ref = visual_world.instances();
-            let instance_data_iter = order.iter().map(|&idx| {
-                let inst = instances_ref[idx as usize];
-                let m = inst.transform.model;
-                InstanceData {
-                    i_model_c0: m[0],
-                    i_model_c1: m[1],
-                    i_model_c2: m[2],
-                    i_model_c3: m[3],
-                    i_color: inst.color,
-                    i_emissive: inst.emissive,
-                    i_opacity: inst.opacity,
-                    i_deformed_base: inst.deformed_base,
-                    i_deformed_count: inst.deformed_count,
-                    i_transmission: inst.transmission,
-                    i_transmission_roughness: inst.transmission_roughness,
-                    i_outline_width: inst.toon_outline.map_or(0.0, |outline| outline.width),
-                    i_outline_color: inst
-                        .toon_outline
-                        .map_or([0.0, 0.0, 0.0, 0.0], |outline| outline.color),
-                }
-            });
-
-            let buf: Subbuffer<[InstanceData]> = Buffer::from_iter(
-                self.context.memory_allocator().clone(),
-                BufferCreateInfo {
-                    usage: BufferUsage::VERTEX_BUFFER,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                    ..Default::default()
-                },
-                instance_data_iter,
-            )?;
-
-            Ok(Some(buf))
         }
 
         fn get_or_create_material_set(

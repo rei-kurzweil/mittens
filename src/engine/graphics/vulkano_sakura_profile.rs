@@ -34,6 +34,8 @@ pub(super) struct ProfileState {
     pub(super) morph_upload_cpu_ns: u64,
     pub(super) deformation_cpu_ns: u64,
     pub(super) cpu_stages: CpuStages,
+    pub(super) view_cache_decisions: Vec<ViewCacheDecision>,
+    pub(super) instance_buffer_uploads: std::cell::Cell<[u64; 2]>,
     pub(super) completion: Option<Box<dyn FnOnce() -> Result<(), Box<dyn Error>>>>,
     pool: Option<Arc<QueryPool>>,
     timestamp_period: f64,
@@ -66,6 +68,8 @@ impl ProfileState {
             morph_upload_cpu_ns: 0,
             deformation_cpu_ns: 0,
             cpu_stages: CpuStages::default(),
+            view_cache_decisions: Vec::with_capacity(2),
+            instance_buffer_uploads: std::cell::Cell::new([0; 2]),
             completion: None,
             pool,
             timestamp_period: physical.properties().timestamp_period as f64,
@@ -140,6 +144,8 @@ impl ProfileState {
         self.morph_upload_cpu_ns = 0;
         self.deformation_cpu_ns = 0;
         self.cpu_stages.reset();
+        self.view_cache_decisions.clear();
+        self.instance_buffer_uploads.set([0; 2]);
         self.draws.clear();
         self.npc_draws.clear();
     }

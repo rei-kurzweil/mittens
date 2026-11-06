@@ -41,6 +41,16 @@ experiment.
 
 ## A. Make invalidation observable
 
+Initial instrumentation and captures are recorded in the
+[cache invalidation baseline](cache-invalidation-baseline.md). Both stationary
+and moving-head baselines rebuilt shared draw structure twice per stereo frame
+due to texture updates. The subsequent
+[view-local mirror binding fix](view-local-mirror-bindings.md) eliminates those
+rebuilds, with two cache hits and seven instance-buffer allocations per frame.
+Trace the 36 remaining mutable snapshot allocations before selecting a material-
+persistence change. Stable first-eye buffer identities and the retained pass
+plan remain enabling work for broader command reuse.
+
 Instrument existing caches before replacing them. `prepare_draw_cache()` returns
 early when `dirty_draw_cache` is false; calling it per view does not prove a
 rebuild. Count actual rebuilds and the mutation paths that set the dirty flag.

@@ -1057,7 +1057,7 @@ fn youtuber_room_shared_anime_shading_and_seated_mitten() -> Result<(), Box<dyn 
                     .unwrap();
                 let texture = room.visuals.runtime_texture_handle(key).unwrap();
                 let water = room.visuals.instance(mirror.source_instance).unwrap();
-                assert_eq!(water.texture, Some(texture));
+                assert_eq!(renderer.view_mirror_bindings.textures[&water.component], texture);
                 assert!(
                     renderer.material_instances[water.material_instance.unwrap()]
                         .custom_snapshots

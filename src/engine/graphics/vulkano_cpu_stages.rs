@@ -32,3 +32,13 @@ impl CpuStages {
         self.0.values_mut().for_each(|ns| *ns = 0);
     }
 }
+
+#[cfg(test)]
+#[derive(serde::Serialize)]
+struct ViewCacheDecision {
+    eye: usize,
+    draw_cache_rebuilt: bool,
+    instance_data_dirty: bool,
+    // True requests refreshing the optional buffer; an empty pass may allocate nothing.
+    buffer_refresh_requested: [bool; 6],
+}

@@ -26,6 +26,12 @@ recorded state, synchronization and pending-use rules remain valid.
 This is a starting inventory from source inspection. Measure cache hits,
 allocations and invalidations before asserting a cache is effective or wasteful.
 
+The [first view-binding fix](view-local-mirror-bindings.md) now preserves shared
+draw topology across eyes and resolves each reflection at binding time. Both
+measured views hit the structural cache; instance-buffer helper allocations fall
+from 10 to 7. First-eye buffers still refresh for model writes and commands still
+record every frame, so broader resource/command persistence remains pending.
+
 ## Data updates versus command changes
 
 A camera or transform change does not intrinsically require a changed draw

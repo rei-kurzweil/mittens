@@ -139,7 +139,11 @@ impl VulkanoState {
                 )
             };
 
-            let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
+            let texture_handle = self.view_mirror_bindings.texture(
+                batch.view_texture_source,
+                batch.texture,
+                self.default_white_texture,
+            );
             let filtering = batch.texture_filtering;
             let quant_bits = batch.quant_steps.to_bits();
             let material_instance = batch.material_instance;
@@ -332,7 +336,11 @@ impl VulkanoState {
                             mesh.index_count,
                         )
                     };
-                    let texture_handle = inst.texture.unwrap_or(self.default_white_texture);
+                    let texture_handle = self.view_mirror_bindings.texture(
+                        Some(inst.component),
+                        inst.texture,
+                        self.default_white_texture,
+                    );
                     let Some(material_set) = self.get_or_create_material_set(
                         inst.renderable.material,
                         texture_handle,
@@ -395,7 +403,11 @@ impl VulkanoState {
                         )
                     };
 
-                    let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
+                    let texture_handle = self.view_mirror_bindings.texture(
+                        batch.view_texture_source,
+                        batch.texture,
+                        self.default_white_texture,
+                    );
                     let filtering = batch.texture_filtering;
                     let quant_bits = batch.quant_steps.to_bits();
                     let material_instance = batch.material_instance;
@@ -482,7 +494,11 @@ impl VulkanoState {
                             mesh.index_count,
                         )
                     };
-                    let texture_handle = inst.texture.unwrap_or(self.default_white_texture);
+                    let texture_handle = self.view_mirror_bindings.texture(
+                        Some(inst.component),
+                        inst.texture,
+                        self.default_white_texture,
+                    );
                     let Some(material_set) = self.get_or_create_material_set(
                         inst.renderable.material,
                         texture_handle,
@@ -863,7 +879,11 @@ impl VulkanoState {
         for batch in transparent_multi_batches {
             #[cfg(test)]
             if self.profile.as_ref().is_some_and(|p|p.suppressed_meshes.contains(&batch.mesh)) { continue; }
-            let texture_handle = batch.texture.unwrap_or(self.default_white_texture);
+            let texture_handle = self.view_mirror_bindings.texture(
+                batch.view_texture_source,
+                batch.texture,
+                self.default_white_texture,
+            );
             let filtering = batch.texture_filtering;
             let quant_bits = batch.quant_steps.to_bits();
             let material_instance = batch.material_instance;

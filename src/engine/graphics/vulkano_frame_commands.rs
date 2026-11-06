@@ -23,7 +23,8 @@ impl VulkanoState {
         self.retire_runtime_resources(visual_world);
         self.apply_pending_runtime_texture_updates();
         self.sync_material_instances(visual_world);
-        Self::retarget_mirror_surface_textures_for_render_view(visual_world, &render_view.kind);
+        self.view_mirror_bindings
+            .prepare(visual_world, &render_view.kind);
 
         profile_cpu_stage!(self, cpu_stage_clock, "material_sync");
 
@@ -57,7 +58,7 @@ impl VulkanoState {
             .collect();
         visual_world.sync_deformation_ranges(&mesh_vertex_counts);
 
-        // Always rebuild draw cache cheaply.
+        // Reuse draw topology until its structural inputs change.
         let draw_cache_rebuilt = visual_world.prepare_draw_cache();
 
         // Multi-layer transparency sort is always per-view.
@@ -316,6 +317,23 @@ impl VulkanoState {
         )?;
 
         profile_cpu_stage!(self, cpu_stage_clock, "instance_buffers");
+
+        #[cfg(test)]
+        if let Some(profile) = self.profile.as_mut() {
+            profile.view_cache_decisions.push(ViewCacheDecision {
+                eye,
+                draw_cache_rebuilt,
+                instance_data_dirty,
+                buffer_refresh_requested: [
+                    need_instance_buffer,
+                    need_outline_instance_buffer,
+                    need_background_instance_buffer,
+                    need_background_occluded_lit_instance_buffer,
+                    need_cutout_instance_buffer,
+                    need_overlay_instance_buffer,
+                ],
+            });
+        }
 
         let clear_color = visual_world.clear_color();
         let defer_overlay_until_before_final_composite =

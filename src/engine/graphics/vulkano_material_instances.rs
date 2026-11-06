@@ -1,5 +1,16 @@
 // Included inside vulkano_backend. Mutable values never enter a descriptor key.
 const MATERIAL_SNAPSHOT_LIMIT: usize = 8;
+// A test invocation can compare limits without changing production cache policy.
+fn material_binding_limit() -> usize {
+    #[cfg(test)]
+    if let Ok(value) = std::env::var("SHIP_PROFILE_MATERIAL_BINDINGS") {
+        let limit: usize = value.parse().expect("material binding limit must be an integer");
+        assert!((1..=512).contains(&limit));
+        return limit;
+    }
+    16
+}
+
 type MaterialResourceKey = (
     crate::engine::graphics::MaterialHandle,
     TextureHandle,
@@ -62,7 +73,7 @@ impl VulkanoState {
             if let Some(entry) = self.material_instances.get_mut(id) {
                 if entry.record.definition != record.definition {
                     entry.bindings =
-                        crate::engine::graphics::material_cache::MaterialCache::new(16);
+                        crate::engine::graphics::material_cache::MaterialCache::new(material_binding_limit());
                     entry.custom_snapshots.clear();
                 }
                 entry.record = record.clone();
@@ -76,7 +87,7 @@ impl VulkanoState {
                         schema,
                         record: record.clone(),
                         custom_snapshots: Vec::new(),
-                        bindings: crate::engine::graphics::material_cache::MaterialCache::new(16),
+                        bindings: crate::engine::graphics::material_cache::MaterialCache::new(material_binding_limit()),
                     },
                 );
             }

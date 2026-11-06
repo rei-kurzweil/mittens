@@ -11,6 +11,15 @@ use crate::engine::graphics::{Skin, SkinId};
 use slotmap::{Key, SlotMap};
 use std::collections::HashMap;
 
+include!("visual_world/diagnostic_hooks.rs");
+mod draw_cache;
+mod render_streams;
+mod instance_updates;
+#[cfg(test)]
+mod cache_profile;
+#[cfg(test)]
+use cache_profile::{DrawCacheProfile, VisualChange};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TextureFiltering {
     /// Default: linear filtering for both minification and magnification.
@@ -48,6 +57,8 @@ pub struct DrawBatch {
     pub material: crate::engine::graphics::MaterialHandle,
     pub mesh: crate::engine::graphics::primitives::MeshHandle,
     pub texture: Option<crate::engine::graphics::TextureHandle>,
+    /// Reflective surfaces bind a capture per view without mutating scene topology.
+    pub view_texture_source: Option<ComponentId>,
     pub texture_filtering: TextureFiltering,
     pub quant_steps: f32,
     pub material_instance: Option<MaterialInstanceId>,
@@ -240,6 +251,8 @@ pub struct VisualWorld {
 
     // Cached draw data (rebuilt when dirty)
     dirty_draw_cache: bool,
+    #[cfg(test)]
+    draw_cache_profile: DrawCacheProfile,
     /// True when per-instance data (e.g. model matrices) changed and any cached GPU instance
     /// buffer should be rebuilt/uploaded.
     dirty_instance_data: bool,
@@ -533,6 +546,8 @@ impl Default for VisualWorld {
             morph_inputs: Vec::new(),
 
             dirty_draw_cache: true,
+            #[cfg(test)]
+            draw_cache_profile: DrawCacheProfile::default(),
             dirty_instance_data: true,
             background_order: Vec::new(),
             background_batches: Vec::new(),
@@ -832,7 +847,7 @@ impl VisualWorld {
                 self.instances[idx].bones_base = 0;
                 self.instances[idx].bones_count = 0;
                 self.instances[idx].deformation_dirty = true;
-                self.dirty_instance_data = true;
+                visual_data_dirty!(self, SetSkinMatrices);
             }
             return true;
         }
@@ -847,7 +862,7 @@ impl VisualWorld {
             self.instances[idx].bones_base = base;
             self.instances[idx].bones_count = want_count;
             self.instances[idx].deformation_dirty = true;
-            self.dirty_instance_data = true;
+            visual_data_dirty!(self, SetSkinMatrices);
         } else if old_count != want_count {
             // Reallocate with new size.
             self.bones_free_range(base, old_count);
@@ -856,7 +871,7 @@ impl VisualWorld {
             self.instances[idx].bones_base = base;
             self.instances[idx].bones_count = want_count;
             self.instances[idx].deformation_dirty = true;
-            self.dirty_instance_data = true;
+            visual_data_dirty!(self, SetSkinMatrices);
         }
 
         // Write into the palette.
@@ -919,7 +934,7 @@ impl VisualWorld {
             self.instances[idx].bones_base = bones_base;
             self.instances[idx].bones_count = bones_count;
             self.instances[idx].deformation_dirty = true;
-            self.dirty_instance_data = true;
+            visual_data_dirty!(self, UpdateSkinRange);
             true
         } else {
             false
@@ -2015,452 +2030,6 @@ impl VisualWorld {
         view[0][2] * tx + view[1][2] * ty + view[2][2] * tz + view[3][2]
     }
 
-    fn build_draw_batches_for_order(
-        instances: &[VisualInstance],
-        order: &[u32],
-        out: &mut Vec<DrawBatch>,
-    ) {
-        out.clear();
-        let mut cursor = 0usize;
-        while cursor < order.len() {
-            let idx0 = order[cursor] as usize;
-            let inst0 = instances[idx0];
-            let r0 = inst0.renderable;
-            let material = r0.material;
-            let mesh = r0.mesh;
-            let texture = inst0.texture;
-            let texture_filtering = inst0.texture_filtering;
-            let quant_steps = sanitize_quant_steps(inst0.quant_steps);
-            let material_instance = inst0.material_instance;
-            let stencil_ref = inst0.stencil_ref;
-
-            let start = cursor;
-            cursor += 1;
-
-            while cursor < order.len() {
-                let idx = order[cursor] as usize;
-                let inst = instances[idx];
-                let r = inst.renderable;
-                if r.material == material
-                    && r.mesh == mesh
-                    && inst.texture == texture
-                    && inst.texture_filtering == texture_filtering
-                    && sanitize_quant_steps(inst.quant_steps).to_bits() == quant_steps.to_bits()
-                    && inst.material_instance == material_instance
-                    && inst.stencil_ref == stencil_ref
-                {
-                    cursor += 1;
-                } else {
-                    break;
-                }
-            }
-
-            out.push(DrawBatch {
-                material,
-                mesh,
-                texture,
-                texture_filtering,
-                quant_steps,
-                material_instance,
-                stencil_ref,
-                start,
-                count: cursor - start,
-            });
-        }
-    }
-
-    fn uses_cached_deformation(instance: &VisualInstance, materials: &MaterialRegistry) -> bool {
-        materials
-            .resolved_capabilities(instance.material_instance, instance.renderable.material)
-            .cached_deformation
-    }
-
-    fn build_outline_render_stream(
-        materials: &MaterialRegistry,
-        instances: &[VisualInstance],
-        order: &[u32],
-        ops: &mut Vec<RenderOp>,
-        stream_instances: &mut Vec<u32>,
-    ) {
-        use crate::engine::graphics::MaterialHandle;
-
-        ops.clear();
-        stream_instances.clear();
-        stream_instances.extend_from_slice(order);
-
-        let mut cursor = 0usize;
-        while cursor < order.len() {
-            let first = instances[order[cursor] as usize];
-            let material = if Self::uses_cached_deformation(&first, materials) {
-                MaterialHandle::SKINNED_TOON_MESH
-            } else {
-                MaterialHandle::TOON_MESH
-            };
-            let mesh = first.renderable.mesh;
-            let start = cursor;
-            cursor += 1;
-            while cursor < order.len() {
-                let instance = instances[order[cursor] as usize];
-                let candidate_material = if Self::uses_cached_deformation(&instance, materials) {
-                    MaterialHandle::SKINNED_TOON_MESH
-                } else {
-                    MaterialHandle::TOON_MESH
-                };
-                if candidate_material != material || instance.renderable.mesh != mesh {
-                    break;
-                }
-                cursor += 1;
-            }
-            ops.push(RenderOp::DrawBatch(DrawBatch {
-                material,
-                mesh,
-                texture: None,
-                texture_filtering: TextureFiltering::Linear,
-                quant_steps: 1.0,
-                material_instance: None,
-                stencil_ref: 0,
-                start,
-                count: cursor - start,
-            }));
-        }
-    }
-
-    fn filtered_phase_order(
-        &self,
-        order: &[u32],
-        excluded_instance: Option<InstanceHandle>,
-    ) -> Vec<u32> {
-        let Some(excluded_index) =
-            excluded_instance.and_then(|handle| self.handle_to_index.get(&handle).copied())
-        else {
-            return order.to_vec();
-        };
-        order
-            .iter()
-            .copied()
-            .filter(|&idx| idx as usize != excluded_index)
-            .collect()
-    }
-
-    fn filtered_clip_sources_by_depth(
-        &self,
-        max_depth: u8,
-        excluded_instance: Option<InstanceHandle>,
-    ) -> Vec<Vec<u32>> {
-        let mut clip_sources_by_depth = vec![Vec::new(); max_depth as usize + 1];
-        let excluded_index =
-            excluded_instance.and_then(|handle| self.handle_to_index.get(&handle).copied());
-        for (index, inst) in self.instances.iter().enumerate() {
-            if !inst.is_stencil_clip {
-                continue;
-            }
-            if Some(index) == excluded_index {
-                continue;
-            }
-            clip_sources_by_depth[inst.stencil_ref as usize].push(index as u32);
-        }
-        clip_sources_by_depth
-    }
-
-    /// Build the per-phase DFS render stream for the overlay pass.
-    ///
-    /// `overlay_order` must already be sorted by `(stencil_ref, material, tex, mesh, ...)`.
-    ///
-    /// Algorithm (one level at a time):
-    /// - Non-clip instances at depth D → `DrawBatch` at stencil_ref D.
-    /// - Clip sources at depth D → `EnterClip`, then their visual draw at stencil_ref D+1,
-    ///   then all content at depth D+1 (recursed), then `ExitClip`.
-    fn build_phase_render_stream(
-        instances: &[VisualInstance],
-        phase_order: &[u32],
-        has_stencil_clips: bool,
-        out_ops: &mut Vec<RenderOp>,
-        out_instances: &mut Vec<u32>,
-    ) {
-        out_ops.clear();
-        out_instances.clear();
-
-        if phase_order.is_empty() {
-            return;
-        }
-
-        if !has_stencil_clips {
-            Self::append_stream_batches(instances, phase_order, 0, out_ops, out_instances);
-            return;
-        }
-
-        let max_depth = phase_order
-            .iter()
-            .map(|&i| instances[i as usize].stencil_ref)
-            .chain(
-                instances
-                    .iter()
-                    .filter(|inst| inst.is_stencil_clip)
-                    .map(|inst| inst.stencil_ref),
-            )
-            .max()
-            .unwrap_or(0);
-
-        // Split into per-depth groups preserving sort order within each group.
-        // Group[d] = (non_clip indices, clip_source indices) at stencil_ref == d.
-        let depth_count = max_depth as usize + 1;
-        let mut non_clip_by_depth: Vec<Vec<u32>> = vec![Vec::new(); depth_count];
-        let mut phase_clip_sources_by_depth: Vec<Vec<u32>> = vec![Vec::new(); depth_count];
-        let mut all_clip_sources_by_depth: Vec<Vec<u32>> = vec![Vec::new(); depth_count];
-
-        for (index, inst) in instances.iter().enumerate() {
-            if inst.is_stencil_clip {
-                all_clip_sources_by_depth[inst.stencil_ref as usize].push(index as u32);
-            }
-        }
-
-        for &idx in phase_order {
-            let inst = &instances[idx as usize];
-            let d = inst.stencil_ref as usize;
-            if inst.is_stencil_clip {
-                phase_clip_sources_by_depth[d].push(idx);
-            } else {
-                non_clip_by_depth[d].push(idx);
-            }
-        }
-
-        Self::build_overlay_level(
-            0,
-            max_depth,
-            instances,
-            &non_clip_by_depth,
-            &all_clip_sources_by_depth,
-            &phase_clip_sources_by_depth,
-            out_ops,
-            out_instances,
-        );
-    }
-
-    fn build_phase_render_stream_excluding(
-        &self,
-        phase_order: &[u32],
-        excluded_instance: Option<InstanceHandle>,
-        out_ops: &mut Vec<RenderOp>,
-        out_instances: &mut Vec<u32>,
-    ) {
-        let filtered_order = self.filtered_phase_order(phase_order, excluded_instance);
-        out_ops.clear();
-        out_instances.clear();
-
-        if filtered_order.is_empty() {
-            return;
-        }
-
-        let excluded_index =
-            excluded_instance.and_then(|handle| self.handle_to_index.get(&handle).copied());
-        let has_stencil_clips = self.instances.iter().any(|inst| inst.is_stencil_clip);
-        if !has_stencil_clips {
-            Self::append_stream_batches(
-                &self.instances,
-                &filtered_order,
-                0,
-                out_ops,
-                out_instances,
-            );
-            return;
-        }
-
-        let max_depth = filtered_order
-            .iter()
-            .map(|&i| self.instances[i as usize].stencil_ref)
-            .chain(
-                self.instances
-                    .iter()
-                    .enumerate()
-                    .filter(|inst| {
-                        let (index, inst) = inst;
-                        inst.is_stencil_clip && Some(*index) != excluded_index
-                    })
-                    .map(|(_, inst)| inst.stencil_ref),
-            )
-            .max()
-            .unwrap_or(0);
-
-        let depth_count = max_depth as usize + 1;
-        let mut non_clip_by_depth: Vec<Vec<u32>> = vec![Vec::new(); depth_count];
-        let mut phase_clip_sources_by_depth: Vec<Vec<u32>> = vec![Vec::new(); depth_count];
-        let all_clip_sources_by_depth =
-            self.filtered_clip_sources_by_depth(max_depth, excluded_instance);
-
-        for &idx in &filtered_order {
-            let inst = &self.instances[idx as usize];
-            let d = inst.stencil_ref as usize;
-            if inst.is_stencil_clip {
-                phase_clip_sources_by_depth[d].push(idx);
-            } else {
-                non_clip_by_depth[d].push(idx);
-            }
-        }
-
-        Self::build_overlay_level(
-            0,
-            max_depth,
-            &self.instances,
-            &non_clip_by_depth,
-            &all_clip_sources_by_depth,
-            &phase_clip_sources_by_depth,
-            out_ops,
-            out_instances,
-        );
-    }
-
-    fn build_overlay_level(
-        depth: usize,
-        max_depth: u8,
-        instances: &[VisualInstance],
-        non_clip_by_depth: &[Vec<u32>],
-        all_clip_sources_by_depth: &[Vec<u32>],
-        phase_clip_sources_by_depth: &[Vec<u32>],
-        out_ops: &mut Vec<RenderOp>,
-        out_instances: &mut Vec<u32>,
-    ) {
-        if depth >= non_clip_by_depth.len() {
-            return;
-        }
-
-        // Draw non-clip instances at this depth.
-        let non_clip = &non_clip_by_depth[depth];
-        if !non_clip.is_empty() {
-            Self::append_stream_batches(instances, non_clip, depth as u8, out_ops, out_instances);
-        }
-
-        let all_clip_sources = &all_clip_sources_by_depth[depth];
-        if !all_clip_sources.is_empty() {
-            let parent_ref = depth as u8;
-            let new_ref = parent_ref.saturating_add(1);
-            let phase_clip_sources = &phase_clip_sources_by_depth[depth];
-
-            // Emit EnterClip for every clip source at this depth.
-            for &src_idx in all_clip_sources {
-                if !phase_clip_sources.contains(&src_idx) {
-                    Self::append_clip_stream_instance(out_instances, src_idx);
-                }
-                out_ops.push(RenderOp::EnterClip {
-                    instance_index: src_idx,
-                    parent_ref,
-                    new_ref,
-                });
-            }
-
-            // Clip sources also draw as normal color instances, but at new_ref
-            // (they are inside their own clip region after the INCR).
-            if !phase_clip_sources.is_empty() {
-                Self::append_stream_batches(
-                    instances,
-                    phase_clip_sources,
-                    new_ref,
-                    out_ops,
-                    out_instances,
-                );
-            }
-
-            // Recurse: all content at the next depth is inside the clip region.
-            if depth + 1 <= max_depth as usize {
-                Self::build_overlay_level(
-                    depth + 1,
-                    max_depth,
-                    instances,
-                    non_clip_by_depth,
-                    all_clip_sources_by_depth,
-                    phase_clip_sources_by_depth,
-                    out_ops,
-                    out_instances,
-                );
-            }
-
-            // Emit ExitClip in reverse order (innermost-first, which here means
-            // the last clip source entered is the first exited).
-            for &src_idx in all_clip_sources.iter().rev() {
-                out_ops.push(RenderOp::ExitClip {
-                    instance_index: src_idx,
-                    ref_value: new_ref,
-                });
-            }
-        } else if depth + 1 <= max_depth as usize {
-            // No clips here but deeper levels exist; keep recursing.
-            Self::build_overlay_level(
-                depth + 1,
-                max_depth,
-                instances,
-                non_clip_by_depth,
-                all_clip_sources_by_depth,
-                phase_clip_sources_by_depth,
-                out_ops,
-                out_instances,
-            );
-        }
-    }
-
-    fn append_clip_stream_instance(out_instances: &mut Vec<u32>, instance_index: u32) {
-        if !out_instances.contains(&instance_index) {
-            out_instances.push(instance_index);
-        }
-    }
-
-    /// Append `DrawBatch` ops for a pre-sorted slice of instance indices.
-    ///
-    /// `effective_ref` overrides the per-instance `stencil_ref` — necessary for clip
-    /// sources that are visually drawn inside their own region (`new_ref`).
-    fn append_stream_batches(
-        instances: &[VisualInstance],
-        indices: &[u32],
-        effective_ref: u8,
-        out_ops: &mut Vec<RenderOp>,
-        out_instances: &mut Vec<u32>,
-    ) {
-        let mut cursor = 0usize;
-        while cursor < indices.len() {
-            let idx0 = indices[cursor] as usize;
-            let inst0 = &instances[idx0];
-            let r0 = inst0.renderable;
-            let material = r0.material;
-            let mesh = r0.mesh;
-            let texture = inst0.texture;
-            let texture_filtering = inst0.texture_filtering;
-            let quant_steps = sanitize_quant_steps(inst0.quant_steps);
-            let material_instance = inst0.material_instance;
-
-            let start = out_instances.len();
-            out_instances.push(indices[cursor]);
-            cursor += 1;
-
-            while cursor < indices.len() {
-                let idx = indices[cursor] as usize;
-                let inst = &instances[idx];
-                let r = inst.renderable;
-                if r.material == material
-                    && r.mesh == mesh
-                    && inst.texture == texture
-                    && inst.texture_filtering == texture_filtering
-                    && sanitize_quant_steps(inst.quant_steps).to_bits() == quant_steps.to_bits()
-                    && inst.material_instance == material_instance
-                {
-                    out_instances.push(indices[cursor]);
-                    cursor += 1;
-                } else {
-                    break;
-                }
-            }
-
-            out_ops.push(RenderOp::DrawBatch(DrawBatch {
-                material,
-                mesh,
-                texture,
-                texture_filtering,
-                quant_steps,
-                material_instance,
-                stencil_ref: effective_ref,
-                start,
-                count: out_instances.len() - start,
-            }));
-        }
-    }
-
     pub fn clear_color(&self) -> [f32; 4] {
         self.clear_color
     }
@@ -2557,8 +2126,8 @@ impl VisualWorld {
 
         self.ambient_light = [0.0, 0.0, 0.0];
 
-        self.dirty_draw_cache = true;
-        self.dirty_instance_data = true;
+        visual_topology_dirty!(self, Clear);
+        visual_data_dirty!(self, Clear);
         self.dirty_camera = true;
         self.background_order.clear();
         self.background_batches.clear();
@@ -2886,7 +2455,7 @@ impl VisualWorld {
             self.instances[index].deformed_base = new_range.base;
             self.instances[index].deformed_count = new_range.vertex_count;
             self.instances[index].deformation_dirty = desired != 0;
-            self.dirty_instance_data = true;
+            visual_data_dirty!(self, SyncDeformationRanges);
         }
         grew
     }
@@ -3142,7 +2711,7 @@ impl VisualWorld {
         if let Some(&idx) = self.handle_to_index.get(&handle) {
             self.instances[idx].is_stencil_clip = true;
             self.instances[idx].stencil_ref = stencil_ref;
-            self.dirty_draw_cache = true;
+            visual_topology_dirty!(self, RegisterStencilClip);
             true
         } else {
             false
@@ -3153,7 +2722,7 @@ impl VisualWorld {
     pub fn unregister_stencil_clip(&mut self, handle: InstanceHandle) -> bool {
         if let Some(&idx) = self.handle_to_index.get(&handle) {
             self.instances[idx].is_stencil_clip = false;
-            self.dirty_draw_cache = true;
+            visual_topology_dirty!(self, UnregisterStencilClip);
             true
         } else {
             false
@@ -3167,7 +2736,7 @@ impl VisualWorld {
                 return true;
             }
             self.instances[idx].stencil_ref = stencil_ref;
-            self.dirty_draw_cache = true;
+            visual_topology_dirty!(self, UpdateStencilRef);
             true
         } else {
             false
@@ -3195,753 +2764,13 @@ impl VisualWorld {
         let order =
             self.filtered_phase_order(&self.transparent_multi_draw_order, excluded_instance);
         let mut batches = Vec::new();
-        Self::build_draw_batches_for_order(&self.instances, &order, &mut batches);
+        Self::build_draw_batches_for_order(&self.materials, &self.instances, &order, &mut batches);
         (order, batches)
     }
 
     /// Call once per frame before rendering. Cheap if nothing changed.
     ///
     /// Returns `true` if the cached draw order/batches were rebuilt this call.
-    pub fn prepare_draw_cache(&mut self) -> bool {
-        if !self.dirty_draw_cache {
-            return false;
-        }
-
-        self.background_order.clear();
-        self.background_occluded_lit_order.clear();
-        self.background_occluded_lit_emissive_order.clear();
-        self.background_occluded_lit_emissive_batches.clear();
-        self.draw_order.clear();
-        self.emissive_draw_order.clear();
-        self.outline_order.clear();
-        self.cutout_order.clear();
-        self.emissive_cutout_order.clear();
-        self.refraction_order.clear();
-        self.rough_transmission_order.clear();
-        self.transparent_single_draw_order.clear();
-        self.overlay_order.clear();
-        self.stencil_clip_order.clear();
-        // Opaque pass: exclude anything that is transparent.
-        for i in 0..self.instances.len() {
-            let inst = &self.instances[i];
-            let capabilities = self
-                .materials
-                .resolved_capabilities(inst.material_instance, inst.renderable.material);
-            if inst.toon_outline.is_some_and(|outline| outline.width > 0.0)
-                && !inst.overlay
-                && !inst.background
-                && !inst.transparent_cutout
-                && !Self::is_transparent(inst)
-                && capabilities.material.transmission
-                    == super::materials::MaterialTransmission::None
-                && inst.stencil_ref == 0
-            {
-                self.outline_order.push(i as u32);
-            }
-            if inst.is_stencil_clip {
-                self.stencil_clip_order.push(i as u32);
-            }
-            if inst.overlay {
-                self.overlay_order.push(i as u32);
-            } else if inst.background {
-                if inst.background_occluded_lit {
-                    self.background_occluded_lit_order.push(i as u32);
-                } else {
-                    self.background_order.push(i as u32);
-                }
-            } else if capabilities.material.transmission
-                == super::materials::MaterialTransmission::Sharp
-            {
-                self.refraction_order.push(i as u32);
-            } else if capabilities.material.transmission
-                == super::materials::MaterialTransmission::Rough
-            {
-                self.rough_transmission_order.push(i as u32);
-            } else if inst.transparent_cutout {
-                self.cutout_order.push(i as u32);
-            } else if !Self::is_transparent(inst) {
-                self.draw_order.push(i as u32);
-            } else if !inst.multiple_layers {
-                self.transparent_single_draw_order.push(i as u32);
-            }
-        }
-        self.stencil_clip_order
-            .sort_by_key(|&i| self.instances[i as usize].stencil_ref);
-        let has_stencil_clips = !self.stencil_clip_order.is_empty();
-
-        self.outline_order.sort_by_key(|&i| {
-            let instance = self.instances[i as usize];
-            (
-                u8::from(Self::uses_cached_deformation(&instance, &self.materials)),
-                instance.renderable.mesh.0,
-            )
-        });
-        Self::build_outline_render_stream(
-            &self.materials,
-            &self.instances,
-            &self.outline_order,
-            &mut self.outline_stream,
-            &mut self.outline_stream_instances,
-        );
-
-        // Background pass: batch aggressively (order does not depend on view).
-        // NOTE: Background instances are excluded from the normal opaque/transparent lists.
-        self.background_order.sort_by_key(|&i| {
-            let inst = self.instances[i as usize];
-            let r = inst.renderable;
-            let tex = inst.texture.map(|t| t.0).unwrap_or(u32::MAX);
-            (
-                r.material.0,
-                r.mesh.0,
-                tex,
-                inst.texture_filtering as u8,
-                sanitize_quant_steps(inst.quant_steps).to_bits(),
-                inst.material_instance.map(|id| id.data().as_ffi()),
-            )
-        });
-        let instances = &self.instances;
-        let background_draw_order = &self.background_order;
-        Self::build_draw_batches_for_order(
-            instances,
-            background_draw_order,
-            &mut self.background_batches,
-        );
-
-        // Background (occluded+lit) pass: same batching strategy.
-        self.background_occluded_lit_order.sort_by_key(|&i| {
-            let inst = self.instances[i as usize];
-            let r = inst.renderable;
-            let tex = inst.texture.map(|t| t.0).unwrap_or(u32::MAX);
-            (
-                r.material.0,
-                r.mesh.0,
-                tex,
-                inst.texture_filtering as u8,
-                sanitize_quant_steps(inst.quant_steps).to_bits(),
-                inst.material_instance.map(|id| id.data().as_ffi()),
-            )
-        });
-        let background_occluded_lit_draw_order = &self.background_occluded_lit_order;
-        Self::build_draw_batches_for_order(
-            instances,
-            background_occluded_lit_draw_order,
-            &mut self.background_occluded_lit_batches,
-        );
-
-        if self
-            .background_occluded_lit_order
-            .iter()
-            .any(|&i| Self::is_emissive_instance(&self.instances[i as usize], &self.materials))
-        {
-            self.background_occluded_lit_emissive_order.extend(
-                self.background_occluded_lit_order
-                    .iter()
-                    .copied()
-                    .filter(|&i| {
-                        Self::is_emissive_instance(&self.instances[i as usize], &self.materials)
-                    }),
-            );
-            Self::build_draw_batches_for_order(
-                instances,
-                &self.background_occluded_lit_emissive_order,
-                &mut self.background_occluded_lit_emissive_batches,
-            );
-        }
-
-        // Sort by (stencil_ref, material, tex, mesh, filtering) so stencil-clipped
-        // instances group with their clip region. tex before mesh matches overlay convention
-        // (untextured quads draw before textured glyphs at same depth).
-        self.draw_order.sort_by_key(|&i| {
-            let inst = self.instances[i as usize];
-            let r = inst.renderable;
-            let tex = inst.texture.map_or(0, |t| t.0.wrapping_add(1));
-            (
-                inst.stencil_ref,
-                r.material.0,
-                tex,
-                r.mesh.0,
-                inst.texture_filtering as u8,
-                sanitize_quant_steps(inst.quant_steps).to_bits(),
-                inst.material_instance.map(|id| id.data().as_ffi()),
-            )
-        });
-
-        // Build the DFS render stream for the opaque phase.
-        Self::build_phase_render_stream(
-            instances,
-            &self.draw_order,
-            has_stencil_clips,
-            &mut self.opaque_stream,
-            &mut self.opaque_stream_instances,
-        );
-
-        self.emissive_draw_order.extend(
-            self.draw_order.iter().copied().filter(|&i| {
-                Self::is_emissive_instance(&self.instances[i as usize], &self.materials)
-            }),
-        );
-        let emissive_draw_order = &self.emissive_draw_order;
-        Self::build_draw_batches_for_order(
-            instances,
-            emissive_draw_order,
-            &mut self.emissive_draw_batches,
-        );
-
-        // Cutout pass: batch aggressively (order does not depend on view).
-        self.cutout_order.sort_by_key(|&i| {
-            let inst = self.instances[i as usize];
-            let r = inst.renderable;
-            let tex = inst.texture.map(|t| t.0).unwrap_or(u32::MAX);
-            (
-                inst.stencil_ref,
-                r.material.0,
-                r.mesh.0,
-                tex,
-                inst.texture_filtering as u8,
-                sanitize_quant_steps(inst.quant_steps).to_bits(),
-                inst.material_instance.map(|id| id.data().as_ffi()),
-            )
-        });
-        Self::build_phase_render_stream(
-            instances,
-            &self.cutout_order,
-            has_stencil_clips,
-            &mut self.cutout_stream,
-            &mut self.cutout_stream_instances,
-        );
-
-        self.refraction_order.sort_by_key(|&i| {
-            let inst = self.instances[i as usize];
-            let r = inst.renderable;
-            let tex = inst.texture.map(|t| t.0).unwrap_or(u32::MAX);
-            (
-                inst.stencil_ref,
-                r.material.0,
-                r.mesh.0,
-                tex,
-                inst.texture_filtering as u8,
-            )
-        });
-        Self::build_phase_render_stream(
-            instances,
-            &self.refraction_order,
-            has_stencil_clips,
-            &mut self.refraction_stream,
-            &mut self.refraction_stream_instances,
-        );
-
-        self.rough_transmission_order.sort_by_key(|&i| {
-            let inst = self.instances[i as usize];
-            let r = inst.renderable;
-            let tex = inst.texture.map(|t| t.0).unwrap_or(u32::MAX);
-            (
-                inst.stencil_ref,
-                r.material.0,
-                r.mesh.0,
-                tex,
-                inst.texture_filtering as u8,
-            )
-        });
-        Self::build_phase_render_stream(
-            instances,
-            &self.rough_transmission_order,
-            has_stencil_clips,
-            &mut self.rough_transmission_stream,
-            &mut self.rough_transmission_stream_instances,
-        );
-
-        self.emissive_cutout_order.extend(
-            self.cutout_order.iter().copied().filter(|&i| {
-                Self::is_emissive_instance(&self.instances[i as usize], &self.materials)
-            }),
-        );
-        let emissive_cutout_order = &self.emissive_cutout_order;
-        Self::build_draw_batches_for_order(
-            instances,
-            emissive_cutout_order,
-            &mut self.emissive_cutout_batches,
-        );
-
-        // Single-layer transparent pass: batch aggressively (order does not depend on view).
-        self.transparent_single_draw_order.sort_by_key(|&i| {
-            let inst = self.instances[i as usize];
-            let r = inst.renderable;
-            let tex = inst.texture.map(|t| t.0).unwrap_or(u32::MAX);
-            (
-                inst.stencil_ref,
-                r.material.0,
-                r.mesh.0,
-                tex,
-                inst.texture_filtering as u8,
-                sanitize_quant_steps(inst.quant_steps).to_bits(),
-                inst.material_instance.map(|id| id.data().as_ffi()),
-            )
-        });
-        Self::build_phase_render_stream(
-            instances,
-            &self.transparent_single_draw_order,
-            has_stencil_clips,
-            &mut self.transparent_single_stream,
-            &mut self.transparent_single_stream_instances,
-        );
-
-        // Overlay pass: no-texture instances (e.g. text backgrounds) must draw before
-        // textured glyphs so that depth-write from glyph edge pixels does not block
-        // the background quad.  tex=0 for untextured, tex=handle+1 for textured, so
-        // placing tex BEFORE mesh ensures untextured always sorts first regardless of
-        // which MeshHandle was allocated earlier.
-        self.overlay_order.sort_by_key(|&i| {
-            let inst = self.instances[i as usize];
-            let r = inst.renderable;
-            let tex = inst.texture.map_or(0, |t| t.0.wrapping_add(1));
-            (
-                inst.stencil_ref,
-                r.material.0,
-                tex,
-                r.mesh.0,
-                inst.texture_filtering as u8,
-                sanitize_quant_steps(inst.quant_steps).to_bits(),
-                inst.material_instance.map(|id| id.data().as_ffi()),
-            )
-        });
-        // Build the DFS render stream for the overlay phase.
-        Self::build_phase_render_stream(
-            instances,
-            &self.overlay_order,
-            has_stencil_clips,
-            &mut self.overlay_stream,
-            &mut self.overlay_stream_instances,
-        );
-
-        self.dirty_draw_cache = false;
-        true
-    }
-
-    pub fn prepare_transparent_multi_draw_cache_for_eye(
-        &mut self,
-        target: CameraTarget,
-        eye: usize,
-    ) {
-        let view = self.camera_view_for_eye(target, eye);
-        self.prepare_transparent_multi_draw_cache_for_view(view);
-    }
-
-    /// Rebuild multi-layer transparent draw order/batches for a specific view matrix.
-    pub fn prepare_transparent_multi_draw_cache_for_view(&mut self, view: [[f32; 4]; 4]) {
-        self.transparent_multi_draw_order.clear();
-
-        for i in 0..self.instances.len() {
-            let inst = &self.instances[i];
-            if inst.overlay {
-                continue;
-            }
-            if inst.background {
-                continue;
-            }
-            if inst.transparent_cutout {
-                continue;
-            }
-            if inst.multiple_layers && Self::is_transparent(inst) {
-                self.transparent_multi_draw_order.push(i as u32);
-            }
-        }
-
-        if self.transparent_multi_draw_order.is_empty() {
-            self.transparent_multi_draw_batches.clear();
-            return;
-        }
-
-        // Back-to-front for blending.
-        self.transparent_multi_draw_order.sort_by(|&a, &b| {
-            let ia = self.instances[a as usize];
-            let ib = self.instances[b as usize];
-            let za = Self::view_space_z(view, ia.transform.model);
-            let zb = Self::view_space_z(view, ib.transform.model);
-            za.partial_cmp(&zb)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.cmp(&b))
-        });
-
-        let instances = &self.instances;
-        let transparent_draw_order = &self.transparent_multi_draw_order;
-        Self::build_draw_batches_for_order(
-            instances,
-            transparent_draw_order,
-            &mut self.transparent_multi_draw_batches,
-        );
-    }
-
-    pub fn register(
-        &mut self,
-        cid: ComponentId,
-        renderable: GpuRenderable,
-        transform: Transform,
-        color: [f32; 4],
-        opacity: f32,
-        multiple_layers: bool,
-        transparent_cutout: bool,
-        background: bool,
-        background_occluded_lit: bool,
-        overlay: bool,
-        emissive: f32,
-        texture: Option<crate::engine::graphics::TextureHandle>,
-        quant_steps: f32,
-    ) -> InstanceHandle {
-        let handle = InstanceHandle(self.next_handle);
-        self.next_handle = self.next_handle.wrapping_add(1);
-
-        let idx = self.instances.len();
-        self.instances.push(VisualInstance {
-            component: cid,
-            renderable,
-            transform,
-            color,
-            opacity: if opacity.is_finite() {
-                opacity.clamp(0.0, 1.0)
-            } else {
-                1.0
-            },
-            multiple_layers,
-            transparent_cutout,
-            background,
-            background_occluded_lit,
-            overlay,
-            emissive: if emissive.is_finite() {
-                emissive.max(0.0)
-            } else {
-                0.0
-            },
-            texture,
-            texture_filtering: TextureFiltering::default(),
-            quant_steps: sanitize_quant_steps(quant_steps),
-            material_instance: None,
-            toon_outline: None,
-            transmission: [1.5, 0.1, 1.0, 0.02],
-            transmission_roughness: 0.0,
-
-            bones_base: 0,
-            bones_count: 0,
-            deformed_base: 0,
-            deformed_count: 0,
-            deformation_dirty: false,
-
-            stencil_ref: 0,
-            is_stencil_clip: false,
-        });
-        self.handle_to_index.insert(handle, idx);
-        self.component_to_handle.insert(cid, handle);
-        self.morph_inputs.push(Vec::new());
-
-        self.dirty_draw_cache = true;
-        self.dirty_instance_data = true;
-        handle
-    }
-
-    pub fn update_quant_steps(&mut self, handle: InstanceHandle, quant_steps: f32) -> bool {
-        if let Some(&idx) = self.handle_to_index.get(&handle) {
-            let q = sanitize_quant_steps(quant_steps);
-            if self.instances[idx].quant_steps.to_bits() == q.to_bits() {
-                return true;
-            }
-            self.instances[idx].quant_steps = q;
-            // Quantization affects material UBO selection => batching.
-            self.dirty_draw_cache = true;
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn bind_material_instance(
-        &mut self,
-        handle: InstanceHandle,
-        material: Option<MaterialInstanceId>,
-    ) -> bool {
-        if material.is_some_and(|id| self.materials.instance(id).is_none()) {
-            return false;
-        }
-        let Some(&idx) = self.handle_to_index.get(&handle) else {
-            return false;
-        };
-        if self.instances[idx].material_instance != material {
-            if let Some(previous) = self.instances[idx].material_instance {
-                if let Some(consumers) = self.material_consumers.get_mut(previous) {
-                    consumers.retain(|&consumer| consumer != handle);
-                }
-            }
-            if let Some(id) = material {
-                if self.material_consumers.get(id).is_none() {
-                    self.material_consumers.insert(id, Vec::new());
-                }
-                self.material_consumers.get_mut(id).unwrap().push(handle);
-            }
-            self.instances[idx].material_instance = material;
-            self.dirty_draw_cache = true;
-        }
-        true
-    }
-
-    pub fn anime_shading(&self, handle: InstanceHandle) -> Option<AnimeShadingParams> {
-        let instance = self.instance(handle)?;
-        Some(
-            instance
-                .material_instance
-                .and_then(|id| self.materials.instance(id))
-                .and_then(|record| {
-                    self.materials
-                        .definition(record.definition)
-                        .map(|definition| {
-                            AnimeShadingParams::from_material(
-                                &definition.parameter_schema,
-                                &record.values,
-                            )
-                        })
-                })
-                .unwrap_or_default(),
-        )
-    }
-
-    pub fn remove_material_source(&mut self, source: ComponentId) {
-        let Some(id) = self.materials.remove_source(source) else {
-            return;
-        };
-        let consumers = self.material_consumers.remove(id).unwrap_or_default();
-        for consumer in consumers {
-            if let Some(&index) = self.handle_to_index.get(&consumer) {
-                let instance = &mut self.instances[index];
-                instance.material_instance = None;
-                instance.renderable.material = match instance.renderable.material {
-                    super::MaterialHandle::ANIME_MESH => super::MaterialHandle::TOON_MESH,
-                    super::MaterialHandle::SKINNED_ANIME_MESH => {
-                        super::MaterialHandle::SKINNED_TOON_MESH
-                    }
-                    other if other.0 >= 1024 => super::MaterialHandle::TOON_MESH,
-                    other => other,
-                };
-                self.dirty_draw_cache = true;
-            }
-        }
-    }
-
-    pub(crate) fn material_consumer_components(
-        &self,
-        id: MaterialInstanceId,
-    ) -> impl Iterator<Item = ComponentId> + '_ {
-        self.material_consumers
-            .get(id)
-            .into_iter()
-            .flatten()
-            .filter_map(|&handle| self.instance(handle).map(|instance| instance.component))
-    }
-
-    pub fn update_toon_outline(
-        &mut self,
-        handle: InstanceHandle,
-        outline: Option<ToonOutlineParams>,
-    ) -> bool {
-        let Some(&idx) = self.handle_to_index.get(&handle) else {
-            return false;
-        };
-        if self.instances[idx].toon_outline == outline {
-            return true;
-        }
-        self.instances[idx].toon_outline = outline;
-        self.dirty_draw_cache = true;
-        self.dirty_instance_data = true;
-        true
-    }
-
-    pub fn remove(&mut self, handle: InstanceHandle) -> bool {
-        if let Some(idx) = self.handle_to_index.remove(&handle) {
-            // Free any skin allocation before removing the instance.
-            let old_base = self.instances[idx].bones_base;
-            let old_count = self.instances[idx].bones_count;
-            if old_count != 0 {
-                self.bones_free_range(old_base, old_count);
-            }
-            self.deformation_ranges.free(DeformationRange {
-                base: self.instances[idx].deformed_base,
-                vertex_count: self.instances[idx].deformed_count,
-            });
-
-            if let Some(id) = self.instances[idx].material_instance {
-                if let Some(consumers) = self.material_consumers.get_mut(id) {
-                    consumers.retain(|&consumer| consumer != handle);
-                }
-            }
-            self.instances.swap_remove(idx);
-
-            if idx < self.instances.len() {
-                // NOTE: This is O(n). Consider storing index->handle too if it becomes hot.
-                if let Some((moved_handle, _)) = self
-                    .handle_to_index
-                    .iter()
-                    .find(|(_, i)| **i == self.instances.len())
-                {
-                    self.handle_to_index.insert(*moved_handle, idx);
-                }
-            }
-
-            self.component_to_handle.retain(|_, &mut h| h != handle);
-
-            self.dirty_draw_cache = true;
-            self.dirty_instance_data = true;
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn update_transform(&mut self, handle: InstanceHandle, transform: Transform) -> bool {
-        if let Some(&idx) = self.handle_to_index.get(&handle) {
-            self.instances[idx].transform = transform;
-            self.dirty_instance_data = true;
-            // transform-only doesn’t affect batching by (material, mesh)
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn update_model(&mut self, handle: InstanceHandle, model: TransformMatrix) -> bool {
-        if let Some(&idx) = self.handle_to_index.get(&handle) {
-            self.instances[idx].transform.model = model;
-            self.instances[idx].transform.matrix_world = model;
-            self.dirty_instance_data = true;
-            // model-only doesn’t affect batching by (material, mesh)
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn update_color(&mut self, handle: InstanceHandle, color: [f32; 4]) -> bool {
-        if let Some(&idx) = self.handle_to_index.get(&handle) {
-            self.instances[idx].color = color;
-            self.dirty_instance_data = true;
-            // Color alpha can change transparent/opaque classification.
-            self.dirty_draw_cache = true;
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn update_opacity(&mut self, handle: InstanceHandle, opacity: f32) -> bool {
-        self.update_opacity_state(handle, opacity, None)
-    }
-
-    pub fn update_opacity_state(
-        &mut self,
-        handle: InstanceHandle,
-        opacity: f32,
-        multiple_layers: impl Into<Option<bool>>,
-    ) -> bool {
-        if let Some(&idx) = self.handle_to_index.get(&handle) {
-            let o = if opacity.is_finite() {
-                opacity.clamp(0.0, 1.0)
-            } else {
-                1.0
-            };
-            let mut changed = false;
-
-            if (self.instances[idx].opacity - o).abs() >= f32::EPSILON {
-                self.instances[idx].opacity = o;
-                changed = true;
-            }
-
-            if let Some(ml) = multiple_layers.into() {
-                if self.instances[idx].multiple_layers != ml {
-                    self.instances[idx].multiple_layers = ml;
-                    changed = true;
-                }
-            }
-
-            if !changed {
-                return true;
-            }
-            self.dirty_instance_data = true;
-            // Opacity changes can change transparent/opaque classification.
-            self.dirty_draw_cache = true;
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn update_transparent_cutout(&mut self, handle: InstanceHandle, enabled: bool) -> bool {
-        if let Some(&idx) = self.handle_to_index.get(&handle) {
-            if self.instances[idx].transparent_cutout == enabled {
-                return true;
-            }
-            self.instances[idx].transparent_cutout = enabled;
-            // Cutout changes affect pass classification.
-            self.dirty_draw_cache = true;
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn update_emissive(&mut self, handle: InstanceHandle, emissive: f32) -> bool {
-        if let Some(&idx) = self.handle_to_index.get(&handle) {
-            self.instances[idx].emissive = if emissive.is_finite() {
-                emissive.max(0.0)
-            } else {
-                0.0
-            };
-            self.dirty_instance_data = true;
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn update_material(
-        &mut self,
-        handle: InstanceHandle,
-        material: crate::engine::graphics::MaterialHandle,
-    ) -> bool {
-        if let Some(&idx) = self.handle_to_index.get(&handle) {
-            if self.instances[idx].renderable.material == material {
-                return true;
-            }
-            self.instances[idx].renderable.material = material;
-            self.dirty_draw_cache = true;
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn update_transmission(&mut self, handle: InstanceHandle, options: [f32; 4]) -> bool {
-        if let Some(&idx) = self.handle_to_index.get(&handle) {
-            self.instances[idx].transmission = options;
-            self.dirty_instance_data = true;
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn update_transmission_roughness(
-        &mut self,
-        handle: InstanceHandle,
-        roughness: f32,
-    ) -> bool {
-        if let Some(&idx) = self.handle_to_index.get(&handle) {
-            self.instances[idx].transmission_roughness = if roughness.is_finite() {
-                roughness.clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-            self.dirty_instance_data = true;
-            true
-        } else {
-            false
-        }
-    }
-
     pub fn set_bloom_settings(&mut self, enabled: bool, layers: u32) {
         self.bloom_runtime_enabled = enabled;
         self.bloom_runtime_layers = layers.clamp(1, 6);
@@ -4030,7 +2859,7 @@ impl VisualWorld {
                     instance.texture = None;
                 }
             }
-            self.dirty_draw_cache = true;
+            visual_topology_dirty!(self, RetainRuntimeTextures);
             self.retired_runtime_textures.extend(removed);
         }
     }
@@ -4041,100 +2870,5 @@ impl VisualWorld {
         std::mem::take(&mut self.retired_runtime_textures)
     }
 
-    pub fn update_texture(
-        &mut self,
-        handle: InstanceHandle,
-        texture: Option<crate::engine::graphics::TextureHandle>,
-    ) -> bool {
-        if let Some(&idx) = self.handle_to_index.get(&handle) {
-            self.instances[idx].texture = texture;
-            // Texture affects batching (descriptor binding), but not instance vertex data.
-            self.dirty_draw_cache = true;
-            true
-        } else {
-            false
-        }
-    }
 
-    pub fn update_texture_filtering(
-        &mut self,
-        handle: InstanceHandle,
-        filtering: TextureFiltering,
-    ) -> bool {
-        if let Some(&idx) = self.handle_to_index.get(&handle) {
-            self.instances[idx].texture_filtering = filtering;
-            // Filtering affects batching (sampler binding), but not instance vertex data.
-            self.dirty_draw_cache = true;
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn update(
-        &mut self,
-        handle: InstanceHandle,
-        renderable: GpuRenderable,
-        transform: Transform,
-    ) -> bool {
-        if let Some(&idx) = self.handle_to_index.get(&handle) {
-            let deformation_input_changed = self.instances[idx].renderable.mesh != renderable.mesh;
-            // Preserve per-instance color when updating renderable/transform.
-            let color = self.instances[idx].color;
-            let opacity = self.instances[idx].opacity;
-            let multiple_layers = self.instances[idx].multiple_layers;
-            let transparent_cutout = self.instances[idx].transparent_cutout;
-            let background = self.instances[idx].background;
-            let background_occluded_lit = self.instances[idx].background_occluded_lit;
-            let overlay = self.instances[idx].overlay;
-            let emissive = self.instances[idx].emissive;
-            let texture = self.instances[idx].texture;
-            let texture_filtering = self.instances[idx].texture_filtering;
-            let quant_steps = self.instances[idx].quant_steps;
-            let material_instance = self.instances[idx].material_instance;
-            let toon_outline = self.instances[idx].toon_outline;
-            let transmission = self.instances[idx].transmission;
-            let transmission_roughness = self.instances[idx].transmission_roughness;
-            let bones_base = self.instances[idx].bones_base;
-            let bones_count = self.instances[idx].bones_count;
-            let deformed_base = self.instances[idx].deformed_base;
-            let deformed_count = self.instances[idx].deformed_count;
-            let deformation_dirty =
-                self.instances[idx].deformation_dirty || deformation_input_changed;
-            let stencil_ref = self.instances[idx].stencil_ref;
-            let is_stencil_clip = self.instances[idx].is_stencil_clip;
-            self.instances[idx] = VisualInstance {
-                component: self.instances[idx].component,
-                renderable,
-                transform,
-                color,
-                opacity,
-                multiple_layers,
-                transparent_cutout,
-                background,
-                background_occluded_lit,
-                overlay,
-                emissive,
-                texture,
-                texture_filtering,
-                quant_steps,
-                material_instance,
-                toon_outline,
-                transmission,
-                transmission_roughness,
-                bones_base,
-                bones_count,
-                deformed_base,
-                deformed_count,
-                deformation_dirty,
-                stencil_ref,
-                is_stencil_clip,
-            };
-            self.dirty_draw_cache = true; // renderable changes likely affect sort/batch
-            self.dirty_instance_data = true;
-            true
-        } else {
-            false
-        }
-    }
 }
