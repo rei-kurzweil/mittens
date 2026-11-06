@@ -1,6 +1,6 @@
 // Input and heading refreshes publish commands to existing native Velocity.
 // This removable asset registers no global callback or MMS pose integration.
-export fn pickup_driving(truck,motion,driver_eye) {
+export fn pickup_driving(truck,motion,driver_eye,proximity_activation) {
     if driver_eye==null { driver_eye=[-0.48,1.90,-0.20] }
     let entry_frame=T.position(-1.2,1.05,-0.25) { name="pickup_entry_frame" }
     let entry=Zone.cube([0.85,1.05,1.0]).at(entry_frame).role("vehicle_entry") { name="pickup_entry_zone" }
@@ -34,8 +34,20 @@ export fn pickup_driving(truck,motion,driver_eye) {
         state.last_throttle=0 state.last_steering=0 state.last_brake=false
         clear_drive_motion()
     }
-    on(mountable,"MountStarted",fn(event) { state.mounted=true reset() })
-    on(mountable,"MountEnded",fn(event) { state.mounted=false reset() })
+    on(mountable,"MountStarted",fn(event) {
+        state.mounted=true
+        if proximity_activation==true {truck.activity_mounted(true)}
+        reset()
+        let controller=query("#ship_input_controller")
+        if controller {controller.set_driver(truck)}
+    })
+    on(mountable,"MountEnded",fn(event) {
+        state.mounted=false
+        reset()
+        if proximity_activation==true {truck.activity_mounted(false)}
+        let controller=query("#ship_input_controller")
+        if controller {controller.clear_driver(truck)}
+    })
     // Called only by the persistent ship input controller while this truck lives.
     truck.ship_input=fn(kind,event) {
         if !state.mounted {return}
@@ -52,7 +64,10 @@ export fn pickup_driving(truck,motion,driver_eye) {
         if state.mounted && !state.brake && state.last_throttle!=0 && state.last_steering!=0 {publish(true)}
     }
     truck.drive_command=fn(throttle,steering,braking) {
+        let moving=!braking && Math.abs(throttle)>=0.16
+        if moving && proximity_activation==true {truck.activity_commanded(true)}
         state.axis=[Math.clamp(steering,-1,1),Math.clamp(throttle,-1,1)] state.brake=braking publish(false)
+        if !moving && proximity_activation==true {truck.activity_commanded(false)}
     }
     truck.drive_status=fn() {return {mounted=state.mounted linear=motion.linear() angular=motion.angular()}}
     truck.attach(mountable)

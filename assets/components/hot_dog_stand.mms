@@ -13,7 +13,7 @@ import { pose as vendor_pose } from "./characters/lumae/poses/hot-dog-vendor.pos
 export fn hot_dog_stand() {
     return T {
         name = "ship_hot_dog_stand"
-        T.position(-2.2, 0.0, -1.1) { pickup_truck(null, mini_fridge()) }
+        T.position(-2.2, 0.0, -1.1) { pickup_truck(null, mini_fridge(), null, true) }
         T.rotation(0.0, Math.pi, 0.0) { hot_dog_grill() }
         ship_solid([1.30, 0.47, 0.0], [1.20, 0.94, 0.72], [0.48, 0.42, 0.29])
         T.position(1.30, 0.94, 0.0).rotation(0.0, Math.pi, 0.0) { fountain_drink_machine() }

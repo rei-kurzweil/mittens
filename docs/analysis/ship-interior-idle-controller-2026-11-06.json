@@ -1,0 +1,347 @@
+{
+  "method": "CPU-only stationary bridge, optimized truck activation, 240 warmup / 480 sampled frames per process. Controller series ABAB, sensor series ABBA; separate process baselines.",
+  "controller_control": "Omit ship_input_controller() entirely. No driver is mounted and there are no synthetic raw input events.",
+  "sensor_control": "Disable only pickup_activity_inner/outer events after settling; retain geometry, native motion/collision and washroom sensors.",
+  "runs": {
+    "controller": [
+      {
+        "case": "full",
+        "components": 16444,
+        "frames": 480,
+        "instances": 2017,
+        "load_and_warmup_ms": 3415.927506,
+        "models": [
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/components/characters/lumae/lumae.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/models/mitten.glb"
+        ],
+        "prepare": {
+          "max_ms": 0.69701,
+          "mean_ms": 0.5349031062499996,
+          "p50_ms": 0.527097,
+          "p95_ms": 0.6028319999999999
+        },
+        "sample_mesh_uploads": 0,
+        "spring_stage_mean_ms": [
+          0.9643868749999989,
+          0.07129061666666664,
+          0.03007775,
+          0.011765910416666671
+        ],
+        "total": {
+          "max_ms": 6.208089,
+          "mean_ms": 4.9567127000000015,
+          "p50_ms": 4.9528810000000005,
+          "p95_ms": 5.480874
+        },
+        "update": {
+          "max_ms": 5.598469,
+          "mean_ms": 4.421670129166667,
+          "p50_ms": 4.439727,
+          "p95_ms": 4.899617
+        }
+      },
+      {
+        "case": "no_input_controller",
+        "components": 16443,
+        "frames": 480,
+        "instances": 2017,
+        "load_and_warmup_ms": 3206.630244,
+        "models": [
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/components/characters/lumae/lumae.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/models/mitten.glb"
+        ],
+        "prepare": {
+          "max_ms": 0.8466170000000001,
+          "mean_ms": 0.47962334375000004,
+          "p50_ms": 0.47075300000000003,
+          "p95_ms": 0.523545
+        },
+        "sample_mesh_uploads": 0,
+        "spring_stage_mean_ms": [
+          0.9746327520833336,
+          0.07500198750000005,
+          0.02962456666666666,
+          0.011481447916666677
+        ],
+        "total": {
+          "max_ms": 7.325655,
+          "mean_ms": 4.217861004166669,
+          "p50_ms": 4.250172,
+          "p95_ms": 4.649861
+        },
+        "update": {
+          "max_ms": 6.509806,
+          "mean_ms": 3.7381238583333305,
+          "p50_ms": 3.788572,
+          "p95_ms": 4.136706
+        }
+      },
+      {
+        "case": "full",
+        "components": 16444,
+        "frames": 480,
+        "instances": 2017,
+        "load_and_warmup_ms": 3384.933977,
+        "models": [
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/components/characters/lumae/lumae.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/models/mitten.glb"
+        ],
+        "prepare": {
+          "max_ms": 0.8686959999999999,
+          "mean_ms": 0.5307522083333328,
+          "p50_ms": 0.5238349999999999,
+          "p95_ms": 0.595687
+        },
+        "sample_mesh_uploads": 0,
+        "spring_stage_mean_ms": [
+          0.9589095687500008,
+          0.07201936874999998,
+          0.029577100000000026,
+          0.011284285416666663
+        ],
+        "total": {
+          "max_ms": 6.046403,
+          "mean_ms": 4.945011185416665,
+          "p50_ms": 4.940956,
+          "p95_ms": 5.503565999999999
+        },
+        "update": {
+          "max_ms": 5.470687,
+          "mean_ms": 4.414121389583332,
+          "p50_ms": 4.420424,
+          "p95_ms": 4.924635
+        }
+      },
+      {
+        "case": "no_input_controller",
+        "components": 16443,
+        "frames": 480,
+        "instances": 2017,
+        "load_and_warmup_ms": 3324.688346,
+        "models": [
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/components/characters/lumae/lumae.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/models/mitten.glb"
+        ],
+        "prepare": {
+          "max_ms": 0.927634,
+          "mean_ms": 0.5186852166666666,
+          "p50_ms": 0.503992,
+          "p95_ms": 0.595618
+        },
+        "sample_mesh_uploads": 0,
+        "spring_stage_mean_ms": [
+          1.0368540229166667,
+          0.0809692729166667,
+          0.03097893750000002,
+          0.013313375
+        ],
+        "total": {
+          "max_ms": 7.555214,
+          "mean_ms": 4.546549581249997,
+          "p50_ms": 4.516762,
+          "p95_ms": 5.25922
+        },
+        "update": {
+          "max_ms": 6.98698,
+          "mean_ms": 4.027745579166665,
+          "p50_ms": 4.01602,
+          "p95_ms": 4.67303
+        }
+      }
+    ],
+    "sensors": [
+      {
+        "case": "full",
+        "components": 16444,
+        "frames": 480,
+        "instances": 2017,
+        "load_and_warmup_ms": 3376.687278,
+        "models": [
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/components/characters/lumae/lumae.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/models/mitten.glb"
+        ],
+        "prepare": {
+          "max_ms": 0.785242,
+          "mean_ms": 0.5364894520833334,
+          "p50_ms": 0.528855,
+          "p95_ms": 0.607496
+        },
+        "sample_mesh_uploads": 0,
+        "spring_stage_mean_ms": [
+          0.9664150979166658,
+          0.07121697083333339,
+          0.030621243749999996,
+          0.0113340125
+        ],
+        "total": {
+          "max_ms": 7.036024,
+          "mean_ms": 4.971665320833334,
+          "p50_ms": 4.963147,
+          "p95_ms": 5.5212259999999995
+        },
+        "update": {
+          "max_ms": 6.2505429999999995,
+          "mean_ms": 4.435002860416668,
+          "p50_ms": 4.439065,
+          "p95_ms": 4.9273169999999995
+        }
+      },
+      {
+        "case": "no_vehicle_sensors",
+        "components": 16444,
+        "frames": 480,
+        "instances": 2017,
+        "load_and_warmup_ms": 3435.91982,
+        "models": [
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/components/characters/lumae/lumae.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/models/mitten.glb"
+        ],
+        "prepare": {
+          "max_ms": 0.944554,
+          "mean_ms": 0.5365742729166667,
+          "p50_ms": 0.523899,
+          "p95_ms": 0.633098
+        },
+        "sample_mesh_uploads": 0,
+        "spring_stage_mean_ms": [
+          0.9870788770833341,
+          0.07256840625000009,
+          0.031288170833333316,
+          0.010976356249999996
+        ],
+        "total": {
+          "max_ms": 6.550922,
+          "mean_ms": 4.920151062499997,
+          "p50_ms": 4.892441,
+          "p95_ms": 5.528321
+        },
+        "update": {
+          "max_ms": 5.895412,
+          "mean_ms": 4.383435466666665,
+          "p50_ms": 4.369149999999999,
+          "p95_ms": 4.915687999999999
+        }
+      },
+      {
+        "case": "no_vehicle_sensors",
+        "components": 16444,
+        "frames": 480,
+        "instances": 2017,
+        "load_and_warmup_ms": 3373.378538,
+        "models": [
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/components/characters/lumae/lumae.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/models/mitten.glb"
+        ],
+        "prepare": {
+          "max_ms": 0.695623,
+          "mean_ms": 0.5335934874999999,
+          "p50_ms": 0.527562,
+          "p95_ms": 0.605146
+        },
+        "sample_mesh_uploads": 0,
+        "spring_stage_mean_ms": [
+          0.9637090541666669,
+          0.07234375416666666,
+          0.03015944375000003,
+          0.011663135416666658
+        ],
+        "total": {
+          "max_ms": 5.901214,
+          "mean_ms": 4.870817860416666,
+          "p50_ms": 4.875144,
+          "p95_ms": 5.368053000000001
+        },
+        "update": {
+          "max_ms": 5.285531000000001,
+          "mean_ms": 4.337051106249995,
+          "p50_ms": 4.359202000000001,
+          "p95_ms": 4.79981
+        }
+      },
+      {
+        "case": "full",
+        "components": 16444,
+        "frames": 480,
+        "instances": 2017,
+        "load_and_warmup_ms": 3396.603478,
+        "models": [
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/sakura-machine-pistol.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/components/characters/lumae/lumae.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/models/mitten_pickup.glb",
+          "assets/models/mitten.glb"
+        ],
+        "prepare": {
+          "max_ms": 0.698077,
+          "mean_ms": 0.5441661000000002,
+          "p50_ms": 0.541137,
+          "p95_ms": 0.60125
+        },
+        "sample_mesh_uploads": 0,
+        "spring_stage_mean_ms": [
+          0.9899423499999994,
+          0.07373553124999996,
+          0.030715702083333334,
+          0.011994977083333325
+        ],
+        "total": {
+          "max_ms": 5.9662500000000005,
+          "mean_ms": 5.109853654166668,
+          "p50_ms": 5.136898,
+          "p95_ms": 5.568528
+        },
+        "update": {
+          "max_ms": 5.35804,
+          "mean_ms": 4.565523758333329,
+          "p50_ms": 4.60176,
+          "p95_ms": 4.9787349999999995
+        }
+      }
+    ]
+  }
+}

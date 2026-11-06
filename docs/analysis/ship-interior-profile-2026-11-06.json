@@ -1,0 +1,1161 @@
+{
+  "checkpoint": "9cdab2d2",
+  "cpu": {
+    "full": {
+      "case": "full",
+      "components": 16432,
+      "frames": 480,
+      "instances": 2017,
+      "load_and_warmup_ms": 5223.656883000001,
+      "models": [
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/components/characters/lumae/lumae.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten.glb"
+      ],
+      "prepare": {
+        "max_ms": 1.566804,
+        "mean_ms": 1.0317622937500002,
+        "p50_ms": 1.0198690000000001,
+        "p95_ms": 1.107871
+      },
+      "sample_mesh_uploads": 960,
+      "spring_stage_mean_ms": [
+        1.0021724145833324,
+        0.07996527083333337,
+        0.03274795208333332,
+        0.013775835416666661
+      ],
+      "total": {
+        "max_ms": 16.001305000000002,
+        "mean_ms": 13.79755785,
+        "p50_ms": 14.471707,
+        "p95_ms": 15.468898999999999
+      },
+      "update": {
+        "max_ms": 14.973338,
+        "mean_ms": 12.765597299999996,
+        "p50_ms": 13.459256,
+        "p95_ms": 14.413456
+      }
+    },
+    "parked_vehicles": {
+      "case": "parked_vehicles",
+      "components": 16432,
+      "frames": 480,
+      "instances": 2017,
+      "load_and_warmup_ms": 3968.850327,
+      "models": [
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/components/characters/lumae/lumae.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten.glb"
+      ],
+      "prepare": {
+        "max_ms": 0.735811,
+        "mean_ms": 0.5255967499999996,
+        "p50_ms": 0.5176459999999999,
+        "p95_ms": 0.584421
+      },
+      "sample_mesh_uploads": 0,
+      "spring_stage_mean_ms": [
+        0.9783728312499994,
+        0.07406934166666664,
+        0.03117023750000001,
+        0.011856920833333328
+      ],
+      "total": {
+        "max_ms": 10.455509,
+        "mean_ms": 8.236830487499995,
+        "p50_ms": 8.211773,
+        "p95_ms": 8.994866
+      },
+      "update": {
+        "max_ms": 9.719479,
+        "mean_ms": 7.711030404166668,
+        "p50_ms": 7.691007,
+        "p95_ms": 8.429745
+      }
+    },
+    "no_input_controller": {
+      "case": "no_input_controller",
+      "components": 16431,
+      "frames": 480,
+      "instances": 2017,
+      "load_and_warmup_ms": 4231.480031,
+      "models": [
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/components/characters/lumae/lumae.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten.glb"
+      ],
+      "prepare": {
+        "max_ms": 1.637462,
+        "mean_ms": 0.9964383520833345,
+        "p50_ms": 0.976569,
+        "p95_ms": 1.082663
+      },
+      "sample_mesh_uploads": 960,
+      "spring_stage_mean_ms": [
+        1.2179706395833343,
+        0.07376007083333334,
+        0.03150067291666663,
+        0.014442575000000006
+      ],
+      "total": {
+        "max_ms": 12.831976000000001,
+        "mean_ms": 10.06121435208333,
+        "p50_ms": 10.898901,
+        "p95_ms": 11.599066
+      },
+      "update": {
+        "max_ms": 11.846858,
+        "mean_ms": 9.06466193958334,
+        "p50_ms": 9.927247,
+        "p95_ms": 10.563063
+      }
+    },
+    "no_destroyables": {
+      "case": "no_destroyables",
+      "components": 16340,
+      "frames": 480,
+      "instances": 2017,
+      "load_and_warmup_ms": 5250.6563240000005,
+      "models": [
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/components/characters/lumae/lumae.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten.glb"
+      ],
+      "prepare": {
+        "max_ms": 1.210795,
+        "mean_ms": 0.9904329666666668,
+        "p50_ms": 0.980337,
+        "p95_ms": 1.056549
+      },
+      "sample_mesh_uploads": 960,
+      "spring_stage_mean_ms": [
+        0.9963532791666678,
+        0.08030761874999993,
+        0.03166133333333333,
+        0.012784862500000015
+      ],
+      "total": {
+        "max_ms": 16.592178999999998,
+        "mean_ms": 13.580212162500002,
+        "p50_ms": 14.266698,
+        "p95_ms": 15.121376000000001
+      },
+      "update": {
+        "max_ms": 15.481515,
+        "mean_ms": 12.589544702083325,
+        "p50_ms": 13.293077,
+        "p95_ms": 14.095935
+      }
+    },
+    "no_vehicles": {
+      "case": "no_vehicles",
+      "components": 13063,
+      "frames": 480,
+      "instances": 1725,
+      "load_and_warmup_ms": 3209.803902,
+      "models": [
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/components/characters/lumae/lumae.glb",
+        "assets/models/mitten.glb"
+      ],
+      "prepare": {
+        "max_ms": 0.483756,
+        "mean_ms": 0.2714728437499999,
+        "p50_ms": 0.265138,
+        "p95_ms": 0.303475
+      },
+      "sample_mesh_uploads": 0,
+      "spring_stage_mean_ms": [
+        1.013275202083334,
+        0.08220392916666672,
+        0.030844843750000007,
+        0.01290877291666668
+      ],
+      "total": {
+        "max_ms": 8.984455,
+        "mean_ms": 4.958548695833333,
+        "p50_ms": 4.913438,
+        "p95_ms": 5.585555
+      },
+      "update": {
+        "max_ms": 8.701451,
+        "mean_ms": 4.686861877083333,
+        "p50_ms": 4.641501,
+        "p95_ms": 5.308769
+      }
+    },
+    "no_avatar": {
+      "case": "no_avatar",
+      "components": 15745,
+      "frames": 480,
+      "instances": 1997,
+      "load_and_warmup_ms": 4785.076752,
+      "models": [
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/components/characters/lumae/lumae.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten_pickup.glb"
+      ],
+      "prepare": {
+        "max_ms": 1.228345,
+        "mean_ms": 1.0270294145833343,
+        "p50_ms": 1.0164499999999999,
+        "p95_ms": 1.096392
+      },
+      "sample_mesh_uploads": 960,
+      "spring_stage_mean_ms": [
+        0.0008131624999999996,
+        7.178333333333319e-05,
+        0.0010839979166666661,
+        0.001362914583333332
+      ],
+      "total": {
+        "max_ms": 18.3233,
+        "mean_ms": 13.176186256250002,
+        "p50_ms": 13.880487,
+        "p95_ms": 14.841109999999999
+      },
+      "update": {
+        "max_ms": 17.233987,
+        "mean_ms": 12.148941254166662,
+        "p50_ms": 12.867904,
+        "p95_ms": 13.82741
+      }
+    },
+    "no_contacts": {
+      "case": "no_contacts",
+      "components": 16432,
+      "frames": 480,
+      "instances": 2017,
+      "load_and_warmup_ms": 4504.582624000001,
+      "models": [
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/components/characters/lumae/lumae.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten.glb"
+      ],
+      "prepare": {
+        "max_ms": 2.2788079999999997,
+        "mean_ms": 1.3454800145833337,
+        "p50_ms": 1.3372659999999998,
+        "p95_ms": 1.4316419999999999
+      },
+      "sample_mesh_uploads": 1505,
+      "spring_stage_mean_ms": [
+        0.9860408729166674,
+        0.08134462708333332,
+        0.030380952083333353,
+        0.013399431249999988
+      ],
+      "total": {
+        "max_ms": 16.176037,
+        "mean_ms": 10.78462243541668,
+        "p50_ms": 10.958779999999999,
+        "p95_ms": 11.847188999999998
+      },
+      "update": {
+        "max_ms": 14.790514,
+        "mean_ms": 9.438953897916658,
+        "p50_ms": 9.622909,
+        "p95_ms": 10.44805
+      }
+    },
+    "no_springs": {
+      "case": "no_springs",
+      "components": 16427,
+      "frames": 480,
+      "instances": 2016,
+      "load_and_warmup_ms": 4937.2334,
+      "models": [
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/components/characters/lumae/lumae.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten.glb"
+      ],
+      "prepare": {
+        "max_ms": 1.245983,
+        "mean_ms": 1.00460078125,
+        "p50_ms": 0.9990000000000001,
+        "p95_ms": 1.040081
+      },
+      "sample_mesh_uploads": 960,
+      "spring_stage_mean_ms": [
+        0.0008470083333333327,
+        5.33458333333334e-05,
+        0.03876655833333331,
+        0.01583885208333333
+      ],
+      "total": {
+        "max_ms": 15.392947000000001,
+        "mean_ms": 12.282433379166681,
+        "p50_ms": 13.110643999999999,
+        "p95_ms": 13.764939
+      },
+      "update": {
+        "max_ms": 14.149280000000001,
+        "mean_ms": 11.27764198750001,
+        "p50_ms": 12.106768,
+        "p95_ms": 12.774123
+      }
+    },
+    "no_callbacks": {
+      "case": "no_callbacks",
+      "components": 16432,
+      "frames": 480,
+      "instances": 2017,
+      "load_and_warmup_ms": 5201.57403,
+      "models": [
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/sakura-machine-pistol.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/components/characters/lumae/lumae.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten_pickup.glb",
+        "assets/models/mitten.glb"
+      ],
+      "prepare": {
+        "max_ms": 1.494303,
+        "mean_ms": 1.055447514583333,
+        "p50_ms": 1.047944,
+        "p95_ms": 1.121634
+      },
+      "sample_mesh_uploads": 960,
+      "spring_stage_mean_ms": [
+        1.043731254166667,
+        0.0930157541666667,
+        0.03234771458333335,
+        0.01719535624999999
+      ],
+      "total": {
+        "max_ms": 12.586474,
+        "mean_ms": 9.777880187500001,
+        "p50_ms": 10.658538,
+        "p95_ms": 11.174865
+      },
+      "update": {
+        "max_ms": 11.496661,
+        "mean_ms": 8.72223844791667,
+        "p50_ms": 9.613982,
+        "p95_ms": 10.050046
+      }
+    }
+  },
+  "stereo": [
+    {
+      "case": "avatar_hidden",
+      "components": 16432,
+      "counters": {
+        "cpu_fence_waits": 0,
+        "cpu_queue_waits": 0,
+        "deformation_bone_resizes": 0,
+        "deformation_bone_upload_bytes": 18539520,
+        "deformation_buffer_allocations": 840,
+        "deformation_dirty_vertices": 4053480,
+        "deformation_dispatches": 120,
+        "deformation_job_upload_bytes": 580800,
+        "deformation_jobs": 2040,
+        "deformation_morph_delta_upload_bytes": 0,
+        "deformation_output_resizes": 0,
+        "deformation_weight_upload_bytes": 960,
+        "deformation_workgroups": 64440,
+        "mirror_captures": 0,
+        "queue_submissions": 240,
+        "xr_eyes": 240
+      },
+      "extent": [
+        1712,
+        1712
+      ],
+      "frames": 120,
+      "gpu": "NVIDIA GeForce GTX 1080",
+      "instances": 2017,
+      "msaa": 4,
+      "room": "bridge",
+      "sample_draws": {
+        "cutout": {
+          "batch_sizes": {
+            "1": 12
+          },
+          "calls": 12,
+          "instances": 12
+        },
+        "emission": {
+          "batch_sizes": {
+            "1": 300
+          },
+          "calls": 300,
+          "instances": 300
+        },
+        "opaque/other": {
+          "batch_sizes": {
+            "1": 626,
+            "10": 8,
+            "12": 10,
+            "13": 4,
+            "14": 2,
+            "15": 4,
+            "16": 4,
+            "161": 2,
+            "17": 6,
+            "2": 30,
+            "20": 6,
+            "23": 4,
+            "25": 6,
+            "26": 2,
+            "283": 2,
+            "3": 12,
+            "32": 2,
+            "33": 2,
+            "34": 2,
+            "4": 8,
+            "41": 4,
+            "43": 2,
+            "46": 2,
+            "47": 2,
+            "5": 6,
+            "50": 2,
+            "55": 2,
+            "6": 12,
+            "7": 4,
+            "8": 6,
+            "9": 6
+          },
+          "calls": 790,
+          "instances": 3638
+        },
+        "single-transparent": {
+          "batch_sizes": {
+            "2": 2
+          },
+          "calls": 2,
+          "instances": 4
+        },
+        "surface-batches": {
+          "batch_sizes": {
+            "1": 380
+          },
+          "calls": 380,
+          "instances": 380
+        }
+      },
+      "timing": {
+        "deformation_cpu_ms": {
+          "mean_ms": 0.1349786,
+          "median_ms": 0.131786,
+          "p95_ms": 0.159918
+        },
+        "gpu_deform_ms": {
+          "mean_ms": 0.04743200000000001,
+          "median_ms": 0.047584,
+          "p95_ms": 0.048384
+        },
+        "gpu_graphics_ms": {
+          "mean_ms": 8.29709786666667,
+          "median_ms": 8.224319999999999,
+          "p95_ms": 8.48
+        },
+        "prepare_ms": {
+          "mean_ms": 1.3339048666666662,
+          "median_ms": 1.3310259999999998,
+          "p95_ms": 1.411125
+        },
+        "record_submit_ms": {
+          "mean_ms": 7.362692416666669,
+          "median_ms": 7.337262,
+          "p95_ms": 7.7524239999999995
+        },
+        "total_ms": {
+          "mean_ms": 27.71562171666668,
+          "median_ms": 28.347909,
+          "p95_ms": 29.523209
+        },
+        "update_ms": {
+          "mean_ms": 13.234067358333327,
+          "median_ms": 13.923747,
+          "p95_ms": 14.871239
+        },
+        "wait_ms": {
+          "mean_ms": 5.775404175,
+          "median_ms": 5.754848,
+          "p95_ms": 6.110924
+        }
+      },
+      "warmup": 120
+    },
+    {
+      "case": "environment_hidden",
+      "components": 16432,
+      "counters": {
+        "cpu_fence_waits": 0,
+        "cpu_queue_waits": 0,
+        "deformation_bone_resizes": 0,
+        "deformation_bone_upload_bytes": 18539520,
+        "deformation_buffer_allocations": 840,
+        "deformation_dirty_vertices": 4053480,
+        "deformation_dispatches": 120,
+        "deformation_job_upload_bytes": 580800,
+        "deformation_jobs": 2040,
+        "deformation_morph_delta_upload_bytes": 0,
+        "deformation_output_resizes": 0,
+        "deformation_weight_upload_bytes": 960,
+        "deformation_workgroups": 64440,
+        "mirror_captures": 0,
+        "queue_submissions": 240,
+        "xr_eyes": 240
+      },
+      "extent": [
+        1712,
+        1712
+      ],
+      "frames": 120,
+      "gpu": "NVIDIA GeForce GTX 1080",
+      "instances": 2017,
+      "msaa": 4,
+      "room": "bridge",
+      "sample_draws": {
+        "opaque/other": {
+          "batch_sizes": {
+            "1": 14
+          },
+          "calls": 14,
+          "instances": 14
+        }
+      },
+      "timing": {
+        "deformation_cpu_ms": {
+          "mean_ms": 0.13265273333333336,
+          "median_ms": 0.130348,
+          "p95_ms": 0.149144
+        },
+        "gpu_deform_ms": {
+          "mean_ms": 0.046966400000000005,
+          "median_ms": 0.047008,
+          "p95_ms": 0.048384
+        },
+        "gpu_graphics_ms": {
+          "mean_ms": 0.7409650666666666,
+          "median_ms": 0.740896,
+          "p95_ms": 0.7447360000000001
+        },
+        "prepare_ms": {
+          "mean_ms": 1.3166802833333329,
+          "median_ms": 1.31522,
+          "p95_ms": 1.404408
+        },
+        "record_submit_ms": {
+          "mean_ms": 1.2114451750000002,
+          "median_ms": 1.1936769999999999,
+          "p95_ms": 1.2752130000000002
+        },
+        "total_ms": {
+          "mean_ms": 15.48834793333333,
+          "median_ms": 16.211413,
+          "p95_ms": 16.88608
+        },
+        "update_ms": {
+          "mean_ms": 12.479141541666673,
+          "median_ms": 13.250233,
+          "p95_ms": 13.810367000000001
+        },
+        "wait_ms": {
+          "mean_ms": 0.47754620833333344,
+          "median_ms": 0.46953799999999996,
+          "p95_ms": 0.5906359999999999
+        }
+      },
+      "warmup": 120
+    },
+    {
+      "case": "full",
+      "components": 16432,
+      "counters": {
+        "cpu_fence_waits": 0,
+        "cpu_queue_waits": 0,
+        "deformation_bone_resizes": 0,
+        "deformation_bone_upload_bytes": 18539520,
+        "deformation_buffer_allocations": 840,
+        "deformation_dirty_vertices": 4053480,
+        "deformation_dispatches": 120,
+        "deformation_job_upload_bytes": 580800,
+        "deformation_jobs": 2040,
+        "deformation_morph_delta_upload_bytes": 0,
+        "deformation_output_resizes": 0,
+        "deformation_weight_upload_bytes": 960,
+        "deformation_workgroups": 64440,
+        "mirror_captures": 0,
+        "queue_submissions": 240,
+        "xr_eyes": 240
+      },
+      "extent": [
+        1712,
+        1712
+      ],
+      "frames": 120,
+      "gpu": "NVIDIA GeForce GTX 1080",
+      "instances": 2017,
+      "msaa": 4,
+      "room": "bridge",
+      "sample_draws": {
+        "cutout": {
+          "batch_sizes": {
+            "1": 12
+          },
+          "calls": 12,
+          "instances": 12
+        },
+        "emission": {
+          "batch_sizes": {
+            "1": 300
+          },
+          "calls": 300,
+          "instances": 300
+        },
+        "opaque/other": {
+          "batch_sizes": {
+            "1": 626,
+            "10": 8,
+            "12": 10,
+            "13": 4,
+            "14": 2,
+            "15": 4,
+            "16": 4,
+            "161": 2,
+            "17": 6,
+            "2": 30,
+            "20": 6,
+            "23": 4,
+            "25": 6,
+            "26": 2,
+            "283": 2,
+            "3": 12,
+            "32": 2,
+            "33": 2,
+            "34": 2,
+            "4": 8,
+            "41": 4,
+            "43": 2,
+            "46": 2,
+            "47": 2,
+            "5": 6,
+            "50": 2,
+            "55": 2,
+            "6": 12,
+            "7": 4,
+            "8": 6,
+            "9": 6
+          },
+          "calls": 790,
+          "instances": 3638
+        },
+        "single-transparent": {
+          "batch_sizes": {
+            "2": 2
+          },
+          "calls": 2,
+          "instances": 4
+        },
+        "surface-batches": {
+          "batch_sizes": {
+            "1": 380
+          },
+          "calls": 380,
+          "instances": 380
+        }
+      },
+      "timing": {
+        "deformation_cpu_ms": {
+          "mean_ms": 0.13365686666666668,
+          "median_ms": 0.130962,
+          "p95_ms": 0.153401
+        },
+        "gpu_deform_ms": {
+          "mean_ms": 0.050299733333333305,
+          "median_ms": 0.050367999999999996,
+          "p95_ms": 0.051328
+        },
+        "gpu_graphics_ms": {
+          "mean_ms": 10.248435733333327,
+          "median_ms": 10.268608,
+          "p95_ms": 10.516096000000001
+        },
+        "prepare_ms": {
+          "mean_ms": 1.408060375,
+          "median_ms": 1.379213,
+          "p95_ms": 1.610549
+        },
+        "record_submit_ms": {
+          "mean_ms": 7.426460241666669,
+          "median_ms": 7.346730999999999,
+          "p95_ms": 7.9798860000000005
+        },
+        "total_ms": {
+          "mean_ms": 30.171535874999996,
+          "median_ms": 30.596057,
+          "p95_ms": 32.379068
+        },
+        "update_ms": {
+          "mean_ms": 13.576675758333332,
+          "median_ms": 14.119601000000001,
+          "p95_ms": 15.529754
+        },
+        "wait_ms": {
+          "mean_ms": 7.751660475000004,
+          "median_ms": 7.7691230000000004,
+          "p95_ms": 8.119196
+        }
+      },
+      "warmup": 120
+    },
+    {
+      "case": "no_bloom",
+      "components": 16429,
+      "counters": {
+        "cpu_fence_waits": 0,
+        "cpu_queue_waits": 0,
+        "deformation_bone_resizes": 0,
+        "deformation_bone_upload_bytes": 18539520,
+        "deformation_buffer_allocations": 840,
+        "deformation_dirty_vertices": 4053480,
+        "deformation_dispatches": 120,
+        "deformation_job_upload_bytes": 580800,
+        "deformation_jobs": 2040,
+        "deformation_morph_delta_upload_bytes": 0,
+        "deformation_output_resizes": 0,
+        "deformation_weight_upload_bytes": 960,
+        "deformation_workgroups": 64440,
+        "mirror_captures": 0,
+        "queue_submissions": 240,
+        "xr_eyes": 240
+      },
+      "extent": [
+        1712,
+        1712
+      ],
+      "frames": 120,
+      "gpu": "NVIDIA GeForce GTX 1080",
+      "instances": 2017,
+      "msaa": 4,
+      "room": "bridge",
+      "sample_draws": {
+        "cutout": {
+          "batch_sizes": {
+            "1": 12
+          },
+          "calls": 12,
+          "instances": 12
+        },
+        "opaque/other": {
+          "batch_sizes": {
+            "1": 626,
+            "10": 8,
+            "12": 10,
+            "13": 4,
+            "14": 2,
+            "15": 4,
+            "16": 4,
+            "161": 2,
+            "17": 6,
+            "2": 30,
+            "20": 6,
+            "23": 4,
+            "25": 6,
+            "26": 2,
+            "283": 2,
+            "3": 12,
+            "32": 2,
+            "33": 2,
+            "34": 2,
+            "4": 8,
+            "41": 4,
+            "43": 2,
+            "46": 2,
+            "47": 2,
+            "5": 6,
+            "50": 2,
+            "55": 2,
+            "6": 12,
+            "7": 4,
+            "8": 6,
+            "9": 6
+          },
+          "calls": 790,
+          "instances": 3638
+        },
+        "single-transparent": {
+          "batch_sizes": {
+            "2": 2
+          },
+          "calls": 2,
+          "instances": 4
+        },
+        "surface-batches": {
+          "batch_sizes": {
+            "1": 380
+          },
+          "calls": 380,
+          "instances": 380
+        }
+      },
+      "timing": {
+        "deformation_cpu_ms": {
+          "mean_ms": 0.13561966666666672,
+          "median_ms": 0.132582,
+          "p95_ms": 0.156193
+        },
+        "gpu_deform_ms": {
+          "mean_ms": 0.047350666666666666,
+          "median_ms": 0.047360000000000006,
+          "p95_ms": 0.048608
+        },
+        "gpu_graphics_ms": {
+          "mean_ms": 7.783341066666665,
+          "median_ms": 7.707616,
+          "p95_ms": 8.00336
+        },
+        "prepare_ms": {
+          "mean_ms": 1.372001875000001,
+          "median_ms": 1.362755,
+          "p95_ms": 1.468737
+        },
+        "record_submit_ms": {
+          "mean_ms": 6.292073791666666,
+          "median_ms": 6.216756999999999,
+          "p95_ms": 7.255694
+        },
+        "total_ms": {
+          "mean_ms": 26.568129199999987,
+          "median_ms": 27.120489000000003,
+          "p95_ms": 28.746613
+        },
+        "update_ms": {
+          "mean_ms": 13.244382466666671,
+          "median_ms": 13.854204,
+          "p95_ms": 14.943613999999998
+        },
+        "wait_ms": {
+          "mean_ms": 5.654222575000003,
+          "median_ms": 5.647153,
+          "p95_ms": 5.935048
+        }
+      },
+      "warmup": 120
+    },
+    {
+      "case": "full",
+      "components": 16432,
+      "counters": {
+        "cpu_fence_waits": 0,
+        "cpu_queue_waits": 0,
+        "deformation_bone_resizes": 0,
+        "deformation_bone_upload_bytes": 18539520,
+        "deformation_buffer_allocations": 840,
+        "deformation_dirty_vertices": 4053480,
+        "deformation_dispatches": 120,
+        "deformation_job_upload_bytes": 580800,
+        "deformation_jobs": 2040,
+        "deformation_morph_delta_upload_bytes": 0,
+        "deformation_output_resizes": 0,
+        "deformation_weight_upload_bytes": 960,
+        "deformation_workgroups": 64440,
+        "mirror_captures": 0,
+        "queue_submissions": 240,
+        "xr_eyes": 240
+      },
+      "extent": [
+        1712,
+        1712
+      ],
+      "frames": 120,
+      "gpu": "NVIDIA GeForce GTX 1080",
+      "instances": 2017,
+      "msaa": 4,
+      "room": "cafeteria",
+      "sample_draws": {
+        "cutout": {
+          "batch_sizes": {
+            "1": 12
+          },
+          "calls": 12,
+          "instances": 12
+        },
+        "emission": {
+          "batch_sizes": {
+            "1": 300
+          },
+          "calls": 300,
+          "instances": 300
+        },
+        "opaque/other": {
+          "batch_sizes": {
+            "1": 626,
+            "10": 8,
+            "12": 10,
+            "13": 4,
+            "14": 2,
+            "15": 4,
+            "16": 4,
+            "161": 2,
+            "17": 6,
+            "2": 30,
+            "20": 6,
+            "23": 4,
+            "25": 6,
+            "26": 2,
+            "283": 2,
+            "3": 12,
+            "32": 2,
+            "33": 2,
+            "34": 2,
+            "4": 8,
+            "41": 4,
+            "43": 2,
+            "46": 2,
+            "47": 2,
+            "5": 6,
+            "50": 2,
+            "55": 2,
+            "6": 12,
+            "7": 4,
+            "8": 6,
+            "9": 6
+          },
+          "calls": 790,
+          "instances": 3638
+        },
+        "single-transparent": {
+          "batch_sizes": {
+            "2": 2
+          },
+          "calls": 2,
+          "instances": 4
+        },
+        "surface-batches": {
+          "batch_sizes": {
+            "1": 380
+          },
+          "calls": 380,
+          "instances": 380
+        }
+      },
+      "timing": {
+        "deformation_cpu_ms": {
+          "mean_ms": 0.1346700916666667,
+          "median_ms": 0.131493,
+          "p95_ms": 0.155635
+        },
+        "gpu_deform_ms": {
+          "mean_ms": 0.0458336,
+          "median_ms": 0.045952,
+          "p95_ms": 0.046752
+        },
+        "gpu_graphics_ms": {
+          "mean_ms": 10.836003199999997,
+          "median_ms": 10.841728,
+          "p95_ms": 11.013408
+        },
+        "prepare_ms": {
+          "mean_ms": 1.3583315750000002,
+          "median_ms": 1.357206,
+          "p95_ms": 1.466411
+        },
+        "record_submit_ms": {
+          "mean_ms": 7.46606751666667,
+          "median_ms": 7.422955,
+          "p95_ms": 8.024030999999999
+        },
+        "total_ms": {
+          "mean_ms": 30.59359823333333,
+          "median_ms": 30.863662,
+          "p95_ms": 32.708917
+        },
+        "update_ms": {
+          "mean_ms": 13.481039425000006,
+          "median_ms": 13.90465,
+          "p95_ms": 15.285531
+        },
+        "wait_ms": {
+          "mean_ms": 8.277669433333333,
+          "median_ms": 8.282950000000001,
+          "p95_ms": 8.613902999999999
+        }
+      },
+      "warmup": 120
+    },
+    {
+      "case": "no_bloom",
+      "components": 16429,
+      "counters": {
+        "cpu_fence_waits": 0,
+        "cpu_queue_waits": 0,
+        "deformation_bone_resizes": 0,
+        "deformation_bone_upload_bytes": 18539520,
+        "deformation_buffer_allocations": 840,
+        "deformation_dirty_vertices": 4053480,
+        "deformation_dispatches": 120,
+        "deformation_job_upload_bytes": 580800,
+        "deformation_jobs": 2040,
+        "deformation_morph_delta_upload_bytes": 0,
+        "deformation_output_resizes": 0,
+        "deformation_weight_upload_bytes": 960,
+        "deformation_workgroups": 64440,
+        "mirror_captures": 0,
+        "queue_submissions": 240,
+        "xr_eyes": 240
+      },
+      "extent": [
+        1712,
+        1712
+      ],
+      "frames": 120,
+      "gpu": "NVIDIA GeForce GTX 1080",
+      "instances": 2017,
+      "msaa": 4,
+      "room": "cafeteria",
+      "sample_draws": {
+        "cutout": {
+          "batch_sizes": {
+            "1": 12
+          },
+          "calls": 12,
+          "instances": 12
+        },
+        "opaque/other": {
+          "batch_sizes": {
+            "1": 626,
+            "10": 8,
+            "12": 10,
+            "13": 4,
+            "14": 2,
+            "15": 4,
+            "16": 4,
+            "161": 2,
+            "17": 6,
+            "2": 30,
+            "20": 6,
+            "23": 4,
+            "25": 6,
+            "26": 2,
+            "283": 2,
+            "3": 12,
+            "32": 2,
+            "33": 2,
+            "34": 2,
+            "4": 8,
+            "41": 4,
+            "43": 2,
+            "46": 2,
+            "47": 2,
+            "5": 6,
+            "50": 2,
+            "55": 2,
+            "6": 12,
+            "7": 4,
+            "8": 6,
+            "9": 6
+          },
+          "calls": 790,
+          "instances": 3638
+        },
+        "single-transparent": {
+          "batch_sizes": {
+            "2": 2
+          },
+          "calls": 2,
+          "instances": 4
+        },
+        "surface-batches": {
+          "batch_sizes": {
+            "1": 380
+          },
+          "calls": 380,
+          "instances": 380
+        }
+      },
+      "timing": {
+        "deformation_cpu_ms": {
+          "mean_ms": 0.1379343,
+          "median_ms": 0.134063,
+          "p95_ms": 0.155664
+        },
+        "gpu_deform_ms": {
+          "mean_ms": 0.04678186666666666,
+          "median_ms": 0.046976,
+          "p95_ms": 0.047968
+        },
+        "gpu_graphics_ms": {
+          "mean_ms": 9.560137866666667,
+          "median_ms": 9.528352,
+          "p95_ms": 9.776352
+        },
+        "prepare_ms": {
+          "mean_ms": 1.3923127416666667,
+          "median_ms": 1.392709,
+          "p95_ms": 1.4645380000000001
+        },
+        "record_submit_ms": {
+          "mean_ms": 6.355798583333336,
+          "median_ms": 6.327195,
+          "p95_ms": 6.664706000000001
+        },
+        "total_ms": {
+          "mean_ms": 28.765550916666665,
+          "median_ms": 29.195621000000003,
+          "p95_ms": 30.973948
+        },
+        "update_ms": {
+          "mean_ms": 13.558865408333338,
+          "median_ms": 14.066969,
+          "p95_ms": 15.614351000000001
+        },
+        "wait_ms": {
+          "mean_ms": 7.450327766666665,
+          "median_ms": 7.468306,
+          "p95_ms": 7.7567010000000005
+        }
+      },
+      "warmup": 120
+    }
+  ],
+  "hardware": {
+    "cpu": "Intel Core i5-10400 @ 2.90GHz",
+    "gpu": "NVIDIA GeForce GTX 1080",
+    "rust": "1.98.1",
+    "build": "release"
+  }
+}

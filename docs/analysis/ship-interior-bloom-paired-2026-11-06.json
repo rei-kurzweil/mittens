@@ -1,0 +1,779 @@
+{
+  "method": "Same loaded scene, ABBA (on/off/off/on), 120 warmup and 240 sampled frames per block. Optimized truck activation enabled.",
+  "bloom_off": "Post-processing graph disabled, including its emission pass, matching the example RenderGraph.off() branch.",
+  "gpu_time": "Timestamped graphics interval summed across both eyes; CPU work and GPU deformation are excluded.",
+  "results": [
+    {
+      "room": "bridge",
+      "per_eye_extent": [
+        1920,
+        1920
+      ],
+      "gpu": "NVIDIA GeForce GTX 1080",
+      "msaa": 4,
+      "warmup_per_state": 240,
+      "samples_per_state": 480,
+      "paired_gpu": {
+        "off": {
+          "blocks": [
+            {
+              "block": 1,
+              "timing": {
+                "mean_ms": 8.674889600000006,
+                "median_ms": 8.612991999999998,
+                "p95_ms": 8.882463999999999
+              }
+            },
+            {
+              "block": 2,
+              "timing": {
+                "mean_ms": 8.750125866666663,
+                "median_ms": 8.686656,
+                "p95_ms": 8.937088
+              }
+            }
+          ],
+          "gpu_graphics_ms": {
+            "mean_ms": 8.712507733333341,
+            "median_ms": 8.679872,
+            "p95_ms": 8.913024
+          }
+        },
+        "on": {
+          "blocks": [
+            {
+              "block": 0,
+              "timing": {
+                "mean_ms": 9.150325999999998,
+                "median_ms": 9.102496,
+                "p95_ms": 9.344032
+              }
+            },
+            {
+              "block": 3,
+              "timing": {
+                "mean_ms": 9.270409866666666,
+                "median_ms": 9.206271999999998,
+                "p95_ms": 9.481024
+              }
+            }
+          ],
+          "gpu_graphics_ms": {
+            "mean_ms": 9.210367933333334,
+            "median_ms": 9.197312,
+            "p95_ms": 9.433664
+          }
+        },
+        "samples_per_state": 480
+      },
+      "sample_draws": {
+        "on": {
+          "cutout": {
+            "batch_sizes": {
+              "1": 12
+            },
+            "calls": 12,
+            "instances": 12
+          },
+          "emission": {
+            "batch_sizes": {
+              "1": 300
+            },
+            "calls": 300,
+            "instances": 300
+          },
+          "opaque/other": {
+            "batch_sizes": {
+              "1": 626,
+              "10": 8,
+              "12": 10,
+              "13": 4,
+              "14": 2,
+              "15": 4,
+              "16": 4,
+              "161": 2,
+              "17": 6,
+              "2": 30,
+              "20": 6,
+              "23": 4,
+              "25": 6,
+              "26": 2,
+              "283": 2,
+              "3": 12,
+              "32": 2,
+              "33": 2,
+              "34": 2,
+              "4": 8,
+              "41": 4,
+              "43": 2,
+              "46": 2,
+              "47": 2,
+              "5": 6,
+              "50": 2,
+              "55": 2,
+              "6": 12,
+              "7": 4,
+              "8": 6,
+              "9": 6
+            },
+            "calls": 790,
+            "instances": 3638
+          },
+          "single-transparent": {
+            "batch_sizes": {
+              "2": 2
+            },
+            "calls": 2,
+            "instances": 4
+          },
+          "surface-batches": {
+            "batch_sizes": {
+              "1": 380
+            },
+            "calls": 380,
+            "instances": 380
+          }
+        },
+        "off": {
+          "cutout": {
+            "batch_sizes": {
+              "1": 12
+            },
+            "calls": 12,
+            "instances": 12
+          },
+          "opaque/other": {
+            "batch_sizes": {
+              "1": 626,
+              "10": 8,
+              "12": 10,
+              "13": 4,
+              "14": 2,
+              "15": 4,
+              "16": 4,
+              "161": 2,
+              "17": 6,
+              "2": 30,
+              "20": 6,
+              "23": 4,
+              "25": 6,
+              "26": 2,
+              "283": 2,
+              "3": 12,
+              "32": 2,
+              "33": 2,
+              "34": 2,
+              "4": 8,
+              "41": 4,
+              "43": 2,
+              "46": 2,
+              "47": 2,
+              "5": 6,
+              "50": 2,
+              "55": 2,
+              "6": 12,
+              "7": 4,
+              "8": 6,
+              "9": 6
+            },
+            "calls": 790,
+            "instances": 3638
+          },
+          "single-transparent": {
+            "batch_sizes": {
+              "2": 2
+            },
+            "calls": 2,
+            "instances": 4
+          },
+          "surface-batches": {
+            "batch_sizes": {
+              "1": 380
+            },
+            "calls": 380,
+            "instances": 380
+          }
+        }
+      }
+    },
+    {
+      "room": "cafeteria",
+      "per_eye_extent": [
+        1920,
+        1920
+      ],
+      "gpu": "NVIDIA GeForce GTX 1080",
+      "msaa": 4,
+      "warmup_per_state": 240,
+      "samples_per_state": 480,
+      "paired_gpu": {
+        "off": {
+          "blocks": [
+            {
+              "block": 1,
+              "timing": {
+                "mean_ms": 12.946516000000003,
+                "median_ms": 12.967456,
+                "p95_ms": 13.140864
+              }
+            },
+            {
+              "block": 2,
+              "timing": {
+                "mean_ms": 12.978985066666667,
+                "median_ms": 13.003392,
+                "p95_ms": 13.179552000000001
+              }
+            }
+          ],
+          "gpu_graphics_ms": {
+            "mean_ms": 12.962750533333322,
+            "median_ms": 12.977440000000001,
+            "p95_ms": 13.15776
+          }
+        },
+        "on": {
+          "blocks": [
+            {
+              "block": 0,
+              "timing": {
+                "mean_ms": 13.462374399999995,
+                "median_ms": 13.486496,
+                "p95_ms": 13.659168000000001
+              }
+            },
+            {
+              "block": 3,
+              "timing": {
+                "mean_ms": 13.511057066666663,
+                "median_ms": 13.532128,
+                "p95_ms": 13.731072
+              }
+            }
+          ],
+          "gpu_graphics_ms": {
+            "mean_ms": 13.486715733333321,
+            "median_ms": 13.498111999999999,
+            "p95_ms": 13.695936
+          }
+        },
+        "samples_per_state": 480
+      },
+      "sample_draws": {
+        "on": {
+          "cutout": {
+            "batch_sizes": {
+              "1": 12
+            },
+            "calls": 12,
+            "instances": 12
+          },
+          "emission": {
+            "batch_sizes": {
+              "1": 300
+            },
+            "calls": 300,
+            "instances": 300
+          },
+          "opaque/other": {
+            "batch_sizes": {
+              "1": 626,
+              "10": 8,
+              "12": 10,
+              "13": 4,
+              "14": 2,
+              "15": 4,
+              "16": 4,
+              "161": 2,
+              "17": 6,
+              "2": 30,
+              "20": 6,
+              "23": 4,
+              "25": 6,
+              "26": 2,
+              "283": 2,
+              "3": 12,
+              "32": 2,
+              "33": 2,
+              "34": 2,
+              "4": 8,
+              "41": 4,
+              "43": 2,
+              "46": 2,
+              "47": 2,
+              "5": 6,
+              "50": 2,
+              "55": 2,
+              "6": 12,
+              "7": 4,
+              "8": 6,
+              "9": 6
+            },
+            "calls": 790,
+            "instances": 3638
+          },
+          "single-transparent": {
+            "batch_sizes": {
+              "2": 2
+            },
+            "calls": 2,
+            "instances": 4
+          },
+          "surface-batches": {
+            "batch_sizes": {
+              "1": 380
+            },
+            "calls": 380,
+            "instances": 380
+          }
+        },
+        "off": {
+          "cutout": {
+            "batch_sizes": {
+              "1": 12
+            },
+            "calls": 12,
+            "instances": 12
+          },
+          "opaque/other": {
+            "batch_sizes": {
+              "1": 626,
+              "10": 8,
+              "12": 10,
+              "13": 4,
+              "14": 2,
+              "15": 4,
+              "16": 4,
+              "161": 2,
+              "17": 6,
+              "2": 30,
+              "20": 6,
+              "23": 4,
+              "25": 6,
+              "26": 2,
+              "283": 2,
+              "3": 12,
+              "32": 2,
+              "33": 2,
+              "34": 2,
+              "4": 8,
+              "41": 4,
+              "43": 2,
+              "46": 2,
+              "47": 2,
+              "5": 6,
+              "50": 2,
+              "55": 2,
+              "6": 12,
+              "7": 4,
+              "8": 6,
+              "9": 6
+            },
+            "calls": 790,
+            "instances": 3638
+          },
+          "single-transparent": {
+            "batch_sizes": {
+              "2": 2
+            },
+            "calls": 2,
+            "instances": 4
+          },
+          "surface-batches": {
+            "batch_sizes": {
+              "1": 380
+            },
+            "calls": 380,
+            "instances": 380
+          }
+        }
+      }
+    },
+    {
+      "room": "bridge",
+      "per_eye_extent": [
+        2144,
+        2144
+      ],
+      "gpu": "NVIDIA GeForce GTX 1080",
+      "msaa": 4,
+      "warmup_per_state": 240,
+      "samples_per_state": 480,
+      "paired_gpu": {
+        "off": {
+          "blocks": [
+            {
+              "block": 1,
+              "timing": {
+                "mean_ms": 10.700727866666671,
+                "median_ms": 10.63872,
+                "p95_ms": 10.864640000000001
+              }
+            },
+            {
+              "block": 2,
+              "timing": {
+                "mean_ms": 10.685755066666673,
+                "median_ms": 10.634464000000001,
+                "p95_ms": 10.819455999999999
+              }
+            }
+          ],
+          "gpu_graphics_ms": {
+            "mean_ms": 10.693241466666667,
+            "median_ms": 10.63696,
+            "p95_ms": 10.85088
+          }
+        },
+        "on": {
+          "blocks": [
+            {
+              "block": 0,
+              "timing": {
+                "mean_ms": 11.314470800000002,
+                "median_ms": 11.260736000000001,
+                "p95_ms": 11.486784
+              }
+            },
+            {
+              "block": 3,
+              "timing": {
+                "mean_ms": 11.303600533333332,
+                "median_ms": 11.252320000000001,
+                "p95_ms": 11.43168
+              }
+            }
+          ],
+          "gpu_graphics_ms": {
+            "mean_ms": 11.309035666666672,
+            "median_ms": 11.253888,
+            "p95_ms": 11.461472
+          }
+        },
+        "samples_per_state": 480
+      },
+      "sample_draws": {
+        "on": {
+          "cutout": {
+            "batch_sizes": {
+              "1": 12
+            },
+            "calls": 12,
+            "instances": 12
+          },
+          "emission": {
+            "batch_sizes": {
+              "1": 300
+            },
+            "calls": 300,
+            "instances": 300
+          },
+          "opaque/other": {
+            "batch_sizes": {
+              "1": 626,
+              "10": 8,
+              "12": 10,
+              "13": 4,
+              "14": 2,
+              "15": 4,
+              "16": 4,
+              "161": 2,
+              "17": 6,
+              "2": 30,
+              "20": 6,
+              "23": 4,
+              "25": 6,
+              "26": 2,
+              "283": 2,
+              "3": 12,
+              "32": 2,
+              "33": 2,
+              "34": 2,
+              "4": 8,
+              "41": 4,
+              "43": 2,
+              "46": 2,
+              "47": 2,
+              "5": 6,
+              "50": 2,
+              "55": 2,
+              "6": 12,
+              "7": 4,
+              "8": 6,
+              "9": 6
+            },
+            "calls": 790,
+            "instances": 3638
+          },
+          "single-transparent": {
+            "batch_sizes": {
+              "2": 2
+            },
+            "calls": 2,
+            "instances": 4
+          },
+          "surface-batches": {
+            "batch_sizes": {
+              "1": 380
+            },
+            "calls": 380,
+            "instances": 380
+          }
+        },
+        "off": {
+          "cutout": {
+            "batch_sizes": {
+              "1": 12
+            },
+            "calls": 12,
+            "instances": 12
+          },
+          "opaque/other": {
+            "batch_sizes": {
+              "1": 626,
+              "10": 8,
+              "12": 10,
+              "13": 4,
+              "14": 2,
+              "15": 4,
+              "16": 4,
+              "161": 2,
+              "17": 6,
+              "2": 30,
+              "20": 6,
+              "23": 4,
+              "25": 6,
+              "26": 2,
+              "283": 2,
+              "3": 12,
+              "32": 2,
+              "33": 2,
+              "34": 2,
+              "4": 8,
+              "41": 4,
+              "43": 2,
+              "46": 2,
+              "47": 2,
+              "5": 6,
+              "50": 2,
+              "55": 2,
+              "6": 12,
+              "7": 4,
+              "8": 6,
+              "9": 6
+            },
+            "calls": 790,
+            "instances": 3638
+          },
+          "single-transparent": {
+            "batch_sizes": {
+              "2": 2
+            },
+            "calls": 2,
+            "instances": 4
+          },
+          "surface-batches": {
+            "batch_sizes": {
+              "1": 380
+            },
+            "calls": 380,
+            "instances": 380
+          }
+        }
+      }
+    },
+    {
+      "room": "cafeteria",
+      "per_eye_extent": [
+        2144,
+        2144
+      ],
+      "gpu": "NVIDIA GeForce GTX 1080",
+      "msaa": 4,
+      "warmup_per_state": 240,
+      "samples_per_state": 480,
+      "paired_gpu": {
+        "off": {
+          "blocks": [
+            {
+              "block": 1,
+              "timing": {
+                "mean_ms": 16.509971466666673,
+                "median_ms": 16.533983999999997,
+                "p95_ms": 16.854048
+              }
+            },
+            {
+              "block": 2,
+              "timing": {
+                "mean_ms": 16.6669552,
+                "median_ms": 16.552384,
+                "p95_ms": 17.499552
+              }
+            }
+          ],
+          "gpu_graphics_ms": {
+            "mean_ms": 16.58846333333333,
+            "median_ms": 16.544832,
+            "p95_ms": 17.299168
+          }
+        },
+        "on": {
+          "blocks": [
+            {
+              "block": 0,
+              "timing": {
+                "mean_ms": 16.68353799999999,
+                "median_ms": 16.650464,
+                "p95_ms": 17.032928
+              }
+            },
+            {
+              "block": 3,
+              "timing": {
+                "mean_ms": 17.209299600000012,
+                "median_ms": 17.182976,
+                "p95_ms": 18.329535999999997
+              }
+            }
+          ],
+          "gpu_graphics_ms": {
+            "mean_ms": 16.9464188,
+            "median_ms": 16.818303999999998,
+            "p95_ms": 17.618816000000002
+          }
+        },
+        "samples_per_state": 480
+      },
+      "sample_draws": {
+        "on": {
+          "cutout": {
+            "batch_sizes": {
+              "1": 12
+            },
+            "calls": 12,
+            "instances": 12
+          },
+          "emission": {
+            "batch_sizes": {
+              "1": 300
+            },
+            "calls": 300,
+            "instances": 300
+          },
+          "opaque/other": {
+            "batch_sizes": {
+              "1": 626,
+              "10": 8,
+              "12": 10,
+              "13": 4,
+              "14": 2,
+              "15": 4,
+              "16": 4,
+              "161": 2,
+              "17": 6,
+              "2": 30,
+              "20": 6,
+              "23": 4,
+              "25": 6,
+              "26": 2,
+              "283": 2,
+              "3": 12,
+              "32": 2,
+              "33": 2,
+              "34": 2,
+              "4": 8,
+              "41": 4,
+              "43": 2,
+              "46": 2,
+              "47": 2,
+              "5": 6,
+              "50": 2,
+              "55": 2,
+              "6": 12,
+              "7": 4,
+              "8": 6,
+              "9": 6
+            },
+            "calls": 790,
+            "instances": 3638
+          },
+          "single-transparent": {
+            "batch_sizes": {
+              "2": 2
+            },
+            "calls": 2,
+            "instances": 4
+          },
+          "surface-batches": {
+            "batch_sizes": {
+              "1": 380
+            },
+            "calls": 380,
+            "instances": 380
+          }
+        },
+        "off": {
+          "cutout": {
+            "batch_sizes": {
+              "1": 12
+            },
+            "calls": 12,
+            "instances": 12
+          },
+          "opaque/other": {
+            "batch_sizes": {
+              "1": 626,
+              "10": 8,
+              "12": 10,
+              "13": 4,
+              "14": 2,
+              "15": 4,
+              "16": 4,
+              "161": 2,
+              "17": 6,
+              "2": 30,
+              "20": 6,
+              "23": 4,
+              "25": 6,
+              "26": 2,
+              "283": 2,
+              "3": 12,
+              "32": 2,
+              "33": 2,
+              "34": 2,
+              "4": 8,
+              "41": 4,
+              "43": 2,
+              "46": 2,
+              "47": 2,
+              "5": 6,
+              "50": 2,
+              "55": 2,
+              "6": 12,
+              "7": 4,
+              "8": 6,
+              "9": 6
+            },
+            "calls": 790,
+            "instances": 3638
+          },
+          "single-transparent": {
+            "batch_sizes": {
+              "2": 2
+            },
+            "calls": 2,
+            "instances": 4
+          },
+          "surface-batches": {
+            "batch_sizes": {
+              "1": 380
+            },
+            "calls": 380,
+            "instances": 380
+          }
+        }
+      }
+    }
+  ]
+}

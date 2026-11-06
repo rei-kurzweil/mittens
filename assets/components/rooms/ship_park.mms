@@ -56,11 +56,11 @@ export fn ship_park() {
         // Both orchard pickups share the transform-fork suspension prefab.
         T.position(-20.0,park_ground_height(-20.0,-4.5,4),-4.5).rotation(0,Math.pi/2.0,0) {
             name="ship_orchard_pickup_north"
-            pickup_truck()
+            pickup_truck(null,null,null,true)
         }
         T.position(-20.0,park_ground_height(-20.0,4.5,4),4.5).rotation(0,Math.pi/2.0,0) {
             name="ship_orchard_pickup_south"
-            pickup_truck()
+            pickup_truck(null,null,null,true)
         }
         T.position(-30.2, 2.1, 0.0).rotation(0.0, -Math.pi / 2.0, 0.0) {
             ship_label([-0.8, 0.0, 0.0], "CHERRY GROVE", 0.19)

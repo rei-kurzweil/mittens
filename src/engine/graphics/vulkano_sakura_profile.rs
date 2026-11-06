@@ -654,3 +654,6 @@ fn profile_sakura_lumae_stereo() -> Result<(), Box<dyn Error>> {
     }
     Ok(())
 }
+
+#[path = "vulkano_ship_profile.rs"]
+mod ship;

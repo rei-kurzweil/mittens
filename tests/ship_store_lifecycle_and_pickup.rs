@@ -85,7 +85,7 @@ fn stores_rebuild_and_pickups_mount_drive_brake_and_dismount() {
         fn fixture() { return T { name="store_fixture" ship_solid([0,1,2],[1,1,1],[0.4,0.5,0.4]) PL.intensity(3) } }
         T.position(10,0,0) { ship_store_accordion("test_store","TEST STORE",fixture,5,3,null) }
         T.position(20,0,0) { ship_store_accordion("retail_test","CONVENIENCE",ship_convenience_store,12,6,null) }
-        pickup_truck()
+        pickup_truck(null,null,null,true)
         ship_solid([0,-0.1,0],[60,0.2,60],[0.3,0.3,0.3])
         T.position(-1.5,0,0) {
             name="test_rider_root"
@@ -273,4 +273,30 @@ fn stores_rebuild_and_pickups_mount_drive_brake_and_dismount() {
         .get_component_by_id_as::<InputComponent>(named(&scene.world, "test_rider_input"))
         .unwrap();
     assert!(restored.enabled && restored.translation_enabled);
+    // Streaming out the mounted truck must retire the controller's cached
+    // driver instead of continuing to invoke a removed vehicle every frame.
+    assert!(scene.systems.attachment.try_mount_from_hit(
+        &mut scene.world,
+        pointer,
+        hit.unwrap(),
+        &mut scene.command_queue
+    ));
+    tick(&mut scene, 3);
+    let velocity = named(&scene.world, "pickup_velocity");
+    scene.command_queue.push_intent_now(
+        velocity,
+        mittens_engine::engine::ecs::IntentValue::RemoveSubtree {
+            component_id: velocity,
+        },
+    );
+    tick(&mut scene, 8);
+    assert!(scene.world.get_component_record(truck).is_none());
+    let input = scene
+        .world
+        .get_component_by_id_as::<InputComponent>(named(&scene.world, "test_rider_input"))
+        .unwrap();
+    assert!(
+        input.enabled && input.translation_enabled,
+        "removing a mounted vehicle restores rider input"
+    );
 }

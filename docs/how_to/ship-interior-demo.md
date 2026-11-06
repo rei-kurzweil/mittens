@@ -93,6 +93,13 @@ constructs fresh content, while paths and room shells remain loaded. Traffic
 lights indicate state: red is collapsed, yellow is loading, green is expanded.
 The persistent `ship_input_controller` forwards input to live mounted pickups
 and held weapons. No streamed asset registers its own global input callback.
+It retains only the mounted driver's handle; idle FrameTick does not query all
+trucks. The three ship pickups use two proximity sensors to wake near a player
+and park after support contact when distant. Mounted or NPC-driven trucks stay
+active. Parking turns gravity off and clears motion without unloading geometry;
+the component-owned settling check removes itself once parked. This prototype
+does not wake for a supporting floor removed while asleep. See the
+[pickup activation contract](pickup-model-schema.md#opt-in-proximity-activation).
 
 Pickups now use `assets/models/mitten_pickup.glb`, including its body, two seats,
 steering wheel, four wheels and four springs. The prefab normalizes its front
@@ -100,7 +107,7 @@ direction and ground height, inserts the suspension pivots/scale forks, and
 combines stationary body/interior parts while keeping springs and wheels movable.
 The former procedural truck, pedals, dashboard fixtures and gauges remain in
 `pickup_truck_prototype.mms`. Cube-based damage still works on that prototype;
-mesh-cut destruction does not yet support the imported GLB geometry.
+the imported truck cuts closed GLB parts while retaining its open lower cabin.
 
 To drive, stand beside the left door and point at the truck. Use XR grip or a
 desktop left click to enter; use the left grip or another left click to exit.
