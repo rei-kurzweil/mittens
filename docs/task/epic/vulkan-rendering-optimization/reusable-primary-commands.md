@@ -171,3 +171,38 @@ Live headset/compositor testing, sorted-transparency/refraction reuse and a
 buffer-version pool for sustained overlap remain subsequent work. These checks
 use Vulkano's resource validation and GPU readback; no claim of a separate Vulkan
 synchronization-layer audit is made.
+
+## Recording-file cleanup after `cbd83ae2`
+
+This cleanup separates the two recording responsibilities without changing their
+Vulkan commands or cache/submission policy:
+
+| File | Responsibility |
+| --- | --- |
+| `vulkano_frame_commands.rs` | Prepare per-view resources, choose cached versus fresh commands, finalize primaries and update cache ownership. |
+| `vulkano_deformation_commands.rs` | Create the dynamic builder, upload dirty joint data, manage deformation storage, dispatch deformation, and prepare the rig binding. |
+| `vulkano_graphics_commands.rs` | Record background, outlines, surfaces, transparency, overlays, post-processing and debug graphics using prepared view resources. |
+| `vulkano_scene_cache.rs` | Graphics-cache entry types, attachment identity and dependency keys; renamed from `vulkano_scene_commands.rs`. |
+| `vulkano_bloom_commands.rs` | Existing extraction/filter recording shared by normal graphics recording and the opt-in bloom-only experiment. |
+| `vulkano_submission_chain.rs` | Existing ordered primary submission and access-provenance forwarding. |
+
+The coordinator decides when an open deformation builder ends: initialized
+eligible views finalize it before graphics; first-use and unsupported views keep
+appending graphics to the same primary. This preserves first-use image handling.
+Prepared graphics inputs move as one stack value and borrow existing draw streams;
+the split adds no per-draw allocation, resource creation or dynamic dispatch.
+The moved deformation and graphics recording bodies were compared against the
+committed source and match apart from formatting and the queue-family lookup.
+
+Cleanup validation: production `cargo check --lib`, 22 CPU tests and 10 GPU
+regression tests pass ([validation log](data/primary-file-split-validation-2026-11-06.log)).
+The post-split stationary cafeteria capture retains the same settings (1920 x
+1920 per eye, bloom/extraction, MSAA 4x, 240 warmup / 480 sampled frames) and
+executed draw counts. Mean CPU recording/submission is **0.964 ms**, GPU graphics
+13.551 ms, elapsed frame **19.254 ms**, elapsed p95 20.046 ms. Both eyes hit the
+cache with zero sampled rebuilds; 480 deformation dispatches and 8,160 jobs remain
+active. This supports preserved recording cost; GPU/elapsed differences from
+older sequential captures are not attributed to moving source between files.
+Preserved [summary](data/scene-primary-file-split-2026-11-06.json),
+[frame samples](data/scene-primary-file-split-2026-11-06.frames.json) and
+[log](data/scene-primary-file-split-2026-11-06.log).

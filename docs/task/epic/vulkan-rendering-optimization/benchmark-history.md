@@ -21,6 +21,7 @@ end-to-end offscreen captures measure different things and are labelled separate
 | Retained upload buffers, first prototype | Per-view/purpose host uploads and invariant rig descriptor reuse; sampled upload allocations 13 -> 0 | [Prototype result and controls](retained-upload-buffers.md) |
 | Bloom-only primary reuse | Two hits per frame; CPU saving outweighed by higher GPU/elapsed time | [Rejected boundary and artifacts](reusable-primary-commands.md#first-bloom-only-checkpoint) |
 | Complete eligible graphics-primary reuse | Dynamic deformation, retained scene/bloom/composite; CPU recording about 7 -> 1 ms | [Implementation, controls and results](reusable-primary-commands.md) |
+| Recorder file split after `cbd83ae2` | Separate deformation/graphics recording; CPU record 0.964 ms, unchanged draws and cache hits | [Cleanup validation](reusable-primary-commands.md#recording-file-cleanup-after-cbd83ae2) |
 
 ## Selected stationary whole-frame historical captures
 
@@ -38,6 +39,7 @@ execution overlaps CPU work; do not add its column to the CPU stages.
 | [Retained uploads enabled, first prototype](data/retained-uploads-on-2026-11-06.json) | 4.353 ms | 0.546 ms | 6.815 ms | 13.765 ms | 23.294 ms |
 | [Graphics primaries disabled](data/scene-primary-stationary-off-2026-11-06.json) | 4.730 ms | 0.545 ms | 7.056 ms | 13.928 ms | 24.145 ms |
 | [Graphics primaries enabled](data/scene-primary-stationary-on-2026-11-06.json) | 4.387 ms | 0.567 ms | 0.999 ms | 12.465 ms | 18.414 ms |
+| [Recorder file split](data/scene-primary-file-split-2026-11-06.json) | 4.226 ms | 0.538 ms | 0.964 ms | 13.551 ms | 19.254 ms |
 
 The per-stage reports retain full distributions and raw/projected frame samples.
 Separate-process GPU variation means a later row is not automatically proof of

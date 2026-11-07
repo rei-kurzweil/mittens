@@ -407,5 +407,5 @@ include!(concat!(
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/src/engine/graphics/vulkano_scene_commands.rs"
+    "/src/engine/graphics/vulkano_scene_cache.rs"
 ));

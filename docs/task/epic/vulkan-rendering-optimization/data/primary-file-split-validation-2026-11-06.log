@@ -1,0 +1,154 @@
+
+running 22 tests
+test engine::graphics::visual_world::cache_profile::tests::measurement_reset_preserves_pending_rebuild_cause ... ok
+test engine::graphics::visual_world::cache_profile::tests::transform_updates_hit_cache_while_structure_changes_rebuild_once ... ok
+test engine::graphics::visual_world::render_streams::tests::custom_reflective_sources_keep_identity_inside_clip_programs ... ok
+test engine::graphics::visual_world::material_identity_tests::equal_valued_materials_keep_distinct_batches_and_shared_color_stays_per_renderable ... ok
+test engine::graphics::visual_world::render_streams::tests::legacy_band_edits_do_not_invalidate_or_split_surface_batches ... ok
+test engine::graphics::visual_world::render_streams::tests::reflective_sources_stay_distinct_in_opaque_and_sorted_transparent_batches ... ok
+test engine::graphics::visual_world::render_streams::tests::unchanged_texture_keeps_draw_cache_but_replacement_invalidates ... ok
+test engine::graphics::visual_world::tests::background_occluded_lit_emissive_subset_includes_only_eligible_instances ... ok
+test engine::graphics::visual_world::tests::background_occluded_lit_non_emissive_keeps_subset_empty ... ok
+test engine::graphics::visual_world::tests::cutout_stream_enters_and_exits_single_root_clip ... ok
+test engine::graphics::visual_world::tests::cutout_stream_uses_opaque_clip_source_for_stencil_ops ... ok
+test engine::graphics::visual_world::tests::deformation_ranges_are_stable_reused_and_reallocated_on_size_change ... ok
+test engine::graphics::visual_world::tests::draw_cache_switches_between_no_clip_and_clip_stream_construction ... ok
+test engine::graphics::visual_world::tests::identical_palette_recomputation_does_not_dirty_deformation ... ok
+test engine::graphics::visual_world::tests::no_clip_streams_are_draw_batches_covering_each_phase_order_once ... ok
+test engine::graphics::visual_world::tests::opaque_stream_enters_and_exits_single_root_clip ... ok
+test engine::graphics::visual_world::tests::opaque_stream_excluding_source_instance_skips_clip_ops_for_that_source ... ok
+test engine::graphics::visual_world::tests::opaque_stream_uses_transparent_clip_source_for_stencil_ops ... ok
+test engine::graphics::visual_world::tests::outline_stream_reuses_visual_instances_and_separates_static_from_skinned_batches ... ok
+test engine::graphics::visual_world::tests::overlay_stream_nests_clip_regions_in_dfs_order ... ok
+test engine::graphics::visual_world::tests::phase_exclusion_helpers_drop_source_from_overlay_cutout_and_transparent_passes ... ok
+test engine::graphics::visual_world::tests::transparent_single_stream_enters_and_exits_single_root_clip ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 1316 filtered out; finished in 0.00s
+
+
+running 1 test
+test engine::graphics::vulkano_renderer::vulkano_backend::command_reuse_tests::retained_primaries_match_fresh_commands_with_changing_camera_lights_and_joints ... [VulkanoRenderer] MSAA enabled: 4x
+[VulkanoRenderer] MSAA enabled: 4x
+[VulkanoRenderer] MSAA enabled: 4x
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1337 filtered out; finished in 0.23s
+
+
+running 5 tests
+test engine::graphics::vulkano_renderer::vulkano_backend::headless_tests::headless_scene_draws_stereo_without_surface_extensions ... [VulkanoRenderer] MSAA disabled
+Headless scene test: NVIDIA GeForce GTX 1080 MSAA=off
+[VulkanoRenderer] MSAA enabled: 4x
+Headless scene test: NVIDIA GeForce GTX 1080 MSAA=4x
+ok
+test engine::graphics::vulkano_renderer::vulkano_backend::headless_tests::material_instances_render_independent_revisions_in_both_eyes ... [VulkanoRenderer] MSAA disabled
+ok
+test engine::graphics::vulkano_renderer::vulkano_backend::headless_tests::mirror_orientation::individual_mirror_pause_retains_last_images ... [VulkanoRenderer] MSAA disabled
+[AssetSystem][debug] scanning asset module: "assets/components/washroom_fixtures.mms"
+[SystemWorld] failed to scan assets dir: import error: cannot read 'types': No such file or directory (os error 2)
+[startup] [█████░░░] 5/8 first update completed
+ok
+test engine::graphics::vulkano_renderer::vulkano_backend::headless_tests::mirror_orientation::planar_mirror_keeps_reflected_objects_upright ... [VulkanoRenderer] MSAA disabled
+[AssetSystem][debug] scanning asset module: "assets/components/washroom_fixtures.mms"
+[SystemWorld] failed to scan assets dir: import error: cannot read 'types': No such file or directory (os error 2)
+ok
+test engine::graphics::vulkano_renderer::vulkano_backend::headless_tests::ship_startup::ship_xr_first_view_is_not_black ... [VulkanoRenderer] MSAA enabled: 4x
+[AssetSystem][debug] scanning asset module: "assets/components/washroom_fixtures.mms"
+[SystemWorld] failed to scan assets dir: import error: cannot read 'types': No such file or directory (os error 2)
+loading ship GPU fixture
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[SecondaryMotion] chain ComponentId(7944v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7948v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7952v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7956v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7960v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7964v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7968v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7972v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7976v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7980v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7984v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7988v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7992v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7996v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8002v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8003v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8004v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8005v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8006v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8007v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8008v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8010v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8012v1): owning GLTF has not spawned its node transforms yet
+ship GPU frame 0
+[ClockSystem] driver: system -> audio
+[AudioInput] source=ComponentId(7930v1) device="default" format=F32 sample_rate=44100 channels=2 windows=[0.080s]
+[HTCEyeTracking] listening on 127.0.0.1:9002
+[AVC] left arm IK: root=transform (id=ComponentId(15183v1)), mid=transform (id=ComponentId(15198v1)), hand=transform (id=ComponentId(15201v1)), target=(id=ComponentId(16391v1))
+[AVC] right arm IK: root=transform (id=ComponentId(15252v1)), mid=transform (id=ComponentId(15267v1)), hand=transform (id=ComponentId(15270v1)), target=(id=ComponentId(16393v1))
+[AVC] re-parenting camera ComponentId(8020v1) under camera anchor ComponentId(14967v1)
+[AVC][capsule][inferred] avc=ComponentId(8014v1) model_root=ComponentId(8015v1) source=aggregate_render_bounds bounds_min=[-0.6704933, 0.029031461, -0.32431844] bounds_max=[0.6704933, 1.8569258, 0.1332873] center_y=0.942979 radius=0.280000 half_segment=0.633947 local_bottom=0.029032 local_top=1.856926 movement_target=Some(ComponentId(8032v1))
+ship GPU frame 1
+[Amplitude] observer=ComponentId(7931v1) source=ComponentId(7930v1) status=Live rms=0.000787 peak=0.002317 frames=1854 dropped=0
+[AVC][capsule][settled] avc=ComponentId(8014v1) capsule_transform=ComponentId(16429v1) zone=ComponentId(16431v1) local_center_y=Some(0.9429787) world_center=Some([5.9959118e-9, 1.9429786, -2.9151068]) radius=0.280000 half_segment=0.633947 world_bottom_top=Some((1.0290315, 2.8569257))
+ship GPU frame 2
+ship GPU frame 3
+ship GPU frame 4
+ship GPU frame 5
+ship GPU frame 6
+ship GPU frame 7
+ship GPU frame 8
+ship GPU frame 9
+ship GPU frame 10
+ship GPU frame 11
+ship GPU frame 12
+ship GPU frame 13
+ship GPU frame 14
+ship GPU frame 15
+ship GPU frame 16
+ship GPU frame 17
+ship GPU frame 18
+ship GPU frame 19
+ship GPU frame 20
+ship GPU frame 21
+ship GPU frame 22
+ship GPU frame 23
+ship visible pixels 153600, instances 2017
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 1333 filtered out; finished in 5.42s
+
+
+running 1 test
+test engine::graphics::vulkano_renderer::vulkano_backend::custom_material_tests::custom_f32_snapshots_preserve_revisions_and_reuse_after_ten_thousand_updates ... [VulkanoRenderer] MSAA disabled
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1337 filtered out; finished in 0.37s
+
+
+running 1 test
+test engine::graphics::vulkano_renderer::vulkano_backend::deformation_tests::morph_arena_reuse_preserves_weights_poses_and_recorded_generations ... [VulkanoRenderer] MSAA disabled
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1337 filtered out; finished in 0.19s
+
+
+running 1 test
+test engine::graphics::vulkano_renderer::vulkano_backend::grid_material_tests::surface_grid_renders_and_updates_spacing_without_legacy_grid_pipeline ... [VulkanoRenderer] MSAA enabled: 4x
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1337 filtered out; finished in 0.32s
+
+
+running 1 test
+test engine::graphics::vulkano_renderer::vulkano_backend::retained_upload_tests::retained_uploads_preserve_reserved_data_and_reuse_completed_storage ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1337 filtered out; finished in 0.13s
+
