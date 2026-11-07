@@ -1,0 +1,173 @@
+{
+  "case": "full",
+  "components": 16621,
+  "frames": 480,
+  "global_frame_tick": false,
+  "instances": 2044,
+  "load_and_warmup_ms": 4321.463097,
+  "models": [
+    "assets/models/sakura-machine-pistol.glb",
+    "assets/models/sakura-machine-pistol.glb",
+    "assets/models/sakura-machine-pistol.glb",
+    "assets/models/mitten_pickup.glb",
+    "assets/components/characters/lumae/lumae.glb",
+    "assets/models/mitten_pickup.glb",
+    "assets/models/mitten_pickup.glb",
+    "assets/models/mitten.glb"
+  ],
+  "pickups_after": [
+    {
+      "angular": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "enabled": true,
+      "gravity_enabled": true,
+      "grounded": true,
+      "linear": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "position": [
+        -9.5,
+        -0.019999999552965164,
+        15.0
+      ],
+      "velocity_id": "ComponentId(4514v1)"
+    },
+    {
+      "angular": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "enabled": true,
+      "gravity_enabled": true,
+      "grounded": true,
+      "linear": [
+        9.313227966600834e-10,
+        -5.587935447692871e-09,
+        -1.8626448161640496e-09
+      ],
+      "position": [
+        23.262197494506836,
+        5.53638219833374,
+        10.62009334564209
+      ],
+      "velocity_id": "ComponentId(7565v1)"
+    },
+    {
+      "angular": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "enabled": true,
+      "gravity_enabled": true,
+      "grounded": true,
+      "linear": [
+        -2.7755575615628914e-16,
+        3.725290298461914e-09,
+        1.8626449271863521e-09
+      ],
+      "position": [
+        23.27332305908203,
+        5.459112167358398,
+        19.3513126373291
+      ],
+      "velocity_id": "ComponentId(7907v1)"
+    }
+  ],
+  "pickups_before": [
+    {
+      "angular": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "enabled": true,
+      "gravity_enabled": true,
+      "grounded": true,
+      "linear": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "position": [
+        -9.5,
+        -0.019999999552965164,
+        15.0
+      ],
+      "velocity_id": "ComponentId(4514v1)"
+    },
+    {
+      "angular": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "enabled": true,
+      "gravity_enabled": true,
+      "grounded": true,
+      "linear": [
+        9.313227966600834e-10,
+        -5.587935447692871e-09,
+        -1.8626448161640496e-09
+      ],
+      "position": [
+        23.08086585998535,
+        5.628654479980469,
+        10.537720680236816
+      ],
+      "velocity_id": "ComponentId(7565v1)"
+    },
+    {
+      "angular": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "enabled": true,
+      "gravity_enabled": true,
+      "grounded": true,
+      "linear": [
+        9.313221860374199e-10,
+        2.7939677238464355e-09,
+        1.862645149230957e-09
+      ],
+      "position": [
+        23.089380264282227,
+        5.5634379386901855,
+        19.450334548950195
+      ],
+      "velocity_id": "ComponentId(7907v1)"
+    }
+  ],
+  "prepare": {
+    "max_ms": 1.153367,
+    "mean_ms": 0.6310830125,
+    "p50_ms": 0.6113759999999999,
+    "p95_ms": 0.7372270000000001
+  },
+  "sample_mesh_uploads": 0,
+  "spring_stage_mean_ms": [
+    1.0286805041666676,
+    0.08236287083333328,
+    0.034003462500000005,
+    0.013056808333333347
+  ],
+  "total": {
+    "max_ms": 12.286513000000001,
+    "mean_ms": 9.409545243749992,
+    "p50_ms": 10.225832,
+    "p95_ms": 10.903957
+  },
+  "update": {
+    "max_ms": 11.486869,
+    "mean_ms": 8.77829242291667,
+    "p50_ms": 9.619966,
+    "p95_ms": 10.229080999999999
+  }
+}

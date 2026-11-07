@@ -1,0 +1,98 @@
+[AssetSystem][debug] scanning asset module: "assets/components/washroom_fixtures.mms"
+[SystemWorld] failed to scan assets dir: import error: cannot read 'types': No such file or directory (os error 2)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[SecondaryMotion] chain ComponentId(7962v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7966v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7970v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7974v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7978v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7982v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7986v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7990v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7994v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7998v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8002v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8006v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8010v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8014v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8020v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8021v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8022v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8023v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8024v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8025v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8026v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8028v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8030v1): owning GLTF has not spawned its node transforms yet
+[HTCEyeTracking] cannot bind 127.0.0.1:9002: Operation not permitted (os error 1)
+[AVC] left arm IK: root=transform (id=ComponentId(16136v1)), mid=transform (id=ComponentId(16151v1)), hand=transform (id=ComponentId(16154v1)), target=(id=ComponentId(16562v1))
+[AVC] right arm IK: root=transform (id=ComponentId(16205v1)), mid=transform (id=ComponentId(16220v1)), hand=transform (id=ComponentId(16223v1)), target=(id=ComponentId(16564v1))
+[AVC] re-parenting camera ComponentId(8038v1) under camera anchor ComponentId(15920v1)
+[AVC][capsule][inferred] avc=ComponentId(8032v1) model_root=ComponentId(8033v1) source=aggregate_render_bounds bounds_min=[-0.6704933, 0.029031461, -0.32431844] bounds_max=[0.6704933, 1.8569258, 0.1332873] center_y=0.942979 radius=0.280000 half_segment=0.633947 local_bottom=0.029032 local_top=1.856926 movement_target=Some(ComponentId(8050v1))
+[startup] [█████░░░] 5/8 first update completed
+[AVC][capsule][settled] avc=ComponentId(8032v1) capsule_transform=ComponentId(16600v1) zone=ComponentId(16602v1) local_center_y=Some(0.9429787) world_center=Some([5.9959118e-9, 1.9429786, -2.9151068]) radius=0.280000 half_segment=0.633947 world_bottom_top=Some((1.0290315, 2.8569257))
+PROFILE_BEGIN case=full frames=120 components=16621 instances=2044 models=["assets/models/sakura-machine-pistol.glb", "assets/models/sakura-machine-pistol.glb", "assets/models/sakura-machine-pistol.glb", "assets/models/mitten_pickup.glb", "assets/components/characters/lumae/lumae.glb", "assets/models/mitten_pickup.glb", "assets/models/mitten_pickup.glb", "assets/models/mitten.glb"]
+UPLOAD_TRACE vertices=963 indices=1728    0: <profile_ship_cpu::CpuUploader as mittens_engine::engine::graphics::MeshUploader>::upload_mesh
+   1: <mittens_engine::engine::graphics::render_assets::RenderAssets>::gpu_mesh_handle
+   2: <mittens_engine::engine::ecs::system::combine_mesh_system::CombineMeshSystem>::reconcile_and_build
+   3: <mittens_engine::engine::ecs::system::system_world::state::SystemWorld>::prepare_render
+   4: profile_ship_cpu::main
+   5: std::sys::backtrace::__rust_begin_short_backtrace::<fn() -> core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>, core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>>
+   6: std::rt::lang_start::<core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>>::{closure#0}
+   7: std::rt::lang_start_internal
+   8: main
+   9: <unknown>
+  10: __libc_start_main
+  11: _start
+
+UPLOAD_TRACE vertices=963 indices=1728    0: <profile_ship_cpu::CpuUploader as mittens_engine::engine::graphics::MeshUploader>::upload_mesh
+   1: <mittens_engine::engine::graphics::render_assets::RenderAssets>::gpu_mesh_handle
+   2: <mittens_engine::engine::ecs::system::combine_mesh_system::CombineMeshSystem>::reconcile_and_build
+   3: <mittens_engine::engine::ecs::system::system_world::state::SystemWorld>::prepare_render
+   4: profile_ship_cpu::main
+   5: std::sys::backtrace::__rust_begin_short_backtrace::<fn() -> core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>, core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>>
+   6: std::rt::lang_start::<core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>>::{closure#0}
+   7: std::rt::lang_start_internal
+   8: main
+   9: <unknown>
+  10: __libc_start_main
+  11: _start
+
+UPLOAD_TRACE vertices=963 indices=1728    0: <profile_ship_cpu::CpuUploader as mittens_engine::engine::graphics::MeshUploader>::upload_mesh
+   1: <mittens_engine::engine::graphics::render_assets::RenderAssets>::gpu_mesh_handle
+   2: <mittens_engine::engine::ecs::system::combine_mesh_system::CombineMeshSystem>::reconcile_and_build
+   3: <mittens_engine::engine::ecs::system::system_world::state::SystemWorld>::prepare_render
+   4: profile_ship_cpu::main
+   5: std::sys::backtrace::__rust_begin_short_backtrace::<fn() -> core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>, core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>>
+   6: std::rt::lang_start::<core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>>::{closure#0}
+   7: std::rt::lang_start_internal
+   8: main
+   9: <unknown>
+  10: __libc_start_main
+  11: _start
+
+UPLOAD_TRACE vertices=963 indices=1728    0: <profile_ship_cpu::CpuUploader as mittens_engine::engine::graphics::MeshUploader>::upload_mesh
+   1: <mittens_engine::engine::graphics::render_assets::RenderAssets>::gpu_mesh_handle
+   2: <mittens_engine::engine::ecs::system::combine_mesh_system::CombineMeshSystem>::reconcile_and_build
+   3: <mittens_engine::engine::ecs::system::system_world::state::SystemWorld>::prepare_render
+   4: profile_ship_cpu::main
+   5: std::sys::backtrace::__rust_begin_short_backtrace::<fn() -> core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>, core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>>
+   6: std::rt::lang_start::<core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>>::{closure#0}
+   7: std::rt::lang_start_internal
+   8: main
+   9: <unknown>
+  10: __libc_start_main
+  11: _start
+
+UPLOAD_OWNER MeshHandle(1840) vertices=963 indices=1728 owners=[]
+UPLOAD_OWNER MeshHandle(1841) vertices=963 indices=1728 owners=[]
+UPLOAD_OWNER MeshHandle(1842) vertices=963 indices=1728 owners=[["pickup_dashboard_gauge_mesh", "", "pickup_dashboard_gauges", "pickup_chassis_frame", "pickup_chassis_pose", "pickup_truck", "pickup_velocity", "ship_orchard_pickup_north", "ship_park", "", "ship_interior"]]
+UPLOAD_OWNER MeshHandle(1843) vertices=963 indices=1728 owners=[["pickup_dashboard_gauge_mesh", "", "pickup_dashboard_gauges", "pickup_chassis_frame", "pickup_chassis_pose", "pickup_truck", "pickup_velocity", "ship_orchard_pickup_south", "ship_park", "", "ship_interior"]]
+{"case":"full","components":16621,"frames":120,"global_frame_tick":false,"instances":2044,"load_and_warmup_ms":4491.597063,"models":["assets/models/sakura-machine-pistol.glb","assets/models/sakura-machine-pistol.glb","assets/models/sakura-machine-pistol.glb","assets/models/mitten_pickup.glb","assets/components/characters/lumae/lumae.glb","assets/models/mitten_pickup.glb","assets/models/mitten_pickup.glb","assets/models/mitten.glb"],"prepare":{"max_ms":2.749753,"mean_ms":1.0442313166666668,"p50_ms":1.009111,"p95_ms":1.2089349999999999},"sample_mesh_uploads":240,"spring_stage_mean_ms":[1.3244096416666666,0.07484129166666668,0.032342174999999994,0.01417415],"total":{"max_ms":13.237255,"mean_ms":10.435218316666667,"p50_ms":11.28413,"p95_ms":12.233837},"update":{"max_ms":11.900439,"mean_ms":9.390252308333338,"p50_ms":10.291194,"p95_ms":11.133922}}

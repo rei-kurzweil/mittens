@@ -1,4 +1,4 @@
-import { pickup_activity } from "./pickup_activity.mms"
+import { pickup_power_panel } from "./pickup_power_panel.mms"
 import { ship_vehicle_motion } from "./ship_vehicle_motion.mms"
 import { pickup_driving } from "./pickup_driving.mms"
 import { pickup_model_suspension_bindings, bind_pickup_model_suspension } from "./pickup_model_suspension.mms"
@@ -10,7 +10,7 @@ import { pickup_ride_height, pickup_ride_transition } from "./pickup_ride_height
 import { pickup_hydraulics_panel } from "./pickup_hydraulics_panel.mms"
 
 // Original procedural geometry remains in pickup_truck_prototype.mms.
-fn make_pickup(color, cargo, gravity_enabled, proximity_activation) {
+fn make_pickup(color, cargo, gravity_enabled) {
     let gauges=pickup_dashboard_gauges()
     let bindings=pickup_model_suspension_bindings()
     let batch=CombineMesh.keep_transforms() {
@@ -109,12 +109,13 @@ fn make_pickup(color, cargo, gravity_enabled, proximity_activation) {
     // A direct child is an existing body-local Velocity gravity override.
     let gravity=Gravity.enabled(gravity_enabled!=false) {name="pickup_gravity"}
     motion.attach(gravity)
-    if proximity_activation==true {truck.attach(pickup_activity(truck,motion,gravity,gravity_enabled))}
     truck.attach(pickup_sliding_colliders(truck))
-    body.attach(pickup_driving(truck,motion,[-0.33,1.78,0.30],proximity_activation))
+    let power=pickup_power_panel(fn() {truck.set_powered(!truck.powered())})
+    body.attach(pickup_driving(truck,motion,[-0.33,1.78,0.30],fn(value) {power.show_power(value)}))
+    body.attach(power)
     return motion
 }
 
-export fn pickup_truck(color, cargo, gravity_enabled, proximity_activation) {
-    return make_pickup(color,cargo,gravity_enabled,proximity_activation)
+export fn pickup_truck(color, cargo, gravity_enabled) {
+    return make_pickup(color,cargo,gravity_enabled)
 }

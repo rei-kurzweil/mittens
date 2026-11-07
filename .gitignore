@@ -12,3 +12,16 @@ docs/.debug/*.log
 /data/*
 !/data/.gitkeep
 assets/models/tmp
+
+# Local-only models: keep directory traversal open for Markdown notes, but
+# ignore every other file type (models, textures, audio, archives, etc.).
+/assets/models/local/**
+!/assets/models/local/**/
+!/assets/models/local/**/*.md
+!/assets/models/local/**/*.MD
+!/assets/models/local/**/*.markdown
+!/assets/models/local/**/*.MARKDOWN
+
+# Personal examples stay local; Git needs one tracked file to retain the folder.
+/examples/local/**
+!/examples/local/.gitkeep

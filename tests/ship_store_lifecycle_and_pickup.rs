@@ -85,7 +85,7 @@ fn stores_rebuild_and_pickups_mount_drive_brake_and_dismount() {
         fn fixture() { return T { name="store_fixture" ship_solid([0,1,2],[1,1,1],[0.4,0.5,0.4]) PL.intensity(3) } }
         T.position(10,0,0) { ship_store_accordion("test_store","TEST STORE",fixture,5,3,null) }
         T.position(20,0,0) { ship_store_accordion("retail_test","CONVENIENCE",ship_convenience_store,12,6,null) }
-        pickup_truck(null,null,null,true)
+        pickup_truck(null,null,null)
         ship_solid([0,-0.1,0],[60,0.2,60],[0.3,0.3,0.3])
         T.position(-1.5,0,0) {
             name="test_rider_root"
@@ -210,10 +210,18 @@ fn stores_rebuild_and_pickups_mount_drive_brake_and_dismount() {
     let mut hit = None;
     while let Some(id) = pending.pop() {
         pending.extend_from_slice(scene.world.children_of(id));
+        // Select a real stable hit target, not a text glyph that is replaced
+        // when the new power readout changes between ON and OFF.
         if scene
             .world
             .get_component_by_id_as::<RenderableComponent>(id)
             .is_some()
+            && scene.world.children_of(id).iter().any(|&child| {
+                scene
+                    .world
+                    .get_component_by_id_as::<RaycastableComponent>(child)
+                    .is_some()
+            })
         {
             hit = Some(id);
             break;
@@ -231,6 +239,15 @@ fn stores_rebuild_and_pickups_mount_drive_brake_and_dismount() {
     );
     tick(&mut scene, 3);
     assert!(
+        !scene
+            .systems
+            .rx
+            .has_global_handlers(mittens_engine::engine::ecs::SignalKind::FrameTick),
+        "mounting a powered-off truck must not enable driving callbacks"
+    );
+    let power_button = named(&scene.world, "pickup_power_button");
+    click(&mut scene, power_button);
+    assert!(
         scene
             .systems
             .rx
@@ -242,6 +259,30 @@ fn stores_rebuild_and_pickups_mount_drive_brake_and_dismount() {
             .rx
             .has_global_handlers(mittens_engine::engine::ecs::SignalKind::XrAxisChanged)
     );
+    for _ in 0..6 {
+        click(&mut scene, power_button);
+        assert!(
+            !scene
+                .systems
+                .rx
+                .has_global_handlers(mittens_engine::engine::ecs::SignalKind::FrameTick),
+            "power off while mounted must bypass heading updates"
+        );
+        assert!(
+            !scene
+                .systems
+                .rx
+                .has_global_handlers(mittens_engine::engine::ecs::SignalKind::XrAxisChanged),
+            "power off while mounted must bypass vehicle input"
+        );
+        click(&mut scene, power_button);
+        assert!(
+            scene
+                .systems
+                .rx
+                .has_global_handlers(mittens_engine::engine::ecs::SignalKind::FrameTick)
+        );
+    }
     let root = named(&scene.world, "test_rider_root");
     assert!(
         !scene
@@ -288,6 +329,9 @@ fn stores_rebuild_and_pickups_mount_drive_brake_and_dismount() {
         (stick_driven[0] - still[0]).abs() + (stick_driven[2] - still[2]).abs() > 0.1,
         "XR stick should drive the mounted pickup"
     );
+    // Dismounting no longer erases momentum. Park explicitly before this
+    // lifecycle test remounts from the fixed exit anchor.
+    key(&mut scene, root, "Space", true);
     assert!(scene.systems.attachment.try_dismount_for_pointer(
         &mut scene.world,
         pointer,

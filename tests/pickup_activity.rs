@@ -1,6 +1,8 @@
 use mittens_engine::engine::{
     Universe,
-    ecs::{ComponentId, EventSignal, SignalEmitter, component::*, system::TransformSystem},
+    ecs::{
+        ComponentId, EventSignal, SignalEmitter, SignalKind, component::*, system::TransformSystem,
+    },
 };
 use std::sync::{
     Arc,
@@ -11,7 +13,7 @@ use std::sync::{
 struct TestClock(AtomicU64);
 impl mittens_engine::engine::ecs::system::ClockDriver for TestClock {
     fn name(&self) -> &'static str {
-        "pickup-activity-test"
+        "pickup-power-test"
     }
     fn time_now_sec(&self) -> f64 {
         self.0.load(Ordering::Relaxed) as f64 / 1_000_000.
@@ -30,6 +32,29 @@ fn tick(scene: &mut Universe, clock: &TestClock, frames: usize) {
         scene.update(1. / 60., &Default::default());
     }
 }
+fn fixture() -> (Universe, Arc<TestClock>) {
+    let mut scene = Universe::new(Default::default());
+    let clock = Arc::new(TestClock::default());
+    scene.systems.clock.set_driver(clock.clone());
+    scene.load_mms_source_at_path(r##"
+        import { ship_input_controller } from "../assets/components/ship_input_controller.mms"
+        import { pickup_truck } from "../assets/components/vehicles/pickup_truck.mms"
+        ship_input_controller(false)
+        let vehicle=pickup_truck()
+        T.position(0,3,0) {name="fixture" vehicle}
+        let floor=T.position(0,-0.1,0).scale(200,0.2,200) {Zone.cube([0.5,0.5,0.5]) {Collidable.static()}}
+        floor
+        T.position(40,0,0) {name="ship_desktop_camera_rig"}
+        let control=T {name="control"}
+        on(control,"DataEvent",fn(event) {
+            let truck=vehicle.query("#pickup_truck")
+            if event=="Drive" {truck.drive_command(0.5,0,false)}
+            if event=="DropFloor" {floor.remove_subtree()}
+            if event=="Kick" {vehicle.translate_world([1,3,0]) vehicle.rotate_world([0,0,0.5])}
+        })
+    "##, "examples/_pickup_power_test.mms").unwrap();
+    (scene, clock)
+}
 fn command(scene: &mut Universe, clock: &TestClock, name: &str) {
     scene.command_queue.push_event(
         named(scene, "control"),
@@ -40,121 +65,145 @@ fn command(scene: &mut Universe, clock: &TestClock, name: &str) {
     );
     tick(scene, clock, 1);
 }
-fn gravity(scene: &Universe) -> bool {
+fn click_power(scene: &mut Universe, clock: &TestClock) {
+    let button = named(scene, "pickup_power_button");
+    scene.command_queue.push_event(
+        button,
+        EventSignal::Click {
+            raycaster: ComponentId::default(),
+            renderable: button,
+            hit_point: [0.; 3],
+            screen_pos_px: None,
+        },
+    );
+    tick(scene, clock, 2);
+}
+fn velocity(scene: &Universe) -> &VelocityComponent {
     scene
         .world
-        .get_component_by_id_as::<GravityComponent>(named(scene, "pickup_gravity"))
+        .get_component_by_id_as::<VelocityComponent>(named(scene, "pickup_velocity"))
         .unwrap()
-        .enabled
 }
-fn move_player(scene: &mut Universe, x: f32) {
-    let id = named(scene, "ship_desktop_camera_rig");
-    let transform = scene
+fn position(scene: &Universe) -> [f32; 3] {
+    TransformSystem::world_position(&scene.world, named(scene, "pickup_truck")).unwrap()
+}
+fn label(scene: &Universe) -> &str {
+    &scene
         .world
-        .get_component_by_id_as_mut::<TransformComponent>(id)
-        .unwrap();
-    transform.transform.translation = [x, 0., 0.];
-    transform.transform.recompute_model();
-    scene
-        .systems
-        .transform_changed(&mut scene.world, &mut scene.visuals, id);
+        .get_component_by_id_as::<TextComponent>(named(scene, "pickup_power_readout"))
+        .unwrap()
+        .text
 }
-#[test]
-fn proximity_parks_supported_truck_wakes_with_deadband_and_pins_npc_commands() {
-    let mut scene = Universe::new(Default::default());
-    let clock = Arc::new(TestClock::default());
-    scene.systems.clock.set_driver(clock.clone());
-    scene.systems.clock.set_bpm(60.);
-    scene
-        .load_mms_source_at_path(
-            r##"
-        import { ship_input_controller } from "../assets/components/ship_input_controller.mms"
-        import { pickup_truck } from "../assets/components/vehicles/pickup_truck.mms"
-        ship_input_controller(false)
-        let vehicle=pickup_truck(null,null,null,true)
-        T.position(0,3,0) {name="fixture" vehicle}
-        T.position(0,-0.1,0).scale(200,0.2,200) {Zone.cube([0.5,0.5,0.5]) {Collidable.static()}}
-        T.position(40,0,0) {
-            name="ship_desktop_camera_rig"
-            T.position(0,0.9,0) {Zone.capsule_y(0.25,0.55) {
-                Collidable.slide().movement_target("/#ship_desktop_camera_rig")
-            }}
-        }
-        let control=T {name="control"}
-        on(control,"DataEvent",fn(event) {
-            let truck=vehicle.query("#pickup_truck")
-            if event=="Drive" {truck.drive_command(0.5,0,false)}
-            if event=="Stop" {truck.drive_command(0,0,true)}
-            if event=="Off" {truck.set_active(false)}
-            if event=="On" {truck.set_active(true)}
-            if event=="Auto" {truck.use_proximity_activation()}
-        })
-    "##,
-            "examples/_pickup_activity_test.mms",
-        )
-        .unwrap();
-    let truck = named(&scene, "pickup_truck");
-    tick(&mut scene, &clock, 10);
-    let falling = TransformSystem::world_position(&scene.world, truck).unwrap();
+fn assert_physics_and_no_polling(scene: &Universe) {
     assert!(
-        gravity(&scene) && falling[1] > 1.,
-        "distant truck must fall before parking: {falling:?}"
+        scene
+            .world
+            .get_component_by_id_as::<GravityComponent>(named(scene, "pickup_gravity"))
+            .unwrap()
+            .enabled
     );
-    tick(&mut scene, &clock, 120);
-    let parked = TransformSystem::world_position(&scene.world, truck).unwrap();
-    assert!(!gravity(&scene), "supported distant truck should park");
-    assert!(
-        parked[1].abs() < 0.05,
-        "truck must reach deck before parking: {parked:?}"
-    );
+    assert!(velocity(scene).enabled);
+    for name in [
+        "pickup_parking_check",
+        "pickup_activity_inner",
+        "pickup_activity_outer",
+    ] {
+        assert!(
+            !scene
+                .world
+                .all_components()
+                .any(|id| scene.world.component_label(id) == Some(name)),
+            "retired {name}"
+        );
+    }
+    assert!(!scene.systems.rx.has_global_handlers(SignalKind::FrameTick));
     assert!(
         !scene
+            .systems
+            .rx
+            .has_global_handlers(SignalKind::XrAxisChanged)
+    );
+}
+#[test]
+fn power_button_is_reachable_unmounted_and_off_preserves_motion() {
+    let (mut scene, clock) = fixture();
+    tick(&mut scene, &clock, 10);
+    assert!(position(&scene)[1] < 3. && position(&scene)[1] > 1.);
+    assert_eq!(label(&scene), "POWER OFF");
+    assert_physics_and_no_polling(&scene);
+    tick(&mut scene, &clock, 120);
+    assert!(position(&scene)[1].abs() < 0.05);
+    assert_physics_and_no_polling(&scene);
+    // Proximity no longer governs either control power or physics.
+    let player = named(&scene, "ship_desktop_camera_rig");
+    for x in [0., 40.] {
+        let transform = scene
             .world
-            .all_components()
-            .any(|id| scene.world.component_label(id) == Some("pickup_parking_check")),
-        "parked truck must have no polling animation"
-    );
-    tick(&mut scene, &clock, 60);
-    assert_eq!(
-        TransformSystem::world_position(&scene.world, truck).unwrap(),
-        parked
-    );
-    move_player(&mut scene, 4.);
-    tick(&mut scene, &clock, 2);
-    assert!(gravity(&scene), "inner sensor wakes player-near truck");
-    move_player(&mut scene, 6.);
-    tick(&mut scene, &clock, 40);
-    assert!(
-        gravity(&scene),
-        "outer sensor retains active state in deadband"
-    );
-    move_player(&mut scene, 10.);
-    tick(&mut scene, &clock, 60);
-    assert!(
-        !gravity(&scene),
-        "leaving outer sensor parks truck after contact"
-    );
+            .get_component_by_id_as_mut::<TransformComponent>(player)
+            .unwrap();
+        transform.transform.translation[0] = x;
+        transform.transform.recompute_model();
+        scene
+            .systems
+            .transform_changed(&mut scene.world, &mut scene.visuals, player);
+        tick(&mut scene, &clock, 40);
+        assert_eq!(label(&scene), "POWER OFF");
+        assert_physics_and_no_polling(&scene);
+    }
     command(&mut scene, &clock, "Drive");
-    let initial = TransformSystem::world_position(&scene.world, truck).unwrap();
-    tick(&mut scene, &clock, 60);
-    let driven = TransformSystem::world_position(&scene.world, truck).unwrap();
-    assert!(
-        gravity(&scene) && driven[2] < initial[2] - 1.,
-        "NPC command wakes and pins truck without a nearby player"
+    assert_eq!(
+        velocity(&scene).linear_local_mps[2],
+        0.,
+        "NPC commands cannot turn power on"
     );
-    command(&mut scene, &clock, "Stop");
-    tick(&mut scene, &clock, 60);
-    assert!(!gravity(&scene), "stopping NPC releases active pin");
-    command(&mut scene, &clock, "On");
-    tick(&mut scene, &clock, 60);
-    assert!(gravity(&scene), "explicit on keeps distant truck active");
-    command(&mut scene, &clock, "Off");
-    tick(&mut scene, &clock, 60);
-    assert!(!gravity(&scene), "explicit off parks truck");
-    move_player(&mut scene, 4.);
+    click_power(&mut scene, &clock);
+    assert_eq!(label(&scene), "POWER ON");
+    assert_physics_and_no_polling(&scene); // Nobody mounted: no driver callbacks needed.
+    command(&mut scene, &clock, "Drive");
+    assert!(velocity(&scene).linear_local_mps[2] < -2.);
+    click_power(&mut scene, &clock);
+    assert_eq!(label(&scene), "POWER OFF");
+    assert!(
+        velocity(&scene).linear_local_mps[2] < -2.,
+        "power off must not erase momentum"
+    );
+    let before = position(&scene);
     tick(&mut scene, &clock, 30);
-    assert!(!gravity(&scene), "manual off overrides proximity");
-    command(&mut scene, &clock, "Auto");
-    tick(&mut scene, &clock, 2);
-    assert!(gravity(&scene), "auto restores proximity policy");
+    assert!(position(&scene)[2] < before[2] - 0.5);
+    assert_physics_and_no_polling(&scene);
+}
+#[test]
+fn off_truck_loses_support_and_accepts_external_linear_and_angular_motion() {
+    let (mut scene, clock) = fixture();
+    tick(&mut scene, &clock, 140);
+    let settled = position(&scene);
+    assert!(settled[1].abs() < 0.05);
+    command(&mut scene, &clock, "DropFloor");
+    tick(&mut scene, &clock, 20);
+    assert!(
+        position(&scene)[1] < settled[1] - 0.1,
+        "support removal must wake/fall without player proximity"
+    );
+    command(&mut scene, &clock, "Kick");
+    let before = position(&scene);
+    let truck = named(&scene, "pickup_truck");
+    let rotation = scene
+        .world
+        .get_component_by_id_as::<TransformComponent>(truck)
+        .unwrap()
+        .transform
+        .rotation;
+    tick(&mut scene, &clock, 10);
+    assert!(position(&scene)[0] > before[0] + 0.1);
+    assert_ne!(
+        scene
+            .world
+            .get_component_by_id_as::<TransformComponent>(truck)
+            .unwrap()
+            .transform
+            .rotation,
+        rotation
+    );
+    assert_eq!(label(&scene), "POWER OFF");
+    assert_physics_and_no_polling(&scene);
 }

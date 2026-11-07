@@ -1,0 +1,43 @@
+{
+  "case": "parked_vehicles",
+  "components": 16621,
+  "frames": 480,
+  "global_frame_tick": false,
+  "instances": 2044,
+  "load_and_warmup_ms": 3117.15067,
+  "models": [
+    "assets/models/sakura-machine-pistol.glb",
+    "assets/models/sakura-machine-pistol.glb",
+    "assets/models/sakura-machine-pistol.glb",
+    "assets/models/mitten_pickup.glb",
+    "assets/components/characters/lumae/lumae.glb",
+    "assets/models/mitten_pickup.glb",
+    "assets/models/mitten_pickup.glb",
+    "assets/models/mitten.glb"
+  ],
+  "prepare": {
+    "max_ms": 0.957604,
+    "mean_ms": 0.6032157999999993,
+    "p50_ms": 0.592024,
+    "p95_ms": 0.676732
+  },
+  "sample_mesh_uploads": 0,
+  "spring_stage_mean_ms": [
+    1.0123295812500006,
+    0.08018984166666669,
+    0.03157964583333334,
+    0.012319093750000001
+  ],
+  "total": {
+    "max_ms": 5.491146,
+    "mean_ms": 4.328220210416666,
+    "p50_ms": 4.327531,
+    "p95_ms": 4.906757000000001
+  },
+  "update": {
+    "max_ms": 4.747804,
+    "mean_ms": 3.7248676479166636,
+    "p50_ms": 3.740073,
+    "p95_ms": 4.25617
+  }
+}

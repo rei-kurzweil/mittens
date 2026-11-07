@@ -146,6 +146,32 @@ fn trucks_cut_imported_parts_keep_cabin_and_other_instance_and_follow_motion() {
             "examples/_pickup_imported_damage.mms",
         )
         .unwrap();
+    // Material compilation is asynchronous. Let every job finish before this
+    // short-lived fixture can exit and tear down shader compiler process state.
+    let definitions: Vec<_> = scene
+        .visuals
+        .materials
+        .instances()
+        .filter_map(|(_, instance)| {
+            scene
+                .visuals
+                .materials
+                .definition(instance.definition)?
+                .custom
+                .clone()
+        })
+        .collect();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while definitions
+        .iter()
+        .any(|definition| definition.compiled.get().is_none())
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "material compilation timed out"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
     let mut upload = Upload::default();
     for _ in 0..5 {
         prepare(&mut scene, &mut upload);

@@ -403,6 +403,96 @@ fn local_bounds(mesh: &CpuMesh) -> Option<Aabb> {
     )
 }
 
+// A retained batch bakes sources into its own coordinate frame. Ordinary
+// structural descendants therefore depend on local transforms below the batch,
+// not on a shared vehicle/parent's changing world pose. World-managed transform
+// boundaries keep the conservative world-matrix key.
+fn ordinary_transform_node(world: &World, node: ComponentId) -> bool {
+    use crate::engine::ecs::component::{
+        InputXRComponent, LayoutBoundsComponent, LayoutVisualPlacementComponent,
+        TransformOperatorComponent,
+    };
+    let overridden = |id| {
+        world
+            .get_component_by_id_as::<TransformOperatorComponent>(id)
+            .is_some()
+            || world
+                .get_component_by_id_as::<LayoutVisualPlacementComponent>(id)
+                .is_some()
+            || world
+                .get_component_by_id_as::<LayoutBoundsComponent>(id)
+                .is_some()
+            || world
+                .get_component_by_id_as::<InputXRComponent>(id)
+                .is_some()
+    };
+    !overridden(node)
+        && !world
+            .children_of(node)
+            .iter()
+            .any(|&child| overridden(child))
+}
+fn structural_source_path(world: &World, root: ComponentId, source: ComponentId) -> bool {
+    use crate::engine::ecs::component::TransformComponent;
+    let mut node = Some(root);
+    while let Some(id) = node {
+        if !ordinary_transform_node(world, id) {
+            return false;
+        }
+        if world
+            .get_component_by_id_as::<TransformComponent>(id)
+            .is_some()
+        {
+            break;
+        }
+        node = world.parent_of(id);
+    }
+    let mut node = Some(source);
+    while let Some(id) = node {
+        if id == root {
+            return true;
+        }
+        if !ordinary_transform_node(world, id) {
+            return false;
+        }
+        node = world.parent_of(id);
+    }
+    false
+}
+fn hash_source_transform(
+    world: &World,
+    root: ComponentId,
+    source: ComponentId,
+    hasher: &mut impl Hasher,
+) {
+    use crate::engine::ecs::component::TransformComponent;
+    let structural = structural_source_path(world, root, source);
+    structural.hash(hasher);
+    if structural {
+        let mut node = Some(source);
+        while let Some(id) = node {
+            if id == root {
+                break;
+            }
+            id.hash(hasher);
+            if let Some(transform) = world.get_component_by_id_as::<TransformComponent>(id) {
+                for column in transform.transform.model {
+                    for value in column {
+                        value.to_bits().hash(hasher);
+                    }
+                }
+            }
+            node = world.parent_of(id);
+        }
+    } else if let Some(matrix) = TransformSystem::world_model(world, source) {
+        for column in matrix {
+            for value in column {
+                value.to_bits().hash(hasher);
+            }
+        }
+    }
+}
+
 fn fingerprint(
     world: &World,
     assets: &RenderAssets,
@@ -427,13 +517,7 @@ fn fingerprint(
             }
         }
         if include_source_transforms {
-            if let Some(matrix) = TransformSystem::world_model(world, id) {
-                for column in matrix {
-                    for value in column {
-                        value.to_bits().hash(&mut hasher);
-                    }
-                }
-            }
+            hash_source_transform(world, root, id, &mut hasher);
         }
     }
     hasher.finish()
@@ -457,6 +541,117 @@ mod tests {
             self.0 += 1;
             Ok(handle)
         }
+    }
+
+    #[test]
+    fn retained_batch_moves_with_parent_without_reuploading_but_internal_edits_rebuild() {
+        let mut world = World::default();
+        let parent = world.add_component(TransformComponent::new());
+        let root = world.add_component(CombineMeshComponent::keep_transforms());
+        let local = world.add_component(TransformComponent::new().with_position(1., 2., 3.));
+        let source = world.add_component(RenderableComponent::cube());
+        for (a, b) in [(parent, root), (root, local), (local, source)] {
+            world.add_child(a, b).unwrap();
+        }
+        let mut visuals = VisualWorld::default();
+        let mut assets = RenderAssets::new();
+        let mut uploader = TestUploader::default();
+        let mut renderables = RenderableSystem::default();
+        let mut bounds = MeshBoundsSystem::default();
+        let mut combine = CombineMeshSystem::default();
+        let mut systems = crate::engine::ecs::SystemWorld::default();
+        systems.transform_changed(&mut world, &mut visuals, parent);
+        combine.reconcile_and_build(
+            &mut world,
+            &mut visuals,
+            &mut assets,
+            &mut uploader,
+            &mut renderables,
+            &mut bounds,
+        );
+        let handle = combine.outputs[&root].handle;
+        for step in 1..5 {
+            let transform = world
+                .get_component_by_id_as_mut::<TransformComponent>(parent)
+                .unwrap();
+            *transform = TransformComponent::new()
+                .with_position(40. * step as f32, 0.1 * step as f32, -50.)
+                .with_scale(2., 3., 4.)
+                .with_rotation_euler(0.1, 0.2 * step as f32, 0.3);
+            systems.transform_changed(&mut world, &mut visuals, parent);
+            combine.reconcile_and_build(
+                &mut world,
+                &mut visuals,
+                &mut assets,
+                &mut uploader,
+                &mut renderables,
+                &mut bounds,
+            );
+            assert_eq!(
+                uploader.0, 1,
+                "shared parent motion must update the instance, not bake geometry"
+            );
+            assert_eq!(combine.outputs[&root].handle, handle);
+            assert_eq!(
+                visuals.instance(handle).unwrap().transform.matrix_world,
+                TransformSystem::world_model(&world, root).unwrap()
+            );
+        }
+        *world
+            .get_component_by_id_as_mut::<TransformComponent>(local)
+            .unwrap() = TransformComponent::new().with_position(4., 2., 3.);
+        systems.transform_changed(&mut world, &mut visuals, local);
+        combine.reconcile_and_build(
+            &mut world,
+            &mut visuals,
+            &mut assets,
+            &mut uploader,
+            &mut renderables,
+            &mut bounds,
+        );
+        assert_eq!(
+            uploader.0, 2,
+            "internal geometry motion still rebuilds the retained batch"
+        );
+    }
+
+    #[test]
+    fn world_managed_operator_boundaries_keep_world_transform_invalidation() {
+        use crate::engine::ecs::component::TransformOperatorComponent;
+        let mut world = World::default();
+        let scene = world.add_component(TransformComponent::new());
+        let operator = world.add_component(TransformOperatorComponent::fork_trs());
+        let root = world.add_component(CombineMeshComponent::keep_transforms());
+        let local = world.add_component(TransformComponent::new());
+        let source = world.add_component(RenderableComponent::cube());
+        for (a, b) in [
+            (scene, operator),
+            (operator, root),
+            (root, local),
+            (local, source),
+        ] {
+            world.add_child(a, b).unwrap();
+        }
+        let assets = RenderAssets::new();
+        let before = fingerprint(&world, &assets, root, &[source], true);
+        // Operator-driven world data can change independently of local TRS.
+        world
+            .get_component_by_id_as_mut::<TransformComponent>(local)
+            .unwrap()
+            .transform
+            .matrix_world[3][0] = 3.;
+        assert_ne!(before, fingerprint(&world, &assets, root, &[source], true));
+        // Also cover an operator nested inside the retained batch.
+        world.add_child(scene, root).unwrap();
+        world.add_child(root, operator).unwrap();
+        world.add_child(operator, local).unwrap();
+        let before = fingerprint(&world, &assets, root, &[source], true);
+        world
+            .get_component_by_id_as_mut::<TransformComponent>(local)
+            .unwrap()
+            .transform
+            .matrix_world[3][0] = 5.;
+        assert_ne!(before, fingerprint(&world, &assets, root, &[source], true));
     }
 
     #[test]

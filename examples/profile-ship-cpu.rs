@@ -75,6 +75,40 @@ fn stats(values: &mut [f64]) -> serde_json::Value {
     serde_json::json!({"mean_ms": mean, "p50_ms": values[values.len()/2],
         "p95_ms": values[values.len()*95/100], "max_ms": values[values.len()-1]})
 }
+// Snapshot outside measured updates: distinguish real motion from support contact
+// and script activity without adding a per-frame MMS diagnostic callback.
+fn pickup_states(scene: &Universe) -> Vec<serde_json::Value> {
+    use mittens_engine::engine::ecs::system::TransformSystem;
+    scene
+        .world
+        .all_components()
+        .filter_map(|id| {
+            if scene.world.component_label(id) != Some("pickup_velocity") {
+                return None;
+            }
+            let velocity = scene
+                .world
+                .get_component_by_id_as::<VelocityComponent>(id)?;
+            let truck = scene
+                .world
+                .children_of(id)
+                .iter()
+                .copied()
+                .find(|&child| scene.world.component_label(child) == Some("pickup_truck"))?;
+            let gravity = scene.world.children_of(id).iter().find_map(|&child| {
+                scene
+                    .world
+                    .get_component_by_id_as::<GravityComponent>(child)
+            });
+            Some(serde_json::json!({"velocity_id":format!("{id:?}"),
+            "position":TransformSystem::world_position(&scene.world,truck),
+            "enabled":velocity.enabled,"grounded":velocity.grounded,
+            "linear":velocity.linear_local_mps,"angular":velocity.angular_local_radps,
+            "gravity_enabled":gravity.map(|g|g.enabled)}))
+        })
+        .collect()
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args = std::env::args().skip(1);
     let case = args.next().unwrap_or_else(|| "full".into());
@@ -244,6 +278,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if case == "no_callbacks" {
         scene.close_mms_session();
     }
+    let pickups_before = pickup_states(&scene);
     let components = scene.world.all_components().count();
     let instances = scene.visuals.instances().len();
     let models: Vec<_> = scene
@@ -311,6 +346,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         "instances":instances,"models":models,"load_and_warmup_ms":loading_ms,
         "update":stats(&mut updates),"prepare":stats(&mut preparations),"total":stats(&mut totals),
         "spring_stage_mean_ms":spring.map(|ms|ms/frames as f64),
+        "pickups_before":pickups_before,"pickups_after":pickup_states(&scene),
         "sample_mesh_uploads":uploader.meshes-mesh_start,"global_frame_tick":scene.systems.rx.has_global_handlers(mittens_engine::engine::ecs::SignalKind::FrameTick)})
     );
     Ok(())

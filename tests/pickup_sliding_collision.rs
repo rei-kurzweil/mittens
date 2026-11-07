@@ -48,7 +48,7 @@ fn rotated_pickup_slides_along_wall_without_self_collision_or_moving_other_truck
         let control=T {name="test_control"}
         on(control,"DataEvent",fn(event) {
             let truck=first.query("#pickup_truck")
-            if event=="Drive" {truck.drive_command(1,0,false)}
+            if event=="Drive" {truck.set_powered(true) truck.drive_command(1,0,false)}
             if event=="Reverse" {truck.drive_command(-1,0,false)}
             if event=="Stop" {truck.drive_command(0,0,true)}
         })
@@ -121,7 +121,7 @@ fn pickup_falls_settles_and_braking_does_not_cancel_gravity() {
         floor
         let control=T {name="test_control"}
         on(control,"DataEvent",fn(event) {
-            if event=="Brake" {vehicle.query("#pickup_truck").drive_command(0,0,true)}
+            if event=="Brake" {let truck=vehicle.query("#pickup_truck") truck.set_powered(true) truck.drive_command(0,0,true)}
             if event=="DropFloor" {floor.remove_subtree()}
         })
     "##,

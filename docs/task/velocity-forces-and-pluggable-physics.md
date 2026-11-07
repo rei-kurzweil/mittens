@@ -240,3 +240,11 @@ only one component may correct/integrate a given movement target in production.
 - [Retire collision response to static non-penetration](retire-collision-response-to-static-nonpenetration.md)
 - [Interaction zones on the collision-query foundation](interaction-zone-collision-query-foundation.md)
 - [Broom flight follow-up](broom-flight-followup.md)
+
+## Pickup rest/wake audit (2026-11-06)
+
+The [native velocity sleeping audit](native-velocity-sleeping-and-wake.md) records
+the implemented Velocity/static-contact behavior and focused active/sleeping
+registry slices. Pickup control power is now separate from gravity and motion.
+Support contact is not a sleeping state; blast-to-body impulse/torque and general
+mass/inertia collision response remain unimplemented capabilities.

@@ -50,3 +50,15 @@ promising results on the headset before claiming sustained runtime performance.
 
 Moving-head controls are recorded separately in the [primary-reuse report](reusable-primary-commands.md):
 24.306 ms disabled versus 21.549 ms enabled (22.351 ms enabled p95).
+
+## Pickup control power and continuous physics
+
+After `5f477986`, pickups use explicit in-cab control power and always retain
+configured native gravity/motion. This changes the workload of historical parked
+truck captures. The [native-physics audit](../../native-velocity-sleeping-and-wake.md)
+records CPU-only bridge controls and their code changes: 10.523 ms total with
+physics active before a CombineMesh invalidation fix, 9.181 ms after that fix,
+versus 4.328 ms with deliberately frozen physics. Dashboard mesh uploads fall
+from 960 per 480 samples to zero. Truck-state snapshots confirm active physics
+and supported orchard pose drift. Native sleeping remains unimplemented.
+These CPU-only totals do not establish a new GPU frame time or headset FPS.

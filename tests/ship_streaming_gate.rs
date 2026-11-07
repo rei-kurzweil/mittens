@@ -92,7 +92,8 @@ fn doorway_streams_real_vehicle_groups_and_barracks_unload_their_subscriptions()
         import { ship_store_accordion } from "../assets/components/ship_store_accordion.mms"
         import { ship_park_streaming_gate } from "../assets/components/rooms/ship_park_streaming_gate.mms"
         import { ship_motorhome_group,ship_driving_vehicle_group } from "../assets/components/vehicles/ship_vehicle_groups.mms"
-        import { ship_barracks } from "../assets/components/rooms/ship_barracks.mms"
+        import { ship_barracks_weapon_table } from "../assets/components/rooms/ship_barracks_weapon_table.mms"
+        import { ship_clear_barracks_weapons } from "../assets/components/rooms/ship_barracks_contents.mms"
         fn shop_a() {return T {name="streamed_shop_a"}}
         fn shop_b() {return T {name="streamed_shop_b"}}
         T.position(100,5.2,0) {
@@ -101,7 +102,10 @@ fn doorway_streams_real_vehicle_groups_and_barracks_unload_their_subscriptions()
             ship_store_accordion("ship_motorhomes","MOTORHOMES",ship_motorhome_group,null,null,[6,2,0],false)
             ship_store_accordion("ship_driving_vehicles","VEHICLES",ship_driving_vehicle_group,null,null,[9,2,0],false)
         }
-        T.position(-20,0,0) {ship_barracks()}
+        // Exercise the current lightweight weapons table in a collapsible fixture.
+        // Grocery inventory remains omitted for the ship's performance isolation.
+        T.position(-20,0,0) {ship_store_accordion("ship_barracks_inventory","SUPPLIES",
+            ship_barracks_weapon_table,null,null,[0,2,0],true,0,ship_clear_barracks_weapons)}
         ship_park_streaming_gate()
         let player=T.position(8,6.45,15) {
             name="ship_desktop_camera_rig"
@@ -120,7 +124,7 @@ fn doorway_streams_real_vehicle_groups_and_barracks_unload_their_subscriptions()
     assert_eq!(count(&scene.world, "recreational_vehicle"), 0);
     assert_eq!(count(&scene.world, "pickup_truck"), 0);
     assert_eq!(count(&scene.world, "streamed_shop_a"), 0);
-    assert!(scene.systems.rx.has_global_handlers(SignalKind::FrameTick));
+    assert!(!scene.systems.rx.has_global_handlers(SignalKind::FrameTick));
     assert!(lens_intensity(&scene, "ship_motorhomes", "red") > 1.0);
     for _ in 0..3 {
         command(&mut scene, "Inside");
@@ -159,15 +163,12 @@ fn doorway_streams_real_vehicle_groups_and_barracks_unload_their_subscriptions()
         assert_eq!(count(&scene.world, "pickup_truck"), 0);
         assert_eq!(count(&scene.world, "streamed_shop_a"), 0);
         assert!(
-            scene.systems.rx.has_global_handlers(SignalKind::FrameTick),
-            "the single persistent controller remains while vehicle contents unload"
+            !scene.systems.rx.has_global_handlers(SignalKind::FrameTick),
+            "the idle controller must not request frames while vehicle contents unload"
         );
         assert!(lens_intensity(&scene, "ship_motorhomes", "red") > 1.0);
     }
-    assert_eq!(count(&scene.world, "ship_grocery_bananas"), 1);
-    assert_eq!(count(&scene.world, "ship_grocery_oranges"), 1);
-    assert_eq!(count(&scene.world, "ship_grocery_checkout"), 1);
-    assert_eq!(count(&scene.world, "retail_shelf"), 5);
+    assert_eq!(count(&scene.world, "ship_barracks_weapon_table"), 1);
     let flights = |world: &World| {
         world
             .all_components()
@@ -180,14 +181,14 @@ fn doorway_streams_real_vehicle_groups_and_barracks_unload_their_subscriptions()
     };
     assert_eq!(flights(&scene.world), 9);
     command(&mut scene, "UnloadBarracks");
-    assert_eq!(count(&scene.world, "retail_shelf"), 0);
+    assert_eq!(count(&scene.world, "ship_barracks_weapon_table"), 0);
     assert_eq!(
         flights(&scene.world),
         0,
         "projectile slots belong to the removable barracks assembly"
     );
     command(&mut scene, "LoadBarracks");
-    assert_eq!(count(&scene.world, "retail_shelf"), 5);
+    assert_eq!(count(&scene.world, "ship_barracks_weapon_table"), 1);
     assert_eq!(flights(&scene.world), 9);
     finish_materials(&scene);
 }

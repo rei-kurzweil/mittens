@@ -1,0 +1,42 @@
+[AssetSystem][debug] scanning asset module: "assets/components/washroom_fixtures.mms"
+[SystemWorld] failed to scan assets dir: import error: cannot read 'types': No such file or directory (os error 2)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[SecondaryMotion] chain ComponentId(7962v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7966v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7970v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7974v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7978v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7982v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7986v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7990v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7994v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7998v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8002v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8006v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8010v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8014v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8020v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8021v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8022v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8023v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8024v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8025v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8026v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8028v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8030v1): owning GLTF has not spawned its node transforms yet
+[HTCEyeTracking] cannot bind 127.0.0.1:9002: Operation not permitted (os error 1)
+[AVC] left arm IK: root=transform (id=ComponentId(15480v1)), mid=transform (id=ComponentId(15495v1)), hand=transform (id=ComponentId(15498v1)), target=(id=ComponentId(16562v1))
+[AVC] right arm IK: root=transform (id=ComponentId(15549v1)), mid=transform (id=ComponentId(15564v1)), hand=transform (id=ComponentId(15567v1)), target=(id=ComponentId(16564v1))
+[AVC] re-parenting camera ComponentId(8038v1) under camera anchor ComponentId(15264v1)
+[AVC][capsule][inferred] avc=ComponentId(8032v1) model_root=ComponentId(8033v1) source=aggregate_render_bounds bounds_min=[-0.6704933, 0.029031461, -0.32431844] bounds_max=[0.6704933, 1.8569258, 0.1332873] center_y=0.942979 radius=0.280000 half_segment=0.633947 local_bottom=0.029032 local_top=1.856926 movement_target=Some(ComponentId(8050v1))
+[startup] [█████░░░] 5/8 first update completed
+[AVC][capsule][settled] avc=ComponentId(8032v1) capsule_transform=ComponentId(16600v1) zone=ComponentId(16602v1) local_center_y=Some(0.9429787) world_center=Some([5.9959118e-9, 1.9429786, -2.9151068]) radius=0.280000 half_segment=0.633947 world_bottom_top=Some((1.0290315, 2.8569257))
+PROFILE_BEGIN case=full frames=480 components=16621 instances=2044 models=["assets/models/sakura-machine-pistol.glb", "assets/models/sakura-machine-pistol.glb", "assets/models/sakura-machine-pistol.glb", "assets/models/mitten_pickup.glb", "assets/components/characters/lumae/lumae.glb", "assets/models/mitten_pickup.glb", "assets/models/mitten_pickup.glb", "assets/models/mitten.glb"]
+{"case":"full","components":16621,"frames":480,"global_frame_tick":false,"instances":2044,"load_and_warmup_ms":4434.572432000001,"models":["assets/models/sakura-machine-pistol.glb","assets/models/sakura-machine-pistol.glb","assets/models/sakura-machine-pistol.glb","assets/models/mitten_pickup.glb","assets/components/characters/lumae/lumae.glb","assets/models/mitten_pickup.glb","assets/models/mitten_pickup.glb","assets/models/mitten.glb"],"prepare":{"max_ms":1.6404150000000002,"mean_ms":1.033526997916667,"p50_ms":1.0119459999999998,"p95_ms":1.150744},"sample_mesh_uploads":960,"spring_stage_mean_ms":[1.4081052979166668,0.07511923958333336,0.03168338958333335,0.014638425000000014],"total":{"max_ms":16.662105999999998,"mean_ms":10.522990370833334,"p50_ms":11.349652,"p95_ms":12.3676},"update":{"max_ms":15.305031999999999,"mean_ms":9.489242808333328,"p50_ms":10.34184,"p95_ms":11.28352}}

@@ -14,9 +14,9 @@ export fn ship_motorhome_group() {
 }
 export fn ship_driving_vehicle_group() {
     return T { name = "ship_driving_vehicle_group"
-        T.position(0.0, 0.0, 5.0) { pickup_truck(null,null,null,true) }
-        T.position(0.0, 0.0, -6.0).rotation(0.0, Math.pi, 0.0) { pickup_truck(null,null,null,true) }
-        T.position(-10.5, 0.0, 5.0) { pickup_truck(null,null,null,true) }
+        T.position(0.0, 0.0, 5.0) { pickup_truck(null,null,null) }
+        T.position(0.0, 0.0, -6.0).rotation(0.0, Math.pi, 0.0) { pickup_truck(null,null,null) }
+        T.position(-10.5, 0.0, 5.0) { pickup_truck(null,null,null) }
         lumae_motorcycle_patrol()
         T.position(10.2, 0.0, 7.5) { motorcycle([0.22, 0.38, 0.32]) }
     }
