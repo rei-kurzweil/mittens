@@ -72,3 +72,95 @@ and **25.150 ms moving-head**, with CPU recording near 1 ms but scene update nea
 9 ms. All captures keep native truck physics active. This is not the former
 frozen-truck cafeteria workload and it does not meet the 45 FPS target.
 [RoomSystem](../../room-system-distance-streaming.md) is a design proposal only.
+
+## Local cafeteria walking/driving (2026-11-07)
+
+At `2887a7b1` plus test-only profiling support, the ignored local variant
+(no orchard, one pickup, Mitten player and Miku vendor) was measured at 1920 per
+eye with bloom/emissive extraction and MSAA 4x. Bridge, barracks and washrooms
+remain loaded; the washroom mirror remains disabled. Each clean capture uses
+240 warmup / 480 samples and verifies actual native locomotion or mounted driving.
+
+[Walking/driving report](local-cafeteria-walking-driving.md): walking **18.238 ms**
+mean / **20.395 ms p95** (54.8 FPS estimate), driving **30.537 ms** mean /
+**31.891 ms p95** (32.7 FPS estimate). CPU scene update is 5.486 versus 13.718 ms;
+GPU graphics is 11.547 versus 15.362 ms. Both reuse graphics primaries without
+rebuilds. This is not a vehicle-subsystem isolation or a RoomSystem result.
+
+Earlier captures made while the user's live app was still open were discarded;
+only the restarted `clean-r1` captures are reported. Private raw artifacts stay
+under ignored `examples/local/benchmarks/`; aggregate results are retained here.
+Offscreen timing excludes headset/compositor/ALVR overhead.
+
+### GPU attribution follow-up
+
+[Seven controlled captures](local-cafeteria-gpu-attribution.md) retain 1920/eye,
+bloom/emission, MSAA 4x and loaded background rooms. With pass timestamps, natural
+walking/driving GPU graphics is 11.529/15.927 ms, almost entirely differentiated
+by opaque rendering (9.773/14.187 ms); postprocess stays near 0.56 ms. Driving
+with the walking render camera costs 9.223 ms GPU despite CPU update 13.610 ms.
+
+From the identical natural driving route/view, hiding the combined body reduces
+GPU graphics to 10.780 ms; hiding the player reduces it to 14.957 ms. Replacing
+only pickup paint shading with a temporary plain-color shader retains all draw
+counts/geometry and reduces GPU graphics to **11.948 ms** (3.979 ms saved).
+Per-frame camera and truck/player poses match exactly. This localizes substantial
+cost to material shading in the cab view; it does not isolate individual shader
+terms or solve the independent CPU update bottleneck. Production materials are
+unchanged. Invalid first avatar/material diagnostic attempts are excluded.
+
+### Pickup Anime material (2026-11-07)
+
+At the user's request, both pickup prefabs now use `pickup_anime_material()`
+with `MaterialDefinition.anime()`, character-style shading and rim strength
+**1.0 versus character 0.42** (2.38x), with matching rim power 3.5. Shared
+character/environment presets are unchanged. Truck paint no longer uses the
+custom painted-metal shader. The preceding correction also removed matcap from
+the retained metal material used by appliances.
+
+A new 1920/eye, MSAA 4x, bloom/emission-on driving capture (240 warmup/480
+samples, pass timestamps) averages **11.739 ms GPU graphics**, **13.586 ms CPU
+update**, **26.714 ms total**, **28.767 ms p95** (37.4 FPS estimate). Opaque GPU
+is 10.072 ms. Two graphics-primary cache hits and zero rebuilds/frame remain.
+Route, mount/power/mirror state and rendered view matrices match the prior
+natural-driving capture exactly. This is improved GPU cost, not yet a 45 FPS
+result. CPU update remains the separate unresolved bottleneck.
+
+Raw captures and source hashes remain ignored at
+`examples/local/benchmarks/cafeteria-1920-driving-anime-rim-2026-11-07.{json,frames.json,log}`
+and `anime-rim-manifest-2026-11-07.json`. Offscreen timing still excludes
+OpenXR/compositor/ALVR overhead; prior results are retained unchanged.
+
+### Character directional-fill experiment (2026-11-07)
+
+Ship avatar/face presets now share a separate custom Anime fragment definition.
+For affecting lights above 25 degrees relative to world-up, a failed `N·L > 0`
+gate floors the ramp input at 1.0; the rim remains independent and unchanged.
+See [material controls and semantics](../../../how_to/character-directional-fill-material.md).
+Global Anime, environment and truck presets are unchanged by this experiment.
+
+Enabling this on skinned characters required custom cached-deformation program
+selection/pipelines using the existing cached-skinned vertex ABI. Custom material
+parameter storage also needed the standard bounded per-texture binding cache;
+the previous flat eight-snapshot pool failed with the avatar's texture count.
+No new MMS syntax, host calls, skinning dispatches or joint-update model were added.
+Snapshot tests were extracted to a focused source file and extended to cover
+more than eight textures and bounded eviction with retained descriptors.
+
+The corrected `walking-character-directional-fill-v3` capture uses the local
+scene, 1920/eye, MSAA 4x, bloom/emission, 240 warmup / 480 samples, pass timestamps.
+It averages **17.672 ms total**, **19.865 ms p95** (56.6 FPS estimate), **5.465 ms
+CPU update**, **10.971 ms GPU graphics** and **0.0458 ms GPU deformation**. All
+background rooms remain loaded, mirror disabled, one truck control-off, normal
+walking input. Two graphics-primary hits and zero rebuilds/frame remain. The
+sampled stereo draw counts match the original walking scene, including all
+636 opaque calls / 3,166 opaque instances; there are no custom-material errors.
+This is not an isolated shader speedup: the truck material and backend also
+changed since the original walking baseline, and GPU/process variation remains.
+
+Two earlier attempts are invalid/excluded: the first lacked a custom geometry
+program and omitted skinned draws; v2 failed before sampling on the flat snapshot
+limit. Raw v3 summary/frame samples/log, source hashes and validation logs remain
+under ignored `examples/local/benchmarks/`. The seven material-system tests, four
+material-registry tests and two Vulkan snapshot/static-room tests passed after
+the fixes. Offscreen timing excludes live OpenXR/compositor/ALVR overhead.

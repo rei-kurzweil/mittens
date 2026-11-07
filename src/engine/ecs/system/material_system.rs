@@ -328,7 +328,7 @@ mod tests {
     use crate::scripting::runner::RuntimeSpecSession;
 
     #[test]
-    fn material_program_contract_rejects_unavailable_custom_deformation() {
+    fn material_program_contract_selects_distinct_custom_geometry_programs() {
         let mut world = World::default();
         let source = world.add_component(ShadingComponent::new());
         let mut visuals = VisualWorld::default();
@@ -344,10 +344,22 @@ mod tests {
         let instance = visuals
             .materials
             .upsert_source(source, definition, vec![1.0]);
-        assert!(MaterialSystem::program(&visuals, instance, MaterialHandle::TOON_MESH).is_some());
+        let static_program =
+            MaterialSystem::program(&visuals, instance, MaterialHandle::TOON_MESH).unwrap();
+        let deformed_program =
+            MaterialSystem::program(&visuals, instance, MaterialHandle::SKINNED_TOON_MESH).unwrap();
+        assert_ne!(static_program, deformed_program);
         assert!(
-            MaterialSystem::program(&visuals, instance, MaterialHandle::SKINNED_TOON_MESH)
-                .is_none()
+            !visuals
+                .materials
+                .resolved_capabilities(Some(instance), static_program)
+                .cached_deformation
+        );
+        assert!(
+            visuals
+                .materials
+                .resolved_capabilities(Some(instance), deformed_program)
+                .cached_deformation
         );
     }
 

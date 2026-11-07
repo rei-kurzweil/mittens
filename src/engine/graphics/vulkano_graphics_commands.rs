@@ -147,6 +147,10 @@ impl VulkanoState {
             stencil_clip_debug_handle,
             stencil_clip_debug_batches,
         } = recording;
+        #[cfg(test)]
+        if let Some(profile) = self.profile.as_ref() {
+            profile.gpu_pass_timestamp(&mut cbb, eye, 0)?;
+        }
         let mut blurred_bloom: Option<Arc<ImageView>> = None;
         // Single dynamic-rendering scope. This keeps MSAA resolve straightforward.
         cbb.begin_rendering(rendering_info_clear_color_and_depth)?;
@@ -205,6 +209,10 @@ impl VulkanoState {
             )?;
         }
 
+        #[cfg(test)]
+        if let Some(profile) = self.profile.as_ref() {
+            profile.gpu_pass_timestamp(&mut cbb, eye, 1)?;
+        }
         profile_cpu_stage!(self, cpu_stage_clock, "background_record");
 
         if let Some(outline_instance_buffer) = outline_instance_buffer.as_ref() {
@@ -219,6 +227,10 @@ impl VulkanoState {
             )?;
         }
 
+        #[cfg(test)]
+        if let Some(profile) = self.profile.as_ref() {
+            profile.gpu_pass_timestamp(&mut cbb, eye, 2)?;
+        }
         profile_cpu_stage!(self, cpu_stage_clock, "outline_record");
 
         self.record_opaque_draws(
@@ -231,6 +243,10 @@ impl VulkanoState {
             Some((opaque_ops, opaque_instances)),
         )?;
 
+        #[cfg(test)]
+        if let Some(profile) = self.profile.as_ref() {
+            profile.gpu_pass_timestamp(&mut cbb, eye, 3)?;
+        }
         profile_cpu_stage!(self, cpu_stage_clock, "opaque_record");
 
         if let Some(cutout_instance_buffer) = cutout_instance_buffer.as_ref() {
@@ -245,6 +261,10 @@ impl VulkanoState {
             )?;
         }
 
+        #[cfg(test)]
+        if let Some(profile) = self.profile.as_ref() {
+            profile.gpu_pass_timestamp(&mut cbb, eye, 4)?;
+        }
         profile_cpu_stage!(self, cpu_stage_clock, "cutout_record");
 
         if sample_scene_color {
@@ -445,6 +465,10 @@ impl VulkanoState {
 
         cbb.end_rendering()?;
 
+        #[cfg(test)]
+        if let Some(profile) = self.profile.as_ref() {
+            profile.gpu_pass_timestamp(&mut cbb, eye, 5)?;
+        }
         if let Some((handle, src_view)) = runtime_texture_publication {
             let dst_view = self.ensure_runtime_texture_target(handle, &src_view)?;
             cbb.copy_image(CopyImageInfo::images(
@@ -588,6 +612,10 @@ impl VulkanoState {
             }
         }
 
+        #[cfg(test)]
+        if let Some(profile) = self.profile.as_ref() {
+            profile.gpu_pass_timestamp(&mut cbb, eye, 6)?;
+        }
         profile_cpu_stage!(self, cpu_stage_clock, "postprocess_record");
 
         if let (Some(handle), Some(debug_instance_buffer)) = (
@@ -687,6 +715,10 @@ impl VulkanoState {
             ))?;
         }
 
+        #[cfg(test)]
+        if let Some(profile) = self.profile.as_ref() {
+            profile.gpu_pass_timestamp(&mut cbb, eye, 7)?;
+        }
         profile_cpu_stage!(self, cpu_stage_clock, "debug_record");
 
         #[cfg(test)]

@@ -1,5 +1,5 @@
 #version 450
-// Painted metal with scene-light highlights, a bright rim and a view-space matcap.
+// Painted metal with scene-light highlights and one view-dependent rim.
 layout(location=0) in vec3 v_world_pos;
 layout(location=1) in vec3 v_normal;
 layout(location=3) in vec4 v_color;
@@ -13,10 +13,9 @@ layout(set=0,binding=1,std430) readonly buffer LightsSSBO {
     uint count; uint _pad0; uint _pad1; uint _pad2; Light lights[64];
 } scene;
 layout(set=1,binding=0,std140) uniform PaintedMetal {
-    float matcap_strength; float specular_strength; float shininess;
+    float specular_strength; float shininess;
     float rim_strength; float rim_power; float exposure;
 } metal;
-layout(set=1,binding=1) uniform sampler2D matcap;
 
 void main() {
     vec3 N=normalize(v_normal);
@@ -54,12 +53,10 @@ void main() {
         highlights+=radiance*specular*metal.specular_strength;
     }
     vec3 Nview=normalize(mat3(camera.view)*N);
-    vec2 matcap_uv=clamp(Nview.xy*vec2(0.5,-0.5)+0.5,vec2(0.001),vec2(0.999));
-    vec3 reflection=texture(matcap,matcap_uv).rgb;
+    // One rim per fragment, independent of scene-light count and direction.
     float rim=pow(1.0-max(dot(Nview,Vview),0.0),max(metal.rim_power,0.01));
     vec3 paint=max(v_color.rgb,vec3(0.0));
     vec3 color=paint*diffuse + highlights
-        + reflection*mix(vec3(0.55),paint,0.45)*metal.matcap_strength
         + vec3(0.90,0.94,1.0)*rim*metal.rim_strength;
     // Preserve highlight detail on the lit imported finish instead of clipping
     // the entire body white. Zero exposure keeps the older HDR preset unchanged.

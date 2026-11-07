@@ -38,6 +38,7 @@ pub(super) struct ProfileState {
     pub(super) instance_buffer_uploads: std::cell::Cell<[u64; 2]>,
     pub(super) completion: Option<Box<dyn FnOnce() -> Result<(), Box<dyn Error>>>>,
     pool: Option<Arc<QueryPool>>,
+    gpu_passes: Option<gpu_passes::GpuPassQueries>,
     timestamp_period: f64,
     timestamp_mask: u64,
     draws: BTreeMap<String, DrawCounts>,
@@ -106,6 +107,7 @@ impl ProfileState {
             view_cache_decisions: Vec::with_capacity(2),
             instance_buffer_uploads: std::cell::Cell::new([0; 2]),
             completion: None,
+            gpu_passes: gpu_passes::GpuPassQueries::new(context)?,
             pool,
             timestamp_period: physical.properties().timestamp_period as f64,
             timestamp_mask: if bits.unwrap_or(64) == 64 {
@@ -701,3 +703,9 @@ fn profile_sakura_lumae_stereo() -> Result<(), Box<dyn Error>> {
 
 #[path = "vulkano_ship_profile.rs"]
 mod ship;
+
+#[path = "vulkano_ship_profile_motion.rs"]
+mod ship_motion;
+
+#[path = "vulkano_profile_gpu_passes.rs"]
+mod gpu_passes;

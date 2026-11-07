@@ -207,7 +207,7 @@ impl VulkanoState {
                     .retain(|key, _| !retired.contains(&key.texture()));
                 entry
                     .custom_snapshots
-                    .retain(|snapshot| !retired.contains(&snapshot.texture));
+                    .retain(|(texture, _), _| !retired.contains(texture));
             }
         }
         // Dropping cache ownership is safe: recorded/submitted commands keep

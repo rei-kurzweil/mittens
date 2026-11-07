@@ -27,7 +27,8 @@ struct GpuMaterialInstance {
         MaterialResourceKey,
         Vec<MaterialSnapshot>,
     >,
-    custom_snapshots: Vec<CustomMaterialSnapshot>,
+    custom_snapshots: crate::engine::graphics::material_cache::MaterialCache<
+        (TextureHandle, TextureFiltering), Vec<CustomMaterialSnapshot>>,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -69,7 +70,7 @@ impl VulkanoState {
                 if entry.record.definition != record.definition {
                     entry.bindings =
                         crate::engine::graphics::material_cache::MaterialCache::new(material_binding_limit());
-                    entry.custom_snapshots.clear();
+                    entry.custom_snapshots = crate::engine::graphics::material_cache::MaterialCache::new(material_binding_limit());
                 }
                 entry.record = record.clone();
                 entry.schema = schema;
@@ -81,7 +82,7 @@ impl VulkanoState {
                         custom,
                         schema,
                         record: record.clone(),
-                        custom_snapshots: Vec::new(),
+                        custom_snapshots: crate::engine::graphics::material_cache::MaterialCache::new(material_binding_limit()),
                         bindings: crate::engine::graphics::material_cache::MaterialCache::new(material_binding_limit()),
                     },
                 );

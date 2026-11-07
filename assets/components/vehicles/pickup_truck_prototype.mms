@@ -4,28 +4,26 @@ import { pickup_cab_interior } from "./pickup_cab_interior.mms"
 import { pickup_driving } from "./pickup_driving.mms"
 import { ship_solid, ship_lamp, ship_label } from "../ship_parts.mms"
 import { pickup_suspension } from "./pickup_suspension.mms"
-import { pickup_painted_metal } from "../materials/pickup_painted_metal.mms"
+import { pickup_anime_material } from "../materials/pickup_anime.mms"
 
 // pickup_truck is the chassis transform driven by Velocity and used for mounting.
 // Destroyable retained body panels; suspension/wheels remain separate branches.
 // Parked pickup, front toward -Z. Open cargo bed and a two-seat cab.
 fn make_pickup(color, cargo) {
     if color == null { color = [0.59, 0.52, 0.42] }
-    let metal = pickup_painted_metal()
+    let finish = pickup_anime_material()
     let suspensions = [
-        pickup_suspension("fl",-0.96,-1.65,0.40,metal),
-        pickup_suspension("fr", 0.96,-1.65,0.40,metal),
-        pickup_suspension("rl",-0.96, 1.55,0.40,metal),
-        pickup_suspension("rr", 0.96, 1.55,0.40,metal),
+        pickup_suspension("fl",-0.96,-1.65,0.40,finish),
+        pickup_suspension("fr", 0.96,-1.65,0.40,finish),
+        pickup_suspension("rl",-0.96, 1.55,0.40,finish),
+        pickup_suspension("rr", 0.96, 1.55,0.40,finish),
     ]
     let truck = T {
         name = "pickup_truck"
         Destroyable.threshold(3.0)
         CombineMesh.keep_transforms() {
             name = "pickup_painted_body"
-            metal
-            Texture.with_uri("assets/textures/pool/chrome-matcap.png")
-            TextureFiltering.linear()
+            finish
             ship_solid([0.0, 0.65, 0.0], [2.0, 0.30, 4.8], color)
             ship_solid([0.0,1.0,-1.72],[2.0,0.45,1.30],color)
             // Hollow cabin: no solid cube through the seats or footwell.

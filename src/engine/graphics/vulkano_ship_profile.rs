@@ -9,7 +9,10 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     let case = std::env::var("SHIP_PROFILE_CASE").unwrap_or("full".into());
     let room = std::env::var("SHIP_PROFILE_ROOM").unwrap_or("bridge".into());
     let motion = std::env::var("SHIP_PROFILE_MOTION").unwrap_or("stationary".into());
-    assert!(matches!(motion.as_str(), "stationary" | "head"));
+    assert!(matches!(
+        motion.as_str(),
+        "stationary" | "head" | "walking" | "driving"
+    ));
     let frames: usize = std::env::var("SHIP_PROFILE_FRAMES")
         .unwrap_or("120".into())
         .parse()?;
@@ -26,12 +29,15 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
             | "no_callbacks"
             | "paired_bloom"
     ));
-    let (position, yaw) = match room.as_str() {
+    let (position, mut yaw) = match room.as_str() {
         "bridge" => ([0., 1., -3.], 0f32),
         "cafeteria" => ([0., 1., 10.], std::f32::consts::PI),
         "orchard" => ([18., 6.2, 7.5], -2.1112158),
         _ => return Err("choose bridge, cafeteria or orchard".into()),
     };
+    if motion == "driving" {
+        yaw = 0.;
+    }
     // Per-eye target; override to match the runtime's reported swapchain extent.
     let extent = [
         std::env::var("SHIP_PROFILE_WIDTH")
@@ -80,7 +86,9 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
         views: Some([view, view]),
         ..Default::default()
     }));
-    let mut source = std::fs::read_to_string("examples/ship_interior.mms")?
+    let source_path = std::env::var("SHIP_PROFILE_SOURCE")
+        .unwrap_or_else(|_| "examples/ship_interior.mms".into());
+    let mut source = std::fs::read_to_string(&source_path)?
         .replace(
             "T.position(0.0, 1.0, -3.0)",
             &format!(
@@ -95,7 +103,7 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     if case == "no_bloom" {
         source = source.replace("let bloom_enabled = true", "let bloom_enabled = false");
     }
-    scene.load_mms_source_at_path(&source, "examples/ship_interior.mms")?;
+    scene.load_mms_source_at_path(&source, &source_path)?;
     let mut uploader = Uploader {
         renderer: &mut renderer,
         mesh: 1000,
@@ -140,6 +148,14 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     }
     scene.systems.audio = crate::engine::ecs::system::AudioSystem::new();
     scene.systems.clock.set_driver(clock.clone());
+    let physical_motion = if matches!(motion.as_str(), "walking" | "driving") {
+        assert_eq!(room, "cafeteria");
+        assert!(matches!(case.as_str(), "full" | "no_bloom"));
+        Some(ship_motion::ShipMotion::setup(&mut scene, &motion)?)
+    } else {
+        None
+    };
+    let camera_replay = ship_motion::CameraReplay::from_env()?;
     let mut profile = ProfileState::new(&context)?;
     if matches!(case.as_str(), "avatar_hidden" | "environment_hidden") {
         profile.suppressed_meshes = scene
@@ -161,6 +177,45 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
             })
             .map(|i| i.renderable.mesh)
             .collect();
+    }
+    let hidden_subtree = std::env::var("SHIP_PROFILE_HIDE_SUBTREE").ok();
+    if let Some(label) = hidden_subtree.as_deref() {
+        // AVC can move imported nodes outside their original GLTF component.
+        let mut roots: HashSet<_> = scene
+            .world
+            .all_components()
+            .filter(|&id| scene.world.component_label(id) == Some(label))
+            .collect();
+        for id in roots.clone() {
+            if let Some(gltf) = scene.world.get_component_by_id_as::<GLTFComponent>(id) {
+                roots.extend(gltf.spawned_node_transforms.iter().copied());
+            }
+        }
+        let selected: HashSet<_> = scene
+            .visuals
+            .instances()
+            .iter()
+            .filter(|instance| {
+                let mut current = Some(instance.component);
+                while let Some(id) = current {
+                    if roots.contains(&id) {
+                        return true;
+                    }
+                    current = scene.world.parent_of(id);
+                }
+                false
+            })
+            .map(|i| i.renderable.mesh)
+            .collect();
+        assert!(
+            !selected.is_empty(),
+            "diagnostic subtree selected no meshes: {label}"
+        );
+        eprintln!(
+            "SHIP_PROFILE_HIDE_SUBTREE {label}: {} meshes",
+            selected.len()
+        );
+        profile.suppressed_meshes.extend(selected);
     }
     uploader.renderer.profile = Some(profile);
     let output = Image::new(
@@ -235,6 +290,9 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
         let material_before = material_cache_totals(uploader.renderer);
         let uploads_before = uploader.renderer.retained_uploads.borrow().stats;
         let commands_before = uploader.renderer.command_reuse.stats;
+        if let Some(pilot) = physical_motion.as_ref() {
+            pilot.input(&mut scene, view, frame);
+        }
         if motion == "head" {
             let mut moving = view;
             moving.pose.position.x = (frame as f32 / 75.).sin() * 0.35;
@@ -254,6 +312,9 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
             } else {
                 Default::default()
             });
+        }
+        if let Some(replay) = &camera_replay {
+            replay.apply(&mut scene, frame, warmup);
         }
         let prepare_ms = prep.elapsed().as_secs_f64() * 1000.;
         let record = Instant::now();
@@ -281,6 +342,7 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
             future.cleanup_finished();
         }
         let wait_ms = wait.elapsed().as_secs_f64() * 1000.;
+        let motion_state = physical_motion.as_ref().map(|pilot| pilot.sample(&scene));
         let p = uploader.renderer.profile.as_ref().unwrap();
         let gpu = p.gpu_ms()?;
         if sampling {
@@ -306,11 +368,15 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
                 "view_cache_decisions":p.view_cache_decisions,
                 "eye0_view":scene.visuals.visual_camera(crate::engine::graphics::CameraTarget::Xr).unwrap().eyes[0].view,
                 "instance_buffer_uploads":p.instance_buffer_uploads.get(),
+                "motion_state":motion_state,"gpu_pass_ms":p.gpu_pass_ms()?,
                 "retained_uploads":uploader.renderer.retained_uploads.borrow().stats.delta(uploads_before),
                 "command_reuse":uploader.renderer.command_reuse.stats.delta(commands_before),
                 "material_cache_counts":material_delta,
                 "dirty_jobs":p.dirty_components.len(),"deformation_cpu_ms":p.deformation_cpu_ns as f64/1e6}));
         }
+    }
+    if let Some(pilot) = physical_motion.as_ref() {
+        pilot.validate(&rows);
     }
     if motion == "head" {
         assert_ne!(
@@ -334,6 +400,14 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
         if !values.is_empty() {
             timing.insert(key.into(), summary(&values));
         }
+    }
+    let mut gpu_passes = serde_json::Map::new();
+    for name in rows[0]["gpu_pass_ms"].as_object().unwrap().keys() {
+        let values: Vec<_> = rows
+            .iter()
+            .map(|r| r["gpu_pass_ms"][name].as_f64().unwrap())
+            .collect();
+        gpu_passes.insert(name.clone(), summary(&values));
     }
     let mut cpu_record_stages = serde_json::Map::new();
     for name in rows[0]["cpu_record_stages_ms"].as_object().unwrap().keys() {
@@ -392,7 +466,10 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
         );
     }
     for field in ["hits", "rebuilds", "invalidations"] {
-        let values: Vec<_> = rows.iter().map(|r| r["command_reuse"][field].as_f64().unwrap()).collect();
+        let values: Vec<_> = rows
+            .iter()
+            .map(|r| r["command_reuse"][field].as_f64().unwrap())
+            .collect();
         cache_counts.insert(format!("command_reuse_{field}"), summarize_counts(&values));
     }
     let paired_gpu = if paired {
@@ -420,7 +497,7 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     } else {
         serde_json::Value::Null
     };
-    let result = serde_json::json!({"paired_gpu":paired_gpu,"case":case,"room":room,"motion":motion,"cache_counts":cache_counts,"material_binding_limit":material_binding_limit(),"frames":frames,"warmup":warmup,"extent":extent,"msaa":4,
+    let result = serde_json::json!({"hidden_subtree":hidden_subtree,"camera_reference":camera_replay.as_ref().map(|r|&r.path),"gpu_pass_ms":gpu_passes,"source":source_path,"paired_gpu":paired_gpu,"case":case,"room":room,"motion":motion,"cache_counts":cache_counts,"material_binding_limit":material_binding_limit(),"frames":frames,"warmup":warmup,"extent":extent,"msaa":4,
         "gpu":uploader.renderer.gpu_device_name(),"components":scene.world.all_components().count(),
         "instances":scene.visuals.instances().len(),"timing":timing,"cpu_record_stages_ms":cpu_record_stages,"sample_draws":rows.last().unwrap()["draws"],
         "counters":uploader.renderer.perf_counters().saturating_delta(counters_start.unwrap())});

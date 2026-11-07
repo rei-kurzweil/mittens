@@ -1,4 +1,4 @@
-// Included in the renderer module. Opaque static surfaces can optionally reuse
+// Included in the renderer module. Static and cached-deformed surfaces reuse
 // their emitted radiance in a depth-tested extraction pass.
 struct CustomGpuProgram {
     definition: std::sync::Arc<crate::engine::graphics::custom_material::CustomMaterialDefinition>,
@@ -26,85 +26,107 @@ impl VulkanoState {
             let Some(custom) = &definition.custom else {
                 continue;
             };
-            let handle = definition.static_program;
-            live.insert(handle);
-            if self.custom_programs.contains_key(&handle) {
-                continue;
-            }
-            let Some(compilation) = custom.compiled.get() else {
-                continue;
-            };
-            let result = (|| -> Result<CustomGpuProgram, String> {
-                let compiled = compilation.as_ref().map_err(Clone::clone)?;
-                if compiled.byte_size
-                    > self
-                        .context
-                        .device()
-                        .physical_device()
-                        .properties()
-                        .max_uniform_buffer_range as usize
-                {
-                    return Err(
-                        "custom uniform block exceeds this device's uniform-buffer limit".into(),
+            for (handle, deformed) in std::iter::once((definition.static_program, false))
+                .chain(definition.deformed_program.map(|handle| (handle, true)))
+            {
+                live.insert(handle);
+                if self.custom_programs.contains_key(&handle) {
+                    continue;
+                }
+                let Some(compilation) = custom.compiled.get() else {
+                    continue;
+                };
+                let result = (|| -> Result<CustomGpuProgram, String> {
+                    let compiled = compilation.as_ref().map_err(Clone::clone)?;
+                    if compiled.byte_size
+                        > self
+                            .context
+                            .device()
+                            .physical_device()
+                            .properties()
+                            .max_uniform_buffer_range as usize
+                    {
+                        return Err(
+                            "custom uniform block exceeds this device's uniform-buffer limit"
+                                .into(),
+                        );
+                    }
+                    let shader = unsafe {
+                        vulkano::shader::ShaderModule::new(
+                            self.context.device().clone(),
+                            vulkano::shader::ShaderModuleCreateInfo::new(&compiled.words),
+                        )
+                    }
+                    .map_err(|e| e.to_string())?;
+                    let mut create = self.custom_pipeline_template.clone();
+                    if deformed {
+                        // Reuse the existing cached-geometry ABI and vertex shader;
+                        // fragment inputs and material/global descriptor layouts match.
+                        let vertex = skinned_toon_mesh_vs::load(self.context.device().clone())
+                            .map_err(|error| error.to_string())?;
+                        create.stages[0] = PipelineShaderStageCreateInfo::new(
+                            vertex
+                                .entry_point("main")
+                                .ok_or("missing cached-deformation entry point")?,
+                        );
+                        create.vertex_input_state = self
+                            .pipeline_skinned_anime_mesh
+                            .vertex_input_state()
+                            .cloned();
+                    }
+                    create.stages[1] = PipelineShaderStageCreateInfo::new(
+                        shader
+                            .entry_point("main")
+                            .ok_or("missing fragment entry point")?,
                     );
-                }
-                let shader = unsafe {
-                    vulkano::shader::ShaderModule::new(
-                        self.context.device().clone(),
-                        vulkano::shader::ShaderModuleCreateInfo::new(&compiled.words),
-                    )
-                }
-                .map_err(|e| e.to_string())?;
-                let mut create = self.custom_pipeline_template.clone();
-                create.stages[1] = PipelineShaderStageCreateInfo::new(
-                    shader
-                        .entry_point("main")
-                        .ok_or("missing fragment entry point")?,
-                );
-                let pipeline =
-                    GraphicsPipeline::new(self.context.device().clone(), None, create.clone())
-                        .map_err(|e| e.to_string())?;
-                let mut transparent_create = create.clone();
-                transparent_create.depth_stencil_state = Some(DepthStencilState {
-                    depth: Some(DepthState {
-                        write_enable: false,
-                        ..DepthState::simple()
-                    }),
-                    ..Default::default()
-                });
-                let transparent_pipeline =
-                    GraphicsPipeline::new(self.context.device().clone(), None, transparent_create)
-                        .map_err(|e| e.to_string())?;
-                let extraction_pipeline = if definition.capabilities.supports_emission_extraction()
-                {
-                    // Reuse exactly the same program and descriptor revision. Equal
-                    // depth admits the visible surface without overwriting scene depth.
-                    create.depth_stencil_state = Some(DepthStencilState {
+                    let pipeline =
+                        GraphicsPipeline::new(self.context.device().clone(), None, create.clone())
+                            .map_err(|e| e.to_string())?;
+                    let mut transparent_create = create.clone();
+                    transparent_create.depth_stencil_state = Some(DepthStencilState {
                         depth: Some(DepthState {
                             write_enable: false,
-                            compare_op: CompareOp::LessOrEqual,
                             ..DepthState::simple()
                         }),
                         ..Default::default()
                     });
-                    Some(
-                        GraphicsPipeline::new(self.context.device().clone(), None, create)
-                            .map_err(|e| e.to_string())?,
+                    let transparent_pipeline = GraphicsPipeline::new(
+                        self.context.device().clone(),
+                        None,
+                        transparent_create,
                     )
-                } else {
-                    None
-                };
-                Ok(CustomGpuProgram {
-                    definition: custom.clone(),
-                    pipeline,
-                    transparent_pipeline,
-                    extraction_pipeline,
-                })
-            })();
-            if let Err(error) = &result {
-                eprintln!("[Material pipeline] {}: {error}", custom.fragment_uri);
+                    .map_err(|e| e.to_string())?;
+                    let extraction_pipeline =
+                        if definition.capabilities.supports_emission_extraction() {
+                            // Reuse exactly the same program and descriptor revision. Equal
+                            // depth admits the visible surface without overwriting scene depth.
+                            create.depth_stencil_state = Some(DepthStencilState {
+                                depth: Some(DepthState {
+                                    write_enable: false,
+                                    compare_op: CompareOp::LessOrEqual,
+                                    ..DepthState::simple()
+                                }),
+                                ..Default::default()
+                            });
+                            Some(
+                                GraphicsPipeline::new(self.context.device().clone(), None, create)
+                                    .map_err(|e| e.to_string())?,
+                            )
+                        } else {
+                            None
+                        };
+                    Ok(CustomGpuProgram {
+                        definition: custom.clone(),
+                        pipeline,
+                        transparent_pipeline,
+                        extraction_pipeline,
+                    })
+                })();
+                if let Err(error) = &result {
+                    eprintln!("[Material pipeline] {}: {error}", custom.fragment_uri);
+                }
+                self.custom_programs.insert(handle, result);
             }
-            self.custom_programs.insert(handle, result);
         }
         self.custom_programs
             .retain(|handle, _| live.contains(handle));
@@ -140,7 +162,15 @@ impl VulkanoState {
             .get_mut(id)
             .ok_or("stale custom material instance")?;
         let revision = entry.record.revision;
-        if let Some(slot) = entry.custom_snapshots.iter().find(|slot| {
+        let key = (texture, filtering);
+        if entry.custom_snapshots.get(&key).is_none() {
+            entry.custom_snapshots.insert(key, Vec::new());
+        }
+        let slots = entry
+            .custom_snapshots
+            .get_mut(&key)
+            .expect("binding inserted");
+        if let Some(slot) = slots.iter().find(|slot| {
             slot.revision == revision
                 && slot.texture == texture
                 && slot.filtering == filtering
@@ -150,7 +180,7 @@ impl VulkanoState {
             return Ok(Some(slot.set.clone()));
         }
         let bytes = compiled.pack(&entry.record.values)?;
-        if let Some(slot) = entry.custom_snapshots.iter_mut().find(|slot| {
+        if let Some(slot) = slots.iter_mut().find(|slot| {
             slot.texture == texture
                 && slot.filtering == filtering
                 && Arc::strong_count(&slot.set) == 1
@@ -172,7 +202,7 @@ impl VulkanoState {
             self.material_upload_stats.uploads += 1;
             return Ok(Some(slot.set.clone()));
         }
-        if entry.custom_snapshots.len() == MATERIAL_SNAPSHOT_LIMIT {
+        if slots.len() == MATERIAL_SNAPSHOT_LIMIT {
             return Err("all custom material snapshots are retained by command buffers".into());
         }
         let buffer = Buffer::from_iter(
@@ -197,7 +227,7 @@ impl VulkanoState {
             ],
             [],
         )?;
-        entry.custom_snapshots.push(CustomMaterialSnapshot {
+        slots.push(CustomMaterialSnapshot {
             revision,
             texture,
             filtering,
@@ -209,4 +239,12 @@ impl VulkanoState {
         self.material_upload_stats.uploads += 1;
         Ok(Some(set))
     }
+}
+
+#[cfg(test)]
+mod custom_snapshot_tests {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/graphics/vulkano_custom_material_snapshot_tests.rs"
+    ));
 }

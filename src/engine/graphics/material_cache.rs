@@ -69,6 +69,10 @@ impl<K: Copy + Eq + Hash, V> MaterialCache<K, V> {
         self.entries.retain(|key, (_, value)| keep(key, value));
     }
 
+    pub fn values(&self) -> impl Iterator<Item = &V> {
+        self.entries.values().map(|(_, value)| value)
+    }
+
     pub fn len(&self) -> usize {
         self.entries.len()
     }

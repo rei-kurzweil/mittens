@@ -403,3 +403,34 @@ moving-head with cached graphics. CPU recording is about 1 ms while scene update
 is about 9 ms with native truck physics active. This proposal does not establish
 that room loading alone reaches the 22 ms goal; retain that distinction in the
 implementation benchmarks and measure native sleeping separately.
+
+## Open design: activation effects and adaptive distance
+
+Discussion only; no API or behavior change has been implemented. Hallways are
+authored rooms, so a graph distance of 1, 2 or 3 has an explicit architectural
+meaning. An optional performance policy could change that distance, but should
+use sustained measurements, separate raise/lower thresholds and a cooldown.
+Include loading spikes in evaluation; changing distance every slow frame would
+risk repeated loading/unloading and worse frame stability.
+
+Keep three events distinct: an agent entering/leaving a room, room contents
+loading/unloading, and an agent entering/leaving a nearby activation zone. A
+room may be resident before the player arrives. Loading the washroom should not
+automatically start its mirror; a nearby hallway arrival/activation zone can
+prepare it ahead of entry. Leaving a small doorway trigger still must not mean
+leaving the room.
+
+Consider room/portal declarations that associate activation rules with existing
+agent-filtered zone events, avoiding a bespoke pair of callbacks for every
+mirror. Rust callers could provide native callbacks and MMS callers script
+callbacks through an adapter to the same native lifecycle events. This is syntax
+sugar/ownership over existing detection, not another overlap detector. Membership
+callbacks should observe the final same-frame transition; temporary loading
+details should not manufacture extra room entry/exit events.
+
+A mirror's effective update state would combine residency, relevant agent
+presence and explicit settings/freeze state. Define multiple-agent behavior and
+unload cleanup before committing to syntax: one departing agent must not disable
+a resource another still needs. Presence should be evaluated on activation too,
+so loading a room around an already-present agent does not require recrossing a
+trigger. The current washroom's two zone handlers remain unchanged for now.

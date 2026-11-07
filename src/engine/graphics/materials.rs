@@ -482,8 +482,9 @@ impl MaterialRegistry {
         let program = MaterialHandle(self.next_custom_program);
         self.next_custom_program = self
             .next_custom_program
-            .checked_add(1)
+            .checked_add(2)
             .expect("custom program IDs exhausted");
+        let deformed_program = MaterialHandle(self.next_custom_program - 1);
         let parameter_schema = MaterialParameterSchema::new(
             custom
                 .fields
@@ -509,7 +510,7 @@ impl MaterialRegistry {
             custom: Some(custom),
             name: "Custom",
             static_program: program,
-            deformed_program: None,
+            deformed_program: Some(deformed_program),
             parameter_schema: parameter_schema.into(),
             defaults,
             consumed_inputs: StandardMaterialInputs {
@@ -549,7 +550,7 @@ mod tests {
                 .definition(definition)
                 .unwrap()
                 .deformed_program
-                .is_none()
+                .is_some()
         );
         let resolved =
             materials.resolved_capabilities(Some(instance), MaterialHandle::REFRACTION_MESH);
