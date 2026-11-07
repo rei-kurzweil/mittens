@@ -5,12 +5,19 @@ ship until the graph, syntax and lifetime rules have been reviewed.
 
 ## Intended behavior
 
-One native `RoomSystem` manages one active room graph and one followed player
-for the first version. A room is a graph vertex; an architectural connection is
-an undirected edge. `load_distance(1)` loads the current room and its immediate
-neighbors, using shortest-path edge count rather than metres, visibility or
-floor number. Recompute the loaded set when the current room or graph changes,
-not in a per-room/per-frame MMS callback.
+One native `RoomSystem` manages an explicitly named room graph/group and
+registered room agents. A room is an abstract graph vertex with persistent
+identity and unloadable contents; it is not itself a spatial zone. A room may
+have small doorway arrival zones, a whole-area occupancy zone, or a deliberate
+combination of both. Agents, not arbitrary overlapping components, change the
+current-room state.
+
+An architectural connection is an undirected edge. `load_distance(1)` loads
+the agent's current room and its immediate neighbors, using shortest-path edge
+count rather than metres, visibility or floor number. Recompute the desired
+loaded set when room membership or graph data changes, not in a per-room MMS
+frame callback. V1 can select one registered player agent for loading while
+retaining an agent identity in membership events.
 
 From the orchard/biodome, keep the cafeteria loaded. Unload the women's washroom,
 washroom passage, barracks, bridge hallway and bridge/control-room contents,
@@ -42,103 +49,223 @@ Reactor routes and any future second biodome can add their actual corridor/door
 edges later; do not infer connectivity from proximity in world coordinates.
 A corner alone does not have to become a separate room/hop.
 
+## Two room-detection modes
+
+### Doorway arrival mode
+
+A small zone just inside a doorway reports **entering the destination room**.
+The agent remains in that room after leaving the small trigger. Leaving a
+threshold is not interpreted as leaving the whole room. Separate room-exit zones
+are unnecessary: entering a different room replaces the current room.
+
+A connection may have several arrival zones for a destination, for example
+multiple doors into the same cafeteria. Place paired destination triggers far
+enough apart that standing in a doorway does not alternate room assignments.
+The native system filters by the room on the other end of the connection and
+ignores repeated arrival reports for the current room.
+
+### Whole-area occupancy mode
+
+An open area that can be approached from any direction can use a zone enveloping
+the whole area. In this mode **both enter and exit matter**:
+
+- Enter explicitly identifies this room as the destination: the agent has entered
+  that room. Add its occupancy membership and select it according to the stated
+  overlap/priority rules; no doorway trigger is required.
+- Exit removes this room from those memberships.
+- A doorway arrival latch and a region membership are different native state;
+  do not apply small-trigger exit behavior to both modes.
+
+Each entry identifies both the room and its owning graph. Exiting the current
+occupancy-mode room is a graph-exit candidate. Reconcile native room events over
+the **same World update frame** before committing:
+
+| Events for an agent in one frame | Committed result |
+| --- | --- |
+| Exit A, enter B in A's graph | Transition to B within the same graph |
+| Exit A, enter B in a different graph | Transition directly to B and its graph |
+| Exit A, no replacement room entered that frame | Leave the graph; current room and graph become null |
+| Enter B on a later frame after leaving | Enter B and its graph from the outside state |
+
+Do not retain the previous graph as active while waiting for a possible future
+entry. Do not guess an adjacent room from a region exit or synthesize a return
+to an earlier room from visit history. For v1, avoid ambiguous/nested occupancy
+regions rather than introducing an implicit parent-room restoration policy.
+A later overlapping/nested-area policy needs explicit semantics and tests.
+
+An exit belonging to an old/non-current room must not clear a newer current
+room. Multiple simultaneous destination entries need explicit priority and a
+stable tie-break, independent of callback dispatch order. Preserve physical
+crossing order when several boundaries are traversed during fixed substeps;
+do not select a room already exited later in that same frame.
+
+If a room uses both modes, duplicate reports of the same room are idempotent.
+A fresh doorway arrival may establish a destination while its region membership
+catches up in the same native update; reconcile the batch before selecting a
+loaded set. Explicit whole-region exit clears that region membership, even if
+an earlier doorway event announced entry into the same room. It also clears
+that room's arrival latch: otherwise the latch would incorrectly keep an exited
+occupancy-mode room current forever.
+
 ## Proposed MMS syntax
 
-The following APIs are **proposed, not available yet**. `RoomGraph`, `Room` and
-`RoomLink` would be ordinary components backed by native `RoomSystem`, using
-existing component/factory/event-binding mechanisms. No new language syntax or
+These APIs are **proposed, not available yet**. `RoomGraph`, `Room`, `RoomLink`
+and `RoomAgent` would be ordinary components backed by native `RoomSystem`.
+There is no `RoomGraph.follow`: the graph defines topology/loading policy, and
+an agent separately identifies who moves through registered graphs. An agent is
+not permanently bound to its initial graph; an entry zone supplies the new graph
+and room. Several graphs may be registered, with one current graph per agent. No new language syntax or
 replacement for `on(world, ...)` is needed.
 
 ```mms
-// These existing Zone/Transform nodes live outside streamed content.
-// Author their actual bounds from the ship geometry during migration.
-let bridge_region = Zone.cube([7,2,6]).at(bridge_region_frame) {}
-let hall_region = Zone.cube([2,2,5]).at(hall_region_frame) {}
-let barracks_region = Zone.cube([4,2,3]).at(barracks_region_frame) {}
-let cafeteria_region = Zone.cube([11,4.5,6]).at(cafeteria_region_frame) {}
-let orchard_region = Zone.cube([32,4,24]).at(orchard_region_frame) {}
-let passage_region = Zone.cube([2,2,4]).at(passage_region_frame) {}
-let washroom_region = Zone.cube([5,3,5]).at(washroom_region_frame) {}
-
-// Choose the active locomotion root for the configured XR/desktop rig.
-// This name is illustrative; use the actual root selected by the ship flags.
-let room_actor = "#ship_player_root"
-
-RoomGraph.follow(room_actor).load_distance(1) {
-    name = "ship_rooms"
-
-    Room.id("bridge").zone(bridge_region).contents(fn() {
-        return ship_control_room()
-    }) {}
-    Room.id("bridge_hallway").zone(hall_region).contents(fn() {
+RoomGraph.id("ship").load_distance(1) {
+    // Abstract rooms; factories run only when their contents are needed.
+    Room.id("bridge_hallway").contents(fn() {
         return ship_mall_entrance_hallway()
     }) {}
-    Room.id("barracks").zone(barracks_region).contents(fn() {
-        return ship_barracks()
-    }) {}
-    Room.id("cafeteria").zone(cafeteria_region).contents(fn() {
+    Room.id("cafeteria").contents(fn() {
         return ship_mall_cafeteria()
     }) {}
-    Room.id("orchard").zone(orchard_region).contents(fn() {
+
+    // Open-area mode: this Zone covers the whole orchard.
+    // Its enter AND exit update the registered agent's room membership.
+    Room.id("orchard").region(orchard_area).contents(fn() {
         return ship_park()
     }) {}
-    Room.id("washroom_passage").zone(passage_region).contents(fn() {
-        return ship_washroom_passage()
-    }) {}
-    Room.id("womens_washroom").zone(washroom_region).contents(fn() {
-        return ship_womens_washroom()
-    }) {}
 
-    RoomLink.between("bridge", "bridge_hallway") {}
-    RoomLink.between("bridge_hallway", "barracks") {}
-    RoomLink.between("bridge_hallway", "cafeteria") {}
-    RoomLink.between("cafeteria", "orchard") {}
-    RoomLink.between("cafeteria", "washroom_passage") {}
-    RoomLink.between("washroom_passage", "womens_washroom") {}
+    // Doorway mode: entering a small zone announces its destination.
+    // Leaving that small trigger does not mean leaving the destination room.
+    RoomLink.between("bridge_hallway", "cafeteria")
+        .enter("cafeteria", cafeteria_side_of_door)
+        .enter("bridge_hallway", hallway_side_of_door) {}
+
+    // Orchard entry works from any side through its whole-area region.
+    // Returning to the doorway-mode cafeteria still has an arrival trigger.
+    RoomLink.between("cafeteria", "orchard")
+        .enter("cafeteria", cafeteria_side_of_orchard_door) {}
 }
+
+// Register the player identity, its movement target and the actual body zone.
+// References are illustrative existing Transform/Zone nodes, resident globally.
+RoomAgent.movement_target(player_root)
+    .zone(player_capsule)
+    .initial_room("ship", "bridge_hallway") {}
 ```
 
-The example shows the interface, not executable placements: the `*_region_frame`
-transforms (volume centers, not floor origins) and region bounds must be authored from the real prefab extents.
-Room regions, links, transforms and names remain resident independently of the
-heavy contents. The factory closure is stored and invoked on load, not evaluated
-while declaring every room. Migrating the actual prefab transforms must preserve
-world placement; do not blindly wrap or double-apply current offsets.
+`orchard_area` is an existing whole-area Zone; `*_side_of_door` are existing small
+Zones on opposite sides of a doorway. They and their transform anchors remain
+resident independently of room contents. Use existing Zone shapes/frames rather
+than inventing a separate spatial shape type for rooms. Multiple `.enter(room,
+zone)` calls can register multiple entrances. A destination must be one of its
+link's two endpoints. Optional `.priority(n)` on `Room` would resolve overlapping
+occupancy regions; the exact name remains part of syntax review.
 
-Prefer this explicit graph over repeating `neighbors([...])` on both endpoints:
-each connection is declared once, and links can later own door/portal metadata.
-Closed doors do not change graph distance in v1; distance is architectural
-adjacency. A future visibility/door policy would be a separate extension.
+The connection declaration automatically registers graph adjacency and its
+arrival triggers together. It needs no second, duplicated neighbor list. We
+cannot reliably infer architectural connectivity from sensor overlap alone,
+and learning edges only when the player crosses them would be too late for
+preloading unvisited neighbors. An explicit connection with optional trigger
+metadata is the initial design; paired named doorway metadata could generate
+these declarations later without changing the graph core.
 
-For code reuse, the first implementation can adapt the existing deferred factory
-and subtree-removal behavior used by `ship_store_accordion`. Room loading must
-not depend on rendering an accordion or querying its chevron/window controls.
+Closed doors do not remove adjacency in v1. One-way traversal and visibility
+policy can be specified later; loading adjacency can remain undirected even
+where movement permissions differ. A connection without triggers is valid when
+whole-area regions or explicit placement identify its rooms.
 
-## Detecting the current room
+The example is an interface sketch, not executable placements. Actual zones,
+room transforms and bounds must be authored from the ship geometry. Room
+contents inherit their authored placement; do not blindly wrap/double-apply
+current offsets during migration. The factory closure is stored rather than
+eagerly evaluating every room. Existing accordion deferred factories/subtree
+removal can inform implementation, but loading must not depend on an accordion
+or its window/chevron controls.
 
-- Follow the selected active rig/locomotion root, not an arbitrary hand or a
-  visible avatar mesh. XR avatar, free XR and desktop configurations need explicit
-  selection. While mounted, use the followed player's effective world position;
-  do not lose room tracking because the rider is attached to a truck.
-- Keep room regions resident so an unloaded destination remains discoverable.
-  Reuse native Zone geometry/queries and transform invalidation where suitable.
-  No MMS loop polls every room each frame.
-- Maintain the current room while the player occupies its region. At doorway
-  overlap, prefer the previous room until the destination is unambiguous. Use a
-  small spatial crossing margin or resident portal zones, not alternating loads
-  on every sensor exit. Author overlap/gaps deliberately.
-- If no region contains the player during a doorway gap, retain the last valid
-  room rather than unload everything. Teleporting directly into another valid
-  room recomputes from that room without requiring an intermediate enter event.
-- Multiple graph support is deferred. V1 validates one active graph per world;
-  do not silently union unrelated graphs or choose one by hash-map iteration.
+## Registering the moving agent
+
+- Register a stable player/agent identity, the Transform that is the movement
+  target, and the body/capsule Zone used for membership detection. A trigger hit
+  must resolve to that registered agent before it can affect room loading.
+- Entering a doorway with a hand, held gun, projectile, loose hot dog or an NPC
+  that is not registered as the followed agent must not switch the player's room.
+  Matching the body zone as well as its movement target avoids treating every
+  descendant sensor as an independent agent.
+- The graph does not own the camera rig. Select the appropriate agent for XR
+  avatar, free XR or desktop configuration. V1 can have one active loading agent
+  and multiple registered graphs. Arrival metadata selects its current graph;
+  the agent remains registered when outside all graphs. Multiple-agent desired-set
+  union can be added without confusing room identity with a camera component.
+- Mounting keeps the same agent identity. Resolve the effective world pose/body
+  probe through attachment; a temporarily disabled locomotion collider must not
+  silently stop room tracking or register the truck as a second player. Specify
+  how a nonblocking membership probe behaves when the physical collider is
+  disabled, and cover this before vehicle migration.
+- Metadata such as `RoomAgent`, initial room, links and trigger associations is
+  registered before streamed factories run. First entry cannot depend on an
+  unloaded destination's callback being present.
+- Threshold-only rooms need an initial room on spawn; a teleport/explicit room
+  placement must update the agent's room because it can bypass all doorway
+  triggers. Occupancy-mode rooms may resolve a spawn/teleport using their regions.
+  Do not assume entry-only triggers can recover arbitrary teleport destinations.
+
+## Desired sets rather than a loading stack
+
+The user's add/remove-list approach maps to set differences:
+
+```text
+desired   = rooms within load_distance of the selected current room
+            (empty when the agent is outside all graphs)
+load      = desired - loaded
+unload    = loaded - desired
+keep      = loaded intersection desired
+```
+
+If transition work is initially assembled as add/remove lists, normalize them
+before executing either list:
+
+```text
+unchanged = intersection(add, remove)
+add       = add - unchanged
+remove    = remove - unchanged
+```
+
+A room present in both lists is removed from both lists and receives neither
+operation. Keep its existing content instance and state intact: no teardown,
+factory call, duplicate instance or unload/reload lifecycle callback. Deduplicate
+repeated room IDs within each list as well. The direct desired/loaded set
+differences above already produce disjoint work lists; this normalization makes
+the same invariant explicit for incrementally assembled lists.
+
+Load/unload work lists may be ordered for safe lifecycle operations, but loaded
+membership is a set, not a LIFO stack. A shared neighbor remains loaded without
+being destroyed/rebuilt during a transition. For example, orchard -> cafeteria
+keeps both and adds bridge hallway/washroom passage. Transitioning back removes
+only the rooms outside the orchard's neighborhood.
+
+When an exit has no replacement entry in the same frame, compute the empty
+room-desired set and remove the prior graph's unloadable contents through normal
+lifecycle handling. Resident agent/entry metadata and persistent physical actors
+and required collision shells are not removed. A later frame's entry can load a
+new graph normally. A same-frame graph switch computes one old/new set diff;
+there is no intermediate empty-set teardown.
+
+Compare stable room identities when cancelling work, not bare display names.
+An optional visit history is separate from current membership and loaded state;
+it never keeps a graph active after an unmatched exit. With several loading
+agents later, union their desired neighborhoods before unloading anything, so
+one agent leaving does not remove another agent's required rooms.
 
 ## Native update and lifecycle
 
-1. Detect a meaningful followed-pose/region or graph change after physics and
-   transform propagation. Resolve the current room natively.
-2. Run bounded BFS from that room to `load_distance`; graph metadata changes
-   invalidate the cached result. Report invalid links, duplicate IDs and missing
+1. After physics and transform propagation, consume native arrival/region
+   enter-exit changes for registered agents. Reconcile an agent's membership
+   batch, initial/teleport placement and graph edits before selecting a room.
+   This is one logical World update frame, not each fixed physics substep or XR
+   eye render. Consume native events in that frame rather than delaying one side
+   through a later MMS callback and creating an artificial unmatched exit.
+2. If the frame commits a room, run bounded BFS within its graph to
+   `load_distance`; if an unmatched current-room exit leaves all graphs, use an
+   empty room-desired set. Graph metadata changes invalidate the cached result. Report invalid links, duplicate IDs and missing
    content factories clearly.
 3. Diff desired and current room sets. Leave already loaded rooms untouched.
    Adjacent rooms should already be present before a normal doorway crossing.
@@ -178,7 +305,7 @@ full visual prefab twice for shell and contents.
 A possible additional authoring hook, to review before adding it, is:
 
 ```mms
-Room.id("orchard").zone(orchard_region)
+Room.id("orchard").region(orchard_area)
     .shell(fn() { return orchard_collision_shell() })
     .contents(fn() { return orchard_visual_contents() }) {}
 ```
@@ -205,13 +332,14 @@ only shells needed by active bodies and wake/support dependencies.
 
 ## Implementation slices after review
 
-1. **Inventory and measurements:** define actual ship room regions/links; record
+1. **Inventory and measurements:** define abstract rooms/groups, doorway versus
+   occupancy detection, actual native agent zones/movement targets and links; record
    per-room entities, render instances, lights, mirrors, script bindings, physics
    actors and initial/reload cost. Preserve orchard baseline captures.
 2. **Graph core:** pure shortest-path loaded-set calculation, stable IDs, link
    validation and current-room transitions. No content deletion yet.
-3. **Native components and bindings:** `RoomGraph`, `Room`, `RoomLink` plus
-   `RoomSystem`, focused component/binding modules and deferred factories.
+3. **Native components and bindings:** `RoomGraph`, `Room`, `RoomLink`,
+   `RoomAgent` plus `RoomSystem`, focused modules and deferred factories.
    Keep language/runtime changes out unless an existing capability is genuinely
    missing and reviewed.
 4. **Lifecycle pilot:** load/unload two simple rooms and prove handler cleanup,
@@ -232,8 +360,24 @@ lookup, per-frame scene reconstruction or new material/pipeline per room check.
 
 - At orchard/radius 1, exactly orchard and cafeteria contents remain loaded;
   bridge, hallway, barracks and washroom contents are absent, not merely hidden.
-- Crossing orchard/cafeteria preloads the next room and changes the neighbor set
-  once; lingering in overlapping doorway zones causes no load/unload flicker.
+- Crossing a doorway arrival zone sets its destination room once. Leaving the
+  small trigger does not clear that room. Multiple entrances and duplicate events
+  do not duplicate content; paired triggers do not produce boundary flicker.
+- Entering a whole-area region identifies that room and graph as the destination.
+  Exiting the current room with no replacement entry in that World frame clears
+  both current room and graph and unloads their unneeded contents safely.
+- Same-frame exit/entry within one graph or across graphs commits one transition
+  and one loaded-set diff, without transient teardown of shared rooms. Dispatch
+  order does not change the result. A later-frame entry works from outside.
+- An old-room exit cannot clear a newer current room. Traversing several rooms
+  in one frame selects the final valid destination, not an already-exited room.
+- Hands, loose objects, projectiles and unrelated NPC zones cannot change the
+  selected player's current room. Registered agents keep independent state.
+- A room in both initially assembled add/remove lists is deleted from both work
+  lists. Its existing content identity and state remain unchanged, with no load or
+  unload callbacks. Duplicate entries do not execute duplicate operations.
+- The add/remove set differences retain shared rooms across transitions, including
+  branch/loop paths, rather than popping them simply because visitation order changed.
 - Walking, XR/free-camera modes, mounting/driving, dismounting and teleporting
   select the correct room without depending on a temporarily absent avatar node.
 - Dormant metadata remains queryable and graph edits update reachability.
