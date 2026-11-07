@@ -1,0 +1,707 @@
+warning: unused variable: `namespace`
+    --> crates/meow-meow-script/src/runtime.rs:1415:21
+     |
+1415 |         if let Some(namespace) = &declaration.namespace {
+     |                     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_namespace`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `meow-meow-script` (lib) generated 1 warning (run `cargo fix --lib -p meow-meow-script` to apply 1 suggestion)
+warning: unused import: `TextComponent`
+ --> src/engine/ecs/system/editor/inspector_panel.rs:5:83
+  |
+5 |     DataComponent, DataValue, SelectionComponent, SelectionEntry, StyleComponent, TextComponent,
+  |                                                                                   ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `PANEL_STATUS_WRAP_SELECTOR` and `rerender_world_panel_status`
+  --> src/engine/ecs/system/editor/inspector_panel.rs:18:60
+   |
+18 |     AuthoredSceneNodePolicy, AuthoredWorldPanelSceneModel, PANEL_STATUS_WRAP_SELECTOR,
+   |                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+19 |     WORLD_PANEL_ROOT_SELECTOR, authored_scene_node_policy, component_id_short, editor_chunk_label,
+20 |     mark_nearest_layout_dirty, rerender_world_panel_status, world_panel_item_label,
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `SignalKind`
+  --> src/engine/ecs/system/editor/inspector_panel.rs:30:80
+   |
+30 | use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, SignalKind, World};
+   |                                                                                ^^^^^^^^^^
+
+warning: unused import: `IntentValue`
+  --> src/engine/ecs/system/editor/world_panel.rs:24:39
+   |
+24 | use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter, World};
+   |                                       ^^^^^^^^^^^
+
+warning: unused imports: `GLTFComponent` and `SerializeComponent`
+  --> src/engine/ecs/system/editor_inspector_system.rs:59:62
+   |
+59 |         BoundsComponent, EditorComponent, EditorUIComponent, GLTFComponent, LayoutComponent,
+   |                                                              ^^^^^^^^^^^^^
+60 |         RenderableComponent, SelectionComponent, SerializeComponent, TextComponent,
+   |                                                  ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::engine::ecs::system::editor::world_panel::set_world_panel_scene_path_for_tests`
+  --> src/engine/ecs/system/editor_inspector_system.rs:68:9
+   |
+68 |     use crate::engine::ecs::system::editor::world_panel::set_world_panel_scene_path_for_tests;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `TransformComponent`
+ --> src/engine/ecs/system/openxr_avatar_free_pointer_tests.rs:2:79
+  |
+2 | use crate::engine::ecs::component::{AvatarControlComponent, PointerComponent, TransformComponent};
+  |                                                                               ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `EventSignal`
+  --> src/engine/ecs/system/system_world.rs:57:39
+   |
+57 | use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter};
+   |                                       ^^^^^^^^^^^
+
+warning: unused imports: `RenderAssets` and `RenderUploader`
+  --> src/engine/ecs/system/system_world.rs:58:31
+   |
+58 | use crate::engine::graphics::{RenderAssets, RenderUploader, VisualWorld};
+   |                               ^^^^^^^^^^^^  ^^^^^^^^^^^^^^
+
+warning: unused import: `TransparentCutoutComponent`
+ --> src/engine/ecs/system/text_system.rs:7:5
+  |
+7 |     TransparentCutoutComponent, UVComponent,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `PAGE_SIZE`
+  --> src/scripting/file_browser/mod.rs:17:20
+   |
+17 | use model::{Model, PAGE_SIZE};
+   |                    ^^^^^^^^^
+
+warning: unused import: `SignalEmitter`
+  --> src/engine/ecs/system/system_world.rs:57:52
+   |
+57 | use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter};
+   |                                                    ^^^^^^^^^^^^^
+
+warning: value assigned to `copied_trs` is never read
+   --> src/engine/ecs/component/transform.rs:317:9
+    |
+317 |         copied_trs.translation[0] = 99.0;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> src/engine/ecs/system/asset_system.rs:780:13
+    |
+780 |         let mut render_assets = RenderAssets::new();
+    |             ----^^^^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `render_assets`
+   --> src/engine/ecs/system/asset_system.rs:780:13
+    |
+780 |         let mut render_assets = RenderAssets::new();
+    |             ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_render_assets`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `emit`
+   --> src/engine/ecs/system/editor_paint_system.rs:452:22
+    |
+452 |         move |world, emit, signal| {
+    |                      ^^^^ help: if this is intentional, prefix it with an underscore: `_emit`
+
+warning: unused variable: `emit`
+   --> src/engine/ecs/system/editor_paint_system.rs:670:26
+    |
+670 |             move |world, emit, signal| {
+    |                          ^^^^ help: if this is intentional, prefix it with an underscore: `_emit`
+
+warning: unused variable: `world`
+   --> src/engine/ecs/system/editor_paint_system.rs:694:5
+    |
+694 |     world: &mut World,
+    |     ^^^^^ help: if this is intentional, prefix it with an underscore: `_world`
+
+warning: unused variable: `editor_root`
+    --> src/engine/ecs/system/editor_paint_system.rs:1478:5
+     |
+1478 |     editor_root: ComponentId,
+     |     ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_editor_root`
+
+warning: unused variable: `editor_root`
+    --> src/engine/ecs/system/editor_paint_system.rs:1545:5
+     |
+1545 |     editor_root: ComponentId,
+     |     ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_editor_root`
+
+warning: unused variable: `editor_root`
+    --> src/engine/ecs/system/editor_paint_system.rs:1590:5
+     |
+1590 |     editor_root: ComponentId,
+     |     ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_editor_root`
+
+warning: unused variable: `prev_offset`
+   --> src/engine/ecs/system/scroll_system.rs:178:17
+    |
+178 |             let prev_offset = sc.scroll_offset;
+    |                 ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_prev_offset`
+
+warning: unused variable: `visuals`
+    --> src/engine/ecs/system/system_world.rs:2043:9
+     |
+2043 |         visuals: &mut VisualWorld,
+     |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_visuals`
+
+warning: variable does not need to be mutable
+    --> src/scripting/tests.rs:6857:9
+     |
+6857 |     let mut rx = RxWorld::default();
+     |         ----^^
+     |         |
+     |         help: remove this `mut`
+
+warning: unused variable: `rx`
+    --> src/scripting/tests.rs:6857:9
+     |
+6857 |     let mut rx = RxWorld::default();
+     |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_rx`
+
+warning: type `EditorContextWorkspaceState` is more private than the item `ensure_workspace_gizmo_host`
+   --> src/engine/ecs/system/editor/context.rs:427:1
+    |
+427 | / pub(crate) fn ensure_workspace_gizmo_host(
+428 | |     world: &mut World,
+429 | |     workspace: &Arc<Mutex<EditorContextWorkspaceState>>,
+430 | | ) -> Option<ComponentId> {
+    | |________________________^ function `ensure_workspace_gizmo_host` is reachable at visibility `pub(crate)`
+    |
+note: but type `EditorContextWorkspaceState` is only usable at visibility `pub(self)`
+   --> src/engine/ecs/system/editor/context.rs:93:1
+    |
+ 93 | struct EditorContextWorkspaceState {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `EditorContextWorkspaceState` is more private than the item `ensure_shared_workspace_transform_gizmo`
+   --> src/engine/ecs/system/editor/context.rs:460:1
+    |
+460 | / pub(crate) fn ensure_shared_workspace_transform_gizmo(
+461 | |     world: &mut World,
+462 | |     emit: &mut dyn SignalEmitter,
+463 | |     workspace: &Arc<Mutex<EditorContextWorkspaceState>>,
+464 | | ) -> Option<ComponentId> {
+    | |________________________^ function `ensure_shared_workspace_transform_gizmo` is reachable at visibility `pub(crate)`
+    |
+note: but type `EditorContextWorkspaceState` is only usable at visibility `pub(self)`
+   --> src/engine/ecs/system/editor/context.rs:93:1
+    |
+ 93 | struct EditorContextWorkspaceState {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `MirrorOffscreenTargets` is more private than the item `vulkano_backend::VulkanoState::ensure_mirror_offscreen_targets`
+    --> src/engine/graphics/vulkano_renderer.rs:2382:9
+     |
+2382 | /         pub fn ensure_mirror_offscreen_targets(
+2383 | |             &mut self,
+2384 | |             mirror_key: &str,
+2385 | |             view_count: usize,
+2386 | |             extent: [u32; 2],
+2387 | |             color_format: Format,
+2388 | |         ) -> Result<&MirrorOffscreenTargets, Box<dyn std::error::Error>> {
+     | |________________________________________________________________________^ method `vulkano_backend::VulkanoState::ensure_mirror_offscreen_targets` is reachable at visibility `pub(in crate::engine::graphics::vulkano_renderer)`
+     |
+note: but type `MirrorOffscreenTargets` is only usable at visibility `pub(self)`
+    --> src/engine/graphics/vulkano_renderer.rs:690:5
+     |
+ 690 |     struct MirrorOffscreenTargets {
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `from_pitch` is never used
+   --> src/engine/ecs/component/music_note.rs:147:19
+    |
+ 36 | impl MusicNote {
+    | -------------- associated function in this implementation
+...
+147 |     pub(crate) fn from_pitch(duration_beats: f32, pitch: NotePitch, octave: u16) -> Self {
+    |                   ^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: variants `DropClip` and `DropClipInstance` are never constructed
+   --> src/engine/ecs/system/audio_system_fundsp.rs:651:5
+    |
+628 | pub enum AudioQueueItem {
+    |          -------------- variants in this enum
+...
+651 |     DropClip {
+    |     ^^^^^^^^
+...
+665 |     DropClipInstance {
+    |     ^^^^^^^^^^^^^^^^
+    |
+    = note: `AudioQueueItem` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `render_sample_from_map` is never used
+   --> src/engine/ecs/system/audio_system_fundsp.rs:899:4
+    |
+899 | fn render_sample_from_map(
+    |    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `gizmo_host_root` and `shared_transform_gizmo` are never read
+  --> src/engine/ecs/system/editor/context.rs:96:5
+   |
+93 | struct EditorContextWorkspaceState {
+   |        --------------------------- fields in this struct
+...
+96 |     gizmo_host_root: Option<ComponentId>,
+   |     ^^^^^^^^^^^^^^^
+97 |     shared_transform_gizmo: Option<ComponentId>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `EditorContextWorkspaceState` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `ensure_workspace_gizmo_host` is never used
+   --> src/engine/ecs/system/editor/context.rs:427:15
+    |
+427 | pub(crate) fn ensure_workspace_gizmo_host(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `ensure_shared_workspace_transform_gizmo` is never used
+   --> src/engine/ecs/system/editor/context.rs:460:15
+    |
+460 | pub(crate) fn ensure_shared_workspace_transform_gizmo(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `INSPECTOR_PANEL_DETAIL_ROOT_SELECTOR` is never used
+  --> src/engine/ecs/system/editor/inspector_panel.rs:44:18
+   |
+44 | pub(crate) const INSPECTOR_PANEL_DETAIL_ROOT_SELECTOR: &str = "#inspector_details_root";
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `INSPECTOR_PANEL_PIN_BUTTON_NAME` is never used
+  --> src/engine/ecs/system/editor/inspector_panel.rs:48:18
+   |
+48 | pub(crate) const INSPECTOR_PANEL_PIN_BUTTON_NAME: &str = "pin_button";
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `INSPECTOR_PANEL_SELECTION_NAME` is never used
+  --> src/engine/ecs/system/editor/inspector_panel.rs:50:18
+   |
+50 | pub(crate) const INSPECTOR_PANEL_SELECTION_NAME: &str = "inspector_panel_selection";
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `parse_inspector_item_index` is never used
+   --> src/engine/ecs/system/editor/inspector_panel.rs:505:15
+    |
+505 | pub(crate) fn parse_inspector_item_index(row_name: &str) -> Option<usize> {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `clicked_named_ancestor` is never used
+   --> src/engine/ecs/system/editor/inspector_panel.rs:815:15
+    |
+815 | pub(crate) fn clicked_named_ancestor(
+    |               ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `debug_style_details` is never used
+    --> src/engine/ecs/system/editor/inspector_panel.rs:1351:15
+     |
+1351 | pub(crate) fn debug_style_details(world: &World, root: ComponentId, selector: &str, label: &str) {
+     |               ^^^^^^^^^^^^^^^^^^^
+
+warning: function `debug_panel_root` is never used
+    --> src/engine/ecs/system/editor/inspector_panel.rs:1413:15
+     |
+1413 | pub(crate) fn debug_panel_root(world: &World, root: ComponentId, kind: &str) {
+     |               ^^^^^^^^^^^^^^^^
+
+warning: constant `EDITOR_SETTINGS_SELECTION_NAME` is never used
+  --> src/engine/ecs/system/editor/settings_panel.rs:12:18
+   |
+12 | pub(crate) const EDITOR_SETTINGS_SELECTION_NAME: &str = "editor_settings_selection";
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `EditorSettingsPanelState` is never constructed
+  --> src/engine/ecs/system/editor/settings_panel.rs:71:19
+   |
+71 | pub(crate) struct EditorSettingsPanelState {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `EditorSettingsPanelEvent` is never used
+  --> src/engine/ecs/system/editor/settings_panel.rs:90:17
+   |
+90 | pub(crate) enum EditorSettingsPanelEvent {
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `reduce_editor_settings_panel_state` is never used
+   --> src/engine/ecs/system/editor/settings_panel.rs:107:15
+    |
+107 | pub(crate) fn reduce_editor_settings_panel_state(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `WorldPanelState` is never constructed
+  --> src/engine/ecs/system/editor/world_panel.rs:39:19
+   |
+39 | pub(crate) struct WorldPanelState {
+   |                   ^^^^^^^^^^^^^^^
+
+warning: enum `WorldPanelEvent` is never used
+  --> src/engine/ecs/system/editor/world_panel.rs:55:17
+   |
+55 | pub(crate) enum WorldPanelEvent {
+   |                 ^^^^^^^^^^^^^^^
+
+warning: function `reduce_world_panel_state` is never used
+  --> src/engine/ecs/system/editor/world_panel.rs:66:15
+   |
+66 | pub(crate) fn reduce_world_panel_state(
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_world_panel_scene_path_for_tests` is never used
+   --> src/engine/ecs/system/editor/world_panel.rs:827:15
+    |
+827 | pub(crate) fn set_world_panel_scene_path_for_tests(path: Option<PathBuf>) {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `WORLD_PANEL_CONTENT_ROOT_SELECTOR` is never used
+    --> src/engine/ecs/system/editor/world_panel.rs:1002:18
+     |
+1002 | pub(crate) const WORLD_PANEL_CONTENT_ROOT_SELECTOR: &str = "#world_panel_content_root";
+     |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `spawn_world_panel_content_tree` is never used
+    --> src/engine/ecs/system/editor/world_panel.rs:1004:15
+     |
+1004 | pub(crate) fn spawn_world_panel_content_tree(
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `spawn_world_panel_row_tree` is never used
+    --> src/engine/ecs/system/editor/world_panel.rs:1051:15
+     |
+1051 | pub(crate) fn spawn_world_panel_row_tree(
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: static `WORLD_PANEL_SCENE_TEST_LOCK` is never used
+  --> src/engine/ecs/system/editor_inspector_system.rs:79:12
+   |
+79 |     static WORLD_PANEL_SCENE_TEST_LOCK: Mutex<()> = Mutex::new(());
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `count_named_children` is never used
+   --> src/engine/ecs/system/editor_inspector_system.rs:110:8
+    |
+110 |     fn count_named_children(
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `count_children_with_name` is never used
+   --> src/engine/ecs/system/editor_inspector_system.rs:144:8
+    |
+144 |     fn count_children_with_name(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `unique_test_scene_path` is never used
+   --> src/engine/ecs/system/editor_inspector_system.rs:160:8
+    |
+160 |     fn unique_test_scene_path() -> PathBuf {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `setup_panels_for_editor_inspector_uses_authored_rows_without_runtime_bounds_children` is never used
+    --> src/engine/ecs/system/editor_inspector_system.rs:1543:8
+     |
+1543 |     fn setup_panels_for_editor_inspector_uses_authored_rows_without_runtime_bounds_children() {
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `last_grid_step` is never read
+  --> src/engine/ecs/system/editor_paint_system.rs:69:5
+   |
+65 | struct PaintStrokeRuntime {
+   |        ------------------ field in this struct
+...
+69 |     last_grid_step: Option<GridStep>,
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `PaintStrokeRuntime` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: struct `PaintActivityStatus` is never constructed
+    --> src/engine/ecs/system/editor_paint_system.rs:2147:8
+     |
+2147 | struct PaintActivityStatus {
+     |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `paint_activity_status` is never used
+    --> src/engine/ecs/system/editor_paint_system.rs:2345:4
+     |
+2345 | fn paint_activity_status(
+     |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `skeleton_root` is never read
+  --> src/engine/ecs/system/gltf_system.rs:53:5
+   |
+50 | struct ImportedSkin {
+   |        ------------ field in this struct
+...
+53 |     skeleton_root: Option<usize>,
+   |     ^^^^^^^^^^^^^
+   |
+   = note: `ImportedSkin` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `trace_layout_id` is never used
+   --> src/engine/ecs/system/layout/measure.rs:121:15
+    |
+121 | pub(crate) fn trace_layout_id(world: &World, id: ComponentId) -> bool {
+    |               ^^^^^^^^^^^^^^^
+
+warning: function `trace_label` is never used
+   --> src/engine/ecs/system/layout/measure.rs:141:15
+    |
+141 | pub(crate) fn trace_label(world: &World, id: ComponentId) -> String {
+    |               ^^^^^^^^^^^
+
+warning: function `fmt_opt` is never used
+   --> src/engine/ecs/system/layout/measure.rs:145:15
+    |
+145 | pub(crate) fn fmt_opt(value: Option<f32>) -> String {
+    |               ^^^^^^^
+
+warning: function `container_cols_for_width` is never used
+   --> src/engine/ecs/system/layout/measure.rs:409:4
+    |
+409 | fn container_cols_for_width(content_width_gu: f32) -> usize {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type alias `StyleTuple` is never used
+    --> src/engine/ecs/system/layout/measure.rs:1176:6
+     |
+1176 | type StyleTuple = (
+     |      ^^^^^^^^^^
+
+warning: trait `StyleDefault` is never used
+    --> src/engine/ecs/system/layout/measure.rs:1186:7
+     |
+1186 | trait StyleDefault {
+     |       ^^^^^^^^^^^^
+
+warning: function `active_palette` is never used
+ --> src/engine/ecs/system/morph_target_system.rs:9:15
+  |
+9 | pub(crate) fn active_palette(
+  |               ^^^^^^^^^^^^^^
+
+warning: associated functions `rolling_avg` and `rolling_max` are never used
+    --> src/engine/ecs/system/openxr_system.rs:1885:8
+     |
+1661 | impl OpenXRSystem {
+     | ----------------- associated functions in this implementation
+...
+1885 |     fn rolling_avg(window: &VecDeque<f32>) -> f32 {
+     |        ^^^^^^^^^^^
+...
+1893 |     fn rolling_max(window: &VecDeque<f32>) -> f32 {
+     |        ^^^^^^^^^^^
+
+warning: function `resolve_surface_aligned_pose_from_normal` is never used
+   --> src/engine/ecs/system/paint_placement.rs:135:4
+    |
+135 | fn resolve_surface_aligned_pose_from_normal(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `find_descendant_by_type` is never used
+   --> src/engine/ecs/system/selection_system.rs:201:4
+    |
+201 | fn find_descendant_by_type(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_descendants` is never used
+   --> src/engine/ecs/system/text_system.rs:676:8
+    |
+676 |     fn collect_descendants(
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `register_text_scales_spawned_glyphs_by_font_size` is never used
+   --> src/engine/ecs/system/text_system.rs:728:8
+    |
+728 |     fn register_text_scales_spawned_glyphs_by_font_size() {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `register_text_marks_spawned_glyph_roots_serialize_off` is never used
+   --> src/engine/ecs/system/text_system.rs:743:8
+    |
+743 |     fn register_text_marks_spawned_glyph_roots_serialize_off() {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `measure_font_size_scales_text_advance_and_height` is never used
+   --> src/engine/ecs/system/text_system.rs:766:8
+    |
+766 |     fn measure_font_size_scales_text_advance_and_height() {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `layout_position_for_index_matches_caret_local_position` is never used
+   --> src/engine/ecs/system/text_system.rs:774:8
+    |
+774 |     fn layout_position_for_index_matches_caret_local_position() {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `layout_position_for_index_wraps_to_second_line_after_wrapped_word` is never used
+   --> src/engine/ecs/system/text_system.rs:780:8
+    |
+780 |     fn layout_position_for_index_wraps_to_second_line_after_wrapped_word() {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `layout_position_for_index_wraps_to_second_line_before_wrapped_word` is never used
+   --> src/engine/ecs/system/text_system.rs:785:8
+    |
+785 |     fn layout_position_for_index_wraps_to_second_line_before_wrapped_word() {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `register_text_spawns_text_input_whitespace_helpers` is never used
+   --> src/engine/ecs/system/text_system.rs:790:8
+    |
+790 |     fn register_text_spawns_text_input_whitespace_helpers() {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `register_text_does_not_spawn_whitespace_helpers_for_plain_text` is never used
+   --> src/engine/ecs/system/text_system.rs:827:8
+    |
+827 |     fn register_text_does_not_spawn_whitespace_helpers_for_plain_text() {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `nearest_transform_self_or_ancestor` is never used
+   --> src/engine/ecs/system/transform_system.rs:138:8
+    |
+ 83 | impl TransformSystem {
+    | -------------------- associated function in this implementation
+...
+138 |     fn nearest_transform_self_or_ancestor(world: &World, cid: ComponentId) -> Option<ComponentId> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `plane_origin` and `plane_normal` are never read
+   --> src/engine/graphics/vulkano_renderer.rs:435:13
+    |
+431 |         Mirror {
+    |         ------ fields in this variant
+...
+435 |             plane_origin: [f32; 3],
+    |             ^^^^^^^^^^^^
+436 |             plane_normal: [f32; 3],
+    |             ^^^^^^^^^^^^
+    |
+    = note: `RenderViewKind` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `viewport` is never read
+   --> src/engine/graphics/vulkano_renderer.rs:445:13
+    |
+442 |     pub struct RenderView {
+    |                ---------- field in this struct
+...
+445 |         pub viewport: [f32; 2],
+    |             ^^^^^^^^
+    |
+    = note: `RenderView` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `pipeline_grid_mesh_transparent_clipped` is never read
+   --> src/engine/graphics/vulkano_renderer.rs:545:13
+    |
+486 |     pub struct VulkanoState {
+    |                ------------ field in this struct
+...
+545 |         pub pipeline_grid_mesh_transparent_clipped: Arc<GraphicsPipeline>,
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `surface` is never read
+  --> src/engine/graphics/vulkano_swapchain.rs:18:9
+   |
+17 | pub(crate) struct VulkanoSwapchainState {
+   |                   --------------------- field in this struct
+18 |     pub surface: Arc<Surface>,
+   |         ^^^^^^^
+
+warning: function `value_as_f32` is never used
+    --> src/scripting/world_evaluator.rs:2980:4
+     |
+2980 | fn value_as_f32(value: &Value) -> Result<f32, String> {
+     |    ^^^^^^^^^^^^
+
+warning: function `value_as_f64` is never used
+    --> src/scripting/world_evaluator.rs:2987:4
+     |
+2987 | fn value_as_f64(value: &Value) -> Result<f64, String> {
+     |    ^^^^^^^^^^^^
+
+warning: function `value_as_u16` is never used
+    --> src/scripting/world_evaluator.rs:2994:4
+     |
+2994 | fn value_as_u16(value: &Value) -> Result<u16, String> {
+     |    ^^^^^^^^^^^^
+
+warning: method `invoke_keyframe_callback` is never used
+   --> src/scripting/runner.rs:196:19
+    |
+ 65 | impl RuntimeSpecSession {
+    | ----------------------- method in this implementation
+...
+196 |     pub(crate) fn invoke_keyframe_callback(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `mittens-engine` (lib test) generated 89 warnings (run `cargo fix --lib -p mittens-engine --tests` to apply 23 suggestions)
+    Finished `release` profile [optimized] target(s) in 0.15s
+     Running unittests src/lib.rs (target/release/deps/mittens_engine-b9b42b14326adf59)
+
+running 1 test
+[VulkanoRenderer] MSAA enabled: 4x
+[AssetSystem][debug] scanning asset module: "assets/components/washroom_fixtures.mms"
+[SystemWorld] failed to scan assets dir: import error: cannot read 'types': No such file or directory (os error 2)
+[ClockSystem] driver: system -> sakura-profile
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[SecondaryMotion] chain ComponentId(7944v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7948v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7952v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7956v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7960v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7964v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7968v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7972v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7976v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7980v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7984v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7988v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7992v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7996v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8002v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8003v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8004v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8005v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8006v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8007v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8008v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8010v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8012v1): owning GLTF has not spawned its node transforms yet
+[ClockSystem] driver: sakura-profile -> audio
+[HTCEyeTracking] listening on 127.0.0.1:9002
+[AVC] left arm IK: root=transform (id=ComponentId(15173v1)), mid=transform (id=ComponentId(15188v1)), hand=transform (id=ComponentId(15191v1)), target=(id=ComponentId(16391v1))
+[AVC] right arm IK: root=transform (id=ComponentId(15242v1)), mid=transform (id=ComponentId(15257v1)), hand=transform (id=ComponentId(15260v1)), target=(id=ComponentId(16393v1))
+[AVC] re-parenting camera ComponentId(8020v1) under camera anchor ComponentId(14957v1)
+[AVC][capsule][inferred] avc=ComponentId(8014v1) model_root=ComponentId(8015v1) source=aggregate_render_bounds bounds_min=[-0.6704933, 0.029031461, -0.32431844] bounds_max=[0.6704933, 1.8569258, 0.1332873] center_y=0.942979 radius=0.280000 half_segment=0.633947 local_bottom=0.029032 local_top=1.856926 movement_target=Some(ComponentId(8032v1))
+[startup] [█████░░░] 5/8 first update completed
+[AVC][capsule][settled] avc=ComponentId(8014v1) capsule_transform=ComponentId(16429v1) zone=ComponentId(16431v1) local_center_y=Some(0.9429787) world_center=Some([0.017126678, 1.9429786, 9.868816]) radius=0.280000 half_segment=0.633947 world_bottom_top=Some((1.0290315, 2.8569257))
+[ClockSystem] driver: audio -> sakura-profile
+SHIP_PROFILE_BEGIN case=full room=cafeteria frames=480
+SHIP_PROFILE_RESULT {"cache_counts":{"instance_buffer_allocations":{"mean":0.0,"median":0.0,"p95":0.0},"instance_buffer_instances_written":{"mean":2319.0,"median":2319.0,"p95":2319.0},"material_cache_counts":{"immutable_hits":{"mean":4.0,"median":4.0,"p95":4.0},"immutable_misses":{"mean":0.0,"median":0.0,"p95":0.0},"mutable_allocations":{"mean":0.0,"median":0.0,"p95":0.0},"mutable_binding_evictions":{"mean":0.0,"median":0.0,"p95":0.0},"mutable_binding_misses":{"mean":0.0,"median":0.0,"p95":0.0},"mutable_snapshot_reuses":{"mean":848.0,"median":848.0,"p95":848.0},"mutable_uploads":{"mean":0.0,"median":0.0,"p95":0.0}},"retained_upload_allocations":{"mean":0.0,"median":0.0,"p95":0.0},"retained_upload_busy_replacements":{"mean":0.0,"median":0.0,"p95":0.0},"retained_upload_reuses":{"mean":13.0,"median":13.0,"p95":13.0},"visual_cache_counts":{"cache_hits":{"mean":2.0,"median":2.0,"p95":2.0},"instance_data_writes.update_model":{"mean":109.4,"median":127.0,"p95":127.0},"prepare_calls":{"mean":2.0,"median":2.0,"p95":2.0},"rebuilds":{"mean":0.0,"median":0.0,"p95":0.0},"transparency_prepare_calls":{"mean":2.0,"median":2.0,"p95":2.0}}},"case":"full","components":16444,"counters":{"cpu_fence_waits":0,"cpu_queue_waits":0,"deformation_bone_resizes":0,"deformation_bone_upload_bytes":74158080,"deformation_buffer_allocations":3360,"deformation_dirty_vertices":16213920,"deformation_dispatches":480,"deformation_job_upload_bytes":2323200,"deformation_jobs":8160,"deformation_morph_delta_upload_bytes":0,"deformation_output_resizes":0,"deformation_weight_upload_bytes":3840,"deformation_workgroups":257760,"mirror_captures":0,"queue_submissions":960,"xr_eyes":960},"cpu_record_stages_ms":{"attachment_setup":{"mean_ms":0.0020442020833333335,"median_ms":0.002001,"p95_ms":0.002459},"background_record":{"mean_ms":0.5267123062499999,"median_ms":0.519783,"p95_ms":0.56757},"builder_create":{"mean_ms":0.01655989166666667,"median_ms":0.014378,"p95_ms":0.045622},"camera_lights_global_descriptors":{"mean_ms":0.0285786916666667,"median_ms":0.024786,"p95_ms":0.05279},"command_buffer_build":{"mean_ms":3.4634008562499994,"median_ms":3.438992,"p95_ms":3.705972},"cutout_record":{"mean_ms":0.024842879166666665,"median_ms":0.024475,"p95_ms":0.029186},"debug_record":{"mean_ms":0.0005563979166666667,"median_ms":0.000554,"p95_ms":0.00065},"deformation_record":{"mean_ms":0.14061792916666652,"median_ms":0.138397,"p95_ms":0.15536},"draw_cache_and_transparency_sort":{"mean_ms":0.05230910625,"median_ms":0.050944,"p95_ms":0.06064},"draw_streams_and_transmission_buffers":{"mean_ms":0.0013153104166666657,"median_ms":0.001255,"p95_ms":0.001719},"instance_buffers":{"mean_ms":0.04560267708333331,"median_ms":0.044636,"p95_ms":0.052265},"material_sync":{"mean_ms":0.04126218750000002,"median_ms":0.040301,"p95_ms":0.04634},"opaque_record":{"mean_ms":1.3922847166666663,"median_ms":1.383381,"p95_ms":1.473647},"outline_record":{"mean_ms":0.0004393770833333329,"median_ms":0.000435,"p95_ms":0.000514},"postprocess_record":{"mean_ms":0.539899316666667,"median_ms":0.535154,"p95_ms":0.571412},"queue_submit_flush":{"mean_ms":0.5059173645833336,"median_ms":0.491324,"p95_ms":0.588528},"record_finish":{"mean_ms":0.009954079166666666,"median_ms":0.009875,"p95_ms":0.010777},"rig_buffer_descriptor":{"mean_ms":0.0007337895833333331,"median_ms":0.000707,"p95_ms":0.000963},"transmission_transparency_overlay_record":{"mean_ms":0.014042670833333335,"median_ms":0.013847,"p95_ms":0.015986},"xr_target_camera_setup":{"mean_ms":0.0022674479166666654,"median_ms":0.002206,"p95_ms":0.002937}},"extent":[1920,1920],"frames":480,"gpu":"NVIDIA GeForce GTX 1080","instances":2017,"material_binding_limit":32,"motion":"stationary","msaa":4,"paired_gpu":null,"room":"cafeteria","sample_draws":{"cutout":{"batch_sizes":{"1":12},"calls":12,"instances":12},"emission":{"batch_sizes":{"1":300},"calls":300,"instances":300},"opaque/other":{"batch_sizes":{"1":626,"10":8,"12":10,"13":4,"14":2,"15":4,"16":4,"161":2,"17":6,"2":30,"20":6,"23":4,"25":6,"26":2,"283":2,"3":12,"32":2,"33":2,"34":2,"4":8,"41":4,"43":2,"46":2,"47":2,"5":6,"50":2,"55":2,"6":12,"7":4,"8":6,"9":6},"calls":790,"instances":3638},"single-transparent":{"batch_sizes":{"2":2},"calls":2,"instances":4},"surface-batches":{"batch_sizes":{"1":380},"calls":380,"instances":380}},"timing":{"deformation_cpu_ms":{"mean_ms":0.13766705208333352,"median_ms":0.135336,"p95_ms":0.152643},"gpu_deform_ms":{"mean_ms":0.04607366666666667,"median_ms":0.046079999999999996,"p95_ms":0.047296},"gpu_graphics_ms":{"mean_ms":13.764506266666668,"median_ms":13.771296,"p95_ms":13.989088},"prepare_ms":{"mean_ms":0.5462595166666666,"median_ms":0.537053,"p95_ms":0.579617},"record_submit_ms":{"mean_ms":6.81512416458333,"median_ms":6.759742,"p95_ms":7.253222},"total_ms":{"mean_ms":23.29424026666669,"median_ms":23.254134,"p95_ms":24.033432},"update_ms":{"mean_ms":4.353144741666668,"median_ms":4.358820000000001,"p95_ms":4.981158000000001},"wait_ms":{"mean_ms":11.56080515833333,"median_ms":11.561806,"p95_ms":11.909306999999998}},"warmup":240}
+test engine::graphics::vulkano_renderer::vulkano_backend::sakura_profile::ship::profile_ship_stereo ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1336 filtered out; finished in 21.14s
+

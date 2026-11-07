@@ -1,0 +1,52 @@
+
+running 1 test
+[VulkanoRenderer] MSAA enabled: 4x
+[AssetSystem][debug] scanning asset module: "assets/components/washroom_fixtures.mms"
+[SystemWorld] failed to scan assets dir: import error: cannot read 'types': No such file or directory (os error 2)
+[ClockSystem] driver: system -> sakura-profile
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[World::init_component_tree] cycle/revisit detected at component=ComponentId(8v1)
+[SecondaryMotion] chain ComponentId(7944v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7948v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7952v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7956v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7960v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7964v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7968v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7972v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7976v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7980v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7984v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7988v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7992v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(7996v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8002v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8003v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8004v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8005v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8006v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8007v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8008v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8010v1): owning GLTF has not spawned its node transforms yet
+[SecondaryMotion] chain ComponentId(8012v1): owning GLTF has not spawned its node transforms yet
+[ClockSystem] driver: sakura-profile -> audio
+[HTCEyeTracking] listening on 127.0.0.1:9002
+[AVC] left arm IK: root=transform (id=ComponentId(15713v1)), mid=transform (id=ComponentId(15728v1)), hand=transform (id=ComponentId(15731v1)), target=(id=ComponentId(16391v1))
+[AVC] right arm IK: root=transform (id=ComponentId(15782v1)), mid=transform (id=ComponentId(15797v1)), hand=transform (id=ComponentId(15800v1)), target=(id=ComponentId(16393v1))
+[AVC] re-parenting camera ComponentId(8020v1) under camera anchor ComponentId(15497v1)
+[AVC][capsule][inferred] avc=ComponentId(8014v1) model_root=ComponentId(8015v1) source=aggregate_render_bounds bounds_min=[-0.6704933, 0.029031461, -0.32431844] bounds_max=[0.6704933, 1.8569258, 0.1332873] center_y=0.942979 radius=0.280000 half_segment=0.633947 local_bottom=0.029032 local_top=1.856926 movement_target=Some(ComponentId(8032v1))
+[startup] [█████░░░] 5/8 first update completed
+[AVC][capsule][settled] avc=ComponentId(8014v1) capsule_transform=ComponentId(16429v1) zone=ComponentId(16431v1) local_center_y=Some(0.9429787) world_center=Some([0.017126678, 1.9429786, 9.868816]) radius=0.280000 half_segment=0.633947 world_bottom_top=Some((1.0290315, 2.8569257))
+[ClockSystem] driver: audio -> sakura-profile
+SHIP_PROFILE_BEGIN case=full room=cafeteria frames=480
+SHIP_PROFILE_RESULT {"cache_counts":{"command_reuse_hits":{"mean":0.0,"median":0.0,"p95":0.0},"command_reuse_invalidations":{"mean":0.0,"median":0.0,"p95":0.0},"command_reuse_rebuilds":{"mean":0.0,"median":0.0,"p95":0.0},"instance_buffer_allocations":{"mean":0.0,"median":0.0,"p95":0.0},"instance_buffer_instances_written":{"mean":2319.0,"median":2319.0,"p95":2319.0},"material_cache_counts":{"immutable_hits":{"mean":4.0,"median":4.0,"p95":4.0},"immutable_misses":{"mean":0.0,"median":0.0,"p95":0.0},"mutable_allocations":{"mean":0.0,"median":0.0,"p95":0.0},"mutable_binding_evictions":{"mean":0.0,"median":0.0,"p95":0.0},"mutable_binding_misses":{"mean":0.0,"median":0.0,"p95":0.0},"mutable_snapshot_reuses":{"mean":850.0,"median":850.0,"p95":850.0},"mutable_uploads":{"mean":0.0,"median":0.0,"p95":0.0}},"retained_upload_allocations":{"mean":0.0,"median":0.0,"p95":0.0},"retained_upload_busy_replacements":{"mean":0.0,"median":0.0,"p95":0.0},"retained_upload_reuses":{"mean":13.0,"median":13.0,"p95":13.0},"visual_cache_counts":{"cache_hits":{"mean":2.0,"median":2.0,"p95":2.0},"instance_data_writes.update_model":{"mean":109.4,"median":127.0,"p95":127.0},"prepare_calls":{"mean":2.0,"median":2.0,"p95":2.0},"rebuilds":{"mean":0.0,"median":0.0,"p95":0.0},"transparency_prepare_calls":{"mean":2.0,"median":2.0,"p95":2.0}}},"case":"full","components":16444,"counters":{"cpu_fence_waits":0,"cpu_queue_waits":0,"deformation_bone_resizes":0,"deformation_bone_upload_bytes":74158080,"deformation_buffer_allocations":3360,"deformation_dirty_vertices":16213920,"deformation_dispatches":480,"deformation_job_upload_bytes":2323200,"deformation_jobs":8160,"deformation_morph_delta_upload_bytes":0,"deformation_output_resizes":0,"deformation_weight_upload_bytes":3840,"deformation_workgroups":257760,"mirror_captures":0,"queue_submissions":960,"xr_eyes":960},"cpu_record_stages_ms":{"attachment_setup":{"mean_ms":0.0024492645833333326,"median_ms":0.002391,"p95_ms":0.002864},"background_record":{"mean_ms":0.5527677874999999,"median_ms":0.548241,"p95_ms":0.605296},"builder_create":{"mean_ms":0.01766726458333333,"median_ms":0.015311,"p95_ms":0.049079},"camera_lights_global_descriptors":{"mean_ms":0.00892768541666666,"median_ms":0.008815,"p95_ms":0.010062},"command_buffer_build":{"mean_ms":3.5798797270833314,"median_ms":3.557492,"p95_ms":3.778804},"cutout_record":{"mean_ms":0.02590471458333333,"median_ms":0.025048,"p95_ms":0.030373},"debug_record":{"mean_ms":0.0006213520833333339,"median_ms":0.000601,"p95_ms":0.000766},"deformation_record":{"mean_ms":0.1516648104166666,"median_ms":0.148719,"p95_ms":0.174047},"draw_cache_and_transparency_sort":{"mean_ms":0.04874922708333334,"median_ms":0.047628,"p95_ms":0.056604},"draw_streams_and_transmission_buffers":{"mean_ms":0.0014480208333333337,"median_ms":0.00139,"p95_ms":0.001828},"instance_buffers":{"mean_ms":0.046952600000000046,"median_ms":0.045996,"p95_ms":0.053475},"material_sync":{"mean_ms":0.051859181249999935,"median_ms":0.051113,"p95_ms":0.058238},"opaque_record":{"mean_ms":1.4445977041666656,"median_ms":1.440905,"p95_ms":1.544476},"outline_record":{"mean_ms":0.0004175604166666665,"median_ms":0.000413,"p95_ms":0.000482},"postprocess_record":{"mean_ms":0.5633405916666668,"median_ms":0.560665,"p95_ms":0.617065},"queue_submit_flush":{"mean_ms":0.5290622729166659,"median_ms":0.517166,"p95_ms":0.592238},"record_finish":{"mean_ms":0.010676941666666662,"median_ms":0.010326,"p95_ms":0.01138},"rig_buffer_descriptor":{"mean_ms":0.0006863083333333326,"median_ms":0.00065,"p95_ms":0.000776},"transmission_transparency_overlay_record":{"mean_ms":0.010065062499999992,"median_ms":0.009861,"p95_ms":0.011587},"xr_target_camera_setup":{"mean_ms":0.0024226166666666644,"median_ms":0.002373,"p95_ms":0.003099}},"extent":[1920,1920],"frames":480,"gpu":"NVIDIA GeForce GTX 1080","instances":2017,"material_binding_limit":32,"motion":"stationary","msaa":4,"paired_gpu":null,"room":"cafeteria","sample_draws":{"cutout":{"batch_sizes":{"1":12},"calls":12,"instances":12},"emission":{"batch_sizes":{"1":300},"calls":300,"instances":300},"opaque/other":{"batch_sizes":{"1":626,"10":8,"12":10,"13":4,"14":2,"15":4,"16":4,"161":2,"17":6,"2":30,"20":6,"23":4,"25":6,"26":2,"283":2,"3":12,"32":2,"33":2,"34":2,"4":8,"41":4,"43":2,"46":2,"47":2,"5":6,"50":2,"55":2,"6":12,"7":4,"8":6,"9":6},"calls":790,"instances":3638},"single-transparent":{"batch_sizes":{"2":2},"calls":2,"instances":4},"surface-batches":{"batch_sizes":{"1":380},"calls":380,"instances":380}},"timing":{"deformation_cpu_ms":{"mean_ms":0.14895445000000004,"median_ms":0.145976,"p95_ms":0.171016},"gpu_deform_ms":{"mean_ms":0.0454862,"median_ms":0.045503999999999996,"p95_ms":0.046592},"gpu_graphics_ms":{"mean_ms":13.928472600000019,"median_ms":13.909504,"p95_ms":14.237024},"prepare_ms":{"mean_ms":0.54520903125,"median_ms":0.5364169999999999,"p95_ms":0.601579},"record_submit_ms":{"mean_ms":7.056325629166664,"median_ms":7.039962,"p95_ms":7.442777},"total_ms":{"mean_ms":24.144546902083334,"median_ms":24.104260999999997,"p95_ms":24.987204},"update_ms":{"mean_ms":4.73001259791667,"median_ms":4.737255,"p95_ms":5.160685},"wait_ms":{"mean_ms":11.795525025000007,"median_ms":11.772071,"p95_ms":12.247268}},"warmup":240}
+test engine::graphics::vulkano_renderer::vulkano_backend::sakura_profile::ship::profile_ship_stereo ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1337 filtered out; finished in 21.61s
+

@@ -146,3 +146,17 @@ validation cases, before/after distributions and open limitations in this epic.
 No automatic budgeted speedup claims. Keep new modules focused and below the
 repository size targets. This epic does not add MaterialBase variants, change
 MMS event APIs or introduce Android rendering features.
+
+## Update: first reusable graphics primaries
+
+[Primary-command results](reusable-primary-commands.md) implement retained uploads
+and complete eligible graphics recordings using current automatic synchronization.
+The bloom-only boundary regressed overall and remains an explicit experiment.
+Whole-graphics reuse reduces measured CPU recording from about 7 to 1 ms while
+joint uploads and deformation stay active. Both-eye cache hits survive head motion.
+
+Next: validate live XR image cycling/in-flight buffer reuse and headset timing;
+retain fallback coverage for sorted transparency, refraction and captures; then
+use the pass-contract work to replace conservative barriers incrementally where
+measurements justify it. Moving-head p95 is still 22.35 ms and live compositor /
+ALVR overhead is excluded, so mean offscreen FPS is not a sustained-headset claim.

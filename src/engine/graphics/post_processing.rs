@@ -39,7 +39,7 @@ pub enum BloomSource {
     Emissive,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct EmissivePassConfig {
     pub output_texture: Option<String>,
 }
@@ -52,7 +52,7 @@ impl Default for EmissivePassConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BlurPassConfig {
     pub enabled: bool,
     pub radius_ndc: f32,
@@ -69,7 +69,7 @@ impl Default for BlurPassConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BloomConfig {
     pub intensity: f32,
     /// Active images in the multiscale pyramid, including the base image.
@@ -95,7 +95,7 @@ impl Default for BloomConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BokehConfig {
     pub focus_distance: f32,
     pub aperture: f32,
@@ -112,7 +112,7 @@ impl Default for BokehConfig {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct PostProcessingConfig {
     pub enabled: bool,
     pub emissive_pass: Option<EmissivePassConfig>,

@@ -255,9 +255,7 @@ fn material_instances_render_independent_revisions_in_both_eyes() -> Result<(), 
     commands.copy_image_to_buffer(CopyImageToBufferInfo::image_buffer(output, readback.clone()))?;
     let first = recorded.remove(0);
     let second = recorded.remove(0);
-    let completion = renderer.submission_future.take().unwrap()
-        .then_execute(context.graphics_queue().clone(), first)?
-        .then_execute(context.graphics_queue().clone(), second)?
+    let completion = second.execute(first.execute(renderer.submission_future.take().unwrap(), context.graphics_queue().clone())?, context.graphics_queue().clone())?
         .then_execute(context.graphics_queue().clone(), commands.build()?)?.then_signal_fence_and_flush()?;
     completion.wait(None)?;
     let pixels = readback.read()?;

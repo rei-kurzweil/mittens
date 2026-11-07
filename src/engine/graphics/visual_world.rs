@@ -53,7 +53,7 @@ pub struct VisualCamera {
 
 pub use super::visual_mirror::{MirrorViewerFamily, MirrorCaptureRequest, VisualMirror};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DrawBatch {
     pub material: crate::engine::graphics::MaterialHandle,
     pub mesh: crate::engine::graphics::primitives::MeshHandle,

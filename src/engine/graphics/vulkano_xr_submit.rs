@@ -123,8 +123,7 @@ impl VulkanoState {
             .submission_future
             .take()
             .unwrap_or_else(|| sync::now(device).boxed());
-        let future = prior
-            .then_execute(queue, cb)?
+        let future = cb.execute(prior, queue)?
             .then_signal_fence_and_flush()?;
         profile_cpu_stage!(self, cpu_stage_clock, "queue_submit_flush");
 

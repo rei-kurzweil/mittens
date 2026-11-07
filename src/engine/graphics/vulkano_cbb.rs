@@ -785,7 +785,7 @@ impl VulkanoState {
         visual_world: &VisualWorld,
         global_set: &Arc<DescriptorSet>,
         rig_set: &Arc<DescriptorSet>,
-        _eye: usize,
+        prepared_buffer: Option<&Subbuffer<[InstanceData]>>,
         excluded_instance: Option<InstanceHandle>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let owned_stream = if excluded_instance.is_some() {
@@ -805,15 +805,15 @@ impl VulkanoState {
         }
 
         // Build instance buffer in transparent-single stream order.
-        let transparent_single_instance_buffer =
-            self.build_instance_buffer_for_order_or_dummy(visual_world, stream_instances)?;
+        let transparent_single_instance_buffer = prepared_buffer
+            .ok_or("transparent-single buffer must be prepared before recording")?;
 
         self.record_phase_stream_draws(
             cbb,
             visual_world,
             global_set,
             rig_set,
-            &transparent_single_instance_buffer,
+            transparent_single_instance_buffer,
             ops,
             stream_instances,
             self.pipeline_toon_mesh_transparent.clone(),
@@ -861,7 +861,7 @@ impl VulkanoState {
 
         // Build transparent instance buffer in transparent-multi draw order.
         let transparent_multi_instance_buffer =
-            self.build_instance_buffer_for_order_or_dummy(&*visual_world, transparent_multi_order)?;
+            self.build_instance_buffer_for_order_or_dummy(&*visual_world, InstanceUpload::SortedTransparent, transparent_multi_order)?;
 
         // Bind pipeline/descriptor sets per (material, texture).
         let mut bound_resource: Option<MaterialResourceKey> = None;

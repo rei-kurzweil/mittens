@@ -20,7 +20,7 @@ use vulkano::{
     sync::PipelineStage,
 };
 
-#[derive(Default, serde::Serialize)]
+#[derive(Default, Clone, serde::Serialize)]
 pub(super) struct DrawCounts {
     calls: u64,
     instances: u64,
@@ -44,7 +44,42 @@ pub(super) struct ProfileState {
     npc_draws: BTreeMap<String, DrawCounts>,
 }
 
+#[derive(Clone)]
+pub(super) struct DrawReplay {
+    draws: BTreeMap<String, DrawCounts>,
+    npc: BTreeMap<String, DrawCounts>,
+}
 impl ProfileState {
+    pub(super) fn snapshot_draws(&self) -> DrawReplay {
+        DrawReplay { draws: self.draws.clone(), npc: self.npc_draws.clone() }
+    }
+    pub(super) fn draw_difference(&self, before: DrawReplay) -> DrawReplay {
+        fn difference(current: &BTreeMap<String, DrawCounts>, old: BTreeMap<String, DrawCounts>) -> BTreeMap<String, DrawCounts> {
+            let mut result = current.clone();
+            for (pass, counts) in old {
+                let dst = result.entry(pass).or_default();
+                dst.calls -= counts.calls; dst.instances -= counts.instances;
+                for (size, count) in counts.batch_sizes { *dst.batch_sizes.entry(size).or_default() -= count; }
+            }
+            result
+        }
+        DrawReplay { draws: difference(&self.draws, before.draws), npc: difference(&self.npc_draws, before.npc) }
+    }
+    pub(super) fn replay_draws(&mut self, replay: &DrawReplay) {
+        fn add(dst: &mut BTreeMap<String, DrawCounts>, src: &BTreeMap<String, DrawCounts>) {
+            for (pass, counts) in src {
+                let dst = dst.entry(pass.clone()).or_default();
+                dst.calls += counts.calls; dst.instances += counts.instances;
+                for (size, count) in &counts.batch_sizes { *dst.batch_sizes.entry(*size).or_default() += count; }
+            }
+        }
+        add(&mut self.draws, &replay.draws); add(&mut self.npc_draws, &replay.npc);
+    }
+}
+impl ProfileState {
+    pub(super) fn timestamp_identity(&self) -> usize {
+        self.pool.as_ref().map_or(0, |pool| Arc::as_ptr(pool) as usize)
+    }
     fn new(context: &RendererContext) -> Result<Self, Box<dyn Error>> {
         let physical = context.device().physical_device();
         let bits = physical.queue_family_properties()

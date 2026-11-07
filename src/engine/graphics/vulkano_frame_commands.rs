@@ -4,8 +4,8 @@ impl VulkanoState {
         &mut self,
         visual_world: &mut VisualWorld,
         render_view: &RenderView,
-        bones_slot: usize,
-        bones_slots_total: usize,
+        view_target_slot: usize,
+        view_target_slots_total: usize,
         color_attachment_view: Arc<ImageView>,
         color_resolve_view: Option<Arc<ImageView>>,
         depth_view: Arc<ImageView>,
@@ -14,15 +14,19 @@ impl VulkanoState {
         runtime_texture_publication: Option<(TextureHandle, Arc<ImageView>)>,
         scene_snapshot: Option<RefractionSnapshotViews>,
         rough_transmission_pyramid: Option<RoughTransmissionPyramidViews>,
-    ) -> Result<Arc<vulkano::command_buffer::PrimaryAutoCommandBuffer>, Box<dyn std::error::Error>>
-    {
+    ) -> Result<ViewCommands, Box<dyn std::error::Error>> {
         #[cfg(test)]
         let mut cpu_stage_clock = self.profile.as_ref().map(|_| std::time::Instant::now());
+
+        self.retained_uploads
+            .borrow_mut()
+            .begin_view(&render_view.kind, view_target_slot);
 
         // Captures can publish replacement image views earlier this frame.
         self.retire_runtime_resources(visual_world);
         self.apply_pending_runtime_texture_updates();
         self.sync_material_instances(visual_world);
+        self.refresh_command_dependencies(visual_world);
         self.view_mirror_bindings
             .prepare(visual_world, &render_view.kind);
 
@@ -50,6 +54,8 @@ impl VulkanoState {
         }
         .filter(|&handle| visual_world.instance(handle).is_some());
 
+        let instance_order_changed = self.last_instance_exclusion != excluded_instance;
+        self.last_instance_exclusion = excluded_instance;
         let queue = self.context.graphics_queue().clone();
         let mesh_vertex_counts: HashMap<_, _> = self
             .meshes
@@ -60,6 +66,9 @@ impl VulkanoState {
 
         // Reuse draw topology until its structural inputs change.
         let draw_cache_rebuilt = visual_world.prepare_draw_cache();
+        if draw_cache_rebuilt {
+            self.command_reuse.scenes.retain(|_, _| false);
+        }
 
         // Multi-layer transparency sort is always per-view.
         visual_world.prepare_transparent_multi_draw_cache_for_view(render_view.view);
@@ -74,7 +83,7 @@ impl VulkanoState {
 
         // Shared deformation is consumed by the first command buffer, regardless of view.
         let dirty_bones_ranges = visual_world.take_dirty_bones_ranges();
-        let bones_palette_dirty = !dirty_bones_ranges.is_empty();
+        let _bones_palette_dirty = !dirty_bones_ranges.is_empty();
 
         profile_cpu_stage!(self, cpu_stage_clock, "draw_cache_and_transparency_sort");
 
@@ -130,8 +139,11 @@ impl VulkanoState {
                 visual_world.refraction_stream()
             };
         let refraction_instance_count = refraction_instances.len();
-        let refraction_instance_buffer =
-            self.build_instance_buffer_for_order_opt(&*visual_world, refraction_instances)?;
+        let refraction_instance_buffer = self.build_instance_buffer_for_order_opt(
+            &*visual_world,
+            InstanceUpload::Refraction,
+            refraction_instances,
+        )?;
 
         // --- Rough scene-color transmission pass ---
         let owned_rough_transmission_stream = excluded_instance
@@ -143,8 +155,11 @@ impl VulkanoState {
                 visual_world.rough_transmission_stream()
             };
         let rough_transmission_instance_count = rough_transmission_instances.len();
-        let rough_transmission_instance_buffer =
-            self.build_instance_buffer_for_order_opt(&*visual_world, rough_transmission_instances)?;
+        let rough_transmission_instance_buffer = self.build_instance_buffer_for_order_opt(
+            &*visual_world,
+            InstanceUpload::RoughTransmission,
+            rough_transmission_instances,
+        )?;
         let scene_color_source = scene_snapshot.as_ref().and_then(|_| {
             post_process
                 .as_ref()
@@ -194,6 +209,7 @@ impl VulkanoState {
 
         let need_instance_buffer = instance_data_dirty
             || draw_cache_rebuilt
+            || instance_order_changed
             || self.cached_instance_buffer.is_none()
             || self.cached_instance_count != instance_count;
 
@@ -205,8 +221,11 @@ impl VulkanoState {
                 .expect("cached_instance_buffer")
                 .clone()
         } else {
-            let buf =
-                self.build_instance_buffer_for_order_or_dummy(&*visual_world, &opaque_instances)?;
+            let buf = self.build_instance_buffer_for_order_or_dummy(
+                &*visual_world,
+                InstanceUpload::Opaque,
+                &opaque_instances,
+            )?;
 
             self.cached_instance_count = instance_count;
             self.cached_instance_buffer = Some(buf.clone());
@@ -215,13 +234,17 @@ impl VulkanoState {
 
         let need_outline_instance_buffer = instance_data_dirty
             || draw_cache_rebuilt
+            || instance_order_changed
             || self.cached_outline_instance_buffer.is_none()
             || self.cached_outline_instance_count != outline_instance_count;
         let outline_instance_buffer = if !need_outline_instance_buffer {
             self.cached_outline_instance_buffer.clone()
         } else {
-            let buffer =
-                self.build_instance_buffer_for_order_opt(&*visual_world, outline_instances)?;
+            let buffer = self.build_instance_buffer_for_order_opt(
+                &*visual_world,
+                InstanceUpload::Outline,
+                outline_instances,
+            )?;
             self.cached_outline_instance_count = outline_instance_count;
             self.cached_outline_instance_buffer = buffer.clone();
             buffer
@@ -229,12 +252,14 @@ impl VulkanoState {
 
         let need_background_instance_buffer = instance_data_dirty
             || draw_cache_rebuilt
+            || instance_order_changed
             || self.cached_background_instance_count != background_instance_count;
         let background_instance_buffer = if !need_background_instance_buffer {
             self.cached_background_instance_buffer.clone()
         } else {
             let buf = self.build_instance_buffer_for_order_opt(
                 &*visual_world,
+                InstanceUpload::Background,
                 visual_world.background_order(),
             )?;
             self.cached_background_instance_count = background_instance_count;
@@ -244,6 +269,7 @@ impl VulkanoState {
 
         let need_background_occluded_lit_instance_buffer = instance_data_dirty
             || draw_cache_rebuilt
+            || instance_order_changed
             || self.cached_background_occluded_lit_instance_count
                 != background_occluded_lit_instance_count;
         let background_occluded_lit_instance_buffer =
@@ -252,6 +278,7 @@ impl VulkanoState {
             } else {
                 let buf = self.build_instance_buffer_for_order_opt(
                     &*visual_world,
+                    InstanceUpload::LitBackground,
                     visual_world.background_occluded_lit_order(),
                 )?;
                 self.cached_background_occluded_lit_instance_count =
@@ -262,12 +289,16 @@ impl VulkanoState {
 
         let need_cutout_instance_buffer = instance_data_dirty
             || draw_cache_rebuilt
+            || instance_order_changed
             || self.cached_cutout_instance_count != cutout_instance_count;
         let cutout_instance_buffer = if !need_cutout_instance_buffer {
             self.cached_cutout_instance_buffer.clone()
         } else {
-            let buf =
-                self.build_instance_buffer_for_order_opt(&*visual_world, &cutout_instances)?;
+            let buf = self.build_instance_buffer_for_order_opt(
+                &*visual_world,
+                InstanceUpload::Cutout,
+                &cutout_instances,
+            )?;
             self.cached_cutout_instance_count = cutout_instance_count;
             self.cached_cutout_instance_buffer = buf.clone();
             buf
@@ -275,13 +306,17 @@ impl VulkanoState {
 
         let need_overlay_instance_buffer = instance_data_dirty
             || draw_cache_rebuilt
+            || instance_order_changed
             || self.cached_overlay_instance_count != overlay_instance_count;
         // Overlay buffer indexed by overlay_stream().1 so batch.start offsets are correct.
         let overlay_instance_buffer = if !need_overlay_instance_buffer {
             self.cached_overlay_instance_buffer.clone()
         } else {
-            let buf =
-                self.build_instance_buffer_for_order_opt(&*visual_world, &overlay_instances)?;
+            let buf = self.build_instance_buffer_for_order_opt(
+                &*visual_world,
+                InstanceUpload::Overlay,
+                &overlay_instances,
+            )?;
             self.cached_overlay_instance_count = overlay_instance_count;
             self.cached_overlay_instance_buffer = buf.clone();
             buf
@@ -297,6 +332,7 @@ impl VulkanoState {
         };
         let emissive_instance_buffer = self.build_instance_buffer_for_order_opt(
             &*visual_world,
+            InstanceUpload::Emission,
             visual_world.emissive_draw_order(),
         )?;
         let background_occluded_lit_emissive_instance_count =
@@ -305,6 +341,7 @@ impl VulkanoState {
             if background_occluded_lit_emissive_instance_count > 0 {
                 self.build_instance_buffer_for_order_opt(
                     &*visual_world,
+                    InstanceUpload::LitEmission,
                     visual_world.background_occluded_lit_emissive_order(),
                 )?
             } else {
@@ -313,7 +350,20 @@ impl VulkanoState {
 
         let emissive_cutout_instance_buffer = self.build_instance_buffer_for_order_opt(
             &*visual_world,
+            InstanceUpload::CutoutEmission,
             visual_world.emissive_cutout_order(),
+        )?;
+
+        let single_owned = excluded_instance
+            .map(|excluded| visual_world.transparent_single_stream_excluding(Some(excluded)));
+        let single_order = single_owned.as_ref().map_or_else(
+            || visual_world.transparent_single_stream().1,
+            |(_, order)| order.as_slice(),
+        );
+        let transparent_single_instance_buffer = self.build_instance_buffer_for_order_opt(
+            visual_world,
+            InstanceUpload::Transparent,
+            single_order,
         )?;
 
         profile_cpu_stage!(self, cpu_stage_clock, "instance_buffers");
@@ -335,6 +385,53 @@ impl VulkanoState {
             });
         }
 
+        let prime_bloom = post_process
+            .as_ref()
+            .filter(|post| {
+                post.config
+                    .bloom
+                    .as_ref()
+                    .is_some_and(|b| b.intensity > 0.0)
+                    && (emissive_instance_count
+                        + emissive_cutout_instance_count
+                        + background_occluded_lit_emissive_instance_count
+                        > 0)
+            })
+            .map(Self::bloom_attachments);
+        // Bloom-only reuse is retained as an opt-in experiment: its measured
+        // cross-pass boundaries regressed total frame time. Production falls back
+        // to fresh recording when complete graphics reuse is ineligible.
+        let split_bloom = self.command_reuse.enabled
+            && !self.command_reuse.scene_enabled
+            && post_process
+                .as_ref()
+                .is_some_and(|post| self.bloom_can_split(post));
+        let scene_candidate = self.command_reuse.enabled
+            && self.command_reuse.scene_enabled
+            && !matches!(render_view.kind, RenderViewKind::Mirror { .. })
+            && excluded_instance.is_none()
+            && !sample_scene_color
+            && runtime_texture_publication.is_none()
+            && !stencil_clip_debug_requested
+            && visual_world.transparent_multi_draw_order().is_empty()
+            && post_process.as_ref().is_none_or(|post| {
+                post.config
+                    .emissive_pass
+                    .as_ref()
+                    .is_none_or(|cfg| cfg.output_texture.is_none())
+                    && post
+                        .config
+                        .bloom
+                        .as_ref()
+                        .is_none_or(|cfg| cfg.output_texture.is_none())
+            });
+        let scene_attachments = Self::scene_attachments(
+            &color_attachment_view,
+            color_resolve_view.as_ref(),
+            &depth_view,
+            post_process.as_ref(),
+            prime_bloom.is_some(),
+        );
         let clear_color = visual_world.clear_color();
         let defer_overlay_until_before_final_composite =
             post_process.is_some() && overlay_instance_count > 0;
@@ -430,36 +527,19 @@ impl VulkanoState {
             renderer_flags: u32::from(visual_world.transmission_depth_compare()),
         };
 
-        let camera_buffer_fg: Subbuffer<CameraUBO> = Buffer::from_data(
+        let camera_buffer_fg: Subbuffer<CameraUBO> = self.retained_uploads.borrow_mut().camera(
             self.context.memory_allocator().clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::UNIFORM_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
+            false,
             camera_ubo_fg,
         )?;
 
         // Lights storage buffer (set=0, binding=1).
         let lights_ssbo = LightsSSBO::from_lights(visual_world.lights());
 
-        let lights_buffer: Subbuffer<LightsSSBO> = Buffer::from_data(
-            self.context.memory_allocator().clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::STORAGE_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            lights_ssbo,
-        )?;
+        let lights_buffer: Subbuffer<LightsSSBO> = self
+            .retained_uploads
+            .borrow_mut()
+            .lights(self.context.memory_allocator().clone(), lights_ssbo)?;
 
         // Global descriptor set (set=0): per-frame camera + lights.
         //
@@ -472,19 +552,10 @@ impl VulkanoState {
             .ok_or("missing default scene-color texture")?
             .view
             .clone();
-        let global_set_fg = DescriptorSet::new(
-            self.descriptor_set_allocator.clone(),
-            self.set_layouts.global.clone(),
-            [
-                WriteDescriptorSet::buffer(0, camera_buffer_fg.clone()),
-                WriteDescriptorSet::buffer(1, lights_buffer.clone()),
-                WriteDescriptorSet::image_view_sampler(
-                    2,
-                    fallback_scene_color.clone(),
-                    self.sampler_scene_color.clone(),
-                ),
-            ],
-            [],
+        let global_set_fg = self.retained_global_set(
+            camera_buffer_fg.clone(),
+            lights_buffer.clone(),
+            fallback_scene_color.clone(),
         )?;
 
         let global_set_refraction = if let Some(snapshot) = scene_snapshot.as_ref() {
@@ -568,39 +639,22 @@ impl VulkanoState {
                 renderer_flags: u32::from(visual_world.transmission_depth_compare()),
             };
 
-            let camera_buffer_bg: Subbuffer<CameraUBO> = Buffer::from_data(
-                self.context.memory_allocator().clone(),
-                BufferCreateInfo {
-                    usage: BufferUsage::UNIFORM_BUFFER,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                    ..Default::default()
-                },
-                camera_ubo_bg,
-            )?;
+            let camera_buffer_bg: Subbuffer<CameraUBO> = self
+                .retained_uploads
+                .borrow_mut()
+                .camera(self.context.memory_allocator().clone(), true, camera_ubo_bg)?;
 
-            let set = DescriptorSet::new(
-                self.descriptor_set_allocator.clone(),
-                self.set_layouts.global.clone(),
-                [
-                    WriteDescriptorSet::buffer(0, camera_buffer_bg),
-                    WriteDescriptorSet::buffer(1, lights_buffer.clone()),
-                    WriteDescriptorSet::image_view_sampler(
-                        2,
-                        fallback_scene_color,
-                        self.sampler_scene_color.clone(),
-                    ),
-                ],
-                [],
+            let set = self.retained_global_set(
+                camera_buffer_bg,
+                lights_buffer.clone(),
+                fallback_scene_color,
             )?;
             Some(set)
         };
 
         profile_cpu_stage!(self, cpu_stage_clock, "camera_lights_global_descriptors");
 
+        let mut preceding_commands = Vec::with_capacity(2);
         let mut cbb = AutoCommandBufferBuilder::primary(
             self.command_buffer_allocator.clone(),
             queue.queue_family_index(),
@@ -624,130 +678,85 @@ impl VulkanoState {
 
         profile_cpu_stage!(self, cpu_stage_clock, "deformation_record");
 
-        // Rig descriptor set (set=2): persistent deformation cache + placeholder lighting.
-        // Layout is defined in `PipelineDescriptorSetLayouts::rig`.
-        let rig_set: Arc<DescriptorSet> = {
-            static DID_LOG_BONES_PALETTE_UPLOAD: AtomicBool = AtomicBool::new(false);
-
-            let want_len = visual_world.bones_palette().len().max(1);
-
-            let want_slots = bones_slots_total.max(1);
-            let slot = bones_slot.min(want_slots - 1);
-
-            let needs_realloc = false;
-
-            if needs_realloc {
-                let new_cap = want_len.next_power_of_two().max(1);
-
-                let mut buffers = Vec::with_capacity(want_slots);
-                for _ in 0..want_slots {
-                    let buffer: Subbuffer<[GpuMat4]> = Buffer::new_slice(
-                        self.context.memory_allocator().clone(),
-                        BufferCreateInfo {
-                            usage: BufferUsage::STORAGE_BUFFER,
-                            ..Default::default()
-                        },
-                        AllocationCreateInfo {
-                            memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                            ..Default::default()
-                        },
-                        new_cap as DeviceSize,
-                    )?;
-                    buffers.push(buffer);
-                }
-
-                self.cached_bones_buffers = buffers;
-                self.cached_bones_slot_valid = vec![false; want_slots];
-                self.cached_bones_capacity = new_cap;
-            }
-
-            if bones_palette_dirty {
-                for v in self.cached_bones_slot_valid.iter_mut() {
-                    *v = false;
-                }
-            }
-
-            // Graphics-stage bones are retired; binding 1 now receives deformation_output.
-            let slot_needs_upload = false;
-
-            if slot_needs_upload {
-                let bones_src = visual_world.bones_palette();
-
-                if env_flag("CAT_DEBUG_BONES_PALETTE")
-                    && bones_src.len() > 1
-                    && !DID_LOG_BONES_PALETTE_UPLOAD.swap(true, Ordering::Relaxed)
-                {
-                    println!(
-                        "[VulkanoRenderer] bones palette upload: dirty={} realloc={} want_len={} cached_cap={} src_len={}",
-                        bones_palette_dirty,
-                        needs_realloc,
-                        want_len,
-                        self.cached_bones_capacity,
-                        bones_src.len()
-                    );
-
-                    for (i, m) in bones_src.iter().take(3).enumerate() {
-                        println!("  bone[{i:03}]={m:?}");
-                    }
-                }
-
-                let identity = [
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ];
-
-                let mut dst = self.cached_bones_buffers[slot].write()?;
-
-                // Write current palette, then fill remainder with identity.
-                if bones_src.is_empty() {
-                    dst[0] = GpuMat4 { cols: identity };
-                    for slot in dst.iter_mut().skip(1) {
-                        *slot = GpuMat4 { cols: identity };
-                    }
-                } else {
-                    for (i, m) in bones_src.iter().copied().enumerate() {
-                        dst[i] = GpuMat4 { cols: m };
-                    }
-                    for slot in dst.iter_mut().skip(bones_src.len()) {
-                        *slot = GpuMat4 { cols: identity };
-                    }
-                }
-
-                if let Some(v) = self.cached_bones_slot_valid.get_mut(slot) {
-                    *v = true;
-                }
-            }
-
-            let per_instance_lighting_buffer: Subbuffer<DummyPerInstanceLightingSSBO> =
-                Buffer::from_data(
-                    self.context.memory_allocator().clone(),
-                    BufferCreateInfo {
-                        usage: BufferUsage::STORAGE_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                        ..Default::default()
-                    },
-                    DummyPerInstanceLightingSSBO::default(),
-                )?;
-
-            DescriptorSet::new(
-                self.descriptor_set_allocator.clone(),
-                self.set_layouts.rig.clone(),
-                [
-                    WriteDescriptorSet::buffer(0, per_instance_lighting_buffer),
-                    WriteDescriptorSet::buffer(1, deformation_output),
-                ],
-                [],
-            )?
-        };
+        let rig_set = self.retained_rig_set(deformation_output)?;
 
         profile_cpu_stage!(self, cpu_stage_clock, "rig_buffer_descriptor");
+
+        let view_key = self.retained_uploads.borrow().active.unwrap();
+        let scene_view_key = (
+            view_key,
+            post_process.as_ref().map_or_else(
+                || Arc::as_ptr(&color_attachment_view) as usize,
+                |post| Arc::as_ptr(&post.final_output_view) as usize,
+            ),
+        );
+        let scene_warmed = self
+            .command_reuse
+            .scene_primed
+            .get(&scene_view_key)
+            .is_some_and(|old| *old == scene_attachments);
+        let mut scene_key = None;
+        #[cfg(test)]
+        let mut scene_draws_before = None;
+        if scene_candidate && scene_warmed {
+            // Bone uploads and deformation are always recorded, independently of graphics.
+            preceding_commands.push(cbb.build()?);
+            profile_cpu_stage!(self, cpu_stage_clock, "command_buffer_build");
+            let key = self.scene_identity(
+                visual_world,
+                extent,
+                &scene_attachments,
+                post_process.as_ref(),
+                &global_set_fg,
+                global_set_bg.as_ref(),
+                &rig_set,
+                [
+                    Some(&instance_buffer),
+                    outline_instance_buffer.as_ref(),
+                    background_instance_buffer.as_ref(),
+                    background_occluded_lit_instance_buffer.as_ref(),
+                    cutout_instance_buffer.as_ref(),
+                    overlay_instance_buffer.as_ref(),
+                    refraction_instance_buffer.as_ref(),
+                    rough_transmission_instance_buffer.as_ref(),
+                    emissive_instance_buffer.as_ref(),
+                    emissive_cutout_instance_buffer.as_ref(),
+                    background_occluded_lit_emissive_instance_buffer.as_ref(),
+                    transparent_single_instance_buffer.as_ref(),
+                ],
+            );
+            if let Some(cached) = self
+                .command_reuse
+                .scenes
+                .get(&scene_view_key)
+                .filter(|entry| entry.key == key)
+            {
+                let commands = cached.commands.clone();
+                #[cfg(test)]
+                if let (Some(profile), Some(draws)) = (self.profile.as_mut(), cached.draws.as_ref())
+                {
+                    profile.replay_draws(draws);
+                }
+                self.command_reuse.stats.hits += 1;
+                self.command_reuse.scene_scratch = key.resources;
+                visual_world.mark_deformations_clean();
+                profile_cpu_stage!(self, cpu_stage_clock, "graphics_cache_lookup");
+                return Ok(ViewCommands {
+                    preceding: preceding_commands,
+                    final_commands: commands,
+                });
+            }
+            scene_key = Some(key);
+            #[cfg(test)]
+            {
+                scene_draws_before = self.profile.as_ref().map(|p| p.snapshot_draws());
+            }
+            cbb = AutoCommandBufferBuilder::primary(
+                self.command_buffer_allocator.clone(),
+                queue.queue_family_index(),
+                CommandBufferUsage::SimultaneousUse,
+            )?;
+        }
 
         // Single dynamic-rendering scope. This keeps MSAA resolve straightforward.
         cbb.begin_rendering(rendering_info_clear_color_and_depth)?;
@@ -1004,7 +1013,7 @@ impl VulkanoState {
             visual_world,
             &global_set_fg,
             &rig_set,
-            eye,
+            transparent_single_instance_buffer.as_ref(),
             excluded_instance,
         )?;
 
@@ -1061,7 +1070,33 @@ impl VulkanoState {
         );
 
         if let Some(post_process) = post_process {
-            if !composite_bloom_before_refraction {
+            if !composite_bloom_before_refraction && split_bloom && !scene_candidate {
+                // End the dynamic scene primary before the reusable extraction/filter chain.
+                // Future chaining retains Vulkano's automatic cross-primary synchronization.
+                preceding_commands.push(cbb.build()?);
+                profile_cpu_stage!(self, cpu_stage_clock, "command_buffer_build");
+                let (commands, output) = self.retained_bloom_commands(
+                    visual_world,
+                    &post_process,
+                    extent,
+                    &global_set_fg,
+                    global_set_bg.as_ref(),
+                    &rig_set,
+                    emissive_instance_buffer.as_ref(),
+                    emissive_instance_count,
+                    emissive_cutout_instance_buffer.as_ref(),
+                    emissive_cutout_instance_count,
+                    background_occluded_lit_emissive_instance_buffer.as_ref(),
+                    background_occluded_lit_emissive_instance_count,
+                )?;
+                preceding_commands.push(commands);
+                blurred_bloom = output;
+                cbb = AutoCommandBufferBuilder::primary(
+                    self.command_buffer_allocator.clone(),
+                    queue.queue_family_index(),
+                    CommandBufferUsage::OneTimeSubmit,
+                )?;
+            } else if !composite_bloom_before_refraction {
                 blurred_bloom = self.record_bloom_passes(
                     &mut cbb,
                     visual_world,
@@ -1170,7 +1205,7 @@ impl VulkanoState {
             stencil_clip_debug_instance_buffer.as_ref(),
         ) {
             self.ensure_window_runtime_debug_targets(
-                bones_slots_total,
+                view_target_slots_total,
                 extent,
                 color_attachment_view.image().format(),
             )?;
@@ -1178,14 +1213,14 @@ impl VulkanoState {
             let debug_view = self
                 .window_runtime_debug_targets
                 .as_ref()
-                .and_then(|targets| targets.color_views.get(bones_slot))
+                .and_then(|targets| targets.color_views.get(view_target_slot))
                 .cloned()
                 .ok_or("missing window runtime debug target")?;
 
             let debug_msaa_view = self
                 .window_runtime_debug_targets
                 .as_ref()
-                .and_then(|targets| targets.msaa_color_views.get(bones_slot))
+                .and_then(|targets| targets.msaa_color_views.get(view_target_slot))
                 .cloned();
 
             let mut debug_color_attachment = RenderingAttachmentInfo {
@@ -1272,9 +1307,40 @@ impl VulkanoState {
         profile_cpu_stage!(self, cpu_stage_clock, "record_finish");
 
         let cb = cbb.build()?;
+        if scene_candidate {
+            self.command_reuse
+                .scene_primed
+                .insert(scene_view_key, scene_attachments);
+        }
+        if let Some(key) = scene_key {
+            #[cfg(test)]
+            let draws = self
+                .profile
+                .as_ref()
+                .zip(scene_draws_before)
+                .map(|(p, before)| p.draw_difference(before));
+            self.command_reuse.scenes.insert(
+                scene_view_key,
+                RetainedScene {
+                    key: key.clone(),
+                    commands: cb.clone(),
+                    #[cfg(test)]
+                    draws,
+                },
+            );
+            self.command_reuse.scene_scratch = key.resources;
+            self.command_reuse.stats.rebuilds += 1;
+        }
+        if let Some(images) = prime_bloom {
+            let view = self.retained_uploads.borrow().active.unwrap();
+            self.command_reuse.primed.insert(view, images);
+        }
 
         profile_cpu_stage!(self, cpu_stage_clock, "command_buffer_build");
 
-        Ok(cb)
+        Ok(ViewCommands {
+            preceding: preceding_commands,
+            final_commands: cb,
+        })
     }
 }

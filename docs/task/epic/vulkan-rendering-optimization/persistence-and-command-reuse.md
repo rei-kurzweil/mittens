@@ -1,6 +1,9 @@
 # Persistence and command reuse plan
 
-Status: design inventory, not an implemented command-cache architecture.
+Status: original design inventory; the [first reusable-primary implementation](reusable-primary-commands.md)
+now retains complete eligible graphics recordings while updating camera/light
+buffers and joint-driven deformation independently. The inventory below records
+the starting architecture; complex paths and explicit synchronization remain work.
 
 The goal is to stop repeatedly constructing the same work on the CPU. The GPU
 must still execute draws for each new view. A retained command buffer can be

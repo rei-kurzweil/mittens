@@ -15,6 +15,8 @@ end-to-end measurement.
 
 ## Work and evidence
 
+- [Benchmark history and change ledger](benchmark-history.md): chronological
+  reports, preserved captures and the implementation changes behind each stage.
 - [CPU recording measurements](measurements.md): instrument and measure resource
   setup, draw preparation, individual recording phases, Vulkano finalization,
   queue submission and completion waits separately.
@@ -30,6 +32,11 @@ end-to-end measurement.
 - [Material binding variants and retention](material-binding-variants.md): fixed
   legacy bands, a standard Surface Grid definition and a measured cache-limit
   fix eliminating 36 recurring material snapshot allocations per frame.
+- [Reusable primary command buffers](reusable-primary-commands.md): retained
+  eligible graphics commands with continuously updated camera/light/joint data;
+  CPU recording about 7 -> 1 ms, 18.41 ms stationary and 21.55 ms moving-head
+  mean offscreen frames at 1920 per eye with bloom/MSAA 4x. Includes the rejected
+  bloom-only boundary and preserved controls.
 - [Persistence and command reuse](persistence-and-command-reuse.md): inventory
   what already persists, what changes each frame, and the invalidation and
   lifetime rules needed to switch incrementally.

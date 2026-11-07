@@ -3,6 +3,7 @@ impl VulkanoState {
     fn build_instance_buffer_for_order_or_dummy(
         &self,
         visual_world: &VisualWorld,
+        role: InstanceUpload,
         order: &[u32],
     ) -> Result<Subbuffer<[InstanceData]>, Box<dyn std::error::Error>> {
         static DID_LOG_SKIN_INSTANCE_RANGES: AtomicBool = AtomicBool::new(false);
@@ -41,25 +42,58 @@ impl VulkanoState {
             }
         }
 
-        // `Buffer::from_iter` with an empty iterator can panic inside Vulkano.
-        let buf: Subbuffer<[InstanceData]> = if order.is_empty() {
-            Buffer::from_iter(
-                self.context.memory_allocator().clone(),
-                BufferCreateInfo {
-                    usage: BufferUsage::VERTEX_BUFFER,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                    ..Default::default()
-                },
-                std::iter::once(InstanceData::default()),
-            )?
-        } else {
-            let instances_ref = visual_world.instances();
-            let instance_data_iter = order.iter().map(|&idx| {
-                let inst = instances_ref[idx as usize];
+        let (buf, allocated) = self.upload_instance_order(visual_world, role, order)?;
+        #[cfg(test)]
+        if let Some(profile) = self.profile.as_ref() {
+            let [allocations, instances] = profile.instance_buffer_uploads.get();
+            profile.instance_buffer_uploads.set([
+                allocations + u64::from(allocated),
+                instances + order.len().max(1) as u64,
+            ]);
+        }
+        #[cfg(not(test))]
+        let _ = allocated;
+        Ok(buf)
+    }
+
+    fn build_instance_buffer_for_order_opt(
+        &self,
+        visual_world: &VisualWorld,
+        role: InstanceUpload,
+        order: &[u32],
+    ) -> Result<Option<Subbuffer<[InstanceData]>>, Box<dyn std::error::Error>> {
+        if order.is_empty() {
+            return Ok(None);
+        }
+
+        let (buf, allocated) = self.upload_instance_order(visual_world, role, order)?;
+        #[cfg(test)]
+        if let Some(profile) = self.profile.as_ref() {
+            let [allocations, instances] = profile.instance_buffer_uploads.get();
+            profile.instance_buffer_uploads.set([
+                allocations + u64::from(allocated),
+                instances + order.len() as u64,
+            ]);
+        }
+        #[cfg(not(test))]
+        let _ = allocated;
+        Ok(Some(buf))
+    }
+    fn upload_instance_order(
+        &self,
+        world: &VisualWorld,
+        role: InstanceUpload,
+        order: &[u32],
+    ) -> Result<(Subbuffer<[InstanceData]>, bool), Box<dyn std::error::Error>> {
+        self.retained_uploads.borrow_mut().instances(
+            self.context.memory_allocator().clone(),
+            role,
+            order.len(),
+            |index| {
+                let Some(&instance) = order.get(index) else {
+                    return InstanceData::default();
+                };
+                let inst = world.instances()[instance as usize];
                 let m = inst.transform.model;
                 InstanceData {
                     i_model_c0: m[0],
@@ -73,91 +107,10 @@ impl VulkanoState {
                     i_deformed_count: inst.deformed_count,
                     i_transmission: inst.transmission,
                     i_transmission_roughness: inst.transmission_roughness,
-                    i_outline_width: inst.toon_outline.map_or(0.0, |outline| outline.width),
-                    i_outline_color: inst
-                        .toon_outline
-                        .map_or([0.0, 0.0, 0.0, 0.0], |outline| outline.color),
+                    i_outline_width: inst.toon_outline.map_or(0., |o| o.width),
+                    i_outline_color: inst.toon_outline.map_or([0.; 4], |o| o.color),
                 }
-            });
-
-            Buffer::from_iter(
-                self.context.memory_allocator().clone(),
-                BufferCreateInfo {
-                    usage: BufferUsage::VERTEX_BUFFER,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                    ..Default::default()
-                },
-                instance_data_iter,
-            )?
-        };
-
-        #[cfg(test)]
-        if let Some(profile) = self.profile.as_ref() {
-            let [allocations, instances] = profile.instance_buffer_uploads.get();
-            profile
-                .instance_buffer_uploads
-                .set([allocations + 1, instances + order.len().max(1) as u64]);
-        }
-        Ok(buf)
-    }
-
-    fn build_instance_buffer_for_order_opt(
-        &self,
-        visual_world: &VisualWorld,
-        order: &[u32],
-    ) -> Result<Option<Subbuffer<[InstanceData]>>, Box<dyn std::error::Error>> {
-        if order.is_empty() {
-            return Ok(None);
-        }
-
-        let instances_ref = visual_world.instances();
-        let instance_data_iter = order.iter().map(|&idx| {
-            let inst = instances_ref[idx as usize];
-            let m = inst.transform.model;
-            InstanceData {
-                i_model_c0: m[0],
-                i_model_c1: m[1],
-                i_model_c2: m[2],
-                i_model_c3: m[3],
-                i_color: inst.color,
-                i_emissive: inst.emissive,
-                i_opacity: inst.opacity,
-                i_deformed_base: inst.deformed_base,
-                i_deformed_count: inst.deformed_count,
-                i_transmission: inst.transmission,
-                i_transmission_roughness: inst.transmission_roughness,
-                i_outline_width: inst.toon_outline.map_or(0.0, |outline| outline.width),
-                i_outline_color: inst
-                    .toon_outline
-                    .map_or([0.0, 0.0, 0.0, 0.0], |outline| outline.color),
-            }
-        });
-
-        let buf: Subbuffer<[InstanceData]> = Buffer::from_iter(
-            self.context.memory_allocator().clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::VERTEX_BUFFER,
-                ..Default::default()
             },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            instance_data_iter,
-        )?;
-
-        #[cfg(test)]
-        if let Some(profile) = self.profile.as_ref() {
-            let [allocations, instances] = profile.instance_buffer_uploads.get();
-            profile
-                .instance_buffer_uploads
-                .set([allocations + 1, instances + order.len() as u64]);
-        }
-        Ok(Some(buf))
+        )
     }
 }

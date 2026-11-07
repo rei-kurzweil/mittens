@@ -233,6 +233,8 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
         uploader.renderer.profile.as_mut().unwrap().reset_frame();
         scene.visuals.reset_draw_cache_profile();
         let material_before = material_cache_totals(uploader.renderer);
+        let uploads_before = uploader.renderer.retained_uploads.borrow().stats;
+        let commands_before = uploader.renderer.command_reuse.stats;
         if motion == "head" {
             let mut moving = view;
             moving.pose.position.x = (frame as f32 / 75.).sin() * 0.35;
@@ -304,6 +306,8 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
                 "view_cache_decisions":p.view_cache_decisions,
                 "eye0_view":scene.visuals.visual_camera(crate::engine::graphics::CameraTarget::Xr).unwrap().eyes[0].view,
                 "instance_buffer_uploads":p.instance_buffer_uploads.get(),
+                "retained_uploads":uploader.renderer.retained_uploads.borrow().stats.delta(uploads_before),
+                "command_reuse":uploader.renderer.command_reuse.stats.delta(commands_before),
                 "material_cache_counts":material_delta,
                 "dirty_jobs":p.dirty_components.len(),"deformation_cpu_ms":p.deformation_cpu_ns as f64/1e6}));
         }
@@ -377,6 +381,20 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
         "instance_buffer_instances_written".into(),
         summarize_counts(&writes),
     );
+    for field in ["allocations", "reuses", "busy_replacements"] {
+        let values: Vec<_> = rows
+            .iter()
+            .map(|r| r["retained_uploads"][field].as_f64().unwrap())
+            .collect();
+        cache_counts.insert(
+            format!("retained_upload_{field}"),
+            summarize_counts(&values),
+        );
+    }
+    for field in ["hits", "rebuilds", "invalidations"] {
+        let values: Vec<_> = rows.iter().map(|r| r["command_reuse"][field].as_f64().unwrap()).collect();
+        cache_counts.insert(format!("command_reuse_{field}"), summarize_counts(&values));
+    }
     let paired_gpu = if paired {
         let summarize = |enabled: bool| {
             let values: Vec<_> = rows
