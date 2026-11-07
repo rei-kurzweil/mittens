@@ -62,3 +62,13 @@ versus 4.328 ms with deliberately frozen physics. Dashboard mesh uploads fall
 from 960 per 480 samples to zero. Truck-state snapshots confirm active physics
 and supported orchard pose drift. Native sleeping remains unimplemented.
 These CPU-only totals do not establish a new GPU frame time or headset FPS.
+
+## Orchard with active physics (2026-11-07)
+
+At `ae55468f`, [four orchard captures](orchard-active-physics.md) compare
+stationary/moving-head and fresh/reused commands at 1920 per eye with bloom,
+MSAA 4x, 240 warmup / 480 samples. Reused frames average **23.216 ms stationary**
+and **25.150 ms moving-head**, with CPU recording near 1 ms but scene update near
+9 ms. All captures keep native truck physics active. This is not the former
+frozen-truck cafeteria workload and it does not meet the 45 FPS target.
+[RoomSystem](../../room-system-distance-streaming.md) is a design proposal only.

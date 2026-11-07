@@ -17,6 +17,11 @@ end-to-end measurement.
 
 - [Benchmark history and change ledger](benchmark-history.md): chronological
   reports, preserved captures and the implementation changes behind each stage.
+- [Orchard with active physics](orchard-active-physics.md): 23.22 ms stationary /
+  25.15 ms moving-head with cached graphics, native truck physics active, and
+  preserved fresh-recording controls; still above the 45 FPS frame budget.
+- [RoomSystem design proposal](../../room-system-distance-streaming.md): graph-hop
+  distance streaming and proposed MMS syntax; not implemented.
 - [CPU recording measurements](measurements.md): instrument and measure resource
   setup, draw preparation, individual recording phases, Vulkano finalization,
   queue submission and completion waits separately.
