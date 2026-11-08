@@ -1,3 +1,4 @@
+import { ship_environment_material } from "../materials/ship_anime_materials.mms"
 import { ship_vehicle_motion } from "./ship_vehicle_motion.mms"
 import { ship_solid } from "../ship_parts.mms"
 import { ship_vehicle_wheel } from "./ship_vehicle_parts.mms"
@@ -11,6 +12,7 @@ export fn motorcycle(color, rider) {
         name = "motorcycle"
         Destroyable.threshold(3.0)
         CombineMesh.keep_transforms() {
+            ship_environment_material("near")
             ship_solid([0.0, 0.52, 0.0], [0.28, 0.24, 1.65], [0.22, 0.28, 0.25])
             ship_solid([0.0, 0.86, -0.25], [0.50, 0.40, 0.70], color)
             ship_solid([0.0, 0.91, 0.42], [0.46, 0.16, 0.74], [0.10, 0.14, 0.12])

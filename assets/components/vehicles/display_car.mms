@@ -8,7 +8,7 @@
 import { laser } from "../laser.mms"
 import { muzzle_flash } from "../muzzle-flash.mms"
 import { mini_explosion } from "../mini-explosion.mms"
-import { bisket_anime_shading } from "../materials/bisket_anime_shading.mms"
+import { display_car_anime_material } from "../materials/display_car_anime.mms"
 
 export fn display_car(root_name, position, yaw, mount_anchor_name, extra_children) {
     let entry_zone_frame = T.position(0.0, 1.0, -1.4) {
@@ -40,7 +40,7 @@ export fn display_car(root_name, position, yaw, mount_anchor_name, extra_childre
         T {
             name = "car_model"
             GLTF.new("assets/models/car.glb") {
-                bisket_anime_shading()
+                display_car_anime_material("near")
             }
         }
 

@@ -1,6 +1,8 @@
 // Pickup-specific Anime preset. Character presets remain unchanged.
+let definition = MaterialDefinition.anime().opaque_bucket("near")
+
 export fn pickup_anime_material() {
-    return Material(MaterialDefinition.anime()).inputs({
+    return Material(definition).inputs({
         shade_color = [0.32, 0.30, 0.48]
         shade_strength = 0.58
         shade_threshold = 0.22

@@ -1,3 +1,4 @@
+import { studio_environment_material } from "../assets/components/materials/studio_anime.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 
 // toon-outline-bisket — XR Bisket outline smoke test, based on mittens-corp.
@@ -36,7 +37,7 @@ fn stage_box(box_name, position, size, color) {
     return T.position(position[0], position[1], position[2])
         .scale(size[0], size[1], size[2]) {
         name = box_name
-        R.cube() { C.rgba(color[0], color[1], color[2], 1.0) }
+        R.cube() { C.rgba(color[0], color[1], color[2], 1.0) studio_environment_material() }
     }
 }
 

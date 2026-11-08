@@ -1,10 +1,11 @@
 import { truss } from "truss.mms"
+import { studio_environment_material } from "./materials/studio_anime.mms"
 
 fn stage_box(box_name, position, size, color) {
     return T.position(position[0], position[1], position[2])
         .scale(size[0], size[1], size[2]) {
         name = box_name
-        R.cube() { C.rgba(color[0], color[1], color[2], 1.0) }
+        R.cube() { C.rgba(color[0], color[1], color[2], 1.0) studio_environment_material() }
         Zone.cube([0.5, 0.5, 0.5]) { Collidable.static().friction(0.8) {} }
     }
 }

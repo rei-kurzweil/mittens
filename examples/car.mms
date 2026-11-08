@@ -1,3 +1,4 @@
+import { studio_environment_material } from "../assets/components/materials/studio_anime.mms"
 // car — first-person desktop vehicle on a studio stage.
 //
 // Run with:
@@ -10,7 +11,7 @@
 
 import { tripod_light } from "../assets/components/tripod_light.mms"
 import { truss } from "../assets/components/truss.mms"
-import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
+import { display_car_anime_material } from "../assets/components/materials/display_car_anime.mms"
 
 RendererSettings { window_size(1440, 810) }
 BGC.rgba(0.055, 0.055, 0.060, 1.0)
@@ -25,7 +26,7 @@ fn stage_box(box_name, position, size, color) {
     return T.position(position[0], position[1], position[2])
         .scale(size[0], size[1], size[2]) {
         name = box_name
-        R.cube() { C.rgba(color[0], color[1], color[2], 1.0) }
+        R.cube() { C.rgba(color[0], color[1], color[2], 1.0) studio_environment_material() }
     }
 }
 
@@ -103,7 +104,7 @@ I.speed(4.0) {
         T.rotation(0.0, 0.0, 0.0) {
             name = "car_visual"
             GLTF.new("assets/models/car.glb") {
-                bisket_anime_shading()
+                display_car_anime_material("near")
             }
         }
 
@@ -120,6 +121,6 @@ I.speed(4.0) {
 T.position(0.0, 0.10, 0).rotation(0.0, -0.32, 0.0) {
     name = "parked_display_car"
     GLTF.new("assets/models/car.glb") {
-        bisket_anime_shading()
+        display_car_anime_material("middle")
     }
 }

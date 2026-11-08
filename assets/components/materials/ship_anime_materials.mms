@@ -1,8 +1,9 @@
 import { anime_directional_fill_definition } from "./anime_directional_fill.mms"
 
 // Station-specific settings. Shared Anime defaults remain suitable for other scenes.
-export fn ship_environment_material() {
-    return Material(MaterialDefinition.anime().opaque_bucket("far")).inputs({
+export fn ship_environment_material(bucket) {
+    if bucket == null { bucket = "far" }
+    return Material(MaterialDefinition.anime().opaque_bucket(bucket)).inputs({
         shade_color = [0.15, 0.17, 0.30]
         shade_strength = 0.82
         shade_threshold = 0.12
