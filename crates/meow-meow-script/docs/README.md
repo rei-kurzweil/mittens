@@ -18,6 +18,10 @@ User-facing MMS documentation lives with the crate.
 - [MMS type-system epic](draft/type-system-epic.md)
 - [Record type expressions and record values](draft/record-types-and-values.md)
 
+## Working specifications
+
+- [Host-filtered bespoke MMS event handlers](spec/host_filtered_bespoke_mms_event_handlers.mms) — typed event selectors and native filtering; proposal only.
+
 Most design analysis, active implementation tasks, and Mittens-specific
 runtime-boundary documentation remain in the workspace documentation while
 the crate ownership cutover is active. Their migration is tracked in

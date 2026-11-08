@@ -161,7 +161,9 @@ pub enum Value {
     /// A closure: params + body AST + captured environment snapshot.
     Function {
         params: Vec<String>,
-        body: crate::ast::BlockStatement,
+        // Code is immutable after materialization. Captured scopes and callback
+        // lookups clone function values frequently; never deep-copy their ASTs.
+        body: Arc<crate::ast::BlockStatement>,
         captured_env: Arc<HashMap<String, Value>>,
         heap: HeapHandle,
     },

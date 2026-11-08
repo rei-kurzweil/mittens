@@ -56,6 +56,8 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     )?;
     let mut scene = Universe::new(Default::default());
     scene.systems.set_vr_perf_enabled(true);
+    let update_timings = std::env::var("SHIP_PROFILE_UPDATE_TIMINGS").as_deref() == Ok("1");
+    crate::engine::update_cpu_profile::enable(update_timings);
     scene.visuals.enable_draw_cache_profile();
     let clock = Arc::new(ProfileClock(std::sync::atomic::AtomicU64::new(
         0f64.to_bits(),
@@ -155,6 +157,19 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     } else {
         None
     };
+    // Diagnostic gates only: retain scene objects, mounting and native physics.
+    let bypassed_callbacks: Vec<u64> = std::env::var("SHIP_PROFILE_BYPASS_CALLBACKS")
+        .unwrap_or_default()
+        .split(',')
+        .filter(|part| !part.is_empty())
+        .map(str::parse)
+        .collect::<Result<_, _>>()?;
+    for &id in &bypassed_callbacks {
+        assert!(
+            scene.systems.rx.bypass_event_binding(id, true),
+            "unknown callback binding {id}"
+        );
+    }
     let camera_replay = ship_motion::CameraReplay::from_env()?;
     let mut profile = ProfileState::new(&context)?;
     if matches!(case.as_str(), "avatar_hidden" | "environment_hidden") {
@@ -368,7 +383,7 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
                 "view_cache_decisions":p.view_cache_decisions,
                 "eye0_view":scene.visuals.visual_camera(crate::engine::graphics::CameraTarget::Xr).unwrap().eyes[0].view,
                 "instance_buffer_uploads":p.instance_buffer_uploads.get(),
-                "motion_state":motion_state,"gpu_pass_ms":p.gpu_pass_ms()?,
+                "world_component_count":scene.world.component_count(),"motion_state":motion_state,"update_profile":if update_timings {Some(crate::engine::update_cpu_profile::snapshot())} else {None},"gpu_pass_ms":p.gpu_pass_ms()?,
                 "retained_uploads":uploader.renderer.retained_uploads.borrow().stats.delta(uploads_before),
                 "command_reuse":uploader.renderer.command_reuse.stats.delta(commands_before),
                 "material_cache_counts":material_delta,
@@ -408,6 +423,20 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
             .map(|r| r["gpu_pass_ms"][name].as_f64().unwrap())
             .collect();
         gpu_passes.insert(name.clone(), summary(&values));
+    }
+    let mut update_stages = serde_json::Map::new();
+    if update_timings {
+        for name in rows[0]["update_profile"]["stages_ms"]
+            .as_object()
+            .unwrap()
+            .keys()
+        {
+            let values: Vec<_> = rows
+                .iter()
+                .map(|r| r["update_profile"]["stages_ms"][name].as_f64().unwrap())
+                .collect();
+            update_stages.insert(name.clone(), summary(&values));
+        }
     }
     let mut cpu_record_stages = serde_json::Map::new();
     for name in rows[0]["cpu_record_stages_ms"].as_object().unwrap().keys() {
@@ -497,7 +526,7 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     } else {
         serde_json::Value::Null
     };
-    let result = serde_json::json!({"hidden_subtree":hidden_subtree,"camera_reference":camera_replay.as_ref().map(|r|&r.path),"gpu_pass_ms":gpu_passes,"source":source_path,"paired_gpu":paired_gpu,"case":case,"room":room,"motion":motion,"cache_counts":cache_counts,"material_binding_limit":material_binding_limit(),"frames":frames,"warmup":warmup,"extent":extent,"msaa":4,
+    let result = serde_json::json!({"bypassed_callbacks":bypassed_callbacks,"update_stages_ms":update_stages,"hidden_subtree":hidden_subtree,"camera_reference":camera_replay.as_ref().map(|r|&r.path),"gpu_pass_ms":gpu_passes,"source":source_path,"paired_gpu":paired_gpu,"case":case,"room":room,"motion":motion,"cache_counts":cache_counts,"material_binding_limit":material_binding_limit(),"frames":frames,"warmup":warmup,"extent":extent,"msaa":4,
         "gpu":uploader.renderer.gpu_device_name(),"components":scene.world.all_components().count(),
         "instances":scene.visuals.instances().len(),"timing":timing,"cpu_record_stages_ms":cpu_record_stages,"sample_draws":rows.last().unwrap()["draws"],
         "counters":uploader.renderer.perf_counters().saturating_delta(counters_start.unwrap())});

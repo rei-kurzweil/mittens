@@ -169,6 +169,8 @@ impl mms::Host for MittensHost<'_, '_> {
     }
 
     fn dispatch(&mut self, request: mms::HostRequest) -> Result<mms::HostResponse, mms::HostError> {
+        #[cfg(test)]
+        let _cpu_scope = crate::engine::update_cpu_profile::host_request(&request);
         use mms::{HostRequest as R, HostResponse as S};
         match request {
             R::ValidateComponents { components } => Ok(S::Components(
@@ -1049,7 +1051,7 @@ fn external_value_to_legacy(value: mms::Value) -> Result<legacy::Value, mms::Hos
             ..
         } => legacy::Value::Function {
             params,
-            body,
+            body: body.as_ref().clone(),
             captured_env: Arc::new(
                 captured_env
                     .iter()

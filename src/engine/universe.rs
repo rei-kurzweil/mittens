@@ -552,6 +552,8 @@ impl Universe {
     /// Game/update step using an explicitly supplied snapshot. Hosts normally
     /// use `update_with_input_providers`; this also supports replay and tests.
     pub fn update(&mut self, dt_sec: f32, input: &InputState) {
+        #[cfg(test)]
+        let mut cpu_profile = crate::engine::update_cpu_profile::Timer::begin_frame();
         let benchmark_ticket = self.systems.benchmarks.frame_ticket();
         let benchmark_started = self.systems.benchmarks.has_active().then(Instant::now);
         let vr_update_started = self.systems.vr_perf_enabled().then(Instant::now);
@@ -560,6 +562,8 @@ impl Universe {
         // 2. Let systems call methods on components,
         //      for example, to update transforms or renderables, which
         //      will update VisualWorld can update draw_batches and give Renderer a snapshot
+        #[cfg(test)]
+        cpu_profile.mark(crate::engine::update_cpu_profile::Phase::UniverseStart);
         let mut runtime_session = self.runtime_spec_session.take();
         self.systems.tick_with_runtime_session(
             &mut self.world,
@@ -570,12 +574,16 @@ impl Universe {
             runtime_session.as_mut(),
             dt_sec,
         );
+        #[cfg(test)]
+        cpu_profile.mark(crate::engine::update_cpu_profile::Phase::SystemsTick);
         self.runtime_spec_session = runtime_session;
 
         // Systems dispatch Rx events during tick. Run queued MMS callbacks
         // before the command drain so their intents take effect this frame.
         self.service_runtime_spec_callbacks();
 
+        #[cfg(test)]
+        cpu_profile.mark(crate::engine::update_cpu_profile::Phase::RuntimeCallbacks);
         // Process commands after tick so any commands queued during tick are processed in the same frame
         let vr_commands_started = self.systems.vr_perf_enabled().then(Instant::now);
         self.systems.process_commands(
@@ -584,6 +592,8 @@ impl Universe {
             &mut self.render_assets,
             &mut self.command_queue,
         );
+        #[cfg(test)]
+        cpu_profile.mark(crate::engine::update_cpu_profile::Phase::FinalCommands);
         if let Some(update_started) = vr_update_started {
             self.systems.set_vr_perf_update_timings(
                 update_started.elapsed(),
@@ -602,6 +612,8 @@ impl Universe {
                 .benchmarks
                 .record_cpu_update(benchmark_ticket, started.elapsed().as_secs_f64() * 1000.0);
         }
+        #[cfg(test)]
+        cpu_profile.mark(crate::engine::update_cpu_profile::Phase::UniverseTail);
     }
 
     pub fn render(&mut self) {

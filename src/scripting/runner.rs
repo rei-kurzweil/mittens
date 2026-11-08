@@ -153,40 +153,6 @@ impl RuntimeSpecSession {
         self.invoke_deferred_callback_with_host(callback_ref, mode, host)
     }
 
-    /// Service queued signal callbacks using one live host lease. Returned
-    /// strings are diagnostics only; effects were written to the lease's
-    /// intent sink.
-    pub(crate) fn service_callbacks_with_host(
-        &mut self,
-        host: crate::scripting::host::MittensHost<'_, '_>,
-    ) -> Vec<String> {
-        if self.is_closed() {
-            return vec!["Mittens RuntimeSpec session is closed".into()];
-        }
-        let invocations = {
-            let mut queued = self.callback_invocations.lock().unwrap();
-            std::mem::take(&mut *queued)
-        };
-        if invocations.is_empty() {
-            return Vec::new();
-        }
-
-        let idle = self.session.take().expect("checked above");
-        let host = host
-            .with_bindings(self.configured.bindings())
-            .with_callback_invocations(Arc::clone(&self.callback_invocations))
-            .with_callback_delivery_enabled(Arc::clone(&self.callback_delivery_enabled));
-        let (idle, errors) = idle.with_host(host, |session| {
-            invocations
-                .into_iter()
-                .filter_map(|invocation| session.invoke_callback_invocation(invocation).err())
-                .map(|error| error.to_string())
-                .collect()
-        });
-        self.session = Some(idle);
-        errors
-    }
-
     /// Invoke a retained keyframe callback only in a phase its session-owned
     /// profile permits.  The engine supplies the opaque reference and plain
     /// metadata only; it never inspects or re-analyzes the callback body.
@@ -2165,3 +2131,6 @@ mod runtime_spec_session_tests {
         assert_eq!(output.errors, vec!["Mittens RuntimeSpec session is closed"]);
     }
 }
+
+#[path = "runtime_callback_delivery.rs"]
+mod callback_delivery;

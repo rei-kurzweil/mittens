@@ -27,3 +27,6 @@ pub enum EngineError {
 
 pub type EngineResult<T> = Result<T, EngineError>;
 pub mod runtime_assets;
+
+#[cfg(test)]
+pub(crate) mod update_cpu_profile;

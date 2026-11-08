@@ -164,3 +164,47 @@ limit. Raw v3 summary/frame samples/log, source hashes and validation logs remai
 under ignored `examples/local/benchmarks/`. The seven material-system tests, four
 material-registry tests and two Vulkan snapshot/static-room tests passed after
 the fixes. Offscreen timing excludes live OpenXR/compositor/ALVR overhead.
+
+### Vehicle CPU drill-down after checkpoint `c11264f8` (2026-11-07)
+
+[CPU attribution and temporal report](../../ship-driving-cpu-profile.md) uses
+opt-in per-frame update/host/callback timing. Fresh walking/driving CPU update
+is 5.529/13.966 ms; native system tick is 5.526/5.744 ms and callback servicing
+0.001/8.200 ms. Longer driving logs show callback cost growing with stable world,
+query and callback counts. The 120 Hz physics substep cadence adds a separate
+one/two-step timing band to the 75 Hz fixture.
+
+A per-callback capture attributes 4.812 ms/frame to the vehicle FrameTick handler
+and 3.079 ms/frame to two settings-panel global DataEvent listeners rejecting
+VelocityChanged events. A fresh control pair bypassing only those listeners
+reduces CPU update **13.972 -> 10.962 ms**, with every pose/view identical.
+Production event delivery and vehicle scripts remain unchanged. Native query
+work accounts for about 0.7–0.8 ms; remaining VM work and its drift need further
+attribution. A vehicle-FrameTick bypass attempt failed motion validation and is
+excluded. All valid raw captures remain ignored under examples/local/benchmarks.
+
+### Shared immutable MMS function bodies (2026-11-07)
+
+Following the [CPU attribution](../../ship-driving-cpu-profile.md), userspace
+sampling identified repeated AST cloning/dropping. Runtime function bodies now
+share immutable code with `Arc<BlockStatement>` instead of copying that code on
+every function-value/captured-environment clone. No script behavior, subscription
+filtering, vehicle control or material change is part of this optimization.
+
+At 1920/eye, bloom/emission, MSAA 4x, 240 warmup/480 samples, full driving CPU
+update falls **13.972 -> 6.575 ms** and callback service **8.154 -> 0.890 ms**.
+All 7.058 callbacks/frame, draw counts, truck/player poses and camera matrices
+remain. Driving elapsed is **20.164 ms mean / 21.886 ms p95** (49.6 FPS estimate);
+walking is **17.845 / 19.867 ms**. GPU graphics is 12.339 ms driving / 11.169 ms
+walking; GPU differences include run variation, not a GPU optimization.
+
+A longer 1,200-sample driving capture averages **19.885 ms / 21.444 ms p95**
+(50.3 FPS estimate), CPU update 6.567 ms and callback service 0.885 ms. The earlier
+callback-time growth is absent across this 16-second synthetic window. Raw
+captures remain ignored under examples/local/benchmarks with stems containing
+`cpu-shared-function-body` and source/test provenance in its manifest.
+
+The typed-table selector work is explicitly independent and still proposed.
+All settings callbacks remain enabled; their combined cost is now 0.117 ms/frame,
+so the old 3 ms settings-bypass opportunity must not be counted again. No live
+OpenXR/compositor/ALVR or full tracked-ship 45 FPS claim follows from these runs.

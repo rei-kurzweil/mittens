@@ -35,6 +35,10 @@ impl MittensHost<'_, '_> {
         let scope = scope
             .map(|scope| self.existing_id(scope, "register_signal_handler"))
             .transpose()?;
+        #[cfg(test)]
+        crate::engine::update_cpu_profile::register_callback(callback.into_raw(), || {
+            format!("{} scope={:?} type={:?} name={:?}",signal,scope,scope.and_then(|id|self.world.component_name(id)),scope.and_then(|id|self.world.component_label(id)))
+        });
         if self.signal_routes.is_none()
             && (self.rx.is_none() || self.callback_invocations.is_none())
         {

@@ -630,7 +630,7 @@ impl<'a, H: Host> Evaluator<'a, H> {
             Expression::BinaryOp { op, lhs, rhs } => self.eval_binary(op, lhs, rhs),
             Expression::Function { params, body } => Ok(Value::Function {
                 params: params.iter().map(|p| p.0.clone()).collect(),
-                body: body.clone(),
+                body: Arc::new(body.clone()),
                 captured_env: Arc::new(self.snapshot()),
                 heap: self.heap.clone(),
             }),
@@ -1137,7 +1137,7 @@ impl<'a, H: Host> Evaluator<'a, H> {
                     callback,
                     Value::Function {
                         params: Vec::new(),
-                        body: closure.body,
+                        body: Arc::new(closure.body),
                         captured_env: closure.captured_env,
                         heap: closure.heap,
                     },
