@@ -153,15 +153,27 @@ impl VisualWorld {
             );
         }
 
-        // Sort by (stencil_ref, material, tex, mesh, filtering) so stencil-clipped
-        // instances group with their clip region. tex before mesh matches overlay convention
+        // Experimental custom-first ordering within each opaque stencil scope.
+        // Keep the existing material/texture/mesh batching inside each group.
+        // A legacy program overriding inherited custom values remains built-in.
+        // tex before mesh matches overlay convention
         // (untextured quads draw before textured glyphs at same depth).
         self.draw_order.sort_by_key(|&i| {
             let inst = self.instances[i as usize];
             let r = inst.renderable;
             let tex = inst.texture.map_or(0, |t| t.0.wrapping_add(1));
+            let custom = inst
+                .material_instance
+                .and_then(|id| self.materials.instance(id))
+                .and_then(|record| self.materials.definition(record.definition))
+                .is_some_and(|definition| {
+                    definition.custom.is_some()
+                        && (definition.static_program == r.material
+                            || definition.deformed_program == Some(r.material))
+                });
             (
                 inst.stencil_ref,
+                !custom,
                 r.material.0,
                 tex,
                 r.mesh.0,
@@ -385,5 +397,162 @@ impl VisualWorld {
             transparent_draw_order,
             &mut self.transparent_multi_draw_batches,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::graphics::materials::MaterialBaseKind;
+    use crate::engine::graphics::primitives::MeshHandle;
+    use crate::engine::graphics::{MaterialHandle, custom_material::CustomMaterialDefinition};
+    use slotmap::KeyData;
+    use std::sync::{Arc, OnceLock};
+
+    fn cid(n: u64) -> ComponentId {
+        KeyData::from_ffi(n).into()
+    }
+
+    fn custom(visuals: &mut VisualWorld) -> (MaterialHandle, MaterialHandle, MaterialInstanceId) {
+        let definition = visuals.materials.register_custom_definition(
+            cid(100),
+            Arc::new(CustomMaterialDefinition {
+                base: MaterialBaseKind::Surface,
+                fields: vec!["gain".into()],
+                fragment_uri: "ordering-test.frag".into(),
+                compiled: OnceLock::new(),
+            }),
+        );
+        let program = visuals
+            .materials
+            .definition(definition)
+            .unwrap()
+            .static_program;
+        let deformed = visuals
+            .materials
+            .definition(definition)
+            .unwrap()
+            .deformed_program
+            .unwrap();
+        let instance = visuals
+            .materials
+            .upsert_source(cid(101), definition, vec![1.0]);
+        (program, deformed, instance)
+    }
+
+    fn add(
+        visuals: &mut VisualWorld,
+        n: u64,
+        program: MaterialHandle,
+        material: Option<MaterialInstanceId>,
+    ) -> InstanceHandle {
+        let handle = visuals.register(
+            cid(n),
+            GpuRenderable::new(MeshHandle::SQUARE, program),
+            Transform::default(),
+            [1.0; 4],
+            1.0,
+            false,
+            false,
+            false,
+            false,
+            false,
+            0.0,
+            None,
+            3.0,
+        );
+        assert!(visuals.bind_material_instance(handle, material));
+        handle
+    }
+
+    #[test]
+    fn custom_first_opaque_retains_batches_and_uses_the_active_program() {
+        let mut visuals = VisualWorld::default();
+        let (program, deformed, material) = custom(&mut visuals);
+        add(&mut visuals, 1, MaterialHandle::ANIME_MESH, None);
+        add(&mut visuals, 2, program, Some(material));
+        add(&mut visuals, 3, program, Some(material));
+        add(&mut visuals, 4, deformed, Some(material));
+        // An explicit built-in program may retain an inherited custom binding.
+        add(&mut visuals, 5, MaterialHandle::ANIME_MESH, Some(material));
+        assert!(visuals.prepare_draw_cache());
+        assert_eq!(visuals.draw_order, [1, 2, 3, 0, 4]);
+        let (ops, indices) = visuals.opaque_stream();
+        assert_eq!(indices.len(), 5);
+        assert!(ops.iter().any(|op| matches!(op, RenderOp::DrawBatch(batch)
+            if batch.material == program && batch.count == 2)));
+        assert!(
+            !visuals.prepare_draw_cache(),
+            "unchanged streams must remain cached"
+        );
+    }
+
+    #[test]
+    fn custom_first_opaque_preserves_clip_entry_source_content_and_exit() {
+        let mut visuals = VisualWorld::default();
+        let (program, _, material) = custom(&mut visuals);
+        let clip = add(&mut visuals, 1, MaterialHandle::ANIME_MESH, None);
+        let builtin = add(&mut visuals, 2, MaterialHandle::ANIME_MESH, None);
+        let custom = add(&mut visuals, 3, program, Some(material));
+        assert!(visuals.register_stencil_clip(clip, 0));
+        assert!(visuals.update_stencil_ref(builtin, 1));
+        assert!(visuals.update_stencil_ref(custom, 1));
+        visuals.prepare_draw_cache();
+        let (ops, indices) = visuals.opaque_stream();
+        assert!(matches!(
+            ops.first(),
+            Some(RenderOp::EnterClip {
+                parent_ref: 0,
+                new_ref: 1,
+                ..
+            })
+        ));
+        assert!(matches!(
+            ops.last(),
+            Some(RenderOp::ExitClip { ref_value: 1, .. })
+        ));
+        let mut drawn = Vec::new();
+        for op in ops {
+            if let RenderOp::DrawBatch(batch) = op {
+                assert_eq!(batch.stencil_ref, 1);
+                drawn.extend_from_slice(&indices[batch.start..batch.start + batch.count]);
+            }
+        }
+        assert_eq!(
+            drawn,
+            [0, 2, 1],
+            "source first, then sorted content inside clip"
+        );
+    }
+
+    #[test]
+    fn custom_first_opaque_does_not_reorder_other_phases() {
+        let mut visuals = VisualWorld::default();
+        let (program, _, material) = custom(&mut visuals);
+        for phase in 0..4 {
+            let builtin = add(
+                &mut visuals,
+                phase * 2 + 1,
+                MaterialHandle::ANIME_MESH,
+                None,
+            );
+            let custom = add(&mut visuals, phase * 2 + 2, program, Some(material));
+            for handle in [builtin, custom] {
+                let index = visuals.handle_to_index[&handle];
+                let instance = &mut visuals.instances[index];
+                match phase {
+                    0 => instance.background = true,
+                    1 => instance.transparent_cutout = true,
+                    2 => instance.overlay = true,
+                    _ => instance.opacity = 0.5,
+                }
+            }
+        }
+        visuals.prepare_draw_cache();
+        assert!(visuals.draw_order.is_empty());
+        assert_eq!(visuals.background_order, [0, 1]);
+        assert_eq!(visuals.cutout_order, [2, 3]);
+        assert_eq!(visuals.overlay_order, [4, 5]);
+        assert_eq!(visuals.transparent_single_draw_order, [6, 7]);
     }
 }

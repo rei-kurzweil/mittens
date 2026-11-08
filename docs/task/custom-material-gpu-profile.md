@@ -7,6 +7,14 @@ captures are retained but marked superseded; **all results below use the full
 fresh `r2-clean` matrix**, started after checking no benchmark/app remained and
 GPU utilization was approximately 1%.
 
+## Follow-up experiment
+
+On 2026-11-08, after checkpoint `ae833df2`, an interim
+[custom-first opaque experiment](custom-first-opaque-experiment.md) enables
+custom opaque programs before built-ins for VR smoke testing. Statements below
+about unchanged production ordering describe the earlier attribution phase.
+The experiment does not implement near/middle/far MaterialBase bands.
+
 ## Question and controls
 
 The truck's custom binary-gate Anime equivalent retained the GPU slowdown of

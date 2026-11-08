@@ -289,3 +289,28 @@ Raw repeat stems end `r3-clean-2026-11-07`, with execution/provenance in
 `custom-anime-clean-repeat-reversed-2026-11-07.manifest.json`. Both matrices are
 retained separately; startup-dependent fragment/order variation prevents treating
 this as a perfect shader microbenchmark or a live XR frame-rate guarantee.
+
+### Custom opaque before built-in trial (2026-11-08)
+
+Checkpoint `ae833df2` first commits all prior material/profiling work. The following
+interim experiment adds a custom-first key inside regular opaque stencil
+scopes; existing material/texture/mesh grouping and other passes remain intact.
+No MaterialBase band API or new render pass is introduced. Actual Lambert truck
+and character/tile shaders remain in use, with no diagnostic truck priority.
+
+Two captures per motion/revision, 240 warmup/480 samples, local cafeteria at
+1920/eye, MSAA 4x, bloom/emission, GPU pass timestamps and opaque work counters:
+
+| Motion | CPU update before → after ms | GPU graphics before → after ms | Elapsed mean before → after ms | Elapsed p95 before → after ms | Opaque fragments M before → after |
+|---|---:|---:|---:|---:|---:|
+| walking | 5.795 → 5.857 | 10.871 → 9.943 | 18.011 → 17.174 | 20.504 → 18.591 | 17.332 → 15.781 |
+| driving | 6.930 → 6.963 | 15.823 → 12.038 | 24.164 → 20.397 | 26.092 → 22.260 | 26.166 → 20.070 |
+
+P95 pools 960 samples, not the two per-run p95s. Both repetitions improve in both
+motion cases. Camera/motion/draw/component/input-vertex work matches; cached
+graphics retain two hits/frame with zero rebuilds and no material allocations.
+Driving mean is below 22.22 ms but p95 remains above; this is not a sustained live
+XR/ALVR 45 FPS result or a measurement of the full orchard variant.
+[Detailed report](../../custom-first-opaque-experiment.md) includes per-run values,
+25 passing visual-world tests, the built smoke-test binary, and raw provenance.
+Ignored capture names contain `custom-first`, `before`/`after` and 2026-11-08.
