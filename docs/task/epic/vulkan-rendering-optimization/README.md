@@ -42,7 +42,11 @@ end-to-end measurement.
   IDs move the truck later. Moving it early reduces 15.13 to 12.85 ms GPU.
   Includes counters, interrupted-run exclusions and the next general
   opaque-ordering slice. The subsequent [custom-first trial](../../custom-first-opaque-experiment.md)
-  is enabled for VR smoke testing with two before/after captures per motion.
+  was retained for VR smoke testing with two before/after captures per motion.
+- [Surface definition opaque buckets](../../opaque-material-ordering-bands.md):
+  Near/Middle/Far replace the interim custom-first heuristic, with independent
+  per-definition settings restricted to Surface. A fresh controlled comparison
+  preserves roughly the previous driving GPU cost; includes API and validation.
 - [Reusable primary command buffers](reusable-primary-commands.md): retained
   eligible graphics commands with continuously updated camera/light/joint data;
   CPU recording about 7 -> 1 ms, 18.41 ms stationary and 21.55 ms moving-head

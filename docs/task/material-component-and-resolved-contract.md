@@ -320,3 +320,12 @@ deterministic coverage. A scalar upload needs no mesh or pipeline rebuild.
 Do not remove granular style components or rewrite every renderer material
 family just to create the anchor. Record unsupported combinations and migration
 boundaries in the material spec before adding new renderer capabilities.
+
+## Surface opaque ordering extension (2026-11-08)
+
+Surface definitions now own a Near/Middle/Far opaque scheduling hint, with Middle
+as default. This metadata belongs to MaterialDefinition rather than creating new
+MaterialBase contracts. Explicitly bucketed built-ins isolate metadata while
+sharing GPU programs. Other bases reject the builder; non-opaque phases ignore
+the hint. See [authoring](../how_to/opaque-material-buckets.md) and
+[implementation/measurements](opaque-material-ordering-bands.md).

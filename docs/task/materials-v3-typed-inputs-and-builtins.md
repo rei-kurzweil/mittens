@@ -17,8 +17,11 @@ R.cube() { walls }
 walls.set_input("rim_color", [0.8, 0.9, 1.0])
 ```
 
-MaterialDefinition.anime()/toon() return shared, engine-owned built-in definition
-references. Shader/schema builders reject edits to these definitions. Separate
+Plain MaterialDefinition.anime()/toon() calls return shared built-in definition
+references. Shader/schema builders reject edits to these definitions. Surface
+definitions may independently author `.opaque_bucket("near")`, `"middle"`, or `"far"`;
+an explicit bucket creates isolated built-in ordering metadata while reusing
+the same GPU programs. See [opaque bucket authoring](../how_to/opaque-material-buckets.md). Separate
 Material objects retain independent values; attaching one Material several times
 shares one renderer instance. Partial inputs inherit existing engine defaults.
 get_input returns overridden values or the definition default, with scalars as

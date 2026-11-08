@@ -314,3 +314,32 @@ XR/ALVR 45 FPS result or a measurement of the full orchard variant.
 [Detailed report](../../custom-first-opaque-experiment.md) includes per-run values,
 25 passing visual-world tests, the built smoke-test binary, and raw provenance.
 Ignored capture names contain `custom-first`, `before`/`after` and 2026-11-08.
+
+### Surface definition buckets and fresh baseline (2026-11-08)
+
+Near/middle/far ordering is now authored per Surface MaterialDefinition, including
+isolated built-in Anime metadata aliases that share their original GPU programs.
+Middle is the default. Ship trucks/characters use Near; environment/tiles use Far.
+The new bucket sort key replaces the interim custom-first rule. Background and
+non-opaque ordering remain unchanged. Tests cover scope validation, independent
+built-in settings, batching/cache invalidation and clip/phase preservation.
+
+After the user reported possible interference in initial captures, reran the
+baseline and candidate together with one executable/current scene: a test-only
+control selects the old custom-first policy versus native buckets. Eight clean
+captures, baseline at both ends, two repetitions per walking/driving case;
+1920/eye, bloom/emission, MSAA 4x, 240 warmup/480 measured frames and identical
+GPU query instrumentation:
+
+| Motion | CPU update baseline → buckets ms | GPU graphics baseline → buckets ms | Elapsed mean baseline → buckets ms | Elapsed p95 baseline → buckets ms |
+|---|---:|---:|---:|---:|
+| walking | 5.687 → 5.840 | 10.132 → 9.812 | 17.097 → 16.984 | 18.500 → 19.675 |
+| driving | 6.670 → 6.792 | 11.270 → 11.335 | 19.238 → 19.461 | 20.568 → 21.003 |
+
+This checks policy cost with new metadata plumbing held fixed, not every change
+against an old executable. Driving GPU is effectively unchanged; no new driving
+speedup is established. Camera/motion/draw/component/input-vertex work matches;
+retained graphics stay at two hits/frame, zero rebuilds and no material allocations.
+[API, per-run values and caveats](../../opaque-material-ordering-bands.md).
+Raw stems contain `surface-policy` and `clean-2026-11-08`; earlier
+`surface-opaque-buckets` captures are superseded after the workstation report.

@@ -51,3 +51,7 @@ schema and must be matched to a real fragment uniform block before use.
 - [OpenXR reference](../../examples/0-9-x-openxr-flowchart.mms)
 - [Typed material authoring](../draft/material-builtin-authoring-api.md)
 - [Mesh deformation contract](../spec/mesh-deformation-pipeline.md)
+
+For the current Surface definition ordering API, see
+[opaque material buckets](opaque-material-buckets.md). Those Near/Middle/Far hints
+share the regular opaque depth buffer and are separate from Background.

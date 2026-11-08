@@ -1,6 +1,7 @@
 # Custom-first opaque ordering experiment
 
-Status: retained as an interim policy after VR smoke testing; opaque bands pending.
+Status: historical interim policy; superseded in the working tree by
+[Surface definition buckets](opaque-material-ordering-bands.md).
 
 Checkpoint before the change: `ae833df2` (LambertToon materials, GPU diagnostics
 and profiling reports). This follow-up retains the trial as an interim policy;

@@ -1,6 +1,7 @@
 # Built-in material authoring API
 
-Status: implemented 2026-10-26; legacy Shading remains available.
+Status: implemented 2026-10-26; Surface bucket extension 2026-11-08.
+Legacy Shading remains available.
 
 See [typed material checkpoint](../task/materials-v3-typed-inputs-and-builtins.md)
 for implementation and validation details.
@@ -29,8 +30,11 @@ R.cube() {
 ```
 
 MaterialDefinition.anime() and MaterialDefinition.toon() reference engine-owned
-built-in definitions. Repeated calls reuse the authored built-in reference and
-the same renderer definition. Creating two Material objects creates independent
+built-in definitions. Plain repeated calls reuse the authored built-in reference.
+Surface definitions may choose `.opaque_bucket("near")`, `"middle"` (default),
+or `"far"`; explicitly bucketed built-ins own isolated ordering metadata and
+reuse the same GPU programs. Shader/schema edits remain prohibited.
+See [opaque bucket authoring](../how_to/opaque-material-buckets.md). Creating two Material objects creates independent
 instances, even if their initial values are identical.
 
 Keep .inputs(...) and .set_input(name, value) as the common parameter API. Partial
