@@ -2,7 +2,7 @@ import { lambert_toon_definition } from "./lambert_toon.mms"
 
 // Match pickup Anime controls so the comparison changes only the diffuse response.
 export fn pickup_lambert_toon_material() {
-    return Material(lambert_toon_definition()).inputs({
+    return Material(lambert_toon_definition("near")).inputs({
         shade_color = [0.32, 0.30, 0.48]
         shade_strength = 0.58
         shade_threshold = 0.22

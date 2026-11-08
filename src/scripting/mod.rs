@@ -8,6 +8,8 @@ pub mod block_effect_analyzer {
 mod camera_xr_binding;
 #[path = "component_bindings/mirror.rs"]
 mod mirror_binding;
+#[path = "component_bindings/material_definition.rs"]
+mod material_definition_binding;
 pub mod component_method_registry;
 pub mod component_registry;
 mod configured_registry;

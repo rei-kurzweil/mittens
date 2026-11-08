@@ -2,6 +2,20 @@
 use super::*;
 
 impl VisualWorld {
+    pub fn set_surface_opaque_bucket(
+        &mut self,
+        definition: super::super::materials::MaterialDefinitionId,
+        bucket: super::super::materials::OpaqueBucket,
+    ) -> Result<bool, String> {
+        let changed = self
+            .materials
+            .set_surface_opaque_bucket(definition, bucket)?;
+        if changed {
+            visual_topology_dirty!(self, UpdateOpaqueBucket);
+        }
+        Ok(changed)
+    }
+
     pub fn register(
         &mut self,
         cid: ComponentId,

@@ -529,6 +529,7 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
         serde_json::Value::Null
     };
     let result = serde_json::json!({"bypassed_callbacks":bypassed_callbacks,"update_stages_ms":update_stages,"hidden_subtree":hidden_subtree,"camera_reference":camera_replay.as_ref().map(|r|&r.path),"gpu_pass_ms":gpu_passes,"source":source_path,"paired_gpu":paired_gpu,"case":case,"room":room,"motion":motion,"cache_counts":cache_counts,"material_binding_limit":material_binding_limit(),"frames":frames,"warmup":warmup,"extent":extent,"msaa":4,
+        "opaque_policy":std::env::var("SHIP_PROFILE_OPAQUE_POLICY").unwrap_or("buckets".into()),
         "gpu":uploader.renderer.gpu_device_name(),"components":scene.world.all_components().count(),
         "instances":scene.visuals.instances().len(),"timing":timing,"cpu_record_stages_ms":cpu_record_stages,"sample_draws":rows.last().unwrap()["draws"],
         "material_diagnostic":uploader.renderer.profile.as_ref().unwrap().material_diagnostic.description(),

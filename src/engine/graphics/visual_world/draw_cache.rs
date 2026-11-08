@@ -153,27 +153,43 @@ impl VisualWorld {
             );
         }
 
-        // Experimental custom-first ordering within each opaque stencil scope.
-        // Keep the existing material/texture/mesh batching inside each group.
-        // A legacy program overriding inherited custom values remains built-in.
-        // tex before mesh matches overlay convention
-        // (untextured quads draw before textured glyphs at same depth).
+        // Surface ordering bands share ordinary depth testing. Preserve stencil
+        // scopes and material/texture/mesh grouping within each band.
+        #[cfg(test)]
+        let custom_first_control =
+            std::env::var("SHIP_PROFILE_OPAQUE_POLICY").as_deref() == Ok("custom_first");
         self.draw_order.sort_by_key(|&i| {
             let inst = self.instances[i as usize];
             let r = inst.renderable;
             let tex = inst.texture.map_or(0, |t| t.0.wrapping_add(1));
-            let custom = inst
-                .material_instance
-                .and_then(|id| self.materials.instance(id))
-                .and_then(|record| self.materials.definition(record.definition))
-                .is_some_and(|definition| {
-                    definition.custom.is_some()
-                        && (definition.static_program == r.material
-                            || definition.deformed_program == Some(r.material))
-                });
+            let bucket = self
+                .materials
+                .opaque_bucket(inst.material_instance, r.material);
+            // Same scene/programs, but the old policy, for controlled GPU profiling.
+            // Compiles out of normal builds and never runs in the per-frame draw path.
+            #[cfg(test)]
+            let bucket = if custom_first_control {
+                use crate::engine::graphics::materials::OpaqueBucket;
+                let custom = inst
+                    .material_instance
+                    .and_then(|id| self.materials.instance(id))
+                    .and_then(|record| self.materials.definition(record.definition))
+                    .is_some_and(|definition| {
+                        definition.custom.is_some()
+                            && (definition.static_program == r.material
+                                || definition.deformed_program == Some(r.material))
+                    });
+                if custom {
+                    OpaqueBucket::Near
+                } else {
+                    OpaqueBucket::Middle
+                }
+            } else {
+                bucket
+            };
             (
                 inst.stencil_ref,
-                !custom,
+                bucket,
                 r.material.0,
                 tex,
                 r.mesh.0,
@@ -437,6 +453,12 @@ mod tests {
         let instance = visuals
             .materials
             .upsert_source(cid(101), definition, vec![1.0]);
+        visuals
+            .set_surface_opaque_bucket(
+                definition,
+                crate::engine::graphics::materials::OpaqueBucket::Near,
+            )
+            .unwrap();
         (program, deformed, instance)
     }
 
@@ -466,7 +488,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_first_opaque_retains_batches_and_uses_the_active_program() {
+    fn opaque_bucket_retains_batches_and_uses_the_active_program() {
         let mut visuals = VisualWorld::default();
         let (program, deformed, material) = custom(&mut visuals);
         add(&mut visuals, 1, MaterialHandle::ANIME_MESH, None);
@@ -488,7 +510,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_first_opaque_preserves_clip_entry_source_content_and_exit() {
+    fn opaque_bucket_preserves_clip_entry_source_content_and_exit() {
         let mut visuals = VisualWorld::default();
         let (program, _, material) = custom(&mut visuals);
         let clip = add(&mut visuals, 1, MaterialHandle::ANIME_MESH, None);
@@ -526,7 +548,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_first_opaque_does_not_reorder_other_phases() {
+    fn opaque_bucket_does_not_reorder_other_phases() {
         let mut visuals = VisualWorld::default();
         let (program, _, material) = custom(&mut visuals);
         for phase in 0..4 {
@@ -554,5 +576,69 @@ mod tests {
         assert_eq!(visuals.cutout_order, [2, 3]);
         assert_eq!(visuals.overlay_order, [4, 5]);
         assert_eq!(visuals.transparent_single_draw_order, [6, 7]);
+    }
+
+    #[test]
+    fn opaque_bucket_orders_builtin_near_before_custom_far_and_invalidates_only_on_change() {
+        use crate::engine::graphics::materials::OpaqueBucket;
+        let mut visuals = VisualWorld::default();
+        let (program, _, custom_material) = custom(&mut visuals);
+        let custom_definition = visuals
+            .materials
+            .instance(custom_material)
+            .unwrap()
+            .definition;
+        visuals
+            .set_surface_opaque_bucket(custom_definition, OpaqueBucket::Far)
+            .unwrap();
+        let builtin = visuals
+            .materials
+            .register_builtin_definition(cid(200), visuals.materials.anime_definition);
+        visuals
+            .set_surface_opaque_bucket(builtin, OpaqueBucket::Near)
+            .unwrap();
+        let builtin_material =
+            visuals
+                .materials
+                .upsert_source(cid(201), builtin, AnimeShadingParams::default());
+        add(&mut visuals, 1, program, Some(custom_material));
+        add(&mut visuals, 2, MaterialHandle::ANIME_MESH, None);
+        add(
+            &mut visuals,
+            3,
+            MaterialHandle::ANIME_MESH,
+            Some(builtin_material),
+        );
+        visuals.prepare_draw_cache();
+        assert_eq!(visuals.draw_order, [2, 1, 0]);
+        assert!(
+            !visuals
+                .set_surface_opaque_bucket(builtin, OpaqueBucket::Near)
+                .unwrap()
+        );
+        assert!(!visuals.prepare_draw_cache());
+        assert!(
+            visuals
+                .set_surface_opaque_bucket(custom_definition, OpaqueBucket::Near)
+                .unwrap()
+        );
+        assert!(visuals.prepare_draw_cache());
+        assert_eq!(visuals.draw_order, [2, 0, 1]);
+        assert_eq!(
+            visuals
+                .materials
+                .definition(builtin)
+                .unwrap()
+                .static_program,
+            MaterialHandle::ANIME_MESH
+        );
+        assert_eq!(
+            visuals
+                .materials
+                .definition(visuals.materials.anime_definition)
+                .unwrap()
+                .opaque_bucket,
+            OpaqueBucket::Middle
+        );
     }
 }

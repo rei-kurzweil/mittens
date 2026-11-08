@@ -1,7 +1,7 @@
 import { pool_tile_material } from "./materials/pool_tiles.mms"
 
 // Shared ceramic finish and texture, with metre-based shader projection.
-let tiles = pool_tile_material()
+let tiles = pool_tile_material("far")
 export fn ship_tile_solid(position, size, color) {
     return T.position(position[0], position[1], position[2]).scale(size[0], size[1], size[2]) {
         R.cube() {

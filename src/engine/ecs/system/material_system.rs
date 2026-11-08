@@ -45,28 +45,52 @@ impl MaterialSystem {
         visuals: &mut VisualWorld,
         source: ComponentId,
     ) -> Result<MaterialDefinitionId, String> {
-        if let Some(id) = visuals.materials.source_definition(source) {
-            return Ok(id);
-        }
         let authored = world
             .get_component_by_id_as::<MaterialDefinitionComponent>(source)
             .ok_or("material references a missing definition")?;
+        if let Some(id) = visuals.materials.source_definition(source) {
+            let surface = visuals
+                .materials
+                .definition(id)
+                .is_some_and(|definition| definition.base == visuals.materials.surface_base);
+            if surface || authored.opaque_bucket.is_some() {
+                visuals
+                    .set_surface_opaque_bucket(id, authored.opaque_bucket.unwrap_or_default())?;
+            }
+            return Ok(id);
+        }
         if let Some(model) = authored.builtin {
-            return Ok(match model {
+            let template = match model {
                 ShadingModel::Anime => visuals.materials.anime_definition,
                 ShadingModel::Toon => visuals.materials.toon_definition,
-            });
+            };
+            let id = visuals
+                .materials
+                .register_builtin_definition(source, template);
+            visuals.set_surface_opaque_bucket(id, authored.opaque_bucket.unwrap_or_default())?;
+            return Ok(id);
         }
         let base = world
             .get_component_by_id_as::<MaterialBaseComponent>(authored.base)
             .ok_or("definition references a missing MaterialBase")?
             .0;
+        if authored.opaque_bucket.is_some()
+            && base != crate::engine::graphics::materials::MaterialBaseKind::Surface
+        {
+            return Err(
+                "opaque_bucket is supported only by MaterialBase::Surface definitions".into(),
+            );
+        }
         let custom = CustomMaterialDefinition::prepare(
             authored.fragment_uri.clone(),
             authored.fields.clone(),
             base,
         )?;
-        Ok(visuals.materials.register_custom_definition(source, custom))
+        let id = visuals.materials.register_custom_definition(source, custom);
+        if let Some(bucket) = authored.opaque_bucket {
+            visuals.set_surface_opaque_bucket(id, bucket)?;
+        }
+        Ok(id)
     }
 
     /// Select the nearest complete material declaration for every consumer.

@@ -213,14 +213,29 @@ fn spawn_tree_uninitialized(
             ));
         }
     };
-    let id = create_component(
-        world,
-        component,
-        tree.constructor.name.as_deref(),
-        &tree.constructor.arguments,
-        tree.deferred_callback,
-        tree.deferred_callback_effect_profile,
-    )?;
+    // An explicitly bucketed built-in definition owns metadata independently.
+    let isolated_builtin = component == "MaterialDefinition"
+        && tree
+            .initializer_calls
+            .iter()
+            .any(|call| call.name == "opaque_bucket");
+    let id = if isolated_builtin {
+        crate::scripting::material_definition_binding::create(
+            world,
+            tree.constructor.name.as_deref(),
+            &tree.constructor.arguments,
+            true,
+        )?
+    } else {
+        create_component(
+            world,
+            component,
+            tree.constructor.name.as_deref(),
+            &tree.constructor.arguments,
+            tree.deferred_callback,
+            tree.deferred_callback_effect_profile,
+        )?
+    };
 
     for call in &tree.initializer_calls {
         apply_call(world, id, component, &call.name, &call.arguments)?;
@@ -267,34 +282,7 @@ fn create_component(
             _ => crate::engine::graphics::materials::MaterialBaseKind::Surface,
         })),
         "MaterialDefinition" => {
-            if matches!(constructor, Some("anime" | "toon")) {
-                let model = if constructor == Some("anime") {
-                    crate::engine::ecs::component::ShadingModel::Anime
-                } else {
-                    crate::engine::ecs::component::ShadingModel::Toon
-                };
-                if let Some(existing) = world.all_components().find(|&id| {
-                    world
-                        .get_component_by_id_as::<MaterialDefinitionComponent>(id)
-                        .is_some_and(|definition| definition.builtin == Some(model))
-                }) {
-                    return Ok(existing);
-                }
-                return Ok(world.add_component(MaterialDefinitionComponent::builtin(model)));
-            }
-            let base = material_reference(args, 0)?;
-            if world
-                .get_component_by_id_as::<MaterialBaseComponent>(base)
-                .is_none()
-            {
-                return Err("MaterialDefinition requires a MaterialBase".into());
-            }
-            world.add_component(MaterialDefinitionComponent {
-                base,
-                fragment_uri: String::new(),
-                fields: Vec::new(),
-                builtin: None,
-            })
+            crate::scripting::material_definition_binding::create(world, constructor, args, false)?
         }
         "Material" => {
             let definition = material_reference(args, 0)?;
@@ -464,43 +452,7 @@ fn apply_call(
                 .push(uv);
         }
         "MaterialDefinition" => {
-            let definition = world
-                .get_component_by_id_as_mut::<MaterialDefinitionComponent>(id)
-                .ok_or("missing material definition")?;
-            if definition.builtin.is_some() {
-                return Err("built-in material definitions are read-only; create a custom definition to change its shader or schema".into());
-            }
-            match method {
-                "fragment" => definition.fragment_uri = string_arg(args, 0)?.to_owned(),
-                "input_f32" => {
-                    let mut fields = definition.fields.clone();
-                    fields.push(string_arg(args, 0)?.to_owned().into());
-                    crate::engine::graphics::custom_material::validate_fields(&fields)?;
-                    definition.fields = fields;
-                }
-                "inputs" => {
-                    let Some(mms::Value::RecordType(schema)) = args.first() else {
-                        return Err("MaterialDefinition.inputs requires a type-only record".into());
-                    };
-                    let fields = schema
-                        .0
-                        .iter()
-                        .map(|(name, tag)| {
-                            Ok(crate::engine::graphics::materials::MaterialInputField {
-                                name: name.clone(),
-                                ty:
-                                    crate::engine::graphics::materials::MaterialFieldType::from_tag(
-                                        *tag,
-                                    )
-                                    .map_err(|error| format!("material field '{name}': {error}"))?,
-                            })
-                        })
-                        .collect::<Result<Vec<_>, String>>()?;
-                    crate::engine::graphics::custom_material::validate_fields(&fields)?;
-                    definition.fields = fields;
-                }
-                _ => return Err(format!("unknown MaterialDefinition builder '{method}'")),
-            }
+            crate::scripting::material_definition_binding::apply(world, id, method, args)?
         }
         "Material" if matches!(method, "inputs" | "descriptor_set") => {
             let fields = match args.first() {
@@ -789,7 +741,7 @@ fn apply_node_properties(
     Ok(())
 }
 
-fn material_reference(args: &[mms::Value], index: usize) -> Result<ComponentId, String> {
+pub(super) fn material_reference(args: &[mms::Value], index: usize) -> Result<ComponentId, String> {
     match args.get(index) {
         Some(mms::Value::ComponentObject { id, .. }) => Ok(MittensHost::component_id(*id)),
         _ => Err("material constructor requires a live component reference".into()),
@@ -965,7 +917,7 @@ fn bool_arg(args: &[mms::Value], index: usize) -> Result<bool, String> {
     }
 }
 
-fn string_arg(args: &[mms::Value], index: usize) -> Result<&str, String> {
+pub(super) fn string_arg(args: &[mms::Value], index: usize) -> Result<&str, String> {
     args.get(index)
         .ok_or_else(|| format!("missing string argument {}", index + 1))
         .and_then(value_as_string)

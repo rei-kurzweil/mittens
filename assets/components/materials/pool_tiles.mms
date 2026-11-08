@@ -2,8 +2,9 @@
 // RGB tangent normals + alpha albedo: assets/textures/pool/white-tiles-surface.png
 import { f32 } from "types"
 
-export fn pool_tile_material() {
-    let definition = MaterialDefinition(MaterialBase())
+export fn pool_tile_material(bucket) {
+    if bucket == null { bucket = "middle" }
+    let definition = MaterialDefinition(MaterialBase()).opaque_bucket(bucket)
         .fragment("assets/shaders/pool-tiles.frag")
         .inputs({
             tile_size: f32

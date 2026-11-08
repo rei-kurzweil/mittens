@@ -20,6 +20,26 @@ pub enum MaterialBaseKind {
     PlanarReflective,
 }
 
+/// Coarse ordering within the regular opaque Surface pass, not visual layers.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum OpaqueBucket {
+    Near,
+    #[default]
+    Middle,
+    Far,
+}
+
+impl OpaqueBucket {
+    pub fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "near" => Ok(Self::Near),
+            "middle" => Ok(Self::Middle),
+            "far" => Ok(Self::Far),
+            _ => Err("opaque_bucket expects near, middle or far".into()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StandardMaterialInputs {
     pub color: bool,
@@ -240,6 +260,7 @@ pub struct MaterialBase {
 
 #[derive(Debug, Clone)]
 pub struct MaterialDefinition {
+    pub opaque_bucket: OpaqueBucket,
     pub custom: Option<std::sync::Arc<super::custom_material::CustomMaterialDefinition>>,
     pub name: &'static str,
     pub base: MaterialBaseId,
@@ -298,6 +319,7 @@ impl Default for MaterialRegistry {
         });
         let mut definitions = SlotMap::with_key();
         let anime_definition = definitions.insert(MaterialDefinition {
+            opaque_bucket: OpaqueBucket::Middle,
             custom: None,
             name: "Anime",
             base: surface_base,
@@ -313,6 +335,7 @@ impl Default for MaterialRegistry {
             },
         });
         let toon_definition = definitions.insert(MaterialDefinition {
+            opaque_bucket: OpaqueBucket::Middle,
             custom: None,
             name: "Toon",
             base: surface_base,
@@ -347,6 +370,56 @@ impl Default for MaterialRegistry {
 }
 
 impl MaterialRegistry {
+    /// A source owns ordering metadata but reuses the built-in GPU programs.
+    pub fn register_builtin_definition(
+        &mut self,
+        source: ComponentId,
+        template: MaterialDefinitionId,
+    ) -> MaterialDefinitionId {
+        if let Some(id) = self.source_definition(source) {
+            return id;
+        }
+        let definition = self.definitions[template].clone();
+        let id = self.definitions.insert(definition);
+        self.definition_sources.insert(source, id);
+        id
+    }
+
+    pub fn set_surface_opaque_bucket(
+        &mut self,
+        id: MaterialDefinitionId,
+        bucket: OpaqueBucket,
+    ) -> Result<bool, String> {
+        let definition = self
+            .definitions
+            .get_mut(id)
+            .ok_or("missing material definition")?;
+        if definition.base != self.surface_base {
+            return Err(
+                "opaque_bucket is supported only by MaterialBase::Surface definitions".into(),
+            );
+        }
+        let changed = definition.opaque_bucket != bucket;
+        definition.opaque_bucket = bucket;
+        Ok(changed)
+    }
+
+    pub fn opaque_bucket(
+        &self,
+        instance: Option<MaterialInstanceId>,
+        program: MaterialHandle,
+    ) -> OpaqueBucket {
+        instance
+            .and_then(|id| self.instance(id))
+            .and_then(|record| self.definition(record.definition))
+            .filter(|definition| {
+                definition.base == self.surface_base
+                    && (definition.static_program == program
+                        || definition.deformed_program == Some(program))
+            })
+            .map_or(OpaqueBucket::Middle, |definition| definition.opaque_bucket)
+    }
+
     pub fn resolved_capabilities(
         &self,
         instance: Option<MaterialInstanceId>,
@@ -493,6 +566,7 @@ impl MaterialRegistry {
         );
         let defaults = vec![0.0; parameter_schema.scalar_count].into();
         let id = self.definitions.insert(MaterialDefinition {
+            opaque_bucket: OpaqueBucket::Middle,
             capabilities: MaterialCapabilities {
                 emission: if custom.base == MaterialBaseKind::ExtractedEmissive {
                     MaterialEmission::ShaderProvided

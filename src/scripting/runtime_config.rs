@@ -9,6 +9,8 @@ use meow_meow_script as mms;
 mod builtin_api_config;
 #[path = "interaction_runtime_config.rs"]
 mod interaction_runtime_config;
+#[path = "material_runtime_config.rs"]
+mod material_runtime_config;
 
 #[path = "runtime_bindings.rs"]
 mod runtime_bindings;
@@ -1309,63 +1311,8 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         method(vec![mms::ValueType::U32], mms::ValueType::Null),
                     );
                 }
-                "MaterialBase" => {
-                    host_constructor(component, canonical, "new", no_args());
-                    host_constructor(component, canonical, "extracted_emissive", no_args());
-                    host_constructor(component, canonical, "planar_reflective", no_args());
-                }
-                "MaterialDefinition" => {
-                    host_constructor(component, canonical, "anime", no_args());
-                    host_constructor(component, canonical, "toon", no_args());
-                    host_constructor(
-                        component,
-                        canonical,
-                        "new",
-                        component_signature([mms::ValueType::Component]),
-                    );
-                    host_builder_call(component, canonical, "fragment", strings(1));
-                    host_builder_call(component, canonical, "input_f32", strings(1));
-                    host_builder_call(
-                        component,
-                        canonical,
-                        "inputs",
-                        component_signature([mms::ValueType::RecordType]),
-                    );
-                }
-                "Material" => {
-                    host_constructor(
-                        component,
-                        canonical,
-                        "new",
-                        component_signature([mms::ValueType::Component]),
-                    );
-                    host_builder_call(
-                        component,
-                        canonical,
-                        "inputs",
-                        component_signature([mms::ValueType::Table]),
-                    );
-                    host_builder_call(
-                        component,
-                        canonical,
-                        "descriptor_set",
-                        component_signature([mms::ValueType::Table]),
-                    );
-                    host_method(
-                        component,
-                        canonical,
-                        "set_input",
-                        method(
-                            vec![mms::ValueType::String, mms::ValueType::Any],
-                            mms::ValueType::Null,
-                        ),
-                    );
-                    host_method(
-                        component,
-                        canonical,
-                        "get_input",
-                        method(vec![mms::ValueType::String], mms::ValueType::Any),
-                    );
+                "MaterialBase" | "MaterialDefinition" | "Material" => {
+                    material_runtime_config::register(component, canonical);
                 }
                 "Amplitude" => {
                     component

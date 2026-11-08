@@ -6,7 +6,7 @@ import { f32, vec3 } from "types"
 let shared = {definition = null}
 export fn anime_directional_fill_definition() {
     if shared.definition == null {
-        shared.definition = MaterialDefinition(MaterialBase())
+        shared.definition = MaterialDefinition(MaterialBase()).opaque_bucket("near")
             .fragment("assets/shaders/anime-directional-fill.frag")
             .inputs({
                 shade_color: vec3

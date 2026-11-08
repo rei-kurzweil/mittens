@@ -2,7 +2,7 @@ use super::Component;
 use super::ShadingModel;
 use crate::engine::ecs::ComponentId;
 use crate::engine::graphics::materials::{
-    MaterialBaseKind, MaterialInputField, MaterialParameterSchema,
+    MaterialBaseKind, MaterialInputField, MaterialParameterSchema, OpaqueBucket,
 };
 use std::collections::BTreeMap;
 
@@ -11,6 +11,7 @@ pub struct MaterialBaseComponent(pub MaterialBaseKind);
 
 #[derive(Debug)]
 pub struct MaterialDefinitionComponent {
+    pub opaque_bucket: Option<OpaqueBucket>,
     pub base: ComponentId,
     pub fragment_uri: String,
     pub fields: Vec<MaterialInputField>,
@@ -32,6 +33,7 @@ impl MaterialDefinitionComponent {
             ShadingModel::Toon => MaterialParameterSchema::default(),
         };
         Self {
+            opaque_bucket: None,
             base: ComponentId::default(),
             fragment_uri: String::new(),
             fields: schema
@@ -44,6 +46,11 @@ impl MaterialDefinitionComponent {
                 .collect(),
             builtin: Some(model),
         }
+    }
+
+    pub fn with_opaque_bucket(mut self, bucket: OpaqueBucket) -> Self {
+        self.opaque_bucket = Some(bucket);
+        self
     }
 
     pub fn parameter_schema(&self) -> MaterialParameterSchema {
