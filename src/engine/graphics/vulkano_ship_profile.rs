@@ -172,6 +172,7 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     }
     let camera_replay = ship_motion::CameraReplay::from_env()?;
     let mut profile = ProfileState::new(&context)?;
+    profile.material_diagnostic.select_truck(&scene);
     if matches!(case.as_str(), "avatar_hidden" | "environment_hidden") {
         profile.suppressed_meshes = scene
             .visuals
@@ -384,6 +385,7 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
                 "eye0_view":scene.visuals.visual_camera(crate::engine::graphics::CameraTarget::Xr).unwrap().eyes[0].view,
                 "instance_buffer_uploads":p.instance_buffer_uploads.get(),
                 "world_component_count":scene.world.component_count(),"motion_state":motion_state,"update_profile":if update_timings {Some(crate::engine::update_cpu_profile::snapshot())} else {None},"gpu_pass_ms":p.gpu_pass_ms()?,
+                "opaque_statistics":p.material_diagnostic.statistics()?,
                 "retained_uploads":uploader.renderer.retained_uploads.borrow().stats.delta(uploads_before),
                 "command_reuse":uploader.renderer.command_reuse.stats.delta(commands_before),
                 "material_cache_counts":material_delta,
@@ -529,6 +531,7 @@ fn profile_ship_stereo() -> Result<(), Box<dyn Error>> {
     let result = serde_json::json!({"bypassed_callbacks":bypassed_callbacks,"update_stages_ms":update_stages,"hidden_subtree":hidden_subtree,"camera_reference":camera_replay.as_ref().map(|r|&r.path),"gpu_pass_ms":gpu_passes,"source":source_path,"paired_gpu":paired_gpu,"case":case,"room":room,"motion":motion,"cache_counts":cache_counts,"material_binding_limit":material_binding_limit(),"frames":frames,"warmup":warmup,"extent":extent,"msaa":4,
         "gpu":uploader.renderer.gpu_device_name(),"components":scene.world.all_components().count(),
         "instances":scene.visuals.instances().len(),"timing":timing,"cpu_record_stages_ms":cpu_record_stages,"sample_draws":rows.last().unwrap()["draws"],
+        "material_diagnostic":uploader.renderer.profile.as_ref().unwrap().material_diagnostic.description(),
         "counters":uploader.renderer.perf_counters().saturating_delta(counters_start.unwrap())});
     println!("SHIP_PROFILE_RESULT {result}");
     if let Some(path) = std::env::var_os("SHIP_PROFILE_OUTPUT") {

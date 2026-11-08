@@ -39,6 +39,7 @@ pub(super) struct ProfileState {
     pub(super) completion: Option<Box<dyn FnOnce() -> Result<(), Box<dyn Error>>>>,
     pool: Option<Arc<QueryPool>>,
     gpu_passes: Option<gpu_passes::GpuPassQueries>,
+    pub(super) material_diagnostic: material_diagnostic::MaterialDiagnostic,
     timestamp_period: f64,
     timestamp_mask: u64,
     draws: BTreeMap<String, DrawCounts>,
@@ -108,6 +109,7 @@ impl ProfileState {
             instance_buffer_uploads: std::cell::Cell::new([0; 2]),
             completion: None,
             gpu_passes: gpu_passes::GpuPassQueries::new(context)?,
+            material_diagnostic: material_diagnostic::MaterialDiagnostic::new(context)?,
             pool,
             timestamp_period: physical.properties().timestamp_period as f64,
             timestamp_mask: if bits.unwrap_or(64) == 64 {
@@ -709,3 +711,6 @@ mod ship_motion;
 
 #[path = "vulkano_profile_gpu_passes.rs"]
 mod gpu_passes;
+
+#[path = "vulkano_profile_material_diagnostic.rs"]
+mod material_diagnostic;

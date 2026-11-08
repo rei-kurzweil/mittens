@@ -152,6 +152,10 @@ impl VulkanoState {
             profile.gpu_pass_timestamp(&mut cbb, eye, 0)?;
         }
         let mut blurred_bloom: Option<Arc<ImageView>> = None;
+        #[cfg(test)]
+        if let Some(profile) = self.profile.as_ref() {
+            profile.material_diagnostic.reset(&mut cbb, eye)?;
+        }
         // Single dynamic-rendering scope. This keeps MSAA resolve straightforward.
         cbb.begin_rendering(rendering_info_clear_color_and_depth)?;
 
@@ -233,6 +237,15 @@ impl VulkanoState {
         }
         profile_cpu_stage!(self, cpu_stage_clock, "outline_record");
 
+        #[cfg(test)]
+        let diagnostic_ops = if let Some(profile) = self.profile.as_ref() {
+            profile.material_diagnostic.begin(&mut cbb, eye)?;
+            profile.material_diagnostic.reorder(opaque_ops, visual_world, opaque_instances)
+        } else {
+            None
+        };
+        #[cfg(test)]
+        let opaque_ops = diagnostic_ops.as_deref().unwrap_or(opaque_ops);
         self.record_opaque_draws(
             &mut cbb,
             visual_world,
@@ -245,6 +258,7 @@ impl VulkanoState {
 
         #[cfg(test)]
         if let Some(profile) = self.profile.as_ref() {
+            profile.material_diagnostic.end(&mut cbb, eye)?;
             profile.gpu_pass_timestamp(&mut cbb, eye, 3)?;
         }
         profile_cpu_stage!(self, cpu_stage_clock, "opaque_record");

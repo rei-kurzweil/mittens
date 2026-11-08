@@ -37,6 +37,11 @@ end-to-end measurement.
 - [Material binding variants and retention](material-binding-variants.md): fixed
   legacy bands, a standard Surface Grid definition and a measured cache-limit
   fix eliminating 36 recurring material snapshot allocations per frame.
+- [Custom Anime GPU attribution](../../custom-material-gpu-profile.md): clean
+  ordering controls identify extra opaque fragment work when numeric material
+  IDs move the truck later. Moving it early reduces 15.13 to 12.85 ms GPU;
+  production ordering remains unchanged. Includes counters, interrupted-run
+  exclusions and the next general opaque-ordering slice.
 - [Reusable primary command buffers](reusable-primary-commands.md): retained
   eligible graphics commands with continuously updated camera/light/joint data;
   CPU recording about 7 -> 1 ms, 18.41 ms stationary and 21.55 ms moving-head

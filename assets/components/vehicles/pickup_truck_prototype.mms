@@ -4,14 +4,14 @@ import { pickup_cab_interior } from "./pickup_cab_interior.mms"
 import { pickup_driving } from "./pickup_driving.mms"
 import { ship_solid, ship_lamp, ship_label } from "../ship_parts.mms"
 import { pickup_suspension } from "./pickup_suspension.mms"
-import { pickup_anime_material } from "../materials/pickup_anime.mms"
+import { pickup_lambert_toon_material } from "../materials/pickup_lambert_toon.mms"
 
 // pickup_truck is the chassis transform driven by Velocity and used for mounting.
 // Destroyable retained body panels; suspension/wheels remain separate branches.
 // Parked pickup, front toward -Z. Open cargo bed and a two-seat cab.
 fn make_pickup(color, cargo) {
     if color == null { color = [0.59, 0.52, 0.42] }
-    let finish = pickup_anime_material()
+    let finish = pickup_lambert_toon_material()
     let suspensions = [
         pickup_suspension("fl",-0.96,-1.65,0.40,finish),
         pickup_suspension("fr", 0.96,-1.65,0.40,finish),

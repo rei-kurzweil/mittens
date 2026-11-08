@@ -208,3 +208,84 @@ The typed-table selector work is explicitly independent and still proposed.
 All settings callbacks remain enabled; their combined cost is now 0.117 ms/frame,
 so the old 3 ms settings-bypass opportunity must not be counted again. No live
 OpenXR/compositor/ALVR or full tracked-ship 45 FPS claim follows from these runs.
+
+### LambertToon truck material experiment (2026-11-07)
+
+New opt-in custom diffuse variant; global Anime, architecture and characters
+remain unchanged. Matched local cafeteria captures at 1920/eye, MSAA 4x,
+bloom/emission, 240 warmup / 480 samples:
+
+| Motion/run | Finish | CPU update ms | GPU graphics ms | Elapsed mean ms | Elapsed p95 ms |
+|---|---|---:|---:|---:|---:|
+| walking, r1 | Anime | 5.678 | 11.221 | 18.238 | 20.371 |
+| walking, r1 | LambertToon | 5.745 | 11.141 | 18.203 | 20.358 |
+| driving, r1 | Anime | 6.844 | 13.131 | 21.345 | 23.144 |
+| driving, r1 | LambertToon | 6.850 | 14.800 | 23.039 | 24.710 |
+| driving, r2 | Anime | 6.872 | 13.419 | 21.677 | 23.670 |
+| driving, r2 | LambertToon | 6.734 | 15.317 | 23.417 | 25.366 |
+
+R2 reverses driving order and enables GPU pass queries on both materials.
+Driving regresses about 1.7–1.9 ms in GPU opaque rendering; CPU stays similar,
+walking stays similar. This compares built-in Anime with custom LambertToon,
+so cosine weighting alone is not established as the cause. It is not a renderer
+optimization or a live XR 45 FPS result. Draw counts, camera and motion match;
+custom material adds two definition/material components. Detailed provenance,
+raw capture names and follow-up controls are in the
+[material experiment](../../lambert-toon-truck-material-experiment.md).
+
+### Same-custom-pipeline binary/Lambert control (2026-11-07)
+
+Driving at 1920/eye, MSAA 4x, bloom/emission, GPU pass timestamps,
+240 warmup/480 samples. Binary → Lambert → Lambert → binary changes only the
+accumulation expression in the same custom shader/definition. GPU means:
+
+| Calculation/path | GPU graphics ms | CPU update ms | Elapsed mean ms |
+|---|---:|---:|---:|
+| Custom binary gate (2 runs) | 15.896 | 6.773 | 24.059 |
+| Custom Lambert (2 runs) | 15.690 | 6.702 | 23.747 |
+| Built-in Anime, fresh reference | 12.326 | 6.848 | 20.521 |
+
+No evidence of a cosine-weighting slowdown: 0.205 ms mean difference is below
+within-variant run spread. Binary custom shading also retains the gap from
+built-in Anime. Pipeline/shader configuration remains to be isolated; branch
+prediction is not an established explanation. All camera/motion/draw states
+match. Full per-run/p95 data, caveats and source hashes are in the
+[experiment report](../../lambert-toon-truck-material-experiment.md#same-custom-pipeline-control-2026-11-07).
+
+### Custom Anime: draw-order/overdraw attribution, clean rerun (2026-11-07)
+
+The user reported accidental GPU use during the first ordering captures. Those
+raw files are marked superseded. The complete fresh eight-case `r2-clean` matrix
+uses 1920/eye, MSAA 4x, bloom/emission, 240 warmup / 480 samples, GPU pass timestamps
+and opaque pipeline statistics throughout. Native ordering: 15.129 ms GPU custom
+versus 13.240 ms built-in. Moving only the custom body early reduces it to
+12.845 ms; moving built-in late increases it to 14.670 ms. Input vertices and
+all camera/motion/draw counts match; custom early reduces fragment invocations
+25.428M → 21.023M. Native sorting moves the body from op 67 to 287 when its
+material handle changes. Draw-order/overdraw is a major cause of the apparent
+custom-material cost, not evidence of a Lambert multiply penalty.
+
+A geometry-key control gives 13.023 ms custom / 12.735 ms built-in; its per-batch
+fingerprints and fragment counts still differ, so the remaining gap is not an
+isolated shader cost. Production ordering remains unchanged. Full CPU/GPU,
+opaque counters, elapsed/p95, limitations and follow-up design are in the
+[focused GPU report](../../custom-material-gpu-profile.md). Raw clean capture
+names contain `custom-order` and `r2-clean`; the manifest retains hashes and the
+runner. No live headset FPS claim follows from these offscreen controls.
+
+### Reverse-order repeat of custom Anime ordering matrix (2026-11-07)
+
+At the user's request, repeated all eight cases once, reversing execution order
+and retaining the identical executable, settings, 240 warmup/480 samples and
+GPU statistics/timestamps. Two clean captures now exist per case; no superseded
+r1 data is reused.
+
+- First clean matrix: custom native → early GPU 15.129 → 12.845 ms; fragments 25.428M → 21.023M. Built-in native → late GPU 13.240 → 14.670 ms.
+- Reverse-order repeat: custom native → early GPU 16.353 → 13.030 ms; fragments 27.114M → 21.424M. Built-in native → late GPU 13.413 → 15.243 ms.
+
+Full GPU median/p95, CPU update, elapsed mean/p95, counts and caveats are appended
+to the [focused report](../../custom-material-gpu-profile.md#second-complete-clean-matrix-reversed-order).
+Raw repeat stems end `r3-clean-2026-11-07`, with execution/provenance in
+`custom-anime-clean-repeat-reversed-2026-11-07.manifest.json`. Both matrices are
+retained separately; startup-dependent fragment/order variation prevents treating
+this as a perfect shader microbenchmark or a live XR frame-rate guarantee.

@@ -122,12 +122,17 @@ impl RendererContext {
             .ok_or(
                 "no compatible Vulkan graphics/compute device (including OpenXR GPU requirements)",
             )?;
+        // Opt-in test instrumentation; normal renderer builds keep this disabled.
+        let profile_statistics = cfg!(test)
+            && std::env::var("SHIP_PROFILE_MATERIAL_DIAGNOSTIC").as_deref() == Ok("1")
+            && physical_device.supported_features().pipeline_statistics_query;
         let (device, mut queues) = Device::new(
             physical_device,
             DeviceCreateInfo {
                 enabled_extensions: device_extensions,
                 enabled_features: DeviceFeatures {
                     dynamic_rendering: true,
+                    pipeline_statistics_query: profile_statistics,
                     ..Default::default()
                 },
                 queue_create_infos: vec![QueueCreateInfo {

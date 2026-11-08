@@ -3,7 +3,7 @@ import { ship_vehicle_motion } from "./ship_vehicle_motion.mms"
 import { pickup_driving } from "./pickup_driving.mms"
 import { pickup_model_suspension_bindings, bind_pickup_model_suspension } from "./pickup_model_suspension.mms"
 import { pickup_model_colliders } from "./pickup_model_colliders.mms"
-import { pickup_anime_material } from "../materials/pickup_anime.mms"
+import { pickup_lambert_toon_material } from "../materials/pickup_lambert_toon.mms"
 import { pickup_dashboard_gauges } from "./pickup_dashboard_gauges.mms"
 import { pickup_sliding_colliders } from "./pickup_sliding_colliders.mms"
 import { pickup_ride_height, pickup_ride_transition } from "./pickup_ride_height.mms"
@@ -19,7 +19,7 @@ fn make_pickup(color, cargo, gravity_enabled) {
     }
     let model=GLTF.new("assets/models/mitten_pickup.glb") {
         name="pickup_model"
-        pickup_anime_material()
+        pickup_lambert_toon_material()
         Selectable.off()
     }
     on(model,"GLTFInitialized",fn(event) {
