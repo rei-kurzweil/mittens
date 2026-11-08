@@ -1,6 +1,7 @@
 # Vehicle example opaque bucket adoption
 
-Status: example changes intentionally uncommitted, pending the user's VR smoke test.
+Status: user reports improved VR performance and 90 FPS in Mittens Corp;
+vehicle/example adoption checkpointed before scoped-invalidation work.
 
 Implementation: `eb5cafc2`. API/benchmark documentation: `acf5c419`.
 This follow-up updates shared vehicle fixtures rather than duplicating changes
@@ -51,4 +52,6 @@ appearance along with frame time. Other affected public scenes include
 `examples/sakura-drone-conversion-desktop.mms`, `examples/toon-outline-bisket.mms`
 and `examples/car.mms`.
 
-Keep these changes uncommitted until that VR check succeeds, as requested.
+The user reported the Mittens Corp VR improvement after these changes. Broader
+scene-specific visual review can continue; this adoption is checkpointed separately
+from the renderer invalidation changes.
