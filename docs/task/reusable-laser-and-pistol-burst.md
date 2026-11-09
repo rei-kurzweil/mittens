@@ -80,16 +80,18 @@ pistol.use_end()
 ```
 
 `use_start` accepts a fresh trigger press when idle. Semi (the default) fires
-one shot; Burst fires three at 0, 33.3 and 66.7 ms, with increasing deterministic
+one shot; Burst fires three at 0, 31.75 and 63.49 ms, with increasing deterministic
 spread. Semi plays `laser_machine_pistol_A.0.wav`; Burst plays
-`laser_machine_pistol_C.0.wav`. Both retain the 450 ms firing lock.
+`laser_machine_pistol_C.0.wav`. Semi has a 279.50 ms firing lock (another 15%
+rate increase after the earlier 40% increase); Burst has a 428.57 ms lock,
+with both its shot spacing and repeat cadence increased by 5%.
 Holding the trigger does not repeat either mode.
 Each shot samples its aim frame's current world pose and restarts the flash.
 `use_end()` cancels pending shots and hides the flash; launched projectiles finish
 independently. Release/regrab cannot bypass a finite clip's lock.
 
-Auto runs at 10 shots/s, spaced 100 ms apart, instead of Burst's unchanged
-33.3 ms spacing. Its native three-shot loop lasts 300 ms,
+Auto runs at 9.2 shots/s, spaced 108.70 ms apart (15% faster than the previous
+8 shots/s). Its native three-shot loop lasts 326.09 ms,
 with no pause between cycles. Trigger release/drop pauses it immediately.
 Every visual `AutoCycle` event plays `laser_machine_pistol_B.0.wav`; keeping this
 outside audio lookahead prevents scheduling an extra recording after release.

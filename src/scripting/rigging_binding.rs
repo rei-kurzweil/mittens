@@ -12,6 +12,7 @@ pub(crate) fn register(builder: &mut mms::RuntimeSpecBuilder<MittensBinding>) {
                 for (name, args) in [
                     ("joints", vec![mms::ValueType::Any]),
                     ("give_automatic_weights", vec![]),
+                    ("capture_rest_pose", vec![]),
                 ] {
                     c.host_constructor(
                         name,
@@ -33,6 +34,7 @@ pub(crate) fn register(builder: &mut mms::RuntimeSpecBuilder<MittensBinding>) {
                 }
                 for (name, result) in [
                     ("give_automatic_weights", mms::ValueType::Null),
+                    ("capture_rest_pose", mms::ValueType::Null),
                     ("status", mms::ValueType::String),
                 ] {
                     c.method(
@@ -78,7 +80,7 @@ pub(crate) fn create(
     args: &[mms::Value],
 ) -> Result<ComponentId, String> {
     match (component, constructor) {
-        ("Armature", None | Some("give_automatic_weights")) => {
+        ("Armature", None | Some("give_automatic_weights" | "capture_rest_pose")) => {
             Ok(world.add_component(ArmatureComponent::default()))
         }
         ("Armature", Some("joints")) => {
@@ -106,6 +108,7 @@ pub(crate) fn apply(
     match method {
         "joints" => armature.joints = joints,
         "give_automatic_weights" => armature.give_automatic_weights(),
+        "capture_rest_pose" => armature.capture_rest_pose(),
         _ => return Err(format!("unknown Armature builder '{method}'")),
     }
     Ok(())

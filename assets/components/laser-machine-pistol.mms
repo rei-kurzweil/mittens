@@ -9,8 +9,10 @@ export fn laser_machine_pistol(options) {
     if options["name"] != null { label = options.name }
     let beats_per_second = 2.0
     if options["beats_per_second"] != null { beats_per_second = options.beats_per_second }
-    let shot_interval = 2.5 / 75.0
-    let auto_shot_interval = 1.0 / 10.0 // 10 shots per second; Burst keeps its faster spacing
+    let shot_interval = (2.5 / 75.0) / 1.05
+    let burst_interval = 0.45 / 1.05 // 5% faster spacing and repeat cadence
+    let semi_shot_interval = 0.45 / (1.4 * 1.15) // Another 15% faster Semi cadence
+    let auto_shot_interval = 1.0 / (8.0 * 1.15) // Another 15% faster Auto cadence
     let device_state = { firing = false cancelled = false trigger_held = false mode = "semi" burst_mode = "semi" bursts_fired = 0 shots_fired = 0 ammunition = null user = null requested_user = null tool = null }
     // A null limit preserves unlimited ammunition for existing callers.
     if options["ammunition"] != null {
@@ -50,19 +52,19 @@ export fn laser_machine_pistol(options) {
         if device_state.ammunition == null { emit_shot(projectile,aim) }
         else { emit_data(completion,event) }
     }
-    let semi = Animation.paused().length(0.45 * beats_per_second) {
+    let semi = Animation.paused().length(semi_shot_interval * beats_per_second) {
         name = label + "_semi"
         Keyframe.at(0.0) { single_sound.play() }
         Keyframe.at(0.0) { request_shot(first, first_aim, "FireFirst") }
-        Keyframe.at(0.45 * beats_per_second) { emit_data(completion, "BurstComplete") }
+        Keyframe.at(semi_shot_interval * beats_per_second) { emit_data(completion, "BurstComplete") }
     }
-    let burst = Animation.paused().length(0.45 * beats_per_second) {
+    let burst = Animation.paused().length(burst_interval * beats_per_second) {
         name = label + "_burst"
         Keyframe.at(0.0) { sound.play() }
         Keyframe.at(0.0) { request_shot(first, first_aim, "FireFirst") }
         Keyframe.at(shot_interval * beats_per_second) { request_shot(second, second_aim, "FireSecond") }
         Keyframe.at(2.0 * shot_interval * beats_per_second) { request_shot(third, third_aim, "FireThird") }
-        Keyframe.at(0.45 * beats_per_second) { emit_data(completion, "BurstComplete") }
+        Keyframe.at(burst_interval * beats_per_second) { emit_data(completion, "BurstComplete") }
     }
     let automatic = Animation.paused().length(3.0 * auto_shot_interval * beats_per_second) {
         name = label + "_auto"

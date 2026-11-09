@@ -162,6 +162,8 @@ pub struct SpringBoneComponent {
     pub root: Option<ComponentRef>,
     pub center: Option<ComponentRef>,
     pub enabled: bool,
+    /// Translate rigid joints with unconstrained springs instead of swinging fixed bones.
+    pub allow_stretch: bool,
     pub virtual_end_length_ratio: Option<f32>,
     pub stiffness: f32,
     pub drag_force: f32,
@@ -180,6 +182,7 @@ impl SpringBoneComponent {
             root: None,
             center: None,
             enabled: true,
+            allow_stretch: false,
             virtual_end_length_ratio: None,
             stiffness: 1.0,
             drag_force: 0.4,
@@ -205,6 +208,10 @@ impl SpringBoneComponent {
     }
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
+        self
+    }
+    pub fn allow_stretch(mut self, enabled: bool) -> Self {
+        self.allow_stretch = enabled;
         self
     }
     pub fn virtual_end_length_ratio(mut self, ratio: f32) -> Self {
@@ -276,6 +283,9 @@ impl Component for SpringBoneComponent {
         }
         if !self.enabled {
             out = out.with_call("enabled", vec![b(false)]);
+        }
+        if self.allow_stretch {
+            out = out.with_call("allow_stretch", vec![b(true)]);
         }
         if let Some(r) = self.virtual_end_length_ratio {
             out = out.with_call("virtual_end_length_ratio", vec![num(r as f64)]);
@@ -438,6 +448,9 @@ pub fn export_secondary_motion_sidecar(
         }
         if !chain.enabled {
             text.push_str(".enabled(false)");
+        }
+        if chain.allow_stretch {
+            text.push_str(".allow_stretch(true)");
         }
         if let Some(r) = chain.virtual_end_length_ratio {
             text.push_str(&format!(".virtual_end_length_ratio({r})"));

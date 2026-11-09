@@ -150,6 +150,8 @@ fn sakura_pistol_grab_gates_burst_and_release_only_stops_weapon_flash() {
     let mut shown = std::collections::HashSet::new();
     let mut sounds = Vec::new();
     let mut casts = Vec::new();
+    let mut xr_settings = crate::engine::ecs::system::XrSettingsSystem::default();
+    let mut graphics_settings = crate::engine::ecs::system::GraphicsSettingsSystem::default();
     for step in 0..100 {
         let mut executor =
             crate::engine::ecs::system::animation_keyframe_evaluator::SessionCallbackExecutor {
@@ -203,8 +205,15 @@ fn sakura_pistol_grab_gates_burst_and_release_only_stops_weapon_flash() {
         for event in rx.drain_ready_events() {
             rx.dispatch_event_handlers(&mut world, &event);
         }
-        let output = session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
-        assert!(output.errors.is_empty(), "{:?}", output.errors);
+        let mut callback_intents = Vec::new();
+        let host =
+            crate::scripting::host::MittensHost::new(&mut world, &mut queue, &mut callback_intents)
+                .with_rx(&mut rx)
+                .with_render_assets(&mut assets)
+                .with_xr_settings(&mut xr_settings)
+                .with_graphics_settings(&mut graphics_settings);
+        let errors = session.service_callbacks_with_host(host);
+        assert!(errors.is_empty(), "{errors:?}");
         if step == 65 {
             let busy = deliver_scene_event(
                 &mut world,
@@ -738,6 +747,8 @@ fn sakura_pistol_modes_have_continuous_auto_and_independent_triggers() {
             animation.register_keyframe(&mut world, id);
         }
     }
+    let mut xr_settings = crate::engine::ecs::system::XrSettingsSystem::default();
+    let mut graphics_settings = crate::engine::ecs::system::GraphicsSettingsSystem::default();
     let mut sounds = Vec::new();
     let mut shot_times = Vec::new();
     let mut consume = |animation: &mut AnimationSystem, intents: Vec<IntentValue>, step: usize| {
@@ -792,7 +803,7 @@ fn sakura_pistol_modes_have_continuous_auto_and_independent_triggers() {
             consume(&mut animation, intents, step);
         }
         // Hold Semi for more than its cooldown, then try Burst.
-        if step == 140 || step == 260 {
+        if step == 140 || step == 280 {
             deliver_scene_event(
                 &mut world,
                 &mut rx,
@@ -818,6 +829,29 @@ fn sakura_pistol_modes_have_continuous_auto_and_independent_triggers() {
                 &mut queue,
                 mode,
                 click(mode),
+            );
+            let intents = deliver_scene_event(
+                &mut world,
+                &mut rx,
+                &mut session,
+                &mut assets,
+                &mut queue,
+                ComponentId::default(),
+                down(ControllerHand::Right),
+            );
+            consume(&mut animation, intents, step);
+        }
+        // A new Semi press 290 ms later allows a frame for completion delivery
+        // after the 279.5 ms lock; the previous 321 ms lock would still reject it.
+        if step == 198 {
+            deliver_scene_event(
+                &mut world,
+                &mut rx,
+                &mut session,
+                &mut assets,
+                &mut queue,
+                ComponentId::default(),
+                up(ControllerHand::Right),
             );
             let intents = deliver_scene_event(
                 &mut world,
@@ -857,19 +891,28 @@ fn sakura_pistol_modes_have_continuous_auto_and_independent_triggers() {
         for event in rx.drain_ready_events() {
             rx.dispatch_event_handlers(&mut world, &event);
         }
-        let output = session.service_callbacks(&mut world, &mut rx, Some(&mut assets), &mut queue);
-        assert!(output.errors.is_empty(), "{:?}", output.errors);
-        consume(&mut animation, output.intents, step);
+        // This full scene also drains settings-panel callbacks; lend it the
+        // same services as scene startup rather than an input-only host.
+        let mut callback_intents = Vec::new();
+        let host =
+            crate::scripting::host::MittensHost::new(&mut world, &mut queue, &mut callback_intents)
+                .with_rx(&mut rx)
+                .with_render_assets(&mut assets)
+                .with_xr_settings(&mut xr_settings)
+                .with_graphics_settings(&mut graphics_settings);
+        let errors = session.service_callbacks_with_host(host);
+        assert!(errors.is_empty(), "{errors:?}");
+        consume(&mut animation, callback_intents, step);
     }
     let automatic: Vec<_> = shot_times.iter().copied().filter(|&t| t < 0.5).collect();
     assert_eq!(
         automatic.len(),
         5,
-        "continuous 10 shots/s Auto: {shot_times:?}"
+        "continuous 9.2 shots/s Auto: {shot_times:?}"
     );
     for pair in automatic.windows(2) {
         assert!(
-            (0.095..=0.105001).contains(&(pair[1] - pair[0])),
+            (0.104999..=0.115001).contains(&(pair[1] - pair[0])),
             "no gap at a cycle boundary: {automatic:?}"
         );
     }
@@ -880,13 +923,21 @@ fn sakura_pistol_modes_have_continuous_auto_and_independent_triggers() {
     assert_eq!(
         shot_times
             .iter()
-            .filter(|&&t| (0.7..1.3).contains(&t))
+            .filter(|&&t| (0.7..0.985).contains(&t))
             .count(),
         1,
         "Semi must not repeat while held"
     );
     assert_eq!(
-        shot_times.iter().filter(|&&t| t >= 1.3).count(),
+        shot_times
+            .iter()
+            .filter(|&&t| (0.7..1.4).contains(&t))
+            .count(),
+        2,
+        "Semi accepts a new press at its faster cadence"
+    );
+    assert_eq!(
+        shot_times.iter().filter(|&&t| t >= 1.4).count(),
         3,
         "Burst fires three shots"
     );
@@ -902,7 +953,7 @@ fn sakura_pistol_modes_have_continuous_auto_and_independent_triggers() {
             clip.uri,
             if step < 100 {
                 "assets/audio/tool/laser_machine_pistol_B.0.wav"
-            } else if step < 260 {
+            } else if step < 280 {
                 "assets/audio/tool/laser_machine_pistol_A.0.wav"
             } else {
                 "assets/audio/tool/laser_machine_pistol_C.0.wav"

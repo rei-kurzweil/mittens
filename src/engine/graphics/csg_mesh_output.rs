@@ -1,5 +1,7 @@
-//! Preserve a conforming surface when f64 cut faces become collinear in f32.
+//! Preserve a conforming surface and per-face UV charts when f64 cut faces
+//! become collinear in f32.
 //! This repairs generated output only; it never closes an authored open mesh.
+use super::CpuVertex;
 use std::collections::HashMap;
 type Face = [usize; 3];
 type Edge = (usize, usize);
@@ -41,8 +43,8 @@ fn add(face: Face, faces: &mut Vec<Option<Face>>, adjacent: &mut HashMap<Edge, V
     }
 }
 
-pub(super) fn conforming_faces(input: Vec<[[f32; 3]; 3]>) -> Vec<[[f32; 3]; 3]> {
-    if !input.iter().any(|face| flat_points(*face)) {
+pub(super) fn conforming_vertices(input: Vec<[CpuVertex; 3]>) -> Vec<[CpuVertex; 3]> {
+    if !input.iter().any(|face| flat_points(face.map(|v| v.pos))) {
         return input;
     }
     let mut ids = HashMap::<[u32; 3], usize>::new();
@@ -50,7 +52,9 @@ pub(super) fn conforming_faces(input: Vec<[[f32; 3]; 3]>) -> Vec<[[f32; 3]; 3]> 
     let mut faces = Vec::with_capacity(input.len());
     let mut adjacent = HashMap::new();
     let mut pending = Vec::new();
-    for points in input {
+    let mut attributes = Vec::with_capacity(input.len());
+    for vertices in input {
+        let points = vertices.map(|v| v.pos);
         let face = points.map(|p| {
             let next = positions.len();
             *ids.entry(p.map(|v| if v == 0.0 { 0 } else { v.to_bits() }))
@@ -63,12 +67,13 @@ pub(super) fn conforming_faces(input: Vec<[[f32; 3]; 3]>) -> Vec<[[f32; 3]; 3]> 
             pending.push(faces.len());
         }
         add(face, &mut faces, &mut adjacent);
+        attributes.push(vertices);
     }
     if pending.is_empty() {
         return faces
             .into_iter()
-            .flatten()
-            .map(|f| f.map(|i| positions[i]))
+            .enumerate()
+            .filter_map(|(i, face)| face.map(|_| attributes[i]))
             .collect();
     }
     loop {
@@ -112,10 +117,33 @@ pub(super) fn conforming_faces(input: Vec<[[f32; 3]; 3]>) -> Vec<[[f32; 3]; 3]> 
                 triangle[(slot + 1) % 3],
                 triangle[(slot + 2) % 3],
             );
+            // Repair a collapsed geometric edge without welding its UV seam.
+            // The new vertex belongs to this neighboring face's attribute chart.
+            let attr = attributes[other];
+            let va = attr[slot];
+            let vb = attr[(slot + 1) % 3];
+            let vc = attr[(slot + 2) % 3];
+            let direction: [f64; 3] = std::array::from_fn(|i| vb.pos[i] as f64 - va.pos[i] as f64);
+            let length2 = direction.iter().map(|v| v * v).sum::<f64>();
+            let t = (0..3)
+                .map(|i| (positions[middle][i] as f64 - va.pos[i] as f64) * direction[i])
+                .sum::<f64>()
+                / length2;
+            let vm = CpuVertex {
+                pos: positions[middle],
+                normal: crate::utils::math::vec3_normalize(std::array::from_fn(|i| {
+                    ((1.0 - t) * va.normal[i] as f64 + t * vb.normal[i] as f64) as f32
+                })),
+                uv: std::array::from_fn(|i| {
+                    ((1.0 - t) * va.uv[i] as f64 + t * vb.uv[i] as f64) as f32
+                }),
+            };
             remove(id, &mut faces, &mut adjacent);
             remove(other, &mut faces, &mut adjacent);
             add([a, middle, c], &mut faces, &mut adjacent);
+            attributes.push([va, vm, vc]);
             add([middle, b, c], &mut faces, &mut adjacent);
+            attributes.push([vm, vb, vc]);
             progress = true;
             false
         });
@@ -154,10 +182,30 @@ pub(super) fn conforming_faces(input: Vec<[[f32; 3]; 3]>) -> Vec<[[f32; 3]; 3]> 
     }
     faces
         .into_iter()
-        .flatten()
-        .filter(|f| !flat(*f, &positions))
-        .map(|f| f.map(|i| positions[i]))
+        .enumerate()
+        .filter_map(|(i, face)| {
+            face.filter(|f| !flat(*f, &positions))
+                .map(|_| attributes[i])
+        })
         .collect()
+}
+
+#[cfg(test)]
+fn conforming_faces(input: Vec<[[f32; 3]; 3]>) -> Vec<[[f32; 3]; 3]> {
+    conforming_vertices(
+        input
+            .into_iter()
+            .map(|face| {
+                face.map(|pos| CpuVertex {
+                    pos,
+                    ..Default::default()
+                })
+            })
+            .collect(),
+    )
+    .into_iter()
+    .map(|face| face.map(|v| v.pos))
+    .collect()
 }
 
 #[cfg(test)]

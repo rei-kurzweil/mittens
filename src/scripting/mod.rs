@@ -68,6 +68,9 @@ mod sakura_scene_tests;
 mod paper_craft_scene_tests;
 
 #[cfg(test)]
+mod display_car_tests;
+
+#[cfg(test)]
 mod lumae_pacing_tests;
 
 #[cfg(test)]

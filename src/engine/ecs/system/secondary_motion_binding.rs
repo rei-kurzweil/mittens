@@ -604,6 +604,9 @@ pub(super) fn build_chain(
             ));
         }
     }
+    if chain.allow_stretch {
+        stretch::validate(world, gltf_id, chain, &joints).map_err(BindFailure::invalid)?;
+    }
     let virtual_ratio = chain.virtual_end_length_ratio;
     if joints.len() == 1 && virtual_ratio.is_none() {
         return Err(BindFailure::invalid(
@@ -690,6 +693,8 @@ pub(super) fn build_chain(
     }
     Ok((
         BoundChain {
+            allow_stretch: chain.allow_stretch,
+            rest_targets: rest_targets::RestTargets::bind(world, gltf_id, &joints),
             joints,
             previous: current.clone(),
             current,

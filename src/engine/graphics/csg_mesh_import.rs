@@ -95,7 +95,39 @@ pub(super) fn from_cpu_mesh(mesh: &CpuMesh) -> Result<Manifold, String> {
     if signed_volume6 <= 0.0 {
         return Err("CSG import requires a positive closed volume with outward winding".into());
     }
-    Ok(Manifold::from_mesh_gl64(&input))
+    // Keep property vertices distinct at UV seams, while the explicit merge
+    // map supplies the same exact-position topology validated above. Manifold
+    // interpolates these channels when a boolean splits an authored triangle.
+    let mut attributed = MeshGL64 {
+        num_prop: 6,
+        ..Default::default()
+    };
+    let mut properties = HashMap::<u32, u64>::new();
+    let mut geometry = HashMap::<[u32; 3], u64>::new();
+    for &index in &mesh.indices_u32 {
+        let vertex = &mesh.vertices[index as usize];
+        if !vertex.uv.into_iter().all(f32::is_finite) {
+            return Err("CSG import contains non-finite texture coordinates".into());
+        }
+        let next = attributed.vert_properties.len() as u64 / 6;
+        let property = *properties.entry(index).or_insert_with(|| {
+            attributed.vert_properties.extend(vertex.pos.map(f64::from));
+            attributed.vert_properties.extend(vertex.uv.map(f64::from));
+            // Generated cutter surfaces have zero in this channel; use the
+            // source's stable cut-face sample there instead of planar UVs.
+            attributed.vert_properties.push(1.0);
+            let key = vertex.pos.map(|v| if v == 0.0 { 0 } else { v.to_bits() });
+            if let Some(&canonical) = geometry.get(&key) {
+                attributed.merge_from_vert.push(next);
+                attributed.merge_to_vert.push(canonical);
+            } else {
+                geometry.insert(key, next);
+            }
+            next
+        });
+        attributed.tri_verts.push(property);
+    }
+    Ok(Manifold::from_mesh_gl64(&attributed))
 }
 
 #[cfg(test)]

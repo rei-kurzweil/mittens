@@ -40,6 +40,32 @@ GLTF
 
 ## Required frame order
 
+### Rigid procedural accessories
+
+Imported GLTF bones already have immutable rest-pose snapshots from import. For an MMS
+transform hierarchy, mark the transforms with `Joint {}` and request
+`Armature.joints(root).capture_rest_pose()`. This captures local TRS once when the joint tree
+is ready and binds secondary motion without requiring renderables, vertex groups, weights,
+or skin palettes. Rigid meshes can remain children of the joints.
+
+This rest-only mode uses the captured shape as its spring target, following the live transform
+above the joint tree. It does not use last frame's simulated bend as the next target.
+Animate the accessory's parent to drive motion; this mode does not sample animation on the
+individual joints as a primary pose. Captures remain unchanged during simulation; explicitly
+call `capture_rest_pose()` again to capture a new authored shape. Weighted armatures continue
+to use `give_automatic_weights()` and their existing primary-pose behavior.
+
+See `assets/components/accessories/concentric_halo.mms` and `examples/halo.mms`.
+
+`SpringBone.allow_stretch(true)` opts a rest-only rig into unconstrained endpoint
+springs. The solver writes local joint translations as well as rotations, allowing
+segment lengths to vary while rigid attached meshes retain their shape. An anchored
+root joint lets the first visible child lag too. The mode requires directly nested
+joint transforms, `world_collision(false)`, `avatar_collision(false)`, and no explicit
+colliders; invalid combinations fail binding. Fixed-length springs remain the default.
+
+### Pose propagation
+
 ```text
 primary pose writes (animation / AVC / IK)
     → primary transform propagation

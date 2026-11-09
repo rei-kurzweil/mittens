@@ -11,6 +11,8 @@ use crate::engine::graphics::{
 };
 use crate::utils::math::{mat4_inverse, mat4_mul};
 use std::collections::HashMap;
+#[path = "rigging_rest.rs"]
+mod rest;
 #[cfg(test)]
 #[path = "rigging_system_tests.rs"]
 mod tests;
@@ -87,11 +89,12 @@ impl RiggingSystem {
             .iter()
             .filter_map(|(&id, bound)| {
                 let config = world.get_component_by_id_as::<ArmatureComponent>(id);
-                let invalid = config
-                    .is_none_or(|c| !c.automatic_weights || c.request_revision != bound.revision)
-                    || world
-                        .get_component_by_id_as::<ArmatureComponent>(bound.owner)
-                        .is_none()
+                let invalid = config.is_none_or(|c| {
+                    (!c.automatic_weights && !c.rest_pose_only)
+                        || c.request_revision != bound.revision
+                }) || world
+                    .get_component_by_id_as::<ArmatureComponent>(bound.owner)
+                    .is_none()
                     || bound.joint_markers.iter().any(|id| {
                         world
                             .get_component_by_id_as::<JointComponent>(*id)
@@ -113,8 +116,9 @@ impl RiggingSystem {
             self.unbind(world, visuals, renderables, skinning, id);
             // Losing a mesh/joint must not silently capture a new rest pose.
             if let Some(c) = world.get_component_by_id_as_mut::<ArmatureComponent>(id) {
-                if c.request_revision == revision && c.automatic_weights {
+                if c.request_revision == revision && (c.automatic_weights || c.rest_pose_only) {
                     c.automatic_weights = false;
+                    c.rest_pose_only = false;
                     c.status = "unbound: rig member removed; request weights again at rest".into();
                 }
             }
@@ -129,16 +133,22 @@ impl RiggingSystem {
                 .get_component_by_id_as::<ArmatureComponent>(id)
                 .unwrap()
                 .clone();
-            if !config.automatic_weights {
+            if !config.automatic_weights && !config.rest_pose_only {
                 continue;
             }
             let attempt = (config.request_revision, world.query_revision());
             if self.attempts.get(&id) == Some(&attempt) {
                 continue;
             }
-            let result =
-                self.give_automatic_weights(world, visuals, assets, renderables, skinning, id);
+            let result = if config.rest_pose_only {
+                self.capture_rest_pose(world, id)
+            } else {
+                self.give_automatic_weights(world, visuals, assets, renderables, skinning, id)
+            };
             let status = match result {
+                Ok(()) if config.rest_pose_only => {
+                    "bound: transform rest poses (no vertex weights)".into()
+                }
                 Ok(()) => "bound: euclidean joint distance".into(),
                 Err(e) => format!("unbound: {e}"),
             };
@@ -309,31 +319,8 @@ impl RiggingSystem {
         if prepared.is_empty() {
             return Err("mesh tree contains no renderables".into());
         }
-        // Persist immutable local rest data for the existing authored/imported spring solver.
-        for &joint in &joints {
-            let transform = world
-                .get_component_by_id_as::<TransformComponent>(joint)
-                .unwrap()
-                .transform;
-            let existing = world.children_of(joint).iter().copied().find(|id| {
-                world
-                    .get_component_by_id_as::<BoneRestPoseComponent>(*id)
-                    .is_some()
-            });
-            let snapshot = BoneRestPoseComponent::new(
-                transform.translation,
-                transform.rotation,
-                transform.scale,
-            );
-            if let Some(id) = existing {
-                *world
-                    .get_component_by_id_as_mut::<BoneRestPoseComponent>(id)
-                    .unwrap() = snapshot;
-            } else {
-                let id = world.add_component(snapshot);
-                world.add_child(joint, id).map_err(|e| format!("{e:?}"))?;
-            }
-        }
+        // Share the same immutable snapshots with transform-only spring rigs.
+        rest::capture_joints(world, &joints);
         let guid = world.get_component_record(request).unwrap().guid;
         let mut meshes = Vec::new();
         for (index, part) in prepared.into_iter().enumerate() {

@@ -2,7 +2,10 @@
 
 Date: 2026-10-13.
 
-Status: proposed after source/asset investigation; no runtime changes made.
+Status: initial native motion and compound sphere contact implemented 2026-11-09.
+See [implementation and geometry audit](../review/display-car-physics-and-destruction.md)
+for current behavior, verification, and remaining limits. The proposal below
+records the original investigation.
 
 ## Outcome and scope
 

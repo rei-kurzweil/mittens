@@ -4,6 +4,8 @@
 //! authoritative here. The legacy registry remains the host implementation
 //! while its declarations move into this specification.
 
+#[path = "spring_runtime_config.rs"]
+mod spring_runtime_config;
 #[path = "runtime_component_common.rs"]
 pub(super) mod component_common;
 use meow_meow_script as mms;
@@ -879,27 +881,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                             component_signature([mms::ValueType::Any, mms::ValueType::F32]),
                         );
                 }
-                "SpringBone" => {
-                    component
-                        .constructor("new", strings(1))
-                        .constructor("from_root", any(1))
-                        .builder_call("center", any(1))
-                        .builder_call("colliders", any(1))
-                        .builder_call("world_collision", booleans(1))
-                        .builder_call("avatar_collision", booleans(1))
-                        .builder_call("enabled", booleans(1));
-                    for method in [
-                        "virtual_end_length_ratio",
-                        "stiffness",
-                        "drag_force",
-                        "hit_radius",
-                    ] {
-                        component.builder_call(method, floats(1));
-                    }
-                    // The host accepts either (power, vec3) or
-                    // (power, x, y, z); overloads remain a tracked seam.
-                    component.builder_call("gravity", any(2));
-                }
+                "SpringBone" => spring_runtime_config::configure(component),
                 "ReturnToRestWhenStill" => {
                     component
                         .builder_call("motion_threshold", floats(1))

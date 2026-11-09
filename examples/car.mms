@@ -4,14 +4,14 @@ import { studio_environment_material } from "../assets/components/materials/stud
 // Run with:
 //   cargo run --release -- load examples/car.mms
 //
-// W/S drive forward and backward, A/D strafe, and Q/E steer. The Input
-// component owns one transform containing both the car and its cockpit camera,
-// so the view always follows the vehicle. Enter/exit behavior is intentionally
-// deferred; this example starts in the driver's seat.
+// W/S drive, A/D steer, Space fires. This fixture starts in its cockpit;
+// click POWER to enable controls. Native Velocity owns movement and contact.
+
 
 import { tripod_light } from "../assets/components/tripod_light.mms"
 import { truss } from "../assets/components/truss.mms"
-import { display_car_anime_material } from "../assets/components/materials/display_car_anime.mms"
+import { display_car_controls } from "../assets/components/vehicles/display_car_controls.mms"
+import { display_car } from "../assets/components/vehicles/display_car.mms"
 
 RendererSettings { window_size(1440, 810) }
 BGC.rgba(0.055, 0.055, 0.060, 1.0)
@@ -27,6 +27,7 @@ fn stage_box(box_name, position, size, color) {
         .scale(size[0], size[1], size[2]) {
         name = box_name
         R.cube() { C.rgba(color[0], color[1], color[2], 1.0) studio_environment_material() }
+        Zone.cube([0.5,0.5,0.5]) { Collidable.static().friction(0.85) {} }
     }
 }
 
@@ -92,35 +93,15 @@ tripod_light(
 
 // The camera remains a sibling of the model so it inherits vehicle motion
 // while keeping an independently authored cockpit offset and view direction.
-I.speed(4.0) {
-    name = "car_input"
-    InputTransformMode.forward_z() {
-        roll_axis_y()
-    }
-
-    T.position(-5.0, 0.10, 0.0) {
-        name = "car_vehicle"
-
-        T.rotation(0.0, 0.0, 0.0) {
-            name = "car_visual"
-            GLTF.new("assets/models/car.glb") {
-                display_car_anime_material("near")
-            }
-        }
-
-        // Fixed first-person cockpit view. Camera3D looks along local -Z.
-        T.position(0, 3.0, -1.55) {
-            name = "car_cockpit_camera"
-            C3D { Pointer {} }
-        }
-    }
+let cockpit = T.position(0, 4.5, -1.0) {
+    name = "car_cockpit_camera"
+    C3D { Pointer {} }
 }
+let car_motion=display_car("car_vehicle", [-5.0, 0.10, 0.0], 0.0, "car_studio_mount", [cockpit])
+let car_body=car_motion.query("#car_vehicle")
+car_body.attach(display_car_controls(car_body,car_motion,"desktop",null,true))
+car_motion
 
 // A second car is scenery only: it has no Input component and remains parked
 // as a lit subject for the driver, studio cameras, and mirror.
-T.position(0.0, 0.10, 0).rotation(0.0, -0.32, 0.0) {
-    name = "parked_display_car"
-    GLTF.new("assets/models/car.glb") {
-        display_car_anime_material("middle")
-    }
-}
+display_car("parked_display_car", [0.0, 0.10, 0.0], -0.32, "parked_car_studio_mount", [])

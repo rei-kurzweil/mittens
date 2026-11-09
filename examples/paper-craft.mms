@@ -28,7 +28,7 @@ import { kawaii_twilight_sky } from "../assets/components/backgrounds/kawaii-twi
 import { sakura_tree } from "../assets/components/plants/sakura_tree.mms"
 import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
 import { pool_building, pool_building_with_stairs, ceramic_box, destroyable_ceramic_box } from "../assets/components/buildings/pool_building.mms"
-import { display_car } from "../assets/components/vehicles/display_car.mms"
+import { display_car_xr } from "../assets/components/vehicles/display_car.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
 import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
@@ -39,6 +39,7 @@ import { gohei_squares } from "../assets/components/paper_craft/gohei_squares.mm
 import { gohei_black_spring } from "../assets/components/paper_craft/gohei_black_spring.mms"
 import { gohei_naive_weights } from "../assets/components/paper_craft/gohei_naive_weights.mms"
 import { tripod_light } from "../assets/components/tripod_light.mms"
+import { concentric_halo } from "../assets/components/accessories/concentric_halo.mms"
 
 // Share floor calibration with other XR demos and future app sessions.
 let xr_calibration_file = XrSettings.floor.default_file()
@@ -168,8 +169,8 @@ ceramic_box([-10.65, -0.07, 0.0], [1.3, 0.14, 2.4], white, tiles)
 for dash in range(28) {
     box([0.0, 0.008, -53.0 + dash * 4.0], [0.13, 0.012, 1.8], [1.0, 0.82, 0.55])
 }
-display_car("paper_craft_road_car_north", [-3.4, -0.04, -17.0], 0.0, "paper_craft_car_north_mount", [])
-display_car("paper_craft_road_car_south", [3.4, -0.04, 19.0], 3.14159265, "paper_craft_car_south_mount", [])
+display_car_xr("paper_craft_road_car_north", [-3.4, -0.04, -17.0], 0.0, "paper_craft_car_north_mount", world)
+display_car_xr("paper_craft_road_car_south", [3.4, -0.04, 19.0], 3.14159265, "paper_craft_car_south_mount", world)
 
 // Rooftop workbench bolted to a ceramic backing wall, with three pairs of legs.
 T.position(-18.0, roof_height, 0.0) {
@@ -233,8 +234,12 @@ let player_motion = Velocity {
     name = "paper_craft_mitten_velocity"
     T.position(spawn_position[0], spawn_position[1], spawn_position[2]) {
         name = "paper_craft_mitten_locomotion_root"
+        Rider
+            .anchor("[name='paper_craft_mitten_xr_camera']")
+            .movement_root("[name='paper_craft_mitten_locomotion_root']")
+            .input("[name='paper_craft_mitten_locomotion_input']") {}
         InputXR.on() {
-            InputXRGamepad { locomotion() speed(1.4) enable_flying(true) }
+            InputXRGamepad { name="paper_craft_mitten_locomotion_input" locomotion() speed(1.4) enable_flying(true) }
             T {
                 name = "paper_craft_mitten_xr_driver"
                 let xr_mitten = GLTF.new("assets/models/mitten.glb") {
@@ -286,6 +291,8 @@ let player_motion = Velocity {
                 }
                 xr_avatar_control
                 on(xr_mitten, "GLTFInitialized", fn(event) {
+                    let head=event.gltf.query("[name='J_Bip_C_Head']")
+                    if head {head.attach(concentric_halo("paper_craft_halo",null))}
                     let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
                     let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
                     if left_eye && right_eye {

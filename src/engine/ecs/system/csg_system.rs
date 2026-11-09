@@ -167,7 +167,7 @@ impl CsgSystem {
                 _ => unreachable!("try_send returns the submitted job variant"),
             })
     }
-    /// Submit a small rigid mesh/chunk for geometry-only subtraction. The
+    /// Submit a small rigid mesh/chunk for subtraction with authored UVs. The
     /// returned cell's Solid can be retained for later cuts via `submit`.
     /// Rejected imports return an error result; no render/collision state is
     /// changed here. As with cell jobs, the caller owns publication/rollback.

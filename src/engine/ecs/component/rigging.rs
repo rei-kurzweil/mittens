@@ -23,6 +23,8 @@ impl Component for JointComponent {
 pub struct ArmatureComponent {
     pub joints: Option<ComponentRef>,
     pub automatic_weights: bool,
+    /// Capture authored transform rest poses without creating skin weights.
+    pub rest_pose_only: bool,
     pub request_revision: u64,
     /// Runtime diagnostics; generated weights/rest matrices are derived data.
     pub status: String,
@@ -32,6 +34,7 @@ impl Default for ArmatureComponent {
         Self {
             joints: None,
             automatic_weights: false,
+            rest_pose_only: false,
             request_revision: 0,
             status: "not requested".into(),
         }
@@ -46,8 +49,15 @@ impl ArmatureComponent {
     }
     pub fn give_automatic_weights(&mut self) {
         self.automatic_weights = true;
+        self.rest_pose_only = false;
         self.request_revision = self.request_revision.wrapping_add(1);
         self.status = "pending".into();
+    }
+    pub fn capture_rest_pose(&mut self) {
+        self.automatic_weights = false;
+        self.rest_pose_only = true;
+        self.request_revision = self.request_revision.wrapping_add(1);
+        self.status = "pending rest capture".into();
     }
 }
 impl Component for ArmatureComponent {
@@ -71,6 +81,8 @@ impl Component for ArmatureComponent {
         }
         if self.automatic_weights {
             result = result.with_call("give_automatic_weights", vec![]);
+        } else if self.rest_pose_only {
+            result = result.with_call("capture_rest_pose", vec![]);
         }
         result
     }

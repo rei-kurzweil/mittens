@@ -1,5 +1,9 @@
 #[path = "secondary_motion_binding.rs"]
 mod binding;
+#[path = "secondary_motion_rest_targets.rs"]
+mod rest_targets;
+#[path = "secondary_motion_stretch.rs"]
+mod stretch;
 use super::collidable_bvh::CollidableBvh;
 use crate::engine::ecs::component::CollisionShape;
 use crate::engine::ecs::component::{
@@ -34,6 +38,8 @@ struct JointConfig {
 #[derive(Debug, Clone)]
 struct BoundChain {
     joints: Vec<JointConfig>,
+    rest_targets: Option<rest_targets::RestTargets>,
+    allow_stretch: bool,
     previous: Vec<[f32; 3]>,
     current: Vec<[f32; 3]>,
     lengths: Vec<f32>,
@@ -799,6 +805,9 @@ impl SecondaryMotionSystem {
             if !globally_enabled {
                 if state.enabled {
                     for joint in &state.joints {
+                        if state.allow_stretch {
+                            stretch::restore_translation(world, joint.id);
+                        }
                         if let Some(transform) =
                             world.get_component_by_id_as_mut::<TransformComponent>(joint.id)
                         {
@@ -844,13 +853,20 @@ impl SecondaryMotionSystem {
                     .unwrap();
                 let contacts = chain_contacts(world, state, settings, &collision_frame, surfaces);
                 while state.accumulator >= STEP {
-                    simulate_step(world, state, &contacts);
+                    if state.allow_stretch {
+                        stretch::step(world, state);
+                    } else {
+                        simulate_step(world, state, &contacts);
+                    }
                     state.accumulator -= STEP;
                 }
             }
             state.parked = rest_weight >= 1.0;
             max_correction_radians =
                 max_correction_radians.max(apply_rotations(world, state, rest_weight));
+            if state.allow_stretch {
+                stretch::apply(world, state, rest_weight);
+            }
             if let Some(root) = state.joints.first().map(|joint| joint.id)
                 && dirty_set.insert(root)
             {
@@ -1060,6 +1076,10 @@ fn chain_contacts<'a>(
 }
 
 fn simulate_step(world: &World, state: &mut BoundChain, contacts: &ChainContacts<'_>) {
+    let rest_frame = state
+        .rest_targets
+        .as_ref()
+        .map(|targets| targets.rotation(world));
     for index in 0..state.joints.len() {
         let primary_head = pos(world, state.joints[index].id).unwrap_or(state.current[index]);
         let head = if index == 0 {
@@ -1071,7 +1091,15 @@ fn simulate_step(world: &World, state: &mut BoundChain, contacts: &ChainContacts
             vec3_sub(state.current[index], state.previous[index]),
             1.0 - state.joints[index].drag,
         );
-        let rest_tail = if index + 1 < state.joints.len() {
+        let rest_tail = if let (Some(targets), Some(frame)) = (&state.rest_targets, rest_frame) {
+            vec3_add(
+                head,
+                vec3_scale(
+                    quat_rotate_vec3(frame, targets.directions[index]),
+                    state.lengths[index],
+                ),
+            )
+        } else if index + 1 < state.joints.len() {
             let primary_tail =
                 pos(world, state.joints[index + 1].id).unwrap_or(state.current[index]);
             vec3_add(

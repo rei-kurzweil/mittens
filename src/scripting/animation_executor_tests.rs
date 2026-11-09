@@ -357,6 +357,23 @@ fn mittens_corp_evaluates_with_mitten_player_bow_and_car_mount_fixture() {
         .all_components()
         .find(|&id| world.component_label(id) == Some("left_display_car"))
         .unwrap();
+    let motion = world.parent_of(car_root).unwrap();
+    let panel = world
+        .all_components()
+        .find(|&id| world.component_label(id) == Some("pickup_power_button"))
+        .unwrap();
+    rx.dispatch_event_handlers(
+        &mut world,
+        &Signal::event(
+            panel,
+            EventSignal::Click {
+                raycaster: ComponentId::default(),
+                renderable: panel,
+                hit_point: [0.; 3],
+                screen_pos_px: None,
+            },
+        ),
+    );
     rx.dispatch_event_handlers(
         &mut world,
         &Signal::event(
@@ -367,6 +384,8 @@ fn mittens_corp_evaluates_with_mitten_player_bow_and_car_mount_fixture() {
             },
         ),
     );
+    let activation = session.service_callbacks(&mut world, &mut rx, None, &mut queue);
+    assert!(activation.errors.is_empty(), "{:?}", activation.errors);
     rx.dispatch_event_handlers(
         &mut world,
         &Signal::event(
@@ -393,15 +412,8 @@ fn mittens_corp_evaluates_with_mitten_player_bow_and_car_mount_fixture() {
         movement_output.errors
     );
     assert!(movement_output.intents.iter().any(|intent| matches!(
-        intent,
-        IntentValue::UpdateTransform {
-            component_id,
-            translation,
-            ..
-        } if *component_id == car_root
-            && translation[1] == -0.75
-            && (translation[0] - -19.0).abs() > 0.01
-            && (translation[2] - -1.5).abs() > 0.01
+        intent, IntentValue::VelocityTranslate {component_id,delta_mps,..}
+        if *component_id==motion && delta_mps[2]==-5.
     )));
 
     // Import only the car and publish its bounds without starting audio or XR.
@@ -656,4 +668,5 @@ fn mittens_corp_evaluates_with_mitten_player_bow_and_car_mount_fixture() {
             ..
         }
     )));
+    crate::scripting::display_car_tests::wait_for_material_compilation(&visuals);
 }

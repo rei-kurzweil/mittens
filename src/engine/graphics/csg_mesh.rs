@@ -8,12 +8,12 @@ mod import;
 mod output;
 
 #[derive(Clone)]
-pub struct Solid(std::sync::Arc<Manifold>);
+pub struct Solid(std::sync::Arc<Manifold>, Option<[f32; 2]>);
 
 impl Solid {
     /// Import closed, outward-wound rigid geometry. The source stays immutable.
-    /// This first slice is geometry-only: output uses `mesh()`'s generated
-    /// normals/UVs; it does not promise source material or attribute preservation.
+    /// Authored UV seams and interpolation survive boolean operations. New cut
+    /// faces use a stable sample from the source atlas; normals remain faceted.
     pub fn from_mesh(mesh: &CpuMesh) -> Result<Self, String> {
         let mut source = import::from_cpu_mesh(mesh)?;
         // Solidify can produce closed but intersecting folds. Resolve their
@@ -21,7 +21,11 @@ impl Solid {
         if source.has_self_intersections() {
             source = source.rebuild_solid(manifold_rust::types::WindingRule::Positive);
         }
-        let solid = checked(source)?;
+        let cut_uv = mesh
+            .indices_u32
+            .first()
+            .map(|&i| mesh.vertices[i as usize].uv);
+        let solid = checked(source, cut_uv)?;
         if solid.empty() || !solid.volume().is_finite() || solid.volume() <= 0.0 {
             return Err("CSG import requires a positive closed volume with outward winding".into());
         }
@@ -29,17 +33,20 @@ impl Solid {
     }
 
     pub fn box_between(min: [f32; 3], max: [f32; 3]) -> Self {
-        Self(std::sync::Arc::new(
-            Manifold::cube(
-                Vec3::new(
-                    (max[0] - min[0]) as f64,
-                    (max[1] - min[1]) as f64,
-                    (max[2] - min[2]) as f64,
-                ),
-                false,
-            )
-            .translate(Vec3::new(min[0] as f64, min[1] as f64, min[2] as f64)),
-        ))
+        Self(
+            std::sync::Arc::new(
+                Manifold::cube(
+                    Vec3::new(
+                        (max[0] - min[0]) as f64,
+                        (max[1] - min[1]) as f64,
+                        (max[2] - min[2]) as f64,
+                    ),
+                    false,
+                )
+                .translate(Vec3::new(min[0] as f64, min[1] as f64, min[2] as f64)),
+            ),
+            None,
+        )
     }
     pub fn world_blast(center: [f32; 3], radius: f32, inverse: [[f32; 4]; 4]) -> Self {
         let solid = Manifold::sphere(radius as f64, 12).translate(Vec3::new(
@@ -47,7 +54,7 @@ impl Solid {
             center[1] as f64,
             center[2] as f64,
         ));
-        Self(std::sync::Arc::new(solid)).transformed(inverse)
+        Self(std::sync::Arc::new(solid), None).transformed(inverse)
     }
     pub fn transformed(&self, matrix: [[f32; 4]; 4]) -> Self {
         let mut m = manifold_rust::linalg::Mat3x4::default();
@@ -56,7 +63,7 @@ impl Solid {
                 m[col][row] = matrix[col][row] as f64;
             }
         }
-        Self(std::sync::Arc::new(self.0.transform(&m)))
+        Self(std::sync::Arc::new(self.0.transform(&m)), self.1)
     }
     pub fn triangle_count(&self) -> usize {
         self.0.num_tri()
@@ -73,7 +80,7 @@ impl Solid {
             Operation::Subtract => self.0.difference(&other.0),
             Operation::Intersect => self.0.intersection(&other.0),
         };
-        checked(result)
+        checked(result, self.1.or(other.1))
     }
     pub fn cut(&self, cutter: &Self) -> Result<(Self, Vec<Self>), String> {
         let removed = self.boolean(cutter, Operation::Intersect)?;
@@ -107,7 +114,7 @@ impl Solid {
         let (third, second) = rest.split_by_plane(normal, low + 2. * length / 3.);
         let mut pieces = Vec::new();
         for part in [first, second, third] {
-            let part = checked(part)?;
+            let part = checked(part, self.1)?;
             if !part.empty() && part.volume() > 1e-12 {
                 pieces.push(part);
             }
@@ -146,34 +153,44 @@ impl Solid {
                 face.swap(0, 1);
             }
         }
-        let mut vertices = Vec::with_capacity(mesh.tri_verts.len());
         let faces = mesh
             .tri_verts
             .chunks_exact(3)
             .map(|face| {
-                std::array::from_fn(|i| mesh.get_vert_pos(face[i] as usize).map(|v| v as f32))
+                let positions: [[f32; 3]; 3] =
+                    std::array::from_fn(|i| mesh.get_vert_pos(face[i] as usize).map(|v| v as f32));
+                let normal = crate::utils::math::vec3_normalize(crate::utils::math::vec3_cross(
+                    crate::utils::math::vec3_sub(positions[1], positions[0]),
+                    crate::utils::math::vec3_sub(positions[2], positions[0]),
+                ));
+                let axis = if normal[0].abs() > normal[1].abs() && normal[0].abs() > normal[2].abs()
+                {
+                    0
+                } else if normal[1].abs() > normal[2].abs() {
+                    1
+                } else {
+                    2
+                };
+                std::array::from_fn(|i| {
+                    let pos = positions[i];
+                    let offset = face[i] as usize * mesh.num_prop as usize;
+                    let uv = if mesh.num_prop >= 6 && mesh.vert_properties[offset + 5] > 0.5 {
+                        [
+                            mesh.vert_properties[offset + 3] as f32,
+                            mesh.vert_properties[offset + 4] as f32,
+                        ]
+                    } else {
+                        self.1
+                            .unwrap_or([pos[(axis + 1) % 3] + 0.5, 0.5 - pos[(axis + 2) % 3]])
+                    };
+                    CpuVertex { pos, normal, uv }
+                })
             })
             .collect();
-        for p in output::conforming_faces(faces) {
-            let normal = crate::utils::math::vec3_normalize(crate::utils::math::vec3_cross(
-                crate::utils::math::vec3_sub(p[1], p[0]),
-                crate::utils::math::vec3_sub(p[2], p[0]),
-            ));
-            let axis = if normal[0].abs() > normal[1].abs() && normal[0].abs() > normal[2].abs() {
-                0
-            } else if normal[1].abs() > normal[2].abs() {
-                1
-            } else {
-                2
-            };
-            for pos in p {
-                vertices.push(CpuVertex {
-                    pos,
-                    normal,
-                    uv: [pos[(axis + 1) % 3] + 0.5, 0.5 - pos[(axis + 2) % 3]],
-                });
-            }
-        }
+        let vertices: Vec<_> = output::conforming_vertices(faces)
+            .into_iter()
+            .flatten()
+            .collect();
         let indices = (0..vertices.len() as u32).collect();
         CpuMesh::new(vertices, indices)
     }
@@ -184,14 +201,14 @@ pub enum Operation {
     Subtract,
     Intersect,
 }
-fn checked(mesh: Manifold) -> Result<Solid, String> {
+fn checked(mesh: Manifold, cut_uv: Option<[f32; 2]>) -> Result<Solid, String> {
     if mesh.status() != Error::NoError {
         return Err(format!("CSG: {:?}", mesh.status()));
     }
     if mesh.num_tri() > 16_384 {
         return Err("CSG chunk exceeded 16384 triangles".into());
     }
-    Ok(Solid(std::sync::Arc::new(mesh)))
+    Ok(Solid(std::sync::Arc::new(mesh), cut_uv))
 }
 
 #[cfg(test)]
@@ -226,3 +243,7 @@ impl std::fmt::Debug for Solid {
             .finish()
     }
 }
+
+#[cfg(test)]
+#[path = "csg_mesh_uv_tests.rs"]
+mod uv_tests;

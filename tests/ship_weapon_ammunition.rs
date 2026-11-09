@@ -142,7 +142,9 @@ fn ship_pistol_stops_at_75_and_throttles_its_counter() {
     key(&mut scene, true);
     let mut previous = "75".to_string();
     let mut updates = Vec::new();
-    for step in 1..=500 {
+    // At 9.2 shots/s the magazine takes over eight seconds; allow the trailing
+    // one-second display update to settle after the final shot as well.
+    for step in 1..=600 {
         advance(&mut scene, &clock);
         let displayed = text(&scene, counter);
         if displayed != previous {
@@ -162,7 +164,10 @@ fn ship_pistol_stops_at_75_and_throttles_its_counter() {
         "the delayed counter must eventually show empty"
     );
     assert_eq!(text(&scene, "ship_rack_pistol_1_ammo_count"), "75");
-    assert!(!updates.is_empty() && updates[0] >= 1.0,"counter update times: {updates:?}");
+    assert!(
+        !updates.is_empty() && updates[0] >= 1.0,
+        "counter update times: {updates:?}"
+    );
     for pair in updates.windows(2) {
         assert!(
             pair[1] - pair[0] >= 1.0 - 1e-6,
