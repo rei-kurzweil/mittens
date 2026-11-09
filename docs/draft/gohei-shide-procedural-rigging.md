@@ -266,12 +266,61 @@ comes from joint motion settings**, not from weights alone. Narrow connector
 joints get greater compliance; panel joints are stiffer but remain movable.
 Use adequate mesh subdivision and joint placement for both effects.
 
-For arbitrary renderable trees without material coordinates, a later method can
-use distance to bone segments with explicit eligible-joint groups, limited
-influences, and optional topology-aware smoothing. Preview influence colors and
-diagnostics. Nearest-bone distance is a heuristic; do not promise general-purpose
-high-quality automatic skinning or silently select it when paper metadata is
-missing. Heat/geodesic weighting is a separate quality milestone.
+### Topology-aware automatic weighting mode
+
+Expose the distance/propagation policy as an explicit automatic-weighting mode.
+The desired generalization for cut paper is **surface-flow weighting** (working
+name): influence travels along connected material from a bone's seeded attachment
+region, decaying with distance along that surface. It must travel around the end
+of a slit, not jump across it. Two edges can occupy the same position and still
+be opposite sides of a cut. Folding also never creates material adjacency.
+
+A tentative algorithm:
+
+1. Build adjacency from logical sheet topology, retaining cuts, connected-component
+   IDs, and strip/region restrictions. Edge lengths are measured in flat material
+   space for paper. An arbitrary mesh can use its undeformed rest surface.
+2. Seed each bone from its explicit guide/attachment region on that surface.
+   A bone can have a supported interval, not just a single start vertex. Resolve
+   seeds through retained material IDs where available. For generic geometry,
+   request or preview ambiguous associations; do not independently snap the bone
+   onto every nearby folded layer.
+3. Compute shortest-path surface distances from those seeds, initially using
+   multi-source graph traversal with nonnegative edge lengths. Propagation crosses
+   actual shared material edges only. A cut blocks passage across the gap but
+   permits a longer route around its endpoint. Disconnected pieces are unreachable
+   unless they have their own seeds/explicit binding association.
+4. Convert distances to smooth decreasing influence scores using a configurable
+   falloff radius/curve, optionally restricted to neighboring bones in the guide.
+   Keep at most four influences and normalize. Unreachable or uncovered vertices
+   produce diagnostics; do not fill them using a hidden Euclidean fallback.
+5. Any weight smoothing uses the same material adjacency and restrictions. Copy
+   the resulting logical weights onto normal/UV seam duplicates, front/back faces,
+   and thickness copies. Render-only seams are not cuts; separately authored cut
+   banks must never be welded just because positions coincide.
+
+The user's “from where the bone starts” is the seed/association part of this
+policy. The rest is distance along connected material, rather than straight-line
+distance to a bone. Starting influence at bone roots only is an optional policy;
+the paper guide can seed a bone's full supported span for more even panel weights.
+
+An edge-graph shortest path is a useful first approximation, but its distances
+can depend on triangulation direction/density. Compare on retessellated patterns
+before promising isotropic surface distances. Triangle-surface geodesics or a
+boundary-aware diffusion solver can improve quality later. Topology preservation
+is required from the first implementation; a sophisticated solver is optional.
+
+This mode prevents shortcuts across cuts; it does not automatically model
+mechanical stiffness or guarantee that a narrow bridge blocks influence. A bridge
+is real connectivity. Material-region restrictions and optional propagation costs
+can refine influence deliberately; spring settings still control compliance.
+
+For the first shide, the ordered material-coordinate method above is a cheaper
+specialized option. Keep both modes named explicitly, with surface-flow as the
+intended general cut-paper mode. A later `bone_distance` mode may use Euclidean
+distance to bone segments for simple unrestricted meshes, but must not silently
+replace either paper mode. Preview influence colors, seed locations, cut
+boundaries, and uncovered regions before accepting a bind.
 
 ### Parenting without skinning
 
