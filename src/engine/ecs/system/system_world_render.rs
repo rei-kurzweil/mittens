@@ -16,6 +16,7 @@ impl SystemWorld {
         uploader: &mut dyn RenderUploader,
         queue: &mut crate::engine::ecs::CommandQueue,
     ) {
+        self.rigging.flush_retired(render_assets, uploader);
         let mut destruction = std::mem::take(&mut self.destroyable);
         destruction.prepare(self, world, visuals, render_assets, uploader);
         self.destroyable = destruction;

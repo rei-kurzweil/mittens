@@ -6,7 +6,7 @@ new_key_type! {
     pub struct SkinId;
 }
 
-/// Shared skin definition data (glTF skin).
+/// Skin definition data shared by an importer or authored rig binding.
 ///
 /// This intentionally lives in the graphics module (and is owned by `VisualWorld`) so that
 /// the ECS `World` remains focused on component topology.
@@ -15,13 +15,13 @@ pub struct Skin {
     pub id: SkinId,
 
     /// Asset key used for de-duplication.
-    /// Currently the glTF URI that the skin came from.
+    /// glTF URI or an authored-rig resource key.
     pub uri: String,
 
-    /// glTF skin index within the source asset.
+    /// Skin index within the source asset or authored binding.
     pub skin_index: usize,
 
-    /// glTF node indices for joints (in skin order).
+    /// Source joint indices in palette order (glTF nodes or authored ordinals).
     pub joint_node_indices: Vec<usize>,
 
     /// Inverse bind matrices (one per joint), column-major.

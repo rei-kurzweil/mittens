@@ -6,15 +6,16 @@ pub mod block_effect_analyzer {
 }
 #[path = "component_bindings/camera_xr.rs"]
 mod camera_xr_binding;
-#[path = "component_bindings/mirror.rs"]
-mod mirror_binding;
-#[path = "component_bindings/material_definition.rs"]
-mod material_definition_binding;
 pub mod component_method_registry;
 pub mod component_registry;
 mod configured_registry;
 mod file_api;
 mod file_browser;
+#[path = "component_bindings/material_definition.rs"]
+mod material_definition_binding;
+#[path = "component_bindings/mirror.rs"]
+mod mirror_binding;
+mod rigging_binding;
 pub use file_browser::interaction::scroll as scroll_file_browser;
 pub mod host;
 mod json_api;

@@ -149,6 +149,7 @@ fn twilight_sky_stereo_has_baked_glow_without_bloom_or_translation_parallax()
         .find(|&id| scene.world.component_label(id) == Some("graphics_bloom_toggle"))
         .unwrap();
     let mut sky_reference: Option<Vec<u8>> = None;
+    let mut paper_reference: Option<Vec<u8>> = None;
     for (label, position, direction, bloom) in [
         ("moon-off", [0., 60., 0.], [-0.35, 0.30, -0.88], false),
         ("moon-on", [0., 60., 0.], [-0.35, 0.30, -0.88], true),
@@ -159,6 +160,8 @@ fn twilight_sky_stereo_has_baked_glow_without_bloom_or_translation_parallax()
             false,
         ),
         ("roof", [-12.8, 22., 4.2], [-5.2, -1.5, -7.5], false),
+        ("gohei-bench", [-19.3, 21.0, -1.5], [0., -0.1, -2.52], false),
+        ("gohei-posed", [-19.3, 21.0, -1.5], [0., -0.1, -2.52], false),
         ("street", [0., 1.7, 30.], [-18., 10., -30.], false),
         ("occluded", [0., 1.7, 40.], [-0.35, 0.30, -0.88], false),
         ("stairs", [-20.5, 17.7, 1.2], [-2.2, -1., 3.8], false),
@@ -172,7 +175,45 @@ fn twilight_sky_stereo_has_baked_glow_without_bloom_or_translation_parallax()
                 value: bloom,
             },
         );
+        let previous_palette = scene.visuals.bones_palette().to_vec();
+        if label == "gohei-posed" {
+            assert_eq!(scene.systems.rigging.binding_count(), 1);
+            let joint = scene
+                .world
+                .all_components()
+                .find(|&id| {
+                    scene.world.component_label(id) == Some("paper_craft_gohei_naive_joint_1")
+                })
+                .unwrap();
+            scene.systems.transition.cancel_transform_transitions(joint);
+            scene
+                .world
+                .get_component_by_id_as_mut::<TransformComponent>(joint)
+                .unwrap()
+                .transform = TransformComponent::new()
+                .with_position(0.08, -0.08, 0.)
+                .with_rotation_euler(0., 0., 0.65)
+                .transform;
+            scene
+                .systems
+                .transform_changed(&mut scene.world, &mut scene.visuals, joint);
+        }
         scene.update(0., &Default::default());
+        if label == "gohei-posed" {
+            assert!(
+                scene.visuals.bones_palette() != previous_palette,
+                "joint edit must update paper palettes"
+            );
+            eprintln!(
+                "gohei skinned instances: {}",
+                scene
+                    .visuals
+                    .instances()
+                    .iter()
+                    .filter(|i| i.bones_count > 0)
+                    .count()
+            );
+        }
         let target = std::array::from_fn(|i| position[i] + direction[i]);
         let rotation = TransformComponent::look_at_world_rotation(position, target).unwrap();
         let camera = TransformComponent::new()
@@ -248,6 +289,19 @@ fn twilight_sky_stereo_has_baked_glow_without_bloom_or_translation_parallax()
                 extent[1],
                 image::ColorType::Rgba8,
             )?;
+        }
+        if label == "gohei-bench" {
+            paper_reference = Some(pixels[..size as usize].to_vec());
+        } else if label == "gohei-posed" {
+            let changed = pixels[..size as usize]
+                .chunks_exact(4)
+                .zip(paper_reference.as_ref().unwrap().chunks_exact(4))
+                .filter(|(a, b)| a[..3].iter().zip(&b[..3]).any(|(a, b)| a.abs_diff(*b) > 10))
+                .count();
+            assert!(
+                changed > 100,
+                "posed paper must visibly deform: {changed} pixels changed"
+            );
         }
         if label == "moon-off" {
             assert!(

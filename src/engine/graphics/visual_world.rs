@@ -1,3 +1,5 @@
+#[path = "visual_skin.rs"]
+mod skin_resources;
 use super::material_binding_key::material_parameter;
 use super::materials::{MaterialInstanceId, MaterialRegistry};
 use crate::engine::ecs::ComponentId;
@@ -13,11 +15,11 @@ use slotmap::{Key, SlotMap};
 use std::collections::HashMap;
 
 include!("visual_world/diagnostic_hooks.rs");
-mod draw_cache;
-mod render_streams;
-mod instance_updates;
 #[cfg(test)]
 mod cache_profile;
+mod draw_cache;
+mod instance_updates;
+mod render_streams;
 #[cfg(test)]
 use cache_profile::{DrawCacheProfile, VisualChange};
 
@@ -51,7 +53,7 @@ pub struct VisualCamera {
     pub eyes: Vec<CameraData>,
 }
 
-pub use super::visual_mirror::{MirrorViewerFamily, MirrorCaptureRequest, VisualMirror};
+pub use super::visual_mirror::{MirrorCaptureRequest, MirrorViewerFamily, VisualMirror};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DrawBatch {
@@ -659,50 +661,6 @@ impl VisualWorld {
         self.morph_inputs[idx] = active_morphs;
         self.instances[idx].deformation_dirty = true;
         true
-    }
-
-    pub fn skin(&self, id: SkinId) -> Option<&Skin> {
-        self.skins.get(id)
-    }
-
-    pub fn skin_id_for(&self, uri: &str, skin_index: usize) -> Option<SkinId> {
-        self.skin_id_by_key
-            .get(&(uri.to_string(), skin_index))
-            .copied()
-    }
-
-    pub fn upsert_skin(
-        &mut self,
-        uri: &str,
-        skin_index: usize,
-        joint_node_indices: Vec<usize>,
-        inverse_bind_matrices: Vec<TransformMatrix>,
-    ) -> SkinId {
-        let key = (uri.to_string(), skin_index);
-        if let Some(existing) = self.skin_id_by_key.get(&key).copied() {
-            if let Some(skin) = self.skins.get_mut(existing) {
-                skin.uri = uri.to_string();
-                skin.skin_index = skin_index;
-                skin.joint_node_indices = joint_node_indices;
-                skin.inverse_bind_matrices = inverse_bind_matrices;
-                return existing;
-            }
-        }
-
-        let id = self.skins.insert(Skin {
-            id: SkinId::null(),
-            uri: uri.to_string(),
-            skin_index,
-            joint_node_indices,
-            inverse_bind_matrices,
-        });
-
-        if let Some(s) = self.skins.get_mut(id) {
-            s.id = id;
-        }
-
-        self.skin_id_by_key.insert(key, id);
-        id
     }
 
     fn bones_identity() -> TransformMatrix {
@@ -2870,6 +2828,4 @@ impl VisualWorld {
     ) -> Vec<crate::engine::graphics::TextureHandle> {
         std::mem::take(&mut self.retired_runtime_textures)
     }
-
-
 }

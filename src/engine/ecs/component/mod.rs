@@ -23,6 +23,8 @@ pub mod background_color;
 pub mod bloom;
 pub mod blur_pass;
 pub mod bone_rest_pose;
+pub mod rigging;
+pub use rigging::{ArmatureComponent, JointComponent, RiggingComponent};
 pub mod bounds;
 pub mod camera_2d;
 pub mod camera_3d;

@@ -83,6 +83,15 @@ impl SystemWorld {
         // world matrices / acceleration structures (e.g. raycasting).
         queue.flush(world, self, visuals, render_assets);
 
+        // Capture authored bind poses before FrameTick/animation can pose joints.
+        self.rigging.reconcile(
+            world,
+            visuals,
+            render_assets,
+            &mut self.renderable,
+            &mut self.skinned_mesh,
+        );
+
         #[cfg(test)]
         cpu_profile.mark(Phase::GltfImports);
         // Grid hit surfaces participate in raycasting only while Paint owns scene input.

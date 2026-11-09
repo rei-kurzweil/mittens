@@ -35,6 +35,9 @@ import { mitten_bow_secondary_motion } from "../assets/components/secondary_moti
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
+import { gohei_squares } from "../assets/components/paper_craft/gohei_squares.mms"
+import { gohei_naive_weights } from "../assets/components/paper_craft/gohei_naive_weights.mms"
+import { tripod_light } from "../assets/components/tripod_light.mms"
 
 // Share floor calibration with other XR demos and future app sessions.
 let xr_calibration_file = XrSettings.floor.default_file()
@@ -167,21 +170,19 @@ for dash in range(28) {
 display_car("paper_craft_road_car_north", [-3.4, -0.04, -17.0], 0.0, "paper_craft_car_north_mount", [])
 display_car("paper_craft_road_car_south", [3.4, -0.04, 19.0], 3.14159265, "paper_craft_car_south_mount", [])
 
-// Rooftop workbench bolted to a ceramic backing wall, with two cantilever brackets.
+// Rooftop workbench bolted to a ceramic backing wall, with three pairs of legs.
 T.position(-18.0, roof_height, 0.0) {
     name = "paper_craft_workbench"
     destroyable_ceramic_box([0.0, 1.35, -4.85], [6.4, 2.7, 0.24], white, tiles)
-    destroyable_box([0.0, 0.94, -4.12], [3.2, 0.10, 1.15], [0.30, 0.32, 0.40])
-    destroyable_box([0.0, 1.004, -4.05], [2.85, 0.025, 0.90], [0.82, 0.56, 0.67])
-    for side in [-1.0, 1.0] {
-        box([side * 1.15, 0.57, -4.60], [0.10, 0.68, 0.12], [0.22, 0.24, 0.31])
-        T.position(side * 1.15, 0.62, -4.24).rotation(0.65, 0.0, 0.0) {
-            box([0.0, 0.0, 0.0], [0.09, 0.09, 1.0], [0.22, 0.24, 0.31])
+    destroyable_box([0.0, 0.94, -4.12], [6.4, 0.10, 1.15], [0.30, 0.32, 0.40])
+    destroyable_box([0.0, 1.004, -4.05], [6.0, 0.025, 0.90], [0.82, 0.56, 0.67])
+    for x in [-2.8, 0.0, 2.8] {
+        for z in [-4.55, -3.70] {
+            box([x, 0.47, z], [0.10, 0.94, 0.10], [0.22, 0.24, 0.31])
         }
-        box([side * 1.15, 0.89, -4.15], [0.12, 0.10, 1.12], [0.22, 0.24, 0.31])
     }
     // A small parts tray and a bench lamp leave the centre clear for the model.
-    ceramic_box([1.12, 1.035, -4.12], [0.40, 0.045, 0.54], white, tiles)
+    ceramic_box([2.7, 1.035, -4.12], [0.40, 0.045, 0.54], white, tiles)
     box([-1.30, 1.04, -4.46], [0.20, 0.06, 0.22], [0.22, 0.24, 0.31])
     box([-1.30, 1.42, -4.46], [0.045, 0.72, 0.045], [0.22, 0.24, 0.31])
     T.position(-1.30, 1.82, -4.33) {
@@ -194,6 +195,19 @@ T.position(-18.0, roof_height, 0.0) {
         Text { "PAPER CRAFT / XR WORKSHOP" C.rgba(0.42, 0.22, 0.34, 1.0) Unlit {} }
     }
 }
+
+// Permanent comparison mounts. Grip roots sit 18 cm above the handle bases;
+// later cut/fold/topological-weight versions can occupy the remaining bench.
+T.position(-20.2, roof_height + 1.22, -4.02) { gohei_squares("paper_craft_gohei_squares") }
+T.position(-18.8, roof_height + 1.22, -4.02) { gohei_naive_weights("paper_craft_gohei_naive") }
+for station in [{ x = -20.2 title = "01 / SQUARES" }, { x = -18.8 title = "02 / NAIVE WEIGHTS" }] {
+    box([station.x, roof_height + 1.04, -4.02], [0.16, 0.045, 0.16], [0.23, 0.24, 0.31])
+    T.position(station.x - 0.3, roof_height + 1.08, -3.52).rotation(-1.1, 0.0, 0.0) {
+        Text { station.title font_size(0.055) C.rgba(0.20, 0.12, 0.22, 1.0) Unlit {} }
+    }
+}
+tripod_light("paper_craft_inspection_light", [-15.0, roof_height, -1.8], [-18.5, roof_height + 1.6, -4.0],
+    SL.color(1.0, 0.96, 1.0).intensity(4.0).distance(8.0).angle(0.62).penumbra(0.35))
 
 // The upgraded mitten tree: one rooftop specimen and two street planters.
 fn paper_craft_planter(label, position) {

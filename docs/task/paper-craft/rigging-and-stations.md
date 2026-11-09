@@ -1,6 +1,9 @@
 # Papercraft and rigging: testable workshop stations
 
-Status: planned. Implements the [design sketch](../../draft/gohei-shide-procedural-rigging.md)
+Status: connected-sheet/folding/physics slices remain planned. The
+[naive baseline](naive-gohei.md) now implements authored Armature/Joint/Rigging,
+Euclidean automatic weights, mesh-tree binding, and an animated squares specimen.
+It does not satisfy surface-flow or folded-paper acceptance below. Implements the [design sketch](../../draft/gohei-shide-procedural-rigging.md)
 after the [environment](environment.md) can host the work.
 
 Each station keeps the previous stages visible. Do not replace the flat pattern

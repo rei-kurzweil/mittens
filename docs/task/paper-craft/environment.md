@@ -105,7 +105,7 @@ under the sky with bloom disabled too; glowing housing alone is not illumination
 Implemented `examples/paper-craft.mms` with the five-building layout above,
 19.2 m main roof, one pistol, no cans/NPC pedestal/reset pit, and the existing
 Sakura sky and short bench at the E1–E2 handoff. The subsequent sky slice now
-uses the kawaii twilight material; the long bench remains a later slice. The four neighbor bases are
+uses the kawaii twilight material; the bench has since been widened to 6.4 m for the naive gohei specimens. The four neighbor bases are
 4.0, 9.6, 16.0, and 3.2 m respectively. A small ceramic entrance apron connects
 the main building doorway to the existing pavement.
 
@@ -141,3 +141,11 @@ Headset handoff:
 - [ ] Double-tap B to toggle flight; hold B/A to rise/descend. Land on the street
   and confirm there is no automatic rooftop reset.
 - [ ] Check rooftop placement and the four floating neighbors from roof and street.
+
+## Workshop prototype handoff
+
+The main bench now has a 6 m mat, three pairs of support legs, and two labeled
+gohei stations. The parts tray is at the right end. A carryable existing tripod
+fixture provides a neutral spotlight directed toward the paper. One pistol stays
+on its separate table. E3/E4 headset acceptance above is still pending. See the
+[naive gohei notes](naive-gohei.md) for specimen scope and controls.

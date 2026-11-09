@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct BindingKey {
     mesh_transform: ComponentId,
-    gltf_component: ComponentId,
+    armature_owner: ComponentId,
     skin_id: SkinId,
 }
 
@@ -28,7 +28,7 @@ struct SkinBinding {
 ///
 /// This system defers to `TransformSystem` for cached world matrices.
 ///
-/// For each imported skin binding, it computes (mesh-local) skin matrices:
+/// For each skin binding, it computes (mesh-local) skin matrices:
 ///
 /// $$ SkinMat_j = inverse(M_meshWorld) * M_jointWorld(j) * IBM(j) $$
 ///
@@ -41,11 +41,11 @@ pub struct SkinnedMeshSystem {
     mesh_transform_to_bindings: HashMap<ComponentId, Vec<usize>>,
     // Bindings that need recomputation + palette update.
     dirty_bindings: Vec<bool>,
-    // Import-owned records. Normal frame iteration is over this compact list;
+    // Importer- or authored-rig-owned records. Normal frame iteration is over this compact list;
     // hash maps above are only reverse indexes for transform invalidation.
     bindings: Vec<Option<SkinBinding>>,
 
-    // Per-instance joint resolution for a given (GLTFComponent instance, SkinId).
+    // Per-instance joint resolution for a given (armature owner, SkinId).
     // Stored as Option so we can keep alignment with the skin's joint order even
     // if a joint node wasn't spawned.
     instance_joints: HashMap<(ComponentId, SkinId), Vec<Option<ComponentId>>>,
@@ -100,24 +100,49 @@ fn imported_binding_profile_enabled() -> bool {
 }
 
 impl SkinnedMeshSystem {
+    /// Dispose one authored binding and its cold-path reverse indexes.
+    pub fn unregister_skin(&mut self, owner: ComponentId, skin: SkinId) {
+        let mut removed = Vec::new();
+        for (index, binding) in self.bindings.iter_mut().enumerate() {
+            if binding
+                .as_ref()
+                .is_some_and(|b| b.key.armature_owner == owner && b.key.skin_id == skin)
+            {
+                *binding = None;
+                self.dirty_bindings[index] = false;
+                removed.push(index);
+            }
+        }
+        for map in [
+            &mut self.joint_to_bindings,
+            &mut self.mesh_transform_to_bindings,
+        ] {
+            map.retain(|_, indices| {
+                indices.retain(|index| !removed.contains(index));
+                !indices.is_empty()
+            });
+        }
+        self.instance_joints.remove(&(owner, skin));
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
 
     pub fn register_skin_instance_joints(
         &mut self,
-        gltf_component: ComponentId,
+        armature_owner: ComponentId,
         skin_id: SkinId,
         joints: Vec<Option<ComponentId>>,
     ) {
         self.instance_joints
-            .insert((gltf_component, skin_id), joints);
+            .insert((armature_owner, skin_id), joints);
 
         // This normally precedes binding registration. Keep the re-registration
         // path correct for asset replacement as well.
         for (index, binding) in self.bindings.iter().enumerate() {
             if binding.as_ref().is_some_and(|binding| {
-                binding.key.gltf_component == gltf_component && binding.key.skin_id == skin_id
+                binding.key.armature_owner == armature_owner && binding.key.skin_id == skin_id
             }) {
                 self.dirty_bindings[index] = true;
             }
@@ -125,16 +150,16 @@ impl SkinnedMeshSystem {
     }
 
     /// Read-only access to the resolved joint transform ComponentIds for a particular
-    /// (GLTFComponent instance, SkinId) pair.
+    /// (armature owner, SkinId) pair.
     ///
     /// The returned slice is in the same order as `VisualWorld::skin(skin_id).joint_node_indices`.
     pub fn instance_joints_for_skin(
         &self,
-        gltf_component: ComponentId,
+        armature_owner: ComponentId,
         skin_id: SkinId,
     ) -> Option<&[Option<ComponentId>]> {
         self.instance_joints
-            .get(&(gltf_component, skin_id))
+            .get(&(armature_owner, skin_id))
             .map(|v| v.as_slice())
     }
 
@@ -143,12 +168,12 @@ impl SkinnedMeshSystem {
         &mut self,
         renderable: ComponentId,
         mesh_transform: ComponentId,
-        gltf_component: ComponentId,
+        armature_owner: ComponentId,
         skin_id: SkinId,
     ) {
         let key = BindingKey {
             mesh_transform,
-            gltf_component,
+            armature_owner,
             skin_id,
         };
         for index in 0..self.bindings.len() {
@@ -171,7 +196,7 @@ impl SkinnedMeshSystem {
             .entry(mesh_transform)
             .or_default()
             .push(index);
-        if let Some(joints) = self.instance_joints.get(&(gltf_component, skin_id)) {
+        if let Some(joints) = self.instance_joints.get(&(armature_owner, skin_id)) {
             for &joint in joints.iter().flatten() {
                 self.joint_to_bindings.entry(joint).or_default().push(index);
             }
@@ -242,7 +267,7 @@ impl SkinnedMeshSystem {
         let skin = visuals.skin(binding.skin_id)?;
         let joints = self
             .instance_joints
-            .get(&(binding.gltf_component, binding.skin_id))?;
+            .get(&(binding.armature_owner, binding.skin_id))?;
 
         let joint_count = skin.joint_count().min(joints.len());
         let mut skin_mats: Vec<TransformMatrix> = Vec::with_capacity(joint_count);
@@ -348,12 +373,12 @@ impl System for SkinnedMeshSystem {
                             let has_skin = visuals.skin(binding.key.skin_id).is_some();
                             let has_joints = self
                                 .instance_joints
-                                .contains_key(&(binding.key.gltf_component, binding.key.skin_id));
+                                .contains_key(&(binding.key.armature_owner, binding.key.skin_id));
                             println!(
-                                "[SkinnedMeshSystem] binding skipped: reason=missing_data has_skin={} has_instance_joints={} gltf_component={:?} mesh_transform={:?}",
+                                "[SkinnedMeshSystem] binding skipped: reason=missing_data has_skin={} has_instance_joints={} armature_owner={:?} mesh_transform={:?}",
                                 has_skin,
                                 has_joints,
-                                binding.key.gltf_component,
+                                binding.key.armature_owner,
                                 binding.key.mesh_transform,
                             );
                         }
@@ -390,13 +415,13 @@ impl System for SkinnedMeshSystem {
                 let n = APPLY_LOG_COUNT.fetch_add(1, Ordering::Relaxed);
                 if n < 16 {
                     println!(
-                        "[SkinnedMeshSystem] binding applied: skin_mats={} renderables={} applied={} failed_apply={} missing_handle={} gltf_component={:?} mesh_transform={:?}",
+                        "[SkinnedMeshSystem] binding applied: skin_mats={} renderables={} applied={} failed_apply={} missing_handle={} armature_owner={:?} mesh_transform={:?}",
                         skin_mats.len(),
                         binding.renderables.len(),
                         applied,
                         failed_apply,
                         missing_handle,
-                        binding.key.gltf_component,
+                        binding.key.armature_owner,
                         binding.key.mesh_transform,
                     );
                 }

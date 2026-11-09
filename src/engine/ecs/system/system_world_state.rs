@@ -31,6 +31,7 @@ pub struct SystemWorld {
     pub zone_observation:
         crate::engine::ecs::system::zone_observation_system::ZoneObservationSystem,
     pub skinned_mesh: SkinnedMeshSystem,
+    pub rigging: crate::engine::ecs::system::RiggingSystem,
     pub combine_mesh: CombineMeshSystem,
     pub implicit_surface: ImplicitSurfaceSystem,
     pub destroyable: crate::engine::ecs::system::destroyable_system::DestroyableSystem,

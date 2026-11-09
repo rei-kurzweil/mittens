@@ -616,6 +616,13 @@ impl mms::Host for MittensHost<'_, '_> {
                             .map_err(|e| mms::HostError::failure("Material", e))?;
                     return Ok(S::Value(value));
                 }
+                if *component_type == "Rigging"
+                    && matches!(*method, "give_automatic_weights" | "status")
+                {
+                    let value = super::rigging_binding::invoke(self.world, id, method)
+                        .map_err(|e| mms::HostError::failure("Rigging", e))?;
+                    return Ok(S::Value(value));
+                }
                 let args = args
                     .into_iter()
                     .map(external_value_to_legacy)
