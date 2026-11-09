@@ -9,6 +9,9 @@ mod ship_startup;
 #[path = "vulkano_mirror_orientation_tests.rs"]
 mod mirror_orientation;
 
+#[path = "vulkano_twilight_sky_tests.rs"]
+mod twilight_sky;
+
 /// Exercise the full scene pipelines, per-eye slots, and MSAA resolve without
 /// a display server, Winit, or OpenXR runtime. Acquisition/lifecycle remain the
 /// responsibility of the real-runtime openxr-only example.

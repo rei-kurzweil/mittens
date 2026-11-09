@@ -5,14 +5,13 @@
 let ground_color = [0.40, 0.31, 0.32]
 
 // Editable sky stops: direction Y is -1 at the nadir, 0 at the horizon, +1 overhead.
-let sky_low_color = [1.0, 0.72, 0.66]
-let sky_high_color = [0.23, 0.32, 0.62]
+let sky_low_color = [1.0, 0.67, 0.78]
+let sky_middle_color = [0.67, 0.53, 0.82]
+let sky_high_color = [0.35, 0.40, 0.70]
 let sky_low_point = -0.12
-let sky_high_point = 0.82
-let sun_direction = [-0.35, 0.30, -0.88]
-let sun_color = [1.0, 0.84, 0.60]
-let sun_angular_radius = 0.055
-let sun_intensity = 5.0
+let sky_middle_point = 0.28
+let sky_high_point = 0.90
+let moon_direction = [-0.35, 0.30, -0.88]
 
 let main_floors = 6
 let storey_height = 3.2
@@ -25,7 +24,7 @@ import { graphics_settings_panel } from "../assets/components/panels/graphics_se
 import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
 import { mini_explosion } from "../assets/components/mini-explosion.mms"
 import { laser_machine_pistol } from "../assets/components/laser-machine-pistol.mms"
-import { gradient_skybox, background_sun } from "../assets/components/backgrounds/gradient_skybox.mms"
+import { kawaii_twilight_sky } from "../assets/components/backgrounds/kawaii-twilight-sky.mms"
 import { sakura_tree } from "../assets/components/plants/sakura_tree.mms"
 import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
 import { pool_building, pool_building_with_stairs, ceramic_box, destroyable_ceramic_box } from "../assets/components/buildings/pool_building.mms"
@@ -47,7 +46,7 @@ name = "paper_craft_scene_editor"
 
 RendererSettings { window_size(1440, 960) }
 Clock.bpm(120.0)
-BGC.rgba(0.23, 0.32, 0.62, 1.0)
+BGC.rgba(0.35, 0.40, 0.70, 1.0)
 AL.rgb(0.16, 0.17, 0.23)
 RenderGraph {
     EmissivePass {}
@@ -56,10 +55,15 @@ RenderGraph {
 // Shared Graphics settings controls bloom and the runtime pyramid image count.
 Raycastable.disabled() {
     Selectable.off()
-    gradient_skybox(sky_low_color, sky_high_color, sky_low_point, sky_high_point)
-    background_sun(sun_direction, sun_angular_radius, sun_color, sun_intensity)
+    kawaii_twilight_sky({
+        low_color = sky_low_color, low_point = sky_low_point,
+        middle_color = sky_middle_color, middle_point = sky_middle_point,
+        high_color = sky_high_color, high_point = sky_high_point,
+        moon_direction = moon_direction
+    })
 }
-T.position(sun_direction[0], sun_direction[1], sun_direction[2]) {
+// Surface lighting stays independent of the visible sky and its baked moon.
+T.position(moon_direction[0], moon_direction[1], moon_direction[2]) {
     DL.color(1.0, 0.84, 0.72).intensity(1.5)
 }
 T.position(0.5, 0.8, 0.3) { DL.color(0.62, 0.74, 1.0).intensity(0.35) }

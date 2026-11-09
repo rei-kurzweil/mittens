@@ -194,3 +194,83 @@ fn paper_craft_xr_scene_has_floating_neighbors_and_clear_ground_to_roof_stairs()
         assert!(!solid_at([-21.6, floor as f32 * 3.2 - 0.1, 3.]));
     }
 }
+
+#[test]
+fn twilight_sky_has_typed_overrides_linear_masks_and_no_bloom_extraction() {
+    use crate::engine::ecs::component::material::{MaterialComponent, MaterialDefinitionComponent};
+    use crate::engine::ecs::component::{BackgroundComponent, TextureComponent};
+    let (mut world, mut rx, mut queue, mut assets) = (
+        World::default(),
+        RxWorld::default(),
+        CommandQueue::new(),
+        RenderAssets::new(),
+    );
+    let (_session, _) = super::tests::start_settings_scene(
+        r#"import { kawaii_twilight_sky } from "../assets/components/backgrounds/kawaii-twilight-sky.mms"
+        kawaii_twilight_sky(false)
+        kawaii_twilight_sky({ moon_radius = 0.08 cloud_strength = 0.0 moon_rotation = 0.7 })"#,
+        "examples/_twilight_test.mms", &mut world, &mut rx, Some(&mut assets), &mut queue,
+    ).unwrap();
+    let definitions: Vec<_> = world
+        .all_components()
+        .filter_map(|id| world.get_component_by_id_as::<MaterialDefinitionComponent>(id))
+        .collect();
+    assert_eq!(definitions.len(), 1, "share shader definition across skies");
+    let definition = definitions[0];
+    let compiled = crate::engine::graphics::custom_material::compile(
+        &definition.fragment_uri,
+        &definition.fields,
+    )
+    .unwrap();
+    assert_eq!(compiled.byte_size, 128);
+    assert!(
+        compiled
+            .descriptor_bindings
+            .iter()
+            .all(|binding| matches!(binding, (1, 0) | (1, 1)))
+    );
+    let materials: Vec<_> = world
+        .all_components()
+        .filter_map(|id| world.get_component_by_id_as::<MaterialComponent>(id))
+        .collect();
+    assert_eq!(materials.len(), 2);
+    assert!(materials.iter().any(|m| m.values["moon_radius"] == [0.055]));
+    let overridden = materials
+        .iter()
+        .find(|m| m.values["moon_radius"] == [0.08])
+        .unwrap();
+    assert_eq!(overridden.values["cloud_strength"], [0.0]);
+    assert_eq!(overridden.values["moon_rotation"], [0.7]);
+    assert_eq!(overridden.values["high_color"], [0.35, 0.40, 0.70]);
+    let backgrounds: Vec<_> = world
+        .all_components()
+        .filter_map(|id| world.get_component_by_id_as::<BackgroundComponent>(id))
+        .collect();
+    assert_eq!(backgrounds.len(), 2);
+    assert!(
+        backgrounds
+            .iter()
+            .all(|bg| !bg.ray_casting && !bg.occlusion_and_lighting)
+    );
+    assert_eq!(
+        world
+            .all_components()
+            .filter_map(|id| { world.get_component_by_id_as::<TextureComponent>(id) })
+            .filter(|t| t.uri() == Some("assets/textures/sky/kawaii-twilight-masks.png"))
+            .count(),
+        2
+    );
+    let packed = image::open("assets/textures/sky/kawaii-twilight-masks.png")
+        .unwrap()
+        .to_rgba8();
+    let clouds = image::open("assets/textures/space/sky-cloud-mask.png")
+        .unwrap()
+        .to_rgba8();
+    assert_eq!(packed.dimensions(), clouds.dimensions());
+    assert!(
+        packed
+            .pixels()
+            .zip(clouds.pixels())
+            .all(|(p, c)| p[0] == c[0] && p[3] == 255)
+    );
+}

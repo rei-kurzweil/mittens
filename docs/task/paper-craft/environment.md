@@ -104,7 +104,8 @@ under the sky with bloom disabled too; glowing housing alone is not illumination
 
 Implemented `examples/paper-craft.mms` with the five-building layout above,
 19.2 m main roof, one pistol, no cans/NPC pedestal/reset pit, and the existing
-Sakura sky and short bench pending later slices. The four neighbor bases are
+Sakura sky and short bench at the E1–E2 handoff. The subsequent sky slice now
+uses the kawaii twilight material; the long bench remains a later slice. The four neighbor bases are
 4.0, 9.6, 16.0, and 3.2 m respectively. A small ceramic entrance apron connects
 the main building doorway to the existing pavement.
 

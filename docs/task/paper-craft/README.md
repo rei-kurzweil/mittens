@@ -1,6 +1,6 @@
 # Paper craft XR example: sequence and acceptance tracker
 
-Status: environment slices 1–2 implemented, 2026-11-09; automated scene/collision checks passed and user headset acceptance pending. Remaining slices planned.
+Status: environment slices 1–2 and twilight sky slice 3 implemented, 2026-11-09. User reported the environment looks good; sky headset review is pending. Workshop and papercraft slices remain planned.
 
 Create `examples/paper-craft.mms` from the XR Sakura drone conversion scene as
 a comfortable rooftop workshop for inspecting progressively constructed shide.
