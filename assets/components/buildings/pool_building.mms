@@ -111,7 +111,30 @@ fn destroyable_section(label, data, white, trim_color, tiles) {
     }
 }
 
-export fn pool_building(label, origin, floors, street_side, roof_access, tiles, trim_color, full_detail, per_floor) {
+fn stairwell_slab(data, y, slab) {
+    // Opening x=[-5.8,-1.4], z=[1.6,5.6]. The full-width front landing
+    // connects both flights to each floor; all boxes also generate collision.
+    building_box(data, [-6.4, y - slab / 2.0, 0.0], [1.2, slab, 12.0], false)
+    building_box(data, [2.8, y - slab / 2.0, 0.0], [8.4, slab, 12.0], false)
+    building_box(data, [-3.6, y - slab / 2.0, -2.2], [4.4, slab, 7.6], false)
+    building_box(data, [-3.6, y - slab / 2.0, 5.8], [4.4, slab, 0.4], false)
+}
+
+fn stairwell_flights(data, y, slab) {
+    // Two separate 1.8 m wide lanes: ten 0.16 m rises per half-storey,
+    // 0.28 m treads, and a 1.2 m deep turnaround. Repeating at 3.2 m
+    // intervals preserves standing clearance above both flights and landings.
+    // Thin open-riser treads are essential: solid blocks extending to the
+    // storey base would obstruct the heads of people on the flight below.
+    for step in range(10) {
+        let rise = (step + 1) * 0.16
+        building_box(data, [-4.7, y + rise - 0.06, 1.74 + step * 0.28], [1.8, 0.12, 0.28], false)
+        building_box(data, [-2.5, y + 1.6 + rise - 0.06, 4.26 - step * 0.28], [1.8, 0.12, 0.28], false)
+    }
+    building_box(data, [-3.6, y + 1.6 - slab / 2.0, 5.0], [4.4, slab, 1.2], false)
+}
+
+fn build_pool_building(label, origin, floors, street_side, roof_access, tiles, trim_color, full_detail, per_floor, full_stairwell) {
     let width = 14.0
     let depth = 12.0
     let storey = 3.2
@@ -140,7 +163,16 @@ export fn pool_building(label, origin, floors, street_side, roof_access, tiles, 
             let y = floor * storey
             let floor_data = data
             if per_floor { floor_data = sections["" + floor] }
-            building_box(floor_data, [0.0, y - slab / 2.0, 0.0], [width, slab, depth], false)
+            if full_stairwell {
+                if floor == 0 {
+                    building_box(floor_data, [0.0, y - slab / 2.0, 0.0], [width, slab, depth], false)
+                } else {
+                    stairwell_slab(floor_data, y, slab)
+                }
+                stairwell_flights(floor_data, y, slab)
+            } else {
+                building_box(floor_data, [0.0, y - slab / 2.0, 0.0], [width, slab, depth], false)
+            }
             // Horizontal spandrels leave 1.95 m of open window height.
             for side in [-1.0, 1.0] {
                 // Front/back facades along Z; columns are emitted separately.
@@ -178,7 +210,9 @@ export fn pool_building(label, origin, floors, street_side, roof_access, tiles, 
         roof_data = sections["" + floors]
         stair_data = sections["" + (floors - 1)]
     }
-    if roof_access {
+    if full_stairwell {
+        stairwell_slab(roof_data, height, slab)
+    } else if roof_access {
         // Roof opening x=[-5.8,-3.4], z=[1.2,5.2], reached from the top floor.
         building_box(roof_data, [-6.4, height - slab / 2.0, 0.0], [1.2, slab, 12.0], false)
         building_box(roof_data, [1.8, height - slab / 2.0, 0.0], [10.4, slab, 12.0], false)
@@ -214,4 +248,14 @@ export fn pool_building(label, origin, floors, street_side, roof_access, tiles, 
             }
         }
     }
+}
+
+export fn pool_building(label, origin, floors, street_side, roof_access, tiles, trim_color, full_detail, per_floor) {
+    return build_pool_building(label, origin, floors, street_side, roof_access, tiles, trim_color, full_detail, per_floor, false)
+}
+
+// Full-detail, floor-batched variant with a continuous ground-to-roof stairwell.
+// Existing pool_building callers retain their original slabs and top-floor stairs.
+export fn pool_building_with_stairs(label, origin, floors, street_side, tiles, trim_color) {
+    return build_pool_building(label, origin, floors, street_side, true, tiles, trim_color, true, true, true)
 }

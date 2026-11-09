@@ -64,6 +64,9 @@ mod tests;
 mod sakura_scene_tests;
 
 #[cfg(test)]
+mod paper_craft_scene_tests;
+
+#[cfg(test)]
 mod lumae_pacing_tests;
 
 #[cfg(test)]
