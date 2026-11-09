@@ -45,14 +45,19 @@ impl TextureUploader for Upload<'_> {
 #[test]
 #[ignore = "requires Vulkan; checks mirror orientation in both eyes"]
 fn planar_mirror_keeps_reflected_objects_upright() -> Result<(), Box<dyn std::error::Error>> {
-    mirror_fixture(false)
+    mirror_fixture(false, false)
 }
 #[test]
 #[ignore = "requires Vulkan; verifies per-mirror pause preserves stereo images and other captures"]
 fn individual_mirror_pause_retains_last_images() -> Result<(), Box<dyn std::error::Error>> {
-    mirror_fixture(true)
+    mirror_fixture(true, false)
 }
-fn mirror_fixture(freeze: bool) -> Result<(), Box<dyn std::error::Error>> {
+#[test]
+#[ignore = "requires Vulkan; checks cube mirror UVs with inherited depth-bucket material"]
+fn cube_mirror_keeps_reflected_objects_upright() -> Result<(), Box<dyn std::error::Error>> {
+    mirror_fixture(false, true)
+}
+fn mirror_fixture(freeze: bool, cube: bool) -> Result<(), Box<dyn std::error::Error>> {
     let context = RendererContext::new(None, None, None)?;
     let extent = [256, 192];
     let format = Format::B8G8R8A8_UNORM;
@@ -107,10 +112,14 @@ fn mirror_fixture(freeze: bool) -> Result<(), Box<dyn std::error::Error>> {
             angle_down: -0.6,
         },
     };
+    // Exercise an off-axis capture, not just a centered viewer.
+    let mut view = view;
+    view.pose.position.x = 0.35;
+    view.pose.position.y = 0.12;
     let mut left = view;
     let mut right = view;
-    left.pose.position.x = -0.032;
-    right.pose.position.x = 0.032;
+    left.pose.position.x -= 0.032;
+    right.pose.position.x += 0.032;
     scene.systems.xr.set_external_frame(Some(
         crate::engine::ecs::system::external_xr_frame::ExternalXrFrame {
             views: Some([left, right]),
@@ -119,8 +128,7 @@ fn mirror_fixture(freeze: bool) -> Result<(), Box<dyn std::error::Error>> {
     ));
     // Objects are behind the viewer, so only their reflections can contribute
     // colored pixels. Leave the space behind the mirror open, as in the ship.
-    scene.load_mms_source_at_path(
-        r#"
+    let source = r#"
         RendererSettings {window_visible(false)}
         BGC.rgba(0,0,0,1)
         RenderGraph.off()
@@ -147,9 +155,16 @@ fn mirror_fixture(freeze: bool) -> Result<(), Box<dyn std::error::Error>> {
             if event=="Resume" {mirror.set_enabled(true)}
         })
         T.position(0,1.6,3) {InputXR.on() {T {CXR {}}}}
-    "#,
-        "examples/_mirror_orientation_test.mms",
-    )?;
+    "#;
+    let source = if cube {
+        source.replace(
+            "T.position(0,1.6,0).scale(4,3,1) {R.plane() {mirror}}",
+            "T.position(0,1.6,0).scale(4,3,0.06) {Material(MaterialDefinition.anime().opaque_bucket(\"far\")) R.cube() {mirror}}",
+        )
+    } else {
+        source.to_owned()
+    };
+    scene.load_mms_source_at_path(&source, "examples/_mirror_orientation_test.mms")?;
     let mut counts = [1000, 1000];
     draw_frames(&mut renderer, &mut scene, &eyes, extent, &mut counts, 8)?;
     let pixels_per_eye = (extent[0] * extent[1]) as usize;
@@ -158,14 +173,27 @@ fn mirror_fixture(freeze: bool) -> Result<(), Box<dyn std::error::Error>> {
         let image = &bytes[eye * pixels_per_eye * 4..(eye + 1) * pixels_per_eye * 4];
         let mut red = [0usize; 3];
         let mut blue = [0usize; 3];
+        let mut red_bounds = [
+            f32::INFINITY,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NEG_INFINITY,
+        ];
+        let mut blue_bounds = red_bounds;
         for (index, pixel) in image.chunks_exact(4).enumerate() {
-            let target = if pixel[2] > 160 && pixel[0] < 80 && pixel[1] < 80 {
-                &mut red
+            let (target, bounds) = if pixel[2] > 160 && pixel[0] < 80 && pixel[1] < 80 {
+                (&mut red, &mut red_bounds)
             } else if pixel[0] > 160 && pixel[2] < 80 && pixel[1] < 80 {
-                &mut blue
+                (&mut blue, &mut blue_bounds)
             } else {
                 continue;
             };
+            let x = (index % extent[0] as usize) as f32 + 0.5;
+            let y = (index / extent[0] as usize) as f32 + 0.5;
+            bounds[0] = bounds[0].min(x);
+            bounds[1] = bounds[1].min(y);
+            bounds[2] = bounds[2].max(x);
+            bounds[3] = bounds[3].max(y);
             target[0] += 1;
             target[1] += index % extent[0] as usize;
             target[2] += index / extent[0] as usize;
@@ -184,6 +212,31 @@ fn mirror_fixture(freeze: bool) -> Result<(), Box<dyn std::error::Error>> {
             red[1] / red[0] < blue[1] / blue[0],
             "preserve the mirror's horizontal orientation"
         );
+        let mirror = scene
+            .visuals
+            .mirrors()
+            .iter()
+            .find(|mirror| {
+                scene.world.component_label(mirror.mirror_component) == Some("pause_target")
+            })
+            .unwrap();
+        let camera = &scene
+            .visuals
+            .visual_camera(crate::engine::graphics::CameraTarget::Xr)
+            .unwrap()
+            .eyes[eye];
+        for (center, actual) in [
+            ([-0.65, 2.35, 4.0], red_bounds),
+            ([0.65, 0.85, 4.0], blue_bounds),
+        ] {
+            let expected = reflected_marker_bounds(camera, mirror, center, extent);
+            for edge in 0..4 {
+                assert!(
+                    (actual[edge] - expected[edge]).abs() < 2.0,
+                    "eye {eye}: reflected marker position/size must match planar geometry: {actual:?} vs {expected:?}"
+                );
+            }
+        }
     }
 
     if freeze {
@@ -365,4 +418,43 @@ fn read_capture(
         .wait(None)?;
     let bytes = readback.read()?.to_vec();
     Ok(bytes)
+}
+
+// Compare the raster against real reflected geometry, so orientation fixes cannot
+// hide a stretched, shifted or sheared capture behind the correct color ordering.
+fn reflected_marker_bounds(
+    camera: &crate::engine::graphics::CameraData,
+    mirror: &crate::engine::graphics::visual_world::VisualMirror,
+    center: [f32; 3],
+    extent: [u32; 2],
+) -> [f32; 4] {
+    use crate::utils::math::{mat4_mul_vec4, vec3_reflect_point};
+    let mut bounds = [
+        f32::INFINITY,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NEG_INFINITY,
+    ];
+    for dx in [-0.4, 0.4] {
+        for dy in [-0.3, 0.3] {
+            for dz in [-0.075, 0.075] {
+                let point = vec3_reflect_point(
+                    [center[0] + dx, center[1] + dy, center[2] + dz],
+                    mirror.plane_origin,
+                    mirror.plane_normal,
+                );
+                let clip = mat4_mul_vec4(
+                    camera.proj,
+                    mat4_mul_vec4(camera.view, [point[0], point[1], point[2], 1.]),
+                );
+                let x = (clip[0] / clip[3] + 1.) * 0.5 * extent[0] as f32;
+                let y = (1. - clip[1] / clip[3]) * 0.5 * extent[1] as f32;
+                bounds[0] = bounds[0].min(x);
+                bounds[1] = bounds[1].min(y);
+                bounds[2] = bounds[2].max(x);
+                bounds[3] = bounds[3].max(y);
+            }
+        }
+    }
+    bounds
 }

@@ -37,7 +37,7 @@ ED {
 
     // Full-body mirror in front of the XR start pose.
     T.position(0.0, 1.25, -4.5).scale(2.4, 2.4, 0.08) {
-        R.cube() { Mirror.quality(2048) {} }
+        R.plane() { Mirror.quality(2048) {} }
     }
 
     T {

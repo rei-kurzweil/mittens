@@ -176,7 +176,7 @@ T.position(-16.2, roof_height + 2.2, -3.6) {
 T.position(-14.8, roof_height + 1.35, -1.0).rotation(0.0, -1.57079633, 0.0).scale(2.6, 2.6, 0.06) {
     name = "sakura_mirror"
     Grabbable {}
-    R.cube() { Mirror.quality(1440) {} Raycastable.enabled() }
+    R.plane() { Mirror.quality(1440) {} Raycastable.enabled() }
 }
 
 // Long road, tiled pavements, lane markings and two existing display-car assets.

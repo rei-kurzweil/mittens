@@ -10,6 +10,10 @@ must still execute draws for each new view. A retained command buffer can be
 submitted again without rerecording it, provided its referenced resources,
 recorded state, synchronization and pending-use rules remain valid.
 
+The [retained key/group proposal](retained-sort-key-components.md) expands the
+possible storage and invalidation model. It is proposal-only; the immediate
+implementation scope remains more careful invalidation of existing pass caches.
+
 ## Layers to retain independently
 
 | Layer | Current behavior / evidence | Candidate persistence | Changes requiring work |

@@ -4,6 +4,8 @@
 //! The renderer later uploads them into GPU buffers (vertex/index buffers)
 //! and returns a `MeshHandle` that can be referenced by ECS renderables.
 
+mod cube;
+
 use vulkano::buffer::BufferContents;
 use vulkano::pipeline::graphics::vertex_input::Vertex;
 
@@ -692,94 +694,6 @@ impl MeshFactory {
             2, 3, 7, 2, 7, 6, // top
             3, 0, 4, 3, 4, 7, // left
         ];
-
-        CpuMesh::new(vertices, indices)
-    }
-
-    /// Unit-ish cube centered at origin.
-    ///
-    /// This is a cube with per-face vertices (24 vertices, 12 triangles) so normals are flat.
-    pub fn cube() -> CpuMesh {
-        let p = 0.5_f32;
-
-        // 4 verts per face. UVs are placeholder; cube texturing isn't a priority yet.
-        let mut vertices: Vec<CpuVertex> = Vec::with_capacity(24);
-        let mut indices: Vec<u32> = Vec::with_capacity(36);
-
-        let mut push_face = |n: [f32; 3], a: [f32; 3], b: [f32; 3], c: [f32; 3], d: [f32; 3]| {
-            let base = vertices.len() as u32;
-            vertices.push(CpuVertex {
-                pos: a,
-                uv: [0.0, 0.0],
-                normal: n,
-            });
-            vertices.push(CpuVertex {
-                pos: b,
-                uv: [1.0, 0.0],
-                normal: n,
-            });
-            vertices.push(CpuVertex {
-                pos: c,
-                uv: [1.0, 1.0],
-                normal: n,
-            });
-            vertices.push(CpuVertex {
-                pos: d,
-                uv: [0.0, 1.0],
-                normal: n,
-            });
-            // CCW triangles as seen from outside.
-            indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
-        };
-
-        // -Z
-        push_face(
-            [0.0, 0.0, -1.0],
-            [-p, -p, -p],
-            [-p, p, -p],
-            [p, p, -p],
-            [p, -p, -p],
-        );
-        // +Z
-        push_face(
-            [0.0, 0.0, 1.0],
-            [-p, -p, p],
-            [p, -p, p],
-            [p, p, p],
-            [-p, p, p],
-        );
-        // -X
-        push_face(
-            [-1.0, 0.0, 0.0],
-            [-p, -p, -p],
-            [-p, -p, p],
-            [-p, p, p],
-            [-p, p, -p],
-        );
-        // +X
-        push_face(
-            [1.0, 0.0, 0.0],
-            [p, -p, -p],
-            [p, p, -p],
-            [p, p, p],
-            [p, -p, p],
-        );
-        // -Y
-        push_face(
-            [0.0, -1.0, 0.0],
-            [-p, -p, -p],
-            [p, -p, -p],
-            [p, -p, p],
-            [-p, -p, p],
-        );
-        // +Y
-        push_face(
-            [0.0, 1.0, 0.0],
-            [-p, p, -p],
-            [-p, p, p],
-            [p, p, p],
-            [p, p, -p],
-        );
 
         CpuMesh::new(vertices, indices)
     }

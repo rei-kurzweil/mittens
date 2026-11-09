@@ -52,6 +52,9 @@ end-to-end measurement.
   CPU recording about 7 -> 1 ms, 18.41 ms stationary and 21.55 ms moving-head
   mean offscreen frames at 1920 per eye with bloom/MSAA 4x. Includes the rejected
   bloom-only boundary and preserved controls.
+- [Retained sort-key components and groups proposal](retained-sort-key-components.md):
+  illustrative storage, dependency/invalidation tables and Mermaid flows; separates
+  scoped invalidation from later retained membership, GPU ranges and budgeted publication.
 - [Persistence and command reuse](persistence-and-command-reuse.md): inventory
   what already persists, what changes each frame, and the invalidation and
   lifetime rules needed to switch incrementally.

@@ -143,7 +143,7 @@ ED {
     
     
     T.position(0.0, 0.55, -4.5).scale(3.0, 3.0, 0.08) {
-        R.cube() {
+        R.plane() {
             Mirror.quality(1440) {}
         }
     }

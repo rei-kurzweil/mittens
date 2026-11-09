@@ -905,3 +905,95 @@ fn player_building_chunks_confine_geometry_and_rebuild_only_the_edited_floor() {
 
 #[path = "sakura_animation_tests.rs"]
 mod animation_tests;
+
+#[test]
+fn sakura_combined_trees_retain_soft_pink_anime_materials() {
+    use crate::engine::graphics::{
+        CpuMesh, MaterialHandle, MeshHandle, MeshUploader, TextureHandle, TextureUploader,
+    };
+    struct Upload(u32);
+    impl MeshUploader for Upload {
+        fn upload_mesh(&mut self, _: &CpuMesh) -> Result<MeshHandle, Box<dyn std::error::Error>> {
+            self.0 += 1;
+            Ok(MeshHandle(1000 + self.0))
+        }
+    }
+    impl TextureUploader for Upload {
+        fn upload_texture_rgba8(
+            &mut self,
+            _: &[u8],
+            _: u32,
+            _: u32,
+        ) -> Result<TextureHandle, Box<dyn std::error::Error>> {
+            Ok(TextureHandle(1000))
+        }
+        fn upload_texture_bc7(
+            &mut self,
+            _: &[u8],
+            _: u32,
+            _: u32,
+            _: bool,
+        ) -> Result<TextureHandle, Box<dyn std::error::Error>> {
+            Ok(TextureHandle(1000))
+        }
+    }
+    let mut scene = crate::engine::Universe::new(Default::default());
+    scene
+        .load_mms_source_at_path(
+            r#"
+        RendererSettings {window_visible(false)}
+        import { sakura_tree } from "../assets/components/plants/sakura_tree.mms"
+        T { sakura_tree(2, 1.15, 0.24) }
+        T.position(4,0,0) { sakura_tree(2, 1.15, 0.24) }
+    "#,
+            "examples/_sakura_tree_material_test.mms",
+        )
+        .unwrap();
+    let mut upload = Upload(0);
+    for _ in 0..3 {
+        scene.update(1.0 / 90.0, &Default::default());
+        scene.systems.prepare_render(
+            &mut scene.world,
+            &mut scene.visuals,
+            &mut scene.render_assets,
+            &mut upload,
+            &mut scene.command_queue,
+        );
+        let trees: Vec<_> = scene
+            .visuals
+            .instances()
+            .iter()
+            .filter(|instance| {
+                matches!(
+                    scene.world.component_label(instance.component),
+                    Some("sakura_tree_branches" | "sakura_tree_blossoms")
+                )
+            })
+            .collect();
+        assert_eq!(trees.len(), 4);
+        for tree in trees {
+            assert_eq!(tree.renderable.material, MaterialHandle::ANIME_MESH);
+            assert!(tree.material_instance.is_some());
+            let params = scene
+                .visuals
+                .anime_shading(
+                    scene
+                        .visuals
+                        .instance_handle_for_component(tree.component)
+                        .unwrap(),
+                )
+                .unwrap();
+            let [r, g, b, strength] = params.shade_color_strength;
+            assert!(r > b && b > g && g >= 0.6, "light pink shade: {params:?}");
+            assert!(strength <= 0.4);
+            assert!(
+                params.controls[1] - params.controls[0] >= 0.5,
+                "soft shade band: {params:?}"
+            );
+        }
+    }
+    assert_eq!(
+        upload.0, 4,
+        "tree batches must retain their uploaded meshes"
+    );
+}

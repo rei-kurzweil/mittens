@@ -44,13 +44,17 @@ fn branch(depth, length, width, wood, blossoms, seed, flowers) {
 export fn sakura_tree(depth, length, width) {
     let definition = MaterialDefinition.anime()
     let wood = Material(definition).inputs({
-        shade_color = [0.42, 0.35, 0.43]
-        shade_strength = 0.55
+        shade_color = [0.82, 0.62, 0.72]
+        shade_strength = 0.40
+        shade_threshold = 0.20
+        lit_threshold = 0.85
         rim_strength = 0.15
     })
     let blossoms = Material(definition).inputs({
-        shade_color = [0.75, 0.58, 0.70]
-        shade_strength = 0.30
+        shade_color = [0.95, 0.72, 0.84]
+        shade_strength = 0.35
+        shade_threshold = 0.20
+        lit_threshold = 0.85
         rim_color = [1.0, 0.90, 0.95]
         rim_strength = 0.18
     })
@@ -60,10 +64,12 @@ export fn sakura_tree(depth, length, width) {
     return T {
         CombineMesh {
             name = "sakura_tree_branches"
+            wood
             branch(depth, length, width, wood, blossoms, 1, false)
         }
         CombineMesh {
             name = "sakura_tree_blossoms"
+            blossoms
             Texture.with_uri("assets/textures/cherry-blossoms/sakura-blossom-256.png")
             TextureFiltering.linear()
             TransparentCutout {}
