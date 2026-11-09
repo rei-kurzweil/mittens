@@ -1,36 +1,36 @@
-//! Configured-only authoring API; no legacy armature/material fallback.
+//! Configured authoring API for ancestor armature drivers.
 use super::runtime_config::{ComponentInitializerKind, MittensBinding};
-use crate::engine::ecs::component::{
-    ArmatureComponent, ComponentRef, JointComponent, RiggingComponent,
-};
+use crate::engine::ecs::component::{ArmatureComponent, ComponentRef, JointComponent};
 use crate::engine::ecs::{ComponentId, World};
 use meow_meow_script as mms;
 
 pub(crate) fn register(builder: &mut mms::RuntimeSpecBuilder<MittensBinding>) {
-    for canonical in ["Armature", "Joint", "Rigging"] {
+    for canonical in ["Armature", "Joint"] {
         builder.component(canonical, |c| {
             super::runtime_config::component_common::register(c, canonical);
-            if canonical == "Rigging" {
-                c.host_constructor(
-                    "new",
-                    mms::ValueSignature::new(
-                        vec![mms::ValueType::Any; 2],
-                        mms::ValueType::Component,
-                    ),
-                    MittensBinding::ComponentConstructor {
-                        component: canonical,
-                        name: Some("new"),
-                    },
-                );
-                c.host_builder_call(
-                    "give_automatic_weights",
-                    mms::ValueSignature::new(vec![], mms::ValueType::Component),
-                    MittensBinding::ComponentInitializer {
-                        component: canonical,
-                        name: "give_automatic_weights",
-                        kind: ComponentInitializerKind::Call,
-                    },
-                );
+            if canonical == "Armature" {
+                for (name, args) in [
+                    ("joints", vec![mms::ValueType::Any]),
+                    ("give_automatic_weights", vec![]),
+                ] {
+                    c.host_constructor(
+                        name,
+                        mms::ValueSignature::new(args.clone(), mms::ValueType::Component),
+                        MittensBinding::ComponentConstructor {
+                            component: canonical,
+                            name: Some(name),
+                        },
+                    );
+                    c.host_builder_call(
+                        name,
+                        mms::ValueSignature::new(args, mms::ValueType::Component),
+                        MittensBinding::ComponentInitializer {
+                            component: canonical,
+                            name,
+                            kind: ComponentInitializerKind::Call,
+                        },
+                    );
+                }
                 for (name, result) in [
                     ("give_automatic_weights", mms::ValueType::Null),
                     ("status", mms::ValueType::String),
@@ -48,14 +48,14 @@ pub(crate) fn register(builder: &mut mms::RuntimeSpecBuilder<MittensBinding>) {
         });
     }
 }
-fn reference(world: &World, args: &[mms::Value], index: usize) -> Result<ComponentRef, String> {
-    match args.get(index) {
+fn reference(world: &World, args: &[mms::Value]) -> Result<ComponentRef, String> {
+    match args.first() {
         Some(mms::Value::ComponentObject { id, .. }) => {
             let id = super::host::MittensHost::component_id(*id);
             Ok(ComponentRef::Guid(
                 world
                     .get_component_record(id)
-                    .ok_or("stale rig reference")?
+                    .ok_or("stale joint-tree reference")?
                     .guid,
             ))
         }
@@ -68,9 +68,7 @@ fn reference(world: &World, args: &[mms::Value], index: usize) -> Result<Compone
                 Ok(ComponentRef::Query(s.clone()))
             }
         }
-        _ => Err(
-            "Rigging.new expects armature and mesh-tree component references or selectors".into(),
-        ),
+        _ => Err("Armature.joints expects a component handle or selector".into()),
     }
 }
 pub(crate) fn create(
@@ -80,24 +78,36 @@ pub(crate) fn create(
     args: &[mms::Value],
 ) -> Result<ComponentId, String> {
     match (component, constructor) {
-        ("Armature", None) => Ok(world.add_component(ArmatureComponent)),
-        ("Joint", None) => Ok(world.add_component(JointComponent)),
-        ("Rigging", Some("new")) => {
-            let armature = reference(world, args, 0)?;
-            let target = reference(world, args, 1)?;
-            Ok(world.add_component(RiggingComponent::new(armature, target)))
+        ("Armature", None | Some("give_automatic_weights")) => {
+            Ok(world.add_component(ArmatureComponent::default()))
         }
-        _ => Err("Rigging requires Rigging.new(armature, mesh_tree)".into()),
+        ("Armature", Some("joints")) => {
+            let root = reference(world, args)?;
+            Ok(world.add_component(ArmatureComponent::new(root)))
+        }
+        ("Joint", None) => Ok(world.add_component(JointComponent)),
+        _ => Err("unsupported armature constructor".into()),
     }
 }
-pub(crate) fn apply(world: &mut World, id: ComponentId, method: &str) -> Result<(), String> {
-    if method != "give_automatic_weights" {
-        return Err(format!("unknown Rigging builder '{method}'"));
+pub(crate) fn apply(
+    world: &mut World,
+    id: ComponentId,
+    method: &str,
+    args: &[mms::Value],
+) -> Result<(), String> {
+    let joints = if method == "joints" {
+        Some(reference(world, args)?)
+    } else {
+        None
+    };
+    let armature = world
+        .get_component_by_id_as_mut::<ArmatureComponent>(id)
+        .ok_or("missing Armature")?;
+    match method {
+        "joints" => armature.joints = joints,
+        "give_automatic_weights" => armature.give_automatic_weights(),
+        _ => return Err(format!("unknown Armature builder '{method}'")),
     }
-    world
-        .get_component_by_id_as_mut::<RiggingComponent>(id)
-        .ok_or("missing Rigging")?
-        .give_automatic_weights();
     Ok(())
 }
 pub(crate) fn invoke(
@@ -108,12 +118,43 @@ pub(crate) fn invoke(
     if method == "status" {
         return Ok(mms::Value::String(
             world
-                .get_component_by_id_as::<RiggingComponent>(id)
-                .ok_or("missing Rigging")?
+                .get_component_by_id_as::<ArmatureComponent>(id)
+                .ok_or("missing Armature")?
                 .status
                 .clone(),
         ));
     }
-    apply(world, id, method)?;
+    apply(world, id, method, &[])?;
     Ok(mms::Value::Null)
+}
+
+/// Armatures may wrap any supported scene subtree, including components still
+/// constructed by the compatibility host. Register children without initializing
+/// them; the completed outer tree owns initialization and parenting.
+pub(crate) fn materialize_descendants(
+    host: &mut super::host::MittensHost<'_, '_>,
+    tree: &mut mms::MaterializedCE,
+) -> Result<(), mms::HostError> {
+    use mms::Host;
+    let armature = tree.component_type == "Armature";
+    for child in &mut tree.children {
+        let mms::CeChild::Spawn(subtree) = child else {
+            continue;
+        };
+        if armature || subtree.component_type == "Armature" {
+            let response = host.dispatch(mms::HostRequest::Register {
+                tree: subtree.clone(),
+            })?;
+            let mms::HostResponse::Component { handle, .. } = response else {
+                return Err(mms::HostError::failure(
+                    "Armature",
+                    "child registration did not return a component",
+                ));
+            };
+            *child = mms::CeChild::Attach(handle);
+        } else {
+            materialize_descendants(host, subtree)?;
+        }
+    }
+    Ok(())
 }

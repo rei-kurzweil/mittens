@@ -31,8 +31,8 @@ These are observations of the current repository, not proposed new APIs:
 | --- | --- |
 | [`CpuMesh`](../../src/engine/graphics/mesh.rs) | `joints0` and `weights0`, four influences per vertex, plus `with_skinning`. We can generate ordinary skinnable mesh data. |
 | [`Skin`](../../src/engine/graphics/skin.rs) | Shared joint ordering and inverse bind matrices, currently described by glTF URI, skin index, and node indices. Authored rigs need identities independent of import metadata. |
-| [`SkinnedMeshSystem`](../../src/engine/ecs/system/skinned_mesh_system.rs) | Dirty binding tracking and mesh-local palette updates. Binding keys and joint lookup currently use a glTF component as instance owner. |
-| [`SecondaryMotionSystem`](../../src/engine/ecs/system/secondary_motion_system.rs) | Fixed-step spring chains, per-joint configuration, collision, and lifecycle tracking. Resolution, rest data, automatic chain discovery, and collision ownership currently depend on glTF. |
+| [`SkinnedMeshSystem`](../../src/engine/ecs/system/skinned_mesh_system.rs) | Dirty binding tracking and mesh-local palette updates. Binding keys and joint lookup share a generic armature owner for imported and authored rigs. |
+| [`SecondaryMotionSystem`](../../src/engine/ecs/system/secondary_motion_system.rs) | Fixed-step spring chains, per-joint configuration, collision, and lifecycle tracking. Resolution, rest data, and automatic chain discovery support imported skins and explicitly referenced authored joint trees. |
 | [`RenderableComponent`](../../src/engine/ecs/component/renderable.rs) | Serializable procedural shapes including polygon, cylinder, and helix constructors. No folded-sheet authoring shape yet. |
 | [`TransformParent`](../../src/engine/ecs/component/transform_operator.rs) | Existing transform inheritance redirection to examine/reuse for rigid attachments. |
 | [`RestAttachment`](../../src/engine/ecs/component/rest_attachment.rs) | Imported rest-space metadata consumed by other systems; it is not a general live joint-parenting component. |
@@ -44,27 +44,12 @@ components or export/reimport a temporary GLB just to activate those systems.
 
 ## Prop structure
 
-Illustrative logical hierarchy; names below are proposals:
-
-```text
-GoheiRoot                         <- grabbed transform / rigid prop motion
-├── Staff                         <- existing cylinder or authored mesh; unskinned
-├── PaperMountA                   <- fixed offset on staff
-│   ├── PaperRigA                 <- authored armature scope
-│   │   └── Anchor               <- fixed to mount, excluded from simulation
-│   │       └── Neck0
-│   │           └── Panel0
-│   │               └── Neck1
-│   │                   └── Panel1 ... Tip
-│   ├── PaperGeometryA            <- one mesh or a renderable subtree
-│   └── PaperMotionA              <- spring config referring to this rig
-└── PaperMountB ...               <- independent strip/chain, if desired
-```
-
-Geometry and joints share a mount basis but need not be structural parents of
-one another. Skin bindings establish their relationship. Mount motion must
-reach the paper exactly once. The mount's rigid wrapper can later carry a tie,
-ornament, or other unskinned decoration.
+The grabbed transform contains an unskinned staff and paper mount. The mount
+contains a joint tree plus an Armature wrapping the paper mesh tree and its
+motion configuration. The Armature references the joint root; the two can be
+siblings, or the joint tree may live elsewhere. Sharing a mount is a useful prop
+placement convention, not a binding requirement. Mount motion reaches the paper
+exactly once. Rigid ornaments can live directly under the relevant joint.
 
 Treat each paper strip as an independent chain initially. Joining strips into
 one mesh must preserve strip identity and prevent cross-strip auto weights.
@@ -199,24 +184,33 @@ missing depth much earlier than motion testing.
 
 ## Authored armatures and binding a renderable tree
 
-Proposed responsibilities, independent of final component names:
+The authored API uses `Armature` as an ancestor pose driver:
 
-1. **Armature:** scoped stable joint IDs, parent relationships, local rest TRS,
-   and resolved transform handles. Ordinary transforms carry the animated pose.
-2. **Joint creation:** explicit joints or chain generation from an ordered guide.
-   The folded-sheet guide supplies positions and crease frames deterministically;
-   arbitrary mesh-to-skeleton inference is deferred.
-3. **Skin binding:** armature reference, explicit geometry roots, exclusions,
-   weighting method/settings, and bind-space records per mesh.
-4. **Rigid attachment:** joint/transform target and retained offset, with no
-   vertex weights. Reuse ordinary parenting or TransformParent where suitable.
+```mms
+let joint_root = T { Joint {} /* joint transform descendants */ }
+joint_root
+T {
+    joint_root // optional placement: a referenced tree can live elsewhere
+    Armature.joints(joint_root).give_automatic_weights() {
+        paper_mesh_tree
+        another_mesh_tree
+        SecondaryMotion { /* SpringBone configuration */ }
+    }
+}
+```
 
-Binding recursively collects supported mesh renderables under the supplied
-roots, snapshots their transforms, and reports the resolved list. Preserve
-materials, child hierarchy, and mesh identities; merging meshes is unnecessary.
-Exclude staff geometry explicitly. Stop at nested armatures/bindings and reject
-already-skinned targets unless an explicit replacement operation was requested.
-Reject unsupported geometry with a target path rather than silently skipping it.
+`.joints(component_or_selector)` selects the root independently of structural
+parenting. The Armature discovers all supported descendant renderables, excluding
+the referenced joint subtree when encountered and stopping at nested Armatures.
+This keeps staff geometry outside the driver and allows rigid joint attachments
+inside the joint tree. There is no separate public Rigging component.
+
+The initial request generates weights and captures per-mesh bind matrices before
+animation/simulation. Explicit rebind requests recapture the intended rest pose.
+Ordinary transforms carry joint poses; immutable rest snapshots support the
+existing spring solver. GLTF import and authored Armatures register the same
+skin/palette runtime storage. Real cuts, guide-generated joints, and topological
+weighting remain later geometry/authoring slices.
 
 Keep source meshes immutable. A derived skinned asset may be shared only when
 source geometry, bind transforms, rig definition, and weight settings match.

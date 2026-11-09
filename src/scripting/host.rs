@@ -294,6 +294,8 @@ impl mms::Host for MittensHost<'_, '_> {
                 if self.phase_blocks_tree(&tree) {
                     return Ok(Self::inert_component(tree.component_type));
                 }
+                let mut tree = tree;
+                super::rigging_binding::materialize_descendants(self, &mut tree)?;
                 if let Some(bindings) = self.bindings {
                     if let Some(result) = super::configured_registry::try_spawn_tree(
                         &tree, bindings, self.world, self.emit, true,
@@ -337,6 +339,8 @@ impl mms::Host for MittensHost<'_, '_> {
                 if self.phase_blocks_tree(&tree) {
                     return Ok(Self::inert_component(tree.component_type));
                 }
+                let mut tree = tree;
+                super::rigging_binding::materialize_descendants(self, &mut tree)?;
                 if let Some(bindings) = self.bindings {
                     if let Some(result) = super::configured_registry::try_spawn_tree(
                         &tree, bindings, self.world, self.emit, false,
@@ -616,11 +620,11 @@ impl mms::Host for MittensHost<'_, '_> {
                             .map_err(|e| mms::HostError::failure("Material", e))?;
                     return Ok(S::Value(value));
                 }
-                if *component_type == "Rigging"
+                if *component_type == "Armature"
                     && matches!(*method, "give_automatic_weights" | "status")
                 {
                     let value = super::rigging_binding::invoke(self.world, id, method)
-                        .map_err(|e| mms::HostError::failure("Rigging", e))?;
+                        .map_err(|e| mms::HostError::failure("Armature", e))?;
                     return Ok(S::Value(value));
                 }
                 let args = args

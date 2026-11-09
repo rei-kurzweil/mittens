@@ -498,7 +498,7 @@ fn youtuber_room_shared_anime_shading_and_seated_mitten() -> Result<(), Box<dyn 
             .secondary_motion
             .bound_snapshot(&room.world)
             .iter()
-            .filter(|chain| chain.gltf == mitten)
+            .filter(|chain| chain.armature_owner == mitten)
             .count()
             >= 10,
         "hair, clothing, tail and bow chains must bind on the NPC"

@@ -25,7 +25,6 @@ use crate::engine::ecs::component::material::{
 const DIRECT_COMPONENTS: &[&str] = &[
     "Armature",
     "Joint",
-    "Rigging",
     "Raycast",
     "MaterialBase",
     "MaterialDefinition",
@@ -88,7 +87,7 @@ pub(crate) fn materialize_material_children(
         };
         if matches!(
             subtree.component_type.as_str(),
-            "Material" | "MaterialDefinition" | "MaterialBase" | "Armature" | "Joint" | "Rigging"
+            "Material" | "MaterialDefinition" | "MaterialBase" | "Armature" | "Joint"
         ) {
             let id = try_spawn_tree(subtree, bindings, world, emit, false)
                 .ok_or("material resources require configured construction")??;
@@ -274,7 +273,7 @@ fn create_component(
     deferred_callback_effect_profile: Option<mms::KeyframeEffectProfile>,
 ) -> Result<ComponentId, String> {
     let id = match component {
-        "Armature" | "Joint" | "Rigging" => {
+        "Armature" | "Joint" => {
             crate::scripting::rigging_binding::create(world, component, constructor, args)?
         }
         "UV" => world.add_component(crate::engine::ecs::component::UVComponent::new()),
@@ -412,8 +411,7 @@ fn create_component(
     if let Some(constructor) = constructor {
         let factory_only = matches!(
             (component, constructor),
-            ("Rigging", "new")
-                | ("MaterialBase" | "MaterialDefinition" | "Material", "new")
+            ("MaterialBase" | "MaterialDefinition" | "Material", "new")
                 | ("MaterialBase", "extracted_emissive" | "planar_reflective")
                 | ("MaterialDefinition", "anime" | "toon")
                 | (
@@ -450,7 +448,7 @@ fn apply_call(
     args: &[mms::Value],
 ) -> Result<(), String> {
     match component {
-        "Rigging" => crate::scripting::rigging_binding::apply(world, id, method)?,
+        "Armature" => crate::scripting::rigging_binding::apply(world, id, method, args)?,
         "UV" if method == "uv" => {
             let uv = [f32_arg(args, 0)?, f32_arg(args, 1)?];
             world

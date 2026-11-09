@@ -160,8 +160,18 @@ fn twilight_sky_stereo_has_baked_glow_without_bloom_or_translation_parallax()
             false,
         ),
         ("roof", [-12.8, 22., 4.2], [-5.2, -1.5, -7.5], false),
-        ("gohei-bench", [-19.3, 21.0, -1.5], [0., -0.1, -2.52], false),
-        ("gohei-posed", [-19.3, 21.0, -1.5], [0., -0.1, -2.52], false),
+        (
+            "gohei-bench",
+            [-18.7, 21.3, -0.4],
+            [0., -0.35, -3.62],
+            false,
+        ),
+        (
+            "gohei-posed",
+            [-18.7, 21.3, -0.4],
+            [0., -0.35, -3.62],
+            false,
+        ),
         ("street", [0., 1.7, 30.], [-18., 10., -30.], false),
         ("occluded", [0., 1.7, 40.], [-0.35, 0.30, -0.88], false),
         ("stairs", [-20.5, 17.7, 1.2], [-2.2, -1., 3.8], false),
@@ -177,7 +187,7 @@ fn twilight_sky_stereo_has_baked_glow_without_bloom_or_translation_parallax()
         );
         let previous_palette = scene.visuals.bones_palette().to_vec();
         if label == "gohei-posed" {
-            assert_eq!(scene.systems.rigging.binding_count(), 1);
+            assert_eq!(scene.systems.rigging.binding_count(), 2);
             let joint = scene
                 .world
                 .all_components()
@@ -186,6 +196,20 @@ fn twilight_sky_stereo_has_baked_glow_without_bloom_or_translation_parallax()
                 })
                 .unwrap();
             scene.systems.transition.cancel_transform_transitions(joint);
+            let black = scene
+                .world
+                .all_components()
+                .find(|&id| scene.world.component_label(id) == Some("paper_craft_gohei_black"))
+                .unwrap();
+            scene.systems.update_transform(
+                &mut scene.world,
+                &mut scene.visuals,
+                black,
+                TransformComponent::new()
+                    .with_position(0.15, 0., 0.)
+                    .transform,
+            );
+
             scene
                 .world
                 .get_component_by_id_as_mut::<TransformComponent>(joint)
@@ -200,18 +224,21 @@ fn twilight_sky_stereo_has_baked_glow_without_bloom_or_translation_parallax()
         }
         scene.update(0., &Default::default());
         if label == "gohei-posed" {
+            for _ in 0..90 {
+                scene.update(1. / 60., &Default::default());
+            }
             assert!(
                 scene.visuals.bones_palette() != previous_palette,
                 "joint edit must update paper palettes"
             );
-            eprintln!(
-                "gohei skinned instances: {}",
+            assert_eq!(
                 scene
                     .visuals
                     .instances()
                     .iter()
                     .filter(|i| i.bones_count > 0)
-                    .count()
+                    .count(),
+                24
             );
         }
         let target = std::array::from_fn(|i| position[i] + direction[i]);

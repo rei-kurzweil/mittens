@@ -91,6 +91,9 @@ impl SystemWorld {
             &mut self.renderable,
             &mut self.skinned_mesh,
         );
+        for owner in self.rigging.take_initialized() {
+            self.secondary_motion.armature_initialized(world, owner);
+        }
 
         #[cfg(test)]
         cpu_profile.mark(Phase::GltfImports);

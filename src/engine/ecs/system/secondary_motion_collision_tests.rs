@@ -260,7 +260,7 @@ fn bisket_mitten_and_lumae_bind_both_enlarged_hand_colliders() {
     for gltf in gltfs {
         let hands: HashSet<_> = snapshots
             .iter()
-            .filter(|chain| chain.gltf == gltf)
+            .filter(|chain| chain.armature_owner == gltf)
             .flat_map(|chain| &chain.colliders)
             .filter(|collider| {
                 matches!(

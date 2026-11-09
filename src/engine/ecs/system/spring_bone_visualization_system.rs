@@ -86,7 +86,7 @@ impl SpringBoneVisualizationSystem {
             .filter(|chain| {
                 self.requests.values().any(|request| {
                     request.scope_roots.iter().any(|root| {
-                        is_descendant_or_self(world, *root, chain.gltf)
+                        is_descendant_or_self(world, *root, chain.armature_owner)
                             || is_descendant_or_self(world, *root, chain.chain)
                     })
                 })
@@ -279,7 +279,7 @@ mod tests {
             scaled_base_radius: 0.4,
         };
         let snapshot = |chain| SecondaryMotionChainSnapshot {
-            gltf,
+            armature_owner: gltf,
             chain,
             enabled: true,
             hit_radius: 0.1,

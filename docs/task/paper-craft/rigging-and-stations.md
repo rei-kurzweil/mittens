@@ -1,8 +1,8 @@
 # Papercraft and rigging: testable workshop stations
 
 Status: connected-sheet/folding/physics slices remain planned. The
-[naive baseline](naive-gohei.md) now implements authored Armature/Joint/Rigging,
-Euclidean automatic weights, mesh-tree binding, and an animated squares specimen.
+[naive baseline](naive-gohei.md) now implements ancestor Armature/Joint authoring,
+Euclidean automatic weights, mesh-tree binding, an animated squares specimen, and a seven-panel reduced-gravity black spring specimen.
 It does not satisfy surface-flow or folded-paper acceptance below. Implements the [design sketch](../../draft/gohei-shide-procedural-rigging.md)
 after the [environment](environment.md) can host the work.
 
@@ -25,7 +25,7 @@ show flat/front/edge views that establish the intended actual folding sequence.
 
 ## P2 — Authored joints and surface-flow auto weights
 
-- [ ] Add scoped authored joint/rest identities and explicit or guide-created
+- [x] Add scoped authored joint/rest identities and explicit or guide-created
   joints, independent of GLTF ownership.
 - [ ] Implement explicit surface-flow weighting: seed attachment regions, follow
   logical material adjacency around cuts, apply distance falloff, cap/normalize
@@ -56,7 +56,7 @@ No need for a general origami solver or smoothly skinned fold construction.
 
 ## P4 — Mesh-tree binding, manual pose, and rigid attachment
 
-- [ ] Bind an explicit renderable subtree, preserving child transforms/materials.
+- [x] Bind Armature descendant mesh trees, preserving child transforms/materials; exclude the referenced joint subtree and nested Armatures.
   Report exclusions, unsupported targets, and conflicting bindings.
 - [ ] Drive paper joints with a small repeatable pose control/animation before
   introducing physics; demonstrate flexible fold regions and gentler panel curvature.
@@ -70,7 +70,7 @@ frames fail clearly. Bounds/picking behavior is recorded and checked.
 
 ## P5 — Paper secondary motion and complete gohei
 
-- [ ] Generalize spring scope/rest lookup and lifecycle to authored armatures.
+- [x] Generalize spring scope/rest lookup and lifecycle to authored armatures with referenced joint trees.
 - [ ] Fix the mount outside simulation; use softer connector and stiffer panel
   joints. Start with the lighter-gravity ranges in the design draft.
 - [ ] Add independent chains for each strip and reset simulation on teleport/rebind.

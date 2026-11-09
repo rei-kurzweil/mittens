@@ -60,8 +60,6 @@ fn fixture(extra: &str) -> Universe {
         fn specimen(label, x) {{
             let joint = T.position(0.0, 0.5, 0.0) {{ name = label + "_joint" Joint {{}} }}
             joint
-            let arm = Armature {{ joint }}
-            arm
             let paper = T.position(0.2, 0.0, 0.0).rotation(0.0, 0.0, 0.3).scale(1.2,0.8,1.0) {{
                 name = label + "_paper"
                 R.cube() {{ name = label + "_mesh" }}
@@ -71,9 +69,9 @@ fn fixture(extra: &str) -> Universe {
             paper
             return T.position(x, 2.0, 0.0) {{
                 name = label
-                arm paper
+                joint
                 R.cube() {{ name = label + "_staff" }}
-                Rigging.new(arm, paper).give_automatic_weights() {{ name = label + "_rig" }}
+                Armature.joints(joint).give_automatic_weights() {{ name = label + "_rig" paper }}
             }}
         }}
         specimen("a", 1.0)
@@ -202,8 +200,10 @@ fn authored_rig_rest_pose_root_motion_independent_instances_and_cleanup() {
     );
 
     scene
-        .systems
-        .remove_subtree_immediate(&mut scene.world, &mut scene.visuals, request);
+        .world
+        .get_component_by_id_as_mut::<ArmatureComponent>(request)
+        .unwrap()
+        .automatic_weights = false;
     scene.update(0., &Default::default());
     assert_eq!(scene.systems.rigging.binding_count(), 1);
     assert_eq!(
@@ -237,16 +237,16 @@ fn authored_rig_rest_pose_root_motion_independent_instances_and_cleanup() {
 #[test]
 fn authored_rig_failure_does_not_publish_partial_mesh_tree() {
     // Reject a forbidden nested armature even after preparing valid meshes.
-    let scene = fixture("Armature {}");
+    let scene = fixture("CombineMesh {}");
     assert_eq!(scene.systems.rigging.binding_count(), 0);
     for name in ["a_rig", "b_rig"] {
         assert!(
             scene
                 .world
-                .get_component_by_id_as::<RiggingComponent>(named(&scene, name))
+                .get_component_by_id_as::<ArmatureComponent>(named(&scene, name))
                 .unwrap()
                 .status
-                .contains("nested armature")
+                .contains("CombineMesh")
         );
     }
     for name in ["a_mesh", "b_mesh"] {
@@ -314,26 +314,9 @@ fn gohei_prefabs_bind_only_paper_and_animate_separate_instances() {
         T.position(2.0,0.0,0.0) { gohei_naive_weights("two") }
     "#, "examples/_gohei_test.mms").unwrap();
     scene.update(0., &Default::default());
-    for (_, material) in scene.visuals.materials.instances() {
-        if let Some(custom) = scene
-            .visuals
-            .materials
-            .definition(material.definition)
-            .and_then(|d| d.custom.as_ref())
-        {
-            let started = std::time::Instant::now();
-            while custom.compiled.get().is_none() {
-                assert!(
-                    started.elapsed().as_secs() < 10,
-                    "shader compilation timed out"
-                );
-                std::thread::sleep(std::time::Duration::from_millis(5));
-            }
-            assert!(custom.compiled.get().unwrap().is_ok());
-        }
-    }
+    wait_materials(&scene);
     assert_eq!(scene.systems.rigging.binding_count(), 2);
-    let request = named(&scene, "one_rigging");
+    let request = named(&scene, "one_armature");
     assert_eq!(scene.systems.rigging.bound[&request].meshes.len(), 10);
     let mesh = scene.systems.rigging.bound[&request].meshes[0].renderable;
     let mut uploader = Uploader::default();
@@ -400,5 +383,249 @@ impl super::super::clock_system::ClockDriver for TestClock {
     }
     fn time_now_sec(&self) -> f64 {
         self.0.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1000.
+    }
+}
+
+#[test]
+fn armature_discovery_excludes_joint_subtree_and_nested_drivers() {
+    let mut scene = Universe::new(Default::default());
+    scene
+        .load_mms_source_at_path(
+            r#"
+        let inner_joints=T { Joint {} }
+        inner_joints
+        let joints=T { Joint {} R.cube() { name="rigid_ornament" } }
+        joints
+        T {
+            inner_joints
+            Armature.joints(joints).give_automatic_weights() {
+                name="outer"
+                joints
+                R.cube() { name="outer_mesh" }
+                Armature.joints(inner_joints).give_automatic_weights() {
+                    name="inner"
+                    R.cube() { name="inner_mesh" }
+                }
+            }
+        }
+    "#,
+            "examples/_armature_scope_test.mms",
+        )
+        .unwrap();
+    scene.update(0., &Default::default());
+    assert_eq!(scene.systems.rigging.binding_count(), 2);
+    for (owner, mesh) in [("outer", "outer_mesh"), ("inner", "inner_mesh")] {
+        let binding = &scene.systems.rigging.bound[&named(&scene, owner)];
+        assert_eq!(binding.meshes.len(), 1);
+        assert_eq!(binding.meshes[0].renderable, named(&scene, mesh));
+    }
+    assert!(
+        scene
+            .systems
+            .skinned_mesh
+            .skin_id_for_renderable(named(&scene, "rigid_ornament"))
+            .is_none()
+    );
+}
+
+#[test]
+fn black_gohei_has_seven_panels_and_authored_secondary_motion() {
+    use crate::engine::ecs::component::{AnimationComponent, SpringBoneComponent};
+    let mut scene = Universe::new(Default::default());
+    scene
+        .load_mms_source_at_path(
+            r#"
+        import { gohei_black_spring } from "../assets/components/paper_craft/gohei_black_spring.mms"
+        gohei_black_spring("black")
+    "#,
+            "examples/_black_gohei_test.mms",
+        )
+        .unwrap();
+    scene.update(0., &Default::default());
+    wait_materials(&scene);
+    let owner = named(&scene, "black_armature");
+    let bound = &scene.systems.rigging.bound[&owner];
+    assert_eq!(bound.joints.len(), 7);
+    assert_eq!(bound.meshes.len(), 14);
+    assert!(
+        bound
+            .meshes
+            .iter()
+            .all(|m| m.source == CpuMeshHandle::QUAD_2D),
+        "paper faces must share the built-in plane source"
+    );
+    for mesh in &bound.meshes {
+        let color = scene
+            .world
+            .children_of(mesh.renderable)
+            .iter()
+            .find_map(|&id| {
+                scene
+                    .world
+                    .get_component_by_id_as::<crate::engine::ecs::component::ColorComponent>(id)
+            })
+            .unwrap();
+        assert!(
+            color.rgba[..3].iter().all(|c| *c > 0.95),
+            "paper stays white on the black staff"
+        );
+    }
+    let grab = scene
+        .world
+        .children_of(named(&scene, "black"))
+        .iter()
+        .find_map(|&id| {
+            scene
+                .world
+                .get_component_by_id_as::<crate::engine::ecs::component::GrabbableComponent>(id)
+        })
+        .unwrap();
+    assert!(
+        grab.to_hand,
+        "the prop grip must snap to the solved avatar hand"
+    );
+
+    let staff = nodes(&scene.world, named(&scene, "black_staff"))
+        .into_iter()
+        .find_map(|id| {
+            scene
+                .world
+                .get_component_by_id_as::<RenderableComponent>(id)
+        })
+        .unwrap();
+    let staff_mesh = scene.render_assets.cpu_mesh(staff.renderable.mesh).unwrap();
+    let min = staff_mesh
+        .vertices
+        .iter()
+        .map(|v| v.pos[1])
+        .fold(f32::INFINITY, f32::min);
+    let max = staff_mesh
+        .vertices
+        .iter()
+        .map(|v| v.pos[1])
+        .fold(f32::NEG_INFINITY, f32::max);
+    assert!((max - min - 1.28).abs() < 0.0001);
+    assert!(
+        staff_mesh
+            .vertices
+            .iter()
+            .all(|v| v.pos[0].abs() <= 0.00601)
+    );
+    assert!(staff_mesh.weights0.is_none());
+    let spring = scene
+        .world
+        .get_component_by_id_as::<SpringBoneComponent>(named(&scene, "black_spring"))
+        .unwrap();
+    assert_eq!(spring.gravity_power, 0.25);
+    assert!(
+        spring.gravity_power < 1.5,
+        "paper gravity should be lighter than the bow preset"
+    );
+    assert!(
+        !nodes(&scene.world, named(&scene, "black"))
+            .iter()
+            .any(|id| scene
+                .world
+                .get_component_by_id_as::<AnimationComponent>(*id)
+                .is_some())
+    );
+    let initial = scene.systems.secondary_motion.bound_snapshot(&scene.world);
+    assert_eq!(initial.len(), 1);
+    assert_eq!(initial[0].armature_owner, owner);
+    assert_eq!(initial[0].segments.len(), 6);
+    let fixed = named(&scene, "black_joint_0");
+    let fixed_rotation = scene
+        .world
+        .get_component_by_id_as::<TransformComponent>(fixed)
+        .unwrap()
+        .transform
+        .rotation;
+    let mut uploader = Uploader::default();
+    prepare(&mut scene, &mut uploader);
+    let root = named(&scene, "black");
+    scene.systems.update_transform(
+        &mut scene.world,
+        &mut scene.visuals,
+        root,
+        TransformComponent::new()
+            .with_position(0.2, 0., 0.)
+            .transform,
+    );
+    for _ in 0..90 {
+        scene.update(1. / 60., &Default::default());
+    }
+    let after = scene.systems.secondary_motion.bound_snapshot(&scene.world);
+    assert_ne!(initial[0].segments, after[0].segments);
+    assert_eq!(
+        scene
+            .world
+            .get_component_by_id_as::<TransformComponent>(fixed)
+            .unwrap()
+            .transform
+            .rotation,
+        fixed_rotation
+    );
+    assert!(
+        after[0]
+            .segments
+            .iter()
+            .all(|s| s.head.iter().chain(&s.end).all(|v| v.is_finite()))
+    );
+    let first = named(&scene, "black_joint_1");
+    assert_ne!(
+        scene
+            .world
+            .get_component_by_id_as::<TransformComponent>(first)
+            .unwrap()
+            .transform
+            .rotation,
+        [0., 0., 0., 1.]
+    );
+    let bound = &scene.systems.rigging.bound[&owner];
+    assert!(bound.meshes.iter().all(|m| {
+        let r = scene
+            .world
+            .get_component_by_id_as::<RenderableComponent>(m.renderable)
+            .unwrap();
+        scene
+            .visuals
+            .instance(r.get_handle().unwrap())
+            .unwrap()
+            .bones_count
+            == 7
+    }));
+    scene
+        .systems
+        .remove_subtree_immediate(&mut scene.world, &mut scene.visuals, root);
+    scene.update(0., &Default::default());
+    prepare(&mut scene, &mut uploader);
+    assert_eq!(scene.systems.rigging.binding_count(), 0);
+    assert!(
+        scene
+            .systems
+            .secondary_motion
+            .bound_snapshot(&scene.world)
+            .is_empty()
+    );
+}
+
+fn wait_materials(scene: &Universe) {
+    for (_, material) in scene.visuals.materials.instances() {
+        if let Some(custom) = scene
+            .visuals
+            .materials
+            .definition(material.definition)
+            .and_then(|d| d.custom.as_ref())
+        {
+            let started = std::time::Instant::now();
+            while custom.compiled.get().is_none() {
+                assert!(
+                    started.elapsed().as_secs() < 10,
+                    "shader compilation timed out"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            assert!(custom.compiled.get().unwrap().is_ok());
+        }
     }
 }

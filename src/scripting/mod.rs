@@ -105,3 +105,6 @@ mod gravity_mode_tests;
 
 #[cfg(test)]
 mod accordion_tests;
+
+#[cfg(test)]
+mod xr_settings_walk_tests;

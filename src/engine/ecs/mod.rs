@@ -90,7 +90,7 @@ pub struct World {
     collidable_ids: std::collections::HashSet<ComponentId>,
     damage_ids: std::collections::HashSet<ComponentId>,
     destroyable_ids: std::collections::HashSet<ComponentId>,
-    rigging_ids: std::collections::HashSet<ComponentId>,
+    armature_ids: std::collections::HashSet<ComponentId>,
     editor_ui_ids: std::collections::HashSet<ComponentId>,
     /// Consumed by the simulation's StaticContactSystem after pose propagation.
     contact_changes: RefCell<std::collections::HashSet<ComponentId>>,
@@ -271,8 +271,8 @@ impl World {
     pub(crate) fn destroyable_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
         self.destroyable_ids.iter().copied()
     }
-    pub(crate) fn rigging_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
-        self.rigging_ids.iter().copied()
+    pub(crate) fn armature_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
+        self.armature_ids.iter().copied()
     }
 
     pub(crate) fn editor_ui_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
@@ -280,10 +280,10 @@ impl World {
     }
     fn track_component_dependencies(&mut self, id: ComponentId) {
         if self
-            .get_component_by_id_as::<component::RiggingComponent>(id)
+            .get_component_by_id_as::<component::ArmatureComponent>(id)
             .is_some()
         {
-            self.rigging_ids.insert(id);
+            self.armature_ids.insert(id);
         }
         if self
             .get_component_by_id_as::<component::EditorUIComponent>(id)
@@ -840,7 +840,7 @@ impl World {
         self.collidable_ids.remove(&c);
         self.damage_ids.remove(&c);
         self.destroyable_ids.remove(&c);
-        self.rigging_ids.remove(&c);
+        self.armature_ids.remove(&c);
         self.editor_ui_ids.remove(&c);
         self.transform_operator_ids.remove(&c);
         self.spring_collider_ids.remove(&c);

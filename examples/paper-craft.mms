@@ -36,6 +36,7 @@ import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_map
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 import { gohei_squares } from "../assets/components/paper_craft/gohei_squares.mms"
+import { gohei_black_spring } from "../assets/components/paper_craft/gohei_black_spring.mms"
 import { gohei_naive_weights } from "../assets/components/paper_craft/gohei_naive_weights.mms"
 import { tripod_light } from "../assets/components/tripod_light.mms"
 
@@ -200,7 +201,8 @@ T.position(-18.0, roof_height, 0.0) {
 // later cut/fold/topological-weight versions can occupy the remaining bench.
 T.position(-20.2, roof_height + 1.22, -4.02) { gohei_squares("paper_craft_gohei_squares") }
 T.position(-18.8, roof_height + 1.22, -4.02) { gohei_naive_weights("paper_craft_gohei_naive") }
-for station in [{ x = -20.2 title = "01 / SQUARES" }, { x = -18.8 title = "02 / NAIVE WEIGHTS" }] {
+T.position(-17.4, roof_height + 1.22, -4.02) { gohei_black_spring("paper_craft_gohei_black") }
+for station in [{ x = -20.2 title = "01 / SQUARES" }, { x = -18.8 title = "02 / NAIVE WEIGHTS" }, { x = -17.4 title = "03 / BLACK SPRING" }] {
     box([station.x, roof_height + 1.04, -4.02], [0.16, 0.045, 0.16], [0.23, 0.24, 0.31])
     T.position(station.x - 0.3, roof_height + 1.08, -3.52).rotation(-1.1, 0.0, 0.0) {
         Text { station.title font_size(0.055) C.rgba(0.20, 0.12, 0.22, 1.0) Unlit {} }

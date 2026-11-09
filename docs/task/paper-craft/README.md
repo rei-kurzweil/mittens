@@ -1,6 +1,6 @@
 # Paper craft XR example: sequence and acceptance tracker
 
-Status: environment slices 1–2 and twilight sky slice 3 implemented, 2026-11-09. User reported the environment looks good; sky headset review is pending. A widened workshop bench, portable light, and naive gohei/rigging baseline are implemented; headset review and the connected/folded papercraft slices remain pending.
+Status: environment slices 1–2 and twilight sky slice 3 implemented, 2026-11-09. User reported the environment looks good; sky headset review is pending. A widened workshop bench, portable light, and three gohei specimens and authored-armature spring motion are implemented; headset review and the connected/folded papercraft slices remain pending.
 
 Create `examples/paper-craft.mms` from the XR Sakura drone conversion scene as
 a comfortable rooftop workshop for inspecting progressively constructed shide.
@@ -10,7 +10,7 @@ fewer, shorter, floating surrounding buildings and a kawaii twilight sky.
 Design reference: [procedural shide and authored rigs](../../draft/gohei-shide-procedural-rigging.md).
 
 The first rigging implementation is the [naive gohei baseline](naive-gohei.md):
-unrigged squares beside Euclidean auto weights with a pose demo. This intentionally
+unrigged squares beside Euclidean auto weights with a pose demo, plus a seven-panel black spring specimen. This intentionally
 prototypes authored mesh-tree skinning before the topology/folding work below.
 
 ## Implementation order

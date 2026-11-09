@@ -1,9 +1,8 @@
 //! Cold-path authored rig binding. Pose palettes remain SkinnedMeshSystem's job.
 use super::{RenderableSystem, SkinnedMeshSystem, TransformSystem};
-use crate::engine::ecs::component::component_ref::{QueryRootMode, resolve_component_ref};
 use crate::engine::ecs::component::{
-    ArmatureComponent, CombineMeshComponent, JointComponent, MeshComponent, RenderableComponent,
-    RiggingComponent, TransformComponent,
+    ArmatureComponent, BoneRestPoseComponent, CombineMeshComponent, JointComponent, MeshComponent,
+    RenderableComponent, TransformComponent,
 };
 use crate::engine::ecs::{ComponentId, World};
 use crate::engine::graphics::{
@@ -39,6 +38,7 @@ pub struct RiggingSystem {
     bound: HashMap<ComponentId, BoundRig>,
     retired_meshes: Vec<CpuMeshHandle>,
     attempts: HashMap<ComponentId, (u64, u64)>,
+    initialized: Vec<ComponentId>,
 }
 
 fn nodes(world: &World, root: ComponentId) -> Vec<ComponentId> {
@@ -81,12 +81,12 @@ impl RiggingSystem {
         renderables: &mut RenderableSystem,
         skinning: &mut SkinnedMeshSystem,
     ) {
-        let requests: Vec<_> = world.rigging_ids().collect();
+        let requests: Vec<_> = world.armature_ids().collect();
         let stale: Vec<_> = self
             .bound
             .iter()
             .filter_map(|(&id, bound)| {
-                let config = world.get_component_by_id_as::<RiggingComponent>(id);
+                let config = world.get_component_by_id_as::<ArmatureComponent>(id);
                 let invalid = config
                     .is_none_or(|c| !c.automatic_weights || c.request_revision != bound.revision)
                     || world
@@ -112,7 +112,7 @@ impl RiggingSystem {
             let revision = self.bound[&id].revision;
             self.unbind(world, visuals, renderables, skinning, id);
             // Losing a mesh/joint must not silently capture a new rest pose.
-            if let Some(c) = world.get_component_by_id_as_mut::<RiggingComponent>(id) {
+            if let Some(c) = world.get_component_by_id_as_mut::<ArmatureComponent>(id) {
                 if c.request_revision == revision && c.automatic_weights {
                     c.automatic_weights = false;
                     c.status = "unbound: rig member removed; request weights again at rest".into();
@@ -126,7 +126,7 @@ impl RiggingSystem {
                 continue;
             }
             let config = world
-                .get_component_by_id_as::<RiggingComponent>(id)
+                .get_component_by_id_as::<ArmatureComponent>(id)
                 .unwrap()
                 .clone();
             if !config.automatic_weights {
@@ -142,14 +142,14 @@ impl RiggingSystem {
                 Ok(()) => "bound: euclidean joint distance".into(),
                 Err(e) => format!("unbound: {e}"),
             };
-            if let Some(c) = world.get_component_by_id_as_mut::<RiggingComponent>(id) {
+            if let Some(c) = world.get_component_by_id_as_mut::<ArmatureComponent>(id) {
                 if c.status != status && status.starts_with("unbound:") {
                     eprintln!("[RiggingSystem] {id:?}: {status}");
                 }
                 c.status = status;
             }
             if !world
-                .get_component_by_id_as::<RiggingComponent>(id)
+                .get_component_by_id_as::<ArmatureComponent>(id)
                 .unwrap()
                 .status
                 .contains("not ready")
@@ -175,57 +175,21 @@ impl RiggingSystem {
             return Err("already bound; request an explicit rebind".into());
         }
         let config = world
-            .get_component_by_id_as::<RiggingComponent>(request)
-            .ok_or("missing Rigging")?
+            .get_component_by_id_as::<ArmatureComponent>(request)
+            .ok_or("missing Armature")?
             .clone();
-        let resolve = |r| {
-            resolve_component_ref(
-                world,
-                r,
-                Some(request),
-                QueryRootMode::ParentScope { levels_up: 1 },
-            )
-        };
-        let owner = resolve(&config.armature).ok_or("armature reference is not ready")?;
-        if world
-            .get_component_by_id_as::<ArmatureComponent>(owner)
-            .is_none()
-        {
-            return Err("armature target is not an Armature".into());
-        }
-        let target = resolve(&config.target).ok_or("mesh tree reference is not ready")?;
-        let mut ancestor = world.parent_of(target);
-        while let Some(id) = ancestor {
-            if world
-                .get_component_by_id_as::<CombineMeshComponent>(id)
-                .is_some()
-            {
-                return Err("mesh target is inside CombineMesh".into());
-            }
-            ancestor = world.parent_of(id);
-        }
-        let mut joints = Vec::new();
-        let mut joint_markers = Vec::new();
-        for id in nodes(world, owner) {
-            if id != owner
-                && world
-                    .get_component_by_id_as::<ArmatureComponent>(id)
+        let owner = request;
+        let target = request;
+        let root = super::armature_scope::joint_root(world, owner)?;
+        let joints = super::armature_scope::joint_transforms(world, owner)?;
+        let joint_markers = nodes(world, root)
+            .into_iter()
+            .filter(|id| {
+                world
+                    .get_component_by_id_as::<JointComponent>(*id)
                     .is_some()
-            {
-                return Err("nested armatures are not supported in this binding".into());
-            }
-            if world.get_component_by_id_as::<JointComponent>(id).is_some() {
-                let joint = frame(world, id).ok_or("Joint requires a Transform ancestor")?;
-                if joints.contains(&joint) {
-                    return Err("duplicate Joint markers on one transform".into());
-                }
-                joints.push(joint);
-                joint_markers.push(id);
-            }
-        }
-        if joints.is_empty() {
-            return Err("armature has no Joint markers".into());
-        }
+            })
+            .collect();
         let mut joint_models = Vec::new();
         for &joint in &joints {
             let model =
@@ -240,20 +204,40 @@ impl RiggingSystem {
             })
             .collect();
         let mut prepared = Vec::new();
-        for id in nodes(world, target) {
-            if world
-                .get_component_by_id_as::<ArmatureComponent>(id)
-                .is_some()
+        let mut mesh_nodes = Vec::new();
+        let mut stack = world
+            .children_of(target)
+            .iter()
+            .rev()
+            .copied()
+            .collect::<Vec<_>>();
+        while let Some(id) = stack.pop() {
+            if id == root
                 || world
-                    .get_component_by_id_as::<RiggingComponent>(id)
-                    .is_some()
-                || world
-                    .get_component_by_id_as::<CombineMeshComponent>(id)
+                    .get_component_by_id_as::<ArmatureComponent>(id)
                     .is_some()
             {
-                return Err(
-                    "mesh target contains a nested armature, binding, or CombineMesh".into(),
-                );
+                continue;
+            }
+            mesh_nodes.push(id);
+            stack.extend(world.children_of(id).iter().rev().copied());
+        }
+        let mut ancestor = world.parent_of(target);
+        while let Some(id) = ancestor {
+            if world
+                .get_component_by_id_as::<CombineMeshComponent>(id)
+                .is_some()
+            {
+                return Err("Armature is inside CombineMesh".into());
+            }
+            ancestor = world.parent_of(id);
+        }
+        for id in mesh_nodes {
+            if world
+                .get_component_by_id_as::<CombineMeshComponent>(id)
+                .is_some()
+            {
+                return Err("mesh target contains CombineMesh".into());
             }
             let Some(renderable) = world.get_component_by_id_as::<RenderableComponent>(id) else {
                 continue;
@@ -325,6 +309,31 @@ impl RiggingSystem {
         if prepared.is_empty() {
             return Err("mesh tree contains no renderables".into());
         }
+        // Persist immutable local rest data for the existing authored/imported spring solver.
+        for &joint in &joints {
+            let transform = world
+                .get_component_by_id_as::<TransformComponent>(joint)
+                .unwrap()
+                .transform;
+            let existing = world.children_of(joint).iter().copied().find(|id| {
+                world
+                    .get_component_by_id_as::<BoneRestPoseComponent>(*id)
+                    .is_some()
+            });
+            let snapshot = BoneRestPoseComponent::new(
+                transform.translation,
+                transform.rotation,
+                transform.scale,
+            );
+            if let Some(id) = existing {
+                *world
+                    .get_component_by_id_as_mut::<BoneRestPoseComponent>(id)
+                    .unwrap() = snapshot;
+            } else {
+                let id = world.add_component(snapshot);
+                world.add_child(joint, id).map_err(|e| format!("{e:?}"))?;
+            }
+        }
         let guid = world.get_component_record(request).unwrap().guid;
         let mut meshes = Vec::new();
         for (index, part) in prepared.into_iter().enumerate() {
@@ -360,7 +369,12 @@ impl RiggingSystem {
                 meshes,
             },
         );
+        self.initialized.push(owner);
         Ok(())
+    }
+
+    pub fn take_initialized(&mut self) -> Vec<ComponentId> {
+        std::mem::take(&mut self.initialized)
     }
 
     fn unbind(

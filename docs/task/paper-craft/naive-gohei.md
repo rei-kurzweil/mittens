@@ -1,18 +1,21 @@
 # Naive gohei prototype
 
 This first implementation deliberately precedes P1–P5. It establishes authored
-joints, mesh-tree binding, and a visible pose before real cuts/folds or physics.
+joints, mesh-tree binding, and a visible pose before a connected cut sheet or physical folds.
 
-`examples/paper-craft.mms` places two separately reusable specimens beside one
+`examples/paper-craft.mms` places three separately reusable specimens beside one
 another on the widened 6.4 m rooftop bench:
 
 - `assets/components/paper_craft/gohei_squares.mms`: unrigged reference.
 - `assets/components/paper_craft/gohei_naive_weights.mms`: automatic weights and
   a repeating joint-pose demonstration. This animation is not secondary motion.
+- `assets/components/paper_craft/gohei_black_spring.mms`: seven white panels and
+  reduced-gravity spring motion on a longer, thinner black staff.
 
-Both call `gohei_squares_common.mms`. Five 11 cm squares step 8 cm across/down,
-leaving 3 cm of overlap at the joins. They have front/back faces. These are
-separate overlapping panels, not a connected folded paper surface: this is
+The first two call `gohei_squares_common.mms`. Five 11 cm planes step 11 cm across and 8 cm down,
+with a 2 mm depth step. Adjacent edges meet over 3 cm vertically without
+horizontal overlap. Each panel has front/back built-in plane faces. These are
+separate staggered panels, not a connected folded paper surface: this is
 intentional for the Euclidean baseline. Four vertices per face also means coarse
 bending; panel interior curvature and narrow folded connectors need later meshes.
 The staff is an existing cylinder. The root is the grip frame, 18 cm above the
@@ -22,24 +25,36 @@ the whole prop; only the paper subtree receives skin weights.
 ## Authoring API
 
 ```mms
-let paper = T { /* one or more renderables, with their own transforms/materials */ }
-paper
-let armature = Armature {
-    T { Joint {} /* child transforms with Joint markers form the joint chain */ }
-}
-armature
+let joints = T { Joint {} /* child joint transforms */ }
+joints
 T {
-    armature
-    paper
-    Rigging.new(armature, paper).give_automatic_weights()
+    joints  // optional: joint tree can also live elsewhere
+    Armature.joints(joints).give_automatic_weights() {
+        paper
+        other_paper
+        SecondaryMotion {
+            SpringBone.from_root("[name='paper_joint_1']")
+                .virtual_end_length_ratio(1.0)
+                .stiffness(0.8).drag_force(0.55)
+                .gravity(0.25, [0, -1, 0])
+        }
+    }
 }
 ```
 
-Emit a let-bound component before using it as a live handle with `attach`.
-`Rigging.new` accepts component handles or selector strings. `status()` returns
-binding diagnostics. Calling `give_automatic_weights()` on a live Rigging requests
-another bind; first return the joints and geometry to the intended rest pose.
-Rest capture runs before the animation phase of the initial simulation tick.
+`Armature` is the ancestor pose driver for its descendant renderables. Its
+`.joints(component_or_selector)` reference selects the joint-tree root independently
+of parenting. Discovery excludes that referenced subtree if encountered and stops
+at nested Armature boundaries. Renderables below joints therefore follow rigidly
+without automatically receiving weights. The joint tree and meshes can share a
+prop transform for grabbing without making the joint tree an Armature child.
+There is no separate public Rigging component. Rust uses
+`let mut armature = ArmatureComponent::new(root); armature.give_automatic_weights()` for the same request.
+Emit let-bound components before using their live handles. `status()` returns
+binding diagnostics. A live `give_automatic_weights()` explicitly requests a
+new rest capture; return the prop to its intended rest pose first. Initial capture
+runs before animation. Authored joint rest snapshots also feed the existing
+spring solver; pose/physics updates do not regenerate weights.
 
 `RiggingSystem` computes inverse squared world-space distance to joint origins,
 keeps at most four influences, and normalizes them. A vertex exactly at a joint
@@ -54,7 +69,7 @@ restores source geometry; removing the prop retires its skins and generated mesh
 on the next update/render preparation. Losing a member suspends the rig until an
 explicit new request, rather than recapturing the current animated pose.
 
-Unsupported inputs report a status: nested armatures/bindings/CombineMesh,
+Unsupported inputs report a status: CombineMesh,
 already skinned or morphed geometry, empty meshes, duplicate joint frames, and
 singular bind transforms. Unlit and other geometry programs without a supported
 deformation variant are rejected at binding. Geometry/topology edits require explicit rebind. A
@@ -62,16 +77,22 @@ failed rebind currently leaves source geometry unbound; preserving the previous
 valid binding across such edits remains P6 work. Picking/bounds still use the
 engine's existing undeformed mesh bounds. Android skinning remains separate.
 
+The third specimen, `gohei_black_spring.mms`, has a 1.28 m staff (1.6×),
+a 12 mm diameter (half the baseline), a black anime staff with strong rim
+lighting, and seven white paper panels with reduced-gravity secondary motion. The
+mount joint stays outside the simulated chain; there is no pose animation on it.
+The first two specimens remain unrigged/animated comparisons.
+
 ## Try it
 
-Launch `cargo run --release -- load examples/paper-craft.mms`. Find `01 / SQUARES`
-and `02 / NAIVE WEIGHTS` on the rooftop bench. Watch the second specimen bend,
-grab either staff, and inspect both sides with the portable tripod light.
+Launch `cargo run --release -- load examples/paper-craft.mms`. Find `01 / SQUARES`,
+`02 / NAIVE WEIGHTS`, and `03 / BLACK SPRING` on the rooftop bench. Watch the second specimen animate and move the third to excite its springs,
+grab any staff, and inspect both sides with the portable tripod light.
 Headset interaction and visual acceptance remain manual checks.
 
 Next slices: connected/tessellated sheet, surface-flow weights around cuts,
-actual folds with transported joint frames, then authored-armature secondary
-motion with reduced paper gravity. Keep these as additional prefab versions so
+actual folds with transported joint frames, then folded-paper secondary
+motion refinement. Keep these as additional prefab versions so
 the original baseline stays available for comparison.
 
 ## Validation
@@ -92,3 +113,51 @@ the original baseline stays available for comparison.
   are `/tmp/paper-craft-twilight-gohei-{bench,posed}-{0,1}.png`.
 - These are correctness checks, not a performance benchmark. Headset grabbing,
   lamp interaction, and final appearance still need user inspection.
+
+
+## Ancestor Armature and black spring specimen validation
+
+The API now places mesh trees inside `Armature.joints(root)` and removes the
+public Rigging component. Joint trees can be siblings or external references;
+including the referenced tree under the driver is optional. Six focused rigging
+checks cover external references, nested-driver boundaries, rigid joint-tree
+renderables, rest identity, independent instances, animation, and cleanup. The
+black specimen adds seven joints/fourteen paper faces and a six-joint spring
+chain, keeping joint zero fixed. Its gravity is 0.25 versus the mitten bow's 1.5.
+
+49 selected rigging, imported spring, collision, visualization, scene, and host
+regression checks passed. The stereo Vulkan fixture also passed with all three
+specimens visible, 24 skinned paper instances, a manual pose on the white rig,
+and a moved/simulated black rig. These are correctness checks, not timing results.
+Headset feel and appearance remain manual acceptance.
+
+A broader Bisket scene-count test reports 15 chains against an expectation of 17;
+the unchanged preset currently comments out its two bust chains. That expectation
+was left outside this armature change.
+
+
+## Plane panels, hand grip, and XR walking
+
+All paper faces now use the shared built-in `R.plane()` quad with transform
+scaling. Each face still gets private generated weights when bound. One Armature
+drives all ten faces of the five-panel specimen, or fourteen faces of the
+seven-panel specimen. Panels step diagonally with vertical overlap, no horizontal
+overlap, and a 2 mm depth stagger. Joint rest offsets and pose-demo translations
+follow the same spacing. This remains a disconnected baseline, not folded paper.
+Paper stays white on every staff; the third staff retains black anime shading
+and its strong lavender rim.
+
+The gohei roots use `Grabbable.to_hand(true)` at their existing grip origins.
+The avatar already supplies the solved hand grip attachment to each hand pointer,
+as it does for the machine pistol. No extra pointer hand-bone selector is needed.
+
+`examples/xr-settings.mms` now explicitly includes WalkingIK and the same sole
+offsets used by paper-craft. Existing locomotion, static floor/cube colliders,
+routed AVC slide capsule, and CapsuleReady-gated gravity remain the contact path.
+Headset movement and grip alignment still require manual acceptance.
+
+Validation for this revision: 11 focused rigging/grip/capsule checks passed,
+three paper-craft/XR-settings scene checks passed, and the stereo Vulkan render
+fixture passed. The XR-settings fixture exercises the real authored stage
+colliders with a representative routed capsule: floor support, cube-side blocking,
+and standing on a cube. It does not replace testing the tracked avatar in a headset.
