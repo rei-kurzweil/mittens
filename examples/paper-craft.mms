@@ -7,10 +7,10 @@ let ground_color = [0.40, 0.31, 0.32]
 // Editable sky stops: direction Y is -1 at the nadir, 0 at the horizon, +1 overhead.
 let sky_low_color = [1.0, 0.67, 0.78]
 let sky_middle_color = [0.67, 0.53, 0.82]
-let sky_high_color = [0.35, 0.40, 0.70]
+let sky_high_color = [0.60, 0.48, 0.78]
 let sky_low_point = -0.12
 let sky_middle_point = 0.28
-let sky_high_point = 0.90
+let sky_high_point = 1.0
 let moon_direction = [-0.35, 0.30, -0.88]
 
 let main_floors = 6
@@ -46,7 +46,7 @@ name = "paper_craft_scene_editor"
 
 RendererSettings { window_size(1440, 960) }
 Clock.bpm(120.0)
-BGC.rgba(0.35, 0.40, 0.70, 1.0)
+BGC.rgba(0.60, 0.48, 0.78, 1.0)
 AL.rgb(0.16, 0.17, 0.23)
 RenderGraph {
     EmissivePass {}

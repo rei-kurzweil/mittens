@@ -1,6 +1,6 @@
 import { kawaii_twilight_sky_material } from "../materials/kawaii-twilight-sky.mms"
 
-// A single rotation-only sky draw. Plain BG keeps its baked moon/glow independent
+// A single rotation-only sky draw. Plain BG keeps its procedural moon/glow independent
 // of scene lights and bloom. Foreground geometry covers it normally.
 export fn kawaii_twilight_sky(config) {
     return BG {
@@ -12,7 +12,7 @@ export fn kawaii_twilight_sky(config) {
             R.sphere() {
                 name = "kawaii_twilight_sky_surface"
                 kawaii_twilight_sky_material(config)
-                Texture.with_uri("assets/textures/sky/kawaii-twilight-masks.png")
+                Texture.with_uri("assets/textures/space/sky-cloud-mask.png")
                 TextureFiltering.linear()
             }
         }

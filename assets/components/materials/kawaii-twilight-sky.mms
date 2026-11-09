@@ -19,7 +19,7 @@ export fn kawaii_twilight_sky_material(config) {
     let inputs = {
         low_color = [1.0, 0.67, 0.78], low_point = -0.12,
         middle_color = [0.67, 0.53, 0.82], middle_point = 0.28,
-        high_color = [0.35, 0.40, 0.70], high_point = 0.90,
+        high_color = [0.60, 0.48, 0.78], high_point = 1.0,
         cloud_color = [0.96, 0.80, 0.94], cloud_strength = 0.55,
         moon_direction = [-0.35, 0.30, -0.88], moon_radius = 0.055,
         moon_color = [0.96, 0.91, 1.0], moon_strength = 1.25,

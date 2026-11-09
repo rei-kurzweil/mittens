@@ -2,6 +2,10 @@
 
 Status: S1–S2 implemented, 2026-11-09. Shader, generator, scene, and offscreen stereo checks passed; headset art/comfort acceptance pending.
 
+Current default: fully procedural moon body and glow, with only the original
+cloud texture sampled. Earlier sections describe the initial baked implementation
+and benchmark history; the latest decision/baseline is recorded at the end.
+
 ## Reuse and requested difference
 
 The current [ship sky prefab](../../../assets/components/backgrounds/ship_space_sky.mms)
@@ -24,7 +28,7 @@ rotation-only under camera translation and correctly occluded by foreground obje
 - [x] Reuse the existing monochrome cloud texture and its spherical seam/pole
   handling; preserve independent cloud tint/strength and gradient controls.
 - [x] Start with art-tunable colors around pink `[1.0, 0.67, 0.78]`, lilac
-  `[0.67, 0.53, 0.82]`, and upper blue-lilac `[0.35, 0.40, 0.70]`. These are
+  `[0.67, 0.53, 0.82]`, and upper lilac `[0.60, 0.48, 0.78]`. These are
   provisional authoring values; verify color-space interpretation and screenshots.
 - [x] Expose moon direction, angular size, orientation, tint, and glow strength.
   Do not carry over the old sun or add stars by default unless the composition needs them.
@@ -77,7 +81,7 @@ before claiming the texture path is faster.
 ## Implementation notes and validation (2026-11-09)
 
 The new material and background wrapper are integrated into `paper-craft.mms`.
-They use a three-stop pink/lilac/blue gradient, tintable clouds, and independently
+They use a three-stop pink/lilac gradient, tintable clouds, and independently
 controlled moon direction, angular radius, rotation, color, brightness, and glow.
 The sky sphere radius is 80 m to fit the workshop CXR's existing 100 m far plane.
 Surface lighting remains independent of sky color.
@@ -130,3 +134,63 @@ Headset follow-up:
 - [ ] Toggle scene bloom and confirm the moon's built-in glow remains.
 - [ ] Look overhead/across the panorama seam and move around nearby buildings.
 - [ ] Tune the exposed palette, moon size/orientation, or glow if desired.
+
+Palette refinement: the upper stop is now lighter lilac `[0.60, 0.48, 0.78]`
+at direction Y `1.0`, replacing the darker blue stop at `0.90`. The transition
+therefore stays brighter and reaches its final color closer to the zenith.
+
+The existing implementation already uses one packed texture and one sampler,
+with cloud and moon/glow in separate channels. It performs one cloud lookup,
+plus a moon lookup only inside the moon/glow footprint. Combining them into a
+single panorama lookup is possible, but would fix the moon's position/size and
+sacrifice its independently allocated resolution unless the panorama grew.
+Retain the packed-channel version for now; no measured bottleneck justifies
+that tradeoff yet.
+
+
+## Moon-body A/B (2026-11-09)
+
+Compared the sampled crisp body against a procedural antialiased crescent while
+retaining the same baked glow. [Benchmark and quality report](../../analysis/twilight-moon-body-ab-2026-11-09.md)
+uses only the fresh run requested after other GPU activity stopped. Normal-size
+cost is essentially unchanged on the GTX 1080; enlarged procedural edges are
+smoother, with roughly 31 µs extra stereo sky cost at 1920×1920 per eye. Both
+versions still make the same texture lookups. The sampled production default
+remains in place; `MOON_BODY_PROCEDURAL=1` selects the experimental quality variant.
+
+
+## Analytic glow comparison (2026-11-09)
+
+The [three-way benchmark](../../analysis/twilight-moon-glow-abc-2026-11-09.md)
+compares sampled body/glow, procedural body with baked glow, and procedural
+body/glow. The third mode uses one cloud lookup and no moon lookup, verified
+from the compiled shader. Normal-size GPU cost is similar on the GTX 1080;
+fully procedural costs about 0.068 ms extra stereo GPU time in the enlarged
+1920×1920-per-eye case. Its softened-circle glow is an artistic approximation
+of the bake, with slightly different tips/falloff. Defaults remain sampled;
+`MOON_BODY_PROCEDURAL=1` and `MOON_GLOW_PROCEDURAL=1` select the experimental
+fully procedural mode. No runtime blur pass or production renderer changes.
+The final benchmark run also fixes the test camera's vertical orientation.
+
+
+## Wide-view moon-size comparison (2026-11-09)
+
+The [new size benchmark](../../analysis/twilight-moon-size-comparison-2026-11-09.md)
+keeps a 120°H/110°V test projection fixed and changes only moon/glow angular size
+from 1× to 5×. It runs only those two new cases; 110°V is an approximation,
+not a captured headset value. At 1920×1920 per eye the 5× moon takes roughly
+0.703 ms sampled, 0.710 ms with procedural body/baked glow, and 0.713 ms fully
+procedural for both eyes on the GTX 1080. The difference is small; defaults stay
+sampled. The fixture `profile_twilight_moon_sizes` retains old benchmark entries
+and records both projection axes and actual moon radius in the raw report.
+
+
+## Procedural default and cloud-only baseline (2026-11-09)
+
+User chose fully procedural moon/glow. Defaults are now analytic and the scene
+binds the original monochrome cloud texture. Sampled assets/compile switches
+remain for reproduction. The [cloud-only baseline report](../../analysis/twilight-no-moon-baseline-2026-11-09.md)
+compares compiled-out moon code against regular/5× procedural moons in the same
+120°H/110°V view. At 1920×1920 per eye, both eyes take about 0.576 ms without a
+moon, 0.675 ms with the regular moon, and 0.712 ms at 5× size on the GTX 1080.
+Scene/layout and actual-workshop stereo checks pass, including bloom independence.

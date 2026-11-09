@@ -114,7 +114,7 @@ fn twilight_sky_stereo_has_baked_glow_without_bloom_or_translation_parallax()
             .is_empty()
     );
     let sky = &scene.visuals.instances()[scene.visuals.background_order()[0] as usize];
-    assert!(sky.texture.is_some(), "packed mask must reach the sky draw");
+    assert!(sky.texture.is_some(), "cloud mask must reach the sky draw");
     let output = Image::new(
         context.memory_allocator().clone(),
         ImageCreateInfo {

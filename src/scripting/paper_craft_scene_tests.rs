@@ -241,7 +241,7 @@ fn twilight_sky_has_typed_overrides_linear_masks_and_no_bloom_extraction() {
         .unwrap();
     assert_eq!(overridden.values["cloud_strength"], [0.0]);
     assert_eq!(overridden.values["moon_rotation"], [0.7]);
-    assert_eq!(overridden.values["high_color"], [0.35, 0.40, 0.70]);
+    assert_eq!(overridden.values["high_color"], [0.60, 0.48, 0.78]);
     let backgrounds: Vec<_> = world
         .all_components()
         .filter_map(|id| world.get_component_by_id_as::<BackgroundComponent>(id))
@@ -256,7 +256,7 @@ fn twilight_sky_has_typed_overrides_linear_masks_and_no_bloom_extraction() {
         world
             .all_components()
             .filter_map(|id| { world.get_component_by_id_as::<TextureComponent>(id) })
-            .filter(|t| t.uri() == Some("assets/textures/sky/kawaii-twilight-masks.png"))
+            .filter(|t| t.uri() == Some("assets/textures/space/sky-cloud-mask.png"))
             .count(),
         2
     );

@@ -1,5 +1,9 @@
 # Kawaii twilight sky masks
 
+The production sky now draws the moon/glow procedurally and samples only
+`../space/sky-cloud-mask.png`. The packed masks and preview below are retained
+for the sampled benchmark variants and offline artwork inspection.
+
 Regenerate from the repository root:
 
 ```sh
@@ -26,15 +30,16 @@ masks as sRGB, or use the packed PNG as ordinary visible RGBA artwork.
 
 `crescent-moon-glow.png` is a separate 512×512 tinted, straight-alpha preview.
 Its alpha combines body and glow; transparent border RGB is zero. It is for
-inspection/reuse as art, not the runtime sky's intensity/mask source. Runtime
-shading samples independent body/glow channels and adds tinted radiance to the
+inspection/reuse as art, not the runtime sky's intensity/mask source. The sampled benchmark variant
+reads independent body/glow channels and adds tinted radiance to the
 gradient/cloud sky. The crescent cutout leaves that sky visible, and no alpha
 blend, runtime blur, or extra render target is needed.
 
 The material is `assets/components/materials/kawaii-twilight-sky.mms`; the
 background wrapper is `assets/components/backgrounds/kawaii-twilight-sky.mms`.
 Use `kawaii_twilight_sky(false)` for defaults, or pass a table of numeric overrides.
-The material-only factory expects this packed texture on the consuming renderable.
+The material-only factory expects the original cloud texture by default. Sampled
+benchmark variants bind the packed texture instead.
 Colors are linear shader RGB, angular radius/orientation are radians, and gradient
 stop positions are normalized view-direction Y. Plain `BG` deliberately keeps
-this sky out of bloom extraction while its baked glow remains visible in color.
+this sky out of bloom extraction while its procedural glow remains visible in color.
