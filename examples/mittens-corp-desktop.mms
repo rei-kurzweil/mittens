@@ -22,6 +22,10 @@ import { suspended_platform } from "../assets/components/platforms/suspended_pla
 import { pose as relaxed_pose_factory } from "../assets/components/poses/bisket/000-relaxed.pose.mms"
 import { display_car_desktop } from "../assets/components/vehicles/display_car.mms"
 
+// Share floor calibration with other XR demos and future app sessions.
+let xr_calibration_file = XrSettings.floor.default_file()
+XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({file = xr_calibration_file}))
+
 // Optional sources stay neutral when the runtime or hardware is unavailable.
 let microphone = AudioInput {}
 let voice_level = Amplitude.rolling_window(0.080).from(microphone) {}
@@ -50,7 +54,7 @@ T.position(-5.5, 2.3, -1.5) {
 }
 T.position(-2.6, 2.3, -1.5) {
     Grabbable {}
-    xr_settings_panel({ root_name = "mittens_corp_xr_settings" })
+    xr_settings_panel({ calibration_file = xr_calibration_file, root_name = "mittens_corp_xr_settings" })
 }
 
 // Keep the studio stage so this tool retains a stable lighting and mirror

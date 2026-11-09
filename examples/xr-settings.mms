@@ -12,6 +12,10 @@ import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisk
 import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 
+// Share floor calibration with other XR demos and future app sessions.
+let xr_calibration_file = XrSettings.floor.default_file()
+XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({file = xr_calibration_file}))
+
 RendererSettings { window_size(1280, 720) }
 BGC.rgba(0.0, 0.0, 0.0, 1.0)
 AL.rgb(0.24, 0.27, 0.38)
@@ -41,7 +45,7 @@ T.position(2.5, 1.3, -1.0).scale(1.8, 2.6, 0.08) {
 // The factory owns its layout, drag handle, and accordion restore. This scene
 // places the panel in front of the player's starting position.
 T.position(-1.28, 2.3, -1.0) {
-    xr_settings_panel({
+    xr_settings_panel({ calibration_file = xr_calibration_file,
         root_name = "xr_settings"
         title = T {
             name = "xr_settings_title_bar"

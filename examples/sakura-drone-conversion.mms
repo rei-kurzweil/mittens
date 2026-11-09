@@ -46,6 +46,10 @@ import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_map
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 
+// Share floor calibration with other XR demos and future app sessions.
+let xr_calibration_file = XrSettings.floor.default_file()
+XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({file = xr_calibration_file}))
+
 // Scope scene geometry for editor diagnostics without adding other editor panels.
 Editor.active() {
 name = "sakura_scene_editor"
@@ -169,7 +173,7 @@ T.position(-24.2, roof_height + 2.2, -1.3) {
 // Beside the spawn-facing workbench, with the roof as a calibration reference.
 T.position(-16.2, roof_height + 2.2, -3.6) {
     Grabbable {}
-    xr_settings_panel({ root_name = "sakura_xr_settings" })
+    xr_settings_panel({ calibration_file = xr_calibration_file, root_name = "sakura_xr_settings" })
 }
 
 // Full-height reflection facing the rooftop spawn; grip to reposition.

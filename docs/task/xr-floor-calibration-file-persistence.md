@@ -1,58 +1,62 @@
 # Shared XR floor calibration persistence
 
-Status: proposed; persistence is not implemented.
+Status: implemented; user review and two-demo VR acceptance pending.
 
-## Current API
+## Delivered contract
 
-`XrSettings.floor.correction_meters()` reads runtime state;
-`XrSettings.floor.set_correction_meters(meters)` updates it. Neither accesses disk.
-`XrSettingsSystem` defaults to zero and resets with the scene. Values must be
-finite and within [-0.5, +0.5] metres; positive correction lowers tracked head and
-hands. A changed value emits `XrSettingsChanged`.
+`XrSettings.floor.correction_meters()` reads memory and
+`set_correction_meters(meters)` previews in memory. Their optional `{file = path}`
+argument explicitly reads a saved default or saves and applies a validated value.
+`XrSettings.floor.default_file()` supplies one shared user-config location.
+A file getter does not modify runtime state; scene startup explicitly applies it.
+Missing files return zero; malformed/unreadable/version/validation errors are reported.
 
-Implementation: `src/scripting/builtin_api_config.rs`,
-`src/scripting/host.rs`, `src/engine/ecs/system/xr_settings_system.rs`.
+Version 1 JSON contains only `version` and `floor_correction_meters`. Finite values
+in [-0.5, +0.5] metres are accepted. Positive correction lowers tracked head/hands.
+Local paths and percent-encoded local file URLs work; remote URLs are rejected.
+Saves sync a unique temporary file beside the destination and atomically replace
+it. Failed writes preserve the previous file and leave runtime state unchanged
+by that call. Prior live slider preview is retained if saving its commit fails.
 
-## Proposed contract
+The XR panel accepts `calibration_file`; slider movement previews without I/O,
+release saves, and reset saves zero. Accordion restoration retains that option.
+Memory-only panels still work without it. All nine demos importing the panel opt
+in: XR settings, five Mittens Corp variants, two Sakura drone-conversion variants,
+and lower-body walking. They load once at scene startup from the same path.
 
-Allow an optional file parameter on the existing getter/setter, rather than a
-component builder. Illustrative syntax, pending API review:
+See [the spec](../spec/xr-settings.md#shared-floor-defaults) for APIs, paths and
+error behavior. XR host handling was extracted to `src/scripting/xr_settings_api.rs`;
+native file handling lives in `src/engine/ecs/system/xr_calibration_file.rs`.
+No tracked asset stores personal calibration.
 
-```mms
-let floor = XrSettings.floor.correction_meters({file = calibration_file})
-XrSettings.floor.set_correction_meters(floor)
-// Slider updates use the ordinary in-memory setter.
-// On commit, write the chosen value to the shared file:
-XrSettings.floor.set_correction_meters(floor, {file = calibration_file})
-```
+## Verification
 
-A getter with `file` reads the saved default; it does not silently replace runtime
-state. Scene initialization explicitly applies the returned value. The ordinary
-getter remains a cheap memory read. An optional setter file writes a versioned
-calibration record and applies the validated value. No disk access in frame
-handlers or repeated UI refresh; save on commit or debounce interaction.
+Automated coverage checks roundtrips and endpoints, missing/corrupt/versioned
+records, escaped paths, remote URL rejection, failed-write preservation and temp
+cleanup, explicit read versus apply, strict MMS argument validation, panel commit
+versus preview, scene sharing, fresh-Universe restart, accordion restoration and
+persisted reset. Existing XR panel/backend tests cover synchronization/lifetime.
 
-Accept local filenames and local `file://` URLs with correct percent decoding;
-reject remote URLs. Provide one documented shared user-config location for the
-examples so calibration survives scene changes and app restarts. Do not store
-user calibration in tracked example assets. A later convenience option may select
-that default location; no per-avatar copy of calibration.
+Automated validation on 2026-11-08:
 
-## Slices and decisions
+- `cargo test --lib xr_calibration`: 5 passed, including loading the authored
+  XR settings and lower-body walking demos against one temporary saved default.
+- `cargo test --lib xr_settings`: 10 passed.
+- `cargo test --lib graphics_settings_`: 8 passed.
+- `cargo check --lib --examples`: passed with existing warnings.
+- Changed Rust files pass `rustfmt --check`; `git diff --check` passes.
 
-- [ ] Finalize parameter shape, shared default path and missing-file behavior
-      (proposed: return zero for a missing file; report malformed/unreadable files).
-- [ ] Define a versioned JSON calibration subset; do not persist unrelated runtime
-      settings merely because they share a settings namespace.
-- [ ] Add native load/save helpers with validation and atomic replacement;
-      write failures must be reported and preserve the previous file. Decide
-      whether failed writes leave runtime state unchanged (preferred).
-- [ ] Expose the same behavior to Rust and MMS without growing oversized host.rs;
-      extract XR settings host handling before expanding it.
-- [ ] Load once in both ship variants and other opted-in XR examples; persist
-      floor-slider commits and define reset-to-zero versus delete-saved-default.
-- [ ] Verify restart/scene sharing, valid endpoints, invalid/nonfinite values,
-      missing/corrupt files, escaped paths and failed writes.
+## Pending VR acceptance
 
-Calibration may become stale after SteamVR recentering. Keep an explicit reset;
-automatic headset/runtime profile detection is deferred.
+1. Run `cargo run --release -- load examples/xr-settings.mms`. Adjust floor
+   correction, release the slider, and note the signed readout. Verify tracking,
+   head/hand/eye alignment and floor contact.
+2. Close and run a different opted-in demo, for example
+   `cargo run --release -- load examples/mittens-corp.mms`. Confirm the initial
+   readout and physical floor correction match without another adjustment.
+3. Adjust in the second demo, release, then reopen the first and confirm it loads
+   the new value. Minimize/restore the panel and check its controls still save.
+4. Reset to zero, reopen either demo and confirm zero persists. Test both signs.
+
+Calibration may become stale after SteamVR recentering. Automatic headset/runtime
+profile detection, other XR settings, and deleting saved calibration are deferred.

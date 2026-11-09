@@ -28,6 +28,10 @@ import { info_panel, info_panel_body } from "../assets/components/ui/info_panel.
 import { mouth_response_panel } from "../assets/components/ui/mouth_response_panel.mms"
 import { button } from "../assets/components/button.mms"
 
+// Share floor calibration with other XR demos and future app sessions.
+let xr_calibration_file = XrSettings.floor.default_file()
+XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({file = xr_calibration_file}))
+
 // Optional sources stay neutral when the runtime or hardware is unavailable.
 let microphone = AudioInput {}
 let raw_voice_level = Amplitude.rolling_window(0.080).from(microphone) {}
@@ -559,7 +563,7 @@ T.position(-5.5, 2.3, -1.5) {
 }
 T.position(-2.6, 2.3, -1.5) {
     Grabbable {}
-    xr_settings_panel({ root_name = "mittens_corp_xr_settings" })
+    xr_settings_panel({ calibration_file = xr_calibration_file, root_name = "mittens_corp_xr_settings" })
 }
 
 RenderGraph {

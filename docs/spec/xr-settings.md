@@ -48,12 +48,55 @@ authored title-bar component, following the graphics panel. Its returned tree
 can also be attached to a caller-owned mount. The panel requires no EditorUI.
 Restored content reads backend state, and multiple panels silently synchronize.
 Removing or minimizing a panel preserves calibration. Scene/session replacement
-or closing the MMS session resets it to zero; persistent profiles are not included.
+or closing the MMS session resets runtime state to zero. Opted-in scenes explicitly
+reload shared calibration at startup, as described below.
 
 All five `mittens-corp*.mms` scenes include this panel beside their graphics
 settings. Sakura places it to the right of the spawn-facing rooftop workbench;
 the lower-body walking test scene places it beside the full-height mirror. Both
 scenes use the same live XR floor-correction backend.
+
+## Shared floor defaults
+
+Floor calibration can be saved across scenes and application restarts. The
+XR settings, Mittens Corp (including desktop/AGC/linear-velocity variants),
+Sakura drone-conversion, and lower-body walking demos opt in to the same file.
+Their panels preview changes live and save on slider release (`SliderCommitted`).
+Reset to zero saves zero as the new default. Minimizing/restoring a panel does
+not reload the file. A panel without `calibration_file` remains memory-only.
+
+```mms parse-only
+let calibration_file = XrSettings.floor.default_file()
+// Read once at scene startup, then explicitly apply the saved default.
+let saved = XrSettings.floor.correction_meters({file = calibration_file})
+XrSettings.floor.set_correction_meters(saved)
+// Pass calibration_file to xr_settings_panel options to save commits/reset.
+// An explicit save also applies the value, after the save succeeds:
+XrSettings.floor.set_correction_meters(0.15, {file = calibration_file})
+```
+
+`default_file()` returns an absolute user-config path:
+
+- Linux: `$XDG_CONFIG_HOME/mittens/xr-calibration.json`, or
+  `$HOME/.config/mittens/xr-calibration.json` when XDG_CONFIG_HOME is unset or relative.
+- macOS: `$HOME/Library/Application Support/mittens/xr-calibration.json`.
+- Windows: `%APPDATA%/mittens/xr-calibration.json`.
+
+Missing config-directory environment variables produce an error; the working
+directory is never used as a default. Explicit file options accept local paths
+and local `file://` URLs with percent decoding; remote URLs are rejected.
+A missing calibration file reads as zero. Unreadable, malformed, unsupported-version,
+and out-of-range records report errors. A file getter never changes runtime state.
+Ordinary getter/setter calls do no disk I/O. Files contain only
+`{"version": 1, "floor_correction_meters": 0.15}`. Writes create parent directories,
+sync a temporary file beside the destination, and atomically replace it. Failed
+writes preserve the prior file and leave runtime state unchanged by that call;
+any earlier slider preview remains active and unsaved.
+
+Rust callers use `xr_settings_system::calibration_file::{default_file, load, save}`
+and `XrSettingsSystem::save_floor_correction_meters` (persist then apply).
+Calibration can become stale after runtime recentering; reset or adjust it explicitly.
+Automatic headset/runtime profile selection and other settings are outside this slice.
 
 ## InputXR and rendered poses
 

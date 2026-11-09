@@ -2,6 +2,8 @@
 pub(super) mod benchmark_api;
 #[path = "graphics_settings_api.rs"]
 pub(super) mod graphics_settings_api;
+#[path = "xr_settings_api.rs"]
+pub(super) mod xr_settings_api;
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
@@ -227,42 +229,10 @@ impl mms::Host for MittensHost<'_, '_> {
                     });
                 };
                 match binding {
-                    super::runtime_config::MittensBinding::Api(
-                        super::runtime_config::MittensApi::XrFloorCorrectionSet,
-                    ) => {
-                        let operation = "XrSettings.floor.set_correction_meters";
-                        let [mms::TransportValue::Number(meters)] = args.as_slice() else {
-                            return Err(mms::HostError::failure(operation, "expects one number"));
-                        };
-                        let settings = self.xr_settings.as_deref_mut().ok_or_else(|| {
-                            mms::HostError::unavailable(
-                                operation,
-                                "XR settings service is unavailable",
-                            )
-                        })?;
-                        if self.deferred_callback_phase != Some(DeferredCallbackHostPhase::Audio) {
-                            settings
-                                .set_floor_correction_meters(*meters, self.emit)
-                                .map_err(|error| mms::HostError::failure(operation, error))?;
-                        }
-                        Ok(S::Unit)
-                    }
-                    super::runtime_config::MittensBinding::Api(
-                        super::runtime_config::MittensApi::XrFloorCorrectionGet,
-                    ) => {
-                        let operation = "XrSettings.floor.correction_meters";
-                        if !args.is_empty() {
-                            return Err(mms::HostError::failure(operation, "expects no arguments"));
-                        }
-                        let settings = self.xr_settings.as_deref().ok_or_else(|| {
-                            mms::HostError::unavailable(
-                                operation,
-                                "XR settings service is unavailable",
-                            )
-                        })?;
-                        Ok(S::Transport(mms::TransportValue::Number(
-                            settings.floor_correction_meters() as f64,
-                        )))
+                    super::runtime_config::MittensBinding::Api(api)
+                        if xr_settings_api::supports(*api) =>
+                    {
+                        self.invoke_xr_settings(*api, args)
                     }
                     super::runtime_config::MittensBinding::Api(
                         super::runtime_config::MittensApi::Smoke,

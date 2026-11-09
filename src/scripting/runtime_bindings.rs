@@ -59,6 +59,7 @@ pub enum MittensApi {
     SecondaryMotionPaused,
     XrFloorCorrectionSet,
     XrFloorCorrectionGet,
+    XrFloorDefaultFile,
     FileReadText,
     FileListDir,
     BrowserLocal,

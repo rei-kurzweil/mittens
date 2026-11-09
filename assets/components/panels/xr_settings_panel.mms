@@ -18,7 +18,7 @@ fn correction_text(meters) {
     return sign + cm + "." + fraction + " cm"
 }
 
-fn settings_content() {
+fn settings_content(calibration_file) {
     let correction = XrSettings.floor.correction_meters()
     let track = T.scale(TRACK_WIDTH * 0.5, 0.025, 0.10) {
         R.cube() {
@@ -51,8 +51,17 @@ fn settings_content() {
         XrSettings.floor.set_correction_meters(event.value)
         readout.set_text(correction_text(XrSettings.floor.correction_meters()))
     })
+    on(slider, "SliderCommitted", fn(event) {
+        if calibration_file != null {
+            XrSettings.floor.set_correction_meters(event.value, {file = calibration_file})
+        }
+    })
     on(reset, "Click", fn(event) {
-        XrSettings.floor.set_correction_meters(0.0)
+        if calibration_file != null {
+            XrSettings.floor.set_correction_meters(0.0, {file = calibration_file})
+        } else {
+            XrSettings.floor.set_correction_meters(0.0)
+        }
         slider.sync_value(XrSettings.floor.correction_meters())
         readout.set_text(correction_text(XrSettings.floor.correction_meters()))
     })
@@ -103,8 +112,10 @@ fn settings_content() {
     }
 }
 
-// Required: root_name. Optional: title (string or authored title-bar component).
+// Required: root_name. Optional: title and calibration_file (save on commit/reset).
+// Callers explicitly load their chosen file once during scene initialization.
 export fn xr_settings_panel(options) {
+    let calibration_file = options["calibration_file"]
     let title = "XR settings"
     if options["title"] != null { title = options.title }
     let panel = info_panel({
@@ -119,7 +130,7 @@ export fn xr_settings_panel(options) {
         toggle_icon_glow_intensity = 0.0
         body_background_color = BODY_COLOR
         body_text_color = TEXT_COLOR
-        content = settings_content()
+        content = settings_content(calibration_file)
     })
     let panel_root = panel.query("#" + options.root_name)
     let selection_guard = Selectable.off()
@@ -128,7 +139,7 @@ export fn xr_settings_panel(options) {
     on(panel_root, "DataEvent", fn(event) {
         if event == "AccordionRestoreRequested" {
             body_mount.attach(info_panel_body({
-                content = settings_content()
+                content = settings_content(calibration_file)
                 body_background_color = BODY_COLOR
                 body_text_color = TEXT_COLOR
             }))

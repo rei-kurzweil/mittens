@@ -23,20 +23,7 @@ pub(super) fn register(builder: &mut mms::RuntimeSpecBuilder<MittensBinding>) {
         MittensBinding::Api(MittensApi::EmitData),
     );
 
-    builder.namespace("XrSettings", |namespace| {
-        namespace.namespace("floor", |floor| {
-            floor.api(
-                "set_correction_meters",
-                mms::ValueSignature::new(vec![mms::ValueType::F64], mms::ValueType::Null),
-                MittensBinding::Api(MittensApi::XrFloorCorrectionSet),
-            );
-            floor.api(
-                "correction_meters",
-                mms::ValueSignature::new(vec![], mms::ValueType::F64),
-                MittensBinding::Api(MittensApi::XrFloorCorrectionGet),
-            );
-        });
-    });
+    crate::scripting::host::xr_settings_api::register(builder);
 
     crate::scripting::host::graphics_settings_api::register(builder);
     crate::scripting::host::benchmark_api::register(builder);

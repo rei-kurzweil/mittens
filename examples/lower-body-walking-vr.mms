@@ -2,6 +2,10 @@ import { bisket_anime_shading } from "../assets/components/materials/bisket_anim
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
 import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
 
+// Share floor calibration with other XR demos and future app sessions.
+let xr_calibration_file = XrSettings.floor.default_file()
+XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({file = xr_calibration_file}))
+
 // Flat-ground lower-body IK smoke scene. Load directly for Bisket; the optional
 // Rust example launcher also accepts --model bisket|mitten.
 RendererSettings.msaa_off() { window_size(800, 600) }
@@ -24,7 +28,7 @@ T.position(-1.7, 2.35, -2.35).scale(0.04, 0.04, 1.0) {
 }
 T.position(-3.4, 2.3, -1.5) {
     Grabbable {}
-    xr_settings_panel({ root_name = "walking_xr_settings" })
+    xr_settings_panel({ calibration_file = xr_calibration_file, root_name = "walking_xr_settings" })
 }
 
 T {

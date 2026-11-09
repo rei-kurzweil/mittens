@@ -1,3 +1,6 @@
+#[path = "xr_calibration_tests.rs"]
+mod xr_calibration_tests;
+
 use super::*;
 use crate::engine::ecs::component::EmissiveComponent;
 use crate::engine::ecs::{ComponentId, EventSignal, Signal};

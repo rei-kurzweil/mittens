@@ -1,3 +1,6 @@
+#[path = "xr_calibration_file.rs"]
+pub mod calibration_file;
+
 use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter};
 
 /// Local XR calibration, independent of any settings panel or avatar.
@@ -17,9 +20,7 @@ impl XrSettingsSystem {
         meters: f64,
         emit: &mut dyn SignalEmitter,
     ) -> Result<(), &'static str> {
-        if !meters.is_finite() || !(-0.5..=0.5).contains(&meters) {
-            return Err("floor correction must be finite and between -0.5 and +0.5 metres");
-        }
+        calibration_file::validate(meters)?;
         let meters = meters as f32;
         if self.floor_correction_meters != meters {
             self.floor_correction_meters = meters;
@@ -32,6 +33,18 @@ impl XrSettingsSystem {
             );
         }
         Ok(())
+    }
+
+    /// Persist before applying, so failed writes preserve runtime state and notifications.
+    pub fn save_floor_correction_meters(
+        &mut self,
+        file: &str,
+        meters: f64,
+        emit: &mut dyn SignalEmitter,
+    ) -> Result<(), String> {
+        calibration_file::save(file, meters)?;
+        self.set_floor_correction_meters(meters, emit)
+            .map_err(str::to_owned)
     }
 
     pub fn reset(&mut self) {
