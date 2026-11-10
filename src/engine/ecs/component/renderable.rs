@@ -34,6 +34,14 @@ pub enum AuthoredRenderableShape {
         segments: u32,
         sides: u32,
     },
+    PartialTorus {
+        radius: f32,
+        tube_radius: f32,
+        start: f32,
+        sweep: f32,
+        segments: u32,
+        sides: u32,
+    },
     Cylinder {
         radius: f32,
         height: f32,
@@ -351,6 +359,31 @@ impl RenderableComponent {
         Ok(component)
     }
 
+    pub fn partial_torus(
+        assets: &mut RenderAssets,
+        radius: f32,
+        tube_radius: f32,
+        start: f32,
+        sweep: f32,
+        segments: u32,
+        sides: u32,
+    ) -> Result<Self, String> {
+        let mesh = MeshFactory::partial_torus(radius, tube_radius, start, sweep, segments, sides)?;
+        let mut component = Self::new(Renderable::new(
+            assets.register_mesh(mesh),
+            MaterialHandle::TOON_MESH,
+        ));
+        component.authored_shape = Some(AuthoredRenderableShape::PartialTorus {
+            radius,
+            tube_radius,
+            start,
+            sweep,
+            segments,
+            sides,
+        });
+        Ok(component)
+    }
+
     pub fn cylinder(
         assets: &mut RenderAssets,
         radius: f32,
@@ -579,6 +612,25 @@ impl Component for RenderableComponent {
                 vec![
                     num(*radius as f64),
                     num(*tube_radius as f64),
+                    num(*segments as f64),
+                    num(*sides as f64),
+                ],
+            ),
+            Some(AuthoredRenderableShape::PartialTorus {
+                radius,
+                tube_radius,
+                start,
+                sweep,
+                segments,
+                sides,
+            }) => ce_call(
+                "Renderable",
+                "partial_torus",
+                vec![
+                    num(*radius as f64),
+                    num(*tube_radius as f64),
+                    num(*start as f64),
+                    num(*sweep as f64),
                     num(*segments as f64),
                     num(*sides as f64),
                 ],

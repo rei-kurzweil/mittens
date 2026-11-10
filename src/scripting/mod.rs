@@ -16,6 +16,7 @@ mod material_definition_binding;
 #[path = "component_bindings/mirror.rs"]
 mod mirror_binding;
 mod rigging_binding;
+mod controller_pose_api;
 pub use file_browser::interaction::scroll as scroll_file_browser;
 pub mod host;
 mod json_api;
@@ -66,6 +67,8 @@ mod sakura_scene_tests;
 
 #[cfg(test)]
 mod paper_craft_scene_tests;
+#[cfg(test)]
+mod paper_craft_screen_tests;
 
 #[cfg(test)]
 mod display_car_tests;

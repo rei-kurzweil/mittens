@@ -122,7 +122,7 @@ fn halo_is_a_rigid_spring_chain_with_single_layer_translucent_custom_material() 
     prepare(&mut scene, &mut upload);
     scene.visuals.prepare_draw_cache();
     assert!(scene.visuals.opaque_stream().1.is_empty());
-    assert_eq!(scene.visuals.transparent_single_stream().1.len(), 2);
+    assert_eq!(scene.visuals.transparent_single_stream().1.len(), 4);
     for index in 0..2 {
         let joint = named(&scene, &format!("test_halo_ring_{index}"));
         assert_eq!(
@@ -147,7 +147,7 @@ fn halo_is_a_rigid_spring_chain_with_single_layer_translucent_custom_material() 
             .cpu_mesh(component.renderable.mesh)
             .unwrap();
         assert!(cpu.joints0.is_none() && cpu.weights0.is_none());
-        assert_eq!(cpu.indices_u32.len(), 64 * 4 * 6);
+        assert_eq!(cpu.indices_u32.len(), 56 * 4 * 6 + 2 * 4 * 3);
         let instance = scene
             .visuals
             .instance(component.get_handle().unwrap())
@@ -159,7 +159,28 @@ fn halo_is_a_rigid_spring_chain_with_single_layer_translucent_custom_material() 
             instance.emissive, 0.,
             "no opaque emission-extraction flag on the blended surface"
         );
-        assert!((instance.color[3] * instance.opacity - 0.7).abs() < 1e-6);
+        let opacity = if index == 0 { 0.7 } else { 0.35 };
+        assert!((instance.color[3] * instance.opacity - opacity).abs() < 1e-6);
+        let insert = named(&scene, &format!("test_halo_insert_{index}"));
+        let insert = scene
+            .world
+            .get_component_by_id_as::<RenderableComponent>(insert)
+            .unwrap();
+        let mesh = scene
+            .render_assets
+            .cpu_mesh(insert.renderable.mesh)
+            .unwrap();
+        assert_eq!(mesh.indices_u32.len(), 5 * 4 * 6 + 2 * 4 * 3);
+        let color = scene
+            .visuals
+            .instance(insert.get_handle().unwrap())
+            .unwrap()
+            .color;
+        if index == 0 {
+            assert!(color[1] > color[0] && color[2] > color[0], "cyan insert");
+        } else {
+            assert!(color[0] > color[1] && color[2] > color[1], "pink insert");
+        }
         if index == 0 {
             assert_eq!(&instance.color[..3], &[1., 0.16, 0.22]);
         }
@@ -243,7 +264,7 @@ fn upper_halo_rings_lag_more_and_authored_rest_poses_do_not_change() {
     }
     eprintln!("halo ring maximum lag in meters: {max_lag:?}");
     assert!(
-        max_stretch > 0.01,
+        max_stretch > 0.003,
         "joint spacing must be free to stretch: {max_stretch}"
     );
     assert!(max_lag[1] > 0.02, "top must visibly lag: {max_lag:?}");

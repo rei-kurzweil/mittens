@@ -29,6 +29,11 @@ the ordered headless and headset gates for MediaPipe face/body LAN input.
 
 ## Workstreams
 
+[Closure-aware idle blinking](../eyelid-closure-aware-idle-blinking.md) records the
+current normalized closure path and the missing provider-independent availability
+and morph authoring APIs needed for an idle-blink fallback. Gaze availability
+must not be used as the eyelid-closure availability test.
+
 The [avatar tracking component design](../avatar-tracking-components-and-mediapipe.md) records
 the 2026-10-20 webcam direction: `WebcamEyeTracking` (lowercase `c`) complements `XREyeTracking`,
 `LowerFaceTracking` owns lower-face semantic channels, and MediaPipe is a shared backend owned

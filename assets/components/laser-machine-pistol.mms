@@ -42,15 +42,17 @@ export fn laser_machine_pistol(options) {
             // Spend synchronously at the actual shot, including each burst keyframe.
             if device_state.ammunition != null { device_state.ammunition = device_state.ammunition - 1 }
             flash.play()
-            projectile.launch({ pose = aim.world_trs() source_tool = device_state.tool source_user = device_state.user on_hit = on_hit })
+            let damage=3.0
+            if device_state.burst_mode=="burst" {damage=2.0}
+            if device_state.burst_mode=="auto" {damage=1.5}
+            projectile.launch({ pose = aim.world_trs() source_tool = device_state.tool source_user = device_state.user damage=damage on_hit = on_hit })
             emit_data(completion, "ShotFired")
         }
     }
     fn request_shot(projectile, aim, event) {
-        // Audio lookahead evaluates keyframes too. Finite-ammo state changes
-        // belong to ordinary events, which are delivered only at visual time.
-        if device_state.ammunition == null { emit_shot(projectile,aim) }
-        else { emit_data(completion,event) }
+        // Lookahead must not mutate projectile hit state or spend ammunition.
+        // These ordinary events run only at visual time, for every ammo policy.
+        emit_data(completion,event)
     }
     let semi = Animation.paused().length(semi_shot_interval * beats_per_second) {
         name = label + "_semi"

@@ -188,6 +188,11 @@ An ineligible side creates no target and no `TwoBoneIK` chain. Its mapped bones 
 their ordinary FK/rest/animation pose. In particular, desktop AVC with no XR hand drivers does
 not manufacture identity targets at world origin.
 
+Procedural holding targets for untracked hands are a planned extension, not a
+current desktop capability. See [screen players and untracked holding pose
+drivers](../task/untracked-pointer-holding-pose-driver.md) for the paper-craft
+mode switch, intended opt-in policy, and shared arm-IK direction.
+
 Eligibility is classified once during AVC initialization. Generated target IDs and IK chains
 are the cached active mode; inactive sides leave their runtime IDs empty. Replacing the
 GLTF/AVC subtree initializes and classifies a new instance. Dynamic driver or topology refresh

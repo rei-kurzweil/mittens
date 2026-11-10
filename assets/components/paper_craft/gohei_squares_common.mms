@@ -13,6 +13,8 @@ export fn square_gohei(label, weighted, spring_paper) {
     let radius = 0.012
     let paper_color = [0.98, 0.97, 1.0]
     let staff_color = [0.54, 0.30, 0.18]
+    let hand_offset = [0.0, 0.0, 0.0]
+    let grip_pitch = 0.0
     if spring_paper {
         panels = 7
         step_x = 0.08
@@ -22,6 +24,9 @@ export fn square_gohei(label, weighted, spring_paper) {
         staff_length = 1.28
         radius = 0.006
         staff_color = [0.012, 0.009, 0.018]
+        // Retain the 5 cm pullback, shift 1.5 cm left, and lean toward -Z.
+        hand_offset = [-0.015, 0.0, -0.055]
+        grip_pitch = -Math.pi / 6.0
     }
     let paper_material = Material(lambert_toon_definition("near")).inputs({
         shade_color = [0.76, 0.73, 0.84], shade_strength = 0.32,
@@ -136,16 +141,21 @@ export fn square_gohei(label, weighted, spring_paper) {
     }
     return T {
         name = label
-        Grabbable.to_hand(true) {}
-        // Local +Y points along the staff. Grip at zero leaves 18 cm below hand.
-        T.position(0.0, -0.18, 0.0) {
-            name = label + "_staff"
-            R.cylinder(radius, staff_length, 16) {
-                staff_material
-                C.rgba(staff_color[0], staff_color[1], staff_color[2], 1.0)
-                Raycastable.enabled()
+        Grabbable.to_hand(true).hand_offset(hand_offset) {}
+        // Keep the adjustment below the snapped grip root so hand alignment
+        // preserves it. Staff and paper rotate together about the grip origin.
+        T.rotation(grip_pitch, 0.0, 0.0) {
+            name = label + "_grip_adjustment"
+            // Grip at zero leaves 18 cm of staff below the hand.
+            T.position(0.0, -0.18, 0.0) {
+                name = label + "_staff"
+                R.cylinder(radius, staff_length, 16) {
+                    staff_material
+                    C.rgba(staff_color[0], staff_color[1], staff_color[2], 1.0)
+                    Raycastable.enabled()
+                }
             }
+            mount
         }
-        mount
     }
 }

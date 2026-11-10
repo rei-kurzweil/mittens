@@ -319,7 +319,7 @@ pub use opacity::OpacityComponent;
 pub use option::OptionComponent;
 pub use overlay::OverlayComponent;
 pub use point_light::PointLightComponent;
-pub use pointer::PointerComponent;
+pub use pointer::{PointerComponent, PointerGrabPose};
 pub use pose_capture::*;
 pub use raycast::{RayCastComponent, RayCastMode};
 pub use raycastable::{

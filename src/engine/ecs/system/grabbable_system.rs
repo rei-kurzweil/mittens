@@ -16,6 +16,9 @@ use crate::utils::math::{
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
+#[path = "controller_grab_pose.rs"]
+mod controller_grip;
+use controller_grip::ControllerGripHold;
 
 #[derive(Debug, Clone, Copy)]
 enum GrabCommand {
@@ -33,6 +36,7 @@ enum GrabCommand {
 
 #[derive(Debug, Clone, Copy)]
 struct ActiveGrab {
+    controller_grip: Option<ControllerGripHold>,
     target: ComponentId,
     pointer_parent: ComponentId,
     original_parent: Option<ComponentId>,
@@ -171,6 +175,11 @@ impl GrabbableSystem {
                         .is_some()
                     && world.get_component_record(grab.pointer_parent).is_some()
                     && world.parent_of(grab.target) == Some(grab.pointer_parent);
+                let valid = valid
+                    && grab
+                        .controller_grip
+                        .as_ref()
+                        .is_none_or(|g| g.is_present(world));
                 (!valid).then_some(pointer)
             })
             .collect();
@@ -179,7 +188,15 @@ impl GrabbableSystem {
         }
 
         let alpha = 1.0 - (-12.0 * dt.max(0.0)).exp();
-        for grab in self.active.values() {
+        for grab in self.active.values_mut() {
+            let grip_pose = if let Some(grip) = &mut grab.controller_grip {
+                let Some(pose) = grip.tick(world, grab.pointer_parent, alpha) else {
+                    continue;
+                };
+                Some(pose)
+            } else {
+                None
+            };
             let Some(transform) =
                 world.get_component_by_id_as_mut::<TransformComponent>(grab.target)
             else {
@@ -199,7 +216,11 @@ impl GrabbableSystem {
                 next = grab.destination_local;
             }
             transform.transform.translation = next;
-            if grab.align_to_hand {
+            if let Some(pose) = grip_pose {
+                next = pose.translation;
+                transform.transform.translation = pose.translation;
+                transform.transform.rotation = pose.rotation_quat_xyzw;
+            } else if grab.align_to_hand {
                 transform.transform.rotation =
                     quat_nlerp(transform.transform.rotation, [0.0, 0.0, 0.0, 1.0], alpha);
             }
@@ -287,7 +308,22 @@ impl GrabbableSystem {
         let align_to_hand = (pointer_topology_context(world, pointer).has_controller_driver
             || attachment.is_some())
             && hand_marker.is_some();
-        if align_to_hand {
+        let controller_grip = if align_to_hand
+            && world
+                .get_component_by_id_as::<PointerComponent>(pointer)
+                .is_some_and(|p| {
+                    p.grab_pose == crate::engine::ecs::component::PointerGrabPose::ControllerGrip
+                }) {
+            let Some((hold, parent)) = ControllerGripHold::start(world, pointer, target_world)
+            else {
+                return;
+            };
+            pointer_parent = parent;
+            Some(hold)
+        } else {
+            None
+        };
+        if align_to_hand && controller_grip.is_none() {
             if let Some(attachment) = attachment {
                 pointer_parent = attachment;
             }
@@ -360,6 +396,7 @@ impl GrabbableSystem {
         self.active.insert(
             pointer,
             ActiveGrab {
+                controller_grip,
                 target,
                 pointer_parent,
                 original_parent,

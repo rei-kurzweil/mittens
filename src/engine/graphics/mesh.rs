@@ -5,6 +5,8 @@
 //! and returns a `MeshHandle` that can be referenced by ECS renderables.
 
 mod cube;
+#[path = "mesh_torus.rs"]
+mod torus;
 
 use vulkano::buffer::BufferContents;
 use vulkano::pipeline::graphics::vertex_input::Vertex;
@@ -1357,60 +1359,6 @@ impl MeshFactory {
     /// Torus about +Y. A four-sided profile is rotated 45 degrees and has
     /// hard profile corners, producing flat washer faces rather than a diamond.
     /// Scale local Y to control a washer's thickness independently of its width.
-    pub fn torus(
-        radius: f32,
-        tube_radius: f32,
-        segments: u32,
-        sides: u32,
-    ) -> Result<CpuMesh, String> {
-        if !radius.is_finite()
-            || !tube_radius.is_finite()
-            || tube_radius <= 0.0
-            || radius <= tube_radius
-            || !(3..=16384).contains(&segments)
-            || !(3..=64).contains(&sides)
-            || u64::from(segments + 1) * u64::from(sides) * 2 > 1_000_000
-        {
-            return Err("torus requires finite radius > tube_radius > 0, 3..=16384 segments and 3..=64 sides (at most one million vertices)".into());
-        }
-        let mut vertices = Vec::new();
-        let mut indices = Vec::new();
-        let phase = if sides == 4 {
-            std::f32::consts::FRAC_PI_4
-        } else {
-            0.0
-        };
-        for side in 0..sides {
-            let a = phase + std::f32::consts::TAU * side as f32 / sides as f32;
-            let b = phase + std::f32::consts::TAU * (side + 1) as f32 / sides as f32;
-            let base = vertices.len() as u32;
-            for i in 0..=segments {
-                let u = i as f32 / segments as f32;
-                let theta = std::f32::consts::TAU * u;
-                let (sin, cos) = theta.sin_cos();
-                for (edge, angle) in [a, b].into_iter().enumerate() {
-                    let normal_angle = if sides == 4 { (a + b) * 0.5 } else { angle };
-                    let r = radius + tube_radius * angle.cos();
-                    vertices.push(CpuVertex {
-                        pos: [r * cos, tube_radius * angle.sin(), r * sin],
-                        normal: [
-                            normal_angle.cos() * cos,
-                            normal_angle.sin(),
-                            normal_angle.cos() * sin,
-                        ],
-                        uv: [u, (side as f32 + edge as f32) / sides as f32],
-                    });
-                }
-            }
-            for i in 0..segments {
-                let a = base + i * 2;
-                // Profile direction crossed with circumference points outward.
-                indices.extend_from_slice(&[a, a + 1, a + 2, a + 1, a + 3, a + 2]);
-            }
-        }
-        Ok(CpuMesh::new(vertices, indices))
-    }
-
     /// Round tube swept along a helix about +Y. Zero major radius gives a
     /// straight tube; zero height gives an arc. Ends are deliberately open.
     pub fn helix_tube(

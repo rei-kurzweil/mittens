@@ -86,6 +86,11 @@ spread. Semi plays `laser_machine_pistol_A.0.wav`; Burst plays
 rate increase after the earlier 40% increase); Burst has a 428.57 ms lock,
 with both its shot spacing and repeat cadence increased by 5%.
 Holding the trigger does not repeat either mode.
+Each shot copies damage into its laser hit context: Semi deals 3, Burst deals 2 per
+shot (up to 6 per burst), and Auto deals 1.5. Scene damage callbacks consume
+`hit.damage`; generic laser launches default to 1 when no damage is supplied.
+All shot launches pass through ordinary visual-time events, including unlimited
+ammunition, so audio lookahead cannot arm a projectile hit a second time.
 Each shot samples its aim frame's current world pose and restarts the flash.
 `use_end()` cancels pending shots and hides the flash; launched projectiles finish
 independently. Release/regrab cannot bypass a finite clip's lock.

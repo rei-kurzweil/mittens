@@ -102,7 +102,7 @@ let shooting_cans = [
 ]
 for can in shooting_cans { can }
 fn handle_laser_hit(hit) {
-    Damage.at(hit.hit_point[0], hit.hit_point[1], hit.hit_point[2], 0.28, 1.0)
+    Damage.at(hit.hit_point[0], hit.hit_point[1], hit.hit_point[2], 0.28, hit.damage)
     let impact = mini_explosion(hit.hit_point, 2.0)
     impact.root
     impact.animation.play()

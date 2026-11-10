@@ -1,7 +1,9 @@
-// Paper craft XR workshop: reduced floating Sakura city and full-height stairs.
+// Paper craft workshop: reduced floating Sakura city and full-height stairs.
+let use_openxr = false // false = screen player (keyboard/mouse via Winit today)
 // cargo run --release -- load examples/paper-craft.mms
 // XR: sticks move, B jumps; double-tap B to fly (2x speed), hold B/A to rise/descend.
-// XR only. Walk the stairs to the street and back; flight remains available.
+// Screen: WASD move, right-drag look, left-drag grab, Space jump, F fire held pistol.
+// Walk the stairs in either mode; procedural untracked holding arms are planned.
 let ground_color = [0.40, 0.31, 0.32]
 
 // Editable sky stops: direction Y is -1 at the nadir, 0 at the horizon, +1 overhead.
@@ -28,7 +30,7 @@ import { kawaii_twilight_sky } from "../assets/components/backgrounds/kawaii-twi
 import { sakura_tree } from "../assets/components/plants/sakura_tree.mms"
 import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
 import { pool_building, pool_building_with_stairs, ceramic_box, destroyable_ceramic_box } from "../assets/components/buildings/pool_building.mms"
-import { display_car_xr } from "../assets/components/vehicles/display_car.mms"
+import { display_car_xr, display_car_desktop } from "../assets/components/vehicles/display_car.mms"
 import { bisket_colliders } from "../assets/components/colliders/bisket.mms"
 import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisket-shirt-physics.mms"
 import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
@@ -40,10 +42,14 @@ import { gohei_black_spring } from "../assets/components/paper_craft/gohei_black
 import { gohei_naive_weights } from "../assets/components/paper_craft/gohei_naive_weights.mms"
 import { tripod_light } from "../assets/components/tripod_light.mms"
 import { concentric_halo } from "../assets/components/accessories/concentric_halo.mms"
+import { pose as mitten_relaxed_arms } from "../assets/components/poses/mitten/relaxed-arms.pose.mms"
 
 // Share floor calibration with other XR demos and future app sessions.
-let xr_calibration_file = XrSettings.floor.default_file()
-XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({file = xr_calibration_file}))
+let xr_calibration_file = null
+if use_openxr {
+    xr_calibration_file = XrSettings.floor.default_file()
+    XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({file = xr_calibration_file}))
+}
 
 // Scope scene geometry for editor diagnostics without adding other editor panels.
 Editor.active() {
@@ -92,7 +98,7 @@ let pistol_material = Material(anime).inputs({
     rim_strength = 0.24
 })
 fn handle_laser_hit(hit) {
-    Damage.at(hit.hit_point[0], hit.hit_point[1], hit.hit_point[2], 0.28, 1.0)
+    Damage.at(hit.hit_point[0], hit.hit_point[1], hit.hit_point[2], 0.28, hit.damage)
     let impact = mini_explosion(hit.hit_point, 2.0)
     impact.root
     impact.animation.play()
@@ -146,9 +152,11 @@ T.position(-24.2, roof_height + 2.2, -1.3) {
     graphics_settings_panel({ root_name = "paper_craft_graphics_settings" })
 }
 // Beside the spawn-facing workbench, with the roof as a calibration reference.
-T.position(-16.2, roof_height + 2.2, -3.6) {
-    Grabbable {}
-    xr_settings_panel({ calibration_file = xr_calibration_file, root_name = "paper_craft_xr_settings" })
+if use_openxr {
+    T.position(-16.2, roof_height + 2.2, -3.6) {
+        Grabbable {}
+        xr_settings_panel({ calibration_file = xr_calibration_file, root_name = "paper_craft_xr_settings" })
+    }
 }
 
 // Full-height reflection facing the rooftop spawn; grip to reposition.
@@ -169,8 +177,13 @@ ceramic_box([-10.65, -0.07, 0.0], [1.3, 0.14, 2.4], white, tiles)
 for dash in range(28) {
     box([0.0, 0.008, -53.0 + dash * 4.0], [0.13, 0.012, 1.8], [1.0, 0.82, 0.55])
 }
-display_car_xr("paper_craft_road_car_north", [-3.4, -0.04, -17.0], 0.0, "paper_craft_car_north_mount", world)
-display_car_xr("paper_craft_road_car_south", [3.4, -0.04, 19.0], 3.14159265, "paper_craft_car_south_mount", world)
+if use_openxr {
+    display_car_xr("paper_craft_road_car_north", [-3.4, -0.04, -17.0], 0.0, "paper_craft_car_north_mount", world)
+    display_car_xr("paper_craft_road_car_south", [3.4, -0.04, 19.0], 3.14159265, "paper_craft_car_south_mount", world)
+} else {
+    display_car_desktop("paper_craft_road_car_north", [-3.4, -0.04, -17.0], 0.0, "paper_craft_car_north_mount")
+    display_car_desktop("paper_craft_road_car_south", [3.4, -0.04, 19.0], 3.14159265, "paper_craft_car_south_mount")
+}
 
 // Rooftop workbench bolted to a ceramic backing wall, with three pairs of legs.
 T.position(-18.0, roof_height, 0.0) {
@@ -225,82 +238,146 @@ paper_craft_planter("paper_craft_rooftop_tree", [-14.1, roof_height, 2.4])
 paper_craft_planter("paper_craft_street_tree_west", [-8.7, 0.08, -9.0])
 paper_craft_planter("paper_craft_street_tree_east", [8.7, 0.08, 7.0])
 
-// One tracked XR player; no desktop player or rooftop reset trigger.
+// Exactly one player rig; both modes share the scene, avatar, gravity and spawn.
 let microphone = AudioInput { name = "paper_craft_mitten_microphone" }
 let voice_level = Amplitude.rolling_window(0.080).highpass(120.0).highpass_resonance(0.707).from(microphone) {
     name = "paper_craft_mitten_voice_level"
 }
-let player_motion = Velocity {
-    name = "paper_craft_mitten_velocity"
-    T.position(spawn_position[0], spawn_position[1], spawn_position[2]) {
-        name = "paper_craft_mitten_locomotion_root"
-        Rider
-            .anchor("[name='paper_craft_mitten_xr_camera']")
-            .movement_root("[name='paper_craft_mitten_locomotion_root']")
-            .input("[name='paper_craft_mitten_locomotion_input']") {}
-        InputXR.on() {
-            InputXRGamepad { name="paper_craft_mitten_locomotion_input" locomotion() speed(1.4) enable_flying(true) }
-            T {
-                name = "paper_craft_mitten_xr_driver"
-                let xr_mitten = GLTF.new("assets/models/mitten.glb") {
-                    name = "paper_craft_xr_mitten"
-                    Raycastable.disabled()
-                    Selectable.off()
-                    HandTracking.new().source("openxr")
-                    pistol_material
-                    bisket_humanoid_bone_map()
-                    MorphTargetMap.new()
-                        .slot("left_eye_blink", "Fcl_EYE_Close_L")
-                        .slot("right_eye_blink", "Fcl_EYE_Close_R")
-                        .slot("viseme_aa", "Fcl_MTH_A")
-                    bisket_colliders()
-                    bisket_shirt_physics(false)
-                    mitten_bow_secondary_motion()
-                }
-                let xr_avatar_control = AVC.movement_target("[name='paper_craft_mitten_locomotion_root']") {
-                    name = "paper_craft_mitten_avatar_control"
-                    crouch_enabled(true)
-                    crouch_sole_offsets([0.0, 0.0530325, 0.0874534], [0.0, 0.0530325, 0.0874534])
-                    WalkingIK { step_scale(1.3) }
-                    mouth_open_from_amplitude(voice_level)
-                    mouth_open_rms_center_range(0.0475, 0.085)
-                    mouth_open_amount(1.0)
-                    mouth_open_smoothing(16.0)
-                    voice_level
-                    initial_yaw(3.14159)
-                    arm_ik(vroid_arm_ik_bend_plane_prototype())
-                    hand_rotation_smoothing(220.0)
-                    T { name = "paper_craft_xr_model_root" Raycastable.disabled() Selectable.off() xr_mitten }
-                    T.position(0.0, 0.08, 0.12) {
-                        name = "paper_craft_mitten_xr_camera"
-                        CXR { Pointer {} }
+let player_motion = null
+if use_openxr {
+    player_motion = Velocity {
+        name = "paper_craft_mitten_velocity"
+        T.position(spawn_position[0], spawn_position[1], spawn_position[2]) {
+            name = "paper_craft_mitten_locomotion_root"
+            Rider
+                .anchor("[name='paper_craft_mitten_xr_camera']")
+                .movement_root("[name='paper_craft_mitten_locomotion_root']")
+                .input("[name='paper_craft_mitten_locomotion_input']") {}
+            InputXR.on() {
+                InputXRGamepad { name="paper_craft_mitten_locomotion_input" locomotion() speed(1.4) enable_flying(true) }
+                T {
+                    name = "paper_craft_mitten_xr_driver"
+                    let xr_mitten = GLTF.new("assets/models/mitten.glb") {
+                        name = "paper_craft_xr_mitten"
+                        mitten_relaxed_arms()
+                        Raycastable.disabled()
+                        Selectable.off()
+                        HandTracking.new().source("openxr")
+                        pistol_material
+                        bisket_humanoid_bone_map()
+                        MorphTargetMap.new()
+                            .slot("left_eye_blink", "Fcl_EYE_Close_L")
+                            .slot("right_eye_blink", "Fcl_EYE_Close_R")
+                            .slot("viseme_aa", "Fcl_MTH_A")
+                        bisket_colliders()
+                        bisket_shirt_physics(false)
+                        mitten_bow_secondary_motion()
                     }
-                    // Live tracking supplies eyelid closure; idle animation
-                    // owns pupil direction, as in the main mitten example.
-                    XREyeTracking.on().priority(["htc", "vrchat_osc"]).enable_pupil_direction_tracking(false)
-                    XRHand.new(true, "Left", "GripAim").laser() {
-                        T {
-                            RestAttachment.new("[name='J_Bip_L_Hand']", "[name='J_Bip_L_Middle3']") { Pointer { name = "paper_craft_left_hand_pointer" } }
+                    let xr_avatar_control = AVC.movement_target("[name='paper_craft_mitten_locomotion_root']") {
+                        name = "paper_craft_mitten_avatar_control"
+                        crouch_enabled(true)
+                        crouch_sole_offsets([0.0, 0.0530325, 0.0874534], [0.0, 0.0530325, 0.0874534])
+                        WalkingIK { step_scale(1.3) }
+                        mouth_open_from_amplitude(voice_level)
+                        mouth_open_rms_center_range(0.0475, 0.085)
+                        mouth_open_amount(1.0)
+                        mouth_open_smoothing(16.0)
+                        voice_level
+                        initial_yaw(3.14159)
+                        arm_ik(vroid_arm_ik_bend_plane_prototype())
+                        hand_rotation_smoothing(220.0)
+                        T { name = "paper_craft_xr_model_root" Raycastable.disabled() Selectable.off() xr_mitten }
+                        T.position(0.0, 0.08, 0.12) {
+                            name = "paper_craft_mitten_xr_camera"
+                            CXR { Pointer {} }
+                        }
+                        // Live tracking supplies eyelid closure; idle animation
+                        // owns pupil direction, as in the main mitten example.
+                        XREyeTracking.on().priority(["htc", "vrchat_osc"]).enable_pupil_direction_tracking(false)
+                        XRHand.new(true, "Left", "GripAim").laser() {
+                            T {
+                                RestAttachment.new("[name='J_Bip_L_Hand']", "[name='J_Bip_L_Middle3']") { Pointer { name = "paper_craft_left_hand_pointer" } }
+                            }
+                        }
+                        XRHand.new(true, "Right", "GripAim").laser() {
+                            T {
+                                RestAttachment.new("[name='J_Bip_R_Hand']", "[name='J_Bip_R_Middle3']") { Pointer { name = "paper_craft_right_hand_pointer" } }
+                            }
                         }
                     }
-                    XRHand.new(true, "Right", "GripAim").laser() {
-                        T {
-                            RestAttachment.new("[name='J_Bip_R_Hand']", "[name='J_Bip_R_Middle3']") { Pointer { name = "paper_craft_right_hand_pointer" } }
+                    xr_avatar_control
+                    on(xr_mitten, "GLTFInitialized", fn(event) {
+                        let head=event.gltf.query("[name='J_Bip_C_Head']")
+                        if head {head.attach(concentric_halo("paper_craft_halo",null))}
+                        let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
+                        let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
+                        if left_eye && right_eye {
+                            xr_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
+                        } else {
+                            print("XR mitten: eye joints were not found for idle gaze")
+                        }
+                    })
+                }
+            }
+        }
+    }
+} else {
+    let camera = C3D {
+        name = "paper_craft_screen_c3d"
+        fov(74.0) near(0.01)
+        Pointer {name="paper_craft_screen_pointer" Raycast.event_driven().min_distance(0.75) {}}
+    }
+    player_motion = Velocity {
+        name = "paper_craft_mitten_velocity"
+        T.position(spawn_position[0], spawn_position[1], spawn_position[2]) {
+            name = "paper_craft_mitten_locomotion_root"
+            Rider.anchor("[name='paper_craft_mitten_screen_camera']")
+                .movement_root("[name='paper_craft_mitten_locomotion_root']")
+                .input("[name='paper_craft_mitten_locomotion_input']") {}
+            I.speed(1.4) {
+                name = "paper_craft_mitten_locomotion_input"
+                InputTransformMode.forward_z() {fps_rotation() roll_axis_y()}
+                T.position(0.0,1.65,0.0) {
+                    name = "paper_craft_mitten_screen_driver"
+                    let model = GLTF.new("assets/models/mitten.glb") {
+                        name = "paper_craft_screen_mitten"
+                        mitten_relaxed_arms()
+                        Raycastable.disabled() Selectable.off()
+                        pistol_material
+                        bisket_humanoid_bone_map()
+                        MorphTargetMap.new()
+                            .slot("left_eye_blink","Fcl_EYE_Close_L")
+                            .slot("right_eye_blink","Fcl_EYE_Close_R")
+                            .slot("viseme_aa","Fcl_MTH_A")
+                        bisket_colliders()
+                        bisket_shirt_physics(false)
+                        mitten_bow_secondary_motion()
+                    }
+                    let avatar = AVC.movement_target("[name='paper_craft_mitten_locomotion_root']") {
+                        name = "paper_craft_mitten_avatar_control"
+                        initial_yaw(3.14159265)
+                        crouch_enabled(true)
+                        crouch_sole_offsets([0.0,0.0530325,0.0874534],[0.0,0.0530325,0.0874534])
+                        WalkingIK {step_scale(1.3)}
+                        mouth_open_from_amplitude(voice_level)
+                        mouth_open_rms_center_range(0.0475,0.085)
+                        mouth_open_amount(1.0) mouth_open_smoothing(16.0)
+                        voice_level
+                        T {name="paper_craft_screen_model_root" Raycastable.disabled() Selectable.off() model}
+                        T.position(0.0,0.08,0.12).rotation(0.0,3.14159265,0.0) {
+                            name="paper_craft_mitten_screen_camera"
+                            camera
                         }
                     }
+                    avatar
+                    on(model,"GLTFInitialized",fn(event) {
+                        let head=event.gltf.query("[name='J_Bip_C_Head']")
+                        if head {head.attach(concentric_halo("paper_craft_halo",null))}
+                        let left=event.gltf.query("[name='J_Adj_L_FaceEye']")
+                        let right=event.gltf.query("[name='J_Adj_R_FaceEye']")
+                        if left && right {avatar.attach(ambient_eye_saccades(left,right,2.0))}
+                    })
                 }
-                xr_avatar_control
-                on(xr_mitten, "GLTFInitialized", fn(event) {
-                    let head=event.gltf.query("[name='J_Bip_C_Head']")
-                    if head {head.attach(concentric_halo("paper_craft_halo",null))}
-                    let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
-                    let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
-                    if left_eye && right_eye {
-                        xr_avatar_control.attach(ambient_eye_saccades(left_eye, right_eye, 2.0))
-                    } else {
-                        print("XR mitten: eye joints were not found for idle gaze")
-                    }
-                })
             }
         }
     }
@@ -316,7 +393,12 @@ if gravity_avatar.capsule_ready() {
     query("[name='paper_craft_mitten_gravity']").set_enabled(true)
 }
 
-XR.on()
+if use_openxr {XR.on()} else {
+    XR.off()
+    on_global("KeyDown",fn(event) {
+        if event.code=="Space" && player_motion.grounded() {player_motion.translate_world([0.0,4.5,0.0])}
+    })
+}
 
 // Weapon table near the spawn end of the roof, to the player's left.
 T.position(-20.3, roof_height, 0.2) {
@@ -348,7 +430,7 @@ fn rooftop_pistol(label, effect_label, x) {
         if event.target == grip {
             held.active = true
             held.pointer = event.pointer
-            held.hand = ""
+            held.hand = "Desktop"
             if event.pointer == query("[name='paper_craft_left_hand_pointer']") { held.hand = "Left" }
             if event.pointer == query("[name='paper_craft_right_hand_pointer']") { held.hand = "Right" }
         }
@@ -360,16 +442,27 @@ fn rooftop_pistol(label, effect_label, x) {
             tool.use_end()
         }
     })
-    on_global("XrButtonDown", fn(event) {
-        if held.active && event.hand == held.hand {
-            if event.control == "LeftTrigger" || event.control == "RightTrigger" { tool.use_start({ user = query("[name='paper_craft_mitten_avatar_control']") }) }
-        }
-    })
-    on_global("XrButtonUp", fn(event) {
-        if held.active && event.hand == held.hand {
-            if event.control == "LeftTrigger" || event.control == "RightTrigger" { tool.use_end() }
-        }
-    })
+    if use_openxr {
+        on_global("XrButtonDown", fn(event) {
+            if held.active && event.hand == held.hand {
+                if event.control == "LeftTrigger" || event.control == "RightTrigger" { tool.use_start({ user = query("[name='paper_craft_mitten_avatar_control']") }) }
+            }
+        })
+        on_global("XrButtonUp", fn(event) {
+            if held.active && event.hand == held.hand {
+                if event.control == "LeftTrigger" || event.control == "RightTrigger" { tool.use_end() }
+            }
+        })
+    } else {
+        on_global("KeyDown",fn(event) {
+            if held.active && held.hand=="Desktop" && event.code=="KeyF" {
+                tool.use_start({user=query("[name='paper_craft_mitten_avatar_control']")})
+            }
+        })
+        on_global("KeyUp",fn(event) {
+            if held.active && held.hand=="Desktop" && event.code=="KeyF" {tool.use_end()}
+        })
+    }
     return grip
 }
 rooftop_pistol("paper_craft_machine_pistol", "paper_craft_pistol_laser", -20.30)

@@ -614,6 +614,11 @@ impl mms::Host for MittensHost<'_, '_> {
                     });
                     return Ok(S::Value(mms::Value::Null));
                 }
+                if *component_type == "XRHand" && *method == "get_grip_pose" {
+                    let value = super::controller_pose_api::get_grip_pose(self.world, id)
+                        .map_err(|e| mms::HostError::failure("XRHand.get_grip_pose",e))?;
+                    return Ok(S::Value(value));
+                }
                 if *component_type == "Material" {
                     let value =
                         super::configured_registry::material_method(self.world, id, method, &args)

@@ -273,3 +273,83 @@ fn a_partial_burst_spends_only_the_remaining_rounds() {
     );
     assert_eq!(empty_shots.load(Ordering::Relaxed), 0);
 }
+
+#[test]
+fn pistol_hit_context_carries_mode_damage_and_burst_totals_six() {
+    for (mode, damage, total) in [("semi", 3.0, 3.0), ("burst", 2.0, 6.0), ("auto", 1.5, 4.5)] {
+        let mut scene = Universe::new(World::default());
+        let clock = Arc::new(TestClock::default());
+        scene.systems.clock.set_driver(clock.clone());
+        let source = r#"
+            import { laser_machine_pistol } from "../assets/components/laser-machine-pistol.mms"
+            let last=Text {name="damage_last" "0"}
+            let total=Text {name="damage_total" "0"}
+            let state={total=0}
+            let tool=laser_machine_pistol({name="damage_test" on_hit=fn(hit) {
+                last.set_text(""+hit.damage)
+                state.total=state.total+hit.damage
+                total.set_text(""+state.total)
+            }})
+            tool.set_mode("__MODE__")
+            let control=T {name="damage_control"}
+            T {tool.root control last total for projectile in tool.projectiles {projectile}}
+            T.position(0,100,0) {R.cube() {name="damage_target"}}
+            on(control,"DataEvent",fn(event) {
+                if event=="Fire" {tool.use_start({user=null})}
+                if event=="Switch" {tool.set_mode("burst")}
+            })
+        "#
+        .replace("__MODE__", mode);
+        scene
+            .load_mms_source_at_path(&source, "examples/_pistol_damage_test.mms")
+            .unwrap();
+        finish_shaders(&scene);
+        let control = named(&scene.world, "damage_control");
+        scene.command_queue.push_event(
+            control,
+            EventSignal::DataEvent {
+                name: "Fire".into(),
+                payload: None,
+            },
+        );
+        let target = named(&scene.world, "damage_target");
+        for step in 0..15 {
+            advance(&mut scene, &clock);
+            if step == 0 && mode == "semi" {
+                // Changing the selector after launch must not retag the pending hit.
+                scene.command_queue.push_event(
+                    control,
+                    EventSignal::DataEvent {
+                        name: "Switch".into(),
+                        payload: None,
+                    },
+                );
+            }
+            for slot in ["first", "second", "third"] {
+                let raycaster = named(&scene.world, &format!("damage_test_{slot}_raycaster"));
+                scene.command_queue.push_event(
+                    raycaster,
+                    EventSignal::RayIntersected {
+                        raycaster,
+                        renderable: target,
+                        t: 1.,
+                        origin: [0.; 3],
+                        dir: [0., 0., -1.],
+                    },
+                );
+            }
+        }
+        // Deliver the final hit without advancing the animation into another Auto shot.
+        scene.update(0., &Default::default());
+        assert_eq!(
+            text(&scene, "damage_last").parse::<f32>().unwrap(),
+            damage,
+            "{mode} per-shot damage"
+        );
+        assert_eq!(
+            text(&scene, "damage_total").parse::<f32>().unwrap(),
+            total,
+            "{mode} total damage"
+        );
+    }
+}

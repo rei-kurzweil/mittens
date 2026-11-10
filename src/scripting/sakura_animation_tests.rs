@@ -152,24 +152,9 @@ fn sakura_pistol_grab_gates_burst_and_release_only_stops_weapon_flash() {
     let mut casts = Vec::new();
     let mut xr_settings = crate::engine::ecs::system::XrSettingsSystem::default();
     let mut graphics_settings = crate::engine::ecs::system::GraphicsSettingsSystem::default();
-    for step in 0..100 {
-        let mut executor =
-            crate::engine::ecs::system::animation_keyframe_evaluator::SessionCallbackExecutor {
-                session: &mut session,
-                render_assets: &mut assets,
-                emit: &mut queue,
-                benchmarks: &mut Default::default(),
-                graphics_settings: &mut Default::default(),
-            };
-        animation.tick_with_beat_and_executor(
-            &mut world,
-            step as f64 * 0.01,
-            120.,
-            &mut rx,
-            Some(&mut executor),
-        );
-        for signal in rx.drain_ready_intents() {
-            if let Some(intent) = signal.intent.map(|intent| intent.value) {
+    let mut consume =
+        |world: &World, animation: &mut AnimationSystem, intents: Vec<IntentValue>, step: usize| {
+            for intent in intents {
                 match intent {
                     IntentValue::RequestRaycast { component_id } => casts.push(component_id),
                     IntentValue::AudioSchedulePlay { component_id, .. } => {
@@ -200,7 +185,29 @@ fn sakura_pistol_grab_gates_burst_and_release_only_stops_weapon_flash() {
                     _ => {}
                 }
             }
-        }
+        };
+    for step in 0..100 {
+        let mut executor =
+            crate::engine::ecs::system::animation_keyframe_evaluator::SessionCallbackExecutor {
+                session: &mut session,
+                render_assets: &mut assets,
+                emit: &mut queue,
+                benchmarks: &mut Default::default(),
+                graphics_settings: &mut Default::default(),
+            };
+        animation.tick_with_beat_and_executor(
+            &mut world,
+            step as f64 * 0.01,
+            120.,
+            &mut rx,
+            Some(&mut executor),
+        );
+        let intents = rx
+            .drain_ready_intents()
+            .into_iter()
+            .filter_map(|signal| signal.intent.map(|i| i.value))
+            .collect();
+        consume(&world, &mut animation, intents, step);
         queue.drain_into_rx(&mut rx);
         for event in rx.drain_ready_events() {
             rx.dispatch_event_handlers(&mut world, &event);
@@ -214,6 +221,7 @@ fn sakura_pistol_grab_gates_burst_and_release_only_stops_weapon_flash() {
                 .with_graphics_settings(&mut graphics_settings);
         let errors = session.service_callbacks_with_host(host);
         assert!(errors.is_empty(), "{errors:?}");
+        consume(&world, &mut animation, callback_intents, step);
         if step == 65 {
             let busy = deliver_scene_event(
                 &mut world,

@@ -49,6 +49,9 @@ pub enum ControllerPoseSource {
 /// - the active XR runtime will drive that transform child from controller pose tracking.
 #[derive(Debug, Clone, Default)]
 pub struct ControllerXRComponent {
+    /// Current raw OpenXR grip in the nearest transform ancestor's space. Never
+    /// synthesized from avatar bones, aim orientation, or a previous XR frame.
+    pub(crate) grip_pose_in_parent: Option<crate::engine::transform::TransformTrs>,
     pub enabled: bool,
     /// Runtime-only: true after a valid controller pose was applied this frame.
     pub pose_valid: bool,
@@ -69,6 +72,7 @@ pub struct ControllerXRComponent {
 impl ControllerXRComponent {
     pub fn new(enabled: bool, hand: ControllerHand, pose: ControllerPoseKind) -> Self {
         Self {
+            grip_pose_in_parent: None,
             enabled,
             pose_valid: false,
             active_pose_source: ControllerPoseSource::None,
@@ -93,6 +97,37 @@ impl ControllerXRComponent {
 
     pub fn on_right_aim() -> Self {
         Self::new(true, ControllerHand::Right, ControllerPoseKind::Aim)
+    }
+    /// Copy the current OpenXR grip into engine world space; None means untracked.
+    pub fn get_grip_pose(
+        &self,
+        world: &crate::engine::ecs::World,
+    ) -> Option<crate::engine::transform::TransformTrs> {
+        if !self.enabled {
+            return None;
+        }
+        let pose = self.grip_pose_in_parent?;
+        let parent = Self::parent_frame(world, self.component_id?);
+        crate::engine::transform::TransformTrs::from_matrix(crate::utils::math::mat4_mul(
+            parent,
+            pose.to_matrix().ok()?,
+        ))
+        .ok()
+    }
+    pub(crate) fn parent_frame(
+        world: &crate::engine::ecs::World,
+        id: ComponentId,
+    ) -> crate::engine::transform::TransformMatrix {
+        let mut parent = world.parent_of(id);
+        while let Some(id) = parent {
+            if let Some(t) = world.get_component_by_id_as::<super::TransformComponent>(id) {
+                return t.transform.matrix_world;
+            }
+            parent = world.parent_of(id);
+        }
+        crate::engine::transform::TransformTrs::IDENTITY
+            .to_matrix()
+            .unwrap()
     }
 }
 

@@ -24,6 +24,11 @@ fn authored_model(
 
 #[test]
 fn paper_craft_xr_scene_has_floating_neighbors_and_clear_ground_to_roof_stairs() {
+    let source = include_str!("../../examples/paper-craft.mms").replacen(
+        "let use_openxr = false",
+        "let use_openxr = true",
+        1,
+    );
     let (mut world, mut rx, mut queue, mut assets) = (
         World::default(),
         RxWorld::default(),
@@ -31,7 +36,7 @@ fn paper_craft_xr_scene_has_floating_neighbors_and_clear_ground_to_roof_stairs()
         RenderAssets::new(),
     );
     let (_session, _) = super::tests::start_settings_scene(
-        include_str!("../../examples/paper-craft.mms"),
+        &source,
         "examples/paper-craft.mms",
         &mut world,
         &mut rx,

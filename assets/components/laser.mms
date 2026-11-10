@@ -62,6 +62,7 @@ export fn laser(options) {
                 projectile = root raycaster = raycaster renderable = event.renderable
                 hit_point = event.hit_point direction = event.direction origin = event.origin distance = event.distance
                 source_tool = context.source_tool source_user = context.source_user
+                damage = context.damage
             }
             if context.on_hit != null { context.on_hit(hit) }
         }
@@ -69,7 +70,9 @@ export fn laser(options) {
 
     fn launch(spec) {
         // Copy the launch context so later tool/user changes cannot retag a hit.
-        flight_state.context = { source_tool = spec.source_tool source_user = spec.source_user on_hit = spec.on_hit }
+        let damage=1.0
+        if spec["damage"]!=null {damage=spec.damage}
+        flight_state.context = { source_tool = spec.source_tool source_user = spec.source_user damage=damage on_hit = spec.on_hit }
         flight_state.pending_hit = true
         root.world_trs(spec.pose)
         raycaster.request_raycast()

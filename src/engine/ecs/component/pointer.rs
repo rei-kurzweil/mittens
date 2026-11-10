@@ -1,6 +1,13 @@
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::Component;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PointerGrabPose {
+    #[default]
+    HandBone,
+    ControllerGrip,
+}
+
 /// User-facing pointer component.
 ///
 /// Attach this under the pose-driving part of the topology (for example a desktop camera rig
@@ -8,6 +15,7 @@ use crate::engine::ecs::component::Component;
 /// and owns a child `RayCastComponent`, so authoring only needs to describe the pointer itself.
 #[derive(Debug, Clone)]
 pub struct PointerComponent {
+    pub grab_pose: PointerGrabPose,
     /// Explicit grip frame for Grabbable.to_hand objects. AVC supplies a runtime
     /// default when this override is absent or unresolved.
     pub grab_attachment: Option<crate::engine::ecs::component::ComponentRef>,
@@ -34,6 +42,7 @@ impl PointerComponent {
 
     pub fn new() -> Self {
         Self {
+            grab_pose: PointerGrabPose::HandBone,
             grab_attachment: None,
             avatar_grab_attachment: None,
             enabled: true,
@@ -48,6 +57,7 @@ impl PointerComponent {
 
     pub fn disabled() -> Self {
         Self {
+            grab_pose: PointerGrabPose::HandBone,
             grab_attachment: None,
             avatar_grab_attachment: None,
             enabled: false,
@@ -62,6 +72,10 @@ impl PointerComponent {
 
     pub fn with_enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
+        self
+    }
+    pub fn grab_pose(mut self, pose: PointerGrabPose) -> Self {
+        self.grab_pose = pose;
         self
     }
 
@@ -150,6 +164,11 @@ impl Component for PointerComponent {
             ce("Pointer")
         } else {
             ce_call("Pointer", "disabled", vec![])
+        };
+        let expression = if self.grab_pose == PointerGrabPose::ControllerGrip {
+            expression.with_call("grab_pose", vec![s("controller_grip")])
+        } else {
+            expression
         };
         let expression = if self.debug_enabled {
             expression.with_call("debug_enable", vec![b(true)])

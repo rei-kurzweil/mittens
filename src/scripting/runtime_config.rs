@@ -4,6 +4,8 @@
 //! authoritative here. The legacy registry remains the host implementation
 //! while its declarations move into this specification.
 
+#[path = "torus_runtime_config.rs"]
+mod torus_runtime_config;
 #[path = "spring_runtime_config.rs"]
 mod spring_runtime_config;
 #[path = "runtime_component_common.rs"]
@@ -23,7 +25,7 @@ pub use runtime_bindings::{ComponentInitializerKind, MittensApi, MittensBinding}
 /// The crate-owned runtime and matching Mittens bindings from one build.
 pub type MittensRuntime = mms::ConfiguredRuntime<MittensBinding>;
 
-fn component_signature(arguments: impl Into<Vec<mms::ValueType>>) -> mms::ValueSignature {
+pub(super) fn component_signature(arguments: impl Into<Vec<mms::ValueType>>) -> mms::ValueSignature {
     mms::ValueSignature::new(arguments, mms::ValueType::Component)
 }
 
@@ -330,6 +332,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     constructor_and_builder(component, "looking_at", any(1));
                 }
                 "Renderable" => {
+                    torus_runtime_config::configure(component);
                     host_constructor(component, canonical, "cube", no_args());
                     no_arg_constructors(
                         component,
@@ -400,18 +403,6 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                                 [
                                     mms::ValueType::F32,
                                     mms::ValueType::F32,
-                                    mms::ValueType::U32,
-                                ],
-                                0,
-                            ),
-                        )
-                        .constructor(
-                            "torus",
-                            optional_component_signature(
-                                [
-                                    mms::ValueType::F32,
-                                    mms::ValueType::F32,
-                                    mms::ValueType::U32,
                                     mms::ValueType::U32,
                                 ],
                                 0,
@@ -700,6 +691,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         "grab_attachment",
                         strings(1),
                     );
+                    host_constructor_and_builder(component, canonical, "grab_pose", strings(1));
                     host_constructor(component, canonical, "disabled", no_args());
                     host_constructor_and_builder(component, canonical, "debug_enable", booleans(1));
                     for method in [
@@ -829,17 +821,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         component_signature([mms::ValueType::U8]),
                     );
                 }
-                "XRHand" => {
-                    component.constructor(
-                        "new",
-                        component_signature([
-                            mms::ValueType::Bool,
-                            mms::ValueType::String,
-                            mms::ValueType::String,
-                        ]),
-                    );
-                    component.builder_call("laser", no_args());
-                }
+                "XRHand" => super::controller_pose_api::configure(component),
                 "JointRetargetBasis" => {
                     component.constructor("new", any(5));
                 }

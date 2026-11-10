@@ -1,3 +1,7 @@
+#[path = "pointer_registry.rs"]
+mod pointer_registry;
+#[path = "torus_registry.rs"]
+mod torus_registry;
 #[path = "spring_registry.rs"]
 mod spring_registry;
 use crate::engine::ecs::SignalEmitter;
@@ -1809,12 +1813,7 @@ fn create_component(
             Some("square") => add!(RenderableComponent::square()),
             Some("plane") => add!(RenderableComponent::plane()),
             Some("tetrahedron") => add!(RenderableComponent::tetrahedron()),
-            Some("torus") => with_render_assets_mut(|assets| {
-                let radius=arg_f32(args,0).unwrap_or(0.5); let tube=arg_f32(args,1).unwrap_or(0.1);
-                let segments=arg_u32(args,2).unwrap_or(64); let sides=arg_u32(args,3).unwrap_or(16);
-                let component=RenderableComponent::torus(assets,radius,tube,segments,sides)?;
-                Ok(world.add_component(component))
-            }),
+            Some(method @ ("torus" | "partial_torus")) => torus_registry::create(world, method, args),
             Some("cylinder") => with_render_assets_mut(|assets| {
                 let radius=arg_f32(args,0).unwrap_or(0.5);let height=arg_f32(args,1).unwrap_or(1.0);
                 let sides=arg_u32(args,2).unwrap_or(24);
@@ -2077,19 +2076,7 @@ fn create_component(
             Ok(id)
         }
         "CameraXR" => add!(super::camera_xr_binding::construct(ctor, args)?),
-        "Pointer" => match ctor {
-            Some("disabled") => add!(PointerComponent::disabled()),
-            Some(method @ ("min_grab_distance"
-            | "click_max_screen_distance_px"
-            | "click_max_ray_angle_deg"
-            | "click_max_origin_distance"
-            | "debug_enable")) => {
-                let id = world.add_component(PointerComponent::new());
-                apply_call(world, id, method, args)?;
-                Ok(id)
-            }
-            _ => add!(PointerComponent::new()),
-        },
+        "Pointer" => pointer_registry::create(world,ctor,args),
         "XR" | "VR" | "OpenXR" => match ctor {
             Some("off") => add!(XrComponent::off()),
             Some("on") | Some("auto") | Some("openxr") => add!(XrComponent::on()),
@@ -3230,47 +3217,8 @@ fn apply_call(
         return Ok(());
     }
 
-    if world
-        .get_component_by_id_as::<PointerComponent>(id)
-        .is_some()
-    {
-        if method == "debug_enable" {
-            let enabled = arg_bool(args, 0)?;
-            world
-                .get_component_by_id_as_mut::<PointerComponent>(id)
-                .expect("pointer checked above")
-                .debug_enabled = enabled;
-            return Ok(());
-        }
-        let value = val_as_f32(arg(args, 0)?)?;
-        let pointer = world
-            .get_component_by_id_as_mut::<PointerComponent>(id)
-            .expect("pointer checked above");
-        match method {
-            "min_grab_distance" if value.is_finite() && value >= 0.0 => {
-                pointer.min_grab_distance = Some(value)
-            }
-            "click_max_screen_distance_px" if value.is_finite() && value >= 0.0 => {
-                pointer.click_max_screen_distance_px = value
-            }
-            "click_max_ray_angle_deg" if value.is_finite() && (0.0..=180.0).contains(&value) => {
-                pointer.click_max_ray_angle_deg = value
-            }
-            "click_max_origin_distance" if value.is_finite() && value >= 0.0 => {
-                pointer.click_max_origin_distance = value
-            }
-            "click_max_ray_angle_deg" => {
-                return Err(
-                    "Pointer.click_max_ray_angle_deg must be finite and between 0 and 180 degrees"
-                        .into(),
-                );
-            }
-            "min_grab_distance" | "click_max_screen_distance_px" | "click_max_origin_distance" => {
-                return Err(format!("Pointer.{method} must be finite and non-negative"));
-            }
-            _ => {}
-        }
-        return Ok(());
+    if world.get_component_by_id_as::<PointerComponent>(id).is_some() {
+        return pointer_registry::apply(world,id,method,args);
     }
 
     if let Some(hand) = world.get_component_by_id_as_mut::<XRHandComponent>(id) {

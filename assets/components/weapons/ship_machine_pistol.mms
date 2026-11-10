@@ -10,7 +10,7 @@ export fn ship_machine_pistol(label) {
     let hand_offset = 0.05
     let material = ship_environment_material()
     fn impact(hit) {
-        Damage.at(hit.hit_point[0], hit.hit_point[1], hit.hit_point[2], 0.28, 1.0)
+        Damage.at(hit.hit_point[0], hit.hit_point[1], hit.hit_point[2], 0.28, hit.damage)
         let effect = mini_explosion(hit.hit_point, 2.0)
         effect.root
         effect.animation.play()

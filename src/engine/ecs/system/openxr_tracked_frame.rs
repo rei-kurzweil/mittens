@@ -38,6 +38,7 @@ impl OpenXRSystem {
                 controller.active_pose_source = ControllerPoseSource::None;
                 controller.raw_aim_rotation = None;
                 controller.raw_grip_rotation = None;
+                controller.grip_pose_in_parent = None;
             }
         }
 
@@ -138,6 +139,15 @@ impl OpenXRSystem {
                 .controller_pose_source_last_logged
                 .get(&controller_cid)
                 .copied();
+            let grip_pose_in_parent = raw_grip.and_then(|pose| {
+                let parent = XRHandComponent::parent_frame(world, controller_cid);
+                let inverse = math::mat4_inverse(parent)?;
+                let matrix = math::mat4_mul(
+                    inverse,
+                    math::mat4_mul(rig_world, Self::mat4_from_pose(pose)),
+                );
+                crate::engine::transform::TransformTrs::from_matrix(matrix).ok()
+            });
             if openxr_debug_enabled() && last_pose_source != Some(pose_source) {
                 let hand_data_source = match cfg.hand {
                     ControllerHand::Left => hands.left_data_source,
@@ -157,6 +167,7 @@ impl OpenXRSystem {
                 controller.active_pose_source = pose_source;
                 controller.raw_aim_rotation = raw_aim.map(Self::quat_from_posef);
                 controller.raw_grip_rotation = raw_grip.map(Self::quat_from_posef);
+                controller.grip_pose_in_parent = grip_pose_in_parent;
             }
 
             let Some(pose) = pose else {

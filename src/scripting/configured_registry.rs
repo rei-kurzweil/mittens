@@ -541,6 +541,14 @@ fn apply_call(
                 .get_component_by_id_as_mut::<RayCastComponent>(id)
                 .unwrap() = ray;
         }
+        "Pointer" if method == "grab_pose" => {
+            let pose = match args.first().and_then(|v| if let mms::Value::String(s) = v {Some(s.as_str())} else {None}) {
+                Some("hand_bone") => crate::engine::ecs::component::PointerGrabPose::HandBone,
+                Some("controller_grip") => crate::engine::ecs::component::PointerGrabPose::ControllerGrip,
+                _ => return Err("Pointer.grab_pose expects hand_bone or controller_grip".into()),
+            };
+            world.get_component_by_id_as_mut::<PointerComponent>(id).ok_or("missing Pointer")?.grab_pose = pose;
+        }
         "Pointer" if method == "grab_attachment" => {
             let reference = component_ref_arg(world, args, 0)?;
             world

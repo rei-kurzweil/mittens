@@ -31,6 +31,11 @@ on that battery.
 
 ## Cross-epic prototype work
 
+[Screen players and untracked holding pose drivers](../task/untracked-pointer-holding-pose-driver.md)
+records paper-craft's implemented desktop/XR mode switch and the future goal of
+feeding shared arm IK from procedural holding targets when hands are untracked.
+The holding driver and its opt-in policy remain design work.
+
 The [audio spectrum and VR rhythm game workbench](audio-spectrum-and-rhythm-game.md)
 tracks two separate epics being developed in this repository. It is a loose
 dashboard; the linked epic and task documents hold their specifications.

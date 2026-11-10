@@ -148,6 +148,12 @@ Paper stays white on every staff; the third staff retains black anime shading
 and its strong lavender rim.
 
 The gohei roots use `Grabbable.to_hand(true)` at their existing grip origins.
+Paper-craft uses the original hand-bone attachment mode. The controller-grip
+experiment was disabled after an in-headset test showed incorrect gun orientation.
+Only the black spring gohei uses a local `.hand_offset([-0.015,0,-0.055])`, pulled
+back 5 cm from the initial correction and shifted 1.5 cm left. A child transform
+tilts the staff and paper together 30 degrees forward (-X rotation), about the
+grip origin, so hand snapping does not overwrite the tilt.
 The avatar already supplies the solved hand grip attachment to each hand pointer,
 as it does for the machine pistol. No extra pointer hand-bone selector is needed.
 
