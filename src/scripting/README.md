@@ -6,6 +6,9 @@ The intent is to eventually replace (or deprecate) JSON component graphs for aut
 
 ## Core idea: component expressions
 
+Focused component registry implementations and API declarations are grouped in
+[`registries/`](registries/README.md). The central registry entry points remain here.
+
 A component expression has three kinds of nodes (plus one sugar bucket):
 
 - **Parameters**: named attributes on the component header, e.g. `name="dialog-continue"`, `guid="..."`.

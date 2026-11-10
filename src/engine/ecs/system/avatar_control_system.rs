@@ -1,3 +1,6 @@
+#[path = "avatar_eye_blink.rs"]
+mod eye_blink;
+use eye_blink::*;
 use crate::engine::ecs::component::HumanoidSlot;
 use crate::engine::ecs::component::{
     AvatarControlComponent, BoneRestPoseComponent, Camera3DComponent, CameraXRComponent,
@@ -353,7 +356,7 @@ fn update_eye_tracking(
     );
     update_one_eye_tracking(avc_id, world, emit, true, left_target, left_gaze);
     update_one_eye_tracking(avc_id, world, emit, false, right_target, right_gaze);
-    update_eye_blink(avc_id, world, humanoid_maps);
+    update_eye_blink(avc_id, world, humanoid_maps, dt_sec);
 }
 
 const EYE_GAZE_FREEZE_ENTER_RAD_PER_SEC: f32 = 30.0_f32.to_radians();
@@ -449,88 +452,6 @@ fn freeze_gaze(
         rotation_limits: live.and_then(|gaze| gaze.rotation_limits),
         sequence: live.map_or(0, |gaze| gaze.sequence),
     })
-}
-
-/// The newest normalized closure for each eye owns its mapped blink target
-/// while present. The base value is never overwritten, so removing/loss of a
-/// tracker restores editor and imported defaults automatically.
-fn update_eye_blink(
-    avc_id: ComponentId,
-    world: &mut World,
-    humanoid_maps: &mut HumanoidBoneMapSystem,
-) {
-    let closure = newest_direct_eye_closure(world, avc_id);
-    let Some(gltf_id) = humanoid_maps.request_for_avc(world, avc_id) else {
-        return;
-    };
-    apply_eye_blink_drivers(world, gltf_id, closure);
-}
-
-fn newest_direct_eye_closure(world: &World, avc_id: ComponentId) -> (Option<f32>, Option<f32>) {
-    let mut left = None::<(u64, f32)>;
-    let mut right = None::<(u64, f32)>;
-    for id in world.children_of(avc_id).iter().copied() {
-        let sample = world
-            .get_component_by_id_as::<XREyeTrackingComponent>(id)
-            .map(|tracker| tracker.closure_sample)
-            .or_else(|| {
-                world
-                    .get_component_by_id_as::<VRChatOSCEyeTrackingComponent>(id)
-                    .map(|tracker| tracker.closure_sample)
-            })
-            .or_else(|| {
-                world
-                    .get_component_by_id_as::<XREyeTrackingHtcComponent>(id)
-                    .map(|tracker| tracker.closure_sample)
-            });
-        let Some(sample) = sample else { continue };
-        if let Some(value) = sample.left {
-            if left.is_none_or(|(sequence, _)| sample.sequence > sequence) {
-                left = Some((sample.sequence, value));
-            }
-        }
-        if let Some(value) = sample.right {
-            if right.is_none_or(|(sequence, _)| sample.sequence > sequence) {
-                right = Some((sample.sequence, value));
-            }
-        }
-    }
-    (left.map(|(_, value)| value), right.map(|(_, value)| value))
-}
-
-fn apply_eye_blink_drivers(
-    world: &mut World,
-    gltf_id: ComponentId,
-    closure: (Option<f32>, Option<f32>),
-) {
-    let labels = world.children_of(gltf_id).iter().copied().find_map(|id| {
-        world
-            .get_component_by_id_as::<crate::engine::ecs::component::MorphTargetMapComponent>(id)
-            .map(|map| map.slots().clone())
-    });
-    let Some(labels) = labels else { return };
-    let Some(gltf) =
-        world.get_component_by_id_as_mut::<crate::engine::ecs::component::GLTFComponent>(gltf_id)
-    else {
-        return;
-    };
-    for (channel, closure) in [
-        ("left_eye_blink", closure.0),
-        ("right_eye_blink", closure.1),
-    ] {
-        let Some(label) = labels.get(channel) else {
-            continue;
-        };
-        for info in gltf
-            .morph_targets
-            .iter()
-            .filter(|info| info.label.as_deref() == Some(label.as_str()))
-        {
-            if let Some(state) = gltf.morph_factors.get_mut(&info.key) {
-                state.driver = closure;
-            }
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -2528,6 +2449,7 @@ mod hand_pose_correction_tests {
         gltf.morph_factors.insert(
             key,
             MorphFactorState {
+                idle_blink: None,
                 base: 0.1,
                 driver: None,
                 amplitude_mouth_open: None,
@@ -2807,6 +2729,7 @@ mod hand_pose_correction_tests {
         gltf.morph_factors.insert(
             left_key,
             MorphFactorState {
+                idle_blink: None,
                 base: 0.1,
                 driver: None,
                 amplitude_mouth_open: None,
@@ -2815,6 +2738,7 @@ mod hand_pose_correction_tests {
         gltf.morph_factors.insert(
             right_key,
             MorphFactorState {
+                idle_blink: None,
                 base: 0.15,
                 driver: None,
                 amplitude_mouth_open: None,

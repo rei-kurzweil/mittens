@@ -1,11 +1,15 @@
 # Implementation guidelines
 
-- Aim to keep each new or refactored source file below 1,400 lines and focused
-  on one responsibility. Before a file grows beyond 1,800 lines, stop and
-  restructure the relevant responsibilities into focused modules.
-- Do not grow an already oversized source file as a shortcut. Extract the
-  relevant responsibility before expanding it; avoid unrelated repository-wide
-  rewrites merely to satisfy the size target.
+- Keep source files focused on cohesive responsibilities. File length is a
+  review signal, not an automatic split threshold.
+- Before adding to a file that appears oversized, create or update a ticket
+  under `docs/task/` proposing a responsibility-based split, including relevant
+  performance constraints and validation. Continue the requested scoped change
+  without automatically performing that split; implement it when explicitly
+  requested or approved.
+- Avoid unrelated refactors solely to meet line-count targets, and avoid tiny
+  per-function or per-primitive modules when a coherent component-family module
+  is the better boundary.
 - Module splits must preserve performance: retain batched/direct hot paths,
   avoid introducing per-draw allocations, repeated resource/pipeline creation,
   or runtime dispatch just to separate files. Measure meaningful changes.

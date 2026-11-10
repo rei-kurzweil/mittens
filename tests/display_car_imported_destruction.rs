@@ -1,7 +1,7 @@
 use mittens_engine::engine::{
     Universe,
     ecs::{
-        ComponentId, EventSignal, KeyboardEvent, Signal, World,
+        ComponentId, EventSignal, KeyboardEvent, Signal, SignalEmitter, SignalKind, World,
         component::{
             CutGeometryComponent, DestroyableComponent, MeshComponent, RenderableComponent,
             TransformComponent,
@@ -15,6 +15,101 @@ use mittens_engine::engine::{
 struct Upload {
     next: u32,
     meshes: std::collections::HashMap<MeshHandle, CpuMesh>,
+}
+
+#[test]
+fn mech_power_switch_is_visible_and_clickable_from_the_driver_eye() {
+    use mittens_engine::engine::ecs::component::{GLTFComponent, TextComponent};
+    use std::sync::{Arc, Mutex};
+    let mut scene = Universe::new(World::default());
+    scene.load_mms_source_at_path(r##"
+        import {display_car_desktop} from "../assets/components/vehicles/display_car.mms"
+        display_car_desktop("power_car",[0,0,0],0,"power_seat")
+        query("#power_car_gravity").set_enabled(false)
+        let ray=Raycast.event_driven().parent_forward(true).nearest_hit_only(true).min_distance(0.75).max_distance(3.0) {name="power_visibility_ray"}
+        T.position(0,4.5,-1).rotation(-0.30627737,-0.32175055,0) {ray}
+        let control=T {name="power_visibility_control"}
+        control
+        on(control,"DataEvent",fn(event) {ray.request_raycast()})
+    "##,"examples/_mech_power_visibility.mms").unwrap();
+    let mut upload = Upload::default();
+    for _ in 0..6 {
+        prepare(&mut scene, &mut upload);
+    }
+    let definitions: Vec<_> = scene
+        .visuals
+        .materials
+        .instances()
+        .filter_map(|(_, i)| {
+            scene
+                .visuals
+                .materials
+                .definition(i.definition)?
+                .custom
+                .clone()
+        })
+        .collect();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while definitions.iter().any(|d| d.compiled.get().is_none()) {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert!(
+        scene.world.all_components().any(|id| scene
+            .world
+            .get_component_by_id_as::<GLTFComponent>(id)
+            .is_some_and(|g| g.spawned_node_transforms.len() >= 10)),
+        "test must include the imported cockpit geometry"
+    );
+    let ray = named(&scene.world, "power_visibility_ray");
+    let hit = Arc::new(Mutex::new(None));
+    let captured = hit.clone();
+    scene
+        .systems
+        .rx
+        .add_handler_closure(SignalKind::RayIntersected, ray, move |_, _, signal| {
+            if let Some(EventSignal::RayIntersected { renderable, .. }) = &signal.event {
+                *captured.lock().unwrap() = Some(*renderable);
+            }
+        });
+    let control = named(&scene.world, "power_visibility_control");
+    scene.command_queue.push_event(
+        control,
+        EventSignal::DataEvent {
+            name: "Cast".into(),
+            payload: None,
+        },
+    );
+    for _ in 0..3 {
+        prepare(&mut scene, &mut upload);
+    }
+    let hit = (*hit.lock().unwrap()).expect("driver ray must hit the power button");
+    assert_eq!(
+        hit,
+        named(&scene.world, "vehicle_power_hit_target"),
+        "dashboard/model must not hide the cockpit control"
+    );
+    scene.command_queue.push_event(
+        hit,
+        EventSignal::Click {
+            raycaster: ray,
+            renderable: hit,
+            hit_point: [0.3, 4.2, -1.9],
+            screen_pos_px: None,
+        },
+    );
+    for _ in 0..3 {
+        prepare(&mut scene, &mut upload);
+    }
+    assert_eq!(
+        scene
+            .world
+            .get_component_by_id_as::<TextComponent>(named(&scene.world, "pickup_power_readout"))
+            .unwrap()
+            .text,
+        "POWER ON",
+        "clicks on the visible button surface must reach its controller"
+    );
 }
 impl MeshUploader for Upload {
     fn upload_mesh(&mut self, mesh: &CpuMesh) -> Result<MeshHandle, Box<dyn std::error::Error>> {

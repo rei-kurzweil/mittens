@@ -101,9 +101,12 @@ export fn display_car_controls(body, motion, input_mode, input_source, seated) {
         if input_mode=="desktop" {bindings.handlers=[bindings.handlers[0],bindings.handlers[1],frames]}
         else {bindings.handlers=[bindings.handlers[0],bindings.handlers[1],bindings.handlers[2],frames]}
     }
-    let panel=pickup_power_panel(fn() { body.set_powered(!state.powered) })
-    // Reuse the truck switch at the mech cockpit's height, facing the seat.
-    let panel_mount=T.position(0,1.6,-1.1) { panel }
+    // Place in the open cockpit view above the dashboard. The old truck-local
+    // offset put this below the view and behind dashboard triangles.
+    let panel=pickup_power_panel(fn() { body.set_powered(!state.powered) }, {
+        position=[0.30,4.20,-1.90] scale=1.5
+    })
+    let panel_mount=T { name="car_power_panel_mount" panel }
     body.powered=fn() {return state.powered}
     body.set_powered=fn(value) {
         state.powered=value==true

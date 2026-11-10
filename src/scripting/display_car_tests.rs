@@ -578,13 +578,16 @@ fn mittens_corp_managed_car_attachments_survive_topology_cleanup() {
             "paper_craft_road_car_north",
         ),
     ] {
+        // Exercise authored mount topology without opening a hardware runtime.
+        // Keep InputXR/hand drivers authored; only disable the top-level session.
+        let source = source.replace("\nXR.on()\n", "\nXR.off()\n");
         let mut world = World::default();
         let mut systems = SystemWorld::default();
         let mut visuals = VisualWorld::default();
         let mut assets = RenderAssets::new();
         let mut queue = CommandQueue::new();
         let (_session, output) = start_settings_scene(
-            source,
+            &source,
             path,
             &mut world,
             &mut systems.rx,

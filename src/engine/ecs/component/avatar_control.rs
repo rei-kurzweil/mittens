@@ -1,3 +1,5 @@
+#[path = "eye_blink_state.rs"]
+mod blink;
 use crate::engine::ecs::ComponentId;
 use crate::engine::ecs::component::{Component, ComponentRef};
 
@@ -93,6 +95,10 @@ impl ArmTwoBoneIkConfig {
 /// ```
 #[derive(Debug, Clone)]
 pub struct AvatarControlComponent {
+    pub idle_blink: bool,
+    pub blink_interval: f32,
+    pub blink_duration: f32,
+    pub(crate) eye_blink_state: blink::EyeBlinkState,
     /// Explicit amplitude observer used for the `viseme_aa` mouth-open fallback.
     pub mouth_open_amplitude: Option<ComponentRef>,
     /// Linear PCM RMS that maps to a closed mouth.
@@ -593,6 +599,10 @@ impl AvatarControlComponent {
 impl Default for AvatarControlComponent {
     fn default() -> Self {
         Self {
+            idle_blink: false,
+            blink_interval: 4.0,
+            blink_duration: 0.18,
+            eye_blink_state: Default::default(),
             mouth_open_amplitude: None,
             mouth_open_rms_floor: 0.015,
             mouth_open_rms_ceiling: 0.12,
@@ -713,6 +723,15 @@ impl Component for AvatarControlComponent {
                 vec![num(self.body_yaw_threshold as f64)],
             )
             .with_call("body_yaw_rate", vec![num(self.body_yaw_rate as f64)]);
+        if self.idle_blink {
+            c = c.with_call("idle_blink", vec![b(true)]);
+        }
+        if self.blink_interval != 4.0 {
+            c = c.with_call("blink_interval", vec![num(self.blink_interval as f64)]);
+        }
+        if self.blink_duration != 0.18 {
+            c = c.with_call("blink_duration", vec![num(self.blink_duration as f64)]);
+        }
         if !self.collision_enabled {
             c = c.with_call("collision_disabled", vec![]);
         }

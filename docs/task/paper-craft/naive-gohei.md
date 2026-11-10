@@ -167,3 +167,17 @@ three paper-craft/XR-settings scene checks passed, and the stereo Vulkan render
 fixture passed. The XR-settings fixture exercises the real authored stage
 colliders with a representative routed capsule: floor support, cube-side blocking,
 and standing on a cube. It does not replace testing the tracked avatar in a headset.
+
+## Two shide and spring tuning
+
+The black gohei now uses two independently weighted seven-panel shide, mirrored
+left/right with a small depth separation. `gohei_shide.mms` owns each strand's
+geometry, binding and animation; the other gohei variants retain one strand.
+Both first panels' joint zero stays anchored at the staff. Each simulated chain
+starts at joint one, so the first panel is excluded from spring collision solving.
+The paper chains already disable both world and avatar collision; there is no
+per-joint collision exemption API added in this change.
+
+Below the fixed attachment, stiffness changes only from 0.8 to 0.75 and drag
+from 0.55 to 0.50 for a small increase in springiness. Gravity is 2.7 versus the
+hair preset's 3.0. The existing local grip offset and 30-degree forward lean remain.

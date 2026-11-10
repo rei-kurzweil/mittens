@@ -275,6 +275,7 @@ if use_openxr {
                     }
                     let xr_avatar_control = AVC.movement_target("[name='paper_craft_mitten_locomotion_root']") {
                         name = "paper_craft_mitten_avatar_control"
+                        idle_blink(true)
                         crouch_enabled(true)
                         crouch_sole_offsets([0.0, 0.0530325, 0.0874534], [0.0, 0.0530325, 0.0874534])
                         WalkingIK { step_scale(1.3) }
@@ -356,6 +357,7 @@ if use_openxr {
                     let avatar = AVC.movement_target("[name='paper_craft_mitten_locomotion_root']") {
                         name = "paper_craft_mitten_avatar_control"
                         initial_yaw(3.14159265)
+                        idle_blink(true)
                         crouch_enabled(true)
                         crouch_sole_offsets([0.0,0.0530325,0.0874534],[0.0,0.0530325,0.0874534])
                         WalkingIK {step_scale(1.3)}

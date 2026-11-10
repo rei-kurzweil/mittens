@@ -1,66 +1,76 @@
 # Idle blinking when eyelid closure tracking is unavailable
 
-Status: implementation inspection and follow-up design. No blink fallback or new
-tracking/morph API is implemented by this change.
+Status: native opt-in idle blink and a semantic MMS closure-availability getter
+are implemented. A general scriptable morph-weight setter remains future work.
 
-Paper-craft now applies `poses/mitten/relaxed-arms.pose.mms` once at GLTF startup
-in both screen and XR modes. It changes only upper-arm rotations to an A-pose,
-preserves Mitten's bind translations/scales, and leaves tracked arm IK free to
-overwrite it. This is independent of the eyelid work below.
+Paper-craft opts into idle blinking in both screen and XR modes. Mitten also has
+an arms-only startup relaxed pose, now 15 degrees from the sides (75 degrees
+below horizontal), preserving its bind translations/scales and allowing tracked
+arm IK to overwrite it afterward.
 
-## What already exists
+## Authoring and behavior
 
-- `XREyeTracking.on().priority(...)` is a generic selector over HTC and VRChat
-  OSC eye transports. `mediapipe` is accepted as a reserved, unavailable provider;
-  the planned webcam component is described in
-  [avatar tracking components and MediaPipe](avatar-tracking-components-and-mediapipe.md).
-- The current runtime selects gaze and closure independently. It stores
-  normalized `EyeClosureSample {left: Option<f32>, right: Option<f32>, sequence}`
-  and a closure source independently of gaze. These are internal runtime fields,
-  not a current MMS capability/status API.
-- AVC consumes normalized closure and maps it to `left_eye_blink` and
-  `right_eye_blink`, without requiring authored provider-specific blink logic.
-  Disabling pupil-direction tracking does not disable closure tracking.
-- Live closure writes `MorphFactorState.driver`; removing the driver restores
-  the base value. Closure samples are cleared before each transport poll, so a
-  frame without a packet is not itself proof that closure tracking is unsupported.
-- Existing tracking-update events are transport-shaped. They are not a generic
-  enumeration of available eyelid channels or an authoritative loss notification.
+```javascript
+AVC {
+    idle_blink(true)
+    blink_interval(4.0)
+    blink_duration(0.18)
+}
+```
 
-Source: `component/xr_eye_tracking.rs`, `system/xr_eye_tracking_system.rs`, and
-`update_eye_blink` in `system/avatar_control_system.rs` under `src/engine/ecs/`.
-The [one-shot source election proposal](one-shot-xr-eye-tracking-source-election.md)
-would replace the current per-channel arbitration; it remains pending.
+Intervals/durations are seconds. The native curve closes quickly and reopens
+more slowly with smooth easing. Defaults are 4 seconds and 0.18 seconds; idle
+blinking is disabled unless explicitly authored. Duration is capped at half
+the interval. The timer is per-avatar and uses the simulation delta.
 
-## The decision must concern closure, not eye tracking generally
+`avatar.eyelid_tracking()` returns `{left: bool, right: bool}` for usable closure
+samples, with a 250 ms grace period across packet gaps. It reports closure,
+not gaze and not merely the existence of a tracker component. A live zero
+means tracked and open. Gaze-only tracking does not suppress idle blinking.
 
-A tracker may supply gaze but no eyelid measurement, or eyelid closure without
-gaze. A live closure value of **0 means tracked and open**, not missing. Likewise,
-an XR runtime, camera, MediaPipe process, or another tracking provider being
-present does not establish that either eyelid channel is supported and usable.
+The existing generic selector handles configured provider priorities and feeds
+normalized closure to AVC. Neither the authored scene nor the idle-blink curve
+needs HTC, OSC, or future webcam/provider-specific availability checks. The
+MediaPipe source is still a reserved, unavailable entry; this does not implement
+a webcam or phone tracking backend.
 
-Expose provider-independent semantic status for eyelid closure, with per-eye
-support, sample validity, and freshness/liveness. Distinguish unsupported,
-temporarily missing, and sustained loss. Use a suitable grace period before
-changing fallback ownership so packet cadence does not toggle idle blinking.
-Keep source-election policy separate from whether the chosen source supplies
-closure. Do not hardcode HTC, OSC, webcam, or future phone-provider checks in AVC
-or the authored blink behavior.
+## Ownership
 
-## Follow-up implementation
+Live eyelid closure is the primary morph driver. With idle blinking enabled,
+the most recent closure value is held for up to 250 ms when packets are missing;
+sustained loss releases that eye to the idle curve. A returning valid sample
+immediately takes priority, including an open value of zero. Each eye is handled
+independently after provider normalization.
 
-Add a semantic blink/closure or morph-weight authoring operation. `Animation`
-keyframes can invoke MMS callbacks, but no direct morph-weight setter is currently
-registered in the MMS component API. A scalar blink animation needs that bridge;
-it does not require replacing the animation system.
+`MorphFactorState.idle_blink` is a separate fallback from `driver`. It leaves
+base factors intact; while untracked it can close an eye further than its base
+value, and between blinks it restores the base. Tracked closure still wins over
+the fallback. Disabling idle blinking clears the fallback. Avatars that do not
+opt in retain the previous immediate-release tracking behavior.
 
-Give procedural idle blinking fallback priority beneath a valid tracked closure
-driver. Preserve authored base values and any higher-priority expression owner;
-do not overwrite the tracking driver or compete with it. The exact fallback slot
-and animation interpolation API still need to be chosen. Screen-mode Mitten can
-use it when closure is unavailable, and an XR gaze-only source should also qualify.
+Missing blink mappings do not fabricate targets. Paper-craft maps the semantic
+`left_eye_blink` / `right_eye_blink` channels to Mitten's imported blink morphs.
 
-Tests should distinguish gaze-only tracking, closure-only tracking, tracked-open
-zero, unilateral channels, short packet gaps, sustained loss, tracker return,
-missing blink morph mappings, and independent avatars. No automatic blinking is
-enabled yet; first land the capability/status and morph authoring contracts.
+## Current implementation and remaining work
+
+- `component/eye_blink_state.rs` retains per-eye closure liveness and the curve.
+- `system/avatar_eye_blink.rs` consumes normalized tracking and writes mapped
+  morph drivers/fallbacks. `MorphFactorState::effective` composes the result.
+- MMS exposes the three builders above and the semantic availability getter.
+- The existing eye selector still chooses gaze and closure independently; the
+  [one-shot election proposal](one-shot-xr-eye-tracking-source-election.md)
+  remains pending. Availability is distinct from that source-election policy.
+
+A fully general channel capability/status contract (support, provider identity,
+validity and freshness) is still a future extension. The new getter answers
+whether closure is currently usable; it does not enumerate every provider or
+claim gaze availability implies eyelid support.
+
+`Animation` callbacks could drive authored morph weights once a setter and its
+ownership rules exist. This first idle blink uses a native AVC curve rather
+than adding per-frame MMS callbacks or a general morph animation API.
+
+Tests cover gaze-only input, tracked-open zero, independent eyes, short packet
+gaps, sustained loss, base restoration, independent avatar clocks, and the real
+paper-craft model closing and reopening its imported blink morph. Related:
+[tracking components and MediaPipe](avatar-tracking-components-and-mediapipe.md).

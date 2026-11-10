@@ -614,6 +614,14 @@ impl mms::Host for MittensHost<'_, '_> {
                     });
                     return Ok(S::Value(mms::Value::Null));
                 }
+                if *component_type == "AvatarControl" && *method == "eyelid_tracking" {
+                    let avatar=self.world.get_component_by_id_as::<crate::engine::ecs::component::AvatarControlComponent>(id)
+                        .ok_or_else(||mms::HostError::failure("eyelid_tracking","not an AvatarControl"))?;
+                    let [left,right]=avatar.eye_blink_state.tracked();
+                    return Ok(S::Value(mms::Value::Map(HashMap::from([
+                        ("left".into(),mms::Value::Bool(left)),("right".into(),mms::Value::Bool(right)),
+                    ]))));
+                }
                 if *component_type == "XRHand" && *method == "get_grip_pose" {
                     let value = super::controller_pose_api::get_grip_pose(self.world, id)
                         .map_err(|e| mms::HostError::failure("XRHand.get_grip_pose",e))?;

@@ -88,6 +88,8 @@ impl Component for MorphTargetBindingComponent {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MorphFactorState {
+    /// Authored idle blink fallback; live expression/tracking drivers take priority.
+    pub idle_blink: Option<f32>,
     pub base: f32,
     /// Primary animation/viseme owner. When present it wins over fallbacks.
     pub driver: Option<f32>,
@@ -95,10 +97,22 @@ pub struct MorphFactorState {
     pub amplitude_mouth_open: Option<f32>,
 }
 impl MorphFactorState {
+    pub fn new(base: f32) -> Self {
+        Self {
+            base,
+            driver: None,
+            amplitude_mouth_open: None,
+            idle_blink: None,
+        }
+    }
     pub fn effective(self) -> f32 {
         self.driver
             .or(self.amplitude_mouth_open)
-            .unwrap_or(self.base)
+            .unwrap_or_else(|| {
+                self.idle_blink
+                    .filter(|v| *v > 0.)
+                    .map_or(self.base, |v| self.base.max(v))
+            })
     }
     pub fn is_active(self) -> bool {
         self.effective().abs() > MORPH_ACTIVE_EPSILON
@@ -181,6 +195,7 @@ mod tests {
         factors.insert(
             key,
             MorphFactorState {
+                idle_blink: None,
                 base: MORPH_ACTIVE_EPSILON,
                 driver: None,
                 amplitude_mouth_open: None,
@@ -190,6 +205,7 @@ mod tests {
         factors.insert(
             key,
             MorphFactorState {
+                idle_blink: None,
                 base: -MORPH_ACTIVE_EPSILON * 1.01,
                 driver: None,
                 amplitude_mouth_open: None,
@@ -204,6 +220,7 @@ mod tests {
     #[test]
     fn driver_does_not_destroy_base_factor() {
         let state = MorphFactorState {
+            idle_blink: None,
             base: 0.25,
             driver: Some(0.8),
             amplitude_mouth_open: Some(0.5),
@@ -211,6 +228,7 @@ mod tests {
         assert_eq!(state.effective(), 0.8);
         assert_eq!(
             MorphFactorState {
+                idle_blink: None,
                 driver: None,
                 amplitude_mouth_open: None,
                 ..state

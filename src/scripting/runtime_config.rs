@@ -4,18 +4,20 @@
 //! authoritative here. The legacy registry remains the host implementation
 //! while its declarations move into this specification.
 
-#[path = "torus_runtime_config.rs"]
-mod torus_runtime_config;
-#[path = "spring_runtime_config.rs"]
+#[path = "registries/renderable_runtime_config.rs"]
+mod renderable_runtime_config;
+#[path = "registries/spring_runtime_config.rs"]
 mod spring_runtime_config;
+#[path = "registries/eye_tracking_runtime_config.rs"]
+mod eye_tracking_runtime_config;
 #[path = "runtime_component_common.rs"]
 pub(super) mod component_common;
 use meow_meow_script as mms;
 #[path = "builtin_api_config.rs"]
 mod builtin_api_config;
-#[path = "interaction_runtime_config.rs"]
+#[path = "registries/interaction_runtime_config.rs"]
 mod interaction_runtime_config;
-#[path = "material_runtime_config.rs"]
+#[path = "registries/material_runtime_config.rs"]
 mod material_runtime_config;
 
 #[path = "runtime_bindings.rs"]
@@ -331,139 +333,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     }
                     constructor_and_builder(component, "looking_at", any(1));
                 }
-                "Renderable" => {
-                    torus_runtime_config::configure(component);
-                    host_constructor(component, canonical, "cube", no_args());
-                    no_arg_constructors(
-                        component,
-                        &[
-                            "annulus_2d",
-                            "circle2d",
-                            "circle_2d",
-                            "sphere",
-                            "triangle",
-                            "square",
-                            "plane",
-                            "tetrahedron",
-                        ],
-                    );
-                    component
-                        .constructor(
-                            "cone",
-                            optional_component_signature([mms::ValueType::U32], 0),
-                        )
-                        .constructor(
-                            "icosahedron",
-                            optional_component_signature(
-                                [mms::ValueType::U32, mms::ValueType::F32],
-                                0,
-                            ),
-                        )
-                        .constructor(
-                            "wireframe_sphere",
-                            optional_component_signature(
-                                [
-                                    mms::ValueType::U32,
-                                    mms::ValueType::U32,
-                                    mms::ValueType::F32,
-                                ],
-                                0,
-                            ),
-                        )
-                        .constructor(
-                            "wireframe_icosahedron",
-                            optional_component_signature(
-                                [
-                                    mms::ValueType::U32,
-                                    mms::ValueType::F32,
-                                    mms::ValueType::F32,
-                                ],
-                                0,
-                            ),
-                        )
-                        .constructor(
-                            "wireframe_box",
-                            optional_component_signature([mms::ValueType::F32], 0),
-                        )
-                        .constructor(
-                            "wireframe_square",
-                            optional_component_signature([mms::ValueType::F32], 0),
-                        )
-                        .constructor(
-                            "heart",
-                            optional_component_signature([mms::ValueType::U32], 0),
-                        )
-                        // Polygon has a stable mesh key plus its 2D point list.
-                        // Keep the strict runtime signature aligned with
-                        // component_registry::polygon_args.
-                        .constructor("polygon", any(2))
-                        .constructor(
-                            "cylinder",
-                            optional_component_signature(
-                                [
-                                    mms::ValueType::F32,
-                                    mms::ValueType::F32,
-                                    mms::ValueType::U32,
-                                ],
-                                0,
-                            ),
-                        )
-                        .constructor(
-                            "helix",
-                            optional_component_signature(
-                                [
-                                    mms::ValueType::F32,
-                                    mms::ValueType::F32,
-                                    mms::ValueType::F32,
-                                    mms::ValueType::F32,
-                                    mms::ValueType::F32,
-                                    mms::ValueType::U32,
-                                    mms::ValueType::F32,
-                                ],
-                                0,
-                            ),
-                        )
-                        .constructor(
-                            "helix_tube",
-                            optional_component_signature(
-                                [
-                                    mms::ValueType::F32,
-                                    mms::ValueType::F32,
-                                    mms::ValueType::F32,
-                                    mms::ValueType::F32,
-                                    mms::ValueType::F32,
-                                    mms::ValueType::U32,
-                                    mms::ValueType::U32,
-                                ],
-                                0,
-                            ),
-                        )
-                        .constructor(
-                            "partial_annulus_2d",
-                            optional_component_signature(
-                                [
-                                    mms::ValueType::F32,
-                                    mms::ValueType::F32,
-                                    mms::ValueType::F32,
-                                    mms::ValueType::F32,
-                                    mms::ValueType::U32,
-                                ],
-                                0,
-                            ),
-                        )
-                        .constructor(
-                            "star",
-                            optional_component_signature(
-                                [
-                                    mms::ValueType::U32,
-                                    mms::ValueType::F32,
-                                    mms::ValueType::U32,
-                                    mms::ValueType::U32,
-                                ],
-                                0,
-                            ),
-                        );
-                }
+                "Renderable" => renderable_runtime_config::configure(component),
                 "CombineMesh" => no_arg_constructors(component, &["keep_transforms"]),
                 "ImplicitSurface" | "ImplicitSphere" | "Destroyable" | "Damage" => {
                     geometry_binding::register(component, canonical)
@@ -572,35 +442,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     constructor_and_builder(component, "bind", strings(1));
                     constructor_and_builder(component, "enabled", booleans(1));
                 }
-                "XREyeTracking" => {
-                    component.constructor("on", no_args());
-                    component.constructor(
-                        "listen",
-                        component_signature([mms::ValueType::String, mms::ValueType::U16]),
-                    );
-                    component.builder_call("priority", any(1));
-                    component.builder_call("enable_pupil_direction_tracking", booleans(1));
-                    component.builder_call("head_rotation_compensation", strings(1));
-                    component.builder_call("rotation_limits", floats(4));
-                    component.builder_call("rotation_limits_per_eye", any(2));
-                }
-                "XREyeTrackingHTC" | "VRChatOSCEyeTracking" | "HTCEyeTracking" => {
-                    component.constructor("on", no_args());
-                    component.constructor(
-                        "listen",
-                        component_signature([mms::ValueType::String, mms::ValueType::U16]),
-                    );
-                    component.builder_call("enable_pupil_direction_tracking", booleans(1));
-                    component.builder_call("head_rotation_compensation", strings(1));
-                    component.builder_call("rotation_limits", floats(4));
-                    component.builder_call("rotation_limits_per_eye", any(2));
-                }
-                "MediaPipeEyeTracking" => {
-                    component.constructor("on", no_args());
-                    component.builder_call("head_rotation_compensation", strings(1));
-                    component.builder_call("rotation_limits", floats(4));
-                    component.builder_call("rotation_limits_per_eye", any(2));
-                }
+                "XREyeTracking" | "XREyeTrackingHTC" | "VRChatOSCEyeTracking" | "HTCEyeTracking" | "MediaPipeEyeTracking" => eye_tracking_runtime_config::configure(component,canonical),
                 "GridBinding" => {
                     component.constructor("grid", any(1));
                 }
@@ -1382,6 +1224,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     constructor_and_builder(component, "panels", any(1));
                 }
                 "AvatarControl" => {
+                    eye_tracking_runtime_config::configure_blink(component);
                     component.alias("avatar_control");
                     host_method(
                         component,

@@ -16,6 +16,15 @@ or dismounting removes those handlers and clears input latches while preserving
 physical velocity. The standalone studio uses the same desktop controller, with its cockpit
 considered occupied from scene startup.
 
+The POWER control is an authored panel, not a named mesh button in `car.glb`.
+The earlier placement reused truck offsets and put its center at
+`[0.64,3.40,-1.80]`, below the seat view and occluded by dashboard triangles.
+The shared mech controller now places it at `[0.30,4.20,-1.90]`, with 1.5x scale,
+facing the driver eye at `[0,4.5,-1]`. A native raycast/click test includes the
+actual cockpit geometry and the desktop pointer's 0.75 m minimum distance.
+All `car.glb` control wrappers share this placement; the pickup truck keeps its
+own cab coordinates through the same configurable panel factory.
+
 Translation now belongs to native Velocity rather than FrameTick pose writes.
 Steering refreshes the heading-relative drive command and preserves vertical
 velocity. No spawn-height reset can overwrite floor or wall correction. The

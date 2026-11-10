@@ -516,11 +516,9 @@ fn black_gohei_has_seven_panels_and_authored_secondary_motion() {
         .world
         .get_component_by_id_as::<SpringBoneComponent>(named(&scene, "black_spring"))
         .unwrap();
-    assert_eq!(spring.gravity_power, 0.25);
-    assert!(
-        spring.gravity_power < 1.5,
-        "paper gravity should be lighter than the bow preset"
-    );
+    assert_eq!(spring.gravity_power, 2.7);
+    assert_eq!(spring.stiffness, 0.75);
+    assert_eq!(spring.drag_force, 0.50);
     assert!(
         !nodes(&scene.world, named(&scene, "black"))
             .iter()
@@ -529,8 +527,15 @@ fn black_gohei_has_seven_panels_and_authored_secondary_motion() {
                 .get_component_by_id_as::<AnimationComponent>(*id)
                 .is_some())
     );
-    let initial = scene.systems.secondary_motion.bound_snapshot(&scene.world);
-    assert_eq!(initial.len(), 1);
+    let strands = scene.systems.secondary_motion.bound_snapshot(&scene.world);
+    assert_eq!(strands.len(), 2, "black gohei has two independent shide");
+    let second = named(&scene, "black_second_shide_armature");
+    assert_eq!(scene.systems.rigging.bound[&second].joints.len(), 7);
+    assert_eq!(scene.systems.rigging.bound[&second].meshes.len(), 14);
+    let initial: Vec<_> = strands
+        .into_iter()
+        .filter(|s| s.armature_owner == owner)
+        .collect();
     assert_eq!(initial[0].armature_owner, owner);
     assert_eq!(initial[0].segments.len(), 6);
     let fixed = named(&scene, "black_joint_0");
@@ -554,7 +559,26 @@ fn black_gohei_has_seven_panels_and_authored_secondary_motion() {
     for _ in 0..90 {
         scene.update(1. / 60., &Default::default());
     }
-    let after = scene.systems.secondary_motion.bound_snapshot(&scene.world);
+    let after: Vec<_> = scene
+        .systems
+        .secondary_motion
+        .bound_snapshot(&scene.world)
+        .into_iter()
+        .filter(|s| s.armature_owner == owner)
+        .collect();
+    assert_eq!(
+        scene
+            .world
+            .get_component_by_id_as::<TransformComponent>(named(
+                &scene,
+                "black_second_shide_joint_0"
+            ))
+            .unwrap()
+            .transform
+            .rotation,
+        [0., 0., 0., 1.],
+        "second shide top stays fixed too"
+    );
     assert_ne!(initial[0].segments, after[0].segments);
     assert_eq!(
         scene

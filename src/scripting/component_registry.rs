@@ -1,8 +1,10 @@
-#[path = "pointer_registry.rs"]
+#[path = "registries/eye_tracking_registry.rs"]
+mod eye_tracking_registry;
+#[path = "registries/pointer_registry.rs"]
 mod pointer_registry;
-#[path = "torus_registry.rs"]
-mod torus_registry;
-#[path = "spring_registry.rs"]
+#[path = "registries/renderable_registry.rs"]
+mod renderable_registry;
+#[path = "registries/spring_registry.rs"]
 mod spring_registry;
 use crate::engine::ecs::SignalEmitter;
 use crate::engine::ecs::component::AssetPayloadComponent;
@@ -69,20 +71,20 @@ use crate::scripting::ast::{
 use crate::scripting::object::{CeChild, MaterializedCE, Value};
 use crate::scripting::token::expand_component_shortform;
 use std::cell::RefCell;
-#[path = "editor_ui_registry.rs"]
+#[path = "registries/editor_ui_registry.rs"]
 mod editor_ui_registry;
-#[path = "xr_gamepad_registry.rs"]
+#[path = "registries/xr_gamepad_registry.rs"]
 mod xr_gamepad_registry;
-#[path = "gravity_registry.rs"]
+#[path = "registries/gravity_registry.rs"]
 pub(super) mod gravity_registry;
-#[path = "geometry_registry.rs"]
+#[path = "registries/geometry_registry.rs"]
 mod geometry_registry;
 use editor_ui_registry::parse_editor_ui_panel_specs;
-#[path = "interaction_registry.rs"]
+#[path = "registries/interaction_registry.rs"]
 mod interaction_registry;
-#[path = "renderer_settings_legacy.rs"]
+#[path = "registries/renderer_settings_legacy.rs"]
 mod renderer_settings_legacy;
-#[path = "walking_ik_registry.rs"]
+#[path = "registries/walking_ik_registry.rs"]
 mod walking_ik_registry;
 
 thread_local! {
@@ -1739,140 +1741,7 @@ fn create_component(
             Ok(id)
         }
         "Unlit" => add!(UnlitComponent),
-        "Renderable" => match ctor {
-            Some("cube") => add!(RenderableComponent::cube()),
-            Some("polygon") => with_render_assets_mut(|render_assets| {
-                let (mesh_key, points) = polygon_args(args)?;
-                let component = RenderableComponent::polygon(render_assets, mesh_key, points)?;
-                Ok(world.add_component(component))
-            }),
-            Some("wireframe_box") => with_render_assets_mut(|render_assets| {
-                let thickness = arg_f32(args, 0).unwrap_or(0.02);
-                Ok(world
-                    .add_component(RenderableComponent::wireframe_box(render_assets, thickness)))
-            }),
-            Some("wireframe_square") => with_render_assets_mut(|render_assets| {
-                let thickness = arg_f32(args, 0).unwrap_or(0.1);
-                Ok(world.add_component(RenderableComponent::wireframe_square(
-                    render_assets,
-                    thickness,
-                )))
-            }),
-            Some("wireframe_sphere") => with_render_assets_mut(|render_assets| {
-                let latitude_segments = arg_u32(args, 0).unwrap_or(16);
-                let longitude_segments = arg_u32(args, 1).unwrap_or(32);
-                let thickness = arg_f32(args, 2).unwrap_or(0.02);
-                Ok(world.add_component(RenderableComponent::wireframe_sphere(
-                    render_assets,
-                    latitude_segments,
-                    longitude_segments,
-                    thickness,
-                )))
-            }),
-            Some("wireframe_icosahedron") => with_render_assets_mut(|render_assets| {
-                let tessellations = arg_u32(args, 0).unwrap_or(0);
-                let sphericalness = arg_f32(args, 1).unwrap_or(0.0);
-                let thickness = arg_f32(args, 2).unwrap_or(0.02);
-                Ok(
-                    world.add_component(RenderableComponent::wireframe_icosahedron(
-                        render_assets,
-                        tessellations,
-                        sphericalness,
-                        thickness,
-                    )),
-                )
-            }),
-            // Legacy saved scenes used circle2d for this annulus. Serialization
-            // always writes the canonical annulus_2d constructor.
-            Some("annulus_2d" | "circle2d") => add!(RenderableComponent::annulus_2d()),
-            Some("circle_2d") => add!(RenderableComponent::circle_2d()),
-            Some("cone") => {
-                if args.is_empty() {
-                    add!(RenderableComponent::cone())
-                } else {
-                    with_render_assets_mut(|render_assets| {
-                        let segments = arg_u32(args, 0).unwrap_or(32);
-                        Ok(world.add_component(RenderableComponent::cone_dynamic(
-                            render_assets,
-                            segments,
-                        )))
-                    })
-                }
-            }
-            Some("icosahedron") => with_render_assets_mut(|render_assets| {
-                let tessellations = arg_u32(args, 0).unwrap_or(0);
-                let sphericalness = arg_f32(args, 1).unwrap_or(0.0);
-                Ok(world.add_component(RenderableComponent::icosahedron(
-                    render_assets,
-                    tessellations,
-                    sphericalness,
-                )))
-            }),
-            Some("sphere") => add!(RenderableComponent::sphere()),
-            Some("triangle") => add!(RenderableComponent::triangle()),
-            Some("square") => add!(RenderableComponent::square()),
-            Some("plane") => add!(RenderableComponent::plane()),
-            Some("tetrahedron") => add!(RenderableComponent::tetrahedron()),
-            Some(method @ ("torus" | "partial_torus")) => torus_registry::create(world, method, args),
-            Some("cylinder") => with_render_assets_mut(|assets| {
-                let radius=arg_f32(args,0).unwrap_or(0.5);let height=arg_f32(args,1).unwrap_or(1.0);
-                let sides=arg_u32(args,2).unwrap_or(24);
-                let component=RenderableComponent::cylinder(assets,radius,height,sides)?;
-                Ok(world.add_component(component))
-            }),
-            Some("helix") => with_render_assets_mut(|assets| {
-                let inner=arg_f32(args,0).unwrap_or(0.5); let outer=arg_f32(args,1).unwrap_or(1.0);
-                let height=arg_f32(args,2).unwrap_or(2.0); let start=arg_f32(args,3).unwrap_or(0.0);
-                let sweep=arg_f32(args,4).unwrap_or(std::f32::consts::TAU*2.0);
-                let segments=arg_u32(args,5).unwrap_or(128); let walls=arg_f32(args,6).unwrap_or(0.0);
-                let component=RenderableComponent::helix(assets,inner,outer,height,start,sweep,segments,walls)?;
-                Ok(world.add_component(component))
-            }),
-            Some("helix_tube") => with_render_assets_mut(|assets| {
-                let radius=arg_f32(args,0).unwrap_or(0.8); let tube=arg_f32(args,1).unwrap_or(0.04);
-                let height=arg_f32(args,2).unwrap_or(2.0); let start=arg_f32(args,3).unwrap_or(0.0);
-                let sweep=arg_f32(args,4).unwrap_or(std::f32::consts::TAU*2.0);
-                let segments=arg_u32(args,5).unwrap_or(128); let sides=arg_u32(args,6).unwrap_or(16);
-                let component=RenderableComponent::helix_tube(assets,radius,tube,height,start,sweep,segments,sides)?;
-                Ok(world.add_component(component))
-            }),
-            Some("partial_annulus_2d") => with_render_assets_mut(|render_assets| {
-                let inner_radius = arg_f32(args, 0).unwrap_or(0.28);
-                let outer_radius = arg_f32(args, 1).unwrap_or(0.52);
-                let start_angle = arg_f32(args, 2).unwrap_or(0.0);
-                let end_angle = arg_f32(args, 3).unwrap_or(4.71239);
-                let segments = arg_u32(args, 4).unwrap_or(64);
-                Ok(world.add_component(RenderableComponent::partial_annulus_2d(
-                    render_assets,
-                    inner_radius,
-                    outer_radius,
-                    start_angle,
-                    end_angle,
-                    segments,
-                )))
-            }),
-            Some("star") => with_render_assets_mut(|render_assets| {
-                let points = arg_u32(args, 0).unwrap_or(5);
-                let inner_radius = arg_f32(args, 1).unwrap_or(0.45);
-                let skip = arg_u32(args, 2).unwrap_or(2);
-                let phase = arg_u32(args, 3).unwrap_or(1);
-                Ok(world.add_component(RenderableComponent::star(
-                    render_assets,
-                    points,
-                    inner_radius,
-                    skip,
-                    phase,
-                )))
-            }),
-            Some("heart") => with_render_assets_mut(|render_assets| {
-                let segments = arg_u32(args, 0).unwrap_or(64);
-                Ok(world.add_component(RenderableComponent::heart(render_assets, segments)))
-            }),
-            _ => Err(format!(
-                "Renderable: unknown constructor '{}'",
-                ctor.unwrap_or("")
-            )),
-        },
+        "Renderable" => renderable_registry::create(world,ctor,args),
         "Grid" => {
             let mut c = GridComponent::default();
             if let Some(method) = ctor {
@@ -3081,118 +2950,13 @@ fn apply_call(
     {
         return geometry_registry::apply(world, id, method, args);
     }
-    if let Some(tracker) = world.get_component_by_id_as_mut::<XREyeTrackingComponent>(id) {
-        match method {
-            "priority" => tracker.priority = eye_tracking_priority_arg(args)?,
-            "enable_pupil_direction_tracking" => {
-                tracker.enable_pupil_direction_tracking = arg_bool(args, 0)?;
-            }
-            "head_rotation_compensation" => {
-                tracker.head_rotation_compensation =
-                    crate::engine::ecs::component::HeadRotationCompensation::parse(arg_str(
-                        args, 0,
-                    )?)
-                    .ok_or_else(|| {
-                        "XREyeTracking.head_rotation_compensation expects 'off' or 'cancel'"
-                            .to_string()
-                    })?;
-            }
-            "rotation_limits" => {
-                tracker.rotation_limits = Some(rotation_limits_call_args(args, "XREyeTracking")?);
-            }
-            "rotation_limits_per_eye" => {
-                tracker.rotation_limits_per_eye = [
-                    Some(rotation_limits_array_arg(args, 0, "XREyeTracking")?),
-                    Some(rotation_limits_array_arg(args, 1, "XREyeTracking")?),
-                ];
-            }
-            _ => {}
-        }
-        return Ok(());
-    }
-    if let Some(tracker) = world.get_component_by_id_as_mut::<VRChatOSCEyeTrackingComponent>(id) {
-        match method {
-            "enable_pupil_direction_tracking" => {
-                tracker.enable_pupil_direction_tracking = arg_bool(args, 0)?;
-            }
-            "head_rotation_compensation" => {
-                tracker.head_rotation_compensation =
-                    crate::engine::ecs::component::HeadRotationCompensation::parse(arg_str(
-                        args, 0,
-                    )?)
-                    .ok_or_else(|| {
-                        "VRChatOSCEyeTracking.head_rotation_compensation expects 'off' or 'cancel'"
-                            .to_string()
-                    })?;
-            }
-            "rotation_limits" => {
-                tracker.rotation_limits =
-                    Some(rotation_limits_call_args(args, "VRChatOSCEyeTracking")?);
-            }
-            "rotation_limits_per_eye" => {
-                tracker.rotation_limits_per_eye = [
-                    Some(rotation_limits_array_arg(args, 0, "VRChatOSCEyeTracking")?),
-                    Some(rotation_limits_array_arg(args, 1, "VRChatOSCEyeTracking")?),
-                ];
-            }
-            _ => {}
-        }
-        return Ok(());
-    }
-    if let Some(tracker) = world.get_component_by_id_as_mut::<XREyeTrackingHtcComponent>(id) {
-        match method {
-            "enable_pupil_direction_tracking" => {
-                tracker.enable_pupil_direction_tracking = arg_bool(args, 0)?;
-            }
-            "head_rotation_compensation" => {
-                tracker.head_rotation_compensation =
-                    crate::engine::ecs::component::HeadRotationCompensation::parse(arg_str(
-                        args, 0,
-                    )?)
-                    .ok_or_else(|| {
-                        "XREyeTrackingHTC.head_rotation_compensation expects 'off' or 'cancel'"
-                            .to_string()
-                    })?;
-            }
-            "rotation_limits" => {
-                tracker.rotation_limits =
-                    Some(rotation_limits_call_args(args, "XREyeTrackingHTC")?);
-            }
-            "rotation_limits_per_eye" => {
-                tracker.rotation_limits_per_eye = [
-                    Some(rotation_limits_array_arg(args, 0, "XREyeTrackingHTC")?),
-                    Some(rotation_limits_array_arg(args, 1, "XREyeTrackingHTC")?),
-                ];
-            }
-            _ => {}
-        }
-        return Ok(());
-    }
-    if let Some(tracker) = world.get_component_by_id_as_mut::<MediaPipeEyeTrackingComponent>(id) {
-        match method {
-            "head_rotation_compensation" => {
-                tracker.head_rotation_compensation =
-                    crate::engine::ecs::component::HeadRotationCompensation::parse(arg_str(
-                        args, 0,
-                    )?)
-                    .ok_or_else(|| {
-                        "MediaPipeEyeTracking.head_rotation_compensation expects 'off' or 'cancel'"
-                            .to_string()
-                    })?;
-            }
-            "rotation_limits" => {
-                tracker.rotation_limits =
-                    Some(rotation_limits_call_args(args, "MediaPipeEyeTracking")?);
-            }
-            "rotation_limits_per_eye" => {
-                tracker.rotation_limits_per_eye = [
-                    Some(rotation_limits_array_arg(args, 0, "MediaPipeEyeTracking")?),
-                    Some(rotation_limits_array_arg(args, 1, "MediaPipeEyeTracking")?),
-                ];
-            }
-            _ => {}
-        }
-        return Ok(());
+    if world.get_component_by_id_as::<XREyeTrackingComponent>(id).is_some()
+        || world.get_component_by_id_as::<XREyeTrackingHtcComponent>(id).is_some()
+        || world.get_component_by_id_as::<VRChatOSCEyeTrackingComponent>(id).is_some()
+        || world.get_component_by_id_as::<HTCEyeTrackingComponent>(id).is_some()
+        || world.get_component_by_id_as::<MediaPipeEyeTrackingComponent>(id).is_some()
+        || (matches!(method,"idle_blink"|"blink_interval"|"blink_duration") && world.get_component_by_id_as::<AvatarControlComponent>(id).is_some()) {
+        return eye_tracking_registry::apply(world,id,method,args);
     }
     if world
         .get_component_by_id_as::<DraggableComponent>(id)

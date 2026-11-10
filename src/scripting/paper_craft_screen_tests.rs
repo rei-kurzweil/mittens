@@ -100,6 +100,8 @@ fn paper_craft_screen_mode_initializes_without_xr_and_grabs_and_fires_only_held_
         "let use_openxr = false",
         1,
     );
+    let source = source.replace("idle_blink(true)", "idle_blink(true) blink_interval(0.6)")
+        + "\nlet eyelid_status=query(\"[name='paper_craft_mitten_avatar_control']\").eyelid_tracking()\n";
     assert!(source.contains("let use_openxr = false"));
     let mut scene = Universe::new(World::default());
     let clock = Arc::new(ScreenClock::default());
@@ -183,7 +185,7 @@ fn paper_craft_screen_mode_initializes_without_xr_and_grabs_and_fires_only_held_
         assert_eq!(t.transform.translation, rest.translation);
         assert_eq!(t.transform.scale, rest.scale);
         assert!(
-            (t.transform.rotation[0] - (-0.3134671)).abs() < 1e-5,
+            (t.transform.rotation[0] - (-0.5478334)).abs() < 1e-5,
             "relaxed arm startup overlay"
         );
         assert!(
@@ -193,8 +195,8 @@ fn paper_craft_screen_mode_initializes_without_xr_and_grabs_and_fires_only_held_
         let shoulder = TransformSystem::world_position(world, upper).unwrap();
         let elbow = TransformSystem::world_position(world, lower).unwrap();
         assert!(
-            elbow[1] < shoulder[1] - 0.10,
-            "A-pose elbows are below shoulders: {shoulder:?} -> {elbow:?}"
+            elbow[1] < shoulder[1] - 0.18,
+            "relaxed-pose elbows are below shoulders: {shoulder:?} -> {elbow:?}"
         );
     }
     assert!(
@@ -288,6 +290,33 @@ fn paper_craft_screen_mode_initializes_without_xr_and_grabs_and_fires_only_held_
             .transform
             .rotation,
         live_rotation
+    );
+    let model = named(&scene, "paper_craft_screen_mitten");
+    let mut max_blink = 0.0_f32;
+    let mut min_blink = 1.0_f32;
+    for _ in 0..40 {
+        advance(&mut scene, &clock, 1);
+        let gltf = scene
+            .world
+            .get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(model)
+            .unwrap();
+        let key = gltf
+            .morph_targets
+            .iter()
+            .find(|t| t.label.as_deref() == Some("Fcl_EYE_Close_L"))
+            .unwrap()
+            .key;
+        let factor = gltf.morph_factors[&key];
+        assert!(
+            factor.driver.is_none(),
+            "idle blink must not impersonate tracking"
+        );
+        max_blink = max_blink.max(factor.effective());
+        min_blink = min_blink.min(factor.effective());
+    }
+    assert!(
+        max_blink > 0.85 && min_blink < 0.001,
+        "native idle blink closes and reopens the imported morph: {min_blink}..{max_blink}"
     );
     super::display_car_tests::wait_for_material_compilation(&scene.visuals);
 }

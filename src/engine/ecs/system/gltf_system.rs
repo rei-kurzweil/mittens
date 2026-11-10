@@ -527,11 +527,7 @@ impl GLTFSystem {
                                 });
                             c.morph_factors.insert(
                                 key,
-                                crate::engine::ecs::component::MorphFactorState {
-                                    base,
-                                    driver: None,
-                                    amplitude_mouth_open: None,
-                                },
+                                crate::engine::ecs::component::MorphFactorState::new(base),
                             );
                         }
                     }
