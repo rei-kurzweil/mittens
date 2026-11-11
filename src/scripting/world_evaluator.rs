@@ -3300,6 +3300,7 @@ fn parse_signal_kind(s: &str) -> Result<SignalKind, String> {
         "DragStart" => Ok(SignalKind::DragStart),
         "GrabStart" => Ok(SignalKind::GrabStart),
         "GrabEnd" => Ok(SignalKind::GrabEnd),
+        "ProjectileHit" => Ok(SignalKind::ProjectileHit),
         "ZoneEntered" => Ok(SignalKind::ZoneEntered),
         "ZoneExited" => Ok(SignalKind::ZoneExited),
         "MountStarted" => Ok(SignalKind::MountStarted),

@@ -137,8 +137,9 @@ fn sakura_scene_has_open_ceramic_towers_typed_sky_rooftop_rig_and_reset() {
                 .iter()
                 .filter(|model| model.uri == "assets/models/sakura-machine-pistol.glb")
                 .count(),
-            3
+            2
         );
+        assert_eq!(models.iter().filter(|model| model.uri == "assets/models/STA_launcher.glb").count(), 1);
         assert_eq!(
             models
                 .iter()

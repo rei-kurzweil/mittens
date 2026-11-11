@@ -618,3 +618,6 @@ pub mod ce_helpers {
         Expression::Array(values.into_iter().map(|v| s(v.as_ref())).collect())
     }
 }
+
+pub mod rocket_motion;
+pub use rocket_motion::{AccelerationComponent, ProjectileImpactComponent};

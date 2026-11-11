@@ -168,6 +168,12 @@ pub enum EventSignal {
     },
 
     /// An opt-in sensor overlaps an enabled slide collidable. Scoped to the sensor.
+    ProjectileHit {
+        zone: ComponentId,
+        other_zone: ComponentId,
+        point: [f32; 3],
+        normal: [f32; 3],
+    },
     ZoneEntered {
         zone: ComponentId,
         other_zone: ComponentId,
@@ -382,6 +388,7 @@ impl EventSignal {
             EventSignal::DragEnd { .. } => SignalKind::DragEnd,
             EventSignal::GrabStart { .. } => SignalKind::GrabStart,
             EventSignal::GrabEnd { .. } => SignalKind::GrabEnd,
+            EventSignal::ProjectileHit { .. } => SignalKind::ProjectileHit,
             EventSignal::ZoneEntered { .. } => SignalKind::ZoneEntered,
             EventSignal::ZoneExited { .. } => SignalKind::ZoneExited,
             EventSignal::MountStarted { .. } => SignalKind::MountStarted,
@@ -1218,6 +1225,7 @@ pub enum SignalKind {
     DragEnd,
     GrabStart,
     GrabEnd,
+    ProjectileHit,
     ZoneEntered,
     ZoneExited,
     MountStarted,

@@ -51,10 +51,6 @@ import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/v
 let xr_calibration_file = XrSettings.floor.default_file()
 XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({file = xr_calibration_file}))
 
-// Scope scene geometry for editor diagnostics without adding other editor panels.
-Editor.active() {
-name = "sakura_scene_editor"
-
 RendererSettings { window_size(1440, 960) }
 Clock.bpm(120.0)
 BGC.rgba(0.23, 0.32, 0.62, 1.0)
@@ -163,11 +159,6 @@ regenerate_buildings()
 // Muted, greyish pink-brown ground fills the spaces around the road and towers.
 T { name = "sakura_ground" box([0.0, -0.48, 0.0], [120.0, 0.5, 140.0], ground_color) }
 
-// Only the editor settings panel is materialized, including BVH snapshots.
-T.position(-20.4, roof_height + 3.3, -3.8) {
-    name = "sakura_editor_settings_mount"
-    EditorUI { panels([{ panel = "settings" }]) }
-}
 T.position(-24.2, roof_height + 2.2, -1.3) {
     graphics_settings_panel({ root_name = "sakura_graphics_settings" })
 }
@@ -315,7 +306,10 @@ sakura_planter("sakura_street_tree_east", [8.7, 0.08, 7.0])
 
 // teleport_pit has a -10 m sensor offset. This places its invisible trigger at
 // y=2 +/-2 m, so falling players reset before they land on the road. No spikes.
-teleport_pit("sakura_roof_reset", [0.0, 12.0, 0.0], [150.0, 4.0, 160.0], reset_position, "none")
+// The road cars also have slide colliders; only player rigs should respawn.
+teleport_pit("sakura_roof_reset", [0.0, 12.0, 0.0], [150.0, 4.0, 160.0], reset_position, "none", fn(target) {
+    return target == query("[name='sakura_mitten_locomotion_root']") || target == query("[name='sakura_desktop_locomotion_root']")
+})
 
 if desktop_view_enabled {
     I.speed(4.0) {
@@ -522,5 +516,3 @@ on_global("KeyDown", fn(event) {
 on_global("KeyUp", fn(event) {
     if launcher_held.active && launcher_held.hand == "Desktop" && event.code == "Space" { launcher.use_end() }
 })
-
-}

@@ -145,6 +145,8 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "GLTF",
     "GestureCoordType",
     "Gravity",
+    "Acceleration",
+    "ProjectileImpact",
     "Grabbable",
     "Grid",
     "GridBinding",
@@ -2396,6 +2398,17 @@ fn create_component(
             };
             add!(RaycastableShapeComponent::new(shape))
         }
+        "Acceleration" => {
+            let id = world.add_component(crate::engine::ecs::component::AccelerationComponent {
+                local: [0.0; 3],
+                max_speed: f32::MAX,
+            });
+            if let Some(method) = ctor {
+                apply_call(world, id, method, args)?;
+            }
+            Ok(id)
+        }
+        "ProjectileImpact" => add!(crate::engine::ecs::component::ProjectileImpactComponent),
         "Gravity" => {
             let id = world.add_component(GravityComponent::new());
             if let Some(method) = ctor {
@@ -3255,6 +3268,19 @@ fn apply_call(
     if let Some(sc) = world.get_component_by_id_as_mut::<StencilClipComponent>(id) {
         if method == "stencil_ref" {
             sc.stencil_ref = arg_f32(args, 0)? as u8;
+        }
+        return Ok(());
+    }
+    if let Some(a) =
+        world.get_component_by_id_as_mut::<crate::engine::ecs::component::AccelerationComponent>(id)
+    {
+        match method {
+            "local" => a.local = arg_f32_arr::<3>(args, 0)?,
+            "max_speed" => a.max_speed = arg_f32(args, 0)?,
+            _ => return Err(format!("Acceleration: unknown builder {method}")),
+        }
+        if !a.local.iter().all(|x| x.is_finite()) || !a.max_speed.is_finite() || a.max_speed < 0.0 {
+            return Err("Acceleration requires finite values and nonnegative max_speed".into());
         }
         return Ok(());
     }

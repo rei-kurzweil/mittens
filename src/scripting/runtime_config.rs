@@ -1034,6 +1034,10 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                         ],
                     );
                 }
+                "Acceleration" => {
+                    constructor_and_builder(component, "local", any(1));
+                    constructor_and_builder(component, "max_speed", any(1));
+                }
                 "Gravity" => gravity_binding::register(component, canonical),
                 "SkinnedMesh" => {
                     component.constructor("new", unsigned(1));
@@ -1327,6 +1331,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "DragEnd",
         "GrabStart",
         "GrabEnd",
+        "ProjectileHit",
         "ZoneEntered",
         "ZoneExited",
         "MountStarted",

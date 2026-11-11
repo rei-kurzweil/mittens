@@ -234,3 +234,5 @@ pub trait System: std::fmt::Debug {
 }
 
 pub mod zone_observation_system;
+
+mod projectile_motion;

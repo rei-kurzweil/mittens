@@ -459,3 +459,12 @@ The transform teleport API has been removed. `Velocity.reset()` clears speed,
 grounded state, and sweep history independently of pose updates. The pit queries
 its mover's owning Velocity and uses normal local `update_transform` for respawn.
 Queried and captured handles (including `let velocity`) are supported.
+
+## Rocket local acceleration slice
+
+`Acceleration.local(vec3).max_speed(number)` now supplies native local m/s²
+acceleration to descendant Velocity components, stopping at nested Velocity
+boundaries. The speed cap limits the projection along the acceleration direction
+and preserves lateral velocity. This implements the rocket use case without
+MMS FrameTick callbacks. World-space providers and live setters remain pending.
+See [STA rocket launcher](sta-rocket-launcher.md) for the impact API and validation.

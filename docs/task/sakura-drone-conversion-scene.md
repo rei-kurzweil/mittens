@@ -169,3 +169,14 @@ Its reusable headless probe is `examples/profile-sakura-cpu.rs`. Measured contac
 and BVH traversal are small; repeated whole-scene transform dependency scans and
 MMS hit delivery are the first CPU follow-up targets. GPU/live-XR timing remains
 separate from these measurements.
+
+The XR `sakura-drone-conversion.mms` example no longer enables `Editor` or
+`EditorUI`; rocket smoke tests are independent of editor panel setup. The
+desktop variant is unchanged. The isolated editor settings reproduction is
+`examples/triage/editor-settings-runtime.mms`.
+
+Road-car regression: adding native slide colliders made the cars enter the
+scene-wide rooftop reset sensor at road height. Its unconditional handler sent
+both cars to the player spawn, overlapping the weapon table. The reset now
+filters movement roots to the Sakura desktop/XR player rigs through the pit's
+optional `accept_mover` predicate. Authored car positions remain unchanged.

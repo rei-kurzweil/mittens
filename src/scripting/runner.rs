@@ -684,6 +684,30 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
         Some(crate::engine::ecs::EventSignal::GrabEnd { pointer, target }) => {
             Value::Map(grab_event_payload(*pointer, *target))
         }
+        Some(crate::engine::ecs::EventSignal::ProjectileHit {
+            zone,
+            other_zone,
+            point,
+            normal,
+        }) => {
+            let mut payload = HashMap::new();
+            for (key, id) in [("zone", *zone), ("other_zone", *other_zone)] {
+                payload.insert(
+                    key.into(),
+                    Value::ComponentObject {
+                        id,
+                        component_type: "Zone".into(),
+                    },
+                );
+            }
+            for (key, vector) in [("point", point), ("normal", normal)] {
+                payload.insert(
+                    key.into(),
+                    Value::Array(vector.iter().map(|v| Value::Number(*v as f64)).collect()),
+                );
+            }
+            Value::Map(payload)
+        }
         Some(crate::engine::ecs::EventSignal::ZoneEntered {
             zone,
             other_zone,

@@ -14,6 +14,7 @@ const MAX_STEPS: usize = 8;
 
 #[derive(Debug, Default)]
 pub struct VelocitySystem {
+    projectile_motion: super::projectile_motion::ProjectileMotion,
     accumulator_sec: f64,
     dropped_since_report_sec: f64,
     reported_bad_target: HashSet<ComponentId>,
@@ -846,6 +847,7 @@ impl VelocitySystem {
                     continue;
                 }
             }
+            super::projectile_motion::accelerate(world, id, &mut linear, elapsed);
             if linear == [0.0; 3] && angular == [0.0; 3] {
                 world
                     .get_component_by_id_as_mut::<VelocityComponent>(id)
@@ -854,11 +856,28 @@ impl VelocitySystem {
                 continue;
             }
             let world_velocity = math::quat_rotate_vec3(parent_rotation, linear);
-            let delta_world = [
+            let mut delta_world = [
                 world_velocity[0] * elapsed,
                 world_velocity[1] * elapsed,
                 world_velocity[2] * elapsed,
             ];
+            if let Some((zone, hit)) = self.projectile_motion.sweep(world, target, delta_world) {
+                delta_world = delta_world.map(|v| v * hit.fraction);
+                linear = [0.0; 3];
+                world
+                    .get_component_by_id_as_mut::<VelocityComponent>(id)
+                    .unwrap()
+                    .enabled = false;
+                emit.push_event(
+                    zone,
+                    crate::engine::ecs::EventSignal::ProjectileHit {
+                        zone,
+                        other_zone: hit.surface,
+                        point: hit.point,
+                        normal: hit.normal,
+                    },
+                );
+            }
             let parent_world = world
                 .parent_of(target)
                 .and_then(|parent| TransformSystem::world_model(world, parent));

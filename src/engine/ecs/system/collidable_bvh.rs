@@ -74,6 +74,69 @@ impl Surface {
         Some(height)
     }
 
+    /// Continuous sphere contact against retained damaged meshes or box surfaces.
+    pub(crate) fn sphere_sweep(
+        &self,
+        moving: ComponentId,
+        start: [f32; 3],
+        end: [f32; 3],
+        radius: f32,
+    ) -> Option<zone_query::ZoneSweepHit> {
+        if let Some(mesh) = &self.mesh {
+            return mesh.sweep(
+                moving,
+                self.zone,
+                end,
+                CollisionShape::Sphere { radius },
+                start,
+            );
+        }
+        let (center, extents, axes) = self.yaw_box?;
+        let motion = std::array::from_fn::<_, 3, _>(|i| end[i] - start[i]);
+        let speed = motion.iter().map(|v| v * v).sum::<f32>().sqrt();
+        let mut t = 0.0;
+        for _ in 0..64 {
+            let position = std::array::from_fn::<_, 3, _>(|i| start[i] + motion[i] * t);
+            let relative = std::array::from_fn::<_, 3, _>(|i| position[i] - center[i]);
+            let mut point = center;
+            for axis in 0..3 {
+                let d = (0..3)
+                    .map(|i| relative[i] * axes[axis][i])
+                    .sum::<f32>()
+                    .clamp(-extents[axis], extents[axis]);
+                for i in 0..3 {
+                    point[i] += axes[axis][i] * d;
+                }
+            }
+            let delta = std::array::from_fn::<_, 3, _>(|i| position[i] - point[i]);
+            let distance = delta.iter().map(|v| v * v).sum::<f32>().sqrt();
+            if distance <= radius + 1e-5 {
+                let normal = if distance > 1e-6 {
+                    delta.map(|v| v / distance)
+                } else if speed > 1e-6 {
+                    motion.map(|v| -v / speed)
+                } else {
+                    [0.0, 1.0, 0.0]
+                };
+                return Some(zone_query::ZoneSweepHit {
+                    moving,
+                    surface: self.zone,
+                    fraction: t,
+                    point,
+                    normal,
+                });
+            }
+            if speed < 1e-7 {
+                return None;
+            }
+            t += (distance - radius) / speed;
+            if t > 1.0 {
+                return None;
+            }
+        }
+        None
+    }
+
     pub fn translation(&self, center: [f32; 3], shape: CollisionShape) -> Option<[f32; 3]> {
         if let Some(mesh) = &self.mesh {
             return mesh.translation(center, shape);

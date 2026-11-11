@@ -14,9 +14,9 @@ collision support needed to eliminate per-frame MMS flight callbacks.
   drives the projectile transform. Author acceleration in local space along
   the flight Z axis (currently negative Z), with a target speed. Native code
   stops accelerating at that speed while Velocity continues moving the rocket.
-  General Acceleration is planned in
-  [the velocity-driver task](gravity-and-acceleration-velocity-drivers.md), but
-  its implementation/API remains pending; reuse that provider design.
+  The local-space Acceleration slice is implemented using ancestor providers
+  bounded by nested Velocity components; see
+  [the velocity-driver task](gravity-and-acceleration-velocity-drivers.md).
   Give the projectile a bounded lifetime and clean up its native motion,
   collision resources, and event bindings on impact or expiry. The launcher
   owns trigger policy and the 100 ms launch delay; copy the world pose at launch
@@ -46,21 +46,60 @@ collision support needed to eliminate per-frame MMS flight callbacks.
 
 - [ ] Establish model orientation, scale, barrel position, and launch effect.
 - [ ] Implement launcher firing and 100 ms delay; integrate held input in Sakura.
-- [ ] Implement native local-space acceleration driving Velocity, including a
+- [x] Implement native local-space acceleration driving Velocity, including a
       target-speed limit, and replace the smoke-test MMS acceleration handler.
-- [ ] Implement native swept projectile collision against existing wall zones.
+- [x] Implement native swept projectile collision against existing wall zones.
       Register an impact handler on the rocket's zone; invoke MMS only on an
       actual impact. Validate high-speed collision, bounded lifecycle, and
       impact attribution.
 - [ ] Implement two-tone sinuous fading ribbon material and shader; validate
       transparency, geometry, and cleanup.
-- [ ] Implement large expanding sphere effect and area damage. Verify how
-      `Damage.at` affects destructible walls and whether other targets need
-      separate area queries.
+- [x] Connect the expanding sphere effect and area damage to native impacts;
+      verify a destructible wall is cut.
+- [ ] Extend blast callbacks to other targets if needed (cans need separate
+      radius-aware blast routing).
 - [ ] Validate launch timing, independent motion, collision at high speed,
       expiry, multiple concurrent rockets, and visual appearance in the example.
 
+## Native flight and impact API
+
+```mms
+let hit_zone = Zone.sphere(0.055) { ProjectileImpact {} }
+let motion = Velocity { T { hit_zone /* projectile model */ } }
+Acceleration.local([0.0, 0.0, -12.0]).max_speed(18.0) { motion }
+on(hit_zone, "ProjectileHit", fn(event) {
+    // event.zone, event.other_zone, event.point, event.normal
+})
+```
+
+Acceleration is in the Velocity parent frame, in m/s². `max_speed` caps the
+velocity projection along its acceleration direction (m/s), preserving lateral
+velocity. Providers add within the ancestor segment and stop at nested Velocity
+boundaries. This slice provides authored local acceleration; world-space and live
+setter APIs remain future work.
+
+`ProjectileImpact` opts a sphere zone directly under the driven transform into
+native continuous collision against enabled static wall boxes (including yaw)
+and destroyed triangle meshes. A retained broad phase filters candidates. The
+engine stops and disables Velocity at the earliest contact, emits one
+`ProjectileHit` scoped to that zone, and leaves the MMS handler to remove the
+projectile, create the explosion, and apply damage. Other projectile shapes and
+static primitive shapes are outside this first slice. Flight has no MMS
+FrameTick subscription. Expiry remains an animation at the default clock tempo.
+
 ## Work log
+
+- Implemented native local acceleration, sphere projectile sweeps, and the
+  zone-scoped `ProjectileHit` event. The rocket now applies `Damage.at` with a
+  provisional 1.5 m radius and amount 8, plays the expanding sphere, and removes
+  itself on impact. It still expires after six seconds at 120 BPM. Exhaust and
+  visual/muzzle/damage calibration remain pending. Earlier work-log entries
+  below describe the superseded smoke-test stages.
+- Validation: four focused rocket tests pass (native speed cap and provider
+  boundaries, nearest high-speed thin-wall hit/miss/initial overlap, rotated
+  flight and expiry, impact/explosion/completed wall cut). All 13 existing
+  Velocity tests and the Sakura scene test pass. Visual/headset acceptance
+  and calibration remain for the next slice.
 
 - Updated flight design: native code owns acceleration, movement, and collision
   detection. The rocket must not poll a sweep query from MMS or subscribe to

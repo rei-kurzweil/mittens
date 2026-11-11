@@ -3,11 +3,13 @@
 // Accumulated Input offsets do not move
 // the respawn point. Visuals: "spikes", "none", or a factory returning a fresh mesh component.
 // Decorations are deterministic jittered patches; they have no Collidable.
-export fn teleport_pit(pit_name, position, size, destination, visual) {
+// Optional accept_mover(target) restricts which movement roots may respawn.
+export fn teleport_pit(pit_name, position, size, destination, visual, accept_mover) {
     let sensor = Zone.cube([size[0] * 0.5, size[1] * 0.5, size[2] * 0.5]).enable_events() {
         name = pit_name + "_sensor"
     }
     on(sensor, "ZoneEntered", fn(event) {
+        if accept_mover != null && !accept_mover(event.movement_target) { return }
         let offset = event.movement_target_offset
 
         let velocity = event.movement_target.query("../Velocity")

@@ -114,3 +114,9 @@ mod accordion_tests;
 
 #[cfg(test)]
 mod xr_settings_walk_tests;
+
+#[cfg(test)]
+mod rocket_motion_tests;
+
+#[cfg(test)]
+mod editor_settings_trigger_tests;

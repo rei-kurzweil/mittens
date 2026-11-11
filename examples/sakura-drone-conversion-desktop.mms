@@ -314,7 +314,10 @@ sakura_planter("sakura_street_tree_east", [8.7, 0.08, 7.0])
 
 // teleport_pit has a -10 m sensor offset. This places its invisible trigger at
 // y=2 +/-2 m, so falling players reset before they land on the road. No spikes.
-teleport_pit("sakura_roof_reset", [0.0, 12.0, 0.0], [150.0, 4.0, 160.0], reset_position, "none")
+// The road cars also have slide colliders; only player rigs should respawn.
+teleport_pit("sakura_roof_reset", [0.0, 12.0, 0.0], [150.0, 4.0, 160.0], reset_position, "none", fn(target) {
+    return target == query("[name='sakura_mitten_locomotion_root']") || target == query("[name='sakura_desktop_locomotion_root']")
+})
 
 if desktop_view_enabled {
     // One wrapper is the AVC camera contract: expose the eye offset at init.
