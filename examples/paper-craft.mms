@@ -1,5 +1,5 @@
 // Paper craft workshop: reduced floating Sakura city and full-height stairs.
-let use_openxr = false // false = screen player (keyboard/mouse via Winit today)
+let use_openxr = true // false = screen player (keyboard/mouse via Winit today)
 // cargo run --release -- load examples/paper-craft.mms
 // XR: sticks move, B jumps; double-tap B to fly (2x speed), hold B/A to rise/descend.
 // Screen: WASD move, right-drag look, left-drag grab, Space jump, F fire held pistol.

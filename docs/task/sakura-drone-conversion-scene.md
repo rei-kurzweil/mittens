@@ -24,12 +24,14 @@ slabs, open window bays and balconies without glass. The spawn roof has a real
 stairwell opening and stairs to its top floor. Floors are otherwise empty; there
 is no complete stair network or furnished building interior yet.
 
-Three instances of assets/models/sakura-machine-pistol.glb sit on a separate
-table to the left of the spawn, at `[-20.3, 25.6, 0.2]`. The target workbench
+Two instances of assets/models/sakura-machine-pistol.glb and a grabbable STA
+launcher prop sit on a separate table to the left of the spawn, at
+`[-20.3, 25.6, 0.2]`. The launcher does not fire yet; see
+[STA rocket launcher](sta-rocket-launcher.md). The target workbench
 retains its cans, lamp and parts tray. The original GLB is 6.593 m long along Z;
 pistol_scale=0.085 makes it about 56 cm. Each pistol lies on its side above the
 mat and preserves its textures and [Grabbable.to_hand(true)](grabbable-to-hand.md)
-grip frame. All three independently select Semi (one shot), Burst (three), or
+grip frame. Each pistol independently selects Semi (one shot), Burst (three), or
 continuous Auto using three smaller, vertically stacked pink/black receiver
 options. See [shared laser and firing modes](reusable-laser-and-pistol-burst.md).
 Two display_car prefab instances sit on the road below. The conversion interaction

@@ -86,6 +86,10 @@ Use the [host bootstrap](docs/host-bootstrap.md) for the lifecycle-only build an
 
 ## Rendering direction
 
+The [Adreno 650 rendering optimization epic](docs/task/epic/adreno650_rendering_optimization/README.md)
+tracks shared draw-cache invalidation, stable instance updates, retained Vulkan
+recordings, multiview, and matched headset measurements.
+
 Share `VisualWorld`, mesh/material preparation, draw ordering, and shaders where their capability requirements allow. The desktop [XR-only example](../docs/desktop/xr-only.md) now provides renderer initialization without a window, surface, or desktop swapchain. The default `desktop` feature includes Winit; disabling it builds the library and XR-only example without Winit, using engine-owned input types. See [library build commands](docs/base-library-build.md). Add an Android XR frame driver and a mobile quality policy.
 
 The GPU and driver perform hardware tiling. **Vulkan dynamic rendering can use tile-based hardware efficiently.** The measured Focus 3 driver lacks dynamic rendering, so the new backend uses classic passes. It clears/stores XR color directly and clears/discards transient depth, preferring lazy memory. These are bandwidth-oriented policies, not a measured speedup. See the [implementation](docs/opaque-renderer.md) and [device evidence](docs/focus-3-vulkan-results.md).
