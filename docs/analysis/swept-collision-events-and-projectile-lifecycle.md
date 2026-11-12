@@ -172,8 +172,17 @@ the standard lifecycle.
 
 "Projectile lifecycle" names the standard set of procedures a projectile runs
 when it hits something: stop motion, remove the projectile, spawn an impact
-effect, apply damage, notify the author, and suppress duplicate hits. It may also
-include lifetime expiry and cleanup of the velocity/acceleration subtree.
+effect, apply damage, notify the author, and suppress duplicate hits. It also
+covers the non-impact endings: lifetime expiry, running out of fuel/energy, and
+cleanup of the velocity/acceleration subtree.
+
+The sweep observation is contact-only: no event is emitted for a step that misses
+everything. Consequently the projectile owns the handler binding, and its
+termination path must unbind that handler. Removing the projectile subtree while
+leaving a sweep handler registered is not a valid cleanup; whether the engine
+tears the binding down implicitly or the author calls `remove()` explicitly is an
+implementation detail, but the observable requirement is that no stale sweep
+events are delivered after expiry/fuel exhaustion.
 
 That lifecycle is useful enough to package, but it should not be the definition
 of the generic event. The intended direction is a `Projectile`
@@ -233,6 +242,242 @@ Overlap events are persistent enter/exit state. A swept event is a contact
 instant with a fraction along the motion. They may also need different debounce
 and repeat semantics.
 
+## Transition order and deprecation gate
+
+The generic mechanism should be added before the projectile API is renamed or
+its current behavior is deprecated.
+
+1. **Add the generic observation path alongside the projectile path.** Introduce
+   a separate opt-in marker and event for generic swept-zone queries. Do not
+   rename `ProjectileHit`/`ProjectileImpact`, and do not change the current
+   rocket behavior yet.
+2. **Prove response ownership on the generic path.** Show that an MMS handler can
+   accept or decline a generic contact without the engine having already stopped
+   the mover.
+3. **Build the `Projectile` lifecycle on the generic path.** Migrate the rocket
+   to the new mechanism while the old projectile-specific path still exists.
+4. **Keep both paths until parity is demonstrated.** The existing rocket tests,
+   expiry, one-shot behavior, effect, damage, and callback must pass through the
+   new path before anything is removed.
+5. **Deprecate the projectile-specific event and behavior.** Only after the
+   generic mechanism and `Projectile` abstraction are proven should the old
+   names and engine-owned stop behavior be deprecated. Rename or remove them
+   after a compatibility window.
+
+This ordering avoids replacing a working smoke-test path with an unproven
+general API, and it gives the generic mechanism a chance to be exercised by
+non-projectile movers before projectiles depend on it.
+
+## Decisions to date (working assumptions)
+
+These are the points that now seem settled enough to design slices around.
+They are still working decisions, not final API commitments.
+
+- **Generic observation is separate from projectile policy.** The reusable
+  mechanism is a swept-contact observation for any velocity/physics-driven
+  collidable, not a projectile-specific event.
+- **"Projectile lifecycle" is the name for the conventional hit procedures:**
+  stop motion, remove the projectile, spawn the impact effect, apply damage,
+  call the author callback, and suppress duplicate hits. Lifetime expiry and
+  motion cleanup belong to the same lifecycle.
+- **MMS owns projectile disposal and hit handling.** The engine should report
+  contacts; it should not be the thing that decides a projectile is finished.
+- **The common case should be packaged as a `Projectile` abstraction.** Users
+  should not have to create a sweep zone, attach the marker, subscribe to the
+  sweep event, and remember the stop/remove sequence by hand. The intended
+  composition is `Projectile` over `Acceleration` over `Velocity`.
+- **Collision targets are broad.** Vehicles and objects in general should be
+  hit. The player body, player accessories, and the sakura tree should not be.
+- **No script polling.** Swept detection stays event-driven and fixed-step.
+- **Sweep events are contact-only.** A miss is not observable and produces no
+  event. There is no "still moving" or "no hit this step" notification.
+- **Expiry/fuel exhaustion tears down the sweep binding.** When a projectile
+  expires or runs out of fuel/energy, it must unbind its swept-zone handler
+  along with stopping motion or removing its subtree. A stale handler that
+  keeps receiving sweep events after the projectile is done is a bug.
+- **Acceleration remains general.** It is not projectile-specific and should
+  keep working as an independent provider.
+- **Keep the performance shape.** Retained broad phase, fixed-step integration,
+  no per-step allocations or script callbacks in the detection hot path.
+- **Add the generic path before renaming or deprecating the projectile path.**
+  The generic swept-zone event/mechanism should exist and be usable on its own
+  before `ProjectileHit`/`ProjectileImpact` are renamed.
+- **Do not deprecate projectile behavior until the replacement is proven.**
+  Keep the current projectile event and engine-owned stop behavior until the
+  generic mechanism and the `Projectile` lifecycle pass the existing rocket
+  behavior through the new path.
+- **The current implementation is a smoke-test slice, not the final API.**
+  `ProjectileHit`/`ProjectileImpact` and the engine-owned stop behavior are
+  expected to change, but only after the additive generic path is in place.
+
+## Test-sized slices
+
+The order below keeps each slice independently demonstrable. Earlier slices
+should not require the later ones to be useful.
+
+### Slice 1: add the generic swept-zone mechanism alongside the projectile path
+
+Introduce a separate opt-in marker and event for generic event-driven swept-zone
+queries. Reuse the existing sphere sweep and `CollidableBvh` geometry internally
+if useful, but keep this as a distinct path.
+
+Explicitly out of scope for this slice:
+
+- renaming or removing `ProjectileHit` / `ProjectileImpact`
+- changing the current rocket's engine-owned stop behavior
+- changing what the existing projectile event means
+
+The generic path should report contacts without zeroing velocity or disabling a
+component. Include identity in the payload: moving component/zone, hit
+collidable, hit zone/frame, point, normal, and fraction.
+
+Smoke tests:
+
+- An MMS scene with a velocity-driven sphere zone and a thin static wall emits
+  the new generic event with a sensible point/normal.
+- The same scene emits no event at all on a miss. The generic mechanism has no
+  "no hit" or per-step heartbeat event.
+- A scene with the generic marker does not emit `ProjectileHit`.
+- The existing rocket scene still emits `ProjectileHit` and behaves exactly as
+  before.
+- A scene containing one generic sensor and one projectile sensor shows no
+  cross-talk between the two events.
+
+This is the easiest meaningful slice because it is additive: the existing
+projectile path remains the compatibility baseline while the generic mechanism
+is proven.
+
+### Slice 2: make the generic path MMS-authoritative
+
+Decide and implement how a generic observed contact is accepted or ignored by
+MMS. The engine should not decide that a generic mover is finished. Depending on
+the contract, this is a consumable event, an explicit response, or a
+pre-integration query.
+
+Smoke tests:
+
+- A handler removes the mover; the root is gone and no stale collision persists.
+- A handler ignores/declines the contact; the mover continues and can still hit
+  a later target.
+- A valid target behind an excluded target is still reachable when the first
+  contact is declined.
+- Ordering is documented: either the generic event arrives before movement is
+  committed, or it is explicitly a post-step notification.
+
+This slice settles the question that the current rocket path avoids: whether MMS
+owns the response or only the cleanup.
+
+### Slice 3: `Projectile` lifecycle on the generic path
+
+Build the reusable projectile layer on top of slices 1 and 2: acceleration,
+velocity, swept zone, and a default hit handler that stops/removes, spawns an
+effect, applies damage, and calls the author callback. Migrate the rocket to the
+new generic path while leaving the old projectile behavior available.
+
+Smoke tests:
+
+- Spawn a projectile with the default lifecycle; step until impact; assert the
+  effect exists, the root is removed, and the author callback ran once.
+- Fire two projectiles; assert two independent lifecycles and no double callback
+  for one hit.
+- Spawn one with no target; assert lifetime expiry removes it and the impact
+  callback did not run.
+- After expiry, keep stepping the scene and assert the sweep handler is unbound:
+  no further sweep event or impact callback is delivered, and no stale binding
+  remains scoped to the removed projectile.
+- If fuel/energy exhaustion is implemented separately from lifetime, repeat the
+  teardown test for that path: motion stops, the sweep handler is unbound, and
+  later contacts do not resurrect the projectile.
+- Override the hit callback and assert the default damage/effect policy can be
+  replaced or augmented.
+- Consumer MMS contains no explicit `on(sweep zone, "…")` wiring.
+- Existing rocket behavior is reproduced through the generic path before the old
+  path is touched.
+
+The packaging decision (MMS composite versus native component) is still open,
+but either version is testable with the same assertions.
+
+### Slice 4: compatibility and deprecation gate
+
+Keep the old projectile-specific event and engine-owned stop behavior until the
+new path has parity with it. Then mark the old path deprecated, document the
+replacement, and only later rename or remove it.
+
+Smoke tests:
+
+- Existing projectile scenes continue to load and behave during the
+  compatibility window.
+- New scenes use the generic event directly, or use `Projectile` without wiring
+  the zone event by hand.
+- The old and new rocket paths produce equivalent lifecycle outcomes in the same
+  focused test matrix.
+- Deprecation diagnostics point at the replacement API without breaking existing
+  scenes.
+
+Do not rename the projectile events or remove the engine-owned projectile
+behavior before this gate passes. The generic event must be usable on its own
+before projectile naming and semantics are changed.
+
+### Slice 5: slide-sphere targets
+
+Add `CollidableMode::Slide` sphere targets to the swept query. Start with
+sphere-versus-sphere, which covers the cans and the existing vehicle movement
+hulls without needing capsule or box narrow-phase work.
+
+Smoke tests:
+
+- A projectile aimed at a slide-sphere can emits a hit and identifies the
+  collidable.
+- A nearest-hit test with a slide sphere and a static wall picks the earlier
+  fraction.
+- The moving projectile's own subtree is still excluded.
+- A miss through empty space still emits nothing.
+
+This is a small geometry addition with straightforward unit tests, and it proves
+that the target set is no longer static-only.
+
+### Slice 6: inclusion/exclusion policy
+
+Make "hit vehicles and objects, not the player rig/accessories/tree" concrete.
+Depending on the ownership decision, this is either an authored MMS predicate or
+an engine role/tag filter; the event payload from slice 1 should make either
+possible.
+
+Smoke tests:
+
+- A projectile aimed at a car/object collidable emits.
+- A projectile aimed at the player capsule, an accessory, and the tree does not
+  emit (or emits a rejected/filtered event that leaves motion untouched,
+  depending on the chosen contract).
+- The same projectile continues through an excluded target and can still hit a
+  valid target behind it.
+- A handler that declines a hit does not stop the projectile.
+
+This slice forces the "MMS can actually decline" decision. It is easy to test
+once that contract exists, but it should not be merged before slice 2 settles
+who owns the response.
+
+### Slice 7: moving-target relative sweep
+
+Account for a moving vehicle/object crossing the projectile during the same
+fixed step, rather than sweeping only against the target's current pose.
+
+Smoke tests:
+
+- Two moving spheres that would miss under endpoint-only testing produce a
+  contact with the expected fraction.
+- A projectile and a vehicle crossing in front of it hit at the crossing point.
+- A projectile and a target receding from each other do not produce a false hit.
+
+This is the hardest geometry slice; keep it separate from the static/mover
+coverage work.
+
+### Slice 8: remaining target shapes
+
+Add capsule, box, and mesh handling for slide targets as needed. The existing
+player/vehicle shapes determine priority. Unit tests can reuse the same
+nearest-hit, initial-overlap, and miss cases already used for sphere sweeps.
+
 ## Open questions
 
 1. Event and marker names: `ZoneSwept` / `SweepCollidable`, `ZoneHit` /
@@ -251,19 +496,32 @@ and repeat semantics.
    that entirely a policy decision?
 8. Damage and effects: should `Projectile` know about `Damage.at` and effect
    assets, or only call an authored callback?
+9. Fuel/energy model: is exhaustion just lifetime/animation, or a real budget
+   consumed by acceleration? Who triggers teardown, and is handler unbinding
+   automatic with subtree removal or explicitly authored?
+10. Handler lifetime: should any projectile-term path (hit, expiry, fuel,
+    cancellation, removal) share one teardown routine that unbinds the sweep
+    handler and suppresses later events?
 
 ## Recommendation summary
 
 - Treat the generic sweep as an observation primitive for any velocity-driven
   collidable, not as projectile behavior.
-- Rename/split before adding more consumers; do not let `ProjectileHit` become
-  the public name for the general event.
+- Add the separate generic event/mechanism first. Do not rename
+  `ProjectileHit`/`ProjectileImpact` or let them become the public name for the
+  general event.
 - Let MMS own projectile lifecycle, and ensure the event contract actually gives
   MMS a decision rather than notifying it after the engine has stopped the
   object.
 - Package the conventional hit policy as `Projectile` on top of
   `Acceleration`/`Velocity`, so authors do not have to wire the zone event by
   hand.
+- Keep sweep events contact-only. Do not emit miss/heartbeat events. Ensure every
+  projectile termination path, including expiry and fuel exhaustion, unbinds the
+  sweep handler so no stale contacts are delivered.
+- Keep the existing projectile event and engine-owned stop behavior until the
+  generic mechanism and `Projectile` lifecycle reach parity. Deprecate and
+  rename only after that gate passes.
 - Extend target coverage to vehicles and general objects, with explicit
   player/accessory/tree exclusion, before treating the API as stable.
 - Keep performance constraints: fixed-step integration, retained broad phase,
