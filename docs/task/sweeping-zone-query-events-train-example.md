@@ -35,12 +35,17 @@ mover's motion across the step; endpoint overlap tests miss fast contacts. That
 coupling to `Velocity`/acceleration is probably acceptable, but it should be
 explicit and should stop at detection.
 
-The suggested opt-in is to bind a `Velocity` component to the collidable zone by
-reference in MMS. The engine can then check for that binding, check whether any
-relevant sweep listener exists, and only then run the sweeping zone query. A
+The suggested opt-in is to bind a `Velocity` component to the `Collidable` child
+by reference in MMS. The engine can then check for that binding, check whether
+any relevant sweep listener exists, and only then run the sweeping zone query. A
 separate projectile-like marker should not be needed. The velocity binding is the
 part that necessarily couples detection to motion; the projectile lifecycle is
 not part of it.
+
+Keeping the binding on `Collidable` also avoids inventing a "moving zone." The
+zone remains the spatial region, which leaves it available for explicit queries
+and future spatial modeling. The event can still be scoped to the zone while the
+collidable owns the motion binding.
 
 The projectile lifecycle is a separate concern. Stopping, removing, spawning an
 effect, applying damage, and unbinding handlers on expiry are not part of the
@@ -121,9 +126,9 @@ hierarchy named for inspection and tests.
 - no motion, velocity binding, or sweep event handler.
 
 The train composition should place two boxcars on the track with a visible gap,
-matching the track gauge and height. Add a named collidable zone for the future
-train sensor, but leave it inert in this slice: no bound velocity and no sweep
-listener. A wheel proxy is optional; the first slice can be a simple boxcar body.
+matching the track gauge and height. Add a named zone/collidable pair for the
+future train sensor, but leave it inert in this slice: no velocity binding and no
+sweep listener. A wheel proxy is optional; the first slice can be a simple boxcar body.
 
 ### Slice 1 acceptance
 
@@ -131,7 +136,7 @@ listener. A wheel proxy is optional; the first slice can be a simple boxcar body
   `cargo run --release -- load examples/sweeping-zone-query-events.mms`.
 - The train is static and does nothing.
 - The example contains no `ProjectileImpact`, `ProjectileHit`, bound velocity on
-  the train's collidable zone, or sweep event handler.
+  the train's `Collidable`, or sweep event handler.
 - Visual check: two floating buildings, a continuous track between them, two
   boxcars with partially open doors.
 - Structural check: wooden track pieces share one `CombineMesh`; rails share a
@@ -146,14 +151,15 @@ current rocket behavior.
 
 Minimum behavior:
 
-- A collidable zone with a `Velocity` component bound to it by reference in MMS
-  reports contact with static geometry during its step.
+- A `Zone` whose `Collidable` has a `Velocity` component bound by reference in
+  MMS reports contact with static geometry during its step. The event is scoped
+  to the zone.
 - The engine checks for a bound velocity and for a relevant sweep listener before
   running the sweeping zone query. Binding a velocity without a listener must
   not emit and should not pay for the sweep.
 - The event is contact-only. A miss produces no event and there is no per-step
   heartbeat.
-- The payload identifies the moving component/zone, the bound velocity, the hit
+- The payload identifies the moving collidable/zone, the bound velocity, the hit
   collidable/zone, point, normal, and fraction, plus the context needed for the
   handler to decide relevance.
 - The generic path does not own projectile disposal, expiry, damage, or effects.
@@ -177,7 +183,7 @@ Attach motion to the train and use the generic swept event to reverse it at the
 buildings.
 
 - Start the train moving toward building A.
-- Bind the train's `Velocity` to its collidable zone by reference and register a
+- Bind the train's `Velocity` to its `Collidable` by reference and register a
   listener for the generic swept event. The engine should do no sweep work until
   that listener exists.
 - Give the sensor a shape that overlaps the leading end of the train, or one
@@ -206,9 +212,8 @@ Smoke tests:
 
 1. Generic event name. Do not block slice 1 on this; use the name chosen by the
    analysis doc when the mechanism lands.
-2. Velocity-binding API: builder name and placement on the zone versus its
-   `Collidable` child, and whether the velocity-bound collidable remains a
-   normal target for other queries.
+2. Velocity-binding API: builder name and signature on `Collidable`, and whether
+   the velocity-bound collidable remains a normal target for other queries.
 3. Listener gating: scoped to the zone, ancestors, or global handlers; checked
    per step or cached; and behavior when a listener is added or removed after
    the velocity binding.
