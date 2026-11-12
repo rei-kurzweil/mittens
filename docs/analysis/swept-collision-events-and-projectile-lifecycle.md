@@ -58,7 +58,8 @@ The detection path is:
 
 - moving target owned by `Velocity`
 - sphere zone under that target
-- opt-in marker
+- opt-in marker (the current projectile path; the generic path would bind a
+  velocity instead)
 - sweep against environment surfaces
 - report earliest contact point and normal
 
@@ -69,9 +70,8 @@ policy, not the mechanism.
 
 A general event should be named and shaped like the other zone observations:
 `ZoneEntered` / `ZoneExited` are overlap observations for movers. A swept
-observation belongs in the same vocabulary (for example, `ZoneSwept`), with a
-marker meaning "this moving zone participates in swept collision" rather than
-"this is a projectile."
+observation belongs in the same vocabulary (for example, `ZoneSwept`), opt-in
+through a bound velocity rather than a marker meaning "this is a projectile."
 
 ## Problem 2: The engine owns the response
 
@@ -137,36 +137,91 @@ rejects a contact, the projectile must continue, which means the engine cannot
 have already stopped it. Target filtering and response ownership are therefore
 the same problem.
 
+## Problem 4: Velocity-aware events and handler context
+
+The desired event is not merely "a zone overlaps something." It is "a mover
+controlled by the physics/velocity systems crossed static geometry during its
+step." Detection is therefore inherently velocity-aware: the engine needs the
+mover's motion to perform the sweep. This coupling to `Velocity` and its
+providers is probably necessary, but it should stop at detection.
+
+That coupling is different from a projectile lifecycle. The engine may need to
+know the velocity to decide *whether* a contact happened and *where* it happened.
+It should not therefore own stopping, removal, damage, effects, or handler
+teardown. Those are policy.
+
+There is also an API-shape question around subscriptions. In the scripting shell
+an event handler is not a closure with lexical capture. A useful handler may
+need a context payload containing data or component references: the moving
+target, its velocity component, the sensor zone, the source/owner, and filter
+data. That context would let the handler decide whether a contact is relevant and
+what to do about it without looking unrelated state up by name.
+
+A better shape for the opt-in is to bind a `Velocity` component to the
+collidable zone by reference in MMS, rather than to introduce a projectile-like
+marker. The collidable zone then carries both its shape and the motion it should
+be swept with. When the engine visits that collidable, it can:
+
+1. check whether a velocity component is bound;
+2. check whether any sweep-event listener is interested in that zone's scope;
+3. only then run the sweeping zone query for that step and report a
+   penetration.
+
+This keeps the velocity coupling where it belongs (the detection query) and
+removes the need for an author to explain "this is a projectile" just to get a
+swept event. The exact builder placement is still open: the binding could live on
+the zone or on its `Collidable` child.
+
+The train example is intended to exercise this distinction with a non-projectile
+mover. See
+[the train example task](../task/sweeping-zone-query-events-train-example.md).
+
 ## Proposed split
 
 ### A. Generic swept-contact observation
 
-A physics-driven movable with an opted-in shape reports the earliest contact with
-the collidable world each fixed step. No MMS polling, no per-frame `FrameTick`
-subscription.
+A collidable zone with a `Velocity` component bound to it reports the earliest
+contact with the collidable world each fixed step. The velocity reference is the
+opt-in: it tells the engine which motion to use for the sweeping zone query. No
+separate projectile/sweep marker is required.
+
+The engine only performs the query when the collidable zone has a bound velocity
+*and* at least one relevant listener exists for the swept event. Binding alone is
+not enough. This avoids paying for sweeps on every collidable, and it matches the
+fact that sweep events are contact-only: with no listener, there is nothing to
+notify and no reason to query.
 
 Minimum properties:
 
-- opt-in marker on a zone or motion component
+- velocity-component reference bound to the collidable zone by an MMS builder
+- listener-gated: check for an interested handler in the zone/ancestor scope
+  before doing work
 - continuous sweep against retained broad-phase candidates
 - fixed-step, allocation-conscious, no per-draw work
-- event payload identifies both sides: moving component, its zone, the hit
-  collidable, the hit zone/frame, point, normal, and fraction
+- first geometry uses the existing sphere-based sweeping zone query; exact
+  mapping from zone shape to sweep shape is open
+- event payload identifies both sides: moving component, its zone, the bound
+  velocity, the hit collidable, the hit zone/frame, point, normal, and fraction
 - reports contacts, does not decide lifecycle
-- works for any `Velocity`-driven object, not just projectiles
+- works for any `Velocity`-driven collidable, not just projectiles
 
-Illustrative MMS shape (not final syntax):
+Illustrative MMS shape (not final syntax; the binding could live on the zone or
+its `Collidable` child):
 
 ```mms
-let sensor = Zone.sphere(0.055) { SweepCollidable {} }
+let motion = Velocity { body }
+let sensor = Zone.sphere(0.4) {
+    Collidable.velocity(motion) {}
+}
 on(sensor, "ZoneSwept", fn(hit) {
-    // hit.collidable, hit.other_zone, hit.point, hit.normal, hit.fraction
+    // hit.velocity, hit.collidable, hit.other_zone,
+    // hit.point, hit.normal, hit.fraction
 })
 ```
 
-This layer should stay usable by authors who want their own response: a car
-probe, a thrown can, a physics tool, or a custom projectile that does not want
-the standard lifecycle.
+This layer should stay usable by authors who want their own response: a train, a
+car probe, a thrown can, a physics tool, or a custom projectile that does not
+want the standard lifecycle.
 
 ### B. Projectile lifecycle
 
@@ -194,8 +249,8 @@ Projectile
         └── Velocity
 ```
 
-The user should not have to create the zone, attach a sweep marker, subscribe to
-a sweep event, and remember to stop/remove on impact for the common case. They
+The user should not have to create the zone, bind the velocity, subscribe to a
+sweep event, and remember to stop/remove on impact for the common case. They
 should configure the projectile and optionally override the impact policy.
 
 Illustrative shape (not final syntax):
@@ -248,9 +303,10 @@ The generic mechanism should be added before the projectile API is renamed or
 its current behavior is deprecated.
 
 1. **Add the generic observation path alongside the projectile path.** Introduce
-   a separate opt-in marker and event for generic swept-zone queries. Do not
-   rename `ProjectileHit`/`ProjectileImpact`, and do not change the current
-   rocket behavior yet.
+   a separate velocity-backed swept-zone observation/event: bind a `Velocity` to
+   a collidable zone, gate the query on listener presence, and report contacts.
+   Do not rename `ProjectileHit`/`ProjectileImpact`, and do not change the
+   current rocket behavior yet.
 2. **Prove response ownership on the generic path.** Show that an MMS handler can
    accept or decline a generic contact without the engine having already stopped
    the mover.
@@ -276,6 +332,14 @@ They are still working decisions, not final API commitments.
 - **Generic observation is separate from projectile policy.** The reusable
   mechanism is a swept-contact observation for any velocity/physics-driven
   collidable, not a projectile-specific event.
+- **The opt-in is a velocity reference on a collidable zone.** Bind a `Velocity`
+  component to the collidable zone by reference in MMS. The engine uses that
+  motion for the sweeping zone query; a separate projectile/sweep marker is not
+  needed for the generic path.
+- **The sweep is listener-gated.** The engine checks whether any relevant
+  listener exists for the swept event before performing the query. Binding a
+  velocity without a listener should not cost a sweep and should not emit
+  anything.
 - **"Projectile lifecycle" is the name for the conventional hit procedures:**
   stop motion, remove the projectile, spawn the impact effect, apply damage,
   call the author callback, and suppress duplicate hits. Lifetime expiry and
@@ -283,7 +347,7 @@ They are still working decisions, not final API commitments.
 - **MMS owns projectile disposal and hit handling.** The engine should report
   contacts; it should not be the thing that decides a projectile is finished.
 - **The common case should be packaged as a `Projectile` abstraction.** Users
-  should not have to create a sweep zone, attach the marker, subscribe to the
+  should not have to create a sweep zone, bind the velocity, subscribe to the
   sweep event, and remember the stop/remove sequence by hand. The intended
   composition is `Projectile` over `Acceleration` over `Velocity`.
 - **Collision targets are broad.** Vehicles and objects in general should be
@@ -317,31 +381,49 @@ should not require the later ones to be useful.
 
 ### Slice 1: add the generic swept-zone mechanism alongside the projectile path
 
-Introduce a separate opt-in marker and event for generic event-driven swept-zone
-queries. Reuse the existing sphere sweep and `CollidableBvh` geometry internally
-if useful, but keep this as a distinct path.
+Introduce a separate generic event for swept-zone queries, opted into by binding
+a `Velocity` component to a collidable zone by reference in MMS. Reuse the
+existing sphere sweep and `CollidableBvh` geometry internally if useful, but keep
+this as a distinct path.
+
+The engine should:
+
+1. find collidable zones with a bound velocity;
+2. check whether any relevant listener exists for the swept event;
+3. only then run the sweeping zone query for the step;
+4. emit a contact event if the zone penetrates something.
+
+Binding a velocity without a listener must not produce an event. A miss must not
+produce an event either; there is no miss/heartbeat notification.
+
+The generic path should report contacts without zeroing velocity or disabling a
+component. Include identity in the payload: moving component/zone, bound
+velocity, hit collidable, hit zone/frame, point, normal, and fraction.
 
 Explicitly out of scope for this slice:
 
 - renaming or removing `ProjectileHit` / `ProjectileImpact`
 - changing the current rocket's engine-owned stop behavior
 - changing what the existing projectile event means
-
-The generic path should report contacts without zeroing velocity or disabling a
-component. Include identity in the payload: moving component/zone, hit
-collidable, hit zone/frame, point, normal, and fraction.
+- deciding the final builder placement (`Zone.velocity(...)` versus
+  `Collidable.velocity(...)`, and whether the collidable keeps its normal target
+  role)
 
 Smoke tests:
 
-- An MMS scene with a velocity-driven sphere zone and a thin static wall emits
-  the new generic event with a sensible point/normal.
-- The same scene emits no event at all on a miss. The generic mechanism has no
-  "no hit" or per-step heartbeat event.
-- A scene with the generic marker does not emit `ProjectileHit`.
+- An MMS scene with a collidable zone, a bound velocity, a listener, and a thin
+  static wall emits the new generic event with a sensible point/normal.
+- The same scene with no listener emits nothing and, if instrumented, does not
+  run the sweep query.
+- The same scene with a listener but no bound velocity emits nothing.
+- A listener on an ancestor scope is sufficient; removing the listener stops
+  future events.
+- The same scene emits no event at all on a miss.
+- A scene with the new path does not emit `ProjectileHit`.
 - The existing rocket scene still emits `ProjectileHit` and behaves exactly as
   before.
-- A scene containing one generic sensor and one projectile sensor shows no
-  cross-talk between the two events.
+- A scene containing one generic swept collidable and one projectile sensor shows
+  no cross-talk between the two events.
 
 This is the easiest meaningful slice because it is additive: the existing
 projectile path remains the compatibility baseline while the generic mechanism
@@ -370,9 +452,10 @@ owns the response or only the cleanup.
 ### Slice 3: `Projectile` lifecycle on the generic path
 
 Build the reusable projectile layer on top of slices 1 and 2: acceleration,
-velocity, swept zone, and a default hit handler that stops/removes, spawns an
-effect, applies damage, and calls the author callback. Migrate the rocket to the
-new generic path while leaving the old projectile behavior available.
+velocity bound to the swept collidable zone, and a default hit handler that
+stops/removes, spawns an effect, applies damage, and calls the author callback.
+Migrate the rocket to the new generic path while leaving the old projectile
+behavior available.
 
 Smoke tests:
 
@@ -383,8 +466,9 @@ Smoke tests:
 - Spawn one with no target; assert lifetime expiry removes it and the impact
   callback did not run.
 - After expiry, keep stepping the scene and assert the sweep handler is unbound:
-  no further sweep event or impact callback is delivered, and no stale binding
-  remains scoped to the removed projectile.
+  no further sweep event or impact callback is delivered, and neither a stale
+  listener nor a stale velocity-to-collidable binding remains scoped to the
+  removed projectile.
 - If fuel/energy exhaustion is implemented separately from lifetime, repeat the
   teardown test for that path: motion stops, the sweep handler is unbound, and
   later contacts do not resurrect the projectile.
@@ -480,33 +564,49 @@ nearest-hit, initial-overlap, and miss cases already used for sphere sweeps.
 
 ## Open questions
 
-1. Event and marker names: `ZoneSwept` / `SweepCollidable`, `ZoneHit` /
-   `ContinuousCollision`, or something else?
-2. Respected ownership: pre-integration query, post-integration notification, or
+1. Event name: `ZoneSwept`, `ZoneHit`, `ContinuousCollision`, or something else?
+2. Velocity-binding API: builder name and placement on the zone versus its
+   `Collidable` child; whether a velocity-bound collidable keeps its normal
+   static/slide target role; what happens if the velocity is removed, disabled,
+   or reparented.
+3. Sweep shape: the first version uses the existing sphere sweeping query. How
+   does a zone's authored shape map to the sweep shape, and when do capsule/box
+   sweeps follow?
+4. Listener gating: does the engine check scoped handlers on the zone, ancestors,
+   or global handlers? Is the check per step, cached with invalidation, or
+   captured at bind time? What happens when a listener is added or removed after
+   the binding?
+5. Respected ownership: pre-integration query, post-integration notification, or
    a consumable event. This determines whether MMS can really decide.
-3. Target coverage: which shapes and which collidable modes participate, and
+6. Target coverage: which shapes and which collidable modes participate, and
    whether moving targets use relative-motion sweeps.
-4. Filtering location: authored predicate in MMS, engine roles/tags, or both. If
+7. Filtering location: authored predicate in MMS, engine roles/tags, or both. If
    MMS filters, what does "ignore" mean for motion?
-5. Repeat semantics: one event per contact, one per step while touching, or
+8. Repeat semantics: one event per contact, one per step while touching, or
    enter/exit-style state for non-projectile movers?
-6. `Projectile` packaging: MMS composite versus native component, and how much
+9. `Projectile` packaging: MMS composite versus native component, and how much
    default lifecycle is hardcoded versus authored.
-7. Owner exclusion: should the sweep always skip the source user's rig, or is
-   that entirely a policy decision?
-8. Damage and effects: should `Projectile` know about `Damage.at` and effect
-   assets, or only call an authored callback?
-9. Fuel/energy model: is exhaustion just lifetime/animation, or a real budget
-   consumed by acceleration? Who triggers teardown, and is handler unbinding
-   automatic with subtree removal or explicitly authored?
-10. Handler lifetime: should any projectile-term path (hit, expiry, fuel,
+10. Owner exclusion: should the sweep always skip the source user's rig, or is
+    that entirely a policy decision?
+11. Damage and effects: should `Projectile` know about `Damage.at` and effect
+    assets, or only call an authored callback?
+12. Fuel/energy model: is exhaustion just lifetime/animation, or a real budget
+    consumed by acceleration? Who triggers teardown, and is handler unbinding
+    automatic with subtree removal or explicitly authored?
+13. Handler lifetime: should any projectile-term path (hit, expiry, fuel,
     cancellation, removal) share one teardown routine that unbinds the sweep
     handler and suppresses later events?
+14. Subscription context: which component references or data should a sweep
+    handler receive, and are they captured at bind time or resolved at emit
+    time? The scripting shell has no closure capture for this.
 
 ## Recommendation summary
 
 - Treat the generic sweep as an observation primitive for any velocity-driven
   collidable, not as projectile behavior.
+- Make the opt-in a `Velocity` reference bound to the collidable zone, not a
+  projectile-specific marker. Skip the sweep entirely when no relevant listener
+  exists.
 - Add the separate generic event/mechanism first. Do not rename
   `ProjectileHit`/`ProjectileImpact` or let them become the public name for the
   general event.
