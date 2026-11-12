@@ -1,6 +1,7 @@
 use crate::engine::ecs::component::{
-    Camera3DComponent, CameraXRComponent, CollidableComponent, GLTFComponent, GravityComponent,
-    InputXRGamepadComponent, TransformComponent, ZoneComponent,
+    Camera3DComponent, CameraXRComponent, CollidableComponent, CombineMeshComponent, GLTFComponent,
+    GravityComponent, InputXRGamepadComponent, TransformComponent, VelocityComponent,
+    ZoneComponent,
 };
 use crate::engine::ecs::system::model::collision_types::CollisionShape;
 use crate::engine::ecs::{CommandQueue, ComponentId, RxWorld, World};
@@ -278,4 +279,120 @@ fn twilight_sky_has_typed_overrides_linear_masks_and_no_bloom_extraction() {
             .zip(clouds.pixels())
             .all(|(p, c)| p[0] == c[0] && p[3] == 255)
     );
+}
+
+#[test]
+fn sweeping_zone_query_events_scene_has_inert_train_and_separate_track_batches() {
+    let source = include_str!("../../examples/sweeping-zone-query-events.mms").replacen(
+        "let use_openxr = true",
+        "let use_openxr = false",
+        1,
+    );
+    assert!(!source.contains("ProjectileHit"));
+    assert!(!source.contains("ProjectileImpact"));
+    assert!(!source.contains("ZoneSwept"));
+
+    let (mut world, mut rx, mut queue, mut assets) = (
+        World::default(),
+        RxWorld::default(),
+        CommandQueue::new(),
+        RenderAssets::new(),
+    );
+    let (_session, _) = super::tests::start_settings_scene(
+        &source,
+        "examples/sweeping-zone-query-events.mms",
+        &mut world,
+        &mut rx,
+        Some(&mut assets),
+        &mut queue,
+    )
+    .unwrap();
+
+    let named = |label: &str| {
+        world
+            .all_components()
+            .find(|&id| world.component_label(id) == Some(label))
+            .unwrap_or_else(|| panic!("missing {label}"))
+    };
+
+    let track = named("paper_craft_train_track");
+    let sleepers = named("paper_craft_train_track_wooden_sleepers");
+    let rails = named("paper_craft_train_track_rails");
+    assert_ne!(sleepers, rails);
+    assert!(
+        world
+            .get_component_by_id_as::<CombineMeshComponent>(sleepers)
+            .is_some()
+    );
+    assert!(
+        world
+            .get_component_by_id_as::<CombineMeshComponent>(rails)
+            .is_some()
+    );
+    let track_origin = authored_model(&world, track);
+    for (axis, expected) in [0.0, 20.5, 12.5].into_iter().enumerate() {
+        assert!((track_origin[3][axis] - expected).abs() < 0.001);
+    }
+
+    let train = named("paper_craft_train");
+    let train_origin = authored_model(&world, train);
+    for (axis, expected) in [0.0, 20.5, 12.5].into_iter().enumerate() {
+        assert!((train_origin[3][axis] - expected).abs() < 0.001);
+    }
+    named("paper_craft_train_car_0");
+    named("paper_craft_train_car_1");
+
+    let sensor = named("paper_craft_train_sweep_sensor");
+    assert!(
+        world
+            .get_component_by_id_as::<ZoneComponent>(sensor)
+            .is_some()
+    );
+    let sensor_collidable = world
+        .children_of(sensor)
+        .iter()
+        .copied()
+        .find(|&id| {
+            world
+                .get_component_by_id_as::<CollidableComponent>(id)
+                .is_some()
+        })
+        .expect("train sensor needs a collidable child");
+    let collidable = world
+        .get_component_by_id_as::<CollidableComponent>(sensor_collidable)
+        .unwrap();
+    assert!(collidable.movement_target_source.is_none());
+    assert!(collidable.movement_target_id.is_none());
+
+    // Slice 1: no Velocity anywhere on the track or train hierarchy.
+    for root in [track, train] {
+        let mut cursor = Some(root);
+        while let Some(id) = cursor {
+            assert!(
+                world
+                    .get_component_by_id_as::<VelocityComponent>(id)
+                    .is_none(),
+                "inert train/track must not have a Velocity ancestor"
+            );
+            cursor = world.parent_of(id);
+        }
+    }
+
+    // The track is visual-only; only the train owns a collidable zone here.
+    for id in world.all_components() {
+        if world
+            .get_component_by_id_as::<CollidableComponent>(id)
+            .is_none()
+        {
+            continue;
+        }
+        let mut cursor = Some(id);
+        while let Some(ancestor) = cursor {
+            assert_ne!(
+                ancestor, track,
+                "track must not contribute a collidable to the sweep world"
+            );
+            cursor = world.parent_of(ancestor);
+        }
+    }
 }

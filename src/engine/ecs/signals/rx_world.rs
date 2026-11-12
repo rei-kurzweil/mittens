@@ -94,6 +94,42 @@ impl SignalEmitter for RxWorld {
     }
 }
 
+/// Snapshot of active handler presence for one event kind.
+///
+/// Used by fixed-step producers to skip work that cannot be observed. Scope
+/// lookup follows event dispatch: a subscription on the event scope or any
+/// ancestor can receive it.
+#[derive(Debug, Default, Clone)]
+pub struct ListenerGate {
+    global: bool,
+    scopes: Vec<ComponentId>,
+}
+
+impl ListenerGate {
+    /// True when at least one active handler exists anywhere.
+    pub fn any(&self) -> bool {
+        self.global || !self.scopes.is_empty()
+    }
+
+    /// True when an active handler is attached at `scope` or an ancestor.
+    pub fn allows(&self, world: &World, scope: ComponentId) -> bool {
+        if !self.any() {
+            return false;
+        }
+        if self.global {
+            return true;
+        }
+        let mut cursor = Some(scope);
+        while let Some(id) = cursor {
+            if self.scopes.binary_search(&id).is_ok() {
+                return true;
+            }
+            cursor = world.parent_of(id);
+        }
+        false
+    }
+}
+
 /// Stores a unified signal stream and dispatches signals to scope-rooted handlers.
 ///
 /// Handlers are keyed by (signal kind, scope root). When dispatching a signal with `scope=S`,
@@ -274,6 +310,28 @@ impl RxWorld {
         self.global_handlers
             .get(&kind)
             .is_some_and(|handlers| handlers.iter().any(Handler::active))
+    }
+
+    /// Build a cheap listener-presence gate for an event kind.
+    ///
+    /// Swept events are contact-only, so the physics path may skip all query
+    /// work when nothing can receive the event. The returned gate keeps the
+    /// active global/scoped handler list; it does not dispatch anything.
+    pub fn listener_gate(&self, kind: SignalKind) -> ListenerGate {
+        let mut gate = ListenerGate::default();
+        for kind in [kind, SignalKind::Any] {
+            gate.global |= self.has_global_handlers(kind);
+            if let Some(by_scope) = self.scoped_handlers.get(&kind) {
+                for (&scope, handlers) in by_scope {
+                    if handlers.iter().any(Handler::active) {
+                        gate.scopes.push(scope);
+                    }
+                }
+            }
+        }
+        gate.scopes.sort_unstable();
+        gate.scopes.dedup();
+        gate
     }
 
     pub fn requeue_ready_events(&mut self, mut events: Vec<Signal>) {

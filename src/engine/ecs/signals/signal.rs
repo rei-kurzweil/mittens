@@ -174,6 +174,19 @@ pub enum EventSignal {
         point: [f32; 3],
         normal: [f32; 3],
     },
+    /// A velocity-bound collidable's zone crossed static geometry during this
+    /// step. Scoped to the moving zone. Contact-only: a miss emits nothing and
+    /// the engine does not stop, disable, or remove the mover.
+    ZoneSwept {
+        zone: ComponentId,
+        collidable: ComponentId,
+        velocity: ComponentId,
+        other_zone: ComponentId,
+        other_collidable: ComponentId,
+        point: [f32; 3],
+        normal: [f32; 3],
+        fraction: f32,
+    },
     ZoneEntered {
         zone: ComponentId,
         other_zone: ComponentId,
@@ -389,6 +402,7 @@ impl EventSignal {
             EventSignal::GrabStart { .. } => SignalKind::GrabStart,
             EventSignal::GrabEnd { .. } => SignalKind::GrabEnd,
             EventSignal::ProjectileHit { .. } => SignalKind::ProjectileHit,
+            EventSignal::ZoneSwept { .. } => SignalKind::ZoneSwept,
             EventSignal::ZoneEntered { .. } => SignalKind::ZoneEntered,
             EventSignal::ZoneExited { .. } => SignalKind::ZoneExited,
             EventSignal::MountStarted { .. } => SignalKind::MountStarted,
@@ -1226,6 +1240,7 @@ pub enum SignalKind {
     GrabStart,
     GrabEnd,
     ProjectileHit,
+    ZoneSwept,
     ZoneEntered,
     ZoneExited,
     MountStarted,
