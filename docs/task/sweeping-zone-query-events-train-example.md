@@ -2,7 +2,7 @@
 
 Date: 2026-11-12
 
-Status: proposed
+Status: in progress (slice 1 implemented)
 
 Related:
 
@@ -89,16 +89,37 @@ the train scene.
 
 ### Buildings and track
 
-- Add two floating buildings that serve as the track endpoints.
-- Prefer purpose-built building blocks or reuse suitable paper-craft towers at a
-  common height. Do not move unrelated scene content just to make the track fit.
-- Run one straight elevated track between the two buildings.
-- Place the train at the midpoint on the track.
-- Leave clear space around the endpoints so the future train sensor can contact
-  a building zone before the model visually enters the wall.
-- The track itself should be visual-only by default. Do not give the rails or
-  sleepers collidable surfaces that the train sensor would hit instead of a
-  building.
+`paper-craft.mms` already has a grounded main tower plus four floating
+neighborhood towers. Reuse two of the existing floating buildings as the track
+endpoints; do not add duplicate endpoint buildings or move unrelated scene
+content.
+
+The first layout uses:
+
+- `paper_craft_east_tower_center` at `[18, 0, 0]`, base `9.6`, height `12.8`
+  (top `22.4`);
+- `paper_craft_west_tower_south` at `[-18, 0, 25]`, base `16.0`, height `16.0`
+  (top `32.0`).
+
+Run the track at approximately `y = 20.5`, above both buildings' first balcony
+railings and below the east tower's roof. The track crosses clear space between
+the two towers and does not intersect the main tower, the low annex, or the
+north tower.
+
+Track endpoints should sit at or slightly inside the two building facades:
+
+- east end near `[11, 20.5, 0]`;
+- west end near `[-11, 20.5, 25]`.
+
+The straight track is centered between those points and yawed to match the
+line. Keep the length constant in the example so the train endpoints and
+building contact zones stay aligned. Leave enough gap before the walls that the
+future train sensor can contact a building zone before the model visually passes
+through the facade.
+
+Place the train at the midpoint on the track. The track itself should be
+visual-only by default. Do not give the rails or sleepers collidable surfaces
+that the train sensor would hit instead of a building.
 
 ### Railroad track prefab
 
@@ -142,6 +163,22 @@ sweep listener. A wheel proxy is optional; the first slice can be a simple boxca
 - Structural check: wooden track pieces share one `CombineMesh`; rails share a
   separate `CombineMesh`.
 - No existing scene test or example is regressed.
+
+### Slice 1 implementation notes
+
+- `examples/sweeping-zone-query-events.mms` copies the paper-craft scene and
+  adds the track/train between `paper_craft_east_tower_center` and
+  `paper_craft_west_tower_south`.
+- The track uses `paper_craft_train_track_wooden_sleepers` and
+  `paper_craft_train_track_rails` as separate `CombineMesh` groups.
+- The train root is `paper_craft_train`, with `paper_craft_train_car_0` and
+  `paper_craft_train_car_1`.
+- The inert sensor is `paper_craft_train_sweep_sensor`, a cube zone with a
+  static collidable child and no velocity binding or listener.
+- Track length is `33.6`, gauge `1.40`, sleeper spacing `0.85`, surface height
+  `20.5`, and yaw `atan2(-22, 25)`.
+- `src/scripting/paper_craft_scene_tests.rs` has a headless smoke test for the
+  inert train, separate track batches, and visual-only track.
 
 ## Slice 2: generic swept-zone event mechanism
 
