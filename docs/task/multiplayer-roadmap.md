@@ -7,8 +7,8 @@ below are scoped follow-ups; each is a separate change.
 
 ## First slice (done)
 
-- `NetSession` (host/join/from_env) and `NetSync` (host / local_player /
-  remote_player) components with MMS bindings and `Net*` events.
+- `MultiplayerSession` (host/join/from_env) and `MultiplayerSync` (host / local_player /
+  remote_player) components with MMS bindings and `Multiplayer*` events.
 - Host-authoritative roster and physics entities; peer-owned player poses;
   unreliable app messages for client → host intents.
 - Versioned JSON envelope, 1,200-byte datagrams, chunked snapshots, stale-tick
@@ -20,13 +20,13 @@ below are scoped follow-ups; each is a separate change.
 
 1. **Interpolation buffer.** Keep ~3 snapshots per remote pose and render
    ~100 ms behind using host tick timestamps; extrapolate briefly on loss.
-   Hook: the apply loop in `NetSystem::tick` (marked `TODO(net)`). Must not
+   Hook: the apply loop in `MultiplayerSystem::tick` (marked `TODO(multiplayer)`). Must not
    allocate per sync per frame.
 2. **Reliable ordered channel** for spawn/despawn, gameplay intents, and chat:
    sequence + ACK + resend, reusing the terminal UDP prototype's approach
    (`src/engine/user_input/udp_text`). `protocol::Channel` is the stub.
 3. **Replicated spawn/despawn.** Today both peers must author the same
-   `NetSync.host(key)` entities. Add host-issued spawn messages naming a prefab
+   `MultiplayerSync.host(key)` entities. Add host-issued spawn messages naming a prefab
    (MMS module + export) plus initial state, and late-join snapshots of them.
 4. **Player animation state.** Replicate AVC inputs (head/hand poses, crouch,
    mouth) instead of only the root, so remote players use the real avatar rig.
@@ -38,8 +38,8 @@ below are scoped follow-ups; each is a separate change.
 7. **Rendering-server mode.** The [laptop rendering server](../desktop/rendering-server.md)
    is a spectator client with no player; it should reuse this session layer.
 8. **Generic MMS `UdpSocket`** (see `android/docs/udp-lan-keyboard.md`) stays
-   separate: it is a raw transport, while `NetSession` owns session semantics.
-   `NetSession` may later sit on top of it.
+   separate: it is a raw transport, while `MultiplayerSession` owns session semantics.
+   `MultiplayerSession` may later sit on top of it.
 9. **Security/NAT.** Session tokens, optional encryption, and relay/NAT
    traversal before anything leaves a trusted LAN.
 
@@ -48,4 +48,4 @@ below are scoped follow-ups; each is a separate change.
 - Peers exchange stable keys and world poses, never `ComponentId`s.
 - No worker thread per datagram; bounded per-frame receive work; keep blocking
   operations off the XR update path.
-- One active `NetSession` per process until multi-session needs are concrete.
+- One active `MultiplayerSession` per process until multi-session needs are concrete.

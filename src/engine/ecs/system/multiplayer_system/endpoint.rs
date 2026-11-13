@@ -6,7 +6,7 @@
 //! the host only, and the host fans state back out in snapshots.
 use super::protocol::{HOST_PEER_ID, Message, Packet, PeerInfo, Pose, snapshot_chunks};
 use super::transport::UdpTransport;
-use crate::engine::ecs::component::NetRole;
+use crate::engine::ecs::component::MultiplayerRole;
 use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
@@ -18,7 +18,7 @@ const MAX_NAME_BYTES: usize = 64;
 const MAX_APP_TEXT_BYTES: usize = 900;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum NetEvent {
+pub enum MultiplayerEvent {
     Connected {
         peer_id: u32,
     },
@@ -67,7 +67,7 @@ enum RoleState {
 }
 
 #[derive(Debug)]
-pub struct NetEndpoint {
+pub struct MultiplayerEndpoint {
     transport: UdpTransport,
     session: uuid::Uuid,
     seq: u64,
@@ -79,24 +79,29 @@ pub struct NetEndpoint {
     /// Latest received poses; drained by the ECS adapter each frame.
     remote_players: HashMap<u32, Pose>,
     host_entities: HashMap<String, Pose>,
-    events: Vec<NetEvent>,
+    events: Vec<MultiplayerEvent>,
     recv_scratch: Vec<(SocketAddr, Packet)>,
 }
 
-impl NetEndpoint {
-    pub fn bind(role: NetRole, addr: &str, name: &str, now: Instant) -> Result<Self, String> {
+impl MultiplayerEndpoint {
+    pub fn bind(
+        role: MultiplayerRole,
+        addr: &str,
+        name: &str,
+        now: Instant,
+    ) -> Result<Self, String> {
         let addr: SocketAddr = addr
             .parse()
             .map_err(|e| format!("'{addr}' is not a numeric socket address: {e}"))?;
         let (bind_addr, state) = match role {
-            NetRole::Host => (
+            MultiplayerRole::Host => (
                 addr,
                 RoleState::Host {
                     clients: HashMap::new(),
                     next_peer_id: HOST_PEER_ID + 1,
                 },
             ),
-            NetRole::Client => {
+            MultiplayerRole::Client => {
                 let any: SocketAddr = if addr.is_ipv4() {
                     "0.0.0.0:0".parse().unwrap()
                 } else {
@@ -128,9 +133,9 @@ impl NetEndpoint {
             events: Vec::new(),
             recv_scratch: Vec::new(),
         };
-        if role == NetRole::Host {
+        if role == MultiplayerRole::Host {
             endpoint.local_peer_id = Some(HOST_PEER_ID);
-            endpoint.events.push(NetEvent::Connected {
+            endpoint.events.push(MultiplayerEvent::Connected {
                 peer_id: HOST_PEER_ID,
             });
         }
@@ -150,7 +155,7 @@ impl NetEndpoint {
         self.transport.local_addr().ok()
     }
 
-    pub fn take_events(&mut self) -> Vec<NetEvent> {
+    pub fn take_events(&mut self) -> Vec<MultiplayerEvent> {
         std::mem::take(&mut self.events)
     }
 
@@ -208,7 +213,7 @@ impl NetEndpoint {
                     }
                 }
                 let targets: Vec<_> = clients.keys().copied().collect();
-                // TODO(net): per-client interest/relevance and delta compression.
+                // TODO(multiplayer): per-client interest/relevance and delta compression.
                 for message in snapshot_chunks(tick, peers, players, entities) {
                     for &to in &targets {
                         self.send(message.clone(), to, "snapshot");
@@ -233,11 +238,11 @@ impl NetEndpoint {
     pub fn send_app(&mut self, name: &str, text: &str) -> Result<(), String> {
         if text.len() > MAX_APP_TEXT_BYTES || name.len() > MAX_NAME_BYTES {
             return Err(format!(
-                "net message too large (name <= {MAX_NAME_BYTES}, text <= {MAX_APP_TEXT_BYTES} bytes)"
+                "multiplayer message too large (name <= {MAX_NAME_BYTES}, text <= {MAX_APP_TEXT_BYTES} bytes)"
             ));
         }
         let Some(from) = self.local_peer_id else {
-            return Err("net session is not connected".into());
+            return Err("multiplayer session is not connected".into());
         };
         let message = Message::App {
             from,
@@ -268,8 +273,8 @@ impl NetEndpoint {
             msg,
         };
         if let Err(message) = self.transport.send(&packet, to) {
-            // TODO(net): coalesce repeated errors instead of one per packet.
-            self.events.push(NetEvent::Error { phase, message });
+            // TODO(multiplayer): coalesce repeated errors instead of one per packet.
+            self.events.push(MultiplayerEvent::Error { phase, message });
         }
     }
 
@@ -289,7 +294,7 @@ impl NetEndpoint {
                 // Same address, restarted client: retire the old peer.
                 let old = clients.remove(&from).unwrap();
                 self.roster.remove(&old.id);
-                self.events.push(NetEvent::PeerLeft {
+                self.events.push(MultiplayerEvent::PeerLeft {
                     peer_id: old.id,
                     name: old.name,
                 });
@@ -316,7 +321,8 @@ impl NetEndpoint {
                     },
                 );
                 self.roster.insert(id, name.clone());
-                self.events.push(NetEvent::PeerJoined { peer_id: id, name });
+                self.events
+                    .push(MultiplayerEvent::PeerJoined { peer_id: id, name });
                 id
             };
             self.send(Message::Welcome { peer_id }, from, "welcome");
@@ -338,12 +344,12 @@ impl NetEndpoint {
             Message::App { name, text, .. } => {
                 // Never trust the claimed sender id.
                 let from = client.id;
-                self.events.push(NetEvent::App { from, name, text });
+                self.events.push(MultiplayerEvent::App { from, name, text });
             }
             Message::Bye => {
                 let client = clients.remove(&from).unwrap();
                 self.roster.remove(&client.id);
-                self.events.push(NetEvent::PeerLeft {
+                self.events.push(MultiplayerEvent::PeerLeft {
                     peer_id: client.id,
                     name: client.name,
                 });
@@ -389,7 +395,7 @@ impl NetEndpoint {
                 *last_heard = now;
                 *last_tick = 0;
                 self.local_peer_id = Some(peer_id);
-                self.events.push(NetEvent::Connected { peer_id });
+                self.events.push(MultiplayerEvent::Connected { peer_id });
             }
             msg if *host_session == Some(packet.session) => {
                 *last_heard = now;
@@ -421,11 +427,11 @@ impl NetEndpoint {
                         }
                     }
                     Message::App { from, name, text } => {
-                        self.events.push(NetEvent::App { from, name, text });
+                        self.events.push(MultiplayerEvent::App { from, name, text });
                     }
                     Message::Bye => {
                         self.reset_client_view();
-                        self.events.push(NetEvent::Error {
+                        self.events.push(MultiplayerEvent::Error {
                             phase: "disconnect",
                             message: "host closed the session".into(),
                         });
@@ -446,7 +452,7 @@ impl NetEndpoint {
             .collect();
         for (&id, name) in &self.roster {
             if !next.contains_key(&id) {
-                self.events.push(NetEvent::PeerLeft {
+                self.events.push(MultiplayerEvent::PeerLeft {
                     peer_id: id,
                     name: name.clone(),
                 });
@@ -454,7 +460,7 @@ impl NetEndpoint {
         }
         for (&id, name) in &next {
             if !self.roster.contains_key(&id) {
-                self.events.push(NetEvent::PeerJoined {
+                self.events.push(MultiplayerEvent::PeerJoined {
                     peer_id: id,
                     name: name.clone(),
                 });
@@ -466,7 +472,8 @@ impl NetEndpoint {
     /// Forget the host and every remote peer; the next poll re-handshakes.
     fn reset_client_view(&mut self) {
         for (id, name) in std::mem::take(&mut self.roster) {
-            self.events.push(NetEvent::PeerLeft { peer_id: id, name });
+            self.events
+                .push(MultiplayerEvent::PeerLeft { peer_id: id, name });
         }
         self.remote_players.clear();
         self.host_entities.clear();
@@ -493,7 +500,7 @@ impl NetEndpoint {
                 for addr in expired {
                     let client = clients.remove(&addr).unwrap();
                     self.roster.remove(&client.id);
-                    self.events.push(NetEvent::PeerLeft {
+                    self.events.push(MultiplayerEvent::PeerLeft {
                         peer_id: client.id,
                         name: client.name,
                     });
@@ -509,7 +516,7 @@ impl NetEndpoint {
                 if host_session.is_some() {
                     if now.duration_since(*last_heard) > PEER_TIMEOUT {
                         self.reset_client_view();
-                        self.events.push(NetEvent::Error {
+                        self.events.push(MultiplayerEvent::Error {
                             phase: "timeout",
                             message: "no packets from host; reconnecting".into(),
                         });
@@ -528,7 +535,7 @@ impl NetEndpoint {
     }
 }
 
-impl Drop for NetEndpoint {
+impl Drop for MultiplayerEndpoint {
     fn drop(&mut self) {
         let targets: Vec<SocketAddr> = match &self.state {
             RoleState::Host { clients, .. } => clients.keys().copied().collect(),

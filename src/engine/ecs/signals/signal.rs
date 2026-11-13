@@ -353,26 +353,26 @@ pub enum EventSignal {
         url: Option<String>,
         bind_addr: Option<String>,
     },
-    /// The local `NetSession` has a peer id (immediately for a host).
-    NetConnected {
+    /// The local `MultiplayerSession` has a peer id (immediately for a host).
+    MultiplayerConnected {
         peer_id: u32,
         is_host: bool,
     },
-    NetPeerJoined {
+    MultiplayerPeerJoined {
         peer_id: u32,
         name: String,
     },
-    NetPeerLeft {
+    MultiplayerPeerLeft {
         peer_id: u32,
         name: String,
     },
-    /// Application message from another peer (`NetSession.send`).
-    NetMessage {
+    /// Application message from another peer (`MultiplayerSession.send`).
+    MultiplayerMessage {
         from: u32,
         name: String,
         text: String,
     },
-    NetError {
+    MultiplayerError {
         phase: String,
         message: String,
     },
@@ -436,11 +436,11 @@ impl EventSignal {
             EventSignal::HttpRequest { .. } => SignalKind::HttpRequest,
             EventSignal::HttpResponse { .. } => SignalKind::HttpResponse,
             EventSignal::HttpError { .. } => SignalKind::HttpError,
-            EventSignal::NetConnected { .. } => SignalKind::NetConnected,
-            EventSignal::NetPeerJoined { .. } => SignalKind::NetPeerJoined,
-            EventSignal::NetPeerLeft { .. } => SignalKind::NetPeerLeft,
-            EventSignal::NetMessage { .. } => SignalKind::NetMessage,
-            EventSignal::NetError { .. } => SignalKind::NetError,
+            EventSignal::MultiplayerConnected { .. } => SignalKind::MultiplayerConnected,
+            EventSignal::MultiplayerPeerJoined { .. } => SignalKind::MultiplayerPeerJoined,
+            EventSignal::MultiplayerPeerLeft { .. } => SignalKind::MultiplayerPeerLeft,
+            EventSignal::MultiplayerMessage { .. } => SignalKind::MultiplayerMessage,
+            EventSignal::MultiplayerError { .. } => SignalKind::MultiplayerError,
             EventSignal::XrEyeTrackingUpdated { .. } => SignalKind::XrEyeTrackingUpdated,
             EventSignal::XrEyeTrackingHtcUpdated { .. } => SignalKind::XrEyeTrackingHtcUpdated,
         }
@@ -714,13 +714,13 @@ pub enum IntentValue {
     RegisterHttpClient {
         component_id: ComponentId,
     },
-    RegisterNetSession {
+    RegisterMultiplayerSession {
         component_id: ComponentId,
     },
-    RegisterNetSync {
+    RegisterMultiplayerSync {
         component_id: ComponentId,
     },
-    NetSend {
+    MultiplayerSend {
         component_id: ComponentId,
         name: String,
         text: String,
@@ -1115,9 +1115,9 @@ impl IntentValue {
             IntentValue::RegisterHttpClient { .. } => "register_http_client",
             IntentValue::HttpClientRequest { .. } => "http_client_request",
             IntentValue::HttpServerReply { .. } => "http_server_reply",
-            IntentValue::RegisterNetSession { .. } => "register_net_session",
-            IntentValue::RegisterNetSync { .. } => "register_net_sync",
-            IntentValue::NetSend { .. } => "net_send",
+            IntentValue::RegisterMultiplayerSession { .. } => "register_multiplayer_session",
+            IntentValue::RegisterMultiplayerSync { .. } => "register_multiplayer_sync",
+            IntentValue::MultiplayerSend { .. } => "multiplayer_send",
             IntentValue::RegisterScrolling { .. } => "register_scrolling",
             IntentValue::RegisterTransform { .. } => "register_transform",
             IntentValue::UpdateTransformWorld { .. } => "update_transform_world",
@@ -1297,11 +1297,11 @@ pub enum SignalKind {
     HttpRequest,
     HttpResponse,
     HttpError,
-    NetConnected,
-    NetPeerJoined,
-    NetPeerLeft,
-    NetMessage,
-    NetError,
+    MultiplayerConnected,
+    MultiplayerPeerJoined,
+    MultiplayerPeerLeft,
+    MultiplayerMessage,
+    MultiplayerError,
     XrEyeTrackingUpdated,
     XrEyeTrackingHtcUpdated,
 }

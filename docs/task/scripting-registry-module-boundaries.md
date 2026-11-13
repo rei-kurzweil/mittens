@@ -51,7 +51,13 @@ instead of changing semantics to make a file reorganization pass.
 
 ## Note (2026-11-13)
 
-The multiplayer `NetSession`/`NetSync` bindings were added as one family pair,
-`registries/net_registry.rs` and `registries/net_runtime_config.rs`, with
+The multiplayer `MultiplayerSession`/`MultiplayerSync` bindings were added as one family pair,
+`registries/multiplayer_registry.rs` and `registries/multiplayer_runtime_config.rs`, with
 single-line dispatch hooks in the central files. New families should follow
 the same shape rather than growing the central registries.
+
+## Naming review (2026-11-13)
+
+Rename the multiplayer family and central dispatch references consistently.
+This scoped rename adds no runtime work; the responsibility-based split above
+remains proposed. Validate with multiplayer and documentation catalog tests.

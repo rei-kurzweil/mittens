@@ -201,9 +201,9 @@ impl SignalPipelineProcessor {
             | IntentValue::PoseReset { .. }
             | IntentValue::HttpClientRequest { .. }
             | IntentValue::HttpServerReply { .. }
-            | IntentValue::RegisterNetSession { .. }
-            | IntentValue::RegisterNetSync { .. }
-            | IntentValue::NetSend { .. } => None,
+            | IntentValue::RegisterMultiplayerSession { .. }
+            | IntentValue::RegisterMultiplayerSync { .. }
+            | IntentValue::MultiplayerSend { .. } => None,
         }
     }
 
@@ -361,9 +361,9 @@ impl SignalPipelineProcessor {
             | IntentValue::PoseReset { .. }
             | IntentValue::HttpClientRequest { .. }
             | IntentValue::HttpServerReply { .. }
-            | IntentValue::RegisterNetSession { .. }
-            | IntentValue::RegisterNetSync { .. }
-            | IntentValue::NetSend { .. } => None,
+            | IntentValue::RegisterMultiplayerSession { .. }
+            | IntentValue::RegisterMultiplayerSync { .. }
+            | IntentValue::MultiplayerSend { .. } => None,
         }
     }
 }

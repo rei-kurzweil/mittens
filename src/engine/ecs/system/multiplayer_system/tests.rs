@@ -1,6 +1,6 @@
-use super::endpoint::{NetEndpoint, NetEvent, PEER_TIMEOUT};
+use super::endpoint::{MultiplayerEndpoint, MultiplayerEvent, PEER_TIMEOUT};
 use super::protocol::{MAX_DATAGRAM, Message, Packet, PeerInfo, Pose, VERSION, snapshot_chunks};
-use crate::engine::ecs::component::NetRole;
+use crate::engine::ecs::component::MultiplayerRole;
 use std::time::{Duration, Instant};
 
 fn pose(x: f32) -> Pose {
@@ -11,15 +11,15 @@ fn pose(x: f32) -> Pose {
     }
 }
 
-fn host_and_client(now: Instant) -> (NetEndpoint, NetEndpoint) {
-    let host = NetEndpoint::bind(NetRole::Host, "127.0.0.1:0", "rei", now).unwrap();
+fn host_and_client(now: Instant) -> (MultiplayerEndpoint, MultiplayerEndpoint) {
+    let host = MultiplayerEndpoint::bind(MultiplayerRole::Host, "127.0.0.1:0", "rei", now).unwrap();
     let addr = host.local_addr().unwrap().to_string();
-    let client = NetEndpoint::bind(NetRole::Client, &addr, "dan", now).unwrap();
+    let client = MultiplayerEndpoint::bind(MultiplayerRole::Client, &addr, "dan", now).unwrap();
     (host, client)
 }
 
 /// Loopback delivery is immediate but not synchronous with `send_to`.
-fn pump(host: &mut NetEndpoint, client: &mut NetEndpoint, now: Instant) {
+fn pump(host: &mut MultiplayerEndpoint, client: &mut MultiplayerEndpoint, now: Instant) {
     for _ in 0..4 {
         client.poll(now);
         std::thread::sleep(Duration::from_millis(5));
@@ -87,18 +87,21 @@ fn snapshot_chunks_fit_the_datagram_budget_and_keep_every_entity() {
 fn client_handshakes_and_both_sides_see_each_other() {
     let now = Instant::now();
     let (mut host, mut client) = host_and_client(now);
-    assert_eq!(host.take_events(), vec![NetEvent::Connected { peer_id: 1 }]);
+    assert_eq!(
+        host.take_events(),
+        vec![MultiplayerEvent::Connected { peer_id: 1 }]
+    );
     pump(&mut host, &mut client, now);
     assert_eq!(
         host.take_events(),
-        vec![NetEvent::PeerJoined {
+        vec![MultiplayerEvent::PeerJoined {
             peer_id: 2,
             name: "dan".into()
         }]
     );
     assert_eq!(
         client.take_events(),
-        vec![NetEvent::Connected { peer_id: 2 }]
+        vec![MultiplayerEvent::Connected { peer_id: 2 }]
     );
 
     // First snapshot carries the roster, the host's player, and host entities.
@@ -107,7 +110,7 @@ fn client_handshakes_and_both_sides_see_each_other() {
     pump(&mut host, &mut client, now);
     assert_eq!(
         client.take_events(),
-        vec![NetEvent::PeerJoined {
+        vec![MultiplayerEvent::PeerJoined {
             peer_id: 1,
             name: "rei".into()
         }]
@@ -143,7 +146,7 @@ fn app_messages_flow_client_to_host_with_trusted_sender() {
     pump(&mut host, &mut client, now);
     assert_eq!(
         host.take_events(),
-        vec![NetEvent::App {
+        vec![MultiplayerEvent::App {
             from: 2,
             name: "launch".into(),
             text: "{\"power\":2}".into()
@@ -151,7 +154,7 @@ fn app_messages_flow_client_to_host_with_trusted_sender() {
     );
     assert_eq!(
         client.take_events(),
-        vec![NetEvent::App {
+        vec![MultiplayerEvent::App {
             from: 1,
             name: "score".into(),
             text: "1".into()
@@ -168,7 +171,7 @@ fn host_expires_silent_clients_and_dropped_clients_say_bye() {
     host.poll(now + PEER_TIMEOUT + Duration::from_millis(1));
     assert_eq!(
         host.take_events(),
-        vec![NetEvent::PeerLeft {
+        vec![MultiplayerEvent::PeerLeft {
             peer_id: 2,
             name: "dan".into()
         }]
@@ -182,7 +185,7 @@ fn host_expires_silent_clients_and_dropped_clients_say_bye() {
     host.poll(now);
     assert_eq!(
         host.take_events(),
-        vec![NetEvent::PeerLeft {
+        vec![MultiplayerEvent::PeerLeft {
             peer_id: 2,
             name: "dan".into()
         }]
@@ -196,6 +199,6 @@ fn client_send_before_welcome_is_an_error() {
     let probe = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
     let addr = probe.local_addr().unwrap().to_string();
     drop(probe);
-    let mut client = NetEndpoint::bind(NetRole::Client, &addr, "dan", now).unwrap();
+    let mut client = MultiplayerEndpoint::bind(MultiplayerRole::Client, &addr, "dan", now).unwrap();
     assert!(client.send_app("x", "y").is_err());
 }

@@ -92,7 +92,7 @@ impl Packet {
         let bytes = serde_json::to_vec(self).map_err(|e| e.to_string())?;
         if bytes.len() > MAX_DATAGRAM {
             return Err(format!(
-                "net packet is {} bytes, exceeds {MAX_DATAGRAM}",
+                "multiplayer packet is {} bytes, exceeds {MAX_DATAGRAM}",
                 bytes.len()
             ));
         }

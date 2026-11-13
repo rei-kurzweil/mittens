@@ -4,16 +4,16 @@
 //! authoritative here. The legacy registry remains the host implementation
 //! while its declarations move into this specification.
 
+#[path = "runtime_component_common.rs"]
+pub(super) mod component_common;
+#[path = "registries/eye_tracking_runtime_config.rs"]
+mod eye_tracking_runtime_config;
+#[path = "registries/multiplayer_runtime_config.rs"]
+mod multiplayer_runtime_config;
 #[path = "registries/renderable_runtime_config.rs"]
 mod renderable_runtime_config;
 #[path = "registries/spring_runtime_config.rs"]
 mod spring_runtime_config;
-#[path = "registries/eye_tracking_runtime_config.rs"]
-mod eye_tracking_runtime_config;
-#[path = "registries/net_runtime_config.rs"]
-mod net_runtime_config;
-#[path = "runtime_component_common.rs"]
-pub(super) mod component_common;
 use meow_meow_script as mms;
 #[path = "builtin_api_config.rs"]
 mod builtin_api_config;
@@ -444,8 +444,16 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     constructor_and_builder(component, "bind", strings(1));
                     constructor_and_builder(component, "enabled", booleans(1));
                 }
-                "XREyeTracking" | "XREyeTrackingHTC" | "VRChatOSCEyeTracking" | "HTCEyeTracking" | "MediaPipeEyeTracking" => eye_tracking_runtime_config::configure(component,canonical),
-                "NetSession" | "NetSync" => net_runtime_config::configure(component, canonical),
+                "XREyeTracking"
+                | "XREyeTrackingHTC"
+                | "VRChatOSCEyeTracking"
+                | "HTCEyeTracking"
+                | "MediaPipeEyeTracking" => {
+                    eye_tracking_runtime_config::configure(component, canonical)
+                }
+                "MultiplayerSession" | "MultiplayerSync" => {
+                    multiplayer_runtime_config::configure(component, canonical)
+                }
                 "GridBinding" => {
                     component.constructor("grid", any(1));
                 }
@@ -1356,11 +1364,11 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "HttpRequest",
         "HttpResponse",
         "HttpError",
-        "NetConnected",
-        "NetPeerJoined",
-        "NetPeerLeft",
-        "NetMessage",
-        "NetError",
+        "MultiplayerConnected",
+        "MultiplayerPeerJoined",
+        "MultiplayerPeerLeft",
+        "MultiplayerMessage",
+        "MultiplayerError",
         "XrEyeTrackingUpdated",
         "XrEyeTrackingHtcUpdated",
     ] {

@@ -73,14 +73,14 @@ use crate::scripting::token::expand_component_shortform;
 use std::cell::RefCell;
 #[path = "registries/editor_ui_registry.rs"]
 mod editor_ui_registry;
-#[path = "registries/xr_gamepad_registry.rs"]
-mod xr_gamepad_registry;
-#[path = "registries/gravity_registry.rs"]
-pub(super) mod gravity_registry;
 #[path = "registries/geometry_registry.rs"]
 mod geometry_registry;
-#[path = "registries/net_registry.rs"]
-pub(super) mod net_registry;
+#[path = "registries/gravity_registry.rs"]
+pub(super) mod gravity_registry;
+#[path = "registries/multiplayer_registry.rs"]
+pub(super) mod multiplayer_registry;
+#[path = "registries/xr_gamepad_registry.rs"]
+mod xr_gamepad_registry;
 use editor_ui_registry::parse_editor_ui_panel_specs;
 #[path = "registries/interaction_registry.rs"]
 mod interaction_registry;
@@ -155,8 +155,8 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "HtmlElement",
     "HttpClient",
     "HttpServer",
-    "NetSession",
-    "NetSync",
+    "MultiplayerSession",
+    "MultiplayerSync",
     "XREyeTracking",
     "Zone",
     "XREyeTrackingHTC",
@@ -1793,7 +1793,7 @@ fn create_component(
             }
             add!(c)
         }
-        "NetSession" | "NetSync" => net_registry::create(world, type_name, ctor, args),
+        "MultiplayerSession" | "MultiplayerSync" => multiplayer_registry::create(world, type_name, ctor, args),
         "XREyeTracking" => match ctor { Some("on") | None => add!(XREyeTrackingComponent::on()), Some("listen") => add!(XREyeTrackingComponent::listen(arg_str(args, 0)?, arg_f32(args, 1)? as u16)), Some(method) => Err(format!("XREyeTracking: unknown constructor '{method}'")) },
         "XREyeTrackingHTC" => match ctor { Some("on") | None => add!(XREyeTrackingHtcComponent::on()), Some("listen") => add!(XREyeTrackingHtcComponent::listen(arg_str(args, 0)?, arg_f32(args, 1)? as u16)), Some(method) => Err(format!("XREyeTrackingHTC: unknown constructor '{method}'")) },
         "VRChatOSCEyeTracking" => match ctor { Some("on") | None => add!(VRChatOSCEyeTrackingComponent::on()), Some("listen") => add!(VRChatOSCEyeTrackingComponent::listen(arg_str(args, 0)?, arg_f32(args, 1)? as u16)), Some(method) => Err(format!("VRChatOSCEyeTracking: unknown constructor '{method}'")) },
@@ -2969,18 +2969,32 @@ fn apply_call(
         return geometry_registry::apply(world, id, method, args);
     }
     if world
-        .get_component_by_id_as::<crate::engine::ecs::component::NetSessionComponent>(id)
+        .get_component_by_id_as::<crate::engine::ecs::component::MultiplayerSessionComponent>(id)
         .is_some()
     {
-        return net_registry::apply(world, id, method, args);
+        return multiplayer_registry::apply(world, id, method, args);
     }
-    if world.get_component_by_id_as::<XREyeTrackingComponent>(id).is_some()
-        || world.get_component_by_id_as::<XREyeTrackingHtcComponent>(id).is_some()
-        || world.get_component_by_id_as::<VRChatOSCEyeTrackingComponent>(id).is_some()
-        || world.get_component_by_id_as::<HTCEyeTrackingComponent>(id).is_some()
-        || world.get_component_by_id_as::<MediaPipeEyeTrackingComponent>(id).is_some()
-        || (matches!(method,"idle_blink"|"blink_interval"|"blink_duration") && world.get_component_by_id_as::<AvatarControlComponent>(id).is_some()) {
-        return eye_tracking_registry::apply(world,id,method,args);
+    if world
+        .get_component_by_id_as::<XREyeTrackingComponent>(id)
+        .is_some()
+        || world
+            .get_component_by_id_as::<XREyeTrackingHtcComponent>(id)
+            .is_some()
+        || world
+            .get_component_by_id_as::<VRChatOSCEyeTrackingComponent>(id)
+            .is_some()
+        || world
+            .get_component_by_id_as::<HTCEyeTrackingComponent>(id)
+            .is_some()
+        || world
+            .get_component_by_id_as::<MediaPipeEyeTrackingComponent>(id)
+            .is_some()
+        || (matches!(method, "idle_blink" | "blink_interval" | "blink_duration")
+            && world
+                .get_component_by_id_as::<AvatarControlComponent>(id)
+                .is_some())
+    {
+        return eye_tracking_registry::apply(world, id, method, args);
     }
     if world
         .get_component_by_id_as::<DraggableComponent>(id)

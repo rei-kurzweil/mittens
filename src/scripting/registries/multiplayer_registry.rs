@@ -1,7 +1,7 @@
 //! Multiplayer session and replication authoring bindings.
 use super::{ComponentId, Value, World, arg_bool, arg_f32, arg_str};
 use crate::engine::ecs::IntentValue;
-use crate::engine::ecs::component::{NetSessionComponent, NetSyncComponent};
+use crate::engine::ecs::component::{MultiplayerSessionComponent, MultiplayerSyncComponent};
 
 pub(super) fn create(
     world: &mut World,
@@ -10,17 +10,17 @@ pub(super) fn create(
     args: &[Value],
 ) -> Result<ComponentId, String> {
     match ty {
-        "NetSession" => {
+        "MultiplayerSession" => {
             let session = match ctor {
-                None => NetSessionComponent::default(),
+                None => MultiplayerSessionComponent::default(),
                 Some("host") => match args {
-                    [] => NetSessionComponent::default(),
-                    _ => NetSessionComponent::host(arg_str(args, 0)?),
+                    [] => MultiplayerSessionComponent::default(),
+                    _ => MultiplayerSessionComponent::host(arg_str(args, 0)?),
                 },
-                Some("join") => NetSessionComponent::join(arg_str(args, 0)?),
-                Some("from_env") => NetSessionComponent::from_env()?,
+                Some("join") => MultiplayerSessionComponent::join(arg_str(args, 0)?),
+                Some("from_env") => MultiplayerSessionComponent::from_env()?,
                 Some(method) => {
-                    let id = world.add_component(NetSessionComponent::default());
+                    let id = world.add_component(MultiplayerSessionComponent::default());
                     if let Err(error) = apply(world, id, method, args) {
                         let _ = world.remove_component_subtree(id);
                         return Err(error);
@@ -30,12 +30,14 @@ pub(super) fn create(
             };
             Ok(world.add_component(session))
         }
-        "NetSync" => {
+        "MultiplayerSync" => {
             let sync = match ctor {
-                Some("host") => NetSyncComponent::host(arg_str(args, 0)?),
-                Some("local_player") | None => NetSyncComponent::local_player(),
-                Some("remote_player") => NetSyncComponent::remote_player(peer_id(args)?),
-                Some(method) => return Err(format!("NetSync: unknown constructor '{method}'")),
+                Some("host") => MultiplayerSyncComponent::host(arg_str(args, 0)?),
+                Some("local_player") | None => MultiplayerSyncComponent::local_player(),
+                Some("remote_player") => MultiplayerSyncComponent::remote_player(peer_id(args)?),
+                Some(method) => {
+                    return Err(format!("MultiplayerSync: unknown constructor '{method}'"));
+                }
             };
             Ok(world.add_component(sync))
         }
@@ -43,7 +45,7 @@ pub(super) fn create(
     }
 }
 
-/// Builder calls on `NetSession`. They take effect at registration.
+/// Builder calls on `MultiplayerSession`. They take effect at registration.
 pub(super) fn apply(
     world: &mut World,
     id: ComponentId,
@@ -51,13 +53,13 @@ pub(super) fn apply(
     args: &[Value],
 ) -> Result<(), String> {
     let session = world
-        .get_component_by_id_as_mut::<NetSessionComponent>(id)
-        .ok_or("not a NetSession component")?;
+        .get_component_by_id_as_mut::<MultiplayerSessionComponent>(id)
+        .ok_or("not a MultiplayerSession component")?;
     match method {
         "player_name" => session.player_name = arg_str(args, 0)?.to_string(),
         "tick_hz" => session.tick_hz = arg_f32(args, 0)?,
         "enabled" => session.enabled = arg_bool(args, 0)?,
-        _ => return Err(format!("NetSession: unknown builder '{method}'")),
+        _ => return Err(format!("MultiplayerSession: unknown builder '{method}'")),
     }
     Ok(())
 }
@@ -70,8 +72,8 @@ pub(crate) fn call(
     mut emit_intent: impl FnMut(IntentValue),
 ) -> Result<Value, String> {
     let session = world
-        .get_component_by_id_as::<NetSessionComponent>(id)
-        .ok_or_else(|| format!("{method}(): not a NetSession component"))?;
+        .get_component_by_id_as::<MultiplayerSessionComponent>(id)
+        .ok_or_else(|| format!("{method}(): not a MultiplayerSession component"))?;
     let no_args = || {
         args.is_empty()
             .then_some(())
@@ -82,7 +84,7 @@ pub(crate) fn call(
             let [Value::String(name), Value::String(text)] = args else {
                 return Err("send(): expected (name: string, text: string)".into());
             };
-            emit_intent(IntentValue::NetSend {
+            emit_intent(IntentValue::MultiplayerSend {
                 component_id: id,
                 name: name.clone(),
                 text: text.clone(),
@@ -92,14 +94,16 @@ pub(crate) fn call(
         "is_host" => no_args().map(|_| Value::Bool(session.is_host())),
         "peer_id" => no_args().map(|_| Value::Number(session.peer_id as f64)),
         "local_name" => no_args().map(|_| Value::String(session.player_name.clone())),
-        _ => Err(format!("NetSession: unknown method '{method}'")),
+        _ => Err(format!("MultiplayerSession: unknown method '{method}'")),
     }
 }
 
 fn peer_id(args: &[Value]) -> Result<u32, String> {
     let id = arg_f32(args, 0)?;
     if id.fract() != 0.0 || !(1.0..=u32::MAX as f32).contains(&id) {
-        return Err(format!("NetSync.remote_player: invalid peer id {id}"));
+        return Err(format!(
+            "MultiplayerSync.remote_player: invalid peer id {id}"
+        ));
     }
     Ok(id as u32)
 }

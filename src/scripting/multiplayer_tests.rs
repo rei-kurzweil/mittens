@@ -25,12 +25,12 @@ const SHARED: &str = r#"
 let proxies = T { name = "proxies" }
 proxies
 fn remote_player(event) {
-    return T { name = "proxy_" + event.name  NetSync.remote_player(event.peer_id) }
+    return T { name = "proxy_" + event.name  MultiplayerSync.remote_player(event.peer_id) }
 }
-on(net, "NetPeerJoined", fn(event) { proxies.attach(remote_player(event)) })
+on(net, "MultiplayerPeerJoined", fn(event) { proxies.attach(remote_player(event)) })
 Gravity.enabled(true) {
     Velocity { name = "ball_velocity"
-        T.position(0.0, 5.0, 0.0) { name = "ball" NetSync.host("ball") }
+        T.position(0.0, 5.0, 0.0) { name = "ball" MultiplayerSync.host("ball") }
     }
 }
 "#;
@@ -39,11 +39,11 @@ Gravity.enabled(true) {
 fn host_and_client_replicate_players_host_physics_and_messages() {
     let host_source = format!(
         r#"
-let net = NetSession.host("127.0.0.1:47011").player_name("rei") {{}}
+let net = MultiplayerSession.host("127.0.0.1:47011").player_name("rei") {{}}
 net
-T.position(1.0, 2.0, 3.0) {{ name = "local_player" NetSync.local_player() }}
+T.position(1.0, 2.0, 3.0) {{ name = "local_player" MultiplayerSync.local_player() }}
 T {{ name = "message_flag" }}
-on(net, "NetMessage", fn(event) {{
+on(net, "MultiplayerMessage", fn(event) {{
     if event.name == "hello" && event.text == "dan" {{
         query("[name='message_flag']").update_transform([7.0, 7.0, 7.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
     }}
@@ -52,10 +52,10 @@ on(net, "NetMessage", fn(event) {{
     );
     let client_source = format!(
         r#"
-let net = NetSession.join("127.0.0.1:47011").player_name("dan") {{}}
+let net = MultiplayerSession.join("127.0.0.1:47011").player_name("dan") {{}}
 net
-T.position(-4.0, 0.0, 1.5) {{ name = "local_player" NetSync.local_player() }}
-on(net, "NetConnected", fn(event) {{ net.send("hello", net.local_name()) }})
+T.position(-4.0, 0.0, 1.5) {{ name = "local_player" MultiplayerSync.local_player() }}
+on(net, "MultiplayerConnected", fn(event) {{ net.send("hello", net.local_name()) }})
 {SHARED}"#
     );
     let mut host = load(&host_source, "examples/_net-host-test.mms");
@@ -120,15 +120,15 @@ fn status_text(scene: &Universe) -> String {
 fn multiplayer_basic_example_runs_as_host_and_client() {
     let source = std::fs::read_to_string("examples/multiplayer-basic.mms").unwrap();
     let configured = |session: &str| {
-        assert!(source.contains("NetSession.from_env()"));
-        source.replace("NetSession.from_env()", session)
+        assert!(source.contains("MultiplayerSession.from_env()"));
+        source.replace("MultiplayerSession.from_env()", session)
     };
     let mut host = load(
-        &configured(r#"NetSession.host("127.0.0.1:47012").player_name("rei")"#),
+        &configured(r#"MultiplayerSession.host("127.0.0.1:47012").player_name("rei")"#),
         "examples/multiplayer-basic.mms",
     );
     let mut client = load(
-        &configured(r#"NetSession.join("127.0.0.1:47012").player_name("dan")"#),
+        &configured(r#"MultiplayerSession.join("127.0.0.1:47012").player_name("dan")"#),
         "examples/multiplayer-basic.mms",
     );
     for _ in 0..90 {

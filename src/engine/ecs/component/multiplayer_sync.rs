@@ -4,7 +4,7 @@ use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter};
 
 /// Who writes the replicated pose of the parent transform.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NetAuthority {
+pub enum MultiplayerAuthority {
     /// Host simulates and publishes; clients apply. A client disables the
     /// nearest `Velocity` driving the transform so it never simulates locally.
     Host { key: String },
@@ -15,27 +15,27 @@ pub enum NetAuthority {
 }
 
 /// Replicates the world pose of its parent `Transform` through the active
-/// `NetSession`. Poses are applied as-received (no interpolation yet).
+/// `MultiplayerSession`. Poses are applied as-received (no interpolation yet).
 #[derive(Debug, Clone)]
-pub struct NetSyncComponent {
-    pub authority: NetAuthority,
+pub struct MultiplayerSyncComponent {
+    pub authority: MultiplayerAuthority,
     component: Option<ComponentId>,
 }
 
-impl NetSyncComponent {
+impl MultiplayerSyncComponent {
     pub fn host(key: impl Into<String>) -> Self {
-        Self::new(NetAuthority::Host { key: key.into() })
+        Self::new(MultiplayerAuthority::Host { key: key.into() })
     }
 
     pub fn local_player() -> Self {
-        Self::new(NetAuthority::LocalPlayer)
+        Self::new(MultiplayerAuthority::LocalPlayer)
     }
 
     pub fn remote_player(peer_id: u32) -> Self {
-        Self::new(NetAuthority::RemotePlayer { peer_id })
+        Self::new(MultiplayerAuthority::RemotePlayer { peer_id })
     }
 
-    fn new(authority: NetAuthority) -> Self {
+    fn new(authority: MultiplayerAuthority) -> Self {
         Self {
             authority,
             component: None,
@@ -43,9 +43,9 @@ impl NetSyncComponent {
     }
 }
 
-impl Component for NetSyncComponent {
+impl Component for MultiplayerSyncComponent {
     fn name(&self) -> &'static str {
-        "net_sync"
+        "multiplayer_sync"
     }
 
     fn set_id(&mut self, component: ComponentId) {
@@ -63,7 +63,7 @@ impl Component for NetSyncComponent {
     fn init(&mut self, emit: &mut dyn SignalEmitter, component: ComponentId) {
         emit.push_intent_now(
             component,
-            IntentValue::RegisterNetSync {
+            IntentValue::RegisterMultiplayerSync {
                 component_id: component,
             },
         );
@@ -74,11 +74,13 @@ impl Component for NetSyncComponent {
         _world: &crate::engine::ecs::World,
     ) -> crate::scripting::ast::ComponentExpression {
         match &self.authority {
-            NetAuthority::Host { key } => ce_call("NetSync", "host", vec![s(key)]),
-            NetAuthority::LocalPlayer => ce_call("NetSync", "local_player", vec![]),
-            NetAuthority::RemotePlayer { peer_id } => {
-                ce_call("NetSync", "remote_player", vec![num(*peer_id as f64)])
-            }
+            MultiplayerAuthority::Host { key } => ce_call("MultiplayerSync", "host", vec![s(key)]),
+            MultiplayerAuthority::LocalPlayer => ce_call("MultiplayerSync", "local_player", vec![]),
+            MultiplayerAuthority::RemotePlayer { peer_id } => ce_call(
+                "MultiplayerSync",
+                "remote_player",
+                vec![num(*peer_id as f64)],
+            ),
         }
     }
 }

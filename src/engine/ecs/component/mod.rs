@@ -54,8 +54,6 @@ pub mod hand_tracking;
 pub mod html_element;
 pub mod http_client;
 pub mod http_server;
-pub mod net_session;
-pub mod net_sync;
 pub mod humanoid_bone_map;
 pub mod ik_chain;
 pub mod implicit_surface;
@@ -75,6 +73,8 @@ pub mod mesh;
 pub mod mirror;
 pub mod morph_target;
 pub mod mountable;
+pub mod multiplayer_session;
+pub mod multiplayer_sync;
 pub mod music_note;
 pub mod normal_visualisation;
 pub mod opacity;
@@ -291,8 +291,6 @@ pub use hand_tracking::HandTrackingComponent;
 pub use html_element::{ElementType, HtmlElementComponent};
 pub use http_client::HttpClientComponent;
 pub use http_server::HttpServerComponent;
-pub use net_session::{NET_DEFAULT_PORT, NetRole, NetSessionComponent};
-pub use net_sync::{NetAuthority, NetSyncComponent};
 pub use humanoid_bone_map::{AuthoredSlot, HumanoidBoneMapComponent, HumanoidSlot};
 pub use ik_chain::{IKChainComponent, IKSolver};
 pub use implicit_surface::{ImplicitSphereComponent, ImplicitSurfaceComponent};
@@ -316,6 +314,10 @@ pub use morph_target::{
     MorphTargetMapComponent,
 };
 pub use mountable::MountableComponent;
+pub use multiplayer_session::{
+    MULTIPLAYER_DEFAULT_PORT, MultiplayerRole, MultiplayerSessionComponent,
+};
+pub use multiplayer_sync::{MultiplayerAuthority, MultiplayerSyncComponent};
 pub(crate) use music_note::NotePitch;
 pub use music_note::{MusicNote, MusicNoteComponent};
 pub use normal_visualisation::NormalVisualisationComponent;

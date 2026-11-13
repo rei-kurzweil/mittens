@@ -1,26 +1,27 @@
-//! Multiplayer first slice: one `NetSession` per process, host-authoritative
+//! Multiplayer first slice: one `MultiplayerSession` per process, host-authoritative
 //! world entities, peer-owned player poses, and app messages over UDP.
 //!
 //! Deliberately absent (stubbed at the marked TODOs): snapshot interpolation,
 //! client prediction/reconciliation, reliable channels, interest management,
 //! delta compression, late-join entity spawning, and NAT traversal.
-#[path = "net_system/endpoint.rs"]
+#[path = "multiplayer_system/endpoint.rs"]
 mod endpoint;
-#[path = "net_system/protocol.rs"]
+#[path = "multiplayer_system/protocol.rs"]
 mod protocol;
 #[cfg(test)]
-#[path = "net_system/tests.rs"]
+#[path = "multiplayer_system/tests.rs"]
 mod tests;
-#[path = "net_system/transport.rs"]
+#[path = "multiplayer_system/transport.rs"]
 mod transport;
 
 use crate::engine::ecs::component::{
-    NetAuthority, NetSessionComponent, NetSyncComponent, TransformComponent, VelocityComponent,
+    MultiplayerAuthority, MultiplayerSessionComponent, MultiplayerSyncComponent,
+    TransformComponent, VelocityComponent,
 };
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, World};
 use crate::engine::transform::{TransformSpace, TransformTrs};
-use endpoint::{NetEndpoint, NetEvent};
+use endpoint::{MultiplayerEndpoint, MultiplayerEvent};
 use protocol::Pose;
 use std::collections::BTreeMap;
 use std::time::Instant;
@@ -28,27 +29,28 @@ use std::time::Instant;
 #[derive(Debug)]
 struct SessionRuntime {
     component: ComponentId,
-    endpoint: NetEndpoint,
+    endpoint: MultiplayerEndpoint,
     send_interval_sec: f32,
     send_accumulator_sec: f32,
     tick: u64,
 }
 
 #[derive(Debug, Default)]
-pub struct NetSystem {
+pub struct MultiplayerSystem {
     session: Option<SessionRuntime>,
-    /// Registered `NetSync` components. Ordered so publishing is deterministic.
-    syncs: BTreeMap<ComponentId, NetAuthority>,
+    /// Registered `MultiplayerSync` components. Ordered so publishing is deterministic.
+    syncs: BTreeMap<ComponentId, MultiplayerAuthority>,
 }
 
-impl NetSystem {
+impl MultiplayerSystem {
     pub fn register_session(
         &mut self,
         world: &mut World,
         emit: &mut dyn SignalEmitter,
         component: ComponentId,
     ) {
-        let Some(config) = world.get_component_by_id_as::<NetSessionComponent>(component) else {
+        let Some(config) = world.get_component_by_id_as::<MultiplayerSessionComponent>(component)
+        else {
             return;
         };
         if !config.enabled {
@@ -58,9 +60,9 @@ impl NetSystem {
             if active.component != component {
                 emit.push_event(
                     component,
-                    EventSignal::NetError {
+                    EventSignal::MultiplayerError {
                         phase: "configuration".into(),
-                        message: "only one NetSession may be active per process".into(),
+                        message: "only one MultiplayerSession may be active per process".into(),
                     },
                 );
                 return;
@@ -71,7 +73,7 @@ impl NetSystem {
         } else {
             20.0
         };
-        match NetEndpoint::bind(
+        match MultiplayerEndpoint::bind(
             config.role,
             &config.addr,
             &config.player_name,
@@ -80,7 +82,7 @@ impl NetSystem {
             Ok(endpoint) => {
                 if let Some(addr) = endpoint.local_addr() {
                     eprintln!(
-                        "[net] {} '{}' bound {addr}",
+                        "[multiplayer] {} '{}' bound {addr}",
                         if endpoint.is_host() { "host" } else { "client" },
                         config.player_name
                     );
@@ -95,7 +97,7 @@ impl NetSystem {
             }
             Err(message) => emit.push_event(
                 component,
-                EventSignal::NetError {
+                EventSignal::MultiplayerError {
                     phase: "bind".into(),
                     message,
                 },
@@ -104,12 +106,12 @@ impl NetSystem {
     }
 
     pub fn register_sync(&mut self, world: &World, component: ComponentId) {
-        if let Some(sync) = world.get_component_by_id_as::<NetSyncComponent>(component) {
+        if let Some(sync) = world.get_component_by_id_as::<MultiplayerSyncComponent>(component) {
             self.syncs.insert(component, sync.authority.clone());
         }
     }
 
-    /// Teardown for a removed `NetSession` or `NetSync`.
+    /// Teardown for a removed `MultiplayerSession` or `MultiplayerSync`.
     pub fn component_removed(&mut self, component: ComponentId) {
         self.syncs.remove(&component);
         if self
@@ -133,12 +135,12 @@ impl NetSystem {
             Some(session) if session.component == component => {
                 session.endpoint.send_app(name, text)
             }
-            _ => Err("NetSession is not active".to_string()),
+            _ => Err("MultiplayerSession is not active".to_string()),
         };
         if let Err(message) = result {
             emit.push_event(
                 component,
-                EventSignal::NetError {
+                EventSignal::MultiplayerError {
                     phase: "send".into(),
                     message,
                 },
@@ -157,8 +159,9 @@ impl NetSystem {
         let scope = session.component;
 
         for event in session.endpoint.take_events() {
-            if let NetEvent::Connected { peer_id } = &event {
-                if let Some(config) = world.get_component_by_id_as_mut::<NetSessionComponent>(scope)
+            if let MultiplayerEvent::Connected { peer_id } = &event {
+                if let Some(config) =
+                    world.get_component_by_id_as_mut::<MultiplayerSessionComponent>(scope)
                 {
                     config.peer_id = *peer_id;
                 }
@@ -167,13 +170,13 @@ impl NetSystem {
         }
 
         // Apply latest received poses as-is.
-        // TODO(net): buffer snapshots and interpolate ~100 ms behind; extrapolate on loss.
+        // TODO(multiplayer): buffer snapshots and interpolate ~100 ms behind; extrapolate on loss.
         let players = session.endpoint.take_remote_players();
         let entities = session.endpoint.take_host_entities();
         for (&sync, authority) in &self.syncs {
             let pose = match authority {
-                NetAuthority::RemotePlayer { peer_id } => players.get(peer_id),
-                NetAuthority::Host { key } if !is_host => {
+                MultiplayerAuthority::RemotePlayer { peer_id } => players.get(peer_id),
+                MultiplayerAuthority::Host { key } if !is_host => {
                     disable_local_simulation(world, sync);
                     entities.get(key)
                 }
@@ -207,8 +210,10 @@ impl NetSystem {
         for (&sync, authority) in &self.syncs {
             let pose = || sync_target(world, sync).and_then(|t| world_pose(world, t));
             match authority {
-                NetAuthority::LocalPlayer if local_player.is_none() => local_player = pose(),
-                NetAuthority::Host { key } if is_host => {
+                MultiplayerAuthority::LocalPlayer if local_player.is_none() => {
+                    local_player = pose()
+                }
+                MultiplayerAuthority::Host { key } if is_host => {
                     if let Some(pose) = pose() {
                         owned_entities.push((key.clone(), pose));
                     }
@@ -222,20 +227,28 @@ impl NetSystem {
     }
 }
 
-fn to_signal(event: NetEvent, is_host: bool) -> EventSignal {
+fn to_signal(event: MultiplayerEvent, is_host: bool) -> EventSignal {
     match event {
-        NetEvent::Connected { peer_id } => EventSignal::NetConnected { peer_id, is_host },
-        NetEvent::PeerJoined { peer_id, name } => EventSignal::NetPeerJoined { peer_id, name },
-        NetEvent::PeerLeft { peer_id, name } => EventSignal::NetPeerLeft { peer_id, name },
-        NetEvent::App { from, name, text } => EventSignal::NetMessage { from, name, text },
-        NetEvent::Error { phase, message } => EventSignal::NetError {
+        MultiplayerEvent::Connected { peer_id } => {
+            EventSignal::MultiplayerConnected { peer_id, is_host }
+        }
+        MultiplayerEvent::PeerJoined { peer_id, name } => {
+            EventSignal::MultiplayerPeerJoined { peer_id, name }
+        }
+        MultiplayerEvent::PeerLeft { peer_id, name } => {
+            EventSignal::MultiplayerPeerLeft { peer_id, name }
+        }
+        MultiplayerEvent::App { from, name, text } => {
+            EventSignal::MultiplayerMessage { from, name, text }
+        }
+        MultiplayerEvent::Error { phase, message } => EventSignal::MultiplayerError {
             phase: phase.into(),
             message,
         },
     }
 }
 
-/// A `NetSync` replicates its parent transform.
+/// A `MultiplayerSync` replicates its parent transform.
 fn sync_target(world: &World, sync: ComponentId) -> Option<ComponentId> {
     world.parent_of(sync).filter(|&parent| {
         world
@@ -254,7 +267,7 @@ fn world_pose(world: &World, target: ComponentId) -> Option<Pose> {
     pose.is_finite().then_some(pose)
 }
 
-/// Clients never integrate host-owned bodies: `Velocity { T { NetSync.host(..) } }`.
+/// Clients never integrate host-owned bodies: `Velocity { T { MultiplayerSync.host(..) } }`.
 fn disable_local_simulation(world: &mut World, sync: ComponentId) {
     let Some(velocity) = sync_target(world, sync).and_then(|t| world.parent_of(t)) else {
         return;

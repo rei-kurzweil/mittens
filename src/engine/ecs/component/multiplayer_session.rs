@@ -2,13 +2,13 @@ use super::Component;
 use crate::engine::ecs::component::ce_helpers::*;
 use crate::engine::ecs::{ComponentId, IntentValue, SignalEmitter};
 
-/// Default UDP port for `NetSession.host()` / `NetSession.join()` without a port.
-pub const NET_DEFAULT_PORT: u16 = 7010;
+/// Default UDP port for `MultiplayerSession.host()` / `MultiplayerSession.join()` without a port.
+pub const MULTIPLAYER_DEFAULT_PORT: u16 = 7010;
 
 /// Which side of a session this process plays. The host owns world/physics
 /// authority; clients own only their local player pose.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum NetRole {
+pub enum MultiplayerRole {
     #[default]
     Host,
     Client,
@@ -17,8 +17,8 @@ pub enum NetRole {
 /// One multiplayer session endpoint. `addr` is the bind address for a host and
 /// the host's address for a client.
 #[derive(Debug, Clone)]
-pub struct NetSessionComponent {
-    pub role: NetRole,
+pub struct MultiplayerSessionComponent {
+    pub role: MultiplayerRole,
     pub addr: String,
     pub player_name: String,
     /// Snapshot/pose send rate. Receiving is polled every frame.
@@ -29,11 +29,11 @@ pub struct NetSessionComponent {
     component: Option<ComponentId>,
 }
 
-impl Default for NetSessionComponent {
+impl Default for MultiplayerSessionComponent {
     fn default() -> Self {
         Self {
-            role: NetRole::Host,
-            addr: format!("0.0.0.0:{NET_DEFAULT_PORT}"),
+            role: MultiplayerRole::Host,
+            addr: format!("0.0.0.0:{MULTIPLAYER_DEFAULT_PORT}"),
             player_name: "player".to_string(),
             tick_hz: 20.0,
             enabled: true,
@@ -43,10 +43,10 @@ impl Default for NetSessionComponent {
     }
 }
 
-impl NetSessionComponent {
+impl MultiplayerSessionComponent {
     pub fn host(bind_addr: impl Into<String>) -> Self {
         Self {
-            role: NetRole::Host,
+            role: MultiplayerRole::Host,
             addr: bind_addr.into(),
             ..Self::default()
         }
@@ -54,36 +54,36 @@ impl NetSessionComponent {
 
     pub fn join(host_addr: impl Into<String>) -> Self {
         Self {
-            role: NetRole::Client,
+            role: MultiplayerRole::Client,
             addr: host_addr.into(),
             ..Self::default()
         }
     }
 
     /// Development launcher configuration:
-    /// `MITTENS_NET_ROLE` (`host` | `client`, default `host`),
-    /// `MITTENS_NET_ADDR` (bind address for host, host address for client),
-    /// `MITTENS_NET_NAME` (player name).
+    /// `MITTENS_MULTIPLAYER_ROLE` (`host` | `client`, default `host`),
+    /// `MITTENS_MULTIPLAYER_ADDR` (bind address for host, host address for client),
+    /// `MITTENS_MULTIPLAYER_NAME` (player name).
     pub fn from_env() -> Result<Self, String> {
-        let role = match std::env::var("MITTENS_NET_ROLE").as_deref() {
-            Ok("host") | Err(_) => NetRole::Host,
-            Ok("client" | "join") => NetRole::Client,
+        let role = match std::env::var("MITTENS_MULTIPLAYER_ROLE").as_deref() {
+            Ok("host") | Err(_) => MultiplayerRole::Host,
+            Ok("client" | "join") => MultiplayerRole::Client,
             Ok(other) => {
                 return Err(format!(
-                    "MITTENS_NET_ROLE must be 'host' or 'client', got '{other}'"
+                    "MITTENS_MULTIPLAYER_ROLE must be 'host' or 'client', got '{other}'"
                 ));
             }
         };
-        let addr = std::env::var("MITTENS_NET_ADDR").unwrap_or_else(|_| match role {
-            NetRole::Host => format!("0.0.0.0:{NET_DEFAULT_PORT}"),
-            NetRole::Client => format!("127.0.0.1:{NET_DEFAULT_PORT}"),
+        let addr = std::env::var("MITTENS_MULTIPLAYER_ADDR").unwrap_or_else(|_| match role {
+            MultiplayerRole::Host => format!("0.0.0.0:{MULTIPLAYER_DEFAULT_PORT}"),
+            MultiplayerRole::Client => format!("127.0.0.1:{MULTIPLAYER_DEFAULT_PORT}"),
         });
         let mut session = Self {
             role,
             addr,
             ..Self::default()
         };
-        if let Ok(name) = std::env::var("MITTENS_NET_NAME") {
+        if let Ok(name) = std::env::var("MITTENS_MULTIPLAYER_NAME") {
             session.player_name = name;
         }
         Ok(session)
@@ -105,13 +105,13 @@ impl NetSessionComponent {
     }
 
     pub fn is_host(&self) -> bool {
-        self.role == NetRole::Host
+        self.role == MultiplayerRole::Host
     }
 }
 
-impl Component for NetSessionComponent {
+impl Component for MultiplayerSessionComponent {
     fn name(&self) -> &'static str {
-        "net_session"
+        "multiplayer_session"
     }
 
     fn set_id(&mut self, component: ComponentId) {
@@ -129,7 +129,7 @@ impl Component for NetSessionComponent {
     fn init(&mut self, emit: &mut dyn SignalEmitter, component: ComponentId) {
         emit.push_intent_now(
             component,
-            IntentValue::RegisterNetSession {
+            IntentValue::RegisterMultiplayerSession {
                 component_id: component,
             },
         );
@@ -140,10 +140,10 @@ impl Component for NetSessionComponent {
         _world: &crate::engine::ecs::World,
     ) -> crate::scripting::ast::ComponentExpression {
         let ctor = match self.role {
-            NetRole::Host => "host",
-            NetRole::Client => "join",
+            MultiplayerRole::Host => "host",
+            MultiplayerRole::Client => "join",
         };
-        let mut ce = ce_call("NetSession", ctor, vec![s(&self.addr)])
+        let mut ce = ce_call("MultiplayerSession", ctor, vec![s(&self.addr)])
             .with_call("player_name", vec![s(&self.player_name)]);
         if self.tick_hz != Self::default().tick_hz {
             ce = ce.with_call("tick_hz", vec![num(self.tick_hz as f64)]);

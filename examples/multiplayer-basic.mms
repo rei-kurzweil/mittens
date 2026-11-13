@@ -2,14 +2,14 @@
 // The host owns physics (the bouncing ball); each player owns their own pose.
 // No interpolation yet, so remote motion steps at the 20 Hz send rate.
 //
-//   MITTENS_NET_ROLE=host   MITTENS_NET_NAME=rei cargo run --release -- load examples/multiplayer-basic.mms
-//   MITTENS_NET_ROLE=client MITTENS_NET_NAME=dan cargo run --release -- load examples/multiplayer-basic.mms
+//   MITTENS_MULTIPLAYER_ROLE=host   MITTENS_MULTIPLAYER_NAME=rei cargo run --release -- load examples/multiplayer-basic.mms
+//   MITTENS_MULTIPLAYER_ROLE=client MITTENS_MULTIPLAYER_NAME=dan cargo run --release -- load examples/multiplayer-basic.mms
 //
 // Across machines: the host binds 0.0.0.0:7010 by default; the client sets
-// MITTENS_NET_ADDR=<host-ip>:7010 (numeric address, UDP port open on the host).
+// MITTENS_MULTIPLAYER_ADDR=<host-ip>:7010 (numeric address, UDP port open on the host).
 // WASD + right-drag to move/look. E kicks the ball (clients ask the host to).
 
-let net = NetSession.from_env() {}
+let net = MultiplayerSession.from_env() {}
 net
 
 RendererSettings { window_size(1280, 800) }
@@ -48,7 +48,7 @@ I.speed(4.0) {
     InputTransformMode.forward_z() { fps_rotation() roll_axis_y() }
     T.position(spawn_x, 1.6, 5.0) {
         name = "local_player"
-        NetSync.local_player()
+        MultiplayerSync.local_player()
         C3D { fov(74.0) near(0.05) Pointer {} }
     }
 }
@@ -60,7 +60,7 @@ proxies
 fn remote_player(event) {
     return T {
         name = "net_proxy_" + event.peer_id
-        NetSync.remote_player(event.peer_id)
+        MultiplayerSync.remote_player(event.peer_id)
         T.scale(0.32, 0.32, 0.32) { R.sphere() { C.rgba(0.98, 0.82, 0.72, 1.0) } }
         T.position(0.0, 0.0, -0.17).scale(0.07, 0.07, 0.12) { R.cube() { C.rgba(0.95, 0.45, 0.50, 1.0) } }
         T.position(0.0, -0.75, 0.0).scale(0.42, 0.95, 0.26) { R.cube() { C.rgba(0.40, 0.56, 0.86, 1.0) } }
@@ -68,25 +68,25 @@ fn remote_player(event) {
     }
 }
 
-on(net, "NetConnected", fn(event) { show_status("connected") })
-on(net, "NetPeerJoined", fn(event) {
+on(net, "MultiplayerConnected", fn(event) { show_status("connected") })
+on(net, "MultiplayerPeerJoined", fn(event) {
     proxies.attach(remote_player(event))
     roster.count = roster.count + 1
     show_status(event.name + " joined")
 })
-on(net, "NetPeerLeft", fn(event) {
+on(net, "MultiplayerPeerLeft", fn(event) {
     let proxy = query("[name='net_proxy_" + event.peer_id + "']")
     if proxy { proxy.remove_subtree() }
     roster.count = roster.count - 1
     show_status(event.name + " left")
 })
-on(net, "NetError", fn(event) { show_status("net " + event.phase + ": " + event.message) })
+on(net, "MultiplayerError", fn(event) { show_status("net " + event.phase + ": " + event.message) })
 
 // Host-authoritative ball. Clients receive its pose and never simulate it:
-// NetSync.host disables this Velocity on clients.
+// MultiplayerSync.host disables this Velocity on clients.
 let ball = T.position(0.0, 3.0, 0.0) {
     name = "ball"
-    NetSync.host("ball")
+    MultiplayerSync.host("ball")
     T.scale(ball_radius * 2.0, ball_radius * 2.0, ball_radius * 2.0) {
         R.sphere() { C.rgba(1.0, 0.62, 0.20, 1.0) EM.on() }
     }
@@ -117,7 +117,7 @@ if net.is_host() {
         if dx != 0.0 || dy != 0.0 || dz != 0.0 { ball_velocity.translate_world([dx, dy, dz]) }
     })
     // Client intents arrive as app messages; the host decides what happens.
-    on(net, "NetMessage", fn(event) {
+    on(net, "MultiplayerMessage", fn(event) {
         if event.name == "kick" { kick(event.sender) }
     })
 }

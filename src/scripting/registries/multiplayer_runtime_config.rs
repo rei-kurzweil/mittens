@@ -8,7 +8,7 @@ pub(super) fn configure(
     let strings = |count| component_signature(vec![mms::ValueType::String; count]);
     let method = |arguments, result| mms::ValueSignature::new(arguments, result);
     match canonical {
-        "NetSession" => {
+        "MultiplayerSession" => {
             component.constructor(
                 "host",
                 optional_component_signature([mms::ValueType::String], 0),
@@ -51,7 +51,7 @@ pub(super) fn configure(
                 method(vec![], mms::ValueType::String),
             );
         }
-        "NetSync" => {
+        "MultiplayerSync" => {
             component.constructor("host", strings(1));
             component.constructor("local_player", no_args());
             component.constructor("remote_player", component_signature([mms::ValueType::U32]));

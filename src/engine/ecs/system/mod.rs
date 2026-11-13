@@ -58,7 +58,6 @@ pub mod hand_tracking;
 pub mod hand_tracking_system;
 pub mod http_client_system;
 pub mod http_server_system;
-pub mod net_system;
 pub mod humanoid_bone_map_system;
 pub mod ik;
 pub mod ik_system;
@@ -75,6 +74,7 @@ pub mod mesh_bounds_system;
 pub mod mirror_system;
 pub mod model;
 pub mod morph_target_system;
+pub mod multiplayer_system;
 pub mod music_system;
 pub mod object_placement_preview;
 pub mod openxr_system;
@@ -156,7 +156,6 @@ pub use grid_system::GridSystem;
 pub use hand_tracking_system::HandTrackingSystem;
 pub use http_client_system::HttpClientSystem;
 pub use http_server_system::HttpServerSystem;
-pub use net_system::NetSystem;
 pub use humanoid_bone_map_system::{
     HumanoidBoneMapReport, HumanoidBoneMapSystem, HumanoidSlotProvenance, HumanoidSlotReport,
     HumanoidSlotStatus, ResolvedHumanoidTarget, ResolvedHumanoidTargetKind,
@@ -176,6 +175,7 @@ pub use layout::LayoutSystem;
 pub use light_system::LightSystem;
 pub use mesh_bounds_system::{MeshBoundsSystem, MeshOutputBounds, MeshOutputKind};
 pub use mirror_system::MirrorSystem;
+pub use multiplayer_system::MultiplayerSystem;
 pub use music_system::MusicSystem;
 pub use openxr_system::OpenXRSystem as XrSystem;
 pub use pipeline_system::PipelineSystem;

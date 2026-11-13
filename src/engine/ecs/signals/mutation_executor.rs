@@ -283,18 +283,22 @@ impl RxMutationExecutor {
                     body_text.clone(),
                 );
             }
-            IntentValue::RegisterNetSession { component_id } => {
-                systems.net.register_session(world, emit, *component_id);
+            IntentValue::RegisterMultiplayerSession { component_id } => {
+                systems
+                    .multiplayer
+                    .register_session(world, emit, *component_id);
             }
-            IntentValue::RegisterNetSync { component_id } => {
-                systems.net.register_sync(world, *component_id);
+            IntentValue::RegisterMultiplayerSync { component_id } => {
+                systems.multiplayer.register_sync(world, *component_id);
             }
-            IntentValue::NetSend {
+            IntentValue::MultiplayerSend {
                 component_id,
                 name,
                 text,
             } => {
-                systems.net.send_message(emit, *component_id, name, text);
+                systems
+                    .multiplayer
+                    .send_message(emit, *component_id, name, text);
             }
             IntentValue::RegisterScrolling { component_id } => {
                 let component = *component_id;

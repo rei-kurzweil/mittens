@@ -130,7 +130,7 @@ pub(crate) fn legacy_supports_component_method(component_type: &str, method: &st
             && matches!(method, "get" | "post" | "put" | "delete"))
         || (matches!(component_type, "HttpServer" | "http_server")
             && matches!(method, "reply_text"))
-        || (matches!(component_type, "NetSession" | "net_session")
+        || (matches!(component_type, "MultiplayerSession" | "multiplayer_session")
             && matches!(method, "send" | "is_host" | "peer_id" | "local_name"))
 }
 
@@ -1095,9 +1095,16 @@ pub(crate) fn invoke_component_method(
             });
             Ok(Value::Null)
         }
-        ("NetSession" | "net_session", "send" | "is_host" | "peer_id" | "local_name") => {
-            super::component_registry::net_registry::call(world, id, method, args, emit_intent)
-        }
+        (
+            "MultiplayerSession" | "multiplayer_session",
+            "send" | "is_host" | "peer_id" | "local_name",
+        ) => super::component_registry::multiplayer_registry::call(
+            world,
+            id,
+            method,
+            args,
+            emit_intent,
+        ),
         ("HttpServer" | "http_server", "reply_text") => {
             let (request_id, status, body_text) = match args {
                 [request, status, body_text] => (

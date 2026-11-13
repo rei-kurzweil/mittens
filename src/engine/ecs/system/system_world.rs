@@ -15,7 +15,6 @@ use crate::engine::ecs::system::GLTFSystem;
 use crate::engine::ecs::system::GltfBoundsVisualizationSystem;
 use crate::engine::ecs::system::HttpClientSystem;
 use crate::engine::ecs::system::HttpServerSystem;
-use crate::engine::ecs::system::NetSystem;
 use crate::engine::ecs::system::ImplicitSurfaceSystem;
 use crate::engine::ecs::system::InputSystem;
 use crate::engine::ecs::system::InputXRGamepadSystem;
@@ -23,6 +22,7 @@ use crate::engine::ecs::system::KeyboardInputSystem;
 use crate::engine::ecs::system::LightSystem;
 use crate::engine::ecs::system::MeshBoundsSystem;
 use crate::engine::ecs::system::MirrorSystem;
+use crate::engine::ecs::system::MultiplayerSystem;
 use crate::engine::ecs::system::MusicSystem;
 use crate::engine::ecs::system::PipelineSystem;
 use crate::engine::ecs::system::PointerSystem;
@@ -1377,9 +1377,9 @@ impl SystemWorld {
     ) {
         use crate::engine::ecs::component::{
             ControllerXRComponent, HttpClientComponent, HttpServerComponent, InputComponent,
-            InputXRComponent, NetSessionComponent, NetSyncComponent, PointerComponent,
-            RayCastComponent, RenderableComponent, SignalRouteUpwardComponent, StencilClipComponent,
-            TransformComponent,
+            InputXRComponent, MultiplayerSessionComponent, MultiplayerSyncComponent,
+            PointerComponent, RayCastComponent, RenderableComponent, SignalRouteUpwardComponent,
+            StencilClipComponent, TransformComponent,
         };
 
         // Best-effort: remove system state for known component types before deleting.
@@ -1469,11 +1469,13 @@ impl SystemWorld {
                 self.http_server.remove_component(n);
             }
             if world
-                .get_component_by_id_as::<NetSessionComponent>(n)
+                .get_component_by_id_as::<MultiplayerSessionComponent>(n)
                 .is_some()
-                || world.get_component_by_id_as::<NetSyncComponent>(n).is_some()
+                || world
+                    .get_component_by_id_as::<MultiplayerSyncComponent>(n)
+                    .is_some()
             {
-                self.net.component_removed(n);
+                self.multiplayer.component_removed(n);
             }
             if world
                 .get_component_by_id_as::<HttpClientComponent>(n)

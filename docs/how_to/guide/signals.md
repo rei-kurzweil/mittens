@@ -604,48 +604,48 @@ scope
 
 ### Networking
 
-#### `NetConnected`
-<!-- catalog:signal source="NetConnected" kind="event" mms="observable-payload" -->
-**Event.** The local session has a peer id: immediately for a host, after the welcome handshake for a client. Payload: `peer_id`, `is_host`. The net subsystem produces it on the `NetSession` component; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. MMS `on(...)` accepts this event. Handler exposure: **Observable with payload**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), [payload conversion](../../../src/scripting/runner.rs), and [net system](../../../src/engine/ecs/system/net_system.rs).
+#### `MultiplayerConnected`
+<!-- catalog:signal source="MultiplayerConnected" kind="event" mms="observable-payload" -->
+**Event.** The local session has a peer id: immediately for a host, after the welcome handshake for a client. Payload: `peer_id`, `is_host`. The net subsystem produces it on the `MultiplayerSession` component; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. MMS `on(...)` accepts this event. Handler exposure: **Observable with payload**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), [payload conversion](../../../src/scripting/runner.rs), and [net system](../../../src/engine/ecs/system/multiplayer_system.rs).
 ```mms parse-only
-let net = NetSession.host() {}
-on(net, "NetConnected", fn(event) { print(event) })
+let net = MultiplayerSession.host() {}
+on(net, "MultiplayerConnected", fn(event) { print(event) })
 net
 ```
 
-#### `NetPeerJoined`
-<!-- catalog:signal source="NetPeerJoined" kind="event" mms="observable-payload" -->
-**Event.** Another peer entered the session roster. Payload: `peer_id`, `name`. The net subsystem produces it on the `NetSession` component; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. MMS `on(...)` accepts this event. Handler exposure: **Observable with payload**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), [payload conversion](../../../src/scripting/runner.rs), and [net system](../../../src/engine/ecs/system/net_system.rs).
+#### `MultiplayerPeerJoined`
+<!-- catalog:signal source="MultiplayerPeerJoined" kind="event" mms="observable-payload" -->
+**Event.** Another peer entered the session roster. Payload: `peer_id`, `name`. The net subsystem produces it on the `MultiplayerSession` component; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. MMS `on(...)` accepts this event. Handler exposure: **Observable with payload**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), [payload conversion](../../../src/scripting/runner.rs), and [net system](../../../src/engine/ecs/system/multiplayer_system.rs).
 ```mms parse-only
-let net = NetSession.host() {}
-on(net, "NetPeerJoined", fn(event) { print(event) })
+let net = MultiplayerSession.host() {}
+on(net, "MultiplayerPeerJoined", fn(event) { print(event) })
 net
 ```
 
-#### `NetPeerLeft`
-<!-- catalog:signal source="NetPeerLeft" kind="event" mms="observable-payload" -->
-**Event.** A peer left, timed out, or the client lost its host. Payload: `peer_id`, `name`. The net subsystem produces it on the `NetSession` component; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. MMS `on(...)` accepts this event. Handler exposure: **Observable with payload**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), [payload conversion](../../../src/scripting/runner.rs), and [net system](../../../src/engine/ecs/system/net_system.rs).
+#### `MultiplayerPeerLeft`
+<!-- catalog:signal source="MultiplayerPeerLeft" kind="event" mms="observable-payload" -->
+**Event.** A peer left, timed out, or the client lost its host. Payload: `peer_id`, `name`. The net subsystem produces it on the `MultiplayerSession` component; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. MMS `on(...)` accepts this event. Handler exposure: **Observable with payload**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), [payload conversion](../../../src/scripting/runner.rs), and [net system](../../../src/engine/ecs/system/multiplayer_system.rs).
 ```mms parse-only
-let net = NetSession.host() {}
-on(net, "NetPeerLeft", fn(event) { print(event) })
+let net = MultiplayerSession.host() {}
+on(net, "MultiplayerPeerLeft", fn(event) { print(event) })
 net
 ```
 
-#### `NetMessage`
-<!-- catalog:signal source="NetMessage" kind="event" mms="observable-payload" -->
-**Event.** An application message arrived through `NetSession.send`. Clients receive host broadcasts; the host receives client messages. Payload: `sender` (peer id), `name`, `text`. The net subsystem produces it on the `NetSession` component; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. MMS `on(...)` accepts this event. Handler exposure: **Observable with payload**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), [payload conversion](../../../src/scripting/runner.rs), and [net system](../../../src/engine/ecs/system/net_system.rs).
+#### `MultiplayerMessage`
+<!-- catalog:signal source="MultiplayerMessage" kind="event" mms="observable-payload" -->
+**Event.** An application message arrived through `MultiplayerSession.send`. Clients receive host broadcasts; the host receives client messages. Payload: `sender` (peer id), `name`, `text`. The net subsystem produces it on the `MultiplayerSession` component; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. MMS `on(...)` accepts this event. Handler exposure: **Observable with payload**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), [payload conversion](../../../src/scripting/runner.rs), and [net system](../../../src/engine/ecs/system/multiplayer_system.rs).
 ```mms parse-only
-let net = NetSession.host() {}
-on(net, "NetMessage", fn(event) { print(event) })
+let net = MultiplayerSession.host() {}
+on(net, "MultiplayerMessage", fn(event) { print(event) })
 net
 ```
 
-#### `NetError`
-<!-- catalog:signal source="NetError" kind="event" mms="observable-payload" -->
-**Event.** A session bind, send, timeout, or configuration problem. Payload: `phase`, `message`. The net subsystem produces it on the `NetSession` component; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. MMS `on(...)` accepts this event. Handler exposure: **Observable with payload**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), [payload conversion](../../../src/scripting/runner.rs), and [net system](../../../src/engine/ecs/system/net_system.rs).
+#### `MultiplayerError`
+<!-- catalog:signal source="MultiplayerError" kind="event" mms="observable-payload" -->
+**Event.** A session bind, send, timeout, or configuration problem. Payload: `phase`, `message`. The net subsystem produces it on the `MultiplayerSession` component; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. MMS `on(...)` accepts this event. Handler exposure: **Observable with payload**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), [payload conversion](../../../src/scripting/runner.rs), and [net system](../../../src/engine/ecs/system/multiplayer_system.rs).
 ```mms parse-only
-let net = NetSession.host() {}
-on(net, "NetError", fn(event) { print(event) })
+let net = MultiplayerSession.host() {}
+on(net, "MultiplayerError", fn(event) { print(event) })
 net
 ```
 
@@ -1609,25 +1609,25 @@ Transform {}
 HttpClient {}
 ```
 
-#### `RegisterNetSession`
-<!-- catalog:signal source="RegisterNetSession" kind="intent" mms="component-lifecycle" -->
-**Intent — Indirectly emitted by component lifecycle.** Binds the session's UDP endpoint when a `NetSession` initializes; only one session may be active per process. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [net system](../../../src/engine/ecs/system/net_system.rs).
+#### `RegisterMultiplayerSession`
+<!-- catalog:signal source="RegisterMultiplayerSession" kind="intent" mms="component-lifecycle" -->
+**Intent — Indirectly emitted by component lifecycle.** Binds the session's UDP endpoint when a `MultiplayerSession` initializes; only one session may be active per process. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [net system](../../../src/engine/ecs/system/multiplayer_system.rs).
 ```mms parse-only
-NetSession.host() {}
+MultiplayerSession.host() {}
 ```
 
-#### `RegisterNetSync`
-<!-- catalog:signal source="RegisterNetSync" kind="intent" mms="component-lifecycle" -->
-**Intent — Indirectly emitted by component lifecycle.** Adds a `NetSync` to the net system's replication index. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [net system](../../../src/engine/ecs/system/net_system.rs).
+#### `RegisterMultiplayerSync`
+<!-- catalog:signal source="RegisterMultiplayerSync" kind="intent" mms="component-lifecycle" -->
+**Intent — Indirectly emitted by component lifecycle.** Adds a `MultiplayerSync` to the net system's replication index. Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [net system](../../../src/engine/ecs/system/multiplayer_system.rs).
 ```mms parse-only
-T { NetSync.local_player() }
+T { MultiplayerSync.local_player() }
 ```
 
-#### `NetSend`
-<!-- catalog:signal source="NetSend" kind="intent" mms="live-api" -->
-**Intent — Available through a live method/builtin.** `NetSession.send(name, text)` queues one unreliable application datagram (client to host, or host to all clients). Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [net system](../../../src/engine/ecs/system/net_system.rs).
+#### `MultiplayerSend`
+<!-- catalog:signal source="MultiplayerSend" kind="intent" mms="live-api" -->
+**Intent — Available through a live method/builtin.** `MultiplayerSession.send(name, text)` queues one unreliable application datagram (client to host, or host to all clients). Sources: [intent definition](../../../src/engine/ecs/signals/signal.rs), [mutation execution](../../../src/engine/ecs/signals/mutation_executor.rs), and [net system](../../../src/engine/ecs/system/multiplayer_system.rs).
 ```mms parse-only
-NetSession.host() {}
+MultiplayerSession.host() {}
 ```
 
 #### `HttpServerReply`

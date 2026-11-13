@@ -29,3 +29,12 @@ Every new I/O or interaction family adds another arm to both.
 No dynamic dispatch or per-node allocation in teardown; keep one subtree walk.
 Validate with `cargo test --lib` (documentation catalog tests included) and a
 subtree-removal-heavy scene such as `examples/sweeping-zone-query-events.mms`.
+
+## Naming review (2026-11-13)
+
+The multiplayer naming pass also updates the existing event/intent enums,
+runner conversion, and world hooks. A future split should group signal enums
+and intent routing by cohesive family alongside the payload/teardown proposal
+above. Preserve enum representation, direct dispatch, and allocation behavior;
+validate catalog coverage and multiplayer end-to-end tests. No split is part
+of this rename.
