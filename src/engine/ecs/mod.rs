@@ -44,8 +44,8 @@ pub use crate::engine::graphics::primitives::{Renderable, Transform, TransformMa
 
 pub use command_queue::CommandQueue;
 pub use signals::{
-    EventSignal, IntentSignal, IntentValue, KeyboardEvent, PointerActivationSource, PoseApplyMode,
-    RxWorld, Signal, SignalEmitter, SignalHandler, SignalKind, SignalWhen,
+    EventSignal, IntentSignal, IntentValue, KeyboardEvent, ListenerGate, PointerActivationSource,
+    PoseApplyMode, RxWorld, Signal, SignalEmitter, SignalHandler, SignalKind, SignalWhen,
 };
 pub use system::{System, SystemWorld};
 pub use world_query_adapter::WorldQueryAdapter;

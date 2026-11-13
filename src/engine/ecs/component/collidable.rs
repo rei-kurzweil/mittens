@@ -18,6 +18,10 @@ pub struct CollidableComponent {
     pub movement_target_source: Option<ComponentRef>,
     pub movement_target_id: Option<ComponentId>,
     pub movement_target_required: bool,
+    /// Motion provider for the generic sweeping-zone query. Binding a
+    /// `Velocity` opts this collidable into velocity-aware sweeps; the event
+    /// remains scoped to the parent zone.
+    pub velocity_source: Option<ComponentRef>,
 }
 
 impl CollidableComponent {
@@ -37,6 +41,7 @@ impl CollidableComponent {
             movement_target_source: None,
             movement_target_id: None,
             movement_target_required: false,
+            velocity_source: None,
         }
     }
 
@@ -59,6 +64,11 @@ impl CollidableComponent {
     pub fn with_runtime_movement_target(mut self, target: Option<ComponentId>) -> Self {
         self.movement_target_id = target;
         self.movement_target_required = true;
+        self
+    }
+
+    pub fn velocity(mut self, velocity: ComponentRef) -> Self {
+        self.velocity_source = Some(velocity);
         self
     }
 
@@ -103,6 +113,13 @@ impl Component for CollidableComponent {
                 ComponentRef::Query(query) => query.clone(),
             };
             ce = ce.with_call("movement_target", vec![s(&reference)]);
+        }
+        if let Some(velocity) = &self.velocity_source {
+            let reference = match velocity {
+                ComponentRef::Guid(guid) => format!("@uuid:{guid}"),
+                ComponentRef::Query(query) => query.clone(),
+            };
+            ce = ce.with_call("velocity", vec![s(&reference)]);
         }
         ce
     }

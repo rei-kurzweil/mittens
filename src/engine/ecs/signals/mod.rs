@@ -7,7 +7,7 @@ mod signal_pipeline_processor;
 
 pub use intent_executor::RxIntentExecutor;
 pub use mutation_executor::RxMutationExecutor;
-pub use rx_world::RxWorld;
+pub use rx_world::{ListenerGate, RxWorld};
 pub use signal::{
     EventSignal, IntentSignal, IntentValue, KeyboardEvent, PointerActivationSource, PoseApplyMode,
     Signal, SignalEmitter, SignalHandler, SignalKind, SignalWhen, TextInputCaretDirection,

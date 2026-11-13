@@ -646,10 +646,18 @@ fn collect_referenced_guids_filtered(
         {
             out.insert(*guid);
         }
-        if let Some(collidable) = world.get_component_by_id_as::<CollidableComponent>(node)
-            && let Some(ComponentRef::Guid(guid)) = &collidable.movement_target_source
-        {
-            out.insert(*guid);
+        if let Some(collidable) = world.get_component_by_id_as::<CollidableComponent>(node) {
+            for source in [
+                &collidable.movement_target_source,
+                &collidable.velocity_source,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                if let ComponentRef::Guid(guid) = source {
+                    out.insert(*guid);
+                }
+            }
         }
         if let Some(rider) = world.get_component_by_id_as::<RiderComponent>(node) {
             for source in [
@@ -837,10 +845,18 @@ fn collect_referenced_guids_limited(
     {
         out.insert(*guid);
     }
-    if let Some(collidable) = world.get_component_by_id_as::<CollidableComponent>(node)
-        && let Some(ComponentRef::Guid(guid)) = &collidable.movement_target_source
-    {
-        out.insert(*guid);
+    if let Some(collidable) = world.get_component_by_id_as::<CollidableComponent>(node) {
+        for source in [
+            &collidable.movement_target_source,
+            &collidable.velocity_source,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if let ComponentRef::Guid(guid) = source {
+                out.insert(*guid);
+            }
+        }
     }
     if let Some(rider) = world.get_component_by_id_as::<RiderComponent>(node) {
         for source in [
@@ -3499,6 +3515,7 @@ fn apply_call(
             .clone();
         let updated = match method {
             "movement_target" => current.movement_target(arg_component_ref(world, args, 0)?),
+            "velocity" => current.velocity(arg_component_ref(world, args, 0)?),
             "enabled" => current.enabled(arg_bool(args, 0)?),
             "friction" => current.with_friction(arg_f32(args, 0)?)?,
             _ => return Err(format!("Collidable: unknown builder '{method}'")),

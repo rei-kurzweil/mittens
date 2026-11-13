@@ -10363,6 +10363,164 @@ fn roundtrip_collidable_preserves_slide_target_and_enabled_state() {
 }
 
 #[test]
+fn collidable_velocity_builder_stores_handle_selector_and_guid_references() {
+    use crate::engine::ecs::component::{CollidableComponent, ComponentRef, VelocityComponent};
+
+    fn velocity_source(world: &World, label: &str) -> Option<ComponentRef> {
+        world.collidable_ids().find_map(|id| {
+            (world.component_label(id) == Some(label))
+                .then(|| {
+                    world
+                        .get_component_by_id_as::<CollidableComponent>(id)
+                        .and_then(|collidable| collidable.velocity_source.clone())
+                })
+                .flatten()
+        })
+    }
+
+    let mut world = World::default();
+    let mut rx = RxWorld::default();
+    let mut assets = RenderAssets::new();
+    let mut queue = CommandQueue::new();
+    let output = MeowMeowRunner::eval_with_world_and_assets(
+        r#"
+            let motion = Velocity { T { name = "velocity_motion" } }
+            T {
+                name = "by_handle_root"
+                Collidable.slide().velocity(motion) { name = "by_handle" }
+            }
+            T {
+                name = "by_selector_root"
+                Collidable.slide().velocity("/[name='velocity_motion']") { name = "by_selector" }
+            }
+            motion
+        "#,
+        &mut world,
+        &mut rx,
+        &mut assets,
+        &mut queue,
+    );
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+
+    let motion = world
+        .all_components()
+        .find(|id| {
+            world
+                .get_component_by_id_as::<VelocityComponent>(*id)
+                .is_some()
+        })
+        .expect("motion velocity component");
+    let motion_guid = world.get_component_record(motion).unwrap().guid;
+
+    assert_eq!(
+        velocity_source(&world, "by_handle"),
+        Some(ComponentRef::Guid(motion_guid))
+    );
+    assert_eq!(
+        velocity_source(&world, "by_selector"),
+        Some(ComponentRef::Query("/[name='velocity_motion']".into()))
+    );
+
+    let output = MeowMeowRunner::eval_with_world_and_assets(
+        &format!(
+            r#"T {{ name = "by_guid_root" Collidable.slide().velocity("@uuid:{motion_guid}") {{ name = "by_guid" }} }}"#
+        ),
+        &mut world,
+        &mut rx,
+        &mut assets,
+        &mut queue,
+    );
+    assert!(output.errors.is_empty(), "{:?}", output.errors);
+    assert_eq!(
+        velocity_source(&world, "by_guid"),
+        Some(ComponentRef::Guid(motion_guid))
+    );
+}
+
+#[test]
+fn collidable_velocity_source_serializes_as_velocity_builder() {
+    use crate::engine::ecs::component::{CollidableComponent, ComponentRef};
+    let source = ComponentRef::Query("[name='motion']".into());
+    let ce = CollidableComponent::slide()
+        .velocity(source.clone())
+        .to_mms_ast(&World::default());
+    let velocity = ce
+        .constructors
+        .iter()
+        .find(|call| call.method.0 == "velocity")
+        .expect("collidable AST should emit a velocity builder");
+    assert_eq!(
+        velocity.args,
+        vec![Expression::String("[name='motion']".to_string())]
+    );
+
+    let (world, id) = roundtrip_component(CollidableComponent::slide().velocity(source.clone()));
+    assert_eq!(
+        world
+            .get_component_by_id_as::<CollidableComponent>(id)
+            .unwrap()
+            .velocity_source,
+        Some(source)
+    );
+}
+
+#[test]
+fn collidable_velocity_guid_reference_survives_serialization() {
+    use crate::engine::ecs::component::{CollidableComponent, ComponentRef, VelocityComponent};
+
+    let mut world = World::default();
+    let root = world.add_component(TransformComponent::new());
+    let motion = world.add_component(VelocityComponent::new());
+    world.add_child(root, motion).unwrap();
+    let motion_guid = world.get_component_record(motion).unwrap().guid;
+    let collidable =
+        world.add_component(CollidableComponent::slide().velocity(ComponentRef::Guid(motion_guid)));
+    world.add_child(root, collidable).unwrap();
+
+    let velocity_ref = format!("velocity(\"@uuid:{motion_guid}\")");
+    let guid_definition = format!("guid = \"{motion_guid}\"");
+
+    let limited = crate::scripting::component_registry::subtree_to_ce_ast(&world, root)
+        .expect("serialize collidable subtree");
+    let limited_text = crate::scripting::unparser::unparse_component(&limited);
+    assert!(limited_text.contains(&velocity_ref), "{limited_text}");
+    assert!(limited_text.contains(&guid_definition), "{limited_text}");
+
+    let filtered = crate::scripting::component_registry::filtered_roots_to_ce_ast(&world, &[root])
+        .expect("serialize filtered collidable subtree");
+    let filtered_text = filtered
+        .iter()
+        .map(crate::scripting::unparser::unparse_component)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(filtered_text.contains(&velocity_ref), "{filtered_text}");
+    assert!(filtered_text.contains(&guid_definition), "{filtered_text}");
+
+    let parsed = parse(&limited_text);
+    let parsed_ce = as_component!(parsed.into_iter().next().unwrap());
+    let materialized = crate::scripting::component_registry::ce_ast_to_materialized(&parsed_ce)
+        .expect("materialize collidable subtree");
+    let mut loaded = World::default();
+    let mut emit = CommandQueue::new();
+    let loaded_root = crate::scripting::component_registry::spawn_tree_uninitialized(
+        &materialized,
+        &mut loaded,
+        &mut emit,
+    )
+    .expect("load collidable subtree");
+    let loaded_collidable =
+        find_first::<CollidableComponent>(&loaded, loaded_root).expect("loaded collidable");
+    assert_eq!(
+        loaded
+            .get_component_by_id_as::<CollidableComponent>(loaded_collidable)
+            .unwrap()
+            .velocity_source,
+        Some(ComponentRef::Guid(motion_guid))
+    );
+    assert!(loaded.component_id_by_guid(motion_guid).is_some());
+}
+
+#[test]
 fn roundtrip_rider_preserves_attachment_references() {
     use crate::engine::ecs::component::{ComponentRef, RiderComponent};
     let original = RiderComponent::new()
