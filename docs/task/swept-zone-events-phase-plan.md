@@ -1,25 +1,33 @@
-# Zone collision events: sphere-first phase plan
+# Collision event unification: plan and backlog
 
 Date: 2026-11-12
 
 Status: planning note. No generic zone-collision event or producer is
-implemented. This document records the phase split and the corrections we made
-while reading the older design docs.
+implemented. This document records the event-first order, the corrections we
+made while reading the older design docs, and the deferred demo/validation work.
 
 ## Purpose
 
-Split the generic zone-collision event work into two phases:
+Unify collision observations behind one event vocabulary before building scene
+demos:
 
-1. **Phase 1 — event machinery with explicit sphere sweeps.** Change the train
-   example to use an explicitly authored sphere sensor, then prove the generic
-   event end to end: velocity binding, listener gate, producer, payload, MMS
-   delivery, and the train reversal demo.
-2. **Phase 2 — box sweep validation.** Restore the box sensor and follow
-   `train-box-sweep-validation.md` for the square-tunnel pass and
-   circular-aperture block.
+1. **Event surface.** Shared identity plus optional `SweptContact`, a
+   `ZoneCollided` event, `SignalKind`, MMS plumbing, catalog docs, and dispatch
+   tests. This lands with no producer and no scene.
+2. **Detection and production.** A reusable sweep query, velocity binding,
+   listener gate, and an observational producer tested with a headless scene.
+3. **Additive lifecycle payload.** `ZoneEntered` / `ZoneExited` adopt the shared
+   identity and optional `swept` fields without changing their transition
+   semantics.
+4. **Deferred demos and shape validation.** Train sphere reversal, box sweep
+   fixtures, and the circular-aperture scene.
+5. **Deferred eligibility unification.** Collision classes, membership groups,
+   and relative/mover-vs-mover sweeps.
+6. **Deferred convergence.** The projectile response becomes a consumer of the
+   shared detector and event rather than a parallel special case.
 
-The event machinery is intentionally shape-agnostic. Phase 2 should add a
-narrow-phase shape arm, not reshape the event or the gate.
+The event machinery is intentionally shape- and scene-agnostic. Do not make the
+first landing depend on the train example, a moving asset, or an MMS scene.
 
 ## Collision model direction
 
@@ -62,19 +70,45 @@ change.
 
 Today `CollidableMode::{Static, Slide}` conflates "static target" with "slide
 mover driven by a movement target." Splitting class from group is follow-up
-work and should not be smuggled into the Phase 1 sphere slice.
+work and should not be smuggled into the first event slice.
+
+## Priority: unify events before demos
+
+The event vocabulary and delivery path are the durable part of this work. Scene
+demos and shape validation are consumers; they should not gate the event model.
+
+Start with the pieces that need no moving asset, no train, and no MMS scene:
+
+1. **Event surface.** Shared payload types, `ZoneCollided`, `SignalKind`, MMS
+   parsing/payload conversion, catalog docs, and dispatch tests. This is
+   testable with no producer.
+2. **Detection core.** A reusable sweep that returns collision identity plus
+   optional `SweptContact`, independent of projectile response. Test it directly
+   on fixtures.
+3. **Eligibility and producer.** `velocity_source` resolution, gate snapshot,
+   and observational emission from the fixed step. Test with a synthetic mover
+   and a static box in a headless world.
+4. **Additive lifecycle payload.** `ZoneEntered` / `ZoneExited` adopt the shared
+   identity and optional `swept` fields without changing transition semantics.
+5. **Deferred consumers.** Train sphere reversal, box aperture validation,
+   class/group filtering, and projectile convergence.
+
+That order keeps the first landing reviewable: data shapes, parser, tests, and
+docs. The demo can be replaced by a headless scene test until the visual example
+is worth building.
 
 ## Relationship to existing docs
 
 ### `sweeping-zone-query-events-train-example.md`
 
-This is the primary task document.
+This is the train demo task document (workstream E1).
 
 Notes and corrections:
 
 - Its **slice 2** ("generic swept-zone event mechanism") is our **Phase 1**.
 - Its **slice 3** ("train motion and reversal") is the Phase 1 scene demo, using
-  a sphere probe rather than the box sensor.
+  a sphere probe rather than the box sensor. It is deferred; the first
+  producer proof is a headless scene test.
 - Its slice 1 leaves the train sensor as
   `Zone.cube([...]) { Collidable.static() {} }` in
   `assets/components/trains/boxcar.mms`. Phase 1 changes that to an explicit
@@ -91,9 +125,9 @@ This is the **Phase 2** document.
 
 Notes and corrections:
 
-- Its **Stage 3** ("generic producer and listener gate") is actually Phase 1
-  work. Phase 2 assumes the producer and gate already exist and only validates
-  box geometry and the two fixture scenarios.
+- Its **Stage 3** ("generic producer and listener gate") is actually Phase 1B
+  work (workstream C). Phase 2 assumes the producer and gate already exist and
+  only validates box geometry and the two fixture scenarios.
 - Its warning is preserved: do not use the Phase 1 sphere result as evidence
   for the box sweep, the square-tunnel pass, or the circular-aperture
   rejection.
@@ -167,13 +201,138 @@ Notes:
 - The train sensor is still a cube and is inert: no velocity binding, no
   listener.
 
+## Untangled backlog
+
+`[ ]` not started, `[-]` partially present, `[x]` implemented in this checkout.
+"Deferred" means intentionally after the event surface and detection core, not
+blocked by a decision.
+
+### A. Event surface (first landing; no producer)
+
+- [ ] A1. Settle the public name and vocabulary. `ZoneCollided` is the working
+      name. Reconcile it with the overlap/contact rule in
+      `spatial-collision-and-physics-naming.md`: `ZoneEntered` / `ZoneExited`
+      are overlap observations, and a swept hit is also an observation rather
+      than a solved contact. The event name and guide wording must agree.
+- [ ] A2. Add shared payload types: collision identity (`zone`, optional
+      `collidable`, `other_zone`, optional `other_collidable`, optional
+      `velocity`) and `SweptContact` (`fraction`, `point`, `normal`). Keep
+      `swept` strictly all-or-nothing.
+- [ ] A3. Add `EventSignal::ZoneCollided` and `SignalKind::ZoneCollided`,
+      including the `EventSignal::kind()` arm.
+- [ ] A4. MMS plumbing: parse in `world_evaluator.rs` and `host.rs`, payload
+      conversion in `runner.rs`, event-name registration in `runtime_config.rs`.
+- [ ] A5. Catalog and documentation test: add a `catalog:signal` entry to
+      `docs/how_to/guide/signals.md` and the `documentation_tests.rs` arrays.
+      While there, add `ProjectileHit`, which currently has no catalog entry.
+- [ ] A6. Dispatch tests with a directly constructed event: scoped and global
+      delivery, nested `swept` map, `swept == null`, and the required
+      `event.swept != null` guard before nested field access.
+- [ ] A7. Additive lifecycle payload: add optional `other_collidable` and
+      `swept` to `ZoneEntered` / `ZoneExited`. Keep existing fields required and
+      keep `ZoneObservationSystem` behavior unchanged.
+- [ ] A8. Write the `ProjectileHit` compatibility note: it stays unchanged until
+      workstream F and is not the public name for the unified event.
+
+### B. Detection core (no scene)
+
+- [ ] B1. Extract a reusable collidable sweep returning the moving zone and
+      collidable, hit zone and collidable, and optional `SweptContact`. Reuse
+      `Surface::sphere_sweep` and `TriangleMesh::sweep`; do not call the
+      projectile's clamp/stop/disable code.
+- [ ] B2. Define nearest-hit selection and self-subtree exclusion. Preserve the
+      fixed-step, allocation-conscious path.
+- [ ] B3. Direct fixture tests: hit, miss, initial overlap, nearest of two,
+      `fraction` in `[0, 1]`, finite point/normal, and a mesh opening that
+      produces no hit.
+- [ ] B4. Box and capsule dispatch stay in workstream E. Do not approximate a
+      cube with a sphere.
+
+### C. Eligibility, gate, and producer
+
+- [ ] C1. Resolve `velocity_source` to a runtime id and retain the binding.
+      Define behavior for removal, disable, reparent, and unresolved references.
+- [ ] C2. Snapshot `ListenerGate` once per fixed step and pass it into
+      `VelocitySystem::step`, or give the producer scoped access to `RxWorld`.
+- [ ] C3. Gate tests with counted queries: no listener, only unrelated global,
+      scoped mover, scoped ancestor, unrelated branch, matching global, `Any`
+      global, and disabled/bypassed binding.
+- [ ] C4. Repeat semantics: decide whether continuous contact emits every step,
+      once per `(mover, surface)` edge, or only on first contact. Initial overlap
+      reports `fraction = 0`, so `swept` presence alone does not dedupe.
+- [ ] C5. Emit `ZoneCollided` from the velocity substep before `delta_world` is
+      applied, with no motion mutation.
+- [ ] C6. Headless MMS scene test with a synthetic mover and static box; the
+      train is not required.
+- [ ] C7. Coexistence test: the rocket still receives `ProjectileHit`, and the
+      generic path never emits it.
+- [ ] C8. Decide whether a velocity-bound sensor remains a normal static target
+      for other queries.
+
+### D. Collision class and groups (deferred implementation)
+
+- [ ] D1. Define class separately from `CollidableMode`: static,
+      velocity-driven, externally driven, dynamic.
+- [ ] D2. Define membership/filter groups and where eligibility is resolved
+      (broad phase, not event dispatch).
+- [ ] D3. Add relative and mover-vs-mover sweeps only after classes and groups
+      exist.
+- [ ] D4. Keep the `ZoneCollided` payload and routing unchanged when
+      classes/groups land; test that a class change does not rename the event.
+
+### E. Scene demos and shape validation (deferred)
+
+- [ ] E1. Train sphere probe, velocity binding, listener, and reversal demo.
+- [ ] E2. Square-tunnel and circular-aperture geometry fixtures.
+- [ ] E3. Static-BVH candidate integration for box sweeps.
+- [ ] E4. Box sensor aperture pass/block scene.
+- [ ] E5. Restore the authored box sensor only after E2 and E3 pass.
+
+### F. Projectile convergence (deferred)
+
+- [ ] F1. Reimplement projectile stop/disable as a consumer of the shared
+      detector and `ZoneCollided` emission, preserving current behavior.
+- [ ] F2. Add a compatibility/deprecation gate before renaming or removing
+      `ProjectileHit` / `ProjectileImpact`.
+
+### First landing checklist (A1-A6)
+
+1. Payload types compile and are exercised by a directly constructed event.
+2. `on(zone, "ZoneCollided", ...)` parses.
+3. Payload conversion exposes identity and `swept` (or null).
+4. Catalog marker and documentation test pass.
+5. No system emits the event yet; no behavior changes.
+
+A7 is a separate additive payload landing. It touches live `ZoneEntered` /
+`ZoneExited` producers, so it should follow the event surface and be reviewed
+for MMS payload compatibility on its own.
+
+### What each track is waiting on
+
+| Track | Can start when | Needs the train demo? |
+| --- | --- | --- |
+| A. Event surface | Now | No |
+| B. Detection core | Now; reuses the retained BVH | No |
+| C. Producer | A, B, and resolved velocity binding | No |
+| D. Class/group | Model can be decided now; implementation after C | No |
+| E2/E3. Box fixtures and BVH | B; pure math can start even earlier | No |
+| E1. Train sphere demo | C | Yes |
+| E4/E5. Box scene | E2/E3 and C | Yes |
+| F. Projectile convergence | C, once the event contract is proven | No |
+
 ## Phase 1: sphere-first generic event
+
+> Phase 1 now lands in three pieces. **1A** is workstream A (event surface, no
+> producer). **1B** is workstreams B and C (detection core, gate, producer,
+> headless tests). **1C** is the train demo in workstream E and is deferred.
+> "Sphere-first" refers to the detector shape, not to the demo order.
 
 ### Goal
 
 Emit a generic, observational contact event when a `Collidable` with a bound
 `Velocity` sweeps its parent `Zone` through static geometry, without changing
-motion or the projectile path.
+motion or the projectile path. The event surface from 1A exists before any
+producer emits it.
 
 ### Required behavior
 
@@ -274,6 +433,9 @@ without measuring.
 
 ### Train example change
 
+Deferred (workstream E1). Do not start this until the event surface, detection
+core, and headless producer test are green.
+
 In `assets/components/trains/boxcar.mms`, replace the inert cube sensor with an
 explicit sphere probe, or add a sphere probe alongside the retained inert cube.
 
@@ -313,7 +475,7 @@ Scripting/scene tests:
 - the rocket still receives `ProjectileHit` and behaves as before;
 - generic and projectile sensors coexist without cross-talk.
 
-Train demo:
+Train demo (deferred; replace with the headless scene test until then):
 
 - run `cargo run --release -- load examples/sweeping-zone-query-events.mms`;
 - the train contacts each building, reverses once per arrival, and travels
@@ -322,12 +484,24 @@ Train demo:
 
 ### Phase 1 acceptance
 
-- The new event is available in MMS and documented in the signal catalog.
+1A, event surface:
+
+- The event is available in MMS and documented in the signal catalog.
+- Directly constructed events dispatch to scoped and global handlers.
+- `swept` is a complete nested payload or `null`; the guide example guards
+  nested access with `event.swept != null`.
+
+1B, detection and producer:
+
 - No listener means no event-only query work.
 - The generic path never mutates motion and never emits `ProjectileHit`.
-- Sphere hit/miss/overlap tests pass.
-- The train reverses using the sphere probe with one event per arrival.
+- Sphere hit/miss/overlap and nearest-hit tests pass.
+- A headless MMS scene with a synthetic mover receives the event.
 - Existing projectile and static-contact behavior is unchanged.
+
+1C, deferred:
+
+- The train reverses using the sphere probe with one event per arrival.
 
 ### Phase 1 non-goals
 
@@ -340,6 +514,10 @@ Train demo:
 - collision masks/groups beyond the existing static BVH eligibility.
 
 ## Phase 2: box sweep validation
+
+> Deferred behind the event surface and detection core. The geometry fixtures
+> and static-BVH integration (E2/E3) may start after workstream B and do not
+> need the train demo.
 
 ### Goal
 
@@ -382,41 +560,57 @@ train's authored box sensor as the shape-validation consumer.
 1. Final event name: `ZoneCollided` (working), `ZoneContact`,
    `ZoneCollision`, or similar. Prefer a name that describes the collision
    rather than the query technique; `ZoneSwept` only names one detector.
+   Reconcile the choice with the overlap-versus-contact wording in
+   `spatial-collision-and-physics-naming.md`.
 2. Optional-sweep semantics: confirm that `swept` is strictly all-or-nothing,
    define `fraction` as `[0, 1]` within the step with no sentinel values, and
    decide whether `ZoneEntered`/`ZoneExited` adopt the same `swept` struct
-   immediately or in a follow-up.
-3. Repeat semantics: an initial overlap reports `fraction = 0` every step, so
+   immediately (A7) or in a follow-up.
+3. Event/lifecycle relation: does an overlap detector also emit
+   `ZoneCollided` on the entry step, every overlapping step, or not at all
+   while `ZoneEntered`/`ZoneExited` own persistent state? Recommendation:
+   lifecycle variants remain the only once-per-transition events, and
+   `ZoneCollided` is instant detection-specific contact.
+4. Repeat semantics: an initial overlap reports `fraction = 0` every step, so
    contact-only is not automatically one-event-per-contact. Decide between
    producer-side `(mover, surface)` edge dedupe and an MMS-side guard. The train
    reversal requires at most one action per arrival.
-4. Gate snapshot timing and transport: build it once per substep in
+5. Gate snapshot timing and transport: build it once per substep in
    `SystemWorld` and pass it into `VelocitySystem::step`, or give the producer
    direct access to `RxWorld`.
-5. Runtime binding resolution: resolve `velocity_source` each step or store a
+6. Runtime binding resolution: resolve `velocity_source` each step or store a
    resolved id. Also decide what happens when the velocity is removed,
    disabled, or reparented.
-6. Whether a velocity-bound sensor collidable remains a normal static target
+7. Whether a velocity-bound sensor collidable remains a normal static target
    for other queries.
-7. Whether Phase 1 reports only the nearest static hit per mover per step or
-   all contacts. Start with nearest.
-8. Collision class/group model: define classes (static, velocity-driven,
-   externally driven, dynamic) and separate membership/filter groups before
-   enabling mover-vs-mover pairs. Keep this out of Phase 1 implementation, but
-   do not hardcode swept-only assumptions into the event.
+8. Whether the first producer reports only the nearest static hit per mover per
+   step or all contacts. Start with nearest.
+9. Payload compatibility for A7: adding `other_collidable` and `swept` to
+   `ZoneEntered`/`ZoneExited` should be additive in MMS. Confirm that existing
+   handlers can ignore the new keys and that missing keys resolve to
+   `Value::Null`.
+10. Collision class/group model: define classes (static, velocity-driven,
+    externally driven, dynamic) and separate membership/filter groups before
+    enabling mover-vs-mover pairs. Keep this out of the event payload and out of
+    the first producer slice.
 
 ## Suggested implementation order
 
-1. Event variant, optional `SweptContact`, `SignalKind`, and MMS plumbing.
-2. Binding resolution and mover enumeration helper.
-3. Gate snapshot passed into the velocity substep.
-4. Shape-aware sphere sweep extracted from the projectile path without changing
-   projectile behavior.
-5. Focused Rust and gate tests.
-6. MMS scene test.
-7. Sphere probe, listener, and train reversal in the example.
-8. Signal guide/catalog update.
-9. Phase 2 box fixtures and narrow phase.
+Event-first, in landing-sized slices:
+
+1. Shared payload types and `ZoneCollided`/`SignalKind` (A2-A3).
+2. MMS parse, payload conversion, catalog, and documentation test (A4-A5).
+3. Direct dispatch and nested-`swept` tests (A6).
+4. Additive `ZoneEntered`/`ZoneExited` payload adoption (A7).
+5. Reusable sweep core and direct fixture tests (B1-B3).
+6. `velocity_source` resolution and retained binding (C1).
+7. Gate snapshot transport and gate tests (C2-C3).
+8. Repeat semantics decision (C4).
+9. Producer emission and headless scene test (C5-C7).
+10. Collision class/group model (D), then relative sweeps.
+11. Box geometry fixtures and static-BVH integration (E2-E3).
+12. Train sphere demo (E1), then box scene (E4-E5).
+13. Projectile convergence (F1-F2).
 
 ## Boundaries
 
