@@ -2,49 +2,276 @@
 
 Date: 2026-11-12
 
-Status: slice 1 implemented (inert visual fixture); generic swept-zone runtime work is deferred and unvalidated. See [the review and recovery tracker](velocity-bound-swept-zones-review-and-recovery.md) for scope, disposition, and staged follow-up.
+Status: in progress (slice 1 implemented)
 
 Related:
 
 - [Swept collision events and projectile lifecycle](../analysis/swept-collision-events-and-projectile-lifecycle.md)
-- [Listener gating trade-offs and collision scenarios](listener-gating-tradeoffs-and-collision-scenarios.md)
 - [STA rocket launcher](sta-rocket-launcher.md)
 
 ## Goal
 
-Build a non-projectile train/environment scene in small stages. The current scene and its headless test establish only the static visual fixture: buildings, track, train, and an inert sensor. They do **not** prove velocity-bound sweeps, listener gating in a producer, or event delivery.
+Build a new example, `examples/sweeping-zone-query-events.mms`, from the
+`examples/paper-craft.mms` base, then use it to prove generic swept-zone events
+with a non-projectile mover.
 
-The intended follow-up sequence is deliberately staged:
+The work is deliberately split:
 
-1. Keep and validate the event listener gate independently.
-2. Maintain an explicit registry of collidables bound to velocity.
-3. Prove gate decisions and skipped-query counts with an instrumented fake query.
-4. Implement and verify a sphere sweep against retained static-BVH candidates.
-5. Wire the generic event into MMS and test listener/no-listener/hit/miss cases.
-6. Drive the train only after the generic event path is proven.
+1. Build the environment and prefabs first. The train must be completely inert.
+2. Verify the environment.
+3. Add the generic velocity-aware swept-zone event mechanism.
+4. Drive the train with that event: it travels between two floating buildings,
+   stops and reverses at each building, and continues the other way.
 
-Do not extend the experimental `MovingProxy`/`swept_shape` implementation as though its math were validated; its removal/replacement is tracked in the recovery document.
+The example must not use `ProjectileImpact`/`ProjectileHit`, and must not depend
+on projectile teardown behavior.
 
-## Train fixture
+## Problem statement: velocity-aware collision events
 
-The scene is based on `examples/paper-craft.mms`. It reuses two floating buildings as endpoints and adds a visual track and a two-car train. The track is visual-only to avoid train-sweep contacts with rails/sleepers. The train's named zone/collidable sensor remains inert: no velocity binding, no sweep handler, and no movement.
+The desired mechanism is broader than a projectile event: notify MMS when an
+object controlled by the physics/velocity systems collides with something
+static. Detection is inherently velocity-aware because a sweep needs the
+mover's motion across the step; endpoint overlap tests miss fast contacts. That
+coupling to `Velocity`/acceleration is probably acceptable, but it should be
+explicit and should stop at detection.
 
-`src/scripting/paper_craft_scene_tests.rs` checks scene structure, placement, separate `CombineMesh` batches, and the absence of projectile or generic sweep setup. This is fixture coverage only, not a collision test.
+The suggested opt-in is to bind a `Velocity` component to the `Collidable` child
+by reference in MMS. The engine can then check for that binding, check whether
+any relevant sweep listener exists, and only then run the sweeping zone query. A
+separate projectile-like marker should not be needed. The velocity binding is the
+part that necessarily couples detection to motion; the projectile lifecycle is
+not part of it.
 
-## Generic swept-zone work: deferred
+Keeping the binding on `Collidable` also avoids inventing a "moving zone." The
+zone remains the spatial region, which leaves it available for explicit queries
+and future spatial modeling. The event can still be scoped to the zone while the
+collidable owns the motion binding.
 
-The desired API direction remains a velocity reference on a collidable and a zone-scoped, contact-only swept event that reports contact without imposing projectile lifecycle policy. The event scaffolding and `ListenerGate` do not yet constitute a complete runtime feature. In particular, registration/resolution, listener-gate use in a producer, validated sweep math, MMS event mappings/payloads, and real event tests must each be established explicitly.
+The projectile lifecycle is a separate concern. Stopping, removing, spawning an
+effect, applying damage, and unbinding handlers on expiry are not part of the
+generic collision event.
 
-The current projectile path remains a separate compatibility baseline. Do not rename or change `ProjectileHit`/`ProjectileImpact` or rocket behavior as part of the train/generic work.
+There is also an API-shape question. In the scripting shell an event handler is a
+subscription, not a closure with lexical capture. A useful handler may need a
+context payload containing data or component references: the moving target, its
+velocity component, the sensor zone, the source/owner, and any filter data. That
+context would let the handler decide whether a contact matters and what to do,
+without querying unrelated state by name.
 
-## Deferred train motion
+The train is a good non-projectile test for all of this because it:
 
-After the generic sphere path and MMS delivery have focused tests:
+- is driven by velocity rather than a projectile motion provider;
+- has a long body and must reverse direction;
+- hits static building endpoints rather than destroyable targets;
+- has no expiry or impact lifecycle, so any projectile-specific coupling will
+  show up immediately.
 
-- bind the train sensor's collidable to its velocity by reference;
-- register a scoped listener on the zone or an applicable ancestor;
-- verify the engine skips event-only query work when no listener exists;
-- verify a static building hit produces one event with useful contact data and a miss produces none;
-- add train movement and ensure each endpoint arrival reverses exactly once.
+## Deliverables
 
-No velocity binding, sweep event, projectile impact marker, or script polling should be added to the inert fixture before those prerequisites are met.
+1. `examples/sweeping-zone-query-events.mms`.
+2. `assets/components/trains/railroad_track.mms`, exporting a reusable
+   `railroad_track(...)` factory.
+3. `assets/components/trains/boxcar.mms`, exporting a reusable `boxcar(...)`
+   factory and a coupled two-car train composition.
+4. The generic swept-zone event mechanism, in a separate slice.
+5. Focused tests or smoke checks described below.
+
+Exact asset paths may move under `assets/components/trains/` if that grouping is
+inconsistent with existing asset organization; keep the factories reusable from
+the example.
+
+## Slice 1: environment and prefabs only
+
+Copy `examples/paper-craft.mms` to `examples/sweeping-zone-query-events.mms` as
+the starting scene. Keep the working viewer, input, sky, lighting, and scene
+setup. Remove or defer unrelated weapon/prop content only if it conflicts with
+the train scene.
+
+### Buildings and track
+
+`paper-craft.mms` already has a grounded main tower plus four floating
+neighborhood towers. Reuse two of the existing floating buildings as the track
+endpoints; do not add duplicate endpoint buildings or move unrelated scene
+content.
+
+The first layout uses:
+
+- `paper_craft_east_tower_center` at `[18, 0, 0]`, base `9.6`, height `12.8`
+  (top `22.4`);
+- `paper_craft_west_tower_south` at `[-18, 0, 25]`, base `16.0`, height `16.0`
+  (top `32.0`).
+
+Run the track at approximately `y = 20.5`, above both buildings' first balcony
+railings and below the east tower's roof. The track crosses clear space between
+the two towers and does not intersect the main tower, the low annex, or the
+north tower.
+
+Track endpoints should sit at or slightly inside the two building facades:
+
+- east end near `[11, 20.5, 0]`;
+- west end near `[-11, 20.5, 25]`.
+
+The straight track is centered between those points and yawed to match the
+line. Keep the length constant in the example so the train endpoints and
+building contact zones stay aligned. Leave enough gap before the walls that the
+future train sensor can contact a building zone before the model visually passes
+through the facade.
+
+Place the train at the midpoint on the track. The track itself should be
+visual-only by default. Do not give the rails or sleepers collidable surfaces
+that the train sensor would hit instead of a building.
+
+### Railroad track prefab
+
+`railroad_track(...)` should build:
+
+- the wooden sleepers/ties underneath the track; and
+- the two rails.
+
+Each group must use its own `CombineMesh`:
+
+- all wooden pieces underneath the rails are one combined mesh;
+- both rails are one combined mesh.
+
+The factory should accept enough parameters to place and size a straight track
+(length, gauge, sleeper spacing, base height, material/color). Keep the generated
+hierarchy named for inspection and tests.
+
+### Boxcar prefab
+
+`boxcar(...)` should build one boxcar out of thin cubes:
+
+- floor, two side walls, two end walls, and a roof;
+- doors partially open on at least one side of each car;
+- a simple coupler/gap between the two cars;
+- no motion, velocity binding, or sweep event handler.
+
+The train composition should place two boxcars on the track with a visible gap,
+matching the track gauge and height. Add a named zone/collidable pair for the
+future train sensor, but leave it inert in this slice: no velocity binding and no
+sweep listener. A wheel proxy is optional; the first slice can be a simple boxcar body.
+
+### Slice 1 acceptance
+
+- The example loads with:
+  `cargo run --release -- load examples/sweeping-zone-query-events.mms`.
+- The train is static and does nothing.
+- The example contains no `ProjectileImpact`, `ProjectileHit`, bound velocity on
+  the train's `Collidable`, or sweep event handler.
+- Visual check: two floating buildings, a continuous track between them, two
+  boxcars with partially open doors.
+- Structural check: wooden track pieces share one `CombineMesh`; rails share a
+  separate `CombineMesh`.
+- No existing scene test or example is regressed.
+
+### Slice 1 implementation notes
+
+- `examples/sweeping-zone-query-events.mms` copies the paper-craft scene and
+  adds the track/train between `paper_craft_east_tower_center` and
+  `paper_craft_west_tower_south`.
+- The track uses `paper_craft_train_track_wooden_sleepers` and
+  `paper_craft_train_track_rails` as separate `CombineMesh` groups.
+- The train root is `paper_craft_train`, with `paper_craft_train_car_0` and
+  `paper_craft_train_car_1`.
+- The inert sensor is `paper_craft_train_sweep_sensor`, a cube zone with a
+  static collidable child and no velocity binding or listener.
+- Track length is `33.6`, gauge `1.40`, sleeper spacing `0.85`, surface height
+  `20.5`, and yaw `atan2(-22, 25)`.
+- `src/scripting/paper_craft_scene_tests.rs` has a headless smoke test for the
+  inert train, separate track batches, and visual-only track.
+
+## Slice 2: generic swept-zone event mechanism
+
+Implement the additive generic mechanism described in the analysis document.
+This slice must not rename or remove the projectile event, and must not change
+current rocket behavior.
+
+Minimum behavior:
+
+- A `Zone` whose `Collidable` has a `Velocity` component bound by reference in
+  MMS reports contact with static geometry during its step. The event is scoped
+  to the zone.
+- The engine checks for a bound velocity and for a relevant sweep listener before
+  running the sweeping zone query. Binding a velocity without a listener must
+  not emit and should not pay for the sweep.
+- The event is contact-only. A miss produces no event and there is no per-step
+  heartbeat.
+- The payload identifies the moving collidable/zone, the bound velocity, the hit
+  collidable/zone, point, normal, and fraction, plus the context needed for the
+  handler to decide relevance.
+- The generic path does not own projectile disposal, expiry, damage, or effects.
+- The existing `ProjectileHit` path continues to work unchanged.
+
+Acceptance and smoke tests:
+
+- A focused Rust test covers hit, miss, and initial overlap for the generic
+  sweep.
+- An MMS scene with a bound velocity and a listener receives the generic event.
+- The same scene with no listener emits nothing and, if instrumented, does not
+  run the sweep query.
+- The same scene with a listener but no bound velocity emits nothing.
+- The same scene emits no event on a miss.
+- The old rocket tests still pass and still receive `ProjectileHit`.
+- Generic and projectile sensors can coexist in one scene without cross-talk.
+
+## Slice 3: train motion and reversal
+
+Attach motion to the train and use the generic swept event to reverse it at the
+buildings.
+
+- Start the train moving toward building A.
+- Bind the train's `Velocity` to its `Collidable` by reference and register a
+  listener for the generic swept event. The engine should do no sweep work until
+  that listener exists.
+- Give the sensor a shape that overlaps the leading end of the train, or one
+  sensor at each end. The simplest correct first version may use one centered
+  sensor; use a leading-end sensor if the train is late to stop.
+- On contact with building A: stop, clear reverse state, and set motion toward
+  building B.
+- On contact with building B: stop and set motion back toward building A.
+- Repeated contact events while still touching a building must not flip
+  direction more than once for that arrival.
+- Free travel between buildings must not emit sweep events.
+- The example must not use `ProjectileImpact`/`ProjectileHit` or the projectile
+  lifecycle.
+
+Smoke tests:
+
+- Run the example and observe the train hit A, reverse, hit B, reverse, and
+  continue cycling.
+- Event count per arrival is one; there is no event during open-track travel.
+- If the train is removed or reset, its sweep handler is unbound and no stale
+  events are delivered.
+- A focused scene test can advance the clock and assert two endpoint reversals
+  without duplicate callbacks.
+
+## Open questions
+
+1. Generic event name. Do not block slice 1 on this; use the name chosen by the
+   analysis doc when the mechanism lands.
+2. Velocity-binding API: builder name and signature on `Collidable`, and whether
+   the velocity-bound collidable remains a normal target for other queries.
+3. Listener gating: scoped to the zone, ancestors, or global handlers; checked
+   per step or cached; and behavior when a listener is added or removed after
+   the velocity binding.
+4. Handler context shape: which component references or data are delivered with
+   the subscription/event, and whether they are captured at bind time or resolved
+   at emit time.
+5. Train sensor placement: one centered sphere, one leading sensor that flips
+   with direction, or one sensor at each end.
+6. Whether endpoint detection uses the building's existing static collider or a
+   dedicated non-solid trigger zone.
+7. Reversal mechanics: reset `Velocity` and reapply a local/world linear vector,
+   or swap the motion provider's direction.
+8. Whether the track needs a separate static collider for the player while
+   remaining invisible to the train sweep.
+9. Fuel/energy exhaustion is not part of the train slice, but the projectile
+   lifecycle still needs a shared teardown path that unbinds sweep handlers and
+   velocity bindings.
+
+## Non-goals
+
+- Renaming or deprecating `ProjectileHit`/`ProjectileImpact`.
+- Changing the current rocket behavior or projectile lifecycle.
+- Moving-target relative sweeps (the train hits static buildings here).
+- Damage, destruction, or effects from train impacts.

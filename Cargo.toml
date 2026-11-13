@@ -441,8 +441,3 @@ required-features = ["desktop"]
 [[example]]
 name = "xr-grab-demo"
 required-features = ["desktop"]
-
-[[bench]]
-name = "listener_gate"
-path = "benches/listener_gate.rs"
-harness = false
