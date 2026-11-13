@@ -283,6 +283,19 @@ impl RxMutationExecutor {
                     body_text.clone(),
                 );
             }
+            IntentValue::RegisterNetSession { component_id } => {
+                systems.net.register_session(world, emit, *component_id);
+            }
+            IntentValue::RegisterNetSync { component_id } => {
+                systems.net.register_sync(world, *component_id);
+            }
+            IntentValue::NetSend {
+                component_id,
+                name,
+                text,
+            } => {
+                systems.net.send_message(emit, *component_id, name, text);
+            }
             IntentValue::RegisterScrolling { component_id } => {
                 let component = *component_id;
                 systems.register_scrolling(world, emit, component);

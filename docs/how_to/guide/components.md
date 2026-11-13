@@ -1023,6 +1023,22 @@ Carries http server state used when that engine feature is present in a componen
 HttpServer {}
 ```
 
+### `NetSessionComponent`
+<!-- catalog:component source="NetSessionComponent" mms="direct" names="NetSession" -->
+One multiplayer endpoint per process. `NetSession.host(addr?)` binds and owns world/physics authority; `NetSession.join(host_addr)` connects as a client; `NetSession.from_env()` reads `MITTENS_NET_ROLE`, `MITTENS_NET_ADDR`, and `MITTENS_NET_NAME`. Builders: `player_name`, `tick_hz`, `enabled`. Methods: `send(name, text)`, `is_host()`, `peer_id()`, `local_name()`. Emits `NetConnected`, `NetPeerJoined`, `NetPeerLeft`, `NetMessage`, and `NetError`. See [multiplayer](../multiplayer.md).
+**Directly constructible** as `NetSession`. Sources: [Rust implementation](../../../src/engine/ecs/component/net_session.rs) and [MMS registry](../../../src/scripting/registries/net_registry.rs).
+```mms parse-only
+NetSession.host("0.0.0.0:7010").player_name("rei") {}
+```
+
+### `NetSyncComponent`
+<!-- catalog:component source="NetSyncComponent" mms="direct" names="NetSync" -->
+Replicates the world pose of its parent `Transform`. `NetSync.local_player()` publishes this peer's player; `NetSync.remote_player(peer_id)` applies another peer's player pose to a proxy; `NetSync.host(key)` is published by the host and applied on clients, which also disable the `Velocity` driving it. Poses are applied as received, without interpolation.
+**Directly constructible** as `NetSync`. Sources: [Rust implementation](../../../src/engine/ecs/component/net_sync.rs) and [MMS registry](../../../src/scripting/registries/net_registry.rs).
+```mms parse-only
+T { NetSync.host("ball") }
+```
+
 ### `RouterComponent`
 <!-- catalog:component source="RouterComponent" mms="direct" names="Router" -->
 Routes selected signals between scopes according to configured routing rules. Use it when a tree needs this state or behavior. RX/pipeline systems; registration intents and routed events are the important signals.

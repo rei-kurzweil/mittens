@@ -10,6 +10,8 @@ mod renderable_runtime_config;
 mod spring_runtime_config;
 #[path = "registries/eye_tracking_runtime_config.rs"]
 mod eye_tracking_runtime_config;
+#[path = "registries/net_runtime_config.rs"]
+mod net_runtime_config;
 #[path = "runtime_component_common.rs"]
 pub(super) mod component_common;
 use meow_meow_script as mms;
@@ -443,6 +445,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     constructor_and_builder(component, "enabled", booleans(1));
                 }
                 "XREyeTracking" | "XREyeTrackingHTC" | "VRChatOSCEyeTracking" | "HTCEyeTracking" | "MediaPipeEyeTracking" => eye_tracking_runtime_config::configure(component,canonical),
+                "NetSession" | "NetSync" => net_runtime_config::configure(component, canonical),
                 "GridBinding" => {
                     component.constructor("grid", any(1));
                 }
@@ -1353,6 +1356,11 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "HttpRequest",
         "HttpResponse",
         "HttpError",
+        "NetConnected",
+        "NetPeerJoined",
+        "NetPeerLeft",
+        "NetMessage",
+        "NetError",
         "XrEyeTrackingUpdated",
         "XrEyeTrackingHtcUpdated",
     ] {

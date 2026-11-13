@@ -81,6 +81,8 @@ mod sakura_desktop_tests;
 
 #[cfg(test)]
 mod untracked_avatar_tests;
+#[cfg(test)]
+mod net_tests;
 
 #[cfg(test)]
 mod climbing_scene_tests;

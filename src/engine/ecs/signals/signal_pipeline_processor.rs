@@ -200,7 +200,10 @@ impl SignalPipelineProcessor {
             | IntentValue::PoseApply { .. }
             | IntentValue::PoseReset { .. }
             | IntentValue::HttpClientRequest { .. }
-            | IntentValue::HttpServerReply { .. } => None,
+            | IntentValue::HttpServerReply { .. }
+            | IntentValue::RegisterNetSession { .. }
+            | IntentValue::RegisterNetSync { .. }
+            | IntentValue::NetSend { .. } => None,
         }
     }
 
@@ -357,7 +360,10 @@ impl SignalPipelineProcessor {
             | IntentValue::PoseApply { .. }
             | IntentValue::PoseReset { .. }
             | IntentValue::HttpClientRequest { .. }
-            | IntentValue::HttpServerReply { .. } => None,
+            | IntentValue::HttpServerReply { .. }
+            | IntentValue::RegisterNetSession { .. }
+            | IntentValue::RegisterNetSync { .. }
+            | IntentValue::NetSend { .. } => None,
         }
     }
 }

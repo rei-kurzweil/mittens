@@ -42,6 +42,7 @@ pub struct SystemWorld {
     pub renderer_stats: RendererStatsSystem,
     pub router: RouterSystem,
     pub http_server: HttpServerSystem,
+    pub net: NetSystem,
     pub http_client: HttpClientSystem,
     pub xr_eye_tracking: XREyeTrackingSystem,
     pub scrolling: ScrollingSystem,
