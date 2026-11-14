@@ -38,27 +38,40 @@ impl<'a> SupportQuery<'a> {
         candidates: &'a mut Vec<usize>,
     ) -> Result<Self, LowerBodyStatus> {
         use LowerBodyStatus::{Pending, UnsupportedRig};
-        if !avatar.capsule_ready || !avatar.collision_enabled {
-            return Err(Pending);
-        }
-        let capsule = avatar.capsule_transform_id.ok_or(Pending)?;
-        let collider = avatar.capsule_collidable_id.ok_or(Pending)?;
-        let zone = world.parent_of(collider).ok_or(Pending)?;
-        let shape = world
-            .get_component_by_id_as::<ZoneComponent>(zone)
-            .filter(|z| z.enabled)
-            .ok_or(Pending)?
-            .shape;
-        let frame = matrix(world, capsule).map_err(UnsupportedRig)?;
-        let (center, shape) = collision_geometry::axis_aligned_world_shape(shape, frame)
-            .ok_or(UnsupportedRig("invalid capsule frame"))?;
-        let (mut min, mut max) = collision_geometry::transformed_aabb(
-            shape,
-            TransformTrs::new(center, [0.0, 0.0, 0.0, 1.0], [1.0; 3])
-                .to_matrix()
-                .unwrap(),
-        );
-        let bottom = min[1];
+        let (center, mut min, mut max, bottom) = if avatar.collision_enabled {
+            if !avatar.capsule_ready {
+                return Err(Pending);
+            }
+            let capsule = avatar.capsule_transform_id.ok_or(Pending)?;
+            let collider = avatar.capsule_collidable_id.ok_or(Pending)?;
+            let zone = world.parent_of(collider).ok_or(Pending)?;
+            let shape = world
+                .get_component_by_id_as::<ZoneComponent>(zone)
+                .filter(|z| z.enabled)
+                .ok_or(Pending)?
+                .shape;
+            let frame = matrix(world, capsule).map_err(UnsupportedRig)?;
+            let (center, shape) = collision_geometry::axis_aligned_world_shape(shape, frame)
+                .ok_or(UnsupportedRig("invalid capsule frame"))?;
+            let (min, max) = collision_geometry::transformed_aabb(
+                shape,
+                TransformTrs::new(center, [0.0, 0.0, 0.0, 1.0], [1.0; 3])
+                    .to_matrix()
+                    .unwrap(),
+            );
+            (center, min, max, min[1])
+        } else {
+            // Visual/network rigs still need read-only floor support. Derive a
+            // query frame from their soles without enabling collision response
+            // or creating a capsule that could move the received locomotion root.
+            let bottom = soles[0][1].min(soles[1][1]);
+            let center = [
+                (soles[0][0] + soles[1][0]) * 0.5,
+                soles[0][1].max(soles[1][1]) + scale * 0.5,
+                (soles[0][2] + soles[1][2]) * 0.5,
+            ];
+            (center, [center[0], bottom, center[2]], center, bottom)
+        };
         let margin = avatar.crouch_support_margin * scale;
         if !margin.is_finite() || margin <= 0.0 {
             return Err(UnsupportedRig("invalid support margin"));

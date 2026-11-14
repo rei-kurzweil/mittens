@@ -4015,6 +4015,7 @@ fn apply_call(
                     .clone()
                     .with_eye_height_from_head_bone(arg_f32(args, 0)?)
             }
+            "eye_offset" => *avc = avc.clone().with_eye_offset(val_as_f32_array::<3>(&args[0])?)?,
             "head_ik_eye_height" => *avc = avc.clone().with_head_ik_eye_height(arg_f32(args, 0)?),
             "head_motion_gaze_policy" => {
                 *avc = avc.clone().with_head_motion_gaze_policy(

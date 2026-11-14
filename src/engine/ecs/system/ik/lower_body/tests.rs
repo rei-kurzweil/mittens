@@ -1261,3 +1261,5 @@ fn leg_world_target_survives_body_translation_and_yaw_on_actual_rigs() {
         }
     }
 }
+
+mod visual_rigs;

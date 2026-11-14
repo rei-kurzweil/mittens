@@ -1526,11 +1526,16 @@ fn try_init_pose_drivers(
             None
         })
         .collect();
-    let authored_eye_offset = camera_children
-        .iter()
-        .map(|&(_, off, _)| off)
-        .find(|off| off != &[0.0, 0.0, 0.0])
-        .unwrap_or([0.0, eye_height_from_head_bone.unwrap_or(0.0), 0.0]);
+    let explicit_eye_offset = world
+        .get_component_by_id_as::<AvatarControlComponent>(id)
+        .and_then(|avatar| avatar.eye_offset);
+    let authored_eye_offset = explicit_eye_offset.unwrap_or_else(|| {
+        camera_children
+            .iter()
+            .map(|&(_, off, _)| off)
+            .find(|off| off != &[0.0, 0.0, 0.0])
+            .unwrap_or([0.0, eye_height_from_head_bone.unwrap_or(0.0), 0.0])
+    });
     // The wrapper is attached beneath the mapped camera anchor, not directly
     // beneath the head. Include that rest path (including helper rotations)
     // before converting the eye origin back to the displaced head pivot.

@@ -242,6 +242,16 @@ fn multiplayer_basic_example_runs_as_host_and_client() {
             .collect();
         assert_eq!(channels.len(), 21);
         assert!(named(scene, "shared_gohei").is_some());
+        for avatar_name in ["local_avatar", "remote_avatar"] {
+            let id = named(scene, avatar_name).unwrap();
+            let feet = scene.systems.lower_body_ik.feet(id).unwrap_or_else(||
+                panic!("{avatar_name}: {:?}", scene.systems.lower_body_ik.status(id))
+            );
+            for foot in feet {
+                assert!(foot.support.is_some(), "{avatar_name} has no foot support: {foot:?}");
+                assert!(foot.solved_sole[1].abs() < 0.015, "{avatar_name} foot must contact floor: {foot:?}");
+            }
+        }
         let local_avatar = scene.world.get_component_by_id_as::<AvatarControlComponent>(
             named(scene, "local_avatar").unwrap()
         ).unwrap();
@@ -397,4 +407,60 @@ fn multiplayer_example_supports_desktop_client_and_windowless_xr_host() {
             .unwrap();
         assert_eq!(session.is_host(), xr);
     }
+}
+
+#[test]
+fn multiplayer_desktop_render_camera_tracks_local_head() {
+    use crate::engine::ecs::component::{AvatarControlComponent, Camera3DComponent};
+    use crate::engine::graphics::CameraTarget;
+    let source = std::fs::read_to_string("examples/multiplayer-basic.mms").unwrap()
+        .replace("let use_xr = true", "let use_xr = false")
+        .replace("let use_desktop = false", "let use_desktop = true")
+        .replace("0.0.0.0:", "127.0.0.1:")
+        .replace("7011", "0")
+        .replace("MultiplayerSession.from_env()", r#"MultiplayerSession.host("127.0.0.1:0")"#);
+    let mut scene = load(&source, "examples/multiplayer-basic.mms");
+    for _ in 0..20 { scene.update(1. / 60., &Default::default()); }
+    let camera = scene.world.all_components().find(|id|
+        scene.world.get_component_by_id_as::<Camera3DComponent>(*id).is_some()
+    ).unwrap();
+    assert_eq!(scene.systems.camera.active_window_camera_component(), Some(camera));
+    let local = named(&scene, "local_avatar").unwrap();
+    assert_eq!(scene.world.get_component_by_id_as::<AvatarControlComponent>(local).unwrap().humanoid_map_gltf, named(&scene, "local_model"));
+    let root = named(&scene, "local_root").unwrap();
+    let check = |scene: &Universe| {
+        let actual = scene.visuals.visual_camera(CameraTarget::Window).unwrap().eyes[0];
+        let expected = TransformSystem::world_position(&scene.world, camera).unwrap();
+        eprintln!("desktop rendered {:?}; camera world {:?}; root {:?}", actual.transform.translation, expected, world_position(scene, "local_root"));
+        assert!((0..3).all(|i| (actual.transform.translation[i] - expected[i]).abs() < 1e-4));
+        let view = scene.systems.camera.active_window_camera_matrices().unwrap().0;
+        assert_eq!(actual.view, view);
+        expected
+    };
+    let before = check(&scene);
+    use crate::engine::ecs::{SignalEmitter, IntentValue};
+    scene.command_queue.push_intent_now(root, IntentValue::PatchTransformTrs {
+        component_id: root, space: crate::engine::transform::TransformSpace::World,
+        translation: Some([3., 0., 2.]), rotation: None,
+    });
+    for _ in 0..12 { scene.update(1. / 60., &Default::default()); }
+    let after = check(&scene);
+    assert!((after[0] - before[0]).abs() > 1.0 && (after[2] - before[2]).abs() > 1.0);
+}
+
+#[test]
+fn multiplayer_eye_offset_roundtrips_and_rejects_nonfinite_calibration() {
+    use crate::engine::ecs::component::{AvatarControlComponent, Component};
+    let original = AvatarControlComponent::new().with_eye_offset([0.0, 0.08, 0.12]).unwrap();
+    for offset in [[f32::NAN, 0., 0.], [0., f32::INFINITY, 0.]] {
+        assert!(AvatarControlComponent::new().with_eye_offset(offset).is_err());
+    }
+    let ast = original.to_mms_ast(&World::default());
+    let source = crate::scripting::unparser::unparse_component(&ast);
+    let scene = load(&source, "examples/_eye-offset-test.mms");
+    let restored = scene.world.all_components().find_map(|id|
+        scene.world.get_component_by_id_as::<AvatarControlComponent>(id)
+    ).unwrap();
+    assert_eq!(restored.eye_offset, original.eye_offset);
+    assert_eq!(AvatarControlComponent::new().eye_offset, None);
 }

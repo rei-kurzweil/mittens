@@ -15,6 +15,9 @@ import { ambient_eye_saccades } from "../assets/components/animations/ambient_ey
 import { gohei_black_spring } from "../assets/components/paper_craft/gohei_black_spring.mms"
 import { shared_grabbable } from "../assets/components/network/shared_grabbable.mms"
 import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
+import { pool_tile_material } from "../assets/components/materials/pool_tiles.mms"
+import { ceramic_box } from "../assets/components/buildings/pool_building.mms"
+import { kawaii_twilight_sky } from "../assets/components/backgrounds/kawaii-twilight-sky.mms"
 import { looping_blink } from "../assets/components/animations/looping_blink.mms"
 
 // Two-player LAN/loopback multiplayer: one host, one client, same arena.
@@ -35,7 +38,20 @@ net
 RendererSettings { window_visible(use_desktop) window_size(1280, 800) }
 // Eye/blink clip timestamps below use seconds converted to beats.
 Clock.bpm(120.0)
-BGC.rgba(0.62, 0.70, 0.86, 1.0)
+BGC.rgba(0.60, 0.48, 0.78, 1.0)
+RenderGraph {
+    EmissivePass {}
+    Bloom { intensity(0.65) radius_ndc(0.035) emissive_scale(1.0) half_res(true) }
+}
+Raycastable.disabled() {
+    Selectable.off()
+    kawaii_twilight_sky({
+        low_color = [1.0, 0.67, 0.78], low_point = -0.12,
+        middle_color = [0.67, 0.53, 0.82], middle_point = 0.28,
+        high_color = [0.60, 0.48, 0.78], high_point = 1.0,
+        moon_direction = [-0.35, 0.30, -0.88]
+    })
+}
 AL.rgb(0.30, 0.31, 0.36)
 T.position(-0.4, 0.9, 0.5) { DL.color(1.0, 0.94, 0.86).intensity(1.2) }
 T.position(0.6, 0.5, -0.4) { DL.color(0.62, 0.74, 1.0).intensity(0.35) }
@@ -43,14 +59,13 @@ T.position(0.6, 0.5, -0.4) { DL.color(0.62, 0.74, 1.0).intensity(0.35) }
 let arena_half = 7.0
 let ball_radius = 0.35
 
-// Arena floor and posts so motion has a reference.
-T.position(0.0, -0.1, 0.0).scale(arena_half * 2.0, 0.2, arena_half * 2.0) {
-    R.cube() { C.rgba(0.80, 0.78, 0.74, 1.0) }
+// Pool ceramic surfaces include static support colliders for planted feet.
+let tiles = pool_tile_material()
+T { name = "arena_floor"
+    ceramic_box([0.0, -0.1, 0.0], [arena_half * 2.0, 0.2, arena_half * 2.0], [0.95, 0.95, 1.0], tiles)
 }
 for corner in [[-1.0, -1.0], [1.0, -1.0], [-1.0, 1.0], [1.0, 1.0]] {
-    T.position(corner[0] * arena_half, 0.6, corner[1] * arena_half).scale(0.3, 1.2, 0.3) {
-        R.cube() { C.rgba(0.36, 0.42, 0.62, 1.0) }
-    }
+    ceramic_box([corner[0] * arena_half, 0.6, corner[1] * arena_half], [0.3, 1.2, 0.3], [0.72, 0.65, 0.85], tiles)
 }
 
 // Keep the reflected-camera side empty: the current mirror path can be blocked
@@ -118,6 +133,12 @@ fn make_mitten(prefix, local_player) {
         name = prefix + "_avatar"
         // Desktop owns an authored clip; XR closure comes only from tracking.
         idle_blink(false)
+        // Same calibrated Mitten sole landmarks and local gait as paper-craft.
+        // Match camera-bearing and camera-free rigs' eye-to-head calibration.
+        eye_offset([0.0, 0.08, 0.12])
+        crouch_enabled(true)
+        crouch_sole_offsets([0.0, 0.0530325, 0.0874534], [0.0, 0.0530325, 0.0874534])
+        WalkingIK { step_scale(1.3) }
         if !local_player { collision_disabled() }
         initial_yaw(3.14159)
         arm_ik(vroid_arm_ik_bend_plane_prototype())
@@ -159,7 +180,9 @@ fn make_mitten(prefix, local_player) {
             avatar.attach(blink)
         }
     })
-    let head = T.position(0.0, 1.65, 0.0) { name = prefix + "_head_target" avatar }
+    // Mitten's desktop eye-to-sole height; using a generic 1.65 m leaves
+    // this model's soles about 6.6 cm above the floor. XR replaces this pose.
+    let head = T.position(0.0, 1.58, 0.0) { name = prefix + "_head_target" avatar }
     let label = Text { prefix C.rgba(0.12, 0.14, 0.20, 1.0) }
     let root = T { name = root_name T.position(-0.25, 2.2, 0.0).scale(0.1, 0.1, 0.1) { label } }
     if local_player && use_xr {

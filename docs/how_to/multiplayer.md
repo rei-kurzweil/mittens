@@ -205,3 +205,19 @@ both peers; it replicates translation and rotation, not scale.
 The mirror has no backing and sits beyond the arena floor/posts to leave the
 reflected-camera side empty. This works around the current mirror clipping issue;
 it does not fix the renderer's handling of geometry behind the mirror.
+
+Both avatar copies use paper-craft's calibrated sole offsets and
+`WalkingIK { step_scale(1.3) }`. The pool-tiled arena floor has static support
+collision. Desktop uses a Mitten-specific 1.58 m authored eye height so its soles
+reach the floor; XR continues to use actual tracking and floor calibration.
+Leg IK, stepping, and gohei paper motion are solved locally, not transmitted.
+
+`AVC.eye_offset([0.0, 0.08, 0.12])` supplies the same mapped-camera-anchor-local
+eye origin to local and camera-free remote rigs. Without an explicit value, AVC
+continues to infer the offset from camera wrappers as before. A remote rig can
+query ground support with collision disabled; this changes its leg pose without
+adding collision response or modifying the received locomotion root.
+
+The scene uses the shared pool ceramic material/texture, paper-craft's twilight
+sky with moon/clouds, and its EmissivePass/Bloom settings. The mirror clearance
+workaround remains in place.

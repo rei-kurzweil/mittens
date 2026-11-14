@@ -1283,6 +1283,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     ] {
                         constructor_and_builder(component, method, floats(1));
                     }
+                    constructor_and_builder(component, "eye_offset", any(1));
                     constructor_and_builder(component, "head_motion_gaze_policy", strings(1));
                     constructor_and_builder(component, "mouth_open_from_amplitude", any(1));
                     constructor_and_builder(component, "mouth_open_rms_center_range", floats(2));

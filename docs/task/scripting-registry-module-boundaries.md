@@ -85,3 +85,14 @@ separate from UDP authoring. Keep host.rs and runtime_config.rs dispatch-only
 for this family. Resolve slots per GLTF instance and preserve direct factor
 updates; no per-draw allocation or new renderer pipelines. Validate script
 weights, tracker/network precedence, animation callbacks and the two-peer demo.
+
+## Shared camera-free avatar eye calibration
+
+The multiplayer proxy needs the same eye-origin calibration as a camera-bearing
+local rig. Add a generic explicit eye_offset vec3 to AVC, preserving the existing
+camera-wrapper fallback when omitted. The large AVC component/initialization and
+component_registry dispatch should eventually group pose/eye calibration config,
+serialization, and initialization coherently; keep direct scalar/vector math and
+no per-frame allocations or dynamic dispatch. This scoped addition does not
+perform the proposed split. Validate finite inputs, MMS serialization, camera
+view/driver agreement, and local/proxy foot contact.

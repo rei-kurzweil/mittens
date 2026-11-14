@@ -191,6 +191,9 @@ pub struct AvatarControlComponent {
     /// the IK target (the head bone pivot chases the HMD position directly).
     /// Default: `None`.
     pub head_ik_eye_height: Option<f32>,
+    /// Eye origin in mapped camera-anchor local space, metres. Explicit shared
+    /// calibration for rigs with or without a camera; otherwise use its wrapper.
+    pub eye_offset: Option<[f32; 3]>,
 
     /// Suppress incoming gaze changes during rapid head motion. This is an
     /// opt-in visual mitigation for unstable eye-tracking samples.
@@ -582,6 +585,15 @@ impl AvatarControlComponent {
         self
     }
 
+    /// Set a shared camera-anchor-local eye origin for camera-free or local rigs.
+    pub fn with_eye_offset(mut self, offset: [f32; 3]) -> Result<Self, String> {
+        if !offset.into_iter().all(f32::is_finite) {
+            return Err("AvatarControl.eye_offset must be a finite vec3".into());
+        }
+        self.eye_offset = Some(offset);
+        Ok(self)
+    }
+
     /// Set the vertical offset for the head IK target calculation (metres).
     /// Decoupled from the camera position so spine bending and camera positioning
     /// can be controlled independently. Default: `None`.
@@ -650,6 +662,7 @@ impl Default for AvatarControlComponent {
             skip_body_operator: false,
             ik_debug: false,
             head_ik_eye_height: None,
+            eye_offset: None,
             neck_pin_enabled: true,
             model_root_id: None,
             model_root_local_y: 0.0,
@@ -797,6 +810,9 @@ impl Component for AvatarControlComponent {
         }
         if let Some(dy) = self.eye_height_from_head_bone {
             c = c.with_call("eye_height_from_head_bone", vec![num(dy as f64)]);
+        }
+        if let Some(offset) = self.eye_offset {
+            c = c.with_call("eye_offset", vec![array(nums(offset.map(f64::from)))]);
         }
         if let Some(dy) = self.head_ik_eye_height {
             c = c.with_call("head_ik_eye_height", vec![num(dy as f64)]);

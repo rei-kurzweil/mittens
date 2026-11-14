@@ -1336,3 +1336,12 @@ Marks an externally driven head-target hierarchy for local AVC/IK without pollin
 ```mms parse-only
 PoseInput { T {} }
 ```
+
+### Shared eye calibration for camera-free avatars
+
+`AvatarControl.eye_offset([x, y, z])` authors a finite eye-origin vector in
+mapped camera-anchor local metres. It overrides camera-wrapper offset inference
+for head/body initialization, so a remote avatar without a camera can use the
+same calibration as its local counterpart. Omit it to retain camera-wrapper
+inference. Camera-bearing rigs should author their actual camera wrapper at the
+same offset. This is initialization configuration, not a live tracking setter.
