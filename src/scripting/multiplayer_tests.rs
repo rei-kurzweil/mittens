@@ -350,6 +350,16 @@ fn multiplayer_example_supports_desktop_client_and_windowless_xr_host() {
         assert_eq!(settings.window_visible, !xr);
         assert_eq!(named(&scene, "multiplayer_xr_settings").is_some(), xr);
         assert_eq!(named(&scene, "xr_floor_correction_slider").is_some(), xr);
+        let camera_anchor = named(&scene, "local_xr_camera_anchor");
+        assert_eq!(camera_anchor.is_some(), xr);
+        if let Some(anchor) = camera_anchor {
+            use crate::engine::ecs::component::TransformComponent;
+            let transform = scene.world.get_component_by_id_as::<TransformComponent>(anchor).unwrap();
+            assert_eq!(transform.transform.translation, [0.0, 0.08, 0.12]);
+            assert!(scene.world.children_of(anchor).iter().any(|id|
+                scene.world.get_component_by_id_as::<CameraXRComponent>(*id).is_some()
+            ));
+        }
         let backend = scene
             .world
             .all_components()

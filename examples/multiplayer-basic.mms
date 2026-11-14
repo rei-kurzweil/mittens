@@ -128,7 +128,11 @@ fn make_mitten(prefix, local_player) {
         left_driver
         right_driver
         if local_player && use_xr {
-            CXR {}
+            // Match Mitten's established head-relative eye/view offset.
+            T.position(0.0, 0.08, 0.12) {
+                name = "local_xr_camera_anchor"
+                CXR {}
+            }
             XREyeTracking.on().priority(["htc", "vrchat_osc"]).enable_pupil_direction_tracking(false)
         }
     }
