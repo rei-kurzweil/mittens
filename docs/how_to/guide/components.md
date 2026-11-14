@@ -1033,7 +1033,7 @@ NetSession.host("0.0.0.0:7010").player_name("rei") {}
 
 ### `NetSyncComponent`
 <!-- catalog:component source="NetSyncComponent" mms="direct" names="NetSync" -->
-Replicates the world pose of its parent `Transform`. `NetSync.local_player()` publishes this peer's player; `NetSync.remote_player(peer_id)` applies another peer's player pose to a proxy; `NetSync.host(key)` is published by the host and applied on clients, which also disable the `Velocity` driving it. Poses are applied as received, without interpolation.
+Replicates the world pose of its parent `Transform`. `NetSync.local_player()` publishes this peer's player; `NetSync.remote_player(peer_id)` applies another peer's player pose to a proxy; `NetSync.host(key)` is published by the host and applied on clients, which also disable the `Velocity` driving it. `.upright()` applies only the yaw of received rotations, so an eye pose can drive a standing body. Poses are applied as received, without interpolation.
 **Directly constructible** as `NetSync`. Sources: [Rust implementation](../../../src/engine/ecs/component/net_sync.rs) and [MMS registry](../../../src/scripting/registries/net_registry.rs).
 ```mms parse-only
 T { NetSync.host("ball") }

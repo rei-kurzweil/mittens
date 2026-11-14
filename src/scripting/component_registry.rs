@@ -2971,6 +2971,9 @@ fn apply_call(
     if world
         .get_component_by_id_as::<crate::engine::ecs::component::NetSessionComponent>(id)
         .is_some()
+        || world
+            .get_component_by_id_as::<crate::engine::ecs::component::NetSyncComponent>(id)
+            .is_some()
     {
         return net_registry::apply(world, id, method, args);
     }

@@ -19,6 +19,9 @@ pub enum NetAuthority {
 #[derive(Debug, Clone)]
 pub struct NetSyncComponent {
     pub authority: NetAuthority,
+    /// Apply only the yaw of received rotations, so an eye/camera pose drives
+    /// a standing body without tilting it.
+    pub upright: bool,
     component: Option<ComponentId>,
 }
 
@@ -35,9 +38,15 @@ impl NetSyncComponent {
         Self::new(NetAuthority::RemotePlayer { peer_id })
     }
 
+    pub fn with_upright(mut self, upright: bool) -> Self {
+        self.upright = upright;
+        self
+    }
+
     fn new(authority: NetAuthority) -> Self {
         Self {
             authority,
+            upright: false,
             component: None,
         }
     }
@@ -73,12 +82,17 @@ impl Component for NetSyncComponent {
         &self,
         _world: &crate::engine::ecs::World,
     ) -> crate::scripting::ast::ComponentExpression {
-        match &self.authority {
+        let ce = match &self.authority {
             NetAuthority::Host { key } => ce_call("NetSync", "host", vec![s(key)]),
             NetAuthority::LocalPlayer => ce_call("NetSync", "local_player", vec![]),
             NetAuthority::RemotePlayer { peer_id } => {
                 ce_call("NetSync", "remote_player", vec![num(*peer_id as f64)])
             }
+        };
+        if self.upright {
+            ce.with_call("upright", vec![])
+        } else {
+            ce
         }
     }
 }

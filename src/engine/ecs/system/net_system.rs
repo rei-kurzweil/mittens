@@ -20,6 +20,7 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::system::TransformSystem;
 use crate::engine::ecs::{ComponentId, EventSignal, IntentValue, SignalEmitter, World};
 use crate::engine::transform::{TransformSpace, TransformTrs};
+use crate::utils::math;
 use endpoint::{NetEndpoint, NetEvent};
 use protocol::Pose;
 use std::collections::BTreeMap;
@@ -34,11 +35,17 @@ struct SessionRuntime {
     tick: u64,
 }
 
+#[derive(Debug)]
+struct SyncEntry {
+    authority: NetAuthority,
+    upright: bool,
+}
+
 #[derive(Debug, Default)]
 pub struct NetSystem {
     session: Option<SessionRuntime>,
     /// Registered `NetSync` components. Ordered so publishing is deterministic.
-    syncs: BTreeMap<ComponentId, NetAuthority>,
+    syncs: BTreeMap<ComponentId, SyncEntry>,
 }
 
 impl NetSystem {
@@ -105,7 +112,13 @@ impl NetSystem {
 
     pub fn register_sync(&mut self, world: &World, component: ComponentId) {
         if let Some(sync) = world.get_component_by_id_as::<NetSyncComponent>(component) {
-            self.syncs.insert(component, sync.authority.clone());
+            self.syncs.insert(
+                component,
+                SyncEntry {
+                    authority: sync.authority.clone(),
+                    upright: sync.upright,
+                },
+            );
         }
     }
 
@@ -163,6 +176,7 @@ impl NetSystem {
                     config.peer_id = *peer_id;
                 }
             }
+            log_event(&event);
             emit.push_event(scope, to_signal(event, is_host));
         }
 
@@ -170,8 +184,8 @@ impl NetSystem {
         // TODO(net): buffer snapshots and interpolate ~100 ms behind; extrapolate on loss.
         let players = session.endpoint.take_remote_players();
         let entities = session.endpoint.take_host_entities();
-        for (&sync, authority) in &self.syncs {
-            let pose = match authority {
+        for (&sync, entry) in &self.syncs {
+            let pose = match &entry.authority {
                 NetAuthority::RemotePlayer { peer_id } => players.get(peer_id),
                 NetAuthority::Host { key } if !is_host => {
                     disable_local_simulation(world, sync);
@@ -187,7 +201,11 @@ impl NetSystem {
                         space: TransformSpace::World,
                         value: TransformTrs {
                             translation: pose.p,
-                            rotation_quat_xyzw: pose.r,
+                            rotation_quat_xyzw: if entry.upright {
+                                yaw_only(pose.r)
+                            } else {
+                                pose.r
+                            },
                             scale: pose.s,
                         },
                     },
@@ -204,9 +222,9 @@ impl NetSystem {
         session.tick += 1;
         let mut local_player = None;
         let mut owned_entities = Vec::new();
-        for (&sync, authority) in &self.syncs {
+        for (&sync, entry) in &self.syncs {
             let pose = || sync_target(world, sync).and_then(|t| world_pose(world, t));
-            match authority {
+            match &entry.authority {
                 NetAuthority::LocalPlayer if local_player.is_none() => local_player = pose(),
                 NetAuthority::Host { key } if is_host => {
                     if let Some(pose) = pose() {
@@ -222,6 +240,16 @@ impl NetSystem {
     }
 }
 
+fn log_event(event: &NetEvent) {
+    match event {
+        NetEvent::Connected { peer_id } => eprintln!("[net] connected as peer {peer_id}"),
+        NetEvent::PeerJoined { peer_id, name } => eprintln!("[net] {name} joined (peer {peer_id})"),
+        NetEvent::PeerLeft { peer_id, name } => eprintln!("[net] {name} left (peer {peer_id})"),
+        NetEvent::Error { phase, message } => eprintln!("[net] {phase} error: {message}"),
+        NetEvent::App { .. } => {}
+    }
+}
+
 fn to_signal(event: NetEvent, is_host: bool) -> EventSignal {
     match event {
         NetEvent::Connected { peer_id } => EventSignal::NetConnected { peer_id, is_host },
@@ -233,6 +261,15 @@ fn to_signal(event: NetEvent, is_host: bool) -> EventSignal {
             message,
         },
     }
+}
+
+/// Heading of `rotation` about world +Y, dropping pitch and roll.
+fn yaw_only(rotation: [f32; 4]) -> [f32; 4] {
+    let forward = math::quat_rotate_vec3(rotation, [0.0, 0.0, 1.0]);
+    if forward[0].abs() + forward[2].abs() < 1e-6 {
+        return [0.0, 0.0, 0.0, 1.0];
+    }
+    math::quat_from_axis_angle([0.0, 1.0, 0.0], forward[0].atan2(forward[2]))
 }
 
 /// A `NetSync` replicates its parent transform.

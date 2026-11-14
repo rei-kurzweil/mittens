@@ -162,3 +162,39 @@ fn multiplayer_basic_example_runs_as_host_and_client() {
     );
     assert!(status_text(&client).contains("remote players: 1"));
 }
+
+#[test]
+fn paper_craft_multiplayer_example_spawns_upright_remote_mittens() {
+    let source = std::fs::read_to_string("examples/paper-craft-multiplayer.mms").unwrap();
+    let configured = |session: &str| {
+        assert!(source.contains("NetSession.from_env()"));
+        source.replace("NetSession.from_env()", session)
+    };
+    let mut host = load(
+        &configured(r#"NetSession.host("127.0.0.1:47013").player_name("rei")"#),
+        "examples/paper-craft-multiplayer.mms",
+    );
+    let mut client = load(
+        &configured(r#"NetSession.join("127.0.0.1:47013").player_name("dan")"#),
+        "examples/paper-craft-multiplayer.mms",
+    );
+    for _ in 0..60 {
+        host.update(1.0 / 60.0, &Default::default());
+        std::thread::sleep(Duration::from_millis(1));
+        client.update(1.0 / 60.0, &Default::default());
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let near = |a: [f32; 3], b: [f32; 3]| (0..3).all(|i| (a[i] - b[i]).abs() < 0.05);
+    let driver = "paper_craft_mitten_screen_driver";
+    let client_eye = world_position(&client, driver).unwrap();
+    let host_eye = world_position(&host, driver).unwrap();
+    assert!((client_eye[0] - host_eye[0]).abs() > 1.0, "players spawn apart");
+    // Proxies trail by at most one send interval of motion (players are idle).
+    assert!(near(world_position(&host, "paper_craft_net_proxy_2").unwrap(), client_eye));
+    assert!(near(world_position(&client, "paper_craft_net_proxy_1").unwrap(), host_eye));
+    let proxy = named(&client, "paper_craft_net_proxy_1").unwrap();
+    let rotation = TransformSystem::world_trs(&client.world, proxy)
+        .unwrap()
+        .rotation_quat_xyzw;
+    assert!(rotation[0].abs() < 1e-4 && rotation[2].abs() < 1e-4, "upright: {rotation:?}");
+}

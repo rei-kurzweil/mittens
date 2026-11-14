@@ -43,13 +43,22 @@ pub(super) fn create(
     }
 }
 
-/// Builder calls on `NetSession`. They take effect at registration.
+/// Builder calls on `NetSession`/`NetSync`. They take effect at registration.
 pub(super) fn apply(
     world: &mut World,
     id: ComponentId,
     method: &str,
     args: &[Value],
 ) -> Result<(), String> {
+    if let Some(sync) = world.get_component_by_id_as_mut::<NetSyncComponent>(id) {
+        return match (method, args) {
+            ("upright", []) => {
+                sync.upright = true;
+                Ok(())
+            }
+            _ => Err(format!("NetSync: unknown builder '{method}'")),
+        };
+    }
     let session = world
         .get_component_by_id_as_mut::<NetSessionComponent>(id)
         .ok_or("not a NetSession component")?;

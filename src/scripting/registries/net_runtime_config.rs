@@ -54,6 +54,7 @@ pub(super) fn configure(
         "NetSync" => {
             component.constructor("host", strings(1));
             component.constructor("local_player", no_args());
+            component.builder_call("upright", no_args());
             component.constructor("remote_player", component_signature([mms::ValueType::U32]));
         }
         _ => {}
