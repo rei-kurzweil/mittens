@@ -902,6 +902,33 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
                     .unwrap_or(Value::Null),
             ),
         ])),
+        Some(crate::engine::ecs::EventSignal::NetConnected { peer_id, is_host }) => {
+            Value::Map(HashMap::from([
+                ("peer_id".to_string(), Value::Number(*peer_id as f64)),
+                ("is_host".to_string(), Value::Bool(*is_host)),
+            ]))
+        }
+        Some(
+            crate::engine::ecs::EventSignal::NetPeerJoined { peer_id, name }
+            | crate::engine::ecs::EventSignal::NetPeerLeft { peer_id, name },
+        ) => Value::Map(HashMap::from([
+            ("peer_id".to_string(), Value::Number(*peer_id as f64)),
+            ("name".to_string(), Value::String(name.clone())),
+        ])),
+        Some(crate::engine::ecs::EventSignal::NetMessage { from, name, text }) => {
+            Value::Map(HashMap::from([
+                // `from` is an MMS keyword, so the payload key is `sender`.
+                ("sender".to_string(), Value::Number(*from as f64)),
+                ("name".to_string(), Value::String(name.clone())),
+                ("text".to_string(), Value::String(text.clone())),
+            ]))
+        }
+        Some(crate::engine::ecs::EventSignal::NetError { phase, message }) => {
+            Value::Map(HashMap::from([
+                ("phase".to_string(), Value::String(phase.clone())),
+                ("message".to_string(), Value::String(message.clone())),
+            ]))
+        }
         Some(crate::engine::ecs::EventSignal::XrEyeTrackingUpdated {
             combined_look,
             left_look,

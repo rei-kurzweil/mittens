@@ -79,6 +79,8 @@ mod xr_gamepad_registry;
 pub(super) mod gravity_registry;
 #[path = "registries/geometry_registry.rs"]
 mod geometry_registry;
+#[path = "registries/net_registry.rs"]
+pub(super) mod net_registry;
 use editor_ui_registry::parse_editor_ui_panel_specs;
 #[path = "registries/interaction_registry.rs"]
 mod interaction_registry;
@@ -153,6 +155,8 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "HtmlElement",
     "HttpClient",
     "HttpServer",
+    "NetSession",
+    "NetSync",
     "XREyeTracking",
     "Zone",
     "XREyeTrackingHTC",
@@ -1789,6 +1793,7 @@ fn create_component(
             }
             add!(c)
         }
+        "NetSession" | "NetSync" => net_registry::create(world, type_name, ctor, args),
         "XREyeTracking" => match ctor { Some("on") | None => add!(XREyeTrackingComponent::on()), Some("listen") => add!(XREyeTrackingComponent::listen(arg_str(args, 0)?, arg_f32(args, 1)? as u16)), Some(method) => Err(format!("XREyeTracking: unknown constructor '{method}'")) },
         "XREyeTrackingHTC" => match ctor { Some("on") | None => add!(XREyeTrackingHtcComponent::on()), Some("listen") => add!(XREyeTrackingHtcComponent::listen(arg_str(args, 0)?, arg_f32(args, 1)? as u16)), Some(method) => Err(format!("XREyeTrackingHTC: unknown constructor '{method}'")) },
         "VRChatOSCEyeTracking" => match ctor { Some("on") | None => add!(VRChatOSCEyeTrackingComponent::on()), Some("listen") => add!(VRChatOSCEyeTrackingComponent::listen(arg_str(args, 0)?, arg_f32(args, 1)? as u16)), Some(method) => Err(format!("VRChatOSCEyeTracking: unknown constructor '{method}'")) },
@@ -2962,6 +2967,15 @@ fn apply_call(
             .is_some()
     {
         return geometry_registry::apply(world, id, method, args);
+    }
+    if world
+        .get_component_by_id_as::<crate::engine::ecs::component::NetSessionComponent>(id)
+        .is_some()
+        || world
+            .get_component_by_id_as::<crate::engine::ecs::component::NetSyncComponent>(id)
+            .is_some()
+    {
+        return net_registry::apply(world, id, method, args);
     }
     if world.get_component_by_id_as::<XREyeTrackingComponent>(id).is_some()
         || world.get_component_by_id_as::<XREyeTrackingHtcComponent>(id).is_some()

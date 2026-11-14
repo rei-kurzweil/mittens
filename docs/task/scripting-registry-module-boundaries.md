@@ -48,3 +48,10 @@ Current broader checks expose four failures: the marker-schema test
 does not exempt `Joint`, and the legacy roundtrip helper cannot handle Animation,
 Keyframe, or the current MusicNote representation. Record/fix those independently
 instead of changing semantics to make a file reorganization pass.
+
+## Note (2026-11-13)
+
+The multiplayer `NetSession`/`NetSync` bindings were added as one family pair,
+`registries/net_registry.rs` and `registries/net_runtime_config.rs`, with
+single-line dispatch hooks in the central files. New families should follow
+the same shape rather than growing the central registries.

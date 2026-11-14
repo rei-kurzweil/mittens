@@ -58,6 +58,7 @@ pub mod hand_tracking;
 pub mod hand_tracking_system;
 pub mod http_client_system;
 pub mod http_server_system;
+pub mod net_system;
 pub mod humanoid_bone_map_system;
 pub mod ik;
 pub mod ik_system;
@@ -155,6 +156,7 @@ pub use grid_system::GridSystem;
 pub use hand_tracking_system::HandTrackingSystem;
 pub use http_client_system::HttpClientSystem;
 pub use http_server_system::HttpServerSystem;
+pub use net_system::NetSystem;
 pub use humanoid_bone_map_system::{
     HumanoidBoneMapReport, HumanoidBoneMapSystem, HumanoidSlotProvenance, HumanoidSlotReport,
     HumanoidSlotStatus, ResolvedHumanoidTarget, ResolvedHumanoidTargetKind,

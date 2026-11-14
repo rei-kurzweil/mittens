@@ -353,6 +353,29 @@ pub enum EventSignal {
         url: Option<String>,
         bind_addr: Option<String>,
     },
+    /// The local `NetSession` has a peer id (immediately for a host).
+    NetConnected {
+        peer_id: u32,
+        is_host: bool,
+    },
+    NetPeerJoined {
+        peer_id: u32,
+        name: String,
+    },
+    NetPeerLeft {
+        peer_id: u32,
+        name: String,
+    },
+    /// Application message from another peer (`NetSession.send`).
+    NetMessage {
+        from: u32,
+        name: String,
+        text: String,
+    },
+    NetError {
+        phase: String,
+        message: String,
+    },
     XrEyeTrackingUpdated {
         combined_look: Option<[f32; 3]>,
         left_look: Option<[f32; 3]>,
@@ -413,6 +436,11 @@ impl EventSignal {
             EventSignal::HttpRequest { .. } => SignalKind::HttpRequest,
             EventSignal::HttpResponse { .. } => SignalKind::HttpResponse,
             EventSignal::HttpError { .. } => SignalKind::HttpError,
+            EventSignal::NetConnected { .. } => SignalKind::NetConnected,
+            EventSignal::NetPeerJoined { .. } => SignalKind::NetPeerJoined,
+            EventSignal::NetPeerLeft { .. } => SignalKind::NetPeerLeft,
+            EventSignal::NetMessage { .. } => SignalKind::NetMessage,
+            EventSignal::NetError { .. } => SignalKind::NetError,
             EventSignal::XrEyeTrackingUpdated { .. } => SignalKind::XrEyeTrackingUpdated,
             EventSignal::XrEyeTrackingHtcUpdated { .. } => SignalKind::XrEyeTrackingHtcUpdated,
         }
@@ -685,6 +713,17 @@ pub enum IntentValue {
     },
     RegisterHttpClient {
         component_id: ComponentId,
+    },
+    RegisterNetSession {
+        component_id: ComponentId,
+    },
+    RegisterNetSync {
+        component_id: ComponentId,
+    },
+    NetSend {
+        component_id: ComponentId,
+        name: String,
+        text: String,
     },
     HttpClientRequest {
         component_id: ComponentId,
@@ -1076,6 +1115,9 @@ impl IntentValue {
             IntentValue::RegisterHttpClient { .. } => "register_http_client",
             IntentValue::HttpClientRequest { .. } => "http_client_request",
             IntentValue::HttpServerReply { .. } => "http_server_reply",
+            IntentValue::RegisterNetSession { .. } => "register_net_session",
+            IntentValue::RegisterNetSync { .. } => "register_net_sync",
+            IntentValue::NetSend { .. } => "net_send",
             IntentValue::RegisterScrolling { .. } => "register_scrolling",
             IntentValue::RegisterTransform { .. } => "register_transform",
             IntentValue::UpdateTransformWorld { .. } => "update_transform_world",
@@ -1255,6 +1297,11 @@ pub enum SignalKind {
     HttpRequest,
     HttpResponse,
     HttpError,
+    NetConnected,
+    NetPeerJoined,
+    NetPeerLeft,
+    NetMessage,
+    NetError,
     XrEyeTrackingUpdated,
     XrEyeTrackingHtcUpdated,
 }
