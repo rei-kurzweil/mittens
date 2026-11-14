@@ -41,7 +41,10 @@ longer-term follow-ups; it is not the immediate implementation order.
    mouth) instead of only the root, so remote players use the real avatar rig.
    XR players need head + hands; the root alone is insufficient.
 5. **Client prediction for host-owned interactions** (grab/kick) with host
-   reconciliation. Only after (1)–(3).
+   reconciliation. Only after (1)–(3). First establish shared grab ownership,
+   release, and physics authority as described in
+   [shared multiplayer grabbing](multiplayer-shared-grabbing.md); prediction is
+   a later layer.
 6. **Compression and relevance.** Binary encoding, quantized poses, deltas
    against acked snapshots, and per-client interest management.
 7. **Rendering-server mode.** The [laptop rendering server](../desktop/rendering-server.md)

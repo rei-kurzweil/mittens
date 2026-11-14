@@ -347,6 +347,8 @@ fn multiplayer_example_supports_desktop_client_and_windowless_xr_host() {
             })
             .unwrap();
         assert_eq!(settings.window_visible, !xr);
+        assert_eq!(named(&scene, "multiplayer_xr_settings").is_some(), xr);
+        assert_eq!(named(&scene, "xr_floor_correction_slider").is_some(), xr);
         let backend = scene
             .world
             .all_components()

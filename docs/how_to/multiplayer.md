@@ -156,3 +156,11 @@ process. The host is always peer `1`; clients are assigned `2, 3, …`.
 
 Implementation: [`multiplayer_system.rs`](../../src/engine/ecs/system/multiplayer_system.rs)
 and its `multiplayer_system/` modules (`protocol`, `transport`, `endpoint`).
+
+XR mode includes the shared XR settings panel beside the starting position. Its
+floor correction loads/saves the existing XR calibration file and adjusts tracked
+head, hands, and rendered eyes together. Corrected tracking poses and the locomotion
+root are sent through the existing channels; the receiver does not apply its own
+XR calibration to a remote avatar. Secondary motion (shirt and bow), IK, and
+ambient gaze run independently on each machine, with no secondary-motion bone
+updates sent over UDP. These simulations may differ slightly between peers.

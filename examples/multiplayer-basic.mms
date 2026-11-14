@@ -12,6 +12,7 @@ import { mitten_bow_secondary_motion } from "../assets/components/secondary_moti
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
+import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
 import { looping_blink } from "../assets/components/animations/looping_blink.mms"
 
 // Two-player LAN/loopback multiplayer: one host, one client, same arena.
@@ -161,6 +162,13 @@ if use_desktop {
 }
 if use_xr { XR.on() } else { XR.off() }
 remote.root
+if use_xr {
+    let xr_calibration_file = XrSettings.floor.default_file()
+    XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({file = xr_calibration_file}))
+    T.position(spawn_x - 1.28, 2.3, -1.5) {
+        xr_settings_panel({ root_name = "multiplayer_xr_settings", calibration_file = xr_calibration_file })
+    }
+}
 let links = { root = null head = null left = null right = null blink_left = null blink_right = null left_valid = null right_valid = null ball = null }
 let channel_state = { ticks = 0.0 send_elapsed = 0.0 }
 let connection = { root = null }
