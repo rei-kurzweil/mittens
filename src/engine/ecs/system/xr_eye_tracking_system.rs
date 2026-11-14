@@ -1,3 +1,4 @@
+use crate::engine::udp::{UdpEndpoint, UdpSystem};
 use crate::engine::ecs::component::xr_eye_tracking::{EyeClosureSample, EyeGazeSample};
 use crate::engine::ecs::component::{
     EyeTrackingSource, HTCEyeTrackingComponent, MediaPipeEyeTrackingComponent,
@@ -6,16 +7,16 @@ use crate::engine::ecs::component::{
 use crate::engine::ecs::{ComponentId, EventSignal, SignalEmitter, World};
 use crate::utils::math::quat_rotate_vec3;
 use std::collections::{HashMap, HashSet};
-use std::net::UdpSocket;
 
 #[derive(Debug, Default)]
 pub struct XREyeTrackingSystem {
+    standalone_udp: UdpSystem,
     selectors: HashSet<ComponentId>,
     vrchat_osc_sources: HashSet<ComponentId>,
     htc_sources: HashSet<ComponentId>,
     mediapipe_sources: HashSet<ComponentId>,
-    sockets: HashMap<ComponentId, UdpSocket>,
-    htc_sockets: HashMap<ComponentId, UdpSocket>,
+    sockets: HashMap<ComponentId, UdpEndpoint>,
+    htc_sockets: HashMap<ComponentId, UdpEndpoint>,
     /// A failed bind is retried so a port becoming available recovers without
     /// restarting the scene, but each active component reports that failure
     /// only once.
@@ -109,10 +110,19 @@ impl XREyeTrackingSystem {
     }
 
     pub fn tick(&mut self, world: &mut World, emit: &mut dyn SignalEmitter) {
+        let udp = self.standalone_udp.clone();
+        self.tick_with_udp(world, emit, &udp);
+    }
+    pub fn tick_with_udp(
+        &mut self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        udp: &UdpSystem,
+    ) {
         self.prune_stale_registrations(world);
         self.ensure_generic_sources(world);
-        self.tick_standard(world, emit);
-        self.tick_htc(world, emit);
+        self.tick_standard(world, emit, udp);
+        self.tick_htc(world, emit, udp);
         self.resolve_generic_trackers(world);
     }
 
@@ -221,7 +231,7 @@ impl XREyeTrackingSystem {
                 .unwrap_or_else(EyeClosureSample::default);
         }
     }
-    fn tick_standard(&mut self, world: &mut World, emit: &mut dyn SignalEmitter) {
+    fn tick_standard(&mut self, world: &mut World, emit: &mut dyn SignalEmitter, udp: &UdpSystem) {
         let ids: Vec<_> = self.vrchat_osc_sources.iter().copied().collect();
         for id in ids {
             // Closure is a live driver value, unlike retained gaze. If the
@@ -238,9 +248,8 @@ impl XREyeTrackingSystem {
                 .get_component_by_id_as::<VRChatOSCEyeTrackingComponent>(id)
                 .unwrap();
             if !self.sockets.contains_key(&id) {
-                match UdpSocket::bind(format!("{}:{}", c.host, c.port)) {
+                match udp.bind(format!("{}:{}", c.host, c.port), 1024, "eye-osc") {
                     Ok(s) => {
-                        let _ = s.set_nonblocking(true);
                         self.failed_standard_binds.remove(&id);
                         eprintln!("[VRChatOSCEyeTracking] listening on {}:{}", c.host, c.port);
                         self.sockets.insert(id, s);
@@ -256,12 +265,11 @@ impl XREyeTrackingSystem {
                 }
             }
             if let Some(s) = self.sockets.get(&id) {
-                let mut bytes = [0u8; 1024];
+                let socket = s.clone();
                 let mut received_update = false;
                 let mut received_gaze = false;
                 let mut received_closure = false;
-                while let Ok(len) = s.recv(&mut bytes) {
-                    let packet = &bytes[..len];
+                let _ = udp.poll(&socket, 256, |_from, packet| {
                     match decode_osc(packet) {
                         Some((combined_look, left_look, right_look, combined_openness)) => {
                             received_gaze |= combined_look.is_some()
@@ -285,7 +293,7 @@ impl XREyeTrackingSystem {
                         }
                         None => {}
                     }
-                }
+                });
                 // A face tracker can submit many UDP packets between rendered
                 // frames. Keep only the newest sample so script callbacks and
                 // renderer mutations remain bounded to one per frame/source.
@@ -332,7 +340,7 @@ impl XREyeTrackingSystem {
             }
         }
     }
-    fn tick_htc(&mut self, world: &mut World, emit: &mut dyn SignalEmitter) {
+    fn tick_htc(&mut self, world: &mut World, emit: &mut dyn SignalEmitter, udp: &UdpSystem) {
         let ids: Vec<_> = self.htc_sources.iter().copied().collect();
         for id in ids {
             if let Some(component) = world.get_component_by_id_as_mut::<HTCEyeTrackingComponent>(id)
@@ -344,9 +352,8 @@ impl XREyeTrackingSystem {
                 .get_component_by_id_as::<HTCEyeTrackingComponent>(id)
                 .unwrap();
             if !self.htc_sockets.contains_key(&id) {
-                match UdpSocket::bind(format!("{}:{}", c.host, c.port)) {
+                match udp.bind(format!("{}:{}", c.host, c.port), 1024, "eye-htc") {
                     Ok(s) => {
-                        let _ = s.set_nonblocking(true);
                         self.failed_htc_binds.remove(&id);
                         eprintln!("[HTCEyeTracking] listening on {}:{}", c.host, c.port);
                         self.htc_sockets.insert(id, s);
@@ -362,14 +369,11 @@ impl XREyeTrackingSystem {
                 }
             }
             if let Some(s) = self.htc_sockets.get(&id) {
-                let mut b = [0u8; 1024];
-                let mut packets = Vec::new();
-                while let Ok(n) = s.recv(&mut b) {
-                    if let Some((left, right)) = decode_htc(&b[..n]) {
-                        packets.push((left, right));
-                    }
-                }
-                for (left, right) in packets {
+                let socket = s.clone();
+                let _ = udp.poll(&socket, 256, |_from, packet| {
+                    let Some((left, right)) = decode_htc(packet) else {
+                        return;
+                    };
                     let gaze_sample = htc_gaze_sample(&left, &right, self.next_sequence());
                     let closure_sequence = self.next_sequence();
                     let closure_sample = htc_closure_sample(&left, &right, closure_sequence);
@@ -393,7 +397,7 @@ impl XREyeTrackingSystem {
                     }) {
                         emit.push_event(selector, event);
                     }
-                }
+                });
             }
         }
     }

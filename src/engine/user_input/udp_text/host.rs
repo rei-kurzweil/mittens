@@ -33,7 +33,7 @@ impl UdpTerminalHost {
             })?;
         scene
             .input_providers
-            .add(UdpTextInputProvider::bind(address)?);
+            .add(UdpTextInputProvider::bind_on(&scene.systems.udp, address)?);
         Ok(Self { target })
     }
     /// Call after polling providers and before update. A received edit explicitly

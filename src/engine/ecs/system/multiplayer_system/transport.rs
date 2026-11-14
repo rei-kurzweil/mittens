@@ -1,10 +1,8 @@
 //! Nonblocking UDP polled from the frame loop: no worker thread, bounded
 //! receive work per poll, oversize datagrams discarded rather than truncated.
 use super::protocol::{MAX_DATAGRAM, Packet};
-use std::{
-    io,
-    net::{SocketAddr, UdpSocket},
-};
+use crate::engine::udp::{UdpEndpoint, UdpSystem};
+use std::{io, net::SocketAddr};
 
 /// Datagrams drained per poll; the rest wait for the next frame.
 const MAX_RECV_PER_POLL: usize = 256;
@@ -22,19 +20,17 @@ pub struct TransportStats {
 
 #[derive(Debug)]
 pub struct UdpTransport {
-    socket: UdpSocket,
-    // Larger than MAX_DATAGRAM so oversize packets are detectable.
-    buffer: Box<[u8; 65_536]>,
+    socket: UdpEndpoint,
+    udp: UdpSystem,
     pub stats: TransportStats,
 }
 
 impl UdpTransport {
-    pub fn bind(addr: SocketAddr) -> io::Result<Self> {
-        let socket = UdpSocket::bind(addr)?;
-        socket.set_nonblocking(true)?;
+    pub fn bind_on(udp: &UdpSystem, addr: SocketAddr) -> io::Result<Self> {
+        let socket = udp.bind(addr, MAX_DATAGRAM, "multiplayer")?;
         Ok(Self {
             socket,
-            buffer: Box::new([0; 65_536]),
+            udp: udp.clone(),
             stats: TransportStats::default(),
         })
     }
@@ -62,26 +58,18 @@ impl UdpTransport {
 
     /// Drain up to `MAX_RECV_PER_POLL` decodable packets.
     pub fn recv_into(&mut self, out: &mut Vec<(SocketAddr, Packet)>) {
-        for _ in 0..MAX_RECV_PER_POLL {
-            match self.socket.recv_from(&mut self.buffer[..]) {
-                Ok((size, from)) => {
-                    if size > MAX_DATAGRAM {
-                        self.stats.oversize_drops += 1;
-                        continue;
-                    }
-                    self.stats.received_packets += 1;
-                    self.stats.received_bytes += size as u64;
-                    match Packet::decode(&self.buffer[..size]) {
-                        Some(packet) => out.push((from, packet)),
-                        None => self.stats.decode_drops += 1,
-                    }
+        let report = self
+            .udp
+            .poll(&self.socket, MAX_RECV_PER_POLL, |from, bytes| {
+                self.stats.received_packets += 1;
+                self.stats.received_bytes += bytes.len() as u64;
+                match Packet::decode(bytes) {
+                    Some(packet) => out.push((from, packet)),
+                    None => self.stats.decode_drops += 1,
                 }
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
-                // Windows reports ICMP port-unreachable from an earlier send
-                // as a recv error; it carries no packet, keep draining.
-                Err(error) if error.kind() == io::ErrorKind::ConnectionReset => continue,
-                Err(_) => break,
-            }
+            });
+        if let Ok(report) = report {
+            self.stats.oversize_drops += report.oversized as u64;
         }
     }
 }

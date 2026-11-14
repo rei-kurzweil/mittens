@@ -10,9 +10,11 @@ use slotmap::{SlotMap, new_key_type};
 use std::{
     collections::HashMap,
     io,
-    net::{SocketAddr, UdpSocket},
+    net::SocketAddr,
     time::{Duration, Instant},
 };
+
+use super::super::udp::{UdpEndpoint, UdpSystem};
 
 const MAX_CHANNELS: usize = 64;
 const MAX_PEERS: usize = 16;
@@ -102,7 +104,8 @@ struct ChannelHistory {
 /// Poll and consume events/samples on the owning thread. Errors from local I/O
 /// propagate; invalid network input is counted and discarded.
 pub struct ChannelSocket {
-    socket: UdpSocket,
+    socket: UdpEndpoint,
+    udp: UdpSystem,
     epoch: [u8; 16],
     next_wire_id: u64,
     publications: SlotMap<PublicationId, Publication>,
@@ -122,10 +125,13 @@ pub struct Sample<'a> {
 
 impl ChannelSocket {
     pub fn bind(addr: SocketAddr) -> Result<Self, ChannelError> {
-        let socket = UdpSocket::bind(addr)?;
-        socket.set_nonblocking(true)?;
+        Self::bind_on(&UdpSystem::default(), addr)
+    }
+    pub fn bind_on(udp: &UdpSystem, addr: SocketAddr) -> Result<Self, ChannelError> {
+        let socket = udp.bind(addr, MAX_DATAGRAM, "typed-channels")?;
         Ok(Self {
             socket,
+            udp: udp.clone(),
             epoch: *uuid::Uuid::new_v4().as_bytes(),
             next_wire_id: 1,
             publications: SlotMap::with_key(),
@@ -320,25 +326,16 @@ impl ChannelSocket {
         for c in self.channels.values_mut() {
             c.updated = false;
         }
-        // An extra byte detects truncation of every oversize datagram on Unix.
-        // Windows reports WSAEMSGSIZE instead; both cases discard the packet.
-        let mut buffer = [0u8; MAX_DATAGRAM + 1];
-        for _ in 0..MAX_RECV {
-            let (len, from) = match self.socket.recv_from(&mut buffer) {
-                Ok(value) => value,
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
-                Err(e) if e.kind() == io::ErrorKind::ConnectionReset => continue,
-                Err(e) if e.raw_os_error() == Some(10040) => {
-                    self.stats.invalid_packets += 1;
-                    continue;
-                }
-                Err(e) => return Err(e.into()),
-            };
+        let udp = self.udp.clone();
+        let socket = self.socket.clone();
+        let report = udp.poll(&socket, MAX_RECV, |from, bytes| {
             self.stats.received_packets += 1;
-            if self.receive(from, &buffer[..len], now).is_err() {
+            if self.receive(from, bytes, now).is_err() {
                 self.stats.invalid_packets += 1;
             }
-        }
+        })?;
+        self.stats.received_packets += report.oversized as u64;
+        self.stats.invalid_packets += report.oversized as u64;
         // No temporary per-poll Vec: bounded work over the channel arenas.
         for (id, c) in &self.channels {
             if c.updated {
@@ -671,7 +668,7 @@ fn push_event(events: &mut Vec<ChannelEvent>, stats: &mut ChannelStats, event: C
     }
 }
 fn send(
-    socket: &UdpSocket,
+    socket: &UdpEndpoint,
     stats: &mut ChannelStats,
     bytes: &[u8],
     to: SocketAddr,

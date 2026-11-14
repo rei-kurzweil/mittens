@@ -1,0 +1,15 @@
+SUMMARY pairs=1 mode=shared replay_ns/pkt median=115.096 min=114.438 max=115.890; UDP receiver_cpu_ms median=NaN (0/7 loss-free trials)
+SUMMARY pairs=8 mode=shared replay_ns/pkt median=111.534 min=110.154 max=115.640; UDP receiver_cpu_ms median=NaN (0/7 loss-free trials)
+SUMMARY pairs=32 mode=shared replay_ns/pkt median=110.028 min=109.733 max=112.042; UDP receiver_cpu_ms median=NaN (0/7 loss-free trials)
+
+ Performance counter stats for 'target/udp-transport-bench/release/mittens-udp-transport-bench --replay-only --mode shared --pairs 1,8,32 --seconds 1 --trials 7 --rounds 5000':
+
+       88638660832      cycles:u
+      269286158223      instructions:u
+         904504955      cache-references:u
+          26241595      cache-misses:u
+
+      22.315241634 seconds time elapsed
+
+      22.206841000 seconds user
+       0.019924000 seconds sys

@@ -103,6 +103,21 @@ impl MultiplayerEndpoint {
         name: &str,
         now: Instant,
     ) -> Result<Self, String> {
+        Self::bind_on(
+            &crate::engine::udp::UdpSystem::default(),
+            role,
+            addr,
+            name,
+            now,
+        )
+    }
+    pub fn bind_on(
+        udp: &crate::engine::udp::UdpSystem,
+        role: MultiplayerRole,
+        addr: &str,
+        name: &str,
+        now: Instant,
+    ) -> Result<Self, String> {
         let addr: SocketAddr = addr
             .parse()
             .map_err(|e| format!("'{addr}' is not a numeric socket address: {e}"))?;
@@ -132,7 +147,7 @@ impl MultiplayerEndpoint {
                 )
             }
         };
-        let transport = UdpTransport::bind(bind_addr).map_err(|e| e.to_string())?;
+        let transport = UdpTransport::bind_on(udp, bind_addr).map_err(|e| e.to_string())?;
         let mut endpoint = Self {
             transport,
             session: uuid::Uuid::new_v4(),

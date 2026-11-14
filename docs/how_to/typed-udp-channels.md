@@ -131,3 +131,9 @@ script value. Received bindings take priority over script values; script values
 take priority over local tracker/fallback drivers. Both APIs resolve semantic
 slots within that GLTF instance. The multiplayer desktop blink clip uses this
 setter; remote copies receive its effective weights through the existing channels.
+
+The native endpoint now leases sockets from the scene's shared `UdpSystem`, also
+used by session, eye-tracking and terminal adapters. Its shared raw I/O does not
+change channel schemas, ACK/epoch policy, binding semantics or the wire protocol.
+Standalone Rust endpoints can use `ChannelSocket::bind_on(&udp, address)` to share
+a transport owner explicitly; `bind(address)` retains standalone behavior.

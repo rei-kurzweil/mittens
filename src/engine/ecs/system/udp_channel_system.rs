@@ -1,4 +1,4 @@
-//! Scene adapter: owns socket I/O and explicit receive bindings; no pose replication policy.
+//! Typed-channel scene adapter. Raw I/O belongs to UdpSystem; no pose replication policy.
 use crate::engine::ecs::component::{
     GLTFComponent, MorphTargetMapComponent, UdpBinding, UdpChannelComponent, UdpSocketComponent,
 };
@@ -36,6 +36,7 @@ enum Channel {
 }
 #[derive(Default)]
 pub struct UdpChannelSystem {
+    standalone_udp: crate::engine::udp::UdpSystem,
     registered: BTreeSet<ComponentId>,
     scratch: Vec<ComponentId>,
     sockets: HashMap<ComponentId, ChannelSocket>,
@@ -99,6 +100,15 @@ impl UdpChannelSystem {
         }
     }
     pub fn tick(&mut self, world: &mut World, emit: &mut dyn SignalEmitter) {
+        let udp = self.standalone_udp.clone();
+        self.tick_with_udp(world, emit, &udp);
+    }
+    pub fn tick_with_udp(
+        &mut self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        udp: &crate::engine::udp::UdpSystem,
+    ) {
         // Registration is a bounded per-component operation, not a world scan.
         let mut ids = std::mem::take(&mut self.scratch);
         ids.clear();
@@ -118,7 +128,7 @@ impl UdpChannelSystem {
                     .address
                     .parse()
                     .map_err(|e| format!("{e}"))
-                    .and_then(|addr| ChannelSocket::bind(addr).map_err(|e| e.to_string()))
+                    .and_then(|addr| ChannelSocket::bind_on(udp, addr).map_err(|e| e.to_string()))
                     .map(|socket| {
                         self.sockets.insert(*id, socket);
                     })

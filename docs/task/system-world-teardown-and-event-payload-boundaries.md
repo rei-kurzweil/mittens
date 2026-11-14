@@ -54,3 +54,10 @@ scene queries or per-frame notification work. The large GrabbableSystem should
 eventually separate grab lifecycle/notification from placement math and its
 tests; retain direct placement updates and allocation behavior. Validate successful
 versus rejected grabs, release/cleanup, scoped MMS payloads, and two-peer replication.
+
+## UDP owner wiring
+
+SystemWorld retains UdpSystem and passes it at adapter registration/update points.
+No event-payload or rendering changes belong in this migration. Future subsystem
+context grouping should retain explicit ownership and direct calls rather than
+adding global state or per-datagram dispatch allocations.

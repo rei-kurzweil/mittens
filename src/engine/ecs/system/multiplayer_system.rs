@@ -49,6 +49,20 @@ impl MultiplayerSystem {
         emit: &mut dyn SignalEmitter,
         component: ComponentId,
     ) {
+        self.register_session_on(
+            world,
+            emit,
+            component,
+            &crate::engine::udp::UdpSystem::default(),
+        );
+    }
+    pub fn register_session_on(
+        &mut self,
+        world: &mut World,
+        emit: &mut dyn SignalEmitter,
+        component: ComponentId,
+        udp: &crate::engine::udp::UdpSystem,
+    ) {
         let Some(config) = world.get_component_by_id_as::<MultiplayerSessionComponent>(component)
         else {
             return;
@@ -73,7 +87,8 @@ impl MultiplayerSystem {
         } else {
             20.0
         };
-        match MultiplayerEndpoint::bind(
+        match MultiplayerEndpoint::bind_on(
+            udp,
             config.role,
             &config.addr,
             &config.player_name,

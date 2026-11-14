@@ -73,25 +73,35 @@ All these native UDP paths currently use Rust's standard-library
 underneath them. The typed-channel endpoint is our own code, not Tokio, Quinn,
 Renet, or another session/reliability library.
 
-The MMS `UdpSocket`/publication/subscription API and `UdpChannelSystem` share the
-native `engine::udp_channels::ChannelSocket` implementation. However, the older
-multiplayer `UdpTransport`, terminal `user_input::udp_text` transport, and XR eye
-OSC/HTC datagram receivers still own separate sockets/protocol implementations.
-They do not currently route through ChannelSocket or share one socket registry.
-Using the same standard-library socket type is not the same as sharing a
-transport/session implementation.
+The MMS socket/channel API, multiplayer session transport, OSC/HTC eye receivers,
+and terminal UDP input now use the shared native `UdpSystem`. `SystemWorld.udp`
+is the common scene owner. The installed terminal provider and shell-client
+sender use it too. Standalone Rust senders/endpoints/tests can create their own
+owner of the same implementation through the backward-compatible constructors;
+`bind_on` / `new_on` allow explicit sharing.
 
-A future consolidation could share bounded datagram polling, oversize detection,
-error handling and diagnostics. The session layer might eventually run above
-typed channels, but that migration is not implemented. Sharing a thin wrapper
-around the standard-library socket alone does not automatically improve latency
-or bandwidth. The useful reuse is common lifecycle, buffering and protocol logic
-where the semantics really match.
+UdpSystem owns common bind/send/receive/error handling, one reusable 64 KiB
+receive buffer, endpoint leases and diagnostics. Consumers preserve their own
+wire formats, registration/session/ACK policy, semantic buffers and update phases.
+This does not merge all protocols into one wire format or one socket, or make
+channel samples reliable. Channel ACK/retry still applies to registration only.
 
-Keep wire compatibility explicit: external OSC/HTC and existing terminal senders
-cannot accept the typed-channel headers/registration protocol without matching
-adapter or sender changes. Likewise, typed channel registration ACK/retry is not
-reliable delivery for all application samples or multiplayer control messages.
+Polling is bounded per endpoint and directly borrows receive storage; sending
+ACKs inside callbacks is supported. Concurrent/recursive polling defers instead
+of blocking on the shared scratch buffer. Final endpoint-lease drop closes the
+socket, with weak diagnostic registrations pruned on inspection/bind. There are
+no extra per-packet transport queues/copies or worker threads.
+
+`UdpSystem` is a native service, **not another MMS component or signal**. The four
+tables above and public MMS socket/binding syntax are unchanged. Eye receive work
+is now explicitly bounded at 256 datagrams per source/update. Terminal receiver
+and ACK budgets remain 64/16; session/channel budgets remain 256. Oversized
+packets are discarded before their protocol callback.
+
+The [benchmark report](../benchmarks/udp-transport-locality.md) distinguishes the
+original buffer-only experiment from measurements of the actual runtime owner.
+Shared I/O does not imply a guaranteed speedup; central lifecycle/error handling
+and unchanged external protocol compatibility are the main maintenance benefit.
 
 ## Sources and further reading
 
@@ -104,6 +114,7 @@ reliable delivery for all application samples or multiplayer control messages.
 - [MMS event payload conversion](../../src/scripting/runner.rs)
 - [Multiplayer system](../../src/engine/ecs/system/multiplayer_system.rs)
 - [UDP channel system](../../src/engine/ecs/system/udp_channel_system.rs)
+- [Shared UDP transport](../../src/engine/udp/mod.rs)
 - [Native typed endpoint](../../src/engine/udp_channels/endpoint.rs)
 - [Separate multiplayer transport](../../src/engine/ecs/system/multiplayer_system/transport.rs)
 - [Terminal UDP transport](../../src/engine/user_input/udp_text/mod.rs)

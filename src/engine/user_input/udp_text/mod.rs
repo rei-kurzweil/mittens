@@ -10,7 +10,8 @@ use super::TextInputFrameEvent;
 pub use receiver::UdpTextInputProvider;
 pub use sender::UdpTextInputSender;
 use serde::{Deserialize, Serialize};
-use std::{io, net::UdpSocket};
+use std::io;
+use crate::engine::udp::UdpEndpoint;
 pub const MAX_PACKET: usize = 1200;
 const VERSION: u8 = 1;
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -84,7 +85,7 @@ impl Packet {
         }
         Some(packet)
     }
-    fn send(&self, socket: &UdpSocket, peer: std::net::SocketAddr) -> io::Result<()> {
+    fn encode(&self) -> io::Result<Vec<u8>> {
         let bytes = serde_json::to_vec(self)?;
         if bytes.len() > MAX_PACKET {
             return Err(io::Error::new(
@@ -92,6 +93,9 @@ impl Packet {
                 "UDP terminal packet exceeds 1200 bytes",
             ));
         }
-        socket.send_to(&bytes, peer).map(|_| ())
+        Ok(bytes)
+    }
+    fn send(&self, socket: &UdpEndpoint, peer: std::net::SocketAddr) -> io::Result<()> {
+        socket.send_to(&self.encode()?, peer).map(|_| ())
     }
 }

@@ -20,3 +20,10 @@ the isolated optimized codec benchmark; measure any change to hot paths.
 ## MMS channel integration
 
 MMS integration uses a separate ECS adapter; native codec/state-machine hot paths remain direct and bounded. Preserve batched/direct dispatch and avoid per-target per-frame allocations. Validate with channel MMS and avatar tests.
+
+## Shared transport migration
+
+Move native bind/poll/send/scratch ownership to the shared UdpSystem with endpoint
+leases. Keep protocol state and direct numeric sample handling here, with bounded
+callbacks and no per-packet queues, copies or allocation. Follow shared-udp-system.md
+for lifecycle, lock-contention and wire-compatibility validation.

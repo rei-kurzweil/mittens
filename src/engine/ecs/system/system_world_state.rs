@@ -42,6 +42,7 @@ pub struct SystemWorld {
     pub renderer_stats: RendererStatsSystem,
     pub router: RouterSystem,
     pub http_server: HttpServerSystem,
+    pub udp: crate::engine::udp::UdpSystem,
     pub multiplayer: MultiplayerSystem,
     pub udp_channels: crate::engine::ecs::system::udp_channel_system::UdpChannelSystem,
     pub http_client: HttpClientSystem,

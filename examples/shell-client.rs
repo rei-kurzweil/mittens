@@ -62,7 +62,8 @@ fn main() {
             });
         if destination != peer {
             peer = destination;
-            sender = destination.and_then(|address| UdpTextInputSender::new(address).ok());
+            sender = destination
+                .and_then(|address| UdpTextInputSender::new_on(&scene.systems.udp, address).ok());
         }
         let focused = scene
             .world

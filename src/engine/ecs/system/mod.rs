@@ -240,3 +240,5 @@ pub mod zone_observation_system;
 mod projectile_motion;
 
 pub mod udp_channel_system;
+
+pub use crate::engine::udp::UdpSystem;

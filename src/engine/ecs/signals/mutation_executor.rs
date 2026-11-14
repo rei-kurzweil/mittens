@@ -289,7 +289,7 @@ impl RxMutationExecutor {
             IntentValue::RegisterMultiplayerSession { component_id } => {
                 systems
                     .multiplayer
-                    .register_session(world, emit, *component_id);
+                    .register_session_on(world, emit, *component_id, &systems.udp);
             }
             IntentValue::RegisterMultiplayerSync { component_id } => {
                 systems.multiplayer.register_sync(world, *component_id);
