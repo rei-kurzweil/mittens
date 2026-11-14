@@ -56,11 +56,30 @@ the same checkout on both computers. The control session uses UDP 7010. Typed te
 between the machines in both directions. Peer IPs come from the control session;
 localhost is not hardcoded into the channel setup. This demo is a two-peer scene.
 
-Set `let use_xr = true` in the demo on a machine using XR hardware. Its head and
-hands then come from InputXR/controllers with gamepad locomotion. Each machine
-may choose its own mode; remote rigs use PoseInput and external hand targets,
-never the receiver's local tracking. Physical XR/Tailscale validation is still
-required; automated tests run the desktop mode headlessly.
+Choose the view mode with the two flags at the very top of the example:
+
+| Machine | `use_xr` | `use_desktop` | Network role |
+| --- | --- | --- | --- |
+| Dan's desktop | `false` | `true` | `client` |
+| Rei's headset | `true` | `false` | `host` |
+
+The committed defaults are desktop-only; Rei changes the two booleans locally.
+Desktop mode creates a winit window and Camera3D, with no CameraXR or InputXR.
+XR-only mode uses the existing no-window host and CameraXR/InputXR, with no
+winit event loop, desktop surface/swapchain, Camera3D or desktop movement input.
+Both flags can be true for XR with a desktop observer view; XR owns locomotion
+in that mode. View mode does not choose authority: launch Rei with
+`MITTENS_MULTIPLAYER_ROLE=host`, and Dan with `client` and
+`MITTENS_MULTIPLAYER_ADDR="<rei-tailscale-ip>:7010"` as shown above.
+
+MMS does not currently expose general environment-variable access. The
+Rust-backed `MultiplayerSession.from_env()` constructor reads the three
+`MITTENS_MULTIPLAYER_*` launcher variables. The view flags are ordinary MMS
+values, not environment reads.
+
+Remote rigs use PoseInput and external hand targets, never the receiver's local
+tracking. Physical XR/Tailscale validation is still required; the mode checks
+run without opening either a window or an XR runtime.
 
 See [typed channel authoring](typed-udp-channels.md) for the implemented API.
 The session/MultiplayerSync examples below describe the older automatic

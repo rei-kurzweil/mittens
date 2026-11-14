@@ -1,3 +1,8 @@
+// View flags: Dan keeps these defaults. Rei sets XR=true and desktop=false locally.
+// Network role is separate: Rei launches as host, Dan as client (commands below).
+let use_xr = false
+let use_desktop = true
+
 import { f32, vec3, vec4 } from "types"
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"
 import { bisket_humanoid_bone_map } from "../assets/components/humanoid_bone_maps/bisket.mms"
@@ -15,12 +20,13 @@ import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/v
 //
 // Across machines: the host binds 0.0.0.0:7010 by default; the client sets
 // MITTENS_MULTIPLAYER_ADDR=<host-ip>:7010 (numeric address, UDP port open on the host).
-// WASD + right-drag to move/look. E kicks the ball (clients ask the host to).
+// Desktop: WASD + right-drag to move/look; E kicks the ball. XR: tracked head/hands
+// and gamepad locomotion. XR-only mode creates no winit window or Camera3D.
 
 let net = MultiplayerSession.from_env() {}
 net
 
-RendererSettings { window_size(1280, 800) }
+RendererSettings { window_visible(use_desktop) window_size(1280, 800) }
 BGC.rgba(0.62, 0.70, 0.86, 1.0)
 AL.rgb(0.30, 0.31, 0.36)
 T.position(-0.4, 0.9, 0.5) { DL.color(1.0, 0.94, 0.86).intensity(1.2) }
@@ -62,8 +68,6 @@ else { ball }
 
 
 // Whole transforms travel through typed channels; every machine solves its own rigs.
-// Set true on a machine using a headset/controllers. Desktop mode needs no XR runtime.
-let use_xr = false
 let channel_port = 7011
 let remote_port = 7012
 if !net.is_host() { channel_port = 7012 remote_port = 7011 }
@@ -123,12 +127,14 @@ let spawn_x = -1.5
 if !net.is_host() { spawn_x = 1.5 }
 local.root.update_transform([spawn_x, 0.0, 0.0])
 remote.root.update_transform([-spawn_x, 0.0, 0.0])
-if !use_xr {
+if use_desktop && !use_xr {
     I.speed(2.0) { InputTransformMode.forward_z() { fps_rotation() roll_axis_y() } local.root }
+} else { local.root }
+if use_desktop {
     // Observer camera keeps both fully solved avatars visible in the desktop demo.
     T.position(0.0, 1.8, 6.0) { C3D { fov(65.0) near(0.05) Pointer {} } }
-    XR.off()
-} else { local.root XR.on() }
+}
+if use_xr { XR.on() } else { XR.off() }
 remote.root
 let links = { root = null head = null left = null right = null blink_left = null blink_right = null left_valid = null right_valid = null ball = null }
 let channel_state = { ticks = 0.0 send_elapsed = 0.0 }

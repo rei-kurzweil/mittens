@@ -275,3 +275,78 @@ fn multiplayer_basic_example_runs_as_host_and_client() {
     );
     assert!(status_text(&client).contains("remote players: 1"));
 }
+
+#[test]
+fn multiplayer_example_supports_desktop_client_and_windowless_xr_host() {
+    use crate::engine::ecs::component::{
+        Camera3DComponent, CameraXRComponent, InputComponent, InputXRComponent,
+        MultiplayerSessionComponent, RendererSettingsComponent, XrComponent,
+    };
+    let source = std::fs::read_to_string("examples/multiplayer-basic.mms").unwrap();
+    for xr in [false, true] {
+        let configured = source
+            .replace("let use_xr = false", &format!("let use_xr = {xr}"))
+            .replace(
+                "let use_desktop = true",
+                &format!("let use_desktop = {}", !xr),
+            )
+            .replace(
+                "MultiplayerSession.from_env()",
+                if xr {
+                    r#"MultiplayerSession.host("127.0.0.1:0").player_name("rei")"#
+                } else {
+                    r#"MultiplayerSession.join("127.0.0.1:7010").player_name("dan")"#
+                },
+            );
+        let scene = load(&configured, "examples/multiplayer-basic.mms");
+        let count = |predicate: fn(&World, ComponentId) -> bool| {
+            scene
+                .world
+                .all_components()
+                .filter(|id| predicate(&scene.world, *id))
+                .count()
+        };
+        assert_eq!(
+            count(|w, id| w.get_component_by_id_as::<Camera3DComponent>(id).is_some()),
+            usize::from(!xr)
+        );
+        assert_eq!(
+            count(|w, id| w.get_component_by_id_as::<CameraXRComponent>(id).is_some()),
+            usize::from(xr)
+        );
+        assert_eq!(
+            count(|w, id| w.get_component_by_id_as::<InputXRComponent>(id).is_some()),
+            usize::from(xr)
+        );
+        assert_eq!(
+            count(|w, id| w.get_component_by_id_as::<InputComponent>(id).is_some()),
+            usize::from(!xr)
+        );
+        let settings = scene
+            .world
+            .all_components()
+            .find_map(|id| {
+                scene
+                    .world
+                    .get_component_by_id_as::<RendererSettingsComponent>(id)
+            })
+            .unwrap();
+        assert_eq!(settings.window_visible, !xr);
+        let backend = scene
+            .world
+            .all_components()
+            .find_map(|id| scene.world.get_component_by_id_as::<XrComponent>(id))
+            .unwrap();
+        assert_eq!(backend.enabled, xr);
+        let session = scene
+            .world
+            .all_components()
+            .find_map(|id| {
+                scene
+                    .world
+                    .get_component_by_id_as::<MultiplayerSessionComponent>(id)
+            })
+            .unwrap();
+        assert_eq!(session.is_host(), xr);
+    }
+}
