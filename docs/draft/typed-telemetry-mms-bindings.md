@@ -321,6 +321,39 @@ alongside AudioClip, AudioInput and AudioOscillator. AudioSource remains the
 umbrella term for sound-producing graph nodes. AudioStream is independent of
 UDP: custom Rust producers, decoders and other transports can feed it.
 
+### Compiled graph source classification
+
+For phase 2, extract source variants from AudioGraphNodeKind into a dedicated
+AudioSourceKind enum, nested through AudioGraphNodeKind::Source. Define source
+variants once so source-specific APIs can accept AudioSourceKind while the
+compiled graph continues to represent both sources and effects:
+
+```rust
+// Proposed phase 2 shape, not implemented.
+enum AudioSourceKind {
+    Oscillator { voices: usize },
+    Clip,
+    Input,
+    Stream,
+}
+
+enum AudioGraphNodeKind {
+    Source(AudioSourceKind),
+    Gain { gain: f32 },
+    LowPass { cutoff_hz: f32, resonance: f32 },
+    // Other existing effect variants remain here.
+}
+```
+
+Update graph compilation and runtime matches together, preserving existing
+source/effect behavior and direct enum dispatch. This classification does not
+introduce per-frame allocation or dynamic dispatch. Validate oscillator, clip,
+input and stream graph paths plus effect routing. A separate AudioEffectKind
+enum is not required by this decision. These Rust enums describe compiled graph
+nodes; any MMS audio-source handle type tag is a separate design question.
+
+### Producers and subscription binding
+
 Separate three responsibilities:
 
 - AudioStream consumes buffered PCM frames and participates in the existing
