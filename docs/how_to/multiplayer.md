@@ -41,11 +41,30 @@ when direct connectivity is unavailable; see its
 [connection types](https://tailscale.com/docs/reference/connection-types).
 This two-computer workflow has not been verified by the local loopback tests.
 The channel-based migration must preserve it alongside the two-window local
-workflow; the current example still uses MultiplayerSession/MultiplayerSync.
+workflow; the demo uses MultiplayerSession for control and typed channels for telemetry.
 
-Each window shows the other player as a head/body proxy with a name tag. The
-orange ball is simulated only by the host. Press **E** to kick it: the host
-kicks directly, a client sends a `kick` message that the host acts on.
+Each desktop window shows full local and remote Mitten avatars. WASD/right-drag
+moves the local rig; scripted hand targets exercise arm IK without a headset. Desktop idle blinks
+use a one-second interval so the networked eye closures are easy to observe.
+The receiving machine solves AVC/IK locally and binds the received blink weights
+to that avatar's morph slots. The orange ball is simulated only by the host.
+Press **E** to kick it; client requests remain host-authoritative.
+
+The control protocol is version 2 (including pose-independent heartbeats); run
+the same checkout on both computers. The control session uses UDP 7010. Typed telemetry uses UDP 7011 on the host and
+7012 on the client, so tailnet/host firewall policy must also allow those ports
+between the machines in both directions. Peer IPs come from the control session;
+localhost is not hardcoded into the channel setup. This demo is a two-peer scene.
+
+Set `let use_xr = true` in the demo on a machine using XR hardware. Its head and
+hands then come from InputXR/controllers with gamepad locomotion. Each machine
+may choose its own mode; remote rigs use PoseInput and external hand targets,
+never the receiver's local tracking. Physical XR/Tailscale validation is still
+required; automated tests run the desktop mode headlessly.
+
+See [typed channel authoring](typed-udp-channels.md) for the implemented API.
+The session/MultiplayerSync examples below describe the older automatic
+replication API, which remains supported separately from the migrated demo.
 
 ## Authority model
 

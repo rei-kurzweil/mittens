@@ -1468,6 +1468,7 @@ impl SystemWorld {
             {
                 self.http_server.remove_component(n);
             }
+            self.udp_channels.remove(world, n);
             if world
                 .get_component_by_id_as::<MultiplayerSessionComponent>(n)
                 .is_some()

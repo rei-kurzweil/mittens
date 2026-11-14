@@ -3325,6 +3325,8 @@ fn parse_signal_kind(s: &str) -> Result<SignalKind, String> {
         "HttpRequest" => Ok(SignalKind::HttpRequest),
         "HttpResponse" => Ok(SignalKind::HttpResponse),
         "HttpError" => Ok(SignalKind::HttpError),
+        "UdpSample" => Ok(SignalKind::UdpSample),
+        "UdpState" => Ok(SignalKind::UdpState),
         "MultiplayerConnected" => Ok(SignalKind::MultiplayerConnected),
         "MultiplayerPeerJoined" => Ok(SignalKind::MultiplayerPeerJoined),
         "MultiplayerPeerLeft" => Ok(SignalKind::MultiplayerPeerLeft),

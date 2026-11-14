@@ -1,8 +1,10 @@
 # Typed UDP channels and MMS bindings
 
-Status: native binary codec and channel endpoint implemented; MMS socket
-values, channel builders and transform bindings are not implemented yet.
-Multiplayer naming is already updated. Design and phase 2 scope: [discussion draft](../draft/typed-telemetry-mms-bindings.md).
+Status: native foundation and MMS adapter implemented, with ordinary socket/
+channel methods, whole-transform and morph receive bindings, partial transform
+writes, external avatar pose inputs, and the two-peer Mitten demo. Physical XR
+and two-machine Tailscale validation remain manual follow-up. See
+[the MMS API](../how_to/typed-udp-channels.md).
 
 ## Native foundation completed
 
@@ -14,14 +16,16 @@ history. Protocol and limits: [native channel reference](../spec/typed-udp-chann
 Validation: 12 functional tests pass with UDP loopback access; the ignored
 measurement is run through `scripts/benchmark_udp_channel_codec.sh`, which
 optimizes the channel modules and dependencies without rebuilding the renderer.
-These tests do not yet exercise MMS socket values or a channel-based scene.
-Next: host ownership and builder integration for the proposed MMS API, then
-adapt the existing demo and end-to-end tests.
+Additional MMS tests cover handle activation, sampling, partial transform writes
+and morph ownership/release. The two-Universe demo test exercises real Mitten
+assets, native pose/morph channels and local AVC/arm IK. There is no new factory
+block syntax: binding options are ordinary tables. Declarative individual
+transform-property methods remain follow-up work.
 
 ## Goal
 
 Expose first-class socket values and typed channels in MMS. Publish explicitly
-with `.write(value)`; receive through Sample handlers or subscription-owned
+with `.write(value)`; receive through UdpSample handlers or subscription-owned
 `.bind_transform(target)`. Use type tags imported from `"types"` and structural
 record types, compact binary payloads and channel identities. Keep local scene
 and physics policy in MMS. Do not introduce a global Bind component/table.
@@ -124,7 +128,8 @@ per-peer target isolation, received target/morph values and local IK consumption
 Then manually validate headset/controller motion and blinking from Rei to Dan
 and back over Tailscale. Local tests do not prove headset or remote-network
 behavior. Keep this target explicit while the MMS/channel adapters are being
-implemented; the current example still uses simple proxies.
+implemented; the example now uses full Mitten rigs and typed bindings. Physical headset and
+remote-network verification remains separate from headless loopback tests.
 
 ## Constraints and later scope
 
@@ -139,3 +144,21 @@ Automatic source publication is deferred. AudioStream, writable Rust producer
 handles, subscription audio binding, nested AudioSourceKind and voice chat are
 phase 2, after basic channels and whole/property transform bindings. See the
 design draft for that scope.
+
+## Intermediate milestone after local avatar testing: compressed audio
+
+Before full phase 2 voice-chat implementation, evaluate compressed-audio payloads
+and codecs (working label: phase 1.5). Send encoded byte buffers with negotiated
+format and media timing, then decode to PCM for AudioStream. Evaluate latency,
+CPU/bitrate/frame-size/loss tradeoffs on desktop and XR targets. Investigate a
+dedicated encoding worker with bounded capture queues and explicit lifecycle,
+after reviewing existing audio workers; no codec work in the real-time callback.
+See the draft's intermediate milestone for details. This does not interrupt the
+current MMS/transform/morph/demo implementation.
+
+Opus is the leading audio candidate; the draft records sourced rationale and
+proposed benchmark settings. No audio codec or worker implementation belongs
+to the current avatar/channel slice.
+
+Voice transmission policy (push-to-talk, RMS activation and mute) is tracked
+separately in [VoiceChatSystem](voice-chat-system.md).

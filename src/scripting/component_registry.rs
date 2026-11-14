@@ -155,6 +155,10 @@ pub const SUPPORTED_COMPONENT_NAMES: &[&str] = &[
     "HtmlElement",
     "HttpClient",
     "HttpServer",
+    "PoseInput",
+    "UdpSocket",
+    "UdpPublication",
+    "UdpSubscription",
     "MultiplayerSession",
     "MultiplayerSync",
     "XREyeTracking",
@@ -1793,6 +1797,14 @@ fn create_component(
             }
             add!(c)
         }
+        "PoseInput" => Ok(world.add_component(crate::engine::ecs::component::PoseInputComponent)),
+        "UdpSocket" => {
+            if ctor != Some("bind") || args.len() != 1 { return Err("UdpSocket.bind expects a numeric IP:port".into()); }
+            let address = arg_str(args, 0)?.to_string();
+            address.parse::<std::net::SocketAddr>().map_err(|e| e.to_string())?;
+            Ok(world.add_component(crate::engine::ecs::component::UdpSocketComponent::new(address)))
+        }
+        "UdpPublication" | "UdpSubscription" => Err("create channels through a socket's publish/subscribe methods".into()),
         "MultiplayerSession" | "MultiplayerSync" => multiplayer_registry::create(world, type_name, ctor, args),
         "XREyeTracking" => match ctor { Some("on") | None => add!(XREyeTrackingComponent::on()), Some("listen") => add!(XREyeTrackingComponent::listen(arg_str(args, 0)?, arg_f32(args, 1)? as u16)), Some(method) => Err(format!("XREyeTracking: unknown constructor '{method}'")) },
         "XREyeTrackingHTC" => match ctor { Some("on") | None => add!(XREyeTrackingHtcComponent::on()), Some("listen") => add!(XREyeTrackingHtcComponent::listen(arg_str(args, 0)?, arg_f32(args, 1)? as u16)), Some(method) => Err(format!("XREyeTrackingHTC: unknown constructor '{method}'")) },
@@ -3019,11 +3031,18 @@ fn apply_call(
         return Ok(());
     }
 
-    if world.get_component_by_id_as::<PointerComponent>(id).is_some() {
-        return pointer_registry::apply(world,id,method,args);
+    if world
+        .get_component_by_id_as::<PointerComponent>(id)
+        .is_some()
+    {
+        return pointer_registry::apply(world, id, method, args);
     }
 
     if let Some(hand) = world.get_component_by_id_as_mut::<XRHandComponent>(id) {
+        if method == "external" {
+            hand.externally_driven = arg_bool(args, 0)?;
+            hand.pose_valid = hand.externally_driven;
+        }
         if method == "laser" {
             hand.laser = true;
         }

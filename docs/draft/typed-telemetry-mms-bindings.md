@@ -1,12 +1,11 @@
 # Typed telemetry and MMS-controlled application
 
-Discussion draft, 2026-11-13. All APIs below are hypothetical pseudocode;
-the MMS socket, stream, binding and channel methods shown are not implemented.
-The initial native codec and endpoint now exist in `src/engine/udp_channels/`;
-see the [wire reference](../spec/typed-udp-channel-wire.md) for that slice.
-The multiplayer rename does not change runtime behavior.
-Implementation slices and the existing two-window demo migration are tracked
-in [the task](../task/typed-udp-channels-and-mms-bindings.md).
+Design discussion, 2026-11-13. The native channel foundation, ordinary MMS
+socket/channel methods, whole-transform and morph receive bindings, and partial
+transform writes are now implemented. See [the current API](../how_to/typed-udp-channels.md)
+and [wire reference](../spec/typed-udp-channel-wire.md). Future audio and
+property-binding examples remain sketches. Implementation and the two-peer
+Mitten demo are tracked in [the task](../task/typed-udp-channels-and-mms-bindings.md).
 
 ## Where the current abstraction makes decisions
 
@@ -115,7 +114,7 @@ import { vec3, vec4 } from "types"
 
 let pose_type = {
     translation: vec3,
-    rotation: vec4,
+    rotation_quat_xyzw: vec4,
     scale: vec3
 }
 ```
@@ -127,19 +126,20 @@ let udp = UdpSocket.bind("0.0.0.0:7010") {}
 udp
 
 let outgoing_pose = udp.publish("left-hand.pose")
-    .type(pose_type) {}
+    .type(pose_type)
 outgoing_pose
 
 let incoming_pose = udp.subscribe("left-hand.pose")
     .from(tracker_address)
-    .type(pose_type) {}
+    .type(pose_type)
 incoming_pose
 ```
 
 `udp` is a first-class socket handle, not a new socket per declaration.
 `publish(...)` and `subscribe(...)` create channel declarations on that socket;
-`.type(...)` accepts language type tags or record types, and `{}` uses the
-normal component-expression construction/attachment rules. Reusing or passing
+`.type(...)` accepts language type tags or record types. These are ordinary
+methods returning the same handle; channel calls do not take a component body.
+The socket constructor still uses normal component-expression syntax. Reusing or passing
 the handle does not rebind the port. Detaching a channel releases that channel;
 closing/removing the socket owner invalidates dependent I/O even if handle
 values remain. Stale socket handles must report an error rather than resolve
@@ -173,18 +173,18 @@ import { vec3, vec4 } from "types"
 let socket = UdpSocket.bind("0.0.0.0:7010") {}
 socket
 let position = socket.subscribe("left-hand.translation")
-    .from(tracker_address).type(vec3) {}
+    .from(tracker_address).type(vec3)
 position
 let orientation = socket.subscribe("left-hand.rotation")
-    .from(tracker_address).type(vec4) {}
+    .from(tracker_address).type(vec4)
 orientation
 let marker = T { R.sphere() {} }
 marker
 
-on(position, "Sample", fn(event) {
+on(position, "UdpSample", fn(event) {
     marker.set_translation(event.value, "world")
 })
-on(orientation, "Sample", fn(event) {
+on(orientation, "UdpSample", fn(event) {
     marker.set_rotation_quat(event.value, "world")
 })
 ```
@@ -195,12 +195,12 @@ another component, or ignore a sample. Typed validation and configured stale
 sequence rejection happen before delivery; a callback does not need to decode
 bytes or repeatedly resolve its target.
 
-The setters above are proposed partial-write intents. Existing
+The setters above now emit partial-write intents. Existing
 `update_transform(position)` reads rotation and scale at call time, then queues
 a full transform update. Independent handlers can overwrite one another's
 queued changes. Partial writes must preserve untouched properties against the
-state at intent execution. Establish those semantics in the first slice so
-imperative translation/rotation mapping is safe immediately.
+state at intent execution. The implemented mutation merges against execution-time state so those
+imperative translation/rotation mappings do not clobber each other.
 
 ## B. Script-authored publication
 
@@ -208,7 +208,7 @@ imperative translation/rotation mapping is safe immediately.
 // Hypothetical API. Use pose_type from the type-only record above.
 let outgoing = socket.publish("left-hand.pose")
     .to(tracker_address)
-    .type(pose_type) {}
+    .type(pose_type)
 outgoing
 on(send_clock, "Tick", fn(event) {
     outgoing.write(controller.world_trs())
@@ -216,7 +216,7 @@ on(send_clock, "Tick", fn(event) {
 ```
 
 The publishing channel accepts explicit `.write(value)` calls. Destination
-configuration is shown as `.to(...)`; its exact routing API remains provisional.
+configuration uses `.to(...)` with a numeric destination address.
 MMS chooses what to sample, when to publish, and where to send it. Native
 transport handles bounded I/O, channel registration, encoding and sequence
 metadata. A telemetry source need not be a scene component. A separate vec3
@@ -237,9 +237,7 @@ session peer ids remain different concepts.
 let incoming = socket.subscribe("left-hand.pose")
     .from(tracker_address)
     .type(pose_type)
-    .bind_transform(marker)
-    .space("world") {}
-incoming
+incoming.bind_transform(marker, { name = "remote_pose", space = "world" })
 ```
 
 The subscription owns its optional local destination. There is no global `Bind`
@@ -327,9 +325,50 @@ multiple consumers, target deletion, channel reuse, stale packets and samples
 arriving before channel registration. Preserve bounded nonblocking frame work
 and direct/batched application paths.
 
-No source implementation changes are part of this draft. Replacing
-MultiplayerSync and migrating existing examples remain separate implementation
-work. Future declarative property bindings can reuse these primitives.
+The source now implements this native/MMS slice and migrates the multiplayer
+demo. MultiplayerSync remains available as a separate older replication API. Future declarative property bindings can reuse these primitives.
+
+## Intermediate milestone: compressed audio transport investigation
+
+After local testing of the typed channels, transforms and morph bindings, and
+before implementing the full phase 2 voice-chat feature, investigate compressed
+audio transport (working milestone name: phase 1.5). This is deferred research,
+not a codec or threading choice to implement during the current avatar slice.
+
+Encoded audio frames are bounded byte buffers, not f32 sample arrays. The
+codec turns PCM input into bytes; a receiving decoder turns those bytes back
+into PCM frames for AudioStream. Plan a language-owned byte/buffer type or tag
+and a corresponding channel payload rather than packing bytes into float
+vectors or introducing a network-only type system. Framing needs negotiated
+codec/configuration, stream epoch, sequence and media timestamps/duration;
+channel registration should carry stable format information rather than
+repeating it in every packet.
+
+Compare candidate speech codecs on actual desktop and XR hardware for total
+capture-to-playback latency, encode/decode CPU, bitrate, frame duration,
+packet-size bounds, loss recovery and jitter-buffer requirements. Include
+algorithmic/lookahead delay and queueing, not just encode time. Opus is the leading candidate to measure first. VRChat explicitly documents
+its Opus voice pipeline in its [May 2026 developer update](https://ask.vrchat.com/t/developer-update-21-may-2026/48458).
+Initial benchmark parameters proposed for us: mono, 48 kHz input, 20 ms frames,
+24–32 kbit/s and moderate encoder complexity. These are our test settings, not
+claims about VRChat's exact configuration. Compare 10 ms frames and complexity
+levels on desktop/XR2 before settling defaults. Use raw encoded packet bytes
+with our stream metadata, not PCM float arrays or an Ogg file container per
+packet. See [Opus encoder controls](https://www.opus-codec.org/docs/opus_api-1.3.1/group__opus__encoderctls.html)
+and [frame-size tradeoffs](https://opus-codec.org/docs/opus-tools/opusenc.html).
+Codec selection remains open until those measurements.
+
+Investigate a dedicated audio encoding worker, following a review of the
+existing audio worker responsibilities. Feed it through bounded queues from
+capture; keep encoding, networking and decoding off the real-time audio
+callback. Define overflow/backpressure, shutdown and stream reconfiguration,
+and measure worker load and queue latency. A separate thread does not make
+codec CPU cost or accumulated latency irrelevant. Coordinate the decoding and
+network I/O ownership with the existing workers rather than automatically
+creating a thread for every channel or peer. Audio packet I/O and playback
+must continue through rendering/asset-loading hitches; an encoding worker alone
+is insufficient if transmission still waits for the scene frame loop. The
+current frame-polled telemetry endpoint is not yet that audio transport.
 
 ## Phase 2 / v2 investigation: network audio and voice chat
 
@@ -394,7 +433,7 @@ voice
 let incoming_voice = some_socket.subscribe("voice")
     .from(peer_address)
     .type(audio_frame_type)
-    .bind_audio(voice) {}
+    .bind_audio(voice)
 incoming_voice
 ```
 
@@ -422,5 +461,5 @@ playback work off blocking scene-update paths. Codec and audio-source binding
 APIs should be designed after the basic channel and transform paths are proven.
 
 Open design choices: schema declaration syntax; channels as first-class
-observables versus scoped events; socket creation/ownership and destination
-routing syntax; codec selection; and explicit local/world conversion behavior.
+future declarative property methods, richer language tags, codec evolution,
+and interpolation/timeout configuration beyond the initial hold policy.

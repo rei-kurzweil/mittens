@@ -353,6 +353,13 @@ pub enum EventSignal {
         url: Option<String>,
         bind_addr: Option<String>,
     },
+    UdpSample {
+        value: meow_meow_script::TransportValue,
+    },
+    UdpState {
+        ready: bool,
+        message: String,
+    },
     /// The local `MultiplayerSession` has a peer id (immediately for a host).
     MultiplayerConnected {
         peer_id: u32,
@@ -436,6 +443,8 @@ impl EventSignal {
             EventSignal::HttpRequest { .. } => SignalKind::HttpRequest,
             EventSignal::HttpResponse { .. } => SignalKind::HttpResponse,
             EventSignal::HttpError { .. } => SignalKind::HttpError,
+            EventSignal::UdpSample { .. } => SignalKind::UdpSample,
+            EventSignal::UdpState { .. } => SignalKind::UdpState,
             EventSignal::MultiplayerConnected { .. } => SignalKind::MultiplayerConnected,
             EventSignal::MultiplayerPeerJoined { .. } => SignalKind::MultiplayerPeerJoined,
             EventSignal::MultiplayerPeerLeft { .. } => SignalKind::MultiplayerPeerLeft,
@@ -714,6 +723,9 @@ pub enum IntentValue {
     RegisterHttpClient {
         component_id: ComponentId,
     },
+    RegisterUdp {
+        component_id: ComponentId,
+    },
     RegisterMultiplayerSession {
         component_id: ComponentId,
     },
@@ -756,6 +768,12 @@ pub enum IntentValue {
         translation: [f32; 3],
         rotation_quat_xyzw: [f32; 4],
         scale: [f32; 3],
+    },
+    PatchTransformTrs {
+        component_id: ComponentId,
+        space: crate::engine::transform::TransformSpace,
+        translation: Option<[f32; 3]>,
+        rotation: Option<[f32; 4]>,
     },
     SetTransformTrs {
         component_id: ComponentId,
@@ -1115,6 +1133,7 @@ impl IntentValue {
             IntentValue::RegisterHttpClient { .. } => "register_http_client",
             IntentValue::HttpClientRequest { .. } => "http_client_request",
             IntentValue::HttpServerReply { .. } => "http_server_reply",
+            IntentValue::RegisterUdp { .. } => "register_udp",
             IntentValue::RegisterMultiplayerSession { .. } => "register_multiplayer_session",
             IntentValue::RegisterMultiplayerSync { .. } => "register_multiplayer_sync",
             IntentValue::MultiplayerSend { .. } => "multiplayer_send",
@@ -1122,6 +1141,7 @@ impl IntentValue {
             IntentValue::RegisterTransform { .. } => "register_transform",
             IntentValue::UpdateTransformWorld { .. } => "update_transform_world",
             IntentValue::UpdateTransform { .. } => "update_transform",
+            IntentValue::PatchTransformTrs { .. } => "patch_transform_trs",
             IntentValue::SetTransformTrs { .. } => "set_transform_trs",
             IntentValue::RemoveTransform { .. } => "remove_transform",
 
@@ -1297,6 +1317,8 @@ pub enum SignalKind {
     HttpRequest,
     HttpResponse,
     HttpError,
+    UdpSample,
+    UdpState,
     MultiplayerConnected,
     MultiplayerPeerJoined,
     MultiplayerPeerLeft,

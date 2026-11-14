@@ -84,6 +84,19 @@ pub struct MultiplayerEndpoint {
 }
 
 impl MultiplayerEndpoint {
+    pub fn peer_ip(&self, peer_id: u32) -> Option<String> {
+        match &self.state {
+            RoleState::Host { clients, .. } => clients
+                .iter()
+                .find(|(_, p)| p.id == peer_id)
+                .map(|(addr, _)| addr.ip().to_string()),
+            RoleState::Client { host_addr, .. } if peer_id == HOST_PEER_ID => {
+                Some(host_addr.ip().to_string())
+            }
+            _ => None,
+        }
+    }
+
     pub fn bind(
         role: MultiplayerRole,
         addr: &str,
@@ -228,6 +241,8 @@ impl MultiplayerEndpoint {
                 let host_addr = *host_addr;
                 if let Some(pose) = local_player {
                     self.send(Message::PlayerPose { pose }, host_addr, "pose");
+                } else {
+                    self.send(Message::Heartbeat, host_addr, "heartbeat");
                 }
             }
             RoleState::Client { .. } => {}

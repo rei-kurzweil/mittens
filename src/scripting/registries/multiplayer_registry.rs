@@ -93,6 +93,15 @@ pub(crate) fn call(
         }
         "is_host" => no_args().map(|_| Value::Bool(session.is_host())),
         "peer_id" => no_args().map(|_| Value::Number(session.peer_id as f64)),
+        "peer_ip" => {
+            let peer = peer_id(args)?;
+            Ok(session
+                .peer_ips
+                .get(&peer)
+                .cloned()
+                .map(Value::String)
+                .unwrap_or(Value::Null))
+        }
         "local_name" => no_args().map(|_| Value::String(session.player_name.clone())),
         _ => Err(format!("MultiplayerSession: unknown method '{method}'")),
     }

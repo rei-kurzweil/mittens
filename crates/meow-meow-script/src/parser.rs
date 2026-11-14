@@ -421,7 +421,7 @@ impl MeowMeowParser {
             }
 
             if self.try_consume(&TokenKind::Dot) {
-                let member = self.expect_ident()?;
+                let member = self.expect_component_method_ident()?;
                 let dot_expr = Expression::BinaryOp {
                     op: BinOpKind::Dot,
                     lhs: Box::new(lhs),
@@ -872,5 +872,18 @@ fn is_assignable_target(expr: &Expression) -> bool {
             rhs,
         } => is_assignable_target(lhs) && matches!(rhs.as_ref(), Expression::Identifier(_)),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod member_tests {
+    #[test]
+    fn contextual_from_is_valid_on_an_ordinary_receiver() {
+        let tokens = crate::MeowMeowTokenizer::new(
+            r#"let x = socket.subscribe("pose").from("127.0.0.1:7010").type(kind)"#,
+        )
+        .tokenize()
+        .unwrap();
+        super::MeowMeowParser::new(tokens).parse_program().unwrap();
     }
 }

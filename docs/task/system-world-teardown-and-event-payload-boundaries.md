@@ -38,3 +38,9 @@ and intent routing by cohesive family alongside the payload/teardown proposal
 above. Preserve enum representation, direct dispatch, and allocation behavior;
 validate catalog coverage and multiplayer end-to-end tests. No split is part
 of this rename.
+
+## MMS channel integration
+
+UDP integration adds registration routing, teardown and Sample payload conversion. Keep the native endpoint separate from the ECS adapter. Preserve batched/direct dispatch and avoid per-target per-frame allocations. Validate with channel MMS and avatar tests.
+
+Remote-avatar pose support touches AVC/OpenXR registration only to select generic external pose ownership. Future splits should group pose-driver discovery/initialization separately from avatar solving, and tracked-device registration separately from XR frame orchestration. Preserve direct target handles and validate local/external hand isolation and IK activation.

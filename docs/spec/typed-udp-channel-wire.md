@@ -1,7 +1,7 @@
 # Typed UDP channels: native foundation
 
-Status: implemented native slice. MMS socket values/builders, transform and morph
-bindings, and the avatar demo migration remain implementation work. Entry point:
+Status: native foundation implemented, with an MMS/scene adapter and migrated
+Mitten demo. See [MMS channel usage](../how_to/typed-udp-channels.md). Entry point:
 [`engine::udp_channels`](../../src/engine/udp_channels/mod.rs). Design and next
 steps: [task](../task/typed-udp-channels-and-mms-bindings.md).
 
@@ -28,7 +28,7 @@ schemas. No comparative performance claim against those codecs has been made.
 
 Native numeric encode/decode uses caller-owned buffers without heap allocation.
 The MMS-value adapter materializes owned transport arrays/tables/strings only
-when requested; it is not yet wired into the MMS host. MMS numbers currently
+when requested; it is used by the MMS host and unbound subscription callbacks. MMS numbers currently
 cross this boundary as f64: encoding rounds to f32 and rejects overflow or
 nonfinite values. Native finite f32 bits, including signed zero and subnormals,
 round-trip exactly. Payload validation rejects truncation, trailing bytes,
@@ -138,5 +138,5 @@ is illustrative rather than an identical end-to-end MMS comparison.
 All sizes exclude the channel/UDP/IP headers and registration traffic. Numeric
 JSON baselines are bare fixed arrays, without the existing multiplayer JSON
 field names/envelope. Results measure codec work only, not networking, script
-execution, frame rate or remote latency. The existing multiplayer JSON protocol
-and demo have not yet been migrated to this foundation.
+execution, frame rate or remote latency. The demo now uses this foundation for spatial/face telemetry. The existing
+JSON multiplayer protocol remains the roster/gameplay control plane.

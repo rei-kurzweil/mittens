@@ -490,6 +490,72 @@ impl mms::Host for MittensHost<'_, '_> {
                     return Ok(S::Value(mms::Value::Null));
                 }
                 let id = self.existing_id(component, "invoke_component_method")?;
+                if *component_type == "Transform"
+                    && matches!(*method, "set_translation" | "set_rotation_quat")
+                {
+                    let count = if *method == "set_translation" { 3 } else { 4 };
+                    let Some(mms::Value::Array(values)) = args.first() else {
+                        return Err(mms::HostError::failure(*method, "expected numeric vector"));
+                    };
+                    if values.len() != count {
+                        return Err(mms::HostError::failure(*method, "incorrect vector length"));
+                    }
+                    let mut numeric = [0.; 4];
+                    for (out, value) in numeric.iter_mut().zip(values) {
+                        let mms::Value::Number(value) = value else {
+                            return Err(mms::HostError::failure(
+                                *method,
+                                "expected finite numbers",
+                            ));
+                        };
+                        *out = *value as f32;
+                        if !out.is_finite() {
+                            return Err(mms::HostError::failure(
+                                *method,
+                                "expected finite f32 values",
+                            ));
+                        }
+                    }
+                    if count == 4 && { let norm = numeric.iter().map(|v| v * v).sum::<f32>(); !norm.is_finite() || norm < 1e-12 } {
+                        return Err(mms::HostError::failure(*method, "degenerate quaternion"));
+                    }
+                    let space = match args.get(1) {
+                        None => crate::engine::transform::TransformSpace::Local,
+                        Some(mms::Value::String(s)) if s == "local" => {
+                            crate::engine::transform::TransformSpace::Local
+                        }
+                        Some(mms::Value::String(s)) if s == "world" => {
+                            crate::engine::transform::TransformSpace::World
+                        }
+                        _ => {
+                            return Err(mms::HostError::failure(
+                                *method,
+                                "space must be local or world",
+                            ));
+                        }
+                    };
+                    self.intents.push(IntentValue::PatchTransformTrs {
+                        component_id: id,
+                        space,
+                        translation: (count == 3).then(|| numeric[..3].try_into().unwrap()),
+                        rotation: (count == 4).then_some(numeric),
+                    });
+                    return Ok(S::Value(mms::Value::Null));
+                }
+                if *component_type == "GLTF" && *method == "morph_weight" {
+                    let [mms::Value::String(slot)] = args.as_slice() else {
+                        return Err(mms::HostError::failure(
+                            "GLTF.morph_weight",
+                            "expected semantic slot",
+                        ));
+                    };
+                    let weight = super::udp_channel_api::morph_weight(self.world, id, slot)
+                        .map_err(|e| mms::HostError::failure("GLTF.morph_weight", e))?;
+                    return Ok(S::Value(mms::Value::Number(weight as f64)));
+                }
+                if super::udp_channel_api::supports(component_type) {
+                    return self.invoke_udp(id, component_type, method, args);
+                }
                 if (*component_type == "Transform" && matches!(*method, "trs" | "world_trs"))
                     || (*component_type == "TransformWorld" && *method == "trs")
                 {
@@ -617,14 +683,34 @@ impl mms::Host for MittensHost<'_, '_> {
                 if *component_type == "AvatarControl" && *method == "eyelid_tracking" {
                     let avatar=self.world.get_component_by_id_as::<crate::engine::ecs::component::AvatarControlComponent>(id)
                         .ok_or_else(||mms::HostError::failure("eyelid_tracking","not an AvatarControl"))?;
-                    let [left,right]=avatar.eye_blink_state.tracked();
+                    let [left, right] = avatar.eye_blink_state.tracked();
                     return Ok(S::Value(mms::Value::Map(HashMap::from([
-                        ("left".into(),mms::Value::Bool(left)),("right".into(),mms::Value::Bool(right)),
+                        ("left".into(), mms::Value::Bool(left)),
+                        ("right".into(), mms::Value::Bool(right)),
                     ]))));
+                }
+                if *component_type == "XRHand" && matches!(*method, "pose_valid" | "set_pose_valid")
+                {
+                    let hand = self.world.get_component_by_id_as_mut::<crate::engine::ecs::component::ControllerXRComponent>(id)
+                        .ok_or_else(|| mms::HostError::failure(*method, "receiver is not XRHand"))?;
+                    if *method == "pose_valid" {
+                        return Ok(S::Value(mms::Value::Bool(hand.pose_valid)));
+                    }
+                    if !hand.externally_driven {
+                        return Err(mms::HostError::failure(
+                            *method,
+                            "local tracking owns this hand",
+                        ));
+                    }
+                    let [mms::Value::Bool(valid)] = args.as_slice() else {
+                        return Err(mms::HostError::failure(*method, "expected boolean"));
+                    };
+                    hand.pose_valid = *valid;
+                    return Ok(S::Value(mms::Value::Null));
                 }
                 if *component_type == "XRHand" && *method == "get_grip_pose" {
                     let value = super::controller_pose_api::get_grip_pose(self.world, id)
-                        .map_err(|e| mms::HostError::failure("XRHand.get_grip_pose",e))?;
+                        .map_err(|e| mms::HostError::failure("XRHand.get_grip_pose", e))?;
                     return Ok(S::Value(value));
                 }
                 if *component_type == "Material" {
@@ -876,6 +962,8 @@ fn signal_kind(name: &str) -> Option<SignalKind> {
         "HttpRequest" => SignalKind::HttpRequest,
         "HttpResponse" => SignalKind::HttpResponse,
         "HttpError" => SignalKind::HttpError,
+        "UdpSample" => SignalKind::UdpSample,
+        "UdpState" => SignalKind::UdpState,
         "MultiplayerConnected" => SignalKind::MultiplayerConnected,
         "MultiplayerPeerJoined" => SignalKind::MultiplayerPeerJoined,
         "MultiplayerPeerLeft" => SignalKind::MultiplayerPeerLeft,
@@ -893,7 +981,7 @@ fn event_arg_transport(
     legacy_event_value_to_transport(crate::scripting::runner::event_arg_value(signal))
 }
 
-fn legacy_event_value_to_transport(
+pub(super) fn legacy_event_value_to_transport(
     value: legacy::Value,
 ) -> Result<mms::TransportValue, mms::HostError> {
     Ok(match value {
@@ -1007,7 +1095,7 @@ fn external_tree_to_legacy(
     })
 }
 
-fn external_value_to_legacy(value: mms::Value) -> Result<legacy::Value, mms::HostError> {
+pub(super) fn external_value_to_legacy(value: mms::Value) -> Result<legacy::Value, mms::HostError> {
     Ok(match value {
         mms::Value::EventBinding(_) => {
             return Err(mms::HostError::failure(

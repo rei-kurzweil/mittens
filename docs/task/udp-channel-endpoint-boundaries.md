@@ -16,3 +16,7 @@ per-poll work, shared receive storage, reusable buffers and typed direct calls.
 Registration-time allocation is allowed within explicit limits. Validate codec,
 loopback lifecycle, stale sequence/epoch, schema mismatch and limit tests, plus
 the isolated optimized codec benchmark; measure any change to hot paths.
+
+## MMS channel integration
+
+MMS integration uses a separate ECS adapter; native codec/state-machine hot paths remain direct and bounded. Preserve batched/direct dispatch and avoid per-target per-frame allocations. Validate with channel MMS and avatar tests.

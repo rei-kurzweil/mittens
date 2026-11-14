@@ -3,7 +3,8 @@
 //! the body without changing session semantics.
 use serde::{Deserialize, Serialize};
 
-pub const VERSION: u8 = 1;
+// Version 2 adds explicit control heartbeats for sessions without pose replication.
+pub const VERSION: u8 = 2;
 /// Complete UDP payload budget, envelope included (see the UDP survey doc).
 pub const MAX_DATAGRAM: usize = 1200;
 pub const HOST_PEER_ID: u32 = 1;
@@ -65,6 +66,8 @@ pub enum Message {
         name: String,
         text: String,
     },
+    /// Keep the control session alive when telemetry uses separate typed channels.
+    Heartbeat,
     Bye,
 }
 

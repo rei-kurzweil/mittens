@@ -43,6 +43,7 @@ pub struct SystemWorld {
     pub router: RouterSystem,
     pub http_server: HttpServerSystem,
     pub multiplayer: MultiplayerSystem,
+    pub udp_channels: crate::engine::ecs::system::udp_channel_system::UdpChannelSystem,
     pub http_client: HttpClientSystem,
     pub xr_eye_tracking: XREyeTrackingSystem,
     pub scrolling: ScrollingSystem,

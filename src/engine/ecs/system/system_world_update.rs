@@ -267,6 +267,7 @@ impl SystemWorld {
         cpu_profile.mark(Phase::VelocityContact);
         // Publish post-physics owned poses; apply received ones before cameras.
         self.multiplayer.tick(world, queue, dt_sec);
+        self.udp_channels.tick(world, queue);
         queue.flush(world, self, visuals, render_assets);
         // Update window camera + select active XR camera rig before OpenXR consumes it.
         self.camera.tick(world, visuals, input, dt_sec);

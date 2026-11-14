@@ -9,6 +9,12 @@ pub(super) fn configure(
     let method = |arguments, result| mms::ValueSignature::new(arguments, result);
     match canonical {
         "MultiplayerSession" => {
+            host_method(
+                component,
+                canonical,
+                "peer_ip",
+                method(vec![mms::ValueType::U32], mms::ValueType::Any),
+            );
             component.constructor(
                 "host",
                 optional_component_signature([mms::ValueType::String], 0),

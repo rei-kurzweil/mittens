@@ -159,6 +159,23 @@ impl MultiplayerSystem {
         let scope = session.component;
 
         for event in session.endpoint.take_events() {
+            if let MultiplayerEvent::PeerJoined { peer_id, .. } = &event {
+                if let Some(ip) = session.endpoint.peer_ip(*peer_id) {
+                    if let Some(c) =
+                        world.get_component_by_id_as_mut::<MultiplayerSessionComponent>(scope)
+                    {
+                        c.peer_ips.insert(*peer_id, ip);
+                    }
+                }
+            }
+            if let MultiplayerEvent::PeerLeft { peer_id, .. } = &event {
+                if let Some(c) =
+                    world.get_component_by_id_as_mut::<MultiplayerSessionComponent>(scope)
+                {
+                    c.peer_ips.remove(peer_id);
+                }
+            }
+
             if let MultiplayerEvent::Connected { peer_id } = &event {
                 if let Some(config) =
                     world.get_component_by_id_as_mut::<MultiplayerSessionComponent>(scope)

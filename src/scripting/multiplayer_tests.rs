@@ -119,10 +119,15 @@ fn status_text(scene: &Universe) -> String {
 #[test]
 fn multiplayer_basic_example_runs_as_host_and_client() {
     let source = std::fs::read_to_string("examples/multiplayer-basic.mms").unwrap();
-    let configured = |session: &str| {
-        assert!(source.contains("MultiplayerSession.from_env()"));
-        source.replace("MultiplayerSession.from_env()", session)
-    };
+    let host_data = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    let client_data = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    let host_port = host_data.local_addr().unwrap().port();
+    let client_port = client_data.local_addr().unwrap().port();
+    drop((host_data, client_data));
+    let source = source
+        .replace("7011", &host_port.to_string())
+        .replace("7012", &client_port.to_string());
+    let configured = |session: &str| source.replace("MultiplayerSession.from_env()", session);
     let mut host = load(
         &configured(r#"MultiplayerSession.host("127.0.0.1:47012").player_name("rei")"#),
         "examples/multiplayer-basic.mms",
@@ -131,25 +136,133 @@ fn multiplayer_basic_example_runs_as_host_and_client() {
         &configured(r#"MultiplayerSession.join("127.0.0.1:47012").player_name("dan")"#),
         "examples/multiplayer-basic.mms",
     );
+    use crate::engine::ecs::{IntentValue, SignalEmitter};
+    use crate::engine::transform::TransformSpace;
+    for (scene, x) in [(&mut host, -2.0), (&mut client, 2.0)] {
+        let root = named(scene, "local_root").unwrap();
+        scene.command_queue.push_intent_now(
+            root,
+            IntentValue::PatchTransformTrs {
+                component_id: root,
+                space: TransformSpace::World,
+                translation: Some([x, 0., 0.]),
+                rotation: None,
+            },
+        );
+    }
+    let mut remote_blinked = [false; 2];
+    let remote_models = [
+        named(&host, "remote_model").unwrap(),
+        named(&client, "remote_model").unwrap(),
+    ];
     for _ in 0..90 {
         host.update(1.0 / 60.0, &Default::default());
         std::thread::sleep(Duration::from_millis(1));
         client.update(1.0 / 60.0, &Default::default());
         std::thread::sleep(Duration::from_millis(1));
+        for (index, scene) in [&host, &client].into_iter().enumerate() {
+            let model = scene
+                .world
+                .get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(
+                    remote_models[index],
+                )
+                .unwrap();
+            remote_blinked[index] |= model
+                .morph_factors
+                .values()
+                .any(|f| f.external.is_some_and(|v| v > 0.2));
+        }
     }
+    assert_eq!(
+        remote_blinked,
+        [true, true],
+        "both peers must actually receive an eye closure"
+    );
     let near = |a: [f32; 3], b: [f32; 3]| (0..3).all(|i| (a[i] - b[i]).abs() < 1e-3);
     assert!(near(
-        world_position(&host, "net_proxy_2").unwrap(),
-        world_position(&client, "local_player").unwrap()
+        world_position(&host, "remote_root").unwrap(),
+        world_position(&client, "local_root").unwrap()
     ));
     assert!(near(
-        world_position(&client, "net_proxy_1").unwrap(),
-        world_position(&host, "local_player").unwrap()
+        world_position(&client, "remote_root").unwrap(),
+        world_position(&host, "local_root").unwrap()
     ));
+    for scene in [&host, &client] {
+        use crate::engine::ecs::component::{
+            AvatarControlComponent, ControllerXRComponent, GLTFComponent, UdpChannelComponent,
+        };
+        let remote_avatar = scene
+            .world
+            .get_component_by_id_as::<AvatarControlComponent>(
+                named(scene, "remote_avatar").unwrap(),
+            )
+            .unwrap();
+        assert!(
+            remote_avatar.head_mount.is_some(),
+            "remote head solver was not initialized"
+        );
+        assert!(
+            remote_avatar.left_hand_bone_id.is_some() && remote_avatar.right_hand_bone_id.is_some(),
+            "remote arm IK was not initialized"
+        );
+        let model = scene
+            .world
+            .get_component_by_id_as::<GLTFComponent>(named(scene, "remote_model").unwrap())
+            .unwrap();
+        assert!(model.spawned && !model.morph_targets.is_empty());
+        assert!(
+            model.morph_factors.values().any(|f| f.external.is_some()),
+            "no received face weights"
+        );
+        let channels: Vec<_> = scene
+            .world
+            .all_components()
+            .filter_map(|id| {
+                scene
+                    .world
+                    .get_component_by_id_as::<UdpChannelComponent>(id)
+            })
+            .collect();
+        assert_eq!(channels.len(), 17);
+        assert!(
+            channels.iter().all(|c| c.ready),
+            "unready channels: {:?}",
+            channels
+                .iter()
+                .filter(|c| !c.ready)
+                .map(|c| (&c.channel_name, &c.error))
+                .collect::<Vec<_>>()
+        );
+        for hand in scene.world.all_components().filter_map(|id| {
+            scene
+                .world
+                .get_component_by_id_as::<ControllerXRComponent>(id)
+        }) {
+            assert!(hand.externally_driven && hand.pose_valid);
+        }
+    }
+    let host_hand = host
+        .world
+        .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(
+            named(&host, "local_left_target").unwrap(),
+        )
+        .unwrap()
+        .trs();
+    let received_hand = client
+        .world
+        .get_component_by_id_as::<crate::engine::ecs::component::TransformComponent>(
+            named(&client, "remote_left_target").unwrap(),
+        )
+        .unwrap()
+        .trs();
+    assert!((host_hand.translation[1] - received_hand.translation[1]).abs() < 0.05);
     let host_ball = world_position(&host, "ball").unwrap();
     let client_ball = world_position(&client, "ball").unwrap();
     assert!(host_ball[0] > 0.5, "host ball should drift: {host_ball:?}");
-    assert!((client_ball[0] - host_ball[0]).abs() < 0.5);
+    assert!(
+        (client_ball[0] - host_ball[0]).abs() < 0.5,
+        "ball host={host_ball:?} client={client_ball:?}"
+    );
     assert!(
         status_text(&host).starts_with("rei (host, peer 1)"),
         "{}",

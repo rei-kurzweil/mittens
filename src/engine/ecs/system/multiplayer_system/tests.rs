@@ -202,3 +202,30 @@ fn client_send_before_welcome_is_an_error() {
     let mut client = MultiplayerEndpoint::bind(MultiplayerRole::Client, &addr, "dan", now).unwrap();
     assert!(client.send_app("x", "y").is_err());
 }
+
+#[test]
+fn message_only_sessions_stay_alive_without_legacy_pose_replication() {
+    let start = Instant::now();
+    let (mut host, mut client) = host_and_client(start);
+    pump(&mut host, &mut client, start);
+    host.take_events();
+    client.take_events();
+    for tick in 1..=12 {
+        let now = start + Duration::from_millis(tick * 500);
+        client.publish(tick, None, Vec::new());
+        host.publish(tick, None, Vec::new());
+        pump(&mut host, &mut client, now);
+        assert!(
+            !host
+                .take_events()
+                .iter()
+                .any(|e| matches!(e, MultiplayerEvent::PeerLeft { .. }))
+        );
+        assert!(
+            !client
+                .take_events()
+                .iter()
+                .any(|e| matches!(e, MultiplayerEvent::PeerLeft { .. }))
+        );
+    }
+}

@@ -165,8 +165,9 @@ fn tick_one(
 ) {
     // Shared rig binding is independent of tracked head embodiment. An
     // untracked NPC keeps its authored model transform and bone hierarchy.
-    let has_pose_driver =
-        owning_input_xr(world, id).is_some() || owning_desktop_input(world, id).is_some();
+    let has_pose_driver = owning_input_xr(world, id).is_some()
+        || owning_desktop_input(world, id).is_some()
+        || owning_pose_input(world, id);
     if !has_pose_driver {
         if let Some(gltf) = humanoid_maps.request_for_avc(world, id)
             && let Some(report) = humanoid_maps.report(gltf)
@@ -738,6 +739,21 @@ fn bind_shared_rig(
     avatar.model_root_id = Some(root);
     avatar.humanoid_map_gltf = Some(report.owning_gltf);
     avatar.humanoid_map_generation = report.generation;
+}
+
+fn owning_pose_input(world: &World, mut id: ComponentId) -> bool {
+    loop {
+        if world
+            .get_component_by_id_as::<crate::engine::ecs::component::PoseInputComponent>(id)
+            .is_some()
+        {
+            return true;
+        }
+        let Some(parent) = world.parent_of(id) else {
+            return false;
+        };
+        id = parent;
+    }
 }
 
 fn owning_desktop_input(world: &World, mut id: ComponentId) -> Option<ComponentId> {
@@ -2449,6 +2465,7 @@ mod hand_pose_correction_tests {
         gltf.morph_factors.insert(
             key,
             MorphFactorState {
+                external: None,
                 idle_blink: None,
                 base: 0.1,
                 driver: None,
@@ -2729,6 +2746,7 @@ mod hand_pose_correction_tests {
         gltf.morph_factors.insert(
             left_key,
             MorphFactorState {
+                external: None,
                 idle_blink: None,
                 base: 0.1,
                 driver: None,
@@ -2738,6 +2756,7 @@ mod hand_pose_correction_tests {
         gltf.morph_factors.insert(
             right_key,
             MorphFactorState {
+                external: None,
                 idle_blink: None,
                 base: 0.15,
                 driver: None,

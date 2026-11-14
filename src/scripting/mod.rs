@@ -122,3 +122,8 @@ mod rocket_motion_tests;
 
 #[cfg(test)]
 mod editor_settings_trigger_tests;
+
+mod udp_channel_api;
+
+#[cfg(test)]
+mod udp_channel_tests;

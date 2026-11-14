@@ -53,6 +53,8 @@ pub struct ControllerXRComponent {
     /// synthesized from avatar bones, aim orientation, or a previous XR frame.
     pub(crate) grip_pose_in_parent: Option<crate::engine::transform::TransformTrs>,
     pub enabled: bool,
+    /// Script/network target; never overwritten by local OpenXR tracking.
+    pub externally_driven: bool,
     /// Runtime-only: true after a valid controller pose was applied this frame.
     pub pose_valid: bool,
     /// Runtime-only source selected for the current frame.
@@ -74,6 +76,7 @@ impl ControllerXRComponent {
         Self {
             grip_pose_in_parent: None,
             enabled,
+            externally_driven: false,
             pose_valid: false,
             active_pose_source: ControllerPoseSource::None,
             raw_aim_rotation: None,
@@ -186,6 +189,9 @@ impl Component for ControllerXRComponent {
             ControllerPoseKind::GripAim => "GripAim",
         };
         let mut expression = ce_call("XRHand", "new", vec![b(self.enabled), s(hand), s(pose)]);
+        if self.externally_driven {
+            expression = expression.with_call("external", vec![b(true)]);
+        }
         if self.laser {
             expression = expression.with_call("laser", vec![]);
         }

@@ -627,3 +627,9 @@ pub mod ce_helpers {
 
 pub mod rocket_motion;
 pub use rocket_motion::{AccelerationComponent, ProjectileImpactComponent};
+
+pub mod udp_channel;
+pub use udp_channel::{UdpSocketComponent, UdpChannelComponent, UdpBinding};
+
+pub mod pose_input;
+pub use pose_input::PoseInputComponent;

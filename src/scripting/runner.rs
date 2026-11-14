@@ -611,6 +611,18 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
             ),
             ("key".to_string(), Value::String(event.key.clone())),
         ])),
+        Some(crate::engine::ecs::EventSignal::UdpSample { value }) => {
+            Value::Map(HashMap::from([(
+                "value".into(),
+                crate::scripting::udp_channel_api::sample_value(value),
+            )]))
+        }
+        Some(crate::engine::ecs::EventSignal::UdpState { ready, message }) => {
+            Value::Map(HashMap::from([
+                ("ready".into(), Value::Bool(*ready)),
+                ("message".into(), Value::String(message.clone())),
+            ]))
+        }
         Some(crate::engine::ecs::EventSignal::FrameTick { dt_sec }) => {
             Value::Map(HashMap::from([(
                 "dt_sec".to_string(),

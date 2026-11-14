@@ -1636,3 +1636,19 @@ MultiplayerSession.host() {}
 ```mms parse-only
 HttpServer {}
 ```
+
+#### `UdpSample`
+<!-- catalog:signal source="UdpSample" kind="event" mms="observable-payload" -->
+An unbound typed subscription received a new latest value. Payload: value. Consumed through on(subscription, "UdpSample", callback). Native bindings apply directly instead of allocating callback payloads.
+
+#### `UdpState`
+<!-- catalog:signal source="UdpState" kind="event" mms="observable-payload" -->
+Socket/channel readiness or error observation. Payload: ready, message. Consumed through scoped or global handlers.
+
+#### `RegisterUdp`
+<!-- catalog:signal source="RegisterUdp" kind="intent" mms="component-lifecycle" -->
+Activates socket/channel participation through the normal component lifecycle. User code creates and attaches handles rather than authoring this intent.
+
+#### `PatchTransformTrs`
+<!-- catalog:signal source="PatchTransformTrs" kind="intent" mms="live-api" -->
+Emitted by Transform.set_translation/set_rotation_quat. Merges requested channels against the current local/world transform at execution, preserving untouched channels across independently queued writes.

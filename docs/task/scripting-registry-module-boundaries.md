@@ -61,3 +61,19 @@ the same shape rather than growing the central registries.
 Rename the multiplayer family and central dispatch references consistently.
 This scoped rename adds no runtime work; the responsibility-based split above
 remains proposed. Validate with multiplayer and documentation catalog tests.
+
+## MMS channel integration
+
+UDP authoring stays in a cohesive registry/config pair; central dispatch receives only routing hooks. Preserve batched/direct dispatch and avoid per-target per-frame allocations. Validate with channel MMS and avatar tests.
+
+Instance `.from(...)` uses the same contextual member-name parser as constructor chains. No new block or factory syntax is introduced.
+
+### Host method-family follow-up
+
+The scoped channel slice also touches the large scripting/host.rs dispatcher.
+A future responsibility split should group transform/pose/morph host methods
+behind one coherent pose-data adapter, leaving handle validation, lease ownership
+and operation routing in host.rs. Keep typed direct calls, shared value conversion
+and existing phase gating; avoid per-operation runtime dispatch or new per-frame
+allocations. Validate language tests, partial transform execution, morph ownership
+and two-peer avatar tests. This proposal does not perform the split.

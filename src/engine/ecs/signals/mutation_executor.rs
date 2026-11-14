@@ -283,6 +283,9 @@ impl RxMutationExecutor {
                     body_text.clone(),
                 );
             }
+            IntentValue::RegisterUdp { component_id } => {
+                systems.udp_channels.register(*component_id);
+            }
             IntentValue::RegisterMultiplayerSession { component_id } => {
                 systems
                     .multiplayer
@@ -328,6 +331,49 @@ impl RxMutationExecutor {
                 {
                     let component = *component_id;
                     systems.update_transform(world, visuals, component, t);
+                }
+            }
+            IntentValue::PatchTransformTrs {
+                component_id,
+                space,
+                translation,
+                rotation,
+            } => {
+                use crate::engine::transform::TransformSpace;
+                let current = match space {
+                    TransformSpace::World => {
+                        crate::engine::ecs::system::TransformSystem::world_trs(world, *component_id)
+                            .map_err(|e| e.to_string())
+                    }
+                    TransformSpace::Local => world
+                        .get_component_by_id_as::<TransformComponent>(*component_id)
+                        .map(|t| t.trs())
+                        .ok_or_else(|| "missing transform".to_string()),
+                };
+                if let Ok(mut value) = current {
+                    if let Some(v) = translation {
+                        value.translation = *v;
+                    }
+                    if let Some(v) = rotation {
+                        value.rotation_quat_xyzw = *v;
+                    }
+                    let local = match space {
+                        TransformSpace::Local => value.normalized().map_err(|e| e.to_string()),
+                        TransformSpace::World => {
+                            crate::engine::ecs::system::TransformSystem::world_to_local_trs(
+                                world,
+                                &systems.transform_operator,
+                                *component_id,
+                                value,
+                            )
+                            .map_err(|e| e.to_string())
+                        }
+                    };
+                    if let Ok(transform) =
+                        local.and_then(|v| Transform::try_from(v).map_err(|e| e.to_string()))
+                    {
+                        systems.update_transform(world, visuals, *component_id, transform);
+                    }
                 }
             }
             IntentValue::SetTransformTrs {

@@ -26,6 +26,8 @@ pub struct MultiplayerSessionComponent {
     pub enabled: bool,
     /// Runtime: this process's peer id once connected (host is 1), else 0.
     pub peer_id: u32,
+    /// Runtime control-plane addresses, used to configure separately typed UDP channels.
+    pub peer_ips: std::collections::HashMap<u32, String>,
     component: Option<ComponentId>,
 }
 
@@ -38,6 +40,7 @@ impl Default for MultiplayerSessionComponent {
             tick_hz: 20.0,
             enabled: true,
             peer_id: 0,
+            peer_ips: std::collections::HashMap::new(),
             component: None,
         }
     }

@@ -88,6 +88,8 @@ impl Component for MorphTargetBindingComponent {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MorphFactorState {
+    /// An explicit external binding owns the final value until released.
+    pub external: Option<f32>,
     /// Authored idle blink fallback; live expression/tracking drivers take priority.
     pub idle_blink: Option<f32>,
     pub base: f32,
@@ -99,6 +101,7 @@ pub struct MorphFactorState {
 impl MorphFactorState {
     pub fn new(base: f32) -> Self {
         Self {
+            external: None,
             base,
             driver: None,
             amplitude_mouth_open: None,
@@ -106,7 +109,8 @@ impl MorphFactorState {
         }
     }
     pub fn effective(self) -> f32 {
-        self.driver
+        self.external
+            .or(self.driver)
             .or(self.amplitude_mouth_open)
             .unwrap_or_else(|| {
                 self.idle_blink
@@ -195,6 +199,7 @@ mod tests {
         factors.insert(
             key,
             MorphFactorState {
+                external: None,
                 idle_blink: None,
                 base: MORPH_ACTIVE_EPSILON,
                 driver: None,
@@ -205,6 +210,7 @@ mod tests {
         factors.insert(
             key,
             MorphFactorState {
+                external: None,
                 idle_blink: None,
                 base: -MORPH_ACTIVE_EPSILON * 1.01,
                 driver: None,
@@ -220,6 +226,7 @@ mod tests {
     #[test]
     fn driver_does_not_destroy_base_factor() {
         let state = MorphFactorState {
+            external: None,
             idle_blink: None,
             base: 0.25,
             driver: Some(0.8),
@@ -228,6 +235,7 @@ mod tests {
         assert_eq!(state.effective(), 0.8);
         assert_eq!(
             MorphFactorState {
+                external: None,
                 idle_blink: None,
                 driver: None,
                 amplitude_mouth_open: None,

@@ -177,6 +177,18 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
             let method = |arguments, result| mms::ValueSignature::new(arguments, result);
             match canonical {
                 "Transform" => {
+                    for name in ["set_translation", "set_rotation_quat"] {
+                        host_method(
+                            component,
+                            canonical,
+                            name,
+                            mms::ValueSignature::with_optional(
+                                vec![mms::ValueType::Array, mms::ValueType::String],
+                                1,
+                                mms::ValueType::Null,
+                            ),
+                        );
+                    }
                     host_method(
                         component,
                         canonical,
@@ -451,6 +463,9 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                 | "MediaPipeEyeTracking" => {
                     eye_tracking_runtime_config::configure(component, canonical)
                 }
+                "UdpSocket" | "UdpPublication" | "UdpSubscription" => {
+                    super::udp_channel_api::configure(component, canonical)
+                }
                 "MultiplayerSession" | "MultiplayerSync" => {
                     multiplayer_runtime_config::configure(component, canonical)
                 }
@@ -586,6 +601,12 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     component.builder_call("root", any(1));
                 }
                 "GLTF" => {
+                    host_method(
+                        component,
+                        canonical,
+                        "morph_weight",
+                        method(vec![mms::ValueType::String], mms::ValueType::F32),
+                    );
                     component.constructor("new", strings(1));
                     component.builder_call("with_visualized_transforms", booleans(1));
                 }
@@ -1364,6 +1385,8 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "HttpRequest",
         "HttpResponse",
         "HttpError",
+        "UdpSample",
+        "UdpState",
         "MultiplayerConnected",
         "MultiplayerPeerJoined",
         "MultiplayerPeerLeft",

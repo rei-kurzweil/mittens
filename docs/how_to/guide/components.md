@@ -1312,3 +1312,27 @@ closure avoids querying it on every event.
 The default is zero; friction reduces physical tangential Velocity during fixed
 contact steps and does not damp airborne motion or change Input speed. See
 [surface friction](../../task/surface-friction-for-static-collidables.md).
+
+### `UdpSocketComponent`
+<!-- catalog:component source="UdpSocketComponent" mms="direct" names="UdpSocket" -->
+A first-class socket handle shared by typed channels. See [channel authoring](../typed-udp-channels.md).
+```mms parse-only
+UdpSocket.bind("127.0.0.1:7011") {}
+```
+
+### `UdpChannelComponent`
+<!-- catalog:component source="UdpChannelComponent" mms="indirect" names="UdpPublication,UdpSubscription" -->
+Runtime channel handles created by socket.publish/subscribe, configured through ordinary methods and activated by normal emission/attachment. Receive bindings take options tables. These handles are excluded from scene serialization.
+```mms parse-only
+import { vec3 } from "types"
+let socket = UdpSocket.bind("127.0.0.1:7011") {}
+let channel = socket.subscribe("position").from("127.0.0.1:7012").type(vec3)
+channel
+```
+
+### `PoseInputComponent`
+<!-- catalog:component source="PoseInputComponent" mms="direct" names="PoseInput" -->
+Marks an externally driven head-target hierarchy for local AVC/IK without polling hardware. Hand targets use XRHand.external(true).
+```mms parse-only
+PoseInput { T {} }
+```
