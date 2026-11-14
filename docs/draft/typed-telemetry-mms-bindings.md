@@ -309,6 +309,28 @@ No source implementation changes are part of this draft. Replacing
 MultiplayerSync and migrating existing examples remain separate implementation
 work. Future declarative property bindings can reuse these primitives.
 
+## Phase 2 / v2 investigation: network audio and voice chat
+
+After the typed-channel basics, whole-transform receive binding, and bindings
+for individual transform properties (translation, rotation and scale) are
+working, investigate streaming audio channels and voice chat. This is future
+scope, not a requirement for the initial telemetry implementation.
+
+A possible receiving API would let an audio subscription bind to a local audio
+source, or expose a dedicated network audio source. The choice and names remain
+open. Follow the same ownership principle as transform subscriptions: the
+channel transports data, while the receiver explicitly chooses its local
+playback target. Positional voice could combine an audio channel with separate
+transform channels for the speaker's location.
+
+Investigate microphone capture, audio-frame/codec negotiation, timestamps and
+clock drift, bounded jitter buffering, loss handling, playback scheduling,
+mute/push-to-talk, and per-peer lifecycle. Audio frames need their own delivery
+and buffering policy; do not assume telemetry latest-value coalescing or
+transform interpolation is appropriate for audio. Keep capture, decoding and
+playback work off blocking scene-update paths. Codec and audio-source binding
+APIs should be designed after the basic channel and transform paths are proven.
+
 Open design choices: schema declaration syntax; channels as first-class
 observables versus scoped events; socket creation/ownership and destination
 routing syntax; codec selection; and explicit local/world conversion behavior.
