@@ -242,3 +242,12 @@ their likelihood.
 - [assets/shaders/mirror-mesh.vert](/home/rei/_/cat-engine/assets/shaders/mirror-mesh.vert)
 - [assets/shaders/mirror-mesh.frag](/home/rei/_/cat-engine/assets/shaders/mirror-mesh.frag)
 - [docs/bugs/mirror-camera-orientation-and-tracking.md](/home/rei/_/cat-engine/docs/bugs/mirror-camera-orientation-and-tracking.md)
+
+## Multiplayer scene report
+
+The multiplayer mirror was blocked with an opaque backing immediately behind
+its plane. User reports that roughly 5–10 m behind the mirror must be empty with
+the current capture path. The scene workaround removes the backing and places
+the mirror beyond the floor and posts. Reproduce with a backing at several
+distances and fix capture clipping so normal backed mirrors work; verify mono
+and stereo without relying on an empty volume behind the surface.

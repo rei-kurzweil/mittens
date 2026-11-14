@@ -53,11 +53,9 @@ for corner in [[-1.0, -1.0], [1.0, -1.0], [-1.0, 1.0], [1.0, 1.0]] {
     }
 }
 
-// A shared full-height mirror faces the avatars (+Z normal) for desktop and XR.
-T.position(0.0, 1.5, -4.60).scale(6.3, 3.1, 0.12) {
-    R.cube() { C.rgba(0.15, 0.18, 0.22, 1.0) }
-}
-T.position(0.0, 1.5, -4.52).scale(6.0, 2.8, 1.0) {
+// Keep the reflected-camera side empty: the current mirror path can be blocked
+// by geometry behind the plane. No backing; place beyond the floor and posts.
+T.position(0.0, 1.5, -7.52).scale(6.0, 2.8, 1.0) {
     R.plane() { Mirror.quality(1024) { name = "multiplayer_mirror" } }
 }
 
@@ -127,6 +125,19 @@ fn make_mitten(prefix, local_player) {
         T { model }
         left_driver
         right_driver
+        if local_player && use_desktop {
+            // AVC mounts this at the mapped head, with desktop yaw correction.
+            T.position(0.0, 0.08, 0.12) {
+                name = "local_desktop_camera_anchor"
+                C3D {
+                    fov(65.0) near(0.01)
+                    Pointer {
+                        name = "local_desktop_pointer"
+                        Raycast.event_driven().min_distance(0.75) {}
+                    }
+                }
+            }
+        }
         if local_player && use_xr {
             // Match Mitten's established head-relative eye/view offset.
             T.position(0.0, 0.08, 0.12) {
@@ -168,10 +179,6 @@ remote.root.update_transform([-spawn_x, 0.0, 0.0])
 if use_desktop && !use_xr {
     I.speed(2.0) { InputTransformMode.forward_z() { fps_rotation() roll_axis_y() } local.root }
 } else { local.root }
-if use_desktop {
-    // Observer camera keeps both fully solved avatars visible in the desktop demo.
-    T.position(0.0, 1.8, 6.0) { C3D { fov(65.0) near(0.05) Pointer { name = "local_desktop_pointer" } } }
-}
 if use_xr { XR.on() } else { XR.off() }
 remote.root
 if use_xr {

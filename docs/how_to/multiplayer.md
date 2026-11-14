@@ -43,7 +43,7 @@ This two-computer workflow has not been verified by the local loopback tests.
 The channel-based migration must preserve it alongside the two-window local
 workflow; the demo uses MultiplayerSession for control and typed channels for telemetry.
 
-Each desktop window shows full local and remote Mitten avatars. WASD/right-drag
+Desktop uses Mitten's first-person head-mounted camera. WASD/right-drag
 moves the local rig; scripted hand targets exercise arm IK without a headset. Both avatar
 copies run ambient eye-saccade animations locally. The local desktop avatar runs an
 authored looping blink clip (2.8-second loop); XR uses tracked eye closure only,
@@ -71,7 +71,7 @@ The committed defaults are desktop-only; Rei changes the two booleans locally.
 Desktop mode creates a winit window and Camera3D, with no CameraXR or InputXR.
 XR-only mode uses the existing no-window host and CameraXR/InputXR, with no
 winit event loop, desktop surface/swapchain, Camera3D or desktop movement input.
-Both flags can be true for XR with a desktop observer view; XR owns locomotion
+Both flags can be true for XR with a desktop first-person view; XR owns locomotion
 in that mode. View mode does not choose authority: launch Rei with
 `MITTENS_MULTIPLAYER_ROLE=host`, and Dan with `client` and
 `MITTENS_MULTIPLAYER_ADDR="<rei-tailscale-ip>:7010"` as shown above.
@@ -201,3 +201,7 @@ shared.disconnect()
 
 The helper owns an identity mount at the scene root. Use equal root scales on
 both peers; it replicates translation and rotation, not scale.
+
+The mirror has no backing and sits beyond the arena floor/posts to leave the
+reflected-camera side empty. This works around the current mirror clipping issue;
+it does not fix the renderer's handling of geometry behind the mirror.

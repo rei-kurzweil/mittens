@@ -118,7 +118,9 @@ fn status_text(scene: &Universe) -> String {
 
 #[test]
 fn multiplayer_basic_example_runs_as_host_and_client() {
-    let source = std::fs::read_to_string("examples/multiplayer-basic.mms").unwrap();
+    let source = std::fs::read_to_string("examples/multiplayer-basic.mms").unwrap()
+        .replace("let use_xr = true", "let use_xr = false")
+        .replace("let use_desktop = false", "let use_desktop = true");
     let host_data = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
     let client_data = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
     let host_port = host_data.local_addr().unwrap().port();
@@ -240,6 +242,15 @@ fn multiplayer_basic_example_runs_as_host_and_client() {
             .collect();
         assert_eq!(channels.len(), 21);
         assert!(named(scene, "shared_gohei").is_some());
+        let local_avatar = scene.world.get_component_by_id_as::<AvatarControlComponent>(
+            named(scene, "local_avatar").unwrap()
+        ).unwrap();
+        assert!(local_avatar.splice_camera_bone.is_some());
+        assert_eq!(
+            scene.world.parent_of(named(scene, "local_desktop_camera_anchor").unwrap()),
+            local_avatar.splice_camera_bone,
+            "desktop camera must follow the local avatar's mapped camera anchor"
+        );
         assert!(
             channels.iter().all(|c| c.ready),
             "unready channels: {:?}",
@@ -298,7 +309,9 @@ fn multiplayer_example_supports_desktop_client_and_windowless_xr_host() {
         Camera3DComponent, CameraXRComponent, InputComponent, InputXRComponent,
         MultiplayerSessionComponent, RendererSettingsComponent, XrComponent,
     };
-    let source = std::fs::read_to_string("examples/multiplayer-basic.mms").unwrap();
+    let source = std::fs::read_to_string("examples/multiplayer-basic.mms").unwrap()
+        .replace("let use_xr = true", "let use_xr = false")
+        .replace("let use_desktop = false", "let use_desktop = true");
     for xr in [false, true] {
         let configured = source
             .replace("let use_xr = false", &format!("let use_xr = {xr}"))
@@ -350,6 +363,13 @@ fn multiplayer_example_supports_desktop_client_and_windowless_xr_host() {
         assert_eq!(settings.window_visible, !xr);
         assert_eq!(named(&scene, "multiplayer_xr_settings").is_some(), xr);
         assert_eq!(named(&scene, "xr_floor_correction_slider").is_some(), xr);
+        let desktop_anchor = named(&scene, "local_desktop_camera_anchor");
+        assert_eq!(desktop_anchor.is_some(), !xr);
+        if let Some(anchor) = desktop_anchor {
+            use crate::engine::ecs::component::TransformComponent;
+            assert_eq!(scene.world.get_component_by_id_as::<TransformComponent>(anchor).unwrap().transform.translation, [0.0, 0.08, 0.12]);
+            assert_eq!(scene.world.parent_of(anchor), named(&scene, "local_avatar"));
+        }
         let camera_anchor = named(&scene, "local_xr_camera_anchor");
         assert_eq!(camera_anchor.is_some(), xr);
         if let Some(anchor) = camera_anchor {
