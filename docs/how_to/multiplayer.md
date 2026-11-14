@@ -17,6 +17,32 @@ Across a LAN, the host binds `0.0.0.0:7010` by default; set
 `MITTENS_MULTIPLAYER_ADDR=<host-ip>:7010` on the client and allow UDP 7010 on the host.
 Addresses are numeric; hostnames are not resolved.
 
+### Two computers over Tailscale
+
+Use the same example on both computers; no separate scene is required. Both
+must run a compatible branch/protocol. On Rei's computer, get the numeric IPv4
+address with `tailscale ip -4`, then run:
+
+```sh
+MITTENS_MULTIPLAYER_ROLE=host MITTENS_MULTIPLAYER_NAME=rei cargo run --release -- load examples/multiplayer-basic.mms
+```
+
+On Dan's computer, replace `<rei-tailscale-ip>` with that numeric address:
+
+```sh
+MITTENS_MULTIPLAYER_ROLE=client MITTENS_MULTIPLAYER_NAME=dan MITTENS_MULTIPLAYER_ADDR="<rei-tailscale-ip>:7010" cargo run --release -- load examples/multiplayer-basic.mms
+```
+
+The default host bind `0.0.0.0:7010` includes its Tailscale IPv4 interface.
+Tailnet access rules and the host firewall must permit this UDP traffic. Use
+numeric addresses; the current example does not resolve MagicDNS hostnames.
+Tailscale handles connectivity between the machines, including relayed paths
+when direct connectivity is unavailable; see its
+[connection types](https://tailscale.com/docs/reference/connection-types).
+This two-computer workflow has not been verified by the local loopback tests.
+The channel-based migration must preserve it alongside the two-window local
+workflow; the current example still uses MultiplayerSession/MultiplayerSync.
+
 Each window shows the other player as a head/body proxy with a name tag. The
 orange ball is simulated only by the host. Press **E** to kick it: the host
 kicks directly, a client sends a `kick` message that the host acts on.

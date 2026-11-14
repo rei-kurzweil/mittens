@@ -1,7 +1,9 @@
 # Typed telemetry and MMS-controlled application
 
 Discussion draft, 2026-11-13. All APIs below are hypothetical pseudocode;
-none of the schema, stream, binding, or channel methods shown are implemented.
+the MMS socket, stream, binding and channel methods shown are not implemented.
+The initial native codec and endpoint now exist in `src/engine/udp_channels/`;
+see the [wire reference](../spec/typed-udp-channel-wire.md) for that slice.
 The multiplayer rename does not change runtime behavior.
 Implementation slices and the existing two-window demo migration are tracked
 in [the task](../task/typed-udp-channels-and-mms-bindings.md).
@@ -266,6 +268,24 @@ syntax remain open; they do not require a separate global binding API. They
 would reuse the same channel and partial-write semantics. Interpolated rotation
 must use normalized shortest-path quaternion interpolation rather than
 component-wise lerp.
+
+## Morph bindings and the Mitten avatar demo
+
+Extend subscription-owned receive binding to scalar morph weights as well as
+transforms. Exact method syntax remains provisional, for example a f32 channel
+bound to an initialized avatar's semantic `left_eye_blink` slot. Resolve against
+that avatar instance, define range/target readiness behavior, and prevent local
+automatic blink writers from competing with received face data. No global Bind
+API or network-specific morph type system is needed.
+
+The demo target is full Mitten avatars for Rei and Dan on both ends, including
+visible remote motion, hand targets and eye blinking. Run IK/AVC on each local
+computer from received head/hand targets and the authoritative locomotion root;
+do not send solved skeleton matrices or independently replay locomotion from
+raw gamepad axes. Source-local inputs remain on the owning peer; remote avatars
+consume the received channels. Desktop deterministic drivers provide validation
+without a headset, followed by an XR/Tailscale manual pass. Details and existing
+avatar scene references are tracked in the implementation task.
 
 ## Policy that must stay visible
 

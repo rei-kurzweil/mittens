@@ -1,7 +1,22 @@
 # Typed UDP channels and MMS bindings
 
-Status: planned; implementation has not started. Multiplayer naming is already
-updated. Design and phase 2 scope: [discussion draft](../draft/typed-telemetry-mms-bindings.md).
+Status: native binary codec and channel endpoint implemented; MMS socket
+values, channel builders and transform bindings are not implemented yet.
+Multiplayer naming is already updated. Design and phase 2 scope: [discussion draft](../draft/typed-telemetry-mms-bindings.md).
+
+## Native foundation completed
+
+`src/engine/udp_channels/` provides the binary codec, TypeTag/RecordType schema
+adapter, bounded nonblocking socket, publication/subscription arenas, declaration
+retry/acknowledgment, latest-value writes/reads, mismatch events and lifecycle
+history. Protocol and limits: [native channel reference](../spec/typed-udp-channel-wire.md).
+
+Validation: 12 functional tests pass with UDP loopback access; the ignored
+measurement is run through `scripts/benchmark_udp_channel_codec.sh`, which
+optimizes the channel modules and dependencies without rebuilding the renderer.
+These tests do not yet exercise MMS socket values or a channel-based scene.
+Next: host ownership and builder integration for the proposed MMS API, then
+adapt the existing demo and end-to-end tests.
 
 ## Goal
 
@@ -63,6 +78,53 @@ These are the current launch commands. Preserve this workflow or update the
 example, tests and how-to together if launcher configuration changes. Verify
 remote motion in both windows, ball authority and E-to-kick, plus restart/loss
 behavior. Revisit or replace MultiplayerSync after the replacement path passes.
+
+Also validate the same scene on two computers over Tailscale: host binds
+`0.0.0.0:7010`, client sets `MITTENS_MULTIPLAYER_ADDR=<host-tailscale-ip>:7010`.
+Keep numeric remote addresses configurable; never hardcode loopback into the
+replacement. See [launch instructions](../how_to/multiplayer.md#two-computers-over-tailscale).
+Local loopback tests do not constitute verification of the remote network path.
+
+## Avatar acceptance target: Rei and Dan as Mitten
+
+The migrated scene must render the full Mitten avatar for both peers on each
+computer, rather than the current sphere/cube remote proxies. Reuse
+`assets/models/mitten.glb` and the existing Mitten humanoid map, anime material,
+blink morph mapping and appropriate local avatar/secondary-motion setup from
+`examples/mitten.mms`, `examples/mittens-corp.mms` and its desktop counterpart.
+Do not copy unrelated vehicle/editor systems into the multiplayer example.
+
+Each computer runs AVC/IK locally for both the locally owned avatar and received
+remote avatars. Transmit solver inputs, not solved bone transforms:
+
+- Authoritative locomotion-root transform, plus movement state needed by local
+  animation. Gamepad input drives locomotion on the owning peer. Raw stick values
+  alone are not enough to keep remote position aligned; do not independently
+  integrate the same locomotion on receivers and introduce drift.
+- Headset/head target and left/right hand target poses, with explicit tracking
+  validity, coordinate space, root relationship and per-peer calibration.
+- Blink/face morph weights, starting with independent left/right eye closure.
+  Existing semantic slots map to Fcl_EYE_Close_L / Fcl_EYE_Close_R. Additional
+  supported hand/finger inputs or expression weights can follow as required;
+  actual voice streaming remains phase 2.
+
+Add subscription-owned scalar morph-target receive binding alongside transform
+binding. Resolve the target within the correct avatar's MorphTargetMap/GLTF
+instance after initialization; never globally query a shared bone/morph name.
+Define finite/range validation, target-load/loss behavior and write ownership.
+The remote avatar's automatic blink/tracking writers must not overwrite received
+blink values. Local camera, InputXR, controller input and microphone providers
+must not take control of a remote avatar, and received channels must not be
+republished as local input.
+
+The desktop two-window version must remain testable without XR hardware: use
+local desktop controls and deterministic head/hand/blink driver inputs to prove
+remote motion and left/right blinking. Add assertions for avatar initialization,
+per-peer target isolation, received target/morph values and local IK consumption.
+Then manually validate headset/controller motion and blinking from Rei to Dan
+and back over Tailscale. Local tests do not prove headset or remote-network
+behavior. Keep this target explicit while the MMS/channel adapters are being
+implemented; the current example still uses simple proxies.
 
 ## Constraints and later scope
 

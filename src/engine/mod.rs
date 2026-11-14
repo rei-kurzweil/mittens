@@ -8,6 +8,7 @@ pub(crate) mod startup_trace;
 pub mod transform;
 pub mod universe;
 pub mod user_input;
+pub mod udp_channels;
 pub mod vr_perf;
 #[cfg(feature = "desktop")]
 pub mod windowing;
