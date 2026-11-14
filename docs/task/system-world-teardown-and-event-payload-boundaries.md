@@ -44,3 +44,13 @@ of this rename.
 UDP integration adds registration routing, teardown and Sample payload conversion. Keep the native endpoint separate from the ECS adapter. Preserve batched/direct dispatch and avoid per-target per-frame allocations. Validate with channel MMS and avatar tests.
 
 Remote-avatar pose support touches AVC/OpenXR registration only to select generic external pose ownership. Future splits should group pose-driver discovery/initialization separately from avatar solving, and tracked-device registration separately from XR frame orchestration. Preserve direct target handles and validate local/external hand isolation and IK activation.
+
+## Pointer grab notifications
+
+PointerGrabbed/PointerReleased add small event-family arms to the existing large
+signal definition and MMS payload dispatch. Keep these direct matches together
+until the proposed family split is approved; preserve scoped dispatch and avoid
+scene queries or per-frame notification work. The large GrabbableSystem should
+eventually separate grab lifecycle/notification from placement math and its
+tests; retain direct placement updates and allocation behavior. Validate successful
+versus rejected grabs, release/cleanup, scoped MMS payloads, and two-peer replication.

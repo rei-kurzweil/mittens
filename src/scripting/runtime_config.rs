@@ -1358,6 +1358,8 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
         "DragEnd",
         "GrabStart",
         "GrabEnd",
+        "PointerGrabbed",
+        "PointerReleased",
         "ProjectileHit",
         "ZoneEntered",
         "ZoneExited",

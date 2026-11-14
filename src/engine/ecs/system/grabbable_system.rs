@@ -404,6 +404,7 @@ impl GrabbableSystem {
                 align_to_hand,
             },
         );
+        emit.push_event(pointer, EventSignal::PointerGrabbed { pointer, target });
     }
 
     fn release(&mut self, world: &mut World, emit: &mut dyn SignalEmitter, pointer: ComponentId) {
@@ -411,6 +412,10 @@ impl GrabbableSystem {
             return;
         };
         self.owned.remove(&grab.target);
+        emit.push_event(
+            pointer,
+            EventSignal::PointerReleased { pointer, target: grab.target },
+        );
         if world.get_component_record(grab.target).is_none() {
             return;
         }
@@ -987,3 +992,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "pointer_grab_events_tests.rs"]
+mod pointer_grab_events_tests;

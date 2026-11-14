@@ -12,6 +12,8 @@ import { mitten_bow_secondary_motion } from "../assets/components/secondary_moti
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 
 import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
+import { gohei_black_spring } from "../assets/components/paper_craft/gohei_black_spring.mms"
+import { shared_grabbable } from "../assets/components/network/shared_grabbable.mms"
 import { xr_settings_panel } from "../assets/components/panels/xr_settings_panel.mms"
 import { looping_blink } from "../assets/components/animations/looping_blink.mms"
 
@@ -102,8 +104,14 @@ fn make_mitten(prefix, local_player) {
         bisket_shirt_physics(false)
         mitten_bow_secondary_motion()
     }
-    let left = T.position(-0.35, -0.35, -0.25) { name = prefix + "_left_target" }
-    let right = T.position(0.35, -0.35, -0.25) { name = prefix + "_right_target" }
+    let left = T.position(-0.35, -0.35, -0.25) {
+        name = prefix + "_left_target"
+        if local_player && use_xr { Pointer { name = "local_left_pointer" } }
+    }
+    let right = T.position(0.35, -0.35, -0.25) {
+        name = prefix + "_right_target"
+        if local_player && use_xr { Pointer { name = "local_right_pointer" } }
+    }
     let external_hands = !local_player || !use_xr
     let left_driver = XRHand.new(true, "Left", "GripAim").external(external_hands) { left }
     let right_driver = XRHand.new(true, "Right", "GripAim").external(external_hands) { right }
@@ -158,7 +166,7 @@ if use_desktop && !use_xr {
 } else { local.root }
 if use_desktop {
     // Observer camera keeps both fully solved avatars visible in the desktop demo.
-    T.position(0.0, 1.8, 6.0) { C3D { fov(65.0) near(0.05) Pointer {} } }
+    T.position(0.0, 1.8, 6.0) { C3D { fov(65.0) near(0.05) Pointer { name = "local_desktop_pointer" } } }
 }
 if use_xr { XR.on() } else { XR.off() }
 remote.root
@@ -167,6 +175,31 @@ if use_xr {
     XrSettings.floor.set_correction_meters(XrSettings.floor.correction_meters({file = xr_calibration_file}))
     T.position(spawn_x - 1.28, 2.3, -1.5) {
         xr_settings_panel({ root_name = "multiplayer_xr_settings", calibration_file = xr_calibration_file })
+    }
+}
+// Grab this cyan cube with the desktop pointer or either XR hand. The latest
+// grab/release transition wins; simultaneous claims favor the client in this demo.
+let shared_prop = T.position(0.0, 1.1, 0.0) {
+    name = "shared_prop"
+    Grabbable.to_hand(true) {}
+    T.scale(0.25, 0.25, 0.25) {
+        R.cube() { C.rgba(0.12, 0.85, 0.95, 1.0) Raycastable.enabled() }
+    }
+}
+let grab_rank = 2
+if net.is_host() { grab_rank = 1 }
+let shared = shared_grabbable({ socket = socket name = "arena.prop.1" target = shared_prop rank = grab_rank })
+shared.root
+let gohei = gohei_black_spring("shared_gohei")
+gohei.update_transform([1.1, 1.1, 0.0])
+let shared_gohei = shared_grabbable({ socket = socket name = "arena.gohei.1" target = gohei rank = grab_rank })
+shared_gohei.root
+let shared_objects = [shared, shared_gohei]
+for item in shared_objects {
+    if use_desktop { item.bind_pointer(query("[name='local_desktop_pointer']")) }
+    if use_xr {
+        item.bind_pointer(query("[name='local_left_pointer']"))
+        item.bind_pointer(query("[name='local_right_pointer']"))
     }
 }
 let links = { root = null head = null left = null right = null blink_left = null blink_right = null left_valid = null right_valid = null ball = null }
@@ -196,6 +229,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     channel_groups.attach(group)
     connection.root = group
     let address = ip + ":" + remote_port
+    for item in shared_objects { item.connect(group, address) }
     links.root = publish("root", address, pose_type)
     links.head = publish("head", address, pose_type)
     links.left = publish("left-hand", address, pose_type)
@@ -226,6 +260,7 @@ on(net, "MultiplayerPeerJoined", fn(event) {
     show_status(event.name + " joined; typed pose and face channels")
 })
 on(net, "MultiplayerPeerLeft", fn(event) {
+    for item in shared_objects { item.disconnect() }
     if connection.root { connection.root.remove_subtree() connection.root = null }
     links.root = null
     roster.count = 0

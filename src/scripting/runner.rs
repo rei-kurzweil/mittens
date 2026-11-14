@@ -693,7 +693,9 @@ pub(crate) fn event_arg_value(signal: &crate::engine::ecs::Signal) -> Value {
             }
             Value::Map(payload)
         }
-        Some(crate::engine::ecs::EventSignal::GrabEnd { pointer, target }) => {
+        Some(crate::engine::ecs::EventSignal::GrabEnd { pointer, target })
+        | Some(crate::engine::ecs::EventSignal::PointerGrabbed { pointer, target })
+        | Some(crate::engine::ecs::EventSignal::PointerReleased { pointer, target }) => {
             Value::Map(grab_event_payload(*pointer, *target))
         }
         Some(crate::engine::ecs::EventSignal::ProjectileHit {

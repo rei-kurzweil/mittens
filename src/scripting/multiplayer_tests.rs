@@ -238,7 +238,8 @@ fn multiplayer_basic_example_runs_as_host_and_client() {
                     .get_component_by_id_as::<UdpChannelComponent>(id)
             })
             .collect();
-        assert_eq!(channels.len(), 17);
+        assert_eq!(channels.len(), 21);
+        assert!(named(scene, "shared_gohei").is_some());
         assert!(
             channels.iter().all(|c| c.ready),
             "unready channels: {:?}",

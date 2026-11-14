@@ -167,6 +167,17 @@ pub enum EventSignal {
         target: ComponentId,
     },
 
+    /// Successful local Grabbable acquisition, scoped to the holding pointer.
+    PointerGrabbed {
+        pointer: ComponentId,
+        target: ComponentId,
+    },
+    /// Local Grabbable ownership ended, including invalidated holds. Pointer scope.
+    PointerReleased {
+        pointer: ComponentId,
+        target: ComponentId,
+    },
+
     /// An opt-in sensor overlaps an enabled slide collidable. Scoped to the sensor.
     ProjectileHit {
         zone: ComponentId,
@@ -418,6 +429,8 @@ impl EventSignal {
             EventSignal::DragEnd { .. } => SignalKind::DragEnd,
             EventSignal::GrabStart { .. } => SignalKind::GrabStart,
             EventSignal::GrabEnd { .. } => SignalKind::GrabEnd,
+            EventSignal::PointerGrabbed { .. } => SignalKind::PointerGrabbed,
+            EventSignal::PointerReleased { .. } => SignalKind::PointerReleased,
             EventSignal::ProjectileHit { .. } => SignalKind::ProjectileHit,
             EventSignal::ZoneEntered { .. } => SignalKind::ZoneEntered,
             EventSignal::ZoneExited { .. } => SignalKind::ZoneExited,
@@ -1287,6 +1300,8 @@ pub enum SignalKind {
     DragEnd,
     GrabStart,
     GrabEnd,
+    PointerGrabbed,
+    PointerReleased,
     ProjectileHit,
     ZoneEntered,
     ZoneExited,

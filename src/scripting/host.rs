@@ -932,6 +932,8 @@ fn signal_kind(name: &str) -> Option<SignalKind> {
         "DragStart" => SignalKind::DragStart,
         "GrabStart" => SignalKind::GrabStart,
         "GrabEnd" => SignalKind::GrabEnd,
+        "PointerGrabbed" => SignalKind::PointerGrabbed,
+        "PointerReleased" => SignalKind::PointerReleased,
         "ProjectileHit" => SignalKind::ProjectileHit,
         "ZoneEntered" => SignalKind::ZoneEntered,
         "ZoneExited" => SignalKind::ZoneExited,

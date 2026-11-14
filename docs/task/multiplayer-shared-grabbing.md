@@ -1,21 +1,44 @@
 # Shared multiplayer grabbing
 
-Status: planned. Follow up after real desktop/XR two-peer testing.
+Status: MMS prototype implemented; physical desktop/XR and Tailscale acceptance pending.
+Host-approved ownership, weapon replication, and throw physics remain planned.
 
-## Current gap
+## Current prototype
 
-`GrabbableSystem` handles grabs locally. The multiplayer example sends avatar
-root/head/hand poses and blink weights, plus the host-owned ball pose; it does
-not replicate grab ownership, attachment, release, or arbitrary grabbed objects.
-The ball is not currently authored as grabbable. A host-published object's pose
-can be visible remotely, but that alone does not implement shared grabbing;
-client-local edits can be overwritten by its receive binding.
+`PointerGrabbed` / `PointerReleased` are pointer-scoped notifications after local
+Grabbable acquisition/release. They expose `pointer` and `target`; rejected grabs
+do not announce success. The receiving machine does not invoke GrabbableSystem
+for a remote hold. The holder uses its ordinary local grab, while the receiver
+applies the resulting world pose. These roles are independent of host/client.
+
+`assets/components/network/shared_grabbable.mms` owns replication policy. The
+multiplayer example passes its existing socket, stable channel/object name, local
+Transform, and peer rank. The cyan cube and black spring gohei have no root-body
+physics; gohei paper secondary motion remains local. A typed snapshot at 20 Hz
+contains a transition revision, owner, held flag, translation, and quaternion.
+The owner repeats the complete latest state after release as well as while held,
+so losing a transition packet does not permanently lose that transition.
+
+Newest transition wins; equal revisions favor rank 2 (client). A losing local
+hold is reparented to its original identity scene mount through MMS; the existing
+native invalidation path then ends following and emits PointerReleased. This
+cleanup notification does not reclaim network ownership. Old revisions are
+ignored. The incoming channel is pinned to the session peer's address and accepts
+only that peer's rank, but there is no host approval/security authority in this
+prototype. Revision/owner are integral values carried by existing f32 type tags;
+revision precision is limited to 24 bits. This is a two-peer demonstration, not a
+final multiplayer ownership protocol.
+
+On peer departure, the remaining peer retains the last pose and takes ownership
+of a remotely owned prop. Connection generation guards ignore obsolete callbacks.
+The ball is still separately host-authoritative and is not grabbable. Weapons,
+throw velocity, and damage are not connected to this prototype.
 
 Desktop grabbing currently holds an object in front of the camera rather than
 driving emulated avatar hands. Support that existing path in the first slice;
 desktop hand-pose emulation is a separate follow-up, not a prerequisite.
 
-## Responsibility and proposed first slice
+## Follow-up: host-approved interaction policy
 
 - Keep local pointer/grip placement in `GrabbableSystem`. Add multiplayer
   interaction policy, initially in MMS using the session and typed-channel APIs.
@@ -94,3 +117,14 @@ hand drivers. Correcting their avatar hand presentation remains separate.
 
 See [multiplayer roadmap](multiplayer-roadmap.md) and
 [local hand placement](grabbable-to-hand.md).
+
+## Prototype validation
+
+- Native tests cover failed/duplicate acquisition, pointer scope, one notification
+  per actual transition, and release after external reparenting.
+- MMS tests cover component payloads and scope, two-peer translation/quaternion
+  replication, release, handoff, simultaneous grabs, disconnect generation guards,
+  and a receiver that missed the grab/release receiving the final snapshot.
+- The full multiplayer scene loads the cube/gohei, establishes 21 channels per
+  peer, and retains desktop/XR mode checks. Physical grip feel and Tailscale
+  latency/packet-loss testing remain manual acceptance.

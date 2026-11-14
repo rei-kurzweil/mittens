@@ -164,3 +164,40 @@ root are sent through the existing channels; the receiver does not apply its own
 XR calibration to a remote avatar. Secondary motion (shirt and bow), IK, and
 ambient gaze run independently on each machine, with no secondary-motion bone
 updates sent over UDP. These simulations may differ slightly between peers.
+
+### Shared grab prototype
+
+Grab the cyan cube or black spring gohei with the desktop pointer or an XR hand's grip. Either peer can
+hold, move, release, and pick it up again. The holder runs local GrabbableSystem;
+the receiver applies world poses from MMS through a typed channel. No remote
+hand parenting or engine network-grab API is required. Pointer-scoped
+`PointerGrabbed` / `PointerReleased` drive the helper's state transitions.
+
+The example uses latest-transition ownership (client wins equal-revision ties),
+not host approval. It repeats complete ownership/pose snapshots at 20 Hz, even
+after release, to recover lost transition packets. Released props stay in place:
+there is no throw/gravity simulation for these props. The gohei's paper spring motion runs locally on each machine. Weapons and firing are still
+separate follow-ups. See [shared grabbing](../task/multiplayer-shared-grabbing.md).
+
+The helper wraps an existing movable root; both peers create the same named
+object locally. `name` identifies its channel, not a serialized component ID.
+`rank` is 1 for the host and 2 for the client in this two-peer example.
+
+```mms parse-only
+import { shared_grabbable } from "../assets/components/network/shared_grabbable.mms"
+let shared = shared_grabbable({
+    socket = socket
+    name = "arena.gohei.1"
+    target = gohei
+    rank = local_rank
+})
+shared.root
+shared.bind_pointer(local_pointer)
+// On peer connection; channels live under the connection's scene group:
+shared.connect(peer_channels, peer_address)
+// On peer departure, before removing that group:
+shared.disconnect()
+```
+
+The helper owns an identity mount at the scene root. Use equal root scales on
+both peers; it replicates translation and rotation, not scale.

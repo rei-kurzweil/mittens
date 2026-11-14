@@ -405,6 +405,32 @@ on(scope, "GrabEnd", fn(event) { print(event) })
 scope
 ```
 
+#### `PointerGrabbed`
+<!-- catalog:signal source="PointerGrabbed" kind="event" mms="observable-payload" -->
+**Event.** A local `Grabbable` hold successfully attached. Emitted once on the
+holding pointer, after native grab acquisition. Payload: `pointer`, `target` (the
+moved Transform, including `Grabbable.parent()` resolution). Rejected grabs do
+not emit this event. This is a notification, not a cancellable permission request.
+Climbing and attachment mounting are separate interactions.
+```mms parse-only
+let pointer = Pointer {}
+on(pointer, "PointerGrabbed", fn(event) { print(event.target) })
+pointer
+```
+
+#### `PointerReleased`
+<!-- catalog:signal source="PointerReleased" kind="event" mms="observable-payload" -->
+**Event.** A local `Grabbable` hold ended. Emitted once on its pointer, with
+`pointer` and `target`, on ordinary release or invalidated hold cleanup (including
+external reparenting). IDs can refer to removed components during cleanup; a
+removed pointer has no live scoped listener. This does not drive a second grab or
+release operation.
+```mms parse-only
+let pointer = Pointer {}
+on(pointer, "PointerReleased", fn(event) { print(event.target) })
+pointer
+```
+
 #### `Click`
 <!-- catalog:signal source="Click" kind="event" mms="observable-null" -->
 **Event.** A drag ended within the click displacement threshold. The interaction and physics subsystem produces it; scoped RX handlers consume it at a signal drain point after execution stages. Events are immediate observations, bubble from the signal scope to ancestor handler scopes, and do not carry `SignalWhen`. Related components are the producers or scopes named by the variant and its subsystem. MMS `on(...)` accepts this event. Handler exposure: **Observable with `null`**. Sources: [event definition](../../../src/engine/ecs/signals/signal.rs), [MMS handler names](../../../src/scripting/world_evaluator.rs), and [payload conversion](../../../src/scripting/runner.rs).
