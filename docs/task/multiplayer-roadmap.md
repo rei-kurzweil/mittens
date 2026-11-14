@@ -16,7 +16,16 @@ below are scoped follow-ups; each is a separate change.
 - Tests: protocol/endpoint over loopback, two `Universe`s end to end, and the
   `multiplayer-basic.mms` example run as host + client.
 
-## Next, in rough order
+## Current priority: typed channels and MMS-controlled application
+
+Follow [typed UDP channels and MMS bindings](typed-udp-channels-and-mms-bindings.md)
+for the next testable slices and migration of the existing two-window
+`multiplayer-basic.mms` demo. That work establishes binary typed channels,
+explicit publication, and receiver-controlled transform application before
+extending the current automatic replication path. The list below retains
+longer-term follow-ups; it is not the immediate implementation order.
+
+## Longer-term follow-ups
 
 1. **Interpolation buffer.** Keep ~3 snapshots per remote pose and render
    ~100 ms behind using host tick timestamps; extrapolate briefly on loss.

@@ -3,6 +3,8 @@
 Discussion draft, 2026-11-13. All APIs below are hypothetical pseudocode;
 none of the schema, stream, binding, or channel methods shown are implemented.
 The multiplayer rename does not change runtime behavior.
+Implementation slices and the existing two-window demo migration are tracked
+in [the task](../task/typed-udp-channels-and-mms-bindings.md).
 
 ## Where the current abstraction makes decisions
 
