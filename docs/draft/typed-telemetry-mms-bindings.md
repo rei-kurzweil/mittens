@@ -20,7 +20,9 @@ on top of transport without requiring transform replication.
 
 ## Agreed direction: typed channels and local bindings
 
-Support both imperative and declarative binding. The first declarative binding
+The typical first-slice flow is imperative publication followed by declarative
+receive binding. Also support imperative receive handlers for custom mapping.
+The first declarative receive binding
 maps an entire transform; imperative MMS handlers immediately support mapping
 UDP channels to individual transform channels, with arbitrary script logic.
 Declarative translation-only, rotation-only, scale-only and per-axis bindings
@@ -58,14 +60,120 @@ ordering, units and local/world space. A matrix and TRS are distinct types:
 whole-transform binding initially accepts TRS; matrix decomposition and shear
 handling require a separate explicit decision.
 
+## Socket versus channel
+
+A socket owns the local UDP endpoint: bind address/port, operating-system socket,
+nonblocking send/receive and bounded I/O buffers. It moves datagrams between
+addresses. UDP itself has no named typed channels or registration handshake;
+those are features of our protocol layered on top.
+
+A channel is a named, typed stream multiplexed over that socket. It owns its
+payload schema and publisher identity, wire registration, sequence tracking and
+subscriptions. Several channels share one socket and port, and a channel does
+not require its own OS socket or worker thread. A socket can communicate with
+several peers; channel lookup must distinguish publishers, so equal names from
+different peers do not accidentally merge. A logical publication can fan out
+to several destinations, with wire registration tracked for each destination.
+
+```text
+UdpSocket bound to 0.0.0.0:7010
+  ├─ tracker A / left-hand.pose         → TRS record
+  ├─ tracker A / right-hand.translation → vec3
+  └─ tracker B / temperature            → f32
+```
+
+A transform binding is a third responsibility: it applies a received channel's
+values to a local scene target. Neither a socket nor an unbound channel implies
+any transform writes or changes to physics ownership.
+
+Conceptual ownership: attached publish/subscribe components hold registrations
+on their socket; detaching releases their participation. Multiple local
+subscriptions to the same publisher/name/schema can share runtime receive
+state. Removing the socket closes I/O and makes dependent channels unavailable;
+removing one channel leaves the socket and other channels active.
+
+Sockets are first-class MMS values: a script can create or reference a socket,
+store it, pass it to a function, and share it across modules. Socket methods
+produce publish/subscribe declaration builders; the attached declarations own
+their channel participation. Exact constructor and lookup syntax is provisional.
+
+## MMS type tags define channel payloads
+
+Use first-class type tags imported from the language-owned `"types"` module,
+not a separate networking `Types` factory or string-based type names. The
+implemented primitive tags include `f32`, `vec2`, `vec3`, `vec4` and `str`.
+Channel declarations consume those same identities; import aliases retain the
+same meaning. Existing type-only primitive record expressions can describe a
+TRS payload structurally:
+
+```ts
+import { vec3, vec4 } from "types"
+
+let pose_type = {
+    translation: vec3,
+    rotation: vec4,
+    scale: vec3
+}
+```
+
+```ts
+// Proposed socket methods using the existing type tags above.
+// The socket may instead be passed in or obtained from an existing owner.
+let udp = UdpSocket.bind("0.0.0.0:7010") {}
+udp
+
+let outgoing_pose = udp.publish("left-hand.pose")
+    .type(pose_type) {}
+outgoing_pose
+
+let incoming_pose = udp.subscribe("left-hand.pose")
+    .from(tracker_address)
+    .type(pose_type) {}
+incoming_pose
+```
+
+`udp` is a first-class socket handle, not a new socket per declaration.
+`publish(...)` and `subscribe(...)` create channel declarations on that socket;
+`.type(...)` accepts language type tags or record types, and `{}` uses the
+normal component-expression construction/attachment rules. Reusing or passing
+the handle does not rebind the port. Detaching a channel releases that channel;
+closing/removing the socket owner invalidates dependent I/O even if handle
+values remain. Stale socket handles must report an error rather than resolve
+to a replacement socket. Exact creation, reference and explicit-close APIs
+remain to be settled.
+
+The publisher announces its schema; a subscriber states the schema it expects.
+A subscription can wait before its publisher exists. Compatible registration
+makes it ready; an incompatible type is an observable error and delivers no
+samples. Registration readiness/loss/errors should be observable in MMS, with
+exact event names still to be settled. Declarative bindings wait for readiness.
+Script authors normally use channel names and handles, not numeric wire IDs.
+
+A networking codec interprets these types as wire layouts and validates values
+at the send/receive boundary. A type tag alone does not change the current MMS
+numeric representation. Wire registration must encode a portable schema,
+not Rust enum discriminants or process-local type handles. Canonical record
+field order makes layout independent of source declaration order.
+
+Quaternion xyzw semantics and coordinate conventions supplement the `vec4`
+field type. Dedicated quaternion, matrix and richer transform tags remain
+language type-system extensions to discuss; do not pretend they are already
+exports. Future tags should also come from `"types"` rather than a parallel
+network-only type system.
+
 ## A. Imperative receive handlers: fine-grained mapping immediately
 
 ```ts
-// Hypothetical MMS API; registration and channel lookup syntax are provisional.
+// Proposed socket method declarations; imported type tags already exist.
+import { vec3, vec4 } from "types"
 let socket = UdpSocket.bind("0.0.0.0:7010") {}
 socket
-let position = socket.channel(tracker_address, "left-hand.translation", Types.vec3())
-let orientation = socket.channel(tracker_address, "left-hand.rotation", Types.quat_xyzw())
+let position = socket.subscribe("left-hand.translation")
+    .from(tracker_address).type(vec3) {}
+position
+let orientation = socket.subscribe("left-hand.rotation")
+    .from(tracker_address).type(vec4) {}
+orientation
 let marker = T { R.sphere() {} }
 marker
 
@@ -93,56 +201,69 @@ imperative translation/rotation mapping is safe immediately.
 ## B. Script-authored publication
 
 ```ts
-// Hypothetical API. Declare the schema once; publish values repeatedly.
-let outgoing = socket.publish_channel("left-hand.pose", Types.transform_trs())
+// Hypothetical API. Use pose_type from the type-only record above.
+let outgoing = socket.publish("left-hand.pose")
+    .to(tracker_address)
+    .type(pose_type) {}
+outgoing
 on(send_clock, "Tick", fn(event) {
-    outgoing.send(tracker_address, controller.world_trs())
+    outgoing.write(controller.world_trs())
 })
 ```
 
+The publishing channel accepts explicit `.write(value)` calls. Destination
+configuration is shown as `.to(...)`; its exact routing API remains provisional.
 MMS chooses what to sample, when to publish, and where to send it. Native
 transport handles bounded I/O, channel registration, encoding and sequence
 metadata. A telemetry source need not be a scene component. A separate vec3
 channel could publish only translation using the same model.
 
+Binding a local source to publish automatically is deferred. It would need an
+explicit sampling trigger, rate and phase relative to physics/XR tracking.
+There is no automatic source sampling in the first slice.
+
 A multiplayer session can expose equivalent typed channels with assigned peer
 identity and explicit routing (host, peer, broadcast). Raw socket addresses and
 session peer ids remain different concepts.
 
-## C. Declarative binding: whole transform first
+## C. Declarative receive binding: whole transform first
 
 ```ts
-// Hypothetical API. This is an alternative to imperative writes to marker.
-let pose = socket.channel(tracker_address, "left-hand.pose", Types.transform_trs())
-let binding = Bind.channel(pose)
-    .to_transform(marker)
+// Proposed subscription builder API. Alternative to imperative marker writes.
+let incoming = socket.subscribe("left-hand.pose")
+    .from(tracker_address)
+    .type(pose_type)
+    .bind_transform(marker)
     .space("world") {}
-binding
+incoming
 ```
 
+The subscription owns its optional local destination. There is no global `Bind`
+component or built-in `Bind` table. Socket methods produce channel declarations;
+a publishing channel accepts `.write(value)`, and a subscription can declare
+how received samples apply locally. Without `.bind_transform(...)`, the
+subscription exposes Sample events without performing scene writes.
+
 This explicitly binds translation, quaternion rotation and scale as a single
-transform update. Receiving data without a binding performs no scene writes.
-MMS owns selection and binding lifetime; native code can perform typed direct
-updates without a script closure per target per frame. Removing the binding
-releases its subscription and write ownership. Invalid target handles cannot
-redirect updates to a replacement component.
+transform update. MMS owns selection and subscription lifetime; native code can
+perform typed direct updates without a script closure per target per frame.
+Detaching the subscription releases its receive participation and write
+ownership; shared channels and other subscribers remain active. Invalid target
+handles cannot redirect updates to a replacement component. Whether target
+loss leaves the subscription available for observation or stops it needs a
+defined policy.
 
 The initial binding needs defined stale-sample and timeout behavior; holding
 the latest accepted value is a possible default. Interpolation, extrapolation
 and more elaborate timeout actions are independent future choices, not implied
 by whole-transform binding.
 
-Later, declarative property binding could shorten the imperative examples:
-
-```ts
-// Future convenience, outside the first declarative slice.
-Bind.channel(position).to(marker, "translation").space("world") {}
-Bind.channel(orientation).to(marker, "rotation_quat").space("world") {}
-```
-
-These would reuse the same channel and partial-write semantics. Interpolated
-rotation must use normalized shortest-path quaternion interpolation rather
-than component-wise lerp.
+Later, property-specific binding methods on subscription builders could
+shorten the imperative translation/rotation examples. Their names and exact
+syntax remain open; they do not require a separate global binding API. They
+would reuse the same channel and partial-write semantics. Interpolated rotation
+must use normalized shortest-path quaternion interpolation rather than
+component-wise lerp.
 
 ## Policy that must stay visible
 
@@ -150,10 +271,9 @@ than component-wise lerp.
   disables Velocity. Scripts can choose a visual proxy, a kinematic target, or
   an explicitly disabled local simulation.
 - Multiple writers targeting the same local transform property should fail
-  binding registration unless
-  an explicit arbitration policy is chosen. Manual writes during an active
-  binding also need defined precedence/release behavior. Different transform properties
-  can coexist through partial-write intents. A whole-transform binding claims
+  binding registration unless an explicit arbitration policy is chosen. Manual writes during an active
+  binding also need defined precedence/release behavior. Different transform
+  properties can coexist through partial-write intents. A whole-transform binding claims
   all three properties; one source channel may feed several different targets.
 - A raw UDP sender address is a routing/filtering key, not authenticated identity.
   Session-assigned identity and authority checks belong above raw transport.
@@ -172,10 +292,11 @@ than component-wise lerp.
 ## First implementation slice
 
 1. Typed binary channels with registration, session-scoped identity, bounded
-   receive/send and explicit sender selection; select the codec separately.
+   receive/send, imperative `.write(value)` and explicit routing/sender selection;
+   select the codec separately.
 2. Imperative Sample handlers plus execution-time partial transform writes,
    allowing translation-only and rotation-only mappings immediately.
-3. Declarative binding of a whole TRS channel to a local transform, with explicit
+3. Subscription-owned `.bind_transform(target)` for a whole TRS channel, with explicit
    coordinate space, lifecycle, ordering, timeout and write-ownership semantics.
 
 Validate both paths against the same sender: whole-transform declarative
@@ -189,5 +310,5 @@ MultiplayerSync and migrating existing examples remain separate implementation
 work. Future declarative property bindings can reuse these primitives.
 
 Open design choices: schema declaration syntax; channels as first-class
-observables versus scoped events; binding components versus an RX operator;
-codec selection; and explicit local/world conversion behavior.
+observables versus scoped events; socket creation/ownership and destination
+routing syntax; codec selection; and explicit local/world conversion behavior.
