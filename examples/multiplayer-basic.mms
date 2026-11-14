@@ -1,7 +1,7 @@
 // View flags: Dan keeps these defaults. Rei sets XR=true and desktop=false locally.
 // Network role is separate: Rei launches as host, Dan as client (commands below).
-let use_xr = false
-let use_desktop = true
+let use_xr = true
+let use_desktop = false
 
 import { f32, vec3, vec4 } from "types"
 import { bisket_anime_shading } from "../assets/components/materials/bisket_anime_shading.mms"

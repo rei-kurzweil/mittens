@@ -630,3 +630,11 @@ This task replaces the eligible avatar's simpler body-follow constraint with
 coordinated head/neck geometry and body placement;
 it does not revive spine FABRIK, infer whole-body posture from one headset,
 change eye tracking, or implement walking/foot planting.
+
+## Coordinated posture follow-up
+
+See [avatar posture and tracking inventory](avatar-posture-tracking-inventory.md)
+for current implementation status and the proposed standing lean, crouch,
+all-fours, prone/supine contact modes, shared pelvis ownership, partial tracking
+and OpenXR/webcam fusion plan. This is documentation-only; it does not implement
+a general UpperBodyIkSystem or the planned body/face tracking consumers.

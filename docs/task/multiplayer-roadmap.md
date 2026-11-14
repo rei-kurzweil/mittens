@@ -18,12 +18,19 @@ below are scoped follow-ups; each is a separate change.
 
 ## Current priority: typed channels and MMS-controlled application
 
-Follow [typed UDP channels and MMS bindings](typed-udp-channels-and-mms-bindings.md)
-for the next testable slices and migration of the existing two-window
-`multiplayer-basic.mms` demo. That work establishes binary typed channels,
-explicit publication, and receiver-controlled transform application before
-extending the current automatic replication path. The list below retains
-longer-term follow-ups; it is not the immediate implementation order.
+The [typed UDP channels and MMS bindings](typed-udp-channels-and-mms-bindings.md)
+task records the channel foundation, receiver-controlled transform/morph bindings,
+and migration of `multiplayer-basic.mms`. It also retains the detailed audio
+milestones. The list below keeps longer-term follow-ups; it is not an instruction
+to implement them all now.
+
+The typed-channel foundation and full-avatar demo migration are now implemented.
+Use [branch acceptance and follow-ups](multiplayer-branch-acceptance-and-followups.md)
+for the current test checklist and remaining interaction/audio work. The historical
+first-slice and automatic snapshot follow-ups below describe that earlier protocol;
+root/head/hand/blink telemetry in the demo already uses binary typed channels.
+[Posture/tracking inventory](avatar-posture-tracking-inventory.md) is a separate,
+docs-only design track, not more implementation scope for this branch.
 
 ## Longer-term follow-ups
 

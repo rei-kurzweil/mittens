@@ -4,6 +4,9 @@ Status: implemented first slice. Desktop/loopback/LAN verified by tests; no
 interpolation, prediction, or reliable delivery yet. See the
 [roadmap](../task/multiplayer-roadmap.md) for what comes next.
 
+See the [four-table component and signal inventory](multiplayer-udp-api-inventory.md)
+for the implemented multiplayer and UDP API, including internal intents.
+
 ## Run the example
 
 Two processes on one machine:
