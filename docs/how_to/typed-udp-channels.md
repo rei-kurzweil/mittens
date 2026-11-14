@@ -124,3 +124,10 @@ roster, address discovery and gameplay requests, and typed binary channels for
 spatial/face telemetry. Control heartbeats work without MultiplayerSync poses.
 Audio compression/worker research and AudioStream/voice chat are deferred in
 [the design draft](../draft/typed-telemetry-mms-bindings.md).
+
+Authored clips can call `model.set_morph_weight("left_eye_blink", weight)` with a
+finite weight in `[0, 1]` after GLTF initialization. Pass `null` to release that
+script value. Received bindings take priority over script values; script values
+take priority over local tracker/fallback drivers. Both APIs resolve semantic
+slots within that GLTF instance. The multiplayer desktop blink clip uses this
+setter; remote copies receive its effective weights through the existing channels.

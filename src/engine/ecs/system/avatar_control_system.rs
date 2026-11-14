@@ -2466,6 +2466,7 @@ mod hand_pose_correction_tests {
             key,
             MorphFactorState {
                 external: None,
+                script: None,
                 idle_blink: None,
                 base: 0.1,
                 driver: None,
@@ -2747,6 +2748,7 @@ mod hand_pose_correction_tests {
             left_key,
             MorphFactorState {
                 external: None,
+                script: None,
                 idle_blink: None,
                 base: 0.1,
                 driver: None,
@@ -2757,6 +2759,7 @@ mod hand_pose_correction_tests {
             right_key,
             MorphFactorState {
                 external: None,
+                script: None,
                 idle_blink: None,
                 base: 0.15,
                 driver: None,

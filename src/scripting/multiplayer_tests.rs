@@ -178,6 +178,21 @@ fn multiplayer_basic_example_runs_as_host_and_client() {
         [true, true],
         "both peers must actually receive an eye closure"
     );
+    for scene in [&host, &client] {
+        use crate::engine::ecs::component::{AnimationComponent, AnimationState, MirrorComponent};
+        assert!(scene.world.get_component_by_id_as::<MirrorComponent>(
+            named(scene, "multiplayer_mirror").unwrap()
+        ).is_some());
+        let animations: Vec<_> = scene.world.all_components()
+            .filter_map(|id| scene.world.get_component_by_id_as::<AnimationComponent>(id))
+            .collect();
+        assert_eq!(animations.iter().filter(|clip|
+            clip.state == AnimationState::Looping && clip.length_beats == Some(64.2)
+        ).count(), 2, "both avatar copies must have ambient gaze clips");
+        assert_eq!(animations.iter().filter(|clip|
+            clip.state == AnimationState::Looping && clip.length_beats == Some(5.6)
+        ).count(), 1, "only the local desktop avatar authors the blink clip");
+    }
     let near = |a: [f32; 3], b: [f32; 3]| (0..3).all(|i| (a[i] - b[i]).abs() < 1e-3);
     assert!(near(
         world_position(&host, "remote_root").unwrap(),

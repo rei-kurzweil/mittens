@@ -77,3 +77,11 @@ and operation routing in host.rs. Keep typed direct calls, shared value conversi
 and existing phase gating; avoid per-operation runtime dispatch or new per-frame
 allocations. Validate language tests, partial transform execution, morph ownership
 and two-peer avatar tests. This proposal does not perform the split.
+
+## Authored morph-animation API
+
+Group GLTF morph read/write/clear operations in a cohesive morph API adapter,
+separate from UDP authoring. Keep host.rs and runtime_config.rs dispatch-only
+for this family. Resolve slots per GLTF instance and preserve direct factor
+updates; no per-draw allocation or new renderer pipelines. Validate script
+weights, tracker/network precedence, animation callbacks and the two-peer demo.

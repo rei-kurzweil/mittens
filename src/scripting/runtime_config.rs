@@ -601,12 +601,7 @@ pub fn build_mittens_runtime() -> Result<MittensRuntime, mms::RuntimeSpecError> 
                     component.builder_call("root", any(1));
                 }
                 "GLTF" => {
-                    host_method(
-                        component,
-                        canonical,
-                        "morph_weight",
-                        method(vec![mms::ValueType::String], mms::ValueType::F32),
-                    );
+                    super::morph_api::configure(component, canonical);
                     component.constructor("new", strings(1));
                     component.builder_call("with_visualized_transforms", booleans(1));
                 }

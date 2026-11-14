@@ -277,34 +277,3 @@ pub(crate) fn sample_value(value: &mms::TransportValue) -> super::object::Value 
         _ => V::Null,
     }
 }
-
-pub(super) fn morph_weight(
-    world: &crate::engine::ecs::World,
-    id: ComponentId,
-    slot: &str,
-) -> Result<f32, String> {
-    let model = world
-        .get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(id)
-        .ok_or("receiver is not a GLTF instance")?;
-    if !model.spawned {
-        return Ok(0.);
-    }
-    let label = world
-        .children_of(id)
-        .iter()
-        .find_map(|id| {
-            world
-                .get_component_by_id_as::<crate::engine::ecs::component::MorphTargetMapComponent>(
-                    *id,
-                )
-                .and_then(|map| map.slots().get(slot))
-        })
-        .ok_or("unknown morph slot")?;
-    Ok(model
-        .morph_targets
-        .iter()
-        .filter(|info| info.label.as_ref() == Some(label))
-        .filter_map(|info| model.morph_factors.get(&info.key))
-        .map(|state| state.effective())
-        .fold(0., f32::max))
-}

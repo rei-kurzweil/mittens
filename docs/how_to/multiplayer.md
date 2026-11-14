@@ -44,8 +44,12 @@ The channel-based migration must preserve it alongside the two-window local
 workflow; the demo uses MultiplayerSession for control and typed channels for telemetry.
 
 Each desktop window shows full local and remote Mitten avatars. WASD/right-drag
-moves the local rig; scripted hand targets exercise arm IK without a headset. Desktop idle blinks
-use a one-second interval so the networked eye closures are easy to observe.
+moves the local rig; scripted hand targets exercise arm IK without a headset. Both avatar
+copies run ambient eye-saccade animations locally. The local desktop avatar runs an
+authored looping blink clip (2.8-second loop); XR uses tracked eye closure only,
+with pupil-direction tracking and synthetic idle blinking disabled. Blink weights
+travel across the network so both people see the source avatar blink. A wall
+mirror shows your own avatar as well as the other player.
 The receiving machine solves AVC/IK locally and binds the received blink weights
 to that avatar's morph slots. The orange ball is simulated only by the host.
 Press **E** to kick it; client requests remain host-authoritative.

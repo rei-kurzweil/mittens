@@ -11,6 +11,9 @@ import { bisket_shirt_physics } from "../assets/components/secondary_motion/bisk
 import { mitten_bow_secondary_motion } from "../assets/components/secondary_motion/mitten-bow.mms"
 import { vroid_arm_ik_bend_plane_prototype } from "../assets/components/arm_ik/vroid.mms"
 
+import { ambient_eye_saccades } from "../assets/components/animations/ambient_eye_saccades.mms"
+import { looping_blink } from "../assets/components/animations/looping_blink.mms"
+
 // Two-player LAN/loopback multiplayer: one host, one client, same arena.
 // The host owns physics (the bouncing ball); each player owns their own pose.
 // No interpolation yet, so remote motion steps at the 20 Hz send rate.
@@ -27,6 +30,8 @@ let net = MultiplayerSession.from_env() {}
 net
 
 RendererSettings { window_visible(use_desktop) window_size(1280, 800) }
+// Eye/blink clip timestamps below use seconds converted to beats.
+Clock.bpm(120.0)
 BGC.rgba(0.62, 0.70, 0.86, 1.0)
 AL.rgb(0.30, 0.31, 0.36)
 T.position(-0.4, 0.9, 0.5) { DL.color(1.0, 0.94, 0.86).intensity(1.2) }
@@ -45,9 +50,17 @@ for corner in [[-1.0, -1.0], [1.0, -1.0], [-1.0, 1.0], [1.0, 1.0]] {
     }
 }
 
+// A shared full-height mirror faces the avatars (+Z normal) for desktop and XR.
+T.position(0.0, 1.5, -4.60).scale(6.3, 3.1, 0.12) {
+    R.cube() { C.rgba(0.15, 0.18, 0.22, 1.0) }
+}
+T.position(0.0, 1.5, -4.52).scale(6.0, 2.8, 1.0) {
+    R.plane() { Mirror.quality(1024) { name = "multiplayer_mirror" } }
+}
+
 // Status board.
 let status = Text { "connecting..." C.rgba(0.16, 0.17, 0.22, 1.0) }
-T.position(-2.6, 3.2, -7.0).scale(0.22, 0.22, 0.22) { status }
+T.position(-2.6, 3.4, -4.30).scale(0.22, 0.22, 0.22) { status }
 let roster = { count = 0 }
 fn show_status(line) {
     let role = "client"
@@ -96,8 +109,8 @@ fn make_mitten(prefix, local_player) {
     let root_name = prefix + "_root"
     let avatar = AVC.movement_target("[name='" + root_name + "']") {
         name = prefix + "_avatar"
-        idle_blink(local_player)
-        if !use_xr { blink_interval(1.0) blink_duration(0.20) }
+        // Desktop owns an authored clip; XR closure comes only from tracking.
+        idle_blink(false)
         if !local_player { collision_disabled() }
         initial_yaw(3.14159)
         arm_ik(vroid_arm_ik_bend_plane_prototype())
@@ -110,6 +123,18 @@ fn make_mitten(prefix, local_player) {
             XREyeTracking.on().priority(["htc", "vrchat_osc"]).enable_pupil_direction_tracking(false)
         }
     }
+    on(model, "GLTFInitialized", fn(event) {
+        let left_eye = event.gltf.query("[name='J_Adj_L_FaceEye']")
+        let right_eye = event.gltf.query("[name='J_Adj_R_FaceEye']")
+        if left_eye && right_eye {
+            let gaze = ambient_eye_saccades(left_eye, right_eye, 2.0)
+            avatar.attach(gaze)
+        } else { print("multiplayer: mapped eyes not found for " + prefix) }
+        if local_player && !use_xr {
+            let blink = looping_blink(event.gltf, 2.0)
+            avatar.attach(blink)
+        }
+    })
     let head = T.position(0.0, 1.65, 0.0) { name = prefix + "_head_target" avatar }
     let label = Text { prefix C.rgba(0.12, 0.14, 0.20, 1.0) }
     let root = T { name = root_name T.position(-0.25, 2.2, 0.0).scale(0.1, 0.1, 0.1) { label } }

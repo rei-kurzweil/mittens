@@ -542,16 +542,10 @@ impl mms::Host for MittensHost<'_, '_> {
                     });
                     return Ok(S::Value(mms::Value::Null));
                 }
-                if *component_type == "GLTF" && *method == "morph_weight" {
-                    let [mms::Value::String(slot)] = args.as_slice() else {
-                        return Err(mms::HostError::failure(
-                            "GLTF.morph_weight",
-                            "expected semantic slot",
-                        ));
-                    };
-                    let weight = super::udp_channel_api::morph_weight(self.world, id, slot)
-                        .map_err(|e| mms::HostError::failure("GLTF.morph_weight", e))?;
-                    return Ok(S::Value(mms::Value::Number(weight as f64)));
+                if *component_type == "GLTF" && matches!(*method, "morph_weight" | "set_morph_weight") {
+                    return super::morph_api::invoke(self.world, id, method, &args)
+                        .map(S::Value)
+                        .map_err(|e| mms::HostError::failure(format!("GLTF.{method}"), e));
                 }
                 if super::udp_channel_api::supports(component_type) {
                     return self.invoke_udp(id, component_type, method, args);

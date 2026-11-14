@@ -90,6 +90,8 @@ impl Component for MorphTargetBindingComponent {
 pub struct MorphFactorState {
     /// An explicit external binding owns the final value until released.
     pub external: Option<f32>,
+    /// Explicit MMS animation value, below a received binding and above local fallbacks.
+    pub script: Option<f32>,
     /// Authored idle blink fallback; live expression/tracking drivers take priority.
     pub idle_blink: Option<f32>,
     pub base: f32,
@@ -102,6 +104,7 @@ impl MorphFactorState {
     pub fn new(base: f32) -> Self {
         Self {
             external: None,
+            script: None,
             base,
             driver: None,
             amplitude_mouth_open: None,
@@ -110,6 +113,7 @@ impl MorphFactorState {
     }
     pub fn effective(self) -> f32 {
         self.external
+            .or(self.script)
             .or(self.driver)
             .or(self.amplitude_mouth_open)
             .unwrap_or_else(|| {
@@ -189,6 +193,20 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
+    fn authored_clip_releases_to_driver_and_received_binding_takes_priority() {
+        let mut state = MorphFactorState::new(0.1);
+        state.driver = Some(0.2);
+        state.script = Some(0.8);
+        assert_eq!(state.effective(), 0.8);
+        state.external = Some(0.4);
+        assert_eq!(state.effective(), 0.4);
+        state.script = None;
+        assert_eq!(state.effective(), 0.4);
+        state.external = None;
+        assert_eq!(state.effective(), 0.2);
+    }
+
+    #[test]
     fn active_threshold_is_strict_and_signed() {
         let key = MorphTargetKey {
             node_index: 1,
@@ -200,6 +218,7 @@ mod tests {
             key,
             MorphFactorState {
                 external: None,
+            script: None,
                 idle_blink: None,
                 base: MORPH_ACTIVE_EPSILON,
                 driver: None,
@@ -211,6 +230,7 @@ mod tests {
             key,
             MorphFactorState {
                 external: None,
+            script: None,
                 idle_blink: None,
                 base: -MORPH_ACTIVE_EPSILON * 1.01,
                 driver: None,
@@ -227,6 +247,7 @@ mod tests {
     fn driver_does_not_destroy_base_factor() {
         let state = MorphFactorState {
             external: None,
+            script: None,
             idle_blink: None,
             base: 0.25,
             driver: Some(0.8),
@@ -236,6 +257,7 @@ mod tests {
         assert_eq!(
             MorphFactorState {
                 external: None,
+            script: None,
                 idle_blink: None,
                 driver: None,
                 amplitude_mouth_open: None,
