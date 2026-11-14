@@ -316,12 +316,47 @@ for individual transform properties (translation, rotation and scale) are
 working, investigate streaming audio channels and voice chat. This is future
 scope, not a requirement for the initial telemetry implementation.
 
-A possible receiving API would let an audio subscription bind to a local audio
-source, or expose a dedicated network audio source. The choice and names remain
-open. Follow the same ownership principle as transform subscriptions: the
-channel transports data, while the receiver explicitly chooses its local
-playback target. Positional voice could combine an audio channel with separate
-transform channels for the speaker's location.
+Use `AudioStream` as the proposed name for a continuously fed audio source,
+alongside AudioClip, AudioInput and AudioOscillator. AudioSource remains the
+umbrella term for sound-producing graph nodes. AudioStream is independent of
+UDP: custom Rust producers, decoders and other transports can feed it.
+
+Separate three responsibilities:
+
+- AudioStream consumes buffered PCM frames and participates in the existing
+  audio graph, effects and output routing like other sources.
+- A Rust writer handle lets arbitrary producer code enqueue frames through a
+  bounded buffer, with explicit format, overflow and lifetime semantics.
+- An audio subscription binding owns the network receive/decode/timing path
+  that feeds a chosen AudioStream. Encoded network frames do not go directly
+  into the PCM source without decoding and format validation.
+
+```ts
+// Phase 2 sketch only; audio_frame_type and these APIs are not implemented.
+let voice = AudioStream.channels(1).sample_rate(48000) {}
+voice
+
+let incoming_voice = some_socket.subscribe("voice")
+    .from(peer_address)
+    .type(audio_frame_type)
+    .bind_audio(voice) {}
+incoming_voice
+```
+
+The receiver explicitly chooses its playback target, following the same
+subscription-owned binding model as transforms. There is no global Bind API.
+The example assumes attachment beneath an appropriate AudioOutput for audible
+playback; merely receiving a channel does not make it audible. Positional voice
+could combine an audio channel with separate transform channels for the
+speaker's location, subject to the audio system's spatial-playback support.
+
+Producers push PCM frames; the audio callback pulls buffered frames without
+waiting for networking, decoding or arbitrary producer code. Define underrun
+behavior, bounded latency/overflow policy, producer ownership and shutdown,
+channel layout, sample-rate conversion and format changes. Callback work must
+avoid blocking locks and allocation. A UdpAudioSource convenience component
+could be considered later, but should build on AudioStream and subscription
+binding rather than introduce a separate UDP-specific playback implementation.
 
 Investigate microphone capture, audio-frame/codec negotiation, timestamps and
 clock drift, bounded jitter buffering, loss handling, playback scheduling,
