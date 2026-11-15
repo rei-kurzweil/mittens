@@ -1,5 +1,5 @@
 
-# mittens 0.10.0
+# mittens 0.11.0
 
 <video height="420" alt="Screenshot_20260303_015535" src="assets/videos/clip_001.mp4" controls></video>
 
@@ -10,9 +10,9 @@ mittens aims to provide a similar -although more opinionated- developer experien
 
 ### Workspace crates
 
-- `mittens-engine` 0.10.0 at the workspace root: Vulkan/OpenXR rendering, ECS,
+- `mittens-engine` 0.11.0 at the workspace root: Vulkan/OpenXR rendering, ECS,
   engine component materialization, and the Mittens-specific scripting host.
-- [`meow-meow-script`](crates/meow-meow-script/README.md) 0.10.0:
+- [`meow-meow-script`](crates/meow-meow-script/README.md) 0.11.0:
   host-neutral syntax, parser, runtime/session evaluator, configurable
   component/API catalogs, and the generic host protocol.
 - [`mittens-query`](crates/mittens-query/README.md) 0.6.0: CSS/MMQ parsing and
@@ -29,11 +29,13 @@ depends on `mittens-engine` only when targeting Android.
 `mittens-engine` 0.8 removes the deprecated `ActionComponent`, `ActionSystem`,
 and `Action.*` MMS constructors. Deferred animation now uses executable
 `Keyframe.at(...) { ... }` blocks that capture live component handles. The
-standalone `meow-meow-script` crate is now at 0.10.0; `mittens-query` remains
+standalone `meow-meow-script` crate is now at 0.11.0; `mittens-query` remains
 at 0.6.0.
 
-The current release pairs `mittens-engine 0.10.0` with
-`meow-meow-script 0.10.0`. See the [0.10.0 release notes](docs/release-notes/mittens-engine-0.10.0.md).
+The current release pairs `mittens-engine 0.11.0` with
+`meow-meow-script 0.11.0`. 0.11 removes the `Shading` component in favor of
+`Material(MaterialDefinition.anime())`; see the
+[0.11.0 release notes](docs/release-notes/mittens-engine-0.11.0.md).
 
 For scripting, see the [MMS language guide](crates/meow-meow-script/docs/guide/language.md), the
 [`meow-meow-script` crate and its Mittens integration](crates/meow-meow-script/README.md),
