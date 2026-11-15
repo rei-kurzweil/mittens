@@ -78,8 +78,13 @@ export fn indoor_pool_with_window_lights(origin, width, length, basin_width, bas
 
     return T.position(origin[0], origin[1], origin[2]) {
         name = "indoor_pool"
-        Shading.anime().shade_color([0.48, 0.48, 0.50]).shade_strength(0.75)
-            .rim_color([1.0, 1.0, 1.0]).rim_strength(0.18).rim_power(4.0)
+        Material(MaterialDefinition.anime()).inputs({
+            shade_color = [0.48, 0.48, 0.50]
+            shade_strength = 0.75
+            rim_color = [1.0, 1.0, 1.0]
+            rim_strength = 0.18
+            rim_power = 4.0
+        })
 
         // Four deck strips leave a real opening over the basin.
         for side in [-1.0, 1.0] {
@@ -133,7 +138,7 @@ export fn indoor_pool_with_window_lights(origin, width, length, basin_width, bas
                     .scale(0.025, cut_height - 0.10, cut_width - 0.10) {
                     R.cube() {
                         C.rgba(1.0, 1.0, 1.0, 1.0)
-                        Shading.toon()
+                        Material(MaterialDefinition.toon())
                         EM.on().intensity(1.8)
                     }
                 }

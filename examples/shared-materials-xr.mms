@@ -22,16 +22,19 @@ T {
 }
 XR.on()
 
-let shared = Shading.anime().shade_strength(0.75)
-    .shade_color([0.25, 0.10, 0.45]).rim_strength(0.35) { name = "shared_anime_source" }
-let independent = Shading.anime().shade_strength(0.75)
-    .shade_color([0.25, 0.10, 0.45]).rim_strength(0.35) { name = "independent_anime_source" }
+let anime_inputs = {
+    shade_strength = 0.75
+    shade_color = [0.25, 0.10, 0.45]
+    rim_strength = 0.35
+}
+let shared = Material(MaterialDefinition.anime()).inputs(anime_inputs) { name = "shared_anime_source" }
+let independent = Material(MaterialDefinition.anime()).inputs(anime_inputs) { name = "independent_anime_source" }
 let reset_values = {
-    shade_strength = shared.get_shade_strength()
-    shade_threshold = shared.get_shade_threshold()
-    lit_threshold = shared.get_lit_threshold()
-    rim_strength = shared.get_rim_strength()
-    rim_power = shared.get_rim_power()
+    shade_strength = shared.get_input("shade_strength")
+    shade_threshold = shared.get_input("shade_threshold")
+    lit_threshold = shared.get_input("lit_threshold")
+    rim_strength = shared.get_input("rim_strength")
+    rim_power = shared.get_input("rim_power")
 }
 
 let left = R.cube() { name = "shared_cube" C.rgba(0.90, 0.65, 0.40, 1.0) shared }
@@ -46,7 +49,7 @@ T.position(0.0, 0.85, -2.7).scale(0.12, 0.12, 0.12) { Text { "Shared cube" } }
 T.position(0.75, 0.85, -2.7).scale(0.12, 0.12, 0.12) { Text { "Shared sphere" } }
 T.position(1.65, 0.85, -2.7).scale(0.12, 0.12, 0.12) { Text { "Independent" } }
 T.position(0.0, -0.04, -2.0).scale(10.0, 0.05, 10.0) {
-    R.cube() { C.rgba(0.15, 0.17, 0.21, 1.0) Shading.toon() }
+    R.cube() { C.rgba(0.15, 0.17, 0.21, 1.0) Material(MaterialDefinition.toon()) }
 }
 
 fn action_button(label, button_name) {
@@ -67,7 +70,7 @@ let pulse = { enabled = false seconds = 0.0 }
 on_global("FrameTick", fn(event) {
     if pulse.enabled {
         pulse.seconds = pulse.seconds + event.dt_sec
-        shared.set_shade_strength(0.5 + 0.45 * Math.sin(pulse.seconds * 1.8))
+        shared.set_input("shade_strength", 0.5 + 0.45 * Math.sin(pulse.seconds * 1.8))
     }
 })
 fn controls() {
@@ -88,7 +91,7 @@ fn controls() {
         if pulse.enabled { label = "Stop shared pulse / resume sliders" }
         content.query("#shared_pulse").query("Text").set_text(label)
         if !pulse.enabled {
-            let strength = shared.get_shade_strength()
+            let strength = shared.get_input("shade_strength")
             content.query("#anime_shade_strength_slider").sync_value(strength)
             content.query("#anime_shade_strength_readout").set_text("" + Math.round(strength * 100.0) / 100.0)
         }

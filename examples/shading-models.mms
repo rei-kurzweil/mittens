@@ -24,12 +24,14 @@ RenderGraph {
     Bloom { intensity(0.30) radius_ndc(0.025) emissive_scale(1.0) half_res(true) }
 }
 
-Shading.anime().shade_color([0.4, 0.4, 0.65])
-                .shade_strength(0.8)
-                .shade_threshold(0.4)
-                .lit_threshold(0.55)
-                .rim_color([1.0, 1.0, 1.0])
-                .rim_strength(0.38) {
+Material(MaterialDefinition.anime()).inputs({
+    shade_color = [0.4, 0.4, 0.65]
+    shade_strength = 0.8
+    shade_threshold = 0.4
+    lit_threshold = 0.55
+    rim_color = [1.0, 1.0, 1.0]
+    rim_strength = 0.38
+}) {
     // Neutral floor and backdrop make differences in the two model materials clear.
     T.position(0.0, -0.06, 0.0).scale(12.0, 0.12, 10.0) {
         name = "shading_models_floor"
@@ -57,7 +59,7 @@ let right_model_x = 1.65
 T.position(left_model_x, 0.0, 0.0) {
     name = "bisket_default_shading"
     GLTF.new("assets/models/bisket.glb") {
-        Shading.toon()
+        Material(MaterialDefinition.toon())
         relaxed_pose_factory()
         bisket_secondary_motion(false)
     }
@@ -65,11 +67,11 @@ T.position(left_model_x, 0.0, 0.0) {
 
 let anime_target = bisket_anime_shading()
 let anime_reset_values = {
-    shade_strength = anime_target.get_shade_strength()
-    shade_threshold = anime_target.get_shade_threshold()
-    lit_threshold = anime_target.get_lit_threshold()
-    rim_strength = anime_target.get_rim_strength()
-    rim_power = anime_target.get_rim_power()
+    shade_strength = anime_target.get_input("shade_strength")
+    shade_threshold = anime_target.get_input("shade_threshold")
+    lit_threshold = anime_target.get_input("lit_threshold")
+    rim_strength = anime_target.get_input("rim_strength")
+    rim_power = anime_target.get_input("rim_power")
 }
 
 // Albedo-derived anime shading model with a two-state light ramp and rim light.

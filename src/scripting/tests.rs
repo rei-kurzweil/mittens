@@ -5255,9 +5255,8 @@ fn lights_example_materializes_all_light_types_and_labeled_targets() {
 
 #[test]
 fn shading_models_example_materializes_comparison_models_and_spotlights() {
-    use crate::engine::ecs::component::{
-        AnimeShadingComponent, GLTFComponent, GrabbableComponent, SpotLightComponent,
-    };
+    use crate::engine::ecs::component::material::{MaterialComponent, MaterialDefinitionComponent};
+    use crate::engine::ecs::component::{GLTFComponent, GrabbableComponent, SpotLightComponent};
 
     let source = include_str!("../../examples/shading-models.mms");
     let mut world = World::default();
@@ -5281,14 +5280,17 @@ fn shading_models_example_materializes_comparison_models_and_spotlights() {
             .count(),
         2
     );
-    for (label, expected) in [
+    // Built-in Toon baseline against the custom Bisket Anime definition.
+    for (label, builtin, fragment) in [
         (
             "bisket_default_shading",
-            crate::engine::ecs::component::ShadingModel::Toon,
+            Some(crate::engine::ecs::component::ShadingModel::Toon),
+            "",
         ),
         (
             "bisket_anime_shading",
-            crate::engine::ecs::component::ShadingModel::Anime,
+            None,
+            "assets/shaders/anime-cutout.frag",
         ),
     ] {
         let root = ids
@@ -5302,12 +5304,16 @@ fn shading_models_example_materializes_comparison_models_and_spotlights() {
             .copied()
             .find(|&id| world.get_component_by_id_as::<GLTFComponent>(id).is_some())
             .unwrap();
-        let shading = world
+        let material = world
             .children_of(gltf)
             .iter()
-            .find_map(|&id| world.get_component_by_id_as::<AnimeShadingComponent>(id))
+            .find_map(|&id| world.get_component_by_id_as::<MaterialComponent>(id))
             .unwrap();
-        assert_eq!(shading.model, expected, "{label}");
+        let definition = world
+            .get_component_by_id_as::<MaterialDefinitionComponent>(material.definition)
+            .unwrap();
+        assert_eq!(definition.builtin, builtin, "{label}");
+        assert_eq!(definition.fragment_uri, fragment, "{label}");
     }
     assert_eq!(
         ids.iter()
@@ -12231,11 +12237,11 @@ fn xr_grab_demo_evaluates_with_editor_settings_and_grabbable_playground() {
 
 #[test]
 fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
-    use crate::engine::ecs::component::{
-        ShadingComponent, ShadingModel, SliderComponent, TextComponent,
-    };
+    use crate::engine::ecs::component::material::{MaterialComponent, MaterialDefinitionComponent};
+    use crate::engine::ecs::component::{SliderComponent, TextComponent};
     use crate::engine::ecs::system::SystemWorld;
-    use crate::engine::graphics::{CpuMesh, MaterialHandle, MeshHandle, MeshUploader};
+    use crate::engine::ecs::system::material_system::MaterialSystem;
+    use crate::engine::graphics::{CpuMesh, MeshHandle, MeshUploader};
 
     #[derive(Default)]
     struct Uploader(u32);
@@ -12251,6 +12257,13 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
             .find(|&id| world.component_label(id) == Some(name))
             .unwrap()
     }
+    fn input(world: &World, material: ComponentId, name: &str) -> f32 {
+        world
+            .get_component_by_id_as::<MaterialComponent>(material)
+            .unwrap()
+            .values[name][0]
+    }
+    /// Published revisions of `source`'s material instance during one service.
     fn service(
         session: &mut RuntimeSpecSession,
         world: &mut World,
@@ -12258,23 +12271,27 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
         visuals: &mut VisualWorld,
         assets: &mut RenderAssets,
         queue: &mut CommandQueue,
-    ) -> usize {
+        source: ComponentId,
+    ) -> u64 {
+        let revision = |visuals: &VisualWorld| {
+            visuals
+                .materials
+                .source_instance(source)
+                .and_then(|id| visuals.materials.instance(id))
+                .map_or(0, |instance| instance.revision)
+        };
+        let before = revision(visuals);
         let output = session.service_callbacks(world, &mut systems.rx, Some(assets), queue);
         assert!(output.errors.is_empty(), "{:?}", output.errors);
-        let edits = output
-            .intents
-            .iter()
-            .filter(|i| matches!(i, IntentValue::RegisterAnimeShading { .. }))
-            .count();
         for intent in output.intents {
             queue.push_intent_now(ComponentId::default(), intent);
         }
         systems.process_commands(world, visuals, assets, queue);
-        edits
+        revision(visuals) - before
     }
 
     let source = format!(
-        "{}\nT {{ R.cube() {{ name = \"isolated_anime\" Shading.anime().shade_strength(0.23) }} }}",
+        "{}\nT {{ R.cube() {{ name = \"isolated_anime\" Material(MaterialDefinition.anime()).inputs({{ shade_strength = 0.23 }}) }} }}",
         include_str!("../../examples/shading-models.mms")
     );
     let mut world = World::default();
@@ -12300,13 +12317,17 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
         .all_components()
         .find(|&id| {
             world
-                .get_component_by_id_as::<ShadingComponent>(id)
-                .is_some_and(|s| s.model == ShadingModel::Anime && s.shade_strength == 0.5)
+                .get_component_by_id_as::<MaterialComponent>(id)
+                .and_then(|m| {
+                    world.get_component_by_id_as::<MaterialDefinitionComponent>(m.definition)
+                })
+                .is_some_and(|d| d.fragment_uri == "assets/shaders/anime-cutout.frag")
         })
         .unwrap();
+    assert_eq!(input(&world, source_id, "shade_strength"), 0.5);
     let slider = label(&world, "anime_shade_strength_slider");
 
-    // Update via the actual prefab callback before GLTF creates its projections.
+    // Update via the actual prefab callback before GLTF creates its renderables.
     systems.rx.dispatch_event_handlers(
         &mut world,
         &Signal::event(slider, EventSignal::SliderChanged { slider, value: 0.8 }),
@@ -12318,17 +12339,12 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
             &mut systems,
             &mut visuals,
             &mut assets,
-            &mut queue
+            &mut queue,
+            source_id
         ),
         1
     );
-    assert_eq!(
-        world
-            .get_component_by_id_as::<ShadingComponent>(source_id)
-            .unwrap()
-            .shade_strength,
-        0.8
-    );
+    assert_eq!(input(&world, source_id, "shade_strength"), 0.8);
     systems.gltf.tick_with_queue(
         &mut world,
         &mut visuals,
@@ -12346,31 +12362,35 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
         &mut Uploader::default(),
         &mut queue,
     );
-    let projections: Vec<_> = world
+    // Imported renderables resolve the GLTF-scoped Material directly.
+    let consumers: Vec<_> = world
         .all_components()
         .filter(|&id| {
             world
-                .get_component_by_id_as::<ShadingComponent>(id)
-                .is_some_and(|s| s.source_component() == Some(source_id))
+                .get_component_by_id_as::<RenderableComponent>(id)
+                .is_some()
+                && MaterialSystem::resolve_source(&world, id) == Some(source_id)
         })
         .collect();
-    assert!(projections.len() > 1);
-    let handles: Vec<_> = projections
+    assert!(consumers.len() > 1);
+    let handles: Vec<_> = consumers
         .iter()
         .map(|&id| {
             world
-                .get_component_by_id_as::<RenderableComponent>(world.parent_of(id).unwrap())
+                .get_component_by_id_as::<RenderableComponent>(id)
                 .unwrap()
                 .get_handle()
                 .unwrap()
         })
         .collect();
-    assert!(
-        handles
-            .iter()
-            .any(|&h| visuals.instance(h).unwrap().renderable.material
-                == MaterialHandle::SKINNED_ANIME_MESH)
-    );
+    let shared_instance = visuals.materials.source_instance(source_id);
+    assert!(shared_instance.is_some());
+    for &h in &handles {
+        assert_eq!(
+            visuals.instance(h).unwrap().material_instance,
+            shared_instance
+        );
+    }
     for &h in &handles {
         assert_eq!(
             visuals
@@ -12388,7 +12408,10 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
         .get_handle()
         .unwrap();
 
-    for value in [0.0, 1.0, 2.0, -1.0, 0.73] {
+    let mut previous = 0.8;
+    for value in [0.0_f32, 1.0, 2.0, -1.0, 0.73] {
+        // Clamped repeats leave the material unchanged and publish nothing.
+        let effective = value.clamp(0.0, 1.0);
         systems.rx.dispatch_event_handlers(
             &mut world,
             &Signal::event(slider, EventSignal::SliderChanged { slider, value }),
@@ -12400,23 +12423,13 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
                 &mut systems,
                 &mut visuals,
                 &mut assets,
-                &mut queue
+                &mut queue,
+                source_id
             ),
-            1
+            u64::from(effective != previous)
         );
-        let effective = value.clamp(0.0, 1.0);
-        for &id in &projections {
-            assert_eq!(
-                crate::engine::ecs::system::material_system::MaterialSystem::resolve_shading(
-                    &world,
-                    world.parent_of(id).unwrap()
-                )
-                .unwrap()
-                .1
-                .shade_strength,
-                effective
-            );
-        }
+        previous = effective;
+        assert_eq!(input(&world, source_id, "shade_strength"), effective);
         for &h in &handles {
             assert_eq!(
                 visuals
@@ -12454,15 +12467,14 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
             &mut systems,
             &mut visuals,
             &mut assets,
-            &mut queue
+            &mut queue,
+            source_id
         ),
         1
     );
-    let shading = world
-        .get_component_by_id_as::<ShadingComponent>(source_id)
-        .unwrap();
-    assert!((shading.shade_threshold - 1.2).abs() < 1e-6);
-    assert!((shading.lit_threshold - 1.2).abs() < 1e-6);
+
+    assert!((input(&world, source_id, "shade_threshold") - 1.2).abs() < 1e-6);
+    assert!((input(&world, source_id, "lit_threshold") - 1.2).abs() < 1e-6);
     let lit_threshold_slider = label(&world, "anime_lit_threshold_slider");
     assert!(
         (world
@@ -12490,15 +12502,14 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
             &mut systems,
             &mut visuals,
             &mut assets,
-            &mut queue
+            &mut queue,
+            source_id
         ),
         1
     );
-    let shading = world
-        .get_component_by_id_as::<ShadingComponent>(source_id)
-        .unwrap();
-    assert!((shading.shade_threshold - 0.25).abs() < 1e-6);
-    assert!((shading.lit_threshold - 0.25).abs() < 1e-6);
+
+    assert!((input(&world, source_id, "shade_threshold") - 0.25).abs() < 1e-6);
+    assert!((input(&world, source_id, "lit_threshold") - 0.25).abs() < 1e-6);
     for &h in &handles {
         assert_eq!(
             visuals
@@ -12527,7 +12538,8 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
             &mut systems,
             &mut visuals,
             &mut assets,
-            &mut queue
+            &mut queue,
+            source_id
         ),
         1
     );
@@ -12566,7 +12578,8 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
             &mut systems,
             &mut visuals,
             &mut assets,
-            &mut queue
+            &mut queue,
+            source_id
         ),
         0
     );
@@ -12590,6 +12603,7 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
         &mut visuals,
         &mut assets,
         &mut queue,
+        source_id,
     );
     let restored_slider = label(&world, "anime_shade_strength_slider");
     assert_ne!(restored_slider, slider);
@@ -12622,24 +12636,17 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
             &mut systems,
             &mut visuals,
             &mut assets,
-            &mut queue
+            &mut queue,
+            source_id
         ),
-        5
+        1
     );
-    assert_eq!(
-        world
-            .get_component_by_id_as::<ShadingComponent>(source_id)
-            .unwrap()
-            .shade_strength,
-        0.5
-    );
-    let reset_shading = world
-        .get_component_by_id_as::<ShadingComponent>(source_id)
-        .unwrap();
-    assert_eq!(reset_shading.shade_threshold, 0.4);
-    assert_eq!(reset_shading.lit_threshold, 0.55);
-    assert_eq!(reset_shading.rim_strength, 0.38);
-    assert_eq!(reset_shading.rim_power, 4.0);
+    assert_eq!(input(&world, source_id, "shade_strength"), 0.5);
+
+    assert_eq!(input(&world, source_id, "shade_threshold"), 0.4);
+    assert_eq!(input(&world, source_id, "lit_threshold"), 0.55);
+    assert_eq!(input(&world, source_id, "rim_strength"), 0.38);
+    assert_eq!(input(&world, source_id, "rim_power"), 4.0);
     for &h in &handles {
         let gpu = visuals
             .instance(h)
@@ -12652,9 +12659,8 @@ fn anime_shading_controls_live_runtime_reaches_gltf_visuals_and_restores() {
 
 #[test]
 fn anime_shading_xr_fixture_materializes_shared_source_and_controls() {
-    use crate::engine::ecs::component::{
-        CameraXRComponent, ShadingComponent, ShadingModel, SliderComponent,
-    };
+    use crate::engine::ecs::component::material::{MaterialComponent, MaterialDefinitionComponent};
+    use crate::engine::ecs::component::{CameraXRComponent, SliderComponent};
     let mut world = World::default();
     let mut rx = RxWorld::default();
     let mut assets = RenderAssets::new();
@@ -12691,8 +12697,11 @@ fn anime_shading_xr_fixture_materializes_shared_source_and_controls() {
         .all_components()
         .find(|&id| {
             world
-                .get_component_by_id_as::<ShadingComponent>(id)
-                .is_some_and(|s| s.model == ShadingModel::Anime)
+                .get_component_by_id_as::<MaterialComponent>(id)
+                .and_then(|m| {
+                    world.get_component_by_id_as::<MaterialDefinitionComponent>(m.definition)
+                })
+                .is_some_and(|d| d.fragment_uri == "assets/shaders/anime-cutout.frag")
         })
         .unwrap();
     let consumers = world
@@ -12704,10 +12713,9 @@ fn anime_shading_xr_fixture_materializes_shared_source_and_controls() {
                 || world
                     .get_component_by_id_as::<crate::engine::ecs::component::GLTFComponent>(id)
                     .is_some())
-                && crate::engine::ecs::system::material_system::MaterialSystem::resolve_shading(
+                && crate::engine::ecs::system::material_system::MaterialSystem::resolve_source(
                     &world, id,
-                )
-                .is_some_and(|(source, _)| source == anime)
+                ) == Some(anime)
         })
         .count();
     assert_eq!(
@@ -12718,7 +12726,8 @@ fn anime_shading_xr_fixture_materializes_shared_source_and_controls() {
 
 #[test]
 fn shared_materials_xr_controls_preserve_sources_and_update_surviving_consumers() {
-    use crate::engine::ecs::component::{CameraXRComponent, ShadingComponent, SliderComponent};
+    use crate::engine::ecs::component::material::MaterialComponent;
+    use crate::engine::ecs::component::{CameraXRComponent, SliderComponent};
     use crate::engine::ecs::system::SystemWorld;
     use crate::engine::graphics::{CpuMesh, MaterialHandle, MeshHandle, MeshUploader};
     #[derive(Default)]
@@ -12800,25 +12809,25 @@ fn shared_materials_xr_controls_preserve_sources_and_update_surviving_consumers(
     let sphere = label(&w, "shared_sphere");
     let comparison = label(&w, "independent_sphere");
     assert_ne!(source, independent);
+    let material = |id| w.get_component_by_id_as::<MaterialComponent>(id).unwrap();
     assert_eq!(
-        w.get_component_by_id_as::<ShadingComponent>(source),
-        w.get_component_by_id_as::<ShadingComponent>(independent)
+        material(source).definition,
+        material(independent).definition
     );
+    assert_eq!(material(source).values, material(independent).values);
     assert_eq!(w.parents_of(source).count(), 2);
     assert!(
         w.all_components()
             .any(|id| w.get_component_by_id_as::<CameraXRComponent>(id).is_some())
     );
     assert_eq!(
-        crate::engine::ecs::system::material_system::MaterialSystem::resolve_shading(&w, cube)
-            .unwrap()
-            .0,
+        crate::engine::ecs::system::material_system::MaterialSystem::resolve_source(&w, cube)
+            .unwrap(),
         source
     );
     assert_eq!(
-        crate::engine::ecs::system::material_system::MaterialSystem::resolve_shading(&w, sphere)
-            .unwrap()
-            .0,
+        crate::engine::ecs::system::material_system::MaterialSystem::resolve_source(&w, sphere)
+            .unwrap(),
         source
     );
     let cube_handle = w
@@ -13010,10 +13019,10 @@ fn shared_materials_xr_controls_preserve_sources_and_update_surviving_consumers(
     v.prepare_draw_cache();
     for edit in 0..10_000 {
         let value = (edit as f32 / 10_000.0).clamp(0.0, 1.0);
-        let shading = w
-            .get_component_by_id_as_mut::<ShadingComponent>(source)
-            .unwrap();
-        *shading = shading.with_shade_strength(value);
+        w.get_component_by_id_as_mut::<MaterialComponent>(source)
+            .unwrap()
+            .values
+            .insert("shade_strength".into(), vec![value]);
         s.register_anime_shading(&mut w, &mut v, source);
         assert_eq!(v.materials.source_instance(source), Some(shared_id));
         assert_eq!(v.materials.instance_count(), material_count);
@@ -13054,7 +13063,7 @@ fn shared_materials_xr_controls_preserve_sources_and_update_surviving_consumers(
     assert!(
         crate::scripting::component_registry::filtered_world_to_ce_ast(&w)
             .unwrap_err()
-            .contains("cannot serialize shared Shading")
+            .contains("material reference-preserving serialization is not implemented")
     );
 
     // Real runtime destruction must preserve a source owned by another subtree.

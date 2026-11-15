@@ -1,4 +1,4 @@
-// Content for info_panel: edits one retained Shading.anime() source.
+// Content for info_panel: edits one retained Anime-input Material.
 // The caller owns panel chrome, restore, and the original Reset values.
 fn fixed_2(value) {
     let scaled = Math.round(value * 100.0)
@@ -44,12 +44,34 @@ fn anime_slider_row(label, slider, readout_name, initial) {
     }
 }
 
+fn clamp(value, minimum, maximum) {
+    if value < minimum { return minimum }
+    if value > maximum { return maximum }
+    return value
+}
+
+// Inputs keep the ranges the Anime controls have always used; thresholds
+// stay ordered, raising or lowering the other one.
+fn set_shade_threshold(target, value) {
+    let shade = value
+    if shade < 0.0 { shade = 0.0 }
+    target.set_input("shade_threshold", shade)
+    if target.get_input("lit_threshold") < shade { target.set_input("lit_threshold", shade) }
+}
+
+fn set_lit_threshold(target, value) {
+    let lit = value
+    if lit < 0.0 { lit = 0.0 }
+    target.set_input("lit_threshold", lit)
+    if target.get_input("shade_threshold") > lit { target.set_input("shade_threshold", lit) }
+}
+
 export fn anime_shading_controls(target, reset_values) {
-    let shade_strength = target.get_shade_strength()
-    let shade_threshold = target.get_shade_threshold()
-    let lit_threshold = target.get_lit_threshold()
-    let rim_strength = target.get_rim_strength()
-    let rim_power = target.get_rim_power()
+    let shade_strength = target.get_input("shade_strength")
+    let shade_threshold = target.get_input("shade_threshold")
+    let lit_threshold = target.get_input("lit_threshold")
+    let rim_strength = target.get_input("rim_strength")
+    let rim_power = target.get_input("rim_power")
     let content = T {
         name = "anime_shading_controls"
         Style {
@@ -79,7 +101,7 @@ export fn anime_shading_controls(target, reset_values) {
             }
         }
     }
-    // Threshold callbacks refresh both rows because Shading maintains shade <= lit.
+    // Threshold callbacks refresh both rows because the setters maintain shade <= lit.
     let shade_strength_slider = content.query("#anime_shade_strength_slider")
     let shade_strength_readout = content.query("#anime_shade_strength_readout")
     let shade_threshold_slider = content.query("#anime_shade_threshold_slider")
@@ -92,52 +114,52 @@ export fn anime_shading_controls(target, reset_values) {
     let rim_power_readout = content.query("#anime_rim_power_readout")
     let reset = content.query("#anime_shading_reset")
     on(shade_strength_slider, "SliderChanged", fn(event) {
-        target.set_shade_strength(event["value"])
-        let effective = target.get_shade_strength()
+        target.set_input("shade_strength", clamp(event["value"], 0.0, 1.0))
+        let effective = target.get_input("shade_strength")
         shade_strength_slider.sync_value(effective)
         shade_strength_readout.set_text(fixed_2(effective))
     })
     on(shade_threshold_slider, "SliderChanged", fn(event) {
-        target.set_shade_threshold(event["value"])
-        let shade = target.get_shade_threshold()
-        let lit = target.get_lit_threshold()
+        set_shade_threshold(target, event["value"])
+        let shade = target.get_input("shade_threshold")
+        let lit = target.get_input("lit_threshold")
         shade_threshold_slider.sync_value(shade)
         shade_threshold_readout.set_text(fixed_2(shade))
         lit_threshold_slider.sync_value(lit)
         lit_threshold_readout.set_text(fixed_2(lit))
     })
     on(lit_threshold_slider, "SliderChanged", fn(event) {
-        target.set_lit_threshold(event["value"])
-        let shade = target.get_shade_threshold()
-        let lit = target.get_lit_threshold()
+        set_lit_threshold(target, event["value"])
+        let shade = target.get_input("shade_threshold")
+        let lit = target.get_input("lit_threshold")
         shade_threshold_slider.sync_value(shade)
         shade_threshold_readout.set_text(fixed_2(shade))
         lit_threshold_slider.sync_value(lit)
         lit_threshold_readout.set_text(fixed_2(lit))
     })
     on(rim_strength_slider, "SliderChanged", fn(event) {
-        target.set_rim_strength(event["value"])
-        let effective = target.get_rim_strength()
+        target.set_input("rim_strength", clamp(event["value"], 0.0, 1.0))
+        let effective = target.get_input("rim_strength")
         rim_strength_slider.sync_value(effective)
         rim_strength_readout.set_text(fixed_2(effective))
     })
     on(rim_power_slider, "SliderChanged", fn(event) {
-        target.set_rim_power(event["value"])
-        let effective = target.get_rim_power()
+        target.set_input("rim_power", clamp(event["value"], 0.01, 128.0))
+        let effective = target.get_input("rim_power")
         rim_power_slider.sync_value(effective)
         rim_power_readout.set_text(fixed_2(effective))
     })
     on(reset, "Click", fn(event) {
-        target.set_shade_strength(reset_values.shade_strength)
-        target.set_shade_threshold(reset_values.shade_threshold)
-        target.set_lit_threshold(reset_values.lit_threshold)
-        target.set_rim_strength(reset_values.rim_strength)
-        target.set_rim_power(reset_values.rim_power)
-        let shade_strength_value = target.get_shade_strength()
-        let shade_threshold_value = target.get_shade_threshold()
-        let lit_threshold_value = target.get_lit_threshold()
-        let rim_strength_value = target.get_rim_strength()
-        let rim_power_value = target.get_rim_power()
+        target.set_input("shade_strength", clamp(reset_values.shade_strength, 0.0, 1.0))
+        set_shade_threshold(target, reset_values.shade_threshold)
+        set_lit_threshold(target, reset_values.lit_threshold)
+        target.set_input("rim_strength", clamp(reset_values.rim_strength, 0.0, 1.0))
+        target.set_input("rim_power", clamp(reset_values.rim_power, 0.01, 128.0))
+        let shade_strength_value = target.get_input("shade_strength")
+        let shade_threshold_value = target.get_input("shade_threshold")
+        let lit_threshold_value = target.get_input("lit_threshold")
+        let rim_strength_value = target.get_input("rim_strength")
+        let rim_power_value = target.get_input("rim_power")
         shade_strength_slider.sync_value(shade_strength_value)
         shade_strength_readout.set_text(fixed_2(shade_strength_value))
         shade_threshold_slider.sync_value(shade_threshold_value)

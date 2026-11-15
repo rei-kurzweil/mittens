@@ -23,11 +23,11 @@ XR.on()
 
 let anime_target = bisket_anime_shading()
 let reset_values = {
-    shade_strength = anime_target.get_shade_strength()
-    shade_threshold = anime_target.get_shade_threshold()
-    lit_threshold = anime_target.get_lit_threshold()
-    rim_strength = anime_target.get_rim_strength()
-    rim_power = anime_target.get_rim_power()
+    shade_strength = anime_target.get_input("shade_strength")
+    shade_threshold = anime_target.get_input("shade_threshold")
+    lit_threshold = anime_target.get_input("lit_threshold")
+    rim_strength = anime_target.get_input("rim_strength")
+    rim_power = anime_target.get_input("rim_power")
 }
 T.position(1.1, 0.0, -3.5) {
     anime_target
@@ -37,7 +37,7 @@ T.position(1.1, 0.0, -3.5) {
     }
 }
 T.position(-1.1, 0.0, -3.5) {
-    Shading.toon()
+    Material(MaterialDefinition.toon())
     GLTF.new("assets/models/bisket.glb") { pose() }
     T.position(-0.65, 0.45, 0.0).scale(0.3, 0.3, 0.3) {
         R.sphere() { C.rgba(0.85, 0.65, 0.55, 1.0) }

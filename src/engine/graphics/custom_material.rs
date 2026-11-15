@@ -493,6 +493,27 @@ mod tests {
     }
 
     #[test]
+    fn anime_cutout_validates_avatar_definition_schema() {
+        use super::super::materials::{MaterialFieldType as T, MaterialInputField};
+        let fields = [
+            ("shade_color", T::Vec3),
+            ("shade_strength", T::F32),
+            ("shade_threshold", T::F32),
+            ("lit_threshold", T::F32),
+            ("rim_color", T::Vec3),
+            ("rim_strength", T::F32),
+            ("rim_power", T::F32),
+        ]
+        .map(|(name, ty)| MaterialInputField {
+            name: name.into(),
+            ty,
+        });
+        let compiled = compile("assets/shaders/anime-cutout.frag", &fields).unwrap();
+        assert!(compiled.descriptor_bindings.contains(&(1, 0)));
+        assert!(compiled.descriptor_bindings.contains(&(1, 1)));
+    }
+
+    #[test]
     fn pool_materials_validate_reserved_engine_resources_and_named_inputs() {
         for (path, names) in [
             (

@@ -2,15 +2,15 @@ use super::*;
 
 #[test]
 fn mittens_corp_evaluates_with_mitten_player_bow_and_car_mount_fixture() {
+    use crate::engine::ecs::component::material::{MaterialComponent, MaterialDefinitionComponent};
     use crate::engine::ecs::component::{
         AmplitudeComponent, AudioInputComponent, AvatarControlComponent, CameraXRComponent,
         CollidableComponent, CollidableMode, CollisionShape, ComponentRef, ControllerXRComponent,
         EditorComponent, EditorPanel, EditorUIComponent, GLTFComponent, HumanoidBoneMapComponent,
         InputXRComponent, InputXRGamepadComponent, MountableComponent, PointerComponent,
         PoseCaptureComponent, ReturnToRestWhenStillComponent, RiderComponent,
-        SecondaryMotionComponent, ShadingComponent, ShadingModel, SpringBoneComponent,
-        SpringColliderComponent, TransformComponent, XREyeTrackingComponent, XrAxisControl,
-        XrButtonControl, ZoneComponent,
+        SecondaryMotionComponent, SpringBoneComponent, SpringColliderComponent, TransformComponent,
+        XREyeTrackingComponent, XrAxisControl, XrButtonControl, ZoneComponent,
     };
 
     let mut world = World::default();
@@ -329,10 +329,11 @@ fn mittens_corp_evaluates_with_mitten_player_bow_and_car_mount_fixture() {
             .get_component_by_id_as::<SpringColliderComponent>(id)
             .is_some()
     }));
-    assert!(world.all_components().any(|id| {
+    assert!(world.children_of(mitten).iter().any(|id| {
         world
-            .get_component_by_id_as::<ShadingComponent>(id)
-            .is_some_and(|shading| shading.model == ShadingModel::Anime)
+            .get_component_by_id_as::<MaterialComponent>(*id)
+            .and_then(|m| world.get_component_by_id_as::<MaterialDefinitionComponent>(m.definition))
+            .is_some_and(|d| d.fragment_uri == "assets/shaders/anime-cutout.frag")
     }));
     assert!(world.children_of(mitten).iter().any(|id| {
         world
